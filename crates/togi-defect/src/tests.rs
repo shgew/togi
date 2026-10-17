@@ -1,16 +1,13 @@
-use std::num::NonZeroU32;
-
 use jiff::Timestamp;
+use test_case::test_case;
 use togi_journal::{
     Activity, Attribution, Build, CommandReset, ConfigLoaded, Decision, DefectAnswer,
-    DefectAnswered, DefectDirection, DefectFound, Event, EventKind, Failure, Payload, ResetTarget,
-    SCHEMA, Seq, SessionStart, SessionWarning, Stamp, TunerDecision,
+    DefectAnswered, DefectDirection, DefectFound, DefectId, Event, EventKind, Failure, FixStamp,
+    Payload, ResetTarget, SCHEMA, Seq, SessionStart, SessionWarning, Stamp, TunerDecision,
 };
 use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CoreSet, CpuId, Signal, TargetOffset};
 
-use crate::{
-    Clause, DefectId, DefectState, Entry, FixStamp, KNOWN_DEFECTS, fixed_stamp, is_ordered,
-};
+use crate::{Clause, DefectState, Entry, KNOWN_DEFECTS, fixed_stamp, is_ordered};
 
 const BACKOFF_ON_FAILURE: Clause = Clause {
     decision_kind: EventKind::TunerDecision,
@@ -82,7 +79,7 @@ fn build(fixes: u32) -> Build {
         rev: None,
         ruleset: 1,
         schema: SCHEMA,
-        fixes,
+        fixes: DefectId::new(fixes).map_or(FixStamp::none(), FixStamp::through),
         evidence: 1,
     }
 }
@@ -189,7 +186,7 @@ impl Log {
         self.push(
             decisions,
             DefectFound {
-                id: NonZeroU32::new(id).unwrap(),
+                id: self::id(id),
                 title: "recorded".into(),
                 detail: "recorded detail".into(),
                 pr: 7,
@@ -204,7 +201,7 @@ impl Log {
         self.push(
             &[found],
             DefectAnswered {
-                id: NonZeroU32::new(id).unwrap(),
+                id: self::id(id),
                 cores: cores(at),
                 answer,
             },
@@ -402,27 +399,26 @@ fn excluded_failures_follow_fixes_filtering() {
     assert!(log.state(&PAIR).excludes_failure(failure));
 }
 
-#[test]
-fn unanswered_matches_by_id() {
-    for answer in [DefectAnswer::Yes, DefectAnswer::No] {
-        let mut log = Log::default();
-        let first_decision = log.warning();
-        let second_decision = log.warning();
-        let first = log.found(1, DefectDirection::TooCautious, &[2], &[first_decision]);
-        log.answer(1, answer, &[2], first);
-        let second = log.found(2, DefectDirection::TooAggressive, &[3], &[second_decision]);
-        log.answer(99, answer, &[3], second);
-        let state = log.state(&PAIR);
-        assert_eq!(unanswered_ids(&state), [2], "{answer:?}");
-        assert_eq!(state.finding_seq(id(1)), Some(first));
-        assert_eq!(state.finding_seq(id(2)), Some(second));
-        let views: Vec<_> = state.unanswered().collect();
-        assert_eq!(views.len(), 1, "{answer:?}");
-        assert_eq!(views[0].seq, second, "{answer:?}");
-        assert_eq!(views[0].direction, DefectDirection::TooAggressive);
-        assert_eq!(views[0].cores, cores(&[3]), "{answer:?}");
-        assert_eq!(views[0].decisions, [second_decision], "{answer:?}");
-    }
+#[test_case(DefectAnswer::Yes; "a yes answer")]
+#[test_case(DefectAnswer::No; "a no answer")]
+fn unanswered_matches_by_id(answer: DefectAnswer) {
+    let mut log = Log::default();
+    let first_decision = log.warning();
+    let second_decision = log.warning();
+    let first = log.found(1, DefectDirection::TooCautious, &[2], &[first_decision]);
+    log.answer(1, answer, &[2], first);
+    let second = log.found(2, DefectDirection::TooAggressive, &[3], &[second_decision]);
+    log.answer(99, answer, &[3], second);
+    let state = log.state(&PAIR);
+    assert_eq!(unanswered_ids(&state), [2]);
+    assert_eq!(state.finding_seq(id(1)), Some(first));
+    assert_eq!(state.finding_seq(id(2)), Some(second));
+    let views: Vec<_> = state.unanswered().collect();
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0].seq, second);
+    assert_eq!(views[0].direction, DefectDirection::TooAggressive);
+    assert_eq!(views[0].cores, cores(&[3]));
+    assert_eq!(views[0].decisions, [second_decision]);
 }
 
 #[test]
@@ -453,25 +449,25 @@ fn scenario() -> Log {
     log
 }
 
-#[test]
-fn fold_prefix_equals_fresh_fold() {
-    for registry in [&PAIR[..], &CAUTIOUS[..], &ALTERNATIVES[..], &NONE[..]] {
-        let registry: &'static [Entry] = registry;
-        let log = scenario();
-        let mut incremental = DefectState::new(registry);
-        assert_eq!(incremental, log.prefix(registry, 0));
-        for (at, event) in log.events.iter().enumerate() {
-            incremental.fold(event);
-            let fresh = log.prefix(registry, at + 1);
-            assert_eq!(incremental, fresh, "prefix {}", at + 1);
-            assert_eq!(pending_ids(&incremental), pending_ids(&fresh));
-            assert_eq!(unanswered_ids(&incremental), unanswered_ids(&fresh));
-            assert_eq!(missing(&incremental), missing(&fresh));
-            assert_eq!(
-                incremental.excluded_failures().collect::<Vec<_>>(),
-                fresh.excluded_failures().collect::<Vec<_>>()
-            );
-        }
+#[test_case(&PAIR; "pair")]
+#[test_case(&CAUTIOUS; "cautious")]
+#[test_case(&ALTERNATIVES; "alternatives")]
+#[test_case(&NONE; "no registry")]
+fn fold_prefix_equals_fresh_fold(registry: &'static [Entry]) {
+    let log = scenario();
+    let mut incremental = DefectState::new(registry);
+    assert_eq!(incremental, log.prefix(registry, 0));
+    for (at, event) in log.events.iter().enumerate() {
+        incremental.fold(event);
+        let fresh = log.prefix(registry, at + 1);
+        assert_eq!(incremental, fresh, "prefix {}", at + 1);
+        assert_eq!(pending_ids(&incremental), pending_ids(&fresh));
+        assert_eq!(unanswered_ids(&incremental), unanswered_ids(&fresh));
+        assert_eq!(missing(&incremental), missing(&fresh));
+        assert_eq!(
+            incremental.excluded_failures().collect::<Vec<_>>(),
+            fresh.excluded_failures().collect::<Vec<_>>()
+        );
     }
 }
 
@@ -573,9 +569,9 @@ fn known_finding_view_carries_its_entry() {
 
 #[test]
 fn empty_registry_fixed_stamp_zero() {
-    assert_eq!(fixed_stamp(&[]), FixStamp(0));
-    assert_eq!(fixed_stamp(KNOWN_DEFECTS), FixStamp(0));
-    assert_eq!(fixed_stamp(&PAIR), FixStamp(2));
+    assert_eq!(fixed_stamp(&[]), FixStamp::none());
+    assert_eq!(fixed_stamp(KNOWN_DEFECTS), FixStamp::none());
+    assert_eq!(fixed_stamp(&PAIR), FixStamp::through(id(2)));
 
     let mut log = Log::default();
     log.start(0);

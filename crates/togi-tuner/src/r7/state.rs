@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, HashMap};
 use togi_journal::{Activity, Decision, Event, Outcome, Seq, TunerDecision};
 use togi_machine::{Condition, CoreId, CoreSet, Regime};
 
-use super::Applied;
 use super::escalation::{BackoffKind, Strikes};
 use super::failed::{Ended, FailedTrial, OpenFailure, Telemetry, effective_top, order_at};
 use super::measurements::{Measurement, Measurements};
@@ -12,6 +11,7 @@ use super::status::SelfSufficiency;
 use super::target::{PassRecord, R7Targets};
 use crate::BackendId;
 use crate::failures::{Pending, together_attribution};
+use crate::hunt::state::LocatedEnd;
 use crate::state::Run;
 
 /// The R7 substate: what request measurements, voltage targets, escalation strikes and
@@ -186,12 +186,14 @@ impl Run {
         let view = self.failed(record);
         let named = self.named_culprit(&view);
         let targets = self.failure_targets(&view);
-        let located_named = self
-            .hunts
-            .located
-            .get(&seq)
-            .and_then(|located| located.end.as_ref())
-            .is_some_and(|end| end.named.is_some());
+        let located_named =
+            self.hunts
+                .located
+                .get(&seq)
+                .is_some_and(|located| match &located.end {
+                    LocatedEnd::Loaded(end) => end.named().is_some(),
+                    LocatedEnd::Open | LocatedEnd::Consumed => false,
+                });
         let probe = (!named && !located_named)
             .then(|| self.r7_probe_part(&view, decision.core))
             .flatten();
@@ -292,7 +294,7 @@ impl Run {
             .all()
             .iter()
             .filter(|&core| !load.loaded.contains(core))
-            .all(|core| profile.at(core) == located.at(core))
+            .all(|core| profile.get(core) == located.get(core))
             .then_some(*seq)
     }
 }

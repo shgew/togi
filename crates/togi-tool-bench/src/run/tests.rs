@@ -10,13 +10,13 @@ use togi_sim::file::Source;
     dead_code,
     reason = "orchestration tests use only part of the shared memory fixture"
 )]
-#[path = "../../tests/common/mod.rs"]
+#[path = "../../tests/bench/common/mod.rs"]
 mod common;
 #[expect(
     dead_code,
     reason = "orchestration tests inspect session events, not simulator outcomes"
 )]
-#[path = "../../tests/session/mod.rs"]
+#[path = "../../tests/bench/session/mod.rs"]
 mod session;
 
 struct Bench {
@@ -30,7 +30,7 @@ impl Bench {
         let bench = Self {
             tree: common::Tree::new(),
             calls: Arc::new(AtomicUsize::new(0)),
-            events: session::session(&togi_sim::MachineDefinition::default(), 1, None, 2)
+            events: session::session(&togi_sim::MachineDefinition::default(), 1, None, 1000)
                 .events
                 .into(),
         };
@@ -121,6 +121,9 @@ impl SuiteSource for MemoryIo {
     }
 }
 
+/// How many of the session's events the `unconcluded` simulator leaves: a prefix that never concludes.
+const UNCONCLUDED: usize = 20;
+
 struct MemoryRunner {
     digest: String,
     exit: i32,
@@ -161,6 +164,9 @@ impl SessionRunner for MemoryRunner {
         if self.mode == "no-journal" {
             events.clear();
         }
+        if self.mode == "unconcluded" && spec.name() == "default/dev-2" {
+            events.truncate(UNCONCLUDED);
+        }
         if let Some(path) = &self.blocked {
             self.tree.write(path, "not a directory");
         }
@@ -171,6 +177,27 @@ impl SessionRunner for MemoryRunner {
             log_dead_end: self.log_dead_end,
             wall: Duration::from_millis(1),
         })
+    }
+    fn audit(
+        &self,
+        session: &Session,
+        completion: togi_tool_audit::Completion,
+    ) -> togi_tool_audit::DirectoryAudit {
+        let findings = togi_tool_audit::audit(&session.events, completion)
+            .into_iter()
+            .map(|violation| togi_tool_audit::Finding {
+                directory: session.dir.clone(),
+                journal: Some("live".into()),
+                seq: Some(violation.seq),
+                check: togi_tool_audit::Kind::Audit(violation.check),
+                reason: violation.reason,
+            })
+            .collect();
+        togi_tool_audit::DirectoryAudit {
+            journals: usize::from(!session.events.is_empty()),
+            findings,
+            skipped: Vec::new(),
+        }
     }
     fn remove(&self, _: &Path) {}
 }
@@ -560,6 +587,78 @@ fn a_simulator_that_leaves_no_journal_is_an_error_record() {
             .iter()
             .all(|r| r.status == Status::Error && r.exit_code == 1 && r.sim_hours == 0.0)
     );
+}
+
+#[test_case::test_case(0, "", Status::Concluded; "concluded")]
+#[test_case::test_case(1, "sim: dead end stock: unstable", Status::DeadEnd; "dead end")]
+#[test_case::test_case(3, "", Status::Censored; "censored")]
+#[test_case::test_case(2, "", Status::Error; "failed")]
+fn a_run_of_any_status_passes_the_audit_of_a_clean_journal(exit: i32, log: &str, status: Status) {
+    let bench = Bench::new();
+    let mut options = bench.options(bench.simulator("sim", exit, log, ""));
+    options.cache = None;
+    let report = run(&options);
+    assert!(report.records.iter().all(|r| r.status == status));
+    assert_eq!(report.audited, 5);
+    assert_eq!(report.violations, Vec::new());
+    assert!(report_text(&report).contains("audit: audited=5 violations=0\n"));
+}
+
+#[test_case::test_case(0, "", Status::Concluded, true; "a concluded run must have stopped")]
+#[test_case::test_case(1, "sim: dead end stock: unstable", Status::DeadEnd, true; "a dead end must have stopped")]
+#[test_case::test_case(3, "", Status::Censored, false; "a censored run may be a prefix")]
+#[test_case::test_case(2, "", Status::Error, false; "a failed run may be a prefix")]
+fn an_unconcluded_journal_is_a_violation_only_when_its_run_finished(
+    exit: i32,
+    log: &str,
+    status: Status,
+    violates: bool,
+) {
+    let bench = Bench::new();
+    let mut options = bench.options(bench.simulator("sim", exit, log, "unconcluded"));
+    options.cache = None;
+    let report = run(&options);
+    assert!(report.records.iter().all(|r| r.status == status));
+    assert_eq!(report.audited, 5);
+    let mut runs: Vec<&str> = report.violations.iter().map(|v| v.run.as_str()).collect();
+    runs.dedup();
+    let want: &[&str] = if violates { &["default/dev-2"] } else { &[] };
+    assert_eq!(runs, want, "{:?}", report.violations);
+}
+
+#[test]
+fn a_run_that_breaks_a_check_is_reported_by_name_and_not_cached() {
+    let bench = Bench::new();
+    let options = bench.options(bench.simulator("sim", 0, "", "unconcluded"));
+    let first = run(&options);
+    assert_eq!(first.audited, 5);
+    assert!(!first.violations.is_empty());
+    assert!(
+        first
+            .violations
+            .iter()
+            .all(|violation| violation.run == "default/dev-2"),
+        "{:?}",
+        first.violations
+    );
+    let last = bench.events[UNCONCLUDED - 1].seq;
+    let text = report_text(&first);
+    assert!(
+        text.contains(&format!(
+            "audit: audited=5 violations={}\n",
+            first.violations.len()
+        )),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!(
+            "audit: default/dev-2 live seq {last} termination: finished run has neither a conclusion nor a dead end\n"
+        )),
+        "{text}"
+    );
+    let second = run(&options);
+    assert_eq!((second.cached, second.audited), (4, 1));
+    assert_eq!(second.violations, first.violations);
 }
 #[test]
 fn a_failed_cache_write_is_a_warning_and_the_records_are_kept() {

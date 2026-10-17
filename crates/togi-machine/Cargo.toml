@@ -13,12 +13,11 @@ rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-togi-trialfiles.workspace = true
 
 [dev-dependencies]
 flate2.workspace = true
 proptest.workspace = true
-tempfile.workspace = true
+test-case.workspace = true
 
 [lints]
 workspace = true

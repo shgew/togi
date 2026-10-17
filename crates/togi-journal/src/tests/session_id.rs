@@ -2,6 +2,7 @@ use std::num::NonZeroU32;
 
 use jiff::Timestamp;
 use proptest::prelude::*;
+use test_case::test_case;
 
 use crate::{InvalidSessionId, SessionId};
 
@@ -9,35 +10,27 @@ fn id(text: &str) -> SessionId {
     text.parse().unwrap()
 }
 
-#[test]
-fn display_and_parse_agree() {
-    for text in [
-        "20261002T011407Z",
-        "20261002T011407Z-2",
-        "20261002T011407Z-10",
-    ] {
-        assert_eq!(id(text).to_string(), text);
-    }
+#[test_case("20261002T011407Z"; "no suffix")]
+#[test_case("20261002T011407Z-2"; "suffix two")]
+#[test_case("20261002T011407Z-10"; "suffix ten")]
+fn display_and_parse_agree(text: &str) {
+    assert_eq!(id(text).to_string(), text);
 }
 
-#[test]
-fn malformed_ids_are_refused() {
-    for text in [
-        "",
-        "20261002T011407",
-        "20261002 011407Z",
-        "20261302T011407Z",
-        "20261002T251407Z",
-        "20261002T011407Z-",
-        "20261002T011407Z-1",
-        "20261002T011407Z-0",
-        "20261002T011407Z-02",
-        "20261002T011407Z-x",
-        "20261002T011407Z-2-3",
-        "../20261002T011407Z",
-    ] {
-        assert!(text.parse::<SessionId>().is_err(), "{text:?}");
-    }
+#[test_case(""; "empty")]
+#[test_case("20261002T011407"; "no zone")]
+#[test_case("20261002 011407Z"; "no T separator")]
+#[test_case("20261302T011407Z"; "month thirteen")]
+#[test_case("20261002T251407Z"; "hour twenty five")]
+#[test_case("20261002T011407Z-"; "empty suffix")]
+#[test_case("20261002T011407Z-1"; "suffix one")]
+#[test_case("20261002T011407Z-0"; "suffix zero")]
+#[test_case("20261002T011407Z-02"; "leading zero suffix")]
+#[test_case("20261002T011407Z-x"; "text suffix")]
+#[test_case("20261002T011407Z-2-3"; "two suffixes")]
+#[test_case("../20261002T011407Z"; "path traversal")]
+fn malformed_ids_are_refused(text: &str) {
+    assert!(text.parse::<SessionId>().is_err(), "{text:?}");
 }
 
 #[test]

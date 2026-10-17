@@ -7,26 +7,17 @@ use std::path::Path;
 use togi_machine::Regime;
 use togi_sim::{MachineDefinition, Model, saturating_count};
 use togi_tool_modelcheck::{Status, check_records};
-use togi_tool_trialfacts::{TrialFact, read};
+use togi_tool_trialfacts::TrialFact;
 
 use crate::encode::encode_shared_voltage_anchor;
 use crate::error::Error;
 use crate::evidence::{bios_context_def, decisive, is_failure, load_of, regime_of, trial_class};
-use crate::output::{DiskOutput, MachineOutput};
+use crate::output::MachineOutput;
 use crate::paths::facts_reference;
 use crate::search::fit;
 use crate::signals::report_signals;
 
 const CORES: usize = 16;
-
-pub fn shared_voltage_anchor(
-    facts: &Path,
-    out_dir: &Path,
-    report: &mut impl io::Write,
-) -> Result<(), Error> {
-    let records = read(facts)?;
-    shared_voltage_anchor_records(&records, facts, out_dir, report, &mut DiskOutput)
-}
 
 /// Fits decoded facts, publishing the accepted anchor through `output`.
 pub fn shared_voltage_anchor_records(
@@ -44,7 +35,7 @@ pub(crate) fn anchor_with(
     facts: &Path,
     out_dir: &Path,
     report: &mut impl io::Write,
-    fitter: impl FnOnce(&[TrialFact]) -> Result<(MachineDefinition, f64), Error>,
+    fitter: impl FnOnce(&[&TrialFact]) -> Result<(MachineDefinition, f64), Error>,
     output: &mut impl MachineOutput,
 ) -> Result<(), Error> {
     let trials = decisive(records)?;

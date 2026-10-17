@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_journal::{Build, Event, Seq};
 use togi_machine::ObservedOffset;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
@@ -19,8 +20,6 @@ fn anchored(base: &[Event], commit: &str, runs: Vec<crate::Run>) -> Record {
         .unwrap();
     Record::new(anchor, commit, false, Vec::new(), runs).unwrap()
 }
-
-type Case = (&'static str, Vec<Session>, Vec<Build>, Vec<Flag>);
 
 type Scored = (String, f64, bool, Placement, Option<f64>, Option<f64>);
 
@@ -370,76 +369,71 @@ fn a_build_without_a_revision_or_a_dirty_one_is_never_the_forecasts_commit() {
     assert_eq!(score.flags, []);
 }
 
-#[test]
-fn builds_cover_the_scored_span() {
+fn keeps_writing(base: &[Event]) -> Vec<Session> {
+    vec![extend(base, 3, [crash(), shutdown_cycles()])]
+}
+
+fn writes_before_a_new_stamp(base: &[Event]) -> Vec<Session> {
+    vec![extend(
+        base,
+        3,
+        [crash(), config_loaded("abc1234"), shutdown_cycles()],
+    )]
+}
+
+fn stamped_right_after(base: &[Event]) -> Vec<Session> {
+    vec![extend(
+        base,
+        3,
+        [config_loaded("abc1234"), crash(), shutdown_cycles()],
+    )]
+}
+
+fn a_new_session(base: &[Event]) -> Vec<Session> {
+    vec![
+        Session::from_events(base.to_vec()).unwrap(),
+        session(1, [start_with(B, build("abc1234")), shutdown_cycles()]),
+    ]
+}
+
+fn stamped_after_the_terminal_point(base: &[Event]) -> Vec<Session> {
+    vec![extend(
+        base,
+        3,
+        [
+            config_loaded("abc1234"),
+            shutdown_cycles(),
+            config_loaded("fedcba9"),
+        ],
+    )]
+}
+
+#[test_case(keeps_writing, &["0123456"], true; "the invocation running at the anchor keeps writing")]
+#[test_case(writes_before_a_new_stamp, &["0123456", "abc1234"], true; "the invocation running at the anchor writes before a new stamp")]
+#[test_case(stamped_right_after, &["abc1234"], false; "a new stamp right after the anchor")]
+#[test_case(a_new_session, &["abc1234"], false; "a new session after the anchor")]
+#[test_case(stamped_after_the_terminal_point, &["abc1234"], false; "stamps after the terminal point are ignored")]
+fn builds_cover_the_scored_span(
+    sessions: fn(&[Event]) -> Vec<Session>,
+    builds: &[&str],
+    flagged: bool,
+) {
     let base = before("0123456");
     let record = anchored(
         &base,
         "abc1234",
         vec![run(Status::Concluded, 0.0, 0, 0, &[-10, -20])],
     );
-    let in_effect = build("0123456");
-    let forecast = build("abc1234");
+    let score = record.score(&sessions(&base)).unwrap();
+    assert_eq!(
+        score.builds,
+        builds.iter().copied().map(build).collect::<Vec<Build>>()
+    );
     let flag = Flag::Revision {
         rev: Some("0123456".to_owned()),
         commit: "abc1234".to_owned(),
     };
-    let cases: Vec<Case> = vec![
-        (
-            "the invocation running at the anchor keeps writing",
-            vec![extend(&base, 3, [crash(), shutdown_cycles()])],
-            vec![in_effect.clone()],
-            vec![flag.clone()],
-        ),
-        (
-            "the invocation running at the anchor writes before a new stamp",
-            vec![extend(
-                &base,
-                3,
-                [crash(), config_loaded("abc1234"), shutdown_cycles()],
-            )],
-            vec![in_effect, forecast.clone()],
-            vec![flag],
-        ),
-        (
-            "a new stamp right after the anchor",
-            vec![extend(
-                &base,
-                3,
-                [config_loaded("abc1234"), crash(), shutdown_cycles()],
-            )],
-            vec![forecast.clone()],
-            vec![],
-        ),
-        (
-            "a new session after the anchor",
-            vec![
-                Session::from_events(base.clone()).unwrap(),
-                session(1, [start_with(B, build("abc1234")), shutdown_cycles()]),
-            ],
-            vec![forecast.clone()],
-            vec![],
-        ),
-        (
-            "stamps after the terminal point are ignored",
-            vec![extend(
-                &base,
-                3,
-                [
-                    config_loaded("abc1234"),
-                    shutdown_cycles(),
-                    config_loaded("fedcba9"),
-                ],
-            )],
-            vec![forecast],
-            vec![],
-        ),
-    ];
-    for (name, sessions, builds, flags) in cases {
-        let score = record.score(&sessions).unwrap();
-        assert_eq!(score.builds, builds, "{name}");
-        assert_eq!(score.flags, flags, "{name}");
-    }
+    assert_eq!(score.flags, if flagged { vec![flag] } else { vec![] });
 }
 
 #[test]

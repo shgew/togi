@@ -6,7 +6,7 @@ use togi_sim::{Load, MachineDefinition, Model};
 use togi_tool_modelcheck::{Checker, Status};
 use togi_tool_trialfacts::{Profile, TrialFact};
 
-use super::{blank_machine, cores, crash, fact, padded, repeated};
+use super::{blank_machine, cores, crash, fact, padded, refs, repeated};
 use crate::error::Error;
 use crate::evidence::{Observation, core_def, initial_config, load_of};
 use crate::likelihood::Likelihood;
@@ -126,7 +126,7 @@ fn a_fit_recovers_the_limits_and_hazard_shape_of_the_machine_that_drew_the_trial
             }
         }
     }
-    let (got, _) = fit(&draw.records).unwrap();
+    let (got, _) = fit(&refs(&draw.records)).unwrap();
     for (found, want) in got.core.iter().zip(&known.core).take(4) {
         assert_eq!(&found.alone[..2], &want.alone[..2], "core {}", want.id);
         assert_eq!(
@@ -140,11 +140,86 @@ fn a_fit_recovers_the_limits_and_hazard_shape_of_the_machine_that_drew_the_trial
     assert!((got.model.growth - known.model.growth).abs() < 0.6);
 }
 
+/// `reps` trials of each class drawn, with seed 12, from `known` in `regimes`: cores 0 to 3 alone and
+/// together, from one count inside their [`one_limit_machine`] limit to three past it.
+fn one_limit_draw(known: &MachineDefinition, regimes: &[Regime], reps: usize) -> Vec<TrialFact> {
+    let source = Model::new(known, 0).unwrap();
+    let mut draw = Draw::new(&source, 12);
+    for core in 0..4_i64 {
+        for &regime in regimes {
+            for alone in [true, false] {
+                for delta in -1..=3 {
+                    let mut offsets = [0_i64; 4];
+                    if !alone {
+                        offsets[usize::try_from((core + 1) % 4).unwrap()] = -5;
+                    }
+                    offsets[usize::try_from(core).unwrap()] = -22 - core - delta;
+                    draw.add(&offsets, regime, &[core], 60, reps);
+                }
+            }
+        }
+    }
+    draw.records
+}
+
+/// Cores 0 to 3 with one limit, -22 to -25, for alone and together trials in R1 to R6: the structure
+/// #427 adopts.
+fn one_limit_machine() -> MachineDefinition {
+    let mut known = blank_machine(16);
+    known.model.past_limit_rate = 0.008;
+    known.model.growth = 3.0;
+    for (c, limits) in known.core.iter_mut().enumerate().take(4) {
+        let limit = -22 - i64::try_from(c).unwrap();
+        limits.alone = [limit; 5];
+        limits.together = [limit, limit, limit, limit, limit, limit, -50];
+    }
+    known
+}
+
+#[test]
+fn a_fit_recovers_one_limit_shared_by_alone_and_together_trials() {
+    let known = one_limit_machine();
+    let records = one_limit_draw(&known, &[Regime::R1, Regime::R2, Regime::R3], 60);
+    let (got, _) = fit(&refs(&records)).unwrap();
+    for (found, want) in got.core.iter().zip(&known.core).take(4) {
+        assert_eq!(&found.alone[..3], &want.alone[..3], "core {}", want.id);
+        assert_eq!(
+            &found.together[..3],
+            &want.together[..3],
+            "core {}",
+            want.id
+        );
+    }
+    assert!((got.model.past_limit_rate / known.model.past_limit_rate - 1.0).abs() < 0.25);
+    assert!((got.model.growth - known.model.growth).abs() < 0.6);
+}
+
+#[test]
+fn a_fit_of_seeded_draws_is_bit_identical_on_every_worker_count() {
+    let known = one_limit_machine();
+    let fit_on = |threads: usize| {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap();
+        let (machine, objective) = pool
+            .install(|| fit(&refs(&one_limit_draw(&known, &[Regime::R1], 20))))
+            .unwrap();
+        (
+            togi_sim::file::encode(&machine).unwrap(),
+            objective.to_bits(),
+        )
+    };
+    let one = fit_on(1);
+    assert_eq!(fit_on(4), one);
+    assert_eq!(fit_on(1), one);
+}
+
 #[test]
 fn a_fit_of_a_sample_that_is_not_sixteen_cores_is_refused() {
     let mut small = seed_fact();
     small.profile = super::profile(&[0, -1]);
-    let error = fit(&[small]).unwrap_err();
+    let error = fit(&[&small]).unwrap_err();
     assert!(
         matches!(error, Error::NeedsSixteenCores { cores: 2, .. }),
         "{error}"
@@ -155,6 +230,7 @@ fn a_fit_of_a_sample_that_is_not_sixteen_cores_is_refused() {
 fn a_constrained_refit_maximizes_the_resampled_likelihood_inside_the_original_evidence() {
     let template = fact(&[-10, 0], Regime::R1, &[0], 900, Decisive::Pass);
     let sample = repeated(&template, 40, 32);
+    let sample = refs(&sample);
     let mut base = blank_machine(16);
     base.model.past_limit_rate = -(0.8_f64).ln() / 900.0;
     base.core[0].alone[0] = -9;
@@ -223,7 +299,7 @@ fn an_outcome_the_model_calls_impossible_costs_infinity_and_a_certain_one_costs_
 fn a_workload_override_needs_ten_trials_and_a_better_likelihood() {
     let id = pick_workload(Regime::R1, 0).id();
     for n in [9_u32, 10] {
-        let mut cfg = initial_config(&[seed_fact()]);
+        let mut cfg = initial_config(&[&seed_fact()]);
         cfg.model.near_limit_rate = 0.0;
         let obs = [observation(&[-20, 0], Regime::R1, &[0], 60, n, 1)];
         let mut l = Likelihood::new(cfg, &obs, None, None);
@@ -246,7 +322,7 @@ fn a_workload_override_needs_ten_trials_and_a_better_likelihood() {
 #[test]
 fn the_coupled_shift_moves_workload_limits_and_leaves_unsupported_ones() {
     let id = pick_workload(Regime::R1, 0).id();
-    let mut cfg = initial_config(&[seed_fact()]);
+    let mut cfg = initial_config(&[&seed_fact()]);
     cfg.model.near_limit_rate = 0.0;
     cfg.model.past_limit_rate = 0.01;
     let unsupported = pick_workload(Regime::R1, 1).id();
@@ -277,7 +353,7 @@ fn the_coupled_shift_moves_workload_limits_and_leaves_unsupported_ones() {
 fn an_initial_machine_seeds_no_joint_whatever_failed_below_zero() {
     let mut records = vec![fact(&[-30; 8], Regime::R7, &[0, 1], 60, crash())];
     records.push(fact(&[-25; 8], Regime::R7, &[0, 1], 60, crash()));
-    let cfg: MachineDefinition = initial_config(&records);
+    let cfg: MachineDefinition = initial_config(&refs(&records));
     assert!(cfg.joint.is_empty() && cfg.ccd.is_none() && cfg.shared_voltage.is_none());
     assert_eq!(cfg.core.len(), 16);
     assert_eq!(cfg.core[3], core_def(3));
@@ -306,7 +382,7 @@ fn a_fit_recovers_a_flat_rate_and_an_idle_limit() {
     ] {
         draw.add(&offsets, Regime::R1, &[loaded], duration, 150);
     }
-    let (got, _) = fit(&draw.records).unwrap();
+    let (got, _) = fit(&refs(&draw.records)).unwrap();
     assert_eq!(
         got.core[1].idle,
         Some(-30),

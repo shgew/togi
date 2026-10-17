@@ -7,28 +7,22 @@
 //! journal's decoder, so a journal holding one is unreadable ([`AuditError`]) rather than a violation. Readbacks and
 //! baselines report the hardware, which may hold firmware offsets outside that range, and are not bounded.
 //!
-//! The `togi-tool-audit` command sweeps: it runs `togi-tool-bench` over a generated suite of every scenario with
-//! seeds `1..=N`, keeps each run's state directory, and audits them with the runs' bench statuses and wall times. Given
-//! state directories instead, it audits those.
+//! The library is shared: `togi-tool-bench` audits every run it simulates with [`audit_directory`], and the
+//! `togi-tool-audit` command audits the state directories it is given as runs that may be in progress.
 
 mod auditor;
-mod interrupt;
 mod marks;
 mod report;
 mod snapshot;
-mod sweep;
 mod violation;
 mod writes;
 
 use togi_journal::{DirError, Event, LookupError, Skipped, StateDir, StateError};
 
-pub use interrupt::{Holding, INTERRUPTED, Interrupt};
 pub use report::{
-    Finding, JournalSkip, Kind, OpenError, Record, RecordError, Report, Split, Status,
-    audit as audit_directories, audit_directory, audit_directory_with, audit_holding, audit_with,
-    check_records, read_records, read_records_from, run_directory, timing,
+    DirectoryAudit, Finding, JournalSkip, Kind, OpenError, Report, audit as audit_directories,
+    audit_directory, audit_directory_with, audit_with,
 };
-pub use sweep::{Evidence, RunError, Sweep, SweepError, sweep_suite};
 pub use violation::{Check, Completion, JournalAudit, Source, Violation};
 
 #[derive(Debug, thiserror::Error)]

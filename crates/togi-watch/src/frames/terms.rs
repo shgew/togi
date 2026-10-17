@@ -113,7 +113,7 @@ pub(crate) fn recut_words(cut: u32, upper: bool) -> String {
 mod tests {
     use togi_journal::DeadEndCondition;
     use togi_machine::{CcdId, CoreId, CoreSet, Regime};
-    use togi_tuner::{CyclePart, CycleStep};
+    use togi_tuner::{CyclePart, CycleStep, Lengths, Quota};
 
     use super::{dead_end_words, first_open_part, part_name, recut_words};
 
@@ -126,10 +126,10 @@ mod tests {
             ccd: ccd.map(CcdId),
             full,
             partial: !full,
-            short: 1,
-            short_s: 60,
-            long: 0,
-            long_s: 0,
+            lengths: Some(Lengths {
+                short: Quota { count: 1, secs: 60 },
+                long: None,
+            }),
             passed: 0,
             failed: 0,
             done,

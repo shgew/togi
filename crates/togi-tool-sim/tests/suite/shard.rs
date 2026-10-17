@@ -1,5 +1,6 @@
 use std::num::NonZeroUsize;
 
+use test_case::test_case;
 use togi_tool_sim::{Run, ShardError, Suite, partition, shard};
 
 use crate::real::real_runs;
@@ -14,21 +15,26 @@ fn positions(all: &[Run], part: &[Run]) -> Vec<usize> {
         .collect()
 }
 
-#[test]
-fn every_run_lands_in_exactly_one_balanced_shard() {
+#[test_case(1; "one shard")]
+#[test_case(2; "two shards")]
+#[test_case(3; "three shards")]
+#[test_case(5; "five shards")]
+#[test_case(7; "seven shards")]
+#[test_case(10; "ten shards")]
+#[test_case(220; "220 shards")]
+#[test_case(300; "300 shards")]
+fn every_run_lands_in_exactly_one_balanced_shard(shards: usize) {
     let runs = real_runs();
-    for shards in [1, 2, 3, 5, 7, 10, 220, 300] {
-        let parts = partition(&runs, count(shards), |_| 1);
-        assert_eq!(parts.len(), shards);
-        let mut ids: Vec<&str> = parts.iter().flatten().map(|run| run.id.as_str()).collect();
-        ids.sort_unstable();
-        let mut want: Vec<&str> = runs.iter().map(|run| run.id.as_str()).collect();
-        want.sort_unstable();
-        assert_eq!(ids, want, "{shards} shards");
-        let sizes: Vec<usize> = parts.iter().map(Vec::len).collect();
-        let (min, max) = (sizes.iter().min().unwrap(), sizes.iter().max().unwrap());
-        assert!(max - min <= 1, "{shards} shards: {sizes:?}");
-    }
+    let parts = partition(&runs, count(shards), |_| 1);
+    assert_eq!(parts.len(), shards);
+    let mut ids: Vec<&str> = parts.iter().flatten().map(|run| run.id.as_str()).collect();
+    ids.sort_unstable();
+    let mut want: Vec<&str> = runs.iter().map(|run| run.id.as_str()).collect();
+    want.sort_unstable();
+    assert_eq!(ids, want);
+    let sizes: Vec<usize> = parts.iter().map(Vec::len).collect();
+    let (min, max) = (sizes.iter().min().unwrap(), sizes.iter().max().unwrap());
+    assert!(max - min <= 1, "{sizes:?}");
 }
 
 #[test]

@@ -1,16 +1,15 @@
 use std::fmt;
 
-use togi_journal::{Activity, Decision, HuntOutcome, Seq, TunerDecision};
+use togi_journal::{Activity, Decision, Seq, TunerDecision};
 use togi_machine::{CcdId, Condition, CoreId, CoreSet, PerCore, Signal, TargetOffset};
 use togi_requests::groups;
 
-use super::Applied;
 use super::escalation::Escalation;
 use super::failed::FailedTrial;
 use super::order::lowest_ranked;
 use super::reason::{Basis, Note, R7Reason, ids};
 use super::target::{Ask, CRASH_TARGET_MIN_S, OwnRequest, Target, backoff_counts, backoff_move};
-use crate::hunt::state::{Located, LocatedEnd};
+use crate::hunt::state::{LoadedEnd, Located, LocatedEnd, Rejected};
 use crate::ledger::carried_clause;
 use crate::r7::failed::OpenFailure;
 use crate::state::Run;
@@ -52,13 +51,17 @@ pub(crate) enum R7Response {
     ReadRanking,
 }
 
-pub(crate) type LocatedLink<'a> = (&'a Located, &'a LocatedEnd);
+pub(crate) type LocatedLink<'a> = (&'a Located, &'a LoadedEnd);
 
-fn located_clause(located: &Located, end: &LocatedEnd) -> (String, Vec<Seq>) {
+fn located_clause(located: &Located, end: &LoadedEnd) -> (String, Vec<Seq>) {
     let mut seqs = vec![end.seq];
     let hunt = located.hunt;
-    let text = match (&end.named, end.failure) {
-        (Some(named), Some(failure)) => {
+    let text = match &end.rejected {
+        Some(Rejected {
+            failure,
+            named: Some(named),
+        }) => {
+            let failure = *failure;
             seqs.push(failure);
             format!(
                 "hunt {hunt} ended loaded after failure #{failure} named loaded core {:02}, which also answers failure #{}",
@@ -66,13 +69,17 @@ fn located_clause(located: &Located, end: &LocatedEnd) -> (String, Vec<Seq>) {
                 located.source
             )
         }
-        (None, Some(failure)) => {
+        Some(Rejected {
+            failure,
+            named: None,
+        }) => {
+            let failure = *failure;
             seqs.push(failure);
             format!(
                 "hunt {hunt} kept the failure on the loaded cores after failure #{failure} with every unloaded core at CO 0"
             )
         }
-        (Some(_) | None, None) => {
+        None => {
             format!("hunt {hunt} kept the failure on the loaded cores")
         }
     };
@@ -191,7 +198,7 @@ impl Run {
     }
 
     fn at_zero_in(profile: &Profile, core: CoreId) -> bool {
-        profile.at(core) == TargetOffset::ZERO
+        profile.get(core) == Some(TargetOffset::ZERO)
     }
 
     /// Whether a named failure counts against its named core. A core named at CO 0 on a CCD with
@@ -234,9 +241,9 @@ impl Run {
     }
 
     fn shallower_than_failed(&self, view: &Failed<'_>, core: CoreId) -> bool {
-        self.core(core)
-            .offset
-            .shallower_than(view.profile().at(core))
+        view.profile()
+            .get(core)
+            .is_some_and(|failed| self.core(core).offset.shallower_than(failed))
     }
 
     /// Whether every core a decision against `id` could move already sits shallower than in the
@@ -536,7 +543,7 @@ impl Run {
                 head.push_str(", and ");
                 head.push_str(text);
             }
-            if link.is_some_and(|(_, end)| end.all_zero && end.failure.is_some()) {
+            if link.is_some_and(|(_, end)| end.all_zero && end.rejected.is_some()) {
                 return Some(R7Response::DeadEnd(crate::zero::dead_end(
                     id, &head, None, cause,
                 )));
@@ -560,7 +567,7 @@ impl Run {
         if !charge.named {
             cause.extend(self.ranking.as_ref().map(|ranking| ranking.seq));
         }
-        Some(self.backoff(view, chosen, cause, charge))
+        self.backoff(view, chosen, cause, charge)
     }
 
     fn backoff(
@@ -569,10 +576,10 @@ impl Run {
         id: CoreId,
         mut cause: Vec<Seq>,
         mut charge: Charge,
-    ) -> R7Response {
+    ) -> Option<R7Response> {
         let record = view.record;
         let failing = view.trial.failing_request(id);
-        let applied = view.profile().at(id);
+        let applied = view.profile().get(id)?;
         let n = self.config.needed;
         let backend = self
             .evidence
@@ -703,7 +710,7 @@ impl Run {
             },
             cause,
         );
-        R7Response::Backoff { decision, why }
+        Some(R7Response::Backoff { decision, why })
     }
 
     /// The route of one multi-core R7 failure whose cores `handled` already answered.
@@ -711,12 +718,12 @@ impl Run {
         let link = match self.hunts.located.get(&record.seq) {
             None => None,
             Some(located) => match &located.end {
-                Some(end) if end.result == HuntOutcome::Loaded => Some((located, end)),
-                Some(_) | None => return None,
+                LocatedEnd::Loaded(end) => Some((located, end)),
+                LocatedEnd::Open | LocatedEnd::Consumed => return None,
             },
         };
         if let Some((_, end)) = link {
-            if let Some(named) = &end.named {
+            if let Some(named) = end.named() {
                 if record.handled.contains(named.core) {
                     return None;
                 }

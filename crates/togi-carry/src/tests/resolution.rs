@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use test_case::test_case;
 use togi_config::Backends;
 use togi_journal::Attribution;
 use togi_machine::{Backend, Condition, Regime};
@@ -20,8 +21,14 @@ const OLD_YCRUNCHER: &str = "/store/0000-y-cruncher-0.8.7.9547";
 const NEW_MPRIME: &str = "/store/0001-mprime-31.04b03";
 const NEW_YCRUNCHER: &str = "/store/0002-y-cruncher-0.8.7.9548";
 
-#[test]
-fn resolve_drops_only_changed_backend_passes_keeps_failures() {
+#[test_case(&backends(OLD_MPRIME, OLD_YCRUNCHER), true, true; "same backends")]
+#[test_case(&backends(NEW_MPRIME, OLD_YCRUNCHER), false, true; "mprime updated between sessions")]
+#[test_case(&backends(OLD_MPRIME, NEW_YCRUNCHER), true, false; "y-cruncher updated between sessions")]
+fn resolve_drops_only_changed_backend_passes_keeps_failures(
+    current: &Backends,
+    keep_mprime: bool,
+    keep_ycruncher: bool,
+) {
     let mprime = workload(Regime::R1, 0);
     let ycruncher = workload(Regime::R1, 1);
     assert_eq!(mprime.backend(), Backend::Mprime);
@@ -40,37 +47,16 @@ fn resolve_drops_only_changed_backend_passes_keeps_failures() {
     let (mut archive, chain) = chain_of(&[&a]);
     let got = pending(&mut archive, &chain, None, &[]);
 
-    for (name, current, keep_mprime, keep_ycruncher) in [
-        (
-            "same backends",
-            backends(OLD_MPRIME, OLD_YCRUNCHER),
-            true,
-            true,
-        ),
-        (
-            "mprime updated between sessions",
-            backends(NEW_MPRIME, OLD_YCRUNCHER),
-            false,
-            true,
-        ),
-        (
-            "y-cruncher updated between sessions",
-            backends(OLD_MPRIME, NEW_YCRUNCHER),
-            true,
-            false,
-        ),
-    ] {
-        let resolved = got.resolve(&context(), &current, 1);
-        let mut want = vec![a.id_of(mprime_failure)];
-        if keep_mprime {
-            want.push(a.id_of(mprime_pass));
-        }
-        want.push(a.id_of(ycruncher_failure));
-        if keep_ycruncher {
-            want.push(a.id_of(ycruncher_pass));
-        }
-        assert_eq!(ids(resolved.facts()), want, "{name}");
+    let resolved = got.resolve(&context(), current, 1);
+    let mut want = vec![a.id_of(mprime_failure)];
+    if keep_mprime {
+        want.push(a.id_of(mprime_pass));
     }
+    want.push(a.id_of(ycruncher_failure));
+    if keep_ycruncher {
+        want.push(a.id_of(ycruncher_pass));
+    }
+    assert_eq!(ids(resolved.facts()), want);
     assert_eq!(
         ids(got.fact_candidates()).len(),
         4,

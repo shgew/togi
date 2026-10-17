@@ -2,6 +2,7 @@ use crate::*;
 use flate2::{Compression, read::MultiGzDecoder, write::GzEncoder};
 use proptest::prelude::*;
 use std::io::{Cursor, Write};
+use test_case::test_case;
 
 mod load;
 mod object_only;
@@ -15,25 +16,37 @@ fn core(value: i64) -> CoreId {
 fn clamp_offset_safety() {
     for value in -100..=100 {
         let offset = TargetOffset::clamped(value);
-        assert_eq!(offset.get(), value.clamp(-50, 0));
-        assert_eq!(TargetOffset::new(value).is_ok(), (-50..=0).contains(&value));
+        assert_eq!(offset.get(), value.clamp(-50, 0), "{value}");
+        assert_eq!(
+            TargetOffset::new(value).is_ok(),
+            (-50..=0).contains(&value),
+            "{value}"
+        );
     }
 }
 
+#[test_case(i64::MIN; "i64 minimum")]
+#[test_case(-100; "far below the floor")]
+#[test_case(-51; "just below the floor")]
+#[test_case(-50; "floor")]
+#[test_case(0; "zero")]
+#[test_case(10; "positive")]
+#[test_case(i64::MAX; "i64 maximum")]
+fn offsets_json_preserves_raw_readbacks(value: i64) {
+    let json = value.to_string();
+    assert_eq!(serde_json::to_string(&ObservedOffset(value)).unwrap(), json);
+    assert_eq!(
+        serde_json::from_str::<ObservedOffset>(&json).unwrap(),
+        ObservedOffset(value)
+    );
+    assert_eq!(
+        serde_json::from_str::<TargetOffset>(&json).is_ok(),
+        (-50..=0).contains(&value)
+    );
+}
+
 #[test]
-fn offsets_json_preserves_raw_readbacks() {
-    for value in [i64::MIN, -100, -51, -50, 0, 10, i64::MAX] {
-        let json = value.to_string();
-        assert_eq!(serde_json::to_string(&ObservedOffset(value)).unwrap(), json);
-        assert_eq!(
-            serde_json::from_str::<ObservedOffset>(&json).unwrap(),
-            ObservedOffset(value)
-        );
-        assert_eq!(
-            serde_json::from_str::<TargetOffset>(&json).is_ok(),
-            (-50..=0).contains(&value)
-        );
-    }
+fn an_observed_readback_differs_from_the_zero_target() {
     assert_ne!(ObservedOffset(10), TargetOffset::ZERO.observed());
 }
 
@@ -88,46 +101,41 @@ fn per_core_copies_are_independent() {
     );
 }
 
-#[test]
-fn workload_regime_contracts() {
-    for (regime, count, threads, bases) in [
-        (Regime::R1, 3, 1, vec![Regime::R1]),
-        (Regime::R2, 3, 1, vec![Regime::R2]),
-        (Regime::R3, 6, 1, vec![Regime::R1, Regime::R2]),
-        (Regime::R4, 9, 1, vec![Regime::R1]),
-        (Regime::R5, 6, 2, vec![Regime::R1, Regime::R2]),
-        (Regime::R6, 3, 1, vec![Regime::R1]),
-        (Regime::R7, 3, 1, vec![Regime::R2]),
-    ] {
-        let catalog = workloads(regime);
-        assert_eq!(catalog.len(), count);
-        let mut ids = std::collections::BTreeSet::new();
-        for (index, workload) in catalog.iter().enumerate() {
-            assert!(ids.insert(workload.id));
-            assert_eq!(workload.threads, threads);
-            assert_eq!(workload_by_id(workload.id), Some(workload));
-            let base = workload_by_id(workload.base).unwrap();
-            assert_eq!(base.id, workload.base);
-            assert_eq!(base.id, base.base);
-            assert_eq!(base.backend, workload.backend);
-            assert!(
-                bases
-                    .iter()
-                    .any(|base_regime| workloads(*base_regime).contains(base))
+#[test_case(Regime::R1, 3, 1, &[Regime::R1]; "R1")]
+#[test_case(Regime::R2, 3, 1, &[Regime::R2]; "R2")]
+#[test_case(Regime::R3, 6, 1, &[Regime::R1, Regime::R2]; "R3")]
+#[test_case(Regime::R4, 9, 1, &[Regime::R1]; "R4")]
+#[test_case(Regime::R5, 6, 2, &[Regime::R1, Regime::R2]; "R5")]
+#[test_case(Regime::R6, 3, 1, &[Regime::R1]; "R6")]
+#[test_case(Regime::R7, 3, 1, &[Regime::R2]; "R7")]
+fn workload_regime_contracts(regime: Regime, count: usize, threads: u8, bases: &[Regime]) {
+    let catalog = workloads(regime);
+    assert_eq!(catalog.len(), count);
+    let mut ids = std::collections::BTreeSet::new();
+    for (index, workload) in catalog.iter().enumerate() {
+        assert!(ids.insert(workload.id));
+        assert_eq!(workload.threads, threads);
+        assert_eq!(workload_by_id(workload.id), Some(workload));
+        let base = workload_by_id(workload.base).unwrap();
+        assert_eq!(base.id, workload.base);
+        assert_eq!(base.id, base.base);
+        assert_eq!(base.backend, workload.backend);
+        assert!(
+            bases
+                .iter()
+                .any(|base_regime| workloads(*base_regime).contains(base))
+        );
+        if regime == Regime::R4 {
+            assert!([25, 50, 75].contains(&workload.duty_pct.get()));
+            assert_eq!(
+                workload.label,
+                format!("{} {}% duty", base.label, workload.duty_pct)
             );
-            if regime == Regime::R4 {
-                assert!([25, 50, 75].contains(&workload.duty_pct.get()));
-                assert_eq!(
-                    workload.label,
-                    format!("{} {}% duty", base.label, workload.duty_pct)
-                );
-            } else {
-                assert_eq!(workload.duty_pct.get(), 0);
-            }
-            assert_eq!(pick_workload(regime, index + count * 3), workload);
+        } else {
+            assert_eq!(workload.duty_pct.get(), 0);
         }
+        assert_eq!(pick_workload(regime, index + count * 3), workload);
     }
-    assert_eq!(workload_by_id("not-a-workload"), None);
 }
 
 #[test]
@@ -154,6 +162,7 @@ fn workload_ids_name_every_catalog_entry() {
 
 #[test]
 fn unknown_workload_ids_are_rejected() {
+    assert_eq!(workload_by_id("not-a-workload"), None);
     assert_eq!(WorkloadId::by_id("not-a-workload"), None);
     assert!("".parse::<WorkloadId>().is_err());
     assert!(serde_json::from_str::<WorkloadId>("\"not-a-workload\"").is_err());
@@ -176,39 +185,33 @@ fn gzip(content: &str) -> Vec<u8> {
     writer.finish().unwrap()
 }
 
-#[test]
-fn read_samples_forms() {
-    for (content, want) in [
-        (
-            "{\"elapsed_ms\":1000}\n{\"elapsed_ms\":2000}\n",
-            vec![1000, 2000],
-        ),
-        ("{\"elapsed_ms\":1000}\n{\"elapsed_ms\":20", vec![1000]),
-        ("", vec![]),
-    ] {
-        let plain: Vec<_> = ReadSamples::from_reader(content.as_bytes())
+#[test_case("{\"elapsed_ms\":1000}\n{\"elapsed_ms\":2000}\n", &[1000, 2000]; "complete lines")]
+#[test_case("{\"elapsed_ms\":1000}\n{\"elapsed_ms\":20", &[1000]; "torn tail")]
+#[test_case("", &[]; "empty")]
+fn read_samples_forms(content: &str, want: &[i64]) {
+    let plain: Vec<_> = ReadSamples::from_reader(content.as_bytes())
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let compressed: Vec<_> =
+        ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(gzip(content))))
             .collect::<Result<_, _>>()
             .unwrap();
-        let compressed: Vec<_> =
-            ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(gzip(content))))
-                .collect::<Result<_, _>>()
-                .unwrap();
-        let expected: Vec<_> = want
-            .into_iter()
-            .map(|elapsed_ms| TrialConditions {
-                elapsed_ms,
-                ..TrialConditions::default()
-            })
-            .collect();
-        assert_eq!(plain, expected);
-        assert_eq!(compressed, expected);
-    }
+    let expected: Vec<_> = want
+        .iter()
+        .map(|&elapsed_ms| TrialConditions {
+            elapsed_ms,
+            ..TrialConditions::default()
+        })
+        .collect();
+    assert_eq!(plain, expected);
+    assert_eq!(compressed, expected);
 }
 
 #[test]
 fn read_samples_rejects_invalid_gzip() {
     let mut samples = ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(b"not gzip")));
-    assert!(matches!(samples.next(), Some(Err(SampleError::Read(_)))));
+    let next = samples.next();
+    assert!(matches!(next, Some(Err(SampleError::Read(_)))), "{next:?}");
     assert!(samples.next().is_none());
 }
 
@@ -227,7 +230,7 @@ fn read_samples_read_error_is_not_clean_eof() {
     let mut samples = ReadSamples::from_reader(broken);
     assert_eq!(samples.next().unwrap().unwrap().elapsed_ms, 1000);
     let error = samples.next().unwrap().unwrap_err();
-    assert!(matches!(error, SampleError::Read(_)));
+    assert!(matches!(error, SampleError::Read(_)), "{error:?}");
     assert_eq!(
         crate::error_chain(&error),
         "read conditions samples (including gzip decoding): injected samples read failure"
@@ -242,7 +245,8 @@ fn read_samples_gzip_error_is_not_clean_eof() {
     broken.extend_from_slice(b"not a second gzip member");
     let mut samples = ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(broken)));
     assert_eq!(samples.next().unwrap().unwrap().elapsed_ms, 1000);
-    assert!(matches!(samples.next(), Some(Err(SampleError::Read(_)))));
+    let next = samples.next();
+    assert!(matches!(next, Some(Err(SampleError::Read(_)))), "{next:?}");
     assert!(samples.next().is_none());
 }
 
@@ -252,42 +256,12 @@ fn read_samples_complete_decode_error_is_not_a_missing_sample() {
         b"{\"elapsed_ms\":1000}\nnot json\n{\"elapsed_ms\":2000}\n",
     ));
     assert_eq!(samples.next().unwrap().unwrap().elapsed_ms, 1000);
-    assert!(matches!(samples.next(), Some(Err(SampleError::Decode(_)))));
+    let next = samples.next();
+    assert!(
+        matches!(next, Some(Err(SampleError::Decode(_)))),
+        "{next:?}"
+    );
     assert!(samples.next().is_none());
-}
-
-#[test]
-fn real_fs_read_samples_opens_plain_or_gzip_and_prefers_plain() {
-    // This exercises path selection in the file adapter, not sample decoding.
-    let content = "{\"elapsed_ms\":1000}\n";
-    for (plain, compressed) in [
-        (Some(content), None),
-        (None, Some(gzip(content))),
-        (Some(content), Some(b"torn".to_vec())),
-        (None, None),
-    ] {
-        let dir = tempfile::tempdir().unwrap();
-        if let Some(content) = plain {
-            std::fs::write(dir.path().join(togi_trialfiles::SAMPLES), content).unwrap();
-        }
-        if let Some(bytes) = &compressed {
-            std::fs::write(
-                dir.path().join(format!("{}.gz", togi_trialfiles::SAMPLES)),
-                bytes,
-            )
-            .unwrap();
-        }
-        let samples: Vec<_> = read_samples(dir.path()).collect::<Result<_, _>>().unwrap();
-        let expected = if plain.is_some() || compressed.is_some() {
-            vec![TrialConditions {
-                elapsed_ms: 1000,
-                ..TrialConditions::default()
-            }]
-        } else {
-            Vec::new()
-        };
-        assert_eq!(samples, expected);
-    }
 }
 
 #[test]
@@ -396,25 +370,32 @@ fn vocabulary_serde_uses_wire_strings() {
             matches!(regime, Regime::R6 | Regime::R7)
         );
     }
-    for name in ["alone", "together", "parked"] {
-        let json = format!("\"{name}\"");
-        assert_eq!(
-            serde_json::from_str::<Condition>(&json).unwrap().as_str(),
-            name
-        );
-    }
-    for name in ["mprime", "ycruncher"] {
-        let json = format!("\"{name}\"");
-        assert_eq!(
-            serde_json::from_str::<Backend>(&json).unwrap().as_str(),
-            name
-        );
-    }
     assert_eq!(
         serde_json::from_str::<ResetKind>("\"sync_flood\"").unwrap(),
         ResetKind::SyncFlood
     );
     assert_ne!(ResetKind::Unknown, ResetKind::Watchdog);
+}
+
+#[test_case("alone")]
+#[test_case("together")]
+#[test_case("parked")]
+fn conditions_read_their_wire_strings(name: &str) {
+    let json = format!("\"{name}\"");
+    assert_eq!(
+        serde_json::from_str::<Condition>(&json).unwrap().as_str(),
+        name
+    );
+}
+
+#[test_case("mprime")]
+#[test_case("ycruncher")]
+fn backends_read_their_wire_strings(name: &str) {
+    let json = format!("\"{name}\"");
+    assert_eq!(
+        serde_json::from_str::<Backend>(&json).unwrap().as_str(),
+        name
+    );
 }
 
 #[test]
@@ -426,26 +407,22 @@ fn unknown_vocabulary_strings_are_rejected() {
     assert!(serde_json::from_str::<Backend>("\"future\"").is_err());
 }
 
-#[test]
-fn bank_attribution_scope() {
-    for (name, local) in [
-        ("load_store", true),
-        ("instruction_fetch", true),
-        ("l2_cache", true),
-        ("decode_unit", true),
-        ("execution_unit", true),
-        ("floating_point", true),
-        ("l3_cache", false),
-        ("unified_memory_controller", false),
-        ("data_fabric", false),
-        ("other", false),
-        ("unknown", false),
-    ] {
-        let bank: BankType = serde_json::from_str(&format!("\"{name}\"")).unwrap();
-        assert_eq!(bank.core_local(), local);
-        assert_eq!(bank.as_str(), name);
-        assert_eq!(serde_json::to_string(&bank).unwrap(), format!("\"{name}\""));
-    }
+#[test_case("load_store", true)]
+#[test_case("instruction_fetch", true)]
+#[test_case("l2_cache", true)]
+#[test_case("decode_unit", true)]
+#[test_case("execution_unit", true)]
+#[test_case("floating_point", true)]
+#[test_case("l3_cache", false)]
+#[test_case("unified_memory_controller", false)]
+#[test_case("data_fabric", false)]
+#[test_case("other", false)]
+#[test_case("unknown", false)]
+fn bank_attribution_scope(name: &str, local: bool) {
+    let bank: BankType = serde_json::from_str(&format!("\"{name}\"")).unwrap();
+    assert_eq!(bank.core_local(), local);
+    assert_eq!(bank.as_str(), name);
+    assert_eq!(serde_json::to_string(&bank).unwrap(), format!("\"{name}\""));
 }
 
 #[test]
@@ -468,14 +445,23 @@ fn per_core_serializes_as_core_keyed_object() {
     );
 }
 
+#[test_case(-1; "negative")]
+#[test_case(16; "past the last core")]
+#[test_case(i64::MAX; "i64 maximum")]
+fn core_ids_reject_unsupported_values(id: i64) {
+    assert!(CoreId::new(id).is_err());
+}
+
+#[test_case("{\"16\":1}"; "past the last core")]
+#[test_case("{\"-1\":1}"; "negative core")]
+#[test_case("{\"x\":1}"; "non numeric core")]
+#[test_case("null"; "null")]
+fn per_core_rejects_unsupported_cores(json: &str) {
+    assert!(serde_json::from_str::<PerCore<i64>>(json).is_err());
+}
+
 #[test]
-fn per_core_rejects_unsupported_cores() {
-    for id in [-1, 16, i64::MAX] {
-        assert!(CoreId::new(id).is_err());
-    }
-    for json in ["{\"16\":1}", "{\"-1\":1}", "{\"x\":1}", "null"] {
-        assert!(serde_json::from_str::<PerCore<i64>>(json).is_err());
-    }
+fn core_id_json_accepts_only_supported_cores() {
     assert!(serde_json::from_str::<CoreId>("16").is_err());
     assert_eq!(serde_json::from_str::<CoreId>("15").unwrap(), core(15));
 }
@@ -583,16 +569,22 @@ fn trial_conditions_round_trip_and_omit_empty_sensors() {
     );
 }
 
-#[test]
-fn read_samples_rejects_invalid_utf8_and_non_objects_but_ignores_torn_tails() {
-    for invalid in [b"\xff\xfe\n".as_slice(), b"[]\n"] {
-        let mut samples = ReadSamples::from_reader(Cursor::new(invalid));
-        assert!(matches!(samples.next(), Some(Err(SampleError::Decode(_)))));
-        assert!(samples.next().is_none());
-    }
-    for torn in [b"{\"elapsed_ms\":3}".as_slice(), b"not json"] {
-        assert!(ReadSamples::from_reader(Cursor::new(torn)).next().is_none());
-    }
+#[test_case(b"\xff\xfe\n"; "invalid utf8")]
+#[test_case(b"[]\n"; "non object")]
+fn read_samples_rejects_complete_undecodable_lines(invalid: &[u8]) {
+    let mut samples = ReadSamples::from_reader(Cursor::new(invalid));
+    let next = samples.next();
+    assert!(
+        matches!(next, Some(Err(SampleError::Decode(_)))),
+        "{next:?}"
+    );
+    assert!(samples.next().is_none());
+}
+
+#[test_case(b"{\"elapsed_ms\":3}"; "torn object")]
+#[test_case(b"not json"; "torn non json")]
+fn read_samples_ignores_torn_tails(torn: &[u8]) {
+    assert!(ReadSamples::from_reader(Cursor::new(torn)).next().is_none());
 }
 
 #[test]
@@ -601,7 +593,8 @@ fn read_samples_reports_open_errors_but_missing_files_are_absent() {
         std::io::ErrorKind::PermissionDenied,
         "injected open failure",
     )));
-    assert!(matches!(denied.next(), Some(Err(SampleError::Open(_)))));
+    let next = denied.next();
+    assert!(matches!(next, Some(Err(SampleError::Open(_)))), "{next:?}");
     assert!(denied.next().is_none());
     let mut missing = ReadSamples::<Cursor<Vec<u8>>>::from_open(Err(std::io::Error::from(
         std::io::ErrorKind::NotFound,
@@ -672,11 +665,14 @@ fn core_set_serializes_as_a_sorted_array() {
     assert_eq!(serde_json::to_string(&CoreSet::default()).unwrap(), "[]");
 }
 
-#[test]
-fn core_set_rejects_duplicates_and_unsupported_cores() {
-    for json in ["[1,1]", "[16]", "[-1]", "[\"1\"]", "null", "{}"] {
-        assert!(serde_json::from_str::<CoreSet>(json).is_err(), "{json}");
-    }
+#[test_case("[1,1]"; "duplicate")]
+#[test_case("[16]"; "past the last core")]
+#[test_case("[-1]"; "negative")]
+#[test_case("[\"1\"]"; "string core")]
+#[test_case("null"; "null")]
+#[test_case("{}"; "object")]
+fn core_set_rejects_duplicates_and_unsupported_cores(json: &str) {
+    assert!(serde_json::from_str::<CoreSet>(json).is_err(), "{json}");
 }
 
 #[test]

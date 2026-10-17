@@ -1,3 +1,5 @@
+use test_case::test_case;
+
 use super::{hex_of, non_start_first_line, sample};
 use crate::fs::{Fault, MemFs};
 use crate::testing::{boot, kinds, live, note, reopen, simulated, stamp};
@@ -265,29 +267,25 @@ fn first_line_without_newline() -> Vec<u8> {
     bytes[..end].to_vec()
 }
 
-#[test]
-fn a_torn_first_header_survives_every_truncation_step_failure() {
-    for fault in [
-        Fault::before(crate::fs::Op::SetLen, 1),
-        Fault::after(crate::fs::Op::SetLen, 1),
-        Fault::before(crate::fs::Op::Sync, 1),
-        Fault::after(crate::fs::Op::Sync, 1),
-    ] {
-        let fs = MemFs::new();
-        fs.put("/state/events.jsonl", first_line_without_newline());
-        let dir = crate::testing::simulated(&fs);
-        fs.inject(fault.clone());
-        assert!(dir.open(boot(2)).is_err(), "{fault:?}");
-        fs.clear_faults();
-        let mut journal = reopen(&fs, 3);
-        assert!(journal.events().is_empty(), "{fault:?}");
-        let first = journal.append(
-            stamp(0),
-            crate::testing::start(crate::testing::default_session()),
-            &[],
-        );
-        assert_eq!(first.unwrap().seq.get(), 1, "{fault:?}");
-    }
+#[test_case(&Fault::before(crate::fs::Op::SetLen, 1); "before the truncation")]
+#[test_case(&Fault::after(crate::fs::Op::SetLen, 1); "after the truncation")]
+#[test_case(&Fault::before(crate::fs::Op::Sync, 1); "before the sync")]
+#[test_case(&Fault::after(crate::fs::Op::Sync, 1); "after the sync")]
+fn a_torn_first_header_survives_every_truncation_step_failure(fault: &Fault) {
+    let fs = MemFs::new();
+    fs.put("/state/events.jsonl", first_line_without_newline());
+    let dir = crate::testing::simulated(&fs);
+    fs.inject(fault.clone());
+    assert!(dir.open(boot(2)).is_err(), "{fault:?}");
+    fs.clear_faults();
+    let mut journal = reopen(&fs, 3);
+    assert!(journal.events().is_empty(), "{fault:?}");
+    let first = journal.append(
+        stamp(0),
+        crate::testing::start(crate::testing::default_session()),
+        &[],
+    );
+    assert_eq!(first.unwrap().seq.get(), 1, "{fault:?}");
 }
 
 #[test]
@@ -303,27 +301,33 @@ fn a_complete_line_that_does_not_decode_is_corruption_and_nothing_is_rewritten()
     assert_eq!(live(&fs), bytes);
 }
 
+fn open_refuses_and_leaves_untouched(bytes: &[u8]) {
+    let fs = MemFs::new();
+    fs.put("/state/events.jsonl", bytes.to_vec());
+    assert!(matches!(
+        simulated(&fs).open(boot(2)),
+        Err(OpenError::Read(_))
+    ));
+    assert_eq!(live(&fs), bytes);
+}
+
 #[test]
-fn a_gap_and_a_forward_cause_are_refused() {
+fn a_gap_is_refused() {
     let good = sample(&MemFs::new());
     let lines: Vec<&[u8]> = good.split_inclusive(|byte| *byte == b'\n').collect();
-
     let mut gap = lines[0].to_vec();
     gap.extend_from_slice(lines[2]);
-    let forward =
-        String::from_utf8(good.clone())
-            .unwrap()
-            .replacen("\"cause\":[1]", "\"cause\":[2]", 1);
+    open_refuses_and_leaves_untouched(&gap);
+}
 
-    for (name, bytes) in [("gap", gap), ("forward cause", forward.into_bytes())] {
-        let fs = MemFs::new();
-        fs.put("/state/events.jsonl", bytes.clone());
-        assert!(
-            matches!(simulated(&fs).open(boot(2)), Err(OpenError::Read(_))),
-            "{name}"
-        );
-        assert_eq!(live(&fs), bytes, "{name}");
-    }
+#[test]
+fn a_forward_cause_is_refused() {
+    let forward = String::from_utf8(sample(&MemFs::new())).unwrap().replacen(
+        "\"cause\":[1]",
+        "\"cause\":[2]",
+        1,
+    );
+    open_refuses_and_leaves_untouched(forward.as_bytes());
 }
 
 #[test]
@@ -339,18 +343,17 @@ fn a_journal_that_does_not_begin_with_session_start_is_another_builds_and_refuse
     assert_eq!(live(&fs), bytes);
 }
 
-#[test]
-fn open_refuses_an_unterminated_foreign_first_line_and_changes_nothing() {
-    for bytes in [&b"garbage"[..], b"{\"seq\":1}"] {
-        let fs = MemFs::new();
-        fs.put("/state/events.jsonl", bytes.to_vec());
-        let Err(OpenError::Read(error)) = simulated(&fs).open(boot(2)) else {
-            panic!("an unterminated foreign first line must be refused by open");
-        };
-        assert!(matches!(error.source, ReadError::Foreign), "{error}");
-        // Opening takes the state lock first; the journal itself is never repaired.
-        assert_eq!(live(&fs), bytes);
-    }
+#[test_case(b"garbage"; "text")]
+#[test_case(b"{\"seq\":1}"; "an event without a newline")]
+fn open_refuses_an_unterminated_foreign_first_line_and_changes_nothing(bytes: &[u8]) {
+    let fs = MemFs::new();
+    fs.put("/state/events.jsonl", bytes.to_vec());
+    let Err(OpenError::Read(error)) = simulated(&fs).open(boot(2)) else {
+        panic!("an unterminated foreign first line must be refused by open");
+    };
+    assert!(matches!(error.source, ReadError::Foreign), "{error}");
+    // Opening takes the state lock first; the journal itself is never repaired.
+    assert_eq!(live(&fs), bytes);
 }
 
 #[test]

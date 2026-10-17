@@ -21,6 +21,8 @@ togi-sim.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+test-case.workspace = true
+togi-trialfiles.workspace = true
 togi-tuner.workspace = true
 
 [lints]

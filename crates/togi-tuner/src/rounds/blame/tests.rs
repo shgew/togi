@@ -1,13 +1,9 @@
 use togi_journal::Outcome;
-use togi_machine::{CoreId, Regime};
+use togi_machine::{PerCore, Regime};
 
 use crate::testkit::{Journal, Start};
 use crate::tests::core;
 use crate::{Action, DecisionPayload};
-
-fn depth(id: CoreId) -> i32 {
-    if id == core(1) { -2 } else { -1 }
-}
 
 #[test]
 fn a_multi_core_r7_failure_without_an_open_record_is_charged_by_depth_not_by_requests() {
@@ -39,12 +35,14 @@ fn a_multi_core_r7_failure_without_an_open_record_is_charged_by_depth_not_by_req
         .pending(failure)
         .expect("the failure is pending");
     assert!(record.class.multi_r7());
-    let deepened = record.class.loaded();
+    let deepened: PerCore<i32> = record
+        .class
+        .loaded()
+        .iter()
+        .map(|id| (id, if id == core(1) { -2 } else { -1 }))
+        .collect();
     assert!(run.r7.open.contains_key(&failure));
-    assert_eq!(run.charged(record, failure, deepened, depth), Some(core(0)));
+    assert_eq!(run.charged(record, failure, &deepened), Some(core(0)));
     assert!(!run.r7.open.contains_key(&record.ledger));
-    assert_eq!(
-        run.charged(record, record.ledger, deepened, depth),
-        Some(core(1))
-    );
+    assert_eq!(run.charged(record, record.ledger, &deepened), Some(core(1)));
 }

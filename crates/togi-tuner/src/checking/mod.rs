@@ -16,9 +16,9 @@ use togi_journal::{CheckingChain, CheckingCycle, CheckingStep, CycleEvent, Event
 use togi_machine::Regime;
 
 use crate::state::Run;
-use crate::{ClassKey, FoldError, Profile, RequirementKind, Topology, Window};
+use crate::{ClassKey, FoldError, Profile, Topology, TrialContext, Window};
 
-pub(crate) use chains::{Node, R7Step};
+pub(crate) use chains::{Link, Node, R7Step};
 pub(crate) use reruns::Reruns;
 pub(crate) use schedule::{PartPlan, Quota, StepPlan};
 pub use schedule::{R7PartRole, r7_part_passes};
@@ -192,12 +192,18 @@ impl Run {
     /// The step and part indexes the open trial's stored requirement names, when it is a trial
     /// of cycle `cycle`.
     pub(crate) fn running_slot(&self, cycle: NonZeroU32) -> Option<(&TrialId, usize, usize)> {
-        let trial = self.flight.open.as_ref().filter(|trial| {
-            trial.requirement.kind == RequirementKind::Cycle && trial.intent.cycle == Some(cycle)
-        })?;
-        let step = usize::try_from(trial.requirement.step?.get().get()).ok()? - 1;
-        let part = usize::try_from(trial.requirement.part?.get().get()).ok()? - 1;
-        Some((&trial.trial, step, part))
+        let trial = self.flight.open()?;
+        let TrialContext::Cycle {
+            cycle: running,
+            step,
+            part,
+        } = trial.requirement.context
+        else {
+            return None;
+        };
+        let step = usize::try_from(step.get().get()).ok()? - 1;
+        let part = usize::try_from(part.get().get()).ok()? - 1;
+        (running == cycle).then_some((&trial.trial, step, part))
     }
 
     fn pin_running_part(&mut self, open: &OpenCycle) {
@@ -465,7 +471,7 @@ impl Run {
             chain.ccd,
             Node {
                 part: chain.part,
-                cores: chain.cores,
+                link: Link::recorded(chain.cores),
                 profile,
                 seq: event.seq,
             },

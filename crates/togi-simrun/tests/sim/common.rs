@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_journal::fs::FileKind;
-use togi_journal::{Build, Event, EventKind, MemFs, SCHEMA, StateDir};
+use togi_journal::{Build, Event, EventKind, FixStamp, MemFs, SCHEMA, StateDir};
 use togi_machine::{CancellationToken, Signal};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
@@ -23,7 +23,7 @@ pub(crate) fn build() -> Build {
         rev: None,
         ruleset: 1,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: 1,
     }
 }
@@ -200,6 +200,29 @@ pub(crate) fn until_kind(kind: EventKind) -> Observer {
             Observe::Continue
         }
     })
+}
+
+/// Stops the run after the first event `hit` holds for.
+pub(crate) fn stop_when(mut hit: impl FnMut(&Event) -> bool + 'static) -> Observer {
+    Box::new(move |event| {
+        if hit(event) {
+            Observe::Stop
+        } else {
+            Observe::Continue
+        }
+    })
+}
+
+/// Holds at the passed cycle that concludes phase 2, read from the tuner folded over `bench`'s journal and then
+/// over every event it is given, which must be the events the run appends in order.
+pub(crate) fn phase_two_concludes(bench: &Bench) -> impl FnMut(&Event) -> bool + 'static {
+    let mut tuner = togi_tuner::replay(&bench.events()).unwrap();
+    move |event| {
+        tuner.fold(event).unwrap();
+        tuner
+            .phase_plan()
+            .is_some_and(|plan| plan.concluded == Some(event.seq))
+    }
 }
 
 /// Every core alone and together at -10, nothing else failing but past-limit crashes at rate 1.

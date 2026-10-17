@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use test_case::test_case;
 use togi_facts::{Decisive, TrialClass};
 use togi_journal::MemFs;
 use togi_journal::fs::Fs;
@@ -77,28 +78,32 @@ fn read_extract(fs: &MemFs, path: &Path) -> Result<Vec<TrialFact>, ReadError> {
     decode(bytes.as_slice())
 }
 
-#[test]
-fn only_decisive_trials_with_a_context_answer_trials() {
+#[test_case(false; "relative to the machine")]
+#[test_case(true; "absolute")]
+fn only_decisive_trials_with_a_context_answer_trials(absolute: bool) {
     let fs = MemFs::new();
     let path = extract_in(&fs, Path::new("/fixtures"));
     let machine_path = Path::new("/fixtures/machine.json");
-    for facts in ["facts.gz", path.to_str().unwrap()] {
-        let replay = Extracts::new()
-            .replay_with(machine_path, &machine(facts), |path| {
-                read_extract(&fs, path)
-            })
-            .unwrap();
-        assert_eq!(replay.len(), 2, "{facts}");
-        for first_offset in [-10, -20, -30, -40] {
-            assert_eq!(
-                answered(&replay, "fixture", first_offset),
-                first_offset == -10,
-                "{facts} {first_offset}"
-            );
-        }
-        assert!(answered(&replay, "other", -40));
-        assert!(!answered(&replay, "other", -10));
+    let facts = if absolute {
+        path.to_str().unwrap()
+    } else {
+        "facts.gz"
+    };
+    let replay = Extracts::new()
+        .replay_with(machine_path, &machine(facts), |path| {
+            read_extract(&fs, path)
+        })
+        .unwrap();
+    assert_eq!(replay.len(), 2);
+    for first_offset in [-10, -20, -30, -40] {
+        assert_eq!(
+            answered(&replay, "fixture", first_offset),
+            first_offset == -10,
+            "{first_offset}"
+        );
     }
+    assert!(answered(&replay, "other", -40));
+    assert!(!answered(&replay, "other", -10));
 }
 
 #[test]
@@ -159,25 +164,27 @@ fn replay_facts_keep_what_the_simulator_matches_and_replays() {
     );
 }
 
+#[test_case(None; "no extract")]
+#[test_case(Some(String::new()); "an empty extract name")]
+fn a_machine_without_an_extract_is_refused(facts: Option<String>) {
+    let declared = MachineDefinition {
+        facts,
+        ..machine("facts.gz")
+    };
+    let error = Extracts::new()
+        .replay_with(Path::new("/fixtures/machine.json"), &declared, |_| {
+            panic!("missing facts must not read")
+        })
+        .unwrap_err();
+    assert!(matches!(error, ExtractsError::NoFacts), "{error}");
+}
+
 #[test]
-fn a_machine_without_an_extract_or_context_or_file_is_refused() {
+fn a_machine_without_a_context_or_file_is_refused() {
     let fs = MemFs::new();
     extract_in(&fs, Path::new("/fixtures"));
     let machine_path = Path::new("/fixtures/machine.json");
     let mut extracts = Extracts::new();
-
-    for facts in [None, Some(String::new())] {
-        let declared = MachineDefinition {
-            facts,
-            ..machine("facts.gz")
-        };
-        let error = extracts
-            .replay_with(machine_path, &declared, |_| {
-                panic!("missing facts must not read")
-            })
-            .unwrap_err();
-        assert!(matches!(error, ExtractsError::NoFacts), "{error}");
-    }
 
     let undeclared = MachineDefinition {
         bios_context: None,

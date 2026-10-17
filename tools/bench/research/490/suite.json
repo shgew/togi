@@ -1,0 +1,19 @@
+{
+  "scenarios": [
+    {"name": "zero", "machine": "machines/zero.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "background-0.1", "machine": "machines/background-0.1.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "background-0.5", "machine": "machines/background-0.5.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "background-1", "machine": "machines/background-1.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "background-2", "machine": "machines/background-2.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "background-4", "machine": "machines/background-4.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "background-8", "machine": "machines/background-8.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "background-16", "machine": "machines/background-16.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "depth-0.1", "machine": "machines/depth-0.1.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "depth-0.5", "machine": "machines/depth-0.5.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "depth-1", "machine": "machines/depth-1.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "depth-2", "machine": "machines/depth-2.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "depth-4", "machine": "machines/depth-4.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "depth-8", "machine": "machines/depth-8.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []},
+    {"name": "depth-16", "machine": "machines/depth-16.json", "dev": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24], "holdout": []}
+  ]
+}

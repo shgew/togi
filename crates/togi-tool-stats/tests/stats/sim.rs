@@ -5,11 +5,11 @@ use std::path::Path;
 
 use jiff::tz::TimeZone;
 use togi_config::Config;
-use togi_journal::{Build, Event, MemFs, SCHEMA};
+use togi_journal::{Build, Event, FixStamp, MemFs, SCHEMA};
 use togi_machine::{CancellationToken, Regime, Signal};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
-use togi_sim::definition::{CoreDef, JointDef, ModelDef, Weights};
+use togi_sim::definition::{CcdDef, CoreDef, JointDef, ModelDef, Weights};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Persistence, Replay, SimInput, SimOutcome, events, simulate};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
@@ -20,7 +20,7 @@ fn build() -> Build {
         rev: None,
         ruleset: RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: EVIDENCE_EPOCH,
     }
 }
@@ -82,26 +82,62 @@ fn chain_machine() -> MachineDefinition {
 
 /// The events of a simulated session through its first clean cycle, over every reboot its crashes cause.
 pub(crate) fn hunting_session() -> Vec<Event> {
-    session(&hunting_machine())
+    session(&hunting_machine(), 1, 1, Config::default())
 }
 
 /// The events of a simulated eight-core session through its first clean cycle, whose R7 chains load
 /// partials and are re-derived after a backoff.
 pub(crate) fn chain_session() -> Vec<Event> {
-    session(&chain_machine())
+    session(&chain_machine(), 1, 1, Config::default())
 }
 
-fn session(definition: &MachineDefinition) -> Vec<Event> {
+/// The events of a simulated session of the seeded default machine with a profile-dependent R7 hazard on
+/// each loaded CCD, 2 failures per hour at a mean CCD depth of 25 doubling every 5 counts deeper, through
+/// two clean cycles: it fails and backs off R7 in phase 1, in phase 2 and after the conclusion.
+pub(crate) fn hazard_session() -> Vec<Event> {
+    let definition = MachineDefinition {
+        ccd: Some(CcdDef {
+            log_rate: (2.0_f64 / 3600.0).ln(),
+            slope: 2.0_f64.ln() / 5.0,
+            ..CcdDef::default()
+        }),
+        ..MachineDefinition::default()
+    };
+    session(&definition, 3, 2, Config::default())
+}
+
+/// The committed bench machines the counterfactual tests simulate, embedded so no test reads them from disk.
+pub(crate) const TARGET_FIT_0: &str =
+    include_str!("../../../../tools/bench/machines/target-fit-0.json");
+pub(crate) const TARGET_FIT_1: &str =
+    include_str!("../../../../tools/bench/machines/target-fit-1.json");
+pub(crate) const TARGET_FIT_2: &str =
+    include_str!("../../../../tools/bench/machines/target-fit-2.json");
+pub(crate) const TARGET_SHARED_VOLTAGE: &str =
+    include_str!("../../../../tools/bench/machines/target-shared-voltage.json");
+
+/// The events of a simulated session of the bench machine definition `machine` drawn from `seed`, through
+/// its first clean cycle.
+pub(crate) fn machine_session(machine: &str, seed: u64) -> Vec<Event> {
+    machine_session_with(machine, seed, Config::default())
+}
+
+/// [`machine_session`] under `config`.
+pub(crate) fn machine_session_with(machine: &str, seed: u64, config: Config) -> Vec<Event> {
+    session(&togi_sim::file::decode(machine).unwrap(), seed, 1, config)
+}
+
+fn session(definition: &MachineDefinition, seed: u64, cycles: u32, config: Config) -> Vec<Event> {
     let simulator = Simulator::new(
-        Model::new(definition, 1).unwrap(),
+        Model::new(definition, seed).unwrap(),
         RunSettings {
-            seed: 1,
+            seed,
             ..RunSettings::default()
         },
     );
     let fs = MemFs::new();
     let outcome = simulate(SimInput {
-        config: Config::default(),
+        config,
         source: ConfigSource::default(),
         build: build(),
         simulator,
@@ -110,7 +146,7 @@ fn session(definition: &MachineDefinition) -> Vec<Event> {
         verify_every: None,
         max_boots: NonZeroU32::new(1000).unwrap(),
         policy: StopPolicy {
-            cycles: NonZeroU32::new(1),
+            cycles: NonZeroU32::new(cycles),
             first_result: false,
         },
         write_samples: false,

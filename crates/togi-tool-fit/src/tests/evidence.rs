@@ -2,7 +2,7 @@ use togi_facts::Decisive;
 use togi_machine::Regime;
 use togi_tool_trialfacts::Class;
 
-use super::{context, crash, fact, repeated};
+use super::{context, crash, fact, refs, repeated};
 use crate::error::{EvidenceError, Problem};
 use crate::evidence::{aggregate, bootstrap, decisive, initial_config};
 
@@ -86,8 +86,9 @@ fn idle_failures_are_left_out_and_the_context_is_kept() {
     idle.class = Class::Idle {
         loaded: super::cores(&[0]),
     };
-    let got = decisive(&[idle.clone(), trial.clone()]).unwrap();
-    assert_eq!(got, std::slice::from_ref(&trial));
+    let records = [idle.clone(), trial.clone()];
+    let got = decisive(&records).unwrap();
+    assert_eq!(got, [&trial]);
     let cfg = initial_config(&got);
     let bios = cfg.bios_context.unwrap();
     assert_eq!(bios.board.as_deref(), Some(context().board.as_str()));
@@ -113,6 +114,7 @@ fn evidence_of_two_bios_contexts_is_refused_whichever_comes_first() {
 fn the_same_seed_resamples_the_same_trials_and_another_seed_others() {
     let template = fact(&[-10, 0], Regime::R1, &[0], 60, Decisive::Pass);
     let records = repeated(&template, 40, 10);
+    let records = refs(&records);
     assert_eq!(bootstrap(&records, 263), bootstrap(&records, 263));
     assert_ne!(bootstrap(&records, 263), bootstrap(&records, 264));
     assert_eq!(bootstrap(&records, 263).len(), 40);
@@ -125,7 +127,7 @@ fn equal_profiles_and_classes_aggregate_with_their_counts_in_first_seen_order() 
     let mut records = repeated(&a, 5, 2);
     records.extend(repeated(&b, 3, 1));
     records.extend(repeated(&a, 2, 2));
-    let got: Vec<_> = aggregate(&records)
+    let got: Vec<_> = aggregate(&refs(&records))
         .iter()
         .map(|o| (o.profile.as_slice()[0].get(), o.n, o.k))
         .collect();
@@ -140,7 +142,7 @@ mod properties {
 
     use crate::evidence::{aggregate, bootstrap};
     use crate::forward::log_loss;
-    use crate::tests::{crash, fact};
+    use crate::tests::{crash, fact, refs};
 
     fn config() -> Config {
         Config {
@@ -165,7 +167,7 @@ mod properties {
                     fact(&[-10 * depth, 0], Regime::R1, &[0], 60, outcome)
                 })
                 .collect();
-            let observations = aggregate(&records);
+            let observations = aggregate(&refs(&records));
             let n: u32 = observations.iter().map(|o| o.n).sum();
             let k: u32 = observations.iter().map(|o| o.k).sum();
             prop_assert_eq!(usize::try_from(n).unwrap(), records.len());
@@ -178,6 +180,7 @@ mod properties {
             let records: Vec<_> = (0..len)
                 .map(|i| fact(&[-i64::try_from(i).unwrap(), 0], Regime::R1, &[0], 60, Decisive::Pass))
                 .collect();
+            let records = refs(&records);
             let sample = bootstrap(&records, seed);
             prop_assert_eq!(sample.len(), records.len());
             prop_assert!(sample.iter().all(|s| records.contains(s)));

@@ -1,4 +1,5 @@
 use serde_json::{Value, json};
+use test_case::test_case;
 
 use super::fixtures::{at, samples};
 use crate::fs::MemFs;
@@ -266,52 +267,46 @@ fn hold_is_an_explicit_decision() {
     assert_eq!(decision.decision, Decision::Hold);
 }
 
-#[test]
-fn unknown_fields_in_nested_machine_types_are_refused() {
-    let cases = [
-        (EventKind::SessionStart, "cores", Some(0)),
-        (EventKind::CrashDetected, "pstore", None),
-        (EventKind::TrialSignal, "schedule", None),
-    ];
-    for (kind, field, index) in cases {
-        let mut line = line_of(super::fixtures::sample(kind));
-        let nested = match index {
-            Some(index) => &mut line["data"][field][index],
-            None => &mut line["data"][field],
-        };
-        assert!(nested.is_object(), "{kind}.{field}");
-        nested["bogus"] = json!(1);
-        let error = Event::decode(&line.to_string()).unwrap_err();
-        assert!(
-            matches!(error, DecodeError::UnknownField { kind: named, .. } if named == kind),
-            "{kind}: {error}"
-        );
-        let path = index.map_or_else(
-            || format!("data.{field}.bogus"),
-            |index| format!("data.{field}[{index}].bogus"),
-        );
-        assert!(error.to_string().contains(&path), "{kind}: {error}");
-    }
+#[test_case(EventKind::SessionStart, "cores", Some(0); "session start core")]
+#[test_case(EventKind::CrashDetected, "pstore", None; "crash pstore")]
+#[test_case(EventKind::TrialSignal, "schedule", None; "trial signal schedule")]
+fn unknown_fields_in_nested_machine_types_are_refused(
+    kind: EventKind,
+    field: &str,
+    index: Option<usize>,
+) {
+    let mut line = line_of(super::fixtures::sample(kind));
+    let nested = match index {
+        Some(index) => &mut line["data"][field][index],
+        None => &mut line["data"][field],
+    };
+    assert!(nested.is_object(), "{kind}.{field}");
+    nested["bogus"] = json!(1);
+    let error = Event::decode(&line.to_string()).unwrap_err();
+    assert!(
+        matches!(error, DecodeError::UnknownField { kind: named, .. } if named == kind),
+        "{kind}: {error}"
+    );
+    let path = index.map_or_else(
+        || format!("data.{field}.bogus"),
+        |index| format!("data.{field}[{index}].bogus"),
+    );
+    assert!(error.to_string().contains(&path), "{kind}: {error}");
 }
 
-#[test]
-fn unknown_workload_ids_are_refused_wherever_a_payload_names_one() {
-    let cases = [
-        (EventKind::TrialIntent, "/data/workload"),
-        (EventKind::HuntStart, "/data/workload"),
-        (EventKind::CheckingChain, "/data/workload"),
-        (EventKind::TrialCarried, "/data/class/workload"),
-        (EventKind::TunerDecision, "/data/workloads/0"),
-    ];
-    for (kind, pointer) in cases {
-        let mut line = line_of(super::fixtures::sample(kind));
-        *line.pointer_mut(pointer).unwrap() = json!("not-a-workload");
-        let error = Event::decode(&line.to_string()).unwrap_err();
-        assert!(
-            togi_machine::error_chain(&error).contains("not-a-workload"),
-            "{kind}: {error}"
-        );
-    }
+#[test_case(EventKind::TrialIntent, "/data/workload"; "trial intent")]
+#[test_case(EventKind::HuntStart, "/data/workload"; "hunt start")]
+#[test_case(EventKind::CheckingChain, "/data/workload"; "checking chain")]
+#[test_case(EventKind::TrialCarried, "/data/class/workload"; "trial carried class")]
+#[test_case(EventKind::TunerDecision, "/data/workloads/0"; "tuner decision workloads")]
+fn unknown_workload_ids_are_refused_wherever_a_payload_names_one(kind: EventKind, pointer: &str) {
+    let mut line = line_of(super::fixtures::sample(kind));
+    *line.pointer_mut(pointer).unwrap() = json!("not-a-workload");
+    let error = Event::decode(&line.to_string()).unwrap_err();
+    assert!(
+        togi_machine::error_chain(&error).contains("not-a-workload"),
+        "{kind}: {error}"
+    );
 }
 
 #[test]
@@ -340,11 +335,10 @@ fn a_config_that_does_not_fit_the_snapshot_is_refused() {
     assert!(Event::decode(&line.to_string()).is_err());
 }
 
-#[test]
-fn a_defect_id_of_zero_is_refused() {
-    for kind in [EventKind::DefectFound, EventKind::DefectAnswered] {
-        let mut line = line_of(super::fixtures::sample(kind));
-        line["data"]["id"] = json!(0);
-        assert!(Event::decode(&line.to_string()).is_err(), "{kind}");
-    }
+#[test_case(EventKind::DefectFound; "defect found")]
+#[test_case(EventKind::DefectAnswered; "defect answered")]
+fn a_defect_id_of_zero_is_refused(kind: EventKind) {
+    let mut line = line_of(super::fixtures::sample(kind));
+    line["data"]["id"] = json!(0);
+    assert!(Event::decode(&line.to_string()).is_err(), "{kind}");
 }

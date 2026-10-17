@@ -5,26 +5,15 @@ use togi_journal::{
 use togi_machine::{Condition, Regime, workloads};
 
 use super::plan::GroupOutcome;
-use super::support::{ended, passed_cycle};
+use super::support::{
+    SHORT, at, attribute, cancel_hunt, ended, group_of, hunt_of, ids, limit_session, members_of,
+    passed_cycle, projection_cases, ran_group, reach, repeated_core_oracle, repeated_session,
+    restore_has_room, run_group, start_hunt_at, start_regime_hunt,
+};
 use crate::later_tests::{pass_cycles, start_cycle, strikes};
 use crate::testkit::{Journal, Start, config, set};
 use crate::tests::{core, off};
 use crate::{Action, DecisionPayload, Load, TrialContext, TrialPlan};
-
-const SHORT: u32 = 120;
-
-fn ids(count: usize) -> Vec<u8> {
-    (0..count).map(|id| u8::try_from(id).unwrap()).collect()
-}
-
-fn limit_session(count: usize) -> Journal {
-    let ids = ids(count);
-    let starts = vec![Start::at_limit(-30).fail(-31); count];
-    let mut j = Journal::new(&ids, &starts);
-    j.profile_change(&vec![-30; count]);
-    j.ranking(&ids);
-    j
-}
 
 fn current(j: &Journal) -> Vec<i64> {
     j.offsets().iter().map(|(_, offset)| offset.get()).collect()
@@ -65,15 +54,6 @@ fn together_plan(j: &mut Journal, loaded: &[u8], profile: &[i64], duration: u32)
     )
 }
 
-fn attribute(j: &mut Journal) -> Seq {
-    let decision = j.next_decision();
-    assert!(
-        matches!(&decision.payload, DecisionPayload::Failure(f) if f.attribution == Attribution::Unattributed),
-        "{decision:?}"
-    );
-    j.decide(decision)
-}
-
 fn fail_together(j: &mut Journal, loaded: &[u8], profile: &[i64], duration: u32) -> Seq {
     let plan = together_plan(j, loaded, profile, duration);
     j.trial(&plan, Outcome::Failure);
@@ -86,23 +66,6 @@ fn fail_all_together(j: &mut Journal, duration: u32) -> Seq {
     fail_together(j, &all, &profile, duration)
 }
 
-fn hunt_of(count: usize, duration: u32) -> Journal {
-    let mut j = limit_session(count);
-    fail_all_together(&mut j, duration);
-    j.start_hunt();
-    j
-}
-
-fn group_of(action: &Action) -> Option<&HuntGroup> {
-    if let Action::Decide(decision) = action
-        && let DecisionPayload::HuntGroup(group) = &decision.payload
-    {
-        Some(group)
-    } else {
-        None
-    }
-}
-
 fn end_of(action: &Action) -> Option<&HuntEnd> {
     if let Action::Decide(decision) = action
         && let DecisionPayload::HuntEnd(end) = &decision.payload
@@ -113,109 +76,12 @@ fn end_of(action: &Action) -> Option<&HuntEnd> {
     }
 }
 
-fn at(plan: &TrialPlan, id: u8) -> i64 {
-    plan.profile.get(core(id)).unwrap().get()
-}
-
 fn core_ids(cores: togi_machine::CoreSet) -> Vec<u8> {
     cores.iter().map(togi_machine::CoreId::get).collect()
 }
 
-fn run_group(j: &mut Journal, fail: bool) {
-    let plan = j.next_trial();
-    assert_eq!(plan.condition, Condition::Parked, "{plan:?}");
-    let outcome = if fail {
-        Outcome::Failure
-    } else {
-        Outcome::Pass
-    };
-    j.trial(&plan, outcome);
-    if fail {
-        attribute(j);
-    }
-}
-
 fn pass_all(_: &TrialPlan) -> Outcome {
     Outcome::Pass
-}
-
-fn start_regime_hunt(
-    j: &mut Journal,
-    hunt: u32,
-    regime: Regime,
-    loaded: &[u8],
-    failing: &[i64],
-) -> Seq {
-    let count = failing.len();
-    let start = HuntStart {
-        hunt: std::num::NonZeroU32::new(hunt).unwrap(),
-        failure: Seq::new(1).unwrap(),
-        trial: None,
-        regime,
-        workload: workloads(regime)[0].id(),
-        cores: set(loaded),
-        duration_s: SHORT,
-        failing: j.profile(failing).offsets(),
-        parked: j.profile(&vec![0; count]).offsets(),
-        parked_seq: None,
-        candidates: set(&ids(count)),
-        trials: 5,
-        trial_s: SHORT,
-        miss: 0.0,
-        rate: 0.0,
-        ranking: ids(count).into_iter().map(core).collect(),
-        reason: None,
-    };
-    j.append(start.into(), &[])
-}
-
-fn start_hunt_at(j: &mut Journal, hunt: u32, loaded: &[u8], failing: &[i64]) -> Seq {
-    start_regime_hunt(j, hunt, Regime::R6, loaded, failing)
-}
-
-fn cancel_hunt(j: &mut Journal, hunt: u32) {
-    let end = HuntEnd {
-        hunt: std::num::NonZeroU32::new(hunt).unwrap(),
-        result: HuntOutcome::Cancelled,
-        cores: set(&[]),
-        members: Vec::new(),
-        groups: 0,
-        reason: "test".to_owned(),
-    };
-    j.append(end.into(), &[]);
-}
-
-fn ran_group(
-    j: &mut Journal,
-    hunt: u32,
-    loaded: &[u8],
-    failing: &[i64],
-    stage: HuntStage,
-    outcome: Outcome,
-    trials: usize,
-) {
-    start_hunt_at(j, hunt, loaded, failing);
-    let planned = reach(j, stage);
-    j.decide(planned);
-    for _ in 0..trials {
-        run_group(j, outcome == Outcome::Failure);
-    }
-    cancel_hunt(j, hunt);
-}
-
-fn reach(j: &mut Journal, stage: HuntStage) -> crate::DecisionAction {
-    let index = u32::from(stage == HuntStage::Complement);
-    for _ in 0..200 {
-        let action = j.next();
-        if group_of(&action).is_some_and(|group| group.stage == stage && group.index == index) {
-            let Action::Decide(decision) = action else {
-                unreachable!();
-            };
-            return decision;
-        }
-        j.step(&mut pass_all);
-    }
-    panic!("the hunt never planned a {stage:?} group");
 }
 
 fn reuse_session() -> Journal {
@@ -552,7 +418,7 @@ fn next_hunt_reuses_established_part_groups() {
                 j.decide(decision.clone());
             }
             Action::RunTrial(plan) => {
-                if let TrialContext::Rerun { failure } = plan.context {
+                if let TrialContext::Rerun { failure } = plan.requirement.context {
                     assert_eq!(failure, source, "the commitment owes its source a rerun");
                     j.trial(plan, Outcome::Failure);
                     continue;
@@ -689,30 +555,11 @@ fn hunt_skips_reached_group() {
     j.decide(decision);
     if let Action::RunTrial(plan) = j.next() {
         assert!(
-            !matches!(plan.context, TrialContext::Hunt { group, .. } if group == number),
+            !matches!(plan.requirement.context, TrialContext::Hunt { group, .. } if group == number),
             "ran the skipped group {plan:?}"
         );
     }
     j.assert_resumes();
-}
-
-fn repeated_session() -> Journal {
-    let count = 16;
-    let mut j = Journal::new(&ids(count), &vec![Start::at_limit(-10).fail(-11); count]);
-    j.profile_change(&vec![-10; count]);
-    j.ranking(&ids(count));
-    j.load(&config(
-        r#"{"checking":{"cycle":["R6"]},"durations":{"checking_idle_s":120}}"#,
-    ));
-    j
-}
-
-fn repeated_core_oracle(plan: &TrialPlan) -> Outcome {
-    if at(plan, 3) < -8 || (at(plan, 3) < 0 && at(plan, 4) < -9) {
-        Outcome::Failure
-    } else {
-        Outcome::Pass
-    }
 }
 
 fn active_plan(j: &Journal) -> &super::plan::Plan {
@@ -1003,16 +850,6 @@ fn backoff_of(decision: &crate::DecisionAction) -> &TunerDecision {
     backoff
 }
 
-fn members_of(pairs: &[(u8, i64)]) -> Vec<Member> {
-    pairs
-        .iter()
-        .map(|&(id, offset)| Member {
-            core: core(id),
-            offset: off(offset),
-        })
-        .collect()
-}
-
 fn reaches_combination(j: &Journal) -> bool {
     j.run()
         .constraints
@@ -1040,13 +877,12 @@ fn assert_owed_rerun(j: &mut Journal, failure: Seq, regime: Regime, loaded: &[u8
     let Action::RunTrial(rerun) = action else {
         panic!("the commitment owes a rerun, the tuner asked for {action:?}");
     };
-    assert_eq!(rerun.context, TrialContext::Rerun { failure });
+    assert_eq!(rerun.requirement.context, TrialContext::Rerun { failure });
     assert_eq!(rerun.condition, Condition::Together);
     assert_eq!(rerun.activity, Activity::Checking);
     assert_eq!(rerun.regime, regime);
     assert_eq!(rerun.load, Load::Many(set(loaded)));
     assert_eq!(rerun.cause, [failure]);
-    assert_eq!(rerun.requirement.kind, crate::RequirementKind::Rerun);
     assert_eq!(
         rerun.requirement.window,
         crate::Window::LiveOrCarried {
@@ -1361,21 +1197,6 @@ fn sixteen_core_culprit_and_pair() {
     }
 }
 
-fn restore_has_room(j: &mut Journal, id: u8, offset: i64) {
-    j.core_phase(CoreTransition {
-        core: core(id),
-        from: Some(CorePhase::Search),
-        to: CorePhase::HasRoom,
-        offset: off(offset),
-        pass: None,
-        failure_point: None,
-        check_solo_limit: false,
-        workloads: Vec::new(),
-        cleared_combination: Vec::new(),
-        reason: "test".to_owned(),
-    });
-}
-
 #[test]
 fn hunt_duration_prior_respects_evidence_and_short_failures() {
     struct Case {
@@ -1637,155 +1458,8 @@ fn hunt_escalation_and_inferred_group() {
 
 #[test]
 fn active_hunt_projection() {
-    struct Case {
-        name: &'static str,
-        stage: HuntStage,
-        prior: usize,
-        live: Vec<Outcome>,
-        inferred: Option<Inference>,
-        skipped: bool,
-        reset: bool,
-        escalated: bool,
-        probe: Option<Member>,
-        held: Vec<Member>,
-        passes: u32,
-        outcome: Option<GroupOutcome>,
-    }
-    let base = || Case {
-        name: "",
-        stage: HuntStage::Part,
-        prior: 0,
-        live: Vec::new(),
-        inferred: None,
-        skipped: false,
-        reset: false,
-        escalated: false,
-        probe: None,
-        held: Vec::new(),
-        passes: 0,
-        outcome: None,
-    };
-    let cases = vec![
-        Case {
-            name: "running reuses earlier valid passes",
-            prior: 2,
-            live: vec![Outcome::Pass],
-            passes: 3,
-            ..base()
-        },
-        Case {
-            name: "passing complement accumulates trials",
-            stage: HuntStage::Complement,
-            prior: 4,
-            live: vec![Outcome::Pass],
-            passes: 5,
-            outcome: Some(GroupOutcome::Passed),
-            ..base()
-        },
-        Case {
-            name: "failure invalidates earlier passes",
-            prior: 2,
-            live: vec![Outcome::Failure],
-            outcome: Some(GroupOutcome::Failed),
-            ..base()
-        },
-        Case {
-            name: "inferred pass",
-            prior: 5,
-            inferred: Some(Inference::Pass),
-            passes: 5,
-            outcome: Some(GroupOutcome::Passed),
-            ..base()
-        },
-        Case {
-            name: "inferred failure",
-            stage: HuntStage::Complement,
-            inferred: Some(Inference::Failure),
-            outcome: Some(GroupOutcome::Failed),
-            ..base()
-        },
-        Case {
-            name: "skipped",
-            skipped: true,
-            outcome: Some(GroupOutcome::Skipped),
-            ..base()
-        },
-        Case {
-            name: "reset excludes reused evidence",
-            prior: 4,
-            reset: true,
-            live: vec![Outcome::Pass],
-            passes: 1,
-            ..base()
-        },
-        Case {
-            name: "escalated full uses only new trials",
-            stage: HuntStage::Full,
-            prior: 4,
-            live: vec![Outcome::Pass],
-            escalated: true,
-            passes: 1,
-            ..base()
-        },
-        Case {
-            name: "member probe preserves held members",
-            stage: HuntStage::Probe,
-            prior: 4,
-            live: vec![Outcome::Pass],
-            probe: Some(Member {
-                core: core(0),
-                offset: off(-30),
-            }),
-            held: members_of(&[(1, -30)]),
-            passes: 1,
-            ..base()
-        },
-    ];
-    for case in cases {
-        let mut j = Journal::new(&ids(4), &[Start::has_room(-30); 4]);
-        j.profile_change(&[-30; 4]);
-        j.ranking(&ids(4));
-        if case.prior > 0 {
-            ran_group(
-                &mut j,
-                1,
-                &ids(4),
-                &[-30; 4],
-                HuntStage::Part,
-                Outcome::Pass,
-                case.prior,
-            );
-        }
-        if case.reset {
-            j.reset(0);
-            let transition = j.next_decision();
-            j.decide(transition);
-            restore_has_room(&mut j, 0, -30);
-        }
-        let begin = start_hunt_at(&mut j, 2, &ids(4), &[-30; 4]);
-        let group = HuntGroup {
-            hunt: std::num::NonZeroU32::new(2).unwrap(),
-            group: std::num::NonZeroU32::MIN,
-            cores: set(&[0, 1]),
-            profile: j.profile(&[-30, -30, 0, 0]).offsets(),
-            set: set(&ids(4)),
-            granularity: 2,
-            stage: case.stage,
-            index: 0,
-            duration_s: SHORT,
-            escalated: case.escalated,
-            full_checked: false,
-            any_failed: false,
-            probe: case.probe,
-            held: case.held.clone(),
-            inferred: case.inferred,
-            skipped: case.skipped,
-            reason: Some("test".to_owned()),
-        };
-        let seq = j.append(group.into(), &[begin]);
-        for outcome in &case.live {
-            run_group(&mut j, *outcome == Outcome::Failure);
-        }
+    for case in projection_cases() {
+        let (mut j, seq) = case.journal();
         let view = j.run().hunt_groups();
         assert_eq!(view.len(), 1, "{}", case.name);
         let group = &view[0];
@@ -1935,7 +1609,9 @@ fn located_hunt_resumes_during_locate() {
     let Action::RunTrial(plan) = &want else {
         panic!("locate did not continue: {want:?}");
     };
-    assert!(matches!(plan.context, TrialContext::Hunt { group, .. } if group.get() == 1));
+    assert!(
+        matches!(plan.requirement.context, TrialContext::Hunt { group, .. } if group.get() == 1)
+    );
     assert_eq!(
         plan.profile
             .iter()
@@ -1977,12 +1653,14 @@ fn parked_failure_naming_a_core_at_zero_reruns_all_zero() {
         assert_eq!(record.offset, Some(off(0)));
         let failure = j.decide(attribution);
         let rerun = j.next_trial();
-        assert_eq!(rerun.context, TrialContext::ZeroRerun { failure });
+        assert_eq!(
+            rerun.requirement.context,
+            TrialContext::ZeroRerun { failure }
+        );
         assert_eq!(rerun.condition, Condition::Parked);
         assert_eq!(rerun.activity, Activity::Hunt);
         assert_eq!(rerun.duration.get(), SHORT);
         assert_eq!(rerun.cause, [failure]);
-        assert_eq!(rerun.requirement.kind, crate::RequirementKind::ZeroRerun);
         assert_eq!(rerun.requirement.needed.get(), 1);
         assert!(rerun.profile.is_zero());
         assert_eq!(rerun.load, Load::Many(set(&ids(4))));
@@ -2037,7 +1715,10 @@ fn together_failure_naming_a_core_at_zero_is_hunted_after_a_passed_rerun() {
         let attribution = j.next_decision();
         let failure = j.decide(attribution);
         let rerun = j.next_trial();
-        assert_eq!(rerun.context, TrialContext::ZeroRerun { failure });
+        assert_eq!(
+            rerun.requirement.context,
+            TrialContext::ZeroRerun { failure }
+        );
         j.trial(&rerun, Outcome::Pass);
         let action = j.next();
         let decision = expect_decision(action.clone());
@@ -2204,7 +1885,7 @@ fn running_hunt_group_cites_mixed_carried_and_live_passes() {
                 panic!("group {number} needs two live trials");
             };
             assert!(
-                matches!(plan.context, TrialContext::Hunt { group, .. } if group.get() == number)
+                matches!(plan.requirement.context, TrialContext::Hunt { group, .. } if group.get() == number)
             );
             j.trial(&plan, Outcome::Pass);
         }

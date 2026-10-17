@@ -1,13 +1,16 @@
 //! `publish`: posts the record and the `review` check as robotogi.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::manifest::{Manifest, read_manifest};
+use crate::parts::{COMMENT_LIMIT, Comment, parse_part, robotogi_comments, split_record};
 use crate::record::parse_record;
 use crate::render::RECORD_FILE;
 use crate::snapshot::view_pull;
 use crate::text::{join, json, nullable, quote};
-use crate::{Error, ROBOTOGI_BOT_LOGIN, ROBOTOGI_LOGIN, Tools, files};
+use crate::{Error, ROBOTOGI_LOGIN, Tools, files};
 
 pub const PUBLISH_USAGE: &str = "usage: just as-bot just reviews publish <snapshot directory>";
 
@@ -70,17 +73,7 @@ pub fn run_publish(t: &mut Tools<'_>, args: &[String]) -> Result<(), Error> {
                 record.head_sha, m.head_sha
             )));
         }
-        let existing = existing_record(t, &m)?;
-        let mut record_url = existing.url.clone();
-        if !existing.url.is_empty() && normalize_record(&existing.body) != normalize_record(&md) {
-            return Err(Error::new(format!(
-                "robotogi's record {} on {} differs from {RECORD_FILE}: it is not updated and no check is posted; post the changed review on a new head",
-                existing.url, m.head_sha
-            )));
-        }
-        if record_url.is_empty() {
-            record_url = post_record(t, &m, &record_path)?;
-        }
+        let record_url = post_parts(t, &m, dir, &md)?;
         if record.verdict != "success" {
             return write!(
                 t.stdout,
@@ -132,11 +125,40 @@ pub fn carry_summary(m: &Manifest) -> String {
     )
 }
 
-/// A record comment already on the pull request.
-#[derive(Default)]
-struct ExistingComment {
-    url: String,
-    body: String,
+/// Posts the parts of `md` that robotogi has not posted for the head yet, in order, and returns the record
+/// URL: the first part's. A record that fits one comment is its own only part. Refuses when a posted part
+/// differs from the one `md` makes, so a rerun resumes an interrupted publish and changes nothing posted.
+fn post_parts(t: &mut Tools<'_>, m: &Manifest, dir: &str, md: &str) -> Result<String, Error> {
+    let bodies = split_record(md, &m.head_sha, COMMENT_LIMIT)?;
+    let mut existing = existing_record(t, m)?;
+    for ((part, parts), c) in &existing {
+        if *parts != bodies.len()
+            || normalize_record(&c.body) != normalize_record(&bodies[part - 1])
+        {
+            return Err(Error::new(format!(
+                "robotogi's record {} on {} differs from {RECORD_FILE}: it is not updated and no check is posted; post the changed review on a new head",
+                c.url, m.head_sha
+            )));
+        }
+    }
+    let mut record_url = String::new();
+    for (i, body) in bodies.iter().enumerate() {
+        let url = if let Some(c) = existing.remove(&(i + 1, bodies.len())) {
+            c.url
+        } else if bodies.len() == 1 {
+            post_record(t, m, &join(dir, RECORD_FILE))?
+        } else {
+            let name = format!("record-part-{}.md", i + 1);
+            let file = join(dir, &name);
+            files::write(&file, body.as_bytes())
+                .map_err(|error| Error::wrap(format!("write {name}"), error))?;
+            post_record(t, m, &file)?
+        };
+        if i == 0 {
+            record_url = url;
+        }
+    }
+    Ok(record_url)
 }
 
 /// A comment body made comparable with the rendered file: GitHub may store CRLF and trim trailing
@@ -145,47 +167,21 @@ pub fn normalize_record(s: &str) -> String {
     s.replace("\r\n", "\n").trim().to_owned()
 }
 
-#[derive(Default, Deserialize)]
-struct CommentNode {
-    #[serde(default, deserialize_with = "nullable", rename = "html_url")]
-    url: String,
-    #[serde(default, deserialize_with = "nullable")]
-    body: String,
-    #[serde(default, deserialize_with = "nullable")]
-    user: User,
-}
-
-#[derive(Default, Deserialize)]
-struct User {
-    #[serde(default, deserialize_with = "nullable")]
-    login: String,
-}
-
-/// robotogi's last record comment for the snapshot's head, or an empty one when there is none.
-fn existing_record(t: &mut Tools<'_>, m: &Manifest) -> Result<ExistingComment, Error> {
-    let pr = m.pull_request;
-    let out = t
-        .programs
-        .gh(&[
-            "api",
-            "--paginate",
-            "--slurp",
-            &format!("repos/{}/issues/{pr}/comments", m.repository),
-        ])
-        .map_err(|error| Error::wrap(format!("list comments of pull request #{pr}"), error))?;
-    let pages: Vec<Option<Vec<CommentNode>>> = serde_json::from_slice(&out)
-        .map_err(|error| Error::wrap(format!("decode comments of pull request #{pr}"), error))?;
-    let mut found = ExistingComment::default();
-    for c in pages.into_iter().flatten().flatten() {
-        if c.user.login != ROBOTOGI_BOT_LOGIN {
-            continue;
-        }
-        if parse_record(&c.body).is_ok_and(|r| r.head_sha == m.head_sha) {
-            found = ExistingComment {
-                url: c.url,
-                body: c.body,
-            };
-        }
+/// robotogi's comments that post the snapshot head's record, last for each part, by part and part count:
+/// a record in one comment is part 1 of 1.
+fn existing_record(
+    t: &mut Tools<'_>,
+    m: &Manifest,
+) -> Result<BTreeMap<(usize, usize), Comment>, Error> {
+    let mut found = BTreeMap::new();
+    for c in robotogi_comments(t.programs, &m.repository, m.pull_request)? {
+        let slot = match parse_part(&c.body) {
+            Some(Ok(p)) if p.head_sha == m.head_sha => (p.part, p.parts),
+            Some(_) => continue,
+            None if parse_record(&c.body).is_ok_and(|r| r.head_sha == m.head_sha) => (1, 1),
+            None => continue,
+        };
+        found.insert(slot, c);
     }
     Ok(found)
 }

@@ -144,47 +144,48 @@ pub fn check_frame_bounds(buf: &Buffer, screen: &Screen) -> Result<(), String> {
 mod tests {
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
+    use test_case::test_case;
 
     use super::{Layout, SizeClass, body_rows, check_frame_bounds, frame_area};
     use crate::frames::testing::screen;
     use crate::screen::{Colours, View};
 
-    #[test]
-    fn the_size_classes_break_at_their_widths_and_heights() {
-        for (width, height, want) in [
-            (240, 67, SizeClass::Wide),
-            (200, 60, SizeClass::Wide),
-            (199, 60, SizeClass::Medium),
-            (200, 59, SizeClass::Medium),
-            (160, 45, SizeClass::Medium),
-            (159, 45, SizeClass::Compact),
-            (160, 44, SizeClass::Compact),
-            (150, 40, SizeClass::Compact),
-            (120, 33, SizeClass::Compact),
-            (80, 24, SizeClass::Compact),
-            (0, 0, SizeClass::Compact),
-            (300, 20, SizeClass::Compact),
-        ] {
-            assert_eq!(SizeClass::of(width, height), want, "{width}x{height}");
-        }
+    #[test_case(240, 67, SizeClass::Wide; "240 by 67")]
+    #[test_case(200, 60, SizeClass::Wide; "200 by 60")]
+    #[test_case(199, 60, SizeClass::Medium; "one column under wide")]
+    #[test_case(200, 59, SizeClass::Medium; "one row under wide")]
+    #[test_case(160, 45, SizeClass::Medium; "160 by 45")]
+    #[test_case(159, 45, SizeClass::Compact; "one column under medium")]
+    #[test_case(160, 44, SizeClass::Compact; "one row under medium")]
+    #[test_case(150, 40, SizeClass::Compact; "150 by 40")]
+    #[test_case(120, 33, SizeClass::Compact; "120 by 33")]
+    #[test_case(80, 24, SizeClass::Compact; "80 by 24")]
+    #[test_case(0, 0, SizeClass::Compact; "0 by 0")]
+    #[test_case(300, 20, SizeClass::Compact; "wide but short")]
+    fn the_size_classes_break_at_their_widths_and_heights(
+        width: u16,
+        height: u16,
+        want: SizeClass,
+    ) {
+        assert_eq!(SizeClass::of(width, height), want, "{width}x{height}");
     }
 
-    #[test]
-    fn the_frame_area_is_the_screen_less_its_last_row_and_column() {
-        for (width, height, want) in [
-            (240, 67, (239, 66)),
-            (80, 24, (79, 23)),
-            (1, 1, (0, 0)),
-            (0, 0, (0, 0)),
-            (1, 9, (0, 8)),
-        ] {
-            let area = frame_area(&screen(View::Main, width, height, Colours::Full, false));
-            assert_eq!(
-                (area.x, area.y, area.width, area.height),
-                (0, 0, want.0, want.1),
-                "{width}x{height}"
-            );
-        }
+    #[test_case(240, 67, (239, 66); "240 by 67")]
+    #[test_case(80, 24, (79, 23); "80 by 24")]
+    #[test_case(1, 1, (0, 0); "1 by 1")]
+    #[test_case(0, 0, (0, 0); "0 by 0")]
+    #[test_case(1, 9, (0, 8); "1 by 9")]
+    fn the_frame_area_is_the_screen_less_its_last_row_and_column(
+        width: u16,
+        height: u16,
+        want: (u16, u16),
+    ) {
+        let area = frame_area(&screen(View::Main, width, height, Colours::Full, false));
+        assert_eq!(
+            (area.x, area.y, area.width, area.height),
+            (0, 0, want.0, want.1),
+            "{width}x{height}"
+        );
     }
 
     #[test]
@@ -203,14 +204,19 @@ mod tests {
         assert_eq!(compact.body, Rect::new(1, 3, 77, 25));
     }
 
-    #[test]
-    fn the_body_rows_are_the_rows_under_the_title() {
-        for (width, height, want) in [(160, 45, 40), (80, 30, 25), (79, 29, 24), (240, 67, 62)] {
-            for view in View::ALL {
-                let sc = screen(view, width, height, Colours::Full, true);
-                assert_eq!(body_rows(&sc), want, "{view:?} {width}x{height}");
-            }
+    #[test_case(160, 45, 40; "160 by 45")]
+    #[test_case(80, 30, 25; "80 by 30")]
+    #[test_case(79, 29, 24; "79 by 29")]
+    #[test_case(240, 67, 62; "240 by 67")]
+    fn the_body_rows_are_the_rows_under_the_title(width: u16, height: u16, want: usize) {
+        for view in View::ALL {
+            let sc = screen(view, width, height, Colours::Full, true);
+            assert_eq!(body_rows(&sc), want, "{view:?} {width}x{height}");
         }
+    }
+
+    #[test]
+    fn a_screen_with_no_room_under_the_title_has_no_body_rows() {
         assert_eq!(
             body_rows(&screen(View::Cores, 10, 2, Colours::Full, true)),
             0
@@ -248,24 +254,25 @@ mod tests {
     }
 
     #[test]
-    fn the_bounds_check_accepts_the_frame_area_and_nothing_else() {
+    fn the_bounds_check_accepts_the_frame_area() {
         let sc = screen(View::Main, 80, 24, Colours::Full, false);
         assert_eq!(
             check_frame_bounds(&Buffer::empty(frame_area(&sc)), &sc),
             Ok(())
         );
-        for area in [
-            Rect::new(0, 0, 80, 24),
-            Rect::new(0, 0, 80, 23),
-            Rect::new(0, 0, 79, 24),
-            Rect::new(1, 0, 79, 23),
-            Rect::new(0, 0, 78, 23),
-        ] {
-            assert!(
-                check_frame_bounds(&Buffer::empty(area), &sc).is_err(),
-                "{area:?}"
-            );
-        }
+    }
+
+    #[test_case(Rect::new(0, 0, 80, 24); "the whole screen")]
+    #[test_case(Rect::new(0, 0, 80, 23); "a row short")]
+    #[test_case(Rect::new(0, 0, 79, 24); "a column short")]
+    #[test_case(Rect::new(1, 0, 79, 23); "shifted right")]
+    #[test_case(Rect::new(0, 0, 78, 23); "two columns short")]
+    fn the_bounds_check_rejects_any_other_area(area: Rect) {
+        let sc = screen(View::Main, 80, 24, Colours::Full, false);
+        assert!(
+            check_frame_bounds(&Buffer::empty(area), &sc).is_err(),
+            "{area:?}"
+        );
     }
 
     #[test]

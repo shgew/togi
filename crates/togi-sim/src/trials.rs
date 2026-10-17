@@ -154,7 +154,7 @@ impl Trials for SimTrials {
             return storage.read(id);
         }
         match &runtime.samples_dir {
-            Some(dir) => Box::new(togi_machine::read_samples(&dir.join(id))),
+            Some(dir) => Box::new(crate::samples::read(dir, id)),
             None if runtime.samples.id.as_deref() == Some(id) => {
                 Box::new(runtime.samples.conditions().map(Ok))
             }
@@ -309,37 +309,54 @@ fn exp1(rng: &mut StdRng) -> f64 {
     -(-rng.random::<f64>()).ln_1p()
 }
 
+/// The words of a draw key: five, or six for an unloaded core. The length is part of the stream, so
+/// only the active words are read.
+struct DrawKey {
+    words: [u64; 6],
+    len: usize,
+}
+
+impl DrawKey {
+    fn words(&self) -> &[u64] {
+        &self.words[..self.len]
+    }
+}
+
 impl Runtime {
     /// The key of every draw about `core` in a trial. It names the core, regime, condition, the core's
     /// applied offset and the trial index, but not the trial ID or the other cores' offsets, so a retry
     /// of the same trial reproduces its class outcome. An unloaded core's draws also name the loaded set,
     /// as a set, so their order never matters.
-    fn key(&self, spec: &TrialSpec, core: CoreId) -> Vec<u64> {
-        let mut key = vec![
-            u64::from(core.get()),
-            regime_index(spec.regime) as u64,
-            condition_index(spec.condition),
-            self.regs[core.index()].get().cast_unsigned(),
-            u64::try_from(spec.index).unwrap_or(u64::MAX),
-        ];
+    fn key(&self, spec: &TrialSpec, core: CoreId) -> DrawKey {
+        let mut key = DrawKey {
+            words: [
+                u64::from(core.get()),
+                regime_index(spec.regime) as u64,
+                condition_index(spec.condition),
+                self.regs[core.index()].get().cast_unsigned(),
+                u64::try_from(spec.index).unwrap_or(u64::MAX),
+                0,
+            ],
+            len: 5,
+        };
         let loaded: CoreSet = spec.cores.iter().copied().collect();
         if !loaded.contains(core) {
-            key.push(loaded_mask(loaded));
+            key.words[5] = loaded_mask(loaded);
+            key.len = 6;
         }
         key
     }
 
     fn run(&mut self, spec: &TrialSpec, escape: bool) -> Result<Outcome, crate::ShapeError> {
         let load = load_of(spec);
-        let profile = self.regs.clone();
-        let planned = self.plan(spec, &load, &profile)?;
+        let planned = self.plan(spec, &load, &self.regs)?;
         let start = self.clock();
         let mut result = TrialResult {
             ran: spec.duration,
             ..TrialResult::default()
         };
         if let Some(first) = load.cores.first() {
-            let mut rng = stream(self.seed, Domain::Tctl, &self.key(spec, first));
+            let mut rng = stream(self.seed, Domain::Tctl, self.key(spec, first).words());
             result.tctl_max_c = Some(62 + rng.random_range(0..15));
             if escape {
                 let cores = u16::try_from(self.model.cores()).unwrap_or(0);
@@ -349,7 +366,7 @@ impl Runtime {
         let mut events = Vec::new();
         let mut stalled = None;
         let finished = self.conclude(spec, planned, start, result, &mut events, &mut stalled);
-        let persisted = self.record_samples(spec, &load, &profile, start, stalled);
+        let persisted = self.record_samples(spec, &load, start, stalled);
         Ok(Outcome {
             result: finished,
             events,
@@ -372,7 +389,11 @@ impl Runtime {
             progress(spec, &result, events);
             return Ok(result);
         };
-        let mut rng = stream(self.seed, Domain::Signal, &self.key(spec, failure.core));
+        let mut rng = stream(
+            self.seed,
+            Domain::Signal,
+            self.key(spec, failure.core).words(),
+        );
         let drawn = self.model.signal_mix(spec.regime).pick(rng.random());
         let signal = failure.signal.unwrap_or(drawn);
         let at = start + failure.at;
@@ -490,7 +511,6 @@ impl Runtime {
         &mut self,
         spec: &TrialSpec,
         load: &Load<'_>,
-        profile: &[TargetOffset],
         start: Duration,
         stalled: Option<CoreId>,
     ) -> io::Result<()> {
@@ -500,7 +520,7 @@ impl Runtime {
             threads: spec.workload.workload().threads,
             ran: self.clock().saturating_sub(start),
             stalled,
-            voltage: self.model.voltage_state(profile, load).ok().flatten(),
+            voltage: self.model.voltage_state(&self.regs, load).ok().flatten(),
         };
         if let Some(storage) = &self.sample_storage {
             self.samples = LastTrial::default();
@@ -575,7 +595,7 @@ impl Runtime {
         let mut best: Option<(f64, Failure)> = None;
         self.model.visit_sources(profile, load, |source| {
             let (core, mut failure) = self.attribute(&source, spec, load);
-            let mut rng = stream(self.seed, source.domain(), &self.key(spec, core));
+            let mut rng = stream(self.seed, source.domain(), self.key(spec, core).words());
             let seconds = onset.failure_time(source.after_s, source.rate, exp1(&mut rng));
             if seconds < duration && best.as_ref().is_none_or(|(known, _)| seconds < *known) {
                 failure.at = Duration::from_secs_f64(seconds);
@@ -684,7 +704,11 @@ impl Runtime {
                     .as_ref()
             })
             .unwrap_or_else(|| self.model.signal_mix(spec.regime));
-        let mut rng = stream(self.seed, Domain::VoltageSignal, &self.key(spec, core));
+        let mut rng = stream(
+            self.seed,
+            Domain::VoltageSignal,
+            self.key(spec, core).words(),
+        );
         if rng.random::<f64>() < mix.probability(Signal::ComputationError) {
             Signal::ComputationError
         } else {

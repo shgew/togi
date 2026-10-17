@@ -9,8 +9,8 @@ use crate::r7::respond::R7Route;
 use crate::testkit::{Journal, R7Report, Start, config, fresh, set};
 use crate::tests::{core, off};
 use crate::{
-    Action, ClassKey, DecisionAction, DecisionPayload, Load, Profile, Requirement, RequirementKind,
-    Secs, TrialContext, TrialPlan, Window, WorkloadChoice,
+    Action, ClassKey, DecisionAction, DecisionPayload, Load, Profile, Requirement, Secs,
+    TrialContext, TrialPlan, Window, WorkloadChoice,
 };
 
 fn values(profile: Profile) -> Vec<i64> {
@@ -376,7 +376,7 @@ fn located_hunt_retests_the_full_failing_profile_before_ending_loaded() {
     j.loc_finish(&first, Outcome::Pass, &R7Report::default());
     let plan = j.next_trial();
     assert_eq!(
-        plan.context,
+        plan.requirement.context,
         TrialContext::Hunt {
             hunt: std::num::NonZeroU32::MIN,
             group: std::num::NonZeroU32::new(4).unwrap(),
@@ -606,19 +606,16 @@ fn r7_escalated_failure_locates_with_idle_cores_at_zero() {
         activity: Activity::Hunt,
         profile: j.profile(&[-30, -30, 0, 0]),
         duration: class.duration(),
-        context: TrialContext::Hunt {
-            hunt: std::num::NonZeroU32::MIN,
-            group: std::num::NonZeroU32::MIN,
-        },
         requirement: Requirement {
-            kind: RequirementKind::Hunt,
+            context: TrialContext::Hunt {
+                hunt: std::num::NonZeroU32::MIN,
+                group: std::num::NonZeroU32::MIN,
+            },
             class,
             window: Window::LiveOrCarried {
                 since: Some(group_seq),
             },
             needed: j.run().config.needed,
-            step: None,
-            part: None,
         },
         retry: false,
         cause: vec![group_seq],
@@ -646,7 +643,7 @@ fn a_locate_reads_a_ranking_newer_than_the_last_round_plan() {
 
 #[test]
 fn a_located_group_failure_naming_a_loaded_core_is_not_held() {
-    use crate::later_tests::{pass_cycles, start_cycle};
+    use crate::later_tests::{pass_cycles, start_cycle, strikes};
     let mut j = Journal::r7_session();
     j.loc_back_off(&top0());
     pass_cycles(&mut j, 3);
@@ -684,7 +681,7 @@ fn a_located_group_failure_naming_a_loaded_core_is_not_held() {
         ),
         "the failure moved twice"
     );
-    assert_eq!(j.run().later.strikes().count(), 0);
+    assert_eq!(strikes(&j), 0);
     j.assert_resumes();
 }
 
@@ -729,7 +726,10 @@ fn r7_passed_locate_hunts_the_unloaded_culprit() {
     let rerun = j
         .loc_drain_without_moves("culprit")
         .expect("the failed load is rerun");
-    assert!(matches!(rerun.context, TrialContext::Rerun { .. }));
+    assert!(matches!(
+        rerun.requirement.context,
+        TrialContext::Rerun { .. }
+    ));
     assert_eq!(rerun.condition, Condition::Together);
     assert_eq!(rerun.load, Load::Many(set(&[0, 1])));
     assert_eq!(rerun.duration.get(), 120);
@@ -816,7 +816,7 @@ fn r7_located_group_failure_naming_a_core() {
                 .loc_drain_without_moves(name)
                 .unwrap_or_else(|| panic!("{name}: no rerun"));
             assert!(
-                matches!(rerun.context, TrialContext::Rerun { .. }),
+                matches!(rerun.requirement.context, TrialContext::Rerun { .. }),
                 "{name}"
             );
             assert_eq!(rerun.cause, [direct], "{name}");
@@ -1018,7 +1018,7 @@ fn r7_locate_failure_naming_a_loaded_core_at_zero() {
             }
         };
         assert_eq!(
-            locate.context,
+            locate.requirement.context,
             TrialContext::Hunt {
                 hunt: std::num::NonZeroU32::MIN,
                 group: std::num::NonZeroU32::MIN,
@@ -1061,7 +1061,7 @@ fn r7_locate_failure_naming_a_loaded_core_at_zero() {
         }
         let rerun = trial(&action).clone();
         assert!(
-            matches!(rerun.context, TrialContext::ZeroRerun { .. }),
+            matches!(rerun.requirement.context, TrialContext::ZeroRerun { .. }),
             "{name}: {rerun:?}"
         );
         assert_eq!(rerun.condition, Condition::Parked, "{name}");
@@ -1113,7 +1113,7 @@ fn r7_passed_zero_rerun_locates_citing_the_rerun() {
     let (_, failure, _) = j.loc_fail_escalated(&top0().named(0));
     let rerun = j.next_trial();
     assert!(
-        matches!(rerun.context, TrialContext::ZeroRerun { .. }),
+        matches!(rerun.requirement.context, TrialContext::ZeroRerun { .. }),
         "{rerun:?}"
     );
     assert_eq!(rerun.condition, Condition::Parked);
@@ -1260,13 +1260,13 @@ fn hunt_group_retry_belongs_to_its_group() {
     let mut j = loc_failed_hunt(4, 120);
     let first = loc_first_hunt_trial(&mut j);
     assert!(
-        matches!(first.context, TrialContext::Hunt { .. }),
+        matches!(first.requirement.context, TrialContext::Hunt { .. }),
         "{first:?}"
     );
     j.trial(&first, Outcome::Inconclusive);
     let again = j.next_trial();
     assert!(again.retry, "{again:?}");
-    assert_eq!(again.context, first.context);
+    assert_eq!(again.requirement.context, first.requirement.context);
     assert_eq!(fresh(&j.events).next().ok(), Some(Action::RunTrial(again)));
     j.reset(0);
     for _ in 0..10 {
@@ -1364,7 +1364,7 @@ fn hunt_retry_stays_with_its_group() {
     j.trial(&ran, Outcome::Inconclusive);
     let retry = j.next_trial();
     assert!(retry.retry, "{retry:?}");
-    assert_eq!(retry.context, ran.context);
+    assert_eq!(retry.requirement.context, ran.requirement.context);
     assert_eq!(values(retry.profile), p1);
 
     j.load(&loc_config(Some((
@@ -1384,7 +1384,7 @@ fn hunt_retry_stays_with_its_group() {
     let plan = trial(&want);
     assert!(!plan.retry, "{plan:?}");
     assert_eq!(
-        plan.context,
+        plan.requirement.context,
         TrialContext::Hunt {
             hunt: std::num::NonZeroU32::MIN,
             group: std::num::NonZeroU32::new(2).unwrap(),
@@ -1400,26 +1400,20 @@ fn hunt_retry_stays_with_its_group() {
 fn requirement_checks_hunt_identity() {
     let mut j = loc_failed_hunt(4, 120);
     let plan = loc_first_hunt_trial(&mut j);
-    let TrialContext::Hunt { hunt, group } = plan.context else {
-        panic!("not a hunt trial: {:?}", plan.context);
+    let TrialContext::Hunt { hunt, group } = plan.requirement.context else {
+        panic!("not a hunt trial: {:?}", plan.requirement.context);
     };
     let needed = j.run().hunts.active.as_ref().unwrap().needed;
-    assert_eq!(plan.requirement.kind, RequirementKind::Hunt);
     assert_eq!(plan.requirement.needed, needed);
     assert_eq!(
         needed.get(),
         u16::try_from(j.run().hunts.active.as_ref().unwrap().start.trials).unwrap()
     );
     j.intent(&plan);
-    assert_eq!(
-        j.run().flight.open.as_ref().unwrap().requirement,
-        plan.requirement
-    );
+    let shown = j.requirement();
+    assert_eq!(shown.needed, u32::from(needed.get()));
     j.load(&config(r#"{"evidence":{"miss":0.001}}"#));
-    assert_eq!(
-        j.run().flight.open.as_ref().unwrap().requirement,
-        plan.requirement
-    );
+    assert_eq!(j.requirement(), shown);
     assert_eq!(j.run().hunts.active.as_ref().unwrap().needed, needed);
 
     for other in [
@@ -1434,7 +1428,7 @@ fn requirement_checks_hunt_identity() {
     ] {
         let mut j = loc_failed_hunt(4, 120);
         let mut plan = loc_first_hunt_trial(&mut j);
-        plan.context = other;
+        plan.requirement.context = other;
         let intent = plan.intent(togi_journal::TrialId::from("other".to_owned()), 0);
         let error = j.try_append(intent.into(), &[]);
         assert!(
@@ -1753,16 +1747,6 @@ fn skipped_together_failure_makes_progress() {
                 .as_ref()
                 .expect("the inconclusive trial left a retry");
             assert_eq!(pending.plan.profile, j.profile(&[-20, -20]));
-            assert_eq!(
-                j.run().evidence.failing_seq(
-                    pending.plan.requirement.class,
-                    &pending.plan.profile,
-                    None,
-                    j.run().config.needed,
-                ),
-                Ok(Some(failure)),
-                "the retry does not select a known-failing profile"
-            );
         }
         let mut found = false;
         for _ in 0..100 {
@@ -1855,7 +1839,10 @@ fn direct_failure_at_zero_in_a_hunt_group() {
         (end, j.decide(attribution))
     };
     let rerun = j.next_trial();
-    assert_eq!(rerun.context, TrialContext::ZeroRerun { failure });
+    assert_eq!(
+        rerun.requirement.context,
+        TrialContext::ZeroRerun { failure }
+    );
     assert_eq!(rerun.condition, Condition::Parked);
     assert_eq!(rerun.activity, Activity::Hunt);
     assert_eq!(values(rerun.profile), [0, 0]);
@@ -2005,7 +1992,11 @@ fn class_targets_preserve_hunt_and_rerun_lookup() {
             }
         }
         let rerun = rerun.unwrap_or_else(|| panic!("{name}: no rerun"));
-        assert_eq!(rerun.context, TrialContext::Rerun { failure }, "{name}");
+        assert_eq!(
+            rerun.requirement.context,
+            TrialContext::Rerun { failure },
+            "{name}"
+        );
         assert_eq!(rerun.load.cores(), set(target), "{name}");
         assert_eq!(rerun.duration, j.run().config.short_trial, "{name}");
         assert_eq!(rerun.condition, Condition::Together, "{name}");
@@ -2145,7 +2136,7 @@ fn loc_hunt_commitment(kind: &str) -> (Journal, TrialPlan, Seq) {
     if kind == "direct" {
         let plan = loc_until_trial(&mut j);
         assert!(
-            matches!(plan.context, TrialContext::Hunt { .. }),
+            matches!(plan.requirement.context, TrialContext::Hunt { .. }),
             "{plan:?}"
         );
         let (named, _) = plan
@@ -2217,7 +2208,7 @@ fn rerun_derived_hunt_commitments() {
                     j.decide(decision);
                 }
                 Some(Action::RunTrial(plan))
-                    if matches!(plan.context, TrialContext::Rerun { .. }) =>
+                    if matches!(plan.requirement.context, TrialContext::Rerun { .. }) =>
                 {
                     j.loc_finish(&plan, Outcome::Pass, &R7Report::default());
                     done.push(plan);

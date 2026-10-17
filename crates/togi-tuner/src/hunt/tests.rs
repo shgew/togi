@@ -9,7 +9,6 @@ use super::plan::{
     PlanError, Probe, ProbeResult, ProbeStep, Start, already_broken, combination_backoff,
     group_profile, park, park_located, partition,
 };
-use crate::r7::Applied;
 use crate::tests::{core, off, profile, topology};
 use crate::{CombinationId, Constraints, Depth, FailurePoint, Profile, Ranking};
 use togi_journal::{HuntOutcome, Seq};
@@ -800,7 +799,7 @@ fn probe_until_done(
 fn member_probes_gallop_then_bisect_one_member_at_a_time() {
     let (_, failing, parked) = two_cores();
     let (ran, _, found) = probe_until_done(&[0, 1], &failing, &parked, |p| {
-        p.at(core(0)).get() <= -30 && p.at(core(1)).get() <= -20
+        p.get(core(0)).unwrap().get() <= -30 && p.get(core(1)).unwrap().get() <= -20
     });
     let order: Vec<(u8, i64)> = ran
         .iter()
@@ -834,7 +833,7 @@ fn member_probes_gallop_then_bisect_one_member_at_a_time() {
 fn already_probed_members_are_held_at_their_shallowest_failing_offset() {
     let (_, failing, parked) = two_cores();
     let (ran, _, found) = probe_until_done(&[0, 1], &failing, &parked, |p| {
-        p.at(core(0)).get() <= -28 && p.at(core(1)).get() <= -30
+        p.get(core(0)).unwrap().get() <= -28 && p.get(core(1)).unwrap().get() <= -30
     });
     assert_eq!(found.members.get(core(0)), Some(off(-28)));
     let first_of_second = ran.iter().find(|probe| probe.member == core(1)).unwrap();
@@ -1305,7 +1304,7 @@ proptest! {
             .collect();
         let parked = park(&failing, tagged);
         for (core, offset) in failing.iter() {
-            let at = parked.profile.at(core);
+            let at = parked.profile.get(core).unwrap();
             prop_assert!(!at.deeper_than(offset));
             prop_assert_eq!(parked.candidates.contains(core), offset.deeper_than(at));
         }

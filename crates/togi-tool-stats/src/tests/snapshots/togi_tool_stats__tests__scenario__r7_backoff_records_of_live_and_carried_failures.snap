@@ -1,0 +1,7 @@
+---
+source: crates/togi-tool-stats/src/tests/scenario.rs
+expression: "crate::r7::records(&r).unwrap()"
+---
+{"seq":3,"hours":0.0005555555555555556,"phase":null,"origin":"trial","trial":"0001","workload":"mprime-avx2-36k-248k-allcore","cores":[0,1],"duration_s":120,"rerun":false,"backoffs":[{"seq":4,"hours":0.0008333333333333334,"phase":null,"core":0,"from":-20,"to":-17,"counts":3,"causes":[3]}]}
+{"seq":10,"hours":0.0025,"phase":null,"origin":"carried","workload":"mprime-avx2-36k-248k-allcore","cores":[0,1],"duration_s":120,"rerun":false,"backoffs":[{"seq":11,"hours":0.002777777777777778,"phase":null,"core":0,"from":-20,"to":-16,"counts":4,"causes":[10]}]}
+{"seq":16,"hours":0.004166666666666667,"phase":null,"origin":"trial","trial":"0003","workload":"mprime-avx2-36k-248k-allcore","cores":[0,1],"duration_s":120,"rerun":false,"backoffs":[{"seq":17,"hours":0.0044444444444444444,"phase":null,"core":0,"from":-20,"to":-15,"counts":5,"causes":[16]}]}

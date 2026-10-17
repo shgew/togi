@@ -8,9 +8,9 @@ use togi_machine::{CoreId, CoreSet, Regime, TargetOffset};
 
 use super::plan::{GroupOutcome, Located as PlanLocated, Plan, Start, already_broken};
 use super::state::{
-    Active, Cut, Ended, GroupRecord, Located, LocatedEnd, Named, ParkedFailure, Recorded, Repeated,
+    Active, Cut, Ended, GroupRecord, LoadedEnd, Located, LocatedEnd, Named, ParkedFailure,
+    Recorded, Rejected, Repeated,
 };
-use crate::r7::Applied;
 use crate::state::Run;
 use crate::{ClassKey, CombinationId, FoldError, Profile, Ranking, Secs};
 
@@ -86,7 +86,9 @@ impl Run {
         let adjacent = newer.core == core
             && older.core == core
             && older.offset.get() + 1 == newer.offset.get()
-            && failing.at(core).get() == newer.offset.get() + 1;
+            && failing
+                .get(core)
+                .is_some_and(|offset| offset.get() == newer.offset.get() + 1);
         adjacent.then_some(Repeated {
             core,
             failures: [older.seq, newer.seq],
@@ -129,7 +131,7 @@ impl Run {
         );
         let loaded_at_zero = loaded
             .iter()
-            .all(|core| failing.at(core) == TargetOffset::ZERO);
+            .all(|core| failing.get(core) == Some(TargetOffset::ZERO));
         let plan = Plan::new(Start {
             candidates: start.candidates,
             loaded,
@@ -168,7 +170,7 @@ impl Run {
                 Located {
                     hunt: start.hunt,
                     source: start.failure,
-                    end: None,
+                    end: LocatedEnd::Open,
                 },
             );
         } else {
@@ -298,7 +300,7 @@ impl Run {
         source: Seq,
         seq: Seq,
         result: HuntOutcome,
-        loaded: Option<LocatedEnd>,
+        loaded: Option<LoadedEnd>,
     ) {
         match result {
             HuntOutcome::Cancelled => {
@@ -308,7 +310,7 @@ impl Run {
             HuntOutcome::Loaded => {
                 self.r7_located_loaded(source, seq);
                 if let (Some(entry), Some(end)) = (self.hunts.located.get_mut(&source), loaded) {
-                    entry.end = Some(end);
+                    entry.end = LocatedEnd::Loaded(end);
                 }
                 self.hunts.active = None;
             }
@@ -317,13 +319,7 @@ impl Run {
             | HuntOutcome::Combination
             | HuntOutcome::Fallback => {
                 if let Some(entry) = self.hunts.located.get_mut(&source) {
-                    entry.end = Some(LocatedEnd {
-                        seq,
-                        result,
-                        failure: None,
-                        named: None,
-                        all_zero: false,
-                    });
+                    entry.end = LocatedEnd::Consumed;
                 }
                 self.failures.retire(source);
                 self.r7.open.remove(&source);
@@ -331,34 +327,39 @@ impl Run {
         }
     }
 
-    fn located_loaded(&self, active: &Active, seq: Seq) -> LocatedEnd {
+    fn located_loaded(&self, active: &Active, seq: Seq) -> LoadedEnd {
         let all_zero = Self::loaded_all_zero(active);
-        let failure = self.rejecting_failure(active);
-        let named = failure
-            .filter(|_| !(active.groups.len() > 1 && all_zero))
-            .and_then(|failure| {
-                let witness = self.failures.witnessed(failure)?;
-                let core = witness
-                    .failure
-                    .core
-                    .filter(|&core| active.class.loaded().contains(core))?;
-                let rejecting = self
-                    .hunts
-                    .rejecting
-                    .clone()
-                    .filter(|rejecting| rejecting.ledger == failure)?;
-                Some(Named {
-                    core,
-                    failure: Box::new(rejecting.open),
-                })
-            });
-        LocatedEnd {
-            seq,
-            result: HuntOutcome::Loaded,
+        let rejected = self.rejecting_failure(active).map(|failure| Rejected {
             failure,
-            named,
+            named: if active.groups.len() > 1 && all_zero {
+                None
+            } else {
+                self.loaded_core_named(active, failure)
+            },
+        });
+        LoadedEnd {
+            seq,
             all_zero,
+            rejected,
         }
+    }
+
+    /// The loaded core the rejecting failure `failure` named, with the failed trial it reads.
+    fn loaded_core_named(&self, active: &Active, failure: Seq) -> Option<Named> {
+        let witness = self.failures.witnessed(failure)?;
+        let core = witness
+            .failure
+            .core
+            .filter(|&core| active.class.loaded().contains(core))?;
+        let rejecting = self
+            .hunts
+            .rejecting
+            .clone()
+            .filter(|rejecting| rejecting.ledger == failure)?;
+        Some(Named {
+            core,
+            failure: Box::new(rejecting.open),
+        })
     }
 
     pub(crate) fn loaded_all_zero(active: &Active) -> bool {
@@ -366,7 +367,7 @@ impl Run {
             .class
             .loaded()
             .iter()
-            .all(|core| active.failing.at(core) == TargetOffset::ZERO)
+            .all(|core| active.failing.get(core) == Some(TargetOffset::ZERO))
     }
 
     pub(crate) fn rejecting_failure(&self, active: &Active) -> Option<Seq> {
@@ -437,8 +438,7 @@ impl Run {
                 .hunts
                 .located
                 .get(&source)
-                .and_then(|entry| entry.end.as_ref())
-                .is_some_and(|end| end.result != HuntOutcome::Loaded)
+                .is_some_and(|entry| entry.end == LocatedEnd::Consumed)
             {
                 self.hunts.located.remove(&source);
             }

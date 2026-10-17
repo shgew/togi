@@ -1,29 +1,23 @@
 use std::path::Path;
 
+use test_case::test_case;
+
 use super::common::{Host, sim};
 
-#[test]
-fn invalid_arguments_are_usage_errors_that_touch_nothing() {
+#[test_case(&["--unknown"], "--unknown"; "unknown flag")]
+#[test_case(&["extra"], "extra"; "positional argument")]
+#[test_case(&["--cycles", "0"], "--cycles"; "zero cycles")]
+#[test_case(&["--cycles", "-1"], "-1"; "negative cycles")]
+#[test_case(&["--max-boots", "0"], "--max-boots"; "zero boots")]
+#[test_case(&["--verify-every", "-1"], "-1"; "negative verify interval")]
+#[test_case(&["--seed", "x"], "--seed"; "non-numeric seed")]
+fn invalid_arguments_are_usage_errors_that_touch_nothing(args: &[&str], named: &str) {
     let mut host = Host::default();
-    for (name, args, named) in [
-        ("unknown flag", vec!["--unknown"], "--unknown"),
-        ("positional argument", vec!["extra"], "extra"),
-        ("zero cycles", vec!["--cycles", "0"], "--cycles"),
-        ("negative cycles", vec!["--cycles", "-1"], "-1"),
-        ("zero boots", vec!["--max-boots", "0"], "--max-boots"),
-        (
-            "negative verify interval",
-            vec!["--verify-every", "-1"],
-            "-1",
-        ),
-        ("non-numeric seed", vec!["--seed", "x"], "--seed"),
-    ] {
-        let ran = host.run(args.iter().copied().chain(["--state-dir", "/state"]));
-        assert_eq!(ran.code, Some(2), "{name}: {}", ran.stderr);
-        assert!(ran.stderr.contains(named), "{name}: {}", ran.stderr);
-        assert!(ran.stdout.is_empty());
-        assert!(host.states.is_empty(), "{name}");
-    }
+    let ran = host.run(args.iter().copied().chain(["--state-dir", "/state"]));
+    assert_eq!(ran.code, Some(2), "{}", ran.stderr);
+    assert!(ran.stderr.contains(named), "{}", ran.stderr);
+    assert!(ran.stdout.is_empty());
+    assert!(host.states.is_empty());
 }
 
 #[test]
@@ -79,15 +73,14 @@ fn a_machine_without_an_extract_cannot_replay() {
     assert!(host.states.is_empty());
 }
 
-#[test]
-fn invalid_input_creates_no_temporary_state() {
+#[test_case(&["--machine", "/machine.json"]; "invalid machine")]
+#[test_case(&["--replay-facts"]; "replay without a machine")]
+fn invalid_input_creates_no_temporary_state(args: &[&str]) {
     let mut host = Host::default();
     host.put("/machine.json", r#"{"unknown_machine_key":1}"#);
-    for args in [vec!["--machine", "/machine.json"], vec!["--replay-facts"]] {
-        let ran = host.run(args);
-        assert_eq!(ran.code, Some(1), "{}", ran.stderr);
-        assert!(!ran.stderr.contains("state directory"));
-    }
+    let ran = host.run(args);
+    assert_eq!(ran.code, Some(1), "{}", ran.stderr);
+    assert!(!ran.stderr.contains("state directory"));
     assert!(host.states.is_empty());
     assert!(host.files.contains_key(Path::new("/machine.json")));
 }

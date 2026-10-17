@@ -19,5 +19,8 @@ togi-sim.workspace = true
 togi-simrun.workspace = true
 togi-tuner.workspace = true
 
+[dev-dependencies]
+test-case.workspace = true
+
 [lints]
 workspace = true

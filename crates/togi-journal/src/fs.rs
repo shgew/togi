@@ -14,6 +14,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use rustix::fs::{AtFlags, CWD, Dir, FileType, OFlags, RenameFlags};
 
+mod trigger;
+
+pub use trigger::{AppendPoint, AppendTrigger};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FileKind {
     File,
@@ -82,7 +86,7 @@ pub trait Fs: Send + Sync + fmt::Debug {
 
 /// A real filesystem adapter that never syncs file contents, directory entries, or permissions.
 ///
-/// For explicitly non-durable simulations and kernel tests only; production journals use
+/// For explicitly non-durable simulations, scratch state copies and kernel tests only; production journals use
 /// [`crate::StateDir::lock`] instead.
 pub fn unsynced_disk_fs() -> Arc<dyn Fs> {
     Arc::new(DiskFs::unsynced())
@@ -649,6 +653,14 @@ impl MemFs {
 
     pub fn clear_faults(&self) {
         self.tree().faults.clear();
+    }
+
+    /// Removes `fault` if it has not fired yet; true when it was still pending.
+    fn withdraw(&self, fault: &Fault) -> bool {
+        let mut tree = self.tree();
+        let pending = tree.faults.len();
+        tree.faults.retain(|(armed, _)| armed != fault);
+        tree.faults.len() < pending
     }
 
     /// Fails the rename that would publish `state.json`.

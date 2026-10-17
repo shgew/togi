@@ -88,6 +88,8 @@ mod tests {
     use std::io::{self, Write};
     use std::rc::Rc;
 
+    use test_case::test_case;
+
     use super::Log;
 
     #[derive(Clone, Default)]
@@ -126,17 +128,15 @@ mod tests {
         assert_eq!(*out.0.borrow(), b"line\n");
     }
 
-    #[test]
-    fn a_stream_log_is_buffered_unless_the_stream_is_a_terminal() {
-        for terminal in [false, true] {
-            let out = Shared::default();
-            let mut log = Log::for_stream(out.clone(), terminal);
-            writeln!(log, "line").unwrap();
-            let before: &[u8] = if terminal { b"line\n" } else { b"" };
-            assert_eq!(*out.0.borrow(), before, "terminal {terminal}");
-            log.finish().unwrap();
-            assert_eq!(*out.0.borrow(), b"line\n", "terminal {terminal}");
-        }
+    #[test_case(false, b""; "a pipe holds the line until finished")]
+    #[test_case(true, b"line\n"; "a terminal gets the line at once")]
+    fn a_stream_log_is_buffered_unless_the_stream_is_a_terminal(terminal: bool, before: &[u8]) {
+        let out = Shared::default();
+        let mut log = Log::for_stream(out.clone(), terminal);
+        writeln!(log, "line").unwrap();
+        assert_eq!(*out.0.borrow(), before);
+        log.finish().unwrap();
+        assert_eq!(*out.0.borrow(), b"line\n");
     }
 
     #[test]

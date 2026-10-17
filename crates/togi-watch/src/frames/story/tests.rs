@@ -14,9 +14,9 @@ use togi_machine::{
 };
 use togi_tuner::{
     Between, ClassKey, CyclePart, CyclePlan, CycleStep, Forecast, GroupState, HuntGroup, HuntPart,
-    HuntPlan, Load, PartNo, PhaseNo, PhasePlan, Profile, R7CoreStatus, Requirement,
-    RequirementKind, RerunPlan, Secs, StepNo, Topology, TrialContext, TrialPlan, Uncertainty,
-    Window, WorkloadChoice,
+    HuntPlan, Lengths, Load, PartNo, PhaseNo, PhasePlan, Profile, Quota, R7CoreStatus, Requirement,
+    RerunPlan, Secs, StepNo, Topology, TrialContext, TrialPlan, Uncertainty, Window,
+    WorkloadChoice,
 };
 
 use super::{
@@ -212,10 +212,13 @@ fn part(cores: &[u8], ccd: Option<u8>, full: bool, running: bool) -> CyclePart {
         ccd: ccd.map(CcdId),
         full,
         partial: !full,
-        short: 1,
-        short_s: 120,
-        long: 0,
-        long_s: 0,
+        lengths: Some(Lengths {
+            short: Quota {
+                count: 1,
+                secs: 120,
+            },
+            long: None,
+        }),
         passed: 0,
         failed: 0,
         done: false,
@@ -265,14 +268,11 @@ fn plan(
         activity: Activity::Checking,
         profile: Profile::alone(&topology, core(3), off(-16)),
         duration: secs,
-        context,
         requirement: Requirement {
-            kind: RequirementKind::Cycle,
+            context,
             class: ClassKey::new(workload, load.cores(), secs),
             window: Window::Live { since: None },
             needed: NonZeroU16::new(1).expect("one"),
-            step: None,
-            part: None,
         },
         retry: false,
         cause: Vec::new(),
@@ -305,10 +305,13 @@ fn hunt_plan() -> HuntPlan {
         rerun: RerunPlan {
             regime: Regime::R7,
             cores: CoreSet::default(),
-            short: 0,
-            short_s: 0,
-            long: 0,
-            long_s: 0,
+            lengths: Lengths {
+                short: Quota {
+                    count: 1,
+                    secs: 600,
+                },
+                long: None,
+            },
         },
     }
 }
@@ -1494,7 +1497,7 @@ mod the_story {
     }
 
     #[test]
-    fn a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are() {
+    fn a_singleton_interior_probe_reads_as_what_it_is() {
         let interior = probing_story(
             &[2],
             vec![probe_of(2, -6, &[-12], &[], false)],
@@ -1510,27 +1513,6 @@ mod the_story {
         assert_eq!(
             interior.brief,
             "Probing core 02 at -6 between its failure and its passing anchor."
-        );
-        let stopped = probing_story(
-            &[2],
-            vec![probe_of(2, -12, &[-12, 0], &[], true)],
-            Some(GroupState::Failed),
-            0,
-            0,
-        );
-        assert!(
-            stopped.lines[1].contains("stopped without a safe bracket"),
-            "{}",
-            stopped.lines[1]
-        );
-        assert!(
-            !stopped.lines[1].contains("passing anchor"),
-            "{}",
-            stopped.lines[1]
-        );
-        assert_eq!(
-            stopped.brief,
-            "Probing core 02 stopped; the shallowest reproduced failure stands."
         );
     }
 

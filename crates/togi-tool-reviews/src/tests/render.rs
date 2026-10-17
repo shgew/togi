@@ -80,6 +80,14 @@ pub(crate) fn outcome(status: &str, sha: &str, reason: &str, issue: i64) -> Reco
         sha: sha.to_owned(),
         reason: reason.to_owned(),
         issue,
+        body: String::new(),
+    }
+}
+
+fn body_fix(sha: &str, body: &str) -> RecordOutcome {
+    RecordOutcome {
+        body: body.to_owned(),
+        ..outcome("fixed", sha, "", 0)
     }
 }
 
@@ -428,6 +436,11 @@ const RUST: &str = "crates/togi-x/src/lib.rs";
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(outcome("fixed", "abc", "", 0)), ""), "outcome must be"; "short sha")]
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(outcome("deferred", "", "x", 1)), ""), "outcome must be"; "two outcome forms")]
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(outcome("open", "", "", 0)), ""), "outcome must be"; "unknown status")]
+#[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(body_fix(FIX_SHA, "mapping")), ""), "outcome must be"; "sha and body")]
+#[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(body_fix("abc", "mapping")), ""), "outcome must be"; "short sha and body")]
+#[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(outcome("fixed", "", "", 0)), ""), "outcome must be"; "fixed without sha or body")]
+#[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(RecordOutcome { body: "mapping".to_owned(), ..outcome("rejected", "", "r", 0) }), ""), "outcome must be"; "rejected with body")]
+#[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(RecordOutcome { body: "mapping".to_owned(), ..deferred(1) }), ""), "outcome must be"; "deferred with body")]
 #[test_case(&doc_manifest(), input(vec![reviewer("", None, &["docs/x.md"])], vec![], ""), "a reviewer has no name"; "nameless reviewer")]
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), vec![finding("", "P2", "x", None, outcome("rejected", "", "r", 0))], ""), "a finding needs a source and text"; "finding without source")]
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), vec![finding("r", "P2", "", None, outcome("rejected", "", "r", 0))], ""), "a finding needs a source and text"; "finding without text")]
@@ -608,19 +621,19 @@ fn markdown_text(input: &str, want: &str) {
 }
 
 #[test]
-fn markdown_cell_and_code() {
+fn markdown_cell() {
     assert_eq!(
         r"a <code>&lt;nil&gt;</code> \|",
         super::cell("a\n`<nil>`\t|")
     );
-    for (input, want) in [
-        ("internal/a.go:4", "`internal/a.go:4`"),
-        ("a`b", "<code>a&#96;b</code>"),
-        ("<nil>.go", "<code>&lt;nil&gt;&#46;go</code>"),
-        (" a", "<code> a</code>"),
-    ] {
-        assert_eq!(want, code(input), "code({input:?})");
-    }
+}
+
+#[test_case("internal/a.go:4" => "`internal/a.go:4`"; "plain path")]
+#[test_case("a`b" => "<code>a&#96;b</code>"; "backtick")]
+#[test_case("<nil>.go" => "<code>&lt;nil&gt;&#46;go</code>"; "html")]
+#[test_case(" a" => "<code> a</code>"; "leading space")]
+fn markdown_code(input: &str) -> String {
+    code(input)
 }
 
 const ONE: &str = r#"{"reviewers":[{"name":"r","files":["docs/x.md"]}],"findings":[]}"#;
@@ -665,6 +678,38 @@ fn render_reads_exactly_one_findings_object(raw: &str, want: &str) {
         stdout.is_empty(),
         "stdout = {:?} for invalid findings",
         String::from_utf8_lossy(&stdout)
+    );
+}
+
+#[test]
+fn render_records_a_finding_fixed_in_the_pull_request_body() {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    write_manifest(
+        &dir_text(dir.path()),
+        &first_manifest(vec![included("docs/x.md", 1, 0)]),
+    )
+    .expect("write manifest");
+    let file = write_findings(
+        dir.path(),
+        r#"{"reviewers":[{"name":"r","files":["docs/x.md"]}],"findings":[{"source":"r","priority":"P3","finding":"Go test mapped twice","outcome":{"status":"fixed","body":"Mapped TestStep to step_rejects_overflow"}}]}"#,
+    );
+    run_render(&mut Vec::new(), &[dir_text(dir.path()), file]).expect("render");
+    let md = read_file(dir.path().join(RECORD_FILE));
+    assert!(
+        md.contains(
+            "| r | P3 | Go test mapped twice | fixed in the pull request body: Mapped TestStep to step_rejects_overflow |"
+        ),
+        "the table does not show the body fix:\n{md}"
+    );
+    assert!(
+        read_file(dir.path().join(RECORD_JSON_FILE)).contains(
+            r#""outcome":{"status":"fixed","body":"Mapped TestStep to step_rejects_overflow"}"#
+        ),
+        "the block does not carry the body fix"
+    );
+    assert_eq!(
+        "fixed",
+        parse_record(&md).expect("parse").findings[0].outcome.status
     );
 }
 

@@ -380,7 +380,7 @@ fn a_combination_failure_is_reported_in_every_section() {
     let m = compute(&p, None);
     assert_eq!(m.runs.len(), 1, "a crash and a reboot make one run");
     assert_eq!(m.hunts[0].hunt.commitment.as_deref(), Some("03 -22->-19"));
-    assert_eq!(m.r7.backoffs.len(), 1);
+    assert_eq!(m.r7.backoffs().len(), 1);
     assert_eq!(m.chains.len(), 1);
 }
 
@@ -398,7 +398,27 @@ fn a_cutoff_between_runs_and_hunts_keeps_the_totals_of_the_run_it_overlaps() {
     let m = compute(&p, cutoff);
     assert_eq!(m.runs.len(), 1);
     assert!(m.hunts.is_empty(), "the hunt began before the cutoff");
-    assert!(m.r7.backoffs.len() == 1, "the backoff came after it");
+    assert_eq!(m.r7.backoffs().len(), 1, "the backoff came after it");
+    assert_eq!(
+        m.r7.failures().count(),
+        0,
+        "its failure was first observed before it"
+    );
+    assert_eq!(crate::r7::records(&m.r7).unwrap(), "");
+    assert_eq!(
+        crate::r7::totals(&m.r7),
+        std::collections::BTreeMap::from([(
+            None,
+            crate::r7::PhaseTotals {
+                failures: 0,
+                carried: 0,
+                charged: 0,
+                backoffs: 1,
+                counts: 3,
+            }
+        )]),
+        "failures by their first event, backoffs by decision time"
+    );
 }
 
 #[test]
@@ -474,9 +494,9 @@ fn r7_backoffs_and_chains_are_listed_with_their_causes_and_sources() {
     let p = Projection::new(&journal);
     let r = crate::r7::decisions(p.events, None);
     assert_eq!(
-        r.backoffs
+        r.backoffs()
             .iter()
-            .map(|b| (b.seq.get(), b.steps))
+            .map(|(_, b)| (b.seq.get(), b.counts))
             .collect::<Vec<_>>(),
         [(4, 3), (11, 4), (17, 5)],
         "only backoffs of multi-core R7 failures are voltage-targeted: live, carried or ended"
@@ -492,6 +512,48 @@ fn r7_backoffs_and_chains_are_listed_with_their_causes_and_sources() {
             crate::r7::render_decisions(table, &r);
             crate::chains::render(table, &chains);
         })
+    );
+    assert_snapshot!(
+        "scenario__r7_backoff_records_of_live_and_carried_failures",
+        crate::r7::records(&r).unwrap()
+    );
+}
+
+#[test]
+fn a_paired_r7_backoff_is_charged_once_to_its_first_cause() {
+    let mut log = Log::with_build(&[(0, 0), (1, 1)], build("test", None));
+    let r7_failure = |log: &mut Log, id: &str| {
+        log.add(intent(id, Regime::R7, &[0, 1], &[0, 0]));
+        let mut failed = failure(Some(id));
+        failed.regime = Some(Regime::R7);
+        log.add(failed)
+    };
+    let held = r7_failure(&mut log, "0001");
+    log.add_caused(&[held], decision(Decision::Hold, 0, -20, -20));
+    let later = r7_failure(&mut log, "0002");
+    let paired = log.add_caused(&[later, held], decision(Decision::Backoff, 0, -20, -18));
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    let r = crate::r7::decisions(p.events, None);
+    assert_eq!(
+        r.failures()
+            .map(|f| (f.seq, f.backoffs.iter().map(|b| b.seq).collect::<Vec<_>>()))
+            .collect::<Vec<_>>(),
+        [(held, Vec::new()), (later, vec![paired])],
+        "the pair's backoff is the later failure's, and the held failure is charged nothing"
+    );
+    assert_eq!(
+        crate::r7::totals(&r),
+        std::collections::BTreeMap::from([(
+            None,
+            crate::r7::PhaseTotals {
+                failures: 2,
+                carried: 0,
+                charged: 1,
+                backoffs: 1,
+                counts: 2,
+            }
+        )])
     );
 }
 

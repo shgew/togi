@@ -616,7 +616,7 @@ fn part_requirement(scene: &Scene<'_>, step: &CycleStep) -> Vec<Clause> {
     let Some(part) = open.and_then(|number| step.parts.get(number - 1)) else {
         return out;
     };
-    let required = part.short + part.long;
+    let required = part.trials();
     if required == 0 {
         return out;
     }
@@ -832,7 +832,7 @@ fn pending_rerun(scene: &Scene<'_>) -> Option<Vec<Clause>> {
         return None;
     }
     let next = s.forecast.between.as_ref()?.next.as_ref()?;
-    let rerun = match next.context {
+    let rerun = match next.requirement.context {
         TrialContext::Rerun { .. } => "a clean rerun is needed",
         TrialContext::ZeroRerun { .. } => "a clean rerun with every core at 0 is needed",
         TrialContext::Search { .. }

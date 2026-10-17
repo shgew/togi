@@ -5,8 +5,9 @@ use std::io;
 use std::path::Path;
 
 use serde_json::{Value, json};
+use test_case::test_case;
 use togi_facts::{Decisive, TrialClass};
-use togi_journal::{SCHEMA, Seq};
+use togi_journal::{FixStamp, SCHEMA, Seq};
 use togi_machine::{
     BiosContext, Condition, CoreId, CoreSet, PerCore, Regime, ResetKind, Signal, TargetOffset,
     WorkloadId,
@@ -75,7 +76,7 @@ fn fact(
             rev: "abc".into(),
             ruleset: 1,
             schema: SCHEMA,
-            fixes: 0,
+            fixes: FixStamp::none(),
             evidence: Some(1),
         },
         context: Some(context("fixture")),
@@ -139,29 +140,29 @@ fn check_fixture(machine: &Value) -> Result<Check, Error> {
     check(path, &definition, &mut extracts)
 }
 
-#[test]
-fn a_fixture_machine_is_judged_against_its_own_extract() {
-    for (near_limit_rate, status, interval) in [
-        (0.0, Status::Ok, Interval { low: 0, high: 0 }),
-        (1.0, Status::Flagged, Interval { low: 10, high: 10 }),
-    ] {
-        let path = Path::new("fixture/machine.json");
-        let result = check_fixture(&machine(near_limit_rate)).unwrap();
-        assert_eq!(result.status, status);
-        assert_eq!(result.machine, path);
-        assert_eq!(result.extract, Path::new("fixture/facts.jsonl.gz"));
-        let [group] = result.groups.as_slice() else {
-            panic!("{result:?}");
-        };
-        assert_eq!((group.n, group.k, group.interval), (10, 0, interval));
-        let mut out = Vec::new();
-        report(&mut out, &[result]).unwrap();
-        let out = String::from_utf8(out).unwrap();
-        assert!(
-            out.contains(&format!("{}: {status}", path.display())),
-            "{out}"
-        );
-    }
+#[test_case(0.0, Status::Ok, Interval { low: 0, high: 0 }; "never near its limit")]
+#[test_case(1.0, Status::Flagged, Interval { low: 10, high: 10 }; "always near its limit")]
+fn a_fixture_machine_is_judged_against_its_own_extract(
+    near_limit_rate: f64,
+    status: Status,
+    interval: Interval,
+) {
+    let path = Path::new("fixture/machine.json");
+    let result = check_fixture(&machine(near_limit_rate)).unwrap();
+    assert_eq!(result.status, status);
+    assert_eq!(result.machine, path);
+    assert_eq!(result.extract, Path::new("fixture/facts.jsonl.gz"));
+    let [group] = result.groups.as_slice() else {
+        panic!("{result:?}");
+    };
+    assert_eq!((group.n, group.k, group.interval), (10, 0, interval));
+    let mut out = Vec::new();
+    report(&mut out, &[result]).unwrap();
+    let out = String::from_utf8(out).unwrap();
+    assert!(
+        out.contains(&format!("{}: {status}", path.display())),
+        "{out}"
+    );
 }
 
 #[test]
@@ -236,26 +237,26 @@ fn a_check_serializes_with_the_class_flattened_and_the_status_in_words() {
     );
 }
 
-#[test]
-fn a_group_is_keyed_by_the_shallowest_loaded_offset_and_idle_cores_do_not_count() {
+#[test_case(&[1], [0, -30, 0, -45], -30; "alone")]
+#[test_case(&[0, 1, 2], [-40, -20, -30, 0], -20; "together")]
+#[test_case(&[0, 1, 2], [-40, 0, -30, 0], 0; "any-zero")]
+fn a_group_is_keyed_by_the_shallowest_loaded_offset_and_idle_cores_do_not_count(
+    loaded: &[i64],
+    profile: [i64; 4],
+    depth: i64,
+) {
     let four = model(&json!({"cores": 4}));
-    for (name, loaded, profile, depth) in [
-        ("alone", &[1][..], [0, -30, 0, -45], -30),
-        ("together", &[0, 1, 2][..], [-40, -20, -30, 0], -20),
-        ("any-zero", &[0, 1, 2][..], [-40, 0, -30, 0], 0),
-    ] {
-        let records: Vec<_> = (1..=10)
-            .map(|seq| fact(seq, &profile, loaded, 60, Decisive::Pass))
-            .collect();
-        let groups = Checker::new(&four, &records)
-            .unwrap()
-            .groups(&four)
-            .unwrap();
-        let [group] = groups.as_slice() else {
-            panic!("{name}: {groups:?}");
-        };
-        assert_eq!(group.depth.get(), depth, "{name}");
-    }
+    let records: Vec<_> = (1..=10)
+        .map(|seq| fact(seq, &profile, loaded, 60, Decisive::Pass))
+        .collect();
+    let groups = Checker::new(&four, &records)
+        .unwrap()
+        .groups(&four)
+        .unwrap();
+    let [group] = groups.as_slice() else {
+        panic!("{groups:?}");
+    };
+    assert_eq!(group.depth.get(), depth);
 }
 
 #[test]
@@ -281,79 +282,94 @@ fn groups_come_out_in_one_order_whatever_the_order_of_the_facts() {
     assert_eq!(forward, backward);
 }
 
-#[test]
-fn a_checker_accepts_exactly_what_its_report_calls_ok() {
-    let flat = |p: f64| json!({"cores": 2, "core": limits(-(-p).ln_1p() / 90.0)});
+fn flat(p: f64) -> Value {
+    json!({"cores": 2, "core": limits(-(-p).ln_1p() / 90.0)})
+}
+
+#[test_case(0.0, false; "never")]
+#[test_case(0.001, false; "too rarely")]
+#[test_case(0.1, true; "as recorded")]
+#[test_case(0.9, false; "too often")]
+fn a_checker_accepts_exactly_what_its_report_calls_ok(p: f64, want: bool) {
     let mut records: Vec<_> = passes(20);
     for record in &mut records[..2] {
         record.outcome = crash();
     }
     let checker = Checker::new(&model(&flat(0.1)), &records).unwrap();
-    for (p, want) in [(0.0, false), (0.001, false), (0.1, true), (0.9, false)] {
-        let model = model(&flat(p));
-        let result = checker.check("synthetic", "synthetic", &model).unwrap();
-        assert_eq!(checker.accepts(&model).unwrap(), want, "p={p}");
-        assert_eq!(result.status == Status::Ok, want, "p={p}: {result:?}");
-    }
+    let model = model(&flat(p));
+    let result = checker.check("synthetic", "synthetic", &model).unwrap();
+    assert_eq!(checker.accepts(&model).unwrap(), want);
+    assert_eq!(result.status == Status::Ok, want, "{result:?}");
 }
 
-#[test]
-fn a_machine_with_an_indecisive_reset_is_refused_and_a_zero_weight_changes_nothing() {
-    for kind in [ResetKind::ThermalTrip, ResetKind::PowerLoss] {
-        for (name, weight) in [("zero", 0.0), ("small-positive", 1e-9), ("positive", 1.0)] {
-            let mut machine = machine(0.0);
-            machine["model"]["reset"] = json!({"watchdog": 1.0, kind.as_str(): weight});
-            let result = check_fixture(&machine);
-            if weight > 0.0 {
-                let Err(Error::IndecisiveReset(refused)) = result else {
-                    panic!("{kind}/{name}: {result:?}");
-                };
-                assert_eq!(refused, kind);
-                continue;
-            }
-            let result = result.unwrap();
-            assert_eq!(result.status, Status::Ok, "{kind}/{name}");
-            assert_eq!(
-                result.groups.iter().map(|g| (g.n, g.k)).collect::<Vec<_>>(),
-                [(10, 0)]
-            );
-        }
-    }
+fn with_reset(kind: ResetKind, weight: f64) -> Result<Check, Error> {
+    let mut machine = machine(0.0);
+    machine["model"]["reset"] = json!({"watchdog": 1.0, kind.as_str(): weight});
+    check_fixture(&machine)
 }
 
-#[test]
-fn the_machines_declared_context_limits_which_facts_are_checked() {
-    let declared = |board: &str| {
-        let mut machine = machine(0.0);
-        machine["bios_context"] = json!({
-            "bios_version": "v1", "board": board, "cpu_model": "cpu", "microcode": "0x1", "boost_limit_mhz": 5000,
-        });
-        model(&machine)
+#[test_case(ResetKind::ThermalTrip, 1e-9; "thermal trip small-positive")]
+#[test_case(ResetKind::ThermalTrip, 1.0; "thermal trip positive")]
+#[test_case(ResetKind::PowerLoss, 1e-9; "power loss small-positive")]
+#[test_case(ResetKind::PowerLoss, 1.0; "power loss positive")]
+fn a_machine_with_an_indecisive_reset_is_refused(kind: ResetKind, weight: f64) {
+    let result = with_reset(kind, weight);
+    let Err(Error::IndecisiveReset(refused)) = result else {
+        panic!("{result:?}");
     };
-    for (name, count, recorded, machine_board, groups) in [
-        ("below-ten", 9, Some("fixture"), None, 0),
-        ("ten", 10, Some("fixture"), None, 1),
-        ("undeclared-takes-any", 10, Some("other"), None, 1),
-        ("undeclared-takes-none", 10, None, None, 1),
-        ("declared-without-context", 10, None, Some("fixture"), 0),
-        ("mismatch", 10, Some("fixture"), Some("other"), 0),
-        ("match", 10, Some("fixture"), Some("fixture"), 1),
-    ] {
-        let mut records = passes(count);
-        for record in &mut records {
-            record.context = recorded.map(context);
-        }
-        let model = machine_board.map_or_else(|| model(&machine(0.0)), declared);
-        let checker = Checker::new(&model, &records).unwrap();
-        let groups_found = checker.groups(&model).unwrap();
-        assert_eq!(groups_found.len(), groups, "{name}");
-        if groups == 1 {
-            assert_eq!(
-                (groups_found[0].n, groups_found[0].k),
-                (count.try_into().unwrap(), 0)
-            );
-        }
+    assert_eq!(refused, kind);
+}
+
+#[test_case(ResetKind::ThermalTrip; "thermal trip")]
+#[test_case(ResetKind::PowerLoss; "power loss")]
+fn a_zero_weight_indecisive_reset_changes_nothing(kind: ResetKind) {
+    let result = with_reset(kind, 0.0).unwrap();
+    assert_eq!(result.status, Status::Ok);
+    assert_eq!(
+        result.groups.iter().map(|g| (g.n, g.k)).collect::<Vec<_>>(),
+        [(10, 0)]
+    );
+}
+
+fn declared(board: &str) -> Model {
+    let mut machine = machine(0.0);
+    machine["bios_context"] = json!({
+        "bios_version": "v1", "board": board, "cpu_model": "cpu", "microcode": "0x1", "boost_limit_mhz": 5000,
+    });
+    model(&machine)
+}
+
+#[test_case(9, Some("fixture"), None, 0; "below-ten")]
+#[test_case(10, Some("fixture"), None, 1; "ten")]
+#[test_case(10, Some("other"), None, 1; "undeclared-takes-any")]
+#[test_case(10, None, None, 1; "undeclared-takes-none")]
+#[test_case(10, None, Some("fixture"), 0; "declared-without-context")]
+#[test_case(10, Some("fixture"), Some("other"), 0; "mismatch")]
+#[test_case(10, Some("fixture"), Some("fixture"), 1; "match")]
+fn the_machines_declared_context_limits_which_facts_are_checked(
+    count: u64,
+    recorded: Option<&str>,
+    machine_board: Option<&str>,
+    groups: usize,
+) {
+    let mut records = passes(count);
+    for record in &mut records {
+        record.context = recorded.map(context);
     }
+    let model = machine_board.map_or_else(|| model(&machine(0.0)), declared);
+    let checker = Checker::new(&model, &records).unwrap();
+    let groups_found = checker.groups(&model).unwrap();
+    assert_eq!(groups_found.len(), groups);
+    if groups == 1 {
+        assert_eq!(
+            (groups_found[0].n, groups_found[0].k),
+            (count.try_into().unwrap(), 0)
+        );
+    }
+}
+
+#[test]
+fn a_group_needs_ten_trials() {
     assert_eq!(MIN_GROUP_TRIALS, 10);
 }
 
@@ -387,6 +403,29 @@ fn an_undeclared_machine_checks_each_recorded_context_separately() {
     halves.extend(under("second", 6..=10));
     let checker = Checker::new(&two, &halves).unwrap();
     assert!(checker.groups(&two).unwrap().is_empty());
+}
+
+#[test]
+fn contexts_order_by_their_boost_limit_as_text() {
+    let two = model(&machine(0.0));
+    let boosted = |boost_limit_mhz: u32| BiosContext {
+        boost_limit_mhz,
+        ..context("board")
+    };
+    let mut records = Vec::new();
+    for (boost, seqs) in [(5700, 1..=10), (570, 11..=20), (10_000, 21..=30)] {
+        records.extend(seqs.map(|seq| {
+            let mut record = fact(seq, &[-10, 0], &[0], 90, Decisive::Pass);
+            record.context = Some(boosted(boost));
+            record
+        }));
+    }
+    let groups = Checker::new(&two, &records).unwrap().groups(&two).unwrap();
+    let boosts: Vec<_> = groups
+        .iter()
+        .map(|group| group.context.as_ref().unwrap().boost_limit_mhz)
+        .collect();
+    assert_eq!(boosts, [10_000, 570, 5700]);
 }
 
 #[test]
@@ -449,61 +488,53 @@ fn an_invalid_machine_is_refused_before_its_extract_is_read() {
     assert!(message.contains("must be even, from 2 to 16"), "{message}");
 }
 
-#[test]
-fn a_trial_that_does_not_fit_the_machine_is_refused_by_its_place_in_the_extract() {
+fn one_offset(f: &mut TrialFact) {
+    f.profile = Profile::new(&[TargetOffset::ZERO]).unwrap();
+}
+
+fn nothing_loaded(f: &mut TrialFact) {
+    f.class = Class::Trial(TrialClass {
+        loaded: CoreSet::default(),
+        ..trial_class(f)
+    });
+}
+
+fn no_duration(f: &mut TrialFact) {
+    f.class = Class::Trial(TrialClass {
+        duration_s: 0,
+        ..trial_class(f)
+    });
+}
+
+fn a_third_core_loaded(f: &mut TrialFact) {
+    f.class = Class::Trial(TrialClass {
+        loaded: cores(&[2]),
+        ..trial_class(f)
+    });
+}
+
+#[test_case(one_offset, FactProblem::ProfileSize { found: 1, cores: 2 }; "profile size")]
+#[test_case(nothing_loaded, FactProblem::NoLoadedCore; "empty loaded")]
+#[test_case(no_duration, FactProblem::ZeroDuration; "zero duration")]
+#[test_case(a_third_core_loaded, FactProblem::LoadedCore { core: 2, cores: 2 }; "core out of range")]
+fn a_trial_that_does_not_fit_the_machine_is_refused_by_its_place_in_the_extract(
+    change: fn(&mut TrialFact),
+    want: FactProblem,
+) {
     let two = model(&json!({"cores": 2}));
-    for (name, change, want) in [
-        (
-            "profile size",
-            (|f: &mut TrialFact| f.profile = Profile::new(&[TargetOffset::ZERO]).unwrap())
-                as fn(&mut TrialFact),
-            FactProblem::ProfileSize { found: 1, cores: 2 },
-        ),
-        (
-            "empty loaded",
-            |f| {
-                f.class = Class::Trial(TrialClass {
-                    loaded: CoreSet::default(),
-                    ..trial_class(f)
-                });
-            },
-            FactProblem::NoLoadedCore,
-        ),
-        (
-            "zero duration",
-            |f| {
-                f.class = Class::Trial(TrialClass {
-                    duration_s: 0,
-                    ..trial_class(f)
-                });
-            },
-            FactProblem::ZeroDuration,
-        ),
-        (
-            "core out of range",
-            |f| {
-                f.class = Class::Trial(TrialClass {
-                    loaded: cores(&[2]),
-                    ..trial_class(f)
-                });
-            },
-            FactProblem::LoadedCore { core: 2, cores: 2 },
-        ),
-    ] {
-        let mut record = fact(7, &[0, 0], &[0], 60, Decisive::Pass);
-        change(&mut record);
-        let result = Checker::new(&two, &[record]);
-        let Err(error @ Error::InvalidFact { seq, problem, .. }) = result else {
-            panic!("{name}: refused nothing");
-        };
-        assert_eq!((seq, problem), (Seq::new(7).unwrap(), want), "{name}");
-        assert!(
-            error
-                .to_string()
-                .starts_with(&format!("invalid trial fact {SESSION}:7: ")),
-            "{name}: {error}"
-        );
-    }
+    let mut record = fact(7, &[0, 0], &[0], 60, Decisive::Pass);
+    change(&mut record);
+    let result = Checker::new(&two, &[record]);
+    let Err(error @ Error::InvalidFact { seq, problem, .. }) = result else {
+        panic!("refused nothing");
+    };
+    assert_eq!((seq, problem), (Seq::new(7).unwrap(), want));
+    assert!(
+        error
+            .to_string()
+            .starts_with(&format!("invalid trial fact {SESSION}:7: ")),
+        "{error}"
+    );
 }
 
 fn trial_class(fact: &TrialFact) -> TrialClass {

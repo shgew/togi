@@ -19,6 +19,7 @@ use crate::manifest::{
     CoverRange, Coverage, Manifest, NotBuilt, PatchStatus, hunk_file_name, is_small, read_manifest,
     reviewer_count, total_lines,
 };
+use crate::parts::split_record;
 use crate::process::{CommandError, Output};
 use crate::rangediff::{RangeDiffEntry, parse_range_diff};
 use crate::render::tests::range;
@@ -219,51 +220,46 @@ fn same_changes_ignores_context() {
     );
 }
 
-#[test]
-fn reviewer_count_by_size() {
-    let cases = [
-        (0, 0, 0),
-        (5000, 0, 0),
-        (99, 30, 1),
-        (100, 1, 1),
-        (100, 2, 1),
-        (100, 3, 2),
-        (499, 30, 2),
-        (499, 3, 2),
-        (500, 3, 2),
-        (499, 9, 2),
-        (500, 1, 1),
-        (500, 2, 1),
-        (500, 9, 3),
-        (500, 30, 4),
-        (1999, 30, 4),
-        (1999, 4, 2),
-        (2000, 4, 2),
-        (1999, 7, 3),
-        (2000, 7, 3),
-        (2000, 13, 4),
-        (2000, 30, 4),
-        (2000, 5, 2),
-        (4999, 40, 4),
-        (4999, 9, 3),
-        (4999, 3, 2),
-        (5000, 3, 2),
-        (4999, 4, 2),
-        (5000, 4, 2),
-        (4999, 7, 3),
-        (5000, 7, 4),
-        (5000, 40, 8),
-        (5000, 6, 3),
-        (5000, 30, 8),
-        (5000, 10, 5),
-        (9000, 3, 2),
-        (5000, 16, 8),
-        (5000, 17, 8),
-        (9000, 100, 8),
-    ];
-    for (l, f, want) in cases {
-        assert_eq!(want, reviewer_count(l, f), "reviewer_count(L={l}, F={f})");
-    }
+#[test_case(0, 0 => 0)]
+#[test_case(5000, 0 => 0)]
+#[test_case(99, 30 => 1)]
+#[test_case(100, 1 => 1)]
+#[test_case(100, 2 => 1)]
+#[test_case(100, 3 => 2)]
+#[test_case(499, 30 => 2)]
+#[test_case(499, 3 => 2)]
+#[test_case(500, 3 => 2)]
+#[test_case(499, 9 => 2)]
+#[test_case(500, 1 => 1)]
+#[test_case(500, 2 => 1)]
+#[test_case(500, 9 => 3)]
+#[test_case(500, 30 => 4)]
+#[test_case(1999, 30 => 4)]
+#[test_case(1999, 4 => 2)]
+#[test_case(2000, 4 => 2)]
+#[test_case(1999, 7 => 3)]
+#[test_case(2000, 7 => 3)]
+#[test_case(2000, 13 => 4)]
+#[test_case(2000, 30 => 4)]
+#[test_case(2000, 5 => 2)]
+#[test_case(4999, 40 => 4)]
+#[test_case(4999, 9 => 3)]
+#[test_case(4999, 3 => 2)]
+#[test_case(5000, 3 => 2)]
+#[test_case(4999, 4 => 2)]
+#[test_case(5000, 4 => 2)]
+#[test_case(4999, 7 => 3)]
+#[test_case(5000, 7 => 4)]
+#[test_case(5000, 40 => 8)]
+#[test_case(5000, 6 => 3)]
+#[test_case(5000, 30 => 8)]
+#[test_case(5000, 10 => 5)]
+#[test_case(9000, 3 => 2)]
+#[test_case(5000, 16 => 8)]
+#[test_case(5000, 17 => 8)]
+#[test_case(9000, 100 => 8)]
+fn reviewer_count_by_size(lines: i64, files: i64) -> i64 {
+    reviewer_count(lines, files)
 }
 
 /// More changed lines never mean fewer reviewers for a fixed file count: every line count 0..=6000 for F
@@ -869,6 +865,8 @@ pub(crate) struct ReReview {
     pub view: Option<View>,
     /// The previous record's author; `robotogi[bot]` when empty.
     pub login: String,
+    /// The pull request's comments as the API lists them, pages of objects; `[[]]` when empty.
+    pub comments: String,
     /// Run before a gh api or git call is answered.
     pub on_api: Option<Hook>,
     pub on_git: Option<Hook>,
@@ -899,6 +897,7 @@ impl ReReview {
             contents,
             view,
             login,
+            comments,
             mut on_api,
             mut on_git,
             ancestors,
@@ -924,6 +923,17 @@ impl ReReview {
                     return Ok(json!({"body": body, "user": {"login": login}})
                         .to_string()
                         .into_bytes());
+                }
+                if args
+                    .last()
+                    .is_some_and(|a| a == "repos/shgew/togi/issues/700/comments")
+                {
+                    let pages = if comments.is_empty() {
+                        "[[]]"
+                    } else {
+                        &comments
+                    };
+                    return Ok(pages.as_bytes().to_vec());
                 }
             }
             pr(args)
@@ -1166,6 +1176,56 @@ fn snapshot_re_review_fallback() {
         h.fake.git_calls.is_empty(),
         "a fallback ran git: {:?}",
         h.fake.git_joined()
+    );
+}
+
+/// The previous record split into parts of at most `limit` characters, posted in order from comment 4242,
+/// with the part at index `skip` missing.
+fn split_previous(limit: usize, skip: Option<usize>) -> ReReview {
+    let body = format!("{}{}", "A finding row.\n".repeat(30), previous_body(1, ""));
+    let parts = split_record(&body, OLD_HEAD_SHA, limit).expect("split");
+    assert!(parts.len() > 1, "the previous record does not split");
+    let listed: Vec<serde_json::Value> = parts
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| Some(i) != skip)
+        .map(|(i, body)| {
+            json!({
+                "html_url": format!("https://github.com/shgew/togi/pull/700#issuecomment-{}", 4242 + i),
+                "body": body,
+                "user": {"login": "robotogi[bot]"},
+            })
+        })
+        .collect();
+    ReReview {
+        comments: json!([listed]).to_string(),
+        ..ReReview::new(parts[0].clone(), "", &[])
+    }
+}
+
+#[test_case(PREVIOUS_URL; "pull request form")]
+#[test_case("https://github.com/shgew/togi/issues/700#issuecomment-4242"; "issue form")]
+fn snapshot_reads_a_split_previous_record(url: &str) {
+    let mut h = split_previous(300, None).harness();
+    snapshot(&mut h, &["--previous", url, "700"]).expect("snapshot");
+    let m = manifest(&h);
+    assert!(
+        !m.fallback.is_empty()
+            && m.previous
+                .as_ref()
+                .is_some_and(|p| p.url == url && p.head_sha == OLD_HEAD_SHA),
+        "manifest = {m:?}, want the joined version 1 record as previous"
+    );
+}
+
+#[test]
+fn snapshot_refuses_a_split_previous_record_missing_a_part() {
+    let mut h = split_previous(300, Some(1)).harness();
+    let error =
+        snapshot(&mut h, &["--previous", PREVIOUS_URL, "700"]).expect_err("snapshot accepted");
+    assert!(
+        error.render().contains("whose parts are all posted"),
+        "error = {error}"
     );
 }
 

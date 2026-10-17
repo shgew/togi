@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use ratatui::text::{Line, Span};
 use togi_machine::{CoreId, CoreSet, Regime};
-use togi_tuner::{CyclePart, CycleStep};
+use togi_tuner::{CyclePart, CycleStep, Quota};
 
 use super::super::colours::Paint;
 use super::super::fit::{cut_words, rule};
@@ -163,7 +163,7 @@ pub(super) fn cycle_lines(
             }
         } else if step.parts.iter().any(|part| part.passed + part.failed > 0) {
             let credited: u32 = step.parts.iter().map(|part| part.passed).sum();
-            let required: u32 = step.parts.iter().map(|part| part.short + part.long).sum();
+            let required: u32 = step.parts.iter().map(CyclePart::trials).sum();
             result = cell(
                 scene,
                 Paint::Hunt,
@@ -225,7 +225,8 @@ fn part_lines(scene: &Scene<'_>, t: &Tables, step: &CycleStep) -> Vec<Line<'stat
     let (short, long) = step
         .parts
         .iter()
-        .fold((0, 0), |(s, l), part| (s + part.short, l + part.long));
+        .map(CyclePart::counts)
+        .fold((0, 0), |(s, l), (short, long)| (s + short, l + long));
     out.push(table_row(
         &t.cycle,
         &[
@@ -310,7 +311,7 @@ fn part_result(scene: &Scene<'_>, part: &CyclePart) -> Line<'static> {
     if part.passed + part.failed == 0 {
         return Line::default();
     }
-    let total = part.short + part.long;
+    let total = part.trials();
     let passed = part.passed.min(total);
     if part.failed > 0 {
         cell(scene, Paint::Bad, format!("{} failed", part.failed))
@@ -323,11 +324,11 @@ fn part_result(scene: &Scene<'_>, part: &CyclePart) -> Line<'static> {
 
 fn part_schedule(part: &CyclePart) -> String {
     let mut out = Vec::new();
-    for (count, length) in [(part.short, part.short_s), (part.long, part.long_s)] {
+    for Quota { count, secs } in part.lengths.iter().flat_map(|lengths| lengths.iter()) {
         match count {
             0 => {}
-            1 => out.push(seconds(length)),
-            _ => out.push(format!("{count} x {}", seconds(length))),
+            1 => out.push(seconds(secs)),
+            _ => out.push(format!("{count} x {}", seconds(secs))),
         }
     }
     out.join(" + ")
@@ -360,7 +361,11 @@ fn step_schedule(step: &CycleStep) -> (String, String) {
         [part] => (place.to_owned(), part_schedule(part)),
         [first, ..] => (
             place.to_owned(),
-            format!("{} x {}", step.parts.len(), seconds(first.short_s)),
+            format!(
+                "{} x {}",
+                step.parts.len(),
+                seconds(first.lengths.map_or(0, |lengths| lengths.short.secs))
+            ),
         ),
         [] => (place.to_owned(), String::new()),
     }
@@ -502,7 +507,7 @@ pub(super) fn combination_lines(
 mod tests {
     use jiff::tz::TimeZone;
     use togi_machine::Regime;
-    use togi_tuner::CyclePlan;
+    use togi_tuner::{CyclePlan, Lengths, Quota};
 
     use super::super::super::layout::SizeClass;
     use super::super::super::measure::Tables;
@@ -754,7 +759,13 @@ mod tests {
     fn a_reopened_step_says_how_much_of_it_passed() {
         let mut reopened = plan();
         reopened.steps[0].done = false;
-        reopened.steps[0].parts[0].short = 2;
+        reopened.steps[0].parts[0].lengths = Some(Lengths {
+            short: Quota {
+                count: 2,
+                secs: 600,
+            },
+            long: None,
+        });
         reopened.steps[0].parts[0].passed = 1;
         let rows = cycle_rows(&reopened, &[], false);
         let step = rows
@@ -956,7 +967,13 @@ mod tests {
         let mut failing = cycle_part(&[0], None, true, false, false);
         failing.failed = 1;
         let mut partway = cycle_part(&[1], None, true, false, false);
-        partway.short = 2;
+        partway.lengths = Some(Lengths {
+            short: Quota {
+                count: 2,
+                secs: 600,
+            },
+            long: None,
+        });
         partway.passed = 1;
         let plan = cycle_plan(
             vec![cycle_step(Regime::R3, vec![failing, partway], false, true)],

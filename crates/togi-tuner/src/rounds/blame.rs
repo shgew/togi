@@ -4,7 +4,6 @@ use togi_requests::groups;
 
 use super::{Round, Shape, actions, shallowest};
 use crate::failures::Pending;
-use crate::r7::Applied;
 use crate::r7::order::lowest_ranked;
 use crate::state::Run;
 use crate::{DecisionAction, Depth, Profile, Ranking};
@@ -51,19 +50,13 @@ impl Run {
         }
     }
 
-    /// The core charged for a failure among its deepened loaded cores: the one it names, else
-    /// the top request group of a multi-core R7 load, else the one deepened furthest. The
-    /// ranking breaks ties, the least preferred core first.
-    fn charged(
-        &self,
-        record: &Pending,
-        seq: Seq,
-        deepened: CoreSet,
-        depth: impl Fn(CoreId) -> i32,
-    ) -> Option<CoreId> {
+    /// The core charged for a failure among its deepened loaded cores, each with how far it
+    /// deepened: the one it names, else the top request group of a multi-core R7 load, else the
+    /// one deepened furthest. The ranking breaks ties, the least preferred core first.
+    fn charged(&self, record: &Pending, seq: Seq, deepened: &PerCore<i32>) -> Option<CoreId> {
         let failure = &record.failure;
         if let (Attribution::Attributed, Some(core)) = (failure.attribution, failure.core) {
-            if deepened.contains(core) {
+            if deepened.get(core).is_some() {
                 return Some(core);
             }
         }
@@ -72,17 +65,18 @@ impl Run {
             let requests: Option<PerCore<f64>> = self.r7.open.get(&seq).map(|open| {
                 deepened
                     .iter()
-                    .filter_map(|core| open.r7.order.value(core).map(|volts| (core, volts)))
+                    .filter_map(|(core, _)| open.r7.order.value(core).map(|volts| (core, volts)))
                     .collect()
             });
             if let Some(top) = requests.and_then(|requests| groups(&requests).first().copied()) {
                 return lowest_ranked(top, &ranking);
             }
         }
-        let deepest = deepened.iter().map(&depth).min()?;
+        let deepest = deepened.iter().map(|(_, depth)| depth).min()?;
         let tied: CoreSet = deepened
             .iter()
-            .filter(|&core| depth(core) == deepest)
+            .filter(|&(_, depth)| depth == deepest)
+            .map(|(core, _)| core)
             .collect();
         lowest_ranked(tied, &ranking)
     }
@@ -109,30 +103,36 @@ impl Run {
             return;
         }
         let profile = record.profile;
-        let at = |profile: &Profile, core: CoreId| profile.at(core);
-        let deepened: CoreSet = record
+        let offsets =
+            |deeper: &Profile, base: &Profile, core: CoreId| deeper.get(core).zip(base.get(core));
+        let deepened: PerCore<i32> = record
             .class
             .loaded()
             .iter()
-            .filter(|&core| match &round {
-                Some(shape) => {
-                    shape.deepened(core)
-                        && (record.failure.trial.is_some()
-                            || at(&profile, core).deeper_than(at(shape.baseline(), core)))
-                }
-                None => at(&profile, core).deeper_than(at(&confirmed, core)),
+            .filter_map(|core| {
+                let (deeper, base) = match &round {
+                    Some(shape) => {
+                        let (deeper, base) = offsets(shape.profile(), shape.baseline(), core)?;
+                        let (failed, _) = offsets(&profile, shape.baseline(), core)?;
+                        let counts = shape.deepened(core)
+                            && (record.failure.trial.is_some() || failed.deeper_than(base));
+                        counts.then_some((deeper, base))?
+                    }
+                    None => offsets(&profile, &confirmed, core)
+                        .filter(|(failed, base)| failed.deeper_than(*base))?,
+                };
+                Some((core, deeper.signed() - base.signed()))
             })
             .collect();
-        let depth = |core: CoreId| match &round {
-            Some(shape) => at(shape.profile(), core).signed() - at(shape.baseline(), core).signed(),
-            None => at(&profile, core).signed() - at(&confirmed, core).signed(),
-        };
-        let Some(blamed) = self.charged(&record, seq, deepened, depth) else {
+        let Some(blamed) = self.charged(&record, seq, &deepened) else {
             return;
         };
         let back = match &round {
-            Some(shape) => at(shape.baseline(), blamed),
-            None => at(&confirmed, blamed),
+            Some(shape) => shape.baseline().get(blamed),
+            None => confirmed.get(blamed),
+        };
+        let Some(back) = back else {
+            return;
         };
         self.phases.push_blame(Blame {
             failure: seq,
@@ -201,7 +201,9 @@ impl Run {
             }
             for &id in self.topo.order() {
                 let core = self.core(id);
-                let base = shape.baseline().at(id);
+                let Some(base) = shape.baseline().get(id) else {
+                    continue;
+                };
                 if id == blame.blamed || !shape.deepened(id) || !core.offset.deeper_than(base) {
                     continue;
                 }
@@ -231,7 +233,7 @@ impl Run {
         let core = self.core(blamed);
         let failed = match (record.failure.core, record.failure.offset) {
             (Some(named), Some(offset)) if named == blamed => offset,
-            _ => blame.profile.at(blamed),
+            _ => blame.profile.get(blamed)?,
         };
         let point = self
             .failure_point(blamed)

@@ -25,3 +25,7 @@ Review sees untested changed code without anyone writing tests to move a number.
 ## Amendment (#918)
 
 The mechanism after the Rust cutover; the decision and its reasons are unchanged. `just cover BASE` takes a required base. It runs `cargo llvm-cov nextest --locked --lcov` over the workspace tests, then `go run ./tools/cover --lcov ... --base BASE`, which prints the changed Rust lines no test reached and, for each changed file the coverage build leaves out, `path: not built for <host triple>`. The whole-repository `go tool cover -func` output has no Rust counterpart. For the retained Go tools, the review coordinator runs `go test -coverprofile` and `go run ./tools/cover --profile ...` by hand (`.omp/commands/review-pr.md`). Code reached only by the VM checks, the `hardware` tests or the target machine still shows as uncovered or not built.
+
+## Amendment (#633, #1038)
+
+`just cover BASE` runs the `togi-tool-cover` crate (`cargo run --quiet --locked -p togi-tool-cover -- --lcov ... --build-dir ... --base BASE`) after `cargo llvm-cov nextest`, with the same flags and output; the decision and its reasons are unchanged. No Go code remains, so the review coordinator's Go profile route is gone.

@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use jiff::Timestamp;
 use togi_config::Config;
 use togi_journal::{
-    Attribution, Build, ConfigLoaded, CorePhase, CoreTransition, Event, Failure, Outcome, Payload,
-    SCHEMA, Seq, SessionStart, Stamp, TrialEnd, TrialId, TunerDecision, TunerWarning,
+    Attribution, Build, ConfigLoaded, CorePhase, CoreTransition, Event, Failure, FixStamp, Outcome,
+    Payload, SCHEMA, Seq, SessionStart, Stamp, TrialEnd, TrialId, TunerDecision, TunerWarning,
 };
 use togi_machine::{
     BootId, CcdId, Condition, CoreInfo, CoreSet, PerCore, Regime, Signal, TargetOffset, WorkloadId,
@@ -12,8 +12,8 @@ use togi_machine::{
 
 use crate::tests::{core, off};
 use crate::{
-    Action, ClassKey, DecisionAction, FoldError, Load, Profile, Requirement, RequirementKind, Secs,
-    State, TrialContext, TrialPlan, Window, WorkloadChoice,
+    Action, ClassKey, DecisionAction, FoldError, Load, Profile, Requirement, Secs, State,
+    TrialContext, TrialPlan, Window, WorkloadChoice,
 };
 
 pub(crate) fn build() -> Build {
@@ -22,7 +22,7 @@ pub(crate) fn build() -> Build {
         rev: None,
         ruleset: crate::RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: crate::EVIDENCE_EPOCH,
     }
 }
@@ -376,7 +376,7 @@ impl Journal {
     /// A manual together plan placed in the open cycle's schedule, opening the default cycle when
     /// none holds the plan's class.
     fn scheduled(&mut self, plan: &TrialPlan) -> TrialPlan {
-        let TrialContext::Cycle { cycle, step, .. } = plan.context else {
+        let TrialContext::Cycle { cycle, step, .. } = plan.requirement.context else {
             return plan.clone();
         };
         let class = ClassKey::new(
@@ -408,7 +408,7 @@ impl Journal {
         let ordinal =
             |at: usize| std::num::NonZeroU32::new(u32::try_from(at).unwrap() + 1).unwrap();
         let mut placed = plan.clone();
-        placed.context = TrialContext::Cycle {
+        placed.requirement.context = TrialContext::Cycle {
             cycle: self.run().checking.open().unwrap().number,
             step: crate::StepNo::new(ordinal(index)),
             part: crate::PartNo::new(ordinal(part)),
@@ -591,24 +591,21 @@ impl Journal {
             },
             profile: self.profile(profile),
             duration,
-            context: match condition {
-                Condition::Together => TrialContext::Cycle {
-                    cycle: std::num::NonZeroU32::MIN,
-                    step: crate::StepNo::new(std::num::NonZeroU32::MIN),
-                    part: crate::PartNo::new(std::num::NonZeroU32::MIN),
-                },
-                Condition::Alone | Condition::Parked => TrialContext::SoloLimit {
-                    core: core(self.ids[0]),
-                    regime,
-                },
-            },
             requirement: Requirement {
-                kind: RequirementKind::Cycle,
+                context: match condition {
+                    Condition::Together => TrialContext::Cycle {
+                        cycle: std::num::NonZeroU32::MIN,
+                        step: crate::StepNo::new(std::num::NonZeroU32::MIN),
+                        part: crate::PartNo::new(std::num::NonZeroU32::MIN),
+                    },
+                    Condition::Alone | Condition::Parked => TrialContext::SoloLimit {
+                        core: core(self.ids[0]),
+                        regime,
+                    },
+                },
                 class: ClassKey::new(id, load.cores(), duration),
                 window: Window::Live { since: None },
                 needed: std::num::NonZeroU16::MIN,
-                step: None,
-                part: None,
             },
             retry: false,
             cause: Vec::new(),
@@ -801,6 +798,16 @@ impl Journal {
 
     pub(crate) fn run(&self) -> &crate::state::Run {
         self.state.run().unwrap()
+    }
+
+    /// The open trial's requirement as the dashboard shows it.
+    pub(crate) fn requirement(&self) -> crate::TrialRequirement {
+        self.state.requirement().expect("a trial is open")
+    }
+
+    /// Where the last closed trial's requirement stood when it ended.
+    pub(crate) fn history(&self) -> crate::TrialHistory {
+        self.state.trial_history().expect("a trial closed")
     }
 
     /// Starts round `round` moving `cores` to `profile`, needing `trials` passes of 120 s.

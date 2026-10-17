@@ -1,104 +1,26 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU8, NonZeroU32};
 
-use togi_journal::{
-    Activity, Attribution, CommandReset, HuntEnd, HuntGroup, HuntOutcome, HuntStage, HuntStart,
-    Inference, Member, Outcome, ResetTarget, Seq,
-};
+use togi_journal::{Activity, HuntGroup, HuntStage, HuntStart, Member, Outcome, Seq};
 use togi_machine::{Condition, Regime, workloads};
 
-use crate::chain_tests::{chain_journal, pass_part};
-use crate::dashboard::{CyclePart, GroupState, MemberProbe, TrialRequirement};
+use crate::chain_tests::{
+    FULL_REQUESTS, PARTIAL_REQUESTS, SHORT, STARTS, chain_journal, decided, journal, one_ccd,
+    pass_part, run, shallower, two_ccds,
+};
+use crate::dashboard::{
+    CyclePart, GroupState, Lengths, MemberProbe, Quota, TrialRequirement, TurnKind,
+};
+use crate::hunt::plan::GroupOutcome;
+use crate::hunt::support::{
+    at, attribute, cancel_hunt, group_of, hunt_of, ids, limit_session, projection_cases,
+    repeated_core_oracle, repeated_session, start_hunt_at,
+};
 use crate::testkit::{Journal, Start, config, fresh, set};
 use crate::tests::{core, off};
 use crate::{
     Action, CombinationId, DecisionAction, DecisionPayload, FailurePoint, Limit, Load, PartNo,
     Reached, StepNo, TrialContext, TrialHistory, TrialPlan,
 };
-
-const STARTS: [i64; 8] = [-10, -20, -30, -40, -20, -20, -20, -20];
-const SHORT: u32 = 120;
-const FULL_REQUESTS: [(u8, f64); 4] = [(0, 1.19), (1, 1.11), (2, 1.2), (3, 1.09)];
-const PARTIAL_REQUESTS: [(u8, f64); 3] = [(0, 1.19), (1, 1.25), (3, 1.1)];
-
-fn grouped(ccds: &[&[u8]]) -> Vec<togi_machine::CoreInfo> {
-    ccds.iter()
-        .zip(0_u8..)
-        .flat_map(|(ids, ccd)| {
-            ids.iter().map(move |&id| togi_machine::CoreInfo {
-                core: core(id),
-                ccd: togi_machine::CcdId(ccd),
-                cpus: Vec::new(),
-            })
-        })
-        .collect()
-}
-
-fn two_ccds() -> Vec<togi_machine::CoreInfo> {
-    grouped(&[&[0, 1, 2, 3], &[4, 5, 6, 7]])
-}
-
-fn one_ccd() -> Vec<togi_machine::CoreInfo> {
-    grouped(&[&[0, 1, 2, 3, 4, 5, 6, 7]])
-}
-
-fn journal(cores: Vec<togi_machine::CoreInfo>, offsets: &[i64], cycle: Option<&str>) -> Journal {
-    let ids: Vec<u8> = cores.iter().map(|info| info.core.get()).collect();
-    let starts: Vec<Start> = offsets
-        .iter()
-        .map(|&offset| Start::has_room(offset))
-        .collect();
-    let mut j = Journal::on(&ids, cores, &starts);
-    j.ranking(&ids);
-    if let Some(cycle) = cycle {
-        j.load(&config(cycle));
-    }
-    for _ in 0..3 {
-        decide_next(&mut j);
-    }
-    assert!(j.run().checking.open().is_some());
-    j
-}
-
-fn decided(action: Action) -> DecisionAction {
-    let Action::Decide(decision) = action else {
-        panic!("expected a decision, got {action:?}");
-    };
-    decision
-}
-
-fn run(
-    j: &mut Journal,
-    plan: &TrialPlan,
-    outcome: Outcome,
-    requests: &[(u8, f64)],
-    named: Option<u8>,
-) -> Seq {
-    let (intent, trial) = j.intent(plan);
-    let signal = (outcome == Outcome::Failure).then_some(togi_machine::Signal::ComputationError);
-    let mut end = Journal::end_payload(&trial, outcome, signal);
-    end.duration_s = plan.duration.get();
-    end.voltage_requests_v = requests
-        .iter()
-        .map(|&(id, volts)| (core(id), volts))
-        .collect();
-    end.core = named.map(core);
-    j.append(end.into(), &[intent])
-}
-
-fn shallower(j: &mut Journal, id: u8, counts: i64) {
-    let to = j.offsets().get(core(id)).unwrap().get() + counts;
-    j.core_phase(crate::schedule_tests::transition(
-        id,
-        togi_journal::CorePhase::HasRoom,
-        to,
-    ));
-    let change = j.next_decision();
-    assert!(
-        matches!(change.payload, DecisionPayload::ProfileChange(_)),
-        "{change:?}"
-    );
-    j.decide(change);
-}
 
 fn chain_record(j: &Journal, step: u32, part: u32, cores: &[u8]) -> togi_journal::Payload {
     togi_journal::CheckingChain {
@@ -125,8 +47,8 @@ fn step_record(j: &Journal, step: u32) -> togi_journal::Payload {
     .into()
 }
 
-fn ids(count: usize) -> Vec<u8> {
-    (0..count).map(|id| u8::try_from(id).unwrap()).collect()
+fn short_secs(part: &CyclePart) -> u32 {
+    part.lengths.expect("the part has trials").short.secs
 }
 
 fn part(cores: &[u8], ccd: Option<u8>, partial: bool, short_s: u32, long: (u32, u32)) -> CyclePart {
@@ -135,10 +57,16 @@ fn part(cores: &[u8], ccd: Option<u8>, partial: bool, short_s: u32, long: (u32, 
         ccd: ccd.map(togi_machine::CcdId),
         full: !partial,
         partial,
-        short: 3,
-        short_s,
-        long: long.0,
-        long_s: long.1,
+        lengths: Some(Lengths {
+            short: Quota {
+                count: 3,
+                secs: short_s,
+            },
+            long: (long.0 > 0).then_some(Quota {
+                count: long.0,
+                secs: long.1,
+            }),
+        }),
         passed: 0,
         failed: 0,
         done: false,
@@ -186,7 +114,7 @@ fn cycle_plan_of(j: &Journal, step: u32, cores: &[u8], secs: u32) -> TrialPlan {
             .collect::<Vec<_>>(),
         secs,
     );
-    plan.context = TrialContext::Cycle {
+    plan.requirement.context = TrialContext::Cycle {
         cycle: j.run().checking.open().unwrap().number,
         step: StepNo::new(NonZeroU32::new(step).unwrap()),
         part: PartNo::new(NonZeroU32::MIN),
@@ -377,7 +305,7 @@ fn cycle_plan_repeated_partial_requirements() {
     let view = j.state.cycle_plan();
     let got = &view.steps[3].parts[1];
     assert!(
-        got.short == 6 && got.long == 2 && got.passed == 2 && !got.done && got.running,
+        got.counts() == (6, 2) && got.passed == 2 && !got.done && got.running,
         "{got:?}"
     );
     assert!(
@@ -441,7 +369,7 @@ fn cycle_plan_credits_each_quota_only_up_to_its_count() {
     let (intent, trial) = j.intent(&long);
     let got = parts(&j, 0)[1].clone();
     assert!(
-        got.short == 3 && got.long == 1 && got.passed == 3 && !got.done && got.running,
+        got.counts() == (3, 1) && got.passed == 3 && !got.done && got.running,
         "five short passes credit three: {got:?}"
     );
     j.end(intent, &trial, Outcome::Pass);
@@ -460,14 +388,14 @@ fn cycle_plan_one_ccd_merges_coincident_durations() {
     let all = [0, 1, 2, 3, 4, 5, 6, 7];
     let view = parts(&j, 0);
     assert!(
-        view.len() == 1 && view[0].full && view[0].short == 4 && view[0].long == 0,
+        view.len() == 1 && view[0].full && view[0].counts() == (4, 0),
         "{view:?}"
     );
     pass_part_merged(&mut j, &all);
     decide_next(&mut j);
     let got = parts(&j, 0)[1].clone();
     assert!(
-        got.partial && !got.full && got.short == 4 && got.long == 0 && got.short_s == 1200,
+        got.partial && !got.full && got.counts() == (4, 0) && short_secs(&got) == 1200,
         "{got:?}"
     );
     let plan = j.next_trial();
@@ -525,7 +453,7 @@ fn requirement_counts_alone_deepening_checks_against_their_round() {
         let plan = trial_after_decisions(&mut j);
         assert!(
             plan.condition == Condition::Alone
-                && matches!(plan.context, TrialContext::Round { round } if round.get() == 2),
+                && matches!(plan.requirement.context, TrialContext::Round { round } if round.get() == 2),
             "{plan:?}"
         );
         let (intent, trial) = j.intent(&plan);
@@ -585,7 +513,7 @@ fn cycle_plan_runs_no_part_during_a_rerun() {
         panic!("the failure did not rerun");
     };
     assert!(
-        matches!(rerun.context, TrialContext::Rerun { .. }),
+        matches!(rerun.requirement.context, TrialContext::Rerun { .. }),
         "{rerun:?}"
     );
     j.intent(&rerun);
@@ -623,116 +551,6 @@ fn cycle_plan_runs_only_the_current_steps_part() {
         }
         j.end(intent, &trial, Outcome::Pass);
     }
-}
-
-fn limit_session(count: usize) -> Journal {
-    let ids = ids(count);
-    let starts = vec![Start::at_limit(-30).fail(-31); count];
-    let mut j = Journal::new(&ids, &starts);
-    j.profile_change(&vec![-30; count]);
-    j.ranking(&ids);
-    j
-}
-
-fn together_failure(j: &mut Journal, duration: u32) {
-    let count = j.offsets().offsets().len();
-    if j.run().config.checking_idle.get() != duration {
-        j.load(&config(&format!(
-            r#"{{"durations":{{"checking_idle_s":{duration}}}}}"#
-        )));
-    }
-    let plan = j.manual(
-        Regime::R6,
-        0,
-        Load::Many(set(&ids(count))),
-        Condition::Together,
-        &vec![-30; count],
-        duration,
-    );
-    j.trial(&plan, Outcome::Failure);
-    let decision = j.next_decision();
-    assert!(matches!(
-        &decision.payload,
-        DecisionPayload::Failure(f) if f.attribution == Attribution::Unattributed
-    ));
-    j.decide(decision);
-}
-
-fn start_hunt(j: &mut Journal) {
-    let decision = j.next_decision();
-    assert!(
-        matches!(decision.payload, DecisionPayload::HuntStart(_)),
-        "{decision:?}"
-    );
-    j.decide(decision);
-}
-
-fn hunt_of(count: usize, duration: u32) -> Journal {
-    let mut j = limit_session(count);
-    together_failure(&mut j, duration);
-    start_hunt(&mut j);
-    j
-}
-
-fn attribute(j: &mut Journal) {
-    let decision = j.next_decision();
-    assert!(
-        matches!(&decision.payload, DecisionPayload::Failure(f) if f.attribution == Attribution::Unattributed),
-        "{decision:?}"
-    );
-    j.decide(decision);
-}
-
-fn run_group(j: &mut Journal, fail: bool) {
-    let plan = j.next_trial();
-    assert_eq!(plan.condition, Condition::Parked, "{plan:?}");
-    j.trial(
-        &plan,
-        if fail {
-            Outcome::Failure
-        } else {
-            Outcome::Pass
-        },
-    );
-    if fail {
-        attribute(j);
-    }
-}
-
-fn start_hunt_at(j: &mut Journal, hunt: u32, loaded: &[u8], failing: &[i64]) -> Seq {
-    let count = failing.len();
-    let start = HuntStart {
-        hunt: NonZeroU32::new(hunt).unwrap(),
-        failure: Seq::new(1).unwrap(),
-        trial: None,
-        regime: Regime::R6,
-        workload: workloads(Regime::R6)[0].id(),
-        cores: set(loaded),
-        duration_s: SHORT,
-        failing: j.profile(failing).offsets(),
-        parked: j.profile(&vec![0; count]).offsets(),
-        parked_seq: None,
-        candidates: set(&ids(count)),
-        trials: 5,
-        trial_s: SHORT,
-        miss: 0.0,
-        rate: 0.0,
-        ranking: ids(count).into_iter().map(core).collect(),
-        reason: None,
-    };
-    j.append(start.into(), &[])
-}
-
-fn cancel_hunt(j: &mut Journal, hunt: u32) {
-    let end = HuntEnd {
-        hunt: NonZeroU32::new(hunt).unwrap(),
-        result: HuntOutcome::Cancelled,
-        cores: set(&[]),
-        members: Vec::new(),
-        groups: 0,
-        reason: "test".to_owned(),
-    };
-    j.append(end.into(), &[]);
 }
 
 fn group_payload(
@@ -869,41 +687,6 @@ fn hunt_plan_cut_counts_an_upcoming_distinct_set_as_a_new_cut() {
         same_granularity_new_set && want == 2,
         "the hunt never cut a distinct set at the same granularity (cuts {want})"
     );
-}
-
-fn repeated_session() -> Journal {
-    let count = 16;
-    let mut j = Journal::new(&ids(count), &vec![Start::at_limit(-10).fail(-11); count]);
-    j.profile_change(&vec![-10; count]);
-    j.ranking(&ids(count));
-    j.load(&config(
-        r#"{"checking":{"cycle":["R6"]},"durations":{"checking_idle_s":120}}"#,
-    ));
-    j
-}
-
-fn at(plan: &TrialPlan, id: u8) -> i64 {
-    plan.profile.get(core(id)).unwrap().get()
-}
-
-fn repeated_core_oracle(plan: &TrialPlan) -> Outcome {
-    if at(plan, 3) < -8 || (at(plan, 3) < 0 && at(plan, 4) < -9) {
-        Outcome::Failure
-    } else {
-        Outcome::Pass
-    }
-}
-
-fn group_of(action: &Action) -> Option<&HuntGroup> {
-    if let Action::Decide(DecisionAction {
-        payload: DecisionPayload::HuntGroup(group),
-        ..
-    }) = action
-    {
-        Some(group)
-    } else {
-        None
-    }
 }
 
 #[test]
@@ -1093,7 +876,7 @@ pub(crate) fn probe_without_checking_profile() -> Journal {
         &[-15, -8],
         SHORT,
     );
-    plan.context = TrialContext::Hunt {
+    plan.requirement.context = TrialContext::Hunt {
         hunt: NonZeroU32::MIN,
         group: NonZeroU32::MIN,
     };
@@ -1124,163 +907,16 @@ fn hunt_probe_without_recorded_checking_profile() {
     j.assert_resumes();
 }
 
-fn members_of(pairs: &[(u8, i64)]) -> Vec<Member> {
-    pairs
-        .iter()
-        .map(|&(id, offset)| Member {
-            core: core(id),
-            offset: off(offset),
-        })
-        .collect()
-}
-
 #[test]
 fn active_hunt_projection() {
-    struct Case {
-        name: &'static str,
-        stage: HuntStage,
-        prior: usize,
-        live: Vec<bool>,
-        inferred: Option<Inference>,
-        skipped: bool,
-        reset: bool,
-        escalated: bool,
-        probe: Option<Member>,
-        held: Vec<Member>,
-        passes: u32,
-        outcome: GroupState,
-    }
-    let base = || Case {
-        name: "",
-        stage: HuntStage::Part,
-        prior: 0,
-        live: Vec::new(),
-        inferred: None,
-        skipped: false,
-        reset: false,
-        escalated: false,
-        probe: None,
-        held: Vec::new(),
-        passes: 0,
-        outcome: GroupState::Running,
-    };
-    let cases = vec![
-        Case {
-            name: "running reuses earlier valid passes",
-            prior: 2,
-            live: vec![false],
-            passes: 3,
-            ..base()
-        },
-        Case {
-            name: "passing complement accumulates trials",
-            stage: HuntStage::Complement,
-            prior: 4,
-            live: vec![false],
-            passes: 5,
-            outcome: GroupState::Passed,
-            ..base()
-        },
-        Case {
-            name: "failure invalidates earlier passes",
-            prior: 2,
-            live: vec![true],
-            outcome: GroupState::Failed,
-            ..base()
-        },
-        Case {
-            name: "inferred pass",
-            prior: 5,
-            inferred: Some(Inference::Pass),
-            passes: 5,
-            outcome: GroupState::Passed,
-            ..base()
-        },
-        Case {
-            name: "inferred failure",
-            stage: HuntStage::Complement,
-            inferred: Some(Inference::Failure),
-            outcome: GroupState::Failed,
-            ..base()
-        },
-        Case {
-            name: "skipped",
-            skipped: true,
-            outcome: GroupState::Skipped,
-            ..base()
-        },
-        Case {
-            name: "reset excludes reused evidence",
-            prior: 4,
-            reset: true,
-            live: vec![false],
-            passes: 1,
-            ..base()
-        },
-        Case {
-            name: "escalated full uses only new trials",
-            stage: HuntStage::Full,
-            prior: 4,
-            live: vec![false],
-            escalated: true,
-            passes: 1,
-            ..base()
-        },
-        Case {
-            name: "member probe preserves held members",
-            stage: HuntStage::Probe,
-            prior: 4,
-            live: vec![false],
-            probe: Some(Member {
-                core: core(0),
-                offset: off(-30),
-            }),
-            held: members_of(&[(1, -30)]),
-            passes: 1,
-            ..base()
-        },
-    ];
-    for case in cases {
-        let mut j = Journal::new(&ids(4), &[Start::has_room(-30); 4]);
-        j.profile_change(&[-30; 4]);
-        j.ranking(&ids(4));
-        if case.prior > 0 {
-            start_hunt_at(&mut j, 1, &ids(4), &[-30; 4]);
-            let planned = reach_group(&mut j);
-            j.decide(planned);
-            for _ in 0..case.prior {
-                run_group(&mut j, false);
-            }
-            cancel_hunt(&mut j, 1);
-        }
-        if case.reset {
-            j.append(
-                CommandReset {
-                    target: ResetTarget::Core(core(0)),
-                }
-                .into(),
-                &[],
-            );
-            let transition = j.next_decision();
-            j.decide(transition);
-            j.core_phase(crate::schedule_tests::transition(
-                0,
-                togi_journal::CorePhase::HasRoom,
-                -30,
-            ));
-        }
-        let begin = start_hunt_at(&mut j, 2, &ids(4), &[-30; 4]);
-        let mut group = group_payload(2, 1, case.stage, &ids(4), 2, 0, SHORT);
-        group.profile = j.profile(&[-30, -30, 0, 0]).offsets();
-        group.escalated = case.escalated;
-        group.probe = case.probe;
-        group.held = case.held.clone();
-        group.inferred = case.inferred;
-        group.skipped = case.skipped;
-        j.append(group.into(), &[begin]);
-        for &fail in &case.live {
-            run_group(&mut j, fail);
-        }
+    for case in projection_cases() {
+        let (mut j, _) = case.journal();
+        let outcome = match case.outcome {
+            None => GroupState::Running,
+            Some(GroupOutcome::Passed) => GroupState::Passed,
+            Some(GroupOutcome::Failed) => GroupState::Failed,
+            Some(GroupOutcome::Skipped) => GroupState::Skipped,
+        };
         let plan = j
             .state
             .hunt_plan()
@@ -1296,7 +932,7 @@ fn active_hunt_projection() {
         assert_eq!(view.held, case.held, "{}", case.name);
         assert_eq!(view.needed, 5, "{}", case.name);
         assert_eq!(view.passed, case.passes, "{}", case.name);
-        assert_eq!(view.outcome, case.outcome, "{}", case.name);
+        assert_eq!(view.outcome, outcome, "{}", case.name);
         assert!(!view.carried, "{}", case.name);
         j.assert_resumes();
         cancel_hunt(&mut j, 2);
@@ -1476,7 +1112,10 @@ fn search_turns_order_and_confirmation() {
         turns.iter().map(|turn| turn.core).collect::<Vec<_>>(),
         [core(0), core(1), core(2)]
     );
-    assert!(turns.iter().all(|turn| !turn.confirm && turn.step == 5));
+    assert!(turns.iter().all(|turn| turn.kind
+        == TurnKind::Search {
+            step: NonZeroU8::new(5).unwrap()
+        }));
     let plan = j.next_trial();
     j.intent(&plan);
     let running: Vec<_> = j
@@ -1569,7 +1208,7 @@ fn stored_requirement_separates_class_count_and_part() {
     decide_next(&mut j);
     let plan = j.next_trial();
     assert!(matches!(
-        plan.context,
+        plan.requirement.context,
         TrialContext::Cycle { step, part, .. } if step.get().get() == 1 && part.get().get() == 2
     ));
     let (intent, trial) = j.intent(&plan);
@@ -1590,11 +1229,12 @@ fn stored_requirement_separates_class_count_and_part() {
             passed: 0,
             trial: 1,
             needed: 3,
-            step: plan.requirement.step,
+            step: Some(crate::StepNo::new(std::num::NonZeroU32::MIN)),
         })
     );
     let part = &projection.cycle_plan.steps[0].parts[1];
-    assert_eq!(part.short + part.long, 4, "{part:?}");
+    let (short, long) = part.counts();
+    assert_eq!(short + long, 4, "{part:?}");
     assert_eq!(part.passed + part.failed + 1, 1, "{part:?}");
     assert!(!part.done && !part.running, "{part:?}");
     assert_eq!(fresh(&j.events).project(), projection);
@@ -1719,7 +1359,7 @@ fn config_reload_keeps_the_running_parts_stored_requirement() {
     let (at, stored) = running(&j).expect("the trial's part is not running");
     let secs = j.run().config.checking_trial.get();
     assert!(
-        stored.short_s == secs && stored.short == 1 && stored.passed == 0,
+        short_secs(&stored) == secs && stored.counts() == (1, 0) && stored.passed == 0,
         "{stored:?}"
     );
     let changed = secs + 1;
@@ -1759,7 +1399,7 @@ fn config_reload_keeps_the_running_parts_stored_requirement() {
     );
     let rebuilt = &parts(&j, 0)[at];
     assert!(
-        rebuilt.short_s == changed && rebuilt.passed == 0,
+        short_secs(rebuilt) == changed && rebuilt.passed == 0,
         "the ended part kept the old requirement: {rebuilt:?}"
     );
 }
@@ -1817,4 +1457,143 @@ fn search_turns_keep_an_unfinished_second_regime_first_then_rotate_past_the_curs
     decide_next(&mut j);
     assert_eq!(turns(&j), rotated);
     j.assert_resumes();
+}
+
+#[test]
+fn absent_lengths_and_confirmation_turns_keep_their_flat_state_shape() {
+    let short_only = part(&[0, 1], Some(0), true, 600, (0, 0));
+    let json = serde_json::to_value(&short_only).unwrap();
+    assert_eq!(
+        (
+            &json["short"],
+            &json["short_s"],
+            &json["long"],
+            &json["long_s"]
+        ),
+        (&3.into(), &600.into(), &0.into(), &0.into())
+    );
+    assert_eq!(
+        serde_json::from_value::<CyclePart>(json).unwrap(),
+        short_only
+    );
+    let none = CyclePart {
+        lengths: None,
+        ..short_only
+    };
+    let json = serde_json::to_value(&none).unwrap();
+    assert_eq!((&json["short"], &json["short_s"]), (&0.into(), &0.into()));
+    assert_eq!(serde_json::from_value::<CyclePart>(json).unwrap(), none);
+
+    let (json, turn) = flat_turn(TurnKind::Confirm);
+    assert_eq!(
+        (json["confirm"].as_bool(), json["step"].as_u64()),
+        (Some(true), Some(0))
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::SearchTurn>(json.clone()).unwrap(),
+        turn
+    );
+    let mut stepped = json;
+    stepped["step"] = 5.into();
+    assert!(serde_json::from_value::<crate::SearchTurn>(stepped).is_err());
+}
+
+#[test]
+fn search_turns_keep_their_flat_step_and_refuse_step_zero() {
+    let (json, turn) = flat_turn(TurnKind::Search {
+        step: NonZeroU8::MIN,
+    });
+    assert_eq!(
+        (json["confirm"].as_bool(), json["step"].as_u64()),
+        (Some(false), Some(1))
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::SearchTurn>(json.clone()).unwrap(),
+        turn
+    );
+    let mut stepless = json;
+    stepless["step"] = 0.into();
+    assert!(serde_json::from_value::<crate::SearchTurn>(stepless).is_err());
+}
+
+fn flat_turn(kind: TurnKind) -> (serde_json::Value, crate::SearchTurn) {
+    let j = Journal::search_at(&[-20, -20, -20]);
+    let turn = crate::SearchTurn {
+        kind,
+        ..j.state.search_turns()[0].clone()
+    };
+    (serde_json::to_value(&turn).unwrap(), turn)
+}
+
+fn rerun(long: Option<Quota>) -> crate::RerunPlan {
+    crate::RerunPlan {
+        regime: Regime::R2,
+        cores: set(&[0]),
+        lengths: Lengths {
+            short: Quota {
+                count: 3,
+                secs: 600,
+            },
+            long,
+        },
+    }
+}
+
+fn flat_rerun(plan: &crate::RerunPlan) -> serde_json::Value {
+    let json = serde_json::to_value(plan).unwrap();
+    let keys: Vec<&str> = json
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        ["cores", "long", "long_s", "regime", "short", "short_s"],
+        "{json}"
+    );
+    assert_eq!(
+        &serde_json::from_value::<crate::RerunPlan>(json.clone()).unwrap(),
+        plan
+    );
+    json
+}
+
+#[test]
+fn a_rerun_without_a_long_trial_keeps_its_flat_state_shape() {
+    let json = flat_rerun(&rerun(None));
+    assert_eq!(
+        (
+            &json["short"],
+            &json["short_s"],
+            &json["long"],
+            &json["long_s"]
+        ),
+        (&3.into(), &600.into(), &0.into(), &0.into())
+    );
+}
+
+#[test]
+fn a_rerun_with_a_long_trial_keeps_its_flat_state_shape() {
+    let json = flat_rerun(&rerun(Some(Quota {
+        count: 1,
+        secs: 1200,
+    })));
+    assert_eq!(
+        (
+            &json["short"],
+            &json["short_s"],
+            &json["long"],
+            &json["long_s"]
+        ),
+        (&3.into(), &600.into(), &1.into(), &1200.into())
+    );
+}
+
+#[test]
+fn a_rerun_without_a_short_trial_is_refused() {
+    let mut json = serde_json::to_value(rerun(None)).unwrap();
+    json["short"] = 0.into();
+    json["short_s"] = 0.into();
+    assert!(serde_json::from_value::<crate::RerunPlan>(json).is_err());
 }

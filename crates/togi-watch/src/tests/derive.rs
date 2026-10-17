@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 
 use togi_journal::{Member, TrialId};
 use togi_machine::{Condition, Regime};
-use togi_tuner::{CyclePlan, GroupState, HuntPart};
+use togi_tuner::{CyclePlan, GroupState, HuntPart, Lengths, Quota};
 
 use super::hunt::{step, trial_view};
 use super::kit::*;
@@ -36,8 +36,13 @@ fn a_cycle_trial_finds_its_part_in_the_plan() {
     steps[0].parts[0].cores = set(&[1]);
     steps[1].parts[0].running = true;
     steps[1].parts[0].passed = 1;
-    steps[1].parts[0].short = 2;
-    steps[1].parts[0].long = 1;
+    steps[1].parts[0].lengths = Some(Lengths {
+        short: Quota { count: 2, secs: 60 },
+        long: Some(Quota {
+            count: 1,
+            secs: 600,
+        }),
+    });
     let cycle = plan(steps, 1);
 
     let mut running = placed(&[0], 1, None);
@@ -94,8 +99,13 @@ fn a_cycle_trial_finds_its_part_in_the_plan() {
 fn the_now_count_credits_each_quota_not_every_pass() {
     let mut steps = vec![step(Regime::R2, false)];
     steps[0].parts[0].running = true;
-    steps[0].parts[0].short = 3;
-    steps[0].parts[0].long = 1;
+    steps[0].parts[0].lengths = Some(Lengths {
+        short: Quota { count: 3, secs: 60 },
+        long: Some(Quota {
+            count: 1,
+            secs: 600,
+        }),
+    });
     steps[0].parts[0].passed = 3;
     let mut cycle = plan(steps, 0);
     let mut running = placed(&[0], 1, None);

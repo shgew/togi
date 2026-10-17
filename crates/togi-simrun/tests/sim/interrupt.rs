@@ -4,11 +4,11 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 
 use togi_config::Config;
-use togi_journal::fs::{Fault, FileKind, Op};
+use togi_journal::fs::{AppendPoint, AppendTrigger, Fault, FileKind, Op};
 use togi_journal::{
-    Combination, CoreTransition, CycleEvent, DeepeningRound, Event, EventKind, Failure, HuntEnd,
-    HuntGroup, HuntStart, MemFs, Outcome, Payload, ProfileChange, RoundEvent, Seq, TrialId,
-    TrialIntent, TunerDecision,
+    Combination, CoreTransition, DeepeningRound, Event, EventKind, Failure, HuntEnd, HuntGroup,
+    HuntStart, MemFs, Outcome, Payload, ProfileChange, RoundEvent, Seq, TrialId, TrialIntent,
+    TunerDecision,
 };
 use togi_machine::{BootId, CoreId, Regime, ResetKind, Signal};
 use togi_session::Stop;
@@ -17,7 +17,9 @@ use togi_sim::faults::{SmuOp, SmuOperation};
 use togi_sim::{History, MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Observe, Replay, SimError, SimOutcome, simulate};
 
-use crate::common::{Bench, finish, hunt_machine, nz};
+use test_case::test_case;
+
+use crate::common::{Bench, finish, hunt_machine, nz, phase_two_concludes};
 
 const SEED: u64 = 1;
 const MAX_BOOTS: u32 = 60;
@@ -284,17 +286,6 @@ fn assert_decisions(want: &Commitments, events: &[Event], label: &str) {
 
 type Closer = fn(&Event, &mut bool) -> bool;
 
-fn phase_two_confirmed(event: &Event) -> bool {
-    matches!(
-        &event.payload,
-        Payload::CheckingCycle(cycle)
-            if cycle.event == CycleEvent::End
-                && cycle.passed
-                && cycle.full
-                && cycle.reason.as_deref().is_some_and(|reason| reason.contains("phase 2 ends"))
-    )
-}
-
 fn hunt_opens(event: &Event) -> bool {
     event.kind() == EventKind::HuntStart
 }
@@ -335,28 +326,27 @@ fn deep_machine() -> MachineDefinition {
     definition
 }
 
-fn run_until(bench: &Bench, open: fn(&Event) -> bool, crash_first: bool) {
+fn run_until(bench: &Bench, mut open: impl FnMut(&Event) -> bool + 'static, crash_first: bool) {
     let mut input = bench.input();
     input.config = quick();
     input.policy.cycles = None;
     input.max_boots = nz(MAX_BOOTS);
-    let (sim, mut crashed) = (bench.sim.clone(), !crash_first);
+    let opened = Rc::new(Cell::new(false));
+    let (sim, seen, mut crashed) = (bench.sim.clone(), Rc::clone(&opened), !crash_first);
     input.observer = Some(Box::new(move |event| {
         if !crashed && event.kind() == EventKind::SessionStart {
             crashed = true;
             sim.crash();
         }
         if open(event) {
+            seen.set(true);
             Observe::Stop
         } else {
             Observe::Continue
         }
     }));
     assert_eq!(finish(input).stop, Some(Stop::Signal));
-    assert!(
-        bench.events().iter().any(open),
-        "the prefix never opened its window"
-    );
+    assert!(opened.get(), "the prefix never opened its window");
 }
 
 #[derive(Clone, Copy)]
@@ -438,11 +428,11 @@ impl Case {
     /// before the first append when `at` is 0. A write fault only keeps the already crashed boot from journaling more.
     fn lose_power_at_append(&self, bench: &Bench, at: usize) {
         let label = format!("{} {}", self.name, Interruption::Append(at).label());
-        let landed = Rc::new(Cell::new(false));
+        let trigger = AppendTrigger::new(self.prefix_len + at, AppendPoint::Landed);
         let writes_after = Rc::new(Cell::new(0_usize));
-        let (flag, writes) = (Rc::clone(&landed), Rc::clone(&writes_after));
+        let (landed, writes) = (trigger.clone(), Rc::clone(&writes_after));
         bench.sim.interrupt_smu(move |operation: &SmuOperation| {
-            if flag.get() && operation.op != SmuOp::Read {
+            if landed.fired() && operation.op != SmuOp::Read {
                 writes.set(writes.get() + 1);
             }
             Ok(())
@@ -455,17 +445,11 @@ impl Case {
         if at == 0 {
             bench.sim.power_loss();
         } else {
-            let (sim, fs, landed, mut appended) = (
-                bench.sim.clone(),
-                bench.fs.clone(),
-                Rc::clone(&landed),
-                0_usize,
-            );
-            input.observer = Some(Box::new(move |_| {
-                appended += 1;
-                if appended == at {
+            assert!(trigger.arm(&bench.fs, self.prefix_len));
+            let (sim, fs, trigger) = (bench.sim.clone(), bench.fs.clone(), trigger.clone());
+            input.observer = Some(Box::new(move |event| {
+                if trigger.lands(event) {
                     sim.power_loss();
-                    landed.set(true);
                     fs.inject(Fault::before(Op::Write, 1).named("events.jsonl"));
                 }
                 Observe::Continue
@@ -481,6 +465,11 @@ impl Case {
             ),
         };
         bench.fs.clear_faults();
+        assert_eq!(
+            trigger.disarm(&bench.fs),
+            at > 0,
+            "{label}: the selected append never landed"
+        );
         assert_eq!(
             bench.events().len(),
             self.prefix_len + at,
@@ -651,7 +640,7 @@ impl Interruption {
 
 fn hunt_case() -> Case {
     let quiet = Bench::new(&hunt_machine(4), SEED);
-    run_until(&quiet, phase_two_confirmed, false);
+    run_until(&quiet, phase_two_concludes(&quiet), false);
     let prefix = quiet.resumed(&joint_machine(), SEED);
     run_until(&prefix, hunt_opens, false);
     let case = Case::new("hunt", prefix, joint_machine(), hunt_closes);
@@ -690,7 +679,16 @@ fn deepening_case() -> Case {
 
 const SHARES: usize = 4;
 
-fn share(case: &Case, index: usize) {
+#[test_case(hunt_case, 0; "hunt resume 0")]
+#[test_case(hunt_case, 1; "hunt resume 1")]
+#[test_case(hunt_case, 2; "hunt resume 2")]
+#[test_case(hunt_case, 3; "hunt resume 3")]
+#[test_case(deepening_case, 0; "deepening resume 0")]
+#[test_case(deepening_case, 1; "deepening resume 1")]
+#[test_case(deepening_case, 2; "deepening resume 2")]
+#[test_case(deepening_case, 3; "deepening resume 3")]
+fn power_loss_during(case: fn() -> Case, index: usize) {
+    let case = case();
     for at in (index..case.append_points()).step_by(SHARES) {
         case.assert_interruption(Interruption::Append(at));
     }
@@ -698,30 +696,3 @@ fn share(case: &Case, index: usize) {
         case.assert_interruption(Interruption::Smu(at));
     }
 }
-
-macro_rules! shares {
-    ($case:ident, $($test:ident => $index:expr),+ $(,)?) => {
-        $(
-            #[test]
-            fn $test() {
-                share(&$case(), $index);
-            }
-        )+
-    };
-}
-
-shares!(
-    hunt_case,
-    power_loss_during_hunt_resume_0 => 0,
-    power_loss_during_hunt_resume_1 => 1,
-    power_loss_during_hunt_resume_2 => 2,
-    power_loss_during_hunt_resume_3 => 3,
-);
-
-shares!(
-    deepening_case,
-    power_loss_during_deepening_resume_0 => 0,
-    power_loss_during_deepening_resume_1 => 1,
-    power_loss_during_deepening_resume_2 => 2,
-    power_loss_during_deepening_resume_3 => 3,
-);

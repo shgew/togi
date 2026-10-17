@@ -11,7 +11,7 @@ use crate::testkit::{
 use crate::tests::core;
 use crate::{
     Action, ClassKey, DecisionAction, DecisionPayload, FoldError, Load, Secs, TrialContext,
-    TrialHistory, TrialPlan, Window,
+    TrialHistory, TrialPlan, TrialRequirement, Window,
 };
 
 type Reload = &'static [(&'static str, &'static str)];
@@ -225,17 +225,18 @@ fn stored_requirement_survives_crash_and_changed_config() {
     }
     let plan = j.next_trial();
     let (intent, trial) = j.intent(&plan);
-    assert_eq!(
-        j.run().flight.open.as_ref().unwrap().requirement,
-        plan.requirement
-    );
+    let open = TrialRequirement {
+        passed: n - 1,
+        failed: 0,
+        trial: n,
+        needed: n,
+    };
+    assert_eq!(u32::from(plan.requirement.needed.get()), n);
+    assert_eq!(j.requirement(), open);
     j.load(&config(
         r#"{"evidence":{"miss":0.001},"durations":{"search_trial_s":91}}"#,
     ));
-    assert_eq!(
-        j.run().flight.open.as_ref().unwrap().requirement,
-        plan.requirement
-    );
+    assert_eq!(j.requirement(), open);
     assert_ne!(u32::from(needed(&j).get()), n);
     j.append(
         togi_journal::CrashDetected {
@@ -258,11 +259,10 @@ fn stored_requirement_survives_crash_and_changed_config() {
         needed: n,
         step: None,
     };
-    let closed = j.run().flight.last_closed.clone().unwrap();
-    assert_eq!((closed.trial, closed.history), (trial, want));
+    assert_eq!(j.history(), want);
     j.assert_resumes();
     j.reset(0);
-    assert_eq!(j.run().flight.last_closed.as_ref().unwrap().history, want);
+    assert_eq!(j.history(), want);
 }
 
 #[test]
@@ -277,7 +277,7 @@ fn requirement_trial_number_is_bounded() {
     for _ in 0..3 {
         j.trial(&plan, Outcome::Pass);
     }
-    let history = j.run().flight.last_closed.as_ref().unwrap().history;
+    let history = j.history();
     assert_eq!((history.passed, history.trial, history.needed), (n, n, n));
 }
 
@@ -287,7 +287,10 @@ fn a_search_trial_needs_one_pass_and_a_check_needs_n() {
     let plan = search.next_trial();
     assert_eq!(plan.requirement.needed.get(), 1);
     assert_eq!(plan.requirement.window, Window::Live { since: None });
-    assert!(matches!(plan.context, TrialContext::Search { .. }));
+    assert!(matches!(
+        plan.requirement.context,
+        TrialContext::Search { .. }
+    ));
     let check = Journal::new(&[0], &[Start::search(-20).checking()]);
     let plan = check.next_trial();
     assert_eq!(plan.requirement.needed, needed(&check));
@@ -306,13 +309,13 @@ fn intents_that_match_no_open_context_are_unscheduled() {
             plan.activity = togi_journal::Activity::Checking;
         }),
         ("hunt", |plan| {
-            plan.context = TrialContext::Hunt {
+            plan.requirement.context = TrialContext::Hunt {
                 hunt: NonZeroU32::MIN,
                 group: NonZeroU32::MIN,
             };
         }),
         ("round", |plan| {
-            plan.context = TrialContext::Round {
+            plan.requirement.context = TrialContext::Round {
                 round: NonZeroU32::MIN,
             };
         }),
@@ -364,10 +367,16 @@ fn retry_requirement_matches_fold() {
     j.trial(&first, Outcome::Inconclusive);
     let retry = j.next_trial();
     assert!(retry.retry);
+    assert_eq!(retry.requirement, first.requirement);
     j.intent(&retry);
     assert_eq!(
-        j.run().flight.open.as_ref().unwrap().requirement,
-        retry.requirement
+        j.requirement(),
+        TrialRequirement {
+            passed: 0,
+            failed: 0,
+            trial: 1,
+            needed: 1,
+        }
     );
 }
 
@@ -475,7 +484,10 @@ fn carried_evidence_answers_a_candidate_solo_limit_but_not_an_ordinary_step() {
     }
     let ordinary = j.next_trial();
     assert_eq!(ordinary.regime, Regime::R1);
-    assert!(matches!(ordinary.context, TrialContext::Search { .. }));
+    assert!(matches!(
+        ordinary.requirement.context,
+        TrialContext::Search { .. }
+    ));
     let boundary = check_decision(&mut j);
     let exit = j.next_decision();
     let DecisionPayload::CorePhase(phase) = &exit.payload else {
@@ -709,7 +721,16 @@ fn carried_passes_do_not_add_session_exposure() {
                 .valid,
             1
         );
-        assert_eq!(j.run().evidence.exposure(workload), 0);
+        let exposure = |j: &Journal| {
+            j.state
+                .project()
+                .checking
+                .exposure
+                .iter()
+                .find(|(id, _)| *id == workload)
+                .map_or(0, |&(_, count)| count)
+        };
+        assert_eq!(exposure(&j), 0);
         let plan = j.manual(
             Regime::R1,
             0,
@@ -719,7 +740,7 @@ fn carried_passes_do_not_add_session_exposure() {
             90,
         );
         j.trial(&plan, Outcome::Pass);
-        assert_eq!(j.run().evidence.exposure(workload), 0);
+        assert_eq!(exposure(&j), 0);
     }
 }
 
@@ -1086,12 +1107,12 @@ fn a_step_pass_belongs_to_the_backend_its_trial_began_with() {
     let plan = j.next_trial();
     let (intent, trial) = j.intent(&plan);
     j.load(&backends(MPRIME_NEW, YCRUNCHER_OLD));
-    let r1 = j.end(intent, &trial, Outcome::Pass);
-    let step = |j: &Journal| j.run().search.current(core(0), &j.run().evidence);
-    assert_eq!(step(&j), (None, None));
+    j.end(intent, &trial, Outcome::Pass);
+    let regimes = |j: &Journal| j.state.search_turns()[0].regimes.clone();
+    assert_eq!(regimes(&j), [Regime::R1, Regime::R2]);
     assert_eq!(j.next_trial().regime, Regime::R1);
     j.load(&backends(MPRIME_OLD, YCRUNCHER_OLD));
-    assert_eq!(step(&j), (Some(r1), None));
+    assert_eq!(regimes(&j), [Regime::R2]);
     assert_eq!(j.next_trial().regime, Regime::R2);
 }
 

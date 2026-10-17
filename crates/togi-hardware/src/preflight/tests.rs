@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use test_case::test_case;
 use togi_backend::{Backend as BackendAdapter, Error as BackendError, Line, Plan, Ready};
 use togi_machine::{Backend, Check, CpuId, Workload};
 use togi_trial::{BackendIdentity, Backends, IdentityError};
@@ -95,20 +96,18 @@ fn the_ran_and_skipped_steps_of_an_unprivileged_run_cover_every_step_once() {
     assert_eq!(names, expected);
 }
 
-#[test]
-fn a_failed_identity_check_skips_every_check_that_needs_the_identity() {
-    for failing in [Step::Cpu, Step::RyzenSmu] {
-        let outcomes = outcomes(true, &[failing]);
-        for (name, skipped, _) in outcomes {
-            let gated = !matches!(name, CheckName::Cpu | CheckName::RyzenSmu);
-            let expected = gated.then_some(Skip::NeedsIdentity);
-            let before_failure = failing == Step::RyzenSmu && name == CheckName::Cpu;
-            assert_eq!(
-                skipped,
-                if before_failure { None } else { expected },
-                "{name}"
-            );
-        }
+#[test_case(Step::Cpu; "cpu")]
+#[test_case(Step::RyzenSmu; "ryzen_smu")]
+fn a_failed_identity_check_skips_every_check_that_needs_the_identity(failing: Step) {
+    for (name, skipped, _) in outcomes(true, &[failing]) {
+        let gated = !matches!(name, CheckName::Cpu | CheckName::RyzenSmu);
+        let expected = gated.then_some(Skip::NeedsIdentity);
+        let before_failure = failing == Step::RyzenSmu && name == CheckName::Cpu;
+        assert_eq!(
+            skipped,
+            if before_failure { None } else { expected },
+            "{name}"
+        );
     }
 }
 

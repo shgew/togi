@@ -8,8 +8,9 @@ use super::plan::{
 };
 use super::state::{Active, GroupRecord};
 use crate::Profile;
-use crate::dashboard::{GroupState, HuntGroup, HuntPart, HuntPlan, MemberProbe, RerunPlan};
-use crate::r7::Applied;
+use crate::dashboard::{
+    GroupState, HuntGroup, HuntPart, HuntPlan, Lengths, MemberProbe, Quota, RerunPlan,
+};
 use crate::state::Run;
 
 /// One group of the active hunt as a dashboard shows it, its outcome read from the answer the
@@ -77,7 +78,7 @@ impl Run {
     }
 
     fn group_running(&self, hunt: &Active, group: &GroupRecord) -> bool {
-        self.flight.open.as_ref().is_some_and(|open| {
+        self.flight.open().is_some_and(|open| {
             open.intent.hunt == Some(hunt.id) && open.intent.group == Some(group.payload.group)
         })
     }
@@ -87,62 +88,55 @@ impl Run {
     }
 }
 
+/// What the active hunt's plan shows: the group in flight or up next, or the end it reaches.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Shape {
-    stage: Option<HuntStage>,
+enum Shape {
+    Group(GroupShape),
+    End(End),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct GroupShape {
+    stage: HuntStage,
     set: CoreSet,
     cores: CoreSet,
     granularity: u32,
     duration_s: u32,
     repeated: bool,
-    end: Option<End>,
 }
 
 impl Shape {
     fn recorded(hunt: &Active, group: &GroupRecord) -> Self {
         let payload = &group.payload;
-        Self {
-            stage: Some(payload.stage),
+        Self::Group(GroupShape {
+            stage: payload.stage,
             set: payload.set,
             cores: payload.cores,
             granularity: payload.granularity,
             duration_s: payload.duration_s,
             repeated: is_repeated(hunt, group),
-            end: None,
-        }
+        })
     }
 
     fn upcoming(hunt: &Active, group: &Group) -> Self {
-        Self {
-            stage: Some(stage_of(group.stage)),
+        Self::Group(GroupShape {
+            stage: stage_of(group.stage),
             set: group.set,
             cores: group.cores,
             granularity: u32::try_from(group.granularity).unwrap_or(u32::MAX),
             duration_s: Run::hunt_secs(hunt, group.duration).get(),
             repeated: group.stage == GroupStage::Repeated,
-            end: None,
-        }
+        })
     }
 
-    fn ended(end: End) -> Self {
-        let set = match end {
-            End::Culprit(core) => std::iter::once(core).collect(),
-            End::Combination(set) | End::Fallback(set) => set,
-            End::Loaded => CoreSet::default(),
-        };
-        Self {
-            stage: None,
-            set,
-            cores: CoreSet::default(),
-            granularity: 0,
-            duration_s: 0,
-            repeated: false,
-            end: Some(end),
+    /// The cores the group splits, or the cores the end settles on.
+    fn set(self) -> CoreSet {
+        match self {
+            Self::Group(group) => group.set,
+            Self::End(End::Culprit(core)) => std::iter::once(core).collect(),
+            Self::End(End::Combination(set) | End::Fallback(set)) => set,
+            Self::End(End::Loaded) => CoreSet::default(),
         }
-    }
-
-    fn splits(self) -> bool {
-        matches!(self.stage, Some(HuntStage::Part | HuntStage::Complement))
     }
 }
 
@@ -169,7 +163,7 @@ impl Run {
         }
         match self.plan_next(hunt) {
             Next::Group(group) => Shape::upcoming(hunt, &group),
-            Next::End(end) => Shape::ended(end),
+            Next::End(end) => Shape::End(end),
         }
     }
 
@@ -178,8 +172,8 @@ impl Run {
         let shape = self.hunt_shape(hunt);
         let views = self.hunt_groups();
         let probing = hunt.groups.iter().any(GroupRecord::is_probe)
-            || matches!(shape.end, Some(End::Combination(_)))
-            || matches!(shape.end, Some(End::Culprit(core)) if self.singleton_probing(hunt, core).is_some());
+            || matches!(shape, Shape::End(End::Combination(_)))
+            || matches!(shape, Shape::End(End::Culprit(core)) if self.singleton_probing(hunt, core).is_some());
         Some(HuntPlan {
             number: hunt.id.get(),
             regime: hunt.start.regime,
@@ -199,9 +193,15 @@ impl Run {
     }
 
     fn hunt_plan_cut(&self, hunt: &Active, shape: Shape) -> u32 {
-        if !shape.splits() {
+        let Shape::Group(
+            shape @ GroupShape {
+                stage: HuntStage::Part | HuntStage::Complement,
+                ..
+            },
+        ) = shape
+        else {
             return 0;
-        }
+        };
         let signature = (shape.set, shape.granularity, shape.duration_s);
         let count = self.hunt_cut();
         if hunt.cut.signature == Some(signature) {
@@ -217,14 +217,23 @@ impl Run {
         RerunPlan {
             regime: hunt.class.regime(),
             cores: hunt.class.loaded(),
-            short: u32::from(self.config.needed.get()),
-            short_s: short.get(),
-            long: u32::from(long != short),
-            long_s: if long == short { 0 } else { long.get() },
+            lengths: Lengths {
+                short: Quota {
+                    count: u32::from(self.config.needed.get()),
+                    secs: short.get(),
+                },
+                long: (long != short).then_some(Quota {
+                    count: 1,
+                    secs: long.get(),
+                }),
+            },
         }
     }
 
     fn hunt_parts(&self, hunt: &Active, shape: Shape, views: &[GroupView]) -> Vec<HuntPart> {
+        let Shape::Group(shape) = shape else {
+            return Vec::new();
+        };
         let part = |failing: CoreSet, group: Option<usize>| {
             let view = group.and_then(|index| views.get(index));
             HuntPart {
@@ -250,7 +259,7 @@ impl Run {
             return vec![part(shape.cores, group)];
         }
         match shape.stage {
-            Some(stage @ (HuntStage::Part | HuntStage::Complement)) => {
+            stage @ (HuntStage::Part | HuntStage::Complement) => {
                 let split = (shape.set == hunt.start.candidates).then(|| hunt.class.loaded());
                 let granularity = usize::try_from(shape.granularity).unwrap_or(usize::MAX);
                 partition(shape.set, granularity, split, hunt.recent)
@@ -279,7 +288,7 @@ impl Run {
                     })
                     .collect()
             }
-            Some(HuntStage::Full) => {
+            HuntStage::Full => {
                 let group = hunt
                     .groups
                     .len()
@@ -287,7 +296,7 @@ impl Run {
                     .filter(|&last| hunt.groups[last].payload.stage == HuntStage::Full);
                 vec![part(shape.set, group)]
             }
-            Some(HuntStage::Locate | HuntStage::Probe) | None => Vec::new(),
+            HuntStage::Locate | HuntStage::Probe => Vec::new(),
         }
     }
 
@@ -301,10 +310,7 @@ impl Run {
             return self.singleton_probing(hunt, set.first()?);
         }
         let checking = self.checking.profile()?;
-        let failing: PerCore<TargetOffset> = set
-            .iter()
-            .map(|core| (core, hunt.failing.at(core)))
-            .collect();
+        let failing: PerCore<TargetOffset> = hunt.failing.among(set).collect();
         if already_broken(&failing, &checking) {
             return Some(ProbeStep::Done(Found {
                 members: failing,
@@ -327,12 +333,12 @@ impl Run {
     }
 
     fn hunt_probes(&self, hunt: &Active, shape: Shape, views: &[GroupView]) -> Vec<MemberProbe> {
-        let step = self.probe_step(hunt, shape.set);
-        shape
-            .set
-            .iter()
-            .map(|core| {
-                let mut probe = member_ladder(hunt, core, views);
+        let set = shape.set();
+        let step = self.probe_step(hunt, set);
+        hunt.failing
+            .among(set)
+            .map(|(core, origin)| {
+                let mut probe = member_ladder(hunt, core, origin, views);
                 match step {
                     Some(ProbeStep::Run(next)) => {
                         if next.member == core && !probe.running {
@@ -355,8 +361,12 @@ impl Run {
     }
 }
 
-fn member_ladder(hunt: &Active, core: CoreId, views: &[GroupView]) -> MemberProbe {
-    let origin = hunt.failing.at(core);
+fn member_ladder(
+    hunt: &Active,
+    core: CoreId,
+    origin: TargetOffset,
+    views: &[GroupView],
+) -> MemberProbe {
     let mut probe = MemberProbe {
         member: core,
         offset: origin,

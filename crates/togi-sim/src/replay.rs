@@ -53,20 +53,19 @@ pub enum FactProblem {
     ExposureTooLong,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct Key {
-    regime: Regime,
-    workload: String,
-    duration: Duration,
-    cores: CoreSet,
-    profile: Vec<TargetOffset>,
-}
+/// Facts of one BIOS context by regime, intended duration and loaded cores, then by workload ID,
+/// then by the full applied profile; each level is a separate map so a lookup borrows the workload
+/// and profile.
+type Buckets = HashMap<
+    (Regime, Duration, CoreSet),
+    HashMap<String, HashMap<Vec<TargetOffset>, Vec<ReplayFact>>>,
+>;
 
 /// Validated facts indexed by BIOS context, regime, workload ID, intended duration, loaded cores and
 /// the full applied profile. Condition and phase are not part of the key.
 #[derive(Clone, Debug, Default)]
 pub struct Replay {
-    contexts: HashMap<BiosContext, HashMap<Key, Vec<ReplayFact>>>,
+    contexts: HashMap<BiosContext, Buckets>,
     facts: usize,
 }
 
@@ -76,15 +75,17 @@ impl Replay {
         let mut replay = Self::default();
         for (index, fact) in facts.into_iter().enumerate() {
             validate(&fact).map_err(|problem| InvalidFact { index, problem })?;
-            let buckets = replay.contexts.entry(fact.context.clone()).or_default();
-            let key = Key {
-                regime: fact.regime,
-                workload: fact.workload.clone(),
-                duration: fact.duration,
-                cores: fact.cores,
-                profile: fact.profile.clone(),
-            };
-            buckets.entry(key).or_default().push(fact);
+            replay
+                .contexts
+                .entry(fact.context.clone())
+                .or_default()
+                .entry((fact.regime, fact.duration, fact.cores))
+                .or_default()
+                .entry(fact.workload.clone())
+                .or_default()
+                .entry(fact.profile.clone())
+                .or_default()
+                .push(fact);
             replay.facts += 1;
         }
         Ok(replay)
@@ -104,15 +105,12 @@ impl Replay {
         load: &Load<'_>,
         profile: &[TargetOffset],
     ) -> Option<&[ReplayFact]> {
-        let buckets = self.contexts.get(context)?;
-        let key = Key {
-            regime: load.regime,
-            workload: load.workload.to_owned(),
-            duration: load.duration,
-            cores: load.cores,
-            profile: profile.to_vec(),
-        };
-        buckets.get(&key).map(Vec::as_slice)
+        self.contexts
+            .get(context)?
+            .get(&(load.regime, load.duration, load.cores))?
+            .get(load.workload)?
+            .get(profile)
+            .map(Vec::as_slice)
     }
 
     /// Whether a recorded answer exists for this trial under `context`.

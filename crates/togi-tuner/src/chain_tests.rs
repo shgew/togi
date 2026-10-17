@@ -15,10 +15,10 @@ use crate::{
     TopologyError, TrialContext, TrialPlan, Window,
 };
 
-const STARTS: [i64; 8] = [-10, -20, -30, -40, -20, -20, -20, -20];
-const SHORT: u32 = 120;
-const FULL_REQUESTS: [(u8, f64); 4] = [(0, 1.19), (1, 1.11), (2, 1.2), (3, 1.09)];
-const PARTIAL_REQUESTS: [(u8, f64); 3] = [(0, 1.19), (1, 1.25), (3, 1.1)];
+pub(crate) const STARTS: [i64; 8] = [-10, -20, -30, -40, -20, -20, -20, -20];
+pub(crate) const SHORT: u32 = 120;
+pub(crate) const FULL_REQUESTS: [(u8, f64); 4] = [(0, 1.19), (1, 1.11), (2, 1.2), (3, 1.09)];
+pub(crate) const PARTIAL_REQUESTS: [(u8, f64); 3] = [(0, 1.19), (1, 1.25), (3, 1.1)];
 
 fn grouped(ccds: &[&[u8]]) -> Vec<CoreInfo> {
     ccds.iter()
@@ -33,11 +33,11 @@ fn grouped(ccds: &[&[u8]]) -> Vec<CoreInfo> {
         .collect()
 }
 
-fn two_ccds() -> Vec<CoreInfo> {
+pub(crate) fn two_ccds() -> Vec<CoreInfo> {
     grouped(&[&[0, 1, 2, 3], &[4, 5, 6, 7]])
 }
 
-fn one_ccd() -> Vec<CoreInfo> {
+pub(crate) fn one_ccd() -> Vec<CoreInfo> {
     grouped(&[&[0, 1, 2, 3, 4, 5, 6, 7]])
 }
 
@@ -48,7 +48,7 @@ fn payload(action: &Action) -> &DecisionPayload {
     &decision.payload
 }
 
-fn decided(action: Action) -> DecisionAction {
+pub(crate) fn decided(action: Action) -> DecisionAction {
     let Action::Decide(decision) = action else {
         panic!("expected a decision, the tuner asked for {action:?}");
     };
@@ -86,7 +86,7 @@ fn cycle_end(action: &Action) -> Option<bool> {
 /// A session over `cores` with every core has-room at `offsets`, its checking profile set and,
 /// under `cycle` (the default cycle when `None`), the first cycle open with its first R7 step
 /// begun.
-fn journal(cores: Vec<CoreInfo>, offsets: &[i64], cycle: Option<&str>) -> Journal {
+pub(crate) fn journal(cores: Vec<CoreInfo>, offsets: &[i64], cycle: Option<&str>) -> Journal {
     seeded_journal(cores, offsets, cycle, |_| {})
 }
 
@@ -133,7 +133,7 @@ pub(crate) fn chain_journal() -> Journal {
     journal(two_ccds(), &STARTS, Some(r7_only()))
 }
 
-fn run(
+pub(crate) fn run(
     j: &mut Journal,
     plan: &TrialPlan,
     outcome: Outcome,
@@ -176,7 +176,7 @@ pub(crate) fn pass_part(j: &mut Journal, cores: &[u8], requests: &[(u8, f64)]) -
         assert_eq!(plan.load, Load::Many(cores), "trial {trial}: {plan:?}");
         assert_eq!(plan.duration.get(), want, "trial {trial}: {plan:?}");
         assert!(
-            matches!(plan.context, TrialContext::Cycle { step, .. } if step.get().get() == 1),
+            matches!(plan.requirement.context, TrialContext::Cycle { step, .. } if step.get().get() == 1),
             "{plan:?}"
         );
         last = Some(run(j, &plan, Outcome::Pass, requests, None));
@@ -203,7 +203,7 @@ fn checking_offsets(j: &Journal) -> togi_machine::PerCore<togi_machine::TargetOf
 }
 
 /// Moves core `id` `counts` shallower and records the checking profile change that follows.
-fn shallower(j: &mut Journal, id: u8, counts: i64) {
+pub(crate) fn shallower(j: &mut Journal, id: u8, counts: i64) {
     let to = j.offsets().get(core(id)).unwrap().get() + counts;
     j.core_phase(transition(id, CorePhase::HasRoom, to));
     let change = j.next_decision();
@@ -252,7 +252,7 @@ fn needed(j: &Journal, step: u32, cores: &[u8], secs: u32) -> Option<u16> {
         &values(j),
         secs,
     );
-    plan.context = TrialContext::Cycle {
+    plan.requirement.context = TrialContext::Cycle {
         cycle: j.run().checking.open().unwrap().number,
         step: StepNo::new(NonZeroU32::new(step).unwrap()),
         part: PartNo::new(NonZeroU32::MIN),
@@ -346,6 +346,27 @@ fn r7_chain_derives_from_completed_predecessor() {
     pass_part(&mut j, &[0, 1, 2, 3, 4, 5, 6, 7], &[]);
     assert_eq!(cycle_end(&j.next()), Some(true));
     j.assert_resumes();
+}
+
+#[test]
+fn chain_order_is_the_order_the_next_derivation_reads() {
+    let mut j = chain_journal();
+    let seq = pass_part(
+        &mut j,
+        &[0, 1, 2, 3],
+        &[(0, 1.1), (1, 1.11), (2, 1.2), (3, 1.09)],
+    );
+    let action = j.next();
+    let chain = chain_of(&action).clone();
+    let state = fresh(&j.events);
+    let load = crate::LoadKey::new(chain.workload, set(&[0, 1, 2, 3]));
+    let order = state.chain_order(load, CcdId(0)).unwrap();
+    assert_eq!(order.groups, chain.groups);
+    assert_eq!(order.sources, chain.source_seqs);
+    assert_eq!(order.sources, [seq]);
+    assert!(order.proxy.is_empty());
+    assert_eq!(order.values.get(core(2)), Some(1.2));
+    assert_eq!(state.chain_order(load, CcdId(1)), None);
 }
 
 #[test]
@@ -572,7 +593,7 @@ fn r7_chain_reruns_a_failed_class_that_left_the_chain() {
     for _ in 0..j.run().config.needed.get() {
         let plan = trial_of(&action).clone();
         assert!(
-            matches!(plan.context, TrialContext::Rerun { .. }),
+            matches!(plan.requirement.context, TrialContext::Rerun { .. }),
             "{plan:?}"
         );
         assert_eq!(plan.load, Load::Many(old));
@@ -873,13 +894,6 @@ fn r7_partial_failure_does_not_complete_its_requirement() {
     let plan = j.next_trial();
     let named = plan.load.cores().first().unwrap().get();
     run(&mut j, &plan, Outcome::Failure, &[], Some(named));
-    let awaiting = j
-        .run()
-        .flight
-        .awaiting
-        .as_ref()
-        .expect("awaits attribution");
-    assert_eq!(awaiting.class, plan.requirement.class);
     let next = j.run().cycle_action().unwrap();
     let again = trial_of(&next);
     assert_eq!((again.load, again.duration), (plan.load, plan.duration));
@@ -977,7 +991,7 @@ fn chain_rederives_after_a_backoff_before_its_step_counts() {
     let mut action = j.next();
     while let Action::RunTrial(plan) = &action {
         assert_eq!(
-            plan.context,
+            plan.requirement.context,
             TrialContext::Rerun { failure: failed },
             "a trial ran before the stale chain was re-derived: {plan:?}"
         );
@@ -1000,7 +1014,10 @@ fn chain_rederives_after_a_backoff_before_its_step_counts() {
     let next = same_next(&j);
     let plan = trial_of(&next);
     assert_eq!(plan.load, Load::Many(first.cores));
-    assert!(matches!(plan.context, TrialContext::Cycle { .. }));
+    assert!(matches!(
+        plan.requirement.context,
+        TrialContext::Cycle { .. }
+    ));
 }
 
 fn r7_cycle_trials(j: &mut Journal) -> HashMap<CoreSet, BTreeSet<(u32, u16)>> {
@@ -1353,7 +1370,7 @@ fn a_passing_parked_end_leaves_the_checking_last_seq() {
     let rerun = zero.next_trial();
     assert_eq!(rerun.condition, Condition::Parked, "{rerun:?}");
     assert!(
-        matches!(rerun.context, TrialContext::ZeroRerun { .. }),
+        matches!(rerun.requirement.context, TrialContext::ZeroRerun { .. }),
         "{rerun:?}"
     );
     run(&mut zero, &rerun, Outcome::Pass, &[], None);

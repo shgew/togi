@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::num::NonZeroU32;
 
-use togi_journal::{CorePhase, Seq};
+use togi_journal::Seq;
 use togi_machine::{CoreId, TargetOffset};
 
-use crate::r7::Applied;
+use crate::cores::Phase;
 use crate::rounds::{Blame, Shape};
 use crate::state::Run;
 use crate::{Depth, FoldError, Profile};
@@ -127,7 +127,9 @@ impl Phases {
         };
         for core in round.cores() {
             if round.deepened(core) && offsets.get(core) == round.baseline().get(core) {
-                let offset = round.profile().at(core);
+                let Some(offset) = round.profile().get(core) else {
+                    continue;
+                };
                 match settled.moved.get_mut(&core) {
                     Some(mark) if mark.offset == offset => mark.attempt = round.id(),
                     _ => {
@@ -259,7 +261,7 @@ impl Run {
         for &id in self.topo.order() {
             let core = self.core(id);
             let offset = from.get(id)?;
-            if core.phase.is_none_or(|phase| phase == CorePhase::Search) {
+            if matches!(core.phase, Phase::Unstarted | Phase::Search { .. }) {
                 continue;
             }
             if passed
@@ -270,7 +272,8 @@ impl Run {
                 continue;
             }
             if !core
-                .solo_limit
+                .phase
+                .solo_limit()
                 .is_some_and(|solo| offset.shallower_than(solo))
             {
                 continue;
@@ -292,7 +295,7 @@ impl Run {
         self.topo
             .order()
             .iter()
-            .any(|&id| self.core(id).phase == Some(CorePhase::Search))
+            .any(|&id| self.core(id).phase.searching())
     }
 
     /// Whether a hunt is open. Phase 2 owes no round while one runs.

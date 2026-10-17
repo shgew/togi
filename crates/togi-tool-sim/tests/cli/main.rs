@@ -1,6 +1,7 @@
 #![expect(
+    clippy::unwrap_used,
     clippy::disallowed_methods,
-    reason = "named kernel adapters exercise child signals and unsynced sample persistence"
+    reason = "fixtures panic on failure; named kernel adapters exercise child signals and unsynced sample persistence"
 )]
 
 use std::io::{BufRead as _, BufReader, Read as _};
@@ -11,8 +12,9 @@ use std::process::Command;
 use jiff::tz::TimeZone;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
+use test_case::test_case;
 use togi_config::Config;
-use togi_journal::{Build, EventKind, Payload, Recording, SCHEMA, ShutdownReason};
+use togi_journal::{Build, EventKind, FixStamp, Payload, Recording, SCHEMA, ShutdownReason};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
@@ -82,77 +84,76 @@ fn real_process_a_log_that_cannot_be_flushed_fails_a_command_that_otherwise_succ
 
 /// One completed trial exercises journal publication and the simulator's unsynced compression adapter.
 /// Whole-session behavior and sample-option forwarding are covered in memory, not repeated on disk.
-#[test]
-fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples() {
+#[test_case(false; "without samples")]
+#[test_case(true; "with samples")]
+fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples(write_samples: bool) {
     let definition = togi_sim::MachineDefinition::default();
-    for write_samples in [false, true] {
-        let dir = tempfile::tempdir().unwrap();
-        let persistence = Persistence::Files(dir.path().to_owned());
-        let outcome = togi_simrun::simulate(SimInput {
-            config: Config::default(),
-            source: ConfigSource::default(),
-            build: Build {
-                version: togi_version::version().to_owned(),
-                rev: None,
-                ruleset: togi_tuner::RULESET,
-                schema: SCHEMA,
-                fixes: 0,
-                evidence: togi_tuner::EVIDENCE_EPOCH,
+    let dir = tempfile::tempdir().unwrap();
+    let persistence = Persistence::Files(dir.path().to_owned());
+    let outcome = togi_simrun::simulate(SimInput {
+        config: Config::default(),
+        source: ConfigSource::default(),
+        build: Build {
+            version: togi_version::version().to_owned(),
+            rev: None,
+            ruleset: togi_tuner::RULESET,
+            schema: SCHEMA,
+            fixes: FixStamp::none(),
+            evidence: togi_tuner::EVIDENCE_EPOCH,
+        },
+        simulator: Simulator::new(
+            Model::new(&definition, 1).unwrap(),
+            RunSettings {
+                seed: 1,
+                ..RunSettings::default()
             },
-            simulator: Simulator::new(
-                Model::new(&definition, 1).unwrap(),
-                RunSettings {
-                    seed: 1,
-                    ..RunSettings::default()
-                },
-            ),
-            persistence: persistence.clone(),
-            replay: Replay::Warm,
-            verify_every: None,
-            max_boots: NonZeroU32::new(10).unwrap(),
-            policy: StopPolicy {
-                cycles: NonZeroU32::new(1),
-                first_result: false,
-            },
-            write_samples,
-            defects: &[],
-            log: None,
-            renderer: Renderer::default(),
-            zone: TimeZone::UTC,
-            cancel: CancellationToken::new(),
-            observer: Some(Box::new(|event| {
-                if event.kind() == EventKind::TrialEnd {
-                    Observe::Stop
-                } else {
-                    Observe::Continue
-                }
-            })),
-            dump_to: None,
+        ),
+        persistence: persistence.clone(),
+        replay: Replay::Warm,
+        verify_every: None,
+        max_boots: NonZeroU32::new(10).unwrap(),
+        policy: StopPolicy {
+            cycles: NonZeroU32::new(1),
+            first_result: false,
+        },
+        write_samples,
+        defects: &[],
+        log: None,
+        renderer: Renderer::default(),
+        zone: TimeZone::UTC,
+        cancel: CancellationToken::new(),
+        observer: Some(Box::new(|event| {
+            if event.kind() == EventKind::TrialEnd {
+                Observe::Stop
+            } else {
+                Observe::Continue
+            }
+        })),
+        dump_to: None,
+    })
+    .unwrap();
+    assert!(matches!(outcome, SimOutcome::Stopped(_)));
+    assert!(dir.path().join("state.json").is_file());
+    let events = togi_simrun::events(&persistence).unwrap();
+    let trial = events
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end.trial.as_str())
+            } else {
+                None
+            }
         })
         .unwrap();
-        assert!(matches!(outcome, SimOutcome::Stopped(_)));
-        assert!(dir.path().join("state.json").is_file());
-        let events = togi_simrun::events(&persistence).unwrap();
-        let trial = events
-            .iter()
-            .find_map(|event| {
-                if let Payload::TrialEnd(end) = &event.payload {
-                    Some(end.trial.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap();
-        let trial = dir.path().join("trials").join(trial);
-        let compressed = trial.join("samples.jsonl.gz");
-        assert_eq!(compressed.is_file(), write_samples);
-        assert!(!trial.join("samples.jsonl").exists());
-        if write_samples {
-            assert!(
-                std::fs::read(compressed)
-                    .unwrap()
-                    .starts_with(&[0x1f, 0x8b])
-            );
-        }
+    let trial = dir.path().join("trials").join(trial);
+    let compressed = trial.join("samples.jsonl.gz");
+    assert_eq!(compressed.is_file(), write_samples);
+    assert!(!trial.join("samples.jsonl").exists());
+    if write_samples {
+        assert!(
+            std::fs::read(compressed)
+                .unwrap()
+                .starts_with(&[0x1f, 0x8b])
+        );
     }
 }

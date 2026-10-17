@@ -13,8 +13,8 @@ use togi_machine::{
 };
 use togi_tuner::{
     Action, Between, Candidate, ClassKey, CyclePart, CyclePlan, CycleStep, DeepeningCheck,
-    DeepeningView, Forecast, GroupState, HuntPlan, Load, PhaseNo, PhasePlan, Profile, Requirement,
-    RequirementKind, RerunPlan, Secs, StepNo, Topology, TrialContext, TrialPlan, Window,
+    DeepeningView, Forecast, GroupState, HuntPlan, Lengths, Load, PhaseNo, PhasePlan, Profile,
+    Quota, Requirement, RerunPlan, Secs, StepNo, Topology, TrialContext, TrialPlan, Window,
     WorkloadChoice,
 };
 
@@ -204,10 +204,16 @@ fn part(short: u32, long: u32, passed: u32, running: bool) -> CyclePart {
         ccd: Some(CcdId(0)),
         full: true,
         partial: false,
-        short,
-        short_s: 60,
-        long,
-        long_s: 600,
+        lengths: Some(Lengths {
+            short: Quota {
+                count: short,
+                secs: 60,
+            },
+            long: (long > 0).then_some(Quota {
+                count: long,
+                secs: 600,
+            }),
+        }),
         passed,
         failed: 0,
         done: passed >= short + long,
@@ -271,10 +277,13 @@ fn hunt(number: u32, cut: u32) -> (HuntPlan, HuntFacts) {
         rerun: RerunPlan {
             regime: Regime::R7,
             cores: CoreSet::default(),
-            short: 0,
-            short_s: 0,
-            long: 0,
-            long_s: 0,
+            lengths: Lengths {
+                short: Quota {
+                    count: 1,
+                    secs: 600,
+                },
+                long: None,
+            },
         },
     };
     let facts = HuntFacts {
@@ -825,14 +834,11 @@ fn next_trial(context: TrialContext) -> TrialPlan {
         activity: Activity::Checking,
         profile: Profile::alone(&topology, core(0), off(-5)),
         duration: secs,
-        context,
         requirement: Requirement {
-            kind: RequirementKind::Cycle,
+            context,
             class: ClassKey::new(workload, load.cores(), secs),
             window: Window::Live { since: None },
             needed: NonZeroU16::new(1).expect("one"),
-            step: None,
-            part: None,
         },
         retry: false,
         cause: Vec::new(),

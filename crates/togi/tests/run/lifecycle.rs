@@ -749,6 +749,33 @@ fn the_bios_context_is_not_read_from_a_machine_whose_identity_is_not_validated()
 }
 
 #[test]
+fn a_topology_with_four_ccds_is_refused_with_the_preflight_status_and_no_journal() {
+    let mut fake = Fake::new();
+    fake.wrap = Box::new(|machine, _| Machine {
+        host: Box::new(crate::support::FourCcds(machine.host)),
+        ..machine
+    });
+    fake.grub = crate::support::Grub::with_saved_entry("tuning");
+    let grubenv = fake.grubenv();
+    let (exit, _, err) = fake.run(&["run", "--tuning-boot", grubenv.to_str().unwrap()]);
+    assert_eq!(exit, Exit::Preflight, "{err}");
+    assert_eq!(
+        err,
+        "togi run: this machine's topology is not supported: 4 CCDs; at most 3 are supported\n"
+    );
+    let journal = fake.read_to_string(fake.state_dir().join("events.jsonl"));
+    assert_eq!(journal.unwrap(), "");
+    let state = fake.grub.state();
+    assert_eq!(state.log, ["set", "clear"]);
+    assert!(
+        state.values["togi_leave_reason"].contains("unsupported topology: 4 CCDs"),
+        "{:?}",
+        state.values
+    );
+    assert_eq!(fake.reboots.get(), 0);
+}
+
+#[test]
 fn the_dashboard_hides_event_lines_and_the_clean_stop_prints_the_restoration_and_shutdown() {
     let mut fake = Fake::new();
     fake.interactive = true;

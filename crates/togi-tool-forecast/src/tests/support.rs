@@ -4,8 +4,8 @@ use jiff::{SignedDuration, Timestamp};
 use togi_config::Config;
 use togi_journal::{
     BootLeaveReason, Build, CommandReset, ConfigLoaded, CrashDetected, DeadEnd, DeadEndCondition,
-    Event, JournalTorn, Mce, Payload, ResetTarget, SCHEMA, Seq, SessionBaseline, SessionId,
-    SessionStart, Shutdown, ShutdownReason, Stamp, StateRebuilt, TrialId, TrialIntent,
+    Event, FixStamp, JournalTorn, Mce, Payload, ResetTarget, SCHEMA, Seq, SessionBaseline,
+    SessionId, SessionStart, Shutdown, ShutdownReason, Stamp, StateRebuilt, TrialId, TrialIntent,
 };
 use togi_machine::{
     BankType, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, ObservedOffset, PerCore,
@@ -35,7 +35,7 @@ pub(super) fn build(rev: &str) -> Build {
         rev: Some(rev.to_owned()),
         ruleset: RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: EVIDENCE_EPOCH,
     }
 }

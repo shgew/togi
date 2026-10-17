@@ -5,7 +5,7 @@ use std::time::Duration;
 use ratatui::text::Line;
 use togi_journal::HuntStage;
 use togi_machine::{CoreSet, Signal};
-use togi_tuner::{GroupState, HuntGroup, MemberProbe, RerunPlan};
+use togi_tuner::{GroupState, HuntGroup, Lengths, MemberProbe, RerunPlan};
 
 use super::super::colours::Paint;
 use super::super::fit::{Clause, Form, display_width, fit_clauses, rule};
@@ -704,11 +704,8 @@ fn then_lines(
             ),
         ]
     };
-    let rerun = &plan.rerun;
-    if rerun.short > 0 || rerun.long > 0 {
-        let (place, length) = rerun_words(rerun, class);
-        steps.push((format!("rerun {place}{length}"), Some(place)));
-    }
+    let (place, length) = rerun_words(&plan.rerun, class);
+    steps.push((format!("rerun {place}{length}"), Some(place)));
     if let Some(cycle) = scene.s.cycle
         && cycle.plan.current < cycle.plan.steps.len()
         && !compact
@@ -769,10 +766,11 @@ fn step_line(scene: &Scene<'_>, text: &str, emphasis: Option<&str>) -> Line<'sta
 /// Where the rerun after a hunt loads, and how long it runs.
 fn rerun_words(rerun: &RerunPlan, class: SizeClass) -> (String, String) {
     let place = format!("{} {}", rerun.regime, kind_words(rerun.regime));
+    let Lengths { short, long } = rerun.lengths;
     if class != SizeClass::Wide {
-        let mut length = format!(": {} x {}", rerun.short, seconds(rerun.short_s));
-        if rerun.long > 0 {
-            length = format!("{length}, then {} x {}", rerun.long, seconds(rerun.long_s));
+        let mut length = format!(": {} x {}", short.count, seconds(short.secs));
+        if let Some(long) = long {
+            length = format!("{length}, then {} x {}", long.count, seconds(long.secs));
         } else if class == SizeClass::Medium {
             length.push_str(", original length");
         }
@@ -785,11 +783,11 @@ fn rerun_words(rerun: &RerunPlan, class: SizeClass) -> (String, String) {
     }
     let mut length = format!(
         ": {} of {}",
-        plural(rerun.short as usize, "trial"),
-        seconds(rerun.short_s)
+        plural(short.count as usize, "trial"),
+        seconds(short.secs)
     );
-    if rerun.long > 0 {
-        length = format!("{length}, then {} of {}", rerun.long, seconds(rerun.long_s));
+    if let Some(long) = long {
+        length = format!("{length}, then {} of {}", long.count, seconds(long.secs));
     } else {
         length.push_str(", its original length");
     }

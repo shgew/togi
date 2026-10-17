@@ -2,6 +2,8 @@ use togi_journal::{Event, Payload};
 use togi_simrun::simulate;
 use togi_tuner::{State, replay};
 
+use test_case::test_case;
+
 use crate::common::{Bench, machine_file, nz};
 
 const CHECKPOINT: usize = 64;
@@ -41,6 +43,11 @@ fn fresh(prefix: &[Event]) -> State {
     replay(prefix).unwrap()
 }
 
+#[test_case("flat-hazard", 7, 30; "flat hazard 7")]
+#[test_case("target-shared-voltage", 2, 40; "target shared voltage 2")]
+#[test_case("target-r7-request-gap", 1, 40; "target r7 request gap 1")]
+#[test_case("misleading-mce", 3, 40; "misleading mce 3")]
+#[test_case("late-onset", 1, 60; "late onset 1")]
 fn incremental_matches_fresh(machine: &str, seed: u64, boots: u32) {
     let events = simulated(machine, seed, boots);
     let mut state = State::new();
@@ -85,29 +92,4 @@ fn incremental_matches_fresh(machine: &str, seed: u64, boots: u32) {
         questions > 0 && checkpoints > 1,
         "{machine} {seed}: {questions} questions, {checkpoints} checkpoints"
     );
-}
-
-#[test]
-fn flat_hazard_7() {
-    incremental_matches_fresh("flat-hazard", 7, 30);
-}
-
-#[test]
-fn target_shared_voltage_2() {
-    incremental_matches_fresh("target-shared-voltage", 2, 40);
-}
-
-#[test]
-fn target_r7_request_gap_1() {
-    incremental_matches_fresh("target-r7-request-gap", 1, 40);
-}
-
-#[test]
-fn misleading_mce_3() {
-    incremental_matches_fresh("misleading-mce", 3, 40);
-}
-
-#[test]
-fn late_onset_1() {
-    incremental_matches_fresh("late-onset", 1, 60);
 }

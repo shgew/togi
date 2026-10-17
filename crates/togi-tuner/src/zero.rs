@@ -7,8 +7,7 @@ use togi_machine::{Condition, CoreId};
 use crate::failures::Pending;
 use crate::state::Run;
 use crate::{
-    ClassKey, DecisionAction, Profile, Requirement, RequirementKind, TrialContext, TrialPlan,
-    Window, WorkloadChoice,
+    ClassKey, DecisionAction, Profile, Requirement, TrialContext, TrialPlan, Window, WorkloadChoice,
 };
 
 const NOT_CURVE_OPTIMIZER: &str = "the instability is not caused by Curve Optimizer";
@@ -77,14 +76,12 @@ pub(crate) enum AtZero {
 
 pub(crate) fn zero_requirement(class: ClassKey, failure: Seq) -> Requirement {
     Requirement {
-        kind: RequirementKind::ZeroRerun,
+        context: TrialContext::ZeroRerun { failure },
         class,
         window: Window::LiveOrCarried {
             since: Some(failure),
         },
         needed: NonZeroU16::MIN,
-        step: None,
-        part: None,
     }
 }
 
@@ -161,7 +158,6 @@ impl Run {
             },
             profile: Profile::zero(&self.topo),
             duration: class.duration(),
-            context: TrialContext::ZeroRerun { failure: seq },
             requirement: zero_requirement(class, seq),
             retry: false,
             cause: vec![seq],
@@ -170,8 +166,8 @@ impl Run {
 
     fn zero_retry(&self, failure: Seq) -> Option<TrialPlan> {
         let retry = self.retry.as_ref()?;
-        if retry.plan.context != (TrialContext::ZeroRerun { failure })
-            || self.retry_requirement(retry)? != retry.requirement
+        if retry.plan.requirement.context != (TrialContext::ZeroRerun { failure })
+            || self.retry_requirement(retry)? != retry.requirement()
         {
             return None;
         }
@@ -245,41 +241,6 @@ impl Run {
         };
         let class = ClassKey::new(workload, plan.load.cores(), plan.duration);
         Some(zero_requirement(class, failure))
-    }
-
-    /// Keeps an inconclusive all-zero rerun to retry. Returns whether `open` was one.
-    pub(crate) fn save_zero_retry(
-        &mut self,
-        open: &crate::flight::OpenTrial,
-        zero: Option<Seq>,
-    ) -> bool {
-        let (RequirementKind::ZeroRerun, Some(failure)) = (open.requirement.kind, zero) else {
-            return false;
-        };
-        let intent = &open.intent;
-        let load = match intent.core {
-            Some(core) if intent.cores.is_empty() => crate::Load::Single(core),
-            _ => crate::Load::Many(intent.cores),
-        };
-        self.retry = Some(crate::requirement::Retry {
-            plan: TrialPlan {
-                regime: intent.regime,
-                workload: WorkloadChoice::Frozen(intent.workload),
-                load,
-                condition: Condition::Parked,
-                activity: intent.activity.unwrap_or(Activity::Checking),
-                profile: open.profile,
-                duration: open.class.duration(),
-                context: TrialContext::ZeroRerun { failure },
-                requirement: open.requirement,
-                retry: true,
-                cause: vec![failure],
-            },
-            requirement: open.requirement,
-            turn: None,
-            workload: intent.workload,
-        });
-        true
     }
 
     pub(crate) fn zero_intent(

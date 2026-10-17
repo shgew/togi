@@ -22,6 +22,7 @@ use togi_machine::{
     Partial, Smu, SmuValidated, Stopped, Trials,
 };
 use togi_render::Renderer;
+use togi_tuner::Topology;
 use togi_tuningboot::Bootloader;
 
 use crate::appender::{AppendHook, Appender, Unresumed};
@@ -121,6 +122,7 @@ pub(crate) enum Control {
 pub(crate) type Outcome = Result<Control, SessionError>;
 
 /// How a run ended: the stop it reached, every error on the way out, and the journal handed back.
+#[must_use = "an ended run carries the errors, emergency and panic to report and the journal to close"]
 pub struct Ended {
     pub stop: Option<Stop>,
     /// The error that ended the run first, then the errors of its cleanup.
@@ -137,6 +139,7 @@ pub struct Ended {
 }
 
 /// The payload of a panic that unwound out of a run.
+#[must_use = "a panic caught for the cleanup is resumed once the caller has put its own state away"]
 pub struct Panic(Box<dyn std::any::Any + Send>);
 
 impl Panic {
@@ -212,6 +215,83 @@ pub(crate) enum Fault {
     Crashed,
 }
 
+/// What the run may do with the machine: each state holds only the proofs its hardware access needs.
+#[derive(Debug)]
+pub(crate) enum Lifecycle {
+    /// No sweep succeeded yet: a stale scope may still hold a workload, so nothing writes the SMU.
+    Unswept,
+    /// The stale-scope sweep succeeded.
+    Swept(Swept),
+    /// The machine may no longer be touched.
+    Faulted(Fault),
+}
+
+/// The proofs a run holds once its sweep succeeded.
+#[derive(Debug)]
+pub(crate) struct Swept {
+    pub cleared: SweepCleared,
+    /// Proof that no workload runs; `None` while a trial holds it.
+    pub stopped: Option<Stopped>,
+    /// The write transaction that last put the machine in the state the next trial starts on; `None` once a write
+    /// of the run failed or before any succeeded.
+    pub confirmed: Option<Verified>,
+}
+
+impl Lifecycle {
+    pub(crate) const fn swept(cleared: SweepCleared, stopped: Stopped) -> Self {
+        Self::Swept(Swept {
+            cleared,
+            stopped: Some(stopped),
+            confirmed: None,
+        })
+    }
+
+    pub(crate) const fn fault(&self) -> Option<Fault> {
+        match self {
+            Self::Faulted(fault) => Some(*fault),
+            Self::Unswept | Self::Swept(_) => None,
+        }
+    }
+
+    /// The proof that no workload runs, while the run holds it.
+    pub(crate) const fn stopped(&self) -> Option<&Stopped> {
+        match self {
+            Self::Swept(Swept {
+                stopped: Some(stopped),
+                ..
+            }) => Some(stopped),
+            Self::Swept(_) | Self::Unswept | Self::Faulted(_) => None,
+        }
+    }
+
+    /// Takes the machine out of reach for `fault`, dropping every proof; a fault already latched stays.
+    pub(crate) fn latch(&mut self, fault: Fault) {
+        if !matches!(self, Self::Faulted(_)) {
+            *self = Self::Faulted(fault);
+        }
+    }
+
+    /// The machine went down: that replaces whatever the run held or knew before.
+    pub(crate) fn crash(&mut self) {
+        *self = Self::Faulted(Fault::Crashed);
+    }
+
+    /// Hands back the proof that no workload runs, unless the machine is out of reach by now.
+    pub(crate) fn hold(&mut self, stopped: Stopped) {
+        if let Self::Swept(swept) = self {
+            swept.stopped = Some(stopped);
+        }
+    }
+
+    /// Forgets the proof that no workload runs, as a trial that holds it does.
+    #[cfg(test)]
+    pub(crate) fn lose_stopped(&mut self) {
+        if let Self::Swept(swept) = self {
+            swept.stopped = None;
+        }
+    }
+}
+
 pub(crate) struct Session<'machine> {
     pub(crate) appender: Appender<'machine>,
     pub(crate) smu: Box<dyn Smu + 'machine>,
@@ -227,31 +307,26 @@ pub(crate) struct Session<'machine> {
     pub(crate) carry: Option<PendingCarry>,
     pub(crate) cancel: CancellationToken,
     pub(crate) report: Box<dyn Write>,
-    /// Sorted by core id.
+    /// Sorted by core id, as [`Session::open`] read it.
     pub(crate) topology: Vec<CoreInfo>,
     pub(crate) hardware: Hardware,
-    /// Proof that no workload runs; `None` before the sweep and while a trial runs or after containment failed.
-    pub(crate) stopped: Option<Stopped>,
-    pub(crate) sweep: Option<SweepCleared>,
+    pub(crate) lifecycle: Lifecycle,
+    /// Proof that the SMU interface is the one togi expects; preflight's, independent of the sweep.
     pub(crate) validated: Option<SmuValidated>,
     pub(crate) visit: Visit,
     pub(crate) recovery_cancelled: bool,
     pub(crate) unreadable: Option<KernelUnreadable>,
-    /// Why the machine may no longer be touched, once it may not.
-    pub(crate) fault: Option<Fault>,
     /// What a join of a workload after a failed record or a panic reported when it could not confirm the stop; the
     /// close reports it after the error that ended the run.
     pub(crate) unconfirmed: Vec<togi_machine::Error>,
     /// The `shutdown` the cleanup records once the machine is restored.
     pub(crate) shutdown: Option<Shutdown>,
-    /// The write transaction that last put the machine in the state the next trial starts on; `None` once a write
-    /// of the run failed or before any succeeded.
-    pub(crate) confirmed: Option<Verified>,
 }
 
 impl<'machine> Session<'machine> {
-    /// Takes over the journal: refuses one this build may not append to, reads the pending tuning-boot reason, folds
-    /// the journal and reads the topology. Nothing is appended.
+    /// Takes over the journal: refuses one this build may not append to, reads the topology and, for a journal with
+    /// no session yet, refuses one the tuner cannot work on; then reads the pending tuning-boot reason and folds the
+    /// journal. Nothing is appended.
     pub(crate) fn open(input: RunInput<'machine>) -> Result<Self, Box<Ended>> {
         let RunInput {
             config,
@@ -274,10 +349,10 @@ impl<'machine> Session<'machine> {
             cancel,
             report,
         } = input;
-        let refused = |journal, error: SessionError| {
+        let refused = |journal, errors: Vec<SessionError>| {
             Box::new(Ended {
                 stop: None,
-                errors: vec![error],
+                errors,
                 emergency: None,
                 journal,
                 capsule: None,
@@ -285,38 +360,45 @@ impl<'machine> Session<'machine> {
             })
         };
         if let Some(refusal) = refusal(&build, &journal) {
-            let mut errors = vec![SessionError::Compatibility(refusal)];
-            if let Some(bootloader) = bootloader.as_deref_mut() {
-                let left = boot::leave(bootloader, "journal incompatible");
-                errors.extend(left.reason_error.map(SessionError::from));
-                errors.extend(left.entry.err().map(SessionError::ClearSavedEntry));
-            }
-            return Err(Box::new(Ended {
-                stop: None,
-                errors,
-                emergency: None,
-                journal,
-                capsule: None,
-                panic: None,
-            }));
+            let errors = leaving(
+                SessionError::Compatibility(refusal),
+                &mut bootloader,
+                "journal incompatible",
+            );
+            return Err(refused(journal, errors));
         }
-        let handoff = match bootloader.map(BootHandoff::read).transpose() {
-            Ok(handoff) => handoff,
-            Err(error) => return Err(refused(journal, error.into())),
-        };
         let Machine {
             clock,
             smu,
-            host,
+            mut host,
             trials,
             kernel,
         } = machine;
+        let mut topology = match host.topology() {
+            Ok(topology) => topology,
+            Err(error) => return Err(refused(journal, vec![error.into()])),
+        };
+        topology.sort_by_key(|info| info.core);
+        if journal.events().is_empty()
+            && let Err(error) = Topology::new(&topology)
+        {
+            let errors = leaving(
+                SessionError::UnsupportedTopology(error),
+                &mut bootloader,
+                &format!("unsupported topology: {error}"),
+            );
+            return Err(refused(journal, errors));
+        }
+        let handoff = match bootloader.map(BootHandoff::read).transpose() {
+            Ok(handoff) => handoff,
+            Err(error) => return Err(refused(journal, vec![error.into()])),
+        };
         let mut appender =
             match Appender::resume_with(journal, clock, renderer, zone, defects, resume) {
                 Ok(appender) => appender,
                 Err(unresumed) => {
                     let Unresumed { journal, error } = *unresumed;
-                    return Err(refused(journal, error.into()));
+                    return Err(refused(journal, vec![error.into()]));
                 }
             };
         if let Some(log) = log {
@@ -351,18 +433,15 @@ impl<'machine> Session<'machine> {
             carry,
             cancel,
             report,
-            topology: Vec::new(),
+            topology,
             hardware: Hardware::new(CoreSet::default()),
-            stopped: None,
-            sweep: None,
+            lifecycle: Lifecycle::Unswept,
             validated: None,
             visit,
             recovery_cancelled: false,
             unreadable: None,
-            fault: None,
             unconfirmed: Vec::new(),
             shutdown: None,
-            confirmed: None,
         })
     }
 
@@ -384,13 +463,11 @@ impl<'machine> Session<'machine> {
         matches!(self.visit, Visit::Same { reconciled: false })
     }
 
-    /// Reads the topology and refuses changed session cores before finishing an earlier boot's dead end; then
-    /// refuses configured cores it lacks and, unless a dead end stays pending until reconciliation, records the
-    /// startup kernel boundary and the configuration.
+    /// Refuses changed session cores before finishing an earlier boot's dead end; then refuses configured cores the
+    /// machine lacks and, unless a dead end stays pending until reconciliation, records the startup kernel boundary
+    /// and the configuration.
     pub(crate) fn start(&mut self) -> Outcome {
-        let mut topology = self.host.topology()?;
-        topology.sort_by_key(|info| info.core);
-        let cores: CoreSet = topology.iter().map(|info| info.core).collect();
+        let cores: CoreSet = self.topology.iter().map(|info| info.core).collect();
         let recorded = self.appender.recovery();
         if recorded.started() {
             let known: CoreSet = recorded.topology().keys().copied().collect();
@@ -413,7 +490,6 @@ impl<'machine> Session<'machine> {
         {
             return Err(SessionError::NoSuchCore { core });
         }
-        self.topology = topology;
         self.hardware = Hardware::new(cores);
         if self.appender.recovery().pending_dead_end().is_some() {
             return Ok(Control::Continue);
@@ -770,6 +846,22 @@ pub(crate) fn refusal(build: &Build, journal: &Journal) -> Option<togi_journal::
         Verdict::Use => None,
         Verdict::Archive => unreachable!("an append is refused or used, never archived"),
     }
+}
+
+/// The errors of a run refused before its first append: `refusal`, then those of leaving the tuning boot for `reason`
+/// when the run was started from it.
+fn leaving(
+    refusal: SessionError,
+    bootloader: &mut Option<Box<dyn Bootloader>>,
+    reason: &str,
+) -> Vec<SessionError> {
+    let mut errors = vec![refusal];
+    if let Some(bootloader) = bootloader.as_deref_mut() {
+        let left = boot::leave(bootloader, reason);
+        errors.extend(left.reason_error.map(SessionError::from));
+        errors.extend(left.entry.err().map(SessionError::ClearSavedEntry));
+    }
+    errors
 }
 
 #[cfg(test)]

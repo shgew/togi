@@ -570,7 +570,7 @@ fn a_different_offset_starts_new_checks_and_a_reset_drops_retry_origins() {
     j.reset(1);
     drive(&mut j, 100, |j| j.run().phases.phase1_end().is_none());
     assert_eq!(j.run().phases.mark(core(1)), None);
-    assert_eq!(j.run().core(core(1)).solo_limit, None);
+    assert_eq!(j.run().core(core(1)).phase.solo_limit(), None);
     assert!(j.run().rounds.active().is_none());
     j.assert_resumes();
 }
@@ -892,7 +892,7 @@ fn round_check_retry() -> (Journal, TrialPlan) {
     let retry = j.next_trial();
     assert!(retry.retry);
     assert_eq!(retry.requirement, first.requirement);
-    assert_eq!(retry.context, first.context);
+    assert_eq!(retry.requirement.context, first.requirement.context);
     assert!(j.run().retry.is_some());
     (j, retry)
 }
@@ -913,7 +913,7 @@ fn first_trial_after(j: &mut Journal) -> TrialPlan {
 #[test]
 fn a_cancelled_round_check_retry_does_not_run_after_its_round_ends() {
     let (mut j, retry) = round_check_retry();
-    let TrialContext::Round { round } = retry.context else {
+    let TrialContext::Round { round } = retry.requirement.context else {
         panic!("the retry is not a round check: {retry:?}");
     };
     j.reset(1);
@@ -933,8 +933,10 @@ fn a_cancelled_round_check_retry_does_not_run_after_its_round_ends() {
     assert!(j.run().retry.is_none());
     let next = first_trial_after(&mut j);
     assert!(!next.retry, "{next:?}");
-    assert_ne!(next.context, retry.context);
-    assert!(matches!(next.context, TrialContext::Search { core: c, .. } if c == core(1)));
+    assert_ne!(next.requirement.context, retry.requirement.context);
+    assert!(
+        matches!(next.requirement.context, TrialContext::Search { core: c, .. } if c == core(1))
+    );
     assert_eq!(next.activity, Activity::Search);
     assert_eq!(next.load, Load::Single(core(1)));
     j.assert_resumes();
@@ -945,7 +947,7 @@ fn a_cancelled_round_check_retry_does_not_run_after_its_round_ends() {
     assert!(j.run().retry.is_none());
     until_round_checks(&mut j, 2);
     let next = j.next_trial();
-    let TrialContext::Round { round: second } = next.context else {
+    let TrialContext::Round { round: second } = next.requirement.context else {
         panic!("the next round's first check is not a round check: {next:?}");
     };
     assert_ne!(second, round);
@@ -958,8 +960,10 @@ fn a_cancelled_round_check_retry_does_not_run_after_its_round_ends() {
     j.reset(1);
     let next = first_trial_after(&mut j);
     assert!(!next.retry, "{next:?}");
-    assert_ne!(next.context, retry.context);
-    assert!(matches!(next.context, TrialContext::Search { core: c, .. } if c == core(1)));
+    assert_ne!(next.requirement.context, retry.requirement.context);
+    assert!(
+        matches!(next.requirement.context, TrialContext::Search { core: c, .. } if c == core(1))
+    );
     assert_eq!(next.activity, Activity::Search);
     assert_eq!(next.load, Load::Single(core(1)));
     j.assert_resumes();
@@ -1208,13 +1212,13 @@ fn a_round_intent_is_scheduled_only_for_the_open_rounds_own_checks() {
     let round = round_starts(&j.events).last().copied().unwrap().clone();
     let plan = j.next_trial();
     assert_eq!(
-        plan.context,
+        plan.requirement.context,
         crate::TrialContext::Round { round: round.round }
     );
     let (intent, trial) = j.intent(&plan);
     assert_eq!(
-        j.run().flight.open.as_ref().unwrap().requirement.kind,
-        crate::RequirementKind::Round
+        j.requirement().needed,
+        u32::from(plan.requirement.needed.get())
     );
     let other = std::num::NonZeroU32::new(round.round.get() + 1).unwrap();
     j.end(intent, &trial, Outcome::Pass);
@@ -1222,7 +1226,10 @@ fn a_round_intent_is_scheduled_only_for_the_open_rounds_own_checks() {
     unscheduled(
         &j,
         &TrialPlan {
-            context: crate::TrialContext::Round { round: other },
+            requirement: crate::Requirement {
+                context: crate::TrialContext::Round { round: other },
+                ..next.requirement
+            },
             ..next.clone()
         },
     );

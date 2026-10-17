@@ -24,7 +24,7 @@ const LIMIT_RANGE: (i64, i64) = (DEEPEST, 1);
 const CORES: usize = 16;
 
 /// Fits the records and returns the machine with its raw negative log likelihood.
-pub(crate) fn fit(records: &[TrialFact]) -> Result<(MachineDefinition, f64), Error> {
+pub(crate) fn fit(records: &[&TrialFact]) -> Result<(MachineDefinition, f64), Error> {
     fit_from(records, None, None)
 }
 
@@ -37,7 +37,7 @@ pub(crate) fn fit(records: &[TrialFact]) -> Result<(MachineDefinition, f64), Err
 /// multi-core R7 load. No joint and no residual hazard is ever fitted. The returned loss is the raw
 /// Bernoulli loss, without the prior and named-core terms every step minimized.
 pub(crate) fn fit_from(
-    records: &[TrialFact],
+    records: &[&TrialFact],
     initial: Option<&MachineDefinition>,
     guard: Option<&Checker>,
 ) -> Result<(MachineDefinition, f64), Error> {
@@ -101,7 +101,7 @@ fn offset_of(o: &Observation, core: usize) -> i64 {
 impl Likelihood<'_> {
     pub(crate) fn fit_regime_limits(&mut self) {
         let rail = self.cfg.shared_voltage.is_some();
-        for (core, id) in self.core_ids().into_iter().enumerate() {
+        for (core, id) in self.core_ids().enumerate() {
             for (r, regime) in REGIMES.into_iter().enumerate() {
                 for alone in [true, false] {
                     if alone && r >= 5 {
@@ -183,7 +183,7 @@ impl Likelihood<'_> {
     /// cores are left to the rail model.
     pub(crate) fn fit_idle(&mut self) {
         let rail = self.cfg.shared_voltage.is_some();
-        for (core, id) in self.core_ids().into_iter().enumerate() {
+        for (core, id) in self.core_ids().enumerate() {
             let indices = self.select(|o| limit_driven(rail, o) && !o.loads(id));
             let exposed = indices.iter().any(|&i| offset_of(&self.obs[i], core) < 0);
             let idle = self.cfg.core[core].idle.unwrap_or(DEEPEST);
@@ -206,7 +206,7 @@ impl Likelihood<'_> {
 
     pub(crate) fn fit_workloads(&mut self) {
         let rail = self.cfg.shared_voltage.is_some();
-        for (core, id) in self.core_ids().into_iter().enumerate() {
+        for (core, id) in self.core_ids().enumerate() {
             let workloads: BTreeSet<(&'static str, WorkloadId)> = self
                 .obs
                 .iter()

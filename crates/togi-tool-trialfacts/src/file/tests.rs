@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use test_case::test_case;
+
 use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -149,58 +151,68 @@ fn a_failure_before_publication_preserves_the_previous_reader_state() {
                 fail: Some(failure),
                 ..Storage::default()
             }));
+            let input = format!("previous extract {}, after {failure:?}", old.is_some());
             let before = storage.borrow().read();
             let error = publish(&storage, &facts).unwrap_err();
             match failure {
-                Operation::Rename => assert!(matches!(error, WriteError::Replace { .. })),
+                Operation::Rename => {
+                    assert!(matches!(error, WriteError::Replace { .. }), "{input}");
+                }
                 Operation::Create | Operation::Write | Operation::Flush | Operation::Sync => {
-                    assert!(matches!(error, WriteError::Io(_)));
+                    assert!(matches!(error, WriteError::Io(_)), "{input}");
                 }
             }
             let state = storage.borrow();
-            assert_eq!(state.read(), before, "after {failure:?}");
-            assert_eq!(state.published, old, "after {failure:?}");
-            assert!(state.temporary.is_none(), "after {failure:?}");
+            assert_eq!(state.read(), before, "{input}");
+            assert_eq!(state.published, old, "{input}");
+            assert!(state.temporary.is_none(), "{input}");
             if failure != Operation::Rename {
-                assert!(!state.operations.contains(&Operation::Rename));
+                assert!(!state.operations.contains(&Operation::Rename), "{input}");
             }
             if matches!(
                 failure,
                 Operation::Create | Operation::Write | Operation::Flush
             ) {
-                assert!(!state.operations.contains(&Operation::Sync));
+                assert!(!state.operations.contains(&Operation::Sync), "{input}");
             }
         }
     }
 }
 
-#[test]
-fn invalid_facts_do_not_even_create_a_temporary_file() {
-    let facts = facts();
-    let mut invalid = facts.clone();
-    invalid[0].class = crate::Class::Idle {
+fn idle_pass(mut records: Vec<TrialFact>) -> Vec<TrialFact> {
+    records[0].class = crate::Class::Idle {
         loaded: togi_machine::CoreSet::default(),
     };
-    invalid[0].outcome = togi_facts::Decisive::Pass;
-    let mut not_finite = facts.clone();
-    not_finite[0].voltage_requests_v = [(togi_machine::CoreId::new(0).unwrap(), f64::NAN)]
+    records[0].outcome = togi_facts::Decisive::Pass;
+    records
+}
+
+fn not_finite(mut records: Vec<TrialFact>) -> Vec<TrialFact> {
+    records[0].voltage_requests_v = [(togi_machine::CoreId::new(0).unwrap(), f64::NAN)]
         .into_iter()
         .collect();
-    for records in [Vec::new(), invalid, not_finite] {
-        let storage = Rc::new(RefCell::new(Storage {
-            published: Some(encoded(&facts)),
-            ..Storage::default()
-        }));
-        let before = storage.borrow().read();
-        assert!(matches!(
-            publish(&storage, &records),
-            Err(WriteError::Empty | WriteError::Invalid { .. } | WriteError::NotFinite { .. })
-        ));
-        let state = storage.borrow();
-        assert_eq!(state.read(), before);
-        assert!(state.operations.is_empty());
-        assert!(state.temporary.is_none());
-    }
+    records
+}
+
+#[test_case(|_| Vec::new(); "no facts")]
+#[test_case(idle_pass; "an invalid fact")]
+#[test_case(not_finite; "a voltage that is not finite")]
+fn invalid_facts_do_not_even_create_a_temporary_file(spoil: fn(Vec<TrialFact>) -> Vec<TrialFact>) {
+    let facts = facts();
+    let records = spoil(facts.clone());
+    let storage = Rc::new(RefCell::new(Storage {
+        published: Some(encoded(&facts)),
+        ..Storage::default()
+    }));
+    let before = storage.borrow().read();
+    assert!(matches!(
+        publish(&storage, &records),
+        Err(WriteError::Empty | WriteError::Invalid { .. } | WriteError::NotFinite { .. })
+    ));
+    let state = storage.borrow();
+    assert_eq!(state.read(), before);
+    assert!(state.operations.is_empty());
+    assert!(state.temporary.is_none());
 }
 
 #[test]

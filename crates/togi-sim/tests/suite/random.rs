@@ -3,6 +3,8 @@
 use togi_sim::Model;
 use togi_sim::random::{Domain, stream};
 
+use test_case::test_case;
+
 use crate::common::{core_def, flat_cores, machine};
 
 fn seeded(seed: u64, cores: i64) -> Model {
@@ -64,7 +66,11 @@ fn drawn_limits_stay_within_their_documented_bounds() {
                 together += 1;
                 zero_together += usize::from(limit == floor);
             }
-            assert!(limits.idle.is_none() && limits.flat == 0.0 && limits.workload.is_empty());
+            assert!(
+                limits.idle.is_none() && limits.workload.is_empty(),
+                "seed {seed}"
+            );
+            assert_eq!(limits.flat, 0.0, "seed {seed}");
         }
     }
     assert!(
@@ -87,19 +93,21 @@ fn r6_and_r7_start_from_the_shallowest_alone_limit() {
     for seed in 0..50 {
         for limits in seeded(seed, 4).limits() {
             let shallowest = *limits.alone.iter().max().expect("five limits");
-            assert!(limits.together[5] >= shallowest && limits.together[6] >= shallowest);
+            assert!(
+                limits.together[5] >= shallowest && limits.together[6] >= shallowest,
+                "seed {seed}: {limits:?}"
+            );
         }
     }
 }
 
-#[test]
-fn a_smaller_machine_draws_only_its_own_cores() {
-    for cores in [2, 8] {
-        assert_eq!(
-            seeded(5, cores).limits().len(),
-            usize::try_from(cores).expect("count")
-        );
-    }
+#[test_case(2; "two cores")]
+#[test_case(8; "eight cores")]
+fn a_smaller_machine_draws_only_its_own_cores(cores: i64) {
+    assert_eq!(
+        seeded(5, cores).limits().len(),
+        usize::try_from(cores).expect("count")
+    );
 }
 
 #[test]

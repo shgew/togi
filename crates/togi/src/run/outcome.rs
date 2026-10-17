@@ -28,8 +28,9 @@ impl Outcome {
 
 /// Writes the diagnostics of a run that ended with `stop` and `errors`, citing `events` for a dead end's
 /// evidence, and says how the process exits. A refused journal is [`Exit::Incompatible`], a missing core
-/// [`Exit::Usage`], any other error [`Exit::Error`]; without errors a signal, the cycles or the first result
-/// exit 0 and a dead end exits with its own status.
+/// [`Exit::Usage`], a topology the tuner cannot work on [`Exit::Preflight`], any other error
+/// [`Exit::Error`]; without errors a signal, the cycles or the first result exit 0 and a dead end exits
+/// with its own status.
 pub(super) fn conclude(
     err: &mut dyn Write,
     renderer: Renderer,
@@ -54,6 +55,7 @@ pub(super) fn conclude(
         return Outcome::exit(match first {
             SessionError::Compatibility(_) => Exit::Incompatible,
             SessionError::NoSuchCore { .. } => Exit::Usage,
+            SessionError::UnsupportedTopology(_) => Exit::Preflight,
             SessionError::Journal(_)
             | SessionError::Fold(_)
             | SessionError::Machine(_)

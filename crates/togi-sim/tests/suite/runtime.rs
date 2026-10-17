@@ -9,6 +9,8 @@ use togi_machine::{
 use togi_sim::definition::{ModelDef, Weights};
 use togi_sim::{History, RunSettings, Simulator, WEIGHTED_SIGNALS};
 
+use test_case::test_case;
+
 use crate::common::{Rig, basic, core, crashed, flat_cores, machine, model, sharp, spec};
 
 const NINETY: Duration = Duration::from_secs(90);
@@ -120,46 +122,60 @@ fn each_signal_has_its_result_shape() {
         let waited = rig.alone(0, -12, Regime::R2, 0);
         match signal {
             Signal::ComputationError | Signal::Stall | Signal::UnexpectedExit => {
-                let result = waited.expect("a backend failure");
-                let failure = result.failure.expect("a failure");
-                assert_eq!((failure.signal, failure.core), (signal, core(0)));
-                assert!(result.ran < NINETY);
+                let result = waited.unwrap_or_else(|error| panic!("{signal}: {error:?}"));
+                let Some(failure) = result.failure else {
+                    panic!("{signal}: no failure in {result:?}");
+                };
+                assert_eq!(
+                    (failure.signal, failure.core),
+                    (signal, core(0)),
+                    "{signal}"
+                );
+                assert!(result.ran < NINETY, "{signal}: {:?}", result.ran);
             }
             Signal::CorrectedMce => {
-                let result = waited.expect("a pass-shaped result");
+                let result = waited.unwrap_or_else(|error| panic!("{signal}: {error:?}"));
                 let mces = rig.mces(&boot);
-                assert!(result.failure.is_none() && result.ran == NINETY);
-                assert_eq!(mces.len(), 1);
-                assert!(mces[0].corrected && mces[0].core == Some(core(0)));
+                assert!(result.failure.is_none(), "{signal}: {:?}", result.failure);
+                assert_eq!(result.ran, NINETY, "{signal}");
+                assert_eq!(mces.len(), 1, "{signal}: {mces:?}");
+                assert_eq!(
+                    (mces[0].corrected, mces[0].core),
+                    (true, Some(core(0))),
+                    "{signal}"
+                );
             }
             Signal::Crash => {
-                assert!(crashed(&waited));
+                assert!(crashed(&waited), "{signal}: {waited:?}");
                 assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
                 rig.sim.reboot();
                 let next = rig.boot();
                 let mces = rig.mces(&next);
-                assert_eq!(mces.len(), 1);
-                assert!(!mces[0].corrected && mces[0].core == Some(core(0)));
-                assert_eq!(mces[0].time, rig.sim.now());
-                assert_eq!(mces[0].monotonic, Duration::ZERO);
+                assert_eq!(mces.len(), 1, "{signal}: {mces:?}");
+                assert_eq!(
+                    (mces[0].corrected, mces[0].core),
+                    (false, Some(core(0))),
+                    "{signal}"
+                );
+                assert_eq!(mces[0].time, rig.sim.now(), "{signal}");
+                assert_eq!(mces[0].monotonic, Duration::ZERO, "{signal}");
             }
             Signal::UncorrectedMce => unreachable!("not a weighted signal"),
         }
     }
 }
 
-#[test]
-fn the_near_limit_rate_fails_a_core_at_its_limit_only_when_it_is_set() {
-    for rate in [0.0, 1e6] {
-        let definition = two_cores(ModelDef {
-            near_limit_rate: rate,
-            ..sharp(Signal::ComputationError)
-        });
-        let mut rig = Rig::new(&definition, 2);
-        for index in 0..100 {
-            let result = rig.alone(1, -10, Regime::R1, index).expect("a result");
-            assert_eq!(result.failure.is_some(), rate > 0.0, "{rate} {index}");
-        }
+#[test_case(0.0; "unset")]
+#[test_case(1e6; "set")]
+fn the_near_limit_rate_fails_a_core_at_its_limit_only_when_it_is_set(rate: f64) {
+    let definition = two_cores(ModelDef {
+        near_limit_rate: rate,
+        ..sharp(Signal::ComputationError)
+    });
+    let mut rig = Rig::new(&definition, 2);
+    for index in 0..100 {
+        let result = rig.alone(1, -10, Regime::R1, index).expect("a result");
+        assert_eq!(result.failure.is_some(), rate > 0.0, "trial {index}");
     }
 }
 
@@ -182,8 +198,9 @@ fn a_nonzero_outsider_switches_a_trial_to_the_together_limit() {
     );
 }
 
-#[test]
-fn machine_checks_name_a_bank_of_the_kind_the_model_chooses() {
+#[test_case(1.0; "core local")]
+#[test_case(0.0; "shared")]
+fn machine_checks_name_a_bank_of_the_kind_the_model_chooses(local: f64) {
     const BANKS: [BankType; 9] = [
         BankType::LoadStore,
         BankType::InstructionFetch,
@@ -195,22 +212,20 @@ fn machine_checks_name_a_bank_of_the_kind_the_model_chooses() {
         BankType::MemoryController,
         BankType::DataFabric,
     ];
-    for local in [1.0, 0.0] {
-        let definition = two_cores(ModelDef {
-            core_local_bank: local,
-            ..sharp(Signal::CorrectedMce)
-        });
-        let mut rig = Rig::new(&definition, 4);
-        for index in 0..20 {
-            rig.alone(0, -15, Regime::R2, index).expect("a result");
-        }
-        let boot = rig.boot();
-        let mces = rig.mces(&boot);
-        assert_eq!(mces.len(), 20);
-        for mce in mces {
-            assert_eq!(mce.bank_type.core_local(), local > 0.5);
-            assert_eq!(BANKS[usize::from(mce.bank)], mce.bank_type);
-        }
+    let definition = two_cores(ModelDef {
+        core_local_bank: local,
+        ..sharp(Signal::CorrectedMce)
+    });
+    let mut rig = Rig::new(&definition, 4);
+    for index in 0..20 {
+        rig.alone(0, -15, Regime::R2, index).expect("a result");
+    }
+    let boot = rig.boot();
+    let mces = rig.mces(&boot);
+    assert_eq!(mces.len(), 20);
+    for mce in mces {
+        assert_eq!(mce.bank_type.core_local(), local > 0.5);
+        assert_eq!(BANKS[usize::from(mce.bank)], mce.bank_type);
     }
 }
 

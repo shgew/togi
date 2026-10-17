@@ -67,7 +67,7 @@ pub(super) fn arguments(
     };
     let flags = parse(args).map_err(refuse)?;
     let allowed: &[&str] = match recipe {
-        Recipe::Forward => &["--facts", "--seal", "--jobs"],
+        Recipe::Forward => &["--facts", "--seal", "--jobs", "--records"],
         Recipe::Fit => &["--facts", "--out", "--jobs", "--seed", "--bootstrap"],
         Recipe::Bench => &[
             "--suite",
@@ -113,7 +113,7 @@ pub(super) fn arguments(
         Recipe::Forward | Recipe::Fit => {
             let Some(Some(facts)) = value("--facts") else {
                 return Err(refuse(
-                    "--facts must name a manifest input; the default extract holds sessions no campaign may read"
+                    "--facts must name a manifest input; the committed extract holds sessions no campaign may read"
                         .to_owned(),
                 ));
             };
@@ -133,6 +133,7 @@ pub(super) fn arguments(
                             )));
                         }
                     }
+                    output("--records")?;
                 }
                 (Recipe::Forward, Role::Confirmation | Role::ConfirmationReference) => {
                     if confirmation == 0 {
@@ -143,6 +144,7 @@ pub(super) fn arguments(
                             "a confirmation scores its sessions unsealed".to_owned(),
                         ));
                     }
+                    output("--records")?;
                 }
                 (Recipe::Fit, Role::Finalization) => {
                     if value("--out").is_none() {

@@ -1,3 +1,5 @@
+use test_case::test_case;
+
 use super::sample;
 use crate::fs::{Fault, MemFs, Op};
 use crate::testing::{
@@ -244,24 +246,23 @@ fn unreadable_fixture(fs: &MemFs) -> Vec<u8> {
     live(fs)
 }
 
-#[test]
-fn an_unreadable_journal_is_archived_byte_for_byte_behind_a_compat_marker() {
-    for kind in [ArchiveKind::ResetAll, ArchiveKind::Transition] {
-        let fs = MemFs::new();
-        let original = unreadable_fixture(&fs);
-        let mut dir = simulated(&fs);
-        assert_eq!(
-            dir.archive_unreadable(kind).unwrap(),
-            Some(default_session())
-        );
-        assert_archived_intact(&fs, &original, "unreadable");
-        assert!(
-            dir.markers()
-                .unwrap()
-                .iter()
-                .all(|(marker, _)| *marker != Marker::CompatPending)
-        );
-    }
+#[test_case(ArchiveKind::ResetAll; "reset all")]
+#[test_case(ArchiveKind::Transition; "transition")]
+fn an_unreadable_journal_is_archived_byte_for_byte_behind_a_compat_marker(kind: ArchiveKind) {
+    let fs = MemFs::new();
+    let original = unreadable_fixture(&fs);
+    let mut dir = simulated(&fs);
+    assert_eq!(
+        dir.archive_unreadable(kind).unwrap(),
+        Some(default_session())
+    );
+    assert_archived_intact(&fs, &original, "unreadable");
+    assert!(
+        dir.markers()
+            .unwrap()
+            .iter()
+            .all(|(marker, _)| *marker != Marker::CompatPending)
+    );
 }
 
 #[test]

@@ -8,8 +8,8 @@ use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_defect::Entry;
 use togi_journal::{
-    Activity, Build, Event, MemFs, Payload, SCHEMA, Seq, SessionBaseline, SessionStart, StateDir,
-    fs::Fault, fs::Op,
+    Activity, Build, Event, FixStamp, MemFs, Payload, SCHEMA, Seq, SessionBaseline, SessionStart,
+    StateDir, fs::Fault, fs::Op,
 };
 use togi_machine::{
     BootId, CancellationToken, Condition, CoreId, CoreSet, Machine, ObservedOffset, PerCore,
@@ -20,8 +20,8 @@ use togi_render::Renderer;
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_tuner::{
-    Action, ClassKey, Load, Profile, Requirement, RequirementKind, Secs, TrialContext, TrialPlan,
-    Window, WorkloadChoice,
+    Action, ClassKey, Load, Profile, Requirement, Secs, TrialContext, TrialPlan, Window,
+    WorkloadChoice,
 };
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
@@ -30,7 +30,7 @@ use crate::boot::BootHandoff;
 use crate::emergency::SweepCleared;
 use crate::error::AppendFailure;
 use crate::execute::TunerValues;
-use crate::session::{ConfigSource, Control, RunInput, Session, StopPolicy};
+use crate::session::{ConfigSource, Control, Lifecycle, RunInput, Session, StopPolicy};
 use crate::write::{Hardware, ProfileRecord, ProfileRequest, apply_profile, checker};
 
 pub(crate) struct Rig {
@@ -39,8 +39,8 @@ pub(crate) struct Rig {
     pub appender: Appender<'static>,
     pub smu: Box<dyn Smu>,
     pub hardware: Hardware,
-    pub stopped: Stopped,
-    pub sweep: SweepCleared,
+    /// Swept, with the proof that no workload runs.
+    pub lifecycle: Lifecycle,
     pub validated: SmuValidated,
     pub boot: BootId,
 }
@@ -67,7 +67,7 @@ pub(crate) fn build() -> Build {
         rev: None,
         ruleset: 1,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: 1,
     }
 }
@@ -140,7 +140,6 @@ impl Rig {
             &[],
         );
         let swept = trials.sweep(&CancellationToken::new()).unwrap();
-        let sweep = SweepCleared::of(&swept);
         let cores: CoreSet = topology.iter().map(|info| info.core).collect();
         let rig = Self {
             sim,
@@ -148,8 +147,7 @@ impl Rig {
             appender,
             smu,
             hardware: Hardware::new(cores),
-            stopped: swept.stopped,
-            sweep,
+            lifecycle: Lifecycle::swept(SweepCleared::of(&swept), swept.stopped),
             validated,
             boot,
         };
@@ -167,6 +165,13 @@ impl Rig {
             .collect()
     }
 
+    pub(crate) fn cleared(&self) -> SweepCleared {
+        let Lifecycle::Swept(swept) = &self.lifecycle else {
+            panic!("the rig is swept");
+        };
+        swept.cleared
+    }
+
     pub(crate) fn offset(&mut self, n: i64) -> i64 {
         self.smu.offset(core(n)).unwrap().0
     }
@@ -178,7 +183,7 @@ impl Rig {
             crate::write::apply(
                 &mut self.appender,
                 &mut *self.smu,
-                &self.stopped,
+                self.lifecycle.stopped().unwrap(),
                 checked,
                 &[],
             )
@@ -395,7 +400,7 @@ pub(crate) fn put(session: &mut Session, values: &[i64]) {
     apply_profile(
         &mut session.appender,
         &mut *session.smu,
-        session.stopped.as_ref().unwrap(),
+        session.lifecycle.stopped().unwrap(),
         &mut session.hardware,
         ProfileRequest {
             target: &target,
@@ -485,18 +490,15 @@ pub(crate) fn search_plan(session: &Session, core: CoreId, regime: Regime) -> Tr
         activity: Activity::Search,
         profile: Profile::alone(topology, core, offset),
         duration,
-        context: TrialContext::Search {
-            core,
-            regime,
-            offset,
-        },
         requirement: Requirement {
-            kind: RequirementKind::Search,
+            context: TrialContext::Search {
+                core,
+                regime,
+                offset,
+            },
             class: ClassKey::new(workload.id(), std::iter::once(core).collect(), duration),
             window: Window::Live { since: None },
             needed: NonZeroU16::MIN,
-            step: None,
-            part: None,
         },
         retry: false,
         cause: Vec::new(),

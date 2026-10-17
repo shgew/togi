@@ -74,7 +74,7 @@ fn dead_end(branch: &Branch) -> bool {
 
 fn rerun(plan: &TrialPlan) -> bool {
     matches!(
-        plan.context,
+        plan.requirement.context,
         TrialContext::Rerun { .. } | TrialContext::ZeroRerun { .. }
     )
 }
@@ -211,7 +211,7 @@ fn forecast_inconclusive_retains_trial() {
         assert_eq!(next.retry, want.retry);
         assert_eq!(next.workload, want.workload);
         assert_eq!(next.requirement, want.requirement);
-        assert_eq!(next.context, want.context);
+        assert_eq!(next.requirement.context, want.requirement.context);
         assert_eq!(next.profile, want.profile);
         assert_eq!(next.duration, want.duration);
         assert_eq!(next.load, want.load);
@@ -445,16 +445,17 @@ fn forecast_r7_premises_fold_distinct_outcomes_without_invented_telemetry() {
 }
 
 fn plan_trial(j: &Journal) -> togi_journal::TrialId {
-    j.state
-        .run()
-        .unwrap()
-        .flight
-        .open
-        .as_ref()
-        .unwrap()
-        .intent
-        .trial
-        .clone()
+    j.events
+        .iter()
+        .rev()
+        .find_map(|event| {
+            if let togi_journal::Payload::TrialIntent(intent) = &event.payload {
+                Some(intent.trial.clone())
+            } else {
+                None
+            }
+        })
+        .expect("a trial intent")
 }
 
 #[test]
@@ -602,7 +603,7 @@ fn forecast_resume_names_no_step_of_a_later_cycle() {
                     ended += 1;
                     let next = between_trials.next.as_ref().expect("cycle 2's first trial");
                     assert!(
-                        matches!(next.context, TrialContext::Cycle { cycle, .. } if cycle.get() == 2),
+                        matches!(next.requirement.context, TrialContext::Cycle { cycle, .. } if cycle.get() == 2),
                         "{next:?}"
                     );
                 }
@@ -636,8 +637,7 @@ fn forecast_resume_names_no_step_of_a_later_cycle() {
             end_pass(&mut j, intent, &trial, plan.duration.get());
             continue;
         }
-        let in_cycle_two =
-            matches!(plan.context, TrialContext::Cycle { cycle, .. } if cycle.get() == 2);
+        let in_cycle_two = matches!(plan.requirement.context, TrialContext::Cycle { cycle, .. } if cycle.get() == 2);
         if in_cycle_two {
             break;
         }
@@ -666,7 +666,7 @@ fn forecast_resume_names_no_step_of_a_later_cycle() {
     let pass = branch(last, Premise::Pass);
     let next = pass.next.as_ref().expect("cycle 2's first trial");
     assert!(
-        matches!(next.context, TrialContext::Cycle { cycle, .. } if cycle.get() == 2)
+        matches!(next.requirement.context, TrialContext::Cycle { cycle, .. } if cycle.get() == 2)
             && !rerun(next)
             && pass.next_step.map(|s| s.get().get()) == Some(1)
     );
@@ -860,7 +860,7 @@ fn forecast_detects_recurring_hunt_plan() {
         &[-15, -30, -5],
         120,
     );
-    plan.context = TrialContext::Hunt {
+    plan.requirement.context = TrialContext::Hunt {
         hunt: NonZeroU32::MIN,
         group: NonZeroU32::MIN,
     };
