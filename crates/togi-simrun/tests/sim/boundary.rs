@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io::{self, Write};
 use std::rc::Rc;
 
@@ -97,17 +97,17 @@ fn a_log_that_refuses_the_repair_line_is_reported_and_the_observer_still_sees_th
     let mut input = bench.input();
     let (log, written) = captured(true);
     input.log = Some(log);
-    let seen = Rc::new(RefCell::new(0));
+    let seen = Rc::new(Cell::new(0));
     let counted = Rc::clone(&seen);
     input.observer = Some(Box::new(move |event| {
         if event.kind() != EventKind::TrialEnd {
             return Observe::Continue;
         }
-        *counted.borrow_mut() += 1;
+        counted.set(counted.get() + 1);
         Observe::Stop
     }));
     let finished = finish(input);
-    assert_eq!(*seen.borrow(), 1);
+    assert_eq!(seen.get(), 1);
     assert!(
         matches!(finished.errors.as_slice(), [SessionError::Log(_)]),
         "{:?}",
