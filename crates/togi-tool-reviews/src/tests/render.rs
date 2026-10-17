@@ -440,6 +440,7 @@ const RUST: &str = "crates/togi-x/src/lib.rs";
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(body_fix("abc", "mapping")), ""), "outcome must be"; "short sha and body")]
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(outcome("fixed", "", "", 0)), ""), "outcome must be"; "fixed without sha or body")]
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(RecordOutcome { body: "mapping".to_owned(), ..outcome("rejected", "", "r", 0) }), ""), "outcome must be"; "rejected with body")]
+#[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(RecordOutcome { body: "mapping".to_owned(), ..deferred(1) }), ""), "outcome must be"; "deferred with body")]
 #[test_case(&doc_manifest(), input(vec![reviewer("", None, &["docs/x.md"])], vec![], ""), "a reviewer has no name"; "nameless reviewer")]
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), vec![finding("", "P2", "x", None, outcome("rejected", "", "r", 0))], ""), "a finding needs a source and text"; "finding without source")]
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), vec![finding("r", "P2", "", None, outcome("rejected", "", "r", 0))], ""), "a finding needs a source and text"; "finding without text")]
