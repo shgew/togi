@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use togi_tool_audit::{Completion, Finding};
 use togi_tool_modelcheck::Check;
 use togi_tool_trialfacts::Extracts;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
@@ -70,17 +71,56 @@ pub struct Report {
     pub warnings: Vec<String>,
     /// The registered gate's verdict, when the suite registers a gate and a baseline was given.
     pub gate: Option<Judgment>,
+    /// How many runs this bench simulated and audited; a cached run was audited when it ran.
+    pub audited: usize,
+    /// The journal audit's violations, in suite order and, within a run, in the order the audit found them.
+    pub violations: Vec<RunFinding>,
+}
+
+/// A journal audit violation in one simulated run.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RunFinding {
+    /// The run, as `SCENARIO/SPLIT-SEED`.
+    pub run: String,
+    pub finding: Finding,
+}
+
+impl RunFinding {
+    fn write(&self, w: &mut impl io::Write) -> io::Result<()> {
+        write!(w, "audit: {}", self.run)?;
+        if let Some(journal) = &self.finding.journal {
+            write!(w, " {journal}")?;
+        }
+        if let Some(seq) = self.finding.seq {
+            write!(w, " seq {seq}")?;
+        }
+        writeln!(
+            w,
+            " {}: {}",
+            self.finding.check.as_str(),
+            self.finding.reason
+        )
+    }
 }
 
 impl Report {
-    /// Writes the report: the suite's notes, the summary, the model checks and, with a baseline, the comparison
-    /// and the gate's verdict.
+    /// Writes the report: the suite's notes, the summary, the model checks, the journal audit and, with a baseline,
+    /// the comparison and the gate's verdict.
     pub fn write(&self, w: &mut impl io::Write) -> io::Result<()> {
         for note in &self.notes {
             writeln!(w, "suite: {note}")?;
         }
         summary::report(w, &self.records)?;
         togi_tool_modelcheck::report(w, &self.checks)?;
+        writeln!(
+            w,
+            "audit: audited={} violations={}",
+            self.audited,
+            self.violations.len()
+        )?;
+        for violation in &self.violations {
+            violation.write(w)?;
+        }
         if let Some(baseline) = &self.baseline {
             compare::report(w, &self.records, baseline)?;
         }
@@ -124,7 +164,7 @@ fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Resu
             .as_ref()
             .and_then(|costs| costs.get(simulator.digest(), &plan.runs[i].name()))
     });
-    let slots: Mutex<Vec<Option<Record>>> = Mutex::new(vec![None; plan.runs.len()]);
+    let slots: Mutex<Vec<Option<Measurement>>> = Mutex::new(vec![None; plan.runs.len()]);
     let cached = AtomicUsize::new(0);
     let warnings = Mutex::new(Vec::new());
     let job = Job {
@@ -141,10 +181,10 @@ fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Resu
         warnings: &warnings,
     };
     let mut errors = pool::run(options.jobs.get(), &order, |i| {
-        let record = job.run(i).inspect_err(|_| fleet.abort())?;
+        let measured = job.run(i).inspect_err(|_| fleet.abort())?;
         slots
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)[i] = Some(record);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)[i] = Some(measured);
         Ok(())
     });
     let mut warnings = warnings
@@ -167,12 +207,24 @@ fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Resu
             .unwrap_or(0);
         return Err(errors.swap_remove(first).1);
     }
-    let mut records: Vec<Record> = slots
-        .into_inner()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .into_iter()
-        .flatten()
-        .collect();
+    let mut audited = 0;
+    let mut violations = Vec::new();
+    let mut records = Vec::with_capacity(plan.runs.len());
+    for (spec, measured) in plan.runs.iter().zip(
+        slots
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    ) {
+        let Some(measured) = measured else { continue };
+        if let Some(findings) = measured.audit {
+            audited += 1;
+            violations.extend(findings.into_iter().map(|finding| RunFinding {
+                run: spec.name(),
+                finding,
+            }));
+        }
+        records.push(measured.record);
+    }
     set_scenario_shares(&mut records);
     let judgment = gate.zip(baseline.as_deref()).map(|(resolved, baseline)| {
         let verdict = resolved.judge(&records, baseline);
@@ -194,7 +246,25 @@ fn execute_with(options: &Options, fleet: &Fleet, io: &impl ExecutionIo) -> Resu
         wall: started.elapsed(),
         warnings,
         gate: judgment,
+        audited,
+        violations,
     })
+}
+
+/// A run's record and, when this bench simulated it rather than taking it from the cache, its audit's findings.
+#[derive(Clone)]
+struct Measurement {
+    record: Record,
+    audit: Option<Vec<Finding>>,
+}
+
+/// How far the audit holds a run to its end: a run that concluded or reached a dead end must have stopped, while a
+/// run the boot cap censored, or that failed, left an unfinished prefix.
+const fn completion(status: Status) -> Completion {
+    match status {
+        Status::Concluded | Status::DeadEnd => Completion::Finished,
+        Status::Censored | Status::Error => Completion::InProgress,
+    }
 }
 
 struct Job<'a, R> {
@@ -212,7 +282,7 @@ struct Job<'a, R> {
 }
 
 impl<R: SessionRunner> Job<'_, R> {
-    fn run(&self, index: usize) -> Result<Record, Error> {
+    fn run(&self, index: usize) -> Result<Measurement, Error> {
         let spec = &self.plan.runs[index];
         self.measure(spec).map_err(|source| match source {
             RunError::Interrupted => Error::Interrupted,
@@ -223,16 +293,21 @@ impl<R: SessionRunner> Job<'_, R> {
         })
     }
 
-    fn measure(&self, spec: &RunSpec) -> Result<Record, RunError> {
+    /// Takes the run from the cache, or simulates it and audits its state directory, every journal in it, before
+    /// the directory is removed. A run the audit faults is not cached, so the next bench runs and audits it again.
+    fn measure(&self, spec: &RunSpec) -> Result<Measurement, RunError> {
         let inputs = cache::inputs(self.suite.digest(), spec);
         let keeping = self.options.keep.is_some();
         let hit = match self.cache {
             Some(cache) if !keeping => cache.get(spec, &inputs),
             _ => None,
         };
-        let mut record = if let Some(record) = hit {
+        let mut measured = if let Some(record) = hit {
             self.cached.fetch_add(1, Ordering::SeqCst);
-            record
+            Measurement {
+                record,
+                audit: None,
+            }
         } else {
             let session = self.simulator.run(
                 self.fleet,
@@ -242,11 +317,27 @@ impl<R: SessionRunner> Job<'_, R> {
                 self.options.timeout,
             )?;
             let record = record_of(spec, &session, self.verdicts)?;
+            let audit = self.simulator.audit(&session, completion(record.status));
             if !keeping {
                 self.simulator.remove(&session.dir);
             }
+            if !audit.skipped.is_empty() {
+                let mut warnings = self
+                    .warnings
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                for skip in &audit.skipped {
+                    warnings.push(format!(
+                        "audit of {} {}: {}",
+                        spec.name(),
+                        skip.journal,
+                        skip.skipped
+                    ));
+                }
+            }
             if !session.ended_by_signal() {
-                if let Some(cache) = self.cache
+                if audit.findings.is_empty()
+                    && let Some(cache) = self.cache
                     && let Err(error) = cache.put(spec, &inputs, &record)
                 {
                     self.warnings
@@ -262,11 +353,14 @@ impl<R: SessionRunner> Job<'_, R> {
                     );
                 }
             }
-            record
+            Measurement {
+                record,
+                audit: Some(audit.findings),
+            }
         };
-        record.commit.clone_from(&self.options.tree.commit);
-        record.dirty = self.options.tree.dirty;
-        Ok(record)
+        measured.record.commit.clone_from(&self.options.tree.commit);
+        measured.record.dirty = self.options.tree.dirty;
+        Ok(measured)
     }
 }
 

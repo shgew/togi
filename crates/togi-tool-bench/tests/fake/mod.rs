@@ -4,6 +4,7 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use togi_journal::Event;
 use togi_sim::MachineDefinition;
 use togi_tool_bench::{Options, Selection, Tree};
 
@@ -19,13 +20,7 @@ impl ProcessBench {
         let bench = Self {
             dir: tempfile::tempdir().unwrap(),
         };
-        let journal = session::session(&MachineDefinition::default(), 1, None, 2).events;
-        let lines: Vec<String> = journal
-            .iter()
-            .map(|event| serde_json::to_string(event).unwrap())
-            .collect();
-        let lines = lines.join("\n") + "\n";
-        fs::write(bench.path("journal.jsonl"), lines).unwrap();
+        bench.journal(&session::session(&MachineDefinition::default(), 1, None, 1000).events);
         fs::write(
             bench.path("suite.json"),
             r#"{"scenarios":[{"name":"default","dev":[1,2,3],"holdout":[101]},{"name":"late","dev":[1]}]}"#,
@@ -38,8 +33,22 @@ impl ProcessBench {
         self.dir.path().join(name)
     }
 
-    /// A simulator that records its arguments, copies the journal into its state directory, prints `log` and
-    /// exits with `exit`; `before` runs first.
+    /// Sets the journal every simulator leaves, with the `state.json` a run publishes at its last event.
+    pub(crate) fn journal(&self, events: &[Event]) {
+        let lines: String = events
+            .iter()
+            .map(|event| serde_json::to_string(event).unwrap() + "\n")
+            .collect();
+        fs::write(self.path("journal.jsonl"), lines).unwrap();
+        let state = serde_json::json!({
+            "facts": togi_journal::State::replay(events).unwrap(),
+            "tuner": togi_tuner::replay(events).unwrap().project(),
+        });
+        fs::write(self.path("state.json"), state.to_string()).unwrap();
+    }
+
+    /// A simulator that records its arguments, copies the journal and its `state.json` into its state directory,
+    /// prints `log` and exits with `exit`; `before` runs first.
     pub(crate) fn simulator(&self, name: &str, exit: i32, log: &str, before: &str) -> PathBuf {
         let path = self.path(name);
         let script = format!(
@@ -52,11 +61,13 @@ while [ $# -gt 0 ]; do
   shift
 done
 cp '{journal}' "$dir/events.jsonl"
+cp '{state}' "$dir/state.json"
 echo '{log}'
 exit {exit}
 "#,
             args = self.path("args.txt").display(),
             journal = self.path("journal.jsonl").display(),
+            state = self.path("state.json").display(),
         );
         fs::write(&path, script).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();

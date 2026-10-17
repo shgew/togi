@@ -30,7 +30,7 @@ impl Bench {
         let bench = Self {
             tree: common::Tree::new(),
             calls: Arc::new(AtomicUsize::new(0)),
-            events: session::session(&togi_sim::MachineDefinition::default(), 1, None, 2)
+            events: session::session(&togi_sim::MachineDefinition::default(), 1, None, 1000)
                 .events
                 .into(),
         };
@@ -121,6 +121,9 @@ impl SuiteSource for MemoryIo {
     }
 }
 
+/// How many of the session's events the `unconcluded` simulator leaves: a prefix that never concludes.
+const UNCONCLUDED: usize = 20;
+
 struct MemoryRunner {
     digest: String,
     exit: i32,
@@ -161,6 +164,9 @@ impl SessionRunner for MemoryRunner {
         if self.mode == "no-journal" {
             events.clear();
         }
+        if self.mode == "unconcluded" && spec.name() == "default/dev-2" {
+            events.truncate(UNCONCLUDED);
+        }
         if let Some(path) = &self.blocked {
             self.tree.write(path, "not a directory");
         }
@@ -171,6 +177,29 @@ impl SessionRunner for MemoryRunner {
             log_dead_end: self.log_dead_end,
             wall: Duration::from_millis(1),
         })
+    }
+    fn audit(
+        &self,
+        session: &Session,
+        completion: togi_tool_audit::Completion,
+    ) -> togi_tool_audit::DirectoryAudit {
+        let findings = togi_tool_audit::audit(&session.events, completion)
+            .into_iter()
+            .map(|violation| togi_tool_audit::Finding {
+                directory: session.dir.clone(),
+                scenario: None,
+                seed: None,
+                journal: Some("live".into()),
+                seq: Some(violation.seq),
+                check: togi_tool_audit::Kind::Audit(violation.check),
+                reason: violation.reason,
+            })
+            .collect();
+        togi_tool_audit::DirectoryAudit {
+            journals: usize::from(!session.events.is_empty()),
+            findings,
+            skipped: Vec::new(),
+        }
     }
     fn remove(&self, _: &Path) {}
 }
@@ -560,6 +589,61 @@ fn a_simulator_that_leaves_no_journal_is_an_error_record() {
             .iter()
             .all(|r| r.status == Status::Error && r.exit_code == 1 && r.sim_hours == 0.0)
     );
+}
+
+#[test]
+fn concluded_dead_end_and_censored_runs_pass_the_audit() {
+    let bench = Bench::new();
+    for (exit, log) in [(0, ""), (1, "sim: dead end stock: unstable"), (3, "")] {
+        let mut options = bench.options(bench.simulator(&format!("sim-{exit}"), exit, log, ""));
+        options.cache = None;
+        let report = run(&options);
+        assert_eq!(report.audited, 5, "{exit}");
+        assert!(
+            report.violations.is_empty(),
+            "{exit}: {:?}",
+            report.violations
+        );
+        assert!(
+            report_text(&report).contains("audit: audited=5 violations=0\n"),
+            "{exit}"
+        );
+    }
+}
+
+#[test]
+fn a_run_that_breaks_a_check_is_reported_by_name_and_not_cached() {
+    let bench = Bench::new();
+    let options = bench.options(bench.simulator("sim", 0, "", "unconcluded"));
+    let first = run(&options);
+    assert_eq!(first.audited, 5);
+    assert!(!first.violations.is_empty());
+    assert!(
+        first
+            .violations
+            .iter()
+            .all(|violation| violation.run == "default/dev-2"),
+        "{:?}",
+        first.violations
+    );
+    let last = bench.events[UNCONCLUDED - 1].seq;
+    let text = report_text(&first);
+    assert!(
+        text.contains(&format!(
+            "audit: audited=5 violations={}\n",
+            first.violations.len()
+        )),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!(
+            "audit: default/dev-2 live seq {last} termination: finished run has neither a conclusion nor a dead end\n"
+        )),
+        "{text}"
+    );
+    let second = run(&options);
+    assert_eq!((second.cached, second.audited), (4, 1));
+    assert_eq!(second.violations, first.violations);
 }
 #[test]
 fn a_failed_cache_write_is_a_warning_and_the_records_are_kept() {

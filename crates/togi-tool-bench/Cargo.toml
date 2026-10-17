@@ -25,6 +25,7 @@ togi-journal.workspace = true
 togi-machine.workspace = true
 togi-requests.workspace = true
 togi-sim.workspace = true
+togi-tool-audit.workspace = true
 togi-tool-forecast.workspace = true
 togi-tool-modelcheck.workspace = true
 togi-tool-trialfacts.workspace = true
