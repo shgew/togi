@@ -18,9 +18,10 @@
 //! plain text reports, and one JSON file per cached run. The gate of a ruleset is the `gate` object of the suite
 //! file, typed and judged by [`gate`].
 //!
-//! Two modes do not measure the suite. [`same`] proves two trees decide the same on every simulated session, or
+//! Three modes do not measure the suite. [`same`] proves two trees decide the same on every simulated session, or
 //! only the suite's smoke sessions, by comparing their journals. [`forecast`] resumes copies of a real run's
 //! state directory on the simulator with the suite's `target` scenario and summarizes what the runs did.
+//! [`research`] dispatches the steps of a bounded research campaign under its launch manifest.
 //!
 //! ```
 //! use togi_tool_bench::{Selection, Suite};
@@ -48,6 +49,7 @@ mod metrics;
 mod pool;
 mod process;
 mod record;
+pub mod research;
 mod run;
 pub mod same;
 pub mod sanity;

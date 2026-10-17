@@ -171,6 +171,11 @@ fit-shared-voltage *args: _dev-shell
 forward *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- --forward-only "$@"
 
+# Dispatch one step of a research campaign under its launch manifest, never the campaign itself (`just research 427 start --manifest FILE`; see docs/benchmarking.md#research-campaigns)
+[group('run')]
+research issue *args: _dev-shell
+    cargo run --release --locked -p togi-tool-bench -- research "$@"
+
 # Start the release workflow on main and follow it: unless an issue, open or closed, is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]
 release: _dev-shell

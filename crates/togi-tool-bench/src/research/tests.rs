@@ -1,0 +1,1150 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::Write as _;
+
+use flate2::Compression;
+use flate2::write::GzEncoder;
+use jiff::{SignedDuration, Timestamp};
+use serde_json::{Value, json};
+use test_case::test_case;
+
+use super::*;
+
+const CHECKOUT: &str = "cccccccccccccccccccccccccccccccccccccccc";
+const REFERENCE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const DEVELOPMENT: [&str; 6] = [
+    "20260924T204352Z",
+    "20260926T151414Z",
+    "20260927T221954Z",
+    "20260929T180308Z",
+    "20261002T004254Z",
+    "20261002T235548Z",
+];
+const CONFIRMATION: &str = "20261004T000701Z";
+const SPENT: &str = "20261004T211726Z";
+const FACTS: &str = "facts/original.jsonl.gz";
+const SUITE: &str = "tools/bench/suites/research.json";
+const RUN: &str = "/research/427/t1";
+
+/// A checkout in memory: its files now, and the files at each commit.
+struct Fake {
+    head: String,
+    files: BTreeMap<String, Vec<u8>>,
+    commits: BTreeMap<String, BTreeMap<String, Vec<u8>>>,
+}
+
+impl Workspace for Fake {
+    fn root(&self) -> &std::path::Path {
+        std::path::Path::new("/checkout")
+    }
+
+    fn head(&self) -> Result<String, WorkspaceError> {
+        Ok(self.head.clone())
+    }
+
+    fn is_ancestor(&self, ancestor: &str, descendant: &str) -> Result<bool, WorkspaceError> {
+        Ok(ancestor == descendant
+            || (ancestor == REFERENCE && descendant == CHECKOUT)
+            || ancestor == CHECKOUT)
+    }
+
+    fn changed(&self, base: &str) -> Result<BTreeSet<String>, WorkspaceError> {
+        let base = &self.commits[base];
+        Ok(base
+            .keys()
+            .chain(self.files.keys())
+            .filter(|path| base.get(*path) != self.files.get(*path))
+            .cloned()
+            .collect())
+    }
+
+    fn read(&self, path: &str) -> Result<Vec<u8>, WorkspaceError> {
+        self.files
+            .get(path)
+            .cloned()
+            .ok_or_else(|| WorkspaceError::Missing(path.to_owned()))
+    }
+}
+
+impl Fake {
+    fn edit(&mut self, path: &str, content: &str) {
+        self.files
+            .insert(path.to_owned(), content.as_bytes().to_vec());
+    }
+
+    fn revert(&mut self, path: &str) {
+        match self.commits[CHECKOUT].get(path) {
+            Some(content) => self.files.insert(path.to_owned(), content.clone()),
+            None => self.files.remove(path),
+        };
+    }
+}
+
+fn rows(sessions: &[&str]) -> Vec<u8> {
+    sessions
+        .iter()
+        .flat_map(|session| format!("{{\"session\":\"{session}\",\"core\":0}}\n").into_bytes())
+        .collect()
+}
+
+fn gzip(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(bytes).unwrap();
+    encoder.finish().unwrap()
+}
+
+fn sessions() -> Vec<&'static str> {
+    DEVELOPMENT.iter().copied().chain([CONFIRMATION]).collect()
+}
+
+fn fake(facts: &[&str]) -> Fake {
+    let files: BTreeMap<String, Vec<u8>> = [
+        (FACTS, gzip(&rows(facts))),
+        ("Cargo.lock", b"lock".to_vec()),
+        ("flake.lock", b"flake".to_vec()),
+        ("rust-toolchain.toml", b"toolchain".to_vec()),
+        ("tools/fit/research/427.md", b"brief 427".to_vec()),
+        ("tools/bench/research/490.md", b"brief 490".to_vec()),
+        (SUITE, b"suite".to_vec()),
+        ("crates/togi-sim/src/model.rs", b"model".to_vec()),
+        ("crates/togi-tuner/src/lib.rs", b"tuner".to_vec()),
+    ]
+    .into_iter()
+    .map(|(path, bytes)| (path.to_owned(), bytes))
+    .collect();
+    Fake {
+        head: CHECKOUT.to_owned(),
+        commits: [
+            (CHECKOUT.to_owned(), files.clone()),
+            (REFERENCE.to_owned(), files.clone()),
+        ]
+        .into(),
+        files,
+    }
+}
+
+fn pin(fake: &Fake, path: &str) -> Value {
+    json!({"path": path, "sha256": sha256(&fake.files[path])})
+}
+
+fn model_manifest(fake: &Fake) -> Value {
+    json!({
+        "issue": 427,
+        "mode": "model-development",
+        "hypotheses": [
+            {"id": "h1", "statement": "a shared core term"},
+            {"id": "h2", "statement": "a structured singleton term"},
+        ],
+        "checkout": CHECKOUT,
+        "reference": REFERENCE,
+        "inputs": [{
+            "path": FACTS,
+            "sha256": sha256(&rows(&sessions())),
+            "development": DEVELOPMENT,
+            "confirmation": [CONFIRMATION],
+        }],
+        "suite": null,
+        "frozen": (["Cargo.lock", "flake.lock", "rust-toolchain.toml", "tools/fit/research/427.md"]
+            .map(|path| pin(fake, path))),
+        "writable": ["crates/togi-sim/src"],
+        "output": RUN,
+        "confirmations": 1,
+    })
+}
+
+fn observation_manifest(fake: &Fake) -> Value {
+    json!({
+        "issue": 490,
+        "mode": "fixed-policy-observation",
+        "hypotheses": [{"id": "o1", "statement": "count the hazard boots"}],
+        "checkout": CHECKOUT,
+        "reference": REFERENCE,
+        "suite": {"path": SUITE, "sha256": sha256(b"suite"), "split": "dev"},
+        "frozen": (["Cargo.lock", "flake.lock", "rust-toolchain.toml", "tools/bench/research/490.md"]
+            .map(|path| pin(fake, path))),
+        "writable": [],
+        "output": "/research/490/o",
+        "confirmations": 0,
+    })
+}
+
+fn at(minutes: i64) -> Timestamp {
+    Timestamp::from_second(1_800_000_000)
+        .unwrap()
+        .checked_add(SignedDuration::from_mins(minutes))
+        .unwrap()
+}
+
+/// A started campaign that applies each action's records as the run directory would.
+struct Live {
+    campaign: Campaign,
+    minute: i64,
+}
+
+impl Live {
+    fn start(manifest: &Value, issue: u32, fake: &Fake) -> Self {
+        let bytes = serde_json::to_vec(manifest).unwrap();
+        let (manifest, record) = start(&bytes, issue, fake, at(0)).unwrap();
+        let issue = manifest.validate(issue).unwrap();
+        Self {
+            campaign: Campaign {
+                manifest,
+                issue,
+                ledger: Ledger {
+                    records: vec![record],
+                },
+            },
+            minute: 0,
+        }
+    }
+
+    fn now(&mut self) -> Timestamp {
+        self.minute += 1;
+        at(self.minute)
+    }
+
+    fn apply(&mut self, result: Result<Vec<Record>, Halt>) -> Result<(), Halt> {
+        match result {
+            Ok(records) => {
+                self.campaign.ledger.records.extend(records);
+                Ok(())
+            }
+            Err(Halt::Stop { reason, detail }) => {
+                self.campaign.ledger.records.push(Record::CampaignStopped {
+                    at: at(self.minute),
+                    reason,
+                    detail: detail.clone(),
+                });
+                Err(Halt::Stop { reason, detail })
+            }
+            Err(refusal) => Err(refusal),
+        }
+    }
+
+    fn begin(
+        &mut self,
+        fake: &Fake,
+        candidate: &str,
+        role: Role,
+        command: &str,
+    ) -> Result<Planned, Halt> {
+        let now = self.now();
+        let mut words = command.split_whitespace().map(str::to_owned);
+        let recipe = words.next().unwrap();
+        let args: Vec<String> = words.collect();
+        let planned = self
+            .campaign
+            .plan(fake, now, candidate, role, &recipe, &args);
+        match planned {
+            Ok(planned) => {
+                self.campaign
+                    .ledger
+                    .records
+                    .push(Record::ExperimentStarted(planned.started.clone()));
+                Ok(planned)
+            }
+            Err(halt) => self.apply(Err(halt)).map(|()| unreachable!()),
+        }
+    }
+
+    fn run(
+        &mut self,
+        fake: &Fake,
+        candidate: &str,
+        role: Role,
+        command: &str,
+        end: End,
+    ) -> Result<u32, Halt> {
+        let planned = self.begin(fake, candidate, role, command)?;
+        let now = self.now();
+        let records = Campaign::finish(
+            &planned.started,
+            now,
+            end,
+            Some(sha256(b"out")),
+            Some(sha256(b"")),
+        );
+        self.campaign.ledger.records.extend(records);
+        Ok(planned.started.seq)
+    }
+
+    fn decide(&mut self, fake: &Fake, candidate: &str, outcome: Outcome) -> Result<(), Halt> {
+        let now = self.now();
+        let metrics = BTreeMap::from([("brier".to_owned(), 0.123_456_789_012_345_67)]);
+        let result = self.campaign.decide(
+            fake,
+            now,
+            candidate,
+            outcome,
+            "by the brief's keep rule",
+            metrics,
+        );
+        self.apply(result)
+    }
+
+    fn stopped(&self) -> Option<StopReason> {
+        self.campaign.ledger.stopped().map(|(reason, _)| reason)
+    }
+}
+
+const FORWARD: &str = "forward --facts facts/original.jsonl.gz --seal 1";
+const CONFIRM: &str = "forward --facts facts/original.jsonl.gz";
+
+fn halt_text(halt: &Halt) -> String {
+    let mut text = halt.to_string();
+    let mut source = std::error::Error::source(halt);
+    while let Some(cause) = source {
+        text = format!("{text}: {cause}");
+        source = cause.source();
+    }
+    text
+}
+
+#[test]
+fn valid_manifest_starts_the_ledger_with_its_hash() {
+    let fake = fake(&sessions());
+    let manifest = model_manifest(&fake);
+    let bytes = serde_json::to_vec(&manifest).unwrap();
+    let (_, record) = start(&bytes, 427, &fake, at(0)).unwrap();
+    assert_eq!(
+        record,
+        Record::CampaignStarted {
+            at: at(0),
+            manifest_sha256: sha256(&bytes),
+            head: CHECKOUT.to_owned(),
+        }
+    );
+}
+
+#[test_case(|m| m["issue"] = json!(428), "names issue 428" ; "issue differs from the command")]
+#[test_case(|m| m["mode"] = json!("fixed-policy-observation"), "runs in model development mode" ; "wrong mode")]
+#[test_case(|m| m["seed"] = json!(7), "unknown field" ; "unknown field")]
+#[test_case(|m| m["hypotheses"] = json!([]), "queue is empty" ; "empty queue")]
+#[test_case(|m| m["checkout"] = json!("cccc"), "full lowercase commit" ; "short checkout")]
+#[test_case(|m| m["inputs"][0]["development"][0] = json!(SPENT), "not an approved development session" ; "spent session")]
+#[test_case(|m| m["inputs"][0]["confirmation"] = json!(["20261010T230611Z"]), "not an approved confirmation session" ; "forbidden confirmation")]
+#[test_case(|m| { m["frozen"].as_array_mut().unwrap().remove(0); }, "must pin Cargo.lock" ; "environment unpinned")]
+#[test_case(|m| { m["frozen"].as_array_mut().unwrap().remove(3); }, "must pin tools/fit/research/427.md" ; "brief unpinned")]
+#[test_case(|m| m["writable"] = json!(["tools/fit/program.md"]), "overlaps tools/fit" ; "writable program")]
+#[test_case(|m| m["writable"] = json!(["crates"]), "overlaps crates/togi-config" ; "writable covers the closed crates")]
+#[test_case(|m| m["writable"] = json!(["facts"]), "overlaps facts/original.jsonl.gz" ; "writable covers an input")]
+#[test_case(|m| m["writable"] = json!(["../outside"]), "plain relative path" ; "writable escapes")]
+#[test_case(|m| m["output"] = json!("runs/research/427/t1"), "is not an absolute path" ; "relative output")]
+#[test_case(|m| m["output"] = json!("/research/427/../x"), "is not an absolute path" ; "output escapes")]
+#[test_case(|m| m["confirmations"] = json!(2), "allows 1 confirmations" ; "too many confirmations")]
+#[test_case(|m| m["limits"] = json!({"wall_minutes": 0, "candidates": 12, "jobs": 4}), "must be positive" ; "zero limit")]
+#[test_case(|m| m["suite"] = json!({"path": SUITE, "sha256": "x", "split": "dev"}), "names no bench suite" ; "suite in model mode")]
+fn manifest_is_rejected(change: fn(&mut Value), expected: &str) {
+    let fake = fake(&sessions());
+    let mut manifest = model_manifest(&fake);
+    change(&mut manifest);
+    let error = start(&serde_json::to_vec(&manifest).unwrap(), 427, &fake, at(0)).unwrap_err();
+    let text = format!(
+        "{error}: {:?}",
+        std::error::Error::source(&error).map(ToString::to_string)
+    );
+    assert!(text.contains(expected), "{text}");
+}
+
+#[test]
+fn output_inside_the_checkout_is_rejected() {
+    let fake = fake(&sessions());
+    let mut manifest = model_manifest(&fake);
+    manifest["output"] = json!("/checkout/runs/t1");
+    let error = start(&serde_json::to_vec(&manifest).unwrap(), 427, &fake, at(0)).unwrap_err();
+    assert!(matches!(error, Refusal::OutputInCheckout(_)), "{error}");
+}
+
+#[test]
+fn issue_without_brief_is_rejected() {
+    let fake = fake(&sessions());
+    let mut manifest = model_manifest(&fake);
+    manifest["issue"] = json!(428);
+    let error = start(&serde_json::to_vec(&manifest).unwrap(), 428, &fake, at(0)).unwrap_err();
+    assert!(
+        matches!(error, Refusal::Manifest(ManifestError::NoBrief(428))),
+        "{error}"
+    );
+}
+
+#[test]
+fn missing_manifest_field_is_rejected() {
+    let fake = fake(&sessions());
+    let mut manifest = model_manifest(&fake);
+    manifest.as_object_mut().unwrap().remove("frozen");
+    let error = start(&serde_json::to_vec(&manifest).unwrap(), 427, &fake, at(0)).unwrap_err();
+    assert!(
+        matches!(error, Refusal::Manifest(ManifestError::Decode(_))),
+        "{error}"
+    );
+}
+
+#[test]
+fn input_is_pinned_by_its_decompressed_rows() {
+    let mut fake = fake(&sessions());
+    let manifest = model_manifest(&fake);
+    let recompressed = {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::best());
+        encoder.write_all(&rows(&sessions())).unwrap();
+        encoder.finish().unwrap()
+    };
+    assert_ne!(recompressed, fake.files[FACTS]);
+    fake.files.insert(FACTS.to_owned(), recompressed.clone());
+    fake.commits.values_mut().for_each(|files| {
+        files.insert(FACTS.to_owned(), recompressed.clone());
+    });
+    start(&serde_json::to_vec(&manifest).unwrap(), 427, &fake, at(0)).unwrap();
+}
+
+#[test]
+fn input_holding_an_unnamed_session_is_rejected() {
+    let with_spent: Vec<&str> = sessions().into_iter().chain([SPENT]).collect();
+    let fake = fake(&with_spent);
+    let mut manifest = model_manifest(&fake);
+    manifest["inputs"][0]["sha256"] = json!(sha256(&rows(&with_spent)));
+    let error = start(&serde_json::to_vec(&manifest).unwrap(), 427, &fake, at(0)).unwrap_err();
+    assert!(error.to_string().contains("it holds sessions"), "{error}");
+}
+
+#[test]
+fn changed_input_is_rejected_at_start() {
+    let fake = fake(&sessions());
+    let mut manifest = model_manifest(&fake);
+    manifest["frozen"][3]["sha256"] = json!(sha256(b"an older brief"));
+    let error = start(&serde_json::to_vec(&manifest).unwrap(), 427, &fake, at(0)).unwrap_err();
+    assert!(
+        matches!(error, Refusal::Manifest(ManifestError::Changed { .. })),
+        "{error}"
+    );
+}
+
+#[test]
+fn start_needs_the_clean_checkout() {
+    let mut fake = fake(&sessions());
+    let manifest = serde_json::to_vec(&model_manifest(&fake)).unwrap();
+    fake.edit("crates/togi-sim/src/model.rs", "edited early");
+    let dirty = start(&manifest, 427, &fake, at(0)).unwrap_err();
+    assert!(matches!(dirty, Refusal::Dirty(_)), "{dirty}");
+    fake.revert("crates/togi-sim/src/model.rs");
+    fake.head = REFERENCE.to_owned();
+    let elsewhere = start(&manifest, 427, &fake, at(0)).unwrap_err();
+    assert!(
+        matches!(elsewhere, Refusal::NotAtCheckout { .. }),
+        "{elsewhere}"
+    );
+}
+
+#[test]
+fn replaced_manifest_is_refused() {
+    let fake = fake(&sessions());
+    let live = Live::start(&model_manifest(&fake), 427, &fake);
+    let mut other = model_manifest(&fake);
+    other["hypotheses"][0]["statement"] = json!("something else");
+    let error = Campaign::open(
+        &serde_json::to_vec(&other).unwrap(),
+        427,
+        live.campaign.ledger,
+    )
+    .unwrap_err();
+    assert!(matches!(error, Refusal::ManifestReplaced), "{error}");
+}
+
+#[test]
+fn changed_frozen_file_stops_the_campaign_and_nothing_refreshes_it() {
+    let mut fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    live.run(
+        &fake,
+        "h1",
+        Role::Reference,
+        FORWARD,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    fake.edit("tools/fit/research/427.md", "a loosened brief");
+    let halt = live
+        .begin(&fake, "h1", Role::Candidate, FORWARD)
+        .unwrap_err();
+    assert!(
+        halt_text(&halt).contains("tools/fit/research/427.md changed"),
+        "{halt}"
+    );
+    assert_eq!(live.stopped(), Some(StopReason::EvidenceChanged));
+    fake.revert("tools/fit/research/427.md");
+    let after = live
+        .begin(&fake, "h1", Role::Candidate, FORWARD)
+        .unwrap_err();
+    assert!(
+        matches!(
+            after,
+            Halt::Refuse(Refusal::Stopped(StopReason::EvidenceChanged))
+        ),
+        "{after}"
+    );
+}
+
+#[test]
+fn deleted_input_stops_the_campaign() {
+    let mut fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    fake.files.remove(FACTS);
+    live.begin(&fake, "h1", Role::Reference, FORWARD)
+        .unwrap_err();
+    assert_eq!(live.stopped(), Some(StopReason::EvidenceChanged));
+}
+
+#[test_case("bench --suite x --split dev", "not an evaluator of model development" ; "bench in model mode")]
+#[test_case("sim", "not an evaluator" ; "unlisted recipe")]
+#[test_case("forward --seal 1", "--facts must name a manifest input" ; "default extract")]
+#[test_case("forward --facts tools/bench/facts/target.jsonl.gz --seal 1", "is not a manifest input" ; "other facts")]
+#[test_case("forward --facts facts/original.jsonl.gz", "seal exactly the input's 1 confirmation" ; "unsealed development run")]
+#[test_case("forward --facts facts/original.jsonl.gz --seal 2", "seal exactly" ; "sealing development sessions away")]
+#[test_case("forward --facts facts/original.jsonl.gz --seal 1 --reference-machine m", "--reference-machine is not allowed" ; "reference machine")]
+#[test_case("forward --facts facts/original.jsonl.gz --seal 1 --jobs 8", "--jobs 8 is outside 1..=4" ; "too many workers")]
+#[test_case("forward --facts facts/original.jsonl.gz --seal 1 --seal 1", "given twice" ; "repeated flag")]
+#[test_case("fit --facts facts/original.jsonl.gz --out /research/427/t1/fit", "does not serve this role" ; "fit in a candidate run")]
+#[test_case("forward --facts facts/original.jsonl.gz --seal 1 stray", "is not a --flag" ; "positional argument")]
+fn model_evaluator_is_refused(command: &str, expected: &str) {
+    let fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    let halt = live
+        .begin(&fake, "h1", Role::Candidate, command)
+        .unwrap_err();
+    assert!(matches!(halt, Halt::Refuse(_)), "{halt}");
+    assert!(halt_text(&halt).contains(expected), "{}", halt_text(&halt));
+    assert_eq!(live.stopped(), None);
+}
+
+#[test]
+fn worker_limit_is_added_when_absent() {
+    let fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    let planned = live.begin(&fake, "h1", Role::Reference, FORWARD).unwrap();
+    assert_eq!(
+        planned.started.args,
+        ["--facts", FACTS, "--seal", "1", "--jobs", "4"].map(str::to_owned)
+    );
+    assert_eq!(planned.budget, std::time::Duration::from_mins(479));
+    assert_eq!(planned.started.stdout, "raw/0001-h1-reference.stdout");
+}
+
+#[test_case("forward --facts facts/original.jsonl.gz --seal 1", "not an evaluator of fixed-policy observation" ; "model evaluator")]
+#[test_case("bench --split dev", "--suite must name the manifest's suite" ; "default suite")]
+#[test_case("bench --suite tools/bench/suites/research.json --split holdout", "--split must be the manifest's dev" ; "other split")]
+#[test_case("bench --suite tools/bench/suites/research.json --split dev --out runs/elsewhere", "--out must name a path inside /research/490/o" ; "output outside the run")]
+#[test_case("bench --suite tools/bench/suites/research.json --split dev --baseline-out b.json", "--baseline-out is not allowed" ; "baseline refresh")]
+fn observation_evaluator_is_refused(command: &str, expected: &str) {
+    let fake = fake(&sessions());
+    let mut live = Live::start(&observation_manifest(&fake), 490, &fake);
+    let halt = live
+        .begin(&fake, "o1", Role::Candidate, command)
+        .unwrap_err();
+    assert!(halt_text(&halt).contains(expected), "{}", halt_text(&halt));
+}
+
+#[test]
+fn observation_run_keeps_the_simulator_timeout_and_boot_cap() {
+    let fake = fake(&sessions());
+    let mut live = Live::start(&observation_manifest(&fake), 490, &fake);
+    let command = "bench --suite tools/bench/suites/research.json --split dev --out /research/490/o/b --timeout 120 --max-boots 400";
+    let seq = live
+        .run(
+            &fake,
+            "o1",
+            Role::Candidate,
+            command,
+            End::Exited { code: 0 },
+        )
+        .unwrap();
+    live.decide(&fake, "o1", Outcome::Kept).unwrap();
+    let decision = live.campaign.ledger.outcome("o1").unwrap();
+    assert_eq!(decision.runs, [seq]);
+    let started = live.campaign.ledger.starts().next().unwrap();
+    assert!(
+        started
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--timeout", "120"])
+    );
+    assert!(
+        started
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--max-boots", "400"])
+    );
+}
+
+#[test]
+fn observation_manifest_cannot_write_the_simulator() {
+    let fake = fake(&sessions());
+    let mut manifest = observation_manifest(&fake);
+    manifest["writable"] = json!(["crates/togi-sim/src"]);
+    let error = start(&serde_json::to_vec(&manifest).unwrap(), 490, &fake, at(0)).unwrap_err();
+    assert!(
+        error.to_string().contains("overlaps crates/togi-sim"),
+        "{error}"
+    );
+}
+
+#[test]
+fn change_outside_writable_paths_stops_the_campaign() {
+    let mut fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    live.run(
+        &fake,
+        "h1",
+        Role::Candidate,
+        FORWARD,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    fake.edit("crates/togi-tuner/src/lib.rs", "a policy change");
+    let halt = live
+        .begin(&fake, "h1", Role::Candidate, FORWARD)
+        .unwrap_err();
+    assert!(
+        halt.to_string().contains("crates/togi-tuner/src/lib.rs"),
+        "{halt}"
+    );
+    assert_eq!(live.stopped(), Some(StopReason::ForbiddenDiff));
+}
+
+#[test]
+fn reference_run_needs_the_reference_tree() {
+    let mut fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    let halt = live
+        .begin(&fake, "h1", Role::Reference, FORWARD)
+        .unwrap_err();
+    assert!(
+        halt.to_string().contains("needs the tree at the reference"),
+        "{halt}"
+    );
+    assert_eq!(live.stopped(), None);
+}
+
+#[test]
+fn wall_limit_stops_the_campaign() {
+    let fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    live.minute = 480;
+    let halt = live
+        .begin(&fake, "h1", Role::Reference, FORWARD)
+        .unwrap_err();
+    assert!(
+        matches!(
+            halt,
+            Halt::Stop {
+                reason: StopReason::WallLimit,
+                ..
+            }
+        ),
+        "{halt}"
+    );
+    assert_eq!(live.stopped(), Some(StopReason::WallLimit));
+}
+
+#[test]
+fn run_stopped_at_the_wall_limit_stops_the_campaign() {
+    let fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    live.run(&fake, "h1", Role::Reference, FORWARD, End::TimedOut)
+        .unwrap();
+    assert_eq!(live.stopped(), Some(StopReason::WallLimit));
+}
+
+#[test]
+fn candidate_limit_stops_the_campaign() {
+    let mut fake = fake(&sessions());
+    let mut manifest = model_manifest(&fake);
+    manifest["limits"] = json!({"wall_minutes": 480, "candidates": 1, "jobs": 4});
+    let mut live = Live::start(&manifest, 427, &fake);
+    fake.edit("crates/togi-sim/src/model.rs", "candidate one");
+    live.run(
+        &fake,
+        "h1",
+        Role::Candidate,
+        FORWARD,
+        End::Exited { code: 1 },
+    )
+    .unwrap();
+    live.run(
+        &fake,
+        "h1",
+        Role::Candidate,
+        FORWARD,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    live.decide(&fake, "h1", Outcome::Rejected).unwrap();
+    fake.edit("crates/togi-sim/src/model.rs", "candidate two");
+    let halt = live
+        .begin(&fake, "h2", Role::Candidate, FORWARD)
+        .unwrap_err();
+    assert!(
+        matches!(
+            halt,
+            Halt::Stop {
+                reason: StopReason::CandidateLimit,
+                ..
+            }
+        ),
+        "{halt}"
+    );
+    assert_eq!(live.stopped(), Some(StopReason::CandidateLimit));
+}
+
+#[test]
+fn unknown_candidate_is_refused() {
+    let fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    let halt = live
+        .begin(&fake, "h9", Role::Candidate, FORWARD)
+        .unwrap_err();
+    assert!(
+        matches!(halt, Halt::Refuse(Refusal::UnknownCandidate(_))),
+        "{halt}"
+    );
+}
+
+#[test]
+fn outcomes_append_and_never_replace() {
+    let mut fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    live.run(
+        &fake,
+        "h1",
+        Role::Candidate,
+        FORWARD,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    live.decide(&fake, "h1", Outcome::Rejected).unwrap();
+    let before = live.campaign.ledger.records.clone();
+    let again = live.decide(&fake, "h1", Outcome::Kept).unwrap_err();
+    assert!(
+        again.to_string().contains("already has an outcome"),
+        "{again}"
+    );
+    let rerun = live
+        .begin(&fake, "h1", Role::Candidate, FORWARD)
+        .unwrap_err();
+    assert!(
+        rerun.to_string().contains("already has an outcome"),
+        "{rerun}"
+    );
+    assert_eq!(live.campaign.ledger.records, before);
+    let rejected = live.campaign.ledger.outcome("h1").unwrap();
+    assert_eq!(rejected.outcome, Outcome::Rejected);
+    assert_eq!(
+        rejected.metrics["brier"].to_bits(),
+        0.123_456_789_012_345_67_f64.to_bits()
+    );
+}
+
+#[test]
+fn outcome_needs_metrics_unless_invalid() {
+    let fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    let now = live.now();
+    let missing = live
+        .campaign
+        .decide(
+            &fake,
+            now,
+            "h1",
+            Outcome::Rejected,
+            "worse",
+            BTreeMap::new(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(missing, Halt::Refuse(Refusal::NoMetrics)),
+        "{missing}"
+    );
+    let invalid = live
+        .campaign
+        .decide(
+            &fake,
+            now,
+            "h1",
+            Outcome::Invalid,
+            "edited a frozen file",
+            BTreeMap::new(),
+        )
+        .unwrap();
+    assert_eq!(invalid.len(), 1);
+}
+
+#[test]
+fn keep_without_a_paired_reference_stops_the_campaign() {
+    let mut fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    live.run(
+        &fake,
+        "h1",
+        Role::Reference,
+        &format!("{FORWARD} --jobs 2"),
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    live.run(
+        &fake,
+        "h1",
+        Role::Candidate,
+        FORWARD,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    let halt = live.decide(&fake, "h1", Outcome::Kept).unwrap_err();
+    assert!(
+        matches!(
+            halt,
+            Halt::Stop {
+                reason: StopReason::UnpairedComparison,
+                ..
+            }
+        ),
+        "{halt}"
+    );
+    assert_eq!(live.stopped(), Some(StopReason::UnpairedComparison));
+}
+
+#[test]
+fn keep_needs_a_complete_candidate_run() {
+    let mut fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    live.run(
+        &fake,
+        "h1",
+        Role::Reference,
+        FORWARD,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    live.run(
+        &fake,
+        "h1",
+        Role::Candidate,
+        FORWARD,
+        End::Exited { code: 101 },
+    )
+    .unwrap();
+    live.decide(&fake, "h1", Outcome::Kept).unwrap_err();
+    assert_eq!(live.stopped(), Some(StopReason::UnpairedComparison));
+}
+
+/// Runs h1 through a kept development comparison, leaving the tree at the kept candidate.
+fn kept(fake: &mut Fake) -> Live {
+    let mut live = Live::start(&model_manifest(fake), 427, fake);
+    live.run(
+        fake,
+        "h1",
+        Role::Reference,
+        FORWARD,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    live.run(
+        fake,
+        "h1",
+        Role::Candidate,
+        FORWARD,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    live.decide(fake, "h1", Outcome::Kept).unwrap();
+    live
+}
+
+#[test]
+fn confirmation_runs_once_then_finalizes() {
+    let mut fake = fake(&sessions());
+    let mut live = kept(&mut fake);
+    let confirmation = live
+        .run(
+            &fake,
+            "h1",
+            Role::Confirmation,
+            CONFIRM,
+            End::Exited { code: 0 },
+        )
+        .unwrap();
+    fake.revert("crates/togi-sim/src/model.rs");
+    let reference = live
+        .run(
+            &fake,
+            "h1",
+            Role::ConfirmationReference,
+            CONFIRM,
+            End::Exited { code: 0 },
+        )
+        .unwrap();
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    live.decide(&fake, "h1", Outcome::ConfirmationPassed)
+        .unwrap();
+    assert_eq!(
+        live.campaign.ledger.outcome("h1").unwrap().runs,
+        [reference, confirmation]
+    );
+    let again = live
+        .begin(&fake, "h1", Role::Confirmation, CONFIRM)
+        .unwrap_err();
+    assert!(again.to_string().contains("already spent"), "{again}");
+    live.run(
+        &fake,
+        "h1",
+        Role::Finalization,
+        "fit --facts facts/original.jsonl.gz --out /research/427/t1/fit",
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    let outside = live
+        .begin(
+            &fake,
+            "h1",
+            Role::Finalization,
+            "fit --facts facts/original.jsonl.gz --out tools/bench/fit",
+        )
+        .unwrap_err();
+    assert!(
+        outside.to_string().contains("inside /research/427/t1"),
+        "{outside}"
+    );
+}
+
+#[test]
+fn confirmation_scores_exactly_the_kept_candidate() {
+    let mut fake = fake(&sessions());
+    let mut live = kept(&mut fake);
+    fake.edit("crates/togi-sim/src/model.rs", "tuned after the keep");
+    let halt = live
+        .begin(&fake, "h1", Role::Confirmation, CONFIRM)
+        .unwrap_err();
+    assert!(
+        halt.to_string().contains("is not the kept candidate"),
+        "{halt}"
+    );
+}
+
+#[test]
+fn confirmation_needs_a_kept_candidate_and_comes_before_its_reference() {
+    let mut fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    let early = live
+        .begin(&fake, "h1", Role::ConfirmationReference, CONFIRM)
+        .unwrap_err();
+    assert!(early.to_string().contains("has not started"), "{early}");
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    let unkept = live
+        .begin(&fake, "h1", Role::Confirmation, CONFIRM)
+        .unwrap_err();
+    assert!(
+        unkept.to_string().contains("not a kept candidate"),
+        "{unkept}"
+    );
+    let sealed = live
+        .begin(&fake, "h1", Role::Confirmation, FORWARD)
+        .unwrap_err();
+    assert!(sealed.to_string().contains("unsealed"), "{sealed}");
+}
+
+#[test]
+fn failed_confirmation_stops_the_campaign() {
+    let mut fake = fake(&sessions());
+    let mut live = kept(&mut fake);
+    live.run(
+        &fake,
+        "h1",
+        Role::Confirmation,
+        CONFIRM,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    fake.revert("crates/togi-sim/src/model.rs");
+    live.run(
+        &fake,
+        "h1",
+        Role::ConfirmationReference,
+        CONFIRM,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    live.decide(&fake, "h1", Outcome::ConfirmationFailed)
+        .unwrap();
+    assert_eq!(live.stopped(), Some(StopReason::ConfirmationFailed));
+}
+
+#[test]
+fn issue_without_confirmations_never_confirms() {
+    let fake = fake(&sessions());
+    let mut manifest = model_manifest(&fake);
+    manifest["confirmations"] = json!(0);
+    let mut live = Live::start(&manifest, 427, &fake);
+    live.campaign.ledger.records.push(Record::Outcome(Decision {
+        at: at(1),
+        candidate: "h1".to_owned(),
+        outcome: Outcome::Kept,
+        reason: "kept".to_owned(),
+        metrics: BTreeMap::new(),
+        runs: Vec::new(),
+    }));
+    let halt = live
+        .begin(&fake, "h1", Role::Confirmation, CONFIRM)
+        .unwrap_err();
+    assert!(
+        halt.to_string().contains("all 0 confirmations are spent"),
+        "{halt}"
+    );
+}
+
+#[test]
+fn interrupted_confirmation_is_incomplete_on_resume_and_stays_spent() {
+    let mut fake = fake(&sessions());
+    let mut live = kept(&mut fake);
+    let confirmation = live
+        .begin(&fake, "h1", Role::Confirmation, CONFIRM)
+        .unwrap()
+        .started
+        .seq;
+    let dangling = live
+        .begin(&fake, "h1", Role::Confirmation, CONFIRM)
+        .unwrap_err();
+    assert!(
+        matches!(&dangling, Halt::Refuse(Refusal::Dangling(runs)) if runs == &[confirmation]),
+        "{dangling}"
+    );
+    let now = live.now();
+    let records = live.campaign.resume(&fake, now).unwrap();
+    assert!(matches!(
+        records.first(),
+        Some(Record::ExperimentEnded(Ended { end: End::Incomplete, seq, .. })) if *seq == confirmation
+    ));
+    live.apply(Ok(records)).unwrap();
+    let again = live
+        .begin(&fake, "h1", Role::Confirmation, CONFIRM)
+        .unwrap_err();
+    assert!(again.to_string().contains("already spent"), "{again}");
+    let unpaired = live
+        .decide(&fake, "h1", Outcome::ConfirmationPassed)
+        .unwrap_err();
+    assert!(
+        matches!(
+            unpaired,
+            Halt::Stop {
+                reason: StopReason::UnpairedComparison,
+                ..
+            }
+        ),
+        "{unpaired}"
+    );
+}
+
+#[test]
+fn stopped_campaign_does_not_resume() {
+    let fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    let now = live.now();
+    let record = live
+        .campaign
+        .stop(now, StopReason::QueueExhausted, "all tried")
+        .unwrap();
+    live.apply(Ok(vec![record])).unwrap();
+    let error = live.campaign.resume(&fake, now).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            Halt::Refuse(Refusal::Stopped(StopReason::QueueExhausted))
+        ),
+        "{error}"
+    );
+    let twice = live
+        .campaign
+        .stop(now, StopReason::Interrupted, "")
+        .unwrap_err();
+    assert!(matches!(twice, Refusal::Stopped(_)), "{twice}");
+}
+
+#[test]
+fn ledger_round_trips_through_json_lines() {
+    let mut fake = fake(&sessions());
+    let live = kept(&mut fake);
+    let mut bytes = Vec::new();
+    for record in &live.campaign.ledger.records {
+        serde_json::to_writer(&mut bytes, record).unwrap();
+        bytes.push(b'\n');
+    }
+    assert_eq!(Ledger::parse(&bytes).unwrap(), live.campaign.ledger);
+    let headless = bytes.splitn(2, |&byte| byte == b'\n').nth(1).unwrap();
+    assert!(matches!(Ledger::parse(headless), Err(LedgerError::NoStart)));
+}
+
+#[test]
+fn report_names_the_stop_outcomes_incomplete_runs_and_notes() {
+    let mut fake = fake(&sessions());
+    let mut live = kept(&mut fake);
+    live.begin(&fake, "h1", Role::Confirmation, CONFIRM)
+        .unwrap();
+    let now = live.now();
+    let records = live.campaign.resume(&fake, now).unwrap();
+    live.apply(Ok(records)).unwrap();
+    let now = live.now();
+    let record = live
+        .campaign
+        .stop(now, StopReason::Interrupted, "owner stopped it")
+        .unwrap();
+    live.apply(Ok(vec![record])).unwrap();
+    let report = render_report(&live.campaign, "The confirmation never completed.\n");
+    for expected in [
+        "# Research campaign t1: #427, model development",
+        "- Stop: interrupted (owner stopped it)",
+        "- Confirmations spent: 1 of 1",
+        "- Resumed: 1 times",
+        "| h1 | a shared core term | 1, 2, 3 | kept | by the brief's keep rule |",
+        "| h2 | a structured singleton term | – | not run |  |",
+        "| brier | 0.12345678901234566 |",
+        "incomplete: found unfinished on resume",
+        "Incomplete runs: 3.",
+        "historical, non-blind check",
+        "## Remaining uncertainty\n\nThe confirmation never completed.",
+    ] {
+        assert!(
+            report.contains(expected),
+            "missing {expected:?} in\n{report}"
+        );
+    }
+}
+
+#[test]
+fn real_fs_run_dir_appends_and_holds_its_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("research/427/t1");
+    let dir = RunDir::create(&path).unwrap();
+    let first = Record::CampaignStarted {
+        at: at(0),
+        manifest_sha256: sha256(b"manifest"),
+        head: CHECKOUT.to_owned(),
+    };
+    dir.append(std::slice::from_ref(&first)).unwrap();
+    let written = std::fs::read(path.join("experiments.jsonl")).unwrap();
+    let second = Record::CampaignResumed {
+        at: at(1),
+        head: CHECKOUT.to_owned(),
+    };
+    dir.append(std::slice::from_ref(&second)).unwrap();
+    let grown = std::fs::read(path.join("experiments.jsonl")).unwrap();
+    assert!(grown.starts_with(&written));
+    assert_eq!(dir.ledger().unwrap().records, [first, second]);
+    assert!(matches!(RunDir::open(&path), Err(ResearchError::Busy(_))));
+    assert!(matches!(
+        RunDir::create(&path),
+        Err(ResearchError::Exists(_))
+    ));
+    drop(dir);
+    let _reopened = RunDir::open(&path).unwrap();
+}

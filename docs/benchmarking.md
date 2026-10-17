@@ -402,7 +402,7 @@ Observation and accounting measure the unchanged tuner. Their conclusions about 
 | [#896](https://github.com/shgew/togi/issues/896) | counterfactual accounting | [`tools/bench/research/896.md`](../tools/bench/research/896.md) |
 | [#503](https://github.com/shgew/togi/issues/503) | fixed-policy observation, feasibility only | [`tools/bench/research/503.md`](../tools/bench/research/503.md) |
 
-An issue without a brief has no campaign; #428's brief waits for #427's parameterization. Each brief names its mode, its finite candidate queue, permitted and forbidden data, writable paths, metrics, keep and stop rules, result format and prerequisites. A prerequisite that has not landed stops the campaign before its first candidate. Every campaign also needs the `just research` dispatcher that validates its manifest and writes its record ([#1040](https://github.com/shgew/togi/issues/1040)); until it lands, no campaign starts.
+An issue without a brief has no campaign; #428's brief waits for #427's parameterization. Each brief names its mode, its finite candidate queue, permitted and forbidden data, writable paths, metrics, keep and stop rules, result format and prerequisites. A prerequisite that has not landed stops the campaign before its first candidate. Every campaign runs through the `just research` dispatcher, which validates its manifest and writes its record ([below](#the-dispatcher)).
 
 ### Limits
 
@@ -425,8 +425,8 @@ Launch it unprivileged, in its own worktree, with no access to live state or har
 
 A campaign writes its record to the output directory the owner names, outside the checkout, so nothing it commits can include it:
 
-- `manifest.json`: the launch manifest: issue, mode and hypothesis queue; checkout and reference revisions; tool and environment versions; the approved session allowlist and canonical input hashes; suite, scenario and seed selection; frozen-file hashes; writable paths; limits; output directory; and the confirmation allowance. A missing or changed manifest, or a frozen input whose hash changed, stops the campaign; nothing refreshes it silently.
-- `experiments.jsonl`: append-only, one line when a candidate starts and one when it ends, never edited. A confirmation has its own start and end lines, which name the candidate they serve. A start line without an end line is an incomplete experiment. An end line holds the candidate and reference identities, input and environment hashes, the commands, full-precision metrics, the typed outcome and its reason.
+- `manifest.json`: a byte copy of the launch manifest: issue, mode and hypothesis queue; checkout and reference revisions; the approved session allowlist and canonical input hashes; the suite and split, which fix scenarios and seeds; frozen-file hashes, which always include the brief and the build environment (`Cargo.lock`, `flake.lock`, `rust-toolchain.toml`); writable paths; limits; output directory; and the confirmation allowance. A missing or changed manifest, or a frozen input whose hash changed, stops the campaign; nothing refreshes it silently.
+- `experiments.jsonl`: append-only, never edited. Each evaluation run has a start line, written before it runs, and an end line. A confirmation run has its own lines, which name the candidate they serve. A start line without an end line is an incomplete run. A start line holds the candidate, its role, the command, `HEAD`, the hash of the candidate's changes, the reference revision and every pinned hash. An outcome line holds the typed outcome, its reason, full-precision metrics and the runs it rests on.
 - the raw stdout and stderr of every evaluation command;
 - `report.md`: the final report.
 
@@ -440,13 +440,62 @@ Rules for the record:
 
 The campaign stops with one reason: its queue is exhausted, a limit is exhausted (wall time or candidates), a confirmation failed, evidence or a frozen input changed, a forbidden diff appeared, a comparison was unpaired, a prerequisite is missing, or it was interrupted.
 
+### The dispatcher
+
+`just research ISSUE ACTION` runs one step of a campaign; it is `togi-tool-bench research`. It chooses no experiment and runs no agent: the researcher calls it for each step, and it refuses whatever the brief and manifest do not allow. Every action that writes holds the run directory's lock without waiting, so a second dispatcher on the same campaign is refused.
+
+| Action | What it does |
+|---|---|
+| `check --manifest FILE` | Validates the manifest against the tree and creates nothing. |
+| `start --manifest FILE` | Validates the manifest, requires `HEAD` at its checkout with no changes and a new output directory outside the checkout, copies the manifest and writes the ledger's first line. |
+| `exec --run DIR --candidate ID --role ROLE -- RECIPE ARGS` | Runs one evaluator through `just`, as described below, keeping its stdout and stderr under `raw/`. |
+| `outcome --run DIR --candidate ID --outcome OUTCOME --reason TEXT --metrics FILE` | Records the researcher's outcome (`kept`, `rejected`, `invalid`, `confirmation-passed` or `confirmation-failed`) with the metrics it read, as a JSON object of numbers. |
+| `stop --run DIR --reason REASON` | Stops the campaign with one of the stop reasons above. |
+| `resume --run DIR` | Records the runs a killed dispatcher left unfinished as incomplete, then lets the campaign continue. |
+| `report --run DIR --notes FILE` | Writes `report.md` from the ledger and the researcher's notes on the remaining uncertainty. |
+
+A manifest is JSON. Hashes are SHA-256 in lowercase hex; a gzip input is pinned by its decompressed bytes. `inputs` is for model development and `suite` (`path`, `sha256`, `split`) for observation and accounting. `limits` defaults to the values above. The owner writes, for example:
+
+```json
+{
+  "issue": 427,
+  "mode": "model-development",
+  "hypotheses": [{"id": "shared-core", "statement": "a shared per-core term improves the forward score"}],
+  "checkout": "<40-hex commit>",
+  "reference": "<40-hex commit>",
+  "inputs": [{"path": "<approved artifact>", "sha256": "4b47590e…",
+              "development": ["20260924T204352Z", "…", "20261002T235548Z"], "confirmation": ["20261004T000701Z"]}],
+  "suite": null,
+  "frozen": [{"path": "Cargo.lock", "sha256": "…"}, {"path": "flake.lock", "sha256": "…"},
+             {"path": "rust-toolchain.toml", "sha256": "…"}, {"path": "tools/fit/research/427.md", "sha256": "…"}],
+  "writable": ["crates/togi-sim/src"],
+  "limits": {"wall_minutes": 480, "candidates": 12, "jobs": 4},
+  "output": "/absolute/path/outside/the/checkout/run-1",
+  "confirmations": 1
+}
+```
+
+The dispatcher refuses a manifest whose issue has no brief or names another mode, whose sessions are not that issue's approved ones, which leaves the environment or the brief unpinned, or whose writable paths overlap evidence, fitted machines, baselines, the tuner, the run loop, the hardware path, the dispatcher, the programs and briefs, the build environment or a pinned file. Observation and accounting may not write the simulator or the fitter either.
+
+Before `exec` and `outcome` record anything, the dispatcher checks that the campaign has not stopped, that no run is left unfinished, that wall time remains, that every pinned file still has its hash and that each facts input still holds exactly its named sessions. It also checks that `HEAD` descends from the checkout and that every changed path is a writable one. A failed check after the start stops the campaign with its reason. A refused command records nothing.
+
+`exec` allows only its mode's evaluators. Model development runs `forward` (`--facts`, `--seal`, `--jobs`) and, to finalize a confirmed candidate, `fit` (`--facts`, `--out`, `--jobs`, `--seed`, `--bootstrap`). `--facts` must name a manifest input, never the default extract. A development run seals exactly the input's confirmation sessions, and a confirmation scores them unsealed. Observation and accounting run only `bench`, with the manifest's `--suite` and `--split`, and keep `--timeout` and `--max-boots`. Output flags must name paths inside the run directory, and `--jobs` defaults to the worker limit and may not exceed it. Each run holds the host-shared lock and gets the wall time left. When the time runs out, or the dispatcher is told to stop, it terminates the evaluator's process group and records the run as timed out or interrupted. A timed-out run also stops the campaign.
+
+The roles enforce the comparison's order:
+
+- A `reference` run needs the tree at the reference revision.
+- A `candidate` run past the candidate limit stops the campaign.
+- In model development, `kept` needs a complete candidate run paired with a complete reference run of the same command and data; otherwise the campaign stops as unpaired. Observation and accounting need a complete candidate run.
+- A `confirmation` needs a kept candidate whose changes are unchanged since its run, and a confirmation the manifest allows. It is spent when its start line is written. Its `confirmation-reference` run follows it, and its outcome needs both to be complete.
+- `confirmation-failed` stops the campaign. A `finalization` run needs a passed confirmation at the same changes.
+
 ### End state
 
 A campaign completes its approved experiments, records every outcome, writes the report, may open a reviewable result pull request when its brief allows one, and stops. The report reconciles the ledger, the exact comparisons, the limits used, the confirmation status and the remaining uncertainty. A negative, no-change or interrupted campaign is a complete deliverable, never a reason to relax a gate. Published summaries and artifacts follow [Writing](../AGENTS.md#writing): no private state paths, raw host journals or identifying data.
 
 ## The bench (`togi-tool-bench`)
 
-`just bench` runs `togi-tool-bench`: the runs, metrics, summary, comparison and cache of the bench ([#821](https://github.com/shgew/togi/issues/821)). `just same`, `just smoke` and `just forecast` run its `same` and `forecast` commands ([#823](https://github.com/shgew/togi/issues/823)), described [below](#the-same-command). The gate report is [below](#judging-the-gate) ([#822](https://github.com/shgew/togi/issues/822)).
+`just bench` runs `togi-tool-bench`: the runs, metrics, summary, comparison and cache of the bench ([#821](https://github.com/shgew/togi/issues/821)). `just same`, `just smoke` and `just forecast` run its `same` and `forecast` commands ([#823](https://github.com/shgew/togi/issues/823)), described [below](#the-same-command). `just research` runs its `research` command, the [campaign dispatcher](#the-dispatcher). The gate report is [below](#judging-the-gate) ([#822](https://github.com/shgew/togi/issues/822)).
 
 ```sh
 just bench --split dev --baseline BEFORE.jsonl --out AFTER.jsonl

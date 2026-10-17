@@ -15,7 +15,7 @@ Rust CLI that finds per-core Curve Optimizer offsets on Zen 5 desktop CPUs and k
 - `docs/adr/`: decisions and the alternatives rejected, with statuses in [the index](docs/adr/README.md). Where a spec disagrees with an ADR, the spec wins. Reversing a decision needs a new ADR, which updates the index in the same pull request.
 - `docs/prior-art.md`: before proposing a feature, check whether it was deliberately left out.
 - `docs/rust-migration.md`: the Go-to-Rust migration log, history only; append what a pull request of the migration measured ([ADR 0048](docs/adr/0048-rust.md), [ADR 0058](docs/adr/0058-native-rust-rewrite.md)). The porting rules that last are in [Rust](#rust), [Code](#code) and the specs.
-- `docs/benchmarking.md`: run it before and after any change to how the tuner decides; it also covers `just forecast`.
+- `docs/benchmarking.md`: run it before and after any change to how the tuner decides; it also covers `just forecast` and research campaigns (`just research`).
 - `docs/simulating.md`, `docs/reviewing.md`, `docs/releasing.md`, `CHANGELOG.md` and `changes/README.md`: read when you do what they name.
 
 ## Workflow

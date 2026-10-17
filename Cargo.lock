@@ -1846,6 +1846,7 @@ name = "togi-tool-bench"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "flate2",
  "jiff",
  "proptest",
  "rand",
@@ -1855,6 +1856,7 @@ dependencies = [
  "sha2",
  "signal-hook 0.4.5",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-facts",
