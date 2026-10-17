@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use ratatui::text::{Line, Span};
-use togi_machine::{CoreId, Regime};
+use togi_machine::{CoreId, CoreSet, Regime};
 use togi_tuner::{CyclePart, CycleStep};
 
 use super::super::colours::Paint;
@@ -387,13 +387,11 @@ pub(super) fn combination_lines(
         ),
         Line::default(),
     ];
-    let ids: Vec<CoreId> = scene
+    let ids: CoreSet = scene
         .s
         .combos
         .iter()
         .flat_map(|combo| combo.members.iter().map(|member| member.core))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
         .collect();
     let shown = t.combos[1]
         .w
@@ -401,7 +399,7 @@ pub(super) fn combination_lines(
         .map_or(0, |fit| ids.len().min(fit));
     let offsets = |value: &dyn Fn(CoreId) -> (String, Paint)| -> Line<'static> {
         let mut spans: Vec<Span<'static>> = Vec::new();
-        for (i, &id) in ids[..shown].iter().enumerate() {
+        for (i, id) in ids.iter().take(shown).enumerate() {
             let (text, paint) = value(id);
             if i > 0 {
                 spans.push(Span::raw(" ".repeat(t.member.saturating_sub(3))));
@@ -430,7 +428,7 @@ pub(super) fn combination_lines(
         let text = format!(
             "columns show {shown} of {} member cores; not shown: {} · l: last {LOG_LIMIT} events",
             ids.len(),
-            core_ids(ids[shown..].iter().copied()),
+            core_ids(ids.iter().skip(shown)),
         );
         out.push(cell(scene, Paint::Grey, cut_words(&text, width)));
     }

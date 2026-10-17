@@ -16,7 +16,7 @@ use togi_journal::{
     HuntGroup, HuntOutcome, HuntSkipped, HuntStart, Inference, Mce, Payload, RoundEvent, TrialEnd,
     TunerDecision,
 };
-use togi_machine::{CoreId, Regime, Signal, TargetOffset, WorkloadId};
+use togi_machine::{CoreId, CoreSet, Regime, Signal, TargetOffset, WorkloadId};
 use togi_tuner::{DecisionPayload, GroupState};
 
 /// The tag of a line of what happened: one short word per kind of event, in a column of its own, so the eye finds
@@ -292,20 +292,33 @@ pub fn core_ids(cores: impl IntoIterator<Item = CoreId>) -> String {
     text.replace(", ", " ")
 }
 
+/// The one core of `cores`, if it holds exactly one.
+fn only(cores: CoreSet) -> Option<CoreId> {
+    cores.first().filter(|_| cores.len() == 1)
+}
+
 /// Cores named as a trial's load: "core 03", "all 8 cores" when they are every core, else the list.
-pub fn cores_text(cores: &[CoreId], total: usize) -> String {
-    match cores {
-        [core] => format!("core {:02}", core.get()),
-        _ if cores.len() == total && total > 1 => format!("all {total} cores"),
-        _ => core_list(cores.iter().copied()),
+pub fn cores_text(cores: CoreSet, total: usize) -> String {
+    match only(cores) {
+        Some(core) => format!("core {:02}", core.get()),
+        None if cores.len() == total && total > 1 => format!("all {total} cores"),
+        None => core_list(cores),
     }
 }
 
 /// Where a load runs: "on core 03", "on 00-07".
-pub fn on_cores(cores: &[CoreId]) -> String {
-    match cores {
-        [core] => format!("on core {:02}", core.get()),
-        _ => format!("on {}", core_ids(cores.iter().copied())),
+pub fn on_cores(cores: CoreSet) -> String {
+    match only(cores) {
+        Some(core) => format!("on core {:02}", core.get()),
+        None => format!("on {}", core_ids(cores)),
+    }
+}
+
+/// Cores named with the word: "core 03", "cores 00-02 05".
+pub fn cores_named(cores: CoreSet) -> String {
+    match only(cores) {
+        Some(core) => format!("core {:02}", core.get()),
+        None => format!("cores {}", core_ids(cores)),
     }
 }
 

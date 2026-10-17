@@ -922,7 +922,7 @@ fn the_cores_page_explains_each_value_and_where_the_failure_came_from() {
     );
 }
 
-fn ids(values: &[u8]) -> Vec<togi_machine::CoreId> {
+fn ids(values: &[u8]) -> togi_machine::CoreSet {
     values.iter().map(|&id| core(id)).collect()
 }
 
@@ -1022,10 +1022,10 @@ fn cut_top_requesters_keep_their_offset_label() {
         );
     }
     assert_eq!(
-        top_cell(&ids(&[0]), &ids(&[8, 9, 10, 11, 12, 13, 14, 15]), 17),
+        top_cell(ids(&[0]), ids(&[8, 9, 10, 11, 12, 13, 14, 15]), 17),
         "08-15 by offset"
     );
-    assert_eq!(top_cell(&[], &[], 17), "-");
+    assert_eq!(top_cell(ids(&[]), ids(&[]), 17), "-");
 }
 
 #[test]

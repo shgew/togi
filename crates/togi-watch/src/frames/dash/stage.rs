@@ -5,7 +5,7 @@
 //! marked as running.
 
 use ratatui::text::{Line, Span};
-use togi_machine::{Condition, CoreId};
+use togi_machine::{Condition, CoreSet};
 use togi_tuner::{CycleStep, HuntPlan, PhaseNo, TrialContext};
 
 use crate::frames::colours::Paint;
@@ -15,7 +15,7 @@ use crate::frames::scene::{Scene, between, clock};
 use crate::frames::terms::{dead_end_words, first_open_part, recut_words};
 use crate::model::CycleView;
 use crate::screen::View;
-use crate::words::{core_ids, kind_words, noun, on_cores, plural};
+use crate::words::{cores_named, kind_words, noun, on_cores, plural};
 
 /// Where the session stands in its life, which decides whether any stage is running.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -742,7 +742,6 @@ fn round_requirement(scene: &Scene<'_>) -> Vec<Clause> {
             "every check of the round is credited",
         )];
     };
-    let cores: Vec<CoreId> = check.cores.iter().collect();
     vec![
         whole(
             scene,
@@ -755,7 +754,7 @@ fn round_requirement(scene: &Scene<'_>) -> Vec<Clause> {
             format!("{} {}", check.regime, kind_words(check.regime)),
             2,
         ),
-        extra(scene, Paint::Text, on_cores(&cores), 1),
+        extra(scene, Paint::Text, on_cores(check.cores), 1),
         whole(
             scene,
             Paint::Text,
@@ -769,7 +768,7 @@ fn round_requirement(scene: &Scene<'_>) -> Vec<Clause> {
 }
 
 fn queued_resets(scene: &Scene<'_>) -> Option<Clause> {
-    let cores: Vec<CoreId> = scene
+    let cores: CoreSet = scene
         .s
         .cores
         .iter()
@@ -780,16 +779,9 @@ fn queued_resets(scene: &Scene<'_>) -> Option<Clause> {
         whole(
             scene,
             Paint::Text,
-            format!("reset queued for {}", on_core_names(&cores)),
+            format!("reset queued for {}", cores_named(cores)),
         )
     })
-}
-
-fn on_core_names(cores: &[CoreId]) -> String {
-    match cores {
-        [core] => format!("core {:02}", core.get()),
-        _ => format!("cores {}", core_ids(cores.iter().copied())),
-    }
 }
 
 /// What a lifecycle that suspends the stages says under the last work: why, and what stays queued.
