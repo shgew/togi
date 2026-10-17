@@ -1,11 +1,13 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use togi_journal::{Activity, Decision, Event, Outcome, Seq, TunerDecision};
 use togi_machine::{Condition, CoreId, CoreSet, Regime};
 
+use super::Applied;
 use super::escalation::{BackoffKind, Strikes};
 use super::failed::{Ended, FailedTrial, OpenFailure, Telemetry, effective_top, order_at};
 use super::measurements::{Measurement, Measurements};
+use super::probe::Probes;
 use super::status::SelfSufficiency;
 use super::target::{PassRecord, R7Targets};
 use crate::BackendId;
@@ -21,6 +23,8 @@ pub(crate) struct R7 {
     pub(crate) targets: R7Targets,
     pub(crate) strikes: Strikes,
     pub(crate) status: SelfSufficiency,
+    pub(crate) probes: Probes,
+    pub(crate) loaded: HashMap<crate::LoadKey, (Seq, crate::Profile)>,
     pub(crate) open: BTreeMap<Seq, OpenFailure>,
     pub(crate) named: BTreeMap<Seq, CoreId>,
 }
@@ -56,6 +60,7 @@ impl Run {
         match outcome {
             Outcome::Pass => {
                 self.r7.strikes.pass(class.load());
+                self.r7.loaded.remove(&class.load());
                 self.r7.status.pass(
                     backend,
                     class.workload(),
@@ -82,8 +87,20 @@ impl Run {
             }
             Outcome::Inconclusive | Outcome::Failure => {}
         }
-        let failed = (outcome == Outcome::Failure && class.multi_r7())
-            .then(|| FailedTrial::freeze(&self.r7.measurements, &self.topo, ended, order));
+        let failed = (outcome == Outcome::Failure && class.multi_r7()).then(|| {
+            let mut failed = FailedTrial::freeze(&self.r7.measurements, &self.topo, ended, order);
+            for (ccd, source, mhz) in self.r7.measurements.clocks(class.load(), backend) {
+                if let std::collections::btree_map::Entry::Vacant(entry) = failed.clocks.entry(ccd)
+                {
+                    entry.insert(mhz);
+                    failed.clock_sources.insert(ccd, source);
+                }
+            }
+            failed
+        });
+        self.r7
+            .measurements
+            .record_clocks(class.load(), backend, seq, telemetry.clocks);
         if !telemetry.requests.is_empty() {
             self.r7.measurements.record(
                 class.load(),
@@ -117,6 +134,8 @@ impl Run {
                     stalled: end.stalled_core,
                 },
                 named,
+                crash_duration_s: (open.crashed || end.signal == Some(togi_machine::Signal::Crash))
+                    .then_some(end.duration_s),
             },
             end.outcome,
             open.backend,
@@ -173,6 +192,9 @@ impl Run {
             .get(&seq)
             .and_then(|located| located.end.as_ref())
             .is_some_and(|end| end.named.is_some());
+        let probe = (!named && !located_named)
+            .then(|| self.r7_probe_part(&view, decision.core))
+            .flatten();
         if decision.activity != Activity::Deepening && decision.decision == Decision::Backoff {
             let kind = if located_named {
                 BackoffKind::LocatedNamed
@@ -182,6 +204,15 @@ impl Run {
                 BackoffKind::Unattributed
             };
             self.r7.strikes.backoff(load, kind, event.seq, seq);
+            if let Some((class, _, stalled_elsewhere)) = probe {
+                self.r7.probes.charge(
+                    (load, decision.core),
+                    class,
+                    event.seq,
+                    seq,
+                    stalled_elsewhere,
+                );
+            }
             if let (false, Some(core)) = (named || located_named, recorded_name) {
                 self.r7.named.insert(seq, core);
             }
@@ -212,6 +243,8 @@ impl Run {
         self.r7.targets.reset_core(core);
         self.r7.status.reset_core(core);
         let named = &self.r7.named;
+        self.r7.probes.reset_core(core);
+        self.r7.loaded.clear();
         let named_core = |seq: Seq| named.get(&seq).copied();
         self.r7.strikes.reset_core(core, named_core);
         self.r7.open.retain(|_, open| {
@@ -226,5 +259,40 @@ impl Run {
         let open = &self.r7.open;
         self.zero
             .retain(|seq| failures.pending(seq).is_some() || open.contains_key(&seq));
+    }
+
+    /// A loaded result answers only this exact load while its unloaded tuning offsets stay
+    /// unchanged. A later loaded-core move cannot change what the locate tested at CO 0.
+    pub(crate) fn r7_located_loaded(&mut self, source: Seq, end: Seq) {
+        if let Some(record) = self.r7.open.get(&source) {
+            self.r7
+                .loaded
+                .insert(record.pending.class.load(), (end, record.pending.profile));
+        }
+    }
+
+    pub(crate) fn r7_offset_changed(
+        &mut self,
+        core: CoreId,
+        before: togi_machine::TargetOffset,
+        after: togi_machine::TargetOffset,
+    ) {
+        if before != after {
+            self.r7.loaded.retain(|load, _| load.loaded.contains(core));
+        }
+    }
+
+    pub(crate) fn r7_loaded_verdict(
+        &self,
+        load: crate::LoadKey,
+        profile: &crate::Profile,
+    ) -> Option<Seq> {
+        let (seq, located) = self.r7.loaded.get(&load)?;
+        self.topo
+            .all()
+            .iter()
+            .filter(|&core| !load.loaded.contains(core))
+            .all(|core| profile.at(core) == located.at(core))
+            .then_some(*seq)
     }
 }

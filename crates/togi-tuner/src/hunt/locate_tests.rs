@@ -719,7 +719,7 @@ fn r7_passed_locate_hunts_the_unloaded_culprit() {
     let action = j.loc_act();
     let move_ = backoff(&action);
     assert_eq!(move_.activity, Activity::Hunt);
-    assert_eq!((move_.core, move_.to_offset), (core(2), off(-29)));
+    assert_eq!((move_.core, move_.to_offset), (core(2), off(0)));
     j.decide(decision(&action).clone());
     let rerun = j
         .loc_drain_without_moves("culprit")
@@ -729,7 +729,7 @@ fn r7_passed_locate_hunts_the_unloaded_culprit() {
     assert_eq!(rerun.load, Load::Many(set(&[0, 1])));
     assert_eq!(rerun.duration.get(), 120);
     assert_eq!(rerun.cause, [failure]);
-    assert_eq!(values(j.offsets()), [-30, -30, -29, -30]);
+    assert_eq!(values(j.offsets()), [-30, -30, 0, -30]);
     j.assert_resumes();
 }
 
@@ -824,7 +824,14 @@ fn r7_located_group_failure_naming_a_core() {
         let move_ = backoff(&action);
         assert_eq!(
             (move_.core, move_.to_offset),
-            (core(cores[0]), off(-29)),
+            (
+                core(cores[0]),
+                off(if result == HuntOutcome::Culprit {
+                    0
+                } else {
+                    -29
+                }),
+            ),
             "{name}"
         );
         j.decide(decision(&action).clone());
@@ -2264,4 +2271,311 @@ fn a_skipped_or_inferred_locate_has_no_live_rejecting_failure() {
         assert_eq!(hunt_end(&action).result, HuntOutcome::Loaded);
         j.assert_resumes();
     }
+}
+
+fn singleton_hunt(origin: i64, duration: u32) -> Journal {
+    let mut j = Journal::r7_session();
+    j.loc_set_core(2, origin);
+    j.profile_change(&[-30, -30, origin, -30]);
+    j.loc_back_off(&top0());
+    // A two-CCD cycle gives each CCD one quarter of the configured all-core duration.
+    j.load(&config(&format!(
+        r#"{{"durations":{{"checking_all_core_s":{}}}}}"#,
+        duration * 4
+    )));
+    let plan = j.manual(
+        Regime::R7,
+        0,
+        Load::Many(set(&[0, 1])),
+        Condition::Together,
+        &[-30, -30, origin, -30],
+        duration,
+    );
+    j.loc_finish(&plan, Outcome::Failure, &top0());
+    let attribution = j.next_decision();
+    j.decide(attribution);
+    let start = j.loc_act();
+    assert_eq!(hunt_start(&start).duration_s, duration);
+    j.decide(decision(&start).clone());
+    j
+}
+
+#[test]
+fn singleton_probes_bracket_the_last_reproduced_failure_and_resume() {
+    for (origin, limit, expected) in [
+        (-30, -22, vec![-29, -28, -26, -22, -24, -23]),
+        (-30, -29, vec![-29]),
+        (-30, 0, vec![-29, -28, -26, -22, -14, -7, -4, -2, -1]),
+        (-1, 0, vec![]),
+    ] {
+        let mut j = singleton_hunt(origin, 120);
+        let mut probes = Vec::new();
+        let located = j.loc_run_until(
+            |plan| fails_as(at(plan, 2) < limit, Verdict::Unnamed),
+            |group| {
+                if let Some(probe) = group.probe {
+                    assert_eq!(probe.core, core(2));
+                    assert_eq!(group.set, set(&[2]));
+                    assert_eq!(group.held, []);
+                    assert!(!probes.contains(&probe.offset.get()));
+                    probes.push(probe.offset.get());
+                }
+                false
+            },
+        );
+        let end = hunt_end(&located.action);
+        assert_eq!(end.result, HuntOutcome::Culprit);
+        assert_eq!(probes, expected);
+        if origin != -1 {
+            assert_eq!(
+                end.members,
+                [Member {
+                    core: core(2),
+                    offset: off(limit - 1)
+                }]
+            );
+        }
+        j.assert_resumes();
+        j.decide(decision(&located.action).clone());
+        j.assert_resumes();
+        let commitment = j.loc_act();
+        let moved = backoff(&commitment);
+        assert_eq!(
+            (moved.core, moved.to_offset, moved.failure_point),
+            (core(2), off(limit), Some(off(limit - 1)))
+        );
+        j.decide(decision(&commitment).clone());
+        assert_eq!(j.run().hunt_next(), None);
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn singleton_without_existing_same_class_anchor_tests_it_before_accelerating() {
+    let mut j = singleton_hunt(-30, 600);
+    let stopped = j.loc_run_until(
+        |plan| fails_as(at(plan, 2) < -22, Verdict::Unnamed),
+        |group| group.stage == HuntStage::Probe,
+    );
+    let anchor = hunt_group(&stopped.action);
+    assert_eq!(
+        anchor.probe,
+        Some(Member {
+            core: core(2),
+            offset: off(0)
+        })
+    );
+    assert_eq!(anchor.duration_s, 120);
+    assert_eq!(anchor.inferred, None);
+    assert!(
+        anchor
+            .reason
+            .as_deref()
+            .unwrap()
+            .contains("safe singleton anchor")
+    );
+    j.decide(decision(&stopped.action).clone());
+    for passed in 0..5 {
+        let projection = j.run().hunt_plan().unwrap();
+        assert_eq!(projection.probes.len(), 1);
+        assert_eq!(projection.probes[0].offset, off(0));
+        assert!(!projection.probes[0].done);
+        j.assert_resumes();
+        let plan = j.next_trial();
+        assert_eq!(at(&plan, 2), 0);
+        assert_eq!(plan.duration.get(), 120);
+        j.loc_finish(&plan, Outcome::Pass, &R7Report::default());
+        assert_eq!(j.run().hunt_groups().last().unwrap().passed, passed + 1);
+    }
+    let first = j.loc_act();
+    let probe = hunt_group(&first);
+    assert_eq!(
+        probe.probe,
+        Some(Member {
+            core: core(2),
+            offset: off(-29)
+        })
+    );
+    assert_eq!(probe.duration_s, 120);
+    assert_eq!(probe.index, 1);
+    j.assert_resumes();
+}
+
+#[test]
+fn a_failed_singleton_anchor_never_creates_a_safe_bracket() {
+    for all_zero in [false, true] {
+        let mut j = singleton_hunt(-30, 600);
+        if all_zero {
+            // Supply an all-zero parked background in the recorded start, not a safe pass.
+            let active = j.run().hunts.active.as_ref().unwrap();
+            let mut start = active.start.clone();
+            start.parked = j.profile(&[0; 4]).offsets();
+            let cause = vec![active.seq];
+            j.append(start.into(), &cause);
+        }
+        let stopped = j.loc_run_until(
+            |plan| fails_as(at(plan, 2) < -22, Verdict::Unnamed),
+            |group| group.stage == HuntStage::Probe,
+        );
+        let anchor = hunt_group(&stopped.action);
+        assert_eq!(anchor.probe.unwrap().offset, off(0));
+        j.decide(decision(&stopped.action).clone());
+        let plan = j.next_trial();
+        j.loc_finish(&plan, Outcome::Failure, &R7Report::default());
+        let attribution = j.next_decision();
+        j.decide(attribution);
+        j.assert_resumes();
+        let action = j.loc_act();
+        if all_zero {
+            assert_eq!(dead_end(&action).condition, DeadEndCondition::FailureAtZero);
+        } else {
+            let end = hunt_end(&action);
+            assert_eq!(end.result, HuntOutcome::Culprit);
+            assert_eq!(
+                end.members,
+                [Member {
+                    core: core(2),
+                    offset: off(-30)
+                }]
+            );
+            j.decide(decision(&action).clone());
+            let commitment = j.loc_act();
+            assert_eq!(backoff(&commitment).to_offset, off(-29));
+        }
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn singleton_anchor_evidence_keeps_the_exact_class_and_backend() {
+    for (workload, loaded, duration, changed_backend, expected_anchor) in [
+        (0, &[0, 1][..], 120, false, false),
+        (1, &[0, 1][..], 120, false, true),
+        (0, &[0, 2][..], 120, false, true),
+        (0, &[0, 1][..], 600, false, true),
+        (0, &[0, 1][..], 120, true, true),
+    ] {
+        let mut j = singleton_hunt(-30, 600);
+        j.load(&loc_config(Some((
+            crate::testkit::MPRIME_OLD,
+            crate::testkit::YCRUNCHER_OLD,
+        ))));
+        let backend = workloads(Regime::R7)[workload].backend;
+        let old = match backend {
+            togi_machine::Backend::Mprime => crate::testkit::MPRIME_OLD,
+            togi_machine::Backend::Ycruncher => crate::testkit::YCRUNCHER_OLD,
+        };
+        // These class variants need not be schedulable parts of the current cycle.
+        for _ in 0..5 {
+            j.carry_under(
+                SESSION,
+                (Regime::R7, workload, loaded, duration),
+                Condition::Together,
+                &[-30, -30, 0, 0],
+                Outcome::Pass,
+                Some((backend, old)),
+            );
+        }
+        if changed_backend {
+            j.load(&loc_config(Some((
+                crate::testkit::MPRIME_NEW,
+                crate::testkit::YCRUNCHER_NEW,
+            ))));
+        }
+        let stopped = j.loc_run_until(
+            |plan| fails_as(at(plan, 2) < -22, Verdict::Unnamed),
+            |group| group.stage == HuntStage::Probe,
+        );
+        assert_eq!(
+            hunt_group(&stopped.action).probe.unwrap().offset,
+            off(if expected_anchor { 0 } else { -29 })
+        );
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn reset_cancels_singleton_anchor_acquisition_and_interior_probes() {
+    for interior in [false, true] {
+        let mut j = singleton_hunt(-30, 600);
+        let stopped = j.loc_run_until(
+            |plan| fails_as(at(plan, 2) < -22, Verdict::Unnamed),
+            |group| group.stage == HuntStage::Probe,
+        );
+        j.decide(decision(&stopped.action).clone());
+        for _ in 0..if interior { 5 } else { 2 } {
+            let plan = j.next_trial();
+            j.loc_finish(&plan, Outcome::Pass, &R7Report::default());
+            j.assert_resumes();
+        }
+        if interior {
+            let next = j.loc_act();
+            assert_eq!(hunt_group(&next).probe.unwrap().offset, off(-29));
+            j.decide(decision(&next).clone());
+            let plan = j.next_trial();
+            j.loc_finish(&plan, Outcome::Inconclusive, &R7Report::default());
+            j.assert_resumes();
+        }
+        j.reset(2);
+        let cancel = j.loc_act();
+        assert_eq!(hunt_end(&cancel).result, HuntOutcome::Cancelled);
+        j.decide(decision(&cancel).clone());
+        assert_eq!(j.run().hunt_next(), None);
+        assert_eq!(at(&j.r7_plan(&[0, 1], &values(j.offsets())), 2), -30);
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn an_ordinary_singleton_hunt_acquires_a_nonzero_parked_anchor() {
+    let mut j = super::support::hunt_session(&[-30; 4]);
+    super::support::passed_cycle(&mut j, &[-10; 4], &[-30; 4]);
+    j.together_failure(Regime::R6, 0, &[-30; 4]);
+    let (_, start) = j.start_hunt();
+    assert_eq!(start.parked, j.profile(&[-10; 4]).offsets());
+    let end = j.run_hunt(300, |plan| {
+        if at(plan, 0) < -22 {
+            Outcome::Failure
+        } else {
+            Outcome::Pass
+        }
+    });
+    assert_eq!(end.result, HuntOutcome::Culprit);
+    assert_eq!(
+        end.members,
+        [Member {
+            core: core(0),
+            offset: off(-23)
+        }]
+    );
+    let active = j.run().hunts.active.as_ref().unwrap();
+    let probes: Vec<_> = active
+        .groups
+        .iter()
+        .filter_map(|group| group.payload.probe)
+        .collect();
+    assert_eq!(
+        probes.first(),
+        Some(&Member {
+            core: core(0),
+            offset: off(-10)
+        })
+    );
+    assert_eq!(
+        probes
+            .iter()
+            .map(|probe| probe.offset.get())
+            .collect::<Vec<_>>(),
+        [-10, -29, -28, -26, -22, -24, -23]
+    );
+    j.assert_resumes();
+    let action = j.next();
+    let moved = backoff(&action);
+    assert_eq!(
+        (moved.to_offset, moved.failure_point),
+        (off(-22), Some(off(-23)))
+    );
+    j.decide(decision(&action).clone());
+    assert_eq!(j.run().hunt_next(), None);
+    j.assert_resumes();
 }

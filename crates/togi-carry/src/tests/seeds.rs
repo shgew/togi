@@ -176,6 +176,63 @@ fn hunt_culprit_seed_sparse_topology() {
 }
 
 #[test]
+fn a_singleton_culprit_seeds_its_end_member_over_the_hunt_start_offset() {
+    let failing = profile(&[(0, -10), (2, -30), (5, -20)]);
+    let member = |core: i64, value: i64| togi_journal::Member {
+        core: super::core(core),
+        offset: offset(value),
+    };
+    for (name, members, want) in [
+        ("refined member", vec![member(2, -23)], -23),
+        ("no members from an older end", Vec::new(), -30),
+        ("member of another core", vec![member(5, -23)], -30),
+        (
+            "own member among others",
+            vec![member(5, -11), member(2, -23)],
+            -23,
+        ),
+    ] {
+        let mut x = Source::new(day(9), &[0, 2, 5], 3, 1).with_context(&context());
+        let failure = x.add(super::idle_failure(failing));
+        x.add(hunt_start(1, failure, failing, set(&[2])));
+        let mut end = culprit(1, set(&[2]));
+        end.members = members;
+        let end = x.add(end);
+
+        let (mut archive, chain) = chain_of(&[&x]);
+        let got = pending(&mut archive, &chain, None, &[]);
+        assert_eq!(
+            got.seeds(),
+            [seed(2, None, Some(point(want, x.id, end, Signal::Crash)))],
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_hunt_end_seeds_before_any_backoff_decision() {
+    let failing = profile(&[(0, -10), (2, -30), (5, -20)]);
+    let mut x = Source::new(day(9), &[0, 2, 5], 3, 1).with_context(&context());
+    let failure = x.add(super::idle_failure(failing));
+    x.add(hunt_start(1, failure, failing, set(&[2])));
+    let mut end = culprit(1, set(&[2]));
+    end.members = vec![togi_journal::Member {
+        core: super::core(2),
+        offset: offset(-23),
+    }];
+    let end = x.add(end);
+    let (mut archive, chain) = chain_of(&[&x]);
+    let interrupted = pending(&mut archive, &chain, None, &[]);
+    let want = [seed(2, None, Some(point(-23, x.id, end, Signal::Crash)))];
+    assert_eq!(interrupted.seeds(), want);
+
+    x.add_caused(&[end], backoff_decision(2));
+    let (mut archive, chain) = chain_of(&[&x]);
+    let decided = pending(&mut archive, &chain, None, &[]);
+    assert_eq!(decided.seeds(), want);
+}
+
+#[test]
 fn resets_drop_seeds() {
     let mut x = Source::new(day(9), &[2], 3, 1).with_context(&context());
     x.pass(2, -30, Condition::Alone);

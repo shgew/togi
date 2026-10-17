@@ -253,12 +253,16 @@ impl Run {
                     stalled: carried.stalled_core,
                 },
                 named: carried.core,
+                crash_duration_s: (carried.signal == Some(togi_machine::Signal::Crash))
+                    .then_some(carried.duration_s),
             },
             carried.outcome,
             backend,
         );
         if let Some(trial) = failed.as_mut() {
             trial.backoffs = self.r7.strikes.snapshot(class.load());
+            trial.located_loaded = self.r7_loaded_verdict(class.load(), &profile);
+            trial.cover = self.evidence.loaded_cover(class.load(), &profile)?;
         }
         let observation = Observation {
             seq: event.seq,

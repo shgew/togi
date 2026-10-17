@@ -63,7 +63,7 @@ impl Run {
                 if self
                     .phases
                     .mark(core)
-                    .is_some_and(|mark| mark.round == shape.id())
+                    .is_some_and(|mark| mark.attempt == shape.id())
                 {
                     outlook
                         .gaps

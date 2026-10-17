@@ -8,7 +8,7 @@ use togi_journal::{
 use togi_machine::{CcdId, Condition, CoreInfo, CoreSet, Regime, Signal, WorkloadId};
 
 use crate::schedule_tests::{decision, transition};
-use crate::testkit::{self, Journal, Start, fresh, set};
+use crate::testkit::{self, Journal, R7Report, Start, fresh, set};
 use crate::tests::core;
 use crate::{
     Action, ClassKey, DecisionAction, DecisionPayload, FoldError, Load, PartNo, Secs, StepNo,
@@ -917,14 +917,41 @@ fn repeated_r7_partial_classes_add_trials() {
 
 #[test]
 fn chain_rederives_after_a_backoff_before_its_step_counts() {
-    let mut j = with_partial();
-    pass_part(&mut j, &[0, 1, 3], &PARTIAL_REQUESTS);
+    let full = [(0, 1.19), (1, 1.11), (2, 1.2), (3, 1.195)];
+    let partial = [(0, 1.19), (1, 1.25), (3, 1.195)];
+    // Two counts make core 3 the full CCD's top requester, including under the named cap.
+    let mut j = seeded_journal(two_ccds(), &STARTS, Some(r7_only()), |j| {
+        for _ in 0..j.run().config.needed.get() {
+            j.r7_fact(
+                true,
+                &[0, 1, 2, 3],
+                &STARTS,
+                &R7Report::default()
+                    .requests(&full)
+                    .top(&[2])
+                    .clocks(&[(0, 5000)]),
+            );
+        }
+    });
+    pass_part(&mut j, &[0, 1, 2, 3], &full);
+    let first = j.next();
+    assert_eq!(chain_of(&first).cores, set(&[0, 1, 3]));
+    j.decide(decided(first));
+    pass_part(&mut j, &[0, 1, 3], &partial);
     let chain = j.next();
     assert_eq!(chain_of(&chain).cores, set(&[0, 3]));
     j.decide(decided(chain));
     let plan = j.next_trial();
     assert_eq!(plan.load, Load::Many(set(&[0, 3])));
-    run(&mut j, &plan, Outcome::Failure, &[], Some(3));
+    j.r7_trial(
+        &[0, 3],
+        &STARTS,
+        Outcome::Failure,
+        &R7Report::default()
+            .requests(&[(0, 1.19), (3, 1.195)])
+            .named(3)
+            .clocks(&[(0, 5000)]),
+    );
     let failure = j.next_decision();
     assert!(
         matches!(failure.payload, DecisionPayload::Failure(_)),
@@ -935,7 +962,7 @@ fn chain_rederives_after_a_backoff_before_its_step_counts() {
     let moved = decision(&backoff);
     assert_eq!(moved.decision, Decision::Backoff);
     assert_eq!(moved.core, core(3));
-    assert!(moved.to_offset.get() > -40, "{moved:?}");
+    assert_eq!(moved.to_offset.get(), -38, "{moved:?}");
     j.decide(backoff);
     let change = j.next_decision();
     assert!(

@@ -1,8 +1,8 @@
 use togi_journal::{
     Activity, DeadEndCondition, Event, EventKind, Outcome, Payload, ShutdownReason,
 };
-use togi_machine::Regime;
-use togi_tuner::PhaseNo;
+use togi_machine::{Regime, Signal};
+use togi_tuner::{PhaseNo, State};
 use togi_watchtest::{Base, Scenario};
 
 use crate::support::{fold, intent_of, running_trial, states_at};
@@ -306,6 +306,44 @@ fn the_unconfirmed_scenario_shows_a_core_off_the_confirmed_bios_profile() {
     let bios = fold(&events).bios_profile().expect("started");
     assert!(bios.confirmed.is_some());
     assert!(!bios.unconfirmed.is_empty());
+}
+
+#[test]
+fn the_later_hunt_crashes_six_consecutive_trials_from_the_first_eligible_checking_trial() {
+    let events = Base::LaterHunt.events().expect("the base simulates");
+    let mut state = State::new();
+    let start = events
+        .iter()
+        .position(|event| {
+            state.fold(event).expect("the journal folds");
+            matches!(&event.payload, Payload::TrialIntent(intent) if
+                intent.activity == Some(Activity::Checking)
+                    && intent.cycle.is_some_and(|cycle| cycle.get() >= 4)
+                    && intent.regime != Regime::R7
+                    && state.bios_profile().is_some_and(|bios| bios.confirmed.is_some())
+            )
+        })
+        .expect("checking outside R7 runs after a confirmed BIOS profile, in cycle 4 or later");
+    let trials: Vec<_> = events[start..]
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::TrialIntent(intent) => Some(&intent.trial),
+            _ => None,
+        })
+        .take(6)
+        .collect();
+    assert_eq!(trials.len(), 6);
+    for trial in trials {
+        let end = events[start..]
+            .iter()
+            .find_map(|event| match &event.payload {
+                Payload::TrialEnd(end) if &end.trial == trial => Some(end),
+                _ => None,
+            })
+            .expect("each burst trial ended");
+        assert_eq!(end.signal, Some(Signal::Crash), "trial {trial}");
+        assert_eq!(end.core, None, "trial {trial} names no core");
+    }
 }
 
 #[test]

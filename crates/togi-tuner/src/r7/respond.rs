@@ -1,7 +1,7 @@
 use std::fmt;
 
 use togi_journal::{Activity, Decision, HuntOutcome, Seq, TunerDecision};
-use togi_machine::{CcdId, Condition, CoreId, CoreSet, PerCore, TargetOffset};
+use togi_machine::{CcdId, Condition, CoreId, CoreSet, PerCore, Signal, TargetOffset};
 use togi_requests::groups;
 
 use super::Applied;
@@ -9,13 +9,15 @@ use super::escalation::Escalation;
 use super::failed::FailedTrial;
 use super::order::lowest_ranked;
 use super::reason::{Basis, Note, R7Reason, ids};
-use super::target::{Ask, OwnRequest, Target, backoff_counts, backoff_move};
+use super::target::{Ask, CRASH_TARGET_MIN_S, OwnRequest, Target, backoff_counts, backoff_move};
 use crate::hunt::state::{Located, LocatedEnd};
 use crate::ledger::carried_clause;
 use crate::r7::failed::OpenFailure;
 use crate::state::Run;
 use crate::zero::{AtZero, Diagnostic};
 use crate::{Action, DecisionAction, Depth, Profile, TrialPlan};
+
+const NAMED_NON_CRASH_CAP: i64 = 3;
 
 /// A failed multi-core R7 trial as attribution reads it now: once its all-zero rerun passed,
 /// neither its named nor its stalled core confines it any more.
@@ -109,8 +111,10 @@ impl LocateReason {
     /// The events the located hunt cites besides the failure.
     pub(crate) fn cause(&self) -> Vec<Seq> {
         let mut cause: Vec<Seq> = self.rerun_passed.into_iter().collect();
-        if let Some(Escalation::Backoffs { decisions, .. }) = &self.escalation {
-            cause.extend(decisions.iter().copied());
+        match &self.escalation {
+            Some(Escalation::Backoffs { decisions, .. }) => cause.extend(decisions.iter().copied()),
+            Some(Escalation::Covered { passes }) => cause.extend(passes.iter().copied()),
+            Some(Escalation::LoadedAtZero) | None => {}
         }
         cause
     }
@@ -268,7 +272,8 @@ impl Run {
     }
 
     /// Why a multi-core R7 failure is located before it is charged, or none when it is charged
-    /// now: a live unattributed one whose load left an unloaded core off CO 0 and that escalates,
+    /// now: a live unattributed one whose load left an unloaded core off CO 0 and that escalates
+    /// or whose load already passed with its loaded cores as deep and an unloaded core shallower,
     /// and, carried or naming a core at CO 0, one whose loaded cores were all at CO 0.
     pub(crate) fn locatable(&self, view: &Failed<'_>) -> Option<LocateReason> {
         let record = view.record;
@@ -286,17 +291,30 @@ impl Run {
             .loaded()
             .iter()
             .all(|core| Self::at_zero_in(view.profile(), core));
+        if view.trial.located_loaded.is_some() && !loaded_at_zero && rerun_passed.is_none() {
+            return None;
+        }
         let affected: Vec<CcdId> = self
             .failure_targets(view)
             .iter()
             .filter_map(|&core| self.ccd_of(core))
             .collect();
-        let escalation = view.trial.backoffs.escalation(
-            &self.topo,
-            record.pending.class.load(),
-            view.profile(),
-            &affected,
-        );
+        let escalation = view
+            .trial
+            .backoffs
+            .escalation(
+                &self.topo,
+                record.pending.class.load(),
+                view.profile(),
+                &affected,
+            )
+            .or_else(|| {
+                view.trial
+                    .covered(self.config.needed)
+                    .map(|passes| Escalation::Covered {
+                        passes: passes.to_vec(),
+                    })
+            });
         if loaded_at_zero {
             if view
                 .named
@@ -334,7 +352,7 @@ impl Run {
 
     /// The request groups of the loaded cores on `ccd`, highest first: the trial's recorded top
     /// requesters of the CCD lead when it recorded any.
-    fn ccd_groups(view: &Failed<'_>, ccd: CcdId) -> Vec<CoreSet> {
+    pub(crate) fn ccd_groups(view: &Failed<'_>, ccd: CcdId) -> Vec<CoreSet> {
         let Some(order) = view.trial.order.ccd(ccd) else {
             return Vec::new();
         };
@@ -490,6 +508,11 @@ impl Run {
             charge.notes.push(Note::Located(text.clone()));
             clause = Some(text);
             located_seqs = seqs;
+        } else if let Some(end) = view.trial.located_loaded {
+            charge.notes.push(Note::Located(format!(
+                "locate ending #{end} already kept this load's failure on the loaded cores; no load pass or unloaded-offset change has rearmed it"
+            )));
+            located_seqs.push(end);
         } else if live && !self.named_culprit(view) && !self.locate_candidates(record).is_empty() {
             charge.notes.push(Note::Ordinal {
                 n: view.trial.backoffs.failures() + 1,
@@ -544,7 +567,7 @@ impl Run {
         view: &Failed<'_>,
         id: CoreId,
         mut cause: Vec<Seq>,
-        charge: Charge,
+        mut charge: Charge,
     ) -> R7Response {
         let record = view.record;
         let failing = view.trial.failing_request(id);
@@ -554,7 +577,14 @@ impl Run {
             .evidence
             .active_backend(record.pending.class.workload().backend());
         let mut target: Option<Target> = None;
+        let short_crash = view
+            .trial
+            .crash_duration_s
+            .filter(|&duration| duration < CRASH_TARGET_MIN_S);
         let own = match failing.volts {
+            Some(request) if record.pending.carried || short_crash.is_some() => {
+                OwnRequest::Measured(request)
+            }
             Some(request) => {
                 let failing_top = charge.rail;
                 let ask = Ask {
@@ -564,6 +594,12 @@ impl Run {
                     n,
                 };
                 target = if charge.named {
+                    if let Some(source) = self
+                        .ccd_of(id)
+                        .and_then(|ccd| view.trial.clock_sources.get(&ccd))
+                    {
+                        cause.push(*source);
+                    }
                     let mhz = self
                         .ccd_of(id)
                         .and_then(|ccd| view.trial.clocks.get(&ccd).copied());
@@ -580,13 +616,33 @@ impl Run {
             None => OwnRequest::OffsetProxy,
         };
         let rail = (charge.stepped && failing.volts.is_some()).then_some(charge.rail);
-        let counts = backoff_counts(own, target.as_ref(), rail);
+        let mut counts = backoff_counts(own, target.as_ref(), rail);
+        if charge.named
+            && !record.pending.carried
+            && view.trial.crash_duration_s.is_none()
+            && matches!(
+                record.pending.failure.signal,
+                Signal::ComputationError | Signal::UnexpectedExit
+            )
+            && counts > NAMED_NON_CRASH_CAP
+        {
+            charge.notes.push(Note::NamedNonCrashCap {
+                uncapped: counts,
+                limit: NAMED_NON_CRASH_CAP,
+            });
+            counts = NAMED_NON_CRASH_CAP;
+        }
         let offset = applied.get();
         let basis = match (failing.volts, &target) {
             (None, _) if failing.sources.is_empty() => Basis::NoTelemetry { offset },
             (None, _) => Basis::Uncovered {
                 offset,
                 sources: failing.sources.clone(),
+            },
+            (Some(request), None) if record.pending.carried => Basis::Carried { request },
+            (Some(request), None) if short_crash.is_some() => Basis::ShortCrash {
+                request,
+                duration_s: short_crash.unwrap_or(0),
             },
             (Some(request), None) => Basis::NoPass { request },
             (Some(request), Some(target)) if request >= target.volts => Basis::Met {
@@ -601,6 +657,16 @@ impl Run {
         cause.extend(failing.sources.iter().copied());
         if let Some(target) = &target {
             cause.extend(target.cited.iter().copied());
+        }
+        if !charge.named {
+            if let Some((_, idled, early)) = self.r7_probe_part(view, id) {
+                if self.r7.probes.due(record.pending.class.load(), id, early) {
+                    charge.notes.push(Note::Probe {
+                        idled,
+                        stalled: view.stalled.filter(|_| early),
+                    });
+                }
+            }
         }
         let mut seen: Vec<Seq> = Vec::new();
         cause.retain(|seq| {
@@ -682,10 +748,23 @@ impl Run {
                 });
             }
         }
+        if link.is_none() && self.carried_covered(&view) {
+            return None;
+        }
         unhandled
             .iter()
             .find_map(|&core| self.core_response(&view, core, link))
             .map(|response| R7Route::Respond(Box::new(response)))
+    }
+
+    /// Whether a carried failure that names no core held its loaded cores no deeper than passes
+    /// of its load with an unloaded core shallower: it needs no move, since those passes show the
+    /// loaded cores do not need one, and a carried failure is not located. The live failures of
+    /// the load find the unloaded core.
+    fn carried_covered(&self, view: &Failed<'_>) -> bool {
+        view.record.pending.carried
+            && !self.named_culprit(view)
+            && view.trial.covered(self.config.needed).is_some()
     }
 
     /// The first response an open multi-core R7 failure requires, in failure order. A failure

@@ -178,7 +178,8 @@ impl Run {
         let shape = self.hunt_shape(hunt);
         let views = self.hunt_groups();
         let probing = hunt.groups.iter().any(GroupRecord::is_probe)
-            || matches!(shape.end, Some(End::Combination(_)));
+            || matches!(shape.end, Some(End::Combination(_)))
+            || matches!(shape.end, Some(End::Culprit(core)) if self.singleton_probing(hunt, core).is_some());
         Some(HuntPlan {
             number: hunt.id.get(),
             regime: hunt.start.regime,
@@ -291,6 +292,14 @@ impl Run {
     }
 
     fn probe_step(&self, hunt: &Active, set: CoreSet) -> Option<ProbeStep> {
+        if set.len() == 1 {
+            if hunt.latest().is_some_and(|group| {
+                group.is_probe() && self.answer_of(hunt, group).outcome.is_none()
+            }) {
+                return None;
+            }
+            return self.singleton_probing(hunt, set.first()?);
+        }
         let checking = self.checking.profile()?;
         let failing: PerCore<TargetOffset> = set
             .iter()

@@ -20,7 +20,9 @@ use super::colours::Paint;
 use super::fit::{cut_styled, display_width, inert, wrap_styled};
 use super::scene::{Scene, clock};
 use super::terms::{recut_words, trial_name};
-use crate::model::{HuntCause, HuntShape, HuntView, TrialEndView, TrialView};
+use crate::model::{
+    HuntCause, HuntShape, HuntView, Singleton, SingletonStage, TrialEndView, TrialView,
+};
 use crate::screen::Colours;
 use crate::words::{
     core_ids, core_list, kind_words, lateness, plural, signal_words, workload_display,
@@ -518,6 +520,9 @@ fn hunt_story(scene: &Scene<'_>, hunt: HuntView<'_>, trial: &TrialView) -> Story
             "failed"
         };
         let (id, offset) = (probe.core.get(), probe.offset.get());
+        if let Some(single) = hunt.singleton() {
+            return singleton_probe_story(label, &single, verb, probe);
+        }
         let which = if hunt.plan.probes.first().map(|first| first.member) == Some(probe.core) {
             format!("Core {id:02} first.")
         } else {
@@ -568,6 +573,48 @@ fn hunt_story(scene: &Scene<'_>, hunt: HuntView<'_>, trial: &TrialView) -> Story
         ),
         Paint::Hunt,
     )
+}
+
+/// The story of a singleton hunt's culprit while its probe runs: it failed alone, so no combination and no
+/// "every smaller part passed" is claimed, and a pass is claimed only once the anchor has one.
+fn singleton_probe_story(
+    label: String,
+    single: &Singleton<'_>,
+    verb: &str,
+    probe: togi_journal::Member,
+) -> Story {
+    let (id, offset) = (probe.core.get(), probe.offset.get());
+    let failed = format!(
+        "Core {id:02} {verb} on its own at {}, so it is the culprit.",
+        single.probe.failed_at.first().map_or(offset, |at| at.get())
+    );
+    let (second, brief) = match single.stage {
+        SingletonStage::Anchor => (
+            format!(
+                "No pass is known at its parked offset yet, and CO 0 is not assumed to pass, so I test core {id:02} at {offset} to find a safe anchor."
+            ),
+            format!("Testing core {id:02} at {offset}, its parked offset, for a safe anchor."),
+        ),
+        SingletonStage::Interior => (
+            format!(
+                "A passing anchor is known, so I probe core {id:02} between its failure and that anchor to narrow its failure point."
+            ),
+            format!("Probing core {id:02} at {offset} between its failure and its passing anchor."),
+        ),
+        SingletonStage::Bracketed => (
+            format!(
+                "A pass sits one count shallower than its failure point, so core {id:02} is bracketed."
+            ),
+            format!("Core {id:02} is bracketed; its failure point stands."),
+        ),
+        SingletonStage::Stopped => (
+            format!(
+                "Probing stopped without a safe bracket, so I keep the shallowest failure I reproduced for core {id:02}."
+            ),
+            format!("Probing core {id:02} stopped; the shallowest reproduced failure stands."),
+        ),
+    };
+    Story::new(label, vec![failed, second], brief, Paint::Hunt)
 }
 
 /// How the hunt splits its candidates in the trial in flight.

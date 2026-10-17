@@ -2,7 +2,6 @@ use togi_journal::Seq;
 use togi_machine::{Condition, CoreSet, Regime, WorkloadId, pick_workload, workloads};
 
 use super::{Check, Round};
-use crate::phases::Mark;
 use crate::r7::order::RequestOrder;
 use crate::state::Run;
 use crate::{ClassKey, LoadKey, Profile};
@@ -22,11 +21,11 @@ impl Run {
             let Some(offset) = shape.profile().get(core) else {
                 continue;
             };
-            let origin = self.phases.mark(core).unwrap_or(Mark {
-                round: shape.id(),
-                seq: shape.start(),
-            });
-            let rotation = usize::try_from(origin.round.get() - 1).unwrap_or(0);
+            let (origin_round, since) = self
+                .phases
+                .mark(core)
+                .map_or((shape.id(), shape.start()), |mark| (mark.round, mark.seq));
+            let rotation = usize::try_from(origin_round.get() - 1).unwrap_or(0);
             for regime in [Regime::R1, Regime::R2] {
                 checks.push(Check {
                     class: ClassKey::new(
@@ -36,14 +35,21 @@ impl Run {
                     ),
                     condition: Condition::Alone,
                     profile: Profile::alone(&self.topo, core, offset),
-                    since: origin.seq,
+                    since,
                 });
             }
         }
+        let since = shape
+            .cores()
+            .iter()
+            .filter(|&core| shape.deepened(core))
+            .filter_map(|core| self.phases.mark(core).map(|mark| mark.seq))
+            .min()
+            .unwrap_or(shape.start());
         let mut sources = Vec::new();
         for workload in workloads(Regime::R7) {
             for &(_, ccd) in self.topo.ccds() {
-                self.r7_checks(round, workload.id(), ccd, &mut checks, &mut sources);
+                self.r7_checks(round, workload.id(), ccd, since, &mut checks, &mut sources);
             }
         }
         sources.sort_unstable();
@@ -56,6 +62,7 @@ impl Run {
         round: &Round,
         workload: WorkloadId,
         full: CoreSet,
+        since: Seq,
         checks: &mut Vec<Check>,
         sources: &mut Vec<Seq>,
     ) {
@@ -87,7 +94,7 @@ impl Run {
                         class,
                         condition: Condition::Together,
                         profile: *shape.profile(),
-                        since: shape.start(),
+                        since,
                     });
                 }
             }

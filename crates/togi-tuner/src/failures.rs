@@ -244,12 +244,15 @@ impl Run {
         let ledger_seq = awaiting.map_or(event.seq, |awaiting| awaiting.end_seq);
         let known_seq = failure.known_failure;
         let zero_rerun = awaiting.and_then(|awaiting| awaiting.zero);
-        let failed_trial = awaiting
-            .and_then(|awaiting| awaiting.r7.clone())
-            .map(|mut trial| {
+        let failed_trial = match awaiting.and_then(|awaiting| awaiting.r7.clone()) {
+            Some(mut trial) => {
                 trial.backoffs = self.r7.strikes.snapshot(class.load());
-                trial
-            });
+                trial.located_loaded = self.r7_loaded_verdict(class.load(), &profile);
+                trial.cover = self.evidence.loaded_cover(class.load(), &profile)?;
+                Some(trial)
+            }
+            None => None,
+        };
         let load = match awaiting {
             Some(awaiting) => match awaiting.intent.core {
                 Some(core) if awaiting.intent.cores.is_empty() => Load::Single(core),

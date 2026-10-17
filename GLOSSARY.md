@@ -112,7 +112,7 @@ The phase that finds and checks a core's candidate solo limit with R1 and R2 tri
 Parked trials that identify the core or combination behind an unattributed failure outside multi-core R7, or a located hunt's unloaded cores.
 
 **Located hunt**:
-The hunt of an unattributed multi-core R7 failure whose unloaded cores were not all at 0, started only after its load's voltage-targeted backoffs stopped helping: two since its last passing trial, or no loaded core able to step back ([Escalation](docs/spec/tuner.md#escalation-to-a-located-hunt)). Its first group, locate, reruns the failed load with the unloaded cores at 0 ([Hunt](docs/spec/tuner.md#hunt)).
+The hunt of an unattributed multi-core R7 failure whose unloaded cores were not all at 0, started only when stepping back its load's top requesters stops helping or cannot help. Its first group, locate, reruns the failed load with the unloaded cores at 0. The escalation grounds and reuse of a prior `loaded` result are in [Escalation](docs/spec/tuner.md#escalation-to-a-located-hunt).
 
 **Member probe**:
 A hunt's parked trial after it finds a combination, which moves one member to find how shallow it must be for the combination to pass ([Hunt](docs/spec/tuner.md#hunt)).
@@ -241,7 +241,7 @@ A backoff that raises a core's request to a voltage at which the load passed ([R
 A backoff after attribution or a hunt identifies a failed offset or combination, recording the failure point or combination.
 
 **Yield**:
-A move back to a core's round baseline (the shallower of its last passed offset and its offset when the failed round began; [Phase 2](docs/spec/tuner.md#phase-2)), made by every deepened mover of that round that is not blamed, loaded or not. A core that yields is finished for phase 2: no later round moves it.
+A move back to a core's round baseline (the shallower of its last passed offset and its offset when the failed round began; [Phase 2](docs/spec/tuner.md#phase-2)), made by every deepened mover of that round that is not blamed, loaded or not. A yield does not finish its core: it remains eligible for another round, with only valid matching evidence counting toward its checks.
 
 **Ruleset**:
 The hardcoded strategy for search, hunts, the two phases, checking and backoffs.

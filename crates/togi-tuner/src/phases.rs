@@ -2,17 +2,20 @@ use std::collections::{BTreeMap, VecDeque};
 use std::num::NonZeroU32;
 
 use togi_journal::{CorePhase, Seq};
-use togi_machine::{CoreId, CoreSet};
+use togi_machine::{CoreId, TargetOffset};
 
+use crate::r7::Applied;
 use crate::rounds::{Blame, Shape};
 use crate::state::Run;
 use crate::{Depth, FoldError, Profile};
 
-/// The round that moved a core to its current unverified offset, and where that round began.
+/// The origin of a core's unverified offset, retained when a yield retries that same offset.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Mark {
     pub(crate) round: NonZeroU32,
     pub(crate) seq: Seq,
+    pub(crate) offset: TargetOffset,
+    pub(crate) attempt: NonZeroU32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -20,7 +23,6 @@ struct Settled {
     phase1_end: Seq,
     first_confirmed: Profile,
     passed: Profile,
-    finished: CoreSet,
     moved: BTreeMap<CoreId, Mark>,
     blames: VecDeque<Blame>,
 }
@@ -80,11 +82,6 @@ impl Phases {
         self.settled().map(|settled| &settled.passed)
     }
 
-    pub(crate) fn finished(&self) -> CoreSet {
-        self.settled()
-            .map_or_else(CoreSet::default, |settled| settled.finished)
-    }
-
     fn settled_mut(&mut self) -> Option<&mut Settled> {
         match &mut self.stage {
             Stage::One => None,
@@ -122,12 +119,6 @@ impl Phases {
         }
     }
 
-    pub(crate) fn finish(&mut self, core: CoreId) {
-        if let Some(settled) = self.settled_mut() {
-            settled.finished.insert(core);
-        }
-    }
-
     /// A round began from `offsets`: a core its profile deepens, still standing at the round's
     /// baseline, is marked as moved by this round.
     pub(crate) fn round_started(&mut self, round: &Shape, offsets: &Profile) {
@@ -136,13 +127,21 @@ impl Phases {
         };
         for core in round.cores() {
             if round.deepened(core) && offsets.get(core) == round.baseline().get(core) {
-                settled.moved.insert(
-                    core,
-                    Mark {
-                        round: round.id(),
-                        seq: round.start(),
-                    },
-                );
+                let offset = round.profile().at(core);
+                match settled.moved.get_mut(&core) {
+                    Some(mark) if mark.offset == offset => mark.attempt = round.id(),
+                    _ => {
+                        settled.moved.insert(
+                            core,
+                            Mark {
+                                round: round.id(),
+                                seq: round.start(),
+                                offset,
+                                attempt: round.id(),
+                            },
+                        );
+                    }
+                }
             }
         }
     }
@@ -214,7 +213,6 @@ impl Phases {
                     phase1_end: seq,
                     first_confirmed: profile,
                     passed: profile,
-                    finished: CoreSet::default(),
                     moved: BTreeMap::new(),
                     blames: VecDeque::new(),
                 });
@@ -251,19 +249,17 @@ pub(crate) struct Moves {
 }
 
 impl Run {
-    /// One round's moves from `from`, given each core's last passed offset. A core that finished
-    /// is not moved again; one deeper than it last passed is checked in place; one with no solo
-    /// limit or already at it has nothing to move toward; the rest move one count if the profile
-    /// so far reaches no failure point or combination.
+    /// One round's moves from `from`, given each core's last passed offset. A core deeper than
+    /// it last passed is checked in place; one with no solo limit or already at it has nothing
+    /// to move toward; the rest move one count if the profile so far reaches no constraint.
     pub(crate) fn phase2_moves(&self, from: &Profile, passed: Option<&Profile>) -> Option<Moves> {
-        let finished = self.phases.finished();
         let mut profile = *from;
         let mut moved = Vec::new();
         let mut carried = Vec::new();
         for &id in self.topo.order() {
             let core = self.core(id);
             let offset = from.get(id)?;
-            if core.phase.is_none_or(|phase| phase == CorePhase::Search) || finished.contains(id) {
+            if core.phase.is_none_or(|phase| phase == CorePhase::Search) {
                 continue;
             }
             if passed

@@ -1414,6 +1414,216 @@ mod the_story {
         }
     }
 
+    fn probe_of(
+        core_id: u8,
+        offset: i64,
+        failed_at: &[i64],
+        passed_at: &[i64],
+        done: bool,
+    ) -> togi_tuner::MemberProbe {
+        togi_tuner::MemberProbe {
+            member: core(core_id),
+            offset: off(offset),
+            failed_at: failed_at.iter().map(|&at| off(at)).collect(),
+            passed_at: passed_at.iter().map(|&at| off(at)).collect(),
+            carried: Vec::new(),
+            running: !done,
+            done,
+        }
+    }
+
+    fn probing_story(
+        failed: &[u8],
+        probes: Vec<togi_tuner::MemberProbe>,
+        anchor_group: Option<GroupState>,
+        at: i64,
+        parked: i64,
+    ) -> super::super::Story {
+        let mut fx = hunting(true, Vec::new());
+        let (plan, facts) = fx.hunt.as_mut().expect("a hunt");
+        if parked != 0 {
+            facts.parking = Some(crate::model::Parking {
+                shallow: vec![(core(2), off(parked))],
+                ..crate::model::Parking::default()
+            });
+        }
+        plan.groups.push(HuntGroup {
+            number: 1,
+            cores: set(failed),
+            profile: PerCore::default(),
+            stage: togi_journal::HuntStage::Part,
+            probe: None,
+            held: Vec::new(),
+            outcome: GroupState::Failed,
+            passed: 0,
+            needed: 5,
+            carried: false,
+            running: false,
+        });
+        if let Some(outcome) = anchor_group {
+            plan.groups.push(HuntGroup {
+                number: 2,
+                cores: set(failed),
+                profile: PerCore::default(),
+                stage: togi_journal::HuntStage::Probe,
+                probe: Some(Member {
+                    core: core(2),
+                    offset: off(parked),
+                }),
+                held: Vec::new(),
+                outcome,
+                passed: 0,
+                needed: 5,
+                carried: false,
+                running: outcome == GroupState::Running,
+            });
+        }
+        plan.probes = probes;
+        facts.group_signals.push((1, Signal::Crash));
+        let mut probing = trial(Regime::R7, Condition::Together, &[0]);
+        probing.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 2,
+            part: None,
+            parts: 0,
+            cut: 0,
+            probe: Some(Member {
+                core: core(2),
+                offset: off(at),
+            }),
+        });
+        fx.trial = Some(probing);
+        story(&fx.scene(ts(1010)))
+    }
+
+    #[test]
+    fn a_singleton_anchor_probe_claims_neither_a_combination_nor_a_pass() {
+        let said = probing_story(
+            &[2],
+            vec![probe_of(2, 0, &[-12], &[], false)],
+            Some(GroupState::Running),
+            0,
+            0,
+        );
+        assert_eq!(said.label, "HUNT 1");
+        assert_eq!(
+            said.lines[0],
+            "Core 02 crashed on its own at -12, so it is the culprit."
+        );
+        assert!(
+            said.lines[1].contains("No pass is known at its parked offset yet"),
+            "{}",
+            said.lines[1]
+        );
+        assert_eq!(
+            said.brief,
+            "Testing core 02 at 0, its parked offset, for a safe anchor."
+        );
+        for line in &said.lines {
+            for wrong in ["together", "smaller part", "combination", "each member"] {
+                assert!(!line.contains(wrong), "{line}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_singleton_parked_at_a_nonzero_offset_tests_that_offset_as_its_safe_anchor() {
+        let said = probing_story(
+            &[2],
+            vec![probe_of(2, -10, &[-30], &[], false)],
+            Some(GroupState::Running),
+            -10,
+            -10,
+        );
+        assert_eq!(
+            said.lines[0],
+            "Core 02 crashed on its own at -30, so it is the culprit."
+        );
+        assert!(
+            said.lines[1].contains("No pass is known at its parked offset yet")
+                && said.lines[1].contains("so I test core 02 at -10 to find a safe anchor"),
+            "{}",
+            said.lines[1]
+        );
+        assert_eq!(
+            said.brief,
+            "Testing core 02 at -10, its parked offset, for a safe anchor."
+        );
+        for line in said.lines.iter().chain([&said.brief]) {
+            for wrong in [
+                "A passing anchor is known",
+                "between its failure",
+                "together",
+                "smaller part",
+                "combination",
+                "each member",
+            ] {
+                assert!(!line.contains(wrong), "{line}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are() {
+        let interior = probing_story(
+            &[2],
+            vec![probe_of(2, -6, &[-12], &[], false)],
+            Some(GroupState::Running),
+            -6,
+            0,
+        );
+        assert!(
+            interior.lines[1].starts_with("A passing anchor is known"),
+            "{}",
+            interior.lines[1]
+        );
+        assert_eq!(
+            interior.brief,
+            "Probing core 02 at -6 between its failure and its passing anchor."
+        );
+        let stopped = probing_story(
+            &[2],
+            vec![probe_of(2, -12, &[-12, 0], &[], true)],
+            Some(GroupState::Failed),
+            0,
+            0,
+        );
+        assert!(
+            stopped.lines[1].contains("stopped without a safe bracket"),
+            "{}",
+            stopped.lines[1]
+        );
+        assert!(
+            !stopped.lines[1].contains("passing anchor"),
+            "{}",
+            stopped.lines[1]
+        );
+        assert_eq!(
+            stopped.brief,
+            "Probing core 02 stopped; the shallowest reproduced failure stands."
+        );
+    }
+
+    #[test]
+    fn an_ordinary_combination_probe_keeps_its_combination_story() {
+        let said = probing_story(
+            &[0, 2],
+            vec![
+                probe_of(0, -10, &[-12], &[], false),
+                probe_of(2, -12, &[-12], &[], false),
+            ],
+            None,
+            -12,
+            0,
+        );
+        assert_eq!(
+            said.lines[0],
+            "00 02 crashed together at their offsets, and every smaller part of them that was tested passed."
+        );
+        assert!(said.lines[1].ends_with("Now core 02."));
+        assert_eq!(said.brief, "Probing members of 00 02: core 02 at -12.");
+    }
+
     #[test]
     fn a_locating_hunt_reruns_its_load_with_the_candidates_at_zero() {
         let mut fx = hunting(false, Vec::new());

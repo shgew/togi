@@ -2,10 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use togi_journal::{
-    Activity, Attribution, Combination, CorePhase, CycleEvent, Decision, Payload, Seq, TrialId,
+    Activity, Attribution, Combination, CorePhase, CycleEvent, Decision, Event, Outcome, Payload,
+    Seq, TrialId, TrialIntent,
 };
-use togi_machine::{CoreId, PerCore, Regime, TargetOffset};
+use togi_machine::{CcdId, Condition, CoreId, PerCore, Regime, Signal, TargetOffset, workloads};
 use togi_session::Stop;
+use togi_sim::model::Script;
+use togi_sim::{MachineDefinition, regime_index};
+use togi_simrun::{Observe, Observer};
 
 use crate::common::{Bench, finish, machine_file};
 
@@ -15,11 +19,144 @@ fn at(profile: &PerCore<TargetOffset>, core: CoreId) -> i64 {
     profile.get(core).map_or(0, TargetOffset::get)
 }
 
+fn target_load(intent: &TrialIntent) -> bool {
+    intent.regime == Regime::R7
+        && intent.workload.as_str() == workloads(Regime::R7)[0].id
+        && intent.cores.len() == 8
+        && intent.cores.iter().all(|core| core.get() < 8)
+}
+
+fn named_target_observer(bench: &Bench, definition: MachineDefinition) -> Observer {
+    let sim = bench.sim.clone();
+    let limits = definition.core;
+    let first = CoreId::new(4).unwrap();
+    let named = CoreId::new(2).unwrap();
+    let mut long_failures = 0;
+    Box::new(move |event| {
+        let Payload::TrialIntent(intent) = &event.payload else {
+            return Observe::Continue;
+        };
+        let (signal, core) = if intent.condition == Condition::Alone {
+            let core = intent.core.unwrap();
+            let limit = limits[core.index()].alone[regime_index(intent.regime)];
+            (
+                (at(&intent.profile, core) < limit).then_some(Signal::ComputationError),
+                core,
+            )
+        } else if target_load(intent) && long_failures < 2 {
+            // The first long failure raises the top requester by one count. Its rerun earns
+            // n short passes at one exact profile before the second long failure names core 2.
+            // That core's real request is then 10.6 mV below the passing full-CCD top: 3 counts.
+            let core = if long_failures == 0 { first } else { named };
+            let signal = (intent.duration_s == 300).then_some(Signal::ComputationError);
+            long_failures += usize::from(signal.is_some());
+            (signal, core)
+        } else {
+            return Observe::Continue;
+        };
+        sim.script_trial(
+            intent.trial.as_str(),
+            Script {
+                signal,
+                at_s: 60.0,
+                core,
+                reset: None,
+                then_crash: false,
+            },
+        )
+        .unwrap();
+        Observe::Continue
+    })
+}
+
+fn assert_named_target(events: &[Event], needed: u32) {
+    let intents: BTreeMap<_, _> = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::TrialIntent(intent) => Some((&intent.trial, intent)),
+            _ => None,
+        })
+        .collect();
+    let ends: BTreeMap<_, _> = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::TrialEnd(end) => Some((event.seq, (intents[&end.trial], end))),
+            _ => None,
+        })
+        .collect();
+    let named = CoreId::new(2).unwrap();
+    let Some((failure_seq, intent)) = events.iter().find_map(|event| {
+        let Payload::Failure(failure) = &event.payload else {
+            return None;
+        };
+        let intent = *intents.get(failure.trial.as_ref()?)?;
+        (failure.core == Some(named)
+            && failure.attribution == Attribution::Attributed
+            && failure.signal == Signal::ComputationError
+            && target_load(intent)
+            && intent.duration_s == 300)
+            .then_some((event.seq, intent))
+    }) else {
+        panic!("no scripted named full-CCD computation error");
+    };
+    let failed = ends
+        .values()
+        .find(|(_, end)| end.trial == intent.trial)
+        .unwrap()
+        .1;
+    assert_eq!(failed.signal, Some(Signal::ComputationError));
+    assert_eq!(failed.core, Some(named));
+    let failing_mhz = failed.ccd_mhz[&CcdId(0)];
+    let request = failed.voltage_requests_v.get(named).unwrap();
+    let Some((decision_event, decision)) = events.iter().find_map(|event| match &event.payload {
+        Payload::TunerDecision(decision)
+            if event.cause.first() == Some(&failure_seq)
+                && decision.decision == Decision::Backoff =>
+        {
+            Some((event, decision))
+        }
+        _ => None,
+    }) else {
+        panic!("no decision answering the scripted named failure");
+    };
+    assert_eq!(decision.core, named);
+    assert_eq!(decision.to_offset.get() - decision.from_offset.get(), 3);
+    assert!(decision.reason.contains(VOLTAGE_TARGETED));
+
+    let passes: Vec<_> = decision_event
+        .cause
+        .iter()
+        .filter_map(|seq| ends.get(seq))
+        .filter(|(_, end)| end.outcome == Outcome::Pass)
+        .collect();
+    assert_eq!(u32::try_from(passes.len()).unwrap(), needed);
+    for (passed_intent, end) in passes {
+        assert!(target_load(passed_intent));
+        assert_eq!(passed_intent.profile, intent.profile);
+        assert_eq!(passed_intent.duration_s, 120);
+        assert!(passed_intent.rerun);
+        assert!(end.ccd_mhz[&CcdId(0)] >= failing_mhz.saturating_sub(25));
+        let top = end
+            .voltage_requests_v
+            .iter()
+            .map(|(_, volts)| volts)
+            .reduce(f64::max)
+            .unwrap();
+        assert!(
+            (0.0072..0.0108).contains(&(top - request)),
+            "passing CCD top {top} and failing request {request} must require three counts"
+        );
+    }
+}
+
 #[test]
 fn sixteen_cores_reach_a_clean_cycle() {
-    let bench = Bench::new(&machine_file("shared-voltage"), 1000);
+    let definition = machine_file("shared-voltage");
+    let bench = Bench::new(&definition, 1000);
     let mut input = bench.input();
+    let needed = input.config.evidence().trials().get();
     input.verify_every = None;
+    input.observer = Some(named_target_observer(&bench, definition));
     let finished = finish(input);
     assert_eq!(finished.stop, Some(Stop::Cycles));
     assert!(finished.errors.is_empty(), "{:?}", finished.errors);
@@ -30,6 +167,7 @@ fn sixteen_cores_reach_a_clean_cycle() {
     assert_eq!(projection.cores.len(), 16);
     assert!(projection.deepening.is_none(), "{:?}", projection.deepening);
     assert!(projection.checking.profile.is_some() && projection.clean_cycles > 0);
+    assert_named_target(&events, needed);
 
     let backed_off: BTreeSet<CoreId> = events
         .iter()
@@ -60,7 +198,7 @@ fn sixteen_cores_reach_a_clean_cycle() {
     let mut combinations: Vec<&Combination> = Vec::new();
     let mut failed: BTreeMap<CoreId, i64> = BTreeMap::new();
     let mut multi_r7: BTreeMap<&TrialId, bool> = BTreeMap::new();
-    let mut named: BTreeMap<Seq, CoreId> = BTreeMap::new();
+    let mut named: BTreeMap<Seq, (CoreId, Signal)> = BTreeMap::new();
     let mut measured_reorder = false;
     let mut named_multi_count = false;
     let mut named_backoffs = 0;
@@ -112,7 +250,7 @@ fn sixteen_cores_reach_a_clean_cycle() {
                     failed.insert(core, offset.get());
                 }
                 if let (true, true, Some(core)) = (multi, attributed, failure.core) {
-                    named.insert(event.seq, core);
+                    named.insert(event.seq, (core, failure.signal));
                 }
             }
             Payload::TunerDecision(decision) => {
@@ -122,7 +260,7 @@ fn sixteen_cores_reach_a_clean_cycle() {
                 let Some(cause) = event.cause.first() else {
                     continue;
                 };
-                if let Some(core) = named.get(cause)
+                if let Some((core, signal)) = named.get(cause)
                     && decision.decision == Decision::Backoff
                 {
                     assert_eq!(
@@ -133,7 +271,8 @@ fn sixteen_cores_reach_a_clean_cycle() {
                         decision.core
                     );
                     named_backoffs += 1;
-                    named_multi_count |= decision.to_offset.get() - decision.from_offset.get() > 1
+                    named_multi_count |= *signal == Signal::ComputationError
+                        && decision.to_offset.get() - decision.from_offset.get() > 1
                         && decision.reason.contains(VOLTAGE_TARGETED);
                 }
             }

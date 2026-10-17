@@ -71,6 +71,8 @@ mod r7_attribution_tests;
 #[cfg(test)]
 mod r7_escalation_tests;
 #[cfg(test)]
+mod r7_probe_tests;
+#[cfg(test)]
 mod r7_resume_tests;
 #[cfg(test)]
 mod r7_target_tests;
@@ -128,7 +130,7 @@ pub use topology::{Ranking, RankingError, Topology, TopologyError};
 /// phases, evidence, failure-point and combination rules, hunts and checking coverage. Bump it when any of
 /// them changes; a session started under another ruleset is archived into a seeded new session. It starts at
 /// 1 because the Rust build starts its own journal schema and never reads a Go journal (`journal.md`).
-pub const RULESET: u32 = 1;
+pub const RULESET: u32 = 2;
 
 /// The evidence epoch this build records trial outcomes under (`docs/spec/tuner.md`, Ruleset): workload
 /// content, generated backend configuration, intended durations and pass/failure detection. Bump it when a

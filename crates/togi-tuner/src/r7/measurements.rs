@@ -1,11 +1,11 @@
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, HashMap};
 
-use togi_machine::{CoreId, PerCore};
+use togi_machine::{CcdId, CoreId, PerCore};
 
 use togi_journal::Seq;
 
-use crate::{LoadKey, Profile};
+use crate::{BackendId, LoadKey, Profile};
 
 /// The request telemetry of one R7 trial: the profile it ran at and each loaded core's request.
 #[derive(Clone, Debug, PartialEq)]
@@ -37,16 +37,49 @@ impl Measurement {
     }
 }
 
+type CcdClocks = BTreeMap<CcdId, (Seq, i64)>;
+
 /// The newest request measurement of every load. A load answers with its newest measurement
 /// whatever the duration or outcome of the trial that took it, so older ones are dropped as
 /// newer ones arrive. The newest full part of a CCD is the measurement of the load that is the
-/// CCD's cores.
+/// CCD's cores. The newest clock of each CCD is kept per load and backend identity, so a
+/// restored backend finds the clocks it last measured.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Measurements {
     newest: HashMap<LoadKey, Measurement>,
+    clocks: HashMap<(LoadKey, BackendId), CcdClocks>,
 }
 
 impl Measurements {
+    pub(crate) fn record_clocks(
+        &mut self,
+        load: LoadKey,
+        backend: BackendId,
+        seq: Seq,
+        clocks: &BTreeMap<CcdId, u32>,
+    ) {
+        if clocks.is_empty() {
+            return;
+        }
+        let entry = self.clocks.entry((load, backend)).or_default();
+        for (&ccd, &mhz) in clocks {
+            if entry.get(&ccd).is_none_or(|&(previous, _)| seq > previous) {
+                entry.insert(ccd, (seq, i64::from(mhz)));
+            }
+        }
+    }
+
+    pub(crate) fn clocks(
+        &self,
+        load: LoadKey,
+        backend: BackendId,
+    ) -> impl Iterator<Item = (CcdId, Seq, i64)> + '_ {
+        self.clocks
+            .get(&(load, backend))
+            .into_iter()
+            .flat_map(|entry| entry.iter().map(|(&ccd, &(seq, mhz))| (ccd, seq, mhz)))
+    }
+
     /// Keeps `measurement` when it is the newest of its load. A measurement without a request
     /// lane is no measurement. Returns whether it was kept.
     pub(crate) fn record(&mut self, load: LoadKey, measurement: Measurement) -> bool {
@@ -76,5 +109,7 @@ impl Measurements {
     /// stays, whichever core a failure of that load named.
     pub(crate) fn reset_core(&mut self, core: CoreId) {
         self.newest.retain(|load, _| !load.loaded.contains(core));
+        self.clocks
+            .retain(|(load, _), _| !load.loaded.contains(core));
     }
 }

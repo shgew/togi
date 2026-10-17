@@ -70,6 +70,25 @@ impl Journal {
         usize::from(self.run().config.needed.get())
     }
 
+    fn at_mce(&mut self, trial: &togi_journal::TrialId, id: u8) -> Seq {
+        self.append(
+            togi_journal::Mce {
+                cpu: CpuId(id.into()),
+                core: Some(core(id)),
+                bank: 0,
+                bank_type: BankType::LoadStore,
+                corrected: false,
+                monotonic_ns: None,
+                from_boot: None,
+                trial: Some(trial.clone()),
+                between_trials: false,
+                lines: Vec::new(),
+            }
+            .into(),
+            &[],
+        )
+    }
+
     fn at_set_offset(&mut self, id: u8, offset: i64) -> Seq {
         self.core_phase(transition(id, CorePhase::HasRoom, offset))
     }
@@ -210,7 +229,7 @@ fn r7_all_core_targets_use_each_ccd() {
     }
     let failing = requests(&[(0, 1.1), (1, 1.09), (2, 1.2), (3, 1.19)]).top(&[0, 2]);
     let at = j.at_values();
-    j.r7_fact(false, &[0, 1, 2, 3], &at, &failing);
+    j.r7_failed(&[0, 1, 2, 3], &at, &failing);
     assert_eq!(j.drain_backoffs(8), [(0, -25), (2, -20)]);
 }
 
@@ -240,6 +259,7 @@ fn r7_backoff_reason() {
         target: Option<f64>,
         basis: Basis,
         counts: i64,
+        mce: bool,
     }
     let cases = [
         Case {
@@ -248,6 +268,7 @@ fn r7_backoff_reason() {
             target: None,
             basis: Basis::NoTelemetry { offset: -30 },
             counts: 1,
+            mce: false,
         },
         Case {
             name: "no pass",
@@ -255,6 +276,7 @@ fn r7_backoff_reason() {
             target: None,
             basis: Basis::NoPass { request: 1.09447 },
             counts: 1,
+            mce: false,
         },
         Case {
             name: "equal target",
@@ -265,6 +287,7 @@ fn r7_backoff_reason() {
                 target: 1.1539,
             },
             counts: 1,
+            mce: false,
         },
         Case {
             name: "higher than target",
@@ -275,6 +298,7 @@ fn r7_backoff_reason() {
                 target: 1.1539,
             },
             counts: 1,
+            mce: false,
         },
         Case {
             name: "one count",
@@ -285,9 +309,21 @@ fn r7_backoff_reason() {
                 target: 1.153,
             },
             counts: 1,
+            mce: false,
         },
         Case {
             name: "several counts",
+            requests: &[(0, 1.145), (1, 1.08)],
+            target: Some(1.1539),
+            basis: Basis::Toward {
+                request: 1.145,
+                target: 1.1539,
+            },
+            counts: 3,
+            mce: false,
+        },
+        Case {
+            name: "uncapped machine check",
             requests: &[(0, 1.09447), (1, 1.08)],
             target: Some(1.1539),
             basis: Basis::Toward {
@@ -295,6 +331,7 @@ fn r7_backoff_reason() {
                 target: 1.1539,
             },
             counts: 17,
+            mce: true,
         },
     ];
     for case in cases {
@@ -307,16 +344,43 @@ fn r7_backoff_reason() {
                     true,
                     &[0, 1],
                     &[-20, -30, -30, -30],
-                    &requests(&[(0, target), (1, 1.08)]).top(&[0]),
+                    &requests(&[(0, target), (1, 1.08)])
+                        .top(&[0])
+                        .clocks(&[(0, 5000)]),
                 );
             }
         }
-        let failure = j.r7_fact(
-            false,
-            &[0, 1],
-            &profile,
-            &requests(case.requests).top(&[0]).named(0),
-        );
+        let report = requests(case.requests)
+            .top(&[0])
+            .named(0)
+            .clocks(&[(0, 5000)]);
+        let failure = if case.mce {
+            let plan = j.r7_plan(&[0, 1], &profile);
+            let (intent, trial) = j.intent(&plan);
+            let mce = j.at_mce(&trial, 0);
+            let mut end =
+                Journal::end_payload(&trial, Outcome::Failure, Some(Signal::UncorrectedMce));
+            end.duration_s = 120;
+            end.voltage_requests_v = case
+                .requests
+                .iter()
+                .map(|&(id, volts)| (core(id), volts))
+                .collect();
+            end.top_requesters = set(&[0]);
+            end.ccd_mhz.insert(CcdId(0), 5000);
+            j.append(end.into(), &[intent, mce]);
+            let attribution = j.next_decision();
+            let DecisionPayload::Failure(failure) = &attribution.payload else {
+                panic!("expected MCE attribution, got {attribution:?}");
+            };
+            assert_eq!(
+                (failure.signal, failure.core),
+                (Signal::UncorrectedMce, Some(core(0)))
+            );
+            j.decide(attribution)
+        } else {
+            j.r7_failed(&[0, 1], &profile, &report)
+        };
         let (action, why) = j.at_r7_backoff();
         assert_eq!(why.failure, failure, "{name}");
         assert_eq!(why.core, core(0), "{name}");
@@ -325,8 +389,9 @@ fn r7_backoff_reason() {
         assert!(why.notes.is_empty(), "{name}: {:?}", why.notes);
         assert_eq!(why.rail, None, "{name}");
         assert!(action.cause.contains(&failure), "{name}");
-        assert!(
+        assert_eq!(
             decision(&action).reason.contains("20230101T000000Z"),
+            case.target.is_some(),
             "{name}"
         );
         assert_eq!(j.next_decision(), action, "{name}");
@@ -805,50 +870,112 @@ fn r7_pending_revives_on_offset_return() {
 #[test]
 fn r7_mce_named_unloaded_core_uses_its_lane() {
     for local_mce in [false, true] {
-        let mut j = Journal::r7_session();
-        let n = j.at_needed();
-        let all = [-30, -30, -30, -30];
-        for _ in 0..n {
-            j.r7_fact(
-                true,
-                &[2, 3],
-                &all,
-                &requests(&[(2, 1.1), (3, 1.09)]).top(&[2]),
-            );
-        }
-        let plan = j.r7_plan(&[0, 1], &all);
-        let (intent, trial) = j.intent(&plan);
-        let mut cause = vec![intent];
-        let mut end =
-            Journal::end_payload(&trial, Outcome::Failure, Some(Signal::ComputationError));
-        end.duration_s = 120;
-        if local_mce {
-            let mce = togi_journal::Mce {
-                cpu: CpuId(3),
-                core: Some(core(3)),
-                bank: 0,
-                bank_type: BankType::LoadStore,
-                corrected: false,
-                monotonic_ns: None,
-                from_boot: None,
-                trial: Some(trial.clone()),
-                between_trials: false,
-                lines: Vec::new(),
+        for clock in [None, Some(5000)] {
+            let ids = [0, 1, 2, 3];
+            let infos = ids
+                .iter()
+                .map(|&id| togi_machine::CoreInfo {
+                    core: core(id),
+                    ccd: CcdId(0),
+                    cpus: Vec::new(),
+                })
+                .collect();
+            let mut j = Journal::on(&ids, infos, &[Start::has_room(-30); 4]);
+            let all = [-30; 4];
+            j.profile_change(&all);
+            j.ranking(&ids);
+            j.load(&crate::testkit::config(r#"{"checking":{"cycle":["R7"]}}"#));
+            let target = if local_mce { 1.11 } else { 1.1 };
+            let passes: Vec<_> = (0..j.at_needed())
+                .map(|_| {
+                    j.r7_fact(
+                        true,
+                        &[2, 3],
+                        &[-30, -30, -20, -30],
+                        &requests(&[(2, target), (3, 1.09)])
+                            .top(&[2])
+                            .clocks(&[(0, 5000)]),
+                    )
+                })
+                .collect();
+            j.open_default_cycle();
+            // Complete the full load so its real chain idles core 3. Its request lane remains
+            // available, but this different load cannot supply the partial's missing clock.
+            let mut measured = None;
+            for _ in 0..4 {
+                let plan = j.next_trial();
+                assert_eq!(plan.load.cores(), set(&ids));
+                let (intent, trial) = j.intent(&plan);
+                let mut end = Journal::end_payload(&trial, Outcome::Pass, None);
+                end.duration_s = plan.duration.get();
+                end.voltage_requests_v = [
+                    (core(0), 1.08),
+                    (core(1), 1.07),
+                    (core(2), target - 10.0 * togi_requests::VOLTS_PER_COUNT),
+                    (core(3), 1.09),
+                ]
+                .into_iter()
+                .collect();
+                measured = Some(j.append(end.into(), &[intent]));
+            }
+            let chain = j.next_decision();
+            let DecisionPayload::CheckingChain(partial) = &chain.payload else {
+                panic!("expected the partial idling core 3, got {chain:?}");
             };
-            cause.push(j.append(mce.into(), &[]));
-        } else {
-            end.core = Some(core(3));
+            assert_eq!(partial.cores, set(&[0, 1, 2]));
+            j.decide(chain);
+            let plan = j.next_trial();
+            assert_eq!(plan.load.cores(), set(&[0, 1, 2]));
+            let (intent, trial) = j.intent(&plan);
+            let mut cause = vec![intent];
+            let signal = if local_mce {
+                cause.push(j.at_mce(&trial, 3));
+                Signal::UncorrectedMce
+            } else {
+                Signal::ComputationError
+            };
+            let mut end = Journal::end_payload(&trial, Outcome::Failure, Some(signal));
+            end.duration_s = 120;
+            end.core = (!local_mce).then_some(core(3));
+            if let Some(mhz) = clock {
+                end.ccd_mhz.insert(CcdId(0), mhz);
+            }
+            j.append(end.into(), &cause);
+            let attribution = j.next_decision();
+            let DecisionPayload::Failure(failure) = &attribution.payload else {
+                panic!("expected attribution, mce={local_mce}, clock={clock:?}: {attribution:?}");
+            };
+            assert_eq!((failure.signal, failure.core), (signal, Some(core(3))));
+            j.decide(attribution);
+            let (action, why) = j.at_r7_backoff();
+            let counts = if clock.is_none() {
+                1
+            } else if local_mce {
+                6
+            } else {
+                3
+            };
+            assert_eq!(why.counts, counts, "mce={local_mce}, clock={clock:?}");
+            assert_eq!(
+                why.basis,
+                if clock.is_some() {
+                    Basis::Toward {
+                        request: 1.09,
+                        target,
+                    }
+                } else {
+                    Basis::NoPass { request: 1.09 }
+                }
+            );
+            assert_eq!(j.next_decision(), action);
+            let moved = decision(&action);
+            assert_eq!((moved.core, moved.to_offset.get()), (core(3), -30 + counts));
+            assert!(action.cause.contains(&measured.unwrap()));
+            for pass in passes {
+                assert_eq!(action.cause.contains(&pass), clock.is_some());
+            }
+            j.assert_resumes();
         }
-        j.append(end.into(), &cause);
-        let attribution = j.next_decision();
-        assert!(
-            matches!(attribution.payload, DecisionPayload::Failure(_)),
-            "{local_mce}"
-        );
-        j.decide(attribution);
-        let (decision, moved) = j.at_next_backoff();
-        assert_eq!(moved, (3, -27), "{local_mce}");
-        assert!(decision.cause.len() > n, "{local_mce}");
     }
 }
 

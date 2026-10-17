@@ -1,6 +1,6 @@
 //! Hunts: the partition plan that narrows an unattributed failure to a culprit or a combination,
-//! the parked profiles its groups run at, and the member probes and backoff that follow a
-//! combination, with the folded state and the decisions that drive them.
+//! the parked profiles its groups run at, and the singleton/member probes and backoff that follow,
+//! with the folded state and the decisions that drive them.
 
 mod evidence;
 mod fold;

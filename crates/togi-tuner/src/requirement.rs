@@ -145,6 +145,7 @@ impl Run {
         }
         self.hunt_intent(intent, class)
             .or_else(|| self.zero_context(intent, class, cause))
+            .or_else(|| self.r7_probe_context(intent, class))
             .or_else(|| self.rerun_context(intent, class))
             .or_else(|| self.round_context(intent, class))
             .or_else(|| self.cycle_context(intent, class))
@@ -160,7 +161,7 @@ impl Run {
 
     /// The context an inconclusive trial's retry belongs to, when the trial belongs to one that
     /// keeps retries.
-    fn retry_context(open: &OpenTrial) -> Option<TrialContext> {
+    fn retry_context(&self, open: &OpenTrial) -> Option<TrialContext> {
         let intent = &open.intent;
         if let Some(turn) = open.turn {
             return Some(turn.context());
@@ -173,7 +174,9 @@ impl Run {
             }),
             RequirementKind::Rerun => match open.requirement.window {
                 Window::Live { since } | Window::LiveOrCarried { since } => {
-                    Some(TrialContext::Rerun { failure: since? })
+                    Some(TrialContext::Rerun {
+                        failure: self.r7_probe_source(open.requirement).or(since)?,
+                    })
                 }
             },
             RequirementKind::Round => Some(TrialContext::Round {
@@ -195,7 +198,7 @@ impl Run {
         if self.save_zero_retry(open, zero) {
             return;
         }
-        let Some(context) = Self::retry_context(open) else {
+        let Some(context) = self.retry_context(open) else {
             return;
         };
         let load = match intent.core {
@@ -229,7 +232,9 @@ impl Run {
             return match plan.context {
                 TrialContext::ZeroRerun { failure } => self.zero_retry_requirement(plan, failure),
                 TrialContext::Cycle { .. } => self.cycle_retry_requirement(plan),
-                TrialContext::Rerun { failure } => self.rerun_retry_requirement(plan, failure),
+                TrialContext::Rerun { failure } => self
+                    .r7_probe_retry_requirement(plan, failure)
+                    .or_else(|| self.rerun_retry_requirement(plan, failure)),
                 TrialContext::Round { round } => self.round_retry_requirement(plan, round),
                 TrialContext::Hunt { hunt, group } => self.hunt_retry_requirement(hunt, group),
                 TrialContext::Search { .. } | TrialContext::SoloLimit { .. } => {

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::num::{NonZeroU16, NonZeroU32};
 
 use proptest::array::uniform4;
@@ -442,6 +443,333 @@ impl Fx {
     }
 }
 
+#[test]
+fn named_targets_do_not_pool_loads_or_profiles_but_do_pool_durations() {
+    let mut fx = Fx::new(2);
+    let p = fx.profile(&[-20, -30, -30, -30]);
+    fx.pass(&record(
+        1,
+        class(0, &[0, 1], 120),
+        p,
+        &[(0, 1.14)],
+        &[(0, 5000)],
+    ));
+    fx.pass(&record(
+        2,
+        class(0, &[0], 120),
+        p,
+        &[(0, 1.13)],
+        &[(0, 5000)],
+    ));
+    assert_eq!(fx.named(workload(0), 0, Some(5000)), None);
+    let other = fx.profile(&[-21, -30, -30, -30]);
+    fx.pass(&record(
+        3,
+        class(0, &[0, 1], 300),
+        other,
+        &[(0, 1.12)],
+        &[(0, 5000)],
+    ));
+    assert_eq!(fx.named(workload(0), 0, Some(5000)), None);
+    fx.pass(&record(
+        4,
+        class(0, &[0, 1], 300),
+        p,
+        &[(0, 1.15)],
+        &[(0, 5000)],
+    ));
+    assert_eq!(
+        fx.named(workload(0), 0, Some(5000)).unwrap().cited,
+        vec![seq(1), seq(4)]
+    );
+    fx.fail(5, class(0, &[0, 1], 120), p, None);
+    assert_eq!(fx.named(workload(0), 0, Some(5000)), None);
+}
+
+#[test]
+fn named_target_clock_tolerance_has_an_inclusive_25_mhz_boundary() {
+    for (gap, admitted) in [(0, true), (2, true), (23, true), (25, true), (26, false)] {
+        let mut fx = Fx::new(1);
+        let p = fx.profile(&[-20, -30, -30, -30]);
+        fx.pass(&record(
+            1,
+            class(0, &[0, 1], 120),
+            p,
+            &[(0, 1.14)],
+            &[(0, 5397 - gap)],
+        ));
+        assert_eq!(fx.named(workload(0), 0, Some(5397)).is_some(), admitted);
+    }
+}
+
+#[test]
+fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
+    // Decision-input reconstruction of session 20261010T230611Z: carried seqs 929–934,
+    // and failures 0106–0119. The Go wire journal cannot be decoded by the Rust reader.
+    let infos: Vec<CoreInfo> = (0..16_u8)
+        .map(|id| CoreInfo {
+            core: core(id),
+            ccd: CcdId(id / 8),
+            cpus: Vec::new(),
+        })
+        .collect();
+    let topo = Topology::new(&infos).unwrap();
+    let mut fx = Fx {
+        evidence: Evidence::new(topo.all()),
+        topo,
+        targets: R7Targets::default(),
+        n: n_of(5),
+    };
+    let p = fx.profile(&[
+        -22, -25, -26, -34, -27, -36, -45, -42, -48, -39, -37, -42, -49, -41, -50, -50,
+    ]);
+    let ccd1 = [8, 9, 10, 11, 12, 13, 14, 15];
+    for (at, duration, mhz, top, own) in [
+        (
+            929,
+            120,
+            5029,
+            1.047_069_668_769_836_4,
+            1.028_604_388_236_999_5,
+        ),
+        (
+            930,
+            120,
+            5029,
+            1.046_853_303_909_301_8,
+            1.028_339_743_614_196_8,
+        ),
+        (931, 120, 5028, 1.047_316_312_789_917, 1.028_660_774_230_957),
+        (
+            932,
+            120,
+            5029,
+            1.047_187_328_338_623,
+            1.028_710_246_086_120_6,
+        ),
+        (
+            933,
+            120,
+            5026,
+            1.046_082_615_852_356,
+            1.027_477_264_404_296_9,
+        ),
+        (
+            934,
+            300,
+            5024,
+            1.046_408_414_840_698_2,
+            1.028_059_482_574_463,
+        ),
+    ] {
+        fx.pass(&record(
+            at,
+            class(0, &ccd1, duration),
+            p,
+            &[(10, top), (11, own)],
+            &[(1, mhz)],
+        ));
+    }
+    for (trial, clock) in [
+        ("0106", 5040),
+        ("0107", 5040),
+        ("0108", 5040),
+        ("0109", 5036),
+        ("0111", 5036),
+        ("0115", 5017),
+        ("0119", 5034),
+    ] {
+        let target = fx.named(workload(0), 11, Some(clock)).unwrap();
+        assert_eq!(target.volts, 1.046_082_615_852_356, "{trial}");
+        assert_eq!(
+            target.cited,
+            vec![seq(929), seq(930), seq(931), seq(932), seq(933)]
+        );
+    }
+    let target = fx.named(workload(0), 11, Some(5040)).unwrap();
+    assert_eq!(
+        backoff_counts(
+            OwnRequest::Measured(1.031_548_738_479_614_3),
+            Some(&target),
+            None
+        ),
+        5
+    );
+    let ids: Vec<u8> = (0..16).collect();
+    let failing_profile = [
+        -21, -24, -25, -32, -26, -35, -44, -40, -47, -38, -36, -41, -48, -40, -49, -49,
+    ];
+    let starts: Vec<_> = failing_profile
+        .iter()
+        .map(|&offset| crate::testkit::Start::has_room(offset))
+        .collect();
+    let mut journal = crate::testkit::Journal::on(&ids, infos, &starts);
+    journal.profile_change(&failing_profile);
+    let mut sources = Vec::new();
+    for (top, own, mhz) in [
+        (1.047_069_668_769_836_4, 1.028_604_388_236_999_5, 5029),
+        (1.046_853_303_909_301_8, 1.028_339_743_614_196_8, 5029),
+        (1.047_316_312_789_917, 1.028_660_774_230_957, 5028),
+        (1.047_187_328_338_623, 1.028_710_246_086_120_6, 5029),
+        (1.046_082_615_852_356, 1.027_477_264_404_296_9, 5026),
+    ] {
+        sources.push(
+            journal.r7_fact(
+                true,
+                &ccd1,
+                &[
+                    -22, -25, -26, -34, -27, -36, -45, -42, -48, -39, -37, -42, -49, -41, -50, -50,
+                ],
+                &crate::testkit::R7Report::default()
+                    .requests(&[(10, top), (11, own)])
+                    .top(&[10])
+                    .clocks(&[(1, mhz)]),
+            ),
+        );
+    }
+    // Install the recorded first CCD1 partial in the cycle before folding its live failure.
+    // The default cycle contains the full CCD, not an arbitrary loaded subset.
+    journal.open_default_cycle();
+    let (step, _) = journal
+        .run()
+        .checking
+        .locate(class(0, &ccd1, 120), None)
+        .unwrap();
+    journal.append(
+        togi_journal::CheckingChain {
+            cycle: journal.run().checking.open().unwrap().number,
+            step: NonZeroU32::new(u32::try_from(step).unwrap() + 1).unwrap(),
+            ccd: CcdId(1),
+            workload: workload(0),
+            groups: vec![set(&[10])],
+            cores: set(&[8, 9, 11, 12, 13, 14, 15]),
+            source_seqs: sources.clone(),
+            profile: journal.profile(&failing_profile).offsets(),
+            part: NonZeroU32::MIN,
+            rederived: None,
+        }
+        .into(),
+        &sources,
+    );
+    journal.r7_failed(
+        &[8, 9, 11, 12, 13, 14, 15],
+        &failing_profile,
+        &crate::testkit::R7Report::default()
+            .requests(&[
+                (11, 1.031_548_738_479_614_3),
+                (12, 1.005_218_982_696_533_2),
+                (13, 1.035_337_686_538_696_3),
+                (14, 1.015_336_632_728_576_7),
+                (15, 1.020_572_423_934_936_5),
+                (8, 1.000_017_166_137_695_3),
+                (9, 1.037_670_969_963_073_7),
+            ])
+            .top(&[9])
+            .named(11)
+            .clocks(&[(1, 5040)]),
+    );
+    let Some(super::respond::R7Response::Backoff { decision, why }) = journal.run().r7_decision()
+    else {
+        panic!("expected reconstructed 0106 backoff");
+    };
+    assert_eq!(why.counts, 3);
+    let crate::DecisionPayload::TunerDecision(td) = decision.payload else {
+        panic!("expected tuner decision");
+    };
+    assert_eq!((td.core, td.to_offset.get()), (core(11), -38));
+    journal.assert_resumes();
+}
+
+#[test]
+fn latest_load_clocks_survive_empty_reports_and_backend_changes_but_not_reset() {
+    let mut store = Measurements::default();
+    let other = load(0, &[2, 3]);
+    let load = load(0, &[0, 1]);
+    let mut evidence = Evidence::new(two_ccds().all());
+    let backend = evidence.active_backend(togi_machine::Backend::Mprime);
+    store.record_clocks(load, backend, seq(1), &[(CcdId(0), 5000)].into());
+    store.record_clocks(load, backend, seq(2), &BTreeMap::default());
+    store.record_clocks(load, backend, seq(3), &[(CcdId(0), 5100)].into());
+    store.record_clocks(load, backend, seq(2), &[(CcdId(0), 4900)].into());
+    assert_eq!(
+        store.clocks(load, backend).collect::<Vec<_>>(),
+        vec![(CcdId(0), seq(3), 5100)]
+    );
+    assert_eq!(
+        store.clocks(super::tests::load(0, &[0]), backend).count(),
+        0
+    );
+    evidence.set_backend(
+        togi_machine::Backend::Mprime,
+        Some(std::path::Path::new("/packages/new-mprime")),
+    );
+    let changed = evidence.active_backend(togi_machine::Backend::Mprime);
+    assert_ne!(changed, backend);
+    assert_eq!(store.clocks(load, changed).count(), 0);
+    // Interleaved reports keep one newest clock per CCD under each backend, and a CCD the
+    // backend never reported stays missing.
+    store.record_clocks(load, changed, seq(4), &[(CcdId(1), 4800)].into());
+    store.record_clocks(load, backend, seq(5), &[(CcdId(1), 4900)].into());
+    store.record_clocks(load, changed, seq(6), &[(CcdId(0), 5200)].into());
+    assert_eq!(
+        store.clocks(load, changed).collect::<Vec<_>>(),
+        vec![(CcdId(0), seq(6), 5200), (CcdId(1), seq(4), 4800)]
+    );
+    evidence.set_backend(togi_machine::Backend::Mprime, None);
+    assert_eq!(
+        evidence.active_backend(togi_machine::Backend::Mprime),
+        backend
+    );
+    assert_eq!(
+        store.clocks(load, backend).collect::<Vec<_>>(),
+        vec![(CcdId(0), seq(3), 5100), (CcdId(1), seq(5), 4900)]
+    );
+    store.record_clocks(other, backend, seq(7), &[(CcdId(0), 5300)].into());
+    store.record_clocks(other, changed, seq(8), &[(CcdId(0), 5400)].into());
+    store.reset_core(core(1));
+    assert_eq!(store.clocks(load, backend).count(), 0);
+    assert_eq!(store.clocks(load, changed).count(), 0);
+    assert_eq!(store.clocks(other, backend).count(), 1);
+    assert_eq!(store.clocks(other, changed).count(), 1);
+}
+
+#[test]
+fn named_allcore_on_one_ccd_uses_that_ccds_top_and_current_backend() {
+    let infos: Vec<CoreInfo> = (0..4_u8)
+        .map(|id| CoreInfo {
+            core: core(id),
+            ccd: CcdId(0),
+            cpus: Vec::new(),
+        })
+        .collect();
+    let topo = Topology::new(&infos).unwrap();
+    let mut fx = Fx {
+        evidence: Evidence::new(topo.all()),
+        topo,
+        targets: R7Targets::default(),
+        n: n_of(1),
+    };
+    let p = fx.profile(&[-20, -30, -30, -30]);
+    fx.pass(&record(
+        1,
+        class(0, &[0, 1, 2, 3], 120),
+        p,
+        &[(0, 1.1), (1, 1.14), (2, 1.12), (3, 1.11)],
+        &[(0, 5000)],
+    ));
+    assert_eq!(fx.named(workload(0), 0, Some(5000)).unwrap().volts, 1.14);
+    fx.evidence.set_backend(
+        togi_machine::Backend::Mprime,
+        Some(std::path::Path::new("/packages/new-mprime")),
+    );
+    let active = fx.evidence.active_backend(togi_machine::Backend::Mprime);
+    assert_eq!(
+        fx.targets
+            .named(fx.ask(active), workload(0), core(0), Some(5000)),
+        None
+    );
+}
+
 mod target {
     use super::*;
 
@@ -559,7 +887,7 @@ mod target {
     }
 
     #[test]
-    fn a_named_target_without_a_failing_clock_applies_no_filter() {
+    fn a_named_target_without_any_failing_load_clock_has_no_target() {
         let mut fx = Fx::new(1);
         let p = fx.profile(&[-20, -30, -30, -30]);
         fx.pass(&record(
@@ -569,25 +897,24 @@ mod target {
             &[(0, 1.136), (1, 1.08)],
             &[],
         ));
-        let target = fx.named(workload(0), 0, None).unwrap();
-        assert!(close(target.volts, 1.136));
+        assert_eq!(fx.named(workload(0), 0, None), None);
     }
 
     #[test]
-    fn a_named_target_transfers_across_loads_and_takes_the_whole_loads_top() {
+    fn a_named_target_rejects_a_load_spanning_ccds() {
         let mut fx = Fx::new(3);
         let p = fx.profile(&[-30, -20, -30, -30]);
         let lanes = [(0, 1.09), (1, 1.118), (2, 1.1), (3, 1.09)];
         for at in 1..=3 {
-            fx.pass(&record(at, class(0, &[0, 1, 2, 3], 120), p, &lanes, &[]));
+            fx.pass(&record(
+                at,
+                class(0, &[0, 1, 2, 3], 120),
+                p,
+                &lanes,
+                &[(0, 5000), (1, 5000)],
+            ));
         }
-        let target = fx.named(workload(0), 0, None).unwrap();
-        assert!(close(target.volts, 1.118));
-        assert_eq!(
-            move_to(-30, None, OwnRequest::Measured(1.1), Some(&target), None),
-            -25
-        );
-        assert!(fx.named(workload(1), 0, None).is_none());
+        assert_eq!(fx.named(workload(0), 0, Some(5000)), None);
     }
 
     #[test]
@@ -599,9 +926,9 @@ mod target {
             class(0, &[0, 1], 120),
             p,
             &[(0, 1.05), (1, 1.04)],
-            &[],
+            &[(0, 5000)],
         ));
-        let target = fx.named(workload(0), 0, None).unwrap();
+        let target = fx.named(workload(0), 0, Some(5000)).unwrap();
         assert_eq!(
             move_to(-30, None, OwnRequest::Measured(1.1), Some(&target), None),
             -29
@@ -799,11 +1126,11 @@ mod target {
             class(0, &[2, 3], 120),
             p,
             &[(2, 1.1), (3, 1.1)],
-            &[],
+            &[(1, 5000)],
         ));
         fx.reset(1);
         assert!(fx.named(workload(0), 0, None).is_none());
-        assert!(fx.named(workload(0), 2, None).is_some());
+        assert!(fx.named(workload(0), 2, Some(5000)).is_some());
         assert_eq!(fx.targets.groups(), 1);
     }
 
@@ -1046,6 +1373,7 @@ mod escalation {
             last = match strikes.escalation(&topo, key, &profile, &affected) {
                 Some(Escalation::Backoffs { failures, .. }) => Answer::Locate(Some(failures)),
                 Some(Escalation::LoadedAtZero) => Answer::Locate(None),
+                Some(Escalation::Covered { .. }) => panic!("strikes alone never cover a load"),
                 None => {
                     let ordinal = strikes.next_ordinal(key);
                     next += 1;
@@ -1514,7 +1842,8 @@ mod props {
         passes: &[PassRecord],
         pick: impl Fn(&PassRecord) -> Option<f64>,
     ) -> Option<(f64, Seq, Vec<Seq>)> {
-        let mut groups: Vec<(Profile, Vec<(Seq, f64)>)> = Vec::new();
+        type PassGroup = ((LoadKey, Profile), Vec<(Seq, f64)>);
+        let mut groups: Vec<PassGroup> = Vec::new();
         for pass in passes {
             let valid = fx
                 .evidence
@@ -1526,10 +1855,10 @@ mod props {
             };
             match groups
                 .iter_mut()
-                .find(|(profile, _)| *profile == pass.profile)
+                .find(|(shape, _)| *shape == (pass.class.load(), pass.profile))
             {
                 Some((_, found)) => found.push((pass.seq, top)),
-                None => groups.push((pass.profile, vec![(pass.seq, top)])),
+                None => groups.push(((pass.class.load(), pass.profile), vec![(pass.seq, top)])),
             }
         }
         let n = usize::from(fx.n.get());
@@ -1624,12 +1953,15 @@ mod props {
                 let ccd = fx.topo.ccd_of(core(moved)).unwrap();
                 for failing in [None, Some(4900), Some(5000)] {
                     let expected = scan(&fx, &passes, |pass| {
-                        if !pass.class.loaded().contains(core(moved)) {
+                        if !pass.class.loaded().contains(core(moved)) || !pass.class.loaded().iter()
+                            .all(|id| fx.topo.ccd_of(id) == Some(ccd)) {
                             return None;
                         }
                         let clock = pass.ccd_mhz.get(&ccd).copied();
-                        let admitted = failing.is_none_or(|floor| clock.unwrap_or(0) >= floor);
-                        top(&pass.requests).filter(|_| admitted)
+                        let admitted = failing.zip(clock).is_some_and(|(floor, clock)| clock >= floor - 25);
+                        let on_ccd: PerCore<f64> = pass.requests.iter()
+                            .filter(|&(id, _)| fx.topo.ccd_of(id) == Some(ccd)).collect();
+                        top(&on_ccd).filter(|_| admitted)
                     });
                     let found = fx.named(workload(0), moved, failing);
                     prop_assert_eq!(
@@ -1748,6 +2080,28 @@ fn r7_reasons_render_each_voltage_basis_and_locate_provenance() {
         let text = reason.to_string();
         assert!(text.contains("located on the unloaded cores"));
         assert!(text.contains("#12, #30"));
+        assert_eq!(text.contains("CO 0 passed (#19)"), rerun_passed.is_some());
+    }
+    for rerun_passed in [None, Some(seq(19))] {
+        let reason = LocateReason {
+            rerun_passed,
+            escalation: Some(Escalation::Covered {
+                passes: vec![seq(12), seq(30)],
+            }),
+        };
+        let mut expected = rerun_passed.into_iter().collect::<Vec<_>>();
+        expected.extend([seq(12), seq(30)]);
+        assert_eq!(reason.cause(), expected);
+        let text = reason.to_string();
+        assert!(text.contains("located on the unloaded cores"), "{text}");
+        assert!(
+            text.ends_with(
+                "; the load already passed with every loaded core as deep or deeper and an \
+                 unloaded core shallower (#12, #30), so its loaded cores pass on their own and \
+                 stepping one back cannot be what it needs"
+            ),
+            "{text}"
+        );
         assert_eq!(text.contains("CO 0 passed (#19)"), rerun_passed.is_some());
     }
 }

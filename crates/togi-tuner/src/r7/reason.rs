@@ -15,11 +15,32 @@ fn count(n: i64) -> String {
 /// How the failing request of the moved core was known.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Basis {
-    NoTelemetry { offset: i64 },
-    Uncovered { offset: i64, sources: Vec<Seq> },
-    NoPass { request: f64 },
-    Met { request: f64, target: f64 },
-    Toward { request: f64, target: f64 },
+    NoTelemetry {
+        offset: i64,
+    },
+    Uncovered {
+        offset: i64,
+        sources: Vec<Seq>,
+    },
+    NoPass {
+        request: f64,
+    },
+    /// A carried failure: passes recorded after it would set its target, so it takes none.
+    Carried {
+        request: f64,
+    },
+    ShortCrash {
+        request: f64,
+        duration_s: u32,
+    },
+    Met {
+        request: f64,
+        target: f64,
+    },
+    Toward {
+        request: f64,
+        target: f64,
+    },
 }
 
 /// What else the charge says about which core moves.
@@ -47,7 +68,15 @@ pub(crate) enum Note {
         failure: Seq,
         end: Seq,
     },
+    NamedNonCrashCap {
+        uncapped: i64,
+        limit: i64,
+    },
     Located(String),
+    Probe {
+        idled: CoreSet,
+        stalled: Option<CoreId>,
+    },
 }
 
 impl fmt::Display for Note {
@@ -89,6 +118,23 @@ impl fmt::Display for Note {
                 "the unloaded cores have not been checked by a located hunt yet; voltage-targeted backoff {n} for this load since its last passing trial; a later failure can trigger a located hunt after {after} backoffs"
             ),
             Self::Located(clause) => f.write_str(clause),
+            Self::Probe { idled, stalled } => {
+                write!(
+                    f,
+                    "before the full load reruns, probe its part idling tied group {}",
+                    ids(*idled)
+                )?;
+                match stalled {
+                    Some(core) => write!(f, ": core {:02} stalled outside that group; this chooses a probe, not a culprit", core.get()),
+                    None => f.write_str(": the charged core has taken two unattributed charges, including across load passes"),
+                }
+            }
+            Self::NamedNonCrashCap { uncapped, limit } => write!(
+                f,
+                "named non-crash computation error or unexpected exit: voltage-target move capped at {} instead of {}; recorded failure points still apply",
+                count(*limit),
+                count(*uncapped)
+            ),
             Self::RerunPassed { failure, end } => write!(
                 f,
                 "the rerun of failure #{failure} with every core at CO 0 passed (#{end}), so it counts as unattributed against the cores off CO 0"
@@ -134,6 +180,18 @@ impl fmt::Display for R7Reason {
             Basis::NoPass { request } => {
                 write!(f, "request {request:.3} V; no qualifying pass, {counts}")?;
             }
+            Basis::Carried { request } => write!(
+                f,
+                "request {request:.3} V; a carried failure takes no voltage target, {counts}"
+            )?,
+            Basis::ShortCrash {
+                request,
+                duration_s,
+            } => write!(
+                f,
+                "request {request:.3} V; crash last evidence at {duration_s} s is below the {} s floor, so no voltage target, {counts}",
+                super::target::CRASH_TARGET_MIN_S
+            )?,
             Basis::Met { request, target } => write!(
                 f,
                 "request {request:.3} V already met the passed target {target:.3} V; {counts}"

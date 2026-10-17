@@ -16,7 +16,7 @@ use std::path::Path;
 use togi_journal::Seq;
 use togi_machine::{Backend, Condition, CoreId, CoreSet, Regime, WorkloadId};
 
-use crate::{ClassKey, Profile, TopologyMismatch};
+use crate::{ClassKey, Depth, LoadKey, Profile, Secs, TopologyMismatch};
 
 pub use backend::BackendId;
 use backend::Backends;
@@ -655,6 +655,56 @@ impl Evidence {
             None
         } else {
             self.newest_unchecked(class, profile, since)
+        })
+    }
+
+    /// The passes showing that the loaded cores of `load` pass on their own at `profile`, a
+    /// profile it failed at: valid passes of its classes, whatever the duration, under each
+    /// class's active backend, at profiles where every loaded core is at least as deep as in
+    /// `profile` and some unloaded core is shallower. A pass is valid while no failure of its
+    /// class at an equal or shallower profile follows it. A pass at a profile `profile` is within
+    /// shows nothing about the unloaded cores, so it never counts, whether or not the failure at
+    /// `profile` is in the ledger yet. Taken as the failure folds, the count is a snapshot: the
+    /// witnesses are the first valid passes, oldest first, up to [`togi_config::TrialCount::MAX`],
+    /// so any supported trial count can later be checked against them without the ledger.
+    pub(crate) fn loaded_cover(
+        &self,
+        load: LoadKey,
+        profile: &Profile,
+    ) -> Result<Count, TopologyMismatch> {
+        self.check(profile)?;
+        let first = ClassKey::new(load.workload, load.loaded, Secs::MIN);
+        let mut runs: Vec<Run<'_>> = Vec::new();
+        let mut valid = 0_usize;
+        for (&class, cells) in self
+            .classes
+            .range(first..)
+            .take_while(|(class, _)| class.load() == load)
+        {
+            let backend = self.backends.active(class.workload().backend());
+            for cell in cells.passes.cells() {
+                self.visit();
+                let loaded_as_deep = load.loaded.iter().all(|core| {
+                    match (cell.profile.get(core), profile.get(core)) {
+                        (Some(pass), Some(failed)) => !pass.shallower_than(failed),
+                        _ => false,
+                    }
+                });
+                if cell.backend != backend || !loaded_as_deep || profile.within(&cell.profile) {
+                    continue;
+                }
+                let floor = self.newest_unchecked(class, &cell.profile, None);
+                let live = cell.live.after(floor);
+                let carried = cell.carried.after(floor);
+                valid += live.len() + carried.len();
+                runs.push(live);
+                runs.push(carried);
+            }
+        }
+        let retained = valid.min(usize::from(togi_config::TrialCount::MAX));
+        Ok(Count {
+            valid: u32::try_from(valid).unwrap_or(u32::MAX),
+            witnesses: merge(&runs, retained),
         })
     }
 

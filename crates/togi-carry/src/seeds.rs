@@ -308,7 +308,12 @@ impl SeedFold {
                     && end.cores.len() == 1
                     && let Some(core) = end.cores.first()
                     && let Some(hunt) = self.hunts.get(&end.hunt)
-                    && let Some(offset) = hunt.failing.get(core)
+                    && let Some(offset) = end
+                        .members
+                        .iter()
+                        .find(|member| member.core == core)
+                        .map(|member| member.offset)
+                        .or_else(|| hunt.failing.get(core))
                     && let Some(&signal) = self.signals.get(&hunt.failure)
                 {
                     let proof = if offset == TargetOffset::ZERO {

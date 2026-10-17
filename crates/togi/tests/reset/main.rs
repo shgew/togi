@@ -14,6 +14,7 @@ use togi_cli::system::System;
 use togi_journal::fs::{Fault, Fs, Op};
 use togi_machine::{CoreId, Signal};
 use togi_sim::model::Script;
+use togi_tuner::RULESET;
 use togi_watchtest::{Scenario, Stop, default_machine, install_events_with_fs, simulate};
 
 const SESSION: &str = "20260101T000000Z";
@@ -240,7 +241,7 @@ fn reset_all_of_an_unrecognized_schema_archives_it_unread() {
 fn reset_all_of_another_ruleset_archives_it_normally() {
     let host = Host::new();
     let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
-    session.rewrite_first_line("\"ruleset\":1", "\"ruleset\":99");
+    session.rewrite_first_line(&format!("\"ruleset\":{RULESET}"), "\"ruleset\":99");
     let ran = reset(&host, session.path(), &["--all"]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert!(!ran.out.contains("without appending"), "{}", ran.out);
@@ -254,50 +255,51 @@ fn reset_all_of_another_ruleset_archives_it_normally() {
 fn reset_core_refuses_every_stamp_mismatch_with_exit_16_and_appends_nothing() {
     let archives = "togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over.";
     let install = "Install togi 0.0.0 to continue this session, or run togi reset --all to archive it and start over.";
+    let current = format!("\"ruleset\":{RULESET}");
     for (name, rewrites, written, uses, advice) in [
         (
             "newer schema",
             &[("\"schema\":1", "\"schema\":99")][..],
-            "(schema 99, ruleset 1)",
-            "schema 1",
+            format!("(schema 99, ruleset {RULESET})"),
+            "schema 1".to_owned(),
             install,
         ),
         (
             "older schema",
             &[("\"schema\":1", "\"schema\":0")],
-            "(schema 0, ruleset 1)",
-            "schema 1",
+            format!("(schema 0, ruleset {RULESET})"),
+            "schema 1".to_owned(),
             archives,
         ),
         (
             "newer ruleset",
-            &[("\"ruleset\":1", "\"ruleset\":99")],
-            "(schema 1, ruleset 99)",
-            "ruleset 1",
+            &[(current.as_str(), "\"ruleset\":99")],
+            "(schema 1, ruleset 99)".to_owned(),
+            format!("ruleset {RULESET}"),
             install,
         ),
         (
             "newer evidence",
             &[("\"evidence\":1}", "\"evidence\":99}")],
-            "(schema 1, ruleset 1, evidence epoch 99)",
-            "evidence epoch 1",
+            format!("(schema 1, ruleset {RULESET}, evidence epoch 99)"),
+            "evidence epoch 1".to_owned(),
             install,
         ),
         (
             "older ruleset",
-            &[("\"ruleset\":1", "\"ruleset\":0")],
-            "(schema 1, ruleset 0)",
-            "ruleset 1",
+            &[(current.as_str(), "\"ruleset\":0")],
+            "(schema 1, ruleset 0)".to_owned(),
+            format!("ruleset {RULESET}"),
             archives,
         ),
         (
             "older ruleset with a newer evidence epoch",
             &[
-                ("\"ruleset\":1", "\"ruleset\":0"),
+                (current.as_str(), "\"ruleset\":0"),
                 ("\"evidence\":1}", "\"evidence\":99}"),
             ],
-            "(schema 1, ruleset 0)",
-            "ruleset 1",
+            "(schema 1, ruleset 0)".to_owned(),
+            format!("ruleset {RULESET}"),
             install,
         ),
     ] {
@@ -661,16 +663,16 @@ fn a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone() {
         let ran = reset(&host, session.path(), args);
         assert_eq!(ran.exit, Exit::Incompatible, "{args:?}: {}", ran.err);
         assert!(
-            ran.err.starts_with(
-                "togi reset: unknown kind \"future.fact\" in journal written by togi 0.0.0 (schema 1, ruleset 1); this build, togi "
-            ),
+            ran.err.starts_with(&format!(
+                "togi reset: unknown kind \"future.fact\" in journal written by togi 0.0.0 (schema 1, ruleset {RULESET}); this build, togi "
+            )),
             "{args:?}: {}",
             ran.err
         );
         assert!(
-            ran.err.ends_with(
-                " (schema 1, ruleset 1), cannot safely modify it; install the build that wrote it\n"
-            ),
+            ran.err.ends_with(&format!(
+                " (schema 1, ruleset {RULESET}), cannot safely modify it; install the build that wrote it\n"
+            )),
             "{args:?}: {}",
             ran.err
         );
@@ -727,16 +729,16 @@ fn a_current_journal_with_an_unknown_field_exits_16_and_is_left_alone() {
         let ran = reset(&host, session.path(), args);
         assert_eq!(ran.exit, Exit::Incompatible, "{args:?}: {}", ran.err);
         assert!(
-            ran.err.starts_with(
-                "togi reset: unknown field \"data.future_field\" of a session.warning event in journal written by togi 0.0.0 (schema 1, ruleset 1); this build, togi "
-            ),
+            ran.err.starts_with(&format!(
+                "togi reset: unknown field \"data.future_field\" of a session.warning event in journal written by togi 0.0.0 (schema 1, ruleset {RULESET}); this build, togi "
+            )),
             "{args:?}: {}",
             ran.err
         );
         assert!(
-            ran.err.ends_with(
-                " (schema 1, ruleset 1), cannot safely modify it; install the build that wrote it\n"
-            ),
+            ran.err.ends_with(&format!(
+                " (schema 1, ruleset {RULESET}), cannot safely modify it; install the build that wrote it\n"
+            )),
             "{args:?}: {}",
             ran.err
         );
@@ -762,7 +764,7 @@ fn solo_limits_are_checked_across_rulesets_and_skipped_across_schemas() {
     .unwrap();
     let path = path.to_str().unwrap();
     let ruleset = Session::with_fs(host.fs.clone(), scenario);
-    ruleset.rewrite_first_line("\"ruleset\":1", "\"ruleset\":99");
+    ruleset.rewrite_first_line(&format!("\"ruleset\":{RULESET}"), "\"ruleset\":99");
     let ran = reset(&host, ruleset.path(), &["--all", "--config", path]);
     assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
     assert!(ran.err.contains("candidate solo limit"), "{}", ran.err);
@@ -941,7 +943,7 @@ fn a_core_in_range_but_not_in_the_session_exits_2() {
     let host = Host::new();
     let state = support::MemoryDir::new();
     let start = format!(
-        "{{\"seq\":1,\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"session.start\",\"msg\":\"x\",\"data\":{{\"build\":{{\"version\":\"0.0.0\",\"ruleset\":1,\"schema\":1,\"fixes\":0,\"evidence\":1}},\"session\":\"{SESSION}\",\"cores\":[{{\"core\":0,\"ccd\":0,\"cpus\":[0,1]}},{{\"core\":1,\"ccd\":0,\"cpus\":[2,3]}}]}}}}\n"
+        "{{\"seq\":1,\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"session.start\",\"msg\":\"x\",\"data\":{{\"build\":{{\"version\":\"0.0.0\",\"ruleset\":{RULESET},\"schema\":1,\"fixes\":0,\"evidence\":1}},\"session\":\"{SESSION}\",\"cores\":[{{\"core\":0,\"ccd\":0,\"cpus\":[0,1]}},{{\"core\":1,\"ccd\":0,\"cpus\":[2,3]}}]}}}}\n"
     );
     host.write(state.path().join("events.jsonl"), &start)
         .unwrap();
@@ -1009,7 +1011,7 @@ fn an_unknown_kind_keeps_a_pending_carry_and_refuses_an_older_ruleset_too() {
     assert_eq!(session.text(), text);
 
     let older = Session::with_fs(host.fs.clone(), Scenario::Confirm);
-    older.rewrite_first_line("\"ruleset\":1", "\"ruleset\":0");
+    older.rewrite_first_line(&format!("\"ruleset\":{RULESET}"), "\"ruleset\":0");
     let text = with_unknown_kind(&older);
     let ran = reset(&host, older.path(), &["--all"]);
     assert_eq!(ran.exit, Exit::Incompatible, "{}", ran.err);

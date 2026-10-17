@@ -12,6 +12,7 @@ use togi_machine::{
     BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, PerCore, Regime, Signal, TargetOffset,
     WorkloadId,
 };
+use togi_tuner::RULESET;
 
 use crate::{Journal, report};
 
@@ -60,7 +61,7 @@ pub(super) fn build(version: &str, rev: Option<&str>) -> Build {
     Build {
         version: version.to_owned(),
         rev: rev.map(str::to_owned),
-        ruleset: 1,
+        ruleset: RULESET,
         schema: SCHEMA,
         fixes: 0,
         evidence: 1,

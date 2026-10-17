@@ -594,11 +594,46 @@ fn a_hunt_opened_by_a_carried_idle_failure_names_the_carried_signal() {
 
 #[test]
 fn a_located_hunt_names_the_held_loaded_cores_as_its_parked_source() {
-    let base = Base::Unconfirmed.events().unwrap();
-    let events = cut_trial(base, |intent| intent.activity == Some(Activity::Hunt)).unwrap();
-    let start = first_hunt_start(events);
-    assert!(start.parked_seq.is_none() && start.parked.iter().any(|(_, o)| o.get() != 0));
-    let hunt = hunt_line(&status_of(&installed(events)), 1);
+    let base = Scenario::Between.events().unwrap();
+    let intent = last_intent(&Scenario::Checking.events().unwrap());
+    let mut fact = carried_pass(&base, &intent);
+    fact.outcome = Outcome::Failure;
+    fact.signal = Some(Signal::Crash);
+    let seq = next_seq(&base);
+    let mut start = first_hunt_start(Base::Session.events().unwrap());
+    start.failure = seq;
+    start.trial = Some(TrialId::from("origin".to_owned()));
+    start.regime = intent.regime;
+    start.workload = intent.workload;
+    start.cores = intent.cores;
+    start.duration_s = intent.duration_s;
+    start.failing = intent.profile;
+    start.parked = intent
+        .profile
+        .iter()
+        .map(|(core, offset)| {
+            (
+                core,
+                if intent.cores.contains(core) {
+                    offset
+                } else {
+                    togi_machine::TargetOffset::ZERO
+                },
+            )
+        })
+        .collect();
+    start.parked_seq = None;
+    start.candidates = intent
+        .profile
+        .iter()
+        .filter(|(core, offset)| !intent.cores.contains(*core) && offset.get() != 0)
+        .map(|(core, _)| core)
+        .collect();
+    let events = then(
+        &base,
+        vec![(vec![], fact.into()), (vec![seq], start.into())],
+    );
+    let hunt = hunt_line(&status_of(&installed(&events)), 1);
     assert!(
         hunt.contains(
             "loaded cores 00 01 02 03 04 05 06 07 held at their failing offsets, the rest parked at 0"
@@ -611,9 +646,20 @@ fn a_located_hunt_names_the_held_loaded_cores_as_its_parked_source() {
 #[test]
 fn a_hunt_after_a_passed_full_cycle_names_the_cycle_end_it_parks_from() {
     let base = Base::LaterHunt.events().unwrap();
+    let mut passed_full_cycle = false;
+    let mut hunt_number = 0;
     let mut events = cut_when(base, |state, event| {
-        event.kind() == EventKind::TrialStart
-            && state.hunt_plan().is_some_and(|plan| plan.number == 4)
+        if let Payload::CheckingCycle(cycle) = &event.payload {
+            passed_full_cycle |= cycle.event == CycleEvent::End && cycle.passed && cycle.full;
+        }
+        if event.kind() == EventKind::TrialStart
+            && passed_full_cycle
+            && let Some(plan) = state.hunt_plan()
+        {
+            hunt_number = plan.number;
+            return true;
+        }
+        false
     })
     .unwrap()
     .to_vec();
@@ -631,12 +677,12 @@ fn a_hunt_after_a_passed_full_cycle_names_the_cycle_end_it_parks_from() {
         .unwrap();
     for event in &mut events {
         if let Payload::HuntStart(start) = &mut event.payload {
-            if start.hunt.get() == 4 {
+            if start.hunt.get() == hunt_number {
                 start.parked_seq = Some(cycle_end);
             }
         }
     }
-    let hunt = hunt_line(&status_of(&installed(&events)), 4);
+    let hunt = hunt_line(&status_of(&installed(&events)), hunt_number);
     assert!(
         hunt.contains(&format!("parked offsets from cycle end #{cycle_end}")),
         "{hunt}"
