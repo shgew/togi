@@ -92,9 +92,12 @@ fn samples_reach_the_state_directory_only_when_asked_for() {
                 .unwrap()
                 .into_iter()
                 .rev()
-                .find_map(|event| match event.payload {
-                    Payload::TrialEnd(end) => Some(end.trial),
-                    _ => None,
+                .find_map(|event| {
+                    if let Payload::TrialEnd(end) = event.payload {
+                        Some(end.trial)
+                    } else {
+                        None
+                    }
                 })
                 .expect("the completed session ended a trial");
             assert!(
@@ -179,9 +182,12 @@ fn a_resume_runs_under_the_configuration_the_journal_recorded() {
     let loaded: Vec<Config> = host
         .events("/state")
         .into_iter()
-        .filter_map(|event| match event.payload {
-            Payload::ConfigLoaded(loaded) => Some(Config::from_snapshot(&loaded.config).unwrap()),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::ConfigLoaded(loaded) = event.payload {
+                Some(Config::from_snapshot(&loaded.config).unwrap())
+            } else {
+                None
+            }
         })
         .collect();
     assert!(loaded.len() >= 2, "{} config.loaded events", loaded.len());
@@ -238,9 +244,12 @@ fn a_dead_end_exits_one_and_cites_the_events_that_caused_it() {
     let events = host.events("/state");
     let (dead_end, causes) = events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::DeadEnd(dead_end) => Some((dead_end, &event.cause)),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::DeadEnd(dead_end) = &event.payload {
+                Some((dead_end, &event.cause))
+            } else {
+                None
+            }
         })
         .expect("the journal has no dead end");
     assert_eq!(dead_end.condition, DeadEndCondition::ThermalTrip);

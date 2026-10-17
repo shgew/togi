@@ -485,9 +485,12 @@ pub(super) fn then(events: &[Event], extra: Vec<(Vec<Seq>, Payload)>) -> Vec<Eve
 fn first_hunt_start(events: &[Event]) -> HuntStart {
     events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::HuntStart(start) => Some(start.clone()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::HuntStart(start) = &event.payload {
+                Some(start.clone())
+            } else {
+                None
+            }
         })
         .unwrap()
 }
@@ -496,9 +499,12 @@ pub(super) fn last_intent(events: &[Event]) -> TrialIntent {
     events
         .iter()
         .rev()
-        .find_map(|event| match &event.payload {
-            Payload::TrialIntent(intent) => Some(intent.clone()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
+                Some(intent.clone())
+            } else {
+                None
+            }
         })
         .unwrap()
 }
@@ -704,13 +710,16 @@ fn a_hunt_after_a_passed_full_cycle_names_the_cycle_end_it_parks_from() {
     let cycle_end = events
         .iter()
         .rev()
-        .find_map(|event| match &event.payload {
-            Payload::CheckingCycle(cycle)
-                if cycle.event == CycleEvent::End && cycle.passed && cycle.full =>
+        .find_map(|event| {
+            if let Payload::CheckingCycle(cycle) = &event.payload
+                && cycle.event == CycleEvent::End
+                && cycle.passed
+                && cycle.full
             {
                 Some(event.seq)
+            } else {
+                None
             }
-            _ => None,
         })
         .unwrap();
     for event in &mut events {
@@ -821,10 +830,10 @@ fn a_short_checking_cycle_names_the_coverage_it_lacks() {
     let machine = togi_watchtest::default_machine(1).unwrap();
     let mut checking = false;
     let stop_at_the_first_checking_trial: togi_watchtest::Until = Box::new(move |event| {
-        match &event.payload {
-            Payload::TrialIntent(intent) => checking = intent.activity == Some(Activity::Checking),
-            Payload::TrialStart(_) => return checking,
-            _ => {}
+        if let Payload::TrialIntent(intent) = &event.payload {
+            checking = intent.activity == Some(Activity::Checking);
+        } else if let Payload::TrialStart(_) = &event.payload {
+            return checking;
         }
         false
     });

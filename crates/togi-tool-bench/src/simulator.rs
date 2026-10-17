@@ -237,7 +237,14 @@ pub(crate) fn build_in(
     let finished = process::run(fleet, &mut command, Duration::MAX).map_err(|error| {
         Error::BuildSimulator(match error {
             RunError::Start(error) => BuildFailure::Spawn(error),
-            error => BuildFailure::Run(error),
+            error @ (RunError::Directory { .. }
+            | RunError::Wait(_)
+            | RunError::TimedOut { .. }
+            | RunError::Read { .. }
+            | RunError::Journal(_)
+            | RunError::Measure(_)
+            | RunError::Model(_)
+            | RunError::Interrupted) => BuildFailure::Run(error),
         })
     })?;
     if finished.exit != 0 {
