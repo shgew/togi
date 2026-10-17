@@ -9,6 +9,7 @@ use super::{
     summarize, total,
 };
 use crate::fakes::{Fake, answer};
+use crate::parts::split_record;
 use crate::record::tests::read_fixture;
 
 const MINUTE: i64 = 60_000_000_000;
@@ -156,6 +157,40 @@ fn summarize_malformed_record() {
             .render()
             .contains("parse record bad: unsupported record version 9"),
         "summarize error = {error}"
+    );
+}
+
+#[test]
+fn summarize_joins_a_split_record() {
+    let fixed = json!({"status": "fixed", "sha": "abc"});
+    let long = "x".repeat(300);
+    let findings: Vec<Value> = (0..5)
+        .map(|i| finding("A", "P2", &format!("{long} {i}"), &fixed))
+        .collect();
+    let bodies = split_record(&record_body(&findings), "abc", 800).expect("split");
+    let last = i64::try_from(bodies.len()).expect("count");
+    assert!(last > 1, "the record does not split");
+    let pulls = vec![pull(
+        1,
+        "",
+        "",
+        bodies
+            .into_iter()
+            .enumerate()
+            .map(|(i, body)| {
+                comment(
+                    &format!("part {i}"),
+                    after(10 * (i64::try_from(i).expect("index") + 1)),
+                    body,
+                )
+            })
+            .collect(),
+    )];
+    let rows = summarize(&pulls).expect("summarize");
+    assert_eq!(
+        (1, 10 * last * MINUTE, counts([0, 0, 5, 0], [5, 0, 0])),
+        (rows[0].records, rows[0].first_record, rows[0].findings),
+        "a split record is one record, recorded when its last part was posted"
     );
 }
 
