@@ -445,6 +445,8 @@ fn open_dump(suffix_dir: &OwnedFd, suffix_path: &Path) -> Result<Option<Dump>, P
         Unsafe::NotRegular
     } else if !owned_by_us(&stat) {
         Unsafe::Owner
+    } else if Mode::from_raw_mode(stat.st_mode).intersects(Mode::WGRP | Mode::WOTH) {
+        Unsafe::Writable
     } else if stat.st_nlink != 1 {
         Unsafe::Linked
     } else {

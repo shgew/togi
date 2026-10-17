@@ -506,6 +506,27 @@ fn real_fs_unsafe_archive_entries_are_refused_from_the_descriptor() {
 }
 
 #[test]
+fn real_fs_group_or_other_writable_dumps_are_refused() {
+    for mode in [0o620, 0o602, 0o666] {
+        let root = archive(&[("150/001/dmesg.txt", b"Panic#1 Part1\nx")]);
+        let path = root.path().join("150/001/dmesg.txt");
+        fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+        let (kernel, _) = kernel_over(root.path(), three_boots());
+        let result = kernel.read_saved_pstore(&JournalBoot::parse(OLD).unwrap());
+        assert!(
+            matches!(
+                &result,
+                Err(Error::Pstore(PstoreError::Unsafe {
+                    path: failed_path,
+                    reason: Unsafe::Writable,
+                })) if *failed_path == path
+            ),
+            "mode {mode:o}: {result:?}"
+        );
+    }
+}
+
+#[test]
 fn a_boot_list_that_cannot_be_read_is_an_error_not_an_absent_record() {
     let cases: [(&str, Reply); 4] = [
         (
