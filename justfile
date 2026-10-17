@@ -55,7 +55,7 @@ cover base: _dev-shell
     trap 'rm -f "$trace"' EXIT
     cargo llvm-cov nextest --locked --lcov --output-path "$trace" >&2
     target=${CARGO_LLVM_COV_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/llvm-cov-target}
-    go run ./tools/cover --lcov "$trace" --build-dir "$target/debug" --base "$1"
+    cargo run --quiet --locked -p togi-tool-cover -- --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
 # Lint the retained Go tool for Linux and macOS, check the Nushell board's syntax, and run workspace clippy for the host and aarch64 macOS, with optional Go lint flags
 [group('quality')]
