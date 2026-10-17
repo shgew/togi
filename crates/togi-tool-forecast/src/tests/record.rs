@@ -120,10 +120,16 @@ fn a_record_that_cannot_be_read_names_the_file() {
     }
     let error = Record::decode(Unreadable, "missing.json").unwrap_err();
     assert!(matches!(error, Error::ReadRecord { .. }));
-    assert!(error.to_string().starts_with("read forecast "), "{error}");
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        "read forecast missing.json: unreadable"
+    );
     let error = Record::decode(b"{\"anchor\":".as_slice(), "broken.json").unwrap_err();
     assert!(matches!(error, Error::DecodeRecord { .. }));
-    assert!(error.to_string().contains("broken.json"), "{error}");
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        "decode forecast broken.json: EOF while parsing a value at line 1 column 10"
+    );
 }
 
 #[test]
@@ -210,7 +216,7 @@ fn a_correctly_sized_array_is_refused_for_every_object_of_a_record() {
             "{name}: {error}"
         );
         assert!(
-            error.to_string().contains("expected an object"),
+            togi_machine::error_chain(&error).contains("expected an object"),
             "{name}: {error}"
         );
     }
@@ -237,7 +243,7 @@ fn an_unknown_key_is_refused_in_every_object_of_a_record() {
             "{name}: {error}"
         );
         assert!(
-            error.to_string().contains("unknown field `hourz`"),
+            togi_machine::error_chain(&error).contains("unknown field `hourz`"),
             "{name}: {error}"
         );
     }

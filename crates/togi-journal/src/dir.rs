@@ -35,7 +35,7 @@ pub enum LockError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DirError {
-    #[error("{op} {}: {source}", path.display())]
+    #[error("{op} {}", path.display())]
     Io {
         op: &'static str,
         path: PathBuf,
@@ -54,7 +54,7 @@ pub enum DirError {
     SessionIdsExhausted { after: SessionId },
     #[error("{} is not a journal: it does not start with session.start", path.display())]
     NotAJournal { path: PathBuf },
-    #[error("{} holds an invalid session id: {source}", path.display())]
+    #[error("{} holds an invalid session id", path.display())]
     BadSession {
         path: PathBuf,
         #[source]
@@ -71,9 +71,9 @@ pub enum DirError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum StateError {
-    #[error("encode state: {0}")]
+    #[error("encode state")]
     Encode(#[source] serde_json::Error),
-    #[error("decode state: {0}")]
+    #[error("decode state")]
     Decode(#[source] serde_json::Error),
     #[error(transparent)]
     Dir(#[from] DirError),

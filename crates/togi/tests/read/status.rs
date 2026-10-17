@@ -52,6 +52,44 @@ fn a_missing_journal_is_an_error_naming_the_file() {
 }
 
 #[test]
+fn a_refused_configuration_prints_its_field_value_and_range() {
+    let dir = session(Scenario::Between);
+    let mut lines = crate::support::lines(&dir);
+    let line = lines
+        .iter_mut()
+        .find(|line| line.contains(r#""kind":"config.loaded""#))
+        .unwrap();
+    let mut event: serde_json::Value = serde_json::from_str(line).unwrap();
+    event["data"]["config"]["durations"]["search_trial_s"] = serde_json::json!(0);
+    *line = event.to_string();
+    crate::support::write_journal(&dir, &(lines.join("\n") + "\n"));
+    let ran = togi(&dir, &["status"]);
+    assert_eq!(ran.status.code(), Some(1));
+    assert_eq!(text(&ran.stdout), "");
+    assert_eq!(
+        text(&ran.stderr),
+        "togi status: config.loaded records a configuration this build refuses: durations.search_trial_s: 0 is not within [1, 86400]\n"
+    );
+}
+
+#[test]
+fn a_malformed_journal_line_prints_its_path_line_and_parser_cause() {
+    let dir = session(Scenario::Between);
+    let header = crate::support::lines(&dir).remove(0);
+    crate::support::write_journal(&dir, format!("{header}\nnot an event\n"));
+    let ran = togi(&dir, &["status"]);
+    assert_eq!(ran.status.code(), Some(1));
+    assert_eq!(text(&ran.stdout), "");
+    assert_eq!(
+        text(&ran.stderr),
+        format!(
+            "togi status: {}: line 2: malformed event: expected ident at line 1 column 2\n",
+            dir.path().join("events.jsonl").display()
+        )
+    );
+}
+
+#[test]
 fn status_takes_no_arguments() {
     let dir = session(Scenario::Search);
     let ran = togi(&dir, &["status", "extra"]);

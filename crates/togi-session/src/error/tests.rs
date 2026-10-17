@@ -11,7 +11,10 @@ fn a_refused_or_misshapen_profile_is_a_fatal_session_error_never_dead_end_eviden
     let refused = ProfileFailure::Refused(Refused::Reaches {
         core: core(0),
         target: target(-20),
-        refusal: ConstraintRefusal::new("failure point -10 of core 00"),
+        refusal: ConstraintRefusal::Reached(togi_tuner::Reached::FailurePoint {
+            core: core(0),
+            point: togi_tuner::FailurePoint::new(target(-10)),
+        }),
     });
     let shape = ProfileFailure::Shape {
         profile: 2,
@@ -97,4 +100,14 @@ fn a_refused_profile_ends_the_run_with_the_refusal_starts_no_trial_and_claims_no
     for n in 0..2 {
         assert_eq!(smu.offset(core(n)).unwrap().0, 0, "core {n}");
     }
+}
+
+#[test]
+fn distinct_causes_with_identical_text_are_both_rendered() {
+    #[derive(Debug, thiserror::Error)]
+    #[error("read")]
+    struct Read(#[source] std::io::Error);
+
+    let error = Read(std::io::Error::other("read"));
+    assert_eq!(togi_machine::error_chain(&error), "read: read");
 }

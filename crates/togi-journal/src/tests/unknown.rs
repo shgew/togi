@@ -326,7 +326,10 @@ fn a_repeated_field_in_a_tagged_object_is_still_refused_by_both() {
     ] {
         assert!(Event::decode(&text).is_err(), "{text}");
         let error = decode(&text, Decoding::Lenient).err().unwrap();
-        assert!(error.to_string().contains("duplicate field"), "{error}");
+        assert!(
+            togi_machine::error_chain(&error).contains("duplicate field"),
+            "{error}"
+        );
     }
 }
 

@@ -179,7 +179,7 @@ fn a_cycle_cannot_pass_before_a_profile_change() {
         .into(),
         &[],
     );
-    assert_eq!(error, Err(crate::FoldError::NoCheckingProfile));
+    assert!(matches!(error, Err(crate::FoldError::NoCheckingProfile)));
     assert_eq!(j.state.next().ok(), None);
 }
 

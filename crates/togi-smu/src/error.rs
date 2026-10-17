@@ -119,15 +119,3 @@ impl From<Error> for togi_machine::Error {
         Self::Other(Box::new(error))
     }
 }
-
-/// The error and every cause below it, joined as `outer: inner`.
-pub(crate) fn chain(error: &dyn std::error::Error) -> String {
-    let mut text = error.to_string();
-    let mut cause = error.source();
-    while let Some(next) = cause {
-        text.push_str(": ");
-        text.push_str(&next.to_string());
-        cause = next.source();
-    }
-    text
-}

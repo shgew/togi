@@ -1548,10 +1548,10 @@ fn an_event_the_state_cannot_take_in_leaves_it_unchanged() {
         Vec::new(),
         log.events[0].payload.clone(),
     );
-    assert_eq!(
+    assert!(matches!(
         state.apply(&second),
-        Err(FoldError::DuplicateStart { seq: second.seq })
-    );
+        Err(FoldError::DuplicateStart { seq }) if seq == second.seq
+    ));
     assert_eq!(state, before);
 
     let mut empty = RecoveryState::default();
@@ -1562,13 +1562,13 @@ fn an_event_the_state_cannot_take_in_leaves_it_unchanged() {
         Vec::new(),
         warning("early"),
     );
-    assert_eq!(
+    assert!(matches!(
         empty.apply(&warn),
         Err(FoldError::BeforeStart {
-            seq: seq(1),
+            seq: at,
             kind: EventKind::SessionWarning
-        })
-    );
+        }) if at == seq(1)
+    ));
     assert_eq!(empty, RecoveryState::default());
 }
 

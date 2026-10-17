@@ -1,9 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use togi_machine::Check;
-
-use crate::error::describe;
+use togi_machine::{Check, error_chain};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CheckName {
@@ -94,6 +92,6 @@ pub(crate) fn failed(name: CheckName, detail: impl Into<String>) -> Check {
 pub(crate) fn outcome<E: Error>(name: CheckName, result: Result<String, E>) -> Check {
     match result {
         Ok(detail) => passed(name, detail),
-        Err(error) => failed(name, describe(&error)),
+        Err(error) => failed(name, error_chain(&error)),
     }
 }

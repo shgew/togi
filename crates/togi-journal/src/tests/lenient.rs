@@ -199,7 +199,10 @@ fn lenient_does_not_hide_a_duplicate_key_behind_an_unknown_field() {
     assert!(doubled.contains(r#""extra":1,"seq":9,"#));
     assert!(Event::decode(&doubled).is_err());
     let error = lenient(&doubled).err().unwrap();
-    assert!(error.to_string().contains("duplicate field"), "{error}");
+    assert!(
+        togi_machine::error_chain(&error).contains("duplicate field"),
+        "{error}"
+    );
 }
 
 #[test]

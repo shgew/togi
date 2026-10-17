@@ -30,13 +30,13 @@ use crate::screen::Log;
 use crate::tuning::TuningClock;
 
 /// Why the model cannot stand for the journal: one of the two folds refused an event.
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum FoldError {
     /// The journal's own state refused an event.
-    #[error("{0}")]
+    #[error(transparent)]
     Journal(#[from] togi_journal::FoldError),
     /// The tuner's state refused an event.
-    #[error("{0}")]
+    #[error(transparent)]
     Tuner(#[from] togi_tuner::FoldError),
 }
 

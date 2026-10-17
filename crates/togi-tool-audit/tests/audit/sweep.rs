@@ -421,6 +421,25 @@ fn real_fs_auditing_a_directory_creates_its_lock_file_and_sets_its_mode() {
 }
 
 #[test]
+fn real_fs_a_lock_failure_reports_its_operation_path_and_cause_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("state");
+    fs::create_dir_all(dir.join("lock")).unwrap();
+    let (findings, journals, skips) = togi_tool_audit::audit_directory(&dir, false);
+    assert_eq!(journals, 0);
+    assert!(skips.is_empty());
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].check, Kind::Unreadable);
+    assert_eq!(
+        findings[0].reason,
+        format!(
+            "lock {}: Is a directory (os error 21)",
+            dir.join("lock").display()
+        )
+    );
+}
+
+#[test]
 fn a_violation_in_an_archived_journal_names_the_archive() {
     let mut dirs = Directories::default();
     let dir = Path::new("/fixture/state");

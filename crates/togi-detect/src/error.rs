@@ -58,7 +58,7 @@ pub enum Error {
         #[source]
         source: DecodeError,
     },
-    #[error("cannot {operation}: {source}")]
+    #[error("cannot {operation}")]
     Status {
         operation: Operation,
         #[source]

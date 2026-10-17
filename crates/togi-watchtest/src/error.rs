@@ -11,11 +11,11 @@ use crate::Scenario;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("simulate: {0}")]
+    #[error("simulate: {}", togi_machine::error_chain(.0))]
     Simulate(#[from] SimError),
     #[error("the simulated run ended with errors: {}", listed(.0))]
     Session(Vec<SessionError>),
-    #[error("read the simulated journal: {0}")]
+    #[error("read the simulated journal: {}", togi_machine::error_chain(.0))]
     History(#[from] HistoryError),
     #[error("the simulation did not stop within {0} boots")]
     Capped(NonZeroU32),
@@ -23,9 +23,9 @@ pub enum Error {
     Machine(#[from] InvalidMachine),
     #[error("script a trial: {0}")]
     Script(#[from] ScriptError),
-    #[error("configuration: {0}")]
+    #[error("configuration: {}", togi_machine::error_chain(.0))]
     Config(#[from] togi_config::ConfigError),
-    #[error("fold the simulated journal: {0}")]
+    #[error("fold the simulated journal: {}", togi_machine::error_chain(.0))]
     Fold(#[from] FoldError),
     #[error("no cut point in the simulated journal: {0}")]
     NoCut(&'static str),
@@ -49,20 +49,20 @@ pub enum Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum InstallError {
-    #[error("lock the state directory: {0}")]
+    #[error("lock the state directory: {}", togi_machine::error_chain(.0))]
     Lock(#[from] LockError),
-    #[error("open the journal: {0}")]
+    #[error("open the journal: {}", togi_machine::error_chain(.0))]
     Open(#[from] OpenError),
-    #[error("append {kind} #{seq}: {source}")]
+    #[error("append {kind} #{seq}: {}", togi_machine::error_chain(.source))]
     Append {
         kind: &'static str,
         seq: u64,
         #[source]
         source: AppendError,
     },
-    #[error("close the journal: {0}")]
+    #[error("close the journal: {}", togi_machine::error_chain(.0))]
     Close(#[from] CloseError),
-    #[error("{0}")]
+    #[error("{}", togi_machine::error_chain(.0))]
     Dir(#[from] DirError),
     #[error("an smu.write at #{seq} follows no smu.intent")]
     OrphanWrite { seq: u64 },
@@ -75,7 +75,7 @@ pub enum InstallError {
 fn listed(errors: &[SessionError]) -> String {
     errors
         .iter()
-        .map(ToString::to_string)
+        .map(|error| togi_machine::error_chain(error))
         .collect::<Vec<_>>()
         .join("; ")
 }

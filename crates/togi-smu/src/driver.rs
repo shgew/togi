@@ -1,4 +1,4 @@
-use crate::error::{Error, Operation, chain};
+use crate::error::{Error, Operation};
 use crate::files::{Files, Readers};
 use crate::identity;
 use crate::mailbox::{COMMAND_DEADLINE, Command, Transport, Worker};
@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use togi_machine::{
     BiosContext, Check, CoreId, CoreInfo, ObservedOffset, Smu, SmuValidated, Stopped, TargetOffset,
+    error_chain,
 };
 
 pub(crate) struct Pending {
@@ -78,7 +79,7 @@ fn check(name: &str, outcome: Result<String, Error>) -> Check {
         },
         Err(error) => Check {
             name: name.to_owned(),
-            detail: chain(&error),
+            detail: error_chain(&error),
             ok: false,
         },
     }

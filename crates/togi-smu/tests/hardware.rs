@@ -1,14 +1,13 @@
 #![cfg(all(feature = "hardware", target_os = "linux"))]
 
 use std::error::Error;
-use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::path::Path;
 use std::sync::{LazyLock, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 use togi_hostlock::{DEFAULT_PATH, HostLock, Policy};
-use togi_machine::{CoreId, ObservedOffset, PmTableReader, Smu, TargetOffset};
+use togi_machine::{CoreId, ObservedOffset, PmTableReader, Smu, TargetOffset, error_chain};
 use togi_smu::Driver;
 
 /// Taken on first use, held until process exit and never dropped: a transaction past its
@@ -23,19 +22,8 @@ static HOST_LOCK: LazyLock<HostLock> = LazyLock::new(|| {
 });
 static SERIAL: Mutex<()> = Mutex::new(());
 
-/// Renders an error with its whole `source` chain, which `Display` alone omits.
-fn chain(error: &dyn Error) -> String {
-    let mut text = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        let _ = write!(text, ": {cause}");
-        source = cause.source();
-    }
-    text
-}
-
 fn must<T, E: Error>(result: Result<T, E>, what: &str) -> T {
-    result.unwrap_or_else(|error| panic!("{what}: {}", chain(&error)))
+    result.unwrap_or_else(|error| panic!("{what}: {}", error_chain(&error)))
 }
 
 /// Runs the hardware tests of this process one at a time, behind the process-lifetime host lock.
@@ -82,7 +70,7 @@ fn restore(driver: &mut Driver, originals: &[(CoreId, ObservedOffset)]) -> Vec<S
             continue;
         };
         if let Err(error) = write(driver, *core, target) {
-            failures.push(format!("restore core {core:02}: {}", chain(&error)));
+            failures.push(format!("restore core {core:02}: {}", error_chain(&error)));
             continue;
         }
         match driver.offset(*core) {
@@ -91,7 +79,9 @@ fn restore(driver: &mut Driver, originals: &[(CoreId, ObservedOffset)]) -> Vec<S
                 "core {core:02}: restored {}, read back {}",
                 original.0, read.0
             )),
-            Err(error) => failures.push(format!("read back core {core:02}: {}", chain(&error))),
+            Err(error) => {
+                failures.push(format!("read back core {core:02}: {}", error_chain(&error)));
+            }
         }
     }
     failures

@@ -735,10 +735,10 @@ fn a_single_core_zero_rerun_rejects_equivalent_many_and_ambiguous_load_shapes() 
         };
         let event = j.event(intent.into(), &[failure]);
         let mut probe = j.state.clone();
-        assert_eq!(
+        assert!(matches!(
             probe.fold(&event),
-            Err(crate::FoldError::UnscheduledIntent(trial.clone()))
-        );
+            Err(crate::FoldError::UnscheduledIntent(found)) if found == trial
+        ));
         assert_eq!(probe.run(), j.state.run());
     }
     j.assert_resumes();

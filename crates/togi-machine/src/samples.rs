@@ -38,11 +38,11 @@ pub struct TrialConditions {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SampleError {
-    #[error("open conditions samples: {0}")]
+    #[error("open conditions samples")]
     Open(#[source] std::io::Error),
-    #[error("read conditions samples (including gzip decoding): {0}")]
+    #[error("read conditions samples (including gzip decoding)")]
     Read(#[source] std::io::Error),
-    #[error("decode conditions sample: {0}")]
+    #[error("decode conditions sample")]
     Decode(#[source] serde_json::Error),
 }
 

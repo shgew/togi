@@ -13,8 +13,9 @@ fn line_of(payload: Payload) -> Value {
     serde_json::from_str(&event.encode().unwrap()).unwrap()
 }
 
-fn assert_expected_an_object(error: &str) {
-    assert!(error.contains("expected an object"), "{error}");
+fn assert_expected_an_object(error: &dyn std::error::Error) {
+    let text = togi_machine::error_chain(error);
+    assert!(text.contains("expected an object"), "{text}");
 }
 
 /// `value`'s members positionally, in the order of `fields`.
@@ -76,7 +77,7 @@ fn an_envelope_line_that_is_an_array_is_refused() {
         matches!(error, DecodeError::Envelope { kind: None, .. }),
         "{error}"
     );
-    assert_expected_an_object(&error.to_string());
+    assert_expected_an_object(&error);
     let header = at(1, "boot-a", 0, &[], sample(EventKind::SessionStart))
         .encode()
         .unwrap();
@@ -84,12 +85,8 @@ fn an_envelope_line_that_is_an_array_is_refused() {
     let mut reader = EventReader::new(journal.as_bytes());
     reader.next().unwrap().unwrap();
     let read = reader.next().unwrap().unwrap_err();
-    assert_expected_an_object(&read.to_string());
-    assert_expected_an_object(
-        &serde_json::from_str::<Event>(&array)
-            .unwrap_err()
-            .to_string(),
-    );
+    assert_expected_an_object(&read);
+    assert_expected_an_object(&serde_json::from_str::<Event>(&array).unwrap_err());
 }
 
 #[test]
@@ -118,7 +115,7 @@ fn a_correctly_sized_positional_data_is_refused() {
         ),
         "{error}"
     );
-    assert_expected_an_object(&error.to_string());
+    assert_expected_an_object(&error);
 
     // `session.archived`: session.
     let mut line = line_of(sample(EventKind::SessionArchived));
@@ -136,7 +133,7 @@ fn a_correctly_sized_positional_data_is_refused() {
         ),
         "{error}"
     );
-    assert_expected_an_object(&error.to_string());
+    assert_expected_an_object(&error);
 }
 
 #[test]
@@ -188,7 +185,7 @@ fn nested_journal_structs_refuse_a_correctly_sized_array() {
     assert_eq!(line["data"]["build"].as_array().unwrap().len(), 6);
     assert!(Build::deserialize(line["data"]["build"].clone()).is_err());
     let error = Event::decode(&line.to_string()).unwrap_err();
-    assert_expected_an_object(&error.to_string());
+    assert_expected_an_object(&error);
 
     // `session.start`'s core: core, ccd, cpus.
     let mut line = line_of(sample(EventKind::SessionStart));
@@ -196,7 +193,7 @@ fn nested_journal_structs_refuse_a_correctly_sized_array() {
         positional(&line["data"]["cores"][0].clone(), &["core", "ccd", "cpus"]);
     assert_eq!(line["data"]["cores"][0].as_array().unwrap().len(), 3);
     let error = Event::decode(&line.to_string()).unwrap_err();
-    assert_expected_an_object(&error.to_string());
+    assert_expected_an_object(&error);
 
     // `trial.carried`'s fact source: session, seq, build, trial, time, boot, backend.
     let mut line = line_of(sample(EventKind::TrialCarried));
@@ -208,20 +205,20 @@ fn nested_journal_structs_refuse_a_correctly_sized_array() {
     );
     assert_eq!(line["data"]["source"].as_array().unwrap().len(), 7);
     let error = Event::decode(&line.to_string()).unwrap_err();
-    assert_expected_an_object(&error.to_string());
+    assert_expected_an_object(&error);
 
     // `trial.signal`'s schedule is internally tagged: the tag leads the sequence.
     let mut line = line_of(sample(EventKind::TrialSignal));
     assert!(line["data"]["schedule"].is_object());
     line["data"]["schedule"] = json!(["random", 7]);
     let error = Event::decode(&line.to_string()).unwrap_err();
-    assert_expected_an_object(&error.to_string());
+    assert_expected_an_object(&error);
 
     // `smu.intent`'s command is internally tagged too.
     let mut line = line_of(sample(EventKind::SmuIntent));
     line["data"] = json!(["set_all", -5]);
     let error = Event::decode(&line.to_string()).unwrap_err();
-    assert_expected_an_object(&error.to_string());
+    assert_expected_an_object(&error);
 }
 
 fn state_value() -> Value {
@@ -246,7 +243,7 @@ fn state_decodes_only_from_an_object() {
     ];
     let array = positional(&object, &fields);
     assert!(State::deserialize(array.clone()).is_err());
-    assert_expected_an_object(&read_state(&array).unwrap_err().to_string());
+    assert_expected_an_object(&read_state(&array).unwrap_err());
 }
 
 #[test]
@@ -263,7 +260,7 @@ fn backend_paths_decode_only_from_an_object() {
 
     assert!(BackendPaths::deserialize(json!(["/opt/mprime", null])).is_err());
     object["backends"] = json!(["/opt/mprime", null]);
-    assert_expected_an_object(&read_state(&object).unwrap_err().to_string());
+    assert_expected_an_object(&read_state(&object).unwrap_err());
     assert!(serde_json::from_str::<BackendPaths>(r#"["/opt/mprime",null]"#).is_err());
 }
 

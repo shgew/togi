@@ -2,10 +2,9 @@ use std::ffi::OsString;
 use std::io;
 use std::path::Path;
 
-use togi_machine::Check;
+use togi_machine::{Check, error_chain};
 
 use crate::checks::{CheckName, failed, passed};
-use crate::error::describe;
 use crate::files::read_attribute;
 
 const CLASS_DIR: &str = "sys/class/watchdog";
@@ -100,13 +99,13 @@ where
     let entries = match list(&class) {
         Ok(entries) => Some(entries),
         Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-        Err(error) => return failed(CheckName::Watchdog, describe(&Refusal::List(error))),
+        Err(error) => return failed(CheckName::Watchdog, error_chain(&Refusal::List(error))),
     };
     let mut devices = Vec::new();
     for entry in entries.into_iter().flatten() {
         let name = match entry {
             Ok(name) => name,
-            Err(error) => return failed(CheckName::Watchdog, describe(&Refusal::List(error))),
+            Err(error) => return failed(CheckName::Watchdog, error_chain(&Refusal::List(error))),
         };
         if let Some(name) = name.to_str().filter(|name| name.starts_with("watchdog")) {
             devices.push((name.to_owned(), class.join(name)));
@@ -123,7 +122,7 @@ where
                 );
             }
             Ok(None) => {}
-            Err(refusal) => refusals.push(describe(&refusal)),
+            Err(refusal) => refusals.push(error_chain(&refusal)),
         }
     }
     if refusals.is_empty() {

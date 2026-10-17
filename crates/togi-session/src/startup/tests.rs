@@ -194,6 +194,26 @@ fn a_failed_sweep_is_a_containment_dead_end_and_leaves_the_smu_alone() {
 }
 
 #[test]
+fn a_failed_sweep_journals_the_operation_and_its_source() {
+    let bench = Bench::new(2);
+    let mut input = bench.input();
+    let trials = input.machine.trials;
+    input.machine.trials = Box::new(SweepFails(trials, || {
+        Error::Containment(Box::new(std::io::Error::other("scope busy")))
+    }));
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    session.start().unwrap();
+    session.preflight().unwrap();
+    let (dead_end, _) = dead_end_of(session.sweep().unwrap());
+    let detail = "trial cleanup could not be confirmed: scope busy";
+    assert_eq!(dead_end.detail, detail);
+    let event = session.appender().journal().events().last().unwrap();
+    assert_eq!(event.msg, format!("dead end containment: {detail}"));
+}
+
+#[test]
 fn a_sweep_whose_check_cannot_be_recorded_still_hands_the_emergency_its_proofs() {
     let bench = Bench::new(2);
     drop(left_applied(&bench, &[-10, -12]));

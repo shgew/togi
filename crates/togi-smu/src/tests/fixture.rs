@@ -562,10 +562,6 @@ pub(super) fn stopped() -> Stopped {
     Stopped::confirmed()
 }
 
-pub(super) fn chain(error: &dyn std::error::Error) -> String {
-    crate::error::chain(error)
-}
-
 /// Every hardware-reaching entry point of a driver that must refuse; names those that did not.
 pub(super) fn accepted_unvalidated(driver: &mut Driver) -> Vec<&'static str> {
     let target = TargetOffset::clamped(-10);

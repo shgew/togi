@@ -260,7 +260,7 @@ pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize, Vec
         if !dir.is_dir() {
             return Err("not a directory".into());
         }
-        StateDir::lock(dir).map_err(|error| error.to_string())
+        StateDir::lock(dir).map_err(|error| togi_machine::error_chain(&error))
     })
 }
 
@@ -284,8 +284,9 @@ pub fn audit_directory_with(
     } else {
         Completion::InProgress
     };
-    let audits = open(dir)
-        .and_then(|state| audit_recordings(&state, completion).map_err(|error| error.to_string()));
+    let audits = open(dir).and_then(|state| {
+        audit_recordings(&state, completion).map_err(|error| togi_machine::error_chain(&error))
+    });
     let audits = match audits {
         Ok(audits) => audits,
         Err(reason) => return (vec![unreadable(reason)], 0, Vec::new()),

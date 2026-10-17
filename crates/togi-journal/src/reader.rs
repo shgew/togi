@@ -3,8 +3,6 @@
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use serde::de::Error as _;
-
 use crate::dir::{DirError, EVENTS_FILE, StateDir, not_found};
 use crate::event::{DecodeError, Decoded, Decoding, Event, Read, Seq, decode};
 use crate::fs::{DiskFs, Fs};
@@ -14,13 +12,19 @@ use crate::skipped::Skipped;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReadError {
-    #[error("read: {0}")]
+    #[error("read")]
     Io(#[from] io::Error),
-    #[error("line {line}: {source}")]
+    #[error("line {line}")]
     Decode {
         line: u64,
         #[source]
-        source: serde_json::Error,
+        source: DecodeError,
+    },
+    #[error("line {line}")]
+    Utf8 {
+        line: u64,
+        #[source]
+        source: std::str::Utf8Error,
     },
     #[error("line {line}: expected seq {expected}, found {found}")]
     Gap {
@@ -28,7 +32,7 @@ pub enum ReadError {
         expected: u64,
         found: Seq,
     },
-    #[error("line {line}: {source}")]
+    #[error("line {line}")]
     UnknownKind {
         line: u64,
         #[source]
@@ -52,7 +56,7 @@ pub enum ReadError {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{}: {source}", path.display())]
+#[error("{}", path.display())]
 pub struct FileError {
     pub path: PathBuf,
     #[source]
@@ -74,7 +78,7 @@ impl ReadError {
             DecodeError::UnknownField { kind, field } => Self::UnknownField { line, kind, field },
             error @ (DecodeError::Envelope { .. } | DecodeError::Payload { .. }) => Self::Decode {
                 line,
-                source: serde_json::Error::custom(error),
+                source: error,
             },
         }
     }
@@ -146,10 +150,7 @@ impl<R: BufRead> EventReader<R> {
         if line == 1 && header::classify(bytes).is_none() {
             return Err(ReadError::Foreign);
         }
-        let text = std::str::from_utf8(bytes).map_err(|error| ReadError::Decode {
-            line,
-            source: serde_json::Error::custom(error),
-        })?;
+        let text = std::str::from_utf8(bytes).map_err(|source| ReadError::Utf8 { line, source })?;
         let Read { decoded, ignored } =
             decode(text, self.decoding).map_err(|error| ReadError::from_decode(line, error))?;
         match decoded {

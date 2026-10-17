@@ -14,7 +14,7 @@ use togi_session::{Readback, Zeroed, zero_and_read_back};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
-use crate::report::{chain, exit_with, fail};
+use crate::report::{exit_with, fail};
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[(
@@ -82,7 +82,11 @@ impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Withheld { step, error } => {
-                write!(f, "{step}: {}; offsets unchanged", chain(error))
+                write!(
+                    f,
+                    "{step}: {}; offsets unchanged",
+                    togi_render::error_chain(error)
+                )
             }
             Self::NotZero { zeroed, cores } => {
                 let confirmed = zeroed
@@ -96,7 +100,7 @@ impl fmt::Display for Failure {
                     Err(error) => write!(
                         f,
                         "setting every core to 0 failed: {}; {missing} of {cores} cores did not read back 0",
-                        chain(error)
+                        togi_render::error_chain(error)
                     ),
                 }
             }
@@ -169,7 +173,11 @@ fn readback_line(readback: &Readback) -> String {
     match &readback.result {
         Ok(ObservedOffset(0)) => format!("core {:02} read back 0", readback.core),
         Ok(offset) => format!("core {:02} reads {}", readback.core, offset.0),
-        Err(error) => format!("core {:02} unreadable: {}", readback.core, chain(error)),
+        Err(error) => format!(
+            "core {:02} unreadable: {}",
+            readback.core,
+            togi_render::error_chain(error)
+        ),
     }
 }
 
@@ -210,7 +218,7 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
             return fail(
                 ctx,
                 COMMAND,
-                format!("{}; offsets unchanged", chain(&error)),
+                format!("{}; offsets unchanged", togi_render::error_chain(&error)),
             );
         }
     };

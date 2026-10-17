@@ -903,7 +903,7 @@ mod tests {
                 .await;
                 let error = h.finish().await.unwrap_err();
                 assert_eq!(
-                    error.to_string(),
+                    togi_render::error_chain(&error),
                     "watch journal: read journal notifications: overflow"
                 );
                 assert!(recorder.restored());
@@ -1134,7 +1134,9 @@ mod tests {
                             let text = match source.journal(screen) {
                                 crate::screen::Journal::Missing => "no session yet".to_owned(),
                                 crate::screen::Journal::Starting => "starting".to_owned(),
-                                crate::screen::Journal::Problem(error) => error.to_string(),
+                                crate::screen::Journal::Problem(error) => {
+                                    togi_render::error_chain(error)
+                                }
                                 crate::screen::Journal::Ready { log, .. } => {
                                     format!("{} events", log.total)
                                 }

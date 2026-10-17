@@ -20,7 +20,7 @@ fn parse(text: &str) -> Config {
 }
 
 fn rejection(text: &str) -> String {
-    Config::parse(text).unwrap_err().to_string()
+    togi_machine::error_chain(&Config::parse(text).unwrap_err())
 }
 
 fn trials(miss: f64, rate: f64) -> Result<u32, TrialsError> {
@@ -511,7 +511,7 @@ fn relative_backend_paths_rejected(text: &str, backend: &str) {
     let err = Config::parse(text).unwrap_err();
     assert!(matches!(err, ConfigError::Backend { .. }), "{err}");
     assert!(
-        err.to_string().starts_with(&format!("backends.{backend}:")),
+        togi_machine::error_chain(&err).starts_with(&format!("backends.{backend}:")),
         "{err}"
     );
 }
@@ -646,9 +646,31 @@ fn a_snapshot_the_configuration_would_refuse_is_refused_when_read_back() {
     snapshot.candidate_solo_limits.set(core(4), offset(-9));
     cases.push(("start_offsets.4", snapshot));
     for (needle, snapshot) in cases {
-        let message = Config::from_snapshot(&snapshot).unwrap_err().to_string();
+        let message = togi_machine::error_chain(&Config::from_snapshot(&snapshot).unwrap_err());
         assert!(message.contains(needle), "{needle}: {message}");
     }
+}
+
+#[test]
+fn serde_text_preserves_the_rejected_value_and_range() {
+    let error =
+        serde_json::from_str::<Config>(r#"{"durations":{"search_trial_s":0}}"#).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "durations.search_trial_s: 0 is not within [1, 86400]"
+    );
+}
+
+#[test]
+fn serde_value_preserves_the_rejected_value_and_range() {
+    let error = serde_json::from_value::<Config>(serde_json::json!({
+        "durations": { "search_trial_s": 0 }
+    }))
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "durations.search_trial_s: 0 is not within [1, 86400]"
+    );
 }
 
 #[test]
@@ -692,8 +714,50 @@ fn load_names_the_file_of_an_invalid_config() {
     let path = std::path::Path::new("/config/config.json");
     let err = Config::load_with(path, |_| Ok(r#"{"bogus":1}"#.as_bytes())).unwrap_err();
     assert!(matches!(&err, LoadError::Parse { path: named, .. } if named == path));
-    assert!(err.to_string().contains("unknown field"));
-    assert!(err.to_string().contains(path.to_str().unwrap()));
+    let text = togi_machine::error_chain(&err);
+    assert!(text.contains("unknown field"), "{text}");
+    assert!(text.contains(path.to_str().unwrap()), "{text}");
+}
+
+#[test]
+fn a_rejected_value_renders_file_then_field_then_range_and_keeps_each_source() {
+    let path = std::path::Path::new("/config/config.json");
+    let err = Config::load_with(path, |_| {
+        Ok(r#"{"dead_ends":{"stray_crashes_in_a_row":0}}"#.as_bytes())
+    })
+    .unwrap_err();
+    assert_eq!(err.to_string(), "invalid config /config/config.json");
+    assert_eq!(
+        togi_machine::error_chain(&err),
+        "invalid config /config/config.json: dead_ends.stray_crashes_in_a_row: 0 is not within [1, 100]"
+    );
+    let config = std::error::Error::source(&err)
+        .and_then(|source| source.downcast_ref::<ConfigError>())
+        .expect("the load error keeps the config error as its source");
+    assert_eq!(config.to_string(), "dead_ends.stray_crashes_in_a_row");
+    let range = std::error::Error::source(config)
+        .and_then(|source| source.downcast_ref::<RangeError>())
+        .expect("the config error keeps the range error as its source");
+    assert_eq!(range.to_string(), "0 is not within [1, 100]");
+}
+
+#[test]
+fn a_syntax_error_in_a_loaded_file_keeps_every_level_as_a_downcastable_source() {
+    let path = std::path::Path::new("/config/config.json");
+    let err = Config::load_with(path, |_| Ok(b"{".as_slice())).unwrap_err();
+    assert_eq!(err.to_string(), "invalid config /config/config.json");
+    let config = std::error::Error::source(&err)
+        .and_then(|source| source.downcast_ref::<ConfigError>())
+        .expect("the load error keeps the config error as its source");
+    assert!(matches!(config, ConfigError::Syntax(_)));
+    assert_eq!(config.to_string(), "parse config JSON");
+    let syntax = std::error::Error::source(config)
+        .and_then(|source| source.downcast_ref::<serde_json::Error>())
+        .expect("the config error keeps the serde error as its source");
+    assert_eq!(
+        togi_machine::error_chain(&err),
+        format!("invalid config /config/config.json: parse config JSON: {syntax}")
+    );
 }
 
 #[test]

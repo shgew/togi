@@ -114,7 +114,7 @@ fn a_refusal_after_a_timeout_names_the_stuck_request() {
     blocked.assert_entered();
     let proof = blocked.driver.validate().unwrap();
     let refused = zero_all(&mut blocked.driver, proof).unwrap_err();
-    let text = crate::error::chain(smu_error(&refused));
+    let text = togi_machine::error_chain(smu_error(&refused));
     assert!(
         text.starts_with("zero all offsets: RSMU command 0xd5 did not finish in time earlier"),
         "{text}"
@@ -126,7 +126,7 @@ fn a_refusal_after_a_timeout_names_the_stuck_request() {
 fn the_timeout_error_names_the_stuck_command() {
     let mut blocked = Blocked::new();
     let error = read(&mut blocked.driver, 0).unwrap_err();
-    let text = crate::error::chain(smu_error(&error));
+    let text = togi_machine::error_chain(smu_error(&error));
     assert!(
         text.contains(&format!(
             "RSMU command 0xd5 did not finish within {OVERRUN:?}"

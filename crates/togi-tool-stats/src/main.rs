@@ -59,7 +59,11 @@ fn main() -> ExitCode {
     let (text, skipped) = match run(&cli) {
         Ok(ran) => ran,
         Err(error) => {
-            let _ = writeln!(std::io::stderr(), "togi-tool-stats: {error}");
+            let _ = writeln!(
+                std::io::stderr(),
+                "togi-tool-stats: {}",
+                togi_machine::error_chain(&error)
+            );
             return ExitCode::FAILURE;
         }
     };

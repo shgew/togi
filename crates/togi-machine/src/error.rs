@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Write as _};
 
 /// Why a machine seam call failed. The named variants are the conditions callers branch on.
 #[derive(Debug, thiserror::Error)]
@@ -19,10 +19,21 @@ pub enum Error {
     Other(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
+/// Renders an operation followed by every source, in order, without comparing their text.
+#[must_use]
+pub fn error_chain(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let _ = write!(text, ": {cause}");
+        source = cause.source();
+    }
+    text
+}
+
 /// What a seam call accomplished before `error` ended it.
 ///
-/// Displays as `error` and reports `error` as its source, so the named variant stays findable by
-/// walking the chain of whatever boxed error `?` produced.
+/// The source keeps the machine error findable even when partial progress is boxed.
 #[derive(Debug)]
 pub struct Partial<T> {
     pub value: T,
@@ -37,7 +48,7 @@ impl<T> Partial<T> {
 
 impl<T> fmt::Display for Partial<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.error.fmt(f)
+        f.write_str("machine operation left partial progress")
     }
 }
 
@@ -46,3 +57,6 @@ impl<T: fmt::Debug> std::error::Error for Partial<T> {
         Some(&self.error)
     }
 }
+
+#[cfg(test)]
+mod tests;

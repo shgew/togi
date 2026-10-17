@@ -125,7 +125,7 @@ pub(crate) fn append_trial_end(
             Payload::SessionWarning(SessionWarning {
                 operation: "read conditions samples".into(),
                 trial: Some(trial.clone()),
-                error: error.to_string(),
+                error: togi_render::error_chain(&error),
             }),
             &[seq],
         )?;
@@ -135,7 +135,7 @@ pub(crate) fn append_trial_end(
             Payload::SessionWarning(SessionWarning {
                 operation: "compress trial files".into(),
                 trial: Some(trial),
-                error: error.to_string(),
+                error: togi_render::error_chain(&error),
             }),
             &[seq],
         )?;
@@ -240,7 +240,7 @@ impl Crashes<'_, '_> {
                 Payload::SessionWarning(SessionWarning {
                     operation: "read saved pstore".into(),
                     trial: None,
-                    error: error.to_string(),
+                    error: togi_render::error_chain(&error),
                 }),
                 &[seq],
             )?;
@@ -376,7 +376,8 @@ impl Crashes<'_, '_> {
         let Some(due) = evidence::kernel_retry(retries.len()) else {
             return Err(Halt::Unreadable(KernelUnreadable {
                 detail: format!(
-                    "kernel log of boot {boot} unreadable after retries at 1, 5 and 30 min: {error}"
+                    "kernel log of boot {boot} unreadable after retries at 1, 5 and 30 min: {}",
+                    togi_render::error_chain(error)
                 ),
                 retries: retries.to_vec(),
             }));
@@ -386,7 +387,10 @@ impl Crashes<'_, '_> {
                 backend: RetryTarget::KernelLog,
                 attempt: due.attempt,
                 wait_s: u32::try_from(due.wait.as_secs()).unwrap_or(u32::MAX),
-                reason: format!("read the kernel log of boot {boot}: {error}"),
+                reason: format!(
+                    "read the kernel log of boot {boot}: {}",
+                    togi_render::error_chain(error)
+                ),
             }),
             &[],
         )?;

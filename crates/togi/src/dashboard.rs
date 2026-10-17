@@ -72,14 +72,17 @@ impl Surface for Watch {
         draw_until(stop, &ended, || {
             togi_watch::terminal::run_after(state_dir, since, &ended, rustix::stdio::stderr(), None)
         })
-        .map_err(|error| error.to_string())
     }
 }
 
 /// Runs `draw`, which ends when `ended` does, while a helper ends `ended` once `stop` is stopped. `stop` is
 /// stopped when `draw` returns or panics: a panic unwinds into the scope, which joins the helper before it
 /// goes on, so the helper must not wait for a stop only a later `hide` would give.
-fn draw_until<T>(stop: &Stop, ended: &togi_watch::terminal::Stop, draw: impl FnOnce() -> T) -> T {
+fn draw_until(
+    stop: &Stop,
+    ended: &togi_watch::terminal::Stop,
+    draw: impl FnOnce() -> Result<(), togi_watch::terminal::Error>,
+) -> Result<(), String> {
     struct Release<'a>(&'a Stop);
     impl Drop for Release<'_> {
         fn drop(&mut self) {
@@ -92,7 +95,7 @@ fn draw_until<T>(stop: &Stop, ended: &togi_watch::terminal::Stop, draw: impl FnO
             ended.stop();
         });
         let _release = Release(stop);
-        draw()
+        draw().map_err(|error| togi_render::error_chain(&error))
     })
 }
 

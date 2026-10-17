@@ -9,11 +9,11 @@ pub enum Error {
     Empty,
     #[error("the journal does not open with session.start")]
     NotStarted,
-    #[error("the session's cores: {0}")]
+    #[error("the session's cores")]
     Topology(#[from] TopologyError),
     #[error(transparent)]
     Forecast(#[from] togi_tool_forecast::Error),
-    #[error("score forecast {path}: {source}")]
+    #[error("score forecast {path}")]
     Score {
         path: String,
         #[source]

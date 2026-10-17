@@ -20,7 +20,7 @@ use crate::args::ConfigArgs;
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
 use crate::report::{
-    chain, current_build, emit, exit_with, fail, log_events, refusal_message, unknown_event_message,
+    current_build, emit, exit_with, fail, log_events, refusal_message, unknown_event_message,
 };
 use crate::system::{System, SystemClock};
 
@@ -102,14 +102,14 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     // creating the lock file, as the read-only commands refuse it.
     let recorded = system.recorded_build(ctx.state_dir);
     if let Err(error @ DirError::ForeignJournal { .. }) = &recorded {
-        return fail(ctx, COMMAND, chain(error));
+        return fail(ctx, COMMAND, togi_render::error_chain(error));
     }
     if matches!(recorded, Ok(None)) && !(all && pending_marker(system, ctx.state_dir)) {
         return no_session(ctx);
     }
     let boot = match system.boot_id() {
         Ok(boot) => boot,
-        Err(error) => return fail(ctx, COMMAND, chain(&error)),
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     let dir = match system.lock_state_dir(ctx.state_dir) {
         Ok(dir) => dir,
@@ -117,7 +117,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             let message = "another togi process holds the journal lock";
             return exit_with(ctx, COMMAND, message, Exit::Locked);
         }
-        Err(error) => return fail(ctx, COMMAND, error),
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     match args.target.core {
         Some(core) => reset_one(ctx, dir, boot, core),
@@ -158,7 +158,7 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
     let build = current_build();
     let recorded = match dir.live_build() {
         Ok(recorded) => recorded,
-        Err(error) => return fail(ctx, COMMAND, chain(&error)),
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     if let Some(recorded) = &recorded
         && let Verdict::Refuse(refusal) = build.verdict(recorded, Operation::Append)
@@ -184,7 +184,7 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
         };
     }
     if let Err(error) = journal.close() {
-        return fail(ctx, COMMAND, chain(&error));
+        return fail(ctx, COMMAND, togi_render::error_chain(&error));
     }
     let queued = format!(
         "reset of core {core:02} queued; the next togi run restarts its search from the baseline"
@@ -212,7 +212,7 @@ fn open_failure(
     {
         return exit_with(ctx, COMMAND, message, Exit::Incompatible);
     }
-    fail(ctx, COMMAND, chain(error))
+    fail(ctx, COMMAND, togi_render::error_chain(error))
 }
 
 fn log_recorded(ctx: &mut Context<'_>, session: Option<&SessionId>, opened: usize) {
@@ -243,7 +243,7 @@ fn command_failure(ctx: &mut Context<'_>, error: &CommandError) -> Exit {
         CommandError::NoSession => no_session(ctx),
         CommandError::NoSuchCore { .. } => exit_with(ctx, COMMAND, error, Exit::Usage),
         CommandError::Compatibility(_) => exit_with(ctx, COMMAND, error, Exit::Incompatible),
-        _ => fail(ctx, COMMAND, chain(error)),
+        _ => fail(ctx, COMMAND, togi_render::error_chain(error)),
     }
 }
 
@@ -256,7 +256,7 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
     let build = current_build();
     let recorded = match dir.live_build() {
         Ok(recorded) => recorded,
-        Err(error) => return fail(ctx, COMMAND, chain(&error)),
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     if let Some(recorded) = &recorded
         && build.verdict(recorded, Operation::ResetAll) == Verdict::Use
@@ -268,7 +268,7 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
     let live = dir.live_session().ok().flatten();
     let dropped = match dir.drop_pending_carry() {
         Ok(dropped) => dropped,
-        Err(error) => return fail(ctx, COMMAND, chain(&error)),
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     let Some(recorded) = recorded else {
         return finish_without_journal(ctx, dir, boot, dropped);
@@ -285,7 +285,7 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
                 )
                 .map_or_else(|exit| exit, |()| Exit::Ok),
                 Ok(None) => no_session(ctx),
-                Err(error) => fail(ctx, COMMAND, chain(&error)),
+                Err(error) => fail(ctx, COMMAND, togi_render::error_chain(&error)),
             };
         }
         Verdict::Refuse(refusal) => {
@@ -338,13 +338,17 @@ fn finish_without_journal(
         Ok(markers) => markers
             .into_iter()
             .find_map(|(marker, session)| (marker == Marker::CompatPending).then_some(session)),
-        Err(error) => return fail(ctx, COMMAND, chain(&error)),
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     if let Some(session) = interrupted {
         let recovered = dir
             .open_at(boot, system.now())
-            .map_err(|error| chain(&error))
-            .and_then(|journal| journal.close().map_err(|error| chain(&error)));
+            .map_err(|error| togi_render::error_chain(&error))
+            .and_then(|journal| {
+                journal
+                    .close()
+                    .map_err(|error| togi_render::error_chain(&error))
+            });
         if let Err(error) = recovered {
             return fail(ctx, COMMAND, error);
         }
@@ -411,7 +415,8 @@ fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, system: &dyn Syste
         Ok(config) => config,
         Err(error) if config.is_explicit() => {
             return vec![format!(
-                "warning: cannot check candidate solo limits: {error}"
+                "warning: cannot check candidate solo limits: {}",
+                togi_render::error_chain(&error)
             )];
         }
         Err(_) => return Vec::new(),
@@ -431,7 +436,7 @@ fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, system: &dyn Syste
         Err(error) => {
             return vec![format!(
                 "warning: cannot check candidate solo limits: {}",
-                chain(&error)
+                togi_render::error_chain(&error)
             )];
         }
     };

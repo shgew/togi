@@ -8,7 +8,7 @@ use togi_render::{Renderer, Style, escape_text};
 
 use crate::cli::Context;
 use crate::exit::Exit;
-use crate::report::{chain, current_build, fail, refusal_message};
+use crate::report::{current_build, fail, refusal_message};
 
 /// What a read-only command says of an event kind this build does not know; `None` when `error` is
 /// anything else. The kind goes in raw: the command's `fail` escapes it in the spec's human form.
@@ -41,7 +41,7 @@ pub fn open(ctx: &mut Context<'_>, command: &str) -> Result<Recording, Exit> {
     let current = current_build();
     let recorded = match ctx.system.recorded_build(ctx.state_dir) {
         Ok(recorded) => recorded,
-        Err(error) => return Err(fail(ctx, command, chain(&error))),
+        Err(error) => return Err(fail(ctx, command, togi_render::error_chain(&error))),
     };
     if let Some(recorded) = &recorded {
         match current.verdict(recorded, Operation::Inspect) {
@@ -65,7 +65,7 @@ pub fn open(ctx: &mut Context<'_>, command: &str) -> Result<Recording, Exit> {
         if matches!(&error.source, ReadError::Io(io) if io.kind() == ErrorKind::NotFound) {
             return fail(ctx, command, format!("no journal at {}", path.display()));
         }
-        let message = unknown_kind(&error).unwrap_or_else(|| chain(&error));
+        let message = unknown_kind(&error).unwrap_or_else(|| togi_render::error_chain(&error));
         fail(ctx, command, message)
     })
 }

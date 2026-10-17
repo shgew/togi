@@ -16,7 +16,15 @@ fn unknown_kind_is_named() {
     line["kind"] = json!("trial.nope");
     let error = Event::decode(&line.to_string()).unwrap_err();
     assert!(matches!(error, DecodeError::UnknownKind(_)), "{error}");
-    assert!(error.to_string().contains("trial.nope"), "{error}");
+    assert_eq!(error.to_string(), "decode event kind");
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        r#"decode event kind: unknown event kind "trial.nope""#
+    );
+    let kind = std::error::Error::source(&error)
+        .and_then(|source| source.downcast_ref::<UnknownKind>())
+        .expect("the decode error keeps the unknown kind as its source");
+    assert_eq!(kind.0, "trial.nope");
 }
 
 /// The first sample (`session.start`) as the first journal line, mutated by `corrupt`.
@@ -90,12 +98,12 @@ fn invalid_envelope_value_names_the_kind_when_the_kind_is_known() {
         matches!(error, DecodeError::Envelope { kind: Some(_), .. }),
         "{error}"
     );
-    assert_names_session_start(&error.to_string());
+    assert_names_session_start(&togi_machine::error_chain(&error));
     let read = EventReader::new(format!("{line}\n").as_bytes())
         .next()
         .unwrap()
         .unwrap_err();
-    assert_names_session_start(&read.to_string());
+    assert_names_session_start(&togi_machine::error_chain(&read));
 
     let escaped = line.replacen("session.start", r"session\u002estart", 1);
     assert_ne!(escaped, line);
@@ -114,7 +122,7 @@ fn invalid_envelope_value_names_the_kind_when_the_kind_is_known() {
         .next()
         .unwrap()
         .unwrap_err();
-    assert_names_session_start(&read.to_string());
+    assert_names_session_start(&togi_machine::error_chain(&read));
 }
 
 #[test]
@@ -128,7 +136,14 @@ fn envelope_errors_without_a_known_kind_do_not_invent_one() {
         matches!(error, DecodeError::Envelope { kind: None, .. }),
         "{error}"
     );
-    assert!(error.to_string().starts_with("malformed event:"), "{error}");
+    let source = std::error::Error::source(&error)
+        .and_then(|source| source.downcast_ref::<serde_json::Error>())
+        .expect("the envelope error keeps the serde error as its source");
+    assert_eq!(error.to_string(), "malformed event");
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        format!("malformed event: {source}")
+    );
 }
 
 fn kindless_first_line() -> String {
@@ -144,7 +159,7 @@ fn a_line_without_a_kind_is_an_envelope_error() {
         matches!(error, DecodeError::Envelope { kind: None, .. }),
         "{error}"
     );
-    let message = error.to_string();
+    let message = togi_machine::error_chain(&error);
     assert!(message.starts_with("malformed event:"), "{message}");
     assert!(message.contains("kind"), "{message}");
 }
@@ -295,7 +310,7 @@ fn unknown_workload_ids_are_refused_wherever_a_payload_names_one() {
         *line.pointer_mut(pointer).unwrap() = json!("not-a-workload");
         let error = Event::decode(&line.to_string()).unwrap_err();
         assert!(
-            error.to_string().contains("not-a-workload"),
+            togi_machine::error_chain(&error).contains("not-a-workload"),
             "{kind}: {error}"
         );
     }

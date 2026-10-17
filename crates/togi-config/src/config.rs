@@ -17,8 +17,7 @@ use crate::{
 
 pub const DEFAULT_PATH: &str = "/etc/togi/config.json";
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(try_from = "Object<RawConfig>")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     overrides: BTreeMap<CoreId, InitialOverride>,
     search_trial: TrialSeconds,
@@ -31,6 +30,15 @@ pub struct Config {
     dead_ends: DeadEndPolicy,
     backends: Backends,
     backend_user: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for Config {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error as _;
+
+        Self::try_from(Object::<RawConfig>::deserialize(deserializer)?)
+            .map_err(|error| D::Error::custom(togi_machine::error_chain(&error)))
+    }
 }
 
 impl Config {

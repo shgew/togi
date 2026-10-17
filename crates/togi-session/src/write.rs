@@ -100,15 +100,17 @@ pub(crate) mod authority;
 pub(crate) use authority::Verified;
 use authority::execute;
 
-/// What the profile a write would leave reaches: a failure point or a combination.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("{0}")]
-pub struct ConstraintRefusal(String);
-
-impl ConstraintRefusal {
-    pub(crate) fn new(reached: impl Into<String>) -> Self {
-        Self(reached.into())
-    }
+/// What prevents the constraint check from accepting the profile a write would leave.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ConstraintRefusal {
+    #[error("the tuner state holds no standing topology")]
+    NoTopology,
+    #[error("check the profile's cores")]
+    Profile(#[from] togi_tuner::ProfileError),
+    #[error("{0}")]
+    Reached(togi_tuner::Reached),
+    #[error("check the profile against the constraints' topology")]
+    Topology(#[from] togi_tuner::TopologyMismatch),
 }
 
 /// The constraint check of `check_set`: refuses a profile that reaches a failure point or combination the tuner
@@ -137,26 +139,25 @@ fn judge(
     after: &PerCore<TargetOffset>,
 ) -> Option<ConstraintRefusal> {
     let (Some(topology), Some(constraints)) = (topology, constraints) else {
-        return Some(ConstraintRefusal::new(
-            "the tuner state holds no standing topology",
-        ));
+        return Some(ConstraintRefusal::NoTopology);
     };
     let profile = match togi_tuner::Profile::new(topology, *after) {
         Ok(profile) => profile,
-        Err(error) => return Some(ConstraintRefusal::new(error.to_string())),
+        Err(error) => return Some(ConstraintRefusal::Profile(error)),
     };
     match constraints.reaches(&profile) {
-        Ok(reached) => reached.map(|reached| ConstraintRefusal::new(reached.to_string())),
-        Err(mismatch) => Some(ConstraintRefusal::new(mismatch.to_string())),
+        Ok(reached) => reached.map(ConstraintRefusal::Reached),
+        Err(mismatch) => Some(ConstraintRefusal::Topology(mismatch)),
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Refused {
-    #[error("refusing to write core {core:02} to {}: the profile would reach {refusal}", .target.get())]
+    #[error("refusing to write core {core:02} to {}: check the resulting profile", .target.get())]
     Reaches {
         core: CoreId,
         target: TargetOffset,
+        #[source]
         refusal: ConstraintRefusal,
     },
     #[error("refusing to write core {core:02}: the offsets of the other cores are not known")]
@@ -313,7 +314,7 @@ pub enum WriteFailure {
     #[error(transparent)]
     Record(AppendFailure),
     /// The seam failed after the intent was durable; `smu.error` records it. A dead end.
-    #[error("SMU {op} failed: {error}")]
+    #[error("SMU {op} failed")]
     Smu {
         op: SmuOp,
         core: Option<CoreId>,
@@ -429,7 +430,7 @@ fn failed(
         op,
         core,
         offset,
-        error: error.to_string(),
+        error: togi_render::error_chain(&error),
     });
     match appender.append(record, causes) {
         Ok(_) => WriteFailure::Smu { op, core, error },

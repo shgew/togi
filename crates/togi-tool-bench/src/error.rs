@@ -120,7 +120,7 @@ pub enum RunError {
         #[source]
         source: io::Error,
     },
-    #[error("read the run journal: {0}")]
+    #[error("read the run journal: {}", togi_machine::error_chain(.0))]
     Journal(#[source] togi_journal::FileError),
     #[error("measure the run: {0}")]
     Measure(String),

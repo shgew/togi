@@ -64,14 +64,14 @@ pub struct Event {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
-    #[error("malformed {}event: {source}", kind_prefix(*.kind))]
+    #[error("malformed {}event", kind_prefix(*.kind))]
     Envelope {
         /// The record's `kind` when it names a known event kind.
         kind: Option<EventKind>,
         #[source]
         source: serde_json::Error,
     },
-    #[error("{0}")]
+    #[error("decode event kind")]
     UnknownKind(#[source] UnknownKind),
     #[error("{kind} event: unknown field {field:?}")]
     UnknownField {
@@ -79,7 +79,7 @@ pub enum DecodeError {
         /// Where the field sits in the line: `extra` in the envelope, `data.extra` in the payload.
         field: String,
     },
-    #[error("{kind} event: {source}")]
+    #[error("{kind} event")]
     Payload {
         kind: EventKind,
         #[source]
@@ -325,7 +325,8 @@ impl Serialize for Event {
 impl<'de> Deserialize<'de> for Event {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let record = Box::<RawValue>::deserialize(deserializer)?;
-        Self::decode(record.get()).map_err(D::Error::custom)
+        Self::decode(record.get())
+            .map_err(|error| D::Error::custom(togi_machine::error_chain(&error)))
     }
 }
 

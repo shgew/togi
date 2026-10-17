@@ -27,6 +27,23 @@ fn the_boot_cap_ends_an_unfinished_session_with_status_three() {
 }
 
 #[test]
+fn a_simulation_failure_prints_its_operation_path_and_cause_once() {
+    let ran = Host::default().execute(["--state-dir", "/state"], |input| {
+        let Persistence::Memory(fs) = &input.persistence else {
+            unreachable!()
+        };
+        fs.inject(togi_journal::fs::Fault::before(togi_journal::fs::Op::Open, 1).named("lock"));
+        simulate(input)
+    });
+    assert_eq!(ran.code, Some(1));
+    assert_eq!(ran.stdout, "");
+    assert_eq!(
+        ran.stderr,
+        "sim: lock the state directory: lock /state/lock: injected Open fault\n"
+    );
+}
+
+#[test]
 fn without_a_state_directory_a_temporary_one_is_kept_and_announced_first() {
     let mut host = Host::default();
     let ran = host.run(["--max-boots", "2"]);

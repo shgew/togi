@@ -107,9 +107,12 @@ fn propagate(running: &mut dyn Running) -> Result<TrialResult, Box<dyn std::erro
 }
 
 #[test]
-fn partial_propagates_with_question_mark_as_its_error() {
+fn partial_propagates_with_question_mark_and_keeps_its_error() {
     let error = propagate(&mut FailingRunning).unwrap_err();
-    assert_eq!(error.to_string(), "cancelled");
+    assert_eq!(
+        crate::error_chain(&*error),
+        "machine operation left partial progress: cancelled"
+    );
 }
 
 #[test]
@@ -128,14 +131,21 @@ fn partial_keeps_its_named_error_findable_after_question_mark_into_a_boxed_error
 }
 
 #[test]
-fn partial_reads_as_its_error() {
+fn partial_names_its_progress_and_retains_its_error() {
     let partial = Partial {
         value: 7_u8,
         error: Error::from(Box::<dyn std::error::Error + Send + Sync>::from(
             "disk gone",
         )),
     };
-    assert_eq!(partial.to_string(), "disk gone");
+    assert_eq!(
+        partial.to_string(),
+        "machine operation left partial progress"
+    );
+    assert_eq!(
+        crate::error_chain(&partial),
+        "machine operation left partial progress: disk gone"
+    );
     assert_eq!(
         std::error::Error::source(&partial).map(ToString::to_string),
         Some("disk gone".to_owned())

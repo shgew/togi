@@ -516,7 +516,7 @@ fn a_score_refuses_sessions_with_another_ruleset_at_its_terminal_session() {
     let mut record = record;
     record.anchor = anchor_session.anchor_at(Seq::new(2).unwrap()).unwrap();
     assert_eq!(
-        record.score(&[anchor_session]).unwrap_err().to_string(),
+        togi_machine::error_chain(&record.score(&[anchor_session]).unwrap_err()),
         format!(
             "session {A} cannot be replayed: the journal's ruleset is 0; this build's is {RULESET}"
         )

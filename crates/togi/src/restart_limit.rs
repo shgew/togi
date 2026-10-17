@@ -10,7 +10,7 @@ use togi_tuningboot::{RETRY_MARKER, RestartLimit, restart_limit};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
-use crate::report::{chain, fail};
+use crate::report::fail;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[(
@@ -53,7 +53,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let mut bootloader = system.bootloader(&args.tuning_boot);
     let limit = match restart_limit(&mut *bootloader) {
         Ok(limit) => limit,
-        Err(error) => return fail(ctx, COMMAND, chain(&error)),
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     let (count, retry) = match limit {
         RestartLimit::Retry(count) => (count.get(), true),
@@ -110,6 +110,6 @@ fn reboot_failure(error: &RebootError) -> String {
             };
             format!("systemctl reboot: {status}{detail}")
         }
-        RebootError::Run(_) => format!("systemctl reboot: {}", chain(error)),
+        RebootError::Run(_) => format!("systemctl reboot: {}", togi_render::error_chain(error)),
     }
 }

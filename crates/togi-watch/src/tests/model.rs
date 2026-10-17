@@ -75,19 +75,17 @@ fn a_refused_event_turns_the_model_into_a_problem() {
         &[],
     );
     let error = model.fold(&event).unwrap_err();
-    assert!(matches!(
-        error,
-        FoldError::Journal(togi_journal::FoldError::UnknownCore { .. })
-    ));
-    assert_eq!(model.problem(), Some(&error));
+    let FoldError::Journal(expected @ togi_journal::FoldError::UnknownCore { .. }) = &error else {
+        panic!("not the refused journal event: {error:?}");
+    };
+    assert!(matches!(model.problem(), Some(FoldError::Journal(kept)) if kept == expected));
     let snap = model.snapshot();
     assert!(snap.session.is_none() && snap.cores.is_empty() && snap.history.is_empty());
     assert_eq!(snap.log_total, 0, "no half-applied fact is shown");
     script.append(warning("later"), &[]);
     let later = script.events.last().unwrap();
-    assert_eq!(
-        model.fold(later),
-        Err(error),
+    assert!(
+        matches!(model.fold(later), Err(FoldError::Journal(kept)) if &kept == expected),
         "a problem state stays a problem"
     );
 }
@@ -132,7 +130,10 @@ fn a_refused_batch_reports_the_first_event_and_keeps_the_problem() {
     let mut model = Model::new();
     let error = model.fold_batch(&script.events[1..]).unwrap_err();
     assert_eq!(error.index, 0);
-    assert_eq!(model.problem(), Some(&error.source));
+    assert!(matches!(
+        (model.problem(), &error.source),
+        (Some(FoldError::Journal(cached)), FoldError::Journal(returned)) if cached == returned
+    ));
     assert!(matches!(
         error.source,
         FoldError::Journal(togi_journal::FoldError::Gap { .. })
@@ -140,9 +141,15 @@ fn a_refused_batch_reports_the_first_event_and_keeps_the_problem() {
     assert!(model.snapshot().session.is_none());
     let later = model.fold_batch(&script.events).unwrap_err();
     assert_eq!(later.index, 0);
-    assert_eq!(model.problem(), Some(&later.source));
+    assert!(matches!(
+        (model.problem(), &later.source),
+        (Some(FoldError::Journal(cached)), FoldError::Journal(returned)) if cached == returned
+    ));
     model.fold_batch(&[]).unwrap();
-    assert_eq!(model.problem(), Some(&later.source));
+    assert!(matches!(
+        (model.problem(), &later.source),
+        (Some(FoldError::Journal(cached)), FoldError::Journal(returned)) if cached == returned
+    ));
 }
 
 #[test]
@@ -152,7 +159,10 @@ fn a_batch_reports_the_failure_position_after_a_valid_prefix() {
     let mut model = Model::new();
     let error = model.fold_batch(&script.events).unwrap_err();
     assert_eq!(error.index, 1);
-    assert_eq!(model.problem(), Some(&error.source));
+    assert!(matches!(
+        (model.problem(), &error.source),
+        (Some(FoldError::Journal(cached)), FoldError::Journal(returned)) if cached == returned
+    ));
     assert!(model.snapshot().session.is_none());
 }
 
@@ -1082,12 +1092,21 @@ fn an_event_the_tuner_refuses_is_a_problem() {
         &[intent],
     );
     let error = model.fold(&unsigned).unwrap_err();
-    assert!(matches!(error, FoldError::Tuner(_)), "{error:?}");
+    assert!(
+        matches!(
+            error,
+            FoldError::Tuner(togi_tuner::FoldError::MissingSignal)
+        ),
+        "{error:?}"
+    );
     let snap = model.snapshot();
     assert!(snap.session.is_none() && snap.history.is_empty());
     assert_eq!(snap.log_total, 0);
     let later = script.event(warning("later"), &[]);
-    assert_eq!(model.fold(&later), Err(error));
+    assert!(matches!(
+        model.fold(&later),
+        Err(FoldError::Tuner(togi_tuner::FoldError::MissingSignal))
+    ));
 }
 
 #[test]

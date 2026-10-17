@@ -131,12 +131,17 @@ fn a_refused_write_appends_no_intent_and_reaches_no_hardware() {
     let refused = rig
         .hardware
         .check_set(core(1), target(-30), &mut |_| {
-            Some(ConstraintRefusal::new("failure point -30 of core 01"))
+            Some(ConstraintRefusal::Reached(
+                togi_tuner::Reached::FailurePoint {
+                    core: core(1),
+                    point: togi_tuner::FailurePoint::new(target(-30)),
+                },
+            ))
         })
         .unwrap_err();
     assert_eq!(
-        refused.to_string(),
-        "refusing to write core 01 to -30: the profile would reach failure point -30 of core 01"
+        togi_render::error_chain(&refused),
+        "refusing to write core 01 to -30: check the resulting profile: failure point -30 of core 01"
     );
     assert!(matches!(refused, Refused::Reaches { .. }));
     assert_eq!(rig.kinds(), before);
@@ -255,7 +260,11 @@ fn a_combination_is_refused_at_the_step_that_reaches_it_with_the_earlier_steps_k
     let mut rig = Rig::new(4);
     let mut combination = |after: &PerCore<TargetOffset>| {
         let deep = |n| after.get(core(n)).is_some_and(|offset| offset.get() <= -30);
-        (deep(0) && deep(1)).then(|| ConstraintRefusal::new("combination 1"))
+        (deep(0) && deep(1)).then(|| {
+            ConstraintRefusal::Reached(togi_tuner::Reached::Combination(
+                togi_tuner::CombinationId::new(std::num::NonZeroU32::new(1).unwrap()),
+            ))
+        })
     };
     let error = rig.put(&[-30, -30, 0, 0], &mut combination).unwrap_err();
     assert!(matches!(
@@ -283,12 +292,17 @@ fn a_failure_point_is_refused_before_any_write_of_that_core() {
         after
             .get(core(2))
             .is_some_and(|offset| offset.get() <= -30)
-            .then(|| ConstraintRefusal::new("failure point -30 of core 02"))
+            .then(|| {
+                ConstraintRefusal::Reached(togi_tuner::Reached::FailurePoint {
+                    core: core(2),
+                    point: togi_tuner::FailurePoint::new(target(-30)),
+                })
+            })
     };
     let error = rig.put(&[0, 0, -30, 0], &mut failure_point).unwrap_err();
     assert_eq!(
-        error.to_string(),
-        "refusing to write core 02 to -30: the profile would reach failure point -30 of core 02"
+        togi_render::error_chain(&error),
+        "refusing to write core 02 to -30: check the resulting profile: failure point -30 of core 02"
     );
     assert_eq!(rig.kinds(), before);
     assert_eq!(
@@ -639,9 +653,9 @@ fn a_write_reaching_a_folded_failure_point_is_refused_with_no_intent_appended() 
             })
             .unwrap_err();
         assert_eq!(
-            refused.to_string(),
+            togi_render::error_chain(&refused),
             format!(
-                "refusing to write core 02 to {deeper}: the profile would reach failure point -30 of core 02"
+                "refusing to write core 02 to {deeper}: check the resulting profile: failure point -30 of core 02"
             )
         );
     }

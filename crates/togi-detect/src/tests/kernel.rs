@@ -94,7 +94,7 @@ fn missing_boot_no_match_and_failure_are_told_apart() {
     let (mut broken, _) = kernel(&[], |_| exit(2, b"", "permission denied\n"));
     let error = broken.mces(&boot(OLD), Duration::ZERO).unwrap_err();
     assert!(!matches!(error.error, togi_machine::Error::BootMissing));
-    assert!(error.to_string().contains(OLD), "{error}");
+    assert!(togi_machine::error_chain(&error).contains(OLD), "{error}");
     let (mut half_empty, _) = kernel(&[], |_| exit(1, b"{}\n", ""));
     assert!(half_empty.mces(&boot(OLD), Duration::ZERO).is_err());
     let (mut signalled, _) = kernel(&[], |_| {
@@ -116,7 +116,7 @@ fn an_exit_error_names_the_operation_status_and_stderr() {
             Duration::ZERO,
         )
         .unwrap_err();
-    let text = error.to_string();
+    let text = togi_machine::error_chain(&error);
     assert!(text.contains("read the kernel log of boot"), "{text}");
     assert!(text.contains("exit status: 2"), "{text}");
     assert!(text.ends_with("permission denied"), "{text}");
@@ -134,7 +134,7 @@ fn a_boot_that_is_not_32_hex_digits_is_refused_before_any_command() {
     ] {
         let error = kernel.mces(&boot(id), Duration::ZERO).unwrap_err();
         assert!(
-            error.to_string().contains("is not a boot id"),
+            togi_machine::error_chain(&error).contains("is not a boot id"),
             "{id}: {error}"
         );
         let cursor = KernelCursor::from("s=1;i=2".to_owned());
@@ -240,7 +240,7 @@ fn a_status_with_an_impossible_cpu_is_an_error() {
     let (mut kernel, _) = kernel(&[], move |_| ok(&out));
     let error = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
     assert!(
-        error.to_string().contains("cannot read the kernel log"),
+        togi_machine::error_chain(&error).contains("cannot read the kernel log"),
         "{error}"
     );
 }

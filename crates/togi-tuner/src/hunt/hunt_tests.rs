@@ -2327,9 +2327,8 @@ fn a_hunt_start_with_a_malformed_ranking_is_rejected_and_leaves_the_state() {
         malformed.ranking = order.into_iter().map(core).collect();
         let event = j.event(malformed.into(), &cause);
         let mut folded = j.state.clone();
-        assert_eq!(
-            folded.fold(&event),
-            Err(FoldError::Ranking(error)),
+        assert!(
+            matches!(folded.fold(&event), Err(FoldError::Ranking(found)) if found == error),
             "{name}"
         );
         assert_eq!(folded.run(), j.state.run(), "{name}");
@@ -2360,7 +2359,10 @@ fn a_rejected_core_phase_keeps_the_hunt_a_queued_reset_would_close() {
     };
     let event = j.event(transition.into(), &[]);
     let mut folded = j.state.clone();
-    assert_eq!(folded.fold(&event), Err(FoldError::BadCandidate(core(0))));
+    assert!(matches!(
+        folded.fold(&event),
+        Err(FoldError::BadCandidate(found)) if found == core(0)
+    ));
     assert_eq!(folded.run(), j.state.run());
     assert!(j.run().hunts.active.as_ref().unwrap().end.is_some());
 }
@@ -2440,13 +2442,14 @@ fn a_hunt_start_rejects_a_workload_from_another_regime_without_mutating_the_run(
     fail_all_together(&mut j, SHORT);
     let (mut start, cause) = j.hunt_start_payload();
     start.workload = workloads(Regime::R3)[0].id();
-    let expected = crate::FoldError::WorkloadRegime {
-        regime: start.regime,
-        workload: start.workload,
-    };
+    let (regime, workload) = (start.regime, start.workload);
     let event = j.event(start.into(), &cause);
     let mut folded = j.state.clone();
-    assert_eq!(folded.fold(&event), Err(expected));
+    assert!(matches!(
+        folded.fold(&event),
+        Err(crate::FoldError::WorkloadRegime { regime: found, workload: id })
+            if found == regime && id == workload
+    ));
     assert_eq!(folded.run(), j.state.run());
 }
 

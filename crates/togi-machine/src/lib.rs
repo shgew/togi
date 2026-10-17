@@ -17,7 +17,7 @@ mod workloads;
 
 pub use cancellation::{CancellationToken, OnCancel};
 pub use core_set::CoreSet;
-pub use error::{Error, Partial};
+pub use error::{Error, Partial, error_chain};
 pub use ids::{BootId, KernelCursor};
 pub use load::{DutyPct, InvalidDutyPct, LoadSchedule, Toggles};
 pub use per_core::PerCore;

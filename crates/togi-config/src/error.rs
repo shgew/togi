@@ -34,37 +34,37 @@ pub struct RelativeBackendPath {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
-    #[error("{0}")]
+    #[error("parse config JSON")]
     Syntax(#[from] serde_json::Error),
-    #[error("durations.{field}: {source}")]
+    #[error("durations.{field}")]
     Duration {
         field: &'static str,
         source: RangeError,
     },
-    #[error("evidence.{field}: {source}")]
+    #[error("evidence.{field}")]
     Probability {
         field: &'static str,
         source: ProbabilityError,
     },
-    #[error("evidence: {0}")]
+    #[error("evidence")]
     Trials(#[from] TrialsError),
-    #[error("dead_ends.{field}: {source}")]
+    #[error("dead_ends.{field}")]
     DeadEnd {
         field: &'static str,
         source: RangeError,
     },
-    #[error("checking.cycle: {0}")]
+    #[error("checking.cycle")]
     Schedule(#[from] EmptySchedule),
     #[error("{table}.{key:?}: a core id is a plain decimal number such as \"3\"")]
     CoreKey { table: &'static str, key: String },
-    #[error("{table}: {source}")]
+    #[error("{table}")]
     Core {
         table: &'static str,
         source: InvalidCore,
     },
     #[error("{table}.{core} is set more than once")]
     DuplicateCore { table: &'static str, core: CoreId },
-    #[error("{table}.{core}: {source}")]
+    #[error("{table}.{core}")]
     Offset {
         table: &'static str,
         core: CoreId,
@@ -72,7 +72,7 @@ pub enum ConfigError {
     },
     #[error("start_offsets.{0} and candidate_solo_limits.{0}: set at most one per core")]
     CoreConflict(CoreId),
-    #[error("backends.{}: {source}", source.backend)]
+    #[error("backends.{}", source.backend)]
     Backend {
         #[from]
         source: RelativeBackendPath,
@@ -83,8 +83,8 @@ pub enum ConfigError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
-    #[error("cannot read config {}: {source}", path.display())]
+    #[error("cannot read config {}", path.display())]
     Read { path: PathBuf, source: io::Error },
-    #[error("invalid config {}: {source}", path.display())]
+    #[error("invalid config {}", path.display())]
     Parse { path: PathBuf, source: ConfigError },
 }

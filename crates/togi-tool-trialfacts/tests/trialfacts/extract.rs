@@ -310,6 +310,10 @@ fn a_bad_source_is_an_error_and_no_facts() {
     fs.put("/state/events.jsonl", "{invalid}\n");
     let error = extract(&lock(&fs)).unwrap_err();
     assert!(matches!(error, ExtractError::Journals(_)), "{error}");
+    assert_eq!(
+        error.to_string(),
+        "/state/events.jsonl: first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover"
+    );
 
     let fs = MemFs::new();
     let mut w = Writer::open(&fs);
@@ -318,6 +322,22 @@ fn a_bad_source_is_an_error_and_no_facts() {
     w.add(alone("1", 0, -10, &[-10, 0]));
     let error = extract(&w.close()).unwrap_err();
     assert!(matches!(error, ExtractError::Facts { .. }), "{error}");
+}
+
+#[test]
+fn a_lock_error_keeps_the_path_and_original_source() {
+    use togi_journal::fs::{Fault, Op};
+    let fs = MemFs::new();
+    fs.inject(Fault::before(Op::Open, 1).named("lock"));
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the fixture injects a lock failure in memory"
+    )]
+    let source = togi_journal::StateDir::simulated(fs).unwrap_err();
+    assert_eq!(
+        ExtractError::Lock(source).to_string(),
+        "lock the state directory: lock /state/lock: injected Open fault"
+    );
 }
 
 #[test]

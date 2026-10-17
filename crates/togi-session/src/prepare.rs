@@ -24,16 +24,16 @@ pub struct Prepared {
 pub enum PrepareError {
     #[error(transparent)]
     Dir(#[from] DirError),
-    #[error("open the journal: {0}")]
+    #[error("open the journal")]
     Open(#[from] OpenError),
-    #[error("close the journal: {0}")]
+    #[error("close the journal")]
     Close(#[from] CloseError),
-    #[error("archive the session: {0}")]
+    #[error("archive the session")]
     Archive(#[from] ArchiveError),
-    #[error("select the carry: {0}")]
+    #[error("select the carry")]
     Carry(#[from] CarryError<FileError>),
-    #[error("the live journal is left for the build that wrote it: {0}")]
-    Refused(Refusal),
+    #[error("the live journal is left for the build that wrote it")]
+    Refused(#[source] Refusal),
 }
 
 /// Opens the directory's journal for `boot`, first archiving what a run cannot resume.

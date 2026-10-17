@@ -1133,9 +1133,11 @@ fn unscheduled(j: &Journal, plan: &TrialPlan) {
     let trial = togi_journal::TrialId::from("9999".to_owned());
     let event = j.event(plan.intent(trial.clone(), 0).into(), &plan.cause);
     let mut probe = j.state.clone();
-    assert_eq!(
-        probe.fold(&event),
-        Err(crate::FoldError::UnscheduledIntent(trial)),
+    assert!(
+        matches!(
+            probe.fold(&event),
+            Err(crate::FoldError::UnscheduledIntent(found)) if found == trial
+        ),
         "{plan:?}"
     );
     assert_eq!(probe.run(), j.state.run());
@@ -1206,10 +1208,10 @@ fn a_round_intent_must_carry_the_checks_profile_and_target_offset() {
         let trial = intent.trial.clone();
         let event = j.event(intent.into(), &plan.cause);
         let mut probe = j.state.clone();
-        assert_eq!(
+        assert!(matches!(
             probe.fold(&event),
-            Err(crate::FoldError::UnscheduledIntent(trial)),
-        );
+            Err(crate::FoldError::UnscheduledIntent(found)) if found == trial
+        ));
         assert_eq!(probe.run(), j.state.run());
     }
     let (_, _) = j.intent(&plan);

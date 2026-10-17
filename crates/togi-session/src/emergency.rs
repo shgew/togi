@@ -68,7 +68,11 @@ impl Readback {
         match &self.result {
             Ok(ObservedOffset(0)) => None,
             Ok(offset) => Some(format!("core {:02} reads {}", self.core, offset.0)),
-            Err(error) => Some(format!("core {:02} unreadable: {error}", self.core)),
+            Err(error) => Some(format!(
+                "core {:02} unreadable: {}",
+                self.core,
+                togi_render::error_chain(error)
+            )),
         }
     }
 }
@@ -153,6 +157,7 @@ pub(crate) fn respond(
     cores: CoreSet,
     report: &mut dyn Write,
 ) -> Outcome {
+    let original = togi_render::error_chain(original);
     let access = match gate {
         Ok(access) => access,
         Err(withheld) => {
@@ -185,7 +190,8 @@ pub(crate) fn respond(
         ),
         Err(error) => writeln!(
             report,
-            "togi: {original}; setting every core to CO 0 without an intent failed: {error} ({status})"
+            "togi: {original}; setting every core to CO 0 without an intent failed: {} ({status})",
+            togi_render::error_chain(error)
         ),
     };
     Outcome {

@@ -9,7 +9,11 @@ fn main() -> ExitCode {
     match run(&cli, &mut std::io::stdout().lock()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            let _ = writeln!(std::io::stderr(), "togi-tool-replay: {error}");
+            let _ = writeln!(
+                std::io::stderr(),
+                "togi-tool-replay: {}",
+                togi_machine::error_chain(&error)
+            );
             ExitCode::FAILURE
         }
     }

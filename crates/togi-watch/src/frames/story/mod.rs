@@ -391,7 +391,10 @@ pub(crate) fn starting_story() -> Story {
 /// The story of a journal that cannot be read; `one_frame` drops the promise to retry, which only live watch
 /// keeps.
 pub(crate) fn problem_story(error: &dyn std::error::Error, one_frame: bool) -> Story {
-    let mut lines = vec![format!("can't read journal: {error}")];
+    let mut lines = vec![format!(
+        "can't read journal: {}",
+        togi_render::error_chain(error)
+    )];
     if !one_frame {
         lines.push(
             "I'll retry when the journal changes. Tuning itself is not affected by this screen."

@@ -23,13 +23,13 @@ pub use playback::{Playback, Speed, SpeedError, offset, prefix};
 /// Why the replay failed.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("read journal: {0}")]
+    #[error("read journal")]
     Read(#[source] FileError),
     #[error("{} holds no events", .0.display())]
     Empty(PathBuf),
     #[error("{0}; replay needs a journal of this build's ruleset")]
     Refused(Refusal),
-    #[error("event {seq} cannot be shown: {source}")]
+    #[error("event {seq} cannot be shown")]
     Fold {
         seq: u64,
         #[source]
@@ -39,7 +39,7 @@ pub enum Error {
     NotTerminal,
     #[error(transparent)]
     Watch(#[from] togi_watch::terminal::Error),
-    #[error("write the frame: {0}")]
+    #[error("write the frame")]
     Output(#[source] std::io::Error),
 }
 

@@ -1,8 +1,7 @@
-use togi_machine::{Backend, Check};
+use togi_machine::{Backend, Check, error_chain};
 use togi_trial::{BackendIdentity, Backends, IdentityError};
 
 use crate::checks::{CheckName, Skip, Skipped, failed, passed};
-use crate::error::describe;
 
 /// A check of the preflight, in the order `run` makes them. `root` and `watchdog` are not steps:
 /// the first is the caller's own, the second does not gate the others.
@@ -121,7 +120,7 @@ pub(crate) fn check_backends(backends: &Backends) -> Check {
                 Ok(found) => details.push(format!("{kind}: {}", found.detail)),
                 Err(error) => {
                     ready = false;
-                    details.push(describe(&error));
+                    details.push(error_chain(&error));
                 }
             },
         }
@@ -170,7 +169,7 @@ impl Account {
                 CheckName::BackendUser,
                 format!("{name}: uid {} gid {}", identity.uid(), identity.gid()),
             ),
-            Self::Refused(error) => failed(CheckName::BackendUser, describe(error)),
+            Self::Refused(error) => failed(CheckName::BackendUser, error_chain(error)),
         }
     }
 }

@@ -1822,7 +1822,7 @@ fn an_unconfirmed_partial_start_journals_each_setup_and_cleanup_cause_once() {
 }
 
 #[test]
-fn a_cause_that_displays_exactly_its_parent_is_journaled_once() {
+fn a_transparent_shared_cause_is_journaled_once() {
     #[derive(Debug, thiserror::Error)]
     #[error("the start failed: launch backend")]
     struct Kept(#[source] std::io::Error);
@@ -1838,7 +1838,7 @@ fn a_cause_that_displays_exactly_its_parent_is_journaled_once() {
 
     impl std::error::Error for Shared {
         fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-            Some(&self.0)
+            std::error::Error::source(&self.0)
         }
     }
 
@@ -1857,7 +1857,7 @@ fn a_cause_that_displays_exactly_its_parent_is_journaled_once() {
 }
 
 #[test]
-fn an_unconfirmed_non_containment_start_keeps_its_existing_reason_text() {
+fn an_unconfirmed_non_containment_start_journals_its_source() {
     #[derive(Debug, thiserror::Error)]
     #[error("launch backend")]
     struct Setup(#[source] std::io::Error);
@@ -1867,8 +1867,14 @@ fn an_unconfirmed_non_containment_start_keeps_its_existing_reason_text() {
             Some(|| Error::Other(Box::new(Setup(std::io::Error::other("launch cause")))));
     });
     let end = containment_dead_end(&run);
-    assert_eq!(end.containment_error.as_deref(), Some("launch backend"));
-    assert_eq!(end.reason.as_deref(), Some("setup failed: launch backend"));
+    assert_eq!(
+        end.containment_error.as_deref(),
+        Some("launch backend: launch cause")
+    );
+    assert_eq!(
+        end.reason.as_deref(),
+        Some("setup failed: launch backend: launch cause")
+    );
 }
 
 #[test]
