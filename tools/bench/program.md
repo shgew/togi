@@ -1,8 +1,16 @@
 # togi tuner research: shorten the time to a conclusion
 
-Rules for an autonomous researcher making a tuning session reach its conclusion in less simulated time without making that conclusion worse. The loop is experiments: keep what wins, discard what does not. Agents open pull requests under `AGENTS.md`; target-machine deployment stays with the owner.
+Rules for the **production policy experiment** mode of a [research campaign](../../docs/benchmarking.md#research-campaigns): making a tuning session reach its conclusion in less simulated time without making that conclusion worse. The loop is experiments: keep what wins, discard what does not. The campaign's limits, prohibitions, record and end state are in [Research campaigns](../../docs/benchmarking.md#research-campaigns); target-machine deployment stays with the owner.
 
-A session concludes when every core is at its limit, deepening can reach no more total depth, and a clean cycle supports the resulting profile. Time to conclusion is simulated time from `session.start` to the last event, including the 90 s charged for each crash reboot. A full cycle records tested coverage, not a guarantee of future stability.
+Observation and accounting campaigns change no tuner code: they measure the unchanged tuner, adding only the analysis tools and research-only fixtures their brief names and leaving the frozen environment below as it is. Their briefs:
+
+- [#490](research/490.md): fixed-policy observation of intermittent R7 hazards.
+- [#896](research/896.md): counterfactual accounting of re-derived R7 parts.
+- [#503](research/503.md): fixed-policy observation, feasibility of an online risk learner.
+
+#490 and #896 run only in those modes: a simulated gain never lifts the evidence volume freeze below.
+
+A session concludes at the confirmation cycle's first passed full end ([Phase 2](../../docs/spec/tuner.md#phase-2)); its profile is the confirmed profile. Time to conclusion is simulated time from `session.start` to the last event, including the 90 s charged for each crash reboot. A full cycle records tested coverage, not a guarantee of future stability.
 
 ## Start
 
@@ -43,7 +51,7 @@ Breaking any rule invalidates an experiment, however good its ratio looks.
 - Compare each candidate against the current best on the dev split. Seeds are deterministic; rerunning the same commit cannot improve its draw. A censored run (the boot cap) is a failure to conclude, not a result to exclude.
 - Use the holdout split once per dev winner, only for confirmation. Discard NEUTRAL, REJECT and failed confirmations.
 - Explain a win by checking that the predicted quantity moved. Ablate kept changes periodically and drop any that no longer contribute.
-- Record every experiment, kept or rejected, with its numbers.
+- Record every experiment, kept or rejected, with its numbers, in the campaign's ledger.
 - Compare the final combination with the baseline on both splits, and state the measured proof and its limits in each pull request.
 
 ADR 0023 rejected probing the shallowest member first, always backing off the shallowest member, moving every member to its passing probe, and reusing member-probe evidence across hunts. Revisit these only with a new argument.

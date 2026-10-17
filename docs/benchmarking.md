@@ -2,7 +2,7 @@
 
 `togi-tool-bench` (`just bench`) runs a fixed suite of simulated sessions and compares two versions of togi. Use it to show that a tuner change makes sessions conclude sooner, or no later, without giving up depth or leaving a profile that fails. Like `togi-tool-sim`, it is a development program and is not shipped.
 
-For the autonomous experiment loop, frozen evaluation environment, proof standard and owner-controlled merge and deployment workflow, follow the [research program](../tools/bench/program.md). [ADR 0029](adr/0029-bench-verdicts-rest-on-fitted-machines.md) records why target claims require checked fits and real-fact replay.
+Autonomous research follows [Research campaigns](#research-campaigns): its modes, limits, prohibitions, record and end state, then the mode's program and the issue's brief. [ADR 0029](adr/0029-bench-verdicts-rest-on-fitted-machines.md) records why target claims require checked fits and real-fact replay.
 
 ```sh
 just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR] [--jobs N] [--max-boots 1000]
@@ -379,6 +379,71 @@ The crate `togi-tool-forecast` defines the record, which `togi-tool-bench foreca
 
 `--split`, `--baseline` and `--same` are usage errors with `--forecast`. `--keep DIR` retains every run directory under a new directory in DIR. Without it, each successful run is deleted as it finishes; a forecast whose runs failed keeps the failed runs and prints where, and a forecast that fails after every run succeeded, such as on writing `--out`, removes its run directory and prints none.
 
+## Research campaigns
+
+A research campaign is a finite run of experiments by an agent following one issue's brief. Only the owner starts one, naming the issue, the limits and the output directory; a brief, a readiness change or a scheduled issue is not authorization. This section owns the rules every campaign shares; a mode's program and an issue's brief add only their own.
+
+### Modes
+
+| Mode | Rules | May change | Ends in |
+|---|---|---|---|
+| Model development | [`tools/fit/program.md`](../tools/fit/program.md) | the failure model and the fitter | a report; a kept model becomes a model-only pull request |
+| Production policy experiment | [`tools/bench/program.md`](../tools/bench/program.md) | tuner decisions in `crates/togi-tuner` | a report; kept changes become sub-issues of the open `Ruleset N` |
+| Fixed-policy observation | the issue's brief | analysis tools and research-only fixtures; the tuner, configuration and simulator stay unchanged | a report |
+| Counterfactual accounting | the issue's brief | the same as observation; alternatives are computed offline, never executed | a report |
+
+Observation and accounting measure the unchanged tuner. Their conclusions about another policy are labelled counterfactual: removing events from an observed journal is not what a different tuner would have done. #490 and #896 start only in these two modes. A simulated gain never lifts their evidence freeze or the [evidence volume](../tools/bench/program.md#hard-rules) rule; a production change for either needs a validated #480 forward score and an owner-approved design under #979.
+
+| Issue | Mode | Brief |
+|---|---|---|
+| [#427](https://github.com/shgew/togi/issues/427) | model development | [`tools/fit/research/427.md`](../tools/fit/research/427.md) |
+| [#480](https://github.com/shgew/togi/issues/480) | model development, diagnostic only | [`tools/fit/research/480.md`](../tools/fit/research/480.md) |
+| [#490](https://github.com/shgew/togi/issues/490) | fixed-policy observation | [`tools/bench/research/490.md`](../tools/bench/research/490.md) |
+| [#896](https://github.com/shgew/togi/issues/896) | counterfactual accounting | [`tools/bench/research/896.md`](../tools/bench/research/896.md) |
+| [#503](https://github.com/shgew/togi/issues/503) | fixed-policy observation, feasibility only | [`tools/bench/research/503.md`](../tools/bench/research/503.md) |
+
+An issue without a brief has no campaign; #428's brief waits for #427's parameterization. Each brief names its mode, its finite candidate queue, permitted and forbidden data, writable paths, metrics, keep and stop rules, result format and prerequisites. A prerequisite that has not landed stops the campaign before its first candidate.
+
+### Limits
+
+By default a campaign runs at most 8 hours of wall time and 12 substantive candidates, evaluates with 4 workers (`--jobs 4`), and holds the host-shared benchmark lock ([AGENTS.md](../AGENTS.md#commands)) for each benchmark it runs. It stops at the first exhausted limit. A substantive candidate is one entry of the brief's queue evaluated against the reference; reference runs and a confirmation belong to the candidate they serve. The owner may override any limit at launch. A monetary or API spending cap is a launch parameter of the agent runner, never chosen by a brief; without one, a paid agent does not continue unattended.
+
+The bench's per-simulator `--timeout` and `--max-boots` bound one simulated session. They are not campaign limits, and a campaign keeps them.
+
+### Prohibitions
+
+In every mode a campaign never:
+
+- runs `togi run`, `togi reset` or `just hardware`, or touches hardware, the SMU, the watchdog, the boot loader or a live state directory;
+- refreshes evidence (`just facts`), forecasts (`just forecast`), regenerates fitted machines, the anchor or overlays into `tools/bench/machines/`, or re-records a baseline (`just bench-baseline`);
+- acquires target evidence, deploys or merges;
+- writes outside its brief's writable paths and the campaign's output directory.
+
+Launch it unprivileged, in its own worktree, with no access to live state or hardware and no privileged credentials. The manifest and diff checks catch mistakes; they are not a security sandbox.
+
+### The record
+
+A campaign writes `runs/research/<issue>/<run-id>/`, outside anything it commits:
+
+- `manifest.json`: the launch manifest: issue, mode and hypothesis queue; checkout and reference revisions; tool and environment versions; the approved session allowlist and canonical input hashes; suite, scenario and seed selection; frozen-file hashes; writable paths; limits; output directory; and the confirmation allowance. A missing or changed manifest, or a frozen input whose hash changed, stops the campaign; nothing refreshes it silently.
+- `experiments.jsonl`: append-only, one line when a candidate starts and one when it ends, never edited. A start line without an end line is an incomplete experiment. An end line holds the candidate and reference identities, input and environment hashes, the commands, full-precision metrics, the typed outcome and its reason.
+- the raw stdout and stderr of every evaluation command;
+- `report.md`: the final report.
+
+Rules for the record:
+
+- Decide each outcome from the typed metrics and the brief's keep rule, never from exit status: the bench exits 0 on REJECT and NEUTRAL, and model flags change neither verdict nor exit ([Comparing two versions](#comparing-two-versions)).
+- Never select a winner from an incomplete or unpaired comparison. Record every candidate, rejected, negative and invalid ones included.
+- On rejection, restore only the experiment's own changes and keep unrelated work.
+- A confirmation is spent when it starts: its start line binds the candidate, reference and data hashes. An interrupted confirmation stays spent, and a resumed campaign never repeats it.
+- A resumed campaign appends to the same ledger; its interrupted experiments stay incomplete.
+
+The campaign stops with one reason: its queue is exhausted, a limit is exhausted (wall time or candidates), a confirmation failed, evidence or a frozen input changed, a forbidden diff appeared, a comparison was unpaired, a prerequisite is missing, or it was interrupted.
+
+### End state
+
+A campaign completes its approved experiments, records every outcome, writes the report, may open a reviewable result pull request when its brief allows one, and stops. The report reconciles the ledger, the exact comparisons, the limits used, the confirmation status and the remaining uncertainty. A negative, no-change or interrupted campaign is a complete deliverable, never a reason to relax a gate. Published summaries and artifacts follow [Writing](../AGENTS.md#writing): no private state paths, raw host journals or identifying data.
+
 ## The bench (`togi-tool-bench`)
 
 `just bench` runs `togi-tool-bench`: the runs, metrics, summary, comparison and cache of the bench ([#821](https://github.com/shgew/togi/issues/821)). `just same`, `just smoke` and `just forecast` run its `same` and `forecast` commands ([#823](https://github.com/shgew/togi/issues/823)), described [below](#the-same-command). The gate report is [below](#judging-the-gate) ([#822](https://github.com/shgew/togi/issues/822)).
@@ -565,7 +630,7 @@ just forward            # the check alone: no ensemble, no machine files
 just forward --seal 1   # also leave the newest session unfitted and unscored
 ```
 
-`just forward` runs `togi-tool-fit --forward-only`: the same rows and `Pooled` line, without fitting the ensemble or writing machine files. `--seal N`, accepted only with `--forward-only`, drops the newest N sessions before the check: they are neither fitted nor scored, the remaining rows are unchanged, and `Pooled` covers only the remaining held-out sessions. At least one held-out session must remain. Model research ([program](../tools/fit/program.md)) iterates with the newest session sealed and scores it only to confirm a kept change.
+`just forward` runs `togi-tool-fit --forward-only`: the same rows and `Pooled` line, without fitting the ensemble or writing machine files. `--seal N`, accepted only with `--forward-only`, drops the newest N sessions before the check: they are neither fitted nor scored, the remaining rows are unchanged, and `Pooled` covers only the remaining held-out sessions. At least one held-out session must remain. A seal count is not a data permission: on the committed extract, `--seal 1` still scores #480's spent score session 20261004T211726Z. Model research ([program](../tools/fit/program.md)) uses only its brief's approved sessions.
 
 To score the current ensemble beside the forward candidate without refitting its members:
 
