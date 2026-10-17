@@ -29,7 +29,8 @@ pub enum Exit {
     BootLoop,
     /// Dead end `containment`.
     Containment,
-    /// Dead end `preflight`.
+    /// Dead end `preflight`, or a topology the tuner cannot work on, refused before a session
+    /// starts.
     Preflight,
     /// The journal was written by an incompatible build: a newer schema, ruleset or evidence
     /// epoch, unknown event kinds on a current-build journal, or, for `reset --core`, any
