@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use togi_sim::file::{self, LoadError};
 use togi_sim::{MachineDefinition, Model};
 
+use test_case::test_case;
+
 use crate::common::machine_dir_text;
 
 const AVX2: &str = "mprime-avx2-36k-248k-allcore";
@@ -152,76 +154,53 @@ fn a_chain_loads_leaf_first_and_the_last_override_wins() {
     );
 }
 
-#[test]
-fn the_parent_is_looked_up_relative_to_the_overlay() {
+#[test_case("leaf.json", "shared/parent.json"; "child directory")]
+#[test_case("other/leaf.json", "../shared/parent.json"; "sibling directory")]
+#[test_case("a/b/leaf.json", "./../../shared/parent.json"; "dot segments")]
+fn the_parent_is_looked_up_relative_to_the_overlay(leaf: &str, extends: &str) {
     let dir = crate::common::MemoryFiles::default();
     let parent = write_parent(&dir, &dir.path().join("shared/parent.json"), "");
     let one = entry(AVX2, 5, r#", "threshold_v": 1.1"#);
-    for (name, leaf, extends) in [
-        (
-            "child directory",
-            dir.path().join("leaf.json"),
-            "shared/parent.json",
-        ),
-        (
-            "sibling directory",
-            dir.path().join("other/leaf.json"),
-            "../shared/parent.json",
-        ),
-        (
-            "dot segments",
-            dir.path().join("a/b/leaf.json"),
-            "./../../shared/parent.json",
-        ),
-    ] {
-        let leaf = dir.write(&leaf, &overlay(extends, &one));
-        let (_, files) = file::load_from(&leaf, &dir).expect(name);
-        assert_eq!(files, [leaf, parent.clone()], "{name}");
-    }
+    let leaf = dir.write(&dir.path().join(leaf), &overlay(extends, &one));
+    let (_, files) = file::load_from(&leaf, &dir).expect("loads");
+    assert_eq!(files, [leaf, parent]);
 }
 
-#[test]
-fn inherited_facts_resolve_to_the_same_extract_from_the_overlay() {
-    let dir = crate::common::MemoryFiles::default();
+fn facts_parent(dir: &crate::common::MemoryFiles) {
     write_parent(
-        &dir,
+        dir,
         &dir.path().join("machines/parent.json"),
         r#""facts": "../facts/extract.jsonl.gz","#,
     );
+}
+
+#[test_case("machines/leaf.json", "parent.json", "../facts/extract.jsonl.gz"; "same directory keeps the value")]
+#[test_case("leaf.json", "machines/parent.json", "facts/extract.jsonl.gz"; "parent directory")]
+#[test_case("overlays/leaf.json", "../machines/parent.json", "../facts/extract.jsonl.gz"; "sibling directory")]
+#[test_case("x/y/leaf.json", "../../machines/parent.json", "../../facts/extract.jsonl.gz"; "deeper directory")]
+fn inherited_facts_resolve_to_the_same_extract_from_the_overlay(
+    leaf: &str,
+    extends: &str,
+    facts: &str,
+) {
+    let dir = crate::common::MemoryFiles::default();
+    facts_parent(&dir);
     let one = entry(AVX2, 5, r#", "threshold_v": 1.1"#);
-    let want = dir.path().join("facts/extract.jsonl.gz");
-    for (name, leaf, extends, facts) in [
-        (
-            "same directory keeps the value",
-            "machines/leaf.json",
-            "parent.json",
-            "../facts/extract.jsonl.gz",
-        ),
-        (
-            "parent directory",
-            "leaf.json",
-            "machines/parent.json",
-            "facts/extract.jsonl.gz",
-        ),
-        (
-            "sibling directory",
-            "overlays/leaf.json",
-            "../machines/parent.json",
-            "../facts/extract.jsonl.gz",
-        ),
-        (
-            "deeper directory",
-            "x/y/leaf.json",
-            "../../machines/parent.json",
-            "../../facts/extract.jsonl.gz",
-        ),
-    ] {
-        let leaf = dir.write(&dir.path().join(leaf), &overlay(extends, &one));
-        let got = load(&dir, &leaf).facts.expect("facts");
-        assert_eq!(got, facts, "{name}");
-        let resolved = leaf.parent().expect("a directory").join(&got);
-        assert_eq!(normalized(&resolved), want, "{name}");
-    }
+    let leaf = dir.write(&dir.path().join(leaf), &overlay(extends, &one));
+    let got = load(&dir, &leaf).facts.expect("facts");
+    assert_eq!(got, facts);
+    let resolved = leaf.parent().expect("a directory").join(&got);
+    assert_eq!(
+        normalized(&resolved),
+        dir.path().join("facts/extract.jsonl.gz")
+    );
+}
+
+#[test]
+fn inherited_facts_resolve_through_a_chain_of_overlays() {
+    let dir = crate::common::MemoryFiles::default();
+    facts_parent(&dir);
+    let one = entry(AVX2, 5, r#", "threshold_v": 1.1"#);
     let mid = dir.write(
         &dir.path().join("mid/mid.json"),
         &overlay("../machines/parent.json", &one),
@@ -328,30 +307,26 @@ fn a_full_machine_lists_only_itself_and_a_missing_one_is_an_error() {
     assert!(matches!(missing, Err(LoadError::Read { .. })));
 }
 
-#[test]
-fn a_cycle_is_an_error_however_it_is_spelled() {
+#[test_case("self.json"; "self")]
+#[test_case("a.json"; "two files")]
+#[test_case("c.json"; "overlay of a cycle")]
+fn a_cycle_is_an_error_however_it_is_spelled(name: &str) {
     let dir = crate::common::MemoryFiles::default();
     let one = entry(AVX2, 5, r#", "threshold_v": 1.1"#);
     let at = |name: &str, extends: &str| dir.write(&dir.path().join(name), &overlay(extends, &one));
-    let mut cycles = vec![
-        ("self", at("self.json", "self.json")),
-        ("two files", {
-            let a = at("a.json", "b.json");
-            at("b.json", "sub/../a.json");
-            a
-        }),
-    ];
-    cycles.push(("overlay of a cycle", at("c.json", "a.json")));
-    for (name, path) in cycles {
-        let error = file::load_from(&path, &dir).expect_err(name);
-        let message = togi_machine::error_chain(&error);
-        assert!(message.contains("cycle"), "{name}: {message}");
-    }
+    at("self.json", "self.json");
+    at("a.json", "b.json");
+    at("b.json", "sub/../a.json");
+    at("c.json", "a.json");
+    let error = file::load_from(dir.path().join(name), &dir).expect_err("a cycle");
+    let message = togi_machine::error_chain(&error);
+    assert!(message.contains("cycle"), "{message}");
 }
 
 #[cfg(unix)]
-#[test]
-fn real_fs_cycles_through_symlinked_directories_are_refused() {
+#[test_case("leaf.json"; "through one link")]
+#[test_case("deep.json"; "through a link twice")]
+fn real_fs_cycles_through_symlinked_directories_are_refused(name: &str) {
     let dir = tempfile::tempdir().expect("temporary directory");
     let loop_dir = dir.path().join("loop");
     std::fs::create_dir_all(&loop_dir).expect("create the directory");
@@ -361,222 +336,95 @@ fn real_fs_cycles_through_symlinked_directories_are_refused() {
         &loop_dir.join("leaf.json"),
         &overlay("alias/leaf.json", &one),
     );
-    let deep = real_write(
+    real_write(
         &loop_dir.join("deep.json"),
         &overlay("alias/alias/leaf.json", &one),
     );
-    for path in [loop_dir.join("leaf.json"), deep] {
-        let error = file::load_with_files(path).expect_err("symlink cycle");
-        let message = togi_machine::error_chain(&error);
-        assert!(message.contains("cycle"), "{message}");
-    }
+    let error = file::load_with_files(loop_dir.join(name)).expect_err("symlink cycle");
+    let message = togi_machine::error_chain(&error);
+    assert!(message.contains("cycle"), "{message}");
 }
 
-#[test]
-fn malformed_overlays_are_refused_with_the_file_named() {
+fn valid() -> String {
+    entry(AVX2, 5, r#", "threshold_v": 1.1"#)
+}
+
+fn with(entries: &str) -> String {
+    overlay("parent.json", entries)
+}
+
+fn mixed(member: &str) -> String {
+    format!(
+        r#"{{{member}, "extends": "parent.json", "shared_voltage_override": [{}]}}"#,
+        valid()
+    )
+}
+
+#[test_case(&mixed(r#""cores": 16"#), "unknown field"; "mixed with full machine fields")]
+#[test_case(&mixed(r#""cores": 0"#), "unknown field"; "mixed with explicit zero cores")]
+#[test_case(&mixed(r#""old_kernel": false"#), "unknown field"; "mixed with explicit false old_kernel")]
+#[test_case(&mixed(r#""model": {}"#), "unknown field"; "mixed with empty model")]
+#[test_case(&mixed(r#""facts": null"#), "unknown field"; "mixed with null member")]
+#[test_case(
+    &format!(r#"{{"extends": "parent.json", "shared_voltage": {{}}, "shared_voltage_override": [{}]}}"#, valid()),
+    "unknown field";
+    "mixed with shared_voltage"
+)]
+#[test_case(&format!(r#"{{"shared_voltage_override": [{}]}}"#, valid()), "extends is missing"; "override without extends")]
+#[test_case(&format!(r#"{{"extends": "", "shared_voltage_override": [{}]}}"#, valid()), "extends is missing"; "empty extends")]
+#[test_case(&format!(r#"{{"extends": null, "shared_voltage_override": [{}]}}"#, valid()), "extends is missing"; "null extends")]
+#[test_case(r#"{"extends": ""}"#, "extends is missing"; "empty extends without override")]
+#[test_case(r#"{"extends": null}"#, "extends is missing"; "null extends without override")]
+#[test_case(r#"{"extends": "parent.json"}"#, "changes nothing"; "extends without override")]
+#[test_case(r#"{"extends": "parent.json", "shared_voltage_override": null}"#, "changes nothing"; "null override")]
+#[test_case(r#"{"shared_voltage_override": null}"#, "extends is missing"; "null override without extends")]
+#[test_case(r#"{"extends": "parent.json", "shared_voltage_override": []}"#, "changes nothing"; "empty override")]
+#[test_case(
+    &format!(r#"{{"extends": "/fixture/parent.json", "shared_voltage_override": [{}]}}"#, valid()),
+    "must be relative";
+    "absolute extends"
+)]
+#[test_case(&overlay("absent.json", &valid()), "absent.json"; "missing parent")]
+#[test_case(&overlay("broken.json", &valid()), "broken.json"; "broken parent")]
+#[test_case(&overlay("plain.json", &valid()), "no shared_voltage"; "parent without shared_voltage")]
+#[test_case(&with(&entry("nope", 5, r#", "threshold_v": 1.1"#)), "unknown workload \"nope\""; "unknown workload")]
+#[test_case(&with(r#"{"core": 5, "threshold_v": 1.1}"#), "unknown workload \"\""; "missing workload")]
+#[test_case(&with(&entry(AVX2, 16, r#", "threshold_v": 1.1"#)), "unknown core 16"; "core past the end")]
+#[test_case(&with(&entry(AVX2, -1, r#", "threshold_v": 1.1"#)), "unknown core -1"; "negative core")]
+#[test_case(&with(&format!(r#"{{"workload": {AVX2:?}, "threshold_v": 1.1}}"#)), "needs core"; "missing core")]
+#[test_case(
+    &with(&format!(r#"{{"workload": {AVX2:?}, "core": 5.5, "threshold_v": 1.1}}"#)),
+    "invalid type";
+    "fractional core"
+)]
+#[test_case(&with(&entry(AVX2, 5, "")), "sets neither"; "no effective field")]
+#[test_case(
+    &with(&format!("{}, {}", valid(), entry(AVX2, 5, r#", "threshold_clock_v_per_100mhz": 0.06"#))),
+    "core 5";
+    "duplicate target"
+)]
+#[test_case(&with(&entry(AVX2, 5, r#", "threshold_v": 0"#)), "threshold_v"; "zero threshold")]
+#[test_case(&with(&entry(AVX2, 5, r#", "threshold_v": -1"#)), "threshold_v"; "negative threshold")]
+#[test_case(
+    &with(&entry(AVX2, 5, r#", "threshold_clock_v_per_100mhz": -0.01"#)),
+    "threshold_clock_v_per_100mhz";
+    "negative clock coefficient"
+)]
+#[test_case(&with(&entry(AVX2, 5, r#", "base_v": 1.1"#)), "unknown field"; "unknown entry member")]
+#[test_case(
+    &format!(r#"{{"extends": "parent.json", "patch": [], "shared_voltage_override": [{}]}}"#, valid()),
+    "unknown field";
+    "unknown overlay member"
+)]
+#[test_case(&with(&entry(AVX2, 5, r#", "threshold_v": null"#)), "sets neither"; "null threshold only")]
+fn malformed_overlays_are_refused_with_the_file_named(content: &str, want: &str) {
     let dir = crate::common::MemoryFiles::default();
     let parent = write_parent(&dir, &dir.path().join("parent.json"), "");
+    assert_eq!(parent, Path::new("/fixture/parent.json"));
     dir.write(&dir.path().join("plain.json"), r#"{"cores": 16}"#);
     dir.write(&dir.path().join("broken.json"), r#"{"cores": ["#);
-    let valid = entry(AVX2, 5, r#", "threshold_v": 1.1"#);
-    let with = |entries: String| overlay("parent.json", &entries);
-    let cases: Vec<(&str, String, &str)> = vec![
-        (
-            "mixed with full machine fields",
-            format!(
-                r#"{{"cores": 16, "extends": "parent.json", "shared_voltage_override": [{valid}]}}"#
-            ),
-            "unknown field",
-        ),
-        (
-            "mixed with explicit zero cores",
-            format!(
-                r#"{{"cores": 0, "extends": "parent.json", "shared_voltage_override": [{valid}]}}"#
-            ),
-            "unknown field",
-        ),
-        (
-            "mixed with explicit false old_kernel",
-            format!(
-                r#"{{"old_kernel": false, "extends": "parent.json", "shared_voltage_override": [{valid}]}}"#
-            ),
-            "unknown field",
-        ),
-        (
-            "mixed with empty model",
-            format!(
-                r#"{{"model": {{}}, "extends": "parent.json", "shared_voltage_override": [{valid}]}}"#
-            ),
-            "unknown field",
-        ),
-        (
-            "mixed with null member",
-            format!(
-                r#"{{"facts": null, "extends": "parent.json", "shared_voltage_override": [{valid}]}}"#
-            ),
-            "unknown field",
-        ),
-        (
-            "mixed with shared_voltage",
-            format!(
-                r#"{{"extends": "parent.json", "shared_voltage": {{}}, "shared_voltage_override": [{valid}]}}"#
-            ),
-            "unknown field",
-        ),
-        (
-            "override without extends",
-            format!(r#"{{"shared_voltage_override": [{valid}]}}"#),
-            "extends is missing",
-        ),
-        (
-            "empty extends",
-            format!(r#"{{"extends": "", "shared_voltage_override": [{valid}]}}"#),
-            "extends is missing",
-        ),
-        (
-            "null extends",
-            format!(r#"{{"extends": null, "shared_voltage_override": [{valid}]}}"#),
-            "extends is missing",
-        ),
-        (
-            "empty extends without override",
-            r#"{"extends": ""}"#.to_owned(),
-            "extends is missing",
-        ),
-        (
-            "null extends without override",
-            r#"{"extends": null}"#.to_owned(),
-            "extends is missing",
-        ),
-        (
-            "extends without override",
-            r#"{"extends": "parent.json"}"#.to_owned(),
-            "changes nothing",
-        ),
-        (
-            "null override",
-            r#"{"extends": "parent.json", "shared_voltage_override": null}"#.to_owned(),
-            "changes nothing",
-        ),
-        (
-            "null override without extends",
-            r#"{"shared_voltage_override": null}"#.to_owned(),
-            "extends is missing",
-        ),
-        (
-            "empty override",
-            r#"{"extends": "parent.json", "shared_voltage_override": []}"#.to_owned(),
-            "changes nothing",
-        ),
-        (
-            "absolute extends",
-            format!(
-                r#"{{"extends": {:?}, "shared_voltage_override": [{valid}]}}"#,
-                parent.display()
-            ),
-            "must be relative",
-        ),
-        (
-            "missing parent",
-            overlay("absent.json", &valid),
-            "absent.json",
-        ),
-        (
-            "broken parent",
-            overlay("broken.json", &valid),
-            "broken.json",
-        ),
-        (
-            "parent without shared_voltage",
-            overlay("plain.json", &valid),
-            "no shared_voltage",
-        ),
-        (
-            "unknown workload",
-            with(entry("nope", 5, r#", "threshold_v": 1.1"#)),
-            "unknown workload \"nope\"",
-        ),
-        (
-            "missing workload",
-            with(r#"{"core": 5, "threshold_v": 1.1}"#.to_owned()),
-            "unknown workload \"\"",
-        ),
-        (
-            "core past the end",
-            with(entry(AVX2, 16, r#", "threshold_v": 1.1"#)),
-            "unknown core 16",
-        ),
-        (
-            "negative core",
-            with(entry(AVX2, -1, r#", "threshold_v": 1.1"#)),
-            "unknown core -1",
-        ),
-        (
-            "missing core",
-            with(format!(r#"{{"workload": {AVX2:?}, "threshold_v": 1.1}}"#)),
-            "needs core",
-        ),
-        (
-            "fractional core",
-            with(format!(
-                r#"{{"workload": {AVX2:?}, "core": 5.5, "threshold_v": 1.1}}"#
-            )),
-            "invalid type",
-        ),
-        (
-            "no effective field",
-            with(entry(AVX2, 5, "")),
-            "sets neither",
-        ),
-        (
-            "duplicate target",
-            with(format!(
-                "{valid}, {}",
-                entry(AVX2, 5, r#", "threshold_clock_v_per_100mhz": 0.06"#)
-            )),
-            "core 5",
-        ),
-        (
-            "zero threshold",
-            with(entry(AVX2, 5, r#", "threshold_v": 0"#)),
-            "threshold_v",
-        ),
-        (
-            "negative threshold",
-            with(entry(AVX2, 5, r#", "threshold_v": -1"#)),
-            "threshold_v",
-        ),
-        (
-            "negative clock coefficient",
-            with(entry(AVX2, 5, r#", "threshold_clock_v_per_100mhz": -0.01"#)),
-            "threshold_clock_v_per_100mhz",
-        ),
-        (
-            "unknown entry member",
-            with(entry(AVX2, 5, r#", "base_v": 1.1"#)),
-            "unknown field",
-        ),
-        (
-            "unknown overlay member",
-            format!(
-                r#"{{"extends": "parent.json", "patch": [], "shared_voltage_override": [{valid}]}}"#
-            ),
-            "unknown field",
-        ),
-        (
-            "null threshold only",
-            with(entry(AVX2, 5, r#", "threshold_v": null"#)),
-            "sets neither",
-        ),
-    ];
-    let leaf = dir.path().join("leaf.json");
-    for (name, content, want) in cases {
-        dir.write(&leaf, &content);
-        let error = togi_machine::error_chain(&file::load_from(&leaf, &dir).expect_err(name));
-        assert!(
-            error.contains(leaf.to_str().expect("utf-8")),
-            "{name}: {error}"
-        );
-        assert!(error.contains(want), "{name}: {error} lacks {want:?}");
-    }
+    let leaf = dir.write(&dir.path().join("leaf.json"), content);
+    let error = togi_machine::error_chain(&file::load_from(&leaf, &dir).expect_err("refused"));
+    assert!(error.contains(leaf.to_str().expect("utf-8")), "{error}");
+    assert!(error.contains(want), "{error} lacks {want:?}");
 }
