@@ -423,10 +423,10 @@ Launch it unprivileged, in its own worktree, with no access to live state or har
 
 ### The record
 
-A campaign writes `runs/research/<issue>/<run-id>/`, outside anything it commits:
+A campaign writes its record to the output directory the owner names, outside the checkout, so nothing it commits can include it:
 
 - `manifest.json`: the launch manifest: issue, mode and hypothesis queue; checkout and reference revisions; tool and environment versions; the approved session allowlist and canonical input hashes; suite, scenario and seed selection; frozen-file hashes; writable paths; limits; output directory; and the confirmation allowance. A missing or changed manifest, or a frozen input whose hash changed, stops the campaign; nothing refreshes it silently.
-- `experiments.jsonl`: append-only, one line when a candidate starts and one when it ends, never edited. A start line without an end line is an incomplete experiment. An end line holds the candidate and reference identities, input and environment hashes, the commands, full-precision metrics, the typed outcome and its reason.
+- `experiments.jsonl`: append-only, one line when a candidate starts and one when it ends, never edited. A confirmation has its own start and end lines, which name the candidate they serve. A start line without an end line is an incomplete experiment. An end line holds the candidate and reference identities, input and environment hashes, the commands, full-precision metrics, the typed outcome and its reason.
 - the raw stdout and stderr of every evaluation command;
 - `report.md`: the final report.
 
