@@ -12,7 +12,7 @@ use togi_watch::terminal::{self, ONE_FRAME_SIZE, SourceError};
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
 use crate::read::unknown_kind;
-use crate::report::{chain, fail};
+use crate::report::fail;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
@@ -85,7 +85,7 @@ pub struct Args {
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     // Another build's journal is refused before the terminal is touched and before any frame: no frame, no retry.
     if let Err(error @ DirError::ForeignJournal { .. }) = ctx.system.recorded_build(ctx.state_dir) {
-        return fail(ctx, "watch", chain(&error));
+        return fail(ctx, "watch", togi_render::error_chain(&error));
     }
     let result = if ctx.system.stdout_facts().is_terminal {
         let out = stdout();
@@ -107,10 +107,10 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     match result {
         Ok(()) => Exit::Ok,
         Err(terminal::Error::Journal(SourceError::Read(error))) => {
-            let message = unknown_kind(&error).unwrap_or_else(|| crate::report::chain(&error));
+            let message = unknown_kind(&error).unwrap_or_else(|| togi_render::error_chain(&error));
             fail(ctx, "watch", message)
         }
-        Err(error) => fail(ctx, "watch", error),
+        Err(error) => fail(ctx, "watch", togi_render::error_chain(&error)),
     }
 }
 

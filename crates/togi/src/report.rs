@@ -1,7 +1,6 @@
 //! What commands that read or change a journal share: this build's stamp, the wording of a
 //! refused journal, error chains and checked writes to stdout.
 
-use std::error::Error;
 use std::fmt::{Display, Write as _};
 
 use togi_defect::{KNOWN_DEFECTS, fixed_stamp};
@@ -54,22 +53,6 @@ pub fn refusal_message(refusal: &Refusal, recorded: &Build, current: &Build) -> 
         text.push_str(
             "togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over.",
         );
-    }
-    text
-}
-
-/// `error` and every cause below it, joined by `: `; a cause the text already ends with or
-/// contains, as the journal errors print their source themselves, is not repeated.
-#[must_use]
-pub fn chain(error: &dyn Error) -> String {
-    let mut text = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        let cause_text = cause.to_string();
-        if !text.contains(&cause_text) {
-            let _ = write!(text, ": {cause_text}");
-        }
-        source = cause.source();
     }
     text
 }

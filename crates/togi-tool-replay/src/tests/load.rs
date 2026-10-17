@@ -113,8 +113,10 @@ impl Read for Missing {
 fn a_missing_journal_and_an_empty_one_are_errors_naming_what_is_wrong() {
     let error = load::events_from(Path::new("state"), BufReader::new(Missing)).unwrap_err();
     assert!(matches!(error, Error::Read(_)), "{error}");
-    assert!(error.to_string().starts_with("read journal: "), "{error}");
-    assert!(error.to_string().contains("state/events.jsonl"), "{error}");
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        "read journal: state/events.jsonl: read: missing recording"
+    );
 
     let error = loaded("").unwrap_err();
     assert!(matches!(error, Error::Empty(_)), "{error}");
@@ -123,10 +125,14 @@ fn a_missing_journal_and_an_empty_one_are_errors_naming_what_is_wrong() {
 
 #[test]
 fn a_journal_that_does_not_decode_is_an_error() {
-    assert!(matches!(
-        loaded("not an event\n").unwrap_err(),
-        Error::Read(_)
-    ));
+    let text = recording(Scenario::Checking);
+    let first = text.lines().next().unwrap();
+    let error = loaded(&format!("{first}\nnot an event\n")).unwrap_err();
+    assert!(matches!(error, Error::Read(_)));
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        "read journal: state/events.jsonl: line 2: malformed event: expected ident at line 1 column 2"
+    );
 }
 
 #[test]

@@ -20,19 +20,19 @@ const MACHINE_FILE: &str = "machine.json";
 pub enum ResumeError {
     #[error(transparent)]
     History(#[from] HistoryError),
-    #[error("read {}: {source}", path.display())]
+    #[error("read {}", path.display())]
     Read {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("decode {}: {source}", path.display())]
+    #[error("decode {}", path.display())]
     Decode {
         path: PathBuf,
         #[source]
         source: serde_json::Error,
     },
-    #[error("restore the simulated machine: {0}")]
+    #[error("restore the simulated machine")]
     Restore(#[from] RestoreError),
 }
 

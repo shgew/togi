@@ -1087,9 +1087,12 @@ fn a_journal_with_an_unknown_kind_is_refused_untouched_by_the_build_that_wrote_i
         ),
         "{error}"
     );
-    assert!(
-        togi_machine::error_chain(&error).contains("retired.fact"),
-        "{error}"
+    let lines = original.iter().filter(|byte| **byte == b'\n').count();
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        format!(
+            "prepare the journal for boot 1: open the journal: {STATE}/events.jsonl: line {lines}: unknown event kind \"retired.fact\""
+        )
     );
     assert_eq!(
         bench.fs.contents(format!("{STATE}/events.jsonl")),

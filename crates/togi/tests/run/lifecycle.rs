@@ -327,6 +327,57 @@ fn a_busy_journal_lock_is_exit_three() {
 }
 
 #[test]
+fn a_journal_lock_failure_prints_its_path_and_cause_once() {
+    let mut fake = Fake::new();
+    let fs = togi_journal::MemFs::new();
+    fs.put(fake.dir.join("config.json"), b"{}".to_vec());
+    fake.fs = std::sync::Arc::new(fs.clone());
+    fs.inject(togi_journal::fs::Fault::before(togi_journal::fs::Op::Open, 1).named("lock"));
+    let (exit, out, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Error);
+    assert_eq!(out, "");
+    assert_eq!(
+        err,
+        "togi run: lock /run-test/state/lock: injected Open fault\n"
+    );
+    assert_eq!(fake.opened.get(), 0);
+}
+
+#[test]
+fn a_journal_close_failure_keeps_its_cause_and_changes_the_exit_status() {
+    use togi_journal::fs::{Fault, Op};
+
+    let on_memory = || {
+        let mut fake = interrupted();
+        let fs = togi_journal::MemFs::new();
+        fs.put(fake.dir.join("config.json"), b"{}".to_vec());
+        fake.fs = std::sync::Arc::new(fs.clone());
+        (fake, fs)
+    };
+    let (baseline, fs) = on_memory();
+    let (exit, _, baseline_err) = baseline.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Ok);
+    let syncs = fs
+        .log()
+        .iter()
+        .filter(|(op, path)| {
+            *op == Op::Sync && path.file_name().is_some_and(|name| name == "events.jsonl")
+        })
+        .count();
+    assert!(syncs > 0);
+
+    let (fake, fs) = on_memory();
+    fs.inject(Fault::before(Op::Sync, u64::try_from(syncs).unwrap()).named("events.jsonl"));
+    let (exit, out, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Error);
+    assert_eq!(out, "");
+    assert_eq!(
+        err,
+        format!("togi run: close journal: injected Sync fault\n{baseline_err}")
+    );
+}
+
+#[test]
 fn a_failed_smu_write_is_the_smu_dead_end_and_exits_eleven() {
     let fake = Fake::new();
     fake.sim.fail_write(1);

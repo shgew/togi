@@ -58,7 +58,7 @@ pub use source::SourceError;
 
 /// A failure of the notifications that tell the loop the journal changed.
 #[derive(Debug, thiserror::Error)]
-#[error("{operation}: {source}")]
+#[error("{operation}")]
 pub struct WatchError {
     operation: &'static str,
     #[source]
@@ -69,7 +69,7 @@ pub struct WatchError {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Drawing on the terminal failed.
-    #[error("{operation}: {source}")]
+    #[error("{operation}")]
     Terminal {
         /// What was being done.
         operation: &'static str,
@@ -78,22 +78,22 @@ pub enum Error {
         source: io::Error,
     },
     /// The keyboard could not be set up.
-    #[error("read keys: {0}")]
+    #[error("read keys")]
     Keys(#[source] io::Error),
     /// The signals could not be listened for.
-    #[error("watch signals: {0}")]
+    #[error("watch signals")]
     Signals(#[source] io::Error),
     /// The runtime could not be started.
-    #[error("start the watch runtime: {0}")]
+    #[error("start the watch runtime")]
     Runtime(#[source] io::Error),
     /// The journal notifications failed.
-    #[error("watch journal: {0}")]
+    #[error("watch journal")]
     Watch(#[from] WatchError),
     /// The journal cannot be shown.
     #[error(transparent)]
     Journal(#[from] SourceError),
     /// The frame could not be written.
-    #[error("write frame: {0}")]
+    #[error("write frame")]
     Output(#[source] io::Error),
 }
 

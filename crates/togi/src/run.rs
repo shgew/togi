@@ -125,7 +125,9 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     // tuning boot's refusal, which clears the boot entry. The same journal is judged again under the locks.
     let unlocked = match ctx.system.recorded_build(ctx.state_dir) {
         Ok(recorded) => recorded,
-        Err(error) => return exit_with(ctx, COMMAND, crate::report::chain(&error), Exit::Error),
+        Err(error) => {
+            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
+        }
     };
     if let Some(refused) = refusal(&build, unlocked.as_ref(), ctx) {
         let _lock = match bootloader {
@@ -143,7 +145,9 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             ctx.system.read_config(path)
         }) {
         Ok(loaded) => loaded,
-        Err(error) => return exit_with(ctx, COMMAND, crate::report::chain(&error), Exit::Usage),
+        Err(error) => {
+            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Usage);
+        }
     };
 
     let cancel = CancellationToken::new();
@@ -170,11 +174,15 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(error @ togi_journal::LockError::Held { .. }) => {
             return exit_with(ctx, COMMAND, error, Exit::Locked);
         }
-        Err(error) => return exit_with(ctx, COMMAND, crate::report::chain(&error), Exit::Error),
+        Err(error) => {
+            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
+        }
     };
     let recorded = match dir.live_build() {
         Ok(recorded) => recorded,
-        Err(error) => return exit_with(ctx, COMMAND, crate::report::chain(&error), Exit::Error),
+        Err(error) => {
+            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
+        }
     };
     if let Some(refused) = refusal(&build, recorded.as_ref(), ctx) {
         return refuse(ctx, &refused, bootloader.as_deref_mut(), renderer);
@@ -212,7 +220,9 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             };
             return refuse(ctx, &refused, bootloader.as_deref_mut(), renderer);
         }
-        Err(error) => return exit_with(ctx, COMMAND, crate::report::chain(&error), Exit::Error),
+        Err(error) => {
+            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
+        }
     };
     let journal = prepared.journal;
 
@@ -329,8 +339,8 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     if let Err(error) = ended.journal.close() {
         let _ = writeln!(
             ctx.err,
-            "togi run: close the journal: {}",
-            escape_text(&crate::report::chain(&error))
+            "togi run: {}",
+            escape_text(&togi_render::error_chain(&error))
         );
         if exit == Exit::Ok {
             exit = Exit::Error;

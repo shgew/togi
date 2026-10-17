@@ -95,7 +95,8 @@ pub(crate) fn audit(
         )),
         Ok(_) => {}
         Err(error) => found.push(violation(format!(
-            "the tuner does not replay the journal: {error}"
+            "the tuner does not replay the journal: {}",
+            togi_machine::error_chain(&error)
         ))),
     }
     Ok(found)

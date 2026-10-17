@@ -7,13 +7,13 @@ use togi_machine::CoreSet;
 /// Why a forecast could not be read, replayed, summarized or scored.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("read journal {}: {source}", path.display())]
+    #[error("read journal {}", path.display())]
     ReadJournal {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("list archive {}: {source}", path.display())]
+    #[error("list archive {}", path.display())]
     ListArchive {
         path: PathBuf,
         #[source]
@@ -21,7 +21,7 @@ pub enum Error {
     },
     #[error(transparent)]
     Journal(#[from] FileError),
-    #[error("encode event {seq}: {source}")]
+    #[error("encode event {seq}")]
     Encode {
         seq: Seq,
         #[source]
@@ -39,18 +39,19 @@ pub enum Error {
         "anchor changed: session {session} through event {seq} differs from the forecast's copy"
     )]
     ChangedAnchor { session: SessionId, seq: Seq },
-    #[error("session {session} cannot be replayed: {refusal}")]
+    #[error("session {session} cannot be replayed")]
     NotReplayable {
         session: SessionId,
+        #[source]
         refusal: Refusal,
     },
-    #[error("session {session}: {source}")]
+    #[error("session {session}")]
     JournalFold {
         session: SessionId,
         #[source]
         source: togi_journal::FoldError,
     },
-    #[error("session {session}: {source}")]
+    #[error("session {session}")]
     TunerFold {
         session: SessionId,
         #[source]
@@ -67,13 +68,13 @@ pub enum Error {
     },
     #[error("run has cores {run}, forecast {forecast}", run = cores(*.run), forecast = cores(*.forecast))]
     ScoreCores { run: CoreSet, forecast: CoreSet },
-    #[error("read forecast {}: {source}", path.display())]
+    #[error("read forecast {}", path.display())]
     ReadRecord {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("decode forecast {}: {source}", path.display())]
+    #[error("decode forecast {}", path.display())]
     DecodeRecord {
         path: PathBuf,
         #[source]
@@ -81,7 +82,7 @@ pub enum Error {
     },
     #[error("forecast {} has no runs", path.display())]
     EmptyRecord { path: PathBuf },
-    #[error("write forecast: {0}")]
+    #[error("write forecast")]
     WriteRecord(#[source] io::Error),
 }
 

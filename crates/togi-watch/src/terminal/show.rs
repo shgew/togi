@@ -903,7 +903,7 @@ mod tests {
                 .await;
                 let error = h.finish().await.unwrap_err();
                 assert_eq!(
-                    error.to_string(),
+                    togi_render::error_chain(&error),
                     "watch journal: read journal notifications: overflow"
                 );
                 assert!(recorder.restored());

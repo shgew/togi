@@ -95,13 +95,13 @@ pub(crate) enum Error {
     Machine(#[from] machine::LoadError),
     #[error("create the state directory: {0}")]
     TempDir(#[source] io::Error),
-    #[error("read the state directory's configuration: {0}")]
+    #[error("read the state directory's configuration: {}", togi_machine::error_chain(.0))]
     Config(#[from] togi_simrun::HistoryError),
-    #[error("resume the simulated machine: {0}")]
+    #[error("resume the simulated machine: {}", togi_machine::error_chain(.0))]
     Resume(#[from] ResumeError),
     #[error("watch for signals: {0}")]
     Signals(#[source] io::Error),
-    #[error(transparent)]
+    #[error("{}", togi_machine::error_chain(.0))]
     Simulate(#[from] togi_simrun::SimError),
     #[error(
         "--cycles counts passed full cycles, and the checking cycle this state directory recorded is not full"
@@ -200,7 +200,7 @@ fn report(
     dir: &Path,
 ) -> u8 {
     for error in &finished.errors {
-        let _ = writeln!(log, "sim: {error}");
+        let _ = writeln!(log, "sim: {}", togi_machine::error_chain(error));
     }
     match &finished.stop {
         Some(Stop::DeadEnd {
@@ -221,8 +221,9 @@ fn report(
                 Err(error) => {
                     let _ = writeln!(
                         log,
-                        "sim: read the evidence from {}: {error}",
-                        dir.display()
+                        "sim: read the evidence from {}: {}",
+                        dir.display(),
+                        togi_machine::error_chain(&error)
                     );
                 }
             }

@@ -281,7 +281,10 @@ fn an_event_that_cannot_be_encoded_is_an_error() {
         matches!(error, Error::Encode { seq, .. } if seq == Seq::new(2).unwrap()),
         "{error}"
     );
-    assert!(error.to_string().starts_with("encode event 2: "), "{error}");
+    assert!(
+        togi_machine::error_chain(&error).starts_with("encode event 2: "),
+        "{error}"
+    );
 }
 
 #[test]
@@ -298,7 +301,7 @@ fn a_journal_of_another_ruleset_reads_as_one_session_that_cannot_be_replayed() {
     let error = crate::after(&sessions, &anchor).unwrap_err();
     assert!(matches!(error, Error::NotReplayable { .. }), "{error}");
     assert_eq!(
-        error.to_string(),
+        togi_machine::error_chain(&error),
         format!(
             "session {A} cannot be replayed: the journal's ruleset is {}; this build's is {RULESET}",
             RULESET - 1

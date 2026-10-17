@@ -652,6 +652,22 @@ fn a_snapshot_the_configuration_would_refuse_is_refused_when_read_back() {
 }
 
 #[test]
+fn serde_config_conversion_preserves_the_rejected_value_and_range() {
+    let json = r#"{"durations":{"search_trial_s":0}}"#;
+    let from_text = serde_json::from_str::<Config>(json).unwrap_err();
+    let from_value = serde_json::from_value::<Config>(serde_json::json!({
+        "durations": { "search_trial_s": 0 }
+    }))
+    .unwrap_err();
+    for error in [from_text, from_value] {
+        assert_eq!(
+            error.to_string(),
+            "durations.search_trial_s: 0 is not within [1, 86400]"
+        );
+    }
+}
+
+#[test]
 fn load_reads_content() {
     let path = std::path::Path::new("/config/config.json");
     assert_eq!(

@@ -144,6 +144,35 @@ fn a_missing_core_is_a_usage_error_and_another_error_is_a_failure() {
 }
 
 #[test]
+fn a_log_cause_is_not_dropped_when_its_text_is_part_of_the_operation() {
+    let (outcome, err) = conclusion(None, &[SessionError::Log(std::io::Error::other("log"))]);
+    assert_eq!(outcome.exit, Exit::Error);
+    assert_eq!(err, "togi run: write the event log: log\n");
+}
+
+#[test]
+fn distinct_causes_with_identical_text_reach_the_cli_in_order() {
+    #[derive(Debug)]
+    struct Read(std::io::Error);
+    impl std::fmt::Display for Read {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("read")
+        }
+    }
+    impl std::error::Error for Read {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.0)
+        }
+    }
+
+    let source = Read(std::io::Error::other("read"));
+    let error = SessionError::Log(std::io::Error::other(source));
+    let (outcome, err) = conclusion(None, &[error]);
+    assert_eq!(outcome.exit, Exit::Error);
+    assert_eq!(err, "togi run: write the event log: read: read\n");
+}
+
+#[test]
 fn a_refused_journal_is_exit_sixteen_and_beats_a_dead_end() {
     let refusal = Refusal {
         dimension: Dimension::Schema,

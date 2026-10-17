@@ -59,7 +59,7 @@ pub struct Options {
 /// Why a forecast could not be made.
 #[derive(Debug, thiserror::Error)]
 pub enum ForecastError {
-    #[error("read anchor: {0}")]
+    #[error("read anchor: {}", togi_machine::error_chain(.0.as_ref()))]
     Anchor(#[source] Box<togi_tool_forecast::Error>),
     #[error(transparent)]
     Bench(Box<Error>),
@@ -78,7 +78,7 @@ pub enum ForecastError {
     IrregularArchiveEntry { path: PathBuf },
     #[error("start the simulator: {0}")]
     Launch(#[source] RunError),
-    #[error("read the run: {0}")]
+    #[error("read the run: {}", togi_machine::error_chain(.0.as_ref()))]
     Read(#[source] Box<togi_tool_forecast::Error>),
     #[error("simulator exit {exit} means {means}, but the journal after the anchor is {journal}")]
     StatusMismatch {
@@ -90,9 +90,9 @@ pub enum ForecastError {
     SimulatorFailed { exit: i32 },
     #[error("{0}")]
     Runs(RunFailures),
-    #[error("summarize the forecast: {0}")]
+    #[error("summarize the forecast: {}", togi_machine::error_chain(.0.as_ref()))]
     Summary(#[source] Box<togi_tool_forecast::Error>),
-    #[error("write forecast {}: {source}", path.display())]
+    #[error("write forecast {}: {}", path.display(), togi_machine::error_chain(.source.as_ref()))]
     Write {
         path: PathBuf,
         #[source]
@@ -178,8 +178,7 @@ impl Report {
             "forecast: hours run from the anchor to conclusion, over concluded runs only; {}",
             togi_tool_forecast::recovery_bias()
         )?;
-        let metrics = togi_tool_forecast::metrics(&record.runs)
-            .map_err(|error| io::Error::other(error.to_string()))?;
+        let metrics = togi_tool_forecast::metrics(&record.runs).map_err(io::Error::other)?;
         let mut rows = vec![[
             "metric".to_owned(),
             "median".to_owned(),
@@ -754,7 +753,10 @@ mod tests {
             };
             let result = write_record_to(&record, &mut writer, RecordingWriter::sync);
             if let Some(limit) = write_limit {
-                assert!(result.unwrap_err().to_string().contains("write failed"));
+                assert!(
+                    togi_machine::error_chain(result.unwrap_err().as_ref())
+                        .contains("write failed")
+                );
                 assert!(writer.calls.iter().all(|call| *call == "write"));
                 assert_eq!(
                     writer.bytes,
@@ -770,7 +772,10 @@ mod tests {
                         .all(|call| *call == "write")
                 );
                 if fail_sync {
-                    assert!(result.unwrap_err().to_string().contains("sync failed"));
+                    assert!(
+                        togi_machine::error_chain(result.unwrap_err().as_ref())
+                            .contains("sync failed")
+                    );
                 } else {
                     result.unwrap();
                 }

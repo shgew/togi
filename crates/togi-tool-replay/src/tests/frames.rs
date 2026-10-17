@@ -223,7 +223,7 @@ fn a_recording_the_dashboard_cannot_fold_names_the_event_that_breaks_it() {
     events.push(second_start);
     let error = draw(&events, 2, &frame(View::Main, (80, 24)), &TimeZone::UTC).unwrap_err();
     assert!(matches!(error, Error::Fold { seq: 2, .. }), "{error}");
-    assert!(error.to_string().starts_with("event 2 cannot be shown: "));
+    assert!(togi_machine::error_chain(&error).starts_with("event 2 cannot be shown: "));
 }
 
 #[test]

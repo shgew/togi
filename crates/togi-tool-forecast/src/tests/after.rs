@@ -199,7 +199,7 @@ fn an_unreplayable_newest_session_cannot_project_a_profile() {
     let anchor = only.anchor_at(togi_journal::Seq::new(2).unwrap()).unwrap();
     let error = after(&[only], &anchor).unwrap_err();
     assert_eq!(
-        error.to_string(),
+        togi_machine::error_chain(&error),
         format!(
             "session {A} cannot be replayed: the journal's ruleset is 0; this build's is {}",
             togi_tuner::RULESET
@@ -230,7 +230,7 @@ fn a_newer_schema_with_this_builds_ruleset_is_refused_for_its_schema() {
     let anchor = only.anchor_at(togi_journal::Seq::new(2).unwrap()).unwrap();
     let error = after(&[only], &anchor).unwrap_err();
     assert_eq!(
-        error.to_string(),
+        togi_machine::error_chain(&error),
         format!(
             "session {A} cannot be replayed: the journal's schema is {}; this build's is {}",
             togi_journal::SCHEMA + 1,

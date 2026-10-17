@@ -331,17 +331,21 @@ fn execute_loaded(
         Ok(SimOutcome::Capped { boots }) => return Outcome::Capped { boots: boots.get() },
         Err(error @ (SimError::Diverged { .. } | SimError::NoCapsule { .. })) => {
             return Outcome::VerifyFailed {
-                detail: error.to_string(),
+                detail: togi_machine::error_chain(&error),
             };
         }
         Err(error) => {
             return Outcome::Failed {
-                detail: error.to_string(),
+                detail: togi_machine::error_chain(&error),
             };
         }
     };
     if !finished.errors.is_empty() {
-        let errors: Vec<String> = finished.errors.iter().map(ToString::to_string).collect();
+        let errors: Vec<String> = finished
+            .errors
+            .iter()
+            .map(|error| togi_machine::error_chain(error))
+            .collect();
         return Outcome::Failed {
             detail: errors.join("; "),
         };
@@ -378,25 +382,28 @@ fn judge(persistence: &Persistence, fs: MemFs) -> Outcome {
         Ok(events) => events,
         Err(error) => {
             return Outcome::Failed {
-                detail: format!("read the journal: {error}"),
+                detail: format!("read the journal: {}", togi_machine::error_chain(&error)),
             };
         }
     };
     if let Err(error) = togi_tuner::replay(&events) {
         return Outcome::ReplayFailed {
-            detail: error.to_string(),
+            detail: togi_machine::error_chain(&error),
         };
     }
     let audits = match open(fs).map(|dir| audit_recordings(&dir, Completion::Finished)) {
         Ok(Ok(audits)) => audits,
         Ok(Err(error)) => {
             return Outcome::Failed {
-                detail: format!("audit the journals: {error}"),
+                detail: format!("audit the journals: {}", togi_machine::error_chain(&error)),
             };
         }
         Err(error) => {
             return Outcome::Failed {
-                detail: format!("open the state directory: {error}"),
+                detail: format!(
+                    "open the state directory: {}",
+                    togi_machine::error_chain(&error)
+                ),
             };
         }
     };

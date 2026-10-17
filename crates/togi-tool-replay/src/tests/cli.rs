@@ -277,5 +277,5 @@ fn run_reports_an_unreadable_recording_and_a_failed_write() {
         || TimeZone::UTC,
     )
     .unwrap_err();
-    assert_eq!(error.to_string(), "write the frame: closed");
+    assert_eq!(togi_machine::error_chain(&error), "write the frame: closed");
 }

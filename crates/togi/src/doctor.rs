@@ -13,9 +13,7 @@ use togi_render::{Renderer, Style, escape_text};
 use crate::args::ConfigArgs;
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
-use crate::report::{
-    chain, current_build, emit, exit_with, fail, refusal_message, unknown_event_message,
-};
+use crate::report::{current_build, emit, exit_with, fail, refusal_message, unknown_event_message};
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[
@@ -67,7 +65,9 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         .map(|(config, _)| config)
     {
         Ok(config) => config,
-        Err(error) => return exit_with(ctx, COMMAND, chain(&error), Exit::Usage),
+        Err(error) => {
+            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Usage);
+        }
     };
     let privileged = system.privileged();
     let _lock = if privileged {
@@ -88,7 +88,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     };
     let diagnosis = match system.diagnose(&config, recorded.as_ref(), privileged) {
         Ok(diagnosis) => diagnosis,
-        Err(error) => return fail(ctx, COMMAND, chain(&error)),
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     let (table, failed) = table(&diagnosis);
     if let Err(exit) = ctx
@@ -99,7 +99,11 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         return exit;
     }
     if let Some(error) = &diagnosis.bios_context_error {
-        return fail(ctx, COMMAND, format!("read BIOS context: {}", chain(error)));
+        return fail(
+            ctx,
+            COMMAND,
+            format!("read BIOS context: {}", togi_render::error_chain(error)),
+        );
     }
     if !failed.is_empty() {
         let line = format!("not ready: {}", failed.join(", "));
@@ -134,7 +138,7 @@ fn recorded_context(
     let recorded = match ctx.system.recorded_build(ctx.state_dir) {
         Ok(Some(recorded)) => recorded,
         Ok(None) => return Ok(None),
-        Err(error) => return Err(fail(ctx, COMMAND, chain(&error))),
+        Err(error) => return Err(fail(ctx, COMMAND, togi_render::error_chain(&error))),
     };
     match current.verdict(&recorded, Operation::Resume) {
         Verdict::Archive => return Ok(None),
@@ -148,7 +152,7 @@ fn recorded_context(
     let recording = ctx.system.recording(&path).map_err(|error| {
         match unknown_event_message(&error, &recorded, &current) {
             Some(message) => refuse(ctx, renderer, &message),
-            None => fail(ctx, COMMAND, chain(&error)),
+            None => fail(ctx, COMMAND, togi_render::error_chain(&error)),
         }
     })?;
     Ok(recording
