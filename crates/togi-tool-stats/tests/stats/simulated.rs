@@ -172,3 +172,123 @@ fn a_simulated_sessions_chain_records_attribute_each_trial_once_to_its_own_set()
         "the session's chain trials and the failed load's reruns are attributed: {text}"
     );
 }
+
+#[test]
+fn a_simulated_sessions_backoff_records_charge_each_backoff_once_to_its_failed_trial() {
+    let events = chain_session();
+    let journal = Journal::new(events.clone()).unwrap();
+    let text = togi_tool_stats::backoff_records(&journal, None).unwrap();
+    let mut intents = std::collections::HashMap::new();
+    let mut r7 = std::collections::HashSet::new();
+    let mut backoffs = std::collections::BTreeSet::new();
+    for event in &events {
+        if let Payload::TrialIntent(intent) = &event.payload {
+            intents.insert(serde_json::to_value(&intent.trial).unwrap(), intent);
+            if intent.regime == togi_machine::Regime::R7 && intent.cores.len() > 1 {
+                r7.insert(intent.trial.clone());
+            }
+        }
+        let failure_of = |seq: &togi_journal::Seq| {
+            events.iter().find(|e| e.seq == *seq).is_some_and(|cause| {
+                if let Payload::Failure(f) = &cause.payload {
+                    f.trial.as_ref().is_some_and(|t| r7.contains(t))
+                } else if let Payload::TrialEnd(end) = &cause.payload {
+                    r7.contains(&end.trial)
+                } else {
+                    false
+                }
+            })
+        };
+        if let Payload::TunerDecision(d) = &event.payload {
+            if d.decision == togi_journal::Decision::Backoff && event.cause.iter().any(failure_of) {
+                backoffs.insert(event.seq.get());
+            }
+        }
+    }
+    assert!(!backoffs.is_empty(), "the session backed off no R7 failure");
+
+    let mut charged = std::collections::BTreeSet::new();
+    let mut phases = Vec::new();
+    let (mut failures, mut counts) = (0, 0);
+    for line in text.lines() {
+        let record: serde_json::Value = serde_json::from_str(line).unwrap();
+        failures += 1;
+        assert_eq!(record["carried"], false, "{line}");
+        let intent = intents[&record["trial"]];
+        assert_eq!(
+            serde_json::to_value(intent.cores).unwrap(),
+            record["cores"],
+            "{line}"
+        );
+        assert_eq!(
+            serde_json::to_value(intent.workload).unwrap(),
+            record["workload"],
+            "{line}"
+        );
+        assert_eq!(
+            intent.cycle.map(|c| u64::from(c.get())),
+            record["cycle"].as_u64(),
+            "{line}"
+        );
+        let requirement = &record["requirement"];
+        if intent.cycle.is_some() && !intent.rerun {
+            assert_eq!(requirement["kind"], "cycle", "{line}");
+            assert_eq!(
+                intent.step.map(|s| u64::from(s.get())),
+                requirement["step"].as_u64(),
+                "{line}"
+            );
+        }
+        assert!(requirement["needed"].as_u64().unwrap() > 0, "{line}");
+        let phase = record["phase"].as_str().unwrap();
+        phases.push(
+            ["phase_1", "phase_2", "concluded"]
+                .iter()
+                .position(|known| *known == phase)
+                .unwrap_or_else(|| panic!("{line}")),
+        );
+        for backoff in record["backoffs"].as_array().unwrap() {
+            let seq = backoff["seq"].as_u64().unwrap();
+            assert!(charged.insert(seq), "backoff {seq} charged twice: {text}");
+            assert!(seq > record["seq"].as_u64().unwrap(), "{line}");
+            let moved = backoff["to"].as_i64().unwrap() - backoff["from"].as_i64().unwrap();
+            assert!(moved > 0, "{line}");
+            assert_eq!(backoff["counts"].as_i64(), Some(moved), "{line}");
+            counts += moved;
+        }
+    }
+    assert_eq!(
+        charged, backoffs,
+        "every voltage-targeted backoff, once: {text}"
+    );
+    assert!(
+        phases.is_sorted(),
+        "phase 1 failures before phase 2's, before the conclusion's: {phases:?}"
+    );
+
+    let rendered = report(&journal, None);
+    let listed = rows(&rendered, "R7 voltage-targeted backoffs");
+    assert_eq!(listed.len(), backoffs.len(), "{rendered}");
+    assert!(
+        listed.iter().all(|row| row[1] == "phase"),
+        "a simulated session folds, so every backoff has its phase: {rendered}"
+    );
+    let all = rows(&rendered, "R7 failures and backoffs by phase")
+        .into_iter()
+        .find(|row| row[0] == "all")
+        .unwrap();
+    assert_eq!(
+        all,
+        [
+            "all".to_owned(),
+            failures.to_string(),
+            "0".to_owned(),
+            text.lines()
+                .filter(|line| !line.contains("\"backoffs\":[]"))
+                .count()
+                .to_string(),
+            backoffs.len().to_string(),
+            counts.to_string(),
+        ]
+    );
+}

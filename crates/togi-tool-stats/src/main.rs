@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use jiff::Timestamp;
-use togi_tool_stats::{Error, Journal, chain_records, report, score};
+use togi_tool_stats::{Error, Journal, backoff_records, chain_records, report, score};
 
 /// Summarize a current or archived journal for review, read-only: the journal and its unfinished final line
 /// are left as they are.
@@ -27,6 +27,9 @@ struct Cli {
     /// Also write each R7 chain derivation's attribution to FILE, one JSON object a line.
     #[arg(long, value_name = "FILE", conflicts_with = "forecast")]
     chains: Option<PathBuf>,
+    /// Also write each multi-core R7 failure with the backoffs charged to it to FILE, one JSON object a line.
+    #[arg(long, value_name = "FILE", conflicts_with = "forecast")]
+    backoffs: Option<PathBuf>,
 }
 
 fn parse_since(text: &str) -> Result<Timestamp, String> {
@@ -60,6 +63,16 @@ fn run(cli: &Cli) -> Result<(String, Vec<String>), Error> {
             source: source.into(),
         })?;
         std::fs::write(path, records).map_err(|source| Error::Chains {
+            path: path.display().to_string(),
+            source,
+        })?;
+    }
+    if let Some(path) = &cli.backoffs {
+        let records = backoff_records(&journal, cli.since).map_err(|source| Error::Backoffs {
+            path: path.display().to_string(),
+            source: source.into(),
+        })?;
+        std::fs::write(path, records).map_err(|source| Error::Backoffs {
             path: path.display().to_string(),
             source,
         })?;

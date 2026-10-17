@@ -4,9 +4,9 @@ use std::process::{Command, Output};
 
 use tempfile::tempdir;
 use togi_journal::Seq;
-use togi_tool_stats::{Journal, chain_records, report};
+use togi_tool_stats::{Journal, backoff_records, chain_records, report};
 
-use crate::sim::{hunting_session, write_journal};
+use crate::sim::{chain_session, hunting_session, write_journal};
 
 fn stats(args: &[&std::ffi::OsStr]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_togi-tool-stats"))
@@ -101,6 +101,42 @@ fn real_process_chains_writes_the_chain_records_beside_the_unchanged_report() {
 }
 
 #[test]
+fn real_process_backoffs_writes_the_failure_records_beside_the_unchanged_report() {
+    let events = chain_session();
+    let journal = Journal::new(events.clone()).unwrap();
+    let dir = tempdir().unwrap();
+    write_journal(dir.path(), &events);
+    let out = dir.path().join("backoffs.jsonl");
+    let ran = stats(&[
+        os("--state-dir"),
+        dir.path().as_os_str(),
+        os("--backoffs"),
+        out.as_os_str(),
+    ]);
+    assert_eq!(ran.status.code(), Some(0));
+    assert_eq!(text(ran.stderr), "");
+    assert_eq!(text(ran.stdout), report(&journal, None));
+    let written = fs::read_to_string(&out).unwrap();
+    assert_eq!(written, backoff_records(&journal, None).unwrap());
+    assert!(written.contains("\"backoffs\":[{"), "{written}");
+
+    let unwritable = dir.path().join("absent").join("backoffs.jsonl");
+    let ran = stats(&[
+        os("--state-dir"),
+        dir.path().as_os_str(),
+        os("--backoffs"),
+        unwritable.as_os_str(),
+    ]);
+    assert_eq!(ran.status.code(), Some(1));
+    assert_eq!(text(ran.stdout), "");
+    let stderr = text(ran.stderr);
+    assert!(
+        stderr.starts_with("togi-tool-stats: write backoff records "),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn real_process_since_keeps_what_starts_at_or_after_the_cutoff() {
     let (dir, _) = state_with_torn_tail();
     let ran = stats(&[
@@ -144,6 +180,12 @@ fn real_process_rejected_arguments_exit_two_without_a_report() {
             os("forecast.json"),
             os("--chains"),
             os("chains.jsonl"),
+        ],
+        vec![
+            os("--forecast"),
+            os("forecast.json"),
+            os("--backoffs"),
+            os("backoffs.jsonl"),
         ],
     ] {
         let mut full = vec![os("--state-dir"), dir.path().as_os_str()];

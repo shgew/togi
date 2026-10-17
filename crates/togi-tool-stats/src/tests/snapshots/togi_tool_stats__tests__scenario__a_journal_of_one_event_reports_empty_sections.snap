@@ -70,7 +70,14 @@ Prior evidence by hunt and stage
 hunt  stage  ran groups  established groups  passed again  failed again  redundant trials  redundant hours
 
 R7 voltage-targeted backoffs
-seq  decision  core  from  to  counts  causes  reason
+seq  phase  decision  core  from  to  counts  failure  loaded cores  requirement  causes  reason
+
+R7 failures and backoffs by phase
+phase  failures  carried  charged  backoffs  counts
+all    0         0        0        0         0
+
+R7 failures by counts charged
+counts  failures
 
 R7 chain derivations
 seq  cycle  step  CCD  workload  part  request groups  loaded cores  kind  moved  result  held  trials  trial s  sources

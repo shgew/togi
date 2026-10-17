@@ -508,3 +508,16 @@ pub fn chain_records(
     let projection = Projection::new(journal);
     chains::records(&chains::attribute(&projection, since))
 }
+
+/// The multi-core R7 failures of `journal` first observed at or after `since` with the backoffs charged to
+/// each, one JSON object a failure and a line, in journal order.
+///
+/// # Errors
+///
+/// When a record cannot be encoded.
+pub fn backoff_records(
+    journal: &Journal,
+    since: Option<Timestamp>,
+) -> Result<String, serde_json::Error> {
+    r7::records(&r7::decisions(journal.events(), since))
+}
