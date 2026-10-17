@@ -73,6 +73,19 @@ fn gh_args_send_method_headers_body_and_url() {
     );
 }
 
+#[test]
+fn gh_command_drops_forced_colour_and_terminal() {
+    let command = GhTransport::new("gh").command(&post());
+    let envs: Vec<_> = command.get_envs().collect();
+    assert_eq!(
+        envs,
+        [
+            (std::ffi::OsStr::new("CLICOLOR_FORCE"), None),
+            (std::ffi::OsStr::new("GH_FORCE_TTY"), None),
+        ]
+    );
+}
+
 #[test_case(b"HTTP/2.0 200 OK\nContent-Type: application/json\r\nX: y\r\n\r\n{\"a\":1}\r\n\r\n", 200, b"{\"a\":1}\r\n\r\n" ; "headers")]
 #[test_case(b"HTTP/1.1 404 Not Found\r\n\r\n{}", 404, b"{}" ; "no headers")]
 #[test_case(b"HTTP/2.0 204 No Content\r\n\r\n", 204, b"" ; "empty body")]

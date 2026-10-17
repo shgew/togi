@@ -16,7 +16,7 @@ By that rule `release` ([#630](https://github.com/shgew/togi/issues/630)), `revi
 ## Considered Options
 
 - **Nushell for every tool,** as [ADR 0048](0048-rust.md) expected: rejected for the programs the rule assigns to Rust. Nushell has no type checker for a changelog parser, and a refusal pinned only by an end-to-end script is tested more slowly and less precisely than a unit test against an in-memory fake.
-- **Rust for every tool, `board` included:** rejected. `board` only reshapes `gh` JSON into a report; a crate would add a build, an HTTP client and a test harness for what a pipeline expresses directly.
+- **Rust for every tool, `board` included:** rejected. `board` only reshapes `gh` JSON into a report; a crate would add a build and a test harness for what a pipeline expresses directly.
 - **Keep the Go tools:** rejected. They keep a second toolchain, linter, formatter configuration and dependency feed in the repository for four small programs, and agents working on them follow a second set of conventions.
 
 ## Consequences

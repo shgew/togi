@@ -61,6 +61,24 @@ impl GhTransport {
             program: program.into(),
         }
     }
+
+    /// The command that sends `request`. It removes `CLICOLOR_FORCE` and `GH_FORCE_TTY` from gh's environment:
+    /// either makes gh colour, pretty-print or page its output, which the tool parses.
+    pub fn command(&self, request: &Request) -> Command {
+        let mut command = Command::new(&self.program);
+        command
+            .args(gh_args(request))
+            .env_remove("CLICOLOR_FORCE")
+            .env_remove("GH_FORCE_TTY")
+            .stdin(if request.body.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    }
 }
 
 impl Transport for GhTransport {
@@ -69,17 +87,8 @@ impl Transport for GhTransport {
         reason = "the release tool's one call site that runs gh"
     )]
     fn send(&mut self, request: Request) -> io::Result<Response> {
-        let mut command = Command::new(&self.program);
-        command
-            .args(gh_args(&request))
-            .stdin(if request.body.is_some() {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let mut child = command
+        let mut child = self
+            .command(&request)
             .spawn()
             .map_err(|error| io::Error::new(error.kind(), format!("run gh: {error}")))?;
         let stdin = child.stdin.take();
