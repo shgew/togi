@@ -1405,6 +1405,39 @@ fn torn_repair_is_kept_with_the_fragment_it_ended(written: usize) {
     assert_eq!(Ledger::parse(&bytes).unwrap().records, [start, torn, later]);
 }
 
+#[test_case("" ; "alone")]
+#[test_case("{\"event\":\"campaign_res\n" ; "after a cut-off line")]
+fn record_that_lost_only_its_newline_stays_discarded(before: &str) {
+    let start = Record::CampaignStarted {
+        at: at(0),
+        manifest_sha256: sha256(b"manifest"),
+        head: CHECKOUT.to_owned(),
+    };
+    let mut bytes = lines(std::slice::from_ref(&start));
+    let clean = bytes.len();
+    bytes.extend_from_slice(before.as_bytes());
+    let lost = Record::CampaignResumed {
+        at: at(1),
+        head: CHECKOUT.to_owned(),
+    };
+    serde_json::to_writer(&mut bytes, &lost).unwrap();
+    assert_eq!(
+        Ledger::parse(&bytes).unwrap().records,
+        std::slice::from_ref(&start)
+    );
+    let torn = Record::LedgerTorn {
+        at: at(2),
+        discarded: crate::suite::hex(&bytes[clean..]),
+    };
+    let later = Record::CampaignResumed {
+        at: at(2),
+        head: CHECKOUT.to_owned(),
+    };
+    bytes.extend(super::ledger::end_torn_tail(&bytes, at(2)).unwrap());
+    bytes.extend(lines(std::slice::from_ref(&later)));
+    assert_eq!(Ledger::parse(&bytes).unwrap().records, [start, torn, later]);
+}
+
 #[test_case(r#"{"event":"campaign_resumed","at":"2027-01-15T08:00:00Z"}"# ; "missing field")]
 #[test_case(r#"{"event":"campaign_resumed","at":"2027-01-15T08:00:00Z","head":"c","note":"x"}"# ; "unknown field")]
 #[test_case(r#"["campaign_resumed","2027-01-15T08:00:00Z","c"]"# ; "record as an array")]

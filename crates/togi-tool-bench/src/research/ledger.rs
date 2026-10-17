@@ -289,10 +289,32 @@ pub(super) fn end_torn_tail(ledger: &[u8], now: Timestamp) -> Result<Vec<u8>, se
     Ok(bytes)
 }
 
+/// The `ledger_torn` record that ends a torn region starting at line `first`, and the index of the line after
+/// it. The region is cut-off lines, possibly ended by a complete record that lost only its newline.
+fn repaired(complete: &[u8], lines: &[(usize, &[u8])], first: usize) -> Option<(Record, usize)> {
+    let start = lines[first].0;
+    let mut last = first;
+    loop {
+        let (last_start, line) = lines[last];
+        let region = &complete[start..last_start + line.len()];
+        let repair = lines
+            .get(last + 1)
+            .and_then(|(_, next)| decode(next).ok())
+            .filter(|next| matches!(next, Record::LedgerTorn { discarded, .. } if *discarded == hex(region)));
+        if let Some(repair) = repair {
+            return Some((repair, last + 2));
+        }
+        if line.is_empty() || decode(line).is_ok() || last + 1 >= lines.len() {
+            return None;
+        }
+        last += 1;
+    }
+}
+
 impl Ledger {
-    /// Reads the ledger's lines. Bytes after the last line that decodes are a torn region, never a record, and
-    /// lines that do not decode directly followed by the `ledger_torn` record holding their bytes are skipped
-    /// the same way.
+    /// Reads the ledger's lines. The torn tail is never a record, and once an append has ended it, the lines it
+    /// spans, directly followed by the `ledger_torn` record holding their bytes, are skipped the same way: also
+    /// a complete record that lost only its newline.
     pub fn parse(bytes: &[u8]) -> Result<Self, LedgerError> {
         let complete = &bytes[..bytes.len() - torn_tail(bytes).len()];
         let mut lines = Vec::new();
@@ -304,40 +326,22 @@ impl Ledger {
         let mut records = Vec::new();
         let mut index = 0;
         while index < lines.len() {
-            let (start, line) = lines[index];
-            index += 1;
+            let line = lines[index].1;
             if line.is_empty() {
+                index += 1;
                 continue;
             }
-            let source = match decode(line) {
-                Ok(record) => {
-                    records.push(record);
-                    continue;
-                }
-                Err(source) => source,
-            };
-            let mut end = index;
-            while lines
-                .get(end)
-                .is_some_and(|(_, next)| !next.is_empty() && decode(next).is_err())
-            {
-                end += 1;
+            if let Some((repair, next)) = repaired(complete, &lines, index) {
+                records.push(repair);
+                index = next;
+                continue;
             }
-            let (last_start, last) = lines[end - 1];
-            let region = hex(&complete[start..last_start + last.len()]);
-            match lines.get(end).map(|(_, next)| decode(next)) {
-                Some(Ok(repair)) if matches!(&repair, Record::LedgerTorn { discarded, .. } if *discarded == region) =>
-                {
-                    records.push(repair);
-                    index = end + 1;
-                }
-                _ => {
-                    return Err(LedgerError::Decode {
-                        line: index,
-                        source,
-                    });
-                }
-            }
+            let record = decode(line).map_err(|source| LedgerError::Decode {
+                line: index + 1,
+                source,
+            })?;
+            records.push(record);
+            index += 1;
         }
         match records.first() {
             Some(Record::CampaignStarted { .. }) => Ok(Self { records }),
