@@ -4,11 +4,11 @@ use jiff::Timestamp;
 use proptest::prelude::*;
 use togi_journal::{
     Activity, BackendRetry, BootLeaveReason, BootSavedEntry, Build, CarriedCore, CorePhase,
-    CoreTransition, CrashDetected, DeadEnd, DeadEndCondition, Event, EventKind, HuntEnd, HuntGroup,
-    HuntOutcome, HuntStage, Mce, Outcome, Payload, ProfileApplied, ProfileChange, ProfileRestored,
-    RetryTarget, SCHEMA, Seq, SessionBaseline, SessionCarried, SessionStart, SessionWarning,
-    Shutdown, ShutdownReason, SmuError, SmuOp, SmuReadback, Stamp, TrialEnd, TrialId, TrialIntent,
-    TrialProgress, TrialStart,
+    CoreTransition, CrashDetected, DeadEnd, DeadEndCondition, DefectId, Event, EventKind, FixStamp,
+    HuntEnd, HuntGroup, HuntOutcome, HuntStage, Mce, Outcome, Payload, ProfileApplied,
+    ProfileChange, ProfileRestored, RetryTarget, SCHEMA, Seq, SessionBaseline, SessionCarried,
+    SessionStart, SessionWarning, Shutdown, ShutdownReason, SmuError, SmuOp, SmuReadback, Stamp,
+    TrialEnd, TrialId, TrialIntent, TrialProgress, TrialStart,
 };
 use togi_machine::{
     Backend, BankType, BootId, CcdId, Condition, CoreInfo, CoreSet, CpuId, KernelCursor,
@@ -1011,7 +1011,7 @@ fn config_loaded(cursor: Option<&str>, error: Option<&str>) -> togi_journal::Con
         build: Build {
             version: "9.9.9".into(),
             rev: Some("abc".into()),
-            fixes: 4,
+            fixes: FixStamp::through(DefectId::new(4).unwrap()),
             ..build()
         },
         config: togi_config::Config::parse("{}").unwrap().snapshot(),
@@ -1032,7 +1032,7 @@ fn config_loaded_updates_the_build_the_run_is_judged_by() {
         (
             build.version.as_str(),
             build.rev.as_deref(),
-            build.fixes,
+            build.fixes.get(),
             build.ruleset,
             build.schema
         ),

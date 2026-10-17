@@ -37,13 +37,6 @@
           ...
         }:
         let
-          goFiles = lib.fileset.unions [
-            ./go.mod
-            ./go.sum
-            ./.golangci.yml
-            ./version.txt
-            ./tools
-          ];
           rustPkgs = pkgs.extend inputs.rust-overlay.overlays.default;
           rustToolchain = rustPkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           craneLib = (inputs.crane.mkLib rustPkgs).overrideToolchain rustToolchain;
@@ -187,12 +180,6 @@
             git add --all
             git -c user.name=nix -c user.email=nix@localhost commit --quiet --message advisory-db
           '';
-          testPhase = flags: packages: ''
-            runHook preCheck
-            export GOFLAGS=''${GOFLAGS//-trimpath/}
-            go test -p $NIX_BUILD_CORES ${flags} -shuffle=on -tags integration ${packages}
-            runHook postCheck
-          '';
           version = lib.fileContents ./version.txt;
           rev = inputs.self.shortRev or inputs.self.dirtyShortRev or "dev";
           installCompletions = lib.optionalString (pkgs.stdenv.buildPlatform.canExecute pkgs.stdenv.hostPlatform) ''
@@ -207,20 +194,6 @@
             license = lib.licenses.gpl3Plus;
             mainProgram = "togi";
             platforms = [ system ];
-          };
-          goTools = pkgs.buildGo127Module {
-            pname = "togi-go-tools";
-            inherit version;
-            src = lib.fileset.toSource {
-              root = ./.;
-              fileset = goFiles;
-            };
-            vendorHash = "sha256-uPqabZgQGQulf+F3BvMLhv4O0h5jOq12F7K60u5xjtA=";
-            nativeCheckInputs = [ pkgs.gitMinimal ];
-            subPackages = [
-              "tools/cover"
-            ];
-            checkPhase = testPhase "" "./...";
           };
           togiPackage =
             rev:
@@ -246,11 +219,8 @@
           devShells.default = pkgs.mkShell (
             {
               packages = [
-                pkgs.go_1_27
                 pkgs.gh
                 pkgs.gh-token
-                pkgs.gopls
-                pkgs.golangci-lint
                 pkgs.just
                 pkgs.nixfmt
                 pkgs.bashInteractive
@@ -264,7 +234,6 @@
                 pkgs.cargo-shear
                 pkgs.mold
               ];
-              GOTOOLCHAIN = "local";
               TOGI_DEV_SHELL = "1";
             }
             // rustLinker
@@ -272,7 +241,6 @@
           );
 
           checks = {
-            go-tools = goTools;
             board-test =
               pkgs.runCommand "togi-board-test"
                 {
@@ -358,22 +326,6 @@
                 done
                 touch "$out"
               '';
-            lint = config.checks.go-tools.overrideAttrs (old: {
-              pname = "togi-lint";
-              goModules = config.checks.go-tools.goModules;
-              nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.golangci-lint ];
-              buildPhase = ''
-                runHook preBuild
-                export HOME=$TMPDIR GOLANGCI_LINT_CACHE=$TMPDIR/golangci-lint
-                for target in linux/amd64 darwin/arm64; do
-                  GOOS=''${target%/*} GOARCH=''${target#*/} CGO_ENABLED=0 golangci-lint run ./...
-                done
-                runHook postBuild
-              '';
-              doCheck = false;
-              installPhase = "mkdir -p $out";
-              dontFixup = true;
-            });
             fmt =
               pkgs.runCommand "togi-fmt"
                 {
@@ -383,7 +335,7 @@
                     fileset = lib.fileset.unions [
                       ./flake.nix
                       ./justfile
-                      (lib.fileset.fileFilter (f: f.hasExt "go" || f.hasExt "nix" || f.hasExt "rs") ./.)
+                      (lib.fileset.fileFilter (f: f.hasExt "nix" || f.hasExt "rs") ./.)
                     ];
                   };
                 }
@@ -473,7 +425,6 @@
           formatter = pkgs.treefmt.withConfig {
             runtimeInputs = [
               pkgs.nixfmt
-              pkgs.go_1_27
               pkgs.just
               rustToolchain
             ];
@@ -483,11 +434,6 @@
               formatter.nixfmt = {
                 command = "nixfmt";
                 includes = [ "*.nix" ];
-              };
-              formatter.gofmt = {
-                command = "gofmt";
-                options = [ "-w" ];
-                includes = [ "*.go" ];
               };
               formatter.rustfmt = {
                 command = "rustfmt";

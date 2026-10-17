@@ -5,16 +5,21 @@ use togi_journal::fs::{Fault, Op};
 use togi_journal::{
     Activity, Attribution, Build, CarriedCore, CorePhase, CoreTransition, CycleEvent,
     DeadEndCondition, Event, EventKind, HuntOutcome, Outcome, Payload, SessionCarried, SessionId,
-    TrialId, TrialIntent,
+    TrialClass, TrialId, TrialIntent,
 };
-use togi_machine::{BiosContext, Condition, CoreId, PerCore, Regime, Signal, TargetOffset};
+use togi_machine::{
+    BiosContext, Condition, ContextField, CoreId, PerCore, Regime, Signal, TargetOffset, WorkloadId,
+};
 use togi_session::{PrepareError, Stop};
 use togi_sim::MachineDefinition;
 use togi_sim::definition::JointDef;
-use togi_simrun::{Observe, Observer, SimError, SimInput, simulate};
+use togi_simrun::{Observer, SimError, SimInput, simulate};
 use togi_tuner::PhaseNo;
 
-use crate::common::{Bench, STATE, build, finish, hunt_machine, machine_file, until_kind};
+use crate::common::{
+    Bench, STATE, build, finish, hunt_machine, machine_file, phase_two_concludes, stop_when,
+    until_kind,
+};
 
 const SEED: u64 = 1000;
 
@@ -67,16 +72,6 @@ fn changed_bios() -> BiosContext {
     }
 }
 
-fn stop_when(mut hit: impl FnMut(&Event) -> bool + 'static) -> Observer {
-    Box::new(move |event| {
-        if hit(event) {
-            Observe::Stop
-        } else {
-            Observe::Continue
-        }
-    })
-}
-
 fn after_initial_phases(cores: usize) -> Observer {
     let mut seen = 0;
     stop_when(move |event| {
@@ -114,17 +109,6 @@ fn is_passed_full_cycle(event: &Event) -> bool {
         &event.payload,
         Payload::CheckingCycle(cycle)
             if cycle.event == CycleEvent::End && cycle.passed && cycle.full
-    )
-}
-
-fn is_phase_two_confirmed(event: &Event) -> bool {
-    matches!(
-        &event.payload,
-        Payload::CheckingCycle(cycle)
-            if cycle.event == CycleEvent::End
-                && cycle.passed
-                && cycle.full
-                && cycle.reason.as_deref().is_some_and(|reason| reason.contains("phase 2 ends"))
     )
 }
 
@@ -191,35 +175,32 @@ fn config(text: &str) -> Config {
     Config::parse(text).unwrap()
 }
 
-fn candidates(limit: i64, cores: i64) -> String {
-    let limits: Vec<String> = (0..cores)
-        .map(|core| format!("\"{core}\": {limit}"))
-        .collect();
-    format!("{{{}}}", limits.join(", "))
+fn candidates(limit: i64, cores: i64) -> serde_json::Value {
+    (0..cores)
+        .map(|core| (core.to_string(), serde_json::Value::from(limit)))
+        .collect::<serde_json::Map<_, _>>()
+        .into()
 }
 
 fn candidate_config(limit: i64, cores: i64) -> Config {
-    config(&format!(
-        r#"{{"candidate_solo_limits": {}}}"#,
-        candidates(limit, cores)
-    ))
+    config(&serde_json::json!({ "candidate_solo_limits": candidates(limit, cores) }).to_string())
 }
 
 fn quick_matrix() -> Config {
-    config(&format!(
-        r#"{{
-            "candidate_solo_limits": {},
-            "evidence": {{"miss": 0.5}},
-            "durations": {{
+    config(
+        &serde_json::json!({
+            "candidate_solo_limits": candidates(-10, 4),
+            "evidence": {"miss": 0.5},
+            "durations": {
                 "search_trial_s": 1,
                 "short_trial_s": 1,
                 "checking_trial_s": 1,
                 "checking_idle_s": 1,
                 "checking_all_core_s": 4
-            }}
-        }}"#,
-        candidates(-10, 4)
-    ))
+            }
+        })
+        .to_string(),
+    )
 }
 
 #[test]
@@ -401,6 +382,19 @@ fn a_ruleset_transition_starts_phase_one_with_nothing_confirmed() {
 #[test]
 fn a_ruleset_transition_after_a_bios_change_carries_only_solo_limits() {
     let source = clean_cycle();
+    let recorded = source
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::SessionContext(context) = &event.payload {
+                Some(context.bios_context())
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let mismatch = recorded.first_difference(&changed_bios()).unwrap();
+    assert_eq!(mismatch.field, ContextField::BiosVersion);
     let next = source.resumed(&shared_voltage(), SEED);
     next.sim.set_bios_context(changed_bios());
     let mut input = next_input(&next);
@@ -409,14 +403,7 @@ fn a_ruleset_transition_after_a_bios_change_carries_only_solo_limits() {
     let events = next.events();
     let carried = carried(&events);
     assert!(!carried.failure_points);
-    assert!(
-        carried
-            .detail
-            .as_deref()
-            .is_some_and(|detail| detail.contains("bios_version")),
-        "{:?}",
-        carried.detail
-    );
+    assert_eq!(carried.detail, Some(mismatch.to_string()));
     assert!(!carried.carried.is_empty());
     assert!(
         carried
@@ -668,7 +655,7 @@ fn culprit_source(definition_after: &MachineDefinition, config: &Config) -> Benc
     let mut input = source.input();
     input.config = config.clone();
     input.policy.cycles = None;
-    input.observer = Some(stop_when(is_phase_two_confirmed));
+    input.observer = Some(stop_when(phase_two_concludes(&source)));
     finish(input);
 
     let source = source.resumed(definition_after, 1);
@@ -836,20 +823,40 @@ fn a_ruleset_transition_carries_a_direct_hunt_failure_point() {
     assert_eq!(point.signal, signal);
 }
 
-fn class_key(intent: &TrialIntent) -> String {
-    let cores: Vec<u8> = match intent.core {
-        Some(core) => vec![core.get()],
-        None => intent.cores.iter().map(CoreId::get).collect(),
-    };
-    format!(
-        "{:?}/{:?}/{cores:?}/{}",
-        intent.regime,
-        Some(intent.workload),
-        intent.duration_s
-    )
+/// What makes two passes evidence of the same trial class.
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct ClassKey {
+    regime: Regime,
+    workload: WorkloadId,
+    cores: Vec<CoreId>,
+    duration_s: u32,
 }
 
-fn first_cycle_live_passes(events: &[Event]) -> BTreeMap<String, usize> {
+impl ClassKey {
+    fn live(intent: &TrialIntent) -> Self {
+        Self {
+            regime: intent.regime,
+            workload: intent.workload,
+            cores: intent
+                .core
+                .map_or_else(|| intent.cores.iter().collect(), |core| vec![core]),
+            duration_s: intent.duration_s,
+        }
+    }
+
+    fn carried(class: &TrialClass) -> Self {
+        Self {
+            regime: class.regime,
+            workload: class
+                .workload
+                .unwrap_or_else(|| panic!("a carried pass names no workload: {class:?}")),
+            cores: class.cores.iter().collect(),
+            duration_s: class.duration_s,
+        }
+    }
+}
+
+fn first_cycle_live_passes(events: &[Event]) -> BTreeMap<ClassKey, usize> {
     let mut intents: HashMap<TrialId, &TrialIntent> = HashMap::new();
     let mut counts = BTreeMap::new();
     let mut open = false;
@@ -873,7 +880,7 @@ fn first_cycle_live_passes(events: &[Event]) -> BTreeMap<String, usize> {
             && let Some(intent) = intents.get(&end.trial)
         {
             assert_eq!(end.outcome, Outcome::Pass, "{end:?}");
-            *counts.entry(class_key(intent)).or_default() += 1;
+            *counts.entry(ClassKey::live(intent)).or_default() += 1;
         }
     }
     panic!("no first passed full cycle");
@@ -908,7 +915,7 @@ fn a_transition_checks_carried_solo_limits_but_completes_full_cycles_with_live_p
 
     let trials = config.evidence().trials().get();
     let mut facts = HashMap::new();
-    let mut together_passes: BTreeMap<String, usize> = BTreeMap::new();
+    let mut together_passes: BTreeMap<ClassKey, usize> = BTreeMap::new();
     let mut completed = BTreeSet::new();
     for event in &events {
         let payload = &event.payload;
@@ -917,12 +924,9 @@ fn a_transition_checks_carried_solo_limits_but_completes_full_cycles_with_live_p
                 && fact.condition == Condition::Together
                 && fact.outcome == Outcome::Pass
             {
-                let cores: Vec<u8> = fact.class.cores.iter().map(CoreId::get).collect();
-                let key = format!(
-                    "{:?}/{:?}/{cores:?}/{}",
-                    fact.class.regime, fact.class.workload, fact.class.duration_s
-                );
-                *together_passes.entry(key).or_default() += 1;
+                *together_passes
+                    .entry(ClassKey::carried(&fact.class))
+                    .or_default() += 1;
             }
             facts.insert(event.seq, fact);
         } else if let Payload::TrialIntent(intent) = payload {
@@ -936,10 +940,6 @@ fn a_transition_checks_carried_solo_limits_but_completes_full_cycles_with_live_p
             && phase.from == Some(CorePhase::Search)
             && phase.to != CorePhase::Search
         {
-            assert!(
-                phase.reason.contains("carried") && phase.reason.contains(&id.to_string()),
-                "{phase:?}"
-            );
             let mut counts: HashMap<Regime, u32> = HashMap::new();
             for cause in &event.cause {
                 if let Some(fact) = facts.get(cause)

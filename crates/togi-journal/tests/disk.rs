@@ -5,7 +5,7 @@ use std::process::Command;
 use std::sync::Arc;
 use togi_journal::fs::{FileKind, Fs, MemFs};
 use togi_journal::{
-    ArchiveKind, Build, Journal, LockError, Payload, SCHEMA, SessionId, SessionStart,
+    ArchiveKind, Build, FixStamp, Journal, LockError, Payload, SCHEMA, SessionId, SessionStart,
     SessionWarning, Stamp, StateDir,
 };
 use togi_machine::BootId;
@@ -36,7 +36,7 @@ mod support {
                 rev: None,
                 ruleset: 1,
                 schema: SCHEMA,
-                fixes: 0,
+                fixes: FixStamp::none(),
                 evidence: 1,
             },
             session: "20231114T221320Z".parse::<SessionId>().unwrap(),

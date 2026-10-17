@@ -2,17 +2,12 @@
 //! togi journal header, so each refuses with exit 1 and the cutover step, reads no further event, and changes no
 //! file in the directory. The Go build's files are described in `fixture`.
 
-use std::ffi::OsString;
-use std::fs::File;
 use std::os::fd::OwnedFd;
-use std::os::unix::ffi::OsStringExt as _;
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use rustix::io::{FdFlags, fcntl_setfd};
-use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{Winsize, tcsetwinsize};
+use togi_render::open_pty;
 
 use crate::fixture::{self, Snapshot};
 use crate::support::{Session, text, togi};
@@ -131,18 +126,7 @@ fn real_process_live_watch_refuses_before_it_takes_the_terminal() {
     let dir = tempfile::tempdir().unwrap();
     fixture::install_real_fs(dir.path());
     let before = fixture::snapshot_real_fs(dir.path());
-    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
-    fcntl_setfd(&master, FdFlags::CLOEXEC).unwrap();
-    grantpt(&master).unwrap();
-    unlockpt(&master).unwrap();
-    let slave_path = PathBuf::from(OsString::from_vec(
-        ptsname(&master, Vec::new()).unwrap().into_bytes(),
-    ));
-    let slave = File::options()
-        .read(true)
-        .write(true)
-        .open(&slave_path)
-        .unwrap();
+    let (master, slave) = open_pty().unwrap();
     tcsetwinsize(
         &slave,
         Winsize {

@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use togi_facts::{Decisive, TrialClass};
-use togi_journal::{SCHEMA, Seq};
+use togi_journal::{FixStamp, SCHEMA, Seq};
 use togi_machine::{
     BiosContext, Condition, CoreId, CoreSet, PerCore, Regime, Signal, TargetOffset, WorkloadId,
 };
@@ -11,6 +11,7 @@ use togi_sim::MachineDefinition;
 use togi_tool_trialfacts::{BuildStamp, Class, Phase, Profile, TrialFact};
 
 mod anchor;
+mod artifact;
 mod evidence;
 mod forward;
 mod generate;
@@ -97,7 +98,7 @@ pub(crate) fn fact_at(
             rev: "abc".into(),
             ruleset: 1,
             schema: SCHEMA,
-            fixes: 0,
+            fixes: FixStamp::none(),
             evidence: Some(1),
         },
         context: Some(context()),

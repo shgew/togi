@@ -12,7 +12,7 @@ use jiff::tz::TimeZone;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 use togi_config::Config;
-use togi_journal::{Build, EventKind, Payload, Recording, SCHEMA, ShutdownReason};
+use togi_journal::{Build, EventKind, FixStamp, Payload, Recording, SCHEMA, ShutdownReason};
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
@@ -96,7 +96,7 @@ fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples() {
                 rev: None,
                 ruleset: togi_tuner::RULESET,
                 schema: SCHEMA,
-                fixes: 0,
+                fixes: FixStamp::none(),
                 evidence: togi_tuner::EVIDENCE_EPOCH,
             },
             simulator: Simulator::new(

@@ -3,7 +3,6 @@
 //! again on one test (`helper`), as in `panics`.
 
 use std::ffi::OsString;
-use std::fs::File;
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -12,7 +11,6 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use rustix::process::{Pid, Signal, kill_process};
-use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use rustix::termios::{LocalModes, tcgetattr};
 use tempfile::TempDir;
 use togi_cli::dashboard::Stop;
@@ -21,6 +19,7 @@ use togi_machine::{
     CancellationToken, Error as MachineError, Machine, Partial, Reporter, Running, Started,
     Stopped, Swept, TrialResult, TrialSpec, Trials,
 };
+use togi_render::open_pty;
 
 use crate::support::{Fake, Scripted, biased};
 
@@ -146,17 +145,6 @@ fn real_process_helper() {
     std::process::exit(i32::from(exit.code()));
 }
 
-fn open_pty() -> (OwnedFd, File) {
-    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
-    grantpt(&master).unwrap();
-    unlockpt(&master).unwrap();
-    let slave = PathBuf::from(OsString::from(
-        String::from_utf8(ptsname(&master, Vec::new()).unwrap().into_bytes()).unwrap(),
-    ));
-    let slave = File::options().read(true).write(true).open(slave).unwrap();
-    (master, slave)
-}
-
 /// Everything the child writes to the terminal, read while it runs: macOS discards what is still queued once the
 /// last slave descriptor closes. The reader ends at that close.
 fn record(master: &OwnedFd) -> (Arc<Mutex<Vec<u8>>>, JoinHandle<()>) {
@@ -199,7 +187,7 @@ fn real_process_ctrl_c_reaches_runs_own_listener_after_the_dashboard_closed_and_
 
 pub(super) fn stopped_by_signal(signal: Signal) {
     let dir = TempDir::new().unwrap();
-    let (master, slave) = open_pty();
+    let (master, slave) = open_pty().unwrap();
     #[expect(
         clippy::disallowed_methods,
         reason = "real_process tests control the run helper over a PTY"
@@ -280,7 +268,7 @@ fn wait_for_exit(child: &mut std::process::Child) -> std::process::ExitStatus {
 fn real_process_a_session_panic_stops_the_dashboard_and_gives_the_terminal_back_before_the_panic_propagates()
  {
     let dir = TempDir::new().unwrap();
-    let (master, slave) = open_pty();
+    let (master, slave) = open_pty().unwrap();
     #[expect(
         clippy::disallowed_methods,
         reason = "the real_process test checks panic terminal restoration"
@@ -329,7 +317,7 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 #[test]
 fn real_process_ctrl_c_stops_a_run_that_shows_the_real_dashboard_and_the_cursor_comes_back() {
     let dir = TempDir::new().unwrap();
-    let (master, slave) = open_pty();
+    let (master, slave) = open_pty().unwrap();
     #[expect(
         clippy::disallowed_methods,
         reason = "the real_process test sends Ctrl-C through a PTY"
@@ -402,7 +390,7 @@ fn last(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 fn real_process_a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and_the_palette()
  {
     let dir = TempDir::new().unwrap();
-    let (master, slave) = open_pty();
+    let (master, slave) = open_pty().unwrap();
     #[expect(
         clippy::disallowed_methods,
         reason = "the real_process test checks console restoration after panic"

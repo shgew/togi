@@ -1,15 +1,14 @@
 use std::cell::RefCell;
-use std::fs::File;
 use std::io::{self, Write};
-use std::os::fd::{AsFd as _, OwnedFd};
+use std::os::fd::AsFd as _;
 use std::rc::Rc;
 
 use rustix::io::{Errno, write};
-use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use test_case::test_case;
-use togi_defect::{DefectId, FindingView};
-use togi_journal::{DefectDirection, Seq};
+use togi_defect::FindingView;
+use togi_journal::{DefectDirection, DefectId, Seq};
 use togi_machine::{CancellationToken, CoreId, CoreSet};
+use togi_render::open_pty;
 use togi_session::PromptError;
 
 use super::{Answers, ask, parse_answer, read_line, readable};
@@ -178,24 +177,11 @@ fn an_answer_that_could_not_be_read_is_no_unless_the_run_was_stopped() {
     assert!(matches!(stopped, Err(PromptError::Cancelled)));
 }
 
-fn terminal() -> (OwnedFd, File) {
-    let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
-    grantpt(&master).unwrap();
-    unlockpt(&master).unwrap();
-    let name = ptsname(&master, Vec::new()).unwrap();
-    let slave = File::options()
-        .read(true)
-        .write(true)
-        .open(std::str::from_utf8(name.as_bytes()).unwrap())
-        .unwrap();
-    (master, slave)
-}
-
 const EOF_KEY: &[u8] = b"\x04";
 
 #[test]
 fn real_fs_a_typed_line_is_read_whole_on_a_terminal() {
-    let (master, slave) = terminal();
+    let (master, slave) = open_pty().unwrap();
     write(&master, b"yes\n").unwrap();
     let line = read_line(slave.as_fd(), &CancellationToken::new(), readable).unwrap();
     assert_eq!(line.as_deref(), Some("yes\n"));
@@ -203,7 +189,7 @@ fn real_fs_a_typed_line_is_read_whole_on_a_terminal() {
 
 #[test]
 fn real_fs_a_signal_that_interrupts_the_wait_is_a_wake_up_not_an_error() {
-    let (_master, slave) = terminal();
+    let (_master, slave) = open_pty().unwrap();
     let cancel = CancellationToken::new();
     let mut waits = 0;
     let line = read_line(slave.as_fd(), &cancel, |_| {
@@ -221,7 +207,7 @@ fn real_fs_a_signal_that_interrupts_the_wait_is_a_wake_up_not_an_error() {
 
 #[test]
 fn real_fs_a_part_of_a_line_does_not_keep_a_stop_waiting() {
-    let (master, slave) = terminal();
+    let (master, slave) = open_pty().unwrap();
     write(&master, b"abc").unwrap();
     write(&master, EOF_KEY).unwrap();
     let cancel = CancellationToken::new();
@@ -241,7 +227,7 @@ fn real_fs_a_part_of_a_line_does_not_keep_a_stop_waiting() {
 
 #[test]
 fn real_fs_the_end_of_the_input_after_a_part_of_a_line_is_that_part_and_no() {
-    let (master, slave) = terminal();
+    let (master, slave) = open_pty().unwrap();
     write(&master, b"yes").unwrap();
     write(&master, EOF_KEY).unwrap();
     write(&master, EOF_KEY).unwrap();
@@ -252,7 +238,7 @@ fn real_fs_the_end_of_the_input_after_a_part_of_a_line_is_that_part_and_no() {
 
 #[test]
 fn real_fs_the_end_of_the_input_with_nothing_typed_is_no_line() {
-    let (master, slave) = terminal();
+    let (master, slave) = open_pty().unwrap();
     write(&master, EOF_KEY).unwrap();
     let line = read_line(slave.as_fd(), &CancellationToken::new(), readable).unwrap();
     assert_eq!(line, None);

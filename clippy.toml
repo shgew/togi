@@ -7,7 +7,7 @@ allow-print-in-tests = true
 # #[expect(clippy::disallowed_methods, reason = "...")]. An entry lands with the crate that
 # defines or first calls its path: process spawning (togi-command's runner, trial workloads,
 # journalctl in detect, systemctl in trial, grub-editenv and systemctl reboot in hardware, the
-# simulator in bench, bench in audit, git and gh in release and reviews), the SMU seam's write methods and journal writes outside
+# simulator in bench, bench in audit, git and gh in release and reviews, git and rustc in cover), the SMU seam's write methods and journal writes outside
 # the journal crate. The journal's disk filesystem (`DiskFs`) is crate-private, so another
 # crate writes journal files only through `StateDir::lock` or the entries below: explicit
 # non-durable adapters and `MemFs::dump_to`, which writes a simulation's files to disk.

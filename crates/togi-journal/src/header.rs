@@ -5,6 +5,7 @@
 use serde::Deserialize;
 use togi_machine::serde_object::{self, Object};
 
+use crate::FixStamp;
 use crate::build::Build;
 use crate::session_id::SessionId;
 
@@ -31,8 +32,8 @@ struct HeaderBuild {
     rev: Option<String>,
     ruleset: u32,
     schema: u32,
-    #[serde(default)]
-    fixes: u32,
+    #[serde(default = "FixStamp::none")]
+    fixes: FixStamp,
     evidence: u32,
 }
 

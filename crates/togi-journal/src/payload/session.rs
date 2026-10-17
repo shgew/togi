@@ -12,7 +12,7 @@ use super::domain::{
     DeadEndAction, DeadEndCondition, DefectAnswer, DefectDirection, Notice, ShutdownReason,
 };
 use super::trial::TrialId;
-use crate::{Build, Seq, SessionId};
+use crate::{Build, DefectId, Seq, SessionId};
 
 #[expect(
     clippy::trivially_copy_pass_by_ref,
@@ -247,7 +247,7 @@ object_only! {
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct DefectFound {
-        pub id: NonZeroU32,
+        pub id: DefectId,
         pub title: String,
         pub detail: String,
         pub pr: u32,
@@ -261,7 +261,7 @@ object_only! {
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct DefectAnswered {
-        pub id: NonZeroU32,
+        pub id: DefectId,
         pub cores: CoreSet,
         pub answer: DefectAnswer,
     }

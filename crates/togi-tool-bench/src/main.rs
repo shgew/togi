@@ -200,6 +200,12 @@ fn bench(args: RunArgs) -> ExitCode {
     if let Err(error) = report.write(&mut io::stdout().lock()) {
         return fail(&format!("write the report: {error}"));
     }
+    if !report.violations.is_empty() {
+        return fail(&format!(
+            "the journal audit found {} violations",
+            report.violations.len()
+        ));
+    }
     if report.gate.as_ref().is_some_and(|gate| !gate.passed()) {
         return fail(&"gate failed");
     }

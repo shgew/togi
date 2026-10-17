@@ -13,12 +13,13 @@ use std::rc::Rc;
 
 use jiff::Timestamp;
 use togi_config::{Backends, Config};
-use togi_defect::{Clause, DefectId, Entry};
+use togi_defect::{Clause, Entry};
 use togi_facts::{Fact, FactId};
 use togi_journal::{
     Attribution, Build, CarriedCore, CarriedFailurePoint, CarriedLimit, ConfigLoaded, Decision,
-    DefectDirection, Event, EventKind, Failure, Outcome, Payload, Provenance, SCHEMA, Seq,
-    SessionContext, SessionId, SessionStart, Stamp, TrialEnd, TrialId, TrialIntent, TunerDecision,
+    DefectDirection, DefectId, Event, EventKind, Failure, FixStamp, Outcome, Payload, Provenance,
+    SCHEMA, Seq, SessionContext, SessionId, SessionStart, Stamp, TrialEnd, TrialId, TrialIntent,
+    TunerDecision,
 };
 use togi_machine::{
     BiosContext, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Regime,
@@ -118,9 +119,13 @@ pub(super) fn build(ruleset: u32, evidence: u32, fixes: u32) -> Build {
         rev: None,
         ruleset,
         schema: SCHEMA,
-        fixes,
+        fixes: fix_stamp(fixes),
         evidence,
     }
+}
+
+fn fix_stamp(fixes: u32) -> FixStamp {
+    DefectId::new(fixes).map_or(FixStamp::none(), FixStamp::through)
 }
 
 pub(super) struct Failed {
@@ -208,7 +213,7 @@ impl Source {
 
     pub(super) fn fixes(&mut self, fixes: u32) -> Seq {
         let build = Build {
-            fixes,
+            fixes: fix_stamp(fixes),
             ..self.build.clone()
         };
         self.config_loaded(build, &Config::default())
