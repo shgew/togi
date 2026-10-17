@@ -437,6 +437,7 @@
                 }
               );
               vm = vm.tuning-boot;
+              vm-host-lock = vm.host-lock;
               vm-restart-limit = vm.restart-limit;
               vm-trial-scope = vm.trial-scope;
               vm-emergency-stop = vm.emergency-stop;
