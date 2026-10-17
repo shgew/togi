@@ -1,4 +1,5 @@
 use std::num::{NonZeroU16, NonZeroU32};
+use std::sync::Arc;
 
 use togi_journal::{Decision, Outcome, Seq};
 use togi_machine::{Backend, Condition, Regime, workloads};
@@ -11,7 +12,7 @@ use crate::testkit::{
 use crate::tests::core;
 use crate::{
     Action, ClassKey, DecisionAction, DecisionPayload, FoldError, Load, Secs, TrialContext,
-    TrialHistory, TrialPlan, TrialRequirement, Window,
+    TrialHistory, TrialPlan, TrialRequirement, Window, WorkloadChoice,
 };
 
 type Reload = &'static [(&'static str, &'static str)];
@@ -707,17 +708,35 @@ fn a_session_failure_stays_known_after_its_decision_retires_it_until_a_reset() {
     let plan = j.next_trial();
     let end = j.trial(&plan, Outcome::Failure);
     let recorded = decide_pending(&mut j);
-    let pending = j.run().failures.pending(recorded).unwrap().fact.clone();
-    assert_eq!(j.run().failures.witnessed(end), Some(pending.as_ref()));
+    let pending = Arc::clone(&j.run().failures.pending(recorded).unwrap().fact);
+    assert!(
+        j.run()
+            .failures
+            .witnessed(end)
+            .is_some_and(|witness| std::ptr::eq(witness, pending.as_ref())),
+        "the witness and the pending record do not share one fact"
+    );
     assert_eq!(
         (pending.class, pending.profile),
         (plan.requirement.class, plan.profile)
     );
     decide_pending(&mut j);
     assert!(j.run().failures.pending(recorded).is_none());
-    assert_eq!(j.run().failures.witnessed(end), Some(pending.as_ref()));
+    let repeat = TrialPlan {
+        workload: WorkloadChoice::Frozen(plan.requirement.class.workload()),
+        ..plan
+    };
+    let Action::Decide(skip) = j.run().skip_known_failure(Action::RunTrial(repeat.clone())) else {
+        panic!("a retired failure no longer skips its repeat");
+    };
+    assert!(matches!(skip.payload, DecisionPayload::Failure(_)));
+    assert_eq!(skip.cause, vec![end]);
     j.reset(0);
     assert!(j.run().failures.witnessed(end).is_none());
+    assert_eq!(
+        j.run().skip_known_failure(Action::RunTrial(repeat.clone())),
+        Action::RunTrial(repeat)
+    );
 }
 
 #[test]
