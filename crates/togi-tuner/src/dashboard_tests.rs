@@ -572,7 +572,7 @@ fn cycle_plan_runs_no_part_during_a_rerun() {
         (transition.core, transition.from, transition.to),
         (
             core(3),
-            togi_journal::CorePhase::HasRoom,
+            Some(togi_journal::CorePhase::HasRoom),
             togi_journal::CorePhase::AtLimit,
         )
     );
