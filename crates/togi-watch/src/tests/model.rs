@@ -776,6 +776,37 @@ fn a_reset_queued_for_a_core_shows_on_that_core() {
     );
 }
 
+#[test]
+fn only_a_new_config_loaded_reopens_a_stopped_session() {
+    let mut script = searching();
+    script.append(restored(), &[]);
+    script.append(shutdown(ShutdownReason::Signal), &[]);
+    let reset = script.append(
+        Payload::CommandReset(togi_journal::CommandReset {
+            target: togi_journal::ResetTarget::Core(core(1)),
+        }),
+        &[],
+    );
+    script.append(warning("stop-time error"), &[]);
+    let model = script.model();
+    let snap = model.snapshot();
+    assert_eq!(
+        snap.stopped.map(|stop| stop.reason),
+        Some(ShutdownReason::Signal)
+    );
+    assert!(snap.resting() && !snap.between_trials());
+    assert_eq!(snap.cores[1].queued, Some(reset), "the reset stays queued");
+    script.append(config_loaded(), &[]);
+    let model = script.model();
+    let snap = model.snapshot();
+    assert!(snap.stopped.is_none(), "config.loaded reopens the session");
+    assert_eq!(
+        snap.cores[1].queued,
+        Some(reset),
+        "still queued for this run"
+    );
+}
+
 fn ended(trial: &TrialId, plan: &togi_tuner::TrialPlan, outcome: Outcome) -> Payload {
     let signal = (outcome == Outcome::Failure).then_some(togi_machine::Signal::ComputationError);
     let mut end = end_payload(trial, outcome, signal);

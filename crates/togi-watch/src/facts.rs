@@ -123,12 +123,6 @@ impl Facts {
                 self.recover = None;
             }
         }
-        if !matches!(
-            event.payload,
-            Payload::Shutdown(_) | Payload::ProfileRestored(_) | Payload::SessionWarning(_)
-        ) {
-            self.stopped = false;
-        }
         match &event.payload {
             Payload::SessionStart(_) => {
                 self.session = Some(SessionView {
@@ -136,7 +130,10 @@ impl Facts {
                     activity: None,
                 });
             }
-            Payload::ConfigLoaded(_) => self.configs += 1,
+            Payload::ConfigLoaded(_) => {
+                self.configs += 1;
+                self.stopped = false;
+            }
             Payload::CheckingCycle(cycle) if cycle.event == togi_journal::CycleEvent::Start => {
                 self.cycle_steps
                     .insert(cycle.cycle.get(), cycle.steps.clone());

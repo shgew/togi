@@ -90,7 +90,16 @@ pub(super) fn cycle_lines(
             }
             result = Line::from(spans);
         } else if i == plan.current {
-            (marker, style, code) = (stage_marker(scene, "►"), Paint::White, Paint::White);
+            let marker_glyph = if scene.s.stopped.is_some() {
+                "○"
+            } else {
+                "►"
+            };
+            (marker, style, code) = (
+                stage_marker(scene, marker_glyph),
+                Paint::White,
+                Paint::White,
+            );
             result = cell(scene, Paint::Running, step_position(scene, step));
             if plan.paused || hunt_open {
                 marker = scene.paint(Paint::Hunt, "○");
@@ -736,6 +745,53 @@ mod tests {
         assert!(step_row(None).ends_with("trial 1 of 1"));
         let row = step_row(Some(&stopped));
         assert!(row.contains("R6") && !row.contains("trial"), "{row}");
+    }
+
+    #[test]
+    fn a_stopped_session_draws_no_running_marker_in_the_checklist() {
+        let model = Model::new();
+        let trial = trial_view(3, 5);
+        let session = SessionView {
+            start: at(0),
+            activity: None,
+        };
+        let stopped = StopView {
+            at: at(1),
+            reason: ShutdownReason::Signal,
+            saved: false,
+        };
+        let rows = |stop: Option<&StopView>| {
+            let mut s = model.snapshot();
+            s.session = Some(&session);
+            s.trial = Some(&trial);
+            s.stopped = stop;
+            let zone = TimeZone::UTC;
+            let scene = scene(&s, &zone);
+            let plan = plan();
+            let cycle = CycleView {
+                plan: &plan,
+                step_hunts: &[],
+                resume: None,
+            };
+            texts(
+                &cycle_lines(
+                    &scene,
+                    &cycle,
+                    &Tables::new(SizeClass::Wide, 120),
+                    120,
+                    SizeClass::Wide,
+                    40,
+                )
+                .lines,
+            )
+        };
+        assert!(rows(None).iter().any(|row| row.starts_with('►')));
+        let over = rows(Some(&stopped));
+        assert!(
+            over[4].starts_with('○') && over[4].contains("R3"),
+            "{over:?}"
+        );
+        assert!(over.iter().all(|row| !row.contains('►')), "{over:?}");
     }
 
     #[test]
