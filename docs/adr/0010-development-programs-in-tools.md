@@ -20,3 +20,7 @@ Simulating needs a source checkout. The operator-facing `togi` has no simulation
 ## Amendment (#918)
 
 The mechanism after the Rust cutover; the decision and its reasons are unchanged. Development programs are the `togi-tool-*` crates (`publish = false`; `just sim` runs `cargo run --release --locked -p togi-tool-sim`), never part of the `togi` crate, and `togi` depends on none of them. The package builds `-p togi` only. The crash-reboot loop is the `togi-simrun` crate, which `togi-session` does not use; the `togi` crate and `togi-session` take `togi-sim` as a dev-dependency only, and tests that need a simulated journal build it in process through `togi-simrun` (via the `togi-watchtest` dev-dependency). `tools/` keeps the benchmark data (`tools/bench`), the Nushell `board` and the three retained Go programs, `release`, `reviews` and `cover`, which also never ship.
+
+## Amendment (#630)
+
+[ADR 0071](0071-no-go-in-the-repository.md) rewrites the Go programs; the decision and its reasons are unchanged. The release tool is the `togi-tool-release` crate (`just release-preview` runs `cargo run --quiet --locked -p togi-tool-release`). `tools/` keeps the benchmark data, the Nushell `board` and the two retained Go programs, `reviews` and `cover`, until their Rust rewrites land.
