@@ -1,7 +1,10 @@
 -- Views over a togi state directory, read by sql.sh after it sets `state_dir` (absolute) and `empty`
--- (an empty JSONL file). The file lists are taken once, when DuckDB starts: restart it to see trials
--- and archives written since. Malformed lines, such as a torn tail, are skipped, so `togi events` and
--- `just stats` stay what a review reports from.
+-- (an empty JSONL file). The file lists are taken when this file is read, so a query fails with "No
+-- files found" once a listed file moves (a trial's samples compressed when it ends, a session
+-- archived), and trials and archives written since are missing: `.read` this file again, or restart
+-- DuckDB. Lines that do not parse, such as most torn tails, are skipped; a torn tail that happens to
+-- parse is read, although togi drops it. So `togi events` and `just stats` stay what a review reports
+-- from.
 
 set TimeZone = 'UTC';
 
@@ -48,7 +51,7 @@ set variable live_session = (
 );
 
 -- Every event of the current journal and of the archived ones, with the session it belongs to.
-create view events as
+create or replace view events as
 select
     if(filename = getvariable('live_journal'), getvariable('live_session'), parse_filename(filename, true)) as session,
     filename <> getvariable('live_journal') as archived,
@@ -81,7 +84,7 @@ where seq is not null;
 -- One row per trial: its `trial.intent` and, once it ended, its `trial.end`. Trial IDs restart in every
 -- session, so (session, trial) is the key. `cores` lists the loaded cores the intent names; `profile`
 -- maps every core to its offset during the trial.
-create view trials as
+create or replace view trials as
 select
     session,
     any_value(archived) as archived,
@@ -105,7 +108,7 @@ where kind in ('trial.intent', 'trial.end')
 group by session, trial;
 
 -- Every per-second conditions sample of every trial, current and archived (journal.md, Files).
-create view samples as
+create or replace view samples as
 select
     if(
         starts_with(filename, getvariable('state_dir') || '/archive/'),
@@ -140,7 +143,7 @@ where elapsed_ms is not null;
 
 -- One row per sample and loaded core (a core with a clock or a worker in that sample), with the core's
 -- offset from the trial's profile and its own lanes of the decoded PM table.
-create view core_samples as
+create or replace view core_samples as
 select
     s.session,
     s.archived,
