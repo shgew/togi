@@ -29,8 +29,8 @@ pub struct Ensemble {
 
 /// One member of the ensemble as written.
 #[derive(Clone, Debug)]
-pub struct Fitted {
-    pub sample: Vec<TrialFact>,
+pub struct Fitted<'a> {
+    pub sample: Vec<&'a TrialFact>,
     pub definition: MachineDefinition,
     pub loss: f64,
     /// The groups the unconstrained refit flagged, which the written refit was restarted to respect.
@@ -42,14 +42,14 @@ pub struct Fitted {
 }
 
 #[derive(Debug)]
-pub struct Generated {
-    pub fits: Vec<Fitted>,
+pub struct Generated<'a> {
+    pub fits: Vec<Fitted<'a>>,
     /// Wall time of the forward-chained check, which ran alongside the fits.
     pub forward_elapsed: Duration,
 }
 
-struct Draft {
-    sample: Vec<TrialFact>,
+struct Draft<'a> {
+    sample: Vec<&'a TrialFact>,
     definition: MachineDefinition,
     loss: f64,
     constrained: Vec<Group>,
@@ -64,14 +64,14 @@ fn first_error<T>(results: Vec<Result<T, Error>>) -> Result<Vec<T>, Error> {
 /// checking their encoded readback, then runs the forward-chained check; `report_to` gets the whole report
 /// once every file is written. The files and the report do not depend on the number of threads the ambient
 /// rayon pool has.
-pub fn generate_records(
-    records: &[TrialFact],
+pub fn generate_records<'a>(
+    records: &'a [TrialFact],
     facts: &Path,
     out_dir: &Path,
     ensemble: Ensemble,
     report_to: &mut impl io::Write,
     output: &mut impl MachineOutput,
-) -> Result<Generated, Error> {
+) -> Result<Generated<'a>, Error> {
     let trials = decisive(records)?;
     let reference = facts_reference(out_dir, facts)?;
     output.prepare(out_dir)?;
@@ -83,7 +83,7 @@ pub fn generate_records(
         },
         || {
             let started = Instant::now();
-            let check = forward_check(&trials, 0);
+            let check = forward_check(trials.iter().copied(), 0);
             (check, started.elapsed())
         },
     );
@@ -101,16 +101,16 @@ fn member_path(out_dir: &Path, n: usize) -> PathBuf {
     out_dir.join(format!("target-fit-{n}.json"))
 }
 
-fn write_ensemble(
+fn write_ensemble<'a>(
     records: &[TrialFact],
-    trials: &[TrialFact],
+    trials: &[&'a TrialFact],
     facts: &Path,
     out_dir: &Path,
     reference: &str,
     ensemble: Ensemble,
     output: &mut impl MachineOutput,
-) -> Result<(Vec<Fitted>, Vec<u8>), Error> {
-    let drafts: Vec<Result<Draft, Error>> = (0..=ensemble.bootstrap)
+) -> Result<(Vec<Fitted<'a>>, Vec<u8>), Error> {
+    let drafts: Vec<Result<Draft<'_>, Error>> = (0..=ensemble.bootstrap)
         .into_par_iter()
         .map(|n| {
             let sample = if n == 0 {
@@ -136,7 +136,7 @@ fn write_ensemble(
     let base_model = Model::new(&base, 0)?;
     let checker = Checker::new(&base_model, records)?;
     let base_accepted = checker.accepts(&base_model)?;
-    let refined: Vec<Result<Draft, Error>> = drafts
+    let refined: Vec<Result<Draft<'_>, Error>> = drafts
         .into_par_iter()
         .enumerate()
         .map(|(n, mut draft)| {

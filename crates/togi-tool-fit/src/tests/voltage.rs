@@ -4,7 +4,7 @@ use togi_sim::{Load, MachineDefinition, Model};
 use togi_tool_modelcheck::Checker;
 use togi_tool_trialfacts::TrialFact;
 
-use super::{crash, fact, repeated};
+use super::{crash, fact, refs, repeated};
 use crate::evidence::{aggregate, bootstrap, initial_config, load_of};
 use crate::likelihood::Likelihood;
 use crate::search::{fit, fit_from};
@@ -50,6 +50,7 @@ fn voltage_records() -> Vec<TrialFact> {
 #[test]
 fn the_request_regression_recovers_the_count_and_clock_slopes_and_the_clock_medians() {
     let records = voltage_records();
+    let records = refs(&records);
     let v = voltage_config(&records);
     let w = &v.workload[avx2()];
     for (core, c) in w.core.iter().enumerate().take(8) {
@@ -83,6 +84,7 @@ fn the_request_regression_recovers_the_count_and_clock_slopes_and_the_clock_medi
 #[test]
 fn a_named_core_failure_pins_the_hazard_to_the_named_core() {
     let records = voltage_records();
+    let records = refs(&records);
     let mut cfg = initial_config(&records);
     let mut shared = voltage_config(&records);
     {
@@ -100,8 +102,8 @@ fn a_named_core_failure_pins_the_hazard_to_the_named_core() {
         stalled: None,
     };
     let score = |failing: &TrialFact| {
-        let named = named_failures(std::slice::from_ref(failing));
-        let obs = aggregate(std::slice::from_ref(failing));
+        let named = named_failures(&[failing]);
+        let obs = aggregate(&[failing]);
         Likelihood::new(cfg.clone(), &obs, None, Some(&named)).score(&[0])
     };
     let first = score(&failing);
@@ -122,14 +124,14 @@ fn a_named_core_failure_pins_the_hazard_to_the_named_core() {
         core: None,
         stalled: Some(CoreId::new(0).unwrap()),
     };
-    assert_eq!(named_failures(&[stalled.clone()])[0].core.get(), 0);
+    assert_eq!(named_failures(&[&stalled])[0].core.get(), 0);
     stalled.outcome = Decisive::Failure {
         signal: togi_machine::Signal::Stall,
         core: None,
         stalled: Some(CoreId::new(15).unwrap()),
     };
     assert!(
-        named_failures(&[stalled]).is_empty(),
+        named_failures(&[&stalled]).is_empty(),
         "an unloaded core must not become a loaded-core failure attribution"
     );
 }
@@ -137,6 +139,7 @@ fn a_named_core_failure_pins_the_hazard_to_the_named_core() {
 #[test]
 fn the_shared_voltage_fit_is_deterministic_bounded_and_leaves_its_input_alone() {
     let records = voltage_records();
+    let records = refs(&records);
     let before = voltage_config(&records);
     let (cfg, loss) = fit(&records).unwrap();
     let (again, again_loss) = fit(&records).unwrap();
@@ -171,7 +174,7 @@ fn the_shared_voltage_fit_is_deterministic_bounded_and_leaves_its_input_alone() 
 
 #[test]
 fn y_cruncher_takes_each_cores_higher_threshold_of_the_two_avx_workloads_and_nothing_else() {
-    let mut v = voltage_config(&voltage_records());
+    let mut v = voltage_config(&refs(&voltage_records()));
     let ids: Vec<&str> = workloads(Regime::R7).iter().map(|w| w.id).collect();
     let (a, b, y) = (ids[0], ids[1], ids[2]);
     let before = v.workload[y].clone();
@@ -198,6 +201,7 @@ fn y_cruncher_takes_each_cores_higher_threshold_of_the_two_avx_workloads_and_not
 #[test]
 fn the_ccd_threshold_shift_moves_every_core_from_its_original_snapshot_inside_the_physical_range() {
     let records = voltage_records();
+    let records = refs(&records);
     let mut cfg = shared_machine(&records, 1.15);
     let v = cfg.shared_voltage.as_mut().unwrap();
     let spread = [0.85, 0.95, 1.05, 1.15, 1.25, 1.35, 1.45, 1.10];
@@ -241,7 +245,7 @@ fn a_failure_at_stock_offsets_is_explained_by_a_bounded_background_rate() {
         });
         records.push(record);
     }
-    let (cfg, _) = fit(&records).unwrap();
+    let (cfg, _) = fit(&refs(&records)).unwrap();
     let background = cfg.shared_voltage.as_ref().unwrap().background_rate;
     assert!(background > 0.0 && background <= 0.001, "{background}");
     let model = Model::new(&cfg, 0).unwrap();
@@ -256,7 +260,7 @@ fn a_failure_at_stock_offsets_is_explained_by_a_bounded_background_rate() {
     );
 }
 
-fn shared_machine(records: &[TrialFact], threshold: f64) -> togi_sim::MachineDefinition {
+fn shared_machine(records: &[&TrialFact], threshold: f64) -> togi_sim::MachineDefinition {
     let mut cfg = initial_config(records);
     let mut shared = voltage_config(records);
     for core in &mut shared.workload.get_mut(avx2()).unwrap().core {
@@ -296,7 +300,7 @@ fn clocks_are_fitted_from_full_and_partial_ccd_loads_and_from_all_core_pressure(
     records.push(telemetry(&loaded_16(), &[-35; 16], &[(0, 5200), (1, 5000)]));
     records.push(telemetry(&loaded_16(), &lopsided, &[(0, 5200), (1, 5000)]));
     records.push(fact(&[-10; 16], Regime::R1, &[0], 60, Decisive::Pass));
-    let v = voltage_config(&records);
+    let v = voltage_config(&refs(&records));
     let w = &v.workload[avx2()];
     assert_eq!(w.full_mhz, [5250.0, 5110.0]);
     assert!((w.idle_gain_mhz - 20.0).abs() < 1e-9, "{}", w.idle_gain_mhz);
@@ -329,7 +333,7 @@ fn single_core_evidence_still_fits_its_limits_beside_the_shared_voltage_model() 
     };
     records.extend(at(-10, 0));
     records.extend(at(-30, 40));
-    let (cfg, _) = fit(&records).unwrap();
+    let (cfg, _) = fit(&refs(&records)).unwrap();
     assert!(
         (-30..0).contains(&cfg.core[0].alone[0]),
         "{}",
@@ -351,7 +355,7 @@ fn constrained_voltage_candidates_stay_inside_the_original_groups_and_an_unconst
         unreachable!("the fixture is a trial");
     };
     let load: Load<'_> = load_of(&class);
-    let mut base = shared_machine(&repeated(&template, 1, 0), 1.135);
+    let mut base = shared_machine(&refs(&repeated(&template, 1, 0)), 1.135);
     let p0 = Model::new(&base, 0)
         .unwrap()
         .failure_probability(template.profile.as_slice(), &load)
@@ -369,6 +373,7 @@ fn constrained_voltage_candidates_stay_inside_the_original_groups_and_an_unconst
     assert!((half - 0.5).abs() < 0.05, "{half}");
     let original = repeated(&template, 40, 20);
     let sample = repeated(&template, 40, 40);
+    let sample = refs(&sample);
     let checker = Checker::new(&base_model, &original).unwrap();
     assert!(checker.accepts(&base_model).unwrap());
     let (guarded, _) = fit_from(&sample, Some(&base), Some(&checker)).unwrap();
@@ -418,6 +423,7 @@ fn every_candidate_of_every_step_is_scored_on_the_augmented_objective() {
             stalled: None,
         };
     }
+    let records = refs(&records);
     let cfg = shared_machine(&records, 1.135);
     let obs = aggregate(&records);
     let named = named_failures(&records);
@@ -479,6 +485,7 @@ fn the_default_fit_is_one_shared_voltage_model_without_joints_or_residual() {
     offsets[9] = -30;
     let template = fact(&offsets, Regime::R1, &[0], 60, Decisive::Pass);
     records.extend(repeated(&template, 40, 20));
+    let records = refs(&records);
     let (cfg, loss) = fit(&records).unwrap();
     assert!(cfg.joint.is_empty() && cfg.ccd.is_none());
     let voltage = cfg.shared_voltage.as_ref().unwrap();
@@ -504,6 +511,7 @@ fn the_default_fit_is_one_shared_voltage_model_without_joints_or_residual() {
 #[test]
 fn a_bootstrap_draw_is_fitted_from_the_telemetry_its_trials_carry() {
     let records = voltage_records();
+    let records = refs(&records);
     let sample = bootstrap(&records, 263);
     assert!(
         sample.iter().all(|fact| records.contains(fact)),
@@ -528,7 +536,7 @@ fn a_singleton_r7_load_keeps_its_per_core_limit_beside_the_rail() {
     };
     records.extend(at(-10, 0));
     records.extend(at(-30, 40));
-    let (cfg, _) = fit(&records).unwrap();
+    let (cfg, _) = fit(&refs(&records)).unwrap();
     let limit = cfg.core[0].together[6];
     assert!((-29..=-10).contains(&limit), "{limit}");
     let model = Model::new(&cfg, 0).unwrap();
@@ -556,6 +564,7 @@ fn flat_and_idle_fits_never_use_a_multi_core_r7_load() {
         Decisive::Pass,
     );
     let records = repeated(&template, 20, 8);
+    let records = refs(&records);
     let cfg = shared_machine(&records, 1.135);
     let obs = aggregate(&records);
     let named = named_failures(&records);

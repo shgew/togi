@@ -24,7 +24,7 @@ const LIMIT_RANGE: (i64, i64) = (DEEPEST, 1);
 const CORES: usize = 16;
 
 /// Fits the records and returns the machine with its raw negative log likelihood.
-pub(crate) fn fit(records: &[TrialFact]) -> Result<(MachineDefinition, f64), Error> {
+pub(crate) fn fit(records: &[&TrialFact]) -> Result<(MachineDefinition, f64), Error> {
     fit_from(records, None, None)
 }
 
@@ -37,7 +37,7 @@ pub(crate) fn fit(records: &[TrialFact]) -> Result<(MachineDefinition, f64), Err
 /// multi-core R7 load. No joint and no residual hazard is ever fitted. The returned loss is the raw
 /// Bernoulli loss, without the prior and named-core terms every step minimized.
 pub(crate) fn fit_from(
-    records: &[TrialFact],
+    records: &[&TrialFact],
     initial: Option<&MachineDefinition>,
     guard: Option<&Checker>,
 ) -> Result<(MachineDefinition, f64), Error> {

@@ -22,9 +22,9 @@ fn the_signal_report_names_the_failure_counts_pooled_and_per_regime() {
     fit_signals(
         &mut cfg,
         &[
-            failing(Regime::R1, Signal::UnexpectedExit),
-            failing(Regime::R7, Signal::Crash),
-            failing(Regime::R7, Signal::ComputationError),
+            &failing(Regime::R1, Signal::UnexpectedExit),
+            &failing(Regime::R7, Signal::Crash),
+            &failing(Regime::R7, Signal::ComputationError),
         ],
     );
     assert_eq!(
@@ -48,7 +48,7 @@ fn the_signal_report_names_the_failure_counts_pooled_and_per_regime() {
 #[test]
 fn an_uncorrected_mce_counts_as_a_crash() {
     let mut cfg = MachineDefinition::default();
-    fit_signals(&mut cfg, &[failing(Regime::R7, Signal::UncorrectedMce)]);
+    fit_signals(&mut cfg, &[&failing(Regime::R7, Signal::UncorrectedMce)]);
     assert_eq!(cfg.model.signals, Weights::from([(Signal::Crash, 1.0)]));
     assert_eq!(
         signals_note(&cfg.model),
@@ -63,7 +63,7 @@ fn without_any_failure_the_mix_is_the_default_whatever_the_machine_held() {
     cfg.model.regime_signals = [(Regime::R7, Weights::from([(Signal::Crash, 3.0)]))].into();
     fit_signals(
         &mut cfg,
-        &[fact(&[0, 0], Regime::R7, &[0], 60, Decisive::Pass)],
+        &[&fact(&[0, 0], Regime::R7, &[0], 60, Decisive::Pass)],
     );
     assert_eq!(cfg.model.signals, ModelDef::default().signals);
     assert!(cfg.model.regime_signals.is_empty());

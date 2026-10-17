@@ -40,7 +40,7 @@ fn float(value: i64) -> f64 {
     f64::from(i32::try_from(value).unwrap_or(0))
 }
 
-pub(crate) fn voltage_config(records: &[TrialFact]) -> SharedVoltageDef {
+pub(crate) fn voltage_config(records: &[&TrialFact]) -> SharedVoltageDef {
     let mut v = SharedVoltageDef {
         idle_v: 0.8,
         margin_v: 0.006,
@@ -98,7 +98,7 @@ pub(crate) fn voltage_config(records: &[TrialFact]) -> SharedVoltageDef {
     clippy::many_single_char_names,
     reason = "the normal equations of a two-variable ridge regression"
 )]
-fn fit_requests(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
+fn fit_requests(v: &mut SharedVoltageDef, records: &[&TrialFact], id: &str) {
     let Some(w) = v.workload.get_mut(id) else {
         return;
     };
@@ -198,7 +198,7 @@ fn fit_requests(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
     }
 }
 
-fn fit_clocks(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
+fn fit_clocks(v: &mut SharedVoltageDef, records: &[&TrialFact], id: &str) {
     let limit = v.power_limit_w.min(v.thermal_limit_w);
     let Some(w) = v.workload.get_mut(id) else {
         return;
@@ -207,6 +207,7 @@ fn fit_clocks(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
     let mut partial: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
     let r7: Vec<(&TrialFact, TrialClass)> = records
         .iter()
+        .copied()
         .filter_map(|fact| trial_class(fact).map(|class| (fact, class)))
         .filter(|(_, class)| class.workload.regime() == Regime::R7 && class.workload.as_str() == id)
         .collect();
@@ -318,7 +319,7 @@ pub(crate) struct NamedFailure {
     pub(crate) core: CoreId,
 }
 
-pub(crate) fn named_failures(records: &[TrialFact]) -> Vec<NamedFailure> {
+pub(crate) fn named_failures(records: &[&TrialFact]) -> Vec<NamedFailure> {
     let mut named = Vec::new();
     for fact in records {
         let Some(class) = trial_class(fact) else {
