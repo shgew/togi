@@ -8,13 +8,13 @@ use std::time::{Duration, Instant};
 use rayon::prelude::*;
 use togi_sim::{MachineDefinition, Model};
 use togi_tool_modelcheck::{Check, Checker, Group, Status, report};
-use togi_tool_trialfacts::{TrialFact, read};
+use togi_tool_trialfacts::TrialFact;
 
 use crate::encode::encode_machine;
 use crate::error::Error;
 use crate::evidence::{bootstrap, decisive};
 use crate::forward::{forward_check, report_forward};
-use crate::output::{DiskOutput, MachineOutput};
+use crate::output::MachineOutput;
 use crate::paths::facts_reference;
 use crate::search::{fit, fit_from};
 use crate::signals::report_signals;
@@ -60,27 +60,10 @@ fn first_error<T>(results: Vec<Result<T, Error>>) -> Result<Vec<T>, Error> {
     results.into_iter().collect()
 }
 
-/// Fits the ensemble to the extract at `facts` and writes `target-fit-N.json` to `out_dir`, then runs the
-/// forward-chained check; `report` gets the whole report once every file is written. The files and the
-/// report do not depend on the number of threads the ambient rayon pool has.
-pub fn generate(
-    facts: &Path,
-    out_dir: &Path,
-    ensemble: Ensemble,
-    report_to: &mut impl io::Write,
-) -> Result<Generated, Error> {
-    let records = read(facts)?;
-    generate_records(
-        &records,
-        facts,
-        out_dir,
-        ensemble,
-        report_to,
-        &mut DiskOutput,
-    )
-}
-
-/// Fits decoded facts and publishes machines through `output`, checking their encoded readback.
+/// Fits decoded facts read from `facts` and publishes `target-fit-N.json` to `out_dir` through `output`,
+/// checking their encoded readback, then runs the forward-chained check; `report_to` gets the whole report
+/// once every file is written. The files and the report do not depend on the number of threads the ambient
+/// rayon pool has.
 pub fn generate_records(
     records: &[TrialFact],
     facts: &Path,

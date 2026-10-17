@@ -11,6 +11,7 @@ use togi_sim::MachineDefinition;
 use togi_tool_trialfacts::{BuildStamp, Class, Phase, Profile, TrialFact};
 
 mod anchor;
+mod artifact;
 mod evidence;
 mod forward;
 mod generate;
