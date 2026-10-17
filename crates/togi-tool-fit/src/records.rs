@@ -157,7 +157,12 @@ impl<'a> RecordsFile<'a> {
     }
 
     /// Writes the records of `check`, run on `extract` with the newest `seal` sessions sealed.
-    pub fn write(mut self, extract: &Extract, seal: usize, check: &ForwardCheck) -> Result<(), Error> {
+    pub fn write(
+        mut self,
+        extract: &Extract,
+        seal: usize,
+        check: &ForwardCheck,
+    ) -> Result<(), Error> {
         encode(&mut self.out, extract, seal, check)
             .and_then(|()| self.out.flush())
             .map_err(|source| Error::Io {
