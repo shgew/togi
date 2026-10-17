@@ -85,12 +85,12 @@ gate: _dev-shell
     cargo deny --locked check bans licenses sources
     cargo shear
 
-# Run every flake check this host builds, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
+# Run every flake check this host builds, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one lint`)
+# Build named flake checks, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one lint`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
