@@ -62,6 +62,109 @@ fn real_process_forward_only_prints_the_check_and_writes_no_machine_files() {
     assert_eq!(entries, [extract], "a forward-only run wrote a file");
 }
 
+#[test]
+fn real_process_records_pair_with_a_rerun_and_compare_equal() {
+    let dir = tempfile::tempdir().unwrap();
+    let extract = two_sessions(dir.path());
+    let facts = extract.to_str().unwrap();
+    let runs = ["candidate.jsonl", "reference.jsonl"].map(|name| dir.path().join(name));
+    for records in &runs {
+        let ran = fit(&[
+            "--facts",
+            facts,
+            "--forward-only",
+            "--records",
+            records.to_str().unwrap(),
+        ]);
+        assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    }
+    let lines = std::fs::read_to_string(&runs[0]).unwrap();
+    let kinds: Vec<&str> = lines
+        .lines()
+        .map(|line| line.split('"').nth(3).unwrap())
+        .collect();
+    assert_eq!(kinds, ["input", "trial", "session", "pooled"], "{lines}");
+    assert_eq!(lines, std::fs::read_to_string(&runs[1]).unwrap());
+
+    let metrics = dir.path().join("metrics.json");
+    let [candidate, reference] = runs.each_ref().map(|path| path.to_str().unwrap());
+    let ran = fit(&[
+        "--compare",
+        candidate,
+        reference,
+        "--metrics",
+        metrics.to_str().unwrap(),
+    ]);
+    let stdout = text(&ran.stdout);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    assert!(
+        stdout.contains("Pooled all: trials=1 failures=1 ") && stdout.contains(" ratio=1 "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("F3: candidate loss lower in 0 of 1 held-out sessions: fails\n"),
+        "{stdout}"
+    );
+    let written = std::fs::read_to_string(&metrics).unwrap();
+    let values: std::collections::BTreeMap<String, f64> = serde_json::from_str(&written).unwrap();
+    assert_eq!(values["pooled.all.loss_ratio"], 1.0);
+    assert_eq!(values["pooled.f3_sessions"], 1.0);
+    let again = fit(&[
+        "--compare",
+        candidate,
+        reference,
+        "--metrics",
+        metrics.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        again.status.code(),
+        Some(1),
+        "an existing metrics file was replaced"
+    );
+    assert_eq!(std::fs::read_to_string(&metrics).unwrap(), written);
+
+    let again = fit(&["--facts", facts, "--forward-only", "--records", candidate]);
+    assert_eq!(
+        again.status.code(),
+        Some(1),
+        "an existing records file was replaced"
+    );
+    assert!(
+        !text(&again.stdout).contains("Pooled:"),
+        "the check ran before the existing records file was refused: {}",
+        text(&again.stdout)
+    );
+    assert_eq!(std::fs::read_to_string(&runs[0]).unwrap(), lines);
+
+    let other = tempfile::tempdir().unwrap();
+    let mut offsets = [0; 16];
+    offsets[0] = -10;
+    let changed = write_extract(
+        other.path(),
+        &[
+            fact("20260101T000000Z", 1, &offsets, Regime::R1, &[0], 60, true),
+            fact("20260102T000000Z", 1, &offsets, Regime::R1, &[0], 60, true),
+        ],
+    );
+    let elsewhere = other.path().join("records.jsonl");
+    let ran = fit(&[
+        "--facts",
+        changed.to_str().unwrap(),
+        "--forward-only",
+        "--records",
+        elsewhere.to_str().unwrap(),
+    ]);
+    assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
+    let unpaired = fit(&["--compare", candidate, elsewhere.to_str().unwrap()]);
+    assert_eq!(unpaired.status.code(), Some(1));
+    assert!(
+        text(&unpaired.stderr).contains("the records do not pair: the candidate read sha256 "),
+        "{}",
+        text(&unpaired.stderr)
+    );
+    assert!(unpaired.stdout.is_empty());
+}
+
 /// Two sessions recorded after the original research artifact: #480's spent score sessions.
 fn later_sessions(dir: &Path) -> PathBuf {
     let mut offsets = [0; 16];
@@ -191,6 +294,24 @@ fn real_process_sealing_every_held_out_session_is_an_error() {
 }
 
 #[test]
+fn real_process_a_failed_check_leaves_no_records_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let extract = two_sessions(dir.path());
+    let records = dir.path().join("records.jsonl");
+    let ran = fit(&[
+        "--facts",
+        extract.to_str().unwrap(),
+        "--forward-only",
+        "--seal",
+        "1",
+        "--records",
+        records.to_str().unwrap(),
+    ]);
+    assert_eq!(ran.status.code(), Some(1), "{}", text(&ran.stderr));
+    assert!(!records.exists(), "a failed check left its records file");
+}
+
+#[test]
 fn real_process_an_unreadable_extract_exits_1_with_the_error_on_stderr() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("missing.gz");
@@ -278,6 +399,12 @@ fn real_process_flags_that_do_not_go_together_are_usage_errors() {
         &["--facts", "f.gz", "--forward-only", "--jobs", "0"],
         &["--facts", "f.gz", "--out", "o", "--bootstrap", "-1"],
         &["--facts", "f.gz", "--forward-only", "extra"],
+        &["--facts", "f.gz", "--records", "r.jsonl"],
+        &["--compare", "a.jsonl"],
+        &["--compare", "a.jsonl", "b.jsonl", "--facts", "f.gz"],
+        &["--compare", "a.jsonl", "b.jsonl", "--forward-only"],
+        &["--compare", "a.jsonl", "b.jsonl", "--jobs", "1"],
+        &["--metrics", "m.json"],
     ] {
         let ran = fit(args);
         assert_eq!(
@@ -291,6 +418,17 @@ fn real_process_flags_that_do_not_go_together_are_usage_errors() {
 }
 
 #[test]
+fn real_process_a_repeated_compare_is_refused_as_repeated() {
+    let ran = fit(&["--compare", "a", "b", "--compare", "c", "d"]);
+    assert_eq!(ran.status.code(), Some(2));
+    assert!(
+        text(&ran.stderr).contains("cannot be used multiple times"),
+        "{}",
+        text(&ran.stderr)
+    );
+}
+
+#[test]
 fn real_process_the_help_lists_the_modes() {
     let ran = fit(&["--help"]);
     assert_eq!(ran.status.code(), Some(0));
@@ -300,6 +438,9 @@ fn real_process_the_help_lists_the_modes() {
         "--shared-voltage-in-sample",
         "--write-artifact",
         "--current-extract",
+        "--records",
+        "--compare",
+        "--metrics",
         "--jobs",
         "--seal",
     ] {

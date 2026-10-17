@@ -67,7 +67,7 @@ pub(super) fn arguments(
     };
     let flags = parse(args).map_err(refuse)?;
     let allowed: &[&str] = match recipe {
-        Recipe::Forward => &["--facts", "--seal", "--jobs"],
+        Recipe::Forward => &["--facts", "--seal", "--jobs", "--records"],
         Recipe::Fit => &["--facts", "--out", "--jobs", "--seed", "--bootstrap"],
         Recipe::Bench => &[
             "--suite",
@@ -133,6 +133,7 @@ pub(super) fn arguments(
                             )));
                         }
                     }
+                    output("--records")?;
                 }
                 (Recipe::Forward, Role::Confirmation | Role::ConfirmationReference) => {
                     if confirmation == 0 {
@@ -143,6 +144,7 @@ pub(super) fn arguments(
                             "a confirmation scores its sessions unsealed".to_owned(),
                         ));
                     }
+                    output("--records")?;
                 }
                 (Recipe::Fit, Role::Finalization) => {
                     if value("--out").is_none() {

@@ -12,6 +12,7 @@ use togi_tool_trialfacts::{BuildStamp, Class, Phase, Profile, TrialFact};
 
 mod anchor;
 mod artifact;
+mod compare;
 mod evidence;
 mod forward;
 mod generate;
