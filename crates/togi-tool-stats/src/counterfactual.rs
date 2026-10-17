@@ -58,6 +58,9 @@ impl Candidate {
 pub(crate) enum Unresolved {
     /// The candidate skipped this failure, so its profile and every later decision differ.
     AfterFailure { failure: Seq },
+    /// A tuner decision before this derivation cites `source`, a trial the candidate skipped, so that
+    /// decision's offsets and every later decision may differ.
+    AfterDecision { decision: Seq, source: Seq },
     /// The order the derivation read cites the measurement of a trial the candidate skipped.
     Source { source: Seq },
     /// The candidate's chain holds another set before this position, or the candidate would derive
@@ -103,7 +106,7 @@ type Slot = (NonZeroU32, NonZeroU32, CcdId);
 pub(crate) enum CycleStatus {
     /// The cycle passed and every final chain class is counted.
     Covered,
-    /// The candidate skipped a failure in or before the cycle.
+    /// The candidate skipped a failure, or a trial a tuner decision cites, in or before the cycle.
     Diverged,
     /// A final chain position is one the candidate cannot tell.
     Unidentified,
@@ -123,8 +126,8 @@ struct Run<'a> {
 }
 
 /// One final chain class of a covered cycle under a candidate: the passes it needs at the cycle's ending
-/// profile, the valid passes the candidate keeps that cover it, the skipped passes it must still run and the
-/// passes no trial in the journal supplies.
+/// profile, the valid passes the candidate keeps that cover it, the skipped or unresolved passes it must still
+/// run and the passes no trial in the journal supplies.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub(crate) struct Coverage {
     pub(crate) step: NonZeroU32,
@@ -138,7 +141,7 @@ pub(crate) struct Coverage {
     pub(crate) needed: u32,
     pub(crate) witnesses: Vec<Seq>,
     pub(crate) rerun: Vec<Seq>,
-    pub(crate) unobserved: u32,
+    pub(crate) unobserved: usize,
 }
 
 /// A failure a candidate skipped: `delayed` when its set is still in the candidate's final chain, so the
@@ -168,7 +171,7 @@ pub(crate) enum Record<'a> {
         cores: CoreSet,
         #[serde(flatten)]
         verdict: Verdict,
-        trials: u32,
+        trials: usize,
         trial_s: u64,
     },
     Failure {
@@ -207,8 +210,8 @@ pub(crate) struct Summary {
     pub(crate) skipped_s: u64,
     pub(crate) unresolved_s: u64,
     pub(crate) required_s: u64,
-    pub(crate) avoidable_s: i64,
-    pub(crate) unobserved: u32,
+    pub(crate) avoidable_s: i128,
+    pub(crate) unobserved: usize,
     pub(crate) lost: u32,
     pub(crate) delayed: u32,
     pub(crate) cycles_covered: u32,
@@ -224,8 +227,12 @@ pub(crate) struct Summary {
 struct Ledger<'a> {
     chains: BTreeMap<Slot, Vec<(NonZeroU32, Position)>>,
     skipped: HashSet<Seq>,
-    /// The first failure the candidate skipped, by its end.
-    diverged: Option<Seq>,
+    /// The trial ends of the derivations the candidate leaves unresolved: whether it runs them is unknown,
+    /// so they witness nothing.
+    uncertain: HashSet<Seq>,
+    /// Where the candidate stops following the journal, the first skipped failure by its end or the first
+    /// tuner decision citing a skipped trial, and the reason every later derivation is unresolved.
+    diverged: Option<(Seq, Unresolved)>,
     records: Vec<Record<'a>>,
     cycles: BTreeMap<NonZeroU32, CycleTally>,
     summary: Summary,
@@ -320,11 +327,8 @@ impl<'a> Ledger<'a> {
     ) -> (Verdict, Position) {
         let d = f.d;
         let unknown = Position::Unknown { actual: d.cores };
-        if let Some(failure) = self.diverged {
-            return (
-                Verdict::Unresolved(Unresolved::AfterFailure { failure }),
-                unknown,
-            );
+        if let Some((_, reason)) = self.diverged {
+            return (Verdict::Unresolved(reason), unknown);
         }
         if let Some(&source) = d.sources.iter().find(|seq| self.skipped.contains(seq)) {
             return (Verdict::Unresolved(Unresolved::Source { source }), unknown);
@@ -432,7 +436,8 @@ impl<'a> Ledger<'a> {
                         } else {
                             self.summary.lost += 1;
                         }
-                        self.diverged.get_or_insert(end);
+                        self.diverged
+                            .get_or_insert((end, Unresolved::AfterFailure { failure: end }));
                         self.records.push(Record::Failure {
                             candidate,
                             failure: Failure {
@@ -450,6 +455,8 @@ impl<'a> Ledger<'a> {
             Verdict::Unresolved(_) => {
                 self.summary.unresolved += 1;
                 tally.unresolved_s += seconds;
+                self.uncertain
+                    .extend(f.runs.iter().filter_map(|run| run.end));
             }
         }
         if verdict != Verdict::Kept {
@@ -462,9 +469,26 @@ impl<'a> Ledger<'a> {
                 part: d.part,
                 cores: d.cores,
                 verdict,
-                trials: u32::try_from(f.runs.len()).unwrap_or(u32::MAX),
+                trials: f.runs.len(),
                 trial_s: seconds,
             });
+        }
+    }
+
+    /// Marks the candidate diverged at `event` when it is a tuner decision citing a trial the candidate
+    /// skipped: without that trial the decision, its offsets and every later decision may differ.
+    fn cite(&mut self, event: &Event) {
+        if self.diverged.is_some() || !matches!(event.payload, Payload::TunerDecision(_)) {
+            return;
+        }
+        if let Some(&source) = event.cause.iter().find(|seq| self.skipped.contains(seq)) {
+            self.diverged = Some((
+                event.seq,
+                Unresolved::AfterDecision {
+                    decision: event.seq,
+                    source,
+                },
+            ));
         }
     }
 
@@ -483,7 +507,7 @@ impl<'a> Ledger<'a> {
         let status = match ended {
             None => CycleStatus::Open,
             Some((_, false)) => CycleStatus::Abandoned,
-            Some((end, true)) if self.diverged.is_some_and(|failure| failure < end) => {
+            Some((end, true)) if self.diverged.is_some_and(|(at, _)| at < end) => {
                 CycleStatus::Diverged
             }
             Some(_) => CycleStatus::Covered,
@@ -500,14 +524,14 @@ impl<'a> Ledger<'a> {
             let required: u64 = coverage
                 .iter()
                 .map(|c| {
-                    let passes = u32::try_from(c.rerun.len()).unwrap_or(u32::MAX) + c.unobserved;
-                    u64::from(passes) * u64::from(c.duration_s)
+                    let passes = c.rerun.len() + c.unobserved;
+                    passes as u64 * u64::from(c.duration_s)
                 })
                 .sum();
             self.summary.cycles_covered += 1;
             self.summary.skipped_s += tally.skipped_s;
             self.summary.required_s += required;
-            self.summary.unobserved += coverage.iter().map(|c| c.unobserved).sum::<u32>();
+            self.summary.unobserved += coverage.iter().map(|c| c.unobserved).sum::<usize>();
             (tally.skipped_s, required, tally.unresolved_s)
         } else {
             self.summary.cycles_unresolved += 1;
@@ -565,21 +589,21 @@ impl<'a> Ledger<'a> {
                         continue;
                     };
                     let class = ClassKey::new(step.workload, cores, Secs::new(secs));
-                    needed
-                        .entry(class)
-                        .or_insert_with(|| Coverage {
-                            step: number,
-                            ccd,
-                            workload: step.workload,
-                            cores,
-                            instead_of,
-                            duration_s: secs.get(),
-                            needed: 0,
-                            witnesses: Vec::new(),
-                            rerun: Vec::new(),
-                            unobserved: 0,
-                        })
-                        .needed += count;
+                    let coverage = needed.entry(class).or_insert_with(|| Coverage {
+                        step: number,
+                        ccd,
+                        workload: step.workload,
+                        cores,
+                        instead_of,
+                        duration_s: secs.get(),
+                        needed: 0,
+                        witnesses: Vec::new(),
+                        rerun: Vec::new(),
+                        unobserved: 0,
+                    });
+                    // A later step of the same workload already adds the earlier steps' passes of the
+                    // class to its own quota, and the tuner checks each quota on its own.
+                    coverage.needed = coverage.needed.max(count);
                 }
             }
         }
@@ -595,11 +619,11 @@ impl<'a> Ledger<'a> {
             let need = usize::try_from(coverage.needed).ok()?;
             let (kept, skipped): (Vec<Seq>, Vec<Seq>) = valid
                 .into_iter()
-                .partition(|seq| !self.skipped.contains(seq));
+                .partition(|seq| !self.skipped.contains(seq) && !self.uncertain.contains(seq));
             coverage.witnesses = kept.into_iter().take(need).collect();
             let missing = need - coverage.witnesses.len();
             coverage.rerun = skipped.into_iter().take(missing).collect();
-            coverage.unobserved = u32::try_from(missing - coverage.rerun.len()).unwrap_or(u32::MAX);
+            coverage.unobserved = missing - coverage.rerun.len();
             out.push(coverage);
         }
         Some((profile.offsets(), out))
@@ -659,6 +683,9 @@ pub(crate) fn account<'a>(p: &Projection<'a>) -> Result<Accounting<'a>, FoldErro
     let mut state = State::new();
     let mut conclusion: Option<Timestamp> = None;
     for event in p.events {
+        for (_, ledger) in &mut ledgers {
+            ledger.cite(event);
+        }
         if let Payload::CheckingCycle(cycle) = &event.payload
             && cycle.event == CycleEvent::Start
         {
@@ -736,8 +763,7 @@ pub(crate) fn account<'a>(p: &Projection<'a>) -> Result<Accounting<'a>, FoldErro
     let mut summaries = Vec::new();
     for (_, mut ledger) in ledgers {
         let s = &mut ledger.summary;
-        s.avoidable_s = i64::try_from(s.skipped_s).unwrap_or(i64::MAX)
-            - i64::try_from(s.required_s).unwrap_or(i64::MAX);
+        s.avoidable_s = i128::from(s.skipped_s) - i128::from(s.required_s);
         s.conclusion_s = conclusion_s;
         s.concluded = conclusion.is_some();
         records.append(&mut ledger.records);
@@ -783,7 +809,7 @@ pub(crate) fn records(accounting: &Accounting<'_>) -> Result<String, serde_json:
     clippy::cast_precision_loss,
     reason = "seconds of a session are far below 2^52"
 )]
-fn share(seconds: i64, of: u64) -> String {
+fn share(seconds: i128, of: u64) -> String {
     if of == 0 {
         return "-".to_owned();
     }
@@ -794,7 +820,7 @@ fn share(seconds: i64, of: u64) -> String {
     clippy::cast_precision_loss,
     reason = "seconds of a session are far below 2^52"
 )]
-fn signed_hours(seconds: i64) -> String {
+fn signed_hours(seconds: i128) -> String {
     hours(seconds as f64)
 }
 

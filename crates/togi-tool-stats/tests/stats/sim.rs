@@ -82,25 +82,35 @@ fn chain_machine() -> MachineDefinition {
 
 /// The events of a simulated session through its first clean cycle, over every reboot its crashes cause.
 pub(crate) fn hunting_session() -> Vec<Event> {
-    session(&hunting_machine(), 1)
+    session(&hunting_machine(), 1, Config::default())
 }
 
 /// The events of a simulated eight-core session through its first clean cycle, whose R7 chains load
 /// partials and are re-derived after a backoff.
 pub(crate) fn chain_session() -> Vec<Event> {
-    session(&chain_machine(), 1)
+    session(&chain_machine(), 1, Config::default())
 }
 
-/// The events of a simulated session of the committed bench machine `file` drawn from `seed`, through its
-/// first clean cycle.
-pub(crate) fn machine_session(file: &str, seed: u64) -> Vec<Event> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tools/bench/machines")
-        .join(file);
-    session(&togi_sim::file::load(path).unwrap(), seed)
+/// The committed bench machines the counterfactual tests simulate, embedded so no test reads them from disk.
+pub(crate) const TARGET_FIT_0: &str =
+    include_str!("../../../../tools/bench/machines/target-fit-0.json");
+pub(crate) const TARGET_FIT_1: &str =
+    include_str!("../../../../tools/bench/machines/target-fit-1.json");
+pub(crate) const TARGET_FIT_2: &str =
+    include_str!("../../../../tools/bench/machines/target-fit-2.json");
+
+/// The events of a simulated session of the bench machine definition `machine` drawn from `seed`, through
+/// its first clean cycle.
+pub(crate) fn machine_session(machine: &str, seed: u64) -> Vec<Event> {
+    machine_session_with(machine, seed, Config::default())
 }
 
-fn session(definition: &MachineDefinition, seed: u64) -> Vec<Event> {
+/// [`machine_session`] under `config`.
+pub(crate) fn machine_session_with(machine: &str, seed: u64, config: Config) -> Vec<Event> {
+    session(&togi_sim::file::decode(machine).unwrap(), seed, config)
+}
+
+fn session(definition: &MachineDefinition, seed: u64, config: Config) -> Vec<Event> {
     let simulator = Simulator::new(
         Model::new(definition, seed).unwrap(),
         RunSettings {
@@ -110,7 +120,7 @@ fn session(definition: &MachineDefinition, seed: u64) -> Vec<Event> {
     );
     let fs = MemFs::new();
     let outcome = simulate(SimInput {
-        config: Config::default(),
+        config,
         source: ConfigSource::default(),
         build: build(),
         simulator,
