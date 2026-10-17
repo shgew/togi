@@ -35,19 +35,23 @@ fn ended(bench: &Bench, carry: Option<PendingCarry>) -> Ended {
 }
 
 fn session_of(journal: &Journal) -> SessionId {
-    match &journal.events()[0].payload {
-        Payload::SessionStart(start) => start.session,
-        other => panic!("{other:?}"),
-    }
+    let payload = &journal.events()[0].payload;
+    let Payload::SessionStart(start) = payload else {
+        panic!("{payload:?}");
+    };
+    start.session
 }
 
 fn recorded_context(journal: &Journal) -> BiosContext {
     journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SessionContext(context) => Some(context.bios_context()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::SessionContext(context) = &event.payload {
+                Some(context.bios_context())
+            } else {
+                None
+            }
         })
         .unwrap()
 }

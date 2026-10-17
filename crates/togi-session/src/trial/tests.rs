@@ -151,11 +151,14 @@ fn a_stall_journaled_before_a_crash_is_recovered_as_the_failure_of_the_interrupt
         .journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialProgress(progress) if progress.signal == Some(Signal::Stall) => {
+        .find_map(|event| {
+            if let Payload::TrialProgress(progress) = &event.payload
+                && progress.signal == Some(Signal::Stall)
+            {
                 Some(progress.clone())
+            } else {
+                None
             }
-            _ => None,
         })
         .expect("the stall was not journaled");
     assert_eq!(progress.core, Some(core(0)));
@@ -171,9 +174,14 @@ fn a_stall_journaled_before_a_crash_is_recovered_as_the_failure_of_the_interrupt
         .journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialEnd(end) if end.trial.as_str() == "0001" => Some(end),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload
+                && end.trial.as_str() == "0001"
+            {
+                Some(end)
+            } else {
+                None
+            }
         })
         .expect("the interrupted trial was not ended");
     assert_eq!(end.outcome, Outcome::Failure);

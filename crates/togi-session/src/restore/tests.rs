@@ -50,9 +50,12 @@ fn restorations(session: &Session) -> Vec<PerCore<TargetOffset>> {
         .journal()
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::ProfileRestored(restored) => Some(restored.offsets),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::ProfileRestored(restored) = &event.payload {
+                Some(restored.offsets)
+            } else {
+                None
+            }
         })
         .collect()
 }

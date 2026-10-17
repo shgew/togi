@@ -244,9 +244,12 @@ fn a_failure_at_zero_in_the_loop_restores_every_core_to_zero_and_ends_in_its_shu
         ended.stop
     );
     let events = ended.journal.events();
-    let restored = events.iter().rev().find_map(|event| match &event.payload {
-        Payload::ProfileRestored(restored) => Some(restored.offsets),
-        _ => None,
+    let restored = events.iter().rev().find_map(|event| {
+        if let Payload::ProfileRestored(restored) = &event.payload {
+            Some(restored.offsets)
+        } else {
+            None
+        }
     });
     if let Some(restored) = restored {
         assert!(
@@ -281,18 +284,16 @@ fn together_trials_carry_the_checking_profile_the_tuner_stands_at() {
     let events = ended.journal.events();
     let mut together = 0;
     for (at, event) in events.iter().enumerate() {
-        let offsets = match &event.payload {
-            Payload::TrialIntent(intent)
-                if intent.condition == togi_machine::Condition::Together =>
-            {
-                &intent.profile
-            }
-            Payload::ProfileApplied(applied)
-                if applied.condition == togi_machine::Condition::Together =>
-            {
-                &applied.offsets
-            }
-            _ => continue,
+        let offsets = if let Payload::TrialIntent(intent) = &event.payload
+            && intent.condition == togi_machine::Condition::Together
+        {
+            &intent.profile
+        } else if let Payload::ProfileApplied(applied) = &event.payload
+            && applied.condition == togi_machine::Condition::Together
+        {
+            &applied.offsets
+        } else {
+            continue;
         };
         let checking = togi_tuner::replay(&events[..at])
             .unwrap()

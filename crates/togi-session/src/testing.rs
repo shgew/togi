@@ -464,9 +464,14 @@ pub(crate) fn search_plan(session: &Session, core: CoreId, regime: Regime) -> Tr
         .events()
         .iter()
         .rev()
-        .find_map(|event| match &event.payload {
-            Payload::CorePhase(phase) if phase.core == core => Some(phase.offset),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::CorePhase(phase) = &event.payload
+                && phase.core == core
+            {
+                Some(phase.offset)
+            } else {
+                None
+            }
         })
         .unwrap();
     let duration = Secs::new(NonZeroU32::new(session.config.search_trial().get()).unwrap());

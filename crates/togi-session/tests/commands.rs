@@ -248,11 +248,14 @@ fn phases_of(journal: &Journal, core: CoreId) -> Vec<(Option<CorePhase>, CorePha
     journal
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CorePhase(phase) if phase.core == core => {
+        .filter_map(|event| {
+            if let Payload::CorePhase(phase) = &event.payload
+                && phase.core == core
+            {
                 Some((phase.from, phase.to, phase.offset.get()))
+            } else {
+                None
             }
-            _ => None,
         })
         .collect()
 }

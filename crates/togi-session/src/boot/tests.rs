@@ -127,9 +127,12 @@ fn exhausted() -> LeaveReason {
 fn leave_reasons(rig: &Rig) -> Vec<String> {
     rig.events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::BootLeaveReason(leave) => Some(leave.reason_id.clone()),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::BootLeaveReason(leave) = &event.payload {
+                Some(leave.reason_id.clone())
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -252,9 +255,12 @@ fn a_reason_whose_event_failed_stays_pending_and_is_imported_by_the_next_run() {
         .journal()
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::BootLeaveReason(leave) => Some(leave.reason_id.clone()),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::BootLeaveReason(leave) = &event.payload {
+                Some(leave.reason_id.clone())
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(ids, [reason.id.to_string()]);
@@ -569,9 +575,12 @@ fn a_resumed_dead_end_acknowledges_the_pending_tuning_boot_reason_once_and_leave
             .journal
             .events()
             .iter()
-            .filter_map(|event| match &event.payload {
-                Payload::BootLeaveReason(leave) => Some(leave.reason_id.clone()),
-                _ => None,
+            .filter_map(|event| {
+                if let Payload::BootLeaveReason(leave) = &event.payload {
+                    Some(leave.reason_id.clone())
+                } else {
+                    None
+                }
             })
             .collect();
         assert_eq!(
@@ -630,9 +639,12 @@ fn a_resumed_dead_end_whose_saved_entry_append_fails_keeps_the_acknowledgement_a
     );
     let acknowledged: Vec<_> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::BootLeaveReason(leave) => Some(leave.reason_id.clone()),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::BootLeaveReason(leave) = &event.payload {
+                Some(leave.reason_id.clone())
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(
