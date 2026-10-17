@@ -369,6 +369,7 @@ fn a_kill_after_every_durable_restoration_event_of_the_same_boot_converges() {
 /// reaches the hardware.
 fn kill_after_durable(fixture: &SameBoot, nth: usize) {
     let mem = fixture.bench.mem.clone();
+    mem.record_history();
     let synced = move || {
         mem.log()
             .iter()

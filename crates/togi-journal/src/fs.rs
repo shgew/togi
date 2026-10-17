@@ -445,6 +445,12 @@ enum Node {
 }
 
 #[derive(Debug, Default)]
+struct History {
+    log: Vec<(Op, PathBuf)>,
+    reads: Vec<PathBuf>,
+}
+
+#[derive(Debug, Default)]
 struct Tree {
     nodes: BTreeMap<PathBuf, Node>,
     data: HashMap<u64, Vec<u8>>,
@@ -453,23 +459,26 @@ struct Tree {
     locks: HashSet<PathBuf>,
     faults: Vec<(Fault, u64)>,
     mutations: u64,
-    log: Vec<(Op, PathBuf)>,
-    reads: Vec<PathBuf>,
+    history: Option<History>,
 }
 
 impl Tree {
     fn check(&mut self, op: Op, paths: &[&Path]) -> Option<Effect> {
         if op.mutates() {
             self.mutations += 1;
-            self.log.push((
-                op,
-                paths
-                    .first()
-                    .map(|path| path.to_path_buf())
-                    .unwrap_or_default(),
-            ));
-        } else if let Some(path) = paths.first() {
-            self.reads.push(path.to_path_buf());
+        }
+        if let Some(history) = &mut self.history {
+            if op.mutates() {
+                history.log.push((
+                    op,
+                    paths
+                        .first()
+                        .map(|path| path.to_path_buf())
+                        .unwrap_or_default(),
+                ));
+            } else if let Some(path) = paths.first() {
+                history.reads.push(path.to_path_buf());
+            }
         }
         let mut fired = None;
         self.faults.retain_mut(|(fault, seen)| {
@@ -485,6 +494,12 @@ impl Tree {
             }
         });
         fired
+    }
+
+    fn history(&self) -> &History {
+        self.history
+            .as_ref()
+            .unwrap_or_else(|| panic!("MemFs histories need record_history before the operations"))
     }
 
     fn node(&self, path: &Path) -> Option<&Node> {
@@ -640,19 +655,34 @@ impl MemFs {
         self.inject(Fault::before(Op::Rename, 1).named("state.json"));
     }
 
-    /// The number of mutating operations performed so far, failed ones included.
+    /// The number of mutating operations performed so far, failed ones included, recorded or not.
     pub fn mutations(&self) -> u64 {
         self.tree().mutations
     }
 
-    /// Every mutating operation attempted so far, in order, with the path it named first.
-    pub fn log(&self) -> Vec<(Op, PathBuf)> {
-        self.tree().log.clone()
+    /// Starts recording the operation history [`Self::log`] and [`Self::reads`] return, for this handle and every
+    /// clone. Operations before the call are not recorded; ordinary simulations never call it and keep no history.
+    pub fn record_history(&self) {
+        self.tree().history.get_or_insert_default();
     }
 
-    /// Every path opened or listed for reading so far, in order, which the mutation log leaves out.
+    /// Every mutating operation attempted since [`Self::record_history`], in order, with the path it named first.
+    ///
+    /// # Panics
+    ///
+    /// If histories are not being recorded, so a test cannot pass on a history it forgot to request.
+    pub fn log(&self) -> Vec<(Op, PathBuf)> {
+        self.tree().history().log.clone()
+    }
+
+    /// Every path opened or listed for reading since [`Self::record_history`], in order, which the mutation log
+    /// leaves out.
+    ///
+    /// # Panics
+    ///
+    /// If histories are not being recorded.
     pub fn reads(&self) -> Vec<PathBuf> {
-        self.tree().reads.clone()
+        self.tree().history().reads.clone()
     }
 
     /// The number of file bodies the filesystem still holds.
@@ -1051,6 +1081,66 @@ mod tests {
         dir(&fs, "/s");
         assert!(fs.create_dir(Path::new("/s/t")).is_err());
         assert_eq!(fs.mutations(), 2);
+    }
+
+    fn exercise(fs: &MemFs) -> (Vec<bool>, u64) {
+        dir(fs, "/s");
+        fs.inject(Fault::before(Op::Sync, 2));
+        fs.inject(Fault::any_after(3));
+        let mut file = fs.open_append(Path::new("/s/a")).unwrap();
+        let outcomes = vec![
+            file.write_all(b"x").is_ok(),
+            file.sync().is_ok(),
+            file.sync().is_ok(),
+            fs.read(Path::new("/s/a")).is_ok(),
+            fs.rename(Path::new("/s/a"), Path::new("/s/b")).is_ok(),
+        ];
+        (outcomes, fs.mutations())
+    }
+
+    #[test]
+    fn recording_histories_changes_no_fault_or_mutation_count() {
+        let recorded = MemFs::new();
+        recorded.record_history();
+        let want = (vec![true, false, false, true, true], 6);
+        assert_eq!(exercise(&MemFs::new()), want);
+        assert_eq!(exercise(&recorded), want);
+    }
+
+    #[test]
+    fn histories_are_not_recorded_by_default() {
+        let fs = MemFs::new();
+        exercise(&fs);
+        assert!(fs.tree().history.is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "record_history")]
+    fn an_unrequested_history_cannot_be_read() {
+        MemFs::new().log();
+    }
+
+    #[test]
+    fn clones_record_in_order_from_the_opt_in() {
+        let fs = MemFs::new();
+        dir(&fs, "/s");
+        fs.read_dir(Path::new("/")).unwrap();
+        let shared = fs.clone();
+        shared.record_history();
+        let mut file = fs.open_append(Path::new("/s/a")).unwrap();
+        file.sync().unwrap();
+        fs.read_dir(Path::new("/s")).unwrap();
+        fs.rename(Path::new("/s/a"), Path::new("/s/b")).unwrap();
+        fs.read(Path::new("/s/b")).unwrap();
+        assert_eq!(
+            shared.log(),
+            [
+                (Op::Open, PathBuf::from("/s/a")),
+                (Op::Sync, PathBuf::from("/s/a")),
+                (Op::Rename, PathBuf::from("/s/a")),
+            ]
+        );
+        assert_eq!(fs.reads(), [PathBuf::from("/s"), PathBuf::from("/s/b")]);
     }
 
     #[test]

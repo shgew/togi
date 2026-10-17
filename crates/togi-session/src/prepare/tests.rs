@@ -581,7 +581,7 @@ fn a_kept_journal_is_prepared_as_the_reopened_directory_is() {
 
         let mut journal = simulated(&kept).open_at(boot("crashed"), now).unwrap();
         journal.reboot(rebooted.clone()).unwrap();
-        let reads = kept.reads().len();
+        kept.record_history();
         let actual = prepare_kept(
             journal,
             &build,
@@ -598,7 +598,7 @@ fn a_kept_journal_is_prepared_as_the_reopened_directory_is() {
         );
         if matches!(name, "empty" | "plain resume" | "carry unsettled") {
             assert!(
-                kept.reads()[reads..]
+                kept.reads()
                     .iter()
                     .all(|path| !path.ends_with("events.jsonl")),
                 "{name}: the kept journal was read from its file"

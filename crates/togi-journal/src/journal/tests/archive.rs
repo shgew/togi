@@ -553,13 +553,13 @@ fn an_undecodable_journal_archive_retries_through_its_own_markers() {
 fn reopening_after_a_moved_archive_syncs_the_archive_directory_before_the_next_writer() {
     let reference = MemFs::new();
     let journal = seeded(&reference);
-    let base = reference.log().len();
+    reference.record_history();
     journal
         .archive(stamp(5), ArchiveKind::ResetAll, &[])
         .map(drop)
         .unwrap();
     let log = reference.log();
-    let moved = log[base..]
+    let moved = log
         .iter()
         .position(|(op, path)| {
             *op == crate::fs::Op::Rename && path == std::path::Path::new("/state/events.jsonl")
@@ -578,17 +578,17 @@ fn reopening_after_a_moved_archive_syncs_the_archive_directory_before_the_next_w
     );
     fs.clear_faults();
     assert!(fs.contents(ARCHIVED).is_some());
-    let mark = fs.log().len();
+    fs.record_history();
     let journal = reopen(&fs, 2);
     assert!(journal.events().is_empty());
     let log = fs.log();
-    let archive_sync = log[mark..]
+    let archive_sync = log
         .iter()
         .position(|(op, path)| {
             *op == crate::fs::Op::SyncDir && path == std::path::Path::new("/state/archive")
         })
         .unwrap();
-    let writer = log[mark..]
+    let writer = log
         .iter()
         .position(|(op, path)| {
             *op == crate::fs::Op::Open && path == std::path::Path::new("/state/events.jsonl")
@@ -614,11 +614,11 @@ fn open_syncs_a_surviving_compat_marker_and_its_directories_before_resuming_the_
     assert!(fs.contents(COMPAT).is_some());
     assert_eq!(live(&fs), original);
 
-    let mark = fs.log().len();
+    fs.record_history();
     let journal = reopen(&fs, 2);
     assert!(journal.events().is_empty());
     assert_archived_intact(&fs, &original, "resumed");
-    let log = fs.log().split_off(mark);
+    let log = fs.log();
     let first_removal = position(&log, Op::Remove, "/state/state.json").unwrap();
     for (op, path) in [
         (Op::Sync, COMPAT),
@@ -652,11 +652,11 @@ fn a_transition_retry_syncs_the_pending_carry_it_keeps_as_its_source() {
     fs.clear_faults();
     assert_eq!(fs.contents("/state/archive/20231115T000000Z.jsonl"), None);
 
-    let mark = fs.log().len();
+    fs.record_history();
     let dir = reopen(&fs, 3)
         .archive(stamp(7), ArchiveKind::Transition, &[])
         .unwrap();
-    assert!(position(&fs.log().split_off(mark), Op::Sync, CARRY).is_some());
+    assert!(position(&fs.log(), Op::Sync, CARRY).is_some());
     assert_eq!(dir.pending_carry().unwrap(), Some(default_session()));
     assert_eq!(dir.markers().unwrap().len(), 1);
     assert_eq!(dir.archives().unwrap().len(), 2);
