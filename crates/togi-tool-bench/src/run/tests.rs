@@ -187,8 +187,6 @@ impl SessionRunner for MemoryRunner {
             .into_iter()
             .map(|violation| togi_tool_audit::Finding {
                 directory: session.dir.clone(),
-                scenario: None,
-                seed: None,
                 journal: Some("live".into()),
                 seq: Some(violation.seq),
                 check: togi_tool_audit::Kind::Audit(violation.check),
