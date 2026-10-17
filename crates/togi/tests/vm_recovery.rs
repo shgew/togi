@@ -433,9 +433,9 @@ mod vm_recovery {
             &self,
             config: &Config,
             recorded: Option<&BiosContext>,
-            privileged: bool,
+            lock: Option<&HostLock>,
         ) -> Result<Diagnosis, HardwareError> {
-            self.0.diagnose(config, recorded, privileged)
+            self.0.diagnose(config, recorded, lock)
         }
 
         fn bootloader(&self, grubenv: &Path) -> Box<dyn Bootloader> {
@@ -458,12 +458,12 @@ mod vm_recovery {
             self.0.stderr_facts()
         }
 
-        fn open_machine(
+        fn open_machine<'lock>(
             &self,
             _: &Config,
             state_dir: &Path,
-            _: &HostLock,
-        ) -> Result<Machine, HardwareError> {
+            _: &'lock HostLock,
+        ) -> Result<Machine<'lock>, HardwareError> {
             let runner = Runner::new(Options {
                 dir: state_dir.join("trials"),
                 backends: Backends::new().with(Arc::new(Sleeper)),

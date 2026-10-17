@@ -16,7 +16,7 @@ use crate::error::{SessionError, Step};
 use crate::session::{Control, Outcome, Session};
 use crate::write;
 
-impl Session {
+impl Session<'_> {
     /// Records what the session starts from, each piece once however often the run begins: the BIOS context, the
     /// baseline and its notice, the carry and a start phase for every core. A baseline that cannot be read is SMU
     /// evidence.

@@ -57,7 +57,7 @@ fn simulator_of(definition: &MachineDefinition) -> Simulator {
     )
 }
 
-fn input(sim: &Simulator, mem: &MemFs) -> RunInput {
+fn input(sim: &Simulator, mem: &MemFs) -> RunInput<'static> {
     let mut machine = sim.seams();
     let boot = machine.host.boot_id().unwrap();
     let journal = dir(mem).open_at(boot.clone(), sim.now()).unwrap();

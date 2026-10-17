@@ -114,14 +114,14 @@ fn quiet() -> Bench {
     })
 }
 
-fn input(bench: &Bench, grub: Option<&SharedGrub>) -> crate::RunInput {
+fn input(bench: &Bench, grub: Option<&SharedGrub>) -> crate::RunInput<'static> {
     let mut input = bench.input();
     input.policy.cycles = Some(NonZeroU32::MIN);
     input.bootloader = grub.map(SharedGrub::boxed);
     input
 }
 
-fn started_lower(bench: &Bench) -> crate::RunInput {
+fn started_lower(bench: &Bench) -> crate::RunInput<'static> {
     let mut input = input(bench, None);
     input.config = togi_config::Config::parse(r#"{"start_offsets":{"0":-10,"1":-10}}"#).unwrap();
     input
@@ -1012,7 +1012,11 @@ impl Smu for OwnedSmu {
     }
 }
 
-fn owned_input(bench: &Bench, joins: &Rc<Joins>, cancel_when_finalized: bool) -> crate::RunInput {
+fn owned_input(
+    bench: &Bench,
+    joins: &Rc<Joins>,
+    cancel_when_finalized: bool,
+) -> crate::RunInput<'static> {
     let mut input = bench.input();
     input.config = togi_config::Config::parse(r#"{"start_offsets":{"0":-5,"1":-5}}"#).unwrap();
     input.machine.trials = Box::new(OwnedTrials {

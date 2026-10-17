@@ -47,7 +47,7 @@ impl<'a> StateDocumentRef<'a> {
     }
 }
 
-impl Appender {
+impl Appender<'_> {
     pub(crate) fn publish_state(&mut self) -> Result<bool, AppendFailure> {
         match self.journal.write_state(&StateDocumentRef::of(&self.folds)) {
             Ok(()) => Ok(true),
@@ -76,7 +76,7 @@ impl Appender {
     }
 }
 
-impl Session {
+impl Session<'_> {
     pub(crate) fn rebuild_state(&mut self) -> Result<(), SessionError> {
         if self.appender.adopted {
             return Ok(());

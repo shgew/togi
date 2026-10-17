@@ -46,7 +46,7 @@ impl StopPolicy {
     }
 }
 
-impl Session {
+impl Session<'_> {
     /// Carries out one action of the tuner. A dead end the action's evidence supports ends the run with it.
     pub(crate) fn execute(&mut self, action: Action, tuned: &TunerValues<'_>) -> Outcome {
         let step = match action {

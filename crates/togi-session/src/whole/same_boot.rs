@@ -84,7 +84,7 @@ impl SameBoot {
     }
 
     /// The killed run also appended what `more` appends after the offsets it left.
-    fn killed(pending: bool, more: impl FnOnce(&Bench, &mut Session)) -> Self {
+    fn killed(pending: bool, more: impl FnOnce(&Bench, &mut Session<'static>)) -> Self {
         Self::killed_from(
             r#"{"start_offsets":{"0":-30,"1":-29,"2":-19,"3":-5}}"#,
             pending,
@@ -92,7 +92,11 @@ impl SameBoot {
         )
     }
 
-    fn killed_from(config: &str, pending: bool, more: impl FnOnce(&Bench, &mut Session)) -> Self {
+    fn killed_from(
+        config: &str,
+        pending: bool,
+        more: impl FnOnce(&Bench, &mut Session<'static>),
+    ) -> Self {
         let mut bench = quiet(4, Some(BIOS.to_vec()));
         bench.config = Config::parse(config).unwrap();
         let mut session = begun(&bench);
@@ -896,7 +900,7 @@ impl Trials for Marked {
     }
 }
 
-fn one_cycle(bench: &Bench) -> crate::session::RunInput {
+fn one_cycle(bench: &Bench) -> crate::session::RunInput<'static> {
     let mut input = bench.input();
     input.policy.cycles = Some(std::num::NonZeroU32::MIN);
     input

@@ -74,9 +74,9 @@ impl Folds {
 ///
 /// The first failed append latches: every later append returns that failure without touching the journal, and the
 /// running trial's token is cancelled so its workload stops.
-pub(crate) struct Appender {
+pub(crate) struct Appender<'machine> {
     pub(crate) journal: Journal,
-    clock: Box<dyn Clock>,
+    clock: Box<dyn Clock + 'machine>,
     pub(crate) folds: Folds,
     renderer: Renderer,
     zone: TimeZone,
@@ -94,12 +94,12 @@ pub(crate) struct Appender {
     pub(crate) adopted: bool,
 }
 
-impl Appender {
+impl<'machine> Appender<'machine> {
     /// Takes over an opened journal, folding the events it already holds into the run's state without logging them.
     #[cfg(test)]
     pub(crate) fn resume(
         journal: Journal,
-        clock: Box<dyn Clock>,
+        clock: Box<dyn Clock + 'machine>,
         renderer: Renderer,
         zone: TimeZone,
     ) -> Result<Self, FoldError> {
@@ -111,7 +111,7 @@ impl Appender {
     /// over when it covers exactly this journal. A journal that does not fold is handed back.
     pub(crate) fn resume_with(
         journal: Journal,
-        clock: Box<dyn Clock>,
+        clock: Box<dyn Clock + 'machine>,
         renderer: Renderer,
         zone: TimeZone,
         defects: &'static [Entry],

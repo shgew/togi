@@ -24,7 +24,7 @@ enum Reached {
     Unsettled,
 }
 
-impl Session {
+impl Session<'_> {
     /// Ends the run with `run`, the stop it reached or the error that ended it, and hands the journal back.
     pub(crate) fn close(mut self, run: Result<Stop, SessionError>) -> Ended {
         let mut errors = Vec::new();

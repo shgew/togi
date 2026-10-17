@@ -45,7 +45,7 @@ impl Simulator {
     }
 
     /// The seams of this machine. They may be taken any number of times; all act on the same machine.
-    pub fn seams(&self) -> Machine {
+    pub fn seams(&self) -> Machine<'static> {
         Machine {
             clock: Box::new(SimClock(self.shared.clone())),
             smu: Box::new(SimSmu(self.shared.clone())),

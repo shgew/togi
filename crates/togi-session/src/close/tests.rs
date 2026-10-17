@@ -18,7 +18,7 @@ use crate::session::{Fault as Broken, Visit};
 use crate::testing::{Bench, core, put, recorded_baseline, swept, target};
 use crate::{Ended, SessionError, Stop};
 
-fn tuned(bench: &Bench) -> Session {
+fn tuned(bench: &Bench) -> Session<'static> {
     let mut session = swept(bench);
     recorded_baseline(&mut session, &[0, 0]);
     put(&mut session, &[-5, -5]);
@@ -44,11 +44,11 @@ fn close(session: Session, run: Result<Stop, SessionError>) -> Ended {
     session.close(run)
 }
 
-fn failed_search(bench: &Bench, offset: i64) -> Session {
+fn failed_search(bench: &Bench, offset: i64) -> Session<'static> {
     failed_search_on(swept(bench), bench, offset)
 }
 
-fn failed_search_on(mut session: Session, bench: &Bench, offset: i64) -> Session {
+fn failed_search_on(mut session: Session<'static>, bench: &Bench, offset: i64) -> Session<'static> {
     session.config = togi_config::Config::parse(&format!(
         r#"{{"start_offsets":{{"0":{offset},"1":{offset}}}}}"#
     ))
@@ -621,7 +621,7 @@ fn a_decision_that_cannot_be_folded_gets_the_emergency_instead_of_the_restoratio
 
 /// A session that recorded no baseline, so its cleanup writes nothing to the SMU and appends only the `shutdown` the
 /// stop owes.
-fn settled(bench: &Bench) -> Session {
+fn settled(bench: &Bench) -> Session<'static> {
     let mut session = swept(bench);
     put(&mut session, &[-5, -5]);
     session.validated = Some(session.host.validate_smu().unwrap());

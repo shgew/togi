@@ -146,7 +146,7 @@ fn warning(appender: &mut Appender) -> Result<togi_journal::Seq, AppendFailure> 
 }
 
 /// Reopens the journal of a finished rig for a later run of the same boot, with its own handoff.
-fn resume(rig: Rig, handoff: BootHandoff) -> Appender {
+fn resume(rig: Rig, handoff: BootHandoff) -> Appender<'static> {
     let sim = rig.sim.clone();
     let dir = rig.appender.into_journal().close().unwrap();
     let journal = dir.open_at(rig.boot.clone(), sim.now()).unwrap();
@@ -412,7 +412,7 @@ enum Recorded {
 }
 
 /// A session on a later boot whose journal holds a dead end still to be finished, with `prior` pending in `grub`.
-fn resumed_dead_end(grub: &Grub, prior: &LeaveReason) -> (Bench, crate::session::Session) {
+fn resumed_dead_end(grub: &Grub, prior: &LeaveReason) -> (Bench, crate::session::Session<'static>) {
     resumed_dead_end_after(grub, prior, Recorded::Nothing)
 }
 
@@ -420,7 +420,7 @@ fn resumed_dead_end_after(
     grub: &Grub,
     prior: &LeaveReason,
     recorded: Recorded,
-) -> (Bench, crate::session::Session) {
+) -> (Bench, crate::session::Session<'static>) {
     let bench = Bench::new(2);
     let mut first = crate::testing::begun(&bench);
     let dead_end = first

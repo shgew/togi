@@ -44,7 +44,28 @@ const SYSTEM_ROOT: &str = "/";
 
 /// Assembles the machine under the held host lock. Reads the topology and nothing else from the
 /// hardware: no mailbox, SMN or PM table access happens before `Host::validate_smu`.
-pub fn open(config: &Config, state_dir: &Path, _lock: &HostLock) -> Result<Machine, Error> {
+///
+/// Hardware access cannot outlive the caller-owned lock, even when a seam is taken out of the
+/// machine:
+///
+/// ```compile_fail,E0505
+/// use std::path::Path;
+/// use togi_config::Config;
+/// use togi_hostlock::HostLock;
+/// use togi_machine::CoreId;
+///
+/// fn release_while_accessible(config: &Config, state: &Path, lock: HostLock) {
+///     let machine = togi_hardware::open(config, state, &lock).unwrap();
+///     let mut smu = machine.smu;
+///     drop(lock);
+///     let _ = smu.offset(CoreId::new(0).unwrap());
+/// }
+/// ```
+pub fn open<'lock>(
+    config: &Config,
+    state_dir: &Path,
+    _lock: &'lock HostLock,
+) -> Result<Machine<'lock>, Error> {
     check_platform()?;
     let root = Path::new(SYSTEM_ROOT);
     let parts = Parts::new(Driver::open(root).map_err(Error::OpenSmu)?, config)?;
@@ -61,19 +82,27 @@ pub fn open(config: &Config, state_dir: &Path, _lock: &HostLock) -> Result<Machi
     })
 }
 
-/// Makes `run`'s preflight checks without writing anything. Privileged checks require both a
-/// request and root. Otherwise the driver only checks identity and touches no mailbox or PM table.
+/// Makes `run`'s preflight checks without writing anything. Privileged checks require both the
+/// held host lock and root. Otherwise the driver only checks identity and touches no mailbox or PM table.
+///
+/// A boolean cannot authorize privileged checks:
+///
+/// ```compile_fail,E0308
+/// use togi_config::Config;
+///
+/// let _ = togi_hardware::diagnose(&Config::default(), None, true);
+/// ```
 pub fn diagnose(
     config: &Config,
     recorded: Option<&BiosContext>,
-    request_privileged: bool,
+    lock: Option<&HostLock>,
 ) -> Result<Diagnosis, Error> {
     check_platform()?;
     diagnose::diagnose_at(
         Path::new(SYSTEM_ROOT),
         config,
         recorded,
-        request_privileged,
+        lock.is_some(),
         Privilege::current(),
     )
 }

@@ -394,7 +394,7 @@ pub(crate) fn crashed(waited: &Waited) -> bool {
 /// A simulator with its seams, and the plumbing to run trials through them.
 pub(crate) struct Rig {
     pub sim: Simulator,
-    pub machine: Machine,
+    pub machine: Machine<'static>,
 }
 
 impl Rig {
