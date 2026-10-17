@@ -94,7 +94,7 @@ pub(crate) fn render_score(score: &Score<'_>) -> String {
         })
         .collect();
     table.line(&format!(
-        "Run: {} {:.2} h after the anchor; builds after the anchor: {}",
+        "Run: {} after {:.2} h of run time since the anchor; builds after the anchor: {}",
         status_name(score.outcome.status),
         score.outcome.hours,
         if builds.is_empty() {

@@ -366,7 +366,7 @@ just forecast "$copy" --out tools/bench/forecasts/<session>-<seq>.json
 The anchor is the last complete event of the copied live journal: its session, sequence and time, with a SHA-256 of the session's journal lines through it. Only events after the anchor count, and the outcome ends at the run's first conclusion or dead end after the anchor: events after that point do not count. A simulated run stops there; a real run that kept checking past its conclusion, as a tuning boot does, is therefore scored by `just stats` as what a `togi run --cycles 1` run with the same history would have recorded. For each run, the forecast records:
 
 - `status`: `concluded` (the run reached the clean cycle `togi run --cycles 1` stops at), `deadend`, or `censored` (still running at the simulator's boot cap). A run that errors fails the whole forecast;
-- `hours`: from the anchor to the conclusion, or to the last event of a run that did not conclude;
+- `hours`: run time after the anchor through the conclusion, or through the last event of a run that did not conclude, counted as `just stats --forecast` counts a real run's ([Scoring a forecast](reviewing.md#scoring-a-forecast)): invocations and the downtime before one that detects a crash, not clean stops;
 - `crashes`: `crash.detected` events;
 - `hunts`: hunts that ran a trial; a hunt answered only by carried facts runs none;
 - `profile` and `depth`: the newest session's final profile and its sum, as in `just bench` (its checking profile, or its baseline before one exists).
