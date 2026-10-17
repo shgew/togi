@@ -154,6 +154,8 @@ The moved core's own failing request r comes from its trial's `voltage_requests_
 
 A carried failure takes no V*: a new session evaluates it after every carried fact has folded, so its target would come from passes recorded after it, at offsets later moves chose. It moves one count, or the stepdown minimum when that is larger, and its reason says that a carried failure takes no voltage target ([ADR 0064](../adr/0064-locate-when-passes-clear-the-loaded-cores.md)). The live session that follows re-tests the moved core and answers its next failure with a live V*.
 
+A live crash whose recorded last-evidence `trial.end.duration_s` is **less than 60 seconds** takes no V*, for named and unattributed failures alike. A `crash.detected` while the trial was open also makes it a crash even if its end preserves a backend signal. Zero duration, including no timed evidence, is below the floor; never substitute the intended class duration. Exactly 60 seconds follows the ordinary target rule. The move is one count except for the existing CO-0 step-down minimum and the requirement to move past a shallower failure point; the zero clamp still applies. Request-order attribution and the source of r do not change, including telemetry fallback and the offset proxy. Non-crash failures do not use this floor. The floor is a heuristic against truncated request summaries, not proof that requests have settled after 60 seconds ([ADR 0066](../adr/0066-short-crashes-take-no-voltage-target.md)).
+
 Record the moved core's failure point at its applied offset in the failed trial, keeping the shallowest point. Phase 2 cannot return there; ordinary backoff rerun obligations follow.
 
 ### Testing a repeatedly charged requester

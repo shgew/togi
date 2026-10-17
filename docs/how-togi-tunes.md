@@ -99,6 +99,8 @@ Backing off a top requester raises its request, so it can keep taking the blame 
 
 This is the common path, not a second definition of edge cases. Carried failures, pending failures whose selected core is already shallower, CO-0 named non-top requesters, and all-zero-locate outcomes follow [R7 attribution](spec/tuner.md#r7-request-order-and-attribution), [voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff) and [Dead ends](spec/tuner.md#dead-ends). The conversion of 3.6 mV per count used for estimated request shifts is an assumption, not a measured constant established for every core and operating point.
 
+Short crashes do not use a passing voltage target: their request summary may cover only an early, lower-request part of the launch. [ADR 0066](adr/0066-short-crashes-take-no-voltage-target.md) chooses a 60-second last-evidence floor, for named and unattributed crashes, with a one-count move unless existing step-down or failure-point safety requires more. This is a heuristic, not a measured settling time; non-crash failures keep their ordinary target rule. [The spec](spec/tuner.md#r7-voltage-targeted-backoff) owns the duration boundary and fallback rules.
+
 ### Phases: take the margin back, then confirm
 
 A **failure point** forbids that core's failing offset and deeper values. A **combination** forbids reaching all its members' recorded offsets together. These constraints apply to the tuning profile; a hunt deliberately tests a failed group profile.

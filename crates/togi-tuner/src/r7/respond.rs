@@ -9,7 +9,7 @@ use super::escalation::Escalation;
 use super::failed::FailedTrial;
 use super::order::lowest_ranked;
 use super::reason::{Basis, Note, R7Reason, ids};
-use super::target::{Ask, OwnRequest, Target, backoff_counts, backoff_move};
+use super::target::{Ask, CRASH_TARGET_MIN_S, OwnRequest, Target, backoff_counts, backoff_move};
 use crate::hunt::state::{Located, LocatedEnd};
 use crate::ledger::carried_clause;
 use crate::r7::failed::OpenFailure;
@@ -575,8 +575,14 @@ impl Run {
             .evidence
             .active_backend(record.pending.class.workload().backend());
         let mut target: Option<Target> = None;
+        let short_crash = view
+            .trial
+            .crash_duration_s
+            .filter(|&duration| duration < CRASH_TARGET_MIN_S);
         let own = match failing.volts {
-            Some(request) if record.pending.carried => OwnRequest::Measured(request),
+            Some(request) if record.pending.carried || short_crash.is_some() => {
+                OwnRequest::Measured(request)
+            }
             Some(request) => {
                 let failing_top = charge.rail;
                 let ask = Ask {
@@ -611,6 +617,10 @@ impl Run {
                 sources: failing.sources.clone(),
             },
             (Some(request), None) if record.pending.carried => Basis::Carried { request },
+            (Some(request), None) if short_crash.is_some() => Basis::ShortCrash {
+                request,
+                duration_s: short_crash.unwrap_or(0),
+            },
             (Some(request), None) => Basis::NoPass { request },
             (Some(request), Some(target)) if request >= target.volts => Basis::Met {
                 request,

@@ -892,6 +892,8 @@ pub(crate) struct R7Report {
     pub(crate) named: Option<u8>,
     pub(crate) stalled: Option<u8>,
     pub(crate) clocks: Vec<(u8, u32)>,
+    pub(crate) signal: Option<Signal>,
+    pub(crate) duration_s: Option<u32>,
 }
 
 impl R7Report {
@@ -972,9 +974,10 @@ impl Journal {
     ) -> Seq {
         let plan = self.r7_plan(cores, profile);
         let (intent, trial) = self.intent(&plan);
-        let signal = (outcome == Outcome::Failure).then_some(Signal::ComputationError);
+        let signal = (outcome == Outcome::Failure)
+            .then_some(report.signal.unwrap_or(Signal::ComputationError));
         let mut end = Self::end_payload(&trial, outcome, signal);
-        end.duration_s = 120;
+        end.duration_s = report.duration_s.unwrap_or(120);
         end.voltage_requests_v = report
             .requests
             .iter()

@@ -253,6 +253,8 @@ impl Run {
                     stalled: carried.stalled_core,
                 },
                 named: carried.core,
+                crash_duration_s: (carried.signal == Some(togi_machine::Signal::Crash))
+                    .then_some(carried.duration_s),
             },
             carried.outcome,
             backend,

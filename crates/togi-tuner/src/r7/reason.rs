@@ -29,6 +29,10 @@ pub(crate) enum Basis {
     Carried {
         request: f64,
     },
+    ShortCrash {
+        request: f64,
+        duration_s: u32,
+    },
     Met {
         request: f64,
         target: f64,
@@ -169,6 +173,14 @@ impl fmt::Display for R7Reason {
             Basis::Carried { request } => write!(
                 f,
                 "request {request:.3} V; a carried failure takes no voltage target, {counts}"
+            )?,
+            Basis::ShortCrash {
+                request,
+                duration_s,
+            } => write!(
+                f,
+                "request {request:.3} V; crash last evidence at {duration_s} s is below the {} s floor, so no voltage target, {counts}",
+                super::target::CRASH_TARGET_MIN_S
             )?,
             Basis::Met { request, target } => write!(
                 f,

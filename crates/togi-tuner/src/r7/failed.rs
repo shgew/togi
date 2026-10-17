@@ -26,6 +26,7 @@ pub(crate) struct Ended<'a> {
     pub(crate) profile: &'a Profile,
     pub(crate) telemetry: Telemetry<'a>,
     pub(crate) named: Option<CoreId>,
+    pub(crate) crash_duration_s: Option<u32>,
 }
 
 /// The request order a trial explains: its own requests, else the newest measurements folded
@@ -61,6 +62,7 @@ pub(crate) fn effective_top(recorded: CoreSet, order: &RequestOrder) -> CoreSet 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct FailedTrial {
     pub(crate) end: Seq,
+    pub(crate) crash_duration_s: Option<u32>,
     pub(crate) stalled: Option<CoreId>,
     pub(crate) recorded_top: CoreSet,
     pub(crate) clocks: BTreeMap<CcdId, i64>,
@@ -95,6 +97,7 @@ impl FailedTrial {
             profile,
             telemetry,
             named,
+            crash_duration_s,
         } = ended;
         let named_lane = named
             .filter(|&core| topology.contains(core))
@@ -111,6 +114,7 @@ impl FailedTrial {
             });
         Self {
             end,
+            crash_duration_s,
             stalled: telemetry.stalled,
             recorded_top: telemetry.top,
             clocks: telemetry

@@ -489,6 +489,9 @@ pub(crate) struct Ask<'a> {
 
 const COUNT_ROUNDING_TOLERANCE: f64 = 1e-9;
 
+/// Earlier crash summaries need not represent the requests of a full passing trial.
+pub(crate) const CRASH_TARGET_MIN_S: u32 = 60;
+
 /// The counts shallower that lift a request from `v` strictly above `top`, and at least one:
 /// `floor((top - v) / VOLTS_PER_COUNT) + 1`. A request exactly a whole number of counts below
 /// `top` still needs the count that reaches it. Both must be finite.

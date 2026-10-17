@@ -122,6 +122,8 @@ impl Run {
                     stalled: end.stalled_core,
                 },
                 named,
+                crash_duration_s: (open.crashed || end.signal == Some(togi_machine::Signal::Crash))
+                    .then_some(end.duration_s),
             },
             end.outcome,
             open.backend,

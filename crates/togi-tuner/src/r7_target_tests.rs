@@ -66,6 +66,166 @@ fn assert_no_pass(why: &R7Reason, request: f64) {
 }
 
 #[test]
+fn short_crash_move_still_escapes_a_shallower_failure_point_and_clamps_at_zero() {
+    use crate::r7::target::backoff_move;
+    use crate::tests::off as target;
+
+    assert_eq!(
+        backoff_move(target(-30), Some(target(-20)), 1).to,
+        target(-19)
+    );
+    assert_eq!(backoff_move(target(-1), None, 1).to, target(0));
+}
+
+#[test]
+fn detected_short_crash_with_a_preserved_backend_signal_takes_no_target() {
+    let mut j = Journal::r7_session();
+    let n = needed(&j);
+    passes(
+        &mut j,
+        n,
+        &[0, 1],
+        &[-20, -30, -30, -30],
+        &report(&[(0, 1.136), (1, 1.08)], &[0]),
+    );
+    let plan = j.r7_plan(&[0, 1], &ALL_30);
+    let (intent, trial) = j.intent(&plan);
+    j.append(
+        togi_journal::CrashDetected {
+            previous_boot: togi_machine::BootId::from("boot".to_owned()),
+            in_flight: Some(intent),
+            stray: false,
+            condition: None,
+            reset_reason: None,
+            reset_reason_raw: Vec::new(),
+            inconclusive: false,
+            pstore: None,
+        }
+        .into(),
+        &[],
+    );
+    let mut end = Journal::end_payload(
+        &trial,
+        Outcome::Failure,
+        Some(togi_machine::Signal::ComputationError),
+    );
+    end.duration_s = 15;
+    end.core = Some(core(0));
+    end.voltage_requests_v = [(core(0), 1.1), (core(1), 1.08)].into_iter().collect();
+    end.top_requesters = set(&[0]);
+    j.append(end.into(), &[intent]);
+    let attribution = j.next_decision();
+    j.decide(attribution);
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(moved(&decision), (0, -29));
+    assert_eq!(
+        why.basis,
+        Basis::ShortCrash {
+            request: 1.1,
+            duration_s: 15,
+        }
+    );
+    assert_eq!(j.resumed().next_decision(), decision);
+}
+
+#[test]
+fn short_crash_duration_floor_applies_to_named_and_unattributed_failures() {
+    for named in [false, true] {
+        for duration in [0, 15, 32, 47, 59, 60, 65, 99, 117] {
+            for signal in [
+                togi_machine::Signal::ComputationError,
+                togi_machine::Signal::UnexpectedExit,
+                togi_machine::Signal::Crash,
+            ] {
+                let mut j = Journal::r7_session();
+                let n = needed(&j);
+                let passed = passes(
+                    &mut j,
+                    n,
+                    &[0, 1],
+                    &[-20, -30, -30, -30],
+                    &report(&[(0, 1.136), (1, 1.08)], &[0]),
+                );
+                let mut failing = report(&[(0, 1.1), (1, 1.08)], &[0]);
+                failing.named = named.then_some(0);
+                failing.duration_s = Some(duration);
+                failing.signal = Some(signal);
+                j.r7_failed(&[0, 1], &ALL_30, &failing);
+                let (decision, why) = r7_backoff(&j);
+                let short = signal == togi_machine::Signal::Crash && duration < 60;
+                assert_eq!(moved(&decision), (0, if short { -29 } else { -20 }));
+                if short {
+                    assert_eq!(
+                        why.basis,
+                        Basis::ShortCrash {
+                            request: 1.1,
+                            duration_s: duration,
+                        }
+                    );
+                    assert_eq!(why.counts, 1);
+                    assert!(passed.iter().all(|seq| !decision.cause.contains(seq)));
+                    let DecisionPayload::TunerDecision(td) = &decision.payload else {
+                        unreachable!()
+                    };
+                    assert!(
+                        td.reason
+                            .contains("below the 60 s floor, so no voltage target")
+                    );
+                } else {
+                    assert_toward(&why, 1.1, 1.136);
+                }
+                assert_eq!(j.next_decision(), decision);
+                assert_eq!(j.resumed().next_decision(), decision);
+            }
+        }
+    }
+}
+
+#[test]
+fn short_crash_preserves_stepdown_minimum_without_a_target() {
+    let mut j = Journal::r7_session();
+    let n = needed(&j);
+    passes(
+        &mut j,
+        n,
+        &[0, 1],
+        &[0, -10, -30, -30],
+        &report(&[(0, 1.236), (1, 1.15)], &[0]),
+    );
+    let profile = [0, -30, -30, -30];
+    j.profile_change(&profile);
+    let mut failing = report(&[(0, 1.2), (1, 1.15)], &[0]);
+    failing.signal = Some(togi_machine::Signal::Crash);
+    failing.duration_s = Some(15);
+    j.r7_failed(&[0, 1], &profile, &failing);
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(moved(&decision), (1, -16));
+    assert_eq!(why.counts, 14);
+    assert_eq!(why.rail, Some(1.2));
+    assert_eq!(
+        why.basis,
+        Basis::ShortCrash {
+            request: 1.15,
+            duration_s: 15,
+        }
+    );
+    assert_eq!(j.resumed().next_decision(), decision);
+}
+
+#[test]
+fn short_crash_without_requests_keeps_the_offset_proxy_fallback() {
+    let mut j = Journal::r7_session();
+    let mut failing = R7Report::default().top(&[0]);
+    failing.signal = Some(togi_machine::Signal::Crash);
+    failing.duration_s = Some(0);
+    j.r7_failed(&[0, 1], &ALL_30, &failing);
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(moved(&decision), (0, -29));
+    assert_eq!(why.basis, Basis::NoTelemetry { offset: -30 });
+    assert_eq!(j.resumed().next_decision(), decision);
+}
+
+#[test]
 fn a_carried_failure_takes_no_voltage_target() {
     for carried in [false, true] {
         let mut j = Journal::r7_session();
