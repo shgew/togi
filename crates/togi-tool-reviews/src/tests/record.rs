@@ -65,16 +65,22 @@ fn block(json: &str) -> String {
 
 #[test_case("@coderabbitai full review", "no togi-review block"; "no block")]
 #[test_case("<!-- togi-review {\"version\":3}", "unterminated togi-review block"; "unterminated")]
-#[test_case(&block(r#"{"version":3,"#), "decode togi-review block"; "bad json")]
+#[test_case(&block(r#"{"version":3,"#), "decode togi-review block: "; "bad json")]
+#[test_case(&block("[1]"), "decode togi-review block: invalid type: sequence, expected an object"; "array record")]
+#[test_case(&block(r#"[3,"0123456789abcdef0123456789abcdef01234567"]"#), "decode togi-review block: invalid type: sequence, expected an object"; "array v3 record")]
+#[test_case(&block(r#"{"version":3,"findings":[["R","P1","x",null,{"status":"fixed"}]]}"#), "decode togi-review block: invalid type: sequence, expected an object"; "array finding")]
+#[test_case(&block(r#"{"version":3,"findings":[{"source":"R","priority":"P1","outcome":["rejected","","why",0]}]}"#), "decode togi-review block: invalid type: sequence, expected an object"; "array outcome")]
 #[test_case(&block(r#"{"version":4,"findings":[]}"#), "unsupported record version 4"; "unknown version")]
 #[test_case(&block(r#"{"version":3,"findings":[{"source":"R","priority":"P4","outcome":{"status":"fixed","sha":"a"}}]}"#), r#"finding from R: unknown priority "P4""#; "unknown priority")]
 #[test_case(&block(r#"{"version":3,"findings":[{"source":"R","priority":"P1","outcome":{"status":"open"}}]}"#), r#"finding from R: unknown outcome "open""#; "unknown outcome")]
 fn parse_record_rejects(body: &str, want: &str) {
     let error = parse_record(body).expect_err("parse_record accepted");
+    let text = crate::Error::wrap("parse", error).render();
     assert!(
-        error.to_string().contains(want),
-        "parse_record error = {error}, want containing {want:?}"
+        text.contains(want),
+        "parse_record error = {text}, want containing {want:?}"
     );
+    let error = parse_record(body).expect_err("parse_record accepted");
     if want == "no togi-review block" {
         assert!(
             matches!(error, RecordError::NoBlock),

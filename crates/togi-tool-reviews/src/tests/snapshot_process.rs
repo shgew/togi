@@ -13,12 +13,15 @@ use crate::snapshot::run_snapshot;
 use crate::snapshot::tests::TOO_LARGE;
 use crate::text::quote;
 
-/// git with no inherited configuration, attributes or Git environment, run in `dir`.
+/// git with no inherited configuration, attributes or Git environment, and sync disabled, run in `dir`.
 fn clean_git(home: &Path, dir: &Path) -> System {
     let mut env: Vec<(OsString, OsString)> = [
         ("HOME", home.as_os_str()),
         ("GIT_CONFIG_NOSYSTEM", "1".as_ref()),
         ("GIT_ATTR_NOSYSTEM", "1".as_ref()),
+        ("GIT_CONFIG_COUNT", "1".as_ref()),
+        ("GIT_CONFIG_KEY_0", "core.fsync".as_ref()),
+        ("GIT_CONFIG_VALUE_0", "none".as_ref()),
         ("GIT_AUTHOR_NAME", "Snapshot Test".as_ref()),
         ("GIT_AUTHOR_EMAIL", "snapshot@example.com".as_ref()),
         ("GIT_COMMITTER_NAME", "Snapshot Test".as_ref()),
@@ -387,7 +390,7 @@ fn real_process_snapshot_too_large_diff_fetch_failure() {
         .expect_err("snapshot of a pull whose head the origin lacks succeeded");
     // The operator sees the failed step, the command and its subcommand with git's exit status, and git's
     // own explanation.
-    let error = error.to_string();
+    let error = error.render();
     for s in [
         "fetch the frozen base and head of pull request #700, whose diff GitHub refuses as too large: ",
         "git fetch: exit status ",

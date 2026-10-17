@@ -11,7 +11,8 @@ use crate::fakes::{
     BASE_SHA, FIX_SHA, HEAD_SHA, OLD_BASE_SHA, OLD_HEAD_SHA, PREVIOUS_URL, check_golden, read_file,
 };
 use crate::manifest::{
-    CoverRange, Coverage, MANIFEST_VERSION, Manifest, ManifestFile, PreviousRecord, write_manifest,
+    CoverRange, Coverage, MANIFEST_VERSION, Manifest, ManifestFile, PreviousRecord, read_manifest,
+    write_manifest,
 };
 use crate::record::{RECORD_CLOSE, RECORD_OPEN, parse_record};
 
@@ -427,10 +428,13 @@ const RUST: &str = "crates/togi-x/src/lib.rs";
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(outcome("fixed", "abc", "", 0)), ""), "outcome must be"; "short sha")]
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(outcome("deferred", "", "x", 1)), ""), "outcome must be"; "two outcome forms")]
 #[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), one_finding(outcome("open", "", "", 0)), ""), "outcome must be"; "unknown status")]
+#[test_case(&doc_manifest(), input(vec![reviewer("", None, &["docs/x.md"])], vec![], ""), "a reviewer has no name"; "nameless reviewer")]
+#[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), vec![finding("", "P2", "x", None, outcome("rejected", "", "r", 0))], ""), "a finding needs a source and text"; "finding without source")]
+#[test_case(&doc_manifest(), input(rv(&["docs/x.md"]), vec![finding("r", "P2", "", None, outcome("rejected", "", "r", 0))], ""), "a finding needs a source and text"; "finding without text")]
 fn build_record_rejects(m: &Manifest, input: FindingsInput, want: &str) {
     let error = build_record(m, input).expect_err("build_record accepted");
     assert!(
-        error.to_string().contains(want),
+        error.render().contains(want),
         "error = {error}, want one containing {want:?}"
     );
 }
@@ -442,13 +446,29 @@ fn render_rejects_unknown_findings_field() {
     let file = write_findings(dir.path(), r#"{"reviewer":[]}"#);
     let error = render(dir.path(), &file).expect_err("render accepted");
     assert!(
-        error.to_string().contains("unknown field"),
+        error.render().contains("unknown field"),
         "error = {error}, want an unknown-field refusal"
     );
     let error = run_render(&mut Vec::new(), &[dir_text(dir.path())]).expect_err("render accepted");
     assert!(
-        error.to_string().contains("usage: reviews render"),
+        error.render().contains("usage: reviews render"),
         "error = {error}, want usage"
+    );
+}
+
+#[test_case(r#"[1,"shgew/togi",700,"a","b",null,"",false,[],0,0,0,false,0,0,[],null]"#; "array manifest")]
+#[test_case(r#"{"version":1,"files":[["docs/x.md","","modified",1,0,false,"","files/001.diff"]]}"#; "array file")]
+#[test_case(r#"{"version":1,"coverage":{"reported":1,"ranges":[["a.rs",1,2]],"not_built":[]}}"#; "array range")]
+fn read_manifest_refuses_arrays(raw: &str) {
+    let dir = tempfile::tempdir().expect("temporary directory");
+    std::fs::write(dir.path().join("manifest.json"), raw).expect("write manifest");
+    let error = read_manifest(&dir_text(dir.path())).expect_err("read_manifest accepted");
+    assert!(
+        error
+            .render()
+            .contains("invalid type: sequence, expected an object"),
+        "error = {}, want an array refusal",
+        error.render()
     );
 }
 
@@ -612,6 +632,10 @@ const ONE: &str = r#"{"reviewers":[{"name":"r","files":["docs/x.md"]}],"findings
 #[test_case(&format!("{ONE}}}"), "data follows"; "trailing closer")]
 #[test_case(&ONE[..ONE.len() - 1], "decode findings"; "truncated")]
 #[test_case("", "decode findings"; "empty")]
+#[test_case("[]", "invalid type: sequence, expected an object"; "empty array")]
+#[test_case(r#"[[{"name":"r","files":["docs/x.md"]}],[],"",""]"#, "invalid type: sequence, expected an object"; "array of the fields")]
+#[test_case(r#"{"reviewers":[["r",null,["docs/x.md"]]],"findings":[]}"#, "invalid type: sequence, expected an object"; "array reviewer")]
+#[test_case(r#"{"reviewers":[{"name":"r","files":["docs/x.md"]}],"findings":[{"source":"r","priority":"P3","finding":"x","outcome":["rejected","","why",0]}]}"#, "invalid type: sequence, expected an object"; "array outcome")]
 fn render_reads_exactly_one_findings_object(raw: &str, want: &str) {
     let dir = tempfile::tempdir().expect("temporary directory");
     write_manifest(
@@ -628,7 +652,7 @@ fn render_reads_exactly_one_findings_object(raw: &str, want: &str) {
     }
     let error = result.expect_err("render accepted");
     assert!(
-        error.to_string().contains(want),
+        error.render().contains(want),
         "error = {error}, want one containing {want:?}"
     );
     for f in [RECORD_FILE, RECORD_JSON_FILE] {

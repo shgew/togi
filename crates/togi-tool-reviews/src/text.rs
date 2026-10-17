@@ -207,3 +207,7 @@ pub fn short(sha: &str) -> &str {
 pub fn lossy(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
+
+#[cfg(test)]
+#[path = "tests/text.rs"]
+mod tests;

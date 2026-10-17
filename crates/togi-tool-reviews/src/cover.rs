@@ -11,7 +11,7 @@ use crate::text::{join, quote};
 use crate::{Error, files};
 
 static COVER_RANGE_LINE: LazyLock<Result<Regex, regex::Error>> =
-    LazyLock::new(|| Regex::new(r"^(.+):(\d+)(?:-(\d+))?$"));
+    LazyLock::new(|| Regex::new(r"^(.+):([0-9]+)(?:-([0-9]+))?$"));
 static COVER_NOT_BUILT_LINE: LazyLock<Result<Regex, regex::Error>> =
     LazyLock::new(|| Regex::new(r"^(.+): not built for (.+)$"));
 
@@ -95,7 +95,7 @@ pub fn intersect_cover(
         merged.push(r);
     }
     Coverage {
-        reported: i64::try_from(ranges.len()).unwrap_or(i64::MAX),
+        reported: crate::count(ranges.len()),
         ranges: merged,
         not_built: unbuilt
             .iter()

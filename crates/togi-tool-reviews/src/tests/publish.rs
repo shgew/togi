@@ -179,7 +179,7 @@ fn publish_refuses_moved_head() {
     let error = publish(&mut h, dir.path()).expect_err("publish accepted");
     assert!(
         error
-            .to_string()
+            .render()
             .contains(&format!("not the snapshot's {HEAD_SHA}")),
         "error = {error}, want a refusal naming the snapshot's head"
     );
@@ -211,7 +211,7 @@ fn publish_needs_one_token() {
     h.gh_token = String::new();
     let error = publish(&mut h, dir.path()).expect_err("publish accepted");
     assert!(
-        error.to_string().contains("just as-bot"),
+        error.render().contains("just as-bot"),
         "error = {error}, want the as-bot hint"
     );
     assert_eq!(0, gh.borrow().views, "publish called gh without a token");
@@ -274,7 +274,7 @@ fn publish_rejects_foreign_check() {
     let error = publish(&mut h, dir.path()).expect_err("publish accepted");
     assert!(
         error
-            .to_string()
+            .render()
             .contains(r#"belongs to app "github-actions""#),
         "error = {error}, want a foreign-app refusal"
     );
@@ -291,7 +291,7 @@ fn publish_needs_a_rendered_record_for_the_head() {
     let gh = github(&[HEAD_SHA], String::new());
     let error = publish(&mut harness(&gh), dir.path()).expect_err("publish accepted");
     assert!(
-        error.to_string().contains("run render first"),
+        error.render().contains("run render first"),
         "error = {error}, want a render hint"
     );
 
@@ -303,7 +303,7 @@ fn publish_needs_a_rendered_record_for_the_head() {
     let gh = github(&[MOVED_SHA], String::new());
     let error = publish(&mut harness(&gh), stale.path()).expect_err("publish accepted");
     assert!(
-        error.to_string().contains("run render again"),
+        error.render().contains("run render again"),
         "error = {error}, want a stale-record refusal"
     );
 }
@@ -362,7 +362,7 @@ fn publish_refuses_carry_forward_of_a_prior_that_is_not_a_success() {
         let mut h = harness(&gh);
         let error = publish(&mut h, dir.path()).expect_err("publish accepted");
         assert!(
-            error.to_string().contains("not recorded as a success"),
+            error.render().contains("not recorded as a success"),
             "verdict {verdict:?}: error = {error}, want a carry-forward refusal"
         );
         assert!(
@@ -416,7 +416,7 @@ fn publish_refuses_an_existing_record_that_differs() {
         let error = publish(&mut h, dir.path()).expect_err("publish accepted");
         assert!(
             error
-                .to_string()
+                .render()
                 .contains(&format!("differs from {RECORD_FILE}")),
             "{name}: error = {error}, want a mismatch refusal"
         );
@@ -445,7 +445,7 @@ fn publish_usage() {
     let mut h = Harness::new(None, None);
     let error = run_publish(&mut h.tools(), &[]).expect_err("publish accepted");
     assert!(
-        error.to_string().contains("usage:"),
+        error.render().contains("usage:"),
         "error = {error}, want usage"
     );
 }

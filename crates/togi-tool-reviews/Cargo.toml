@@ -13,6 +13,8 @@ regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+thiserror.workspace = true
+togi-machine.workspace = true
 
 [dev-dependencies]
 test-case.workspace = true

@@ -87,7 +87,7 @@ pub fn run_publish(t: &mut Tools<'_>, args: &[String]) -> Result<(), Error> {
                 "record {record_url}\nthe verdict is {}: no review check posted\n",
                 record.verdict
             )
-            .map_err(|error| Error::new(crate::error::io_reason(&error)));
+            .map_err(Error::cause);
         }
         check.output = CheckOutput {
             title: "Review recorded".to_owned(),
@@ -96,12 +96,12 @@ pub fn run_publish(t: &mut Tools<'_>, args: &[String]) -> Result<(), Error> {
         record_url
     };
     let check_url = post_check(t, &m, dir, &check)?;
-    write!(t.stdout, "record {record_url}\ncheck {check_url}\n")
-        .map_err(|error| Error::new(crate::error::io_reason(&error)))?;
+    write!(t.stdout, "record {record_url}\ncheck {check_url}\n").map_err(Error::cause)?;
     if let Err(error) = require_head(t, &m) {
         let _ = writeln!(
             t.stderr,
-            "warning: published, but {error}; the new head needs its own review"
+            "warning: published, but {}; the new head needs its own review",
+            error.render()
         );
     }
     Ok(())

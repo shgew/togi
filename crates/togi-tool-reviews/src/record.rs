@@ -1,9 +1,8 @@
 //! The hidden JSON block that ends a review record comment (docs/review-record.md).
 
-use std::fmt;
-
-use serde::Deserialize;
+use serde::Serialize;
 use serde_json::value::RawValue;
+use togi_machine::object_only;
 
 use crate::text::{nullable, quote};
 
@@ -12,37 +11,51 @@ pub const RECORD_CLOSE: &str = " -->";
 pub const PRIORITIES: [&str; 4] = ["P0", "P1", "P2", "P3"];
 pub const OUTCOMES: [&str; 3] = ["fixed", "rejected", "deferred"];
 
-/// The part of a record's block this tool reads; versions 1, 2 and 3 share it.
-#[derive(Debug, Default, Deserialize)]
-pub struct Record {
-    #[serde(default, deserialize_with = "nullable")]
-    pub version: i64,
-    /// In every version.
-    #[serde(default, deserialize_with = "nullable")]
-    pub head_sha: String,
-    /// From version 2.
-    #[serde(default, deserialize_with = "nullable")]
-    pub base_sha: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub findings: Vec<Finding>,
-    /// In every version 3 record.
-    #[serde(default, deserialize_with = "nullable")]
-    pub verdict: String,
-}
+object_only! {
+    /// The part of a record's block this tool reads; versions 1, 2 and 3 share it.
+    #[derive(Debug, Default, Serialize)]
+    pub struct Record {
+        #[serde(default, deserialize_with = "nullable")]
+        pub version: i64,
+        /// In every version.
+        #[serde(default, deserialize_with = "nullable")]
+        pub head_sha: String,
+        /// From version 2.
+        #[serde(default, deserialize_with = "nullable")]
+        pub base_sha: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub findings: Vec<Finding>,
+        /// In every version 3 record.
+        #[serde(default, deserialize_with = "nullable")]
+        pub verdict: String,
+    }
 
-#[derive(Debug, Default, Deserialize)]
-pub struct Finding {
-    #[serde(default, deserialize_with = "nullable")]
-    pub source: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub priority: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub finding: String,
-    /// Kept raw: version 1 records it as an object and later versions as a string.
-    #[serde(default)]
-    pub location: Option<Box<RawValue>>,
-    #[serde(default, deserialize_with = "nullable")]
-    pub outcome: Outcome,
+    #[derive(Debug, Default, Serialize)]
+    pub struct Finding {
+        #[serde(default, deserialize_with = "nullable")]
+        pub source: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub priority: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub finding: String,
+        /// Kept raw: version 1 records it as an object and later versions as a string.
+        #[serde(default)]
+        pub location: Option<Box<RawValue>>,
+        #[serde(default, deserialize_with = "nullable")]
+        pub outcome: Outcome,
+    }
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    pub struct Outcome {
+        #[serde(default, deserialize_with = "nullable")]
+        pub status: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub sha: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub reason: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub issue: i64,
+    }
 }
 
 impl Finding {
@@ -52,54 +65,21 @@ impl Finding {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
-pub struct Outcome {
-    #[serde(default, deserialize_with = "nullable")]
-    pub status: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub sha: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub reason: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub issue: i64,
-}
-
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum RecordError {
+    #[error("no togi-review block")]
     NoBlock,
+    #[error("unterminated togi-review block")]
     Unterminated,
-    Decode(serde_json::Error),
+    #[error("decode togi-review block")]
+    Decode(#[source] serde_json::Error),
+    #[error("unsupported record version {0}")]
     Version(i64),
-    Priority { source: String, priority: String },
-    Outcome { source: String, status: String },
+    #[error("finding from {from}: unknown priority {}", quote(.priority))]
+    Priority { from: String, priority: String },
+    #[error("finding from {from}: unknown outcome {}", quote(.status))]
+    Outcome { from: String, status: String },
 }
-
-impl fmt::Display for RecordError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoBlock => f.write_str("no togi-review block"),
-            Self::Unterminated => f.write_str("unterminated togi-review block"),
-            Self::Decode(error) => write!(f, "decode togi-review block: {error}"),
-            Self::Version(version) => write!(f, "unsupported record version {version}"),
-            Self::Priority { source, priority } => {
-                write!(
-                    f,
-                    "finding from {source}: unknown priority {}",
-                    quote(priority)
-                )
-            }
-            Self::Outcome { source, status } => {
-                write!(
-                    f,
-                    "finding from {source}: unknown outcome {}",
-                    quote(status)
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for RecordError {}
 
 /// Reads the hidden block that ends a review record comment.
 pub fn parse_record(body: &str) -> Result<Record, RecordError> {
@@ -117,13 +97,13 @@ pub fn parse_record(body: &str) -> Result<Record, RecordError> {
     for finding in &record.findings {
         if !PRIORITIES.contains(&finding.priority.as_str()) {
             return Err(RecordError::Priority {
-                source: finding.source.clone(),
+                from: finding.source.clone(),
                 priority: finding.priority.clone(),
             });
         }
         if !OUTCOMES.contains(&finding.outcome.status.as_str()) {
             return Err(RecordError::Outcome {
-                source: finding.source.clone(),
+                from: finding.source.clone(),
                 status: finding.outcome.status.clone(),
             });
         }

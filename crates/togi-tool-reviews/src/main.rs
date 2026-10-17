@@ -29,7 +29,7 @@ fn main() -> ExitCode {
     match dispatch(&mut t, &args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            let _ = writeln!(std::io::stderr(), "reviews: {error}");
+            let _ = writeln!(std::io::stderr(), "reviews: {}", error.render());
             ExitCode::FAILURE
         }
     }

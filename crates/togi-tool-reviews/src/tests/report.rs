@@ -153,7 +153,7 @@ fn summarize_malformed_record() {
     let error = summarize(&pulls).expect_err("summarize accepted");
     assert!(
         error
-            .to_string()
+            .render()
             .contains("parse record bad: unsupported record version 9"),
         "summarize error = {error}"
     );
@@ -266,7 +266,7 @@ fn render_write_error(rows: &[Row], fail_at: &str, want: &str) {
         .unwrap_or_else(|| panic!("output lacks {fail_at:?}:\n{full}"));
     let error =
         render(&mut FailingWriter { room }, rows, &total(rows)).expect_err("render succeeded");
-    assert_eq!(want, error.to_string());
+    assert_eq!(want, error.render());
     assert!(
         error.find::<io::Error>().is_some(),
         "render error {error} does not carry the write failure"
@@ -375,7 +375,7 @@ fn run_refuses_truncated_comments() {
     let error = run(&mut fake, &mut Vec::new()).expect_err("run accepted");
     assert!(
         error
-            .to_string()
+            .render()
             .contains("pull request #5 has more than 100 comments"),
         "run error = {error}"
     );

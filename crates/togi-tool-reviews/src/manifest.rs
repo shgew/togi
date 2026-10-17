@@ -1,7 +1,8 @@
 //! `manifest.json`: everything a coordinator needs from the frozen pull request, and everything render
 //! reads from it.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use togi_machine::object_only;
 
 use crate::diff::FileDiff;
 use crate::text::{join, json_indented, nullable};
@@ -9,177 +10,179 @@ use crate::{Error, files};
 
 pub const MANIFEST_VERSION: i64 = 1;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Manifest {
-    #[serde(default, deserialize_with = "nullable")]
-    pub version: i64,
-    #[serde(default, deserialize_with = "nullable")]
-    pub repository: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub pull_request: i64,
-    #[serde(default, deserialize_with = "nullable")]
-    pub head_sha: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub base_sha: String,
-    /// The record this one follows; null in a first record.
-    #[serde(default)]
-    pub previous: Option<PreviousRecord>,
-    /// Why a re-review covers the whole layer instead of a delta.
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub fallback: String,
-    /// True when every patch is unchanged: the record carries forward and the new head needs only a check.
-    #[serde(default, deserialize_with = "nullable")]
-    pub carry_forward: bool,
-    /// The files of this record's diff: the pull request's, or the delta's on a re-review.
-    #[serde(default, deserialize_with = "nullable")]
-    pub files: Vec<ManifestFile>,
-    /// F of the sizing rule, over the included files.
-    #[serde(default, deserialize_with = "nullable")]
-    pub included_files: i64,
-    /// L of the sizing rule, over the included files.
-    #[serde(default, deserialize_with = "nullable")]
-    pub included_lines: i64,
-    #[serde(default, deserialize_with = "nullable")]
-    pub reviewers: i64,
-    /// The small-pull-request rule applied to the pull request's whole diff.
-    #[serde(default, deserialize_with = "nullable")]
-    pub small: bool,
-    #[serde(default, deserialize_with = "nullable")]
-    pub pr_files: i64,
-    #[serde(default, deserialize_with = "nullable")]
-    pub pr_lines: i64,
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub patches: Vec<PatchStatus>,
-    /// Null until `just cover` output arrives.
-    #[serde(default)]
-    pub coverage: Option<Coverage>,
-}
+object_only! {
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    pub struct Manifest {
+        #[serde(default, deserialize_with = "nullable")]
+        pub version: i64,
+        #[serde(default, deserialize_with = "nullable")]
+        pub repository: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub pull_request: i64,
+        #[serde(default, deserialize_with = "nullable")]
+        pub head_sha: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub base_sha: String,
+        /// The record this one follows; null in a first record.
+        #[serde(default)]
+        pub previous: Option<PreviousRecord>,
+        /// Why a re-review covers the whole layer instead of a delta.
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "String::is_empty"
+        )]
+        pub fallback: String,
+        /// True when every patch is unchanged: the record carries forward and the new head needs only a check.
+        #[serde(default, deserialize_with = "nullable")]
+        pub carry_forward: bool,
+        /// The files of this record's diff: the pull request's, or the delta's on a re-review.
+        #[serde(default, deserialize_with = "nullable")]
+        pub files: Vec<ManifestFile>,
+        /// F of the sizing rule, over the included files.
+        #[serde(default, deserialize_with = "nullable")]
+        pub included_files: i64,
+        /// L of the sizing rule, over the included files.
+        #[serde(default, deserialize_with = "nullable")]
+        pub included_lines: i64,
+        #[serde(default, deserialize_with = "nullable")]
+        pub reviewers: i64,
+        /// The small-pull-request rule applied to the pull request's whole diff.
+        #[serde(default, deserialize_with = "nullable")]
+        pub small: bool,
+        #[serde(default, deserialize_with = "nullable")]
+        pub pr_files: i64,
+        #[serde(default, deserialize_with = "nullable")]
+        pub pr_lines: i64,
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "Vec::is_empty"
+        )]
+        pub patches: Vec<PatchStatus>,
+        /// Null until `just cover` output arrives.
+        #[serde(default)]
+        pub coverage: Option<Coverage>,
+    }
 
-/// The record a re-review follows.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PreviousRecord {
-    #[serde(default, deserialize_with = "nullable")]
-    pub url: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub head_sha: String,
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub base_sha: String,
-    /// The previous record's verdict; empty for a version 1 or 2 record, which has none. Only a `success`
-    /// record carries forward.
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub verdict: String,
-}
+    /// The record a re-review follows.
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    pub struct PreviousRecord {
+        #[serde(default, deserialize_with = "nullable")]
+        pub url: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub head_sha: String,
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "String::is_empty"
+        )]
+        pub base_sha: String,
+        /// The previous record's verdict; empty for a version 1 or 2 record, which has none. Only a `success`
+        /// record carries forward.
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "String::is_empty"
+        )]
+        pub verdict: String,
+    }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ManifestFile {
-    #[serde(default, deserialize_with = "nullable")]
-    pub path: String,
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub old_path: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub status: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub added: i64,
-    #[serde(default, deserialize_with = "nullable")]
-    pub removed: i64,
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "is_false"
-    )]
-    pub binary: bool,
-    /// The reason the review skips the file; empty for an included file.
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub exclusion: String,
-    /// The included file's hunk file, relative to the snapshot directory.
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub hunk_file: String,
-}
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    pub struct ManifestFile {
+        #[serde(default, deserialize_with = "nullable")]
+        pub path: String,
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "String::is_empty"
+        )]
+        pub old_path: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub status: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub added: i64,
+        #[serde(default, deserialize_with = "nullable")]
+        pub removed: i64,
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "is_false"
+        )]
+        pub binary: bool,
+        /// The reason the review skips the file; empty for an included file.
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "String::is_empty"
+        )]
+        pub exclusion: String,
+        /// The included file's hunk file, relative to the snapshot directory.
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "String::is_empty"
+        )]
+        pub hunk_file: String,
+    }
 
-/// One patch of a re-review's range-diff.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PatchStatus {
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub old: String,
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub new: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub subject: String,
-    /// `unchanged`, `changed`, `added` or `removed`.
-    #[serde(default, deserialize_with = "nullable")]
-    pub status: String,
-    /// An unchanged patch that range-diff showed as changed because only its context lines differ.
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "is_false"
-    )]
-    pub context_only: bool,
-}
+    /// One patch of a re-review's range-diff.
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    pub struct PatchStatus {
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "String::is_empty"
+        )]
+        pub old: String,
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "String::is_empty"
+        )]
+        pub new: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub subject: String,
+        /// `unchanged`, `changed`, `added` or `removed`.
+        #[serde(default, deserialize_with = "nullable")]
+        pub status: String,
+        /// An unchanged patch that range-diff showed as changed because only its context lines differ.
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "is_false"
+        )]
+        pub context_only: bool,
+    }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Coverage {
-    /// The ranges in the input, before dropping those outside the hunks.
-    #[serde(default, deserialize_with = "nullable")]
-    pub reported: i64,
-    #[serde(default, deserialize_with = "nullable")]
-    pub ranges: Vec<CoverRange>,
-    #[serde(default, deserialize_with = "nullable")]
-    pub not_built: Vec<NotBuilt>,
-}
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    pub struct Coverage {
+        /// The ranges in the input, before dropping those outside the hunks.
+        #[serde(default, deserialize_with = "nullable")]
+        pub reported: i64,
+        #[serde(default, deserialize_with = "nullable")]
+        pub ranges: Vec<CoverRange>,
+        #[serde(default, deserialize_with = "nullable")]
+        pub not_built: Vec<NotBuilt>,
+    }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CoverRange {
-    #[serde(default, deserialize_with = "nullable")]
-    pub path: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub first: i64,
-    #[serde(default, deserialize_with = "nullable")]
-    pub last: i64,
-}
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    pub struct CoverRange {
+        #[serde(default, deserialize_with = "nullable")]
+        pub path: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub first: i64,
+        #[serde(default, deserialize_with = "nullable")]
+        pub last: i64,
+    }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NotBuilt {
-    #[serde(default, deserialize_with = "nullable")]
-    pub path: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub target: String,
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    pub struct NotBuilt {
+        #[serde(default, deserialize_with = "nullable")]
+        pub path: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub target: String,
+    }
 }
 
 #[expect(

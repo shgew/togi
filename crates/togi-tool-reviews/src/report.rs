@@ -342,7 +342,7 @@ fn earlier_match(earlier: &[Finding], updated: &[bool], f: &Finding) -> Option<u
 
 pub fn total(rows: &[Row]) -> Totals {
     let mut totals = Totals {
-        pulls: i64::try_from(rows.len()).unwrap_or(i64::MAX),
+        pulls: crate::count(rows.len()),
         ..Totals::default()
     };
     for row in rows {
@@ -443,8 +443,7 @@ pub fn median(sorted: &[i64]) -> i64 {
     if n % 2 == 1 {
         return sorted[n / 2];
     }
-    let sum = i128::from(sorted[n / 2 - 1]) + i128::from(sorted[n / 2]);
-    i64::try_from(sum / 2).unwrap_or_default()
+    sorted[n / 2 - 1].midpoint(sorted[n / 2])
 }
 
 /// `nanos` rounded to the minute, half away from zero, as `5m` or `2h05m`.

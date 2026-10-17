@@ -32,9 +32,11 @@ const FLAG_USAGE: &str = "Usage of snapshot:
 ";
 
 static PULL_URL: LazyLock<Result<Regex, regex::Error>> =
-    LazyLock::new(|| Regex::new(r"^https://github\.com/([^/]+/[^/]+)/pull/\d+$"));
+    LazyLock::new(|| Regex::new(r"^https://github\.com/([^/]+/[^/]+)/pull/[0-9]+$"));
 static COMMENT_URL: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
-    Regex::new(r"^https://github\.com/([^/]+/[^/]+)/(?:pull|issues)/(\d+)#issuecomment-(\d+)$")
+    Regex::new(
+        r"^https://github\.com/([^/]+/[^/]+)/(?:pull|issues)/([0-9]+)#issuecomment-([0-9]+)$",
+    )
 });
 /// What `--previous-base` accepts: a complete lower-case commit SHA, SHA-1 or SHA-256.
 static PREVIOUS_BASE_SHA: LazyLock<Result<Regex, regex::Error>> =
@@ -195,9 +197,7 @@ pub fn run_snapshot(t: &mut Tools<'_>, args: &[String]) -> Result<(), Error> {
 fn read_input(stdin: &mut dyn Read, name: &str) -> Result<Vec<u8>, Error> {
     if name == "-" {
         let mut bytes = Vec::new();
-        stdin
-            .read_to_end(&mut bytes)
-            .map_err(|error| Error::new(crate::error::io_reason(&error)))?;
+        stdin.read_to_end(&mut bytes).map_err(Error::cause)?;
         return Ok(bytes);
     }
     files::read(name)
@@ -226,7 +226,7 @@ pub fn create_snapshot(
         head_sha: before.head.clone(),
         base_sha: before.base.clone(),
         small: is_small(&pr_files),
-        pr_files: i64::try_from(pr_files.len()).unwrap_or(i64::MAX),
+        pr_files: crate::count(pr_files.len()),
         pr_lines: total_lines(&pr_files),
         ..Manifest::default()
     };
@@ -598,7 +598,7 @@ pub fn print_summary(w: &mut dyn Write, dir: &str, m: &Manifest) -> Result<(), E
         "files: {}, included {}, excluded {}",
         m.files.len(),
         m.included_files,
-        i64::try_from(m.files.len()).unwrap_or(i64::MAX) - m.included_files
+        crate::count(m.files.len()) - m.included_files
     );
     for f in &m.files {
         if f.exclusion.is_empty() {
@@ -639,8 +639,7 @@ pub fn print_summary(w: &mut dyn Write, dir: &str, m: &Manifest) -> Result<(), E
     } else if m.changes_code() {
         b.push_str("uncovered: not recorded yet; run `just cover <base>` and pass its output to `snapshot --cover`\n");
     }
-    w.write_all(b.as_bytes())
-        .map_err(|error| Error::new(crate::error::io_reason(&error)))
+    w.write_all(b.as_bytes()).map_err(Error::cause)
 }
 
 #[cfg(test)]

@@ -34,6 +34,12 @@ pub const ROBOTOGI_LOGIN: &str = "robotogi";
 /// robotogi-helper.
 pub const ROBOTOGI_BOT_LOGIN: &str = "robotogi[bot]";
 
+/// A length as the manifest's and record's integer counts hold it, saturating at `i64::MAX`, which no
+/// list in memory reaches.
+pub fn count(len: usize) -> i64 {
+    i64::try_from(len).unwrap_or(i64::MAX)
+}
+
 /// What the subcommands reach outside the process through, so tests use fakes.
 pub struct Tools<'a> {
     pub programs: &'a mut dyn Programs,

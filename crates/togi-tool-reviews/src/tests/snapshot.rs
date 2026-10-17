@@ -16,7 +16,7 @@ use crate::fakes::{
     PREVIOUS_URL, check_golden, fail, read_file,
 };
 use crate::manifest::{
-    Coverage, Manifest, NotBuilt, PatchStatus, hunk_file_name, is_small, read_manifest,
+    CoverRange, Coverage, Manifest, NotBuilt, PatchStatus, hunk_file_name, is_small, read_manifest,
     reviewer_count, total_lines,
 };
 use crate::process::{CommandError, Output};
@@ -184,7 +184,7 @@ fn parse_diff_edges(input: &str, want_path: &str, want_error: &str) {
     if !want_error.is_empty() {
         let error = result.expect_err("parse_diff accepted");
         assert!(
-            error.to_string().contains(want_error),
+            error.render().contains(want_error),
             "error = {error}, want one containing {want_error:?}"
         );
         return;
@@ -533,7 +533,7 @@ fn snapshot_refuses_moved_head() {
     let mut h = Harness::new(Some(pull_handler(SAMPLE_PR, &[HEAD_SHA, MOVED_SHA])), None);
     let error = snapshot(&mut h, &["700"]).expect_err("snapshot accepted");
     assert!(
-        error.to_string().contains("moved while the snapshot ran"),
+        error.render().contains("moved while the snapshot ran"),
         "error = {error}"
     );
     assert_no_snapshot(&h);
@@ -544,13 +544,13 @@ fn snapshot_diff_failure() {
     let mut h = Harness::new(Some(pull_handler("ERROR", &[HEAD_SHA])), None);
     let error = snapshot(&mut h, &["700"]).expect_err("snapshot accepted");
     assert!(
-        error.to_string().contains("HTTP 502"),
+        error.render().contains("HTTP 502"),
         "error = {error}, want the gh failure"
     );
     let mut h = Harness::new(Some(pull_handler("GraphQL: oops\n", &[HEAD_SHA])), None);
     let error = snapshot(&mut h, &["700"]).expect_err("snapshot accepted");
     assert!(
-        error.to_string().contains("not a unified diff"),
+        error.render().contains("not a unified diff"),
         "error = {error}, want a refusal to take text for a diff"
     );
 }
@@ -699,7 +699,7 @@ fn snapshot_too_large_diff_refuses_movement(side: &str) {
     );
     let error = snapshot(&mut h, &["700"]).expect_err("snapshot accepted");
     assert!(
-        error.to_string().contains("moved while the snapshot ran"),
+        error.render().contains("moved while the snapshot ran"),
         "error = {error}"
     );
     assert_eq!(
@@ -757,7 +757,7 @@ fn snapshot_too_large_diff_step_failures(
         );
     }
     assert!(
-        error.to_string().contains(want_message) && error.to_string().contains("#700"),
+        error.render().contains(want_message) && error.render().contains("#700"),
         "error = {error}, want the {step} step and the pull request named"
     );
     assert_eq!(want_isolated, h.fake.isolated_subcommands());
@@ -805,7 +805,7 @@ fn snapshot_diff_refusals_outside_too_large_run_no_git(message: &'static str) {
     let error = snapshot(&mut h, &["700"]).expect_err("snapshot accepted");
     assert!(
         error
-            .to_string()
+            .render()
             .contains("fetch the diff of pull request #700"),
         "error = {error}"
     );
@@ -827,7 +827,7 @@ fn snapshot_other_diff_failure_runs_no_git() {
     let error = snapshot(&mut h, &["700"]).expect_err("snapshot accepted");
     assert!(
         error
-            .to_string()
+            .render()
             .contains("fetch the diff of pull request #700"),
         "error = {error}"
     );
@@ -846,7 +846,7 @@ fn snapshot_usage(args: &[&str]) {
     let mut h = Harness::new(None, None);
     let error = snapshot(&mut h, args).expect_err("snapshot accepted");
     assert!(
-        error.to_string().contains("usage: reviews snapshot"),
+        error.render().contains("usage: reviews snapshot"),
         "snapshot {args:?}: error = {error}, want usage"
     );
 }
@@ -1191,7 +1191,7 @@ fn snapshot_rejects_previous(url: &str, body: String, login: &'static str, want:
     );
     let error = snapshot(&mut h, &["--previous", url, "700"]).expect_err("snapshot accepted");
     assert!(
-        error.to_string().contains(want),
+        error.render().contains(want),
         "error = {error}, want one containing {want:?}"
     );
 }
@@ -1216,6 +1216,11 @@ fn parse_range_diff_reads_entries() {
     assert!(
         parse_range_diff("fatal: bad revision\n").is_err(),
         "an error message parsed as range-diff output"
+    );
+    assert_eq!(
+        vec![entry("abc1234", "def5678", '=', "\u{a0}\u{3000}Subject")],
+        parse_range_diff(" 1:  abc1234 = 1:  def5678 \u{a0}\u{3000}Subject\n").expect("parse"),
+        "only ASCII whitespace separates the subject, as in Go"
     );
 }
 
@@ -1247,6 +1252,13 @@ b_linux.go: not built for darwin/arm64
     assert!(
         parse_cover("a.go:9-3\n").is_err(),
         "a backwards range was accepted"
+    );
+    assert_eq!(
+        Vec::<CoverRange>::new(),
+        parse_cover("a.go:\u{661}\u{662}\na.go:\u{661}-3\n")
+            .expect("parse")
+            .0,
+        "non-ASCII digits read as a range"
     );
 }
 
@@ -1351,4 +1363,74 @@ fn snapshot_cover_on_delta_hunks() {
 /// A shared flag a fake sets and a view reads.
 pub(crate) fn flag() -> Rc<RefCell<bool>> {
     Rc::new(RefCell::new(false))
+}
+
+#[test_case(&["--cover", "c", "7"], ("", "", "c"), &["7"]; "two dashes and a separate value")]
+#[test_case(&["-cover", "c", "7"], ("", "", "c"), &["7"]; "one dash")]
+#[test_case(&["-cover=c", "7"], ("", "", "c"), &["7"]; "one dash and an attached value")]
+#[test_case(&["--previous=u", "--previous-base", "b", "7"], ("u", "b", ""), &["7"]; "two flags")]
+#[test_case(&["--cover=", "7"], ("", "", ""), &["7"]; "empty attached value")]
+#[test_case(&["--cover", "-", "7"], ("", "", "-"), &["7"]; "a value that looks like a flag")]
+#[test_case(&["--", "-cover", "7"], ("", "", ""), &["-cover", "7"]; "terminator ends the flags")]
+#[test_case(&["7", "--cover", "c"], ("", "", ""), &["7", "--cover", "c"]; "flags end at the first argument")]
+#[test_case(&["-", "7"], ("", "", ""), &["-", "7"]; "a lone dash is an argument")]
+fn parse_flags_reads(args: &[&str], want: (&str, &str, &str), rest: &[&str]) {
+    let args: Vec<String> = args.iter().map(|&a| a.to_owned()).collect();
+    let mut stderr = Vec::new();
+    let (flags, got) = super::parse_flags(&args, &mut stderr).expect("parse_flags");
+    assert_eq!(
+        (want, rest.to_vec()),
+        (
+            (
+                flags.previous.as_str(),
+                flags.previous_base.as_str(),
+                flags.cover.as_str()
+            ),
+            got.iter().map(String::as_str).collect::<Vec<_>>()
+        )
+    );
+    assert!(
+        stderr.is_empty(),
+        "stderr = {}",
+        String::from_utf8_lossy(&stderr)
+    );
+}
+
+#[test_case(&["---cover", "c"], "bad flag syntax: ---cover"; "three dashes")]
+#[test_case(&["-=c"], "bad flag syntax: -=c"; "no name")]
+#[test_case(&["--other", "x", "7"], "flag provided but not defined: -other"; "unknown flag")]
+#[test_case(&["--cover"], "flag needs an argument: -cover"; "missing value")]
+fn parse_flags_refuses(args: &[&str], want: &str) {
+    let args: Vec<String> = args.iter().map(|&a| a.to_owned()).collect();
+    let mut stderr = Vec::new();
+    let Err(error) = super::parse_flags(&args, &mut stderr) else {
+        panic!("parse_flags accepted {args:?}");
+    };
+    assert_eq!(
+        (want.to_owned(), format!("{want}\n{}", super::FLAG_USAGE)),
+        (
+            error.render(),
+            String::from_utf8_lossy(&stderr).into_owned()
+        )
+    );
+}
+
+#[test_case("-h"; "short")]
+#[test_case("-help"; "one dash")]
+#[test_case("--help"; "two dashes")]
+fn parse_flags_help(arg: &str) {
+    let mut stderr = Vec::new();
+    let Err(error) = super::parse_flags(&[arg.to_owned(), "7".to_owned()], &mut stderr) else {
+        panic!("parse_flags accepted {arg}");
+    };
+    assert_eq!(
+        (
+            "flag: help requested".to_owned(),
+            super::FLAG_USAGE.to_owned()
+        ),
+        (
+            error.render(),
+            String::from_utf8_lossy(&stderr).into_owned()
+        )
+    );
 }

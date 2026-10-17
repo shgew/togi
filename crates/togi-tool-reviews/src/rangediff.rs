@@ -14,7 +14,7 @@ use crate::{Error, Programs};
 /// `git range-diff --no-patch` output: old index, old commit, mark, new index, new commit, subject.
 static RANGE_DIFF_LINE: LazyLock<Result<Regex, regex::Error>> = LazyLock::new(|| {
     Regex::new(
-        r"^\s*(?:\d+|-+):\s+([0-9a-f]+|-+)\s+([=!<>])\s+(?:\d+|-+):\s+([0-9a-f]+|-+)\s+(.*)$",
+        r"^[\t\n\f\r ]*(?:[0-9]+|-+):[\t\n\f\r ]+([0-9a-f]+|-+)[\t\n\f\r ]+([=!<>])[\t\n\f\r ]+(?:[0-9]+|-+):[\t\n\f\r ]+([0-9a-f]+|-+)[\t\n\f\r ]+(.*)$",
     )
 });
 

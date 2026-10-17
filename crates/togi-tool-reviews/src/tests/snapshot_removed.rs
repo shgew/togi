@@ -194,7 +194,7 @@ fn snapshot_removed_patch_provenance_failure(error: &CommandError) {
     let got =
         snapshot(&mut h, &["--previous", PREVIOUS_URL, "700"]).expect_err("snapshot accepted");
     assert!(
-        got.to_string().contains("merge-base --is-ancestor aaa1111")
+        got.render().contains("merge-base --is-ancestor aaa1111")
             && got.find::<CommandError>() == Some(error),
         "error = {got}, want the ancestry failure surfaced"
     );

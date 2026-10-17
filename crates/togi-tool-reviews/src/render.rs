@@ -6,7 +6,8 @@ use std::io::Write;
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize as _, Serialize};
+use togi_machine::object_only;
 
 use crate::manifest::{Manifest, read_manifest};
 use crate::record::{PRIORITIES, RECORD_CLOSE, RECORD_OPEN};
@@ -20,96 +21,6 @@ pub const RENDER_USAGE: &str = "usage: reviews render <snapshot directory> <find
 static FULL_SHA: LazyLock<Result<Regex, regex::Error>> =
     LazyLock::new(|| Regex::new(r"^[0-9a-f]{40}$"));
 
-/// One review record. Its JSON form is the version 3 block of docs/review-record.md; `markdown` writes the
-/// same data for people. The skipped fields are the few things only the Markdown carries.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RecordModel {
-    pub version: i64,
-    pub repository: String,
-    pub pull_request: i64,
-    pub head_sha: String,
-    pub base_sha: String,
-    pub previous: Option<RecordPrevious>,
-    pub excluded_files: Vec<RecordExcluded>,
-    pub files: Vec<String>,
-    pub reviewers: Vec<RecordReviewer>,
-    pub findings: Vec<RecordFinding>,
-    pub coverage: Option<RecordCoverage>,
-    pub verdict: String,
-    #[serde(skip)]
-    pub blocker: String,
-    #[serde(skip)]
-    pub fallback: String,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RecordPrevious {
-    pub url: String,
-    pub head_sha: String,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RecordExcluded {
-    pub path: String,
-    pub reason: String,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RecordReviewer {
-    #[serde(default, deserialize_with = "nullable")]
-    pub name: String,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default, deserialize_with = "nullable")]
-    pub files: Vec<String>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RecordFinding {
-    #[serde(default, deserialize_with = "nullable")]
-    pub source: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub priority: String,
-    #[serde(default, deserialize_with = "nullable")]
-    pub finding: String,
-    #[serde(default)]
-    pub location: Option<String>,
-    #[serde(default)]
-    pub url: Option<String>,
-    #[serde(default, deserialize_with = "nullable")]
-    pub outcome: RecordOutcome,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RecordOutcome {
-    #[serde(default, deserialize_with = "nullable")]
-    pub status: String,
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub sha: String,
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub reason: String,
-    #[serde(
-        default,
-        deserialize_with = "nullable",
-        skip_serializing_if = "is_zero"
-    )]
-    pub issue: i64,
-}
-
 #[expect(
     clippy::trivially_copy_pass_by_ref,
     reason = "serde passes the field by reference"
@@ -118,29 +29,109 @@ fn is_zero(value: &i64) -> bool {
     *value == 0
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RecordCoverage {
-    pub uncovered: i64,
-    pub judgment: String,
-}
+object_only! {
+    /// One review record. Its JSON form is the version 3 block of docs/review-record.md; `markdown` writes
+    /// the same data for people. The skipped fields are the few things only the Markdown carries.
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct RecordModel {
+        pub version: i64,
+        pub repository: String,
+        pub pull_request: i64,
+        pub head_sha: String,
+        pub base_sha: String,
+        pub previous: Option<RecordPrevious>,
+        pub excluded_files: Vec<RecordExcluded>,
+        pub files: Vec<String>,
+        pub reviewers: Vec<RecordReviewer>,
+        pub findings: Vec<RecordFinding>,
+        pub coverage: Option<RecordCoverage>,
+        pub verdict: String,
+        #[serde(skip)]
+        pub blocker: String,
+        #[serde(skip)]
+        pub fallback: String,
+    }
 
-/// The coordinator's judgment, the one input render takes besides the manifest.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FindingsInput {
-    /// Cover every included file; a coordinator that reviewed a small pull request lists itself.
-    #[serde(default, deserialize_with = "nullable")]
-    pub reviewers: Vec<RecordReviewer>,
-    #[serde(default, deserialize_with = "nullable")]
-    pub findings: Vec<RecordFinding>,
-    /// How the uncovered ranges were judged; required when the diff changes Go or Rust code.
-    #[serde(default, deserialize_with = "nullable")]
-    pub coverage_judgment: String,
-    /// A blocker the findings do not show, such as an unresolved review thread or an open finding from an
-    /// earlier record.
-    #[serde(default, deserialize_with = "nullable")]
-    pub blocked: String,
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct RecordPrevious {
+        pub url: String,
+        pub head_sha: String,
+    }
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct RecordExcluded {
+        pub path: String,
+        pub reason: String,
+    }
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct RecordReviewer {
+        #[serde(default, deserialize_with = "nullable")]
+        pub name: String,
+        #[serde(default)]
+        pub model: Option<String>,
+        #[serde(default, deserialize_with = "nullable")]
+        pub files: Vec<String>,
+    }
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct RecordFinding {
+        #[serde(default, deserialize_with = "nullable")]
+        pub source: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub priority: String,
+        #[serde(default, deserialize_with = "nullable")]
+        pub finding: String,
+        #[serde(default)]
+        pub location: Option<String>,
+        #[serde(default)]
+        pub url: Option<String>,
+        #[serde(default, deserialize_with = "nullable")]
+        pub outcome: RecordOutcome,
+    }
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct RecordOutcome {
+        #[serde(default, deserialize_with = "nullable")]
+        pub status: String,
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "String::is_empty")]
+        pub sha: String,
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "String::is_empty")]
+        pub reason: String,
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "is_zero")]
+        pub issue: i64,
+    }
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct RecordCoverage {
+        pub uncovered: i64,
+        pub judgment: String,
+    }
+
+    /// The coordinator's judgment, the one input render takes besides the manifest.
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct FindingsInput {
+        /// Cover every included file; a coordinator that reviewed a small pull request lists itself.
+        #[serde(default, deserialize_with = "nullable")]
+        pub reviewers: Vec<RecordReviewer>,
+        #[serde(default, deserialize_with = "nullable")]
+        pub findings: Vec<RecordFinding>,
+        /// How the uncovered ranges were judged; required when the diff changes Go or Rust code.
+        #[serde(default, deserialize_with = "nullable")]
+        pub coverage_judgment: String,
+        /// A blocker the findings do not show, such as an unresolved review thread or an open finding from
+        /// an earlier record.
+        #[serde(default, deserialize_with = "nullable")]
+        pub blocked: String,
+    }
 }
 
 pub fn run_render(stdout: &mut dyn Write, args: &[String]) -> Result<(), Error> {
@@ -167,15 +158,14 @@ pub fn run_render(stdout: &mut dyn Write, args: &[String]) -> Result<(), Error> 
         model.verdict,
         model.head_sha
     )
-    .map_err(|error| Error::new(crate::error::io_reason(&error)))
+    .map_err(Error::cause)
 }
 
 /// Exactly one JSON object with known fields. Anything after it but whitespace, such as a second object,
 /// is refused rather than silently dropped.
 pub fn decode_findings(raw: &[u8]) -> Result<FindingsInput, Error> {
     let mut de = serde_json::Deserializer::from_slice(raw);
-    let input =
-        FindingsInput::deserialize(&mut de).map_err(|error| Error::new(error.to_string()))?;
+    let input = FindingsInput::deserialize(&mut de).map_err(Error::cause)?;
     if de.end().is_err() {
         return Err(Error::new(
             "data follows the findings object; the file must hold exactly one JSON object",
@@ -238,7 +228,7 @@ pub fn build_record(m: &Manifest, input: FindingsInput) -> Result<RecordModel, E
             ));
         }
         r.coverage = Some(RecordCoverage {
-            uncovered: i64::try_from(coverage.ranges.len()).unwrap_or(i64::MAX),
+            uncovered: crate::count(coverage.ranges.len()),
             judgment: input.coverage_judgment.clone(),
         });
     } else if !input.coverage_judgment.is_empty() {
