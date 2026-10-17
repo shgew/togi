@@ -76,12 +76,7 @@ fn real_process_a_registered_gate_judges_the_run_against_the_baseline_and_sets_t
     let bench = Bench::new();
     let machine = shared_voltage();
     let definition = file::load(&machine).unwrap();
-    let journal = session::session(&definition, 1, None, 2).events;
-    let lines: Vec<String> = journal
-        .iter()
-        .map(|event| serde_json::to_string(event).unwrap())
-        .collect();
-    fs::write(bench.path("journal.jsonl"), lines.join("\n") + "\n").unwrap();
+    bench.journal(&session::session(&definition, 1, None, 1000).events);
 
     let scenarios = json!([{"name": "tiny", "machine": machine, "dev": [1]}]);
     let plain = bench.path("plain.json");

@@ -137,10 +137,9 @@ sql dir="/var/lib/togi" *args: _dev-shell
 bench *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- "$@"
 
-# Sweep every simulated scenario with the bench and simulator and audit the retained journals, or audit given state directories (`just audit --seeds 50 --jobs 8 --keep runs`)
+# Audit the current and archived journals of state directories; `just bench` audits its own runs (`just audit COPY-OF-STATE-DIR`)
 [group('run')]
 audit *args: _dev-shell
-    cargo build --release --locked -p togi-tool-bench
     cargo run --release --locked -p togi-tool-audit -- "$@"
 
 # Prove simulated session decisions are unchanged from a base revision, building both trees' simulators; stops at the first difference (`--keep-going` counts them all)

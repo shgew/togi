@@ -3,6 +3,8 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use togi_tool_audit::{Completion, DirectoryAudit};
+
 use super::{
     Costs, Error, Fleet, Options, Record, Root, RunCache, RunError, RunSpec, Session, Simulator,
 };
@@ -25,6 +27,8 @@ pub(super) trait SessionRunner: Sync {
         boots: NonZeroU32,
         timeout: Duration,
     ) -> Result<Session, RunError>;
+    /// Audits every journal of the state directory `session` left.
+    fn audit(&self, session: &Session, completion: Completion) -> DirectoryAudit;
     fn remove(&self, path: &Path);
 }
 
@@ -90,6 +94,9 @@ impl SessionRunner for Simulator {
         timeout: Duration,
     ) -> Result<Session, RunError> {
         self.run(fleet, root, spec, boots, timeout)
+    }
+    fn audit(&self, session: &Session, completion: Completion) -> DirectoryAudit {
+        togi_tool_audit::audit_directory(&session.dir, completion)
     }
     fn remove(&self, path: &Path) {
         let _ = std::fs::remove_dir_all(path);
