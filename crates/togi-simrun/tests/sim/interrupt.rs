@@ -6,9 +6,9 @@ use std::rc::Rc;
 use togi_config::Config;
 use togi_journal::fs::{AppendPoint, AppendTrigger, Fault, FileKind, Op};
 use togi_journal::{
-    Combination, CoreTransition, CycleEvent, DeepeningRound, Event, EventKind, Failure, HuntEnd,
-    HuntGroup, HuntStart, MemFs, Outcome, Payload, ProfileChange, RoundEvent, Seq, TrialId,
-    TrialIntent, TunerDecision,
+    Combination, CoreTransition, DeepeningRound, Event, EventKind, Failure, HuntEnd, HuntGroup,
+    HuntStart, MemFs, Outcome, Payload, ProfileChange, RoundEvent, Seq, TrialId, TrialIntent,
+    TunerDecision,
 };
 use togi_machine::{BootId, CoreId, Regime, ResetKind, Signal};
 use togi_session::Stop;
@@ -17,7 +17,7 @@ use togi_sim::faults::{SmuOp, SmuOperation};
 use togi_sim::{History, MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Observe, Replay, SimError, SimOutcome, simulate};
 
-use crate::common::{Bench, finish, hunt_machine, nz};
+use crate::common::{Bench, finish, hunt_machine, nz, phase_two_concludes};
 
 const SEED: u64 = 1;
 const MAX_BOOTS: u32 = 60;
@@ -284,17 +284,6 @@ fn assert_decisions(want: &Commitments, events: &[Event], label: &str) {
 
 type Closer = fn(&Event, &mut bool) -> bool;
 
-fn phase_two_confirmed(event: &Event) -> bool {
-    matches!(
-        &event.payload,
-        Payload::CheckingCycle(cycle)
-            if cycle.event == CycleEvent::End
-                && cycle.passed
-                && cycle.full
-                && cycle.reason.as_deref().is_some_and(|reason| reason.contains("phase 2 ends"))
-    )
-}
-
 fn hunt_opens(event: &Event) -> bool {
     event.kind() == EventKind::HuntStart
 }
@@ -335,28 +324,27 @@ fn deep_machine() -> MachineDefinition {
     definition
 }
 
-fn run_until(bench: &Bench, open: fn(&Event) -> bool, crash_first: bool) {
+fn run_until(bench: &Bench, mut open: impl FnMut(&Event) -> bool + 'static, crash_first: bool) {
     let mut input = bench.input();
     input.config = quick();
     input.policy.cycles = None;
     input.max_boots = nz(MAX_BOOTS);
-    let (sim, mut crashed) = (bench.sim.clone(), !crash_first);
+    let opened = Rc::new(Cell::new(false));
+    let (sim, seen, mut crashed) = (bench.sim.clone(), Rc::clone(&opened), !crash_first);
     input.observer = Some(Box::new(move |event| {
         if !crashed && event.kind() == EventKind::SessionStart {
             crashed = true;
             sim.crash();
         }
         if open(event) {
+            seen.set(true);
             Observe::Stop
         } else {
             Observe::Continue
         }
     }));
     assert_eq!(finish(input).stop, Some(Stop::Signal));
-    assert!(
-        bench.events().iter().any(open),
-        "the prefix never opened its window"
-    );
+    assert!(opened.get(), "the prefix never opened its window");
 }
 
 #[derive(Clone, Copy)]
@@ -650,7 +638,7 @@ impl Interruption {
 
 fn hunt_case() -> Case {
     let quiet = Bench::new(&hunt_machine(4), SEED);
-    run_until(&quiet, phase_two_confirmed, false);
+    run_until(&quiet, phase_two_concludes(&quiet), false);
     let prefix = quiet.resumed(&joint_machine(), SEED);
     run_until(&prefix, hunt_opens, false);
     let case = Case::new("hunt", prefix, joint_machine(), hunt_closes);
