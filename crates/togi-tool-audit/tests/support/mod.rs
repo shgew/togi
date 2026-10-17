@@ -191,8 +191,8 @@ impl Memory {
     pub(crate) fn run(&self, args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Output {
         let mut out = Vec::new();
         let mut err = Vec::new();
-        let inspect = |path: &Path, simulated| {
-            audit_directory_with(path, simulated, |path| {
+        let inspect = |path: &Path, completion| {
+            audit_directory_with(path, completion, |path| {
                 let fs = self
                     .dirs
                     .get(&lexical(path))

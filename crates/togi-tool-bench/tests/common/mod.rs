@@ -6,7 +6,8 @@ pub(crate) use tree::Tree;
 use std::collections::BTreeMap;
 
 use togi_machine::PerCore;
-use togi_tool_bench::{Record, Split, Status};
+use togi_tool_bench::{Record, Status};
+use togi_tool_forecast::Split;
 
 /// A concluded dev run of `scenario` with every measurement zero but its ten simulated hours.
 pub(crate) fn record(scenario: &str, seed: u64) -> Record {
