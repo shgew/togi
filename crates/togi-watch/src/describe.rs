@@ -12,7 +12,7 @@ use togi_journal::{
 use togi_machine::{Condition, CoreId, Regime, Signal};
 
 use crate::facts::{Facts, HuntStartFacts, trial_cores};
-use crate::history::{Entry, EntryKind, Key};
+use crate::history::{Entry, EntryKind, Key, Verdict};
 use crate::words::{
     History, Tag, Tone, age, core_ids, kind_words, lateness, on_cores, phase_line, plural,
     signal_words, words, workload_display,
@@ -439,30 +439,34 @@ impl Facts {
             }
             Outcome::Failure => {
                 let named = if let Some(core) = d.core {
-                    format!(" · core {:02} named", core.get())
+                    Some(format!("core {:02} named", core.get()))
                 } else if intent
                     .as_ref()
                     .is_some_and(|i| i.hunt.is_none() && i.condition != Condition::Alone)
                 {
-                    " · no core named".to_owned()
+                    Some("no core named".to_owned())
                 } else {
-                    String::new()
+                    None
                 };
-                if d.signal == Some(Signal::Crash) {
+                let (signal, when) = if d.signal == Some(Signal::Crash) {
                     line.tag = Tag::Crash;
                     line.tone = Tone::Bad;
-                    line.text.push_str(" · rebooted");
-                    if let Some(late) = lateness_text(d, intent.as_ref(), count) {
-                        let _ = write!(line.text, " · {late}");
-                    }
+                    (
+                        "rebooted".to_owned(),
+                        lateness_text(d, intent.as_ref(), count),
+                    )
                 } else {
                     let words = d.signal.map_or("failed", signal_words);
                     line.tag = Tag::Fail;
                     line.tone = Tone::Bad;
-                    let _ = write!(line.text, " · {words}");
                     line.alarm = Some(words.to_owned());
-                }
-                line.text.push_str(&named);
+                    (words.to_owned(), None)
+                };
+                line.verdict = Some(Verdict {
+                    signal,
+                    when,
+                    named,
+                });
                 if d.signal == Some(Signal::Crash) {
                     if let Some(i) =
                         self.history.entries.iter().rposition(|previous| {

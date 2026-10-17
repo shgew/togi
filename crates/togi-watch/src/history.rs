@@ -57,6 +57,19 @@ pub enum Key {
     },
 }
 
+/// How a trial ended, kept in parts so the history panel can reserve what attributes the failure before it fits
+/// the context. The journal's own message and the log view never pass through here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Verdict {
+    /// What the trial did: "rebooted", "wrong result" and the like.
+    pub signal: String,
+    /// How far into the trial it got, when known: "early in trial 2 of 5". Context, the first thing a narrow
+    /// panel gives up.
+    pub when: Option<String>,
+    /// The attribution: "core 04 named" or "no core named". Decisive, so a narrow panel keeps it.
+    pub named: Option<String>,
+}
+
 /// One line of what happened, in plain words or merged from several events.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
@@ -64,7 +77,8 @@ pub struct Entry {
     pub at: Timestamp,
     /// The tag column.
     pub tag: Tag,
-    /// The sentence, with raw untrusted text in it.
+    /// The subject of a failure whose `verdict` follows it, or the whole sentence of any other entry; raw
+    /// untrusted text in it.
     pub text: String,
     /// How the line is drawn.
     pub tone: Tone,
@@ -74,6 +88,8 @@ pub struct Entry {
     pub key: Option<Key>,
     /// The words of `text` drawn as an alarm.
     pub alarm: Option<String>,
+    /// How a failed trial ended, for the parts that follow `text`.
+    pub verdict: Option<Verdict>,
     /// Trials merged, for [`EntryKind::Trials`].
     pub runs: u32,
     /// The number of the first merged trial in its part or requirement.
@@ -126,6 +142,7 @@ impl Entry {
             kind: EntryKind::Plain,
             key: None,
             alarm: None,
+            verdict: None,
             runs: 0,
             first: 0,
             of: 0,
@@ -140,6 +157,18 @@ impl Entry {
             count: 0,
             inferred: None,
         }
+    }
+
+    /// The whole sentence as the plain-text consumers read it: `text`, then the parts of a `verdict`.
+    pub fn full_text(&self) -> Cow<'_, str> {
+        let Some(verdict) = &self.verdict else {
+            return Cow::Borrowed(&self.text);
+        };
+        let mut text = format!("{} · {}", self.text, verdict.signal);
+        for part in [&verdict.when, &verdict.named].into_iter().flatten() {
+            let _ = write!(text, " · {part}");
+        }
+        Cow::Owned(text)
     }
 
     /// The sentence split around the words drawn as an alarm: the words before, the alarm and the words after.
@@ -228,15 +257,18 @@ impl Entry {
                 }
                 (text, String::new(), String::new())
             }
-            EntryKind::Plain => match self.alarm.as_deref() {
-                Some(alarm) if !alarm.is_empty() => match self.text.split_once(alarm) {
-                    Some((before, after)) => {
-                        (before.to_owned(), alarm.to_owned(), after.to_owned())
-                    }
-                    None => (self.text.clone(), String::new(), String::new()),
-                },
-                _ => (self.text.clone(), String::new(), String::new()),
-            },
+            EntryKind::Plain => {
+                let full = self.full_text();
+                match self.alarm.as_deref() {
+                    Some(alarm) if !alarm.is_empty() => match full.split_once(alarm) {
+                        Some((before, after)) => {
+                            (before.to_owned(), alarm.to_owned(), after.to_owned())
+                        }
+                        None => (full.into_owned(), String::new(), String::new()),
+                    },
+                    _ => (full.into_owned(), String::new(), String::new()),
+                }
+            }
         }
     }
 

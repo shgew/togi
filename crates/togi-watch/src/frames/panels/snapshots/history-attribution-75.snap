@@ -1,0 +1,13 @@
+---
+source: crates/togi-watch/src/frames/panels/history.rs
+expression: "rows.join(\"\\n\")"
+---
+WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+
+00:16  fail     rerun of R7 all-core on... · wrong result · no core named
+00:16  fail     rerun of R7 all-core on... · wrong result · core 04 named
+00:16  crash    R7 partial CCD 0 on 00-02 05-07 · rebooted · no core named
+00:16  crash    rerun of R7 all-core on 00-02... · rebooted · no core named
+00:16  crash    rerun of R7 all-core on 00-07 · rebooted · no core named
+00:16  crash    rerun of R7 all-core on 00-07 · rebooted · no core named
+00:16  start    session started on 8 cores

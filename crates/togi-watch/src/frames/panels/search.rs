@@ -54,9 +54,9 @@ pub(super) fn turn_lines(
             (style, faint) = (Paint::White, Paint::Text);
         }
         let mut what = if turn.step == 1 {
-            "search step: 1 count deeper".to_owned()
+            "search: 1 count deeper".to_owned()
         } else {
-            format!("search step: {}", regime_list(&turn.regimes))
+            format!("search: {}", regime_list(&turn.regimes))
         };
         let mut so_far = "none yet".to_owned();
         if let Some(core) = scene.core(turn.core) {
@@ -376,6 +376,67 @@ mod tests {
         }
         let text = confirm_turn(2, 0).join("\n");
         assert!(text.contains("light 2/5, heavy 0/5"), "{text}");
+    }
+
+    /// The 160x45 turns panel is 75 cells wide; its `this turn` column is the one the descriptions must fit.
+    #[test]
+    fn the_medium_turn_descriptions_fit_their_column_whole() {
+        let t = Tables::new(SizeClass::Medium, 75);
+        let column = t.turns[2].w;
+        let turn = |step: u8, regimes: Vec<Regime>| SearchTurn {
+            core: core(2),
+            confirm: false,
+            regimes,
+            offset: off(-35),
+            workload: togi_machine::workloads(Regime::R1)[0].id(),
+            step,
+            light: 0,
+            heavy: 0,
+            needed: 5,
+            running: false,
+        };
+        let turns = [
+            turn(2, vec![Regime::R1, Regime::R2]),
+            turn(1, vec![Regime::R1]),
+        ];
+        let model = Model::new();
+        let mut s = model.snapshot();
+        s.turns = &turns;
+        let zone = TimeZone::UTC;
+        let scene = scene(&s, &zone);
+        let rows = texts(&turn_lines(&scene, &t, 75, SizeClass::Medium));
+        let pair = rows
+            .iter()
+            .find(|row| row.contains("search: light, then heavy"))
+            .unwrap_or_else(|| panic!("{rows:?}"));
+        let deeper = rows
+            .iter()
+            .find(|row| row.contains("search: 1 count deeper"))
+            .unwrap_or_else(|| panic!("{rows:?}"));
+        assert!(!pair.contains("...") && !deeper.contains("..."), "{rows:?}");
+        for words in [
+            "search: light, then heavy",
+            "search: 1 count deeper",
+            "confirm: light trial 5 of 5",
+            "confirm: heavy trial 5 of 5",
+            "records the solo limit",
+        ] {
+            assert!(
+                super::super::super::fit::display_width(words) <= column,
+                "{words} in {column}"
+            );
+        }
+        for (light, heavy, want) in [
+            (0, 0, "confirm: light trial 1 of 5"),
+            (5, 4, "confirm: heavy trial 5 of 5"),
+        ] {
+            let rows = confirm_turn(light, heavy);
+            assert!(
+                rows.iter()
+                    .any(|row| row.contains(want) && !row.contains("...")),
+                "{rows:?}"
+            );
+        }
     }
 
     #[test]

@@ -3,7 +3,7 @@
 use ratatui::text::{Line, Span};
 
 use super::super::colours::Paint;
-use super::super::fit::{cut_styled, rule};
+use super::super::fit::{Clause, Form, cut_styled, fit_clauses, line_width, rule};
 use super::super::scene::Scene;
 use super::table::cell;
 use crate::history::{Entry, LOG_LIMIT};
@@ -56,20 +56,78 @@ pub(super) fn history(scene: &Scene<'_>, width: usize, height: usize) -> Vec<Lin
 }
 
 fn row(scene: &Scene<'_>, entry: &Entry, width: usize) -> Line<'static> {
-    let (before, alarm, after) = entry.sentence();
-    let sentence = Line::from(vec![
-        scene.paint(Paint::Text, before),
-        scene.paint(Paint::Bad, alarm),
-        scene.paint(Paint::Text, after),
-    ]);
+    let room = width.saturating_sub(PREFIX);
     let mut spans = vec![
         scene.paint(Paint::Grey, scene.wall_minute(entry.at)),
         Span::raw("  "),
         scene.paint(Paint::from(entry.tone), format!("{:<8}", entry.tag.word())),
         Span::raw(" "),
     ];
-    spans.extend(cut_styled(&sentence, width.saturating_sub(PREFIX)).spans);
+    let sentence = if entry.verdict.is_some() {
+        verdict_sentence(scene, entry, room)
+    } else {
+        let (before, alarm, after) = entry.sentence();
+        cut_styled(
+            &Line::from(vec![
+                scene.paint(Paint::Text, before),
+                scene.paint(Paint::Bad, alarm),
+                scene.paint(Paint::Text, after),
+            ]),
+            room,
+        )
+    };
+    spans.extend(sentence.spans);
     Line::from(spans)
+}
+
+/// The sentence of a failed trial in `room` cells. What the failure was and whom it names are reserved first;
+/// the timing gives way before anything else, and the subject is cut to what is left, so a long subject never
+/// takes the attribution's cells.
+fn verdict_sentence(scene: &Scene<'_>, entry: &Entry, room: usize) -> Line<'static> {
+    let Some(verdict) = &entry.verdict else {
+        return Line::default();
+    };
+    let sep = || Line::from(scene.paint(Paint::Text, " · ".to_owned()));
+    let signal_paint = if entry.alarm.is_some() {
+        Paint::Bad
+    } else {
+        Paint::Text
+    };
+    let signal = Line::from(scene.paint(signal_paint, verdict.signal.clone()));
+    let named = verdict
+        .named
+        .as_ref()
+        .map(|named| Line::from(scene.paint(Paint::Text, named.clone())));
+    let reserved: usize = line_width(&signal)
+        + named
+            .as_ref()
+            .map_or(0, |named| line_width(named) + line_width(&sep()));
+    let subject_room = room.saturating_sub(reserved + line_width(&sep()));
+    let subject_text = scene.paint(Paint::Text, entry.text.clone());
+    let subject_cut = cut_styled(&Line::from(subject_text.clone()), subject_room);
+    let mut subject = vec![Form::new(Line::from(subject_text), 1)];
+    subject.push(if line_width(&subject_cut) > 0 {
+        Form::new(subject_cut, 0)
+    } else {
+        Form::empty()
+    });
+    let mut clauses = vec![
+        Clause::new(Line::default(), subject),
+        Clause::whole(sep(), signal),
+    ];
+    if let Some(when) = &verdict.when {
+        clauses.push(Clause::new(
+            sep(),
+            vec![
+                Form::new(Line::from(scene.paint(Paint::Text, when.clone())), 2),
+                Form::empty(),
+            ],
+        ));
+    }
+    if let Some(named) = named {
+        clauses.push(Clause::whole(sep(), named));
+    }
+    fit_clauses(room, &clauses)
 }
 
 #[cfg(test)]
@@ -360,6 +418,222 @@ mod tests {
                 paint.style(Colours::Full),
                 "{tone:?}"
             );
+        }
+    }
+
+    /// The history pane of the Medium class at 160x45: 75 cells, 16 of them before the sentence.
+    mod medium {
+        use togi_journal::{Outcome, TrialEnd, TrialId, TrialIntent};
+        use togi_machine::{Condition, Regime, Signal};
+
+        use super::super::PREFIX;
+        use super::{cut_words, panel, texts};
+        use crate::model::Count;
+        use crate::tests::kit::{Hist, core, end_payload, intent, nz};
+
+        const WIDTH: usize = 75;
+        const SENTENCE: usize = WIDTH - PREFIX;
+        const ALL: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7];
+        const SPLIT: &[u8] = &[0, 1, 2, 5, 6, 7];
+
+        fn eight() -> Hist {
+            Hist::new(&(0..8).map(|id| (id, 0)).collect::<Vec<_>>())
+        }
+
+        /// Folds a failed trial of R7 on the cores `cores`; `count` is its place among the part's trials.
+        fn fail(
+            h: &mut Hist,
+            cores: &[u8],
+            count: Option<(u32, u32)>,
+            shape: impl FnOnce(&mut TrialIntent),
+            end: impl FnOnce(&mut TrialEnd),
+        ) {
+            let id = format!("t{}", h.count);
+            let mut plan = intent(&id, Regime::R7, Condition::Together, &[0; 8], cores);
+            shape(&mut plan);
+            h.push(plan.into());
+            let trial = TrialId::from(id);
+            let mut over = end_payload(&trial, Outcome::Failure, Some(Signal::ComputationError));
+            end(&mut over);
+            if let Some((index, of)) = count {
+                h.facts.counts.insert(
+                    trial,
+                    Count {
+                        passed: index - 1,
+                        index,
+                        of,
+                    },
+                );
+            }
+            h.push(over.into());
+        }
+
+        fn crash_at(second: u32) -> impl FnOnce(&mut TrialEnd) {
+            move |end| {
+                end.signal = Some(Signal::Crash);
+                end.last_sample_s = Some(second);
+            }
+        }
+
+        fn early(h: &mut Hist) {
+            fail(h, ALL, Some((2, 5)), |i| i.rerun = true, crash_at(10));
+        }
+
+        fn late(h: &mut Hist) {
+            fail(h, ALL, Some((2, 5)), |i| i.rerun = true, crash_at(110));
+        }
+
+        fn midway(h: &mut Hist) {
+            fail(h, SPLIT, Some((1, 5)), |i| i.rerun = true, crash_at(60));
+        }
+
+        fn partial(h: &mut Hist) {
+            fail(
+                h,
+                SPLIT,
+                Some((1, 3)),
+                |i| i.cycle = Some(nz(1)),
+                crash_at(10),
+            );
+        }
+
+        fn wrong(h: &mut Hist) {
+            fail(
+                h,
+                &[0, 1, 2, 4, 5, 6, 7],
+                None,
+                |i| i.rerun = true,
+                |end| end.core = Some(core(4)),
+            );
+        }
+
+        fn parked(h: &mut Hist) {
+            fail(
+                h,
+                ALL,
+                None,
+                |i| {
+                    i.rerun = true;
+                    i.condition = Condition::Parked;
+                },
+                |_| {},
+            );
+        }
+
+        /// The sentence the pane draws for the newest entry at `width`.
+        fn drawn(h: &Hist, width: usize) -> String {
+            let (kept, _) = h.facts.history.recent();
+            let rows = texts(&panel(&kept, 0, width, 12));
+            rows[2].chars().skip(PREFIX).collect()
+        }
+
+        /// Checks what the pane keeps of the newest entry against what the blind cut it replaces would have
+        /// kept, and returns the sentence the pane draws.
+        fn assert_kept(h: &Hist, signal: &str, attribution: &str) -> String {
+            let (kept, _) = h.facts.history.recent();
+            let full = kept[0].full_text().into_owned();
+            assert!(
+                full.contains(signal) && full.ends_with(attribution),
+                "{full:?}"
+            );
+            let blind = cut_words(&full, SENTENCE);
+            assert!(
+                !blind.contains(attribution),
+                "a blind cut {blind:?} loses {attribution:?}, which is the defect"
+            );
+            let shown = drawn(h, WIDTH);
+            assert!(shown.chars().count() <= SENTENCE, "{shown:?}");
+            assert!(
+                shown.contains(signal) && shown.ends_with(attribution),
+                "{shown:?}"
+            );
+            shown
+        }
+
+        #[test]
+        fn an_early_rerun_crash_keeps_no_core_named() {
+            let mut h = eight();
+            early(&mut h);
+            assert_eq!(
+                assert_kept(&h, "rebooted", "no core named"),
+                "rerun of R7 all-core on 00-07 · rebooted · no core named"
+            );
+            let (kept, _) = h.facts.history.recent();
+            assert_eq!(
+                kept[0].full_text(),
+                "rerun of R7 all-core on 00-07 · rebooted · early in trial 2 of 5 · no core named"
+            );
+        }
+
+        #[test]
+        fn a_late_rerun_crash_keeps_no_core_named() {
+            let mut h = eight();
+            late(&mut h);
+            assert_eq!(
+                assert_kept(&h, "rebooted", "no core named"),
+                "rerun of R7 all-core on 00-07 · rebooted · no core named"
+            );
+        }
+
+        #[test]
+        fn a_midway_rerun_crash_keeps_no_core_named_and_cuts_its_subject() {
+            let mut h = eight();
+            midway(&mut h);
+            let shown = assert_kept(&h, "rebooted", "no core named");
+            assert!(shown.starts_with("rerun of R7 all-core on"), "{shown:?}");
+            assert!(shown.contains("... · rebooted"), "{shown:?}");
+        }
+
+        #[test]
+        fn a_partial_ccd_crash_keeps_its_part_and_no_core_named() {
+            let mut h = eight();
+            partial(&mut h);
+            assert_eq!(
+                assert_kept(&h, "rebooted", "no core named"),
+                "R7 partial CCD 0 on 00-02 05-07 · rebooted · no core named"
+            );
+        }
+
+        #[test]
+        fn a_wrong_result_keeps_the_core_it_names() {
+            let mut h = eight();
+            wrong(&mut h);
+            let shown = assert_kept(&h, "wrong result", "core 04 named");
+            assert!(shown.starts_with("rerun of R7 all-core on"), "{shown:?}");
+        }
+
+        #[test]
+        fn a_long_subject_never_takes_the_attribution_cells() {
+            let mut h = eight();
+            parked(&mut h);
+            let shown = assert_kept(&h, "wrong result", "no core named");
+            assert!(shown.starts_with("rerun of R7"), "{shown:?}");
+            let bare = "wrong result · no core named";
+            let bare_width = bare.chars().count();
+            assert_eq!(drawn(&h, PREFIX + bare_width), bare);
+            for width in PREFIX + bare_width..WIDTH {
+                let shown = drawn(&h, width);
+                assert!(shown.ends_with("no core named"), "{width}: {shown:?}");
+                assert!(shown.contains("wrong result"), "{width}: {shown:?}");
+            }
+        }
+
+        #[test]
+        fn the_medium_history_pane() {
+            let mut h = eight();
+            early(&mut h);
+            late(&mut h);
+            midway(&mut h);
+            partial(&mut h);
+            wrong(&mut h);
+            parked(&mut h);
+            let (kept, _) = h.facts.history.recent();
+            let rows = texts(&panel(&kept, 0, WIDTH, 12));
+            let (_, expected) = include_str!("snapshots/history-attribution-75.snap")
+                .strip_prefix("---\n")
+                .and_then(|snapshot| snapshot.split_once("\n---\n"))
+                .expect("a committed snapshot has an insta metadata header");
+            assert_eq!(rows.join("\n"), expected.trim_end_matches('\n'));
         }
     }
 }

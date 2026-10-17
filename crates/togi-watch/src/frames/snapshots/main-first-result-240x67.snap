@@ -62,9 +62,9 @@ expression: body
 │                                                                                                                          05:32  pass     R4 partial load on core 00 at -23 · passed · Tctl max 62°C
 │                                                                                                                          05:30  pass     R4 partial load on core 15 at -13 · passed · Tctl max 66°C
 │                                                                                                                          05:28  pass     R4 partial load on core 07 at -29 · passed · Tctl max 64°C
-│                                                                                                                          05:26  note     checking cycle 1 R7 step 3 CCD 1 y-cruncher FFTv4 + N63 + VT3 all-core: request groups [[09]...
-│                                                                                                                          05:26  note     checking cycle 1 R7 step 3 CCD 1 y-cruncher FFTv4 + N63 + VT3 all-core: request groups [[12]...
-│                                                                                                                          05:26  note     checking cycle 1 R7 step 3 CCD 1 y-cruncher FFTv4 + N63 + VT3 all-core: request groups [[10...
+│                                                                                                                          05:26  note     cycle 1 step 3 · CCD 1 partials end
+│                                                                                                                          05:26  note     cycle 1 step 3 · CCD 1 partial 5 loads 09 13
+│                                                                                                                          05:26  note     cycle 1 step 3 · CCD 1 partial 4 loads 09 12 13
 │                                                                                                                          +899 more
 │
 │   ?  help    l  log    esc  back    q  close view
