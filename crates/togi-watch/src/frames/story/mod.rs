@@ -276,7 +276,7 @@ fn round_moves(scene: &Scene<'_>, round: u32) -> String {
         )
     };
     format!(
-        "{what}; at most {} left, then one full cycle.",
+        "{what}; {} left if no round fails, then one full cycle.",
         plural(left as usize, "round")
     )
 }

@@ -5,7 +5,7 @@ expression: body
 │ togi   06:50:01   tuning 30h49m   session 30h49m   56 failures · 11 crashes   last observed failure 04:43, 2h06m ago
 │ STOPPED  ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ○ PHASE 2 → ○ CLEAN CYCLES
 │
-│ STOPPED · PHASE 2 · between rounds · 5 candidates · 0 moving · at most 1 round left
+│ STOPPED · PHASE 2 · between rounds · 5 candidates · 0 moving · 1 round left if none fails
 │ BIOS profile: page 6
 │
 │ NOW  STOPPED · 06:49:21 · stopped at the first confirmed result

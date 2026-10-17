@@ -726,7 +726,7 @@ mod the_story {
         let scene = fx.scene(ts(1010));
         let said = story(&scene);
         assert_eq!(said.label, "PHASE 2 · ROUND 1");
-        assert!(said.lines[0].starts_with("Round 1 checks again the offsets kept from the round that ended unpassed; at most 2 rounds left"));
+        assert!(said.lines[0].starts_with("Round 1 checks again the offsets kept from the round that ended unpassed; 2 rounds left if no round fails"));
         assert!(!said.lines.join(" ").contains(" alone at "));
         assert_eq!(plain(&operation(&scene, &together)), "PHASE 2 · ROUND 1");
     }
@@ -755,7 +755,7 @@ mod the_story {
             candidates: vec![candidate(0, true), candidate(1, false), candidate(2, true)],
         });
         let said = story(&fx.scene(ts(1010)));
-        assert!(said.lines[0].starts_with("Round 2 moves cores 00, 02 one count toward their solo limits; at most 1 round left, then one full cycle."));
+        assert!(said.lines[0].starts_with("Round 2 moves cores 00, 02 one count toward their solo limits; 1 round left if no round fails, then one full cycle."));
         assert_eq!(said.brief, "Checking round 2's proposed profile.");
     }
 

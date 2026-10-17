@@ -147,7 +147,10 @@ fn sub_state(scene: &Scene<'_>, stage: Stage, short: bool) -> Vec<Span<'static>>
                     Some(round) if short => out.push(text(Paint::Text, format!(" · r{round}"))),
                     Some(round) => out.push(text(
                         Paint::Text,
-                        format!(" · round {round} · at most {left} left"),
+                        format!(
+                            " · round {round} · {} left if none fails",
+                            plural(left as usize, "round")
+                        ),
                     )),
                     None if phases.confirming => {
                         let words = if short {
@@ -159,7 +162,7 @@ fn sub_state(scene: &Scene<'_>, stage: Stage, short: bool) -> Vec<Span<'static>>
                     }
                     None if !short => out.push(text(
                         Paint::Text,
-                        format!(" · at most {} left", plural(left as usize, "round")),
+                        format!(" · {} left if none fails", plural(left as usize, "round")),
                     )),
                     None => {}
                 }
@@ -465,7 +468,10 @@ fn headline(scene: &Scene<'_>, stage: Stage, life: Lifecycle) -> Vec<Clause> {
             out.push(extra(
                 scene,
                 Paint::Grey,
-                format!("at most {} left", phases.rounds_left),
+                format!(
+                    "{} left if none fails",
+                    plural(phases.rounds_left as usize, "round")
+                ),
                 3,
             ));
         }
@@ -480,7 +486,7 @@ fn headline(scene: &Scene<'_>, stage: Stage, life: Lifecycle) -> Vec<Clause> {
                 scene,
                 Paint::Grey,
                 format!(
-                    "at most {} left",
+                    "{} left if none fails",
                     plural(phases.rounds_left as usize, "round")
                 ),
                 3,

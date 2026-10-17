@@ -448,7 +448,7 @@ fn a_repair_holds_the_cycle_without_leaving_the_phase() {
 fn phase_two_names_its_round_and_its_confirmation_cycle() {
     assert_eq!(
         phase2_round().stage(WIDE),
-        "■ SOLO LIMITS  3/3 → ■ PHASE 1 → ► PHASE 2 · round 3 · at most 2 left → ○ CLEAN CYCLES"
+        "■ SOLO LIMITS  3/3 → ■ PHASE 1 → ► PHASE 2 · round 3 · 2 rounds left if none fails → ○ CLEAN CYCLES"
     );
     assert_eq!(
         confirmation().stage(WIDE),
@@ -731,7 +731,7 @@ fn a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart() {
     let [head, requirement] = phase2_round().progress();
     assert_eq!(
         head,
-        "PHASE 2 · round 3 · 4/8 credited checks · 3 candidates · 2 moving · at most 2 left"
+        "PHASE 2 · round 3 · 4/8 credited checks · 3 candidates · 2 moving · 2 rounds left if none fails"
     );
     assert_eq!(
         requirement,
@@ -973,7 +973,7 @@ fn a_completed_round_says_every_check_is_credited() {
     let [head, requirement] = rig.progress();
     assert_eq!(
         head,
-        "PHASE 2 · round 3 · 5/5 credited checks · 3 candidates · 2 moving · at most 2 left"
+        "PHASE 2 · round 3 · 5/5 credited checks · 3 candidates · 2 moving · 2 rounds left if none fails"
     );
     assert_eq!(requirement, "every check of the round is credited");
 }

@@ -3,9 +3,9 @@ source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
 │ togi   15:15:40   tuning 15h15m   session 15h15m   8 failures · 8 crashes   last observed failure 08:22, 6h53m ago
-│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ► PHASE 2 · round 1 · at most 1 left → ○ CLEAN CYCLES
+│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ► PHASE 2 · round 1 · 1 round left if none fails → ○ CLEAN CYCLES
 │
-│ PHASE 2 · round 1 · 0/180 credited checks · 15 candidates · 15 moving · at most 1 left
+│ PHASE 2 · round 1 · 0/180 credited checks · 15 candidates · 15 moving · 1 round left if none fails
 │ check 1 of 36 · R1 light · on core 00 · 0/5 credited checks
 │
 │ NOW  PHASE 2 · ROUND 1 · CORE 00 AT -11 · LIGHT   R1   light load  on core 00 alone at -11   mprime SSE 4K-21K · 1 worker
