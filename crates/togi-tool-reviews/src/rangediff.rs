@@ -69,7 +69,7 @@ pub fn parse_range_diff(out: &str) -> Result<Vec<RangeDiffEntry>, Error> {
 pub struct DeltaResult {
     pub patches: Vec<PatchStatus>,
     /// The delta's patches in range-diff order: the new version of each changed patch, each added patch,
-    /// and the reverse of each removed one.
+    /// and the reverse of each removed one; then the remerge diff of each new merge that changed something.
     pub texts: Vec<Vec<u8>>,
     /// The sections of those patches; the reversed ones carry no changed new-side lines.
     pub files: Vec<Vec<FileDiff>>,
@@ -94,7 +94,9 @@ fn patch(git: &mut dyn Programs, from: &str, to: &str) -> Result<(Vec<u8>, Vec<F
 
 /// Compares the layer's patches between the previous record's range and the current one. A patch
 /// range-diff marks changed whose added and removed lines are the same, so only its context moved, counts
-/// as unchanged.
+/// as unchanged. Range-diff skips merge commits, so each merge the new range has and the previous head
+/// lacks is classified by its remerge diff, what it changed beyond merging its parents mechanically: none
+/// is unchanged, any (a conflict resolution, an edit made in the merge) is changed and joins the delta.
 pub fn classify_range(
     git: &mut dyn Programs,
     old_base: &str,
@@ -160,7 +162,64 @@ pub fn classify_range(
         }
         d.patches.push(s);
     }
+    for (commit, subject) in merges_since(git, old_head, new_base, new_head)? {
+        let text = git
+            .git(&[
+                "show",
+                "--remerge-diff",
+                "--no-color",
+                "--no-ext-diff",
+                "--format=",
+                &commit,
+            ])
+            .map_err(|error| Error::wrap(format!("remerge diff of {commit}"), error))?;
+        let files = parse_diff(&text)
+            .map_err(|error| Error::wrap(format!("remerge diff of {commit}"), error))?;
+        let status = if files.is_empty() {
+            "unchanged"
+        } else {
+            d.texts.push(text);
+            d.files.push(files);
+            "changed"
+        };
+        d.patches.push(PatchStatus {
+            new: commit,
+            subject,
+            status: status.to_owned(),
+            ..PatchStatus::default()
+        });
+    }
     Ok(d)
+}
+
+/// The merge commits of `new_base..new_head` that `old_head` lacks, oldest first, each with its subject.
+fn merges_since(
+    git: &mut dyn Programs,
+    old_head: &str,
+    new_base: &str,
+    new_head: &str,
+) -> Result<Vec<(String, String)>, Error> {
+    let out = git
+        .git(&[
+            "log",
+            "--merges",
+            "--reverse",
+            "--no-color",
+            "--format=%H %s",
+            &format!("{new_base}..{new_head}"),
+            &format!("^{old_head}"),
+        ])
+        .map_err(|error| {
+            Error::wrap(format!("list the merges of {new_base}..{new_head}"), error)
+        })?;
+    Ok(lossy(&out)
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let (commit, subject) = line.split_once(' ').unwrap_or((line, ""));
+            (commit.to_owned(), subject.to_owned())
+        })
+        .collect())
 }
 
 /// The reversal of a removed patch's effects that the new range lost, or `None` when the new base
