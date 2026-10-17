@@ -983,16 +983,14 @@ struct CancelAt {
 impl Edge {
     fn names(self, kind: &str, line: &str) -> bool {
         let unattributed = line.contains(" unattributed ");
-        match (self, kind) {
-            (
-                Self::TogetherTrialEnd | Self::UnattributedTrialEnd | Self::ZeroTrialEnd,
-                "trial.end",
-            ) => line.contains(" FAIL "),
-            (Self::TogetherFailure, "failure") => !unattributed,
-            (Self::UnattributedFailure | Self::ZeroFailure, "failure") => unattributed,
-            (Self::HuntEnd, "hunt.end") => line.contains("combination"),
-            (Self::Combination, "combination") => true,
-            _ => false,
+        match self {
+            Self::TogetherTrialEnd | Self::UnattributedTrialEnd | Self::ZeroTrialEnd => {
+                kind == "trial.end" && line.contains(" FAIL ")
+            }
+            Self::TogetherFailure => kind == "failure" && !unattributed,
+            Self::UnattributedFailure | Self::ZeroFailure => kind == "failure" && unattributed,
+            Self::HuntEnd => kind == "hunt.end" && line.contains("combination"),
+            Self::Combination => kind == "combination",
         }
     }
 

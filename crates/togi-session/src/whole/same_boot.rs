@@ -831,7 +831,7 @@ fn between_trials_after_setup(before_readback: bool) -> Vec<bool> {
             (SmuOp::Read, HookPhase::Before) if written.get() && before_readback => {
                 return Err(Error::Crashed);
             }
-            _ => {}
+            (SmuOp::Read | SmuOp::Set | SmuOp::SetAll, HookPhase::Before | HookPhase::After) => {}
         }
         Ok(())
     });
