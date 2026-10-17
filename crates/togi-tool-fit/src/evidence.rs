@@ -40,7 +40,7 @@ pub(crate) fn load_of(class: &TrialClass) -> Load<'_> {
 
 /// The decisive trials of an extract, checked to describe one machine: failures outside any trial have no
 /// exposure to fit and are left out.
-pub(crate) fn decisive(records: &[TrialFact]) -> Result<Vec<TrialFact>, EvidenceError> {
+pub(crate) fn decisive(records: &[TrialFact]) -> Result<Vec<&TrialFact>, EvidenceError> {
     let mut out = Vec::new();
     let mut shape: Option<(usize, Option<&BiosContext>)> = None;
     for fact in records {
@@ -75,7 +75,7 @@ pub(crate) fn decisive(records: &[TrialFact]) -> Result<Vec<TrialFact>, Evidence
                 cores,
             }));
         }
-        out.push(fact.clone());
+        out.push(fact);
     }
     if out.is_empty() {
         return Err(EvidenceError::NoTrials);
@@ -102,10 +102,10 @@ impl Observation {
     }
 }
 
-pub(crate) fn aggregate(records: &[TrialFact]) -> Vec<Observation> {
+pub(crate) fn aggregate(records: &[&TrialFact]) -> Vec<Observation> {
     let mut indices: HashMap<ProfileClassKey, usize> = HashMap::new();
     let mut out: Vec<Observation> = Vec::new();
-    for fact in records {
+    for &fact in records {
         let Some(class) = trial_class(fact) else {
             continue;
         };
@@ -129,10 +129,10 @@ pub(crate) fn aggregate(records: &[TrialFact]) -> Vec<Observation> {
 }
 
 /// `records.len()` trials drawn with replacement, from the stream `seed` names.
-pub(crate) fn bootstrap(records: &[TrialFact], seed: u64) -> Vec<TrialFact> {
+pub(crate) fn bootstrap<'a>(records: &[&'a TrialFact], seed: u64) -> Vec<&'a TrialFact> {
     let mut rng = StdRng::seed_from_u64(seed);
     (0..records.len())
-        .map(|_| records[rng.random_range(0..records.len())].clone())
+        .map(|_| records[rng.random_range(0..records.len())])
         .collect()
 }
 
@@ -159,7 +159,7 @@ pub(crate) fn core_def(id: usize) -> CoreDef {
 
 /// The machine a fit starts from: every limit at the deepest offset and the hazard shape's starting values,
 /// with no joint, no residual hazard and no shared-voltage model yet.
-pub(crate) fn initial_config(records: &[TrialFact]) -> MachineDefinition {
+pub(crate) fn initial_config(records: &[&TrialFact]) -> MachineDefinition {
     let cores = records
         .first()
         .map_or(0, |fact| fact.profile.as_slice().len());

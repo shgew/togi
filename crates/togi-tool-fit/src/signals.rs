@@ -16,7 +16,7 @@ use crate::evidence::regime_of;
 /// uncorrected MCE counts as a crash, which the simulator draws as a crash leaving an MCE with probability
 /// `crash_mce`. Without any failure the mix is the simulator's default weights and no `regime_signals`,
 /// whatever the starting model held.
-pub(crate) fn fit_signals(cfg: &mut MachineDefinition, records: &[TrialFact]) {
+pub(crate) fn fit_signals(cfg: &mut MachineDefinition, records: &[&TrialFact]) {
     let mut pooled: BTreeMap<Signal, f64> = BTreeMap::new();
     let mut regimes: BTreeMap<Regime, BTreeMap<Signal, f64>> = BTreeMap::new();
     for fact in records {

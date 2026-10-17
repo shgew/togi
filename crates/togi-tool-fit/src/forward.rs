@@ -124,8 +124,11 @@ pub(crate) fn log_loss(p: f64, failure: bool) -> f64 {
 }
 
 /// The trials in session order and the index where each session begins, without the newest `seal` sessions.
-fn segment(trials: &[TrialFact], seal: usize) -> Result<(Vec<TrialFact>, Vec<usize>), Error> {
-    let mut ordered = trials.to_vec();
+fn segment<'a>(
+    trials: impl IntoIterator<Item = &'a TrialFact>,
+    seal: usize,
+) -> Result<(Vec<&'a TrialFact>, Vec<usize>), Error> {
+    let mut ordered: Vec<&TrialFact> = trials.into_iter().collect();
     ordered.sort_by_key(|fact| fact.session);
     let mut bounds: Vec<usize> = Vec::new();
     for i in 0..ordered.len() {
@@ -147,7 +150,10 @@ fn segment(trials: &[TrialFact], seal: usize) -> Result<(Vec<TrialFact>, Vec<usi
 /// Runs the check over decisive `trials`; the newest `seal` sessions are neither fitted nor scored. The
 /// result does not depend on the thread count: each prefix fit lands in its own slot, and scoring and
 /// pooling run in session order.
-pub fn forward_check(trials: &[TrialFact], seal: usize) -> Result<ForwardCheck, Error> {
+pub fn forward_check<'a>(
+    trials: impl IntoIterator<Item = &'a TrialFact>,
+    seal: usize,
+) -> Result<ForwardCheck, Error> {
     let (ordered, bounds) = segment(trials, seal)?;
     let fits: Vec<Result<MachineDefinition, Error>> = (0..bounds.len().saturating_sub(1))
         .into_par_iter()
@@ -165,8 +171,8 @@ pub fn forward_check(trials: &[TrialFact], seal: usize) -> Result<ForwardCheck, 
 /// Convention: the probability of a trial is the mean over all members of the member's failure probability
 /// for it, taken member by member in the order given; the log loss, the predicted failures and the 1%
 /// surprise test use that mean. A model-check group counts as flagged when any member flags it.
-pub fn reference_check(
-    trials: &[TrialFact],
+pub fn reference_check<'a>(
+    trials: impl IntoIterator<Item = &'a TrialFact>,
     seal: usize,
     members: &[MachineDefinition],
 ) -> Result<ForwardCheck, Error> {
@@ -190,10 +196,10 @@ pub fn reference_check(
 /// number of sessions before the held-out one, the held-out trials, the earlier trials' profile classes and
 /// the constant predictor's probability.
 fn chain(
-    ordered: &[TrialFact],
+    ordered: &[&TrialFact],
     mut score: impl FnMut(
         usize,
-        &[TrialFact],
+        &[&TrialFact],
         &HashSet<ProfileClassKey>,
         f64,
     ) -> Result<(ForwardScore, Breakdown), Error>,
@@ -233,7 +239,7 @@ fn chain(
             pooled.flagged += scored.flagged;
             pooled.eligible += scored.eligible;
         }
-        for fact in held_out {
+        for &fact in held_out {
             seen.insert(ProfileClassKey::from(fact));
             if is_failure(fact) {
                 training_failures += 1;
@@ -247,12 +253,12 @@ fn chain(
 
 pub(crate) fn score_forward(
     cfg: &MachineDefinition,
-    held_out: &[TrialFact],
+    held_out: &[&TrialFact],
     seen: &HashSet<ProfileClassKey>,
     constant: f64,
 ) -> Result<(ForwardScore, Breakdown), Error> {
     let model = Model::new(cfg, 0)?;
-    let checker = Checker::new(&model, held_out)?;
+    let checker = Checker::new(&model, held_out.iter().copied())?;
     let groups = checker.groups(&model)?;
     let (mut score, breakdown) = score_trials(held_out, seen, constant, |fact, class| {
         Ok(model.failure_probability(fact.profile.as_slice(), &load_of(class))?)
@@ -264,14 +270,14 @@ pub(crate) fn score_forward(
 
 fn score_reference(
     models: &[Model],
-    held_out: &[TrialFact],
+    held_out: &[&TrialFact],
     seen: &HashSet<ProfileClassKey>,
     constant: f64,
 ) -> Result<(ForwardScore, Breakdown), Error> {
     let mut eligible: HashSet<String> = HashSet::new();
     let mut flagged: HashSet<String> = HashSet::new();
     for model in models {
-        let checker = Checker::new(model, held_out)?;
+        let checker = Checker::new(model, held_out.iter().copied())?;
         for group in checker.groups(model)? {
             let key = group.to_string();
             if group.flagged {
@@ -294,14 +300,14 @@ fn score_reference(
 }
 
 fn score_trials(
-    held_out: &[TrialFact],
+    held_out: &[&TrialFact],
     seen: &HashSet<ProfileClassKey>,
     constant: f64,
     mut probability: impl FnMut(&TrialFact, &togi_facts::TrialClass) -> Result<f64, Error>,
 ) -> Result<(ForwardScore, Breakdown), Error> {
     let mut score = ForwardScore::default();
     let mut breakdown = Breakdown::default();
-    for fact in held_out {
+    for &fact in held_out {
         let Some(class) = trial_class(fact) else {
             continue;
         };

@@ -137,14 +137,14 @@ pub fn run(options: &Options, report: &mut (impl io::Write + Send)) -> Result<El
                     .map(records::RecordsFile::create)
                     .transpose()?;
                 let forward = Instant::now();
-                let check = forward_check(&trials, *seal)?;
+                let check = forward_check(trials.iter().copied(), *seal)?;
                 let elapsed = forward.elapsed();
                 report_forward(report, &check, *seal)?;
                 if let Some(records) = records {
                     records.write(&extract, *seal, &check)?;
                 }
                 if !members.is_empty() {
-                    let reference = reference_check(&trials, *seal, &members)?;
+                    let reference = reference_check(trials.iter().copied(), *seal, &members)?;
                     report_reference(report, &reference, *seal, members.len())?;
                 }
                 Ok(Some(elapsed))
