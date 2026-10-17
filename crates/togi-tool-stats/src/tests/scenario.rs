@@ -362,7 +362,9 @@ fn combination() -> Log {
     log.at(520).add(searched);
     log.add(trial_start("0004"));
     log.add(unclear);
-    log.at(600).add(cycle(1, CycleEvent::End, true));
+    let mut cycle_end = cycle(1, CycleEvent::End, true);
+    cycle_end.passed = true;
+    log.at(600).add(cycle_end);
     log.at(601).add(shutdown(ShutdownReason::Cycles));
     log
 }

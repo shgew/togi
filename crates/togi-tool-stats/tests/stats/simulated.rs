@@ -1,7 +1,7 @@
 use togi_journal::Payload;
 use togi_tool_stats::{Journal, report};
 
-use crate::sim::hunting_session;
+use crate::sim::{chain_session, hunting_session};
 
 /// The rows of the section titled `title`: its lines after the header, up to the blank line.
 fn rows<'a>(text: &'a str, title: &str) -> Vec<Vec<&'a str>> {
@@ -100,7 +100,7 @@ fn a_report_is_the_same_for_the_same_journal() {
 
 #[test]
 fn a_simulated_sessions_chain_records_attribute_each_trial_once_to_its_own_set() {
-    let events = hunting_session();
+    let events = chain_session();
     let text =
         togi_tool_stats::chain_records(&Journal::new(events.clone()).unwrap(), None).unwrap();
     let intents: std::collections::HashMap<u64, &togi_journal::TrialIntent> = events
@@ -111,6 +111,7 @@ fn a_simulated_sessions_chain_records_attribute_each_trial_once_to_its_own_set()
         })
         .collect();
     let mut seen = std::collections::HashSet::new();
+    let mut reruns = 0;
     let mut kinds = std::collections::BTreeMap::new();
     for line in text.lines() {
         let record: serde_json::Value = serde_json::from_str(line).unwrap();
@@ -122,24 +123,52 @@ fn a_simulated_sessions_chain_records_attribute_each_trial_once_to_its_own_set()
             for trial in record[list].as_array().unwrap() {
                 let seq = trial["seq"].as_u64().unwrap();
                 assert!(seen.insert(seq), "trial {seq} attributed twice: {text}");
+                reruns += usize::from(rerun);
                 let intent = intents[&seq];
-                assert!(seq > record["seq"].as_u64().unwrap());
-                assert_eq!(intent.regime, togi_machine::Regime::R7);
+                assert!(
+                    seq > record["seq"].as_u64().unwrap(),
+                    "trial {seq} of {line}"
+                );
+                assert_eq!(
+                    intent.regime,
+                    togi_machine::Regime::R7,
+                    "trial {seq} of {line}"
+                );
+                let (cycle, step) = if rerun {
+                    (None, None)
+                } else {
+                    (record["cycle"].as_u64(), record["step"].as_u64())
+                };
                 assert_eq!(
                     intent.cycle.map(|c| u64::from(c.get())),
-                    record["cycle"].as_u64()
+                    cycle,
+                    "trial {seq} of {line}: a rerun belongs to no cycle"
                 );
                 assert_eq!(
                     intent.step.map(|s| u64::from(s.get())),
-                    record["step"].as_u64()
+                    step,
+                    "trial {seq} of {line}"
                 );
-                assert_eq!(&serde_json::to_value(intent.cores).unwrap(), cores);
-                assert_eq!(intent.rerun, rerun);
+                assert_eq!(
+                    &serde_json::to_value(intent.workload).unwrap(),
+                    &record["workload"],
+                    "trial {seq} of {line}"
+                );
+                assert_eq!(
+                    &serde_json::to_value(intent.cores).unwrap(),
+                    cores,
+                    "trial {seq} of {line}"
+                );
+                assert_eq!(intent.rerun, rerun, "trial {seq} of {line}");
             }
         }
     }
     assert!(
         kinds.contains_key("first") && kinds.contains_key("unchanged"),
-        "the hunt's backoff re-derives the session's chains: {kinds:?}"
+        "the backoff re-derives the session's chains: {kinds:?}"
+    );
+    assert!(
+        seen.len() > reruns && reruns > 0,
+        "the session's chain trials and the failed load's reruns are attributed: {text}"
     );
 }
