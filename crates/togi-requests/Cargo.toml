@@ -10,5 +10,8 @@ description = "Per-core voltage request and clock summaries of a trial, and the 
 [dependencies]
 togi-machine.workspace = true
 
+[dev-dependencies]
+test-case.workspace = true
+
 [lints]
 workspace = true

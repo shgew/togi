@@ -102,7 +102,7 @@ fn cycle_plan_of(j: &Journal, step: u32, cores: &[u8], secs: u32) -> TrialPlan {
             .collect::<Vec<_>>(),
         secs,
     );
-    plan.context = TrialContext::Cycle {
+    plan.requirement.context = TrialContext::Cycle {
         cycle: j.run().checking.open().unwrap().number,
         step: StepNo::new(NonZeroU32::new(step).unwrap()),
         part: PartNo::new(NonZeroU32::MIN),
@@ -441,7 +441,7 @@ fn requirement_counts_alone_deepening_checks_against_their_round() {
         let plan = trial_after_decisions(&mut j);
         assert!(
             plan.condition == Condition::Alone
-                && matches!(plan.context, TrialContext::Round { round } if round.get() == 2),
+                && matches!(plan.requirement.context, TrialContext::Round { round } if round.get() == 2),
             "{plan:?}"
         );
         let (intent, trial) = j.intent(&plan);
@@ -501,7 +501,7 @@ fn cycle_plan_runs_no_part_during_a_rerun() {
         panic!("the failure did not rerun");
     };
     assert!(
-        matches!(rerun.context, TrialContext::Rerun { .. }),
+        matches!(rerun.requirement.context, TrialContext::Rerun { .. }),
         "{rerun:?}"
     );
     j.intent(&rerun);
@@ -864,7 +864,7 @@ pub(crate) fn probe_without_checking_profile() -> Journal {
         &[-15, -8],
         SHORT,
     );
-    plan.context = TrialContext::Hunt {
+    plan.requirement.context = TrialContext::Hunt {
         hunt: NonZeroU32::MIN,
         group: NonZeroU32::MIN,
     };
@@ -1193,7 +1193,7 @@ fn stored_requirement_separates_class_count_and_part() {
     decide_next(&mut j);
     let plan = j.next_trial();
     assert!(matches!(
-        plan.context,
+        plan.requirement.context,
         TrialContext::Cycle { step, part, .. } if step.get().get() == 1 && part.get().get() == 2
     ));
     let (intent, trial) = j.intent(&plan);
@@ -1214,7 +1214,7 @@ fn stored_requirement_separates_class_count_and_part() {
             passed: 0,
             trial: 1,
             needed: 3,
-            step: plan.requirement.step,
+            step: Some(crate::StepNo::new(std::num::NonZeroU32::MIN)),
         })
     );
     let part = &projection.cycle_plan.steps[0].parts[1];

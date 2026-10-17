@@ -133,7 +133,10 @@ fn temperature_counts_only_together_passes_with_a_reading() {
     zero.decide(attribution);
     let rerun = zero.next_trial();
     assert_eq!(rerun.condition, Condition::Parked);
-    assert!(matches!(rerun.context, TrialContext::ZeroRerun { .. }));
+    assert!(matches!(
+        rerun.requirement.context,
+        TrialContext::ZeroRerun { .. }
+    ));
     with_tctl(&mut zero, &rerun, Outcome::Pass, Some(97));
     assert_eq!(zero.run().checking.temperature_peak(), None);
 

@@ -1600,6 +1600,7 @@ name = "togi-carry"
 version = "0.0.0"
 dependencies = [
  "jiff",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-defect",
@@ -1636,6 +1637,7 @@ name = "togi-defect"
 version = "0.0.0"
 dependencies = [
  "jiff",
+ "test-case",
  "togi-config",
  "togi-journal",
  "togi-machine",
@@ -1712,6 +1714,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-machine",
 ]
@@ -1759,6 +1762,7 @@ dependencies = [
 name = "togi-requests"
 version = "0.0.0"
 dependencies = [
+ "test-case",
  "togi-machine",
 ]
 
@@ -1847,11 +1851,8 @@ name = "togi-tool-audit"
 version = "0.0.0"
 dependencies = [
  "clap",
- "nix",
- "rustix",
  "serde",
  "serde_json",
- "signal-hook 0.4.5",
  "tempfile",
  "thiserror",
  "togi-journal",
@@ -1887,6 +1888,7 @@ dependencies = [
  "togi-sim",
  "togi-simrun",
  "togi-statecopy",
+ "togi-tool-audit",
  "togi-tool-forecast",
  "togi-tool-modelcheck",
  "togi-tool-trialfacts",
@@ -1932,9 +1934,11 @@ name = "togi-tool-fit"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "flate2",
  "proptest",
  "rand",
  "rayon",
+ "sha2",
  "tempfile",
  "thiserror",
  "togi-facts",
@@ -2061,6 +2065,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-journal",
@@ -2155,6 +2160,9 @@ dependencies = [
 [[package]]
 name = "togi-version"
 version = "0.0.0"
+dependencies = [
+ "test-case",
+]
 
 [[package]]
 name = "togi-watch"

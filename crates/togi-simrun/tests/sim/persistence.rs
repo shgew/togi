@@ -6,7 +6,7 @@ use togi_journal::{EventKind, MemFs};
 use togi_machine::BootId;
 use togi_session::Stop;
 use togi_sim::MachineDefinition;
-use togi_simrun::{Observe, Persistence, Replay, SimInput, SimOutcome, simulate};
+use togi_simrun::{Observe, Persistence, Replay, SimInput, SimOutcome, events, simulate};
 
 use crate::common::{STATE, hunt_machine, input, machine_file, nz, simulator};
 
@@ -166,9 +166,11 @@ fn published_in_a_crashing_simulation(replay: Replay) -> (usize, usize) {
     let seen = seen.borrow();
     let mut published = seen.iter().map(|(_, state)| state).collect::<Vec<_>>();
     published.dedup();
-    let journal = String::from_utf8(fs.contents(format!("{STATE}/events.jsonl")).unwrap()).unwrap();
     assert!(
-        !journal.contains("\"state.rebuilt\""),
+        !events(&Persistence::Memory(fs.clone()))
+            .unwrap()
+            .iter()
+            .any(|event| event.kind() == EventKind::StateRebuilt),
         "a boot found no published state.json and rebuilt it"
     );
     assert!(fs.contents(format!("{STATE}/state.json")).is_some());

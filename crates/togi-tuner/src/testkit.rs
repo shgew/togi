@@ -12,8 +12,8 @@ use togi_machine::{
 
 use crate::tests::{core, off};
 use crate::{
-    Action, ClassKey, DecisionAction, FoldError, Load, Profile, Requirement, RequirementKind, Secs,
-    State, TrialContext, TrialPlan, Window, WorkloadChoice,
+    Action, ClassKey, DecisionAction, FoldError, Load, Profile, Requirement, Secs, State,
+    TrialContext, TrialPlan, Window, WorkloadChoice,
 };
 
 pub(crate) fn build() -> Build {
@@ -376,7 +376,7 @@ impl Journal {
     /// A manual together plan placed in the open cycle's schedule, opening the default cycle when
     /// none holds the plan's class.
     fn scheduled(&mut self, plan: &TrialPlan) -> TrialPlan {
-        let TrialContext::Cycle { cycle, step, .. } = plan.context else {
+        let TrialContext::Cycle { cycle, step, .. } = plan.requirement.context else {
             return plan.clone();
         };
         let class = ClassKey::new(
@@ -408,7 +408,7 @@ impl Journal {
         let ordinal =
             |at: usize| std::num::NonZeroU32::new(u32::try_from(at).unwrap() + 1).unwrap();
         let mut placed = plan.clone();
-        placed.context = TrialContext::Cycle {
+        placed.requirement.context = TrialContext::Cycle {
             cycle: self.run().checking.open().unwrap().number,
             step: crate::StepNo::new(ordinal(index)),
             part: crate::PartNo::new(ordinal(part)),
@@ -591,24 +591,21 @@ impl Journal {
             },
             profile: self.profile(profile),
             duration,
-            context: match condition {
-                Condition::Together => TrialContext::Cycle {
-                    cycle: std::num::NonZeroU32::MIN,
-                    step: crate::StepNo::new(std::num::NonZeroU32::MIN),
-                    part: crate::PartNo::new(std::num::NonZeroU32::MIN),
-                },
-                Condition::Alone | Condition::Parked => TrialContext::SoloLimit {
-                    core: core(self.ids[0]),
-                    regime,
-                },
-            },
             requirement: Requirement {
-                kind: RequirementKind::Cycle,
+                context: match condition {
+                    Condition::Together => TrialContext::Cycle {
+                        cycle: std::num::NonZeroU32::MIN,
+                        step: crate::StepNo::new(std::num::NonZeroU32::MIN),
+                        part: crate::PartNo::new(std::num::NonZeroU32::MIN),
+                    },
+                    Condition::Alone | Condition::Parked => TrialContext::SoloLimit {
+                        core: core(self.ids[0]),
+                        regime,
+                    },
+                },
                 class: ClassKey::new(id, load.cores(), duration),
                 window: Window::Live { since: None },
                 needed: std::num::NonZeroU16::MIN,
-                step: None,
-                part: None,
             },
             retry: false,
             cause: Vec::new(),

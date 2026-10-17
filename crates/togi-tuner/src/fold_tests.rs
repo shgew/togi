@@ -436,7 +436,7 @@ fn a_plan_records_its_context_in_its_intent() {
     let nz = |n| NonZeroU32::new(n).unwrap();
     let with = |context| {
         let mut plan = base.clone();
-        plan.context = context;
+        plan.requirement.context = context;
         plan.intent(TrialId::from("1".to_owned()), 0)
     };
     let cycle = with(TrialContext::Cycle {
@@ -690,7 +690,7 @@ fn a_skipped_round_check_names_its_round() {
         90,
     );
     plan.workload = WorkloadChoice::Frozen(workloads(Regime::R1)[0].id());
-    plan.context = TrialContext::Round {
+    plan.requirement.context = TrialContext::Round {
         round: NonZeroU32::new(3).unwrap(),
     };
     let Action::Decide(DecisionAction {

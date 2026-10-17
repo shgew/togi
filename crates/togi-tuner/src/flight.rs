@@ -5,9 +5,8 @@ use togi_journal::{Event, Mce, Outcome, Seq, TrialEnd, TrialId, TrialIntent, Tri
 use togi_machine::{Condition, CoreId, CoreSet, Regime, Signal};
 
 use crate::r7::failed::FailedTrial;
-use crate::requirement::Turn;
 use crate::state::Run;
-use crate::{BackendId, ClassKey, FoldError, Profile, Requirement, RequirementKind, StepNo};
+use crate::{BackendId, ClassKey, FoldError, Profile, Requirement, StepNo, TrialContext};
 
 /// The cores of the MCEs seen in a trial's window that its end cites.
 pub(crate) fn cited_mces(seen: &BTreeMap<Seq, CoreId>, cause: &[Seq]) -> CoreSet {
@@ -34,7 +33,6 @@ pub(crate) struct OpenTrial {
     pub(crate) profile: Profile,
     pub(crate) class: ClassKey,
     pub(crate) requirement: Requirement,
-    pub(crate) turn: Option<Turn>,
     pub(crate) backend: BackendId,
     pub(crate) crashed: bool,
     pub(crate) mces: BTreeMap<Seq, CoreId>,
@@ -61,12 +59,40 @@ pub(crate) struct ClosedTrial {
     pub(crate) history: TrialHistory,
 }
 
-/// The trial in flight, the failed end awaiting attribution, and the last trial closed.
+/// Where the current trial stands: none, in flight, or failed and awaiting attribution.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "a run holds one, stored inline like the rest of its state"
+)]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) enum InFlight {
+    #[default]
+    Idle,
+    Open(OpenTrial),
+    Awaiting(Awaiting),
+}
+
+/// The current trial and the last trial closed.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Flight {
-    pub(crate) open: Option<OpenTrial>,
-    pub(crate) awaiting: Option<Awaiting>,
+    pub(crate) current: InFlight,
     pub(crate) last_closed: Option<ClosedTrial>,
+}
+
+impl Flight {
+    pub(crate) const fn open(&self) -> Option<&OpenTrial> {
+        match &self.current {
+            InFlight::Open(open) => Some(open),
+            InFlight::Idle | InFlight::Awaiting(_) => None,
+        }
+    }
+
+    pub(crate) const fn awaiting(&self) -> Option<&Awaiting> {
+        match &self.current {
+            InFlight::Awaiting(awaiting) => Some(awaiting),
+            InFlight::Idle | InFlight::Open(_) => None,
+        }
+    }
 }
 
 impl Run {
@@ -75,12 +101,12 @@ impl Run {
         event: &Event,
         intent: &TrialIntent,
     ) -> Result<(), FoldError> {
-        if let Some(open) = self.flight.open.as_ref().map(|open| &open.trial).or(self
-            .flight
-            .awaiting
-            .as_ref()
-            .map(|awaiting| &awaiting.intent.trial))
-        {
+        let open = match &self.flight.current {
+            InFlight::Idle => None,
+            InFlight::Open(open) => Some(&open.trial),
+            InFlight::Awaiting(awaiting) => Some(&awaiting.intent.trial),
+        };
+        if let Some(open) = open {
             return Err(FoldError::OverlappingIntent {
                 trial: intent.trial.clone(),
                 open: open.clone(),
@@ -89,21 +115,20 @@ impl Run {
         let class = self.class_of_intent(intent)?;
         let profile = Profile::new(&self.topo, intent.profile)?;
         self.require_cores(intent.core.into_iter().collect())?;
-        let (requirement, turn) = self.schedule_intent(intent, class, &event.cause)?;
-        if let Some(turn) = turn {
+        let requirement = self.schedule_intent(intent, class, &event.cause)?;
+        if let Some(turn) = requirement.context.turn() {
             self.search
                 .turn(self.topo.order().iter().position(|&id| id == turn.core));
         }
         self.retry = None;
         self.zero_intent(event, intent);
-        self.flight.open = Some(OpenTrial {
+        self.flight.current = InFlight::Open(OpenTrial {
             trial: intent.trial.clone(),
             seq: event.seq,
             intent: intent.clone(),
             profile,
             class,
             requirement,
-            turn,
             backend: self.evidence.active_backend(intent.workload.backend()),
             crashed: false,
             mces: BTreeMap::new(),
@@ -113,8 +138,7 @@ impl Run {
 
     fn open_for(&self, trial: &TrialId) -> Result<&OpenTrial, FoldError> {
         self.flight
-            .open
-            .as_ref()
+            .open()
             .filter(|open| &open.trial == trial)
             .ok_or_else(|| FoldError::NoOpenTrial(trial.clone()))
     }
@@ -131,20 +155,17 @@ impl Run {
         let Some(core) = mce.core.filter(|_| mce.bank_type.core_local()) else {
             return Ok(());
         };
-        let Some(open) = self.flight.open.as_ref() else {
+        let InFlight::Open(open) = &mut self.flight.current else {
             return Ok(());
         };
-        if mce.trial.as_ref().is_some_and(|trial| trial != &open.trial) {
-            return Ok(());
-        }
-        if let Some(open) = self.flight.open.as_mut() {
+        if mce.trial.as_ref().is_none_or(|trial| trial == &open.trial) {
             open.mces.insert(event.seq, core);
         }
         Ok(())
     }
 
     pub(crate) fn crash_detected(&mut self) {
-        if let Some(open) = self.flight.open.as_mut() {
+        if let InFlight::Open(open) = &mut self.flight.current {
             open.crashed = true;
         }
     }
@@ -152,40 +173,44 @@ impl Run {
     pub(crate) fn history(&self, open: &OpenTrial) -> TrialHistory {
         let requirement = open.requirement;
         let needed = u32::from(requirement.needed.get());
-        let (passed, trial) = match requirement.kind {
-            RequirementKind::Search | RequirementKind::ZeroRerun => (0, 1),
-            RequirementKind::SoloLimit
-            | RequirementKind::Cycle
-            | RequirementKind::Rerun
-            | RequirementKind::Round
-            | RequirementKind::Hunt => {
-                let valid = self
-                    .evidence
-                    .count(
-                        requirement.class,
-                        &open.profile,
-                        requirement.window,
-                        requirement.needed,
-                    )
-                    .map_or(0, |count| count.valid);
-                (
-                    valid.min(needed),
-                    valid.saturating_add(1).min(needed.max(1)),
+        let single = match requirement.context {
+            TrialContext::Search { .. } | TrialContext::ZeroRerun { .. } => true,
+            TrialContext::SoloLimit { .. }
+            | TrialContext::Cycle { .. }
+            | TrialContext::Rerun { .. }
+            | TrialContext::Round { .. }
+            | TrialContext::Hunt { .. } => false,
+        };
+        let (passed, trial) = if single {
+            (0, 1)
+        } else {
+            let valid = self
+                .evidence
+                .count(
+                    requirement.class,
+                    &open.profile,
+                    requirement.window,
+                    requirement.needed,
                 )
-            }
+                .map_or(0, |count| count.valid);
+            (
+                valid.min(needed),
+                valid.saturating_add(1).min(needed.max(1)),
+            )
         };
         TrialHistory {
             passed,
             trial,
-            needed: match requirement.kind {
-                RequirementKind::Search | RequirementKind::ZeroRerun => 1,
-                RequirementKind::SoloLimit
-                | RequirementKind::Cycle
-                | RequirementKind::Rerun
-                | RequirementKind::Round
-                | RequirementKind::Hunt => needed,
+            needed: if single { 1 } else { needed },
+            step: match requirement.context {
+                TrialContext::Cycle { step, .. } => Some(step),
+                TrialContext::Search { .. }
+                | TrialContext::SoloLimit { .. }
+                | TrialContext::Rerun { .. }
+                | TrialContext::ZeroRerun { .. }
+                | TrialContext::Round { .. }
+                | TrialContext::Hunt { .. } => None,
             },
-            step: requirement.step,
         }
     }
 
@@ -201,9 +226,12 @@ impl Run {
                 .map(|(core, _)| core)
                 .collect(),
         )?;
-        let open = match self.flight.open.take() {
-            Some(open) if open.trial == end.trial => open,
-            _ => return Err(FoldError::NoOpenTrial(end.trial.clone())),
+        let open = match std::mem::take(&mut self.flight.current) {
+            InFlight::Open(open) if open.trial == end.trial => open,
+            other @ (InFlight::Idle | InFlight::Open(_) | InFlight::Awaiting(_)) => {
+                self.flight.current = other;
+                return Err(FoldError::NoOpenTrial(end.trial.clone()));
+            }
         };
         let history = self.history(&open);
         self.record_end(event.seq, &open, end)?;
@@ -220,19 +248,19 @@ impl Run {
         });
         let class = open.class;
         let together = open.intent.condition == Condition::Together;
-        if let Some(turn) = open.turn {
+        if let Some(turn) = open.requirement.context.turn() {
             self.update_core(turn.core, |state| state.last_seq = Some(event.seq));
         }
         match end.outcome {
             Outcome::Pass => self.record_step_pass(event.seq, &open),
             Outcome::Inconclusive => {
-                self.save_retry(&open, zero);
+                self.save_retry(&open);
                 self.revalidate_retry();
             }
 
             Outcome::Failure => {
                 let signal = end.signal.ok_or(FoldError::MissingSignal)?;
-                self.flight.awaiting = Some(Awaiting {
+                self.flight.current = InFlight::Awaiting(Awaiting {
                     intent: open.intent,
                     profile: open.profile,
                     class: open.class,
@@ -263,12 +291,11 @@ impl Run {
     /// A search pass at the core's current offset, under the backend package its trial began with,
     /// is part of its unfinished step; a candidate check's passes are counted by the ledger alone.
     fn record_step_pass(&mut self, seq: Seq, open: &OpenTrial) {
-        let Some(turn) = open.turn else {
+        let Some(turn) = open.requirement.context.turn() else {
             return;
         };
         let state = self.core(turn.core);
-        let current = state.phase == Some(togi_journal::CorePhase::Search)
-            && turn.offset == Some(state.offset);
+        let current = state.phase.searching() && turn.offset == Some(state.offset);
         if current {
             self.search.record_pass(
                 turn.core,

@@ -1,15 +1,13 @@
+use test_case::test_case;
+
 use super::{VERSION, resolve_revision, rev, string, version};
 
-#[test]
-fn revision_is_the_stamp_or_dev() {
-    for (explicit, want) in [
-        (Some("release-revision"), "release-revision"),
-        (Some("dev"), "dev"),
-        (Some(""), "dev"),
-        (None, "dev"),
-    ] {
-        assert_eq!(resolve_revision(explicit), want, "stamp {explicit:?}");
-    }
+#[test_case(Some("release-revision"), "release-revision"; "a release stamp")]
+#[test_case(Some("dev"), "dev"; "an explicit dev")]
+#[test_case(Some(""), "dev"; "an empty stamp")]
+#[test_case(None, "dev"; "no stamp")]
+fn revision_is_the_stamp_or_dev(explicit: Option<&'static str>, want: &str) {
+    assert_eq!(resolve_revision(explicit), want);
 }
 
 #[test]

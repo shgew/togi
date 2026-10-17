@@ -3,7 +3,8 @@
 //!
 //! [`Journal::read`] reads a journal whole without taking its lock; [`report`] renders it as plain text
 //! tables, sorted and deterministic for a fixed journal. [`score`] reads a state directory's journals from a
-//! forecast's anchor onward and renders how the run compares with the forecast's ensemble.
+//! forecast's anchor onward and renders how the run compares with the forecast's ensemble. [`counterfactual`]
+//! accounts the journal's R7 chain re-derivations under the predeclared candidate rules of #896.
 //!
 //! ```
 //! use togi_tool_stats::Journal;
@@ -13,6 +14,7 @@
 //! ```
 
 mod chains;
+mod counterfactual;
 mod error;
 mod evidence;
 mod forecast;
@@ -26,6 +28,7 @@ mod table;
 #[cfg(test)]
 mod tests;
 
+pub use counterfactual::{Counterfactual, counterfactual};
 pub use error::Error;
 pub use forecast::{Scored, score};
 pub use journal::Journal;

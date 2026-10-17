@@ -1,6 +1,7 @@
 use togi_journal::{CorePhase, CoreTransition, DeadEnd, DeadEndCondition, ProfileChange, Seq};
 use togi_machine::{CoreId, Regime, TargetOffset};
 
+use crate::cores::Phase;
 use crate::state::Run;
 use crate::{Action, CombinationId, DecisionAction, NotReady, Profile};
 
@@ -18,7 +19,7 @@ impl Run {
             .order()
             .iter()
             .copied()
-            .find(|&core| self.core(core).phase.is_none())
+            .find(|&core| matches!(self.core(core).phase, Phase::Unstarted))
     }
 
     /// The pending monotonicity warning, citing the failure and the carried passes it contradicts.
@@ -60,7 +61,7 @@ impl Run {
         Some(DecisionAction::new(
             CoreTransition {
                 core: id,
-                from: core.phase,
+                from: core.phase.wire(),
                 to: CorePhase::Search,
                 offset: TargetOffset::clamped(core.baseline.0),
                 pass: None,
@@ -120,7 +121,10 @@ impl Run {
         let profile = self.offsets();
         self.topo.order().iter().find_map(|&id| {
             let core = self.core(id);
-            let phase = core.phase.filter(|&phase| phase != CorePhase::Search)?;
+            let phase = core
+                .phase
+                .wire()
+                .filter(|&phase| phase != CorePhase::Search)?;
             let limit = self.constraints.at_limit(id, &profile).ok().flatten();
             let want = if limit.is_some() {
                 CorePhase::AtLimit

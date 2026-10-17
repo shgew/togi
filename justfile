@@ -130,10 +130,9 @@ sql dir="/var/lib/togi" *args: _dev-shell
 bench *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- "$@"
 
-# Sweep every simulated scenario with the bench and simulator and audit the retained journals, or audit given state directories (`just audit --seeds 50 --jobs 8 --keep runs`)
+# Audit the current and archived journals of state directories; `just bench` audits its own runs (`just audit COPY-OF-STATE-DIR`)
 [group('run')]
 audit *args: _dev-shell
-    cargo build --release --locked -p togi-tool-bench
     cargo run --release --locked -p togi-tool-audit -- "$@"
 
 # Prove simulated session decisions are unchanged from a base revision, building both trees' simulators; stops at the first difference (`--keep-going` counts them all)
@@ -171,17 +170,22 @@ facts state_dir: _dev-shell
 copy-state src dst: _dev-shell
     [[ "$(id -u)" != 0 ]] || export CARGO_TARGET_DIR=~root/.cache/togi/copy-state-target; cargo run --release --locked -p togi-tool-copy-state -- "$1" "$2"
 
-# Fit the target-machine bootstrap ensemble from the committed evidence; the result does not depend on --jobs
+# Fit the target-machine bootstrap ensemble from named facts into a named directory (`just fit --facts FILE --out DIR`; add --current-extract to read sessions after the research artifact); the result does not depend on --jobs
 [group('run')]
 fit *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- "$@"
 
-# Fit the all-facts IN-SAMPLE shared-voltage anchor; not forward-validated
+# Fit the all-facts IN-SAMPLE shared-voltage anchor from named facts into a named directory; not forward-validated
 [group('run')]
 fit-shared-voltage *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- --shared-voltage-in-sample "$@"
 
-# Run only the forward-chained check of the target fit, writing no machine files (`just forward --seal 1`)
+# Write the original seven-session research artifact from the committed extract to the new file OUT, checking its hash (tools/fit/program.md#the-data)
+[group('run')]
+fit-artifact out: _dev-shell
+    cargo run --release --locked -p togi-tool-fit -- --facts tools/bench/facts/target.jsonl.gz --write-artifact "$1"
+
+# Run only the forward-chained check on named facts, writing no machine files (`just forward --facts ARTIFACT --seal 1`)
 [group('run')]
 forward *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- --forward-only "$@"

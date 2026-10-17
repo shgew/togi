@@ -6,6 +6,7 @@ use togi_journal::{
 };
 use togi_machine::{BootId, Condition, CoreId, CoreSet, PerCore, Regime, Signal, TargetOffset};
 
+use crate::cores::Phase;
 use crate::flight::OpenTrial;
 use crate::r7::order::RequestOrder;
 use crate::state::Run;
@@ -141,11 +142,12 @@ impl Sim {
                     return settled;
                 }
                 Ok(Action::RunTrial(plan)) => {
-                    settled.next_step = if let TrialContext::Cycle { step, .. } = plan.context {
-                        Some(step)
-                    } else {
-                        None
-                    };
+                    settled.next_step =
+                        if let TrialContext::Cycle { step, .. } = plan.requirement.context {
+                            Some(step)
+                        } else {
+                            None
+                        };
                     settled.next = self.resolved(plan);
                     return settled;
                 }
@@ -233,7 +235,7 @@ impl Sim {
         }
         let cause = self
             .run()
-            .and_then(|run| run.flight.open.as_ref())
+            .and_then(|run| run.flight.open())
             .map(|open| open.seq);
         self.fold(end.into(), cause.into_iter().collect())
     }
@@ -288,7 +290,7 @@ impl Sim {
                 return None;
             }
             let plan = settled.next.clone()?;
-            match plan.context {
+            match plan.requirement.context {
                 TrialContext::Cycle {
                     cycle: number,
                     step,
@@ -450,7 +452,7 @@ impl State {
             return Forecast::default();
         }
         let cycle = run.checking.last_cycle();
-        let open = run.flight.open.as_ref().filter(|open| !open.crashed);
+        let open = run.flight.open().filter(|open| !open.crashed);
         let Some(open) = open else {
             return Forecast {
                 branches: Vec::new(),
@@ -567,6 +569,6 @@ impl Run {
         self.topo
             .order()
             .iter()
-            .any(|&core| self.core(core).phase.is_none())
+            .any(|&core| matches!(self.core(core).phase, Phase::Unstarted))
     }
 }

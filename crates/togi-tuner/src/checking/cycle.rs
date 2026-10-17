@@ -11,8 +11,8 @@ use crate::failures::load_of;
 use crate::r7::order::RequestOrder;
 use crate::state::Run;
 use crate::{
-    Action, ClassKey, DecisionAction, DecisionPayload, LoadKey, PartNo, Requirement,
-    RequirementKind, StepNo, TrialContext, TrialPlan, Window, WorkloadChoice,
+    Action, ClassKey, DecisionAction, DecisionPayload, LoadKey, PartNo, Requirement, StepNo,
+    TrialContext, TrialPlan, Window, WorkloadChoice,
 };
 
 fn ordinal(index: usize) -> NonZeroU32 {
@@ -53,15 +53,17 @@ impl Run {
 
     fn cycle_requirement(open: &OpenCycle, step: usize, part: usize, quota: &Quota) -> Requirement {
         Requirement {
-            kind: RequirementKind::Cycle,
+            context: TrialContext::Cycle {
+                cycle: open.number,
+                step: StepNo::new(ordinal(step)),
+                part: PartNo::new(ordinal(part)),
+            },
             class: quota.class,
             window: Window::Live {
                 since: Some(open.start),
             },
             needed: NonZeroU16::new(u16::try_from(quota.count).unwrap_or(u16::MAX))
                 .unwrap_or(NonZeroU16::MIN),
-            step: Some(StepNo::new(ordinal(step))),
-            part: Some(PartNo::new(ordinal(part))),
         }
     }
 
@@ -97,7 +99,7 @@ impl Run {
     /// The requirement a saved cycle retry would carry now, when its cycle is open and its step
     /// still holds its class.
     pub(crate) fn cycle_retry_requirement(&self, plan: &TrialPlan) -> Option<Requirement> {
-        let TrialContext::Cycle { cycle, step, .. } = plan.context else {
+        let TrialContext::Cycle { cycle, step, .. } = plan.requirement.context else {
             return None;
         };
         let open = self.checking.open().filter(|open| open.number == cycle)?;
@@ -132,11 +134,6 @@ impl Run {
             activity: Activity::Checking,
             profile,
             duration: class.duration(),
-            context: TrialContext::Cycle {
-                cycle: open.number,
-                step: StepNo::new(ordinal(step)),
-                part: PartNo::new(ordinal(part)),
-            },
             requirement,
             retry: false,
             cause,

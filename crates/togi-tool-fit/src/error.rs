@@ -64,6 +64,23 @@ pub enum Error {
     Path(PathBuf),
     #[error("--seal {seal} leaves no held-out session to score ({held_out} held out)")]
     Seal { seal: usize, held_out: usize },
+    #[error(
+        "{} holds session {session}, recorded after the original research artifact: only --current-extract reads later sessions, and no research campaign does",
+        path.display()
+    )]
+    LaterSession { path: PathBuf, session: String },
+    #[error(
+        "{} holds sessions of the original research artifact, but its rows hash to {sha256}, not the artifact's {}: write the artifact with `just fit-artifact`",
+        path.display(),
+        crate::artifact::SHA256
+    )]
+    NotTheArtifact { path: PathBuf, sha256: String },
+    #[error(
+        "the original research artifact's sessions in {} hash to {sha256}, not {}: take them from the extract committed at 455704be",
+        path.display(),
+        crate::artifact::SHA256
+    )]
+    ArtifactSource { path: PathBuf, sha256: String },
     #[error("the shared-voltage fit requires 16 cores: fact {session}:{seq} has {cores}")]
     NeedsSixteenCores {
         session: SessionId,

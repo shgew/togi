@@ -516,7 +516,7 @@ fn repeated_cycle_classes_add_trials() {
         loop {
             let action = j.step(&mut |_| Outcome::Pass);
             if let Action::RunTrial(plan) = &action {
-                if let TrialContext::Cycle { step, .. } = plan.context {
+                if let TrialContext::Cycle { step, .. } = plan.requirement.context {
                     classes
                         .entry(step.get().get())
                         .or_default()
@@ -718,7 +718,7 @@ fn an_r7_cycle_intent_waits_for_its_recorded_step() {
         &[-10, -12],
         j.run().config.short_trial.get(),
     );
-    plan.context = TrialContext::Cycle {
+    plan.requirement.context = TrialContext::Cycle {
         cycle: std::num::NonZeroU32::MIN,
         step: crate::StepNo::new(std::num::NonZeroU32::MIN),
         part: crate::PartNo::new(std::num::NonZeroU32::MIN),
@@ -732,14 +732,9 @@ fn an_r7_cycle_intent_waits_for_its_recorded_step() {
     let step = j.next_decision();
     assert!(matches!(step.payload, DecisionPayload::CheckingStep(_)));
     j.decide(step);
-    let (requirement, turn) = j.run().schedule_intent(&intent, class, &[]).unwrap();
-    assert_eq!(requirement.kind, crate::RequirementKind::Cycle);
+    let requirement = j.run().schedule_intent(&intent, class, &[]).unwrap();
+    assert_eq!(requirement.context, plan.requirement.context);
     assert_eq!(requirement.class, class);
-    assert_eq!(
-        requirement.step,
-        Some(crate::StepNo::new(std::num::NonZeroU32::MIN))
-    );
-    assert!(turn.is_none());
     j.assert_resumes();
 }
 

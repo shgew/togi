@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use test_case::test_case;
 use togi_machine::{CcdId, CoreId, CoreSet, PerCore, PmTable, TrialConditions};
 
 use super::{MIN_SAMPLES, Telemetry, VOLTS_PER_COUNT, WARMUP_MS, counts, groups, summarize, top};
@@ -152,47 +153,23 @@ fn summarize_counts_a_repeated_core_once() {
     );
 }
 
-#[test]
-fn groups_orders_by_request() {
-    let id = |ids: &[i64]| cores(ids);
-    for (name, requests, want) in [
-        (
-            "strict order",
-            per_core(&[(1, 1.10), (2, 1.12), (3, 1.11)]),
-            vec![id(&[2]), id(&[3]), id(&[1])],
-        ),
-        (
-            "within the tie joins the top",
-            per_core(&[(1, 1.1000), (2, 1.1009), (3, 1.0950)]),
-            vec![id(&[1, 2]), id(&[3])],
-        ),
-        (
-            "ties measure from the group's highest",
-            per_core(&[(1, 1.1000), (2, 1.0992), (3, 1.0984)]),
-            vec![id(&[1, 2]), id(&[3])],
-        ),
-        (
-            "equal requests group by core",
-            per_core(&[(5, 1.1), (4, 1.1)]),
-            vec![id(&[4, 5])],
-        ),
-        ("no requests", PerCore::default(), Vec::new()),
-    ] {
-        assert_eq!(groups(&requests), want, "{name}");
-    }
+#[test_case(per_core(&[(1, 1.10), (2, 1.12), (3, 1.11)]), &[&[2], &[3], &[1]]; "strict order")]
+#[test_case(per_core(&[(1, 1.1000), (2, 1.1009), (3, 1.0950)]), &[&[1, 2], &[3]]; "within the tie joins the top")]
+#[test_case(per_core(&[(1, 1.1000), (2, 1.0992), (3, 1.0984)]), &[&[1, 2], &[3]]; "ties measure from the group's highest")]
+#[test_case(per_core(&[(5, 1.1), (4, 1.1)]), &[&[4, 5]]; "equal requests group by core")]
+#[test_case(PerCore::default(), &[]; "no requests")]
+fn groups_orders_by_request(requests: PerCore<f64>, want: &[&[i64]]) {
+    let want: Vec<CoreSet> = want.iter().map(|ids| cores(ids)).collect();
+    assert_eq!(groups(&requests), want);
 }
 
-#[test]
-fn counts_raises_a_request_by_whole_counts() {
-    for (v, target, want) in [
-        (1.100, 1.100, 1),
-        (1.100, 1.050, 1),
-        (1.100, 1.100 + VOLTS_PER_COUNT, 1),
-        (1.100, 1.100 + VOLTS_PER_COUNT + 0.0001, 2),
-        (1.0322, 1.0443, 4),
-    ] {
-        assert_eq!(counts(v, target), want, "counts({v}, {target})");
-    }
+#[test_case(1.100, 1.100, 1; "target equal to the request")]
+#[test_case(1.100, 1.050, 1; "target below the request")]
+#[test_case(1.100, 1.100 + VOLTS_PER_COUNT, 1; "target one count above")]
+#[test_case(1.100, 1.100 + VOLTS_PER_COUNT + 0.0001, 2; "target just over one count above")]
+#[test_case(1.0322, 1.0443, 4; "several counts above")]
+fn counts_raises_a_request_by_whole_counts(v: f64, target: f64, want: i64) {
+    assert_eq!(counts(v, target), want);
 }
 
 #[test]

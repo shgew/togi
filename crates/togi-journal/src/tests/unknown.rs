@@ -3,6 +3,7 @@
 
 use serde::Deserialize;
 use serde_json::{Value, json};
+use test_case::test_case;
 
 use crate::event::{Decoded, Decoding, Read, decode};
 use crate::unknown::{Step, Unknown, is_unknown_field, locate};
@@ -94,75 +95,60 @@ fn refusal<T: for<'de> Deserialize<'de> + std::fmt::Debug>(text: &str) -> (Strin
     )
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Empty {}
+
 /// [`locate`] reads serde's refusal as a protocol: the message starts ``unknown field ` ``, names the field unescaped
 /// and closes it with `` `, ``, and the path of a field refused inside an internally tagged enum ends at the enum's
 /// object. A `serde` or `serde_json` release that changes any of this fails here before it changes what a lenient
 /// read ignores.
-#[test]
-fn serde_refuses_an_unknown_field_in_the_words_locate_reads() {
-    #[derive(Debug, Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Empty {}
-
-    let cases: [(&str, (String, String, bool)); 7] = [
-        (
-            "a struct",
-            refusal::<Leaf>(r#"{"id":1,"zz":2,"label":"a"}"#),
-        ),
-        ("a struct without fields", refusal::<Empty>(r#"{"zz":2}"#)),
-        (
-            "a struct inside a tagged variant",
-            refusal::<Holder>(
-                r#"{"shape":{"kind":"dot","leaf":{"id":1,"label":"a","zz":1}},"label":"x"}"#,
-            ),
-        ),
-        (
-            "a tagged variant",
-            refusal::<Holder>(
-                r#"{"shape":{"kind":"dot","zz":1,"leaf":{"id":1,"label":"a"}},"label":"x"}"#,
-            ),
-        ),
-        (
-            "escaped names",
-            refusal::<Leaf>(r#"{"id":1,"z\u0060z":2,"label":"a"}"#),
-        ),
-        (
-            "a NUL in the name",
-            refusal::<Leaf>(r#"{"id":1,"\u0000z":2,"label":"a"}"#),
-        ),
-        (
-            "a repeated known field",
-            refusal::<Leaf>(r#"{"id":1,"id":2,"label":"a"}"#),
-        ),
-    ];
-    let expected = [
-        ("unknown field `zz`, expected `id` or `label`", "zz", true),
-        ("unknown field `zz`, there are no fields", "zz", true),
-        (
-            "unknown field `zz`, expected `id` or `label`",
-            "shape",
-            true,
-        ),
-        (
-            "unknown field `zz`, expected `leaf` or `leaves`",
-            "shape",
-            true,
-        ),
-        ("unknown field `z`z`, expected `id` or `label`", "z`z", true),
-        (
-            "unknown field `\u{0}z`, expected `id` or `label`",
-            "\u{0}z",
-            true,
-        ),
-        ("duplicate field `id`", ".", false),
-    ];
-    for ((case, actual), (message, path, unknown)) in cases.into_iter().zip(expected) {
-        assert_eq!(
-            actual,
-            (message.to_owned(), path.to_owned(), unknown),
-            "{case}"
-        );
-    }
+#[test_case(
+    &refusal::<Leaf>(r#"{"id":1,"zz":2,"label":"a"}"#),
+    "unknown field `zz`, expected `id` or `label`", "zz", true;
+    "a struct"
+)]
+#[test_case(
+    &refusal::<Empty>(r#"{"zz":2}"#),
+    "unknown field `zz`, there are no fields", "zz", true;
+    "a struct without fields"
+)]
+#[test_case(
+    &refusal::<Holder>(
+        r#"{"shape":{"kind":"dot","leaf":{"id":1,"label":"a","zz":1}},"label":"x"}"#,
+    ),
+    "unknown field `zz`, expected `id` or `label`", "shape", true;
+    "a struct inside a tagged variant"
+)]
+#[test_case(
+    &refusal::<Holder>(
+        r#"{"shape":{"kind":"dot","zz":1,"leaf":{"id":1,"label":"a"}},"label":"x"}"#,
+    ),
+    "unknown field `zz`, expected `leaf` or `leaves`", "shape", true;
+    "a tagged variant"
+)]
+#[test_case(
+    &refusal::<Leaf>(r#"{"id":1,"z\u0060z":2,"label":"a"}"#),
+    "unknown field `z`z`, expected `id` or `label`", "z`z", true;
+    "escaped names"
+)]
+#[test_case(
+    &refusal::<Leaf>(r#"{"id":1,"\u0000z":2,"label":"a"}"#),
+    "unknown field `\u{0}z`, expected `id` or `label`", "\u{0}z", true;
+    "a NUL in the name"
+)]
+#[test_case(
+    &refusal::<Leaf>(r#"{"id":1,"id":2,"label":"a"}"#),
+    "duplicate field `id`", ".", false;
+    "a repeated known field"
+)]
+fn serde_refuses_an_unknown_field_in_the_words_locate_reads(
+    actual: &(String, String, bool),
+    message: &str,
+    path: &str,
+    unknown: bool,
+) {
+    assert_eq!(*actual, (message.to_owned(), path.to_owned(), unknown));
 }
 
 #[test]
@@ -335,31 +321,38 @@ fn signal_event() -> Event {
     at(2, "boot-a", 0, &[1], sample(EventKind::TrialSignal))
 }
 
-#[test]
-fn an_unknown_field_named_like_a_known_one_of_the_enclosing_objects_is_named_and_ignored() {
-    // Each name is a field of `trial.signal`'s data, of its envelope, or of the other schedule variant.
-    for name in [
-        "schedule", "trial", "stops", "conts", "pct", "seed2", "data", "msg", "boot", "time",
-    ] {
-        let schedule = json!({"kind": "random", "seed": 99, name: 1});
-        let text = signal_line(schedule);
-        let path = format!("data.schedule.{name}");
+// Each name is a field of `trial.signal`'s data, of its envelope, or of the other schedule variant.
+#[test_case("schedule"; "schedule")]
+#[test_case("trial"; "trial")]
+#[test_case("stops"; "stops")]
+#[test_case("conts"; "conts")]
+#[test_case("pct"; "pct")]
+#[test_case("seed2"; "seed2")]
+#[test_case("data"; "data")]
+#[test_case("msg"; "msg")]
+#[test_case("boot"; "boot")]
+#[test_case("time"; "time")]
+fn an_unknown_field_named_like_a_known_one_of_the_enclosing_objects_is_named_and_ignored(
+    name: &str,
+) {
+    let schedule = json!({"kind": "random", "seed": 99, name: 1});
+    let text = signal_line(schedule);
+    let path = format!("data.schedule.{name}");
 
-        let error = Event::decode(&text).unwrap_err();
-        assert!(
-            matches!(&error, DecodeError::UnknownField { kind: EventKind::TrialSignal, field } if *field == path),
-            "{name}: {error}"
-        );
-        let Read {
-            decoded: Decoded::Event(event),
-            ignored,
-        } = decode(&text, Decoding::Lenient).unwrap()
-        else {
-            panic!("{name}: skipped");
-        };
-        assert_eq!(event, signal_event(), "{name}");
-        assert_eq!(ignored, [path], "{name}");
-    }
+    let error = Event::decode(&text).unwrap_err();
+    assert!(
+        matches!(&error, DecodeError::UnknownField { kind: EventKind::TrialSignal, field } if *field == path),
+        "{name}: {error}"
+    );
+    let Read {
+        decoded: Decoded::Event(event),
+        ignored,
+    } = decode(&text, Decoding::Lenient).unwrap()
+    else {
+        panic!("{name}: skipped");
+    };
+    assert_eq!(event, signal_event(), "{name}");
+    assert_eq!(ignored, [path], "{name}");
 }
 
 #[test]
@@ -405,47 +398,51 @@ fn an_escaped_unknown_field_in_a_tagged_object_is_named_and_ignored() {
     assert_eq!(ignored, [path]);
 }
 
-#[test]
-fn a_repeated_field_in_a_tagged_object_is_still_refused_by_both() {
-    for text in [
-        signal_line(json!({"kind": "random", "seed": 99}))
-            .replace(r#""seed":99"#, r#""extra":1,"seed":99,"seed":98"#),
-        signal_line(json!({"kind": "random", "seed": 99}))
-            .replace(r#""seed":99"#, r#""seed":99,"seed":98,"extra":1"#),
-    ] {
-        assert!(Event::decode(&text).is_err(), "{text}");
-        let error = decode(&text, Decoding::Lenient).err().unwrap();
-        assert!(
-            togi_machine::error_chain(&error).contains("duplicate field"),
-            "{error}"
-        );
-    }
+#[test_case(
+    &signal_line(json!({"kind": "random", "seed": 99}))
+        .replace(r#""seed":99"#, r#""extra":1,"seed":99,"seed":98"#);
+    "an unknown field before the repeat"
+)]
+#[test_case(
+    &signal_line(json!({"kind": "random", "seed": 99}))
+        .replace(r#""seed":99"#, r#""seed":99,"seed":98,"extra":1"#);
+    "an unknown field after the repeat"
+)]
+fn a_repeated_field_in_a_tagged_object_is_still_refused_by_both(text: &str) {
+    assert!(Event::decode(text).is_err(), "{text}");
+    let error = decode(text, Decoding::Lenient).err().unwrap();
+    assert!(
+        togi_machine::error_chain(&error).contains("duplicate field"),
+        "{error}"
+    );
 }
 
-#[test]
-fn an_unknown_field_in_a_smu_command_is_named_and_ignored_whatever_its_name() {
+#[test_case("extra"; "extra")]
+#[test_case("data"; "data")]
+#[test_case("kind"; "kind")]
+#[test_case("msg"; "msg")]
+#[test_case("seq"; "seq")]
+fn an_unknown_field_in_a_smu_command_is_named_and_ignored_whatever_its_name(name: &str) {
     let payload = sample(EventKind::SmuIntent);
     let event = at(2, "boot-a", 0, &[1], payload);
-    for name in ["extra", "data", "kind", "msg", "seq"] {
-        let mut line: Value = serde_json::from_str(&event.encode().unwrap()).unwrap();
-        let data = line["data"].as_object_mut().unwrap();
-        assert!(!data.contains_key(name), "{name} is known to the command");
-        data.insert(name.to_owned(), json!(1));
-        let text = line.to_string();
-        let path = format!("data.{name}");
-        let error = Event::decode(&text).unwrap_err();
-        assert!(
-            matches!(&error, DecodeError::UnknownField { field, .. } if *field == path),
-            "{name}: {error}"
-        );
-        let Read {
-            decoded: Decoded::Event(decoded),
-            ignored,
-        } = decode(&text, Decoding::Lenient).unwrap()
-        else {
-            panic!("{name}: skipped");
-        };
-        assert_eq!(decoded, event, "{name}");
-        assert_eq!(ignored, [path], "{name}");
-    }
+    let mut line: Value = serde_json::from_str(&event.encode().unwrap()).unwrap();
+    let data = line["data"].as_object_mut().unwrap();
+    assert!(!data.contains_key(name), "{name} is known to the command");
+    data.insert(name.to_owned(), json!(1));
+    let text = line.to_string();
+    let path = format!("data.{name}");
+    let error = Event::decode(&text).unwrap_err();
+    assert!(
+        matches!(&error, DecodeError::UnknownField { field, .. } if *field == path),
+        "{name}: {error}"
+    );
+    let Read {
+        decoded: Decoded::Event(decoded),
+        ignored,
+    } = decode(&text, Decoding::Lenient).unwrap()
+    else {
+        panic!("{name}: skipped");
+    };
+    assert_eq!(decoded, event, "{name}");
+    assert_eq!(ignored, [path], "{name}");
 }

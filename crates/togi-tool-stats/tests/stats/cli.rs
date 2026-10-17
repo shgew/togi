@@ -4,9 +4,9 @@ use std::process::{Command, Output};
 
 use tempfile::tempdir;
 use togi_journal::Seq;
-use togi_tool_stats::{Journal, chain_records, report};
+use togi_tool_stats::{Journal, chain_records, counterfactual, report};
 
-use crate::sim::{hunting_session, write_journal};
+use crate::sim::{chain_session, hunting_session, write_journal};
 
 fn stats(args: &[&std::ffi::OsStr]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_togi-tool-stats"))
@@ -101,6 +101,49 @@ fn real_process_chains_writes_the_chain_records_beside_the_unchanged_report() {
 }
 
 #[test]
+fn real_process_counterfactual_prints_the_accounting_and_writes_its_records() {
+    let events = chain_session();
+    let want = counterfactual(&Journal::new(events.clone()).unwrap()).unwrap();
+    let dir = tempdir().unwrap();
+    write_journal(dir.path(), &events);
+    let out = dir.path().join("witnesses.jsonl");
+    let ran = stats(&[
+        os("--state-dir"),
+        dir.path().as_os_str(),
+        os("--counterfactual"),
+        os("--witnesses"),
+        out.as_os_str(),
+    ]);
+    assert_eq!(ran.status.code(), Some(0));
+    assert_eq!(text(ran.stderr), "");
+    assert_eq!(text(ran.stdout), want.text);
+    assert_eq!(fs::read_to_string(&out).unwrap(), want.records);
+    assert_eq!(
+        want.records
+            .lines()
+            .filter(|line| line.starts_with(r#"{"record":"summary""#))
+            .count(),
+        3
+    );
+
+    let unwritable = dir.path().join("absent").join("witnesses.jsonl");
+    let ran = stats(&[
+        os("--state-dir"),
+        dir.path().as_os_str(),
+        os("--counterfactual"),
+        os("--witnesses"),
+        unwritable.as_os_str(),
+    ]);
+    assert_eq!(ran.status.code(), Some(1));
+    assert_eq!(text(ran.stdout), "");
+    let stderr = text(ran.stderr);
+    assert!(
+        stderr.starts_with("togi-tool-stats: write counterfactual records "),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn real_process_since_keeps_what_starts_at_or_after_the_cutoff() {
     let (dir, _) = state_with_torn_tail();
     let ran = stats(&[
@@ -146,6 +189,13 @@ fn real_process_rejected_arguments_exit_two_without_a_report() {
             os("--chains"),
             os("chains.jsonl"),
         ],
+        vec![
+            os("--counterfactual"),
+            os("--since"),
+            os("2026-10-07T00:00:00Z"),
+        ],
+        vec![os("--counterfactual"), os("--chains"), os("chains.jsonl")],
+        vec![os("--witnesses"), os("witnesses.jsonl")],
     ] {
         let mut full = vec![os("--state-dir"), dir.path().as_os_str()];
         full.extend(args.iter().copied());

@@ -418,7 +418,7 @@ fn next_hunt_reuses_established_part_groups() {
                 j.decide(decision.clone());
             }
             Action::RunTrial(plan) => {
-                if let TrialContext::Rerun { failure } = plan.context {
+                if let TrialContext::Rerun { failure } = plan.requirement.context {
                     assert_eq!(failure, source, "the commitment owes its source a rerun");
                     j.trial(plan, Outcome::Failure);
                     continue;
@@ -555,7 +555,7 @@ fn hunt_skips_reached_group() {
     j.decide(decision);
     if let Action::RunTrial(plan) = j.next() {
         assert!(
-            !matches!(plan.context, TrialContext::Hunt { group, .. } if group == number),
+            !matches!(plan.requirement.context, TrialContext::Hunt { group, .. } if group == number),
             "ran the skipped group {plan:?}"
         );
     }
@@ -877,13 +877,12 @@ fn assert_owed_rerun(j: &mut Journal, failure: Seq, regime: Regime, loaded: &[u8
     let Action::RunTrial(rerun) = action else {
         panic!("the commitment owes a rerun, the tuner asked for {action:?}");
     };
-    assert_eq!(rerun.context, TrialContext::Rerun { failure });
+    assert_eq!(rerun.requirement.context, TrialContext::Rerun { failure });
     assert_eq!(rerun.condition, Condition::Together);
     assert_eq!(rerun.activity, Activity::Checking);
     assert_eq!(rerun.regime, regime);
     assert_eq!(rerun.load, Load::Many(set(loaded)));
     assert_eq!(rerun.cause, [failure]);
-    assert_eq!(rerun.requirement.kind, crate::RequirementKind::Rerun);
     assert_eq!(
         rerun.requirement.window,
         crate::Window::LiveOrCarried {
@@ -1610,7 +1609,9 @@ fn located_hunt_resumes_during_locate() {
     let Action::RunTrial(plan) = &want else {
         panic!("locate did not continue: {want:?}");
     };
-    assert!(matches!(plan.context, TrialContext::Hunt { group, .. } if group.get() == 1));
+    assert!(
+        matches!(plan.requirement.context, TrialContext::Hunt { group, .. } if group.get() == 1)
+    );
     assert_eq!(
         plan.profile
             .iter()
@@ -1652,12 +1653,14 @@ fn parked_failure_naming_a_core_at_zero_reruns_all_zero() {
         assert_eq!(record.offset, Some(off(0)));
         let failure = j.decide(attribution);
         let rerun = j.next_trial();
-        assert_eq!(rerun.context, TrialContext::ZeroRerun { failure });
+        assert_eq!(
+            rerun.requirement.context,
+            TrialContext::ZeroRerun { failure }
+        );
         assert_eq!(rerun.condition, Condition::Parked);
         assert_eq!(rerun.activity, Activity::Hunt);
         assert_eq!(rerun.duration.get(), SHORT);
         assert_eq!(rerun.cause, [failure]);
-        assert_eq!(rerun.requirement.kind, crate::RequirementKind::ZeroRerun);
         assert_eq!(rerun.requirement.needed.get(), 1);
         assert!(rerun.profile.is_zero());
         assert_eq!(rerun.load, Load::Many(set(&ids(4))));
@@ -1712,7 +1715,10 @@ fn together_failure_naming_a_core_at_zero_is_hunted_after_a_passed_rerun() {
         let attribution = j.next_decision();
         let failure = j.decide(attribution);
         let rerun = j.next_trial();
-        assert_eq!(rerun.context, TrialContext::ZeroRerun { failure });
+        assert_eq!(
+            rerun.requirement.context,
+            TrialContext::ZeroRerun { failure }
+        );
         j.trial(&rerun, Outcome::Pass);
         let action = j.next();
         let decision = expect_decision(action.clone());
@@ -1879,7 +1885,7 @@ fn running_hunt_group_cites_mixed_carried_and_live_passes() {
                 panic!("group {number} needs two live trials");
             };
             assert!(
-                matches!(plan.context, TrialContext::Hunt { group, .. } if group.get() == number)
+                matches!(plan.requirement.context, TrialContext::Hunt { group, .. } if group.get() == number)
             );
             j.trial(&plan, Outcome::Pass);
         }

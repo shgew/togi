@@ -12,8 +12,8 @@ use crate::testkit::{Journal, R7Report, Start, build, pairs, set};
 use crate::tests::{core, off};
 use crate::zero::{Diagnostic, Zero, zero_requirement};
 use crate::{
-    Action, ClassKey, DecisionPayload, Load, Profile, RequirementKind, Secs, TrialContext,
-    TrialHistory, TrialPlan, Window, WorkloadChoice,
+    Action, ClassKey, DecisionPayload, Load, Profile, Secs, TrialContext, TrialHistory, TrialPlan,
+    Window, WorkloadChoice,
 };
 
 const SESSION: &str = "20230101T000000Z";
@@ -98,7 +98,7 @@ impl Journal {
     fn zero_rerun(&self, failure: Seq) -> TrialPlan {
         let plan = self.next_trial();
         assert_eq!(
-            plan.context,
+            plan.requirement.context,
             TrialContext::ZeroRerun { failure },
             "expected the all-zero rerun of #{failure}, got {plan:?}"
         );
@@ -194,7 +194,6 @@ fn expected_rerun(
         activity,
         profile: Profile::zero(j.run().topo_ref()),
         duration: secs(duration(regime)),
-        context: TrialContext::ZeroRerun { failure },
         requirement: zero_requirement(
             ClassKey::new(workload(regime), load.cores(), secs(duration(regime))),
             failure,
@@ -405,7 +404,7 @@ fn zero_rerun_requirement_is_one_trial() {
     let (intent, trial) = j.intent(&rerun);
     assert!(j.intent_at(intent).rerun);
     let stored = rerun.requirement;
-    assert_eq!(stored.kind, RequirementKind::ZeroRerun);
+    assert_eq!(stored.context, TrialContext::ZeroRerun { failure });
     assert_eq!(
         stored.window,
         Window::LiveOrCarried {
@@ -751,13 +750,16 @@ fn an_unrelated_checking_retry_does_not_replace_a_zero_diagnostic() {
     let cycle = j.next_trial();
     j.run_named(&cycle, Outcome::Inconclusive, None);
     assert!(matches!(
-        j.run().retry.as_ref().unwrap().plan.context,
+        j.run().retry.as_ref().unwrap().plan.requirement.context,
         TrialContext::Cycle { .. }
     ));
     let plan = together(&j, Regime::R6, &[0, 1], &[0, -20]);
     let failure = j.failed(&plan, Some(0));
     let rerun = j.zero_rerun(failure);
-    assert_eq!(rerun.context, TrialContext::ZeroRerun { failure });
+    assert_eq!(
+        rerun.requirement.context,
+        TrialContext::ZeroRerun { failure }
+    );
     assert!(!rerun.retry);
     assert_eq!(rerun.load, plan.load);
     assert_eq!(rerun.duration, plan.duration);

@@ -9,11 +9,8 @@ description = "The journal invariant audit: checks a recorded session against th
 
 [dependencies]
 clap.workspace = true
-rustix = { workspace = true, features = ["fs", "process"] }
 serde.workspace = true
 serde_json.workspace = true
-signal-hook.workspace = true
-tempfile.workspace = true
 thiserror.workspace = true
 togi-journal.workspace = true
 togi-machine.workspace = true
@@ -21,7 +18,7 @@ togi-tuner.workspace = true
 togi-version.workspace = true
 
 [dev-dependencies]
-nix.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
