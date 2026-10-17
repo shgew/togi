@@ -180,7 +180,13 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
     if let Err(error) = reset {
         return match error {
             CommandError::NoSuchCore { .. } => no_such_core(ctx, core),
-            error => command_failure(ctx, &error),
+            error @ (CommandError::NoSession
+            | CommandError::Compatibility(_)
+            | CommandError::Append(_)
+            | CommandError::Fold(_)
+            | CommandError::Archive(_)
+            | CommandError::Close(_)
+            | CommandError::Dir(_)) => command_failure(ctx, &error),
         };
     }
     if let Err(error) = journal.close() {
@@ -243,7 +249,11 @@ fn command_failure(ctx: &mut Context<'_>, error: &CommandError) -> Exit {
         CommandError::NoSession => no_session(ctx),
         CommandError::NoSuchCore { .. } => exit_with(ctx, COMMAND, error, Exit::Usage),
         CommandError::Compatibility(_) => exit_with(ctx, COMMAND, error, Exit::Incompatible),
-        _ => fail(ctx, COMMAND, togi_render::error_chain(error)),
+        CommandError::Append(_)
+        | CommandError::Fold(_)
+        | CommandError::Archive(_)
+        | CommandError::Close(_)
+        | CommandError::Dir(_) => fail(ctx, COMMAND, togi_render::error_chain(error)),
     }
 }
 
@@ -440,14 +450,14 @@ fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, system: &dyn Syste
         }
         Err(_) => return Vec::new(),
     };
-    let limits: Vec<(CoreId, i64)> = config
+    let mut limits = config
         .overrides()
         .filter_map(|(core, entry)| match entry {
             InitialOverride::CandidateSoloLimit(offset) => Some((core, offset.get())),
             InitialOverride::Start(_) => None,
         })
-        .collect();
-    if limits.is_empty() {
+        .peekable();
+    if limits.peek().is_none() {
         return Vec::new();
     }
     let state = match togi_tuner::replay(events) {
@@ -463,7 +473,6 @@ fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, system: &dyn Syste
         return Vec::new();
     };
     limits
-        .into_iter()
         .filter_map(|(core, limit)| {
             let point = constraints.failure_points().get(core)?.offset().get();
             (limit <= point).then(|| {

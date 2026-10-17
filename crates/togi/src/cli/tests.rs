@@ -185,6 +185,11 @@ fn moved(args: &[&str]) -> Vec<String> {
     &["togi", "--state-dir=s", "run", "--config", "c"] ;
     "before an attached state dir"
 )]
+#[test_case(
+    &["togi", "--config", "a", "--state-dir", "s", "--config=b", "--state-dir=t", "run", "x"],
+    &["togi", "--state-dir", "s", "--state-dir=t", "run", "--config", "a", "--config=b", "x"] ;
+    "repeated configs between state dirs"
+)]
 fn a_leading_config_moves_after_the_command_name(args: &[&str], want: &[&str]) {
     assert_eq!(moved(args), want);
 }
@@ -198,6 +203,23 @@ fn a_leading_config_moves_after_the_command_name(args: &[&str], want: &[&str]) {
 #[test_case(&["togi", "--state-dir", "s", "doctor"] ; "no config")]
 fn other_arguments_are_left_as_they_are(args: &[&str]) {
     assert_eq!(moved(args), args);
+}
+
+#[test]
+fn a_leading_config_moves_after_a_non_utf8_command_name() {
+    let arg = |text: &str| OsString::from(text);
+    let command = OsString::from_vec(vec![0xff]);
+    let args = vec![
+        arg("togi"),
+        arg("--config"),
+        arg("c"),
+        command.clone(),
+        arg("x"),
+    ];
+    assert_eq!(
+        config_after_command(args),
+        [arg("togi"), command, arg("--config"), arg("c"), arg("x")]
+    );
 }
 
 #[test]

@@ -153,7 +153,9 @@ fn a_failure_before_publication_preserves_the_previous_reader_state() {
             let error = publish(&storage, &facts).unwrap_err();
             match failure {
                 Operation::Rename => assert!(matches!(error, WriteError::Replace { .. })),
-                _ => assert!(matches!(error, WriteError::Io(_))),
+                Operation::Create | Operation::Write | Operation::Flush | Operation::Sync => {
+                    assert!(matches!(error, WriteError::Io(_)));
+                }
             }
             let state = storage.borrow();
             assert_eq!(state.read(), before, "after {failure:?}");
