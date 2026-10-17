@@ -343,7 +343,8 @@ fn trial_intent(j: &Journal) -> (togi_journal::TrialIntent, TrialPlan) {
 #[test]
 fn an_intent_naming_another_regimes_workload_a_missing_load_or_a_foreign_core_is_refused() {
     type Change = fn(&mut togi_journal::TrialIntent);
-    let cases: [(&str, Change, fn(&FoldError) -> bool); 4] = [
+    type Expected = fn(&FoldError) -> bool;
+    let cases: [(&str, Change, Expected); 4] = [
         (
             "workload of another regime",
             |intent| intent.workload = workloads(Regime::R2)[0].id(),

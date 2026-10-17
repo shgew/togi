@@ -919,7 +919,7 @@ fn a_kept_error_names_its_operation_and_keeps_the_error_as_its_source() {
     ));
     assert!(std::ptr::eq(
         source.downcast_ref::<Error>().unwrap(),
-        &*kept
+        std::ptr::from_ref(kept.as_ref())
     ));
     let io = source
         .source()
