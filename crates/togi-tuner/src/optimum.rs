@@ -171,7 +171,7 @@ impl Search {
             return;
         };
         let need = self.needs[branch];
-        let mut options = [(CoreId::default(), 0); PER_CORE_MAX];
+        let mut options = [(CoreId::FIRST, 0); PER_CORE_MAX];
         let mut len = 0;
         for &core in &self.order {
             if let Some(at) = need[core.index()] {

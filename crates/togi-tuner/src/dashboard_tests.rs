@@ -26,7 +26,7 @@ fn chain_record(j: &Journal, step: u32, part: u32, cores: &[u8]) -> togi_journal
     togi_journal::CheckingChain {
         cycle: j.run().checking.open().unwrap().number,
         step: NonZeroU32::new(step).unwrap(),
-        ccd: togi_machine::CcdId(0),
+        ccd: togi_machine::CcdId::new(0).unwrap(),
         workload: togi_machine::pick_workload(Regime::R7, 0).id(),
         groups: Vec::new(),
         cores: set(cores),
@@ -54,7 +54,7 @@ fn short_secs(part: &CyclePart) -> u32 {
 fn part(cores: &[u8], ccd: Option<u8>, partial: bool, short_s: u32, long: (u32, u32)) -> CyclePart {
     CyclePart {
         cores: set(cores),
-        ccd: ccd.map(togi_machine::CcdId),
+        ccd: ccd.map(|ccd| togi_machine::CcdId::try_from(ccd).unwrap()),
         full: !partial,
         partial,
         lengths: Some(Lengths {

@@ -335,7 +335,7 @@ fn combination() -> Log {
     log.add(CheckingChain {
         cycle: nz(1),
         step: nz(2),
-        ccd: togi_machine::CcdId(1),
+        ccd: togi_machine::CcdId::new(1).unwrap(),
         workload: workload(Regime::R7, 0),
         groups: vec![set(&[3]), set(&[2])],
         cores: set(&[2]),
@@ -437,7 +437,7 @@ fn r7_backoffs_and_chains_are_listed_with_their_causes_and_sources() {
         |cycle, step, ccd, groups: Vec<CoreSet>, cores, sources: Vec<_>, part| CheckingChain {
             cycle: nz(cycle),
             step: nz(step),
-            ccd: togi_machine::CcdId(ccd),
+            ccd: togi_machine::CcdId::new(ccd).unwrap(),
             workload: workload(Regime::R7, 0),
             groups,
             cores,

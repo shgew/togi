@@ -993,7 +993,9 @@ fn named_cap_failure(j: &mut Journal, signal: Signal, named: Option<u8>, crashed
     end.core = named.map(core);
     end.top_requesters = set(&[0]);
     end.voltage_requests_v = [(core(0), 1.1), (core(1), 1.08)].into_iter().collect();
-    end.ccd_mhz = [(togi_machine::CcdId(0), 5000)].into_iter().collect();
+    end.ccd_mhz = [(togi_machine::CcdId::new(0).unwrap(), 5000)]
+        .into_iter()
+        .collect();
     j.append(end.into(), &cause);
     let attribution = j.next_decision();
     assert!(matches!(attribution.payload, DecisionPayload::Failure(_)));
@@ -1098,7 +1100,7 @@ fn an_mce_named_crash_keeps_its_full_target() {
     let (intent, trial) = j.intent(&plan);
     let mce = j.append(
         togi_journal::Mce {
-            cpu: CpuId(0),
+            cpu: CpuId::from(0),
             core: Some(core(0)),
             bank: 0,
             bank_type: BankType::LoadStore,
@@ -1114,7 +1116,9 @@ fn an_mce_named_crash_keeps_its_full_target() {
     );
     let mut end = Journal::end_payload(&trial, Outcome::Failure, Some(Signal::Crash));
     end.duration_s = 120;
-    end.ccd_mhz = [(togi_machine::CcdId(0), 5000)].into_iter().collect();
+    end.ccd_mhz = [(togi_machine::CcdId::new(0).unwrap(), 5000)]
+        .into_iter()
+        .collect();
     end.voltage_requests_v = [(core(0), 1.1), (core(1), 1.08)].into_iter().collect();
     j.append(end.into(), &[intent, mce]);
     let attribution = j.next_decision();

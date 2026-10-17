@@ -19,7 +19,7 @@ pub(crate) struct Location {
 
 impl Location {
     pub(crate) fn argument(self) -> u32 {
-        u32::from(self.ccd.0) << 28 | u32::from(self.slot) << 20
+        u32::from(self.ccd.get()) << 28 | u32::from(self.slot) << 20
     }
 }
 
@@ -73,7 +73,7 @@ fn join<T>(items: &[T], each: impl Fn(&T) -> String, separator: &str) -> String 
 }
 
 fn cpu_list(cpus: &[CpuId]) -> String {
-    join(cpus, |cpu| format!("cpu{}", cpu.0), ", ")
+    join(cpus, |cpu| format!("cpu{}", cpu.get()), ", ")
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -88,7 +88,7 @@ pub enum SlotError {
         "{}",
         join(.0, |(core_id, cpus)| format!(
             "core {core_id} siblings report different CCD keys: {}",
-            join(cpus, |(cpu, key)| format!("cpu{} key {key}", cpu.0), ", ")
+            join(cpus, |(cpu, key)| format!("cpu{} key {key}", cpu.get()), ", ")
         ), "; ")
     )]
     Siblings(Vec<(i64, Vec<(CpuId, i64)>)>),
@@ -96,28 +96,28 @@ pub enum SlotError {
     TooManyCcds { count: usize },
     #[error(
         "{} outside supported range 0-{}",
-        join(.0, |(ccd, ids)| format!("CCD{} core IDs {}", ccd.0, join(ids, ToString::to_string, ", ")), "; "),
+        join(.0, |(ccd, ids)| format!("CCD{} core IDs {}", ccd.get(), join(ids, ToString::to_string, ", ")), "; "),
         PER_CORE_MAX - 1
     )]
     OutOfRange(Vec<(CcdId, Vec<i64>)>),
-    #[error("{read} of CCD{}", ccd.0)]
+    #[error("{read} of CCD{}", ccd.get())]
     Read {
         ccd: CcdId,
         read: FuseRead,
         #[source]
         source: MailboxError,
     },
-    #[error("CCD{} fuse reads cannot be verified: RSMU probes both returned {probe:#x}", ccd.0)]
+    #[error("CCD{} fuse reads cannot be verified: RSMU probes both returned {probe:#x}", ccd.get())]
     UnverifiableFuse { ccd: CcdId, probe: u32 },
-    #[error("CCD{} fuse reads disagree: {first:#x} and {second:#x}", ccd.0)]
+    #[error("CCD{} fuse reads disagree: {first:#x} and {second:#x}", ccd.get())]
     FuseDisagree { ccd: CcdId, first: u32, second: u32 },
-    #[error("CCD{} fuse {mask:#04x}: harvested CCDs are not yet supported", ccd.0)]
+    #[error("CCD{} fuse {mask:#04x}: harvested CCDs are not yet supported", ccd.get())]
     Harvested { ccd: CcdId, mask: u8 },
-    #[error("CCD{} fuse {mask:#04x} leaves 8 live slots for {cores} cores", ccd.0)]
+    #[error("CCD{} fuse {mask:#04x} leaves 8 live slots for {cores} cores", ccd.get())]
     CoreCount { ccd: CcdId, mask: u8, cores: usize },
     #[error(
         "core IDs disagree with their CCD (core ID / 8): {}",
-        join(.0, |m| format!("core {:02} on CCD{}, want CCD{}", m.core, m.ccd.0, m.want.0), "; ")
+        join(.0, |m| format!("core {:02} on CCD{}, want CCD{}", m.core, m.ccd.get(), m.want.get()), "; ")
     )]
     CcdIdentity(Vec<Misplaced>),
 }
@@ -132,7 +132,7 @@ fn read_disabled_mask(ccd: CcdId, smn: &mut SmnRead<'_>) -> Result<u8, SlotError
             source,
         })
     };
-    let address = CCD_FUSE.wrapping_add(u32::from(ccd.0) << CCD_FUSE_STRIDE_SHIFT);
+    let address = CCD_FUSE.wrapping_add(u32::from(ccd.get()) << CCD_FUSE_STRIDE_SHIFT);
     let first_probe = read(RSMU_RESPONSE, FuseRead::ResponseProbe)?;
     let fuse = read(address, FuseRead::Fuse)?;
     let second_probe = read(RSMU_COMMAND, FuseRead::CommandProbe)?;
@@ -189,7 +189,7 @@ pub(crate) fn map(cpus: &[RawCpu], smn: &mut SmnRead<'_>) -> Result<SlotMap, Slo
             ids.iter()
                 .filter_map(|id| CoreId::new(*id).ok())
                 .filter_map(|core| {
-                    let want = CcdId(core.get() / SLOTS_PER_CCD);
+                    let want = CcdId::new(i64::from(core.get() / SLOTS_PER_CCD)).ok()?;
                     (want != *ccd).then_some(Misplaced {
                         core,
                         ccd: *ccd,
@@ -228,7 +228,7 @@ pub(crate) fn map(cpus: &[RawCpu], smn: &mut SmnRead<'_>) -> Result<SlotMap, Slo
             let _ = write!(
                 detail,
                 "CCD{} fuse {mask:#04x}: cores {first:02}-{last:02} on slots 0-7",
-                ccd.0
+                ccd.get()
             );
             details.push(detail);
         }

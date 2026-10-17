@@ -245,7 +245,7 @@ fn r7_runs_one_instance_per_core_and_progress_names_the_core() {
             assert_eq!(handle.started.instances.len(), 2);
             assert_eq!(handle.started.instances[0].scope, "togi-trial-t1-c01");
             assert_eq!(handle.started.instances[1].scope, "togi-trial-t1-c05");
-            assert_eq!(handle.started.instances[1].cpus, [CpuId(5)]);
+            assert_eq!(handle.started.instances[1].cpus, [CpuId::from(5)]);
             let run = finish(&handle).await;
             let mut progress = run.progress();
             progress.sort_unstable();
@@ -267,11 +267,20 @@ fn a_thread_on_a_foreign_cpu_is_an_escape_and_ends_the_trial() {
             let rig = rig();
             let handle = rig.start(spec(Regime::R1, &[2], secs(60))).await.unwrap();
             *rig.fake.process(0).threads.borrow_mut() = Ok(Threads {
-                threads: vec![Thread { tid: 7, cpu: 3 }, Thread { tid: 8, cpu: 2 }],
+                threads: vec![
+                    Thread {
+                        tid: 7,
+                        cpu: CpuId::from(3),
+                    },
+                    Thread {
+                        tid: 8,
+                        cpu: CpuId::from(2),
+                    },
+                ],
                 errors: Vec::new(),
             });
             let run = finish(&handle).await;
-            assert_eq!(run.finished.result.escaped, [CpuId(3)]);
+            assert_eq!(run.finished.result.escaped, [CpuId::from(3)]);
             assert_eq!(run.finished.result.failure, None);
             assert!(run.warnings().contains(&"outside allowed cpus"));
             assert!(run.finished.result.ran <= secs(2));
@@ -310,7 +319,7 @@ fn a_lost_sample_sticks_through_the_whole_trial() {
             tokio::time::sleep(Duration::from_millis(1500)).await;
             *process.usage.borrow_mut() = Ok(crate::procfs::Usage {
                 cpu_time: secs(1),
-                cpu: 0,
+                cpu: CpuId::from(0),
             });
             let run = finish(&handle).await;
             assert_eq!(run.finished.result.ran, secs(5));
@@ -347,11 +356,14 @@ fn a_partial_thread_listing_still_proves_an_escape_despite_other_failures() {
             let rig = rig();
             let handle = rig.start(spec(Regime::R1, &[0], secs(30))).await.unwrap();
             *rig.fake.process(0).threads.borrow_mut() = Ok(Threads {
-                threads: vec![Thread { tid: 9, cpu: 6 }],
+                threads: vec![Thread {
+                    tid: 9,
+                    cpu: CpuId::from(6),
+                }],
                 errors: vec![lost_read()],
             });
             let run = finish(&handle).await;
-            assert_eq!(run.finished.result.escaped, [CpuId(6)]);
+            assert_eq!(run.finished.result.escaped, [CpuId::from(6)]);
             assert_eq!(run.finished.result.inconclusive, None);
         })
         .await;
@@ -382,7 +394,7 @@ fn recover(read: Read, process: &ProcShared) {
         Read::Usage => {
             *process.usage.borrow_mut() = Ok(Usage {
                 cpu_time: secs(1),
-                cpu: 0,
+                cpu: CpuId::from(0),
             });
         }
     }
@@ -758,7 +770,10 @@ fn a_watched_poll_that_uses_the_rest_of_the_duration_leaves_no_required_sample_a
             // A thread on a CPU the instance was not given: read after the deadline it would be an
             // escape that ends the trial and overrides what the teardown recovers.
             *rig.fake.process(0).threads.borrow_mut() = Ok(Threads {
-                threads: vec![Thread { tid: 9, cpu: 6 }],
+                threads: vec![Thread {
+                    tid: 9,
+                    cpu: CpuId::from(6),
+                }],
                 errors: Vec::new(),
             });
             let run = finish(&handle).await;
@@ -804,7 +819,10 @@ fn a_watched_poll_that_uses_the_rest_of_the_duration_still_drains_a_quiet_instan
             // escape that ends the trial and overrides the evidence the teardown recovers.
             for index in 0..2 {
                 *rig.fake.process(index).threads.borrow_mut() = Ok(Threads {
-                    threads: vec![Thread { tid: 9, cpu: 6 }],
+                    threads: vec![Thread {
+                        tid: 9,
+                        cpu: CpuId::from(6),
+                    }],
                     errors: Vec::new(),
                 });
             }

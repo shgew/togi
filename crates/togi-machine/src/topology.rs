@@ -3,7 +3,7 @@ use crate::{CcdId, CoreId, CpuId};
 use serde::Serialize;
 
 object_only! {
-    #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct CoreInfo {
         pub core: CoreId,

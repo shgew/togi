@@ -716,7 +716,7 @@ impl togi_machine::Host for FourCcds {
         let mut cores = self.0.topology()?;
         let quarter = cores.len().div_ceil(4);
         for (index, info) in cores.iter_mut().enumerate() {
-            info.ccd = togi_machine::CcdId(u8::try_from(index / quarter).unwrap());
+            info.ccd = togi_machine::CcdId::try_from(index / quarter).unwrap();
         }
         Ok(cores)
     }

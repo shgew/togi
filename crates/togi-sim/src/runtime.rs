@@ -319,10 +319,12 @@ impl Runtime {
         } else {
             "Uncorrected"
         };
-        let cpu = CpuId(u16::from(pending.core.get()));
+        let cpu = CpuId::from(u16::from(pending.core.get()));
         let line = format!(
             "[Hardware Error]: {kind} error on CPU {} bank {} ({}) at {time} (simulated)",
-            cpu.0, pending.bank, pending.bank_type,
+            cpu.get(),
+            pending.bank,
+            pending.bank_type,
         );
         self.logs.entry(boot.clone()).or_default().push(Mce {
             cpu,

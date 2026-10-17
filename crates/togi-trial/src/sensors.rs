@@ -71,7 +71,7 @@ impl Sensors {
                     core,
                     roots
                         .cpu
-                        .join(format!("cpu{}", first.0))
+                        .join(format!("cpu{}", first.get()))
                         .join("cpufreq/scaling_cur_freq"),
                 ))
             })
@@ -236,13 +236,13 @@ mod tests {
         vec![
             CoreInfo {
                 core: core(0),
-                ccd: CcdId(0),
-                cpus: vec![CpuId(0), CpuId(8)],
+                ccd: CcdId::new(0).unwrap(),
+                cpus: vec![CpuId::from(0), CpuId::from(8)],
             },
             CoreInfo {
                 core: core(1),
-                ccd: CcdId(0),
-                cpus: vec![CpuId(1), CpuId(9)],
+                ccd: CcdId::new(0).unwrap(),
+                cpus: vec![CpuId::from(1), CpuId::from(9)],
             },
         ]
     }

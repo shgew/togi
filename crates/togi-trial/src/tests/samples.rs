@@ -56,7 +56,7 @@ fn each_tick_persists_a_conditions_sample_with_sensors_workers_and_power() {
                     tokio::time::sleep(Duration::from_millis(at)).await;
                     *process.usage.borrow_mut() = Ok(crate::procfs::Usage {
                         cpu_time: Duration::from_millis(cpu_ms),
-                        cpu: 2,
+                        cpu: togi_machine::CpuId::from(2),
                     });
                 });
             }

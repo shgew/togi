@@ -86,7 +86,7 @@ impl fmt::Display for Note {
                 f,
                 "named core {:02} failed at CO 0 without being a top requester; back off CCD {}'s top group instead",
                 core.get(),
-                ccd.0
+                ccd.get()
             ),
             Self::NamedOnEmptyCcd {
                 named,
@@ -96,8 +96,8 @@ impl fmt::Display for Note {
                 f,
                 "named core {:02} failed at CO 0 on CCD {}, which had no loaded core; count the failure against loaded CCD {}'s top group",
                 named.get(),
-                named_ccd.0,
-                loaded_ccd.0
+                named_ccd.get(),
+                loaded_ccd.get()
             ),
             Self::SteppedDown {
                 ccd,
@@ -108,7 +108,7 @@ impl fmt::Display for Note {
                 write!(
                     f,
                     "CCD {} groups [{}] are already at CO 0; step down request order to group {}",
-                    ccd.0,
+                    ccd.get(),
                     skipped.join(" "),
                     ids(*group)
                 )

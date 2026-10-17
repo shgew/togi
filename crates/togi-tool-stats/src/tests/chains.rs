@@ -30,7 +30,7 @@ fn chain(
     CheckingChain {
         cycle: nz(1),
         step: nz(1),
-        ccd: CcdId(ccd),
+        ccd: CcdId::try_from(ccd).unwrap(),
         workload: workload(Regime::R7, 0),
         groups: groups.iter().map(|group| set(group)).collect(),
         cores: set(cores),

@@ -30,8 +30,8 @@ pub(super) fn topology() -> Vec<CoreInfo> {
     (0..16)
         .map(|n| CoreInfo {
             core: core(n),
-            ccd: CcdId(n / 8),
-            cpus: vec![CpuId(u16::from(n)), CpuId(u16::from(n) + 32)],
+            ccd: CcdId::try_from(n / 8).unwrap(),
+            cpus: vec![CpuId::from(u16::from(n)), CpuId::from(u16::from(n) + 32)],
         })
         .collect()
 }
@@ -413,7 +413,7 @@ pub(super) fn burn(shared: &std::rc::Rc<ProcShared>, cpus: u32) {
             total += Duration::from_secs(1) * cpus;
             *shared.usage.borrow_mut() = Ok(Usage {
                 cpu_time: total,
-                cpu: 0,
+                cpu: CpuId::from(0),
             });
         }
     });
@@ -526,7 +526,7 @@ mod tests {
             identity,
             false,
             cwd,
-            &[CpuId(0)],
+            &[CpuId::from(0)],
             &["worker".into()],
         );
         let target = cwd.join("results.txt");
@@ -604,7 +604,7 @@ mod tests {
                     identity,
                     false,
                     std::path::Path::new("/trials/t1/c00"),
-                    &[CpuId(0)],
+                    &[CpuId::from(0)],
                     &["worker".into()],
                 ),
                 cwd: "/trials/t1/c00".into(),

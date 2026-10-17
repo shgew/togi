@@ -13,8 +13,10 @@ fn cores(ids: &[i64]) -> CoreSet {
     ids.iter().map(|&id| core(id)).collect()
 }
 
-fn ccd_of(core: CoreId) -> CcdId {
-    CcdId(core.get() / 8)
+fn placed(ids: &[i64]) -> BTreeMap<CoreId, CcdId> {
+    ids.iter()
+        .map(|&id| (core(id), CcdId::new(id / 8).unwrap()))
+        .collect()
 }
 
 fn per_core<T: Copy + Default>(readings: &[(i64, T)]) -> PerCore<T> {
@@ -70,11 +72,14 @@ fn summarize_uses_samples_after_warmup() {
             )
         }
     });
-    let got = summarize(seq, cores(&[0, 1, 8]), ccd_of).expect("20 samples after the warmup");
+    let got = summarize(seq, &placed(&[0, 1, 8])).expect("20 samples after the warmup");
     let want = Telemetry {
         requests: per_core(&[(0, lane(1.100)), (1, lane(1.0995)), (8, lane(1.050))]),
         top_requesters: cores(&[0, 1, 8]),
-        ccd_mhz: BTreeMap::from([(CcdId(0), 5205), (CcdId(1), 5100)]),
+        ccd_mhz: BTreeMap::from([
+            (CcdId::new(0).unwrap(), 5205),
+            (CcdId::new(1).unwrap(), 5100),
+        ]),
     };
     assert_eq!(got, want);
 }
@@ -84,16 +89,11 @@ fn summarize_needs_min_samples_after_warmup() {
     let steady = |_| (vec![(3, 1.1)], vec![(3, 5000)]);
     let last = |count: usize| WARMUP_MS + (i64::try_from(count).unwrap() - 1) * 1000;
     assert!(
-        summarize(
-            samples(0, last(MIN_SAMPLES - 1), steady),
-            cores(&[3]),
-            ccd_of
-        )
-        .is_none(),
+        summarize(samples(0, last(MIN_SAMPLES - 1), steady), &placed(&[3])).is_none(),
         "19 samples after the warmup summarized"
     );
     assert!(
-        summarize(samples(0, last(MIN_SAMPLES), steady), cores(&[3]), ccd_of).is_some(),
+        summarize(samples(0, last(MIN_SAMPLES), steady), &placed(&[3])).is_some(),
         "20 samples after the warmup did not summarize"
     );
 }
@@ -112,11 +112,11 @@ fn summarize_needs_min_clock_samples_per_ccd() {
             (vec![(0, 1.1), (8, 1.05)], mhz)
         },
     );
-    let got = summarize(seq, cores(&[0, 8]), ccd_of).expect("20 samples after the warmup");
+    let got = summarize(seq, &placed(&[0, 8])).expect("20 samples after the warmup");
     let want = Telemetry {
         requests: per_core(&[(0, lane(1.1)), (8, lane(1.05))]),
         top_requesters: cores(&[0, 8]),
-        ccd_mhz: BTreeMap::from([(CcdId(0), 5200)]),
+        ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 5200)]),
     };
     assert_eq!(got, want);
 }
@@ -128,13 +128,13 @@ fn summarize_skips_samples_without_lanes() {
         core_mhz: per_core(&[(2, 5000)]),
         ..TrialConditions::default()
     });
-    assert!(summarize(seq, cores(&[2]), ccd_of).is_none());
+    assert!(summarize(seq, &placed(&[2])).is_none());
 }
 
 #[test]
 fn summarize_without_cores_is_none() {
     let seq = samples(WARMUP_MS, 30000, |_| (vec![(0, 1.1)], vec![(0, 5000)]));
-    assert!(summarize(seq, CoreSet::default(), ccd_of).is_none());
+    assert!(summarize(seq, &BTreeMap::new()).is_none());
 }
 
 #[test]
@@ -143,11 +143,14 @@ fn summarize_counts_a_repeated_core_once() {
         let step = f32::from(u16::try_from(ms / 1000).unwrap());
         (vec![(0, 1.0 + step * 0.01)], vec![(0, 5000 + ms / 1000)])
     });
-    let once = summarize(seq.clone(), cores(&[0]), ccd_of).unwrap();
-    let twice = summarize(seq, cores(&[0, 0]), ccd_of).unwrap();
-    assert_eq!(cores(&[0, 0]).len(), 1);
+    let once = summarize(seq.clone(), &placed(&[0])).unwrap();
+    let twice = summarize(seq, &placed(&[0, 0])).unwrap();
+    assert_eq!(placed(&[0, 0]).len(), 1);
     assert_eq!(once, twice);
-    assert_eq!(once.ccd_mhz, BTreeMap::from([(CcdId(0), 5018)]));
+    assert_eq!(
+        once.ccd_mhz,
+        BTreeMap::from([(CcdId::new(0).unwrap(), 5018)])
+    );
 }
 
 #[test_case(per_core(&[(1, 1.10), (2, 1.12), (3, 1.11)]), &[&[2], &[3], &[1]]; "strict order")]
@@ -187,13 +190,10 @@ fn summarize_skips_samples_with_a_non_finite_lane() {
             .collect::<Vec<_>>()
     };
     let min = i64::try_from(MIN_SAMPLES).unwrap();
-    assert!(summarize(noisy(min - 1), cores(&[0, 1]), ccd_of).is_none());
-    let got = summarize(noisy(min), cores(&[0, 1]), ccd_of).unwrap();
-    assert_eq!(
-        got,
-        summarize(finite_only(min), cores(&[0, 1]), ccd_of).unwrap()
-    );
+    assert!(summarize(noisy(min - 1), &placed(&[0, 1])).is_none());
+    let got = summarize(noisy(min), &placed(&[0, 1])).unwrap();
+    assert_eq!(got, summarize(finite_only(min), &placed(&[0, 1])).unwrap());
     assert!(got.requests.iter().all(|(_, request)| request.is_finite()));
     let unloaded = broken(WARMUP_MS, f32::NAN);
-    assert!(summarize(finite_only(min).chain([unloaded]), cores(&[0]), ccd_of).is_some());
+    assert!(summarize(finite_only(min).chain([unloaded]), &placed(&[0])).is_some());
 }

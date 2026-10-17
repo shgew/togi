@@ -307,7 +307,7 @@ pub(crate) fn r7_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> Vec
                     total
                 )
             };
-            let head = format!("CCD {}  ", ccd.0);
+            let head = format!("CCD {}  ", ccd.get());
             let indent = " ".repeat(head.len());
             let room = width.saturating_sub(head.len()).max(1);
             let mut body = wrap_styled(&top, room, text);

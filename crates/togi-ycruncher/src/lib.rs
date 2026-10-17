@@ -45,7 +45,7 @@ impl Profile {
 fn config(cpus: &[CpuId], tests: &[&str]) -> String {
     let logical = cpus
         .iter()
-        .map(|cpu| cpu.0.to_string())
+        .map(|cpu| cpu.get().to_string())
         .collect::<Vec<_>>()
         .join(" ");
     let memory = MEMORY_PER_CPU * cpus.len() as u64;
@@ -278,7 +278,7 @@ impl Backend for Ycruncher {
         let patterns = &self.patterns;
         let line = patterns.sgr.replace_all(line, "");
         if let Some(cpu) = patterns.affinity.captures(&line).and_then(|c| c.get(1)) {
-            Line::AffinityError(cpu.as_str().parse().ok().map(CpuId))
+            Line::AffinityError(cpu.as_str().parse::<u16>().ok().map(CpuId::from))
         } else if patterns.computation.is_match(&line) {
             Line::ComputationError
         } else if patterns.setup.is_match(&line) {

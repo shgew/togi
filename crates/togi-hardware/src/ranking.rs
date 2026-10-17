@@ -10,13 +10,13 @@ use crate::files::read_attribute;
 pub(crate) enum RankingError {
     #[error("core {core} lists no logical CPU")]
     NoCpu { core: CoreId },
-    #[error("read the preferred-core ranking of cpu {}", cpu.0)]
+    #[error("read the preferred-core ranking of cpu {}", cpu.get())]
     Read {
         cpu: CpuId,
         #[source]
         source: io::Error,
     },
-    #[error("the preferred-core ranking of cpu {} is {text:?}, not an integer", cpu.0)]
+    #[error("the preferred-core ranking of cpu {} is {text:?}, not an integer", cpu.get())]
     Parse {
         cpu: CpuId,
         text: String,
@@ -36,7 +36,7 @@ fn rank(
         .ok_or(RankingError::NoCpu { core: core.core })?;
     let path = root
         .join("sys/devices/system/cpu/cpufreq")
-        .join(format!("policy{}", cpu.0))
+        .join(format!("policy{}", cpu.get()))
         .join("amd_pstate_prefcore_ranking");
     let text = read_attribute(&path).map_err(|source| RankingError::Read { cpu, source })?;
     let value = text.trim().parse().map_err(|source| RankingError::Parse {

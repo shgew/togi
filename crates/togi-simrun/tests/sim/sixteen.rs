@@ -110,7 +110,7 @@ fn assert_named_target(events: &[Event], needed: u32) {
         .1;
     assert_eq!(failed.signal, Some(Signal::ComputationError));
     assert_eq!(failed.core, Some(named));
-    let failing_mhz = failed.ccd_mhz[&CcdId(0)];
+    let failing_mhz = failed.ccd_mhz[&CcdId::new(0).unwrap()];
     let request = failed.voltage_requests_v.get(named).unwrap();
     let Some((decision_event, decision)) = events.iter().find_map(|event| {
         if let Payload::TunerDecision(decision) = &event.payload
@@ -139,7 +139,7 @@ fn assert_named_target(events: &[Event], needed: u32) {
         assert_eq!(passed_intent.profile, intent.profile);
         assert_eq!(passed_intent.duration_s, 120);
         assert!(passed_intent.rerun);
-        assert!(end.ccd_mhz[&CcdId(0)] >= failing_mhz.saturating_sub(25));
+        assert!(end.ccd_mhz[&CcdId::new(0).unwrap()] >= failing_mhz.saturating_sub(25));
         let top = end
             .voltage_requests_v
             .iter()

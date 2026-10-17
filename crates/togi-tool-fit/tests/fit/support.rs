@@ -162,9 +162,7 @@ pub(crate) fn sixteen_core_evidence() -> Vec<TrialFact> {
                 record.outcome = named_failure(loaded[usize::try_from(rep * 3 % 8).unwrap()]);
             }
             let mhz = 5200 + u32::try_from(rep % 4).unwrap() * 20;
-            record
-                .ccd_mhz
-                .insert(CcdId(u8::try_from(ccd).unwrap()), mhz);
+            record.ccd_mhz.insert(CcdId::try_from(ccd).unwrap(), mhz);
             for &core in &loaded {
                 let depth = -offsets[usize::try_from(core).unwrap()];
                 let request = 1.22 + f64::from(u8::try_from(core % 8).unwrap()) * 0.005

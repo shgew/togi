@@ -38,7 +38,7 @@ fn original() -> SessionFacts {
         stalled_core: Some(core(3)),
         voltage_requests_v: [(core(3), 1.125), (core(7), 1.25)].into_iter().collect(),
         top_requesters: set(&[7]),
-        ccd_mhz: BTreeMap::from([(CcdId(0), 4800)]),
+        ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4800)]),
         ..fail("0304", Signal::ComputationError, 11)
     });
     s.boot("idle-boot");

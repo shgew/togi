@@ -71,7 +71,7 @@ impl Interruption {
                 warning: String::new(),
                 pid: 1,
                 tid: 1,
-                cpu: CpuId(0),
+                cpu: CpuId::from(0),
             }),
         };
         log.boot("t/b").at(evidence_at + self.recovery);

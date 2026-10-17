@@ -211,7 +211,7 @@ fn failure_keeps_attribution_and_telemetry() {
         stalled_core: Some(core(3)),
         voltage_requests_v: [(core(3), 1.125), (core(7), 1.25)].into_iter().collect(),
         top_requesters: set(&[7]),
-        ccd_mhz: BTreeMap::from([(CcdId(0), 4800)]),
+        ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4800)]),
         ..fail("0304", Signal::ComputationError, 11)
     });
     let facts = s.extract();
@@ -234,7 +234,7 @@ fn failure_keeps_attribution_and_telemetry() {
         Some(Telemetry {
             voltage_requests_v: [(core(3), 1.125), (core(7), 1.25)].into_iter().collect(),
             top_requesters: set(&[7]),
-            ccd_mhz: BTreeMap::from([(CcdId(0), 4800)]),
+            ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4800)]),
         })
     );
     let telemetry = telemetry.as_ref().unwrap();
@@ -273,13 +273,13 @@ fn telemetry_is_present_when_any_one_lane_is_populated() {
         (
             "ccd mhz",
             TrialEnd {
-                ccd_mhz: BTreeMap::from([(CcdId(0), 4700)]),
+                ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4700)]),
                 ..pass("t", 5)
             },
             Telemetry {
                 voltage_requests_v: togi_machine::PerCore::default(),
                 top_requesters: set(&[]),
-                ccd_mhz: BTreeMap::from([(CcdId(0), 4700)]),
+                ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4700)]),
             },
         ),
     ];

@@ -4,7 +4,7 @@ use std::sync::{Arc, OnceLock};
 
 use togi_config::Config;
 use togi_journal::{Activity, Event, Payload};
-use togi_machine::{Backend, Regime};
+use togi_machine::{Backend, CoreId, Regime};
 use togi_sim::MachineDefinition;
 use togi_sim::definition::ModelDef;
 use togi_tuner::State;
@@ -222,7 +222,10 @@ fn later_hunt() -> Result<Vec<Event>, Error> {
         {
             return false;
         }
-        match crash_trial(&fault, intent.trial.as_str(), 7.0, 3) {
+        match CoreId::new(3)
+            .map_err(Error::from)
+            .and_then(|core| crash_trial(&fault, intent.trial.as_str(), 7.0, core))
+        {
             Ok(()) => {
                 *count += 1;
                 false
