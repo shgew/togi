@@ -3,7 +3,8 @@ use std::fmt::Write as _;
 
 use jiff::{SignedDuration, Timestamp};
 use togi_journal::{
-    Event, HuntEnd, HuntGroup, HuntStart, Outcome, Payload, Seq, TrialEnd, TrialId, TrialIntent,
+    Event, HuntEnd, HuntGroup, HuntStart, Outcome, Payload, Seq, ShutdownReason, TrialEnd, TrialId,
+    TrialIntent,
 };
 use togi_machine::{BootId, CoreId, CoreSet, Signal, WorkloadId};
 use togi_tuner::{Profile, Topology};
@@ -127,7 +128,8 @@ pub(crate) struct Run {
     pub(crate) builds: std::collections::BTreeMap<String, u32>,
     pub(crate) trials: u32,
     pub(crate) crashes: u32,
-    pub(crate) ending: String,
+    /// `None` while the run has not shut down.
+    pub(crate) ending: Option<ShutdownReason>,
     boot: BootId,
 }
 
@@ -230,7 +232,7 @@ impl<'a> Projection<'a> {
                                 builds: std::collections::BTreeMap::new(),
                                 trials: 0,
                                 crashes: 0,
-                                ending: "open".to_owned(),
+                                ending: None,
                                 boot: event.boot.clone(),
                             });
                             self.runs.len() - 1
@@ -245,7 +247,7 @@ impl<'a> Projection<'a> {
                 }
                 Payload::Shutdown(shutdown) => {
                     if let Some(run) = active.take() {
-                        self.runs[run].ending = shutdown.reason.to_string();
+                        self.runs[run].ending = Some(shutdown.reason);
                         self.runs[run].end = event.time;
                     }
                 }

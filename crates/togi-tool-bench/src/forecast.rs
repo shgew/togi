@@ -284,7 +284,7 @@ fn execute_with_durability(
         .map(|((spec, machine), outcome)| Run {
             machine: machine.unwrap_or_default(),
             seed: spec.seed,
-            split: spec.split.to_string(),
+            split: spec.split,
             outcome,
         })
         .collect();
@@ -664,6 +664,7 @@ mod tests {
     use sha2::Digest as _;
     use std::collections::BTreeMap;
     use std::io::Write;
+    use togi_tool_forecast::Split;
 
     struct RecordingWriter {
         bytes: Vec<u8>,
@@ -716,7 +717,7 @@ mod tests {
             vec![Run {
                 machine: String::new(),
                 seed: 1,
-                split: "dev".to_owned(),
+                split: Split::Dev,
                 outcome: Outcome {
                     status: Status::Concluded,
                     hours: 1.0,

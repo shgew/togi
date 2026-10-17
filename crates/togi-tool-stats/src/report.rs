@@ -184,6 +184,7 @@ fn render_session(
             run.trials,
             run.crashes,
             run.ending
+                .map_or_else(|| "open".to_owned(), |reason| reason.to_string())
         );
     }
 }

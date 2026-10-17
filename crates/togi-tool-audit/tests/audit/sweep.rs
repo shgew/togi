@@ -8,8 +8,8 @@ use togi_journal::fs::MemFs;
 
 use togi_journal::Event;
 use togi_tool_audit::{
-    Finding, Kind, Record, Split, Status, audit_directory_with, audit_with, check_records,
-    read_records_from, run_directory, sweep_suite, timing,
+    Completion, Finding, Kind, Record, Split, Status, audit_directory_with, audit_with,
+    check_records, read_records_from, run_directory, sweep_suite, timing,
 };
 
 use crate::fixtures::*;
@@ -71,9 +71,9 @@ impl Directories {
     fn inspect(
         &self,
         path: &Path,
-        simulated: bool,
+        completion: Completion,
     ) -> (Vec<Finding>, usize, Vec<togi_tool_audit::JournalSkip>) {
-        audit_directory_with(path, simulated, |path| {
+        audit_directory_with(path, completion, |path| {
             let fs = self
                 .0
                 .get(&lexical(path))
@@ -93,7 +93,7 @@ impl Directories {
             records,
             root,
             || (),
-            |path, simulated| self.inspect(path, simulated),
+            |path, completion| self.inspect(path, completion),
         )
         .unwrap()
     }
@@ -425,7 +425,8 @@ fn real_fs_a_lock_failure_reports_its_operation_path_and_cause_once() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("state");
     fs::create_dir_all(dir.join("lock")).unwrap();
-    let (findings, journals, skips) = togi_tool_audit::audit_directory(&dir, false);
+    let (findings, journals, skips) =
+        togi_tool_audit::audit_directory(&dir, Completion::InProgress);
     assert_eq!(journals, 0);
     assert!(skips.is_empty());
     assert_eq!(findings.len(), 1);
@@ -527,9 +528,9 @@ fn each_directory_is_audited_while_the_hook_holds_its_guard() {
                 seen: &seen,
             }
         },
-        |path, simulated| {
+        |path, completion| {
             audited.set(audited.get() + 1);
-            memory.inspect(path, simulated)
+            memory.inspect(path, completion)
         },
     )
     .unwrap();
