@@ -95,7 +95,8 @@ fn select_picks_the_lexical_minimum_whatever_the_order() {
         rotated.rotate_left(rotation);
         assert_eq!(
             select_names(rotated),
-            (Some("05-A64 ~ Awa"), Some("24-ZN5 ~ Alpha"))
+            (Some("05-A64 ~ Awa"), Some("24-ZN5 ~ Alpha")),
+            "rotation {rotation}"
         );
     }
     let reversed: Vec<_> = names.into_iter().rev().collect();
@@ -536,10 +537,13 @@ fn memory_is_32_mib_per_cpu() {
             )
             .unwrap();
         let contents = String::from_utf8(plan.inputs[0].contents.clone()).unwrap();
-        assert!(contents.contains(&format!(
-            "TotalMemory : {}\n",
-            33_554_432 * u64::from(count)
-        )));
+        assert!(
+            contents.contains(&format!(
+                "TotalMemory : {}\n",
+                33_554_432 * u64::from(count)
+            )),
+            "{count} cpus"
+        );
     }
 }
 

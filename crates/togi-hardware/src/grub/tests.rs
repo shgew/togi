@@ -182,32 +182,42 @@ fn clearing_fails_in_each_of_its_three_commands_with_what_was_known() {
                 is_injected(&error),
                 "operation {at} after {after_effect}: {error:?}"
             );
+            let case = format!("operation {at} after {after_effect}");
             match at {
                 1 => {
-                    assert!(matches!(error, ClearError::ReadBefore(_)), "{error:?}");
-                    assert_eq!(error.before(), None);
+                    assert!(
+                        matches!(error, ClearError::ReadBefore(_)),
+                        "{case}: {error:?}"
+                    );
+                    assert_eq!(error.before(), None, "{case}");
                 }
                 2 => {
-                    assert!(matches!(error, ClearError::Unset { .. }), "{error:?}");
-                    assert_eq!(error.before(), Some("togi"));
+                    assert!(
+                        matches!(error, ClearError::Unset { .. }),
+                        "{case}: {error:?}"
+                    );
+                    assert_eq!(error.before(), Some("togi"), "{case}");
                 }
                 _ => {
-                    assert!(matches!(error, ClearError::ReadAfter { .. }), "{error:?}");
-                    assert_eq!(error.before(), Some("togi"));
+                    assert!(
+                        matches!(error, ClearError::ReadAfter { .. }),
+                        "{case}: {error:?}"
+                    );
+                    assert_eq!(error.before(), Some("togi"), "{case}");
                 }
             }
-            assert_eq!(error.after(), None);
+            assert_eq!(error.after(), None, "{case}");
             let unset = at == 3 || (at == 2 && after_effect);
-            assert_eq!(
-                fake.saved().is_empty(),
-                unset,
-                "operation {at} after {after_effect}"
-            );
+            assert_eq!(fake.saved().is_empty(), unset, "{case}");
 
             let remaining = fake.saved();
             fake.0.borrow_mut().fail_at = 0;
-            assert_eq!(fake.grub().clear_saved().unwrap(), saved(&remaining));
-            assert_eq!(fake.saved(), "");
+            assert_eq!(
+                fake.grub().clear_saved().unwrap(),
+                saved(&remaining),
+                "{case}"
+            );
+            assert_eq!(fake.saved(), "", "{case}");
         }
     }
 }
@@ -381,25 +391,25 @@ fn reason_reads_writes_and_clears_keep_the_cause_whether_or_not_the_effect_happe
     for after_effect in [false, true] {
         let fake = Fake::default().failing(1, after_effect);
         let error = read_reason(&mut fake.grub()).unwrap_err();
-        assert!(is_injected(&error), "read {error:?}");
+        assert!(is_injected(&error), "read after {after_effect}: {error:?}");
 
         let fake = Fake::default().failing(1, after_effect);
         let count = RestartCount::try_from(1).unwrap();
         let reason = LeaveReason::new("retry", count).unwrap();
         let error = write_reason(&mut fake.grub(), &reason).unwrap_err();
-        assert!(is_injected(&error), "write {error:?}");
+        assert!(is_injected(&error), "write after {after_effect}: {error:?}");
 
         let fake = Fake::default()
             .value(REASON_VARIABLE, "record")
             .failing(1, after_effect);
         let error = clear_reason(&mut fake.grub()).unwrap_err();
-        assert!(is_injected(&error), "clear {error:?}");
+        assert!(is_injected(&error), "clear after {after_effect}: {error:?}");
 
         let fake = Fake::default()
             .value(COUNT_VARIABLE, "2")
             .failing(1, after_effect);
         let error = reset_count(&mut fake.grub()).unwrap_err();
-        assert!(is_injected(&error), "reset {error:?}");
+        assert!(is_injected(&error), "reset after {after_effect}: {error:?}");
     }
 }
 
