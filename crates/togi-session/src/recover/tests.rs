@@ -214,7 +214,10 @@ impl Trials for TestTrials {
         }
     }
 
-    fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<dyn Iterator<Item = Result<TrialConditions, togi_machine::SampleError>> + 'a> {
         let script = self.0.borrow();
         if let Some(text) = script.jsonl.get(id) {
             return Box::new(ReadSamples::from_reader(Cursor::new(
@@ -227,7 +230,8 @@ impl Trials for TestTrials {
                 .get(id)
                 .cloned()
                 .unwrap_or_default()
-                .into_iter(),
+                .into_iter()
+                .map(Ok),
         )
     }
 }
@@ -353,7 +357,20 @@ impl Harness {
 
     fn append_end(&mut self, end: TrialEnd) -> Step<Seq> {
         let mut trials = TestTrials(Rc::clone(&self.trials));
-        append_trial_end(self.appender.as_mut().unwrap(), &mut trials, end, &[])
+        let samples = crate::evidence::summarize_samples(
+            std::iter::empty(),
+            CoreSet::default(),
+            Regime::R1,
+            |_| None,
+        );
+        append_trial_end(
+            self.appender.as_mut().unwrap(),
+            &mut trials,
+            end,
+            samples,
+            false,
+            &[],
+        )
     }
 
     fn consistent(&self) {
@@ -1663,6 +1680,60 @@ fn a_recovered_trials_end_carries_the_request_telemetry_of_its_loaded_cores() {
     assert_eq!(end.voltage_requests_v.get(core(0)), Some(1.25));
     assert!(end.top_requesters.contains(core(0)));
     assert!(!end.ccd_mhz.is_empty());
+    h.consistent();
+}
+
+#[test]
+fn recovery_discards_the_entire_sample_summary_and_warns_on_a_late_decode_error() {
+    let mut text = String::new();
+    for i in 0..20 {
+        let mut table = PmTable::default();
+        table.voltage_request_v[0] = 1.25;
+        let sample = TrialConditions {
+            elapsed_ms: 5000 + i * 1000,
+            tctl_c: Some(77),
+            core_mhz: [(core(0), 5000)].into_iter().collect(),
+            worker_cpu_ms: [(core(0), i * 100)].into_iter().collect(),
+            pm_table: Some(table),
+            ..TrialConditions::default()
+        };
+        text.push_str(&serde_json::to_string(&sample).unwrap());
+        text.push('\n');
+    }
+    let clean = crashed_trial_with(&text);
+    assert_eq!(clean.ends()[0].1.last_sample_s, Some(24));
+    assert!(!clean.ends()[0].1.voltage_requests_v.is_empty());
+    text.push_str("not json\n");
+    let h = crashed_trial_with(&text);
+    let (event, end) = h.ends()[0];
+    assert_eq!(end.outcome, clean.ends()[0].1.outcome);
+    assert_eq!(end.signal, clean.ends()[0].1.signal);
+    assert_eq!(end.duration_s, clean.ends()[0].1.duration_s);
+    let data = serde_json::to_value(end).unwrap();
+    for field in [
+        "tctl_max_c",
+        "voltage_request_median_v",
+        "voltage_request_min_v",
+        "voltage_requests_v",
+        "top_requesters",
+        "ccd_mhz",
+        "last_sample_s",
+        "last_sample_tctl_c",
+        "last_sample_min_mhz",
+        "last_sample_max_mhz",
+        "stalled_core",
+        "worker_stalled_ms",
+    ] {
+        assert!(data.get(field).is_none(), "{field}: {data}");
+    }
+    let warnings = h.warnings();
+    let (warning_event, warning) = warnings
+        .iter()
+        .find(|(_, warning)| warning.operation == "read conditions samples")
+        .unwrap();
+    assert_eq!(warning.trial.as_ref(), Some(&end.trial));
+    assert!(warning.error.contains("decode conditions sample"));
+    assert_eq!(warning_event.cause, [event.seq]);
     h.consistent();
 }
 

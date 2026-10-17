@@ -188,7 +188,10 @@ pub trait Trials {
         ready: Stopped,
     ) -> Result<Box<dyn Running>, Partial<Option<Stopped>>>;
     fn ended(&mut self, id: &str) -> Result<(), Error>;
-    fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a>;
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<dyn Iterator<Item = Result<TrialConditions, crate::SampleError>> + 'a>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

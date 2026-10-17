@@ -356,7 +356,9 @@ impl Trials for SweepFails {
     fn samples<'a>(
         &'a self,
         id: &'a str,
-    ) -> Box<dyn Iterator<Item = togi_machine::TrialConditions> + 'a> {
+    ) -> Box<
+        dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
+    > {
         self.0.samples(id)
     }
 }

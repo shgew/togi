@@ -200,26 +200,23 @@ impl togi_sim::SampleStorage for MemorySamples {
         Ok(())
     }
 
-    fn read(&self, id: &str) -> Box<dyn Iterator<Item = togi_machine::TrialConditions>> {
-        use std::io::Read;
+    fn read(
+        &self,
+        id: &str,
+    ) -> Box<dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>>>
+    {
         let files = self.files.borrow();
         let Some((bytes, compressed)) = files.get(id) else {
             return Box::new(std::iter::empty());
         };
-        let plain = if *compressed {
-            let mut plain = Vec::new();
-            flate2::read::GzDecoder::new(bytes.as_slice())
-                .read_to_end(&mut plain)
-                .expect("valid gzip");
-            plain
+        let reader: Box<dyn std::io::Read> = if *compressed {
+            Box::new(flate2::read::MultiGzDecoder::new(std::io::Cursor::new(
+                bytes.clone(),
+            )))
         } else {
-            bytes.clone()
+            Box::new(std::io::Cursor::new(bytes.clone()))
         };
-        let samples: Vec<_> = serde_json::Deserializer::from_slice(&plain)
-            .into_iter::<togi_machine::TrialConditions>()
-            .map(|sample| sample.expect("valid sample"))
-            .collect();
-        Box::new(samples.into_iter())
+        Box::new(togi_machine::ReadSamples::from_reader(reader))
     }
 
     fn ended(&self, id: &str) -> Result<(), Error> {

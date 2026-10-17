@@ -23,6 +23,7 @@ togi-tuner.workspace = true
 togi-tuningboot.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
 proptest.workspace = true
 togi-sim.workspace = true
 

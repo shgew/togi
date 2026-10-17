@@ -35,7 +35,11 @@ fn tick(ms: i64, pairs: &[(i64, i64)]) -> TrialConditions {
 }
 
 fn collect(rig: &mut Rig, id: &str) -> Vec<TrialConditions> {
-    rig.machine.trials.samples(id).collect()
+    rig.machine
+        .trials
+        .samples(id)
+        .collect::<Result<_, _>>()
+        .expect("valid simulated samples")
 }
 
 fn scripted(signal: Signal, at: f64, culprit: i64) -> MachineDefinition {
@@ -218,9 +222,12 @@ fn a_long_trial_keeps_no_series_and_yields_lazily() {
         hour,
     ));
     let mut samples = rig.machine.trials.samples("0001");
-    assert_eq!(samples.next(), Some(tick(1000, &[(0, 1000), (1, 1000)])));
     assert_eq!(
-        samples.nth(3597).map(|sample| sample.elapsed_ms),
+        samples.next().unwrap().unwrap(),
+        tick(1000, &[(0, 1000), (1, 1000)])
+    );
+    assert_eq!(
+        samples.nth(3597).map(|sample| sample.unwrap().elapsed_ms),
         Some(3_599_000)
     );
     assert!(samples.next().is_none(), "strictly before the end");

@@ -195,7 +195,12 @@ fn background_failures_are_unattributed_crashes_and_match_their_probability() {
         }
         failures += 1;
         if failures <= 20 {
-            let samples: Vec<_> = rig.machine.trials.samples("0001").collect();
+            let samples: Vec<_> = rig
+                .machine
+                .trials
+                .samples("0001")
+                .collect::<Result<_, _>>()
+                .unwrap();
             if let Some(last) = samples.last() {
                 for core in cores(&[0, 1]) {
                     assert_eq!(

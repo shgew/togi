@@ -211,7 +211,8 @@ impl Rig {
             self.read(self.env.dir.join("t1/samples.jsonl"))
                 .unwrap_or_default(),
         ))
-        .collect()
+        .collect::<Result<_, _>>()
+        .unwrap()
     }
 
     pub(super) async fn start(&self, spec: TrialSpec) -> Result<Handle, Partial<Option<Stopped>>> {
@@ -352,7 +353,9 @@ impl Landed {
     }
 
     pub(super) fn samples(&self) -> Vec<togi_machine::TrialConditions> {
-        togi_machine::ReadSamples::from_reader(std::io::Cursor::new(self.bytes())).collect()
+        togi_machine::ReadSamples::from_reader(std::io::Cursor::new(self.bytes()))
+            .collect::<Result<_, _>>()
+            .unwrap()
     }
 
     /// Blocks the runtime thread, and with it the paused clock, until `lines` have landed.

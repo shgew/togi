@@ -416,7 +416,8 @@ fn workers(readings: &[&[(i64, i64)]], loaded: &[i64], regime: Regime) -> TrialS
         })
         .collect();
     let last = samples.last().map(|sample| sample.elapsed_ms);
-    let summary = summarize_samples(samples, set(loaded), regime, |_| None);
+    let summary =
+        summarize_samples(samples.into_iter().map(Ok), set(loaded), regime, |_| None).unwrap();
     TrialSummary { summary, last }
 }
 
@@ -594,7 +595,11 @@ fn the_requested_voltage_is_the_loaded_cores_highest_request_by_median_and_minim
         ),
     ];
     for (name, loaded, samples, want) in cases {
-        let got = summarize_samples(samples, set(loaded), Regime::R7, |_| None).voltage;
+        let got = summarize_samples(samples.into_iter().map(Ok), set(loaded), Regime::R7, |_| {
+            None
+        })
+        .unwrap()
+        .voltage;
         assert_eq!(
             got.map(|voltage| (voltage.median_v, voltage.min_v)),
             want,
@@ -620,19 +625,32 @@ fn telemetry_samples(count: usize) -> Vec<TrialConditions> {
 fn request_telemetry_needs_twenty_samples_after_the_warmup_and_every_loaded_core_on_a_known_ccd() {
     let ccd = |core: CoreId| Some(CcdId(core.get() / 4));
     for regime in [Regime::R1, Regime::R3, Regime::R6, Regime::R7] {
-        let enough = summarize_samples(telemetry_samples(20), set(&[2, 7]), regime, ccd);
+        let enough = summarize_samples(
+            telemetry_samples(20).into_iter().map(Ok),
+            set(&[2, 7]),
+            regime,
+            ccd,
+        )
+        .unwrap();
         let telemetry = enough.telemetry.unwrap();
         assert_eq!(telemetry.requests.get(core(7)), Some(1.5), "{regime}");
         assert_eq!(telemetry.ccd_mhz.len(), 2, "{regime}");
-        let short = summarize_samples(telemetry_samples(19), set(&[2, 7]), regime, ccd);
+        let short = summarize_samples(
+            telemetry_samples(19).into_iter().map(Ok),
+            set(&[2, 7]),
+            regime,
+            ccd,
+        )
+        .unwrap();
         assert!(short.telemetry.is_none(), "{regime}");
     }
     let unknown = summarize_samples(
-        telemetry_samples(20),
+        telemetry_samples(20).into_iter().map(Ok),
         set(&[2, 7]),
         Regime::R7,
         |core: CoreId| (core.get() != 7).then_some(CcdId(0)),
-    );
+    )
+    .unwrap();
     assert!(unknown.telemetry.is_none());
     assert!(unknown.voltage.is_some());
 }
@@ -648,7 +666,13 @@ fn a_summary_fills_an_end_with_the_stall_of_a_failure_and_the_last_sample_of_a_c
             .collect(),
         ..voltage_sample(1.25, 1.5)
     });
-    let summary = summarize_samples(samples, set(&[2, 7]), Regime::R7, |_| None);
+    let summary = summarize_samples(
+        samples.into_iter().map(Ok),
+        set(&[2, 7]),
+        Regime::R7,
+        |_| None,
+    )
+    .unwrap();
     let end = |outcome, crashed| {
         let mut end = TrialEnd {
             trial: togi_journal::TrialId::from("0001".to_owned()),

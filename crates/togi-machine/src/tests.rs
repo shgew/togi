@@ -184,15 +184,15 @@ fn read_samples_forms() {
             vec![1000, 2000],
         ),
         ("{\"elapsed_ms\":1000}\n{\"elapsed_ms\":20", vec![1000]),
-        (
-            "{\"elapsed_ms\":1000}\nnot json\n{\"elapsed_ms\":2000}\n",
-            vec![1000, 2000],
-        ),
         ("", vec![]),
     ] {
-        let plain: Vec<_> = ReadSamples::from_reader(content.as_bytes()).collect();
+        let plain: Vec<_> = ReadSamples::from_reader(content.as_bytes())
+            .collect::<Result<_, _>>()
+            .unwrap();
         let compressed: Vec<_> =
-            ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(gzip(content)))).collect();
+            ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(gzip(content))))
+                .collect::<Result<_, _>>()
+                .unwrap();
         let expected: Vec<_> = want
             .into_iter()
             .map(|elapsed_ms| TrialConditions {
@@ -208,8 +208,49 @@ fn read_samples_forms() {
 #[test]
 fn read_samples_rejects_invalid_gzip() {
     let mut samples = ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(b"not gzip")));
-    assert_eq!(samples.next(), None);
-    assert_eq!(samples.next(), None);
+    assert!(matches!(samples.next(), Some(Err(SampleError::Read(_)))));
+    assert!(samples.next().is_none());
+}
+
+struct SampleReadFailure;
+
+impl std::io::Read for SampleReadFailure {
+    fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other("injected samples read failure"))
+    }
+}
+
+#[test]
+fn read_samples_read_error_is_not_clean_eof() {
+    let prefix = b"{\"elapsed_ms\":1000}\n";
+    let broken = std::io::Read::chain(Cursor::new(prefix), SampleReadFailure);
+    let mut samples = ReadSamples::from_reader(broken);
+    assert_eq!(samples.next().unwrap().unwrap().elapsed_ms, 1000);
+    let error = samples.next().unwrap().unwrap_err();
+    assert!(matches!(error, SampleError::Read(_)));
+    assert!(error.to_string().contains("injected samples read failure"));
+    assert!(samples.next().is_none());
+}
+
+#[test]
+fn read_samples_gzip_error_is_not_clean_eof() {
+    let prefix = "{\"elapsed_ms\":1000}\n";
+    let mut broken = gzip(prefix);
+    broken.extend_from_slice(b"not a second gzip member");
+    let mut samples = ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(broken)));
+    assert_eq!(samples.next().unwrap().unwrap().elapsed_ms, 1000);
+    assert!(matches!(samples.next(), Some(Err(SampleError::Read(_)))));
+    assert!(samples.next().is_none());
+}
+
+#[test]
+fn read_samples_complete_decode_error_is_not_a_missing_sample() {
+    let mut samples = ReadSamples::from_reader(Cursor::new(
+        b"{\"elapsed_ms\":1000}\nnot json\n{\"elapsed_ms\":2000}\n",
+    ));
+    assert_eq!(samples.next().unwrap().unwrap().elapsed_ms, 1000);
+    assert!(matches!(samples.next(), Some(Err(SampleError::Decode(_)))));
+    assert!(samples.next().is_none());
 }
 
 #[test]
@@ -233,7 +274,7 @@ fn real_fs_read_samples_opens_plain_or_gzip_and_prefers_plain() {
             )
             .unwrap();
         }
-        let samples: Vec<_> = read_samples(dir.path()).collect();
+        let samples: Vec<_> = read_samples(dir.path()).collect::<Result<_, _>>().unwrap();
         let expected = if plain.is_some() || compressed.is_some() {
             vec![TrialConditions {
                 elapsed_ms: 1000,
@@ -252,7 +293,8 @@ fn read_samples_stops_early() {
         "{\"elapsed_ms\":1}\n{\"elapsed_ms\":2}\n",
     ))))
     .take(1)
-    .collect();
+    .collect::<Result<_, _>>()
+    .unwrap();
     assert_eq!(
         samples,
         [TrialConditions {
@@ -539,13 +581,29 @@ fn trial_conditions_round_trip_and_omit_empty_sensors() {
 }
 
 #[test]
-fn read_samples_skips_lines_that_are_not_samples() {
-    let samples: Vec<_> = ReadSamples::from_reader(Cursor::new(
-        b"{\"elapsed_ms\":1}\n\xff\xfe\n[]\n{\"elapsed_ms\":2}\n{\"elapsed_ms\":3}",
-    ))
-    .map(|sample| sample.elapsed_ms)
-    .collect();
-    assert_eq!(samples, [1, 2]);
+fn read_samples_rejects_invalid_utf8_and_non_objects_but_ignores_torn_tails() {
+    for invalid in [b"\xff\xfe\n".as_slice(), b"[]\n"] {
+        let mut samples = ReadSamples::from_reader(Cursor::new(invalid));
+        assert!(matches!(samples.next(), Some(Err(SampleError::Decode(_)))));
+        assert!(samples.next().is_none());
+    }
+    for torn in [b"{\"elapsed_ms\":3}".as_slice(), b"not json"] {
+        assert!(ReadSamples::from_reader(Cursor::new(torn)).next().is_none());
+    }
+}
+
+#[test]
+fn read_samples_reports_open_errors_but_missing_files_are_absent() {
+    let mut denied = ReadSamples::<Cursor<Vec<u8>>>::from_open(Err(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "injected open failure",
+    )));
+    assert!(matches!(denied.next(), Some(Err(SampleError::Open(_)))));
+    assert!(denied.next().is_none());
+    let mut missing = ReadSamples::<Cursor<Vec<u8>>>::from_open(Err(std::io::Error::from(
+        std::io::ErrorKind::NotFound,
+    )));
+    assert!(missing.next().is_none());
 }
 
 #[test]
