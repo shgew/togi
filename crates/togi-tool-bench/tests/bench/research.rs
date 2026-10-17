@@ -1,4 +1,5 @@
 //! `togi-tool-bench research`, run as a process in a fixture repository with a fake `just`.
+#![expect(clippy::disallowed_methods, reason = "the tests run the built command")]
 
 use std::fmt::Write as _;
 use std::fs;

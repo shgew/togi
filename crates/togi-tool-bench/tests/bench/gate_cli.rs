@@ -1,4 +1,5 @@
 //! The `togi-tool-bench` command with a registered gate, run as a process over a fake simulator.
+#![expect(clippy::disallowed_methods, reason = "the tests run the built command")]
 
 use std::fs;
 use std::path::Path;

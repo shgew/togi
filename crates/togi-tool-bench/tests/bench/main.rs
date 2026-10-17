@@ -1,8 +1,4 @@
-#![expect(
-    clippy::unwrap_used,
-    clippy::disallowed_methods,
-    reason = "the tests run the built command and panic on a broken fixture"
-)]
+#![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
 
 mod common;
 mod fake;

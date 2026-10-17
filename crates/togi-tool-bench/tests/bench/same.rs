@@ -1,4 +1,5 @@
 //! `same` over fake simulators: scripts that leave a recorded journal and exit as the test says.
+#![expect(clippy::disallowed_methods, reason = "the tests run the built command")]
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
