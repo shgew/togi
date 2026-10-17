@@ -353,11 +353,11 @@ The run log and `togi events` color the whole human-readable line according to i
 |---|---|
 | Trial ends with failure (`trial.end` outcome `failure`), `failure`, `crash.detected` | Red |
 | Dead end (`deadend` event and `run` summary), incompatible-session refusal line (not an event) | Red, bold |
-| Search step passed (`step_deeper`), deepening `deepen`, or `hunt.end` result `culprit`, `combination` or `direct` | Green |
+| Search step passed (`step_deeper`), deepening `deepen`, or `hunt.end` result `culprit` or `direct` | Green |
 | Core reaches its limit, search ends with room, passed `deepening.round` end, or passed full `checking.cycle` end | Green, bold |
-| `combination`, `hunt.start`, `tuner.warning`, `session.warning` (including state projection write failures), `backoff` or `yield`; known defect or ruleset mismatch warning | Yellow |
+| `combination`, `hunt.start`, `hunt.end` result `combination`, `fallback` or `loaded`, `tuner.warning`, `session.warning` (including state projection write failures), `backoff` or `yield`; known defect or ruleset mismatch warning | Yellow |
 | Inconclusive trial or `backend.retry` | Dim |
-| `hunt.group`, `deepening.round` start, `hunt.skipped`, `host.ranking`, passed non-full cycle, and everything else | Plain |
+| `hunt.group`, `deepening.round` start, `hunt.skipped`, `hunt.end` result `cancelled`, `host.ranking`, passed non-full cycle, and everything else | Plain |
 
 ANSI SGR is used when that output stream is a terminal (a character device such as `/dev/null` is not one) or `JOURNAL_STREAM` names that stream (its device and inode match, whatever the file type). A non-empty `NO_COLOR` disables ANSI even in the system journal. `events.jsonl`, `state.json` and `togi events --json` stay uncolored. When `JOURNAL_STREAM` names that stream, red and red-bold lines start with `<3>` so systemd stores them at priority err (`SyslogLevelPrefix=` is on by default), including with `NO_COLOR`; no other line gets a priority prefix, and terminals outside the system journal never get one. `togi events` uses the same rules on stdout.
 

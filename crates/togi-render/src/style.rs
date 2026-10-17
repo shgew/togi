@@ -34,8 +34,8 @@ impl Style {
 ///
 /// Plain, deliberately: a passed `trial.end`, `smu.*`, `profile.*`, `trial.*` other than the end,
 /// `mce`, the carried copies, `checking.step` and `checking.chain`, `host.ranking`, `hunt.group`
-/// (even with an inferred failure), `hunt.skipped`, `hunt.end` results `cancelled`, `fallback`
-/// and `loaded`, cycle and round starts, a failed or non-full cycle end, a failed deepening end,
+/// (even with an inferred failure), `hunt.skipped`, `hunt.end` result `cancelled`, cycle and round
+/// starts, a failed or non-full cycle end, a failed deepening end,
 /// core transitions other than reaching the limit or leaving search with room, the `check_solo_limit`
 /// and `hold` decisions, `defect.answered`, `command.reset` and every session, boot and journal
 /// event except `session.warning`. A new kind lands here by naming its arm.
@@ -55,8 +55,9 @@ pub fn style_for(payload: &Payload) -> Style {
             Decision::CheckSoloLimit | Decision::Hold => Style::Plain,
         },
         Payload::HuntEnd(end) => match end.result {
-            HuntOutcome::Culprit | HuntOutcome::Combination | HuntOutcome::Direct => Style::Green,
-            HuntOutcome::Cancelled | HuntOutcome::Fallback | HuntOutcome::Loaded => Style::Plain,
+            HuntOutcome::Culprit | HuntOutcome::Direct => Style::Green,
+            HuntOutcome::Combination | HuntOutcome::Fallback | HuntOutcome::Loaded => Style::Yellow,
+            HuntOutcome::Cancelled => Style::Plain,
         },
         Payload::CorePhase(transition) => {
             let reaches_limit = transition.to == CorePhase::AtLimit;
