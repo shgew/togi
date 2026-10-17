@@ -1484,32 +1484,116 @@ fn absent_lengths_and_confirmation_turns_keep_their_flat_state_shape() {
     assert_eq!((&json["short"], &json["short_s"]), (&0.into(), &0.into()));
     assert_eq!(serde_json::from_value::<CyclePart>(json).unwrap(), none);
 
+    let (json, turn) = flat_turn(TurnKind::Confirm);
+    assert_eq!(
+        (json["confirm"].as_bool(), json["step"].as_u64()),
+        (Some(true), Some(0))
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::SearchTurn>(json.clone()).unwrap(),
+        turn
+    );
+    let mut stepped = json;
+    stepped["step"] = 5.into();
+    assert!(serde_json::from_value::<crate::SearchTurn>(stepped).is_err());
+}
+
+#[test]
+fn search_turns_keep_their_flat_step_and_refuse_step_zero() {
+    let (json, turn) = flat_turn(TurnKind::Search {
+        step: NonZeroU8::MIN,
+    });
+    assert_eq!(
+        (json["confirm"].as_bool(), json["step"].as_u64()),
+        (Some(false), Some(1))
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::SearchTurn>(json.clone()).unwrap(),
+        turn
+    );
+    let mut stepless = json;
+    stepless["step"] = 0.into();
+    assert!(serde_json::from_value::<crate::SearchTurn>(stepless).is_err());
+}
+
+fn flat_turn(kind: TurnKind) -> (serde_json::Value, crate::SearchTurn) {
     let j = Journal::search_at(&[-20, -20, -20]);
-    let turn = j.state.search_turns()[0].clone();
-    for kind in [
-        TurnKind::Confirm,
-        TurnKind::Search {
-            step: NonZeroU8::MIN,
+    let turn = crate::SearchTurn {
+        kind,
+        ..j.state.search_turns()[0].clone()
+    };
+    (serde_json::to_value(&turn).unwrap(), turn)
+}
+
+fn rerun(long: Option<Quota>) -> crate::RerunPlan {
+    crate::RerunPlan {
+        regime: Regime::R2,
+        cores: set(&[0]),
+        lengths: Lengths {
+            short: Quota {
+                count: 3,
+                secs: 600,
+            },
+            long,
         },
-    ] {
-        let turn = crate::SearchTurn {
-            kind,
-            ..turn.clone()
-        };
-        let json = serde_json::to_value(&turn).unwrap();
-        let flat = (json["confirm"].as_bool(), json["step"].as_u64());
-        let want = match kind {
-            TurnKind::Confirm => (Some(true), Some(0)),
-            TurnKind::Search { step } => (Some(false), Some(u64::from(step.get()))),
-        };
-        assert_eq!(flat, want);
-        assert_eq!(
-            serde_json::from_value::<crate::SearchTurn>(json).unwrap(),
-            turn
-        );
     }
-    let mut json = serde_json::to_value(&turn).unwrap();
-    json["confirm"] = true.into();
-    json["step"] = 5.into();
-    assert!(serde_json::from_value::<crate::SearchTurn>(json).is_err());
+}
+
+fn flat_rerun(plan: &crate::RerunPlan) -> serde_json::Value {
+    let json = serde_json::to_value(plan).unwrap();
+    let keys: Vec<&str> = json
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        ["cores", "long", "long_s", "regime", "short", "short_s"],
+        "{json}"
+    );
+    assert_eq!(
+        &serde_json::from_value::<crate::RerunPlan>(json.clone()).unwrap(),
+        plan
+    );
+    json
+}
+
+#[test]
+fn a_rerun_without_a_long_trial_keeps_its_flat_state_shape() {
+    let json = flat_rerun(&rerun(None));
+    assert_eq!(
+        (
+            &json["short"],
+            &json["short_s"],
+            &json["long"],
+            &json["long_s"]
+        ),
+        (&3.into(), &600.into(), &0.into(), &0.into())
+    );
+}
+
+#[test]
+fn a_rerun_with_a_long_trial_keeps_its_flat_state_shape() {
+    let json = flat_rerun(&rerun(Some(Quota {
+        count: 1,
+        secs: 1200,
+    })));
+    assert_eq!(
+        (
+            &json["short"],
+            &json["short_s"],
+            &json["long"],
+            &json["long_s"]
+        ),
+        (&3.into(), &600.into(), &1.into(), &1200.into())
+    );
+}
+
+#[test]
+fn a_rerun_without_a_short_trial_is_refused() {
+    let mut json = serde_json::to_value(rerun(None)).unwrap();
+    json["short"] = 0.into();
+    json["short_s"] = 0.into();
+    assert!(serde_json::from_value::<crate::RerunPlan>(json).is_err());
 }
