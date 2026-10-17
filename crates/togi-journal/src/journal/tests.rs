@@ -4,6 +4,7 @@ mod repair;
 
 use std::fmt::Write as _;
 
+use test_case::test_case;
 use togi_machine::TargetOffset;
 
 use super::*;
@@ -164,17 +165,17 @@ fn the_first_event_must_be_session_start_and_consumes_no_seq() {
     assert_eq!(first.seq, Seq::FIRST);
 }
 
-#[test]
-fn a_cause_must_precede_its_event_and_a_refusal_changes_nothing() {
+#[test_case(2; "the next seq")]
+#[test_case(3; "a later seq")]
+#[test_case(99; "a far later seq")]
+fn a_cause_must_precede_its_event_and_a_refusal_changes_nothing(cause: u64) {
     let fs = MemFs::new();
     let mut journal = begin_default(&fs);
     let mutations = fs.mutations();
-    for cause in [2, 3, 99] {
-        let error = journal
-            .append(stamp(1), note("x"), &[Seq::new(cause).unwrap()])
-            .unwrap_err();
-        assert!(matches!(error, AppendError::Cause { .. }));
-    }
+    let error = journal
+        .append(stamp(1), note("x"), &[Seq::new(cause).unwrap()])
+        .unwrap_err();
+    assert!(matches!(error, AppendError::Cause { .. }));
     assert_eq!(fs.mutations(), mutations);
     assert_eq!(
         journal
@@ -242,19 +243,15 @@ fn a_receipt_follows_a_durable_intent_and_the_write_cites_it() {
     assert_eq!(journal.events()[2].kind(), EventKind::SmuWrite);
 }
 
-#[test]
-fn no_receipt_comes_from_an_intent_that_was_not_made_durable() {
-    for fault in [
-        Fault::before(Op::Write, 1),
-        Fault::short_write(1),
-        Fault::before(Op::Sync, 1),
-    ] {
-        let fs = MemFs::new();
-        let mut journal = begin_default(&fs);
-        fs.inject(fault);
-        assert!(journal.append_smu_intent(stamp(1), command(), &[]).is_err());
-        assert_eq!(journal.events().len(), 1);
-    }
+#[test_case(Fault::before(Op::Write, 1); "write refused")]
+#[test_case(Fault::short_write(1); "short write")]
+#[test_case(Fault::before(Op::Sync, 1); "sync refused")]
+fn no_receipt_comes_from_an_intent_that_was_not_made_durable(fault: Fault) {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    fs.inject(fault);
+    assert!(journal.append_smu_intent(stamp(1), command(), &[]).is_err());
+    assert_eq!(journal.events().len(), 1);
 }
 
 #[test]
@@ -373,81 +370,78 @@ fn a_reboot_whose_sync_fails_poisons_the_journal_and_keeps_its_boot() {
     ));
 }
 
-#[test]
-fn a_write_or_fsync_failure_poisons_without_further_io_and_the_survivor_replays_once() {
-    let cases = [
-        (Fault::before(Op::Write, 1), 1, "write never happened"),
-        (Fault::short_write(1), 1, "short write"),
-        (
-            Fault::after(Op::Write, 1),
-            2,
-            "write landed, error reported",
+#[test_case(Fault::before(Op::Write, 1), 1, "write never happened"; "write never happened")]
+#[test_case(Fault::short_write(1), 1, "short write"; "short write")]
+#[test_case(
+    Fault::after(Op::Write, 1), 2, "write landed, error reported";
+    "write landed, error reported"
+)]
+#[test_case(
+    Fault::before(Op::Sync, 1), 2, "sync failed after the write landed";
+    "sync failed after the write landed"
+)]
+#[test_case(Fault::after(Op::Sync, 1), 2, "sync reported failure"; "sync reported failure")]
+fn a_write_or_fsync_failure_poisons_without_further_io_and_the_survivor_replays_once(
+    fault: Fault,
+    survivors: usize,
+    why: &str,
+) {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    fs.inject(fault);
+    assert!(
+        matches!(
+            journal.append(stamp(1), note("lost?"), &[]),
+            Err(AppendError::Failed(_))
         ),
-        (
-            Fault::before(Op::Sync, 1),
-            2,
-            "sync failed after the write landed",
-        ),
-        (Fault::after(Op::Sync, 1), 2, "sync reported failure"),
-    ];
-    for (fault, survivors, why) in cases {
-        let fs = MemFs::new();
-        let mut journal = begin_default(&fs);
-        fs.inject(fault);
-        assert!(
-            matches!(
-                journal.append(stamp(1), note("lost?"), &[]),
-                Err(AppendError::Failed(_))
-            ),
-            "{why}"
-        );
-        assert_eq!(journal.events().len(), 1, "{why}: nothing is published");
-        let mutations = fs.mutations();
-        for _ in 0..3 {
-            assert!(matches!(
-                journal.append(stamp(2), note("again"), &[]),
-                Err(AppendError::Poisoned(_))
-            ));
-        }
+        "{why}"
+    );
+    assert_eq!(journal.events().len(), 1, "{why}: nothing is published");
+    let mutations = fs.mutations();
+    for _ in 0..3 {
         assert!(matches!(
-            journal.append_smu_intent(stamp(2), command(), &[]),
+            journal.append(stamp(2), note("again"), &[]),
             Err(AppendError::Poisoned(_))
         ));
-        assert!(matches!(journal.flush(), Err(AppendError::Poisoned(_))));
-        assert_eq!(
-            fs.mutations(),
-            mutations,
-            "{why}: a poisoned journal does no I/O"
-        );
-
-        let dir = journal.close().unwrap();
-        assert_eq!(fs.mutations(), mutations);
-        let mut journal = dir.open(boot(2)).unwrap();
-        let replayed = journal
-            .events()
-            .iter()
-            .filter(|event| event.kind() == EventKind::SessionWarning)
-            .count();
-        assert_eq!(replayed, survivors - 1, "{why}");
-        let torn = journal
-            .events()
-            .iter()
-            .filter(|event| event.kind() == EventKind::JournalTorn)
-            .count();
-        assert_eq!(torn, usize::from(why == "short write"), "{why}");
-        let next = journal
-            .append(stamp(3), note("after"), &[])
-            .unwrap()
-            .seq
-            .get();
-        assert_eq!(
-            next,
-            journal.events().len() as u64,
-            "{why}: seqs stay contiguous"
-        );
-        let bytes = journal.close().map(|_| live(&fs)).unwrap();
-        assert!(Recording::parse(&bytes).unwrap().torn().is_none(), "{why}");
     }
+    assert!(matches!(
+        journal.append_smu_intent(stamp(2), command(), &[]),
+        Err(AppendError::Poisoned(_))
+    ));
+    assert!(matches!(journal.flush(), Err(AppendError::Poisoned(_))));
+    assert_eq!(
+        fs.mutations(),
+        mutations,
+        "{why}: a poisoned journal does no I/O"
+    );
+
+    let dir = journal.close().unwrap();
+    assert_eq!(fs.mutations(), mutations);
+    let mut journal = dir.open(boot(2)).unwrap();
+    let replayed = journal
+        .events()
+        .iter()
+        .filter(|event| event.kind() == EventKind::SessionWarning)
+        .count();
+    assert_eq!(replayed, survivors - 1, "{why}");
+    let torn = journal
+        .events()
+        .iter()
+        .filter(|event| event.kind() == EventKind::JournalTorn)
+        .count();
+    assert_eq!(torn, usize::from(why == "short write"), "{why}");
+    let next = journal
+        .append(stamp(3), note("after"), &[])
+        .unwrap()
+        .seq
+        .get();
+    assert_eq!(
+        next,
+        journal.events().len() as u64,
+        "{why}: seqs stay contiguous"
+    );
+    let bytes = journal.close().map(|_| live(&fs)).unwrap();
+    assert!(Recording::parse(&bytes).unwrap().torn().is_none(), "{why}");
 }
 
 #[test]
@@ -608,24 +602,24 @@ fn end_with(median: Option<f64>) -> Payload {
     Payload::TrialEnd(end)
 }
 
-#[test]
-fn a_payload_that_reads_back_different_is_refused_without_poison_or_seq() {
-    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let fs = MemFs::new();
-        let mut journal = begin_default(&fs);
-        let mutations = fs.mutations();
-        let refused = journal.append(stamp(1), end_with(Some(value)), &[]);
-        assert!(matches!(refused, Err(AppendError::Lossy)), "{value}");
-        assert_eq!(fs.mutations(), mutations);
-        assert_eq!(
-            journal
-                .append(stamp(2), end_with(Some(0.5)), &[])
-                .unwrap()
-                .seq
-                .get(),
-            2
-        );
-    }
+#[test_case(f64::NAN; "nan")]
+#[test_case(f64::INFINITY; "infinity")]
+#[test_case(f64::NEG_INFINITY; "negative infinity")]
+fn a_payload_that_reads_back_different_is_refused_without_poison_or_seq(value: f64) {
+    let fs = MemFs::new();
+    let mut journal = begin_default(&fs);
+    let mutations = fs.mutations();
+    let refused = journal.append(stamp(1), end_with(Some(value)), &[]);
+    assert!(matches!(refused, Err(AppendError::Lossy)));
+    assert_eq!(fs.mutations(), mutations);
+    assert_eq!(
+        journal
+            .append(stamp(2), end_with(Some(0.5)), &[])
+            .unwrap()
+            .seq
+            .get(),
+        2
+    );
 }
 
 fn fine_stamp(nanos: i64, mono: Option<std::time::Duration>) -> Stamp {

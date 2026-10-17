@@ -1599,6 +1599,7 @@ name = "togi-carry"
 version = "0.0.0"
 dependencies = [
  "jiff",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-defect",
@@ -1634,6 +1635,7 @@ name = "togi-defect"
 version = "0.0.0"
 dependencies = [
  "jiff",
+ "test-case",
  "togi-config",
  "togi-journal",
  "togi-machine",
@@ -1710,6 +1712,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-machine",
 ]
@@ -1756,6 +1759,7 @@ dependencies = [
 name = "togi-requests"
 version = "0.0.0"
 dependencies = [
+ "test-case",
  "togi-machine",
 ]
 
@@ -2119,6 +2123,9 @@ dependencies = [
 [[package]]
 name = "togi-version"
 version = "0.0.0"
+dependencies = [
+ "test-case",
+]
 
 [[package]]
 name = "togi-watch"
