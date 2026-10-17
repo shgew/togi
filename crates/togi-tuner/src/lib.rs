@@ -123,7 +123,7 @@ pub use projection::{
     TemperaturePeak,
 };
 pub use query::{NotReady, replay};
-pub use r7::query::R7CoreStatus;
+pub use r7::query::{ChainOrder, R7CoreStatus};
 pub use state::State;
 pub use topology::{Ranking, RankingError, Topology, TopologyError};
 

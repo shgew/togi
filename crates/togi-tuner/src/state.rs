@@ -377,6 +377,16 @@ impl State {
         self.run().map(|run| &run.constraints)
     }
 
+    /// The evidence ledger folded so far, once the session started and the state stands: an
+    /// analysis counts passes with it under the tuner's own classes, backends, windows and
+    /// failure invalidation.
+    pub fn evidence(&self) -> Option<&Evidence> {
+        if self.poisoned {
+            return None;
+        }
+        self.run().map(|run| &run.evidence)
+    }
+
     #[cfg(test)]
     pub(crate) fn run_mut_for_test(&mut self) -> Option<&mut Run> {
         self.run.as_mut()
