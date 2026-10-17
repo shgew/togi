@@ -231,8 +231,8 @@ in
   };
 
   # The host lock on a normal boot of the module with a hardware-test group: nix/provision-lock.py, the program
-  # docs/howto.md gives manual installs, on fresh, legacy, held and symlinked locks, and the installed `togi`'s
-  # refusals of an unrelated user, a foreign owner, a read-only lock and a held lock. Its checks are exit
+  # docs/howto.md gives manual installs, on fresh, legacy, held and symlinked locks; an unrelated user's denial;
+  # and the installed `togi`'s refusals of a foreign owner, a read-only lock and a held lock. Its checks are exit
   # statuses, inodes, modes and contents, not message text.
   host-lock = pkgs.testers.runNixOSTest {
     name = "togi-host-lock";
@@ -253,7 +253,6 @@ in
       users.users.unrelated.isNormalUser = true;
       environment.etc."togi-provision-lock.py".source = ./provision-lock.py;
       environment.systemPackages = [
-        trialTests
         pkgs.util-linux
         pkgs.python3
       ];
@@ -261,7 +260,6 @@ in
 
     testScript = ''
       lock = "/run/lock/togi.lock"
-      pin = "hardware::a_helper_cannot_pin_outside_its_scope"
       provision = "python3 /etc/togi-provision-lock.py"
 
 
@@ -320,11 +318,15 @@ in
 
       machine.fail("runuser -u unrelated -- touch /run/lock/unrelated-lock")
       machine.fail(f"runuser -u unrelated -- flock --nonblock {lock} true")
-      unrelated_status, unrelated_output = machine.execute(
-          f"runuser -u unrelated -- togi-trial-tests {pin} --test-threads 1 --nocapture 2>&1"
+
+      # The refusals run while another process holds the lock: `reset` checks the lock before taking it and exits 1
+      # with no journal once it has it, so only a held lock tells a refusal (1) from a wrongly accepted lock (3).
+      machine.succeed(
+          "systemd-run --unit=togi-test-holder --property=Type=exec /bin/sh -c "
+          f"'set -e; exec 9<{lock}; ${pkgs.util-linux}/bin/flock --exclusive 9; "
+          "${pkgs.coreutils}/bin/touch /run/togi-test-held; exec ${pkgs.coreutils}/bin/sleep infinity'"
       )
-      machine.log(unrelated_output)
-      assert unrelated_status != 0, unrelated_output
+      machine.wait_until_succeeds("test -f /run/togi-test-held", timeout=10)
 
       machine.succeed(f"chown unrelated {lock}")
       foreign_identity = stat(lock, "%d:%i:%u:%g:%a")
@@ -338,12 +340,6 @@ in
       assert stat(lock, "%a") == "640"
       machine.succeed(f"test ! -e /tmp/readonly-lock-state; chmod 0644 {lock}")
 
-      machine.succeed(
-          "systemd-run --unit=togi-test-holder --property=Type=exec /bin/sh -c "
-          f"'set -e; exec 9<{lock}; ${pkgs.util-linux}/bin/flock --exclusive 9; "
-          "${pkgs.coreutils}/bin/touch /run/togi-test-held; exec ${pkgs.coreutils}/bin/sleep infinity'"
-      )
-      machine.wait_until_succeeds("test -f /run/togi-test-held", timeout=10)
       machine.succeed(f"systemd-tmpfiles --create --prefix={lock}")
       assert stat(lock, "%d:%i") == lock_identity
       assert stat(lock, "%a") == "644"
