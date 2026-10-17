@@ -241,18 +241,15 @@ fn report(error: &clap::Error, out: &mut dyn Write, err: &mut dyn Write) -> Exit
             }
         };
     }
-    match error.kind() {
-        ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
-            let _ = err.write_all(BANNER.as_bytes());
-        }
+    let kind = error.kind();
+    if kind == ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand {
+        let _ = err.write_all(BANNER.as_bytes());
+    } else if kind == ErrorKind::MissingSubcommand {
         // Flags without a command, such as `--state-dir /x`: the same wordmark and help as no
         // arguments at all, in place of clap's error text.
-        ErrorKind::MissingSubcommand => {
-            let _ = err.write_all(BANNER.as_bytes());
-            let _ = err.write_all(command().render_help().to_string().as_bytes());
-            return Exit::Usage;
-        }
-        _ => {}
+        let _ = err.write_all(BANNER.as_bytes());
+        let _ = err.write_all(command().render_help().to_string().as_bytes());
+        return Exit::Usage;
     }
     let _ = err.write_all(text.as_bytes());
     Exit::Usage

@@ -14,12 +14,13 @@ use crate::report::{current_build, fail, refusal_message};
 /// anything else. The kind goes in raw: the command's `fail` escapes it in the spec's human form.
 #[must_use]
 pub fn unknown_kind(error: &FileError) -> Option<String> {
-    match &error.source {
-        ReadError::UnknownKind { line, source } => Some(format!(
+    if let ReadError::UnknownKind { line, source } = &error.source {
+        Some(format!(
             "line {line}: unknown event kind \"{}\"; this build does not know it",
             source.0
-        )),
-        _ => None,
+        ))
+    } else {
+        None
     }
 }
 
