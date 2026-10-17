@@ -371,20 +371,29 @@ fn real_fs_missing_binaries_directory_is_backend_missing() {
     );
 }
 
+fn without_zen5() -> Result<Binaries, Error> {
+    discover_names(&Ycruncher::new("/pkg").unwrap(), &["11-SNB ~ Hina", LOWEST])
+}
+
 #[test]
-fn missing_zen5_fails_check_and_every_plan() {
-    let ycruncher = Ycruncher::new("/pkg").unwrap();
-    let discover = || discover_names(&ycruncher, &["11-SNB ~ Hina", LOWEST]);
-    let error = ycruncher.check_with(discover).unwrap_err();
+fn missing_zen5_fails_check() {
+    let error = Ycruncher::new("/pkg")
+        .unwrap()
+        .check_with(without_zen5)
+        .unwrap_err();
     assert!(matches!(error, Error::NoZen5 { .. }));
     assert!(error.is_missing());
     assert!(error.to_string().contains("24-ZN5"));
-    for base in ["ycruncher-bkt-sftv4", "ycruncher-fftv4-n63-vt3"] {
-        let error = ycruncher
-            .plan_with(workload(base), Path::new("/w"), &cpus(&[2]), discover)
-            .unwrap_err();
-        assert!(matches!(error, Error::NoZen5 { .. }), "{base}");
-    }
+}
+
+#[test_case("ycruncher-bkt-sftv4"; "lowest binary workload")]
+#[test_case("ycruncher-fftv4-n63-vt3"; "zen5 binary workload")]
+fn missing_zen5_fails_every_plan(base: &str) {
+    let error = Ycruncher::new("/pkg")
+        .unwrap()
+        .plan_with(workload(base), Path::new("/w"), &cpus(&[2]), without_zen5)
+        .unwrap_err();
+    assert!(matches!(error, Error::NoZen5 { .. }));
 }
 
 #[test]
