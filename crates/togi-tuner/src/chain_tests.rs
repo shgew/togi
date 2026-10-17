@@ -176,7 +176,7 @@ pub(crate) fn pass_part(j: &mut Journal, cores: &[u8], requests: &[(u8, f64)]) -
         assert_eq!(plan.load, Load::Many(cores), "trial {trial}: {plan:?}");
         assert_eq!(plan.duration.get(), want, "trial {trial}: {plan:?}");
         assert!(
-            matches!(plan.context, TrialContext::Cycle { step, .. } if step.get().get() == 1),
+            matches!(plan.requirement.context, TrialContext::Cycle { step, .. } if step.get().get() == 1),
             "{plan:?}"
         );
         last = Some(run(j, &plan, Outcome::Pass, requests, None));
@@ -252,7 +252,7 @@ fn needed(j: &Journal, step: u32, cores: &[u8], secs: u32) -> Option<u16> {
         &values(j),
         secs,
     );
-    plan.context = TrialContext::Cycle {
+    plan.requirement.context = TrialContext::Cycle {
         cycle: j.run().checking.open().unwrap().number,
         step: StepNo::new(NonZeroU32::new(step).unwrap()),
         part: PartNo::new(NonZeroU32::MIN),
@@ -572,7 +572,7 @@ fn r7_chain_reruns_a_failed_class_that_left_the_chain() {
     for _ in 0..j.run().config.needed.get() {
         let plan = trial_of(&action).clone();
         assert!(
-            matches!(plan.context, TrialContext::Rerun { .. }),
+            matches!(plan.requirement.context, TrialContext::Rerun { .. }),
             "{plan:?}"
         );
         assert_eq!(plan.load, Load::Many(old));
@@ -970,7 +970,7 @@ fn chain_rederives_after_a_backoff_before_its_step_counts() {
     let mut action = j.next();
     while let Action::RunTrial(plan) = &action {
         assert_eq!(
-            plan.context,
+            plan.requirement.context,
             TrialContext::Rerun { failure: failed },
             "a trial ran before the stale chain was re-derived: {plan:?}"
         );
@@ -993,7 +993,10 @@ fn chain_rederives_after_a_backoff_before_its_step_counts() {
     let next = same_next(&j);
     let plan = trial_of(&next);
     assert_eq!(plan.load, Load::Many(first.cores));
-    assert!(matches!(plan.context, TrialContext::Cycle { .. }));
+    assert!(matches!(
+        plan.requirement.context,
+        TrialContext::Cycle { .. }
+    ));
 }
 
 fn r7_cycle_trials(j: &mut Journal) -> HashMap<CoreSet, BTreeSet<(u32, u16)>> {
@@ -1346,7 +1349,7 @@ fn a_passing_parked_end_leaves_the_checking_last_seq() {
     let rerun = zero.next_trial();
     assert_eq!(rerun.condition, Condition::Parked, "{rerun:?}");
     assert!(
-        matches!(rerun.context, TrialContext::ZeroRerun { .. }),
+        matches!(rerun.requirement.context, TrialContext::ZeroRerun { .. }),
         "{rerun:?}"
     );
     run(&mut zero, &rerun, Outcome::Pass, &[], None);

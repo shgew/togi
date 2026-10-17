@@ -6,7 +6,7 @@ use togi_machine::{CoreId, CoreSet, PerCore, Regime, TargetOffset, WorkloadId};
 
 use crate::hunt::plan::GroupOutcome;
 use crate::state::Run;
-use crate::{Limit, Profile, Requirement, RequirementKind, State, TrialHistory, Window};
+use crate::{Limit, Profile, Requirement, State, TrialContext, TrialHistory, Window};
 
 #[expect(
     clippy::struct_excessive_bools,
@@ -198,11 +198,7 @@ impl State {
 
     /// The requirement the open trial was scheduled for, as its `trial.intent` folded.
     pub fn open_requirement(&self) -> Option<Requirement> {
-        self.live()?
-            .flight
-            .open
-            .as_ref()
-            .map(|open| open.requirement)
+        self.live()?.flight.open().map(|open| open.requirement)
     }
 
     pub fn hunt_plan(&self) -> Option<HuntPlan> {
@@ -326,9 +322,9 @@ impl Run {
     }
 
     fn trial_requirement(&self) -> Option<TrialRequirement> {
-        let open = self.flight.open.as_ref()?;
+        let open = self.flight.open()?;
         let history = self.history(open);
-        let failed = if open.requirement.kind == RequirementKind::Cycle {
+        let failed = if let TrialContext::Cycle { .. } = open.requirement.context {
             let (Window::Live { since } | Window::LiveOrCarried { since }) =
                 open.requirement.window;
             self.evidence
@@ -350,7 +346,8 @@ impl Run {
         let cursor = self.search.cursor();
         let current = cursor.and_then(|at| order.get(at).copied());
         let second_only = |id: CoreId| {
-            self.searching(id).is_some_and(|core| core.check.is_none())
+            self.searching(id)
+                .is_some_and(|core| core.phase.check().is_none())
                 && matches!(self.search.current(id, &self.evidence), (Some(_), None))
         };
         let mut ids: Vec<CoreId> = current.filter(|&id| second_only(id)).into_iter().collect();
@@ -369,11 +366,11 @@ impl Run {
     fn turn_view(&self, id: CoreId, second_only: bool) -> SearchTurn {
         let core = self.core(id);
         let needed = self.config.needed;
-        let (light, heavy, regime, frozen) = match core.check {
+        let (light, heavy, regime, frozen) = match core.phase.check() {
             Some(check) => {
                 let profile = Profile::alone(&self.topo, id, core.offset);
                 let window = Window::LiveOrCarried {
-                    since: core.phase_seq,
+                    since: Some(check.since),
                 };
                 let valid = |frozen| {
                     self.evidence
@@ -391,14 +388,14 @@ impl Run {
             None if second_only => (0, 0, Regime::R2, None),
             None => (0, 0, Regime::R1, None),
         };
-        let step = if core.check.is_some() {
+        let step = if core.phase.check().is_some() {
             0
         } else if self.failure_point(id).is_some() {
             1
         } else {
             5
         };
-        let regimes = if core.check.is_none() && second_only {
+        let regimes = if core.phase.check().is_none() && second_only {
             vec![Regime::R2]
         } else {
             vec![Regime::R1, Regime::R2]
@@ -406,7 +403,7 @@ impl Run {
         let plan = self.search_trial(id, regime, frozen);
         SearchTurn {
             core: id,
-            confirm: core.check.is_some(),
+            confirm: core.phase.check().is_some(),
             regimes,
             offset: core.offset,
             workload: plan.workload_at(self.rotation(&plan)),
@@ -414,7 +411,7 @@ impl Run {
             light,
             heavy,
             needed: u32::from(needed.get()),
-            running: self.flight.open.as_ref().is_some_and(|open| {
+            running: self.flight.open().is_some_and(|open| {
                 open.intent.core == Some(id) && open.intent.activity == Some(Activity::Search)
             }),
         }

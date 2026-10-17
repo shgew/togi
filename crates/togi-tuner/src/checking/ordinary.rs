@@ -1,4 +1,4 @@
-use togi_journal::{Activity, CorePhase, Decision, HuntSkipped, Seq, TunerDecision};
+use togi_journal::{Activity, Decision, HuntSkipped, Seq, TunerDecision};
 use togi_machine::{Condition, CoreId, TargetOffset};
 
 use crate::failures::Pending;
@@ -17,7 +17,7 @@ impl Run {
         })?;
         let core = self.core(id);
         let record = self.failures.pending(seq);
-        if core.phase == Some(CorePhase::Search) {
+        if core.phase.searching() {
             let failed = record.and_then(Pending::offset).unwrap_or(core.offset);
             return Some(Action::Decide(DecisionAction::new(
                 self.search_failure(id, failed),

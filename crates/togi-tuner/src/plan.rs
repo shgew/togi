@@ -61,7 +61,7 @@ pub enum WorkloadChoice {
     Frozen(WorkloadId),
 }
 
-/// The identity a scheduled trial's requirement belongs to.
+/// The identity a scheduled trial's requirement belongs to, with the context its kind needs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TrialContext {
     Search {
@@ -93,27 +93,13 @@ pub enum TrialContext {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RequirementKind {
-    Search,
-    SoloLimit,
-    Cycle,
-    Rerun,
-    ZeroRerun,
-    Round,
-    Hunt,
-}
-
 /// The evidence obligation a trial was scheduled for, captured before its intent folds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Requirement {
-    pub kind: RequirementKind,
+    pub context: TrialContext,
     pub class: ClassKey,
     pub window: Window,
     pub needed: NonZeroU16,
-    pub step: Option<StepNo>,
-    pub part: Option<PartNo>,
 }
 
 /// A trial the tuner asks for.
@@ -126,7 +112,6 @@ pub struct TrialPlan {
     pub activity: Activity,
     pub profile: Profile,
     pub duration: Secs,
-    pub context: TrialContext,
     pub requirement: Requirement,
     pub retry: bool,
     pub cause: Vec<Seq>,
@@ -168,7 +153,7 @@ impl TrialPlan {
             round: None,
             rerun: false,
         };
-        match self.context {
+        match self.requirement.context {
             TrialContext::Search { .. } | TrialContext::SoloLimit { .. } => {}
             TrialContext::Cycle { cycle, step, .. } => {
                 intent.cycle = Some(cycle);

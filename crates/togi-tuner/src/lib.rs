@@ -114,8 +114,8 @@ pub use forecast::{AllPass, Between, Branch, Forecast, Premise, Uncertainty};
 pub use later::bios::{BiosProfile, Confirmed, Unconfirmed};
 pub use phase_plan::{Candidate, PhaseNo, PhasePlan};
 pub use plan::{
-    Action, DecisionAction, DecisionPayload, Load, PartNo, Requirement, RequirementKind, StepNo,
-    TrialContext, TrialPlan, WorkloadChoice,
+    Action, DecisionAction, DecisionPayload, Load, PartNo, Requirement, StepNo, TrialContext,
+    TrialPlan, WorkloadChoice,
 };
 pub use profile::{Profile, ProfileError, TopologyMismatch};
 pub use projection::{

@@ -224,7 +224,7 @@ fn first_failure_holds_and_second_steps_back_naming_both() {
     assert_eq!(shown.since(), Some(held));
     assert!(matches!(
         j.next(),
-        Action::RunTrial(plan) if !matches!(plan.context, TrialContext::Rerun { .. })
+        Action::RunTrial(plan) if !matches!(plan.requirement.context, TrialContext::Rerun { .. })
     ));
     j.assert_resumes();
 
