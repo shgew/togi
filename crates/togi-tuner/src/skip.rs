@@ -33,10 +33,10 @@ impl Run {
             return action;
         };
         let multi_r7 = plan.regime == Regime::R7 && plan.load.cores().len() > 1;
-        let hunt = matches!(plan.context, TrialContext::Hunt { .. });
+        let hunt = matches!(plan.requirement.context, TrialContext::Hunt { .. });
         if multi_r7
             || (plan.condition == Condition::Parked && !hunt)
-            || matches!(plan.context, TrialContext::ZeroRerun { .. })
+            || matches!(plan.requirement.context, TrialContext::ZeroRerun { .. })
         {
             return action;
         }
@@ -79,7 +79,7 @@ impl Run {
         let mut failure: Failure = known.failure.clone();
         failure.known_failure = Some(seq);
         failure.reason = Some(reason);
-        failure.round = if let TrialContext::Round { round } = plan.context {
+        failure.round = if let TrialContext::Round { round } = plan.requirement.context {
             Some(round)
         } else {
             None

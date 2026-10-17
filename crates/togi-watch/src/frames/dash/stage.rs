@@ -832,7 +832,7 @@ fn pending_rerun(scene: &Scene<'_>) -> Option<Vec<Clause>> {
         return None;
     }
     let next = s.forecast.between.as_ref()?.next.as_ref()?;
-    let rerun = match next.context {
+    let rerun = match next.requirement.context {
         TrialContext::Rerun { .. } => "a clean rerun is needed",
         TrialContext::ZeroRerun { .. } => "a clean rerun with every core at 0 is needed",
         TrialContext::Search { .. }

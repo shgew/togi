@@ -25,4 +25,14 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+    #[error("fold the journal into the tuner")]
+    Fold(#[source] togi_tuner::FoldError),
+    #[error("encode the counterfactual records")]
+    Records(#[source] serde_json::Error),
+    #[error("write counterfactual records {path}")]
+    Witnesses {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 }

@@ -14,8 +14,7 @@ use togi_machine::{
 use togi_tuner::{
     Action, Between, Candidate, ClassKey, CyclePart, CyclePlan, CycleStep, DeepeningCheck,
     DeepeningView, Forecast, GroupState, HuntPlan, Load, PhaseNo, PhasePlan, Profile, Requirement,
-    RequirementKind, RerunPlan, Secs, StepNo, Topology, TrialContext, TrialPlan, Window,
-    WorkloadChoice,
+    RerunPlan, Secs, StepNo, Topology, TrialContext, TrialPlan, Window, WorkloadChoice,
 };
 
 use crate::frames::colours::Paint;
@@ -825,14 +824,11 @@ fn next_trial(context: TrialContext) -> TrialPlan {
         activity: Activity::Checking,
         profile: Profile::alone(&topology, core(0), off(-5)),
         duration: secs,
-        context,
         requirement: Requirement {
-            kind: RequirementKind::Cycle,
+            context,
             class: ClassKey::new(workload, load.cores(), secs),
             window: Window::Live { since: None },
             needed: NonZeroU16::new(1).expect("one"),
-            step: None,
-            part: None,
         },
         retry: false,
         cause: Vec::new(),

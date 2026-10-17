@@ -8,6 +8,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::fake::ProcessBench as Bench;
+use crate::session;
+use togi_sim::MachineDefinition;
+use togi_tool_audit::{Check, Kind};
 use togi_tool_bench::{Error, Fleet, Options, Report, RunError, Status, execute};
 
 const DAMAGE: &str = r#"printf 'broken\n' > "$4/events.jsonl"; exit 0"#;
@@ -124,6 +127,41 @@ fn real_process_keeping_the_runs_skips_the_cache_and_leaves_their_directories() 
             .unwrap()
             .contains("log line")
     );
+}
+
+#[test]
+fn real_process_every_simulated_run_is_audited_with_its_state_directory() {
+    let bench = Bench::new();
+    let mut options = bench.options(bench.simulator("sim", 0, "", ""));
+    options.keep = Some(bench.path("kept"));
+    let report = run(&options);
+    assert_eq!(report.audited, 5);
+    assert!(report.violations.is_empty(), "{:?}", report.violations);
+    let kept = report.kept.unwrap();
+    assert!(kept.join("default/dev-1/lock").is_file());
+}
+
+#[test]
+fn real_process_a_capped_journal_is_an_unfinished_prefix_when_censored_but_not_when_concluded() {
+    let bench = Bench::new();
+    bench.journal(&session::session(&MachineDefinition::default(), 1, None, 2).events);
+    let mut options = bench.options(bench.simulator("capped", 3, "", ""));
+    options.cache = None;
+    let censored = run(&options);
+    assert!(
+        censored
+            .records
+            .iter()
+            .all(|record| record.status == Status::Censored)
+    );
+    assert!(censored.violations.is_empty(), "{:?}", censored.violations);
+    options.simulator = Some(bench.simulator("concluded", 0, "", ""));
+    let concluded = run(&options);
+    assert_eq!(concluded.violations.len(), 5, "{:?}", concluded.violations);
+    assert!(concluded.violations.iter().all(|violation| {
+        violation.finding.check == Kind::Audit(Check::Termination)
+            && violation.finding.journal.as_deref() == Some("live")
+    }));
 }
 
 #[test]

@@ -5,21 +5,16 @@ use togi_machine::Condition;
 
 use super::{Check, Round};
 use crate::state::Run;
-use crate::{
-    ClassKey, Profile, Requirement, RequirementKind, TrialContext, TrialPlan, Window,
-    WorkloadChoice,
-};
+use crate::{ClassKey, Profile, Requirement, TrialContext, TrialPlan, Window, WorkloadChoice};
 
 pub(super) fn round_requirement(round: &Round, check: &Check) -> Requirement {
     Requirement {
-        kind: RequirementKind::Round,
+        context: TrialContext::Round { round: round.id() },
         class: check.class,
         window: Window::LiveOrCarried {
             since: Some(check.since),
         },
         needed: round.trials(),
-        step: None,
-        part: None,
     }
 }
 
@@ -86,8 +81,8 @@ impl Run {
         cause: Vec<Seq>,
     ) -> Option<TrialPlan> {
         let retry = self.retry.as_ref()?;
-        let holds = matches!(retry.plan.context, TrialContext::Round { .. })
-            && retry.requirement == *requirement
+        let holds = matches!(retry.plan.requirement.context, TrialContext::Round { .. })
+            && retry.requirement() == *requirement
             && self.retry_requirement(retry).as_ref() == Some(requirement);
         holds.then(|| TrialPlan {
             cause,

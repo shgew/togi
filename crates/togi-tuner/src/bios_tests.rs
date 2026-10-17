@@ -752,7 +752,7 @@ fn a_paired_hunt_shows_no_move_while_a_zero_failure_awaits_its_diagnostic_or_dea
         match (&action, name) {
             (Action::RunTrial(plan), "diagnostic") => {
                 assert!(matches!(
-                    plan.context,
+                    plan.requirement.context,
                     crate::TrialContext::ZeroRerun { .. }
                 ));
             }

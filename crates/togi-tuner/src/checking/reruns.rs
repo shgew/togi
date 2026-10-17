@@ -6,9 +6,7 @@ use togi_machine::Condition;
 
 use crate::failures::load_of;
 use crate::state::Run;
-use crate::{
-    Action, ClassKey, Requirement, RequirementKind, TrialContext, TrialPlan, Window, WorkloadChoice,
-};
+use crate::{Action, ClassKey, Requirement, TrialContext, TrialPlan, Window, WorkloadChoice};
 
 /// A failed class the checking profile has to pass again before checking goes on: the class of
 /// the failure an offset-changing decision answered, and that failure.
@@ -173,14 +171,14 @@ impl Run {
 
     pub(crate) fn rerun_requirement(head: Obligation, need: Need) -> Requirement {
         Requirement {
-            kind: RequirementKind::Rerun,
+            context: TrialContext::Rerun {
+                failure: head.failure,
+            },
             class: need.class,
             window: Window::LiveOrCarried {
                 since: Some(head.failure),
             },
             needed: need.needed,
-            step: None,
-            part: None,
         }
     }
 
@@ -204,9 +202,6 @@ impl Run {
             activity: Activity::Checking,
             profile,
             duration: class.duration(),
-            context: TrialContext::Rerun {
-                failure: head.failure,
-            },
             requirement,
             retry: false,
             cause: vec![cited],

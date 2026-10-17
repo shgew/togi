@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use crate::fake::ProcessBench as Bench;
 use crate::git::{isolate_git, repo};
+use crate::session;
 use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 
 fn plain_command(bench: &Bench) -> Command {
@@ -129,6 +130,43 @@ fn real_process_kept_runs_are_named_on_stderr() {
     let stderr = text(&output.stderr);
     assert!(stderr.contains("kept the runs in "), "{stderr}");
     assert_eq!(fs::read_dir(bench.path("kept")).unwrap().count(), 1);
+}
+
+#[test]
+fn real_process_a_run_that_breaks_an_audit_check_fails_the_bench_and_is_named() {
+    let bench = Bench::new();
+    let events = session::session(&togi_sim::MachineDefinition::default(), 1, None, 2).events;
+    let seq = events.last().unwrap().seq;
+    bench.journal(&events);
+    let mut command = bench_command(&bench);
+    with_sim(&mut command, &bench, 0);
+    let output = run(&mut command);
+    assert_eq!(output.status.code(), Some(1), "{}", text(&output.stderr));
+    let stdout = text(&output.stdout);
+    assert!(
+        stdout.contains("audit: audited=5 violations=5\n"),
+        "{stdout}"
+    );
+    let named: Vec<&str> = stdout
+        .lines()
+        .filter(|line| line.contains(&format!(" live seq {seq} termination: ")))
+        .map(|line| line.split(' ').nth(1).unwrap())
+        .collect();
+    assert_eq!(
+        named,
+        [
+            "default/dev-1",
+            "default/dev-2",
+            "default/dev-3",
+            "default/holdout-101",
+            "late/dev-1"
+        ]
+    );
+    assert!(
+        text(&output.stderr).contains("the journal audit found 5 violations"),
+        "{}",
+        text(&output.stderr)
+    );
 }
 
 #[test]

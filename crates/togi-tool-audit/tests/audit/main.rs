@@ -11,6 +11,6 @@ mod fixtures;
 mod ranges;
 mod rebuild;
 mod references;
+mod report;
 mod snapshot;
-mod sweep;
 mod writes;

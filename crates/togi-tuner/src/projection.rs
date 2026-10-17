@@ -94,11 +94,11 @@ impl State {
                     let state = run.core(core);
                     CoreView {
                         core,
-                        phase: state.phase,
+                        phase: state.phase.wire(),
                         offset: state.offset,
                         pass: state.pass,
                         failure_point: run.failure_point(core),
-                        solo_limit: state.solo_limit,
+                        solo_limit: state.phase.solo_limit(),
                     }
                 })
                 .collect()
@@ -130,7 +130,7 @@ impl State {
                             round.trials(),
                         )
                         .unwrap_or_default();
-                    let running = run.flight.open.as_ref().is_some_and(|flight| {
+                    let running = run.flight.open().is_some_and(|flight| {
                         flight.intent.round == Some(round.id())
                             && flight.class == check.class
                             && flight.profile == check.profile

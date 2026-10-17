@@ -4,11 +4,12 @@ use togi_machine::{CoreId, CoreSet, ObservedOffset, Regime, TargetOffset, Worklo
 use crate::state::Run;
 use crate::{CombinationId, FailurePoint, FoldError};
 
-/// The R1 and R2 workloads a candidate solo limit froze.
+/// The R1 and R2 workloads a candidate solo limit froze, and the event that began its check.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Check {
     pub(crate) r1: WorkloadId,
     pub(crate) r2: WorkloadId,
+    pub(crate) since: Seq,
 }
 
 impl Check {
@@ -16,15 +17,62 @@ impl Check {
         core: CoreId,
         checking: bool,
         workloads: &[WorkloadId],
+        since: Seq,
     ) -> Result<Option<Self>, FoldError> {
         if !checking {
             return Ok(None);
         }
         match *workloads {
             [r1, r2] if r1.regime() == Regime::R1 && r2.regime() == Regime::R2 => {
-                Ok(Some(Self { r1, r2 }))
+                Ok(Some(Self { r1, r2, since }))
             }
             _ => Err(FoldError::BadCandidate(core)),
+        }
+    }
+}
+
+/// Where a core stands in the search, with what only that phase has: a searching core's
+/// candidate check, and the solo limit a core that left the search with a pass keeps.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum Phase {
+    #[default]
+    Unstarted,
+    Search {
+        check: Option<Check>,
+    },
+    HasRoom {
+        solo_limit: Option<TargetOffset>,
+    },
+    AtLimit {
+        solo_limit: Option<TargetOffset>,
+    },
+}
+
+impl Phase {
+    pub(crate) const fn wire(self) -> Option<CorePhase> {
+        match self {
+            Self::Unstarted => None,
+            Self::Search { .. } => Some(CorePhase::Search),
+            Self::HasRoom { .. } => Some(CorePhase::HasRoom),
+            Self::AtLimit { .. } => Some(CorePhase::AtLimit),
+        }
+    }
+
+    pub(crate) const fn searching(self) -> bool {
+        matches!(self, Self::Search { .. })
+    }
+
+    pub(crate) const fn check(self) -> Option<Check> {
+        match self {
+            Self::Search { check } => check,
+            Self::Unstarted | Self::HasRoom { .. } | Self::AtLimit { .. } => None,
+        }
+    }
+
+    pub(crate) const fn solo_limit(self) -> Option<TargetOffset> {
+        match self {
+            Self::HasRoom { solo_limit } | Self::AtLimit { solo_limit } => solo_limit,
+            Self::Unstarted | Self::Search { .. } => None,
         }
     }
 }
@@ -59,14 +107,11 @@ impl Rotation {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Core {
-    pub(crate) phase: Option<CorePhase>,
+    pub(crate) phase: Phase,
     pub(crate) offset: TargetOffset,
     pub(crate) baseline: ObservedOffset,
     pub(crate) pass: Option<TargetOffset>,
-    pub(crate) solo_limit: Option<TargetOffset>,
-    pub(crate) check: Option<Check>,
     pub(crate) checks: u32,
-    pub(crate) phase_seq: Option<Seq>,
     pub(crate) queued_reset: Option<Seq>,
     pub(crate) pending: Option<Seq>,
     pub(crate) zero_seq: Option<Seq>,
@@ -129,7 +174,7 @@ impl Run {
         if self
             .retry
             .as_ref()
-            .is_some_and(|retry| retry.turn.is_some_and(|turn| turn.core == core))
+            .is_some_and(|retry| retry.turn().is_some_and(|turn| turn.core == core))
         {
             self.retry = None;
         }
@@ -142,7 +187,13 @@ impl Run {
     ) -> Result<(), FoldError> {
         let core = transition.core;
         self.require_core(core)?;
-        let check = Check::recorded(core, transition.check_solo_limit, &transition.workloads)?;
+        let seq = event.seq;
+        let check = Check::recorded(
+            core,
+            transition.check_solo_limit,
+            &transition.workloads,
+            seq,
+        )?;
         self.constraints
             .set_failure_point(core, transition.failure_point.map(FailurePoint::new))?;
         self.hunt_phase_reset(core);
@@ -153,26 +204,22 @@ impl Run {
             .map(CombinationId::new)
             .collect();
         self.constraints.remove_combinations(&cleared);
-        let seq = event.seq;
         let before = self.core(core).offset;
         self.r7_offset_changed(core, before, transition.offset);
         let entering_search = transition.to == CorePhase::Search;
         self.update_core(core, |state| {
-            if transition.from == Some(CorePhase::Search)
-                && !entering_search
-                && transition.pass.is_some()
-            {
-                state.solo_limit = transition.pass;
-            }
-            if entering_search {
-                state.solo_limit = None;
-            }
-            state.phase = Some(transition.to);
+            let solo_limit = match transition.pass {
+                Some(pass) if transition.from == Some(CorePhase::Search) => Some(pass),
+                Some(_) | None => state.phase.solo_limit(),
+            };
+            state.phase = match transition.to {
+                CorePhase::Search => Phase::Search { check },
+                CorePhase::HasRoom => Phase::HasRoom { solo_limit },
+                CorePhase::AtLimit => Phase::AtLimit { solo_limit },
+            };
             state.offset = transition.offset;
             state.pass = transition.pass;
-            state.check = check;
             state.checks += u32::from(check.is_some());
-            state.phase_seq = Some(seq);
             state.queued_reset = None;
             if transition.failure_point == Some(TargetOffset::ZERO) {
                 state.zero_seq = Some(seq);
@@ -201,6 +248,7 @@ impl Run {
             core,
             decision.decision == togi_journal::Decision::CheckSoloLimit,
             &decision.workloads,
+            event.seq,
         )?;
         self.constraints
             .set_failure_point(core, decision.failure_point.map(FailurePoint::new))?;
@@ -220,11 +268,10 @@ impl Run {
         self.update_core(core, |state| {
             state.offset = decision.to_offset;
             state.pass = decision.pass;
-            state.check = check;
-            if check.is_some() {
-                state.checks += 1;
-                state.phase_seq = Some(seq);
+            if let Phase::Search { check: current } = &mut state.phase {
+                *current = check;
             }
+            state.checks += u32::from(check.is_some());
             if decision.failure_point == Some(TargetOffset::ZERO) {
                 state.zero_seq = Some(seq);
             }

@@ -12,9 +12,9 @@ use togi_sim::definition::JointDef;
 use togi_sim::model::Script;
 use togi_sim::{MachineDefinition, regime_index};
 use togi_simrun::{Observe, Observer};
-use togi_tuner::{Profile, State};
+use togi_tuner::{Profile, State, replay};
 
-use crate::common::{Bench, finish, hunt_machine, nz};
+use crate::common::{Bench, finish, hunt_machine, nz, phase_two_concludes, stop_when};
 
 const HUNT_BUDGET: usize = 4;
 const CRASH_BUDGET: usize = 32;
@@ -85,17 +85,6 @@ pub(crate) fn run(
     (finished.stop, bench.events())
 }
 
-fn phase_two_confirmed(event: &Event) -> bool {
-    matches!(
-        &event.payload,
-        Payload::CheckingCycle(cycle)
-            if cycle.event == CycleEvent::End
-                && cycle.passed
-                && cycle.full
-                && cycle.reason.as_deref().is_some_and(|reason| reason.contains("phase 2 ends"))
-    )
-}
-
 fn run_after_confirmation(
     definition: &MachineDefinition,
     joints: Vec<JointDef>,
@@ -105,15 +94,15 @@ fn run_after_confirmation(
     let (_, confirmed) = run(
         &first,
         config.clone(),
-        Some(Box::new(|event| {
-            if phase_two_confirmed(event) {
-                Observe::Stop
-            } else {
-                Observe::Continue
-            }
-        })),
+        Some(stop_when(phase_two_concludes(&first))),
     );
-    assert!(confirmed.iter().any(phase_two_confirmed));
+    assert!(
+        replay(&confirmed)
+            .unwrap()
+            .phase_plan()
+            .is_some_and(|plan| plan.concluded.is_some()),
+        "phase 2 never concluded"
+    );
     let mut with_joints = definition.clone();
     with_joints.joint = joints;
     let second = first.resumed(&with_joints, 1);
