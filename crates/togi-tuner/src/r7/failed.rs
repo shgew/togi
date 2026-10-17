@@ -68,7 +68,9 @@ pub(crate) struct FailedTrial {
     named_lane: Option<(CoreId, RequestOrder)>,
     pub(crate) backoffs: Backoffs,
     /// The passes of the load, as the failure folds, that hold every loaded core at least as
-    /// deep with an unloaded core shallower ([`crate::Evidence::loaded_cover`]).
+    /// deep with an unloaded core shallower ([`crate::Evidence::loaded_cover`]): the count of
+    /// them and the earliest ones, up to the supported trial bound. Frozen at the fold; a later
+    /// pass, invalidation, reset or configuration change never alters it.
     pub(crate) cover: Count,
 }
 
@@ -126,10 +128,11 @@ impl FailedTrial {
         effective_top(self.recorded_top, &self.order)
     }
 
-    /// The passes showing the loaded cores pass on their own as deep as they failed, once there
-    /// are `needed` of them.
+    /// The earliest `needed` of the frozen passes showing the loaded cores pass on their own as
+    /// deep as they failed, once the snapshot holds that many. A `needed` the snapshot cannot
+    /// serve, as a larger configuration after a reload may ask, finds none.
     pub(crate) fn covered(&self, needed: std::num::NonZeroU16) -> Option<&[Seq]> {
-        (self.cover.valid >= u32::from(needed.get())).then_some(self.cover.witnesses.as_slice())
+        self.cover.witnesses.get(..usize::from(needed.get()))
     }
 
     /// The failing request of `core`: the measurement the trial's order took it from, else the

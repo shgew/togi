@@ -1751,4 +1751,26 @@ fn r7_reasons_render_each_voltage_basis_and_locate_provenance() {
         assert!(text.contains("#12, #30"));
         assert_eq!(text.contains("CO 0 passed (#19)"), rerun_passed.is_some());
     }
+    for rerun_passed in [None, Some(seq(19))] {
+        let reason = LocateReason {
+            rerun_passed,
+            escalation: Some(Escalation::Covered {
+                passes: vec![seq(12), seq(30)],
+            }),
+        };
+        let mut expected = rerun_passed.into_iter().collect::<Vec<_>>();
+        expected.extend([seq(12), seq(30)]);
+        assert_eq!(reason.cause(), expected);
+        let text = reason.to_string();
+        assert!(text.contains("located on the unloaded cores"), "{text}");
+        assert!(
+            text.ends_with(
+                "; the load already passed with every loaded core as deep or deeper and an \
+                 unloaded core shallower (#12, #30), so its loaded cores pass on their own and \
+                 stepping one back cannot be what it needs"
+            ),
+            "{text}"
+        );
+        assert_eq!(text.contains("CO 0 passed (#19)"), rerun_passed.is_some());
+    }
 }

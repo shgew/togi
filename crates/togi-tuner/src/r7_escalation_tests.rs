@@ -588,6 +588,102 @@ fn coverage_is_frozen_when_the_failure_folds() {
     j.assert_resumes();
 }
 
+/// A journal whose load passed `count` times at offsets with an unloaded core shallower, then
+/// failed unattributed at `[-30; 4]`, so the failure folds already covered by the default count.
+fn covered_failure(count: usize) -> (Journal, Vec<Seq>, Seq) {
+    let mut j = Journal::r7_session();
+    for (id, offset) in (0..).zip([-30, -30, -20, -30]) {
+        j.place(id, offset);
+    }
+    let passes: Vec<Seq> = (0..count)
+        .map(|_| j.load_trial(escalation_load('a'), Outcome::Pass))
+        .collect();
+    for id in 0..4 {
+        j.place(id, -30);
+    }
+    let failure = j.play("A").last_failure();
+    (j, passes, failure)
+}
+
+/// Passes of the failed load that cover its failure's profile, folded after the failure.
+fn pass_after_the_fold(j: &mut Journal, count: usize) {
+    j.place(2, -20);
+    for _ in 0..count {
+        j.load_trial(escalation_load('a'), Outcome::Pass);
+    }
+    j.place(2, -30);
+}
+
+#[test]
+fn a_covered_failure_cites_the_earliest_passes_of_the_current_needed_count() {
+    let bound = usize::from(togi_config::TrialCount::MAX);
+    let at_bound = format!(
+        r#"{{"evidence":{{"miss":{:e},"rate":0.5}}}}"#,
+        0.5_f64.powf(f64::from(togi_config::TrialCount::MAX) - 0.5)
+    );
+    let cases: [(&str, String, usize, std::cmp::Ordering); 3] = [
+        (
+            "a larger count",
+            r#"{"evidence":{"miss":0.01,"rate":0.5}}"#.to_owned(),
+            20,
+            std::cmp::Ordering::Greater,
+        ),
+        (
+            "a smaller count",
+            r#"{"evidence":{"miss":0.2,"rate":0.5}}"#.to_owned(),
+            20,
+            std::cmp::Ordering::Less,
+        ),
+        (
+            "the supported bound",
+            at_bound,
+            bound + 1,
+            std::cmp::Ordering::Greater,
+        ),
+    ];
+    for (name, config, count, want) in cases {
+        let (mut j, passes, failure) = covered_failure(count);
+        let before = usize::from(j.run().config.needed.get());
+        pass_after_the_fold(&mut j, 3);
+        j.load(&crate::testkit::config(&config));
+        let after = usize::from(j.run().config.needed.get());
+        assert_eq!(after.cmp(&before), want, "{name}");
+        assert!(after <= passes.len() && after <= bound, "{name}");
+        if name == "the supported bound" {
+            assert_eq!(after, bound, "{name}");
+        }
+        let (located, escalation, cause) = j.located();
+        assert_eq!(located, failure, "{name}");
+        assert_eq!(
+            escalation,
+            Escalation::Covered {
+                passes: passes[..after].to_vec()
+            },
+            "{name}"
+        );
+        assert_eq!(cause, passes[..after], "{name}");
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn passes_after_the_fold_never_lift_a_covered_failure_over_a_larger_count() {
+    let (mut j, passes, failure) = covered_failure(6);
+    let before = usize::from(j.run().config.needed.get());
+    assert!(before <= passes.len());
+    pass_after_the_fold(&mut j, 5);
+    j.load(&crate::testkit::config(
+        r#"{"evidence":{"miss":0.01,"rate":0.5}}"#,
+    ));
+    let after = usize::from(j.run().config.needed.get());
+    assert!(after > passes.len());
+    match j.run().r7_decision() {
+        Some(R7Response::Backoff { why, .. }) => assert_eq!(why.failure, failure),
+        other => panic!("expected a voltage-targeted backoff, got {other:?}"),
+    }
+    j.assert_resumes();
+}
+
 #[test]
 fn a_carried_failure_its_loaded_cores_passed_as_deep_needs_no_move() {
     for covered in [true, false] {

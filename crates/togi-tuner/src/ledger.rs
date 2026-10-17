@@ -259,9 +259,7 @@ impl Run {
         );
         if let Some(trial) = failed.as_mut() {
             trial.backoffs = self.r7.strikes.snapshot(class.load());
-            trial.cover = self
-                .evidence
-                .loaded_cover(class.load(), &profile, self.config.needed)?;
+            trial.cover = self.evidence.loaded_cover(class.load(), &profile)?;
         }
         let observation = Observation {
             seq: event.seq,

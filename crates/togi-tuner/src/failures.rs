@@ -247,9 +247,7 @@ impl Run {
         let failed_trial = match awaiting.and_then(|awaiting| awaiting.r7.clone()) {
             Some(mut trial) => {
                 trial.backoffs = self.r7.strikes.snapshot(class.load());
-                trial.cover =
-                    self.evidence
-                        .loaded_cover(class.load(), &profile, self.config.needed)?;
+                trial.cover = self.evidence.loaded_cover(class.load(), &profile)?;
                 Some(trial)
             }
             None => None,

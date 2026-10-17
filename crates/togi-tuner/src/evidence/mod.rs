@@ -664,12 +664,13 @@ impl Evidence {
     /// `profile` and some unloaded core is shallower. A pass is valid while no failure of its
     /// class at an equal or shallower profile follows it. A pass at a profile `profile` is within
     /// shows nothing about the unloaded cores, so it never counts, whether or not the failure at
-    /// `profile` is in the ledger yet. The first `needed`, oldest first.
+    /// `profile` is in the ledger yet. Taken as the failure folds, the count is a snapshot: the
+    /// witnesses are the first valid passes, oldest first, up to [`togi_config::TrialCount::MAX`],
+    /// so any supported trial count can later be checked against them without the ledger.
     pub(crate) fn loaded_cover(
         &self,
         load: LoadKey,
         profile: &Profile,
-        needed: NonZeroU16,
     ) -> Result<Count, TopologyMismatch> {
         self.check(profile)?;
         let first = ClassKey::new(load.workload, load.loaded, Secs::MIN);
@@ -700,9 +701,10 @@ impl Evidence {
                 runs.push(carried);
             }
         }
+        let retained = valid.min(usize::from(togi_config::TrialCount::MAX));
         Ok(Count {
             valid: u32::try_from(valid).unwrap_or(u32::MAX),
-            witnesses: merge(&runs, usize::from(needed.get())),
+            witnesses: merge(&runs, retained),
         })
     }
 
