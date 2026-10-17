@@ -31,11 +31,11 @@ pub(crate) struct Failed<'a> {
 
 impl Failed<'_> {
     fn profile(&self) -> &Profile {
-        &self.record.pending.profile
+        &self.record.pending.fact.profile
     }
 
     fn loaded(&self) -> CoreSet {
-        self.record.pending.class.loaded()
+        self.record.pending.fact.class.loaded()
     }
 }
 
@@ -187,7 +187,7 @@ impl Run {
         Failed {
             record,
             trial,
-            named: record.pending.failure.core.filter(|_| confined),
+            named: record.pending.fact.failure.core.filter(|_| confined),
             stalled: trial.stalled.filter(|_| confined),
             rerun_end,
         }
@@ -273,8 +273,8 @@ impl Run {
             .all()
             .iter()
             .filter(|&core| {
-                !record.pending.class.loaded().contains(core)
-                    && !Self::at_zero_in(&record.pending.profile, core)
+                !record.pending.fact.class.loaded().contains(core)
+                    && !Self::at_zero_in(&record.pending.fact.profile, core)
             })
             .collect()
     }
@@ -285,15 +285,15 @@ impl Run {
     /// and, carried or naming a core at CO 0, one whose loaded cores were all at CO 0.
     pub(crate) fn locatable(&self, view: &Failed<'_>) -> Option<LocateReason> {
         let record = view.record;
-        if !record.pending.class.multi_r7()
+        if !record.pending.fact.class.multi_r7()
             || (!record.pending.carried
-                && record.pending.failure.condition == Some(Condition::Parked))
+                && record.pending.fact.failure.condition == Some(Condition::Parked))
             || self.locate_candidates(record).is_empty()
         {
             return None;
         }
         let live = !record.pending.carried
-            && record.pending.failure.condition == Some(Condition::Together);
+            && record.pending.fact.failure.condition == Some(Condition::Together);
         let rerun_passed = view.rerun_end;
         let loaded_at_zero = view
             .loaded()
@@ -312,7 +312,7 @@ impl Run {
             .backoffs
             .escalation(
                 &self.topo,
-                record.pending.class.load(),
+                record.pending.fact.class.load(),
                 view.profile(),
                 &affected,
             )
@@ -419,6 +419,7 @@ impl Run {
         } else if let Some(core) = view
             .record
             .pending
+            .fact
             .failure
             .core
             .filter(|_| view.named.is_some())
@@ -471,7 +472,7 @@ impl Run {
             );
         }
         if !self.named_culprit(view) {
-            let subject = match view.record.pending.failure.core {
+            let subject = match view.record.pending.fact.failure.core {
                 Some(named) if view.named.is_some() => format!(
                     "R7 failure naming core {:02} at CO 0 on CCD {}, which had no loaded core,",
                     named.get(),
@@ -508,7 +509,7 @@ impl Run {
         let mut charge = self.charge(view, id);
         let rerun = view.rerun_end;
         let live = !record.pending.carried
-            && record.pending.failure.condition == Some(Condition::Together);
+            && record.pending.fact.failure.condition == Some(Condition::Together);
         let mut located_seqs: Vec<Seq> = Vec::new();
         let mut clause: Option<String> = None;
         if let Some((located, end)) = link {
@@ -583,7 +584,7 @@ impl Run {
         let n = self.config.needed;
         let backend = self
             .evidence
-            .active_backend(record.pending.class.workload().backend());
+            .active_backend(record.pending.fact.class.workload().backend());
         let mut target: Option<Target> = None;
         let short_crash = view
             .trial
@@ -613,11 +614,14 @@ impl Run {
                         .and_then(|ccd| view.trial.clocks.get(&ccd).copied());
                     self.r7
                         .targets
-                        .named(ask, record.pending.class.workload(), id, mhz)
+                        .named(ask, record.pending.fact.class.workload(), id, mhz)
                 } else {
-                    self.r7
-                        .targets
-                        .unattributed(ask, record.pending.class.load(), id, failing_top)
+                    self.r7.targets.unattributed(
+                        ask,
+                        record.pending.fact.class.load(),
+                        id,
+                        failing_top,
+                    )
                 };
                 OwnRequest::Measured(request)
             }
@@ -629,7 +633,7 @@ impl Run {
             && !record.pending.carried
             && view.trial.crash_duration_s.is_none()
             && matches!(
-                record.pending.failure.signal,
+                record.pending.fact.failure.signal,
                 Signal::ComputationError | Signal::UnexpectedExit
             )
             && counts > NAMED_NON_CRASH_CAP
@@ -668,7 +672,11 @@ impl Run {
         }
         if !charge.named {
             if let Some((_, idled, early)) = self.r7_probe_part(view, id) {
-                if self.r7.probes.due(record.pending.class.load(), id, early) {
+                if self
+                    .r7
+                    .probes
+                    .due(record.pending.fact.class.load(), id, early)
+                {
                     charge.notes.push(Note::Probe {
                         idled,
                         stalled: view.stalled.filter(|_| early),

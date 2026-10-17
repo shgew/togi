@@ -25,7 +25,7 @@ impl Run {
             )));
         }
         let record = record?;
-        let failed = record.failure.offset?;
+        let failed = record.fact.failure.offset?;
         if failed == TargetOffset::ZERO {
             let head = format!("core {:02} failed at CO 0", id.get());
             return match self.at_zero(seq, record, id, &head, vec![seq]) {
@@ -55,7 +55,7 @@ impl Run {
         failed: TargetOffset,
     ) -> DecisionAction {
         let core = self.core(id);
-        let failure = &record.failure;
+        let failure = &record.fact.failure;
         let point = self.failure_point(id).map_or(failed, |old| {
             if old.shallower_than(failed) {
                 old

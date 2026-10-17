@@ -45,7 +45,9 @@ impl Run {
                 .into_iter()
                 .chain(self.rounds.last().copied())
                 .find(|shape| shape.id() == id),
-            None if record.failure.trial.is_none() => active.filter(|shape| seq > shape.start()),
+            None if record.fact.failure.trial.is_none() => {
+                active.filter(|shape| seq > shape.start())
+            }
             None => None,
         }
     }
@@ -54,14 +56,14 @@ impl Run {
     /// deepened: the one it names, else the top request group of a multi-core R7 load, else the
     /// one deepened furthest. The ranking breaks ties, the least preferred core first.
     fn charged(&self, record: &Pending, seq: Seq, deepened: &PerCore<i32>) -> Option<CoreId> {
-        let failure = &record.failure;
+        let failure = &record.fact.failure;
         if let (Attribution::Attributed, Some(core)) = (failure.attribution, failure.core) {
             if deepened.get(core).is_some() {
                 return Some(core);
             }
         }
         let ranking = self.ranked();
-        if record.class.multi_r7() {
+        if record.fact.class.multi_r7() {
             let requests: Option<PerCore<f64>> = self.r7.open.get(&seq).map(|open| {
                 deepened
                     .iter()
@@ -93,7 +95,7 @@ impl Run {
         let Some(confirmed) = self.phases.first_confirmed().copied() else {
             return;
         };
-        if record.carried || record.failure.known_failure.is_some() {
+        if record.carried || record.fact.failure.known_failure.is_some() {
             return;
         }
         let round = self.failed_round(&record, seq);
@@ -102,10 +104,11 @@ impl Run {
         {
             return;
         }
-        let profile = record.profile;
+        let profile = record.fact.profile;
         let offsets =
             |deeper: &Profile, base: &Profile, core: CoreId| deeper.get(core).zip(base.get(core));
         let deepened: PerCore<i32> = record
+            .fact
             .class
             .loaded()
             .iter()
@@ -115,7 +118,7 @@ impl Run {
                         let (deeper, base) = offsets(shape.profile(), shape.baseline(), core)?;
                         let (failed, _) = offsets(&profile, shape.baseline(), core)?;
                         let counts = shape.deepened(core)
-                            && (record.failure.trial.is_some() || failed.deeper_than(base));
+                            && (record.fact.failure.trial.is_some() || failed.deeper_than(base));
                         counts.then_some((deeper, base))?
                     }
                     None => offsets(&profile, &confirmed, core)
@@ -231,7 +234,7 @@ impl Run {
         }
         let blamed = blame.blamed;
         let core = self.core(blamed);
-        let failed = match (record.failure.core, record.failure.offset) {
+        let failed = match (record.fact.failure.core, record.fact.failure.offset) {
             (Some(named), Some(offset)) if named == blamed => offset,
             _ => blame.profile.get(blamed)?,
         };
@@ -240,8 +243,9 @@ impl Run {
             .map_or(failed, |old| shallowest(failed, old));
         let to = shallowest(shallowest(core.offset, blame.back), point.shallower_by(1));
         let place: Vec<String> = [
-            record.failure.regime.map(|regime| regime.to_string()),
+            record.fact.failure.regime.map(|regime| regime.to_string()),
             record
+                .fact
                 .failure
                 .trial
                 .as_ref()

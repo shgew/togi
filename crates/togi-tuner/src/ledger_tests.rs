@@ -97,7 +97,13 @@ fn evidence_validity() {
     let queued: Vec<Seq> = j.run().failures.queue().collect();
     assert!(queued.ends_with(&[idle, parked]));
     assert_eq!(
-        j.run().failures.pending(parked).unwrap().class.regime(),
+        j.run()
+            .failures
+            .pending(parked)
+            .unwrap()
+            .fact
+            .class
+            .regime(),
         Regime::R6
     );
     j.assert_resumes();
@@ -693,6 +699,25 @@ fn reset_clears_carried_idle_failure() {
     assert!(failing(&j, k, &[-20, -20], None).is_none());
     assert!(j.run().failures.pending(failure).is_none());
     assert!(j.run().failures.witnessed(failure).is_none());
+}
+
+#[test]
+fn a_session_failure_stays_known_after_its_decision_retires_it_until_a_reset() {
+    let mut j = Journal::search_at(&[-30]);
+    let plan = j.next_trial();
+    let end = j.trial(&plan, Outcome::Failure);
+    let recorded = decide_pending(&mut j);
+    let pending = j.run().failures.pending(recorded).unwrap().fact.clone();
+    assert_eq!(j.run().failures.witnessed(end), Some(pending.as_ref()));
+    assert_eq!(
+        (pending.class, pending.profile),
+        (plan.requirement.class, plan.profile)
+    );
+    decide_pending(&mut j);
+    assert!(j.run().failures.pending(recorded).is_none());
+    assert_eq!(j.run().failures.witnessed(end), Some(pending.as_ref()));
+    j.reset(0);
+    assert!(j.run().failures.witnessed(end).is_none());
 }
 
 #[test]

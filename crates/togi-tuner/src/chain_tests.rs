@@ -883,7 +883,7 @@ fn r7_partial_failure_does_not_complete_its_requirement() {
     );
     let seq = j.decide(failure);
     let pending = j.run().failures.pending(seq).expect("a pending failure");
-    assert_eq!(pending.class, plan.requirement.class);
+    assert_eq!(pending.fact.class, plan.requirement.class);
     let next = j.run().cycle_action().unwrap();
     let again = trial_of(&next);
     assert_eq!((again.load, again.duration), (plan.load, plan.duration));

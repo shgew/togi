@@ -121,7 +121,7 @@ impl Run {
         head: &str,
         mut cause: Vec<Seq>,
     ) -> AtZero {
-        if record.profile.is_zero() {
+        if record.fact.profile.is_zero() {
             return AtZero::DeadEnd(Box::new(dead_end(core, head, None, cause)));
         }
         match self.zero.get(seq) {
@@ -145,13 +145,13 @@ impl Run {
     }
 
     fn zero_plan_fresh(&self, seq: Seq, record: &Pending) -> TrialPlan {
-        let class = record.class;
+        let class = record.fact.class;
         TrialPlan {
             regime: class.regime(),
             workload: WorkloadChoice::Frozen(class.workload()),
             load: record.load,
             condition: Condition::Parked,
-            activity: if record.failure.condition == Some(Condition::Parked) {
+            activity: if record.fact.failure.condition == Some(Condition::Parked) {
                 Activity::Hunt
             } else {
                 Activity::Checking
@@ -182,11 +182,11 @@ impl Run {
         let Some(record) = self.failures.pending(failure) else {
             return;
         };
-        if record.class.multi_r7() {
+        if record.fact.class.multi_r7() {
             return;
         }
-        let core = record.failure.core;
-        let queue = record.failure.condition != Some(Condition::Parked);
+        let core = record.fact.failure.core;
+        let queue = record.fact.failure.condition != Some(Condition::Parked);
         if let Some(core) = core {
             self.update_core(core, |state| {
                 if state.pending == Some(failure) {
@@ -224,7 +224,7 @@ impl Run {
             && intent.cycle.is_none()
             && intent.step.is_none()
             && intent.activity == Some(plan.activity)
-            && class == record.class
+            && class == record.fact.class
             && shape
             && Profile::new(&self.topo, intent.profile).ok() == Some(plan.profile);
         matches.then(|| zero_requirement(class, failure))

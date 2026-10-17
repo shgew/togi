@@ -155,8 +155,8 @@ impl Run {
         pending: Pending,
         trial: Option<FailedTrial>,
     ) {
-        let answerable = pending.class.multi_r7()
-            && (pending.carried || pending.failure.condition != Some(Condition::Parked));
+        let answerable = pending.fact.class.multi_r7()
+            && (pending.carried || pending.fact.failure.condition != Some(Condition::Parked));
         if let (true, Some(r7)) = (answerable, trial) {
             self.r7.open.insert(
                 seq,
@@ -181,8 +181,8 @@ impl Run {
             return;
         };
         let seq = record.seq;
-        let load = record.pending.class.load();
-        let recorded_name = record.pending.failure.core;
+        let load = record.pending.fact.class.load();
+        let recorded_name = record.pending.fact.failure.core;
         let view = self.failed(record);
         let named = self.named_culprit(&view);
         let targets = self.failure_targets(&view);
@@ -250,8 +250,8 @@ impl Run {
         let named_core = |seq: Seq| named.get(&seq).copied();
         self.r7.strikes.reset_core(core, named_core);
         self.r7.open.retain(|_, open| {
-            let class = open.pending.class;
-            !(class.loaded().contains(core) || open.pending.failure.core == Some(core))
+            let class = open.pending.fact.class;
+            !(class.loaded().contains(core) || open.pending.fact.failure.core == Some(core))
         });
         for open in self.r7.open.values_mut() {
             open.r7.backoffs.forget(|seq| named_core(seq) == Some(core));
@@ -267,9 +267,10 @@ impl Run {
     /// unchanged. A later loaded-core move cannot change what the locate tested at CO 0.
     pub(crate) fn r7_located_loaded(&mut self, source: Seq, end: Seq) {
         if let Some(record) = self.r7.open.get(&source) {
-            self.r7
-                .loaded
-                .insert(record.pending.class.load(), (end, record.pending.profile));
+            self.r7.loaded.insert(
+                record.pending.fact.class.load(),
+                (end, record.pending.fact.profile),
+            );
         }
     }
 

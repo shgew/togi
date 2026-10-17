@@ -34,8 +34,9 @@ fn a_multi_core_r7_failure_without_an_open_record_is_charged_by_depth_not_by_req
         .failures
         .pending(failure)
         .expect("the failure is pending");
-    assert!(record.class.multi_r7());
+    assert!(record.fact.class.multi_r7());
     let deepened: PerCore<i32> = record
+        .fact
         .class
         .loaded()
         .iter()

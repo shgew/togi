@@ -2238,7 +2238,7 @@ fn resetting_a_loaded_core_discards_the_saved_located_group_rejection() {
         let located = j.loc_run(|_| Verdict::Named(1));
         assert_eq!(hunt_end(&located.action).result, HuntOutcome::Loaded);
         let saved = j.run().hunts.rejecting.clone().unwrap();
-        assert_eq!(saved.open.pending.class.loaded(), set(&[0, 1]));
+        assert_eq!(saved.open.pending.fact.class.loaded(), set(&[0, 1]));
         j.reset(reset);
         assert_eq!(
             j.run().hunts.rejecting.as_deref(),

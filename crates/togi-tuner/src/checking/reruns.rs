@@ -88,7 +88,7 @@ impl Run {
     pub(crate) fn queue_rerun(&mut self, cause: &[Seq]) {
         let found = cause.iter().find_map(|&seq| {
             self.failures.pending(seq).map(|pending| Obligation {
-                class: pending.class,
+                class: pending.fact.class,
                 failure: seq,
             })
         });
@@ -104,7 +104,7 @@ impl Run {
         let (source, direct) = self.hunts.commitment_source(*cause.first()?)?;
         let direct = direct.and_then(|seq| {
             self.failures.pending(seq).map(|pending| Obligation {
-                class: pending.class,
+                class: pending.fact.class,
                 failure: seq,
             })
         });
