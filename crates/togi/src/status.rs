@@ -166,10 +166,12 @@ impl Scan {
 fn render(events: &[Event]) -> Result<String, Problem> {
     let model = togi_watch::model::project(events);
     if let Some(problem) = model.problem() {
-        return Err(Problem::Replay(problem.to_string()));
+        return Err(Problem::Replay(togi_render::error_chain(problem)));
     }
-    let journal = JournalState::replay(events).map_err(|e| Problem::Replay(e.to_string()))?;
-    let tuner = togi_tuner::replay(events).map_err(|e| Problem::Replay(e.to_string()))?;
+    let journal = JournalState::replay(events)
+        .map_err(|error| Problem::Replay(togi_render::error_chain(&error)))?;
+    let tuner = togi_tuner::replay(events)
+        .map_err(|error| Problem::Replay(togi_render::error_chain(&error)))?;
     let projection = tuner.project();
     if journal.session.is_none() {
         return Err(Problem::NoSession);

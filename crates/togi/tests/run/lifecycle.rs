@@ -344,6 +344,27 @@ fn a_journal_lock_failure_prints_its_path_and_cause_once() {
 }
 
 #[test]
+fn a_locked_journal_read_failure_prints_its_path_and_cause_once() {
+    let mut fake = Fake::new();
+    let fs = togi_journal::MemFs::new();
+    fs.put(fake.dir.join("config.json"), b"{}".to_vec());
+    fake.fs = std::sync::Arc::new(fs.clone());
+    *fake.at_host_lock.borrow_mut() = Some(Box::new(move || {
+        fs.inject(
+            togi_journal::fs::Fault::before(togi_journal::fs::Op::Read, 1).named("events.jsonl"),
+        );
+    }));
+    let (exit, out, err) = fake.run(&["run", "--no-tui"]);
+    assert_eq!(exit, Exit::Error);
+    assert_eq!(out, "");
+    assert_eq!(
+        err,
+        "togi run: read journal /run-test/state/events.jsonl: injected Read fault\n"
+    );
+    assert_eq!(fake.opened.get(), 0);
+}
+
+#[test]
 fn a_journal_close_failure_keeps_its_cause_and_changes_the_exit_status() {
     use togi_journal::fs::{Fault, Op};
 

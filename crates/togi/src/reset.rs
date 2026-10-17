@@ -415,7 +415,8 @@ fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, system: &dyn Syste
         Ok(config) => config,
         Err(error) if config.is_explicit() => {
             return vec![format!(
-                "warning: cannot check candidate solo limits: {error}"
+                "warning: cannot check candidate solo limits: {}",
+                togi_render::error_chain(&error)
             )];
         }
         Err(_) => return Vec::new(),

@@ -388,6 +388,23 @@ fn a_held_state_directory_lock_exits_3_and_changes_nothing() {
 }
 
 #[test]
+fn a_reset_journal_lock_failure_prints_its_path_and_cause_once() {
+    let host = Host::new();
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    host.fs.inject(Fault::before(Op::Open, 1).named("lock"));
+    let ran = reset(&host, session.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Error);
+    assert_eq!(ran.out, "");
+    assert_eq!(
+        ran.err,
+        format!(
+            "togi reset: lock {}: injected Open fault\n",
+            session.path().join("lock").display()
+        )
+    );
+}
+
+#[test]
 fn a_pending_carry_is_dropped_without_a_journal() {
     let host = Host::new();
     let state = support::MemoryDir::new();
@@ -527,6 +544,24 @@ fn an_invalid_or_missing_config_never_stops_the_archive() {
         );
         assert!(!host.exists(session.journal()));
     }
+}
+
+#[test]
+fn an_invalid_explicit_config_warning_keeps_the_parser_cause() {
+    let host = Host::new();
+    let cfg = support::MemoryDir::new();
+    let path = cfg.path().join("bad.json");
+    host.write(&path, "{").unwrap();
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    let ran = reset(
+        &host,
+        session.path(),
+        &["--all", "--config", path.to_str().unwrap()],
+    );
+    assert_eq!(ran.exit, Exit::Ok);
+    assert_eq!(ran.err.lines().find(|line| line.starts_with("warning:")),
+        Some(format!("warning: cannot check candidate solo limits: invalid config {}: parse config JSON: EOF while parsing an object at line 1 column 1", path.display()).as_str()));
+    assert!(!host.exists(session.journal()));
 }
 
 #[test]

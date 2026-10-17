@@ -190,11 +190,15 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
 
     let boot = match ctx.system.boot_id() {
         Ok(boot) => boot,
-        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
+        Err(error) => {
+            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
+        }
     };
     let mut machine = match ctx.system.open_machine(&config, ctx.state_dir, &lock) {
         Ok(machine) => machine,
-        Err(error) => return exit_with(ctx, COMMAND, error, Exit::Error),
+        Err(error) => {
+            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
+        }
     };
     let bios = machine
         .host
@@ -358,7 +362,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             let _ = writeln!(
                 ctx.err,
                 "togi: systemctl reboot: {}",
-                escape_text(&error.to_string())
+                escape_text(&togi_render::error_chain(&error))
             );
         }
     }
@@ -421,7 +425,7 @@ fn refuse(
         let _ = writeln!(
             ctx.err,
             "togi: persist GRUB leave reason: {}",
-            escape_text(&error.to_string())
+            escape_text(&togi_render::error_chain(&error))
         );
     }
     match bootloader.clear_saved_entry() {
@@ -436,7 +440,7 @@ fn refuse(
             let _ = writeln!(
                 ctx.err,
                 "togi: clear GRUB saved entry: {}; no reboot requested",
-                escape_text(&error.to_string())
+                escape_text(&togi_render::error_chain(&error))
             );
         }
     }
