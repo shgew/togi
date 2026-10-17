@@ -856,12 +856,14 @@ impl Journal {
     }
 
     pub(crate) fn warning(&self) -> Option<TunerWarning> {
-        match self.state.next().ok() {
-            Some(Action::Decide(DecisionAction {
-                payload: crate::DecisionPayload::TunerWarning(warning),
-                ..
-            })) => Some(warning),
-            _ => None,
+        if let Ok(Action::Decide(DecisionAction {
+            payload: crate::DecisionPayload::TunerWarning(warning),
+            ..
+        })) = self.state.next()
+        {
+            Some(warning)
+        } else {
+            None
         }
     }
 }

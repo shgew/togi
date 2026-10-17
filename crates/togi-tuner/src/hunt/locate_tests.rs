@@ -1278,7 +1278,7 @@ fn hunt_group_retry_belongs_to_its_group() {
             Some(Action::Decide(decision)) => {
                 j.decide(decision);
             }
-            _ => break,
+            Some(Action::ReadRanking) | None => break,
         }
     }
     assert!(j.run().retry.is_none());
@@ -2222,7 +2222,7 @@ fn rerun_derived_hunt_commitments() {
                     j.loc_finish(&plan, Outcome::Pass, &R7Report::default());
                     done.push(plan);
                 }
-                _ => break,
+                Some(Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking) | None => break,
             }
         }
         let got: Vec<u32> = done.iter().map(|plan| plan.duration.get()).collect();

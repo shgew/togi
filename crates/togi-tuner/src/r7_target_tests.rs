@@ -31,10 +31,11 @@ fn passes(
 }
 
 fn r7_backoff(j: &Journal) -> (DecisionAction, R7Reason) {
-    match j.run().r7_decision() {
-        Some(R7Response::Backoff { decision, why }) => (decision, why),
-        other => panic!("expected a voltage-targeted backoff, got {other:?}"),
-    }
+    let response = j.run().r7_decision();
+    let Some(R7Response::Backoff { decision, why }) = response else {
+        panic!("expected a voltage-targeted backoff, got {response:?}");
+    };
+    (decision, why)
 }
 
 fn moved(decision: &DecisionAction) -> (u8, i64) {

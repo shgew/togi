@@ -621,7 +621,8 @@ fn zero_diagnostic_lifecycle() {
         let end = j.end(intent, &trial, outcome);
         let want = match outcome {
             Outcome::Pass => Diagnostic::Passed { end },
-            Outcome::Failure | Outcome::Inconclusive => Diagnostic::Failed { end },
+            Outcome::Failure => Diagnostic::Failed { end },
+            Outcome::Inconclusive => unreachable!("the lifecycle ends only in a pass or a failure"),
         };
         assert_eq!(j.diagnostic(failure), Some(&want), "{outcome:?}");
         j.assert_resumes();

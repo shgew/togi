@@ -113,12 +113,10 @@ pub(crate) fn is_hold(decision: &TunerDecision) -> bool {
 
 pub(crate) fn settle(j: &mut Journal) {
     for _ in 0..40 {
-        match j.state.next().ok() {
-            Some(Action::Decide(action)) => {
-                j.decide(action);
-            }
-            _ => return,
-        }
+        let Some(Action::Decide(action)) = j.state.next().ok() else {
+            return;
+        };
+        j.decide(action);
     }
     panic!("the tuner kept deciding");
 }
