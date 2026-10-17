@@ -296,6 +296,28 @@ pub(crate) fn within_tie(load: CoreSet, held: CoreSet, order: &ChainOrder) -> bo
         })
 }
 
+/// The verdict of a derivation that follows a set the tie candidate kept, `old`, in place of the tuner's:
+/// the candidate derives from `old` by the tuner's order of it, `order`, so the derivation is kept when that
+/// order exists, cites no trial in `skipped` and gives the derivation's `cores`.
+pub(crate) fn after_kept(
+    old: CoreSet,
+    cores: CoreSet,
+    order: Option<&ChainOrder>,
+    skipped: &HashSet<Seq>,
+) -> Verdict {
+    let Some(order) = order else {
+        return Verdict::Unresolved(Unresolved::Diverged);
+    };
+    if let Some(&source) = order.sources.iter().find(|seq| skipped.contains(seq)) {
+        return Verdict::Unresolved(Unresolved::Source { source });
+    }
+    if next_set(old, order) == cores {
+        Verdict::Kept
+    } else {
+        Verdict::Unresolved(Unresolved::Diverged)
+    }
+}
+
 fn record_position(chain: &mut Vec<(NonZeroU32, Position)>, part: NonZeroU32, position: Position) {
     match chain.iter().position(|&(at, _)| at == part) {
         None => chain.push((part, position)),
@@ -346,16 +368,10 @@ impl<'a> Ledger<'a> {
                 return (Verdict::Unresolved(Unresolved::Diverged), unknown);
             }
             Some(Position::Kept { old, .. }) => {
-                let Some(order) = state.chain_order(LoadKey::new(d.workload, old), d.ccd) else {
-                    return (Verdict::Unresolved(Unresolved::Diverged), unknown);
-                };
-                if let Some(&source) = order.sources.iter().find(|seq| self.skipped.contains(seq)) {
-                    return (Verdict::Unresolved(Unresolved::Source { source }), unknown);
-                }
-                return if next_set(old, &order) == d.cores {
-                    (Verdict::Kept, same)
-                } else {
-                    (Verdict::Unresolved(Unresolved::Diverged), unknown)
+                let order = state.chain_order(LoadKey::new(d.workload, old), d.ccd);
+                return match after_kept(old, d.cores, order.as_ref(), &self.skipped) {
+                    Verdict::Kept => (Verdict::Kept, same),
+                    verdict @ (Verdict::Skipped | Verdict::Unresolved(_)) => (verdict, unknown),
                 };
             }
             Some(Position::Same(_)) => {}

@@ -50,6 +50,7 @@
             ./tools/bench/facts
             ./tools/bench/suite.json
             ./tools/bench/baseline.jsonl
+            ./tools/bench/research/896/suite.json
             ./tools/bench/gates
           ];
           cliSource = cargoSources.source { code = cargoSources.closure [ "togi" ]; };
