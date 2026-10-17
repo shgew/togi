@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::{self, Write};
 
 use jiff::{SignedDuration, Timestamp};
@@ -5,11 +6,12 @@ use serde_json::{Value, json};
 use test_case::test_case;
 
 use super::{
-    Comment, Counts, PULLS_QUERY, Pull, Row, Totals, format_duration, median, render, run,
-    summarize, total,
+    Comment, Counts, PULLS_QUERY, Place, Pull, Row, Totals, format_duration, median, place, render,
+    run, summarize, total,
 };
 use crate::fakes::{Fake, answer};
 use crate::record::tests::read_fixture;
+use crate::record::{Finding, parse_record};
 
 const MINUTE: i64 = 60_000_000_000;
 const HOUR: i64 = 60 * MINUTE;
@@ -98,16 +100,25 @@ fn summarize_counts_each_finding_once() {
         pull(9, "before review", "", vec![]),
     ];
     let rows = summarize(&pulls).expect("summarize");
-    let row = |number, title: &str, check: &str, records, first_record, findings| Row {
+    let row = |number, title: &str, check: &str, records, first_record, findings, places| Row {
         number,
         title: title.to_owned(),
         check: check.to_owned(),
         records,
         first_record,
         findings,
+        places,
     };
     let want = vec![
-        row(9, "before review", "", 0, 0, Counts::default()),
+        row(
+            9,
+            "before review",
+            "",
+            0,
+            0,
+            Counts::default(),
+            BTreeMap::new(),
+        ),
         row(
             10,
             "chain",
@@ -115,6 +126,7 @@ fn summarize_counts_each_finding_once() {
             2,
             90 * MINUTE,
             counts([0, 1, 1, 1], [2, 1, 0]),
+            BTreeMap::from([(Place::Unknown, 3)]),
         ),
         row(
             11,
@@ -123,8 +135,21 @@ fn summarize_counts_each_finding_once() {
             1,
             20 * MINUTE,
             counts([0, 0, 1, 3], [3, 0, 1]),
+            BTreeMap::from([
+                (dir("docs"), 2),
+                (dir("tools/bench"), 1),
+                (dir("tools/fit"), 1),
+            ]),
         ),
-        row(12, "blocked", "failure", 0, 0, Counts::default()),
+        row(
+            12,
+            "blocked",
+            "failure",
+            0,
+            0,
+            Counts::default(),
+            BTreeMap::new(),
+        ),
     ];
     assert_eq!(want, rows);
     let want_totals = Totals {
@@ -134,6 +159,12 @@ fn summarize_counts_each_finding_once() {
         recorded: 2,
         findings: counts([0, 1, 2, 4], [5, 1, 1]),
         first_records: vec![20 * MINUTE, 90 * MINUTE],
+        places: BTreeMap::from([
+            (dir("docs"), 2),
+            (dir("tools/bench"), 1),
+            (dir("tools/fit"), 1),
+            (Place::Unknown, 3),
+        ]),
     };
     assert_eq!(want_totals, total(&rows));
 }
@@ -175,20 +206,20 @@ fn body(findings: &[String]) -> String {
 #[test_case(
     &body(&[at(r#","location":"a.go:1""#, "deferred"), at(r#","location":"b.go:2""#, "rejected")]),
     &body(&[at(r#","location":"b.go:2""#, "fixed")]),
-    counts([0, 0, 2, 0], [1, 0, 1]); "update one of two locations")]
+    counts([0, 0, 2, 0], [1, 0, 1]), (dir("."), 2); "update one of two locations")]
 #[test_case(
     &body(&[at(r#","location":"a.go:1""#, "deferred")]),
     &body(&[at(r#","location":"b.go:2""#, "fixed")]),
-    counts([0, 0, 2, 0], [1, 0, 1]); "new location")]
+    counts([0, 0, 2, 0], [1, 0, 1]), (dir("."), 2); "new location")]
 #[test_case(
     &body(&[at(r#","location":null"#, "deferred")]),
     &body(&[at("", "fixed")]),
-    counts([0, 0, 1, 0], [1, 0, 0]); "null then absent location")]
+    counts([0, 0, 1, 0], [1, 0, 0]), (Place::Unknown, 1); "null then absent location")]
 #[test_case(
     &body(&[at("", "deferred")]),
     &body(&[at(r#","location":null"#, "fixed")]),
-    counts([0, 0, 1, 0], [1, 0, 0]); "absent then null location")]
-fn summarize_shared_text(first: &str, second: &str, want: Counts) {
+    counts([0, 0, 1, 0], [1, 0, 0]), (Place::Unknown, 1); "absent then null location")]
+fn summarize_shared_text(first: &str, second: &str, want: Counts, places: (Place, i64)) {
     let pulls = vec![pull(
         1,
         "",
@@ -204,9 +235,95 @@ fn summarize_shared_text(first: &str, second: &str, want: Counts) {
         records: 2,
         first_record: HOUR,
         findings: want,
+        places: BTreeMap::from([places]),
         ..Row::default()
     }];
     assert_eq!(want, rows);
+}
+
+fn located(location: &str) -> Finding {
+    let mut record = parse_record(&body(&[at(location, "fixed")])).expect("parse");
+    record.findings.remove(0)
+}
+
+fn dir(name: &str) -> Place {
+    Place::Directory(name.to_owned())
+}
+
+#[test_case(r#","location":{"path":"internal/tuner/step.go","line":7}"#, &dir("internal/tuner"); "version 1 object")]
+#[test_case(r#","location":"crates/togi-tuner/src/decide.rs:42""#, &dir("crates/togi-tuner"); "string with a line")]
+#[test_case(r#","location":"tools/audit/sweep.go:112-115""#, &dir("tools/audit"); "string with a range")]
+#[test_case(r#","location":"crates/togi/tests/run/panics.rs""#, &dir("crates/togi"); "string without a line")]
+#[test_case(r#","location":"docs/spec/tuner.md:227, docs/spec/workloads.md:193""#, &dir("docs/spec"); "several files count under the first")]
+#[test_case(r#","location":"docs/adr/0058-native-rust-rewrite.md:13""#, &dir("docs/adr"); "adr")]
+#[test_case(r#","location":"docs/review-record.md:12""#, &dir("docs"); "docs root")]
+#[test_case(r#","location":"justfile:208-211""#, &dir("."); "repository root")]
+#[test_case(r#","location":"AGENTS.md""#, &dir("."); "root without a line")]
+#[test_case(r#","location":"cmd/togi/hostlock_test.go:352-355 (original head)""#, &dir("cmd/togi"); "trailing note")]
+#[test_case(r#","location":"pull request body (demo)""#, &Place::Unknown; "not a file")]
+#[test_case(r#","location":null"#, &Place::Unknown; "null")]
+#[test_case("", &Place::Unknown; "absent")]
+#[test_case(r#","location":"""#, &Place::Unknown; "empty")]
+#[test_case(r#","location":7"#, &Place::Unknown; "number")]
+#[test_case(r#","location":{"line":7}"#, &Place::Unknown; "object without a path")]
+fn place_of_a_finding(location: &str, want: &Place) {
+    assert_eq!(*want, place(&located(location)));
+}
+
+#[test]
+fn summarize_counts_an_updated_finding_once_in_its_place() {
+    let pulls = vec![pull(
+        1,
+        "",
+        "",
+        vec![
+            comment(
+                "first",
+                after(60),
+                body(&[
+                    at(r#","location":"crates/togi-tuner/src/a.rs:1""#, "deferred"),
+                    at(r#","location":null"#, "deferred"),
+                ]),
+            ),
+            comment(
+                "second",
+                after(120),
+                body(&[at(r#","location":"crates/togi-tuner/src/a.rs:1""#, "fixed")]),
+            ),
+        ],
+    )];
+    let rows = summarize(&pulls).expect("summarize");
+    assert_eq!(
+        BTreeMap::from([(dir("crates/togi-tuner"), 1), (Place::Unknown, 1)]),
+        rows[0].places
+    );
+}
+
+#[test]
+fn render_lists_directories_by_count_then_name_with_unknown_last() {
+    let rows = vec![
+        Row {
+            places: BTreeMap::from([
+                (dir("docs/spec"), 2),
+                (Place::Unknown, 5),
+                (dir("crates/b"), 1),
+            ]),
+            ..Row::default()
+        },
+        Row {
+            places: BTreeMap::from([
+                (dir("crates/a"), 2),
+                (dir("crates/b"), 1),
+                (dir("docs/adr"), 3),
+            ]),
+            ..Row::default()
+        },
+    ];
+    let mut w = Vec::new();
+    render(&mut w, &[], &total(&rows)).expect("render");
+    let out = String::from_utf8(w).expect("utf-8");
+    let want = "\nFindings by directory, each counted once:\ndocs/adr   3\ncrates/a   2\ncrates/b   2\ndocs/spec  2\nunknown    5\n";
+    assert!(out.ends_with(want), "output:\n{out}");
 }
 
 /// Accepts whole writes until `room` bytes are used, then fails the write that would exceed it.
@@ -239,6 +356,7 @@ fn recorded() -> Vec<Row> {
         check: "success".to_owned(),
         records: 1,
         first_record: 20 * MINUTE,
+        places: BTreeMap::from([(dir("docs"), 1)]),
         ..Row::default()
     }]
 }
@@ -255,6 +373,7 @@ fn unrecorded() -> Vec<Row> {
 #[test_case(&recorded(), "\n1 merged", "write totals: write failed"; "pull requests")]
 #[test_case(&recorded(), "Findings:", "write totals: write failed"; "findings")]
 #[test_case(&recorded(), "Time from", "write totals: write failed"; "first record")]
+#[test_case(&recorded(), "\nFindings by", "write directories: write failed"; "directories")]
 #[test_case(&unrecorded(), "\n1 merged", "write totals: write failed"; "pull requests unrecorded")]
 #[test_case(&unrecorded(), "Findings:", "write totals: write failed"; "findings unrecorded")]
 fn render_write_error(rows: &[Row], fail_at: &str, want: &str) {
@@ -360,6 +479,17 @@ total  2/4      3/4      0   0   11  4   13     1         1
 4 merged pull requests: 2 with robotogi's review check on the head (1 successful), 3 with a review record.
 Findings: P0 0, P1 0, P2 11, P3 4; fixed 13, rejected 1, deferred 1.
 Time from opening to the first record: median 1h00m, longest 2h30m.
+
+Findings by directory, each counted once:
+docs              4
+internal/simrun   3
+docs/spec         2
+.                 1
+internal/journal  1
+internal/watch    1
+tools/bench       1
+tools/fit         1
+tools/sim         1
 ";
     assert_eq!(want, String::from_utf8_lossy(&w));
 }
