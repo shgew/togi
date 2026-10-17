@@ -138,7 +138,9 @@ fn quantile(c: &Criterion) -> (f64, f64, f64, f64) {
             hi,
             ..
         } => (baseline, candidate, lo, hi),
-        _ => panic!("not a quantile: {c:?}"),
+        Measure::Conclusion { .. } | Measure::Time { .. } | Measure::PooledMedian { .. } => {
+            panic!("not a quantile: {c:?}")
+        }
     }
 }
 

@@ -120,15 +120,63 @@ fn count_events(events: &[Event], measured: &mut Measured) {
             }
             Payload::HuntStart(_) => measured.hunts += 1,
             Payload::Combination(_) => measured.combinations += 1,
-            _ => {}
+            Payload::SessionStart(_)
+            | Payload::SessionContext(_)
+            | Payload::SessionBaseline(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::SessionArchived(_)
+            | Payload::SessionCarried(_)
+            | Payload::ConfigLoaded(_)
+            | Payload::PreflightCheck(_)
+            | Payload::SmuIntent(_)
+            | Payload::SmuWrite(_)
+            | Payload::SmuReadback(_)
+            | Payload::SmuError(_)
+            | Payload::ProfileApplied(_)
+            | Payload::ProfileChange(_)
+            | Payload::ProfileRestored(_)
+            | Payload::TrialIntent(_)
+            | Payload::TrialStart(_)
+            | Payload::TrialProgress(_)
+            | Payload::TrialSignal(_)
+            | Payload::TrialSample(_)
+            | Payload::TrialCarried(_)
+            | Payload::Failure(_)
+            | Payload::FailureCarried(_)
+            | Payload::Mce(_)
+            | Payload::TunerDecision(_)
+            | Payload::CorePhase(_)
+            | Payload::CheckingCycle(_)
+            | Payload::CheckingStep(_)
+            | Payload::CheckingChain(_)
+            | Payload::HostRanking(_)
+            | Payload::HuntGroup(_)
+            | Payload::HuntEnd(_)
+            | Payload::HuntSkipped(_)
+            | Payload::DeepeningRound(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::CommandReset(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::DeadEnd(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::Shutdown(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_) => {}
         }
     }
 }
 
 fn final_profile(events: &[Event], cores: usize) -> Result<PerCore<ObservedOffset>, RunError> {
-    let checking = events.iter().rev().find_map(|event| match &event.payload {
-        Payload::ProfileChange(change) => Some(change.to),
-        _ => None,
+    let checking = events.iter().rev().find_map(|event| {
+        if let Payload::ProfileChange(change) = &event.payload {
+            Some(change.to)
+        } else {
+            None
+        }
     });
     let baseline = match checking {
         Some(_) => None,
@@ -163,9 +211,12 @@ fn real_answers(events: &[Event], model: &Model, replay: Option<&Replay>) -> Res
     let Some(replay) = replay else {
         return Ok(0);
     };
-    let Some(session) = events.iter().find_map(|event| match &event.payload {
-        Payload::SessionStart(start) => Some(start.session),
-        _ => None,
+    let Some(session) = events.iter().find_map(|event| {
+        if let Payload::SessionStart(start) = &event.payload {
+            Some(start.session)
+        } else {
+            None
+        }
     }) else {
         return Ok(0);
     };
@@ -173,9 +224,12 @@ fn real_answers(events: &[Event], model: &Model, replay: Option<&Replay>) -> Res
         .map_err(|error| RunError::Measure(format!("extract the trial facts: {error}")))?;
     let started: HashSet<&TrialId> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialStart(start) => Some(&start.trial),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::TrialStart(start) = &event.payload {
+                Some(&start.trial)
+            } else {
+                None
+            }
         })
         .collect();
     let mut answered = 0;

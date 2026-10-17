@@ -251,9 +251,12 @@ fn a_missing_explicit_config_is_a_usage_error() {
 fn recorded_config(fake: &Fake) -> (String, bool) {
     fake.events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::ConfigLoaded(loaded) => Some((loaded.path.clone(), loaded.file)),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::ConfigLoaded(loaded) = &event.payload {
+                Some((loaded.path.clone(), loaded.file))
+            } else {
+                None
+            }
         })
         .unwrap()
 }

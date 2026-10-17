@@ -83,7 +83,12 @@ pub(crate) fn run_with(
             let _ = writeln!(log, "sim: {error}");
             match error {
                 Error::ScheduleNotFull => crate::USAGE,
-                _ => FAILED,
+                Error::Machine(_)
+                | Error::TempDir(_)
+                | Error::Config(_)
+                | Error::Resume(_)
+                | Error::Signals(_)
+                | Error::Simulate(_) => FAILED,
             }
         }
     }

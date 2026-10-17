@@ -33,7 +33,9 @@ impl From<ExtractsError> for Error {
     fn from(error: ExtractsError) -> Self {
         match error {
             ExtractsError::Read(error) => Self::ReadExtract(error),
-            other => Self::Extract(other),
+            other @ (ExtractsError::NoFacts
+            | ExtractsError::NoContext
+            | ExtractsError::Invalid(_)) => Self::Extract(other),
         }
     }
 }

@@ -243,7 +243,14 @@ pub(crate) fn build_in(
     let finished =
         process::run(fleet, &mut command, Duration::MAX).map_err(|error| match error {
             RunError::Start(error) => build_failed(format!("run cargo: {error}")),
-            error => build_failed(format!("cargo build: {error}")),
+            error @ (RunError::Directory { .. }
+            | RunError::Wait(_)
+            | RunError::TimedOut { .. }
+            | RunError::Read { .. }
+            | RunError::Journal(_)
+            | RunError::Measure(_)
+            | RunError::Model(_)
+            | RunError::Interrupted) => build_failed(format!("cargo build: {error}")),
         })?;
     if finished.exit != 0 {
         return Err(build_failed(format!(
