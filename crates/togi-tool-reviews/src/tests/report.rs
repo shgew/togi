@@ -266,6 +266,7 @@ fn dir(name: &str) -> Place {
 #[test_case(r#","location":"""#, &Place::Unknown; "empty")]
 #[test_case(r#","location":7"#, &Place::Unknown; "number")]
 #[test_case(r#","location":{"line":7}"#, &Place::Unknown; "object without a path")]
+#[test_case(r#","location":["docs/spec/tuner.md"]"#, &Place::Unknown; "array of a path")]
 fn place_of_a_finding(location: &str, want: &Place) {
     assert_eq!(*want, place(&located(location)));
 }
@@ -323,7 +324,10 @@ fn render_lists_directories_by_count_then_name_with_unknown_last() {
     render(&mut w, &[], &total(&rows)).expect("render");
     let out = String::from_utf8(w).expect("utf-8");
     let want = "\nFindings by directory, each counted once:\ndocs/adr   3\ncrates/a   2\ncrates/b   2\ndocs/spec  2\nunknown    5\n";
-    assert!(out.ends_with(want), "output:\n{out}");
+    let directories = out
+        .find("\nFindings by directory")
+        .map(|start| &out[start..]);
+    assert_eq!(Some(want), directories);
 }
 
 /// Accepts whole writes until `room` bytes are used, then fails the write that would exceed it.
