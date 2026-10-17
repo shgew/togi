@@ -46,9 +46,9 @@ pub enum ExtractsError {
     NoFacts,
     #[error("replay requires the machine to declare its BIOS context")]
     NoContext,
-    #[error("load replay oracle: {0}")]
+    #[error("load replay oracle")]
     Read(#[from] ReadError),
-    #[error("load replay oracle: {0}")]
+    #[error("load replay oracle")]
     Invalid(#[from] InvalidFact),
 }
 

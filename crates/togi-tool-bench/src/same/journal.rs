@@ -90,19 +90,19 @@ impl<F: togi_journal::fs::Fs> Source for F {
 /// Why a session's journals could not be digested or compared.
 #[derive(Debug, thiserror::Error)]
 pub enum JournalError {
-    #[error("list journals in {}: {source}", path.display())]
+    #[error("list journals in {}", path.display())]
     List {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("read journal {}: {source}", path.display())]
+    #[error("read journal {}", path.display())]
     Read {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("journal {}: line {line}: decode event: {source}", path.display())]
+    #[error("journal {}: line {line}: decode event", path.display())]
     Decode {
         path: PathBuf,
         line: usize,

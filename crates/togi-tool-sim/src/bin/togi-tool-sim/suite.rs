@@ -34,7 +34,7 @@ pub(crate) fn run(args: &SuiteArgs, log: &mut Log) -> u8 {
         Ok(true) => 0,
         Ok(false) => FAILED,
         Err(error) => {
-            let _ = writeln!(log, "sim: {error}");
+            let _ = writeln!(log, "sim: {}", togi_machine::error_chain(&error));
             FAILED
         }
     }
@@ -46,7 +46,7 @@ pub(crate) fn check(args: &CheckArgs, log: &mut Log) -> u8 {
     match check_manifests(args) {
         Ok(()) => 0,
         Err(error) => {
-            let _ = writeln!(log, "sim: {error}");
+            let _ = writeln!(log, "sim: {}", togi_machine::error_chain(&error));
             FAILED
         }
     }
@@ -58,23 +58,23 @@ pub(crate) enum Error {
     Suite(#[from] togi_tool_sim::SuiteError),
     #[error(transparent)]
     Shard(#[from] togi_tool_sim::ShardError),
-    #[error("watch for signals: {0}")]
+    #[error("watch for signals")]
     Signals(#[source] io::Error),
-    #[error("encode the manifest: {0}")]
+    #[error("encode the manifest")]
     Encode(#[source] serde_json::Error),
-    #[error("write {}: {source}", path.display())]
+    #[error("write {}", path.display())]
     Write {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("read {}: {source}", path.display())]
+    #[error("read {}", path.display())]
     Read {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("{}: {source}", path.display())]
+    #[error("{}", path.display())]
     Manifest {
         path: PathBuf,
         #[source]
@@ -292,7 +292,7 @@ fn execute_loaded(
         Ok(loaded) => loaded,
         Err(error) => {
             return Outcome::Failed {
-                detail: error.to_string(),
+                detail: togi_machine::error_chain(&error),
             };
         }
     };

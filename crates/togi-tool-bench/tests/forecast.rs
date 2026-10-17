@@ -670,7 +670,7 @@ fn a_state_directory_without_a_journal_has_no_anchor() {
         togi_tool_forecast::Error::ReadJournal { .. }
     ));
     assert_eq!(
-        ForecastError::Anchor(Box::new(error)).to_string(),
+        togi_machine::error_chain(&ForecastError::Anchor(Box::new(error))),
         "read anchor: read journal /empty/events.jsonl: entity not found"
     );
 }
@@ -679,7 +679,7 @@ fn a_state_directory_without_a_journal_has_no_anchor() {
 fn a_failed_forecast_read_keeps_the_file_and_original_source() {
     let error = Anchor::of_fs(&MemFs::new(), "/empty").unwrap_err();
     assert_eq!(
-        ForecastError::Read(Box::new(error)).to_string(),
+        togi_machine::error_chain(&ForecastError::Read(Box::new(error))),
         "read the run: read journal /empty/events.jsonl: entity not found"
     );
 }

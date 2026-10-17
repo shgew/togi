@@ -150,14 +150,10 @@ impl Session<'_> {
     /// them is recorded as the run's dead end and replaces the stop; what follows it stays owed.
     pub(crate) fn record_drained(&mut self) -> Result<Option<Stop>, SessionError> {
         while let Some(action) = self.appender.tuner().drain() {
-            match action.payload {
-                DecisionPayload::DeadEnd(dead_end) => {
-                    return self.dead_end(dead_end, &action.cause).map(Some);
-                }
-                payload => {
-                    self.appender.append(payload.into(), &action.cause)?;
-                }
+            if let DecisionPayload::DeadEnd(dead_end) = action.payload {
+                return self.dead_end(dead_end, &action.cause).map(Some);
             }
+            self.appender.append(action.payload.into(), &action.cause)?;
         }
         Ok(None)
     }

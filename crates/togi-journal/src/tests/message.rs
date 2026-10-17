@@ -150,7 +150,8 @@ fn recovered_trial_messages_keep_the_reason_and_the_last_sample() {
                 assert!(text.contains("INCONCLUSIVE"), "{text}");
                 assert!(text.ends_with(&format!(": {reason}")), "{text}");
             }
-            _ => assert!(text.contains("FAIL"), "{text}"),
+            Outcome::Failure => assert!(text.contains("FAIL"), "{text}"),
+            Outcome::Pass => unreachable!("no case recovers a passing trial: {text}"),
         }
     }
 }

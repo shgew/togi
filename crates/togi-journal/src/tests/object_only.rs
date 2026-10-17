@@ -49,7 +49,7 @@ fn nested_objects(value: &Value, at: &str, found: &mut Vec<String>) {
                 nested_objects(member, &pointer, found);
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 

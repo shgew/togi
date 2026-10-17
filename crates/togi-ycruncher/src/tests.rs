@@ -237,7 +237,14 @@ fn directory_read_errors_precede_executable_checks() {
                 assert_eq!(kind, io::ErrorKind::PermissionDenied);
                 assert_eq!(source.kind(), kind);
             }
-            other => panic!("{other:?}"),
+            other @ (Error::Missing { .. }
+            | Error::Stat { .. }
+            | Error::NotExecutable { .. }
+            | Error::NoBinaries { .. }
+            | Error::NoZen5 { .. }
+            | Error::Unsupported { .. }
+            | Error::NoCpus { .. }
+            | Error::Pattern { .. }) => panic!("{other:?}"),
         }
     }
 }
@@ -438,12 +445,10 @@ fn real_fs_unreadable_binaries_directory_is_not_backend_missing() {
         return;
     }
     let error = result.unwrap_err();
-    match &error {
-        Error::ReadBinaries { source, .. } => {
-            assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
-        }
-        other => panic!("{other:?}"),
-    }
+    let Error::ReadBinaries { source, .. } = &error else {
+        panic!("{error:?}");
+    };
+    assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
     assert!(!error.is_missing());
 }
 

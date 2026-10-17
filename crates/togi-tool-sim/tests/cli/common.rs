@@ -151,7 +151,7 @@ impl Host {
                         Ok(true) => 0,
                         Ok(false) => 1,
                         Err(error) => {
-                            let _ = writeln!(log, "sim: {error}");
+                            let _ = writeln!(log, "sim: {}", togi_machine::error_chain(&error));
                             1
                         }
                     }
@@ -176,7 +176,7 @@ impl Host {
                     match result {
                         Ok(()) => 0,
                         Err(error) => {
-                            let _ = writeln!(log, "sim: {error}");
+                            let _ = writeln!(log, "sim: {}", togi_machine::error_chain(&error));
                             1
                         }
                     }

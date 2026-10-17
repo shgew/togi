@@ -23,7 +23,7 @@ pub const MAX_RESAMPLES: usize = 10_000_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GateError {
-    #[error("decode gate: {0}")]
+    #[error("decode gate")]
     Decode(#[from] serde_json::Error),
     #[error(
         "gate: bootstrap_seed is a pair, the seed of the Go bench's PCG; archived Go gates are kept as records and are not re-scored"

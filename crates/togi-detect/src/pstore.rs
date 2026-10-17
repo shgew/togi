@@ -403,7 +403,13 @@ pub(crate) fn is_directory(
                 .map_err(|errno| PstoreError::io(Access::Inspect, &path.join(name), errno))?;
             Ok(FileType::from_raw_mode(stat.st_mode) == FileType::Directory)
         }
-        kind => Ok(kind == FileType::Directory),
+        FileType::Directory => Ok(true),
+        FileType::RegularFile
+        | FileType::Symlink
+        | FileType::Fifo
+        | FileType::Socket
+        | FileType::CharacterDevice
+        | FileType::BlockDevice => Ok(false),
     }
 }
 

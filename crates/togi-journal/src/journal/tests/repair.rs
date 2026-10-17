@@ -7,9 +7,12 @@ fn torn_events(journal: &crate::Journal) -> Vec<&crate::JournalTorn> {
     journal
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::JournalTorn(torn) => Some(torn),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::JournalTorn(torn) = &event.payload {
+                Some(torn)
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -395,11 +398,11 @@ fn a_reopen_after_a_failed_repair_directory_sync_syncs_the_directory_again() {
     fs.inject(Fault::before(crate::fs::Op::SyncDir, 1));
     assert!(dir.open(boot(2)).is_err());
     fs.clear_faults();
-    let mark = fs.log().len();
+    fs.record_history();
     let journal = reopen(&fs, 3);
     assert_eq!(journal.events().len(), 5);
     assert!(
-        fs.log()[mark..]
+        fs.log()
             .iter()
             .any(|(op, path)| *op == crate::fs::Op::SyncDir
                 && path == std::path::Path::new("/state"))

@@ -2,7 +2,7 @@ use std::io;
 
 use jiff::tz::{self, TimeZone};
 use serde_json::{Value, json};
-use togi_journal::{Event, Payload};
+use togi_journal::{Event, HuntOutcome, Payload};
 
 use crate::{OutputFacts, Renderer, Style, escape_text, style_for};
 
@@ -233,9 +233,9 @@ fn style_cases() -> Vec<(&'static str, Event, Style)> {
         ("hunt cancelled", hunt_end("cancelled"), Style::Plain),
         ("hunt direct", hunt_end("direct"), Style::Green),
         ("hunt culprit", hunt_end("culprit"), Style::Green),
-        ("hunt combination", hunt_end("combination"), Style::Green),
-        ("hunt fallback", hunt_end("fallback"), Style::Plain),
-        ("hunt loaded", hunt_end("loaded"), Style::Plain),
+        ("hunt combination", hunt_end("combination"), Style::Yellow),
+        ("hunt fallback", hunt_end("fallback"), Style::Yellow),
+        ("hunt loaded", hunt_end("loaded"), Style::Yellow),
         ("hunt start", hunt_start(), Style::Yellow),
         (
             "hunt group without inference",
@@ -387,6 +387,41 @@ fn every_nonplain_style_wraps_the_whole_line_in_owned_sgr() {
         assert_eq!(
             renderer.text(style, "line").to_string(),
             format!("{open}line\x1b[0m")
+        );
+    }
+}
+
+#[test]
+fn hunt_end_lines_colour_only_the_wrapper() {
+    for &result in HuntOutcome::ALL {
+        let open = match result {
+            HuntOutcome::Culprit | HuntOutcome::Direct => Some("\x1b[32m"),
+            HuntOutcome::Combination | HuntOutcome::Fallback | HuntOutcome::Loaded => {
+                Some("\x1b[33m")
+            }
+            HuntOutcome::Cancelled => None,
+        };
+        let event = hunt_end(result.as_str());
+        let no_color = Renderer::new(OutputFacts {
+            is_terminal: true,
+            no_color: true,
+            journald: false,
+        });
+        let plain_line = no_color.line(&event, &utc()).to_string();
+        assert_eq!(
+            plain().line(&event, &utc()).to_string(),
+            plain_line,
+            "{result}"
+        );
+        assert!(!plain_line.contains('\x1b'), "{result}");
+        let expected = open.map_or_else(
+            || plain_line.clone(),
+            |open| format!("{open}{plain_line}\x1b[0m"),
+        );
+        assert_eq!(
+            colored().line(&event, &utc()).to_string(),
+            expected,
+            "{result}"
         );
     }
 }

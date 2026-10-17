@@ -7,10 +7,7 @@
 }:
 let
   module = import ./module.nix { packages.${pkgs.stdenv.hostPlatform.system}.default = package; };
-  documentedLockProvision = pkgs.writeText "togi-documented-lock-provision.py" (
-    builtins.elemAt (pkgs.lib.splitString "\nPY\n" (builtins.elemAt (pkgs.lib.splitString "<<'PY'\n" (builtins.readFile ../docs/howto.md)) 1)) 0
-  );
-  # Both VM tests share this node: the NixOS module with the tuning specialisation, GRUB on a virtual disk
+  # The tuning VM tests share this node: the NixOS module with the tuning specialisation, GRUB on a virtual disk
   # and an i6300esb watchdog that resets the machine. Their nodes disable DHCP.
   tuningBoot =
     { pkgs, lib, ... }:
@@ -56,14 +53,8 @@ in
         isNormalUser = true;
         group = "togi-hardware";
       };
-      users.users.unrelated.isNormalUser = true;
       systemd.services."user@".serviceConfig.Delegate = "cpu cpuset io memory pids";
-      environment.etc."togi-test-lock-provision.py".source = documentedLockProvision;
-      environment.systemPackages = [
-        trialTests
-        pkgs.util-linux
-        pkgs.python3
-      ];
+      environment.systemPackages = [ trialTests ];
     };
 
     testScript = ''
@@ -93,73 +84,6 @@ in
       run_scope_tests("", hardware, "")
       lock_identity = machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip()
       assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
-      provision = "python3 /etc/togi-test-lock-provision.py"
-      provision_dir = machine.succeed("mktemp -d /run/togi-provision.XXXXXX").strip()
-      try:
-          for initial_mode in [None, "600", "644"]:
-              for group, expected_owner in [("-", "root:root:600"), ("togi-hardware", "root:togi-hardware:660")]:
-                  fixture = f"{provision_dir}/lock-{initial_mode}-{group}"
-                  if initial_mode is not None:
-                      machine.succeed(f"printf provision-content > {fixture}; chmod {initial_mode} {fixture}")
-                      identity = machine.succeed(f"stat -c '%d:%i' {fixture}").strip()
-                  machine.succeed(f"{provision} {fixture} {group}")
-                  assert machine.succeed(f"stat -c '%U:%G:%a' {fixture}").strip() == expected_owner
-                  if initial_mode is not None:
-                      assert machine.succeed(f"stat -c '%d:%i' {fixture}").strip() == identity
-                      assert machine.succeed(f"cat {fixture}") == "provision-content"
-                  machine.log(f"documented provisioning: initial={initial_mode}, group={group}, result={expected_owner}")
-
-          held = f"{provision_dir}/held-legacy"
-          machine.succeed(f"printf held-content > {held}; chmod 0644 {held}")
-          held_before = machine.succeed(f"stat -c '%d:%i:%U:%G:%a:%h' {held}; sha256sum {held}")
-          # Keep an old read-only descriptor locked while running the published procedure.
-          machine.succeed(
-              f"(exec 9<{held}; flock --exclusive 9; "
-              f"if {provision} {held} togi-hardware > {provision_dir}/held-output 2>&1; then exit 1; fi; "
-              f"! flock --exclusive --nonblock {held} true)"
-          )
-          assert machine.succeed(f"stat -c '%d:%i:%U:%G:%a:%h' {held}; sha256sum {held}") == held_before
-          machine.succeed(f"flock --exclusive --nonblock {held} true")
-          machine.log("documented provisioning: held legacy lock refused without changing inode, content, or exclusion")
-          machine.log(machine.succeed(f"cat {provision_dir}/held-output"))
-
-          target = f"{provision_dir}/symlink-target"
-          symlink = f"{provision_dir}/symlink-lock"
-          machine.succeed(f"printf target-content > {target}; chmod 0644 {target}; ln -s {target} {symlink}")
-          target_before = machine.succeed(f"stat -c '%d:%i:%U:%G:%a:%h' {target}; sha256sum {target}")
-          machine.log(machine.fail(f"{provision} {symlink} togi-hardware"))
-          assert machine.succeed(f"stat -c '%d:%i:%U:%G:%a:%h' {target}; sha256sum {target}") == target_before
-          assert machine.succeed(f"readlink {symlink}").strip() == target
-          machine.log("documented provisioning: symlink refused without modifying its target")
-      finally:
-          machine.succeed(f"rm -rf -- {provision_dir}")
-      assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == lock_identity
-      assert machine.succeed("stat -c '%U:%G:%a' /run/lock/togi.lock").strip() == "root:togi-hardware:660"
-      machine.fail("runuser -u unrelated -- touch /run/lock/unrelated-lock")
-      machine.fail("runuser -u unrelated -- flock --nonblock /run/lock/togi.lock true")
-      unrelated_status, unrelated_output = machine.execute(
-          f"runuser -u unrelated -- togi-trial-tests {pin} {flags} 2>&1"
-      )
-      assert unrelated_status != 0, unrelated_output
-      assert "permission denied" in unrelated_output.lower(), unrelated_output
-      machine.succeed("chown unrelated /run/lock/togi.lock")
-      foreign_identity = machine.succeed("stat -c '%d:%i:%u:%g:%a' /run/lock/togi.lock").strip()
-      machine.succeed("systemd-tmpfiles --create --prefix=/run/lock/togi.lock")
-      foreign_status, foreign_output = machine.execute(
-          "togi --state-dir /tmp/foreign-lock-state reset --all 2>&1"
-      )
-      assert foreign_status == 1, foreign_output
-      assert "is owned by another user" in foreign_output, foreign_output
-      assert machine.succeed("stat -c '%d:%i:%u:%g:%a' /run/lock/togi.lock").strip() == foreign_identity
-      machine.succeed("test ! -e /tmp/foreign-lock-state; chown root /run/lock/togi.lock")
-      machine.succeed("chmod 0640 /run/lock/togi.lock")
-      readonly_status, readonly_output = machine.execute(
-          "runuser -u togi-hardware -- togi --state-dir /tmp/readonly-lock-state reset --all 2>&1"
-      )
-      assert readonly_status == 1, readonly_output
-      assert "only its owner may restrict them" in readonly_output, readonly_output
-      assert machine.succeed("stat -c '%a' /run/lock/togi.lock").strip() == "640"
-      machine.succeed("test ! -e /tmp/readonly-lock-state; chmod 0660 /run/lock/togi.lock")
       machine.succeed("loginctl enable-linger togi-hardware")
       delegated_uid = machine.succeed("id -u togi-hardware").strip()
       machine.wait_for_unit(f"user@{delegated_uid}.service")
@@ -251,16 +175,6 @@ in
           "${pkgs.coreutils}/bin/touch /run/togi-test-held; exec ${pkgs.coreutils}/bin/sleep infinity'"
       )
       machine.wait_until_succeeds("test -f /run/togi-test-held", timeout=10)
-      machine.succeed("systemd-tmpfiles --create --prefix=/run/lock/togi.lock")
-      assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == contention_inode
-      assert machine.succeed("stat -c '%a' /run/lock/togi.lock").strip() == "644"
-      for state_dir in ["/tmp/host-lock-state-a", "/tmp/host-lock-state-b"]:
-          contention_status, contention_output = machine.execute(
-              f"togi --state-dir {state_dir} reset --all 2>&1"
-          )
-          assert contention_status == 3, contention_output
-          assert "another togi process holds the host lock" in contention_output, contention_output
-          machine.succeed(f"test ! -e {state_dir}")
       machine.succeed(
           "mkdir -p /run/systemd/system/togi.service.d; "
           "printf '[Service]\\nRestartSec=1s\\n' > /run/systemd/system/togi.service.d/contention.conf; "
@@ -277,11 +191,6 @@ in
       assert machine.succeed("stat -c '%d:%i' /run/lock/togi.lock").strip() == contention_inode
       assert machine.succeed("stat -c '%a' /run/lock/togi.lock").strip() == "600"
       machine.succeed("systemctl stop togi-test-holder.service")
-      released_status, released_output = machine.execute(
-          "togi --state-dir /tmp/released-lock-state reset --all 2>&1"
-      )
-      assert released_status == 1, released_output
-      assert "no journal at /tmp/released-lock-state/events.jsonl" in released_output
       machine.succeed("grub-set-default 'NixOS - togi' && sync")
       frozen_boot = machine.succeed("cat /proc/sys/kernel/random/boot_id").strip()
       # Freeze only PID 1, not QEMU's clock or the driver's shell. The armed
@@ -318,6 +227,130 @@ in
       machine.wait_for_unit("multi-user.target")
       assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
       machine.succeed("! systemctl is-active --quiet togi.service")
+    '';
+  };
+
+  # The host lock on a normal boot of the module with a hardware-test group: nix/provision-lock.py, the program
+  # docs/howto.md gives manual installs, on fresh, legacy, held and symlinked locks; an unrelated user's denial;
+  # and the installed `togi`'s refusals of a foreign owner, a read-only lock and a held lock. Its checks are exit
+  # statuses, inodes, modes and contents, not message text.
+  host-lock = pkgs.testers.runNixOSTest {
+    name = "togi-host-lock";
+
+    nodes.machine = {
+      imports = [ module ];
+      networking.useDHCP = false;
+      services.togi = {
+        enable = true;
+        hardwareTestGroup = "togi-hardware";
+      };
+      hardware.cpu.amd.ryzen-smu.enable = false;
+      users.groups.togi-hardware = { };
+      users.users.togi-hardware = {
+        isNormalUser = true;
+        group = "togi-hardware";
+      };
+      users.users.unrelated.isNormalUser = true;
+      environment.etc."togi-provision-lock.py".source = ./provision-lock.py;
+      environment.systemPackages = [
+        pkgs.util-linux
+        pkgs.python3
+      ];
+    };
+
+    testScript = ''
+      lock = "/run/lock/togi.lock"
+      provision = "python3 /etc/togi-provision-lock.py"
+
+
+      def stat(path, format):
+          return machine.succeed(f"stat -c '{format}' {path}").strip()
+
+
+      def exits(command, want):
+          status, output = machine.execute(f"{command} 2>&1")
+          machine.log(output)
+          assert status == want, (status, output)
+
+
+      machine.wait_for_unit("multi-user.target")
+      lock_identity = stat(lock, "%d:%i")
+      assert stat(lock, "%U:%G:%a") == "root:togi-hardware:660"
+
+      provision_dir = machine.succeed("mktemp -d /run/togi-provision.XXXXXX").strip()
+      try:
+          for initial_mode in [None, "600", "644"]:
+              for group, expected_owner in [("-", "root:root:600"), ("togi-hardware", "root:togi-hardware:660")]:
+                  fixture = f"{provision_dir}/lock-{initial_mode}-{group}"
+                  if initial_mode is not None:
+                      machine.succeed(f"printf provision-content > {fixture}; chmod {initial_mode} {fixture}")
+                      identity = stat(fixture, "%d:%i")
+                  machine.succeed(f"{provision} {fixture} {group}")
+                  assert stat(fixture, "%U:%G:%a") == expected_owner
+                  if initial_mode is not None:
+                      assert stat(fixture, "%d:%i") == identity
+                      assert machine.succeed(f"cat {fixture}") == "provision-content"
+                  machine.log(f"provisioning: initial={initial_mode}, group={group}, result={expected_owner}")
+
+          held = f"{provision_dir}/held-legacy"
+          machine.succeed(f"printf held-content > {held}; chmod 0644 {held}")
+          held_before = machine.succeed(f"stat -c '%d:%i:%U:%G:%a:%h' {held}; sha256sum {held}")
+          # Keep an old read-only descriptor locked while running the program.
+          machine.succeed(
+              f"(exec 9<{held}; flock --exclusive 9; "
+              f"if {provision} {held} togi-hardware; then exit 1; fi; "
+              f"! flock --exclusive --nonblock {held} true)"
+          )
+          assert machine.succeed(f"stat -c '%d:%i:%U:%G:%a:%h' {held}; sha256sum {held}") == held_before
+          machine.succeed(f"flock --exclusive --nonblock {held} true")
+
+          target = f"{provision_dir}/symlink-target"
+          symlink = f"{provision_dir}/symlink-lock"
+          machine.succeed(f"printf target-content > {target}; chmod 0644 {target}; ln -s {target} {symlink}")
+          target_before = machine.succeed(f"stat -c '%d:%i:%U:%G:%a:%h' {target}; sha256sum {target}")
+          machine.fail(f"{provision} {symlink} togi-hardware")
+          assert machine.succeed(f"stat -c '%d:%i:%U:%G:%a:%h' {target}; sha256sum {target}") == target_before
+          assert machine.succeed(f"readlink {symlink}").strip() == target
+      finally:
+          machine.succeed(f"rm -rf -- {provision_dir}")
+      assert stat(lock, "%d:%i") == lock_identity
+      assert stat(lock, "%U:%G:%a") == "root:togi-hardware:660"
+
+      machine.fail("runuser -u unrelated -- touch /run/lock/unrelated-lock")
+      machine.fail(f"runuser -u unrelated -- flock --nonblock {lock} true")
+
+      # The refusals run while another process holds the lock: `reset` checks the lock before taking it and exits 1
+      # with no journal once it has it, so only a held lock tells a refusal (1) from a wrongly accepted lock (3).
+      machine.succeed(
+          "systemd-run --unit=togi-test-holder --property=Type=exec /bin/sh -c "
+          f"'set -e; exec 9<{lock}; ${pkgs.util-linux}/bin/flock --exclusive 9; "
+          "${pkgs.coreutils}/bin/touch /run/togi-test-held; exec ${pkgs.coreutils}/bin/sleep infinity'"
+      )
+      machine.wait_until_succeeds("test -f /run/togi-test-held", timeout=10)
+
+      machine.succeed(f"chown unrelated {lock}")
+      foreign_identity = stat(lock, "%d:%i:%u:%g:%a")
+      machine.succeed(f"systemd-tmpfiles --create --prefix={lock}")
+      exits("togi --state-dir /tmp/foreign-lock-state reset --all", 1)
+      assert stat(lock, "%d:%i:%u:%g:%a") == foreign_identity
+      machine.succeed(f"test ! -e /tmp/foreign-lock-state; chown root {lock}")
+
+      machine.succeed(f"chmod 0640 {lock}")
+      exits("runuser -u togi-hardware -- togi --state-dir /tmp/readonly-lock-state reset --all", 1)
+      assert stat(lock, "%a") == "640"
+      machine.succeed(f"test ! -e /tmp/readonly-lock-state; chmod 0644 {lock}")
+
+      machine.succeed(f"systemd-tmpfiles --create --prefix={lock}")
+      assert stat(lock, "%d:%i") == lock_identity
+      assert stat(lock, "%a") == "644"
+      for state_dir in ["/tmp/host-lock-state-a", "/tmp/host-lock-state-b"]:
+          exits(f"togi --state-dir {state_dir} reset --all", 3)
+          machine.succeed(f"test ! -e {state_dir}")
+      assert stat(lock, "%d:%i") == lock_identity
+      machine.succeed("systemctl stop togi-test-holder.service")
+      # Without the holder the lock is taken and `reset` goes on to find no journal.
+      exits("togi --state-dir /tmp/released-lock-state reset --all", 1)
+      assert stat(lock, "%d:%i") == lock_identity
     '';
   };
 

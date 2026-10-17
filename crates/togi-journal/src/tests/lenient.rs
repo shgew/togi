@@ -241,7 +241,7 @@ fn struct_objects(value: &Value, pointer: &str, path: &str, found: &mut Vec<(Str
                 );
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 

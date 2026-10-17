@@ -753,13 +753,13 @@ fn dead_end_stop(dead_end: DeadEnd, causes: Vec<Seq>, reboot: bool) -> Stop {
 /// What this build may do with the journal for `operation`, judged by the build of its `session.start`; `None` for a
 /// journal that has none.
 pub(crate) fn verdict(build: &Build, journal: &Journal, operation: Operation) -> Option<Verdict> {
-    let recorded = journal
-        .events()
-        .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SessionStart(start) => Some(&start.build),
-            _ => None,
-        })?;
+    let recorded = journal.events().iter().find_map(|event| {
+        if let Payload::SessionStart(start) = &event.payload {
+            Some(&start.build)
+        } else {
+            None
+        }
+    })?;
     Some(build.verdict(recorded, operation))
 }
 

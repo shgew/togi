@@ -69,7 +69,7 @@ mod watch;
 
 pub use error::{
     CleanupFailure, Containment, Error, InvalidId, InvalidTrial, Joined, OutputFailure,
-    PrepareError, StorageError, StorageFailure,
+    PrepareError, StorageError, StorageFailure, SystemdError,
 };
 pub use identity::{BackendIdentity, IdentityError};
 pub use runner::{Backends, Options, Runner, Trial};

@@ -215,7 +215,7 @@ fn malformed_documents_are_refused_with_the_file_named() {
     ];
     for (name, text, want) in cases {
         let error = load_text(&text).expect_err(name);
-        let message = error.to_string();
+        let message = togi_machine::error_chain(&error);
         assert!(
             matches!(error, LoadError::Parse { .. }),
             "{name}: {message}"

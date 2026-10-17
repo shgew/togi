@@ -226,17 +226,15 @@ fn a_refused_scope_probe_fails_the_check_with_its_cause() {
         &tree,
         Privilege::Root,
         resolved_account(),
-        Scope::refusing("systemd-run exited with exit status: 1"),
+        Scope::refusing("Failed to start transient scope unit"),
     );
     let checks = host.preflight();
     let systemd = find(&checks, "systemd_run");
     assert!(!systemd.ok);
-    assert!(
-        systemd
-            .detail
-            .contains("systemd-run exited with exit status: 1"),
-        "{}",
-        systemd.detail
+    assert_eq!(
+        systemd.detail,
+        "the preflight scope probe failed: exited with exit status: 1: \
+         Failed to start transient scope unit"
     );
 }
 

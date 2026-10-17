@@ -195,6 +195,7 @@ fn publications(bench: &Bench) -> usize {
 #[test]
 fn on_finish_publishes_the_state_once_after_the_final_event() {
     let bench = Bench::new(2);
+    bench.mem.record_history();
     let mut input = bench.input();
     input.cancel.cancel();
     input.publication = PublicationPolicy::OnFinish;
@@ -215,6 +216,7 @@ fn on_finish_publishes_the_state_once_after_the_final_event() {
 #[test]
 fn live_publishes_after_every_append_and_the_last_state_covers_the_final_event() {
     let bench = Bench::new(2);
+    bench.mem.record_history();
     let mut input = bench.input();
     input.cancel.cancel();
     input.publication = PublicationPolicy::Live;

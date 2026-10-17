@@ -47,7 +47,8 @@ pub(crate) fn audit(
         Ok(None) => return Ok(Vec::new()),
         Err(StateError::Decode(error)) => {
             return Ok(vec![violation(format!(
-                "state.json is not this build's document: {error}"
+                "state.json is not this build's document: {}",
+                togi_machine::error_chain(&error)
             ))]);
         }
         Err(error) => return Err(AuditError::State(error)),
@@ -56,7 +57,8 @@ pub(crate) fn audit(
         Ok(snapshot) => snapshot,
         Err(error) => {
             return Ok(vec![violation(format!(
-                "state.json is not this build's document: {error}"
+                "state.json is not this build's document: {}",
+                togi_machine::error_chain(&error)
             ))]);
         }
     };
@@ -83,7 +85,8 @@ pub(crate) fn audit(
         )),
         Ok(_) => {}
         Err(error) => found.push(violation(format!(
-            "the journal's facts do not fold: {error}"
+            "the journal's facts do not fold: {}",
+            togi_machine::error_chain(&error)
         ))),
     }
     match togi_tuner::replay(events) {

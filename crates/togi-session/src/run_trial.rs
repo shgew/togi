@@ -236,7 +236,8 @@ impl Session<'_> {
             .append(Payload::TrialIntent(intent), &plan.cause)?;
         let alone = match (plan.condition, plan.load) {
             (Condition::Alone, Load::Single(core)) => Some(core),
-            _ => None,
+            (Condition::Alone, Load::Many(_))
+            | (Condition::Together | Condition::Parked, Load::Single(_) | Load::Many(_)) => None,
         };
         if let Some(core) = alone {
             let offset = plan

@@ -47,7 +47,7 @@ pub(crate) fn run(args: ForecastArgs) -> ExitCode {
     }
     let tree = match inspect(&args.out.iter().map(PathBuf::as_path).collect::<Vec<_>>()) {
         Ok(tree) => tree,
-        Err(error) => return fail(&error),
+        Err(error) => return fail(&togi_machine::error_chain(&error)),
     };
     let options = Options {
         state: args.state,
@@ -74,7 +74,7 @@ pub(crate) fn run(args: ForecastArgs) -> ExitCode {
                     kept.display()
                 );
             }
-            return fail(&failed);
+            return fail(&togi_machine::error_chain(&failed));
         }
     };
     if let Some(kept) = &report.kept {

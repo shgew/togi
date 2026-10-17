@@ -77,13 +77,13 @@ impl Directories {
             let fs = self
                 .0
                 .get(&lexical(path))
-                .ok_or_else(|| "not a directory".to_owned())?;
+                .ok_or(togi_tool_audit::OpenError::NotADirectory)?;
             #[expect(
                 clippy::disallowed_methods,
                 reason = "report content fixtures open only the injected in-memory journal"
             )]
             let state = StateDir::simulated(fs.clone());
-            state.map_err(|error| error.to_string())
+            Ok(state?)
         })
     }
 
@@ -305,7 +305,7 @@ fn a_clean_directory_reports_its_journals_and_nothing_else() {
 
 fn records_file(text: &str) -> Result<Vec<Record>, String> {
     read_records_from(Path::new("[tmp]/records.jsonl"), text.as_bytes())
-        .map_err(|error| error.to_string())
+        .map_err(|error| togi_machine::error_chain(&error))
 }
 
 #[test]
@@ -318,7 +318,7 @@ fn record_reader_errors_keep_the_source_path() {
     }
     let error = read_records_from(Path::new("/fixture/records.jsonl"), Broken).unwrap_err();
     assert_eq!(
-        error.to_string(),
+        togi_machine::error_chain(&error),
         "open run records /fixture/records.jsonl: record stream failed",
     );
 }

@@ -194,13 +194,13 @@ impl Memory {
                 let fs = self
                     .dirs
                     .get(&lexical(path))
-                    .ok_or_else(|| "not a directory".to_owned())?;
+                    .ok_or(togi_tool_audit::OpenError::NotADirectory)?;
                 #[expect(
                     clippy::disallowed_methods,
                     reason = "ordinary command content fixtures open only the injected in-memory journal"
                 )]
                 let state = StateDir::simulated(fs.clone());
-                state.map_err(|error| error.to_string())
+                Ok(state?)
             })
         };
         let records = |path: &Path| {

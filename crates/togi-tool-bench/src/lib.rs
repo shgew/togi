@@ -56,7 +56,9 @@ mod stats;
 mod suite;
 pub mod summary;
 
-pub use error::{Error, RunError, Unrunnable};
+pub use error::{
+    BuildFailure, Error, GitError, MeasureError, ModelCheckError, RunError, Unrunnable,
+};
 pub use git::{Tree, inspect};
 pub use metrics::{Measured, measure};
 pub use process::Fleet;

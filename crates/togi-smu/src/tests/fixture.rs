@@ -548,10 +548,10 @@ pub(super) fn forged_proof() -> SmuValidated {
 }
 
 pub(super) fn smu_error(error: &togi_machine::Error) -> &Error {
-    match error {
-        togi_machine::Error::Other(inner) => inner.downcast_ref::<Error>().unwrap(),
-        other => panic!("not a togi-smu error: {other}"),
-    }
+    let togi_machine::Error::Other(inner) = error else {
+        panic!("not a togi-smu error: {error}");
+    };
+    inner.downcast_ref::<Error>().unwrap()
 }
 
 #[expect(

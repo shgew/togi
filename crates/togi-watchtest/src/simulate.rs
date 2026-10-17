@@ -131,8 +131,7 @@ pub fn crash_trial(machine: &Simulator, trial: &str, at_s: f64, core: u8) -> Res
         Script {
             signal: Some(Signal::Crash),
             at_s,
-            core: CoreId::new(i64::from(core))
-                .map_err(|error| Error::Fixture(error.to_string()))?,
+            core: CoreId::new(i64::from(core))?,
             reset: None,
             then_crash: false,
         },
