@@ -145,7 +145,7 @@ impl Run {
                 Some(Candidate {
                     core: id,
                     offset,
-                    solo_limit: core.solo_limit,
+                    solo_limit: core.phase.solo_limit(),
                     gap,
                     carried,
                     moving,

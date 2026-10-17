@@ -170,7 +170,7 @@ impl Run {
     /// together and parked ones to the one core a backend signal or a core-local MCE the end
     /// cites names, else the only core off zero, else to no core.
     pub(crate) fn attribution(&self) -> Option<DecisionAction> {
-        let awaiting = self.flight.awaiting.as_ref()?;
+        let awaiting = self.flight.awaiting()?;
         let intent = &awaiting.intent;
         let (attribution, core, offset) = if intent.condition == Condition::Alone {
             (Attribution::Attributed, intent.core, intent.offset)
@@ -209,8 +209,7 @@ impl Run {
         let awaiting = match (&failure.trial, failure.known_failure) {
             (Some(trial), None) => Some(
                 self.flight
-                    .awaiting
-                    .as_ref()
+                    .awaiting()
                     .filter(|awaiting| &awaiting.intent.trial == trial)
                     .ok_or_else(|| FoldError::NotAwaiting(trial.clone()))?,
             ),
@@ -265,7 +264,7 @@ impl Run {
             .or_else(|| awaiting.and_then(|awaiting| awaiting.intent.round));
 
         if awaiting.is_some() {
-            self.flight.awaiting = None;
+            self.flight.current = crate::flight::InFlight::Idle;
         }
         if known_seq.is_some() {
             self.retry = None;

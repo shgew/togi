@@ -18,8 +18,8 @@ use crate::r7::Applied;
 use crate::r7::respond::R7Route;
 use crate::state::Run;
 use crate::{
-    Action, ClassKey, DecisionAction, Depth, Load, Profile, Requirement, RequirementKind, Secs,
-    TrialContext, TrialPlan, Window, WorkloadChoice,
+    Action, ClassKey, DecisionAction, Depth, Load, Profile, Requirement, Secs, TrialContext,
+    TrialPlan, Window, WorkloadChoice,
 };
 
 enum Settled {
@@ -69,31 +69,22 @@ impl Run {
 
     pub(crate) fn hunt_requirement(&self, hunt: &Active, group: &GroupRecord) -> Requirement {
         Requirement {
-            kind: RequirementKind::Hunt,
+            context: TrialContext::Hunt {
+                hunt: hunt.id,
+                group: group.payload.group,
+            },
             class: group.class,
             window: Window::LiveOrCarried {
                 since: self.hunt_since(group.payload.stage, group.seq),
             },
             needed: hunt.needed,
-            step: None,
-            part: None,
-        }
-    }
-
-    pub(crate) fn hunt_context(hunt: &Active, group: &GroupRecord) -> TrialContext {
-        TrialContext::Hunt {
-            hunt: hunt.id,
-            group: group.payload.group,
         }
     }
 
     fn hunt_trial(&self, hunt: &Active, group: &GroupRecord) -> TrialPlan {
         let requirement = self.hunt_requirement(hunt, group);
-        let context = Self::hunt_context(hunt, group);
         if let Some(retry) = self.retry.as_ref().filter(|retry| {
-            retry.plan.context == context
-                && retry.requirement == requirement
-                && self.retry_requirement(retry) == Some(requirement)
+            retry.requirement() == requirement && self.retry_requirement(retry) == Some(requirement)
         }) {
             let mut plan = retry.plan.clone();
             plan.cause = vec![group.seq];
@@ -107,7 +98,6 @@ impl Run {
             activity: Activity::Hunt,
             profile: group.profile,
             duration: group.class.duration(),
-            context,
             requirement,
             retry: false,
             cause: vec![group.seq],
@@ -987,7 +977,7 @@ impl Run {
         known: Seq,
         reason: String,
     ) -> Option<DecisionAction> {
-        let TrialContext::Hunt { hunt, group } = plan.context else {
+        let TrialContext::Hunt { hunt, group } = plan.requirement.context else {
             return None;
         };
         let active = self

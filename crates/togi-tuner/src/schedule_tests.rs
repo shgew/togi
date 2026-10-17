@@ -60,7 +60,10 @@ fn search_and_solo_limit_check() {
             let plan = j.next_trial();
             assert_eq!(plan.regime, regime);
             assert!(matches!(plan.workload, WorkloadChoice::Frozen(_)));
-            assert!(matches!(plan.context, TrialContext::SoloLimit { .. }));
+            assert!(matches!(
+                plan.requirement.context,
+                TrialContext::SoloLimit { .. }
+            ));
             j.trial(&plan, Outcome::Pass);
         }
     }

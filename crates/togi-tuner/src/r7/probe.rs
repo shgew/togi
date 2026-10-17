@@ -7,8 +7,7 @@ use super::respond::Failed;
 use crate::flight::OpenTrial;
 use crate::state::Run;
 use crate::{
-    Action, ClassKey, Load, LoadKey, Requirement, RequirementKind, TrialContext, TrialPlan, Window,
-    WorkloadChoice,
+    Action, ClassKey, Load, LoadKey, Requirement, TrialContext, TrialPlan, Window, WorkloadChoice,
 };
 
 /// One unfinished experiment, not a claim that the idled group caused the parent failure.
@@ -122,14 +121,14 @@ impl Run {
 
     fn r7_probe_requirement(&self, probe: &Probe) -> Requirement {
         Requirement {
-            kind: RequirementKind::Rerun,
+            context: TrialContext::Rerun {
+                failure: probe.failure,
+            },
             class: probe.class,
             window: Window::Live {
                 since: Some(probe.since),
             },
             needed: self.config.needed,
-            step: None,
-            part: None,
         }
     }
 
@@ -153,9 +152,6 @@ impl Run {
             activity: Activity::Checking,
             profile,
             duration: class.duration(),
-            context: TrialContext::Rerun {
-                failure: probe.failure,
-            },
             requirement,
             retry: false,
             cause,
@@ -174,11 +170,6 @@ impl Run {
             && class == probe.class
             && Self::together_shape(intent, class))
         .then(|| self.r7_probe_requirement(probe))
-    }
-
-    pub(crate) fn r7_probe_source(&self, requirement: Requirement) -> Option<Seq> {
-        let probe = self.r7.probes.head()?;
-        (requirement == self.r7_probe_requirement(probe)).then_some(probe.failure)
     }
 
     pub(crate) fn r7_probe_retry_requirement(

@@ -954,7 +954,7 @@ fn next_cycle_step(script: &Script) -> Option<u32> {
     for _ in 0..200 {
         match ahead.shadow.next().ok()? {
             togi_tuner::Action::RunTrial(plan) => {
-                if let togi_tuner::TrialContext::Cycle { step, .. } = plan.context {
+                if let togi_tuner::TrialContext::Cycle { step, .. } = plan.requirement.context {
                     return Some(step.get().get());
                 }
                 let (intent, trial) = ahead.intent(&plan);
@@ -984,7 +984,7 @@ fn a_running_rerun_names_the_step_checking_resumes_at() {
         };
         let (intent, trial) = script.intent(&plan);
         let mut outcome = Outcome::Pass;
-        match plan.context {
+        match plan.requirement.context {
             togi_tuner::TrialContext::Cycle { .. } => {
                 cycle_trials += 1;
                 if cycle_trials % 3 == 0 {

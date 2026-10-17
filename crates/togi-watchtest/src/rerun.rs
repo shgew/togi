@@ -239,7 +239,7 @@ impl Fixture {
                     }
                 }
                 Action::ReadRanking => return Err(fixture("the tuner asked for a ranking read")),
-                Action::RunTrial(plan) => match plan.context {
+                Action::RunTrial(plan) => match plan.requirement.context {
                     TrialContext::Rerun { .. } => {
                         let trial = self.trial(&plan)?;
                         running.push(self.events.clone());
@@ -271,7 +271,7 @@ impl Fixture {
                     _ if failed_r6 => {
                         return Err(fixture(format!(
                             "cycle 1 ran {:?} after its R6 failure instead of completing on the reruns",
-                            plan.context
+                            plan.requirement.context
                         )));
                     }
                     TrialContext::Search { .. }

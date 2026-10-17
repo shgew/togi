@@ -14,9 +14,8 @@ use togi_machine::{
 };
 use togi_tuner::{
     Between, ClassKey, CyclePart, CyclePlan, CycleStep, Forecast, GroupState, HuntGroup, HuntPart,
-    HuntPlan, Load, PartNo, PhaseNo, PhasePlan, Profile, R7CoreStatus, Requirement,
-    RequirementKind, RerunPlan, Secs, StepNo, Topology, TrialContext, TrialPlan, Uncertainty,
-    Window, WorkloadChoice,
+    HuntPlan, Load, PartNo, PhaseNo, PhasePlan, Profile, R7CoreStatus, Requirement, RerunPlan,
+    Secs, StepNo, Topology, TrialContext, TrialPlan, Uncertainty, Window, WorkloadChoice,
 };
 
 use super::{
@@ -265,14 +264,11 @@ fn plan(
         activity: Activity::Checking,
         profile: Profile::alone(&topology, core(3), off(-16)),
         duration: secs,
-        context,
         requirement: Requirement {
-            kind: RequirementKind::Cycle,
+            context,
             class: ClassKey::new(workload, load.cores(), secs),
             window: Window::Live { since: None },
             needed: NonZeroU16::new(1).expect("one"),
-            step: None,
-            part: None,
         },
         retry: false,
         cause: Vec::new(),

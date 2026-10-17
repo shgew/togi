@@ -131,7 +131,7 @@ impl Journal {
         ));
         let plan = self.next_trial();
         assert!(
-            matches!(plan.context, TrialContext::ZeroRerun { .. }),
+            matches!(plan.requirement.context, TrialContext::ZeroRerun { .. }),
             "{plan:?}"
         );
         assert_eq!(plan.condition, Condition::Parked);
