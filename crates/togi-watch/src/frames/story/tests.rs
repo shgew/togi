@@ -1555,6 +1555,44 @@ mod the_story {
     }
 
     #[test]
+    fn a_combination_probe_of_its_first_member_says_that_member_goes_first() {
+        let said = probing_story(
+            &[2, 3],
+            vec![
+                probe_of(2, -12, &[-12], &[], false),
+                probe_of(3, -10, &[-12], &[], false),
+            ],
+            None,
+            -12,
+            0,
+        );
+        assert!(
+            said.lines[1].ends_with("Core 02 first."),
+            "{}",
+            said.lines[1]
+        );
+    }
+
+    #[test]
+    fn a_bracketed_singleton_says_its_failure_point_stands() {
+        let said = probing_story(
+            &[2],
+            vec![probe_of(2, -30, &[-30], &[-29], true)],
+            Some(GroupState::Passed),
+            -30,
+            0,
+        );
+        assert_eq!(
+            said.lines[1],
+            "A pass sits one count shallower than its failure point, so core 02 is bracketed."
+        );
+        assert_eq!(
+            said.brief,
+            "Core 02 is bracketed; its failure point stands."
+        );
+    }
+
+    #[test]
     fn a_locating_hunt_reruns_its_load_with_the_candidates_at_zero() {
         let mut fx = hunting(false, Vec::new());
         fx.hunt.as_mut().expect("a hunt").0.groups.push(HuntGroup {
@@ -1965,6 +2003,20 @@ mod the_resting_band {
         let band = resting_band(&fx.scene(ts(2000)));
         assert_eq!(band.lines[0], "No trial has run yet");
         assert_eq!(band.lines.len(), 2);
+    }
+
+    #[test]
+    fn the_last_trial_names_its_peak_tctl_and_median_voltage_request() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
+        fx.last = Some(TrialEndView {
+            tctl_max_c: Some(81),
+            voltage_v: Some(1.104),
+            ..end_view(Outcome::Pass, None)
+        });
+        assert_eq!(
+            resting_band(&fx.scene(ts(2000))).lines[0],
+            "last: PASS after 10:00 · R1 light on 00 01 · Tctl max 81°C · 1.10 V median"
+        );
     }
 
     #[test]

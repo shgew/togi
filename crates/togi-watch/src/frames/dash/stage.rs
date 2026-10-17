@@ -924,10 +924,13 @@ pub(crate) fn phase_progress(scene: &Scene<'_>, width: usize) -> [Line<'static>;
     }
     let life = lifecycle(scene);
     let stage = current(scene);
-    [
+    let rows = [
         fit_clauses(width, &headline(scene, stage, life)),
         fit_clauses(width, &requirement(scene, stage, life)),
-    ]
+    ];
+    #[cfg(test)]
+    crate::corpus::lines("dash.progress", "", &rows);
+    rows
 }
 
 #[cfg(test)]

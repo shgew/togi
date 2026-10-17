@@ -1856,6 +1856,45 @@ mod tests {
     }
 
     #[test]
+    fn the_stage_line_names_a_singleton_hunt_s_probe_stage() {
+        let session = SessionView {
+            start: at(0),
+            activity: None,
+        };
+        let line = |probe: togi_tuner::MemberProbe| {
+            let plan = singleton_plan(probe, None, 0);
+            let mut facts = hunt_facts();
+            facts.parking = Some(core03_parked_at(0));
+            let model = Model::new();
+            let mut s = model.snapshot();
+            s.session = Some(&session);
+            s.hunt = Some(HuntView {
+                plan: &plan,
+                facts: &facts,
+            });
+            let zone = TimeZone::UTC;
+            plain(&crate::frames::dash::stage_line(
+                &scene(&s, &zone),
+                240,
+                false,
+            ))
+        };
+        for (probe, stage) in [
+            (
+                probe(3, 0, true, false),
+                " · HUNT 1 · culprit probes · testing anchor ",
+            ),
+            (
+                probe(3, -30, false, true),
+                " · HUNT 1 · culprit probes · probes done ",
+            ),
+        ] {
+            let shown = line(probe);
+            assert!(shown.contains(stage), "{shown}");
+        }
+    }
+
+    #[test]
     fn a_singleton_parked_at_a_nonzero_offset_stages_as_testing_its_anchor() {
         let mut running = probe(3, -10, true, false);
         running.failed_at = vec![off(-30)];
@@ -1876,8 +1915,8 @@ mod tests {
         assert_eq!(stage(false), "culprit probes · testing anchor");
     }
 
-    fn parts_of_a_located_hunt(parking: crate::model::Parking) -> Vec<String> {
-        let plan = hunt_plan(
+    fn located_parts_plan() -> togi_tuner::HuntPlan {
+        hunt_plan(
             Vec::new(),
             vec![
                 part(
@@ -1889,10 +1928,13 @@ mod tests {
                 ),
                 part(&[4, 5], &[0, 1, 2, 3], None, None, false),
             ],
-        );
+        )
+    }
+
+    fn parts_of_a_located_hunt(parking: crate::model::Parking) -> Vec<String> {
         let mut facts = hunt_facts();
         facts.parking = Some(parking);
-        with_hunt(&plan, &facts, |scene, hunt| {
+        with_hunt(&located_parts_plan(), &facts, |scene, hunt| {
             texts(&part_lines(
                 scene,
                 hunt,
@@ -1924,19 +1966,31 @@ mod tests {
 
     #[test]
     fn a_hunt_never_calls_kept_or_nonzero_parked_cores_zero() {
-        let rows = parts_of_a_located_hunt(crate::model::Parking {
+        let parking = crate::model::Parking {
             held: set(&[0, 1, 2]),
             kept: set(&[3]),
             zero: set(&[5]),
             shallow: vec![(crate::tests::kit::core(4), off(-10))],
-        });
+        };
+        let rows = parts_of_a_located_hunt(parking.clone());
         assert!(!rows[0].contains("at 0"), "{rows:?}");
-        assert!(
-            rows.iter()
-                .any(|row| row.contains("00-02 held at failing offsets")
-                    && row.contains("03 kept at failing offsets")
-                    && row.contains("04 parked at -10")),
-            "{rows:?}"
-        );
+        let held_kept_and_parked = |row: &String| {
+            row.contains("00-02 held at failing offsets")
+                && row.contains("03 kept at failing offsets")
+                && row.contains("04 parked at -10")
+        };
+        assert!(rows.iter().any(held_kept_and_parked), "{rows:?}");
+        let mut facts = hunt_facts();
+        facts.parking = Some(parking);
+        let panel = with_hunt(&located_parts_plan(), &facts, |scene, hunt| {
+            texts(&hunt_lines(
+                scene,
+                hunt,
+                &Tables::new(SizeClass::Wide, 100),
+                100,
+                SizeClass::Wide,
+            ))
+        });
+        assert!(panel.iter().any(held_kept_and_parked), "{panel:?}");
     }
 }

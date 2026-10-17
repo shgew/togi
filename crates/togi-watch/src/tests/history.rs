@@ -407,6 +407,31 @@ fn deepening_history_separates_deeper_and_yielded_members() {
 }
 
 #[test]
+fn a_held_failure_says_tuning_stays_where_it_is() {
+    let mut h = Hist::three();
+    h.push(
+        TunerDecision {
+            core: core(2),
+            activity: togi_journal::Activity::Checking,
+            decision: Decision::Hold,
+            from_offset: off(-10),
+            to_offset: off(-10),
+            pass: None,
+            failure_point: None,
+            workloads: Vec::new(),
+            reason: String::new(),
+        }
+        .into(),
+    );
+    let sentences = h.sentences();
+    let held = sentences.last().expect("a sentence");
+    assert!(
+        held.ends_with(": core 02 failure held; tuning stays at -10"),
+        "{sentences:?}"
+    );
+}
+
+#[test]
 fn inferred_group_answers_do_not_hide_outcome_changes() {
     let mut h = Hist::three();
     h.push(hunt_start(4, &[0, 1, 2]).into());
