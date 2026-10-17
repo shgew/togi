@@ -112,7 +112,22 @@ fn back_off(j: &mut Journal, failure: Seq) -> TunerDecision {
                 j.decide(action);
                 return decision;
             }
-            _ => panic!("expected the backoff and its profile change, got {action:?}"),
+            (DecisionPayload::TunerDecision(_), Some(_))
+            | (DecisionPayload::ProfileChange(_), None)
+            | (
+                DecisionPayload::Failure(_)
+                | DecisionPayload::DeadEnd(_)
+                | DecisionPayload::CheckingCycle(_)
+                | DecisionPayload::CheckingStep(_)
+                | DecisionPayload::CheckingChain(_)
+                | DecisionPayload::HuntStart(_)
+                | DecisionPayload::HuntGroup(_)
+                | DecisionPayload::HuntEnd(_)
+                | DecisionPayload::HuntSkipped(_)
+                | DecisionPayload::Combination(_)
+                | DecisionPayload::DeepeningRound(_),
+                _,
+            ) => panic!("expected the backoff and its profile change, got {action:?}"),
         }
     }
     panic!("the backoff was never applied to the checking profile");

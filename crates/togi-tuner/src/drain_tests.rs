@@ -37,10 +37,10 @@ fn decided(action: Option<DecisionAction>) -> DecisionAction {
 }
 
 fn tuner_decision(action: &DecisionAction) -> &TunerDecision {
-    match &action.payload {
-        DecisionPayload::TunerDecision(decision) => decision,
-        other => panic!("expected a tuner decision, got {other:?}"),
-    }
+    let DecisionPayload::TunerDecision(decision) = &action.payload else {
+        panic!("expected a tuner decision, got {:?}", action.payload);
+    };
+    decision
 }
 
 #[test]

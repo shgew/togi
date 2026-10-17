@@ -9,10 +9,10 @@ use crate::tests::core;
 use crate::{Action, DecisionAction, DecisionPayload, FoldError, Load, State};
 
 fn failure_of(action: &DecisionAction) -> &togi_journal::Failure {
-    match &action.payload {
-        DecisionPayload::Failure(failure) => failure,
-        other => panic!("expected a failure, got {other:?}"),
-    }
+    let DecisionPayload::Failure(failure) = &action.payload else {
+        panic!("expected a failure, got {:?}", action.payload);
+    };
+    failure
 }
 
 #[test]

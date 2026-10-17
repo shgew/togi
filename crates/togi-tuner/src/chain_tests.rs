@@ -42,40 +42,44 @@ fn one_ccd() -> Vec<CoreInfo> {
 }
 
 fn payload(action: &Action) -> &DecisionPayload {
-    match action {
-        Action::Decide(decision) => &decision.payload,
-        other => panic!("expected a decision, the tuner asked for {other:?}"),
-    }
+    let Action::Decide(decision) = action else {
+        panic!("expected a decision, the tuner asked for {action:?}");
+    };
+    &decision.payload
 }
 
 fn decided(action: Action) -> DecisionAction {
-    match action {
-        Action::Decide(decision) => decision,
-        other => panic!("expected a decision, the tuner asked for {other:?}"),
-    }
+    let Action::Decide(decision) = action else {
+        panic!("expected a decision, the tuner asked for {action:?}");
+    };
+    decision
 }
 
 fn chain_of(action: &Action) -> &CheckingChain {
-    match payload(action) {
-        DecisionPayload::CheckingChain(chain) => chain,
-        other => panic!("expected a checking.chain, got {other:?}"),
-    }
+    let payload = payload(action);
+    let DecisionPayload::CheckingChain(chain) = payload else {
+        panic!("expected a checking.chain, got {payload:?}");
+    };
+    chain
 }
 
 fn trial_of(action: &Action) -> &TrialPlan {
-    match action {
-        Action::RunTrial(plan) => plan,
-        other => panic!("expected a trial, the tuner asked for {other:?}"),
-    }
+    let Action::RunTrial(plan) = action else {
+        panic!("expected a trial, the tuner asked for {action:?}");
+    };
+    plan
 }
 
 fn cycle_end(action: &Action) -> Option<bool> {
-    match action {
-        Action::Decide(DecisionAction {
-            payload: DecisionPayload::CheckingCycle(cycle),
-            ..
-        }) if cycle.event == CycleEvent::End => Some(cycle.passed),
-        _ => None,
+    if let Action::Decide(DecisionAction {
+        payload: DecisionPayload::CheckingCycle(cycle),
+        ..
+    }) = action
+        && cycle.event == CycleEvent::End
+    {
+        Some(cycle.passed)
+    } else {
+        None
     }
 }
 
@@ -510,7 +514,7 @@ fn r7_chain_rederives_after_profile_change_one_ccd() {
                 assert_ne!(plan.load.cores().len(), 8, "the full part re-ran: {plan:?}");
                 j.trial(&plan, Outcome::Pass);
             }
-            other => {
+            other @ (Action::Decide(_) | Action::ReadRanking) => {
                 j.decide(decided(other));
             }
         }
@@ -608,7 +612,7 @@ fn reorder_step(j: &mut Journal, action: Action) {
             let requests = reorder_requests(&plan);
             run(j, &plan, Outcome::Pass, &requests, None);
         }
-        other => {
+        other @ (Action::Decide(_) | Action::ReadRanking) => {
             j.decide(decided(other));
         }
     }
@@ -684,39 +688,37 @@ fn r7_chain_retests_reordered_part_after_backoff() {
     let (mut short, mut long) = (0, 0);
     let later = &j.events[first_backoff..];
     for (at, event) in later.iter().enumerate() {
-        match &event.payload {
-            Payload::CheckingChain(chain) => {
-                assert_eq!(chain.profile, profile, "a chain record at a stale profile");
-                derived.entry(chain.ccd.0).or_default().push((
-                    chain.part.get(),
-                    chain.cores,
-                    chain.rederived,
-                ));
-            }
-            Payload::TrialIntent(intent) if intent.regime == Regime::R7 => {
-                trials.push(intent.cores);
-                if intent.cores == riskiest {
-                    if intent.duration_s == SHORT {
-                        short += 1;
-                    } else {
-                        long += 1;
-                    }
+        if let Payload::CheckingChain(chain) = &event.payload {
+            assert_eq!(chain.profile, profile, "a chain record at a stale profile");
+            derived.entry(chain.ccd.0).or_default().push((
+                chain.part.get(),
+                chain.cores,
+                chain.rederived,
+            ));
+        } else if let Payload::TrialIntent(intent) = &event.payload
+            && intent.regime == Regime::R7
+        {
+            trials.push(intent.cores);
+            if intent.cores == riskiest {
+                if intent.duration_s == SHORT {
+                    short += 1;
+                } else {
+                    long += 1;
                 }
             }
-            Payload::ProfileChange(_) => {
-                let rerun = later[at + 1..]
-                    .iter()
-                    .find_map(|event| match &event.payload {
-                        Payload::TrialIntent(intent) => Some(intent.rerun),
-                        _ => None,
-                    });
-                assert_eq!(
-                    rerun,
-                    Some(true),
-                    "a backoff was not followed by its class's rerun"
-                );
-            }
-            _ => {}
+        } else if let Payload::ProfileChange(_) = &event.payload {
+            let rerun = later[at + 1..].iter().find_map(|event| {
+                if let Payload::TrialIntent(intent) = &event.payload {
+                    Some(intent.rerun)
+                } else {
+                    None
+                }
+            });
+            assert_eq!(
+                rerun,
+                Some(true),
+                "a backoff was not followed by its class's rerun"
+            );
         }
     }
     let unchanged = Some(Rederived::Unchanged);
@@ -811,7 +813,7 @@ fn r7_full_cycle_includes_every_partial() {
                 }
                 j.trial(&plan, Outcome::Pass);
             }
-            other => {
+            other @ (Action::Decide(_) | Action::ReadRanking) => {
                 j.decide(decided(other));
             }
         }
@@ -839,7 +841,7 @@ fn r7_one_ccd_runs_full_then_chain_once() {
                 assert_ne!(plan.load.cores().len(), 8, "the full part ran twice");
                 j.trial(&plan, Outcome::Pass);
             }
-            other => {
+            other @ (Action::Decide(_) | Action::ReadRanking) => {
                 j.decide(decided(other));
             }
         }
@@ -1016,7 +1018,7 @@ fn r7_cycle_trials(j: &mut Journal) -> HashMap<CoreSet, BTreeSet<(u32, u16)>> {
                     .insert((plan.duration.get(), plan.requirement.needed.get()));
                 j.trial(&plan, Outcome::Pass);
             }
-            other => {
+            other @ (Action::Decide(_) | Action::ReadRanking) => {
                 j.decide(decided(other));
             }
         }

@@ -49,11 +49,12 @@ fn next_round(j: &mut Journal) -> u32 {
 fn apply_round(j: &mut Journal) {
     loop {
         let action = j.next_decision();
-        match &action.payload {
-            DecisionPayload::TunerDecision(decision) if decision.decision == Decision::Deepen => {
-                j.decide(action);
-            }
-            _ => return,
+        if let DecisionPayload::TunerDecision(decision) = &action.payload
+            && decision.decision == Decision::Deepen
+        {
+            j.decide(action);
+        } else {
+            return;
         }
     }
 }

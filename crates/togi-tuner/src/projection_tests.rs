@@ -478,18 +478,17 @@ fn random_outcomes_preserve_profiles() {
                     if matches!(decision.payload, DecisionPayload::DeadEnd(_)) {
                         break;
                     }
-                    match &decision.payload {
-                        DecisionPayload::ProfileChange(change) => {
-                            let profile = Profile::new(j.run().topo_ref(), change.to).unwrap();
-                            assert_eq!(
-                                j.state.constraints().unwrap().reaches(&profile),
-                                Ok(None),
-                                "seed {seed}, step {step}: profile change reaches a constraint"
-                            );
-                        }
-                        DecisionPayload::HuntStart(_) => started += 1,
-                        DecisionPayload::HuntEnd(_) => ended += 1,
-                        _ => {}
+                    if let DecisionPayload::ProfileChange(change) = &decision.payload {
+                        let profile = Profile::new(j.run().topo_ref(), change.to).unwrap();
+                        assert_eq!(
+                            j.state.constraints().unwrap().reaches(&profile),
+                            Ok(None),
+                            "seed {seed}, step {step}: profile change reaches a constraint"
+                        );
+                    } else if let DecisionPayload::HuntStart(_) = &decision.payload {
+                        started += 1;
+                    } else if let DecisionPayload::HuntEnd(_) = &decision.payload {
+                        ended += 1;
                     }
                     j.decide(decision);
                 }
