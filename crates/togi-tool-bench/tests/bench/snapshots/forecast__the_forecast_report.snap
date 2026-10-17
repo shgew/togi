@@ -1,5 +1,5 @@
 ---
-source: crates/togi-tool-bench/tests/forecast.rs
+source: crates/togi-tool-bench/tests/bench/forecast.rs
 expression: "String::from_utf8(out).unwrap()"
 ---
 forecast: after session 20260101T000000Z event 2542 at 2026-01-01T06:07:19Z

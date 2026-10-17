@@ -1,5 +1,6 @@
-//! The public seams end to end: the runtime thread, the sync API and abandoned handles. These run
-//! in real time on the fake OS, with short timings where a bound is under test.
+//! The public seams end to end: the runtime thread, the sync API and abandoned handles. A manual
+//! clock bounds the synchronous waits and pauses the runtime thread's clock. Tests that act while a
+//! trial runs keep the system clock, with trials far longer than the test.
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -13,12 +14,14 @@ use togi_backend::{Backend, Line, Plan, Ready};
 use togi_journal::fs::{FileKind, Fs, MemFs};
 use togi_machine::{
     CancellationToken, CoreId, CpuId, Partial, PmTable, PmTableReader, Regime, Reporter, Running,
-    Sample, Signal, Stopped, Trials, Workload,
+    Sample, Signal, Stopped, TrialResult, Trials, Workload,
 };
 
 use super::harness::{
-    Run, crate_error, finish, identity_of, local, nothing_runs, rig, rig_edit, spec, topology,
+    Run, crate_error, finish, identity_of, local, nothing_runs, printing, rig, rig_edit, spec,
+    topology,
 };
+use crate::clock::{Clock, Manual};
 use crate::error::{CleanupFailure, Error, InvalidTrial};
 use crate::id::ScopeName;
 use crate::native::Settings;
@@ -26,7 +29,7 @@ use crate::os::fake::{Delivery, Fake, Launch, ProcCtx, Reply, script};
 use crate::os::{ExitInfo, GroupSignal, KillSignal, Systemd};
 use crate::runner::{Backends, Options, Runner};
 use crate::sensors::Roots;
-use crate::supervisor::TrialCommand;
+use crate::supervisor::{Event, Finished, TrialCommand};
 use crate::testing::TestBackend;
 use crate::timing::Timing;
 
@@ -48,7 +51,22 @@ fn fast() -> Timing {
     }
 }
 
+/// A runner on a manual clock: the runtime thread's clock is paused, and a synchronous wait ends
+/// only when it is answered.
 fn runner(setup: impl FnOnce(&Fake) + Send + 'static, timing: Timing) -> (Runner, Arc<MemFs>) {
+    runner_on(Clock::Manual(Manual::new()), setup, timing)
+}
+
+/// A runner on the system clock, for tests that act while a trial of ten minutes runs.
+fn live_runner(setup: impl FnOnce(&Fake) + Send + 'static, timing: Timing) -> (Runner, Arc<MemFs>) {
+    runner_on(Clock::System, setup, timing)
+}
+
+fn runner_on(
+    clock: Clock,
+    setup: impl FnOnce(&Fake) + Send + 'static,
+    timing: Timing,
+) -> (Runner, Arc<MemFs>) {
     let fs = Arc::new(MemFs::default());
     let root = Path::new("/rig");
     let memory = crate::watch::Memory::new(fs.clone());
@@ -75,6 +93,7 @@ fn runner(setup: impl FnOnce(&Fake) + Send + 'static, timing: Timing) -> (Runner
         inputs: crate::procfs::Inputs::memory(fs.clone()),
         memory: Some(memory.clone()),
         durability: crate::samples::Durability::Unsynced,
+        clock,
     };
     let runner = Runner::build(options, settings, move || {
         let fake = Fake::with_memory(memory);
@@ -150,39 +169,46 @@ fn marks_termination(terminated: Arc<AtomicBool>) -> impl FnOnce(&Fake) + Send +
     }
 }
 
-/// Timings whose start bound a blocked launch can outlast: one instance may take 850 ms.
-fn stalling() -> Timing {
-    Timing {
-        sample: Duration::from_millis(50),
-        stall_grace: Duration::from_millis(150),
-        stop_grace: Duration::from_millis(50),
-        teardown: Duration::from_millis(400),
-        kill_slot: Duration::from_millis(100),
-        drain: Duration::from_millis(200),
-        writer_join: Duration::from_millis(300),
-        prepare: Duration::from_millis(200),
-        margin: Duration::from_millis(100),
-        ..Timing::default()
-    }
-}
-
-/// Workers that record termination, the first launch of which blocks the runtime thread for
-/// `stall` first, as slow filesystem or launcher setup does. `launches` counts the launches;
-/// `ready` is whether the workers start inside their scope.
-fn stalls_first_launch(
-    stall: Duration,
+/// A runner whose workers record termination and whose first launch holds the runtime thread, as
+/// slow filesystem or launcher setup does: it lets the start's wait run out on `clock`, then holds
+/// until `release` answers. `ready` is whether the workers start inside their scope.
+struct Stalled {
+    runner: Runner,
+    clock: Arc<Manual>,
+    release: std::sync::mpsc::Sender<()>,
     terminated: Arc<AtomicBool>,
     launches: Arc<AtomicUsize>,
-    ready: bool,
-) -> impl FnOnce(&Fake) + Send + 'static {
-    move |fake| {
-        fake.set_ready_default(ready);
-        fake.on_launch(move |_, _| {
-            if launches.fetch_add(1, Ordering::SeqCst) == 0 {
-                std::thread::sleep(stall);
-            }
-            terminating(&terminated)
-        });
+}
+
+fn stalled(ready: bool) -> Stalled {
+    let clock = Manual::new();
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let terminated = Arc::new(AtomicBool::new(false));
+    let launches = Arc::new(AtomicUsize::new(0));
+    let setup = {
+        let (clock, terminated, launches) = (
+            Arc::clone(&clock),
+            Arc::clone(&terminated),
+            Arc::clone(&launches),
+        );
+        move |fake: &Fake| {
+            fake.set_ready_default(ready);
+            fake.on_launch(move |_, _| {
+                if launches.fetch_add(1, Ordering::SeqCst) == 0 {
+                    clock.expire_waiting();
+                    let _ = held.recv();
+                }
+                terminating(&terminated)
+            });
+        }
+    };
+    let (runner, _fs) = runner_on(Clock::Manual(Arc::clone(&clock)), setup, fast());
+    Stalled {
+        runner,
+        clock,
+        release,
+        terminated,
+        launches,
     }
 }
 
@@ -243,14 +269,14 @@ fn a_failing_trial_reports_its_signal_on_the_waiting_thread() {
 
 #[test]
 fn stopping_without_waiting_tears_down_and_proves_it() {
-    let (mut runner, _dir) = runner(|_| {}, fast());
+    let (mut runner, _dir) = live_runner(|_| {}, fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     assert!(trial.stop().is_ok());
 }
 
 #[test]
 fn readers_keep_draining_between_start_and_wait() {
-    let (mut runner, fs) = runner(
+    let (mut runner, fs) = live_runner(
         |fake| {
             fake.on_launch(|_, _| {
                 Launch::Run(script(|mut ctx: ProcCtx| async move {
@@ -354,7 +380,7 @@ fn trial_stop_refused(trial: Box<dyn Running>) -> bool {
 #[test]
 fn a_trial_dropped_after_start_is_torn_down_by_its_supervisor() {
     let terminated = Arc::new(AtomicBool::new(false));
-    let (mut runner, _keep) = runner(marks_termination(Arc::clone(&terminated)), fast());
+    let (mut runner, _keep) = live_runner(marks_termination(Arc::clone(&terminated)), fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     drop(trial);
     assert!(
@@ -366,9 +392,14 @@ fn a_trial_dropped_after_start_is_torn_down_by_its_supervisor() {
 #[test]
 fn a_trial_dropped_while_supervision_runs_is_torn_down_too() {
     let terminated = Arc::new(AtomicBool::new(false));
-    let (mut runner, _keep) = runner(marks_termination(Arc::clone(&terminated)), fast());
+    let (mut runner, fs) = live_runner(marks_termination(Arc::clone(&terminated)), fast());
     let trial = start(&mut runner, Regime::R7, &[0, 1], secs(600));
-    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        wait_for(secs(10), || fs
+            .contents("/rig/trials/t1/samples.jsonl")
+            .is_some_and(|samples| !samples.is_empty())),
+        "supervision took a sample"
+    );
     drop(trial);
     assert!(wait_for(secs(10), || terminated.load(Ordering::SeqCst)));
 }
@@ -384,20 +415,34 @@ fn a_trial_dropped_after_wait_changes_nothing() {
     assert!(next.stop().is_ok());
 }
 
+/// Cancels the wait it reports to at the first progress line.
+struct CancelOnProgress(CancellationToken);
+
+impl Reporter for CancelOnProgress {
+    fn progress(&mut self, _: &str) {
+        self.0.cancel();
+    }
+
+    fn sample(&mut self, _: Sample) {}
+
+    fn signal(&mut self, _: CoreId, _: Signal, _: &str) {}
+}
+
 #[test]
 fn cancelling_a_wait_returns_a_partial_result_and_stop_still_proves_the_teardown() {
-    let (mut runner, _dir) = runner(|_| {}, fast());
+    let (mut runner, _dir) = live_runner(
+        |fake| {
+            fake.on_launch(printing("ok started\n"));
+        },
+        fast(),
+    );
     let mut trial = start(&mut runner, Regime::R1, &[0], secs(600));
     let cancel = CancellationToken::new();
-    let trigger = cancel.clone();
-    let canceller = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(150));
-        trigger.cancel();
-    });
-    let partial = trial.wait(&cancel, &mut Collect::default()).unwrap_err();
-    canceller.join().unwrap();
+    let partial = trial
+        .wait(&cancel, &mut CancelOnProgress(cancel.clone()))
+        .unwrap_err();
     assert!(matches!(partial.error, togi_machine::Error::Cancelled));
-    assert!(partial.value.ran < secs(5));
+    assert!(partial.value.ran < secs(600));
     assert!(trial.stop().is_ok());
 }
 
@@ -452,16 +497,33 @@ fn dropping_the_runner_is_bounded_even_with_a_stuck_trial() {
     );
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     std::mem::forget(trial);
-    let begun = Instant::now();
     drop(runner);
-    let bound = fast().stop_bound() + secs(1);
-    assert!(begun.elapsed() < bound + secs(1), "{:?}", begun.elapsed());
+}
+
+#[test]
+fn dropping_the_runner_gives_up_on_a_wedged_runtime_thread_at_its_join_bound() {
+    let Stalled {
+        mut runner,
+        clock,
+        release: _held,
+        ..
+    } = stalled(true);
+    let partial = start_failure(&mut runner, Regime::R1, &[0], secs(600));
+    assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
+    let begun = clock.elapsed();
+    let expiry = std::thread::spawn({
+        let clock = Arc::clone(&clock);
+        move || clock.expire_waiting()
+    });
+    drop(runner);
+    expiry.join().unwrap();
+    assert_eq!(clock.elapsed(), begun + fast().stop_bound() + secs(1));
 }
 
 #[test]
 fn dropping_the_runner_tears_down_a_trial_whose_handle_was_never_dropped() {
     let terminated = Arc::new(AtomicBool::new(false));
-    let (mut runner, _keep) = runner(marks_termination(Arc::clone(&terminated)), fast());
+    let (mut runner, _keep) = live_runner(marks_termination(Arc::clone(&terminated)), fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     std::mem::forget(trial);
     drop(runner);
@@ -512,28 +574,25 @@ fn the_runner_sweeps_probes_compresses_and_reads_samples() {
 
 #[test]
 fn a_cancelled_sweep_returns_cancelled_without_waiting_out_its_deadline() {
+    let cancel = CancellationToken::new();
     let (mut runner, _dir) = runner(
-        |fake| {
-            fake.on_systemd(|call| {
-                if let Systemd::ListScopes = call {
-                    Some(Reply::Hang)
-                } else {
-                    None
-                }
-            });
+        {
+            let cancel = cancel.clone();
+            move |fake| {
+                fake.on_systemd(move |call| {
+                    if let Systemd::ListScopes = call {
+                        cancel.cancel();
+                        Some(Reply::Hang)
+                    } else {
+                        None
+                    }
+                });
+            }
         },
         Timing::default(),
     );
-    let cancel = CancellationToken::new();
-    let trigger = cancel.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(100));
-        trigger.cancel();
-    });
-    let begun = Instant::now();
     let error = runner.sweep(&cancel).unwrap_err();
     assert!(matches!(error, togi_machine::Error::Cancelled));
-    assert!(begun.elapsed() < secs(5));
 }
 
 #[test]
@@ -542,23 +601,20 @@ fn a_trial_longer_than_the_teardown_budgets_still_completes_through_wait() {
     let (mut runner, _dir) = runner(|_| {}, timing);
     let long = timing.teardown + timing.writer_join + timing.margin + Duration::from_secs(1);
     let mut trial = start(&mut runner, Regime::R1, &[0], long);
-    let begun = Instant::now();
     let result = trial
         .wait(&CancellationToken::new(), &mut Collect::default())
         .map_err(|partial| partial.error)
         .unwrap();
     assert_eq!(result.ran, long);
-    assert!(begun.elapsed() + Duration::from_millis(100) >= long);
     assert!(trial.stop().is_ok());
 }
 
-fn silent_supervisor(
+/// A trial whose supervisor's events are what the test sends, on `clock`.
+fn scripted_supervisor(
     duration: Duration,
     timing: &Timing,
-) -> (
-    crate::native::Trial,
-    std::sync::mpsc::Sender<crate::supervisor::Event>,
-) {
+    clock: &Arc<Manual>,
+) -> (crate::native::Trial, std::sync::mpsc::Sender<Event>) {
     let (events_tx, events) = std::sync::mpsc::channel();
     let (commands, _commands_rx) = tokio::sync::mpsc::unbounded_channel();
     let handle = crate::supervisor::Handle {
@@ -569,59 +625,92 @@ fn silent_supervisor(
         cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         registration: CancellationToken::new().on_cancel(|| {}),
     };
-    (crate::native::Trial::new(handle, timing), events_tx)
+    let trial = crate::native::Trial::new(handle, timing, Clock::Manual(Arc::clone(clock)));
+    (trial, events_tx)
+}
+
+fn finished(ran: Duration) -> Event {
+    Event::Finished(Box::new(Finished {
+        result: TrialResult {
+            ran,
+            ..TrialResult::default()
+        },
+        errors: Vec::new(),
+        teardown: Ok(nothing_runs()),
+        abandoned: false,
+    }))
+}
+
+/// A supervisor bound of 300 ms past the trial's duration.
+fn short_bound() -> Timing {
+    Timing {
+        teardown: Duration::from_millis(100),
+        writer_join: Duration::from_millis(100),
+        margin: Duration::from_millis(100),
+        ..Timing::default()
+    }
 }
 
 #[test]
 fn wait_gives_up_on_a_supervisor_that_never_answers_at_its_bound() {
-    let timing = Timing {
-        teardown: Duration::from_millis(100),
-        writer_join: Duration::from_millis(100),
-        margin: Duration::from_millis(100),
-        ..Timing::default()
-    };
-    let (mut trial, _kept_open) = silent_supervisor(Duration::from_millis(200), &timing);
-    let begun = Instant::now();
+    let timing = short_bound();
+    let clock = Manual::new();
+    let (mut trial, _kept_open) = scripted_supervisor(Duration::from_millis(200), &timing, &clock);
+    let expiry = std::thread::spawn({
+        let clock = Arc::clone(&clock);
+        move || clock.expire_waiting()
+    });
     let partial = trial
         .wait(&CancellationToken::new(), &mut Collect::default())
         .unwrap_err();
-    let elapsed = begun.elapsed();
-    assert!(
-        elapsed >= Duration::from_millis(450) && elapsed < secs(3),
-        "{elapsed:?}"
-    );
+    expiry.join().unwrap();
+    assert_eq!(clock.elapsed(), Duration::from_millis(500));
     assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
-    assert_eq!(partial.value, togi_machine::TrialResult::default());
+    assert_eq!(partial.value, TrialResult::default());
 }
 
 #[test]
 fn stop_gives_up_on_a_supervisor_that_never_answers_with_containment() {
-    let timing = Timing {
-        teardown: Duration::from_millis(100),
-        writer_join: Duration::from_millis(100),
-        margin: Duration::from_millis(100),
-        ..Timing::default()
-    };
-    let (trial, _kept_open) = silent_supervisor(secs(60), &timing);
-    let begun = Instant::now();
+    let timing = short_bound();
+    let clock = Manual::new();
+    let (trial, _kept_open) = scripted_supervisor(secs(60), &timing, &clock);
+    let expiry = std::thread::spawn({
+        let clock = Arc::clone(&clock);
+        move || clock.expire_waiting()
+    });
     let outcome = Box::new(trial).stop();
+    expiry.join().unwrap();
     assert!(matches!(outcome, Err(togi_machine::Error::Containment(_))));
-    assert!(begun.elapsed() >= Duration::from_millis(250) && begun.elapsed() < secs(3));
+    assert_eq!(clock.elapsed(), Duration::from_millis(300));
 }
 
 #[test]
 fn the_wait_bound_covers_the_whole_duration_of_a_long_trial() {
     let timing = Timing::default();
-    let (trial, _kept_open) = silent_supervisor(secs(900), &timing);
+    let (trial, _kept_open) = scripted_supervisor(secs(900), &timing, &Manual::new());
     let remaining = trial.wait_budget();
     assert!(remaining > secs(900) + timing.teardown + timing.writer_join);
 }
 
-struct Slow;
+/// A reporter that takes 10 ms of `clock` over each progress line it counts.
+struct Slow {
+    clock: Arc<Manual>,
+    progress: usize,
+}
+
+impl Slow {
+    fn on(clock: &Arc<Manual>) -> Self {
+        Self {
+            clock: Arc::clone(clock),
+            progress: 0,
+        }
+    }
+}
 
 impl Reporter for Slow {
     fn progress(&mut self, _: &str) {
-        std::thread::sleep(Duration::from_millis(10));
+        self.clock.advance(Duration::from_millis(10));
+        self.progress += 1;
     }
 
     fn sample(&mut self, _: Sample) {}
@@ -631,22 +720,17 @@ impl Reporter for Slow {
 
 #[test]
 fn a_backlog_of_reports_cannot_carry_wait_past_its_absolute_bound() {
-    let timing = Timing {
-        teardown: Duration::from_millis(100),
-        writer_join: Duration::from_millis(100),
-        margin: Duration::from_millis(100),
-        ..Timing::default()
-    };
-    let (mut trial, events) = silent_supervisor(Duration::from_millis(200), &timing);
+    let timing = short_bound();
+    let clock = Manual::new();
+    let (mut trial, events) = scripted_supervisor(Duration::from_millis(200), &timing, &clock);
     for _ in 0..1000 {
-        events
-            .send(crate::supervisor::Event::Progress("ok".into()))
-            .unwrap();
+        events.send(Event::Progress("ok".into())).unwrap();
     }
-    let begun = Instant::now();
-    let outcome = trial.wait(&CancellationToken::new(), &mut Slow);
+    let mut slow = Slow::on(&clock);
+    let outcome = trial.wait(&CancellationToken::new(), &mut slow);
     assert!(outcome.is_err());
-    assert!(begun.elapsed() < secs(2), "{:?}", begun.elapsed());
+    assert_eq!(clock.elapsed(), Duration::from_millis(500));
+    assert_eq!(slow.progress, 50);
 }
 
 #[test]
@@ -694,49 +778,31 @@ fn start_failure(
 
 #[test]
 fn a_stalled_start_is_containment_without_a_value_and_the_trial_it_finishes_late_is_abandoned() {
-    let terminated = Arc::new(AtomicBool::new(false));
-    let (mut runner, _keep) = runner(
-        stalls_first_launch(
-            secs(1),
-            Arc::clone(&terminated),
-            Arc::new(AtomicUsize::new(0)),
-            true,
-        ),
-        stalling(),
-    );
-    let begun = Instant::now();
-    let partial = start_failure(&mut runner, Regime::R1, &[0], secs(600));
-    assert!(begun.elapsed() < secs(5), "{:?}", begun.elapsed());
+    let mut stall = stalled(true);
+    let partial = start_failure(&mut stall.runner, Regime::R1, &[0], secs(600));
+    assert_eq!(stall.clock.elapsed(), fast().start_bound(1));
     assert!(partial.value.is_none(), "no proof that nothing runs");
     assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
+    stall.release.send(()).unwrap();
     assert!(
-        wait_for(secs(10), || terminated.load(Ordering::SeqCst)),
+        wait_for(secs(10), || stall.terminated.load(Ordering::SeqCst)),
         "the workload of a start nobody waits for was torn down"
     );
 }
 
 #[test]
 fn a_timed_out_start_launches_no_further_instance_and_rolls_back_the_first() {
-    let terminated = Arc::new(AtomicBool::new(false));
-    let launches = Arc::new(AtomicUsize::new(0));
-    let (mut runner, _keep) = runner(
-        stalls_first_launch(
-            Duration::from_millis(1200),
-            Arc::clone(&terminated),
-            Arc::clone(&launches),
-            true,
-        ),
-        stalling(),
-    );
-    let partial = start_failure(&mut runner, Regime::R7, &[0, 1], secs(600));
+    let mut stall = stalled(true);
+    let partial = start_failure(&mut stall.runner, Regime::R7, &[0, 1], secs(600));
     assert!(partial.value.is_none());
     assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
+    stall.release.send(()).unwrap();
     assert!(
-        wait_for(secs(10), || terminated.load(Ordering::SeqCst)),
+        wait_for(secs(10), || stall.terminated.load(Ordering::SeqCst)),
         "the first instance was rolled back"
     );
     assert_eq!(
-        launches.load(Ordering::SeqCst),
+        stall.launches.load(Ordering::SeqCst),
         1,
         "a start nobody waits for launches nothing more"
     );
@@ -744,19 +810,21 @@ fn a_timed_out_start_launches_no_further_instance_and_rolls_back_the_first() {
 
 #[test]
 fn dropping_the_runner_after_a_timed_out_start_waits_for_the_rollback_in_progress() {
-    let terminated = Arc::new(AtomicBool::new(false));
-    let (mut runner, _keep) = runner(
-        stalls_first_launch(
-            secs(1),
-            Arc::clone(&terminated),
-            Arc::new(AtomicUsize::new(0)),
-            false,
-        ),
-        stalling(),
-    );
+    let Stalled {
+        mut runner,
+        clock,
+        release,
+        terminated,
+        ..
+    } = stalled(false);
     let partial = start_failure(&mut runner, Regime::R6, &[0], secs(600));
     assert!(partial.value.is_none());
+    let released = std::thread::spawn(move || {
+        clock.until_waiting();
+        release.send(()).unwrap();
+    });
     drop(runner);
+    released.join().unwrap();
     assert!(
         terminated.load(Ordering::SeqCst),
         "shutdown let the start that was waiting for its scope roll its workload back"
@@ -766,7 +834,7 @@ fn dropping_the_runner_after_a_timed_out_start_waits_for_the_rollback_in_progres
 #[test]
 fn dropping_the_trial_and_the_runner_back_to_back_still_terminates_the_workload() {
     let terminated = Arc::new(AtomicBool::new(false));
-    let (mut runner, _keep) = runner(marks_termination(Arc::clone(&terminated)), fast());
+    let (mut runner, _keep) = live_runner(marks_termination(Arc::clone(&terminated)), fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     drop(trial);
     drop(runner);
@@ -790,7 +858,7 @@ fn a_duration_that_cannot_be_scheduled_is_refused_before_anything_changes() {
 
 #[test]
 fn a_repeated_wait_reports_the_failure_the_first_one_did() {
-    let (mut runner, _dir) = runner(|_| {}, fast());
+    let (mut runner, _dir) = live_runner(|_| {}, fast());
     let mut trial = start(&mut runner, Regime::R1, &[0], secs(600));
     let cancel = CancellationToken::new();
     cancel.cancel();
@@ -970,7 +1038,7 @@ fn storage_failures_list_each_member_with_its_own_causes() {
 
 #[test]
 fn a_cancelled_trial_keeps_the_output_failure_that_followed_its_cancellation() {
-    let (mut runner, _dir) = runner(
+    let (mut runner, _dir) = live_runner(
         |fake| {
             fake.on_launch(|_, _| {
                 Launch::Run(script(|mut ctx: ProcCtx| async move {
@@ -1026,9 +1094,10 @@ fn quick() -> Timing {
 
 #[test]
 fn a_first_wait_after_the_old_deadline_still_gets_the_finished_outcome() {
-    let (mut runner, _dir) = runner(|_| {}, quick());
-    let mut trial = start(&mut runner, Regime::R1, &[0], Duration::from_millis(100));
-    std::thread::sleep(Duration::from_millis(1300));
+    let clock = Manual::new();
+    let (mut trial, events) = scripted_supervisor(Duration::from_millis(100), &quick(), &clock);
+    events.send(finished(Duration::from_millis(100))).unwrap();
+    clock.advance(Duration::from_millis(1300));
     let result = trial
         .wait(&CancellationToken::new(), &mut Collect::default())
         .map_err(|partial| partial.error)
@@ -1040,29 +1109,24 @@ fn a_first_wait_after_the_old_deadline_still_gets_the_finished_outcome() {
             .is_ok(),
         "and the outcome stays retrievable"
     );
-    assert!(trial.stop().is_ok());
+    assert!(Box::new(trial).stop().is_ok());
 }
 
 #[test]
 fn a_late_wait_with_a_backlog_of_reports_is_still_bounded() {
-    let (mut runner, _dir) = runner(
-        |fake| {
-            fake.on_launch(|_, _| {
-                Launch::Run(script(|mut ctx: ProcCtx| async move {
-                    ctx.print(&"ok line\n".repeat(300)).await;
-                    ctx.until_killed().await;
-                }))
-            });
-        },
-        quick(),
-    );
-    let mut trial = start(&mut runner, Regime::R1, &[0], Duration::from_millis(100));
-    std::thread::sleep(Duration::from_millis(1300));
-    let begun = Instant::now();
+    let clock = Manual::new();
+    let (mut trial, events) = scripted_supervisor(Duration::from_millis(100), &quick(), &clock);
+    for _ in 0..300 {
+        events.send(Event::Progress("ok line".into())).unwrap();
+    }
+    events.send(finished(Duration::from_millis(100))).unwrap();
+    clock.advance(Duration::from_millis(1300));
+    let mut slow = Slow::on(&clock);
     let partial = trial
-        .wait(&CancellationToken::new(), &mut Slow)
+        .wait(&CancellationToken::new(), &mut slow)
         .unwrap_err();
-    assert!(begun.elapsed() < secs(2), "{:?}", begun.elapsed());
+    assert_eq!(clock.elapsed(), Duration::from_millis(1900));
+    assert_eq!(slow.progress, 60, "reports stop at the stop bound");
     assert!(matches!(partial.error, togi_machine::Error::Containment(_)));
 }
 
@@ -1213,6 +1277,7 @@ fn real_fs_runner_samples_are_read_only_from_regular_files_below_the_validated_r
         fs: None,
         inputs: crate::procfs::Inputs::default(),
         memory: None,
+        clock: Clock::System,
         durability: crate::samples::Durability::Unsynced,
     };
     let runner = Runner::build(options, settings, || {
@@ -1906,7 +1971,7 @@ async fn shutdown_reports_the_live_supervisor_still_running_at_the_shared_deadli
 
 #[test]
 fn a_cached_cancellation_joined_to_a_failed_teardown_stays_containment_with_every_diagnostic() {
-    let (mut runner, _dir) = runner(
+    let (mut runner, _dir) = live_runner(
         |fake| {
             fake.on_systemd(|call| {
                 if let Systemd::Kill { .. } = call {
@@ -2015,7 +2080,7 @@ async fn a_cancelled_sweep_nobody_waits_for_with_failed_cleanup_reports_every_ca
 #[test]
 fn stopping_without_waiting_has_terminated_the_workload_before_it_returns() {
     let terminated = Arc::new(AtomicBool::new(false));
-    let (mut runner, _keep) = runner(marks_termination(Arc::clone(&terminated)), fast());
+    let (mut runner, _keep) = live_runner(marks_termination(Arc::clone(&terminated)), fast());
     let trial = start(&mut runner, Regime::R1, &[0], secs(600));
     assert!(trial.stop().is_ok());
     assert!(

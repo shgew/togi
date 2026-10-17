@@ -17,7 +17,7 @@ const S2: &str = "20260102T000000Z";
 const S3: &str = "20260103T000000Z";
 
 /// A 16-core trial of the first workload of R1 loading core 0, the shape the fitter accepts.
-fn trial(session: &str, seq: u64, ruleset: u32, failing: bool) -> TrialFact {
+pub(super) fn trial(session: &str, seq: u64, ruleset: u32, failing: bool) -> TrialFact {
     let outcome = if failing { crash() } else { Decisive::Pass };
     let mut offsets = [0; 16];
     offsets[0] = -20;
@@ -27,7 +27,7 @@ fn trial(session: &str, seq: u64, ruleset: u32, failing: bool) -> TrialFact {
 }
 
 /// Session 1 has four trials and the others three, the first of each failing; the latest session comes first.
-fn three_sessions() -> Vec<TrialFact> {
+pub(super) fn three_sessions() -> Vec<TrialFact> {
     let mut trials = Vec::new();
     for (session, ruleset, n) in [(S3, 3, 3), (S2, 2, 3), (S1, 1, 4)] {
         for i in 0..n {
@@ -200,6 +200,7 @@ fn the_regime_rows_show_mean_log_loss_in_regime_order() {
             (Regime::R1, counts(1, 0, 0.3, 0.3, 0.6)),
         ]),
         r7: R7Rows::default(),
+        trials: Vec::new(),
     };
     let check = ForwardCheck {
         rows: vec![row],
@@ -309,6 +310,7 @@ fn the_r7_rows_follow_the_regime_rows_by_workload_then_ccd_then_singleton() {
             score,
             regimes: breakdown.regimes,
             r7: breakdown.r7,
+            trials: breakdown.trials,
         }],
         pooled: score,
     };

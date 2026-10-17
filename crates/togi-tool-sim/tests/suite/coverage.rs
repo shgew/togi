@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_journal::{DeadEndCondition, ShutdownReason};
 use togi_tool_audit::{Check, Violation};
 use togi_tool_sim::{
@@ -234,53 +235,38 @@ fn a_run_missing_from_its_manifest_is_named() {
     );
 }
 
-#[test]
-fn only_a_clean_outcome_passes() {
-    let violation = Violation {
+#[test_case(Outcome::Failed { detail: "d".to_owned() }; "failed")]
+#[test_case(Outcome::Capped { boots: 1000 }; "capped")]
+#[test_case(Outcome::DeadEnd {
+    condition: DeadEndCondition::FailureAtZero,
+    detail: "d".to_owned(),
+}; "dead end")]
+#[test_case(Outcome::Stopped { reason: ShutdownReason::Signal }; "stopped")]
+#[test_case(Outcome::VerifyFailed { detail: "d".to_owned() }; "verify failed")]
+#[test_case(Outcome::ReplayFailed { detail: "d".to_owned() }; "replay failed")]
+#[test_case(Outcome::AuditViolations {
+    violations: vec![Violation {
         seq: togi_journal::Seq::FIRST,
         check: Check::Avoidance,
         reason: "reason".to_owned(),
-    };
-    let unclean = vec![
-        Outcome::Failed {
-            detail: "d".to_owned(),
-        },
-        Outcome::Capped { boots: 1000 },
-        Outcome::DeadEnd {
-            condition: DeadEndCondition::FailureAtZero,
-            detail: "d".to_owned(),
-        },
-        Outcome::Stopped {
-            reason: ShutdownReason::Signal,
-        },
-        Outcome::VerifyFailed {
-            detail: "d".to_owned(),
-        },
-        Outcome::ReplayFailed {
-            detail: "d".to_owned(),
-        },
-        Outcome::AuditViolations {
-            violations: vec![violation],
-        },
+    }],
+}; "audit violations")]
+fn only_a_clean_outcome_passes(outcome: Outcome) {
+    let manifests = vec![
+        manifest(
+            0,
+            vec![result("a/dev-1", outcome.clone()), clean("b/dev-1")],
+        ),
+        manifest(1, vec![clean("a/dev-2"), clean("b/holdout-9")]),
     ];
-    for outcome in unclean {
-        let manifests = vec![
-            manifest(
-                0,
-                vec![result("a/dev-1", outcome.clone()), clean("b/dev-1")],
-            ),
-            manifest(1, vec![clean("a/dev-2"), clean("b/holdout-9")]),
-        ];
-        assert_eq!(
-            problems(&manifests, 2),
-            vec![Problem::Unclean {
-                id: id("a/dev-1"),
-                shard: 0,
-                outcome: outcome.clone()
-            }],
-            "{outcome}"
-        );
-    }
+    assert_eq!(
+        problems(&manifests, 2),
+        vec![Problem::Unclean {
+            id: id("a/dev-1"),
+            shard: 0,
+            outcome
+        }]
+    );
 }
 
 #[test]
@@ -337,25 +323,14 @@ fn a_manifest_round_trips_one_result_per_line() {
     assert_eq!(parse_manifest(&text).unwrap(), results);
 }
 
-#[test]
-fn a_damaged_manifest_is_refused_with_its_line() {
-    let good = r#"{"id":"a/dev-1","outcome":{"kind":"clean"}}"#;
-    let cases = [
-        (format!("{good}\n{{\"id\":\"a/dev"), 2),
-        (format!("{good}\n{{\"id\":\"a/dev-2\"}}"), 2),
-        (
-            r#"{"id":"a/dev-1","outcome":{"kind":"clean"},"extra":1}"#.to_owned(),
-            1,
-        ),
-        (
-            r#"{"id":"a/dev-1","outcome":{"kind":"unheard_of"}}"#.to_owned(),
-            1,
-        ),
-    ];
-    for (text, line) in cases {
-        let error = parse_manifest(&text).unwrap_err();
-        assert_eq!(error.line, line, "{text}");
-    }
+const GOOD: &str = r#"{"id":"a/dev-1","outcome":{"kind":"clean"}}"#;
+
+#[test_case(&format!("{GOOD}\n{{\"id\":\"a/dev"), 2; "truncated second line")]
+#[test_case(&format!("{GOOD}\n{{\"id\":\"a/dev-2\"}}"), 2; "second line without an outcome")]
+#[test_case(r#"{"id":"a/dev-1","outcome":{"kind":"clean"},"extra":1}"#, 1; "unknown key")]
+#[test_case(r#"{"id":"a/dev-1","outcome":{"kind":"unheard_of"}}"#, 1; "unknown outcome kind")]
+fn a_damaged_manifest_is_refused_with_its_line(text: &str, line: usize) {
+    assert_eq!(parse_manifest(text).unwrap_err().line, line);
 }
 
 #[test]
@@ -365,20 +340,21 @@ fn blank_lines_in_a_manifest_are_skipped() {
     assert_eq!(parse_manifest("").unwrap(), Vec::new());
 }
 
+fn with_violations(violation: &str) -> String {
+    format!(
+        r#"{{"id":"a/dev-1","outcome":{{"kind":"audit_violations","violations":[{violation}]}}}}"#
+    )
+}
+
 #[test]
-fn a_manifest_line_is_an_object_never_a_positional_array() {
-    let violations = |violation: &str| {
-        format!(
-            r#"{{"id":"a/dev-1","outcome":{{"kind":"audit_violations","violations":[{violation}]}}}}"#
-        )
-    };
-    let object = violations(r#"{"seq":1,"check":"avoidance","reason":"r"}"#);
+fn a_manifest_line_is_an_object() {
+    let object = with_violations(r#"{"seq":1,"check":"avoidance","reason":"r"}"#);
     assert_eq!(parse_manifest(&object).unwrap().len(), 1);
-    for text in [
-        r#"["a/dev-1",{"kind":"clean"}]"#.to_owned(),
-        r#"{"id":"a/dev-1","outcome":["clean"]}"#.to_owned(),
-        violations(r#"[1,"avoidance","r"]"#),
-    ] {
-        assert_eq!(parse_manifest(&text).unwrap_err().line, 1, "{text}");
-    }
+}
+
+#[test_case(r#"["a/dev-1",{"kind":"clean"}]"#; "result")]
+#[test_case(r#"{"id":"a/dev-1","outcome":["clean"]}"#; "outcome")]
+#[test_case(&with_violations(r#"[1,"avoidance","r"]"#); "violation")]
+fn a_manifest_line_is_never_a_positional_array(text: &str) {
+    assert_eq!(parse_manifest(text).unwrap_err().line, 1);
 }

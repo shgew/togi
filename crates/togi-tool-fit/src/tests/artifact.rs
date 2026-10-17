@@ -139,6 +139,7 @@ fn the_report_names_the_rows_and_whether_the_historical_confirmation_is_scored()
     let forward = |seal| Mode::Forward {
         seal,
         reference: Vec::new(),
+        records: None,
     };
     assert_eq!(
         report(forward(1)),

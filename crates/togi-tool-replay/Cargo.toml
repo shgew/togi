@@ -20,6 +20,7 @@ togi-watch.workspace = true
 [dev-dependencies]
 rustix = { workspace = true, features = ["event", "process", "pty", "termios"] }
 tempfile.workspace = true
+test-case.workspace = true
 togi-watchtest.workspace = true
 
 [lints]

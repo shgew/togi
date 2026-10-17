@@ -1,28 +1,13 @@
 //! The `togi-tool-bench` command with a registered gate, run as a process over a fake simulator.
-#![expect(
-    clippy::unwrap_used,
-    clippy::disallowed_methods,
-    reason = "the tests run the built command and panic on a broken fixture"
-)]
-
-#[expect(
-    dead_code,
-    reason = "CLI tests construct commands directly rather than using fixture Options"
-)]
-mod fake;
-mod git;
-#[expect(
-    dead_code,
-    reason = "process fixture setup uses session events, not simulator outcomes"
-)]
-mod session;
+#![expect(clippy::disallowed_methods, reason = "the tests run the built command")]
 
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use fake::ProcessBench as Bench;
-use git::{isolate_git, repo};
+use crate::fake::ProcessBench as Bench;
+use crate::git::{isolate_git, repo};
+use crate::session;
 use serde_json::json;
 use togi_sim::file;
 use togi_tool_bench::{Record, read_records, write_records};

@@ -10,6 +10,8 @@ use togi_sim::file;
 use togi_sim::voltage::core_watts;
 use togi_sim::{MachineDefinition, Model, Problem, SourceKind};
 
+use test_case::test_case;
+
 use crate::common::{
     Rig, committed_machine, flat_cores, invalid, load, machine_dir_text, model, offsets,
     r7_workload, spec,
@@ -137,37 +139,55 @@ fn clocks_follow_package_power_idle_gain_and_cross_ccd_balance() {
     assert!(first < 4329 && second < 4889, "{first} {second}");
 }
 
-#[test]
-fn core_eleven_needs_a_supporting_core_to_keep_its_rail() {
+/// The rail and core 11's rate and threshold when `cores` run the second R7 workload under a deep profile.
+fn core_eleven_rail(cores: &[i64]) -> (f64, f64, f64) {
     let model = voltage_model();
-    let regime = r7();
     let workload = r7_workload(1);
     let profile = offsets(&[
         -31, -38, -37, -34, -35, -36, -45, -42, -48, -47, -38, -44, -50, -42, -50, -50,
     ]);
-    let state = |cores: &[i64]| {
-        model
-            .voltage_state(&profile, &load(regime, workload, cores, SECONDS))
-            .expect("shape")
-            .expect("a rail")
-    };
-    let unsupported_cores = [8, 9, 11, 12, 14, 15];
-    let unsupported = state(&unsupported_cores);
+    let state = model
+        .voltage_state(&profile, &load(r7(), workload, cores, SECONDS))
+        .expect("shape")
+        .expect("a rail");
     let threshold = model.voltage().expect("a rail").workload(workload).cores[11].threshold_v;
-    assert!(state(&[8, 9, 10, 11, 12, 13, 14, 15]).rail > threshold);
-    for supporter in [10, 13] {
-        let mut cores = unsupported_cores.to_vec();
-        cores.push(supporter);
-        let supported = state(&cores);
-        assert!(unsupported.rail < threshold && supported.rail > threshold);
-        assert!(unsupported.rates[11] > supported.rates[11] * 10.0);
-    }
-    let mix = model.voltage().expect("a rail").workload(workload).cores[11]
+    (state.rail, state.rates[11], threshold)
+}
+
+const UNSUPPORTED: [i64; 6] = [8, 9, 11, 12, 14, 15];
+
+#[test_case(10; "core 10")]
+#[test_case(13; "core 13")]
+fn core_eleven_needs_a_supporting_core_to_keep_its_rail(supporter: i64) {
+    let (unsupported, unsupported_rate, threshold) = core_eleven_rail(&UNSUPPORTED);
+    let mut cores = UNSUPPORTED.to_vec();
+    cores.push(supporter);
+    let (supported, supported_rate, _) = core_eleven_rail(&cores);
+    assert!(
+        unsupported < threshold && supported > threshold,
+        "{unsupported} and {supported} around {threshold}"
+    );
+    assert!(
+        unsupported_rate > supported_rate * 10.0,
+        "{unsupported_rate} against {supported_rate}"
+    );
+}
+
+#[test]
+fn core_eleven_keeps_its_rail_with_its_whole_ccd_and_fails_by_computation_error() {
+    let (rail, _, threshold) = core_eleven_rail(&[8, 9, 10, 11, 12, 13, 14, 15]);
+    assert!(rail > threshold, "{rail} <= {threshold}");
+    let model = voltage_model();
+    let mix = model
+        .voltage()
+        .expect("a rail")
+        .workload(r7_workload(1))
+        .cores[11]
         .signals
         .as_ref()
         .expect("core 11 names its signals");
     for x in [0.0, 0.25, 0.5, 0.999] {
-        assert_eq!(mix.pick(x), Signal::ComputationError);
+        assert_eq!(mix.pick(x), Signal::ComputationError, "{x}");
     }
 }
 
@@ -369,70 +389,73 @@ fn the_rail_drops_unloaded_flat_and_idle_hazards_but_other_loads_keep_theirs() {
     assert_ne!(before, kinds_of(&moved, &other));
 }
 
-#[test]
-fn equal_request_and_requirement_slopes_cancel_a_common_clock_shift() {
-    let regime = r7();
-    let workload = r7_workload(0);
-    let profile = offsets(&[-35; 16]);
-    let two = load(regime, workload, &[0, 1], SECONDS);
-    let tune = |delta: f64, coefficient: f64| {
-        let mut definition = committed_machine("shared-voltage.json");
-        definition.core = flat_cores(16, -50, -50);
-        let rail = definition.shared_voltage.as_mut().expect("a rail");
-        let w = rail.workload.get_mut(workload).expect("workload");
-        w.idle_gain_mhz = 0.0;
-        w.package_mhz_per_w = 0.0;
-        w.balance_mhz_per_w = 0.0;
-        w.full_mhz = [w.reference_mhz + delta; 2];
-        for core in &mut w.core {
-            core.base_v = 1.2;
-            core.threshold_v = 1.074;
-            core.clock_v_per_100mhz = 0.03;
-            core.threshold_clock_v_per_100mhz = coefficient;
-        }
-        model(&definition)
-    };
-    let reference = tune(0.0, 0.03).hazard(&profile, &two).expect("shape");
-    for delta in [-100.0, 100.0] {
-        let model = tune(delta, 0.03);
-        close(
-            model.hazard(&profile, &two).expect("shape"),
-            reference,
-            1e-12,
-        );
-        let want = -(-reference * SECONDS).exp_m1();
-        close(
-            model.failure_probability(&profile, &two).expect("shape"),
-            want,
-            1e-12,
-        );
+fn tuned(delta: f64, coefficient: f64) -> Model {
+    let mut definition = committed_machine("shared-voltage.json");
+    definition.core = flat_cores(16, -50, -50);
+    let rail = definition.shared_voltage.as_mut().expect("a rail");
+    let w = rail.workload.get_mut(r7_workload(0)).expect("workload");
+    w.idle_gain_mhz = 0.0;
+    w.package_mhz_per_w = 0.0;
+    w.balance_mhz_per_w = 0.0;
+    w.full_mhz = [w.reference_mhz + delta; 2];
+    for core in &mut w.core {
+        core.base_v = 1.2;
+        core.threshold_v = 1.074;
+        core.clock_v_per_100mhz = 0.03;
+        core.threshold_clock_v_per_100mhz = coefficient;
     }
-    let steeper = tune(100.0, 0.04).hazard(&profile, &two).expect("shape");
-    assert!(steeper > reference, "{steeper} <= {reference}");
+    model(&definition)
+}
+
+#[test_case(-100.0; "down")]
+#[test_case(100.0; "up")]
+fn equal_request_and_requirement_slopes_cancel_a_common_clock_shift(delta: f64) {
+    let profile = offsets(&[-35; 16]);
+    let two = load(r7(), r7_workload(0), &[0, 1], SECONDS);
+    let reference = tuned(0.0, 0.03).hazard(&profile, &two).expect("shape");
+    let model = tuned(delta, 0.03);
+    close(
+        model.hazard(&profile, &two).expect("shape"),
+        reference,
+        1e-12,
+    );
+    let want = -(-reference * SECONDS).exp_m1();
+    close(
+        model.failure_probability(&profile, &two).expect("shape"),
+        want,
+        1e-12,
+    );
 }
 
 #[test]
-fn an_omitted_requirement_coefficient_keeps_the_clock_independent_threshold() {
+fn a_steeper_requirement_slope_raises_the_hazard_of_a_faster_clock() {
+    let profile = offsets(&[-35; 16]);
+    let two = load(r7(), r7_workload(0), &[0, 1], SECONDS);
+    let reference = tuned(0.0, 0.03).hazard(&profile, &two).expect("shape");
+    let steeper = tuned(100.0, 0.04).hazard(&profile, &two).expect("shape");
+    assert!(steeper > reference, "{steeper} <= {reference}");
+}
+
+#[test_case(&[0, 1]; "two cores")]
+#[test_case(&[8, 9, 10, 11, 12, 13, 14, 15]; "a whole ccd")]
+fn an_omitted_requirement_coefficient_keeps_the_clock_independent_threshold(cores: &[i64]) {
     let model = voltage_model();
     let regime = r7();
     let workload = r7_workload(0);
     let voltage = model.voltage().expect("a rail");
-    for cores in [&[0, 1][..], &[8, 9, 10, 11, 12, 13, 14, 15]] {
-        let state = model
-            .voltage_state(
-                &offsets(&[-35; 16]),
-                &load(regime, workload, cores, SECONDS),
-            )
-            .expect("shape")
-            .expect("a rail");
-        for &id in cores {
-            let parameters = &voltage.workload(workload).cores[usize::try_from(id).expect("index")];
-            assert_eq!(parameters.threshold_clock_v_per_100mhz, 0.0);
-            let x = (parameters.threshold_v - state.rail) / voltage.margin_v;
-            let want =
-                voltage.rate * (x.max(0.0) + (-x.abs()).exp().ln_1p()) / std::f64::consts::LN_2;
-            assert_eq!(state.rates[usize::try_from(id).expect("index")], want);
-        }
+    let state = model
+        .voltage_state(
+            &offsets(&[-35; 16]),
+            &load(regime, workload, cores, SECONDS),
+        )
+        .expect("shape")
+        .expect("a rail");
+    for &id in cores {
+        let parameters = &voltage.workload(workload).cores[usize::try_from(id).expect("index")];
+        assert_eq!(parameters.threshold_clock_v_per_100mhz, 0.0);
+        let x = (parameters.threshold_v - state.rail) / voltage.margin_v;
+        let want = voltage.rate * (x.max(0.0) + (-x.abs()).exp().ln_1p()) / std::f64::consts::LN_2;
+        assert_eq!(state.rates[usize::try_from(id).expect("index")], want);
     }
 }
 
@@ -574,49 +597,54 @@ fn the_share_of_two_rates_whose_sum_overflows_is_still_their_ratio() {
     assert_eq!(model.failure_probability(&profile, &two), Ok(1.0));
 }
 
-#[test]
-fn failure_share_is_a_loaded_cores_rail_rate_over_the_total() {
-    let regime = r7();
-    let workload = r7_workload(0);
+#[test_case(0.0; "a quiet idle core")]
+#[test_case(0.01; "a failing idle core")]
+fn failure_share_is_a_loaded_cores_rail_rate_over_the_total(idle_rate: f64) {
     let profile = offsets(&[-35; 16]);
-    let three = load(regime, workload, &[0, 1, 7], SECONDS);
-    for idle_rate in [0.0, 0.01] {
-        let mut definition = committed_machine("shared-voltage.json");
-        definition
-            .core
-            .iter_mut()
-            .find(|core| core.id == 8)
-            .expect("core 8")
-            .flat = idle_rate;
-        let model = model(&definition);
-        let state = model
-            .voltage_state(&profile, &three)
-            .expect("shape")
-            .expect("a rail");
-        let total = model.hazard(&profile, &three).expect("shape");
-        for id in [0, 1, 7] {
-            let share = model
-                .r7_failure_share(&profile, &three, core(id))
-                .expect("shape");
-            close(
-                share,
-                state.rates[usize::try_from(id).expect("index")] / total,
-                1e-12,
-            );
-        }
-        assert_eq!(
-            model.r7_failure_share(&profile, &three, core(8)),
-            Ok(0.0),
-            "unloaded"
+    let three = load(r7(), r7_workload(0), &[0, 1, 7], SECONDS);
+    let mut definition = committed_machine("shared-voltage.json");
+    definition
+        .core
+        .iter_mut()
+        .find(|core| core.id == 8)
+        .expect("core 8")
+        .flat = idle_rate;
+    let model = model(&definition);
+    let state = model
+        .voltage_state(&profile, &three)
+        .expect("shape")
+        .expect("a rail");
+    let total = model.hazard(&profile, &three).expect("shape");
+    for id in [0, 1, 7] {
+        let share = model
+            .r7_failure_share(&profile, &three, core(id))
+            .expect("shape");
+        close(
+            share,
+            state.rates[usize::try_from(id).expect("index")] / total,
+            1e-12,
         );
     }
+    assert_eq!(
+        model.r7_failure_share(&profile, &three, core(8)),
+        Ok(0.0),
+        "unloaded"
+    );
+}
+
+#[test_case(Regime::R7, &[0]; "a single r7 core")]
+#[test_case(Regime::R2, &[0, 1]; "an r2 pair")]
+fn failure_share_is_zero_outside_a_multi_core_r7_load(regime: Regime, cores: &[i64]) {
     let model = voltage_model();
-    for other in [
-        load(regime, workload, &[0], SECONDS),
-        load(Regime::R2, workload, &[0, 1], SECONDS),
-    ] {
-        assert_eq!(model.r7_failure_share(&profile, &other, core(0)), Ok(0.0));
-    }
+    let profile = offsets(&[-35; 16]);
+    let other = load(regime, r7_workload(0), cores, SECONDS);
+    assert_eq!(model.r7_failure_share(&profile, &other, core(0)), Ok(0.0));
+}
+
+#[test]
+fn failure_share_is_zero_without_a_rail_hazard() {
+    let profile = offsets(&[-35; 16]);
+    let three = load(r7(), r7_workload(0), &[0, 1, 7], SECONDS);
     let legacy = crate::common::model(&crate::common::machine(16, vec![]));
     assert_eq!(legacy.r7_failure_share(&profile, &three, core(0)), Ok(0.0));
 
@@ -670,40 +698,40 @@ fn the_background_rate_ignores_profile_workload_and_load_and_takes_the_onset_boo
         let profile = offsets(&[offset; 16]);
         for workload in togi_machine::workloads(Regime::R7) {
             for cores in [&[0, 1][..], &[0, 1, 2, 3, 4, 5, 6, 7], &[0, 1, 8, 9]] {
+                let case = format!("offset {offset}, {}, cores {cores:?}", workload.id);
                 let two = load(regime, workload.id, cores, 120.0);
-                assert_eq!(
-                    model.hazard(&profile, &two),
-                    Ok(0.001),
-                    "{offset} {cores:?}"
-                );
+                assert_eq!(model.hazard(&profile, &two), Ok(0.001), "{case}");
                 for duration in [5.0, 120.0] {
                     let timed = load(regime, workload.id, cores, duration);
                     let exposure = duration + 2.0 * f64::min(duration, 10.0);
                     assert_eq!(
                         model.failure_probability(&profile, &timed),
-                        Ok(-(-0.001 * exposure).exp_m1())
+                        Ok(-(-0.001 * exposure).exp_m1()),
+                        "{case}, {duration} s"
                     );
                 }
                 assert_eq!(
                     model.r7_failure_share(&profile, &two, core(cores[0])),
                     Ok(0.0),
-                    "background names no core"
+                    "background names no core: {case}"
                 );
             }
         }
     }
-    let zero = offsets(&[0; 16]);
-    for outside in [
-        load(regime, r7_workload(0), &[0], 120.0),
-        load(Regime::R2, "", &[0, 1], 120.0),
-    ] {
-        assert_eq!(model.hazard(&zero, &outside), Ok(0.0));
-    }
     let silent = crate::common::model(&background_machine(0.0));
+    let zero = offsets(&[0; 16]);
     assert_eq!(
         silent.hazard(&zero, &load(regime, r7_workload(0), &[0, 1], 120.0)),
         Ok(0.0)
     );
+}
+
+#[test_case(Regime::R7, r7_workload(0), &[0]; "a single r7 core")]
+#[test_case(Regime::R2, "", &[0, 1]; "an r2 pair")]
+fn the_background_rate_stays_out_of_other_loads(regime: Regime, workload: &str, cores: &[i64]) {
+    let model = model(&background_machine(0.001));
+    let outside = load(regime, workload, cores, 120.0);
+    assert_eq!(model.hazard(&offsets(&[0; 16]), &outside), Ok(0.0));
 }
 
 #[test]
@@ -777,47 +805,44 @@ fn edit_rail(edit: impl FnOnce(&mut SharedVoltageDef)) -> MachineDefinition {
     definition
 }
 
-#[test]
-fn idle_voltage_must_stay_finite_at_recording_precision() {
-    for idle_v in [1e100, f64::MAX] {
-        let definition = edit_rail(|rail| rail.idle_v = idle_v);
-        assert!(
-            Model::new(&definition, 1).is_err(),
-            "idle_v {idle_v} overflows recorded f32 voltage requests"
-        );
-        let error = invalid(&definition);
-        assert_eq!(
-            (error.path.as_str(), error.problem),
-            ("shared_voltage.idle_v", Problem::NotFinite)
-        );
-    }
+#[test_case(1e100; "past f32")]
+#[test_case(f64::MAX; "the largest f64")]
+fn idle_voltage_must_stay_finite_at_recording_precision(idle_v: f64) {
+    let definition = edit_rail(|rail| rail.idle_v = idle_v);
+    assert!(
+        Model::new(&definition, 1).is_err(),
+        "idle_v {idle_v} overflows recorded f32 voltage requests"
+    );
+    let error = invalid(&definition);
+    assert_eq!(
+        (error.path.as_str(), error.problem),
+        ("shared_voltage.idle_v", Problem::NotFinite)
+    );
 }
 
-#[test]
-fn a_loaded_request_must_stay_finite_at_recording_precision() {
-    let edits: [(&str, RailEdit); 2] = [
-        ("a base that overflows f32", |rail| {
-            for workload in rail.workload.values_mut() {
-                workload.core[0].base_v = 1e100;
-            }
-        }),
-        (
-            "a count slope that sends the deepest request below f32",
-            |rail| {
-                for workload in rail.workload.values_mut() {
-                    workload.core[0].count_v = 1e38;
-                }
-            },
-        ),
-    ];
-    for (name, edit) in edits {
-        let error = invalid(&edit_rail(edit));
-        assert_eq!(error.problem, Problem::Overflow, "{name}: {error}");
-        assert!(
-            error.path.starts_with("shared_voltage.workload.") && error.path.ends_with(".core[0]"),
-            "{name}: {error}"
-        );
-    }
+#[test_case(
+    |rail| {
+        for workload in rail.workload.values_mut() {
+            workload.core[0].base_v = 1e100;
+        }
+    };
+    "a base that overflows f32"
+)]
+#[test_case(
+    |rail| {
+        for workload in rail.workload.values_mut() {
+            workload.core[0].count_v = 1e38;
+        }
+    };
+    "a count slope that sends the deepest request below f32"
+)]
+fn a_loaded_request_must_stay_finite_at_recording_precision(edit: RailEdit) {
+    let error = invalid(&edit_rail(edit));
+    assert_eq!(error.problem, Problem::Overflow, "{error}");
+    assert!(
+        error.path.starts_with("shared_voltage.workload.") && error.path.ends_with(".core[0]"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -866,64 +891,42 @@ fn the_rail_needs_sixteen_cores_the_three_r7_workloads_and_sixteen_core_entries(
     );
 }
 
-#[test]
-fn rail_numbers_are_finite_and_in_range() {
-    let rail: [(&str, Problem, RailEdit); 5] = [
-        ("margin_v", Problem::NotFinite, |r| r.margin_v = f64::NAN),
-        ("idle_v", Problem::NotPositive, |r| r.idle_v = 0.0),
-        ("rate", Problem::NotPositive, |r| r.rate = -1.0),
-        ("power_limit_w", Problem::NotFinite, |r| {
-            r.power_limit_w = f64::INFINITY;
-        }),
-        ("thermal_limit_w", Problem::NotPositive, |r| {
-            r.thermal_limit_w = 0.0;
-        }),
-    ];
-    for (field, problem, edit) in rail {
-        let error = invalid(&edit_rail(edit));
-        assert_eq!(
-            (error.path, error.problem),
-            (format!("shared_voltage.{field}"), problem)
-        );
-    }
+#[test_case("margin_v", Problem::NotFinite, |r| r.margin_v = f64::NAN; "nan margin")]
+#[test_case("idle_v", Problem::NotPositive, |r| r.idle_v = 0.0; "zero idle voltage")]
+#[test_case("rate", Problem::NotPositive, |r| r.rate = -1.0; "negative rate")]
+#[test_case("power_limit_w", Problem::NotFinite, |r| r.power_limit_w = f64::INFINITY; "infinite power limit")]
+#[test_case("thermal_limit_w", Problem::NotPositive, |r| r.thermal_limit_w = 0.0; "zero thermal limit")]
+fn rail_numbers_are_finite_and_in_range(field: &str, problem: Problem, edit: RailEdit) {
+    let error = invalid(&edit_rail(edit));
+    assert_eq!(
+        (error.path, error.problem),
+        (format!("shared_voltage.{field}"), problem)
+    );
+}
 
-    let workload: [(&str, Problem, WorkloadEdit); 9] = [
-        ("core[0].count_v", Problem::NotPositive, |w| {
-            w.core[0].count_v = -1.0;
-        }),
-        ("core[0].base_v", Problem::NotPositive, |w| {
-            w.core[0].base_v = 0.0;
-        }),
-        ("core[0].threshold_v", Problem::NotPositive, |w| {
-            w.core[0].threshold_v = -1.0;
-        }),
-        ("core[0].clock_v_per_100mhz", Problem::Negative, |w| {
-            w.core[0].clock_v_per_100mhz = -0.1;
-        }),
-        ("core[0].signals.crash", Problem::NotFinite, |w| {
-            w.core[0].signals = Some(Weights::from([(Signal::Crash, f64::INFINITY)]));
-        }),
-        ("core[0].signals", Problem::ZeroTotal, |w| {
-            w.core[0].signals = Some(Weights::default());
-        }),
-        ("reference_mhz", Problem::NotPositive, |w| {
-            w.reference_mhz = 0.0;
-        }),
-        ("full_mhz[1]", Problem::NotPositive, |w| w.full_mhz[1] = 0.0),
-        ("package_mhz_per_w", Problem::Negative, |w| {
-            w.package_mhz_per_w = -1.0;
-        }),
-    ];
+#[test_case("core[0].count_v", Problem::NotPositive, |w| w.core[0].count_v = -1.0; "negative count slope")]
+#[test_case("core[0].base_v", Problem::NotPositive, |w| w.core[0].base_v = 0.0; "zero base")]
+#[test_case("core[0].threshold_v", Problem::NotPositive, |w| w.core[0].threshold_v = -1.0; "negative threshold")]
+#[test_case("core[0].clock_v_per_100mhz", Problem::Negative, |w| w.core[0].clock_v_per_100mhz = -0.1; "negative clock slope")]
+#[test_case(
+    "core[0].signals.crash",
+    Problem::NotFinite,
+    |w| w.core[0].signals = Some(Weights::from([(Signal::Crash, f64::INFINITY)]));
+    "infinite signal weight"
+)]
+#[test_case("core[0].signals", Problem::ZeroTotal, |w| w.core[0].signals = Some(Weights::default()); "no signal weight")]
+#[test_case("reference_mhz", Problem::NotPositive, |w| w.reference_mhz = 0.0; "zero reference clock")]
+#[test_case("full_mhz[1]", Problem::NotPositive, |w| w.full_mhz[1] = 0.0; "zero full clock")]
+#[test_case("package_mhz_per_w", Problem::Negative, |w| w.package_mhz_per_w = -1.0; "negative package slope")]
+fn workload_numbers_are_finite_and_in_range(field: &str, problem: Problem, edit: WorkloadEdit) {
     let id = r7_workload(0);
-    for (field, problem, edit) in workload {
-        let error = invalid(&edit_rail(|r| {
-            edit(r.workload.get_mut(id).expect("workload"));
-        }));
-        assert_eq!(
-            (error.path, error.problem),
-            (format!("shared_voltage.workload.{id}.{field}"), problem)
-        );
-    }
+    let error = invalid(&edit_rail(|r| {
+        edit(r.workload.get_mut(id).expect("workload"));
+    }));
+    assert_eq!(
+        (error.path, error.problem),
+        (format!("shared_voltage.workload.{id}.{field}"), problem)
+    );
 }
 
 #[test]
@@ -963,31 +966,34 @@ fn rail_fields_are_checked_in_document_order() {
     );
 }
 
-#[test]
-fn a_rail_whose_hazard_cannot_be_represented_is_refused() {
-    let edits: [(&str, RailEdit); 2] = [
-        ("a rate that overflows over a small margin", |rail| {
-            rail.rate = 1e308;
-            rail.margin_v = 1e-3;
-        }),
-        ("a requirement slope that overflows the threshold", |rail| {
-            for workload in rail.workload.values_mut() {
-                workload.core[0].threshold_clock_v_per_100mhz = 1e308;
-            }
-        }),
-    ];
-    for (name, edit) in edits {
-        let error = invalid(&edit_rail(edit));
-        assert_eq!(error.problem, Problem::Overflow, "{name}: {error}");
-        assert!(
-            error.path.starts_with("shared_voltage.workload.") && error.path.ends_with(".core[0]"),
-            "{name}: {error}"
-        );
-    }
+#[test_case(
+    |rail| {
+        rail.rate = 1e308;
+        rail.margin_v = 1e-3;
+    };
+    "a rate that overflows over a small margin"
+)]
+#[test_case(
+    |rail| {
+        for workload in rail.workload.values_mut() {
+            workload.core[0].threshold_clock_v_per_100mhz = 1e308;
+        }
+    };
+    "a requirement slope that overflows the threshold"
+)]
+fn a_rail_whose_hazard_cannot_be_represented_is_refused(edit: RailEdit) {
+    let error = invalid(&edit_rail(edit));
+    assert_eq!(error.problem, Problem::Overflow, "{error}");
+    assert!(
+        error.path.starts_with("shared_voltage.workload.") && error.path.ends_with(".core[0]"),
+        "{error}"
+    );
 }
 
-#[test]
-fn a_rail_whose_deficit_stays_small_is_accepted_however_large_its_rate() {
+#[test_case(0, 0.0; "at offset zero")]
+#[test_case(-35, 0.126; "at offset -35")]
+#[test_case(-50, 0.18; "at the floor")]
+fn a_rail_whose_deficit_stays_small_is_accepted_however_large_its_rate(offset: i64, deficit: f64) {
     // Requests and requirements share a 1.2 V base and a default 0.0036 V per count, so a core asks at
     // least 1.02 V of a 1.2 V requirement: the deficit is at most 0.18 V and every source rate is below
     // 1.27e308, though the sum of the two voltages (2.58 V) over a 1 V margin would overflow.
@@ -1002,26 +1008,23 @@ fn a_rail_whose_deficit_stays_small_is_accepted_however_large_its_rate() {
     rail.rate = 1e308;
     rail.margin_v = 1.0;
     let model = model(&definition);
-    let workload = r7_workload(0);
-    let two = load(r7(), workload, &[0, 1], 1.0);
+    let two = load(r7(), r7_workload(0), &[0, 1], 1.0);
     let softplus =
         |deficit: f64| 1e308 * (deficit + (-deficit).exp().ln_1p()) / std::f64::consts::LN_2;
-    for (offset, deficit) in [(0, 0.0), (-35, 0.126), (-50, 0.18)] {
-        let profile = offsets(&[offset; 16]);
-        let sources = model.sources(&profile, &two).expect("shape");
-        assert_eq!(sources.len(), 2, "{offset}");
-        for source in &sources {
-            assert!(source.rate.is_finite(), "{offset}: {source:?}");
-            close(source.rate / softplus(deficit), 1.0, 1e-9);
-        }
-        for id in [0, 1] {
-            let share = model
-                .r7_failure_share(&profile, &two, core(id))
-                .expect("shape");
-            close(share, 0.5, 1e-9);
-        }
-        assert_eq!(model.failure_probability(&profile, &two), Ok(1.0));
+    let profile = offsets(&[offset; 16]);
+    let sources = model.sources(&profile, &two).expect("shape");
+    assert_eq!(sources.len(), 2);
+    for source in &sources {
+        assert!(source.rate.is_finite(), "{source:?}");
+        close(source.rate / softplus(deficit), 1.0, 1e-9);
     }
+    for id in [0, 1] {
+        let share = model
+            .r7_failure_share(&profile, &two, core(id))
+            .expect("shape");
+        close(share, 0.5, 1e-9);
+    }
+    assert_eq!(model.failure_probability(&profile, &two), Ok(1.0));
     file::encode(&definition).expect("a machine that is valid encodes");
 }
 
@@ -1131,33 +1134,35 @@ fn a_rail_rate_that_rounds_past_f64_stays_finite() {
     assert!(share.is_finite(), "{share}");
 }
 
-#[test]
-fn requirement_coefficients_are_finite_and_nonnegative_without_an_upper_bound() {
+#[test_case(-1.0, false; "negative")]
+#[test_case(f64::NAN, false; "nan")]
+#[test_case(f64::INFINITY, false; "infinite")]
+#[test_case(f64::NEG_INFINITY, false; "negative infinite")]
+#[test_case(0.0, true; "zero")]
+#[test_case(0.027, true; "small")]
+#[test_case(2.0, true; "large")]
+fn requirement_coefficients_are_finite_and_nonnegative_without_an_upper_bound(
+    coefficient: f64,
+    valid: bool,
+) {
     let workload = r7_workload(0);
-    let set = |coefficient: f64| {
-        edit_rail(|rail| {
-            rail.workload.get_mut(workload).expect("workload").core[0]
-                .threshold_clock_v_per_100mhz = coefficient;
-        })
-    };
-    for coefficient in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(Model::new(&set(coefficient), 1).is_err(), "{coefficient}");
-    }
-    for coefficient in [0.0, 0.027, 2.0] {
-        assert!(Model::new(&set(coefficient), 1).is_ok(), "{coefficient}");
-    }
+    let definition = edit_rail(|rail| {
+        rail.workload.get_mut(workload).expect("workload").core[0].threshold_clock_v_per_100mhz =
+            coefficient;
+    });
+    assert_eq!(Model::new(&definition, 1).is_ok(), valid);
 }
 
-#[test]
-fn the_background_rate_is_finite_and_nonnegative() {
-    for rate in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let definition = edit_rail(|rail| rail.background_rate = rate);
-        assert!(Model::new(&definition, 1).is_err(), "{rate}");
-    }
-    for rate in [0.0, 0.001, 2.0] {
-        let definition = edit_rail(|rail| rail.background_rate = rate);
-        assert!(Model::new(&definition, 1).is_ok(), "{rate}");
-    }
+#[test_case(-1.0, false; "negative")]
+#[test_case(f64::NAN, false; "nan")]
+#[test_case(f64::INFINITY, false; "infinite")]
+#[test_case(f64::NEG_INFINITY, false; "negative infinite")]
+#[test_case(0.0, true; "zero")]
+#[test_case(0.001, true; "small")]
+#[test_case(2.0, true; "large")]
+fn the_background_rate_is_finite_and_nonnegative(rate: f64, valid: bool) {
+    let definition = edit_rail(|rail| rail.background_rate = rate);
+    assert_eq!(Model::new(&definition, 1).is_ok(), valid);
 }
 
 #[test]

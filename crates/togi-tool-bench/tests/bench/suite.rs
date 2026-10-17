@@ -1,11 +1,4 @@
-#![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
-
-#[expect(
-    dead_code,
-    reason = "this binary uses only memory trees, not record and snapshot helpers"
-)]
-mod common;
-use common::Tree;
+use crate::common::Tree;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

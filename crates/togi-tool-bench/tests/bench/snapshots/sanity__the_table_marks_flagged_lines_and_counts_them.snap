@@ -1,5 +1,5 @@
 ---
-source: crates/togi-tool-bench/tests/sanity.rs
+source: crates/togi-tool-bench/tests/bench/sanity.rs
 expression: "String::from_utf8(out).unwrap()"
 ---
 sanity: means over the runs in both the current records and the baseline; flagged when the means differ by more than the band and by more than 3 standard errors, when concluded runs were lost, or when a side lacks the metric on runs the other has

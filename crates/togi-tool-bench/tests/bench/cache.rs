@@ -1,16 +1,8 @@
-#![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
-
-#[expect(
-    dead_code,
-    reason = "this binary uses only part of the shared memory fixture"
-)]
-mod common;
-
 use std::fs::{self, File};
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use common::{Tree, record};
+use crate::common::{Tree, record};
 use togi_tool_bench::cache::{
     Costs, RunCache, current_exe_digest, inputs, longest_first, tree_key,
 };

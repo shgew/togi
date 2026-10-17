@@ -3,6 +3,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use serde_json::{Value, json};
+use test_case::test_case;
 
 use super::{CheckPayload, run_publish};
 use crate::fakes::{
@@ -516,22 +517,21 @@ fn publish_carries_forward() {
     );
 }
 
-#[test]
-fn publish_refuses_carry_forward_of_a_prior_that_is_not_a_success() {
-    for verdict in ["blocked", ""] {
-        let dir = carry_snapshot(verdict, vec![unchanged(false)]);
-        let gh = github(&[HEAD_SHA], String::new());
-        let mut h = harness(&gh);
-        let error = publish(&mut h, dir.path()).expect_err("publish accepted");
-        assert!(
-            error.render().contains("not recorded as a success"),
-            "verdict {verdict:?}: error = {error}, want a carry-forward refusal"
-        );
-        assert!(
-            gh.borrow().posted.is_empty() && h.stdout.is_empty(),
-            "verdict {verdict:?}: a refused carry-forward posted or printed"
-        );
-    }
+#[test_case("blocked"; "blocked")]
+#[test_case(""; "no verdict")]
+fn publish_refuses_carry_forward_of_a_prior_that_is_not_a_success(verdict: &str) {
+    let dir = carry_snapshot(verdict, vec![unchanged(false)]);
+    let gh = github(&[HEAD_SHA], String::new());
+    let mut h = harness(&gh);
+    let error = publish(&mut h, dir.path()).expect_err("publish accepted");
+    assert!(
+        error.render().contains("not recorded as a success"),
+        "error = {error}, want a carry-forward refusal"
+    );
+    assert!(
+        gh.borrow().posted.is_empty() && h.stdout.is_empty(),
+        "a refused carry-forward posted or printed"
+    );
 }
 
 #[test]
@@ -563,31 +563,36 @@ fn publish_ignores_prefix_lookalike_bots() {
     );
 }
 
-#[test]
-fn publish_refuses_an_existing_record_that_differs() {
-    let blocked_dir = rendered_snapshot(deferred(5));
-    let blocked = record(blocked_dir.path());
+fn blocked_record(_: &Path) -> String {
+    record(rendered_snapshot(deferred(5)).path())
+}
+
+fn record_with_extra_text(dir: &Path) -> String {
+    format!("{}\nextra visible text\n", record(dir))
+}
+
+#[test_case(blocked_record; "blocked record")]
+#[test_case(record_with_extra_text; "other data")]
+fn publish_refuses_an_existing_record_that_differs(existing: fn(&Path) -> String) {
     let dir = rendered_snapshot(fixed());
-    let extra = format!("{}\nextra visible text\n", record(dir.path()));
-    for (name, body) in [("blocked record", &blocked), ("other data", &extra)] {
-        let gh = github(
-            &[HEAD_SHA],
-            comments(&[(RECORD_COMMENT_URL, body, "robotogi[bot]")]),
-        );
-        let mut h = harness(&gh);
-        let error = publish(&mut h, dir.path()).expect_err("publish accepted");
-        assert!(
-            error
-                .render()
-                .contains(&format!("differs from {RECORD_FILE}")),
-            "{name}: error = {error}, want a mismatch refusal"
-        );
-        let f = gh.borrow();
-        assert!(
-            f.posted.is_empty() && f.check_payload.is_empty() && h.stdout.is_empty(),
-            "{name}: a refused publish posted or printed"
-        );
-    }
+    let body = existing(dir.path());
+    let gh = github(
+        &[HEAD_SHA],
+        comments(&[(RECORD_COMMENT_URL, &body, "robotogi[bot]")]),
+    );
+    let mut h = harness(&gh);
+    let error = publish(&mut h, dir.path()).expect_err("publish accepted");
+    assert!(
+        error
+            .render()
+            .contains(&format!("differs from {RECORD_FILE}")),
+        "error = {error}, want a mismatch refusal"
+    );
+    let f = gh.borrow();
+    assert!(
+        f.posted.is_empty() && f.check_payload.is_empty() && h.stdout.is_empty(),
+        "a refused publish posted or printed"
+    );
 }
 
 #[test]
@@ -612,19 +617,25 @@ fn publish_usage() {
     );
 }
 
-#[test]
-fn dispatch_routes_subcommands() {
-    let mut h = Harness::new(
+fn dispatching() -> Harness {
+    Harness::new(
         Some(crate::fakes::answer(
             r#"[{"data":{"repository":{"pullRequests":{"nodes":[]}}}}]"#,
         )),
         None,
-    );
-    for args in [&[][..], &["report"]] {
-        h.dispatch(args)
-            .unwrap_or_else(|error| panic!("dispatch({args:?}): {error}"));
-    }
-    for args in [&["report", "x"][..], &["bogus"]] {
-        assert!(h.dispatch(args).is_err(), "dispatch({args:?}) succeeded");
-    }
+    )
+}
+
+#[test_case(&[]; "no subcommand reports")]
+#[test_case(&["report"]; "report")]
+fn dispatch_routes_subcommands(args: &[&str]) {
+    dispatching()
+        .dispatch(args)
+        .unwrap_or_else(|error| panic!("dispatch({args:?}): {error}"));
+}
+
+#[test_case(&["report", "x"]; "report with an argument")]
+#[test_case(&["bogus"]; "unknown subcommand")]
+fn dispatch_refuses_bad_arguments(args: &[&str]) {
+    assert!(dispatching().dispatch(args).is_err());
 }

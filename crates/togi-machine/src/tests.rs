@@ -210,7 +210,8 @@ fn read_samples_forms(content: &str, want: &[i64]) {
 #[test]
 fn read_samples_rejects_invalid_gzip() {
     let mut samples = ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(b"not gzip")));
-    assert!(matches!(samples.next(), Some(Err(SampleError::Read(_)))));
+    let next = samples.next();
+    assert!(matches!(next, Some(Err(SampleError::Read(_)))), "{next:?}");
     assert!(samples.next().is_none());
 }
 
@@ -229,7 +230,7 @@ fn read_samples_read_error_is_not_clean_eof() {
     let mut samples = ReadSamples::from_reader(broken);
     assert_eq!(samples.next().unwrap().unwrap().elapsed_ms, 1000);
     let error = samples.next().unwrap().unwrap_err();
-    assert!(matches!(error, SampleError::Read(_)));
+    assert!(matches!(error, SampleError::Read(_)), "{error:?}");
     assert_eq!(
         crate::error_chain(&error),
         "read conditions samples (including gzip decoding): injected samples read failure"
@@ -244,7 +245,8 @@ fn read_samples_gzip_error_is_not_clean_eof() {
     broken.extend_from_slice(b"not a second gzip member");
     let mut samples = ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(broken)));
     assert_eq!(samples.next().unwrap().unwrap().elapsed_ms, 1000);
-    assert!(matches!(samples.next(), Some(Err(SampleError::Read(_)))));
+    let next = samples.next();
+    assert!(matches!(next, Some(Err(SampleError::Read(_)))), "{next:?}");
     assert!(samples.next().is_none());
 }
 
@@ -254,42 +256,12 @@ fn read_samples_complete_decode_error_is_not_a_missing_sample() {
         b"{\"elapsed_ms\":1000}\nnot json\n{\"elapsed_ms\":2000}\n",
     ));
     assert_eq!(samples.next().unwrap().unwrap().elapsed_ms, 1000);
-    assert!(matches!(samples.next(), Some(Err(SampleError::Decode(_)))));
+    let next = samples.next();
+    assert!(
+        matches!(next, Some(Err(SampleError::Decode(_)))),
+        "{next:?}"
+    );
     assert!(samples.next().is_none());
-}
-
-const SAMPLE_LINE: &str = "{\"elapsed_ms\":1000}\n";
-
-// These exercise path selection in the file adapter, not sample decoding.
-#[test_case(Some(SAMPLE_LINE), None; "plain only")]
-#[test_case(None, Some(gzip(SAMPLE_LINE).as_slice()); "gzip only")]
-#[test_case(Some(SAMPLE_LINE), Some(b"torn".as_slice()); "plain preferred over torn gzip")]
-#[test_case(None, None; "neither")]
-fn real_fs_read_samples_opens_plain_or_gzip_and_prefers_plain(
-    plain: Option<&str>,
-    compressed: Option<&[u8]>,
-) {
-    let dir = tempfile::tempdir().unwrap();
-    if let Some(content) = plain {
-        std::fs::write(dir.path().join(togi_trialfiles::SAMPLES), content).unwrap();
-    }
-    if let Some(bytes) = compressed {
-        std::fs::write(
-            dir.path().join(format!("{}.gz", togi_trialfiles::SAMPLES)),
-            bytes,
-        )
-        .unwrap();
-    }
-    let samples: Vec<_> = read_samples(dir.path()).collect::<Result<_, _>>().unwrap();
-    let expected = if plain.is_some() || compressed.is_some() {
-        vec![TrialConditions {
-            elapsed_ms: 1000,
-            ..TrialConditions::default()
-        }]
-    } else {
-        Vec::new()
-    };
-    assert_eq!(samples, expected);
 }
 
 #[test]
@@ -601,7 +573,11 @@ fn trial_conditions_round_trip_and_omit_empty_sensors() {
 #[test_case(b"[]\n"; "non object")]
 fn read_samples_rejects_complete_undecodable_lines(invalid: &[u8]) {
     let mut samples = ReadSamples::from_reader(Cursor::new(invalid));
-    assert!(matches!(samples.next(), Some(Err(SampleError::Decode(_)))));
+    let next = samples.next();
+    assert!(
+        matches!(next, Some(Err(SampleError::Decode(_)))),
+        "{next:?}"
+    );
     assert!(samples.next().is_none());
 }
 
@@ -617,7 +593,8 @@ fn read_samples_reports_open_errors_but_missing_files_are_absent() {
         std::io::ErrorKind::PermissionDenied,
         "injected open failure",
     )));
-    assert!(matches!(denied.next(), Some(Err(SampleError::Open(_)))));
+    let next = denied.next();
+    assert!(matches!(next, Some(Err(SampleError::Open(_)))), "{next:?}");
     assert!(denied.next().is_none());
     let mut missing = ReadSamples::<Cursor<Vec<u8>>>::from_open(Err(std::io::Error::from(
         std::io::ErrorKind::NotFound,

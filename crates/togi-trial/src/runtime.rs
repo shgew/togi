@@ -7,6 +7,7 @@ use togi_machine::{CancellationToken, Partial, Stopped, Swept, TrialSpec};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio::task::LocalSet;
 
+use crate::clock::Clock;
 use crate::error::Error;
 use crate::os::Os;
 use crate::supervisor::{Env, Handle, TrialCommand, start};
@@ -41,6 +42,7 @@ pub(crate) struct Runtime {
     thread: Option<JoinHandle<()>>,
     finished: Receiver<()>,
     join_bound: Duration,
+    clock: Clock,
 }
 
 /// What the synchronous side waits beyond the supervisors' own shutdown slot.
@@ -51,26 +53,31 @@ impl Runtime {
     /// so nothing the environment holds has to be `Send`.
     pub(crate) fn spawn<O: Os>(
         make_env: impl FnOnce() -> Env<O> + Send + 'static,
+        clock: Clock,
     ) -> Result<Self, Error> {
-        Self::spawn_with(make_env, true)
+        Self::spawn_with(make_env, true, clock)
     }
 
     /// Runs in-memory adapters without constructing the operating system's I/O reactor.
     pub(crate) fn spawn_timer_only<O: Os>(
         make_env: impl FnOnce() -> Env<O> + Send + 'static,
+        clock: Clock,
     ) -> Result<Self, Error> {
-        Self::spawn_with(make_env, false)
+        Self::spawn_with(make_env, false, clock)
     }
 
     fn spawn_with<O: Os>(
         make_env: impl FnOnce() -> Env<O> + Send + 'static,
         io: bool,
+        clock: Clock,
     ) -> Result<Self, Error> {
         let join_bound = Timing::default().stop_bound() + JOIN_SLACK;
         let (bound_tx, bound_rx) = sync_channel::<Duration>(1);
         let (commands, mut inbox) = unbounded_channel::<Command>();
         let (finished_tx, finished) = channel();
         let (ready_tx, ready_rx) = sync_channel::<Result<(), Error>>(1);
+        #[cfg(test)]
+        let paused = clock.paused();
         let thread = std::thread::Builder::new()
             .name("togi-trial".to_owned())
             .spawn(move || {
@@ -79,6 +86,8 @@ impl Runtime {
                 if io {
                     builder.enable_io();
                 }
+                #[cfg(test)]
+                builder.start_paused(paused);
                 let runtime = match builder.build() {
                     Ok(runtime) => runtime,
                     Err(error) => {
@@ -115,6 +124,7 @@ impl Runtime {
             thread: Some(thread),
             finished,
             join_bound,
+            clock,
         })
     }
 
@@ -126,7 +136,11 @@ impl Runtime {
     /// supervisors' shutdown slot plus a second; a thread stuck past that is abandoned.
     pub(crate) fn shutdown(&mut self) {
         let _ = self.commands.send(Command::Shutdown);
-        if self.finished.recv_timeout(self.join_bound).is_ok() {
+        if self
+            .clock
+            .recv_timeout(&self.finished, self.join_bound)
+            .is_ok()
+        {
             if let Some(thread) = self.thread.take() {
                 let _ = thread.join();
             }

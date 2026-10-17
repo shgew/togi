@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use tempfile::TempDir;
+use test_case::test_case;
 use togi_machine::{REGIMES, workload_by_id, workloads};
 
 fn fake_package() -> TempDir {
@@ -123,50 +124,39 @@ fn expected_settings(fft: (u16, u16), flags: [u8; 4], hyper: u8, threads: usize)
     )
 }
 
-#[test]
-fn plans_match_exactly() {
+#[test_case("mprime-sse-4k-21k", (4, 21), [0, 0, 0, 0], &[2], 0; "sse one cpu")]
+#[test_case("mprime-avx512-36k-248k", (36, 248), [1, 1, 1, 1], &[2, 18], 1; "avx512 two threads")]
+#[test_case("mprime-avx2-36k-248k", (36, 248), [1, 1, 1, 0], &[2], 0; "avx2 one cpu")]
+fn plans_match_exactly(base: &str, fft: (u16, u16), flags: [u8; 4], ids: &[u16], hyper: u8) {
     let pkg = Path::new("/pkg");
-    let mprime = Mprime::new(pkg).unwrap();
     let dir = Path::new("/w");
-    for (base, fft, flags, ids, hyper) in [
-        ("mprime-sse-4k-21k", (4, 21), [0, 0, 0, 0], vec![2], 0),
-        (
-            "mprime-avx512-36k-248k",
-            (36, 248),
-            [1, 1, 1, 1],
-            vec![2, 18],
-            1,
-        ),
-        ("mprime-avx2-36k-248k", (36, 248), [1, 1, 1, 0], vec![2], 0),
-    ] {
-        let got = mprime
-            .plan_with(workload(base), dir, &cpus(&ids), executable)
-            .unwrap();
-        let settings = expected_settings(fft, flags, hyper, ids.len());
-        let want = Plan {
-            program: pkg.join("bin/mprime"),
-            args: vec![
-                OsString::from("-t"),
-                OsString::from(format!("-W{}", dir.display())),
-            ],
-            inputs: vec![
-                Input {
-                    name: "prime.txt".parse().unwrap(),
-                    contents: format!(
-                        "V30OptionsConverted=1\nStressTester=1\nUsePrimenet=0\n{settings}EnableSetAffinity=0\n"
-                    )
-                    .into_bytes(),
-                },
-                Input {
-                    name: "local.txt".parse().unwrap(),
-                    contents: format!("ErrorCheck=1\nSumInputsErrorCheck=1\n{settings}")
-                        .into_bytes(),
-                },
-            ],
-            watched: vec!["results.txt".parse().unwrap()],
-        };
-        assert_eq!(got, want, "{base}");
-    }
+    let got = Mprime::new(pkg)
+        .unwrap()
+        .plan_with(workload(base), dir, &cpus(ids), executable)
+        .unwrap();
+    let settings = expected_settings(fft, flags, hyper, ids.len());
+    let want = Plan {
+        program: pkg.join("bin/mprime"),
+        args: vec![
+            OsString::from("-t"),
+            OsString::from(format!("-W{}", dir.display())),
+        ],
+        inputs: vec![
+            Input {
+                name: "prime.txt".parse().unwrap(),
+                contents: format!(
+                    "V30OptionsConverted=1\nStressTester=1\nUsePrimenet=0\n{settings}EnableSetAffinity=0\n"
+                )
+                .into_bytes(),
+            },
+            Input {
+                name: "local.txt".parse().unwrap(),
+                contents: format!("ErrorCheck=1\nSumInputsErrorCheck=1\n{settings}").into_bytes(),
+            },
+        ],
+        watched: vec!["results.txt".parse().unwrap()],
+    };
+    assert_eq!(got, want);
 }
 
 #[test]
@@ -187,23 +177,23 @@ fn sse_single_cpu_local_txt_is_literal() {
     assert_eq!(plan.args[1], OsString::from("-W/w"));
 }
 
-#[test]
-fn thread_count_and_hyperthreading_follow_the_cpu_list() {
-    let mprime = Mprime::new("/pkg").unwrap();
-    for (ids, hyper) in [(vec![2], 0), (vec![2, 18], 1), (vec![2, 18, 3, 19], 1)] {
-        let plan = mprime
-            .plan_with(
-                workload("mprime-sse-4k-21k"),
-                Path::new("/w"),
-                &cpus(&ids),
-                executable,
-            )
-            .unwrap();
-        for name in ["prime.txt", "local.txt"] {
-            let contents = text(&plan, name);
-            assert!(contents.contains(&format!("TortureThreads={}\n", ids.len())));
-            assert!(contents.contains(&format!("TortureHyperthreading={hyper}\n")));
-        }
+#[test_case(&[2], 0; "one cpu")]
+#[test_case(&[2, 18], 1; "one core two threads")]
+#[test_case(&[2, 18, 3, 19], 1; "two cores four threads")]
+fn thread_count_and_hyperthreading_follow_the_cpu_list(ids: &[u16], hyper: u8) {
+    let plan = Mprime::new("/pkg")
+        .unwrap()
+        .plan_with(
+            workload("mprime-sse-4k-21k"),
+            Path::new("/w"),
+            &cpus(ids),
+            executable,
+        )
+        .unwrap();
+    for name in ["prime.txt", "local.txt"] {
+        let contents = text(&plan, name);
+        assert!(contents.contains(&format!("TortureThreads={}\n", ids.len())));
+        assert!(contents.contains(&format!("TortureHyperthreading={hyper}\n")));
     }
 }
 
@@ -317,76 +307,54 @@ fn classify(line: &str) -> Line {
     Mprime::new("").unwrap().classify(line)
 }
 
-#[test]
-fn every_computation_alternative_is_recognised_in_any_case() {
-    for line in [
-        "FATAL ERROR: Rounding was 0.5, expected less than 0.4",
-        "ERROR: ILLEGAL SUMOUT",
-        "Possible hardware failure",
-        "Hardware failure detected running 288K FFT size, consult stress.txt file.",
-        "Maximum number of warnings exceeded",
-        "TORTURE TEST FAILED",
-        "Torture Test completed 5000 iterations - 2 errors",
-        "Torture Test completed 4 tests in 1 minutes - 12 errors, 0 warnings.",
-        "ERROR: SUM(INPUTS) != SUM(OUTPUTS)",
-        "ERROR: Shift counter corrupt",
-        "ERROR: Illegal double encountered",
-        "ERROR: FFT data has been zeroed",
-        "ERROR: Jacobi error check failed",
-        "Warning: ILLEGAL SUMOUT",
-        "Warning: SUMOUT MISMATCH",
-    ] {
-        for variant in [line.to_owned(), line.to_lowercase(), line.to_uppercase()] {
-            assert_eq!(classify(&variant), Line::ComputationError, "{variant}");
-        }
+#[test_case("FATAL ERROR: Rounding was 0.5, expected less than 0.4"; "rounding")]
+#[test_case("ERROR: ILLEGAL SUMOUT"; "illegal sumout error")]
+#[test_case("Possible hardware failure"; "possible hardware failure")]
+#[test_case("Hardware failure detected running 288K FFT size, consult stress.txt file."; "hardware failure detected")]
+#[test_case("Maximum number of warnings exceeded"; "too many warnings")]
+#[test_case("TORTURE TEST FAILED"; "torture test failed")]
+#[test_case("Torture Test completed 5000 iterations - 2 errors"; "iterations with errors")]
+#[test_case("Torture Test completed 4 tests in 1 minutes - 12 errors, 0 warnings."; "tests with errors")]
+#[test_case("ERROR: SUM(INPUTS) != SUM(OUTPUTS)"; "sum mismatch")]
+#[test_case("ERROR: Shift counter corrupt"; "shift counter")]
+#[test_case("ERROR: Illegal double encountered"; "illegal double")]
+#[test_case("ERROR: FFT data has been zeroed"; "zeroed data")]
+#[test_case("ERROR: Jacobi error check failed"; "jacobi")]
+#[test_case("Warning: ILLEGAL SUMOUT"; "illegal sumout warning")]
+#[test_case("Warning: SUMOUT MISMATCH"; "sumout mismatch warning")]
+fn every_computation_alternative_is_recognised_in_any_case(line: &str) {
+    for variant in [line.to_owned(), line.to_lowercase(), line.to_uppercase()] {
+        assert_eq!(classify(&variant), Line::ComputationError, "{variant}");
     }
 }
 
-#[test]
-fn every_setup_alternative_is_recognised() {
-    for line in [
-        "Error allocating memory for FFT data.",
-        "Out of memory!",
-        "Unable to allocate memory.  One possible cause is the operating system's swap area is too small.",
-        "Cannot initialize FFT code, errcode=1002",
-    ] {
-        for variant in [line.to_owned(), line.to_lowercase(), line.to_uppercase()] {
-            assert_eq!(classify(&variant), Line::SetupError, "{variant}");
-        }
+#[test_case("Error allocating memory for FFT data."; "fft allocation")]
+#[test_case("Out of memory!"; "out of memory")]
+#[test_case("Unable to allocate memory.  One possible cause is the operating system's swap area is too small."; "unable to allocate")]
+#[test_case("Cannot initialize FFT code, errcode=1002"; "fft initialisation")]
+fn every_setup_alternative_is_recognised(line: &str) {
+    for variant in [line.to_owned(), line.to_lowercase(), line.to_uppercase()] {
+        assert_eq!(classify(&variant), Line::SetupError, "{variant}");
     }
 }
 
-#[test]
-fn progress_keeps_the_reported_spelling() {
-    for (line, want) in [
-        ("Self-test 4K passed!", "self-test 4K passed"),
-        (
-            "[Worker #1 Sep 24 21:43] Self-test 21K (thread 1 of 2) passed!",
-            "self-test 21K passed",
-        ),
-        ("Self-test 288 passed", "self-test 288 passed"),
-        ("SELF-TEST 8k PASSED", "self-test 8k passed"),
-        (
-            "Self-test 6K (thread 12 of 16) passed",
-            "self-test 6K passed",
-        ),
-    ] {
-        assert_eq!(classify(line), Line::Progress(want.to_owned()), "{line}");
-    }
+#[test_case("Self-test 4K passed!", "self-test 4K passed"; "exclamation")]
+#[test_case("[Worker #1 Sep 24 21:43] Self-test 21K (thread 1 of 2) passed!", "self-test 21K passed"; "worker prefix and thread")]
+#[test_case("Self-test 288 passed", "self-test 288 passed"; "size without unit")]
+#[test_case("SELF-TEST 8k PASSED", "self-test 8k passed"; "upper case")]
+#[test_case("Self-test 6K (thread 12 of 16) passed", "self-test 6K passed"; "thread without exclamation")]
+fn progress_keeps_the_reported_spelling(line: &str, want: &str) {
+    assert_eq!(classify(line), Line::Progress(want.to_owned()), "{line}");
 }
 
-#[test]
-fn ordinary_lines_are_other() {
-    for line in [
-        "",
-        "Torture Test completed 100 - 0 errors",
-        "Torture Test completed 4 tests in 1 minutes - 0 errors, 0 warnings.",
-        "Self-test 4K failed",
-        "Self-test passed",
-        "[Worker #1] Test 1, 1600000 Lucas-Lehmer in-place iterations of M83839 using FFT length 4K.",
-    ] {
-        assert_eq!(classify(line), Line::Other, "{line:?}");
-    }
+#[test_case(""; "empty")]
+#[test_case("Torture Test completed 100 - 0 errors"; "zero errors")]
+#[test_case("Torture Test completed 4 tests in 1 minutes - 0 errors, 0 warnings."; "tests with zero errors")]
+#[test_case("Self-test 4K failed"; "self-test failed")]
+#[test_case("Self-test passed"; "self-test without size")]
+#[test_case("[Worker #1] Test 1, 1600000 Lucas-Lehmer in-place iterations of M83839 using FFT length 4K."; "lucas-lehmer status")]
+fn ordinary_lines_are_other(line: &str) {
+    assert_eq!(classify(line), Line::Other, "{line:?}");
 }
 
 #[test]
