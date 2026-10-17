@@ -172,7 +172,7 @@ pub fn run(options: &Options, report: &mut (impl io::Write + Send)) -> Result<El
 }
 
 /// The identity of the rows a run reads, so its raw output names the data it rests on, and for the
-/// original research artifact whether a forward check scores its historical confirmation session.
+/// original research artifact whether the run's forward check scores its historical confirmation session.
 pub(crate) fn report_extract(
     report: &mut impl io::Write,
     extract: &Extract,
@@ -188,22 +188,22 @@ pub(crate) fn report_extract(
         "Facts: sha256 {}, {} rows, {} sessions: {artifact}",
         extract.sha256, extract.rows, extract.sessions
     )?;
-    match mode {
-        Mode::Forward { seal, .. } if extract.is_artifact() => {
-            let status = if *seal == 0 {
-                "scored, a historical check that is not blind"
-            } else {
-                "sealed, neither fitted nor scored"
-            };
-            writeln!(
-                report,
-                "Historical confirmation {}: {status}",
-                artifact::CONFIRMATION
-            )
-        }
-        Mode::Forward { .. }
-        | Mode::Ensemble { .. }
-        | Mode::SharedVoltage { .. }
-        | Mode::WriteArtifact { .. } => Ok(()),
+    let scored = match mode {
+        Mode::Forward { seal, .. } => *seal == 0,
+        Mode::Ensemble { .. } => true,
+        Mode::SharedVoltage { .. } | Mode::WriteArtifact { .. } => return Ok(()),
+    };
+    if !extract.is_artifact() {
+        return Ok(());
     }
+    let status = if scored {
+        "scored, a historical check that is not blind"
+    } else {
+        "sealed, neither fitted nor scored"
+    };
+    writeln!(
+        report,
+        "Historical confirmation {}: {status}",
+        artifact::CONFIRMATION
+    )
 }

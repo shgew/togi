@@ -161,6 +161,14 @@ fn the_report_names_the_rows_and_whether_the_historical_confirmation_is_scored()
             },
             out: PathBuf::from("out"),
         }),
+        format!(
+            "{facts}Historical confirmation {CONFIRMATION}: scored, a historical check that is not blind\n"
+        )
+    );
+    assert_eq!(
+        report(Mode::SharedVoltage {
+            out: PathBuf::from("out"),
+        }),
         facts
     );
 }

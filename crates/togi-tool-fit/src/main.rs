@@ -13,7 +13,8 @@ use togi_tool_fit::{Ensemble, Mode, Options, Sessions, run};
 #[command(name = "togi-tool-fit")]
 struct Cli {
     /// The gzip extract of decisive trial facts. Without --current-extract it may hold no session recorded
-    /// after the original research artifact, and one holding the artifact's sessions must be that artifact.
+    /// after the original research artifact, and one holding the artifact's sessions must be that artifact;
+    /// --write-artifact reads the whole extract to select the artifact's rows.
     #[arg(long)]
     facts: Option<PathBuf>,
     /// Read every session of --facts: the owner-approved fit or check of the current extract, never a
@@ -38,9 +39,9 @@ struct Cli {
     /// With --forward-only, leave the newest N sessions out of the check.
     #[arg(long, default_value_t = 0, requires = "forward_only")]
     seal: usize,
-    /// With --forward-only and --current-extract, also score these committed machine files, fitted to the
-    /// current extract, as one ensemble, on the same held-out sessions beside the fit: each trial's
-    /// probability is the mean over all of them. They are not fitted.
+    /// With --forward-only and --current-extract, also score these committed machine files, fitted in-sample
+    /// to every session of the original research artifact, as one ensemble, on the same held-out sessions
+    /// beside the fit: each trial's probability is the mean over all of them. They are not fitted.
     #[arg(
         long,
         num_args = 1..,
