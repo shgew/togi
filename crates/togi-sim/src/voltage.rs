@@ -74,8 +74,11 @@ object_only! {
 
 impl Voltage {
     pub(crate) fn resolve(def: &SharedVoltageDef, path: &Path<'_>) -> Result<Self, InvalidMachine> {
+        let idle_path = path.key("idle_v");
+        let idle_v = idle_path.positive(def.idle_v)?;
+        idle_path.finite(f64::from(narrow(idle_v)))?;
         let mut rail = Self {
-            idle_v: path.key("idle_v").positive(def.idle_v)?,
+            idle_v,
             margin_v: path.key("margin_v").positive(def.margin_v)?,
             rate: path.key("rate").positive(def.rate)?,
             background_rate: path
@@ -188,9 +191,9 @@ fn resolve_core(
     // from the reference (1..=u32::MAX MHz, what a trial reports), so the largest deficit is at one of
     // four corners. It is formed from the differences of the bases and slopes, so a huge clock term common
     // to both cannot round a small deficit away, plus the rounding the runtime's own evaluation can add,
-    // bounded by the magnitudes of the terms before they cancel. A voltage that is not finite, or a
-    // hazard beyond `f64::MAX` at the largest deficit, is unrepresentable: the core is refused rather
-    // than left to produce an infinite source.
+    // bounded by the magnitudes of the terms before they cancel. A voltage that is not finite (a request
+    // also at the recorded f32 precision), or a hazard beyond `f64::MAX` at the largest deficit, is
+    // unrepresentable: the core is refused rather than left to produce an infinite source or lane.
     let terms = core.base_v.abs()
         + core.threshold_v.abs()
         + 50.0 * core.count_v
@@ -204,7 +207,7 @@ fn resolve_core(
             let request =
                 core.base_v + core.count_v * offset + core.clock_v_per_100mhz * above / 100.0;
             let threshold = core.threshold_v + core.threshold_clock_v_per_100mhz * above / 100.0;
-            if !request.is_finite() || !threshold.is_finite() {
+            if !request.is_finite() || !narrow(request).is_finite() || !threshold.is_finite() {
                 return Err(path.error(Problem::Overflow));
             }
             let exact = (core.threshold_v - core.base_v) - core.count_v * offset

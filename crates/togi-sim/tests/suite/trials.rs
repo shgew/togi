@@ -706,6 +706,28 @@ fn a_trial_can_be_scripted_after_the_machine_is_built() {
 }
 
 #[test]
+fn dynamic_scripts_reject_replay_only_failure_signals() {
+    let rig = Rig::new(&machine(2, flat_cores(2, -20, -20)), 1);
+    let result = rig.sim.script_trial(
+        "0001",
+        Script {
+            signal: Some(Signal::UncorrectedMce),
+            at_s: 2.0,
+            core: core(1),
+            reset: None,
+            then_crash: false,
+        },
+    );
+    assert_eq!(
+        result,
+        Err(ScriptError::Signal {
+            trial: "0001".to_owned(),
+            signal: Signal::UncorrectedMce,
+        })
+    );
+}
+
+#[test]
 fn a_crash_draws_its_reset_from_the_model() {
     let definition = with(
         2,

@@ -5,11 +5,11 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
-use togi_machine::{Backend, BiosContext, CoreId, Machine, ResetKind};
+use togi_machine::{Backend, BiosContext, CoreId, Machine, ResetKind, Signal};
 
 use crate::adapters::{SimClock, SimHost, SimKernel, SimSmu};
 use crate::faults::SmuHook;
-use crate::model::{Model, Script};
+use crate::model::{Model, Script, failure_signal};
 use crate::persisted::{Persisted, RestoreError};
 use crate::replay::Replay;
 use crate::runtime::{RunSettings, Runtime, Shared};
@@ -26,6 +26,8 @@ pub enum ScriptError {
     },
     #[error("script trial {trial} at_s {at_s} must be finite and nonnegative")]
     At { trial: String, at_s: f64 },
+    #[error("script trial {trial} signal {signal:?} is only supported by replay")]
+    Signal { trial: String, signal: Signal },
 }
 
 /// A deterministic virtual machine. Cloning the handle shares the machine. [`seams`](Self::seams) hands the session its adapters; every adapter and
@@ -161,6 +163,14 @@ impl Simulator {
     pub fn script_trial(&self, trial: &str, script: Script) -> Result<(), ScriptError> {
         let mut runtime = self.shared.borrow_mut();
         let cores = runtime.model.cores();
+        if let Some(signal) = script.signal
+            && failure_signal(Some(signal)).is_err()
+        {
+            return Err(ScriptError::Signal {
+                trial: trial.to_owned(),
+                signal,
+            });
+        }
         if script.core.index() >= cores {
             return Err(ScriptError::Core {
                 trial: trial.to_owned(),
