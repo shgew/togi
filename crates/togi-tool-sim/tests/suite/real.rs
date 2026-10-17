@@ -241,7 +241,9 @@ impl togi_sim::file::Source for CommittedMachines {
                     clean.pop();
                 }
                 std::path::Component::CurDir => {}
-                component => clean.push(component),
+                component @ (std::path::Component::Prefix(_)
+                | std::path::Component::RootDir
+                | std::path::Component::Normal(_)) => clean.push(component),
             }
         }
         Ok(clean)

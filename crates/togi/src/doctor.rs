@@ -156,13 +156,13 @@ fn recorded_context(
             None => fail(ctx, COMMAND, togi_render::error_chain(&error)),
         }
     })?;
-    Ok(recording
-        .events()
-        .iter()
-        .find_map(|event| match &event.payload {
-            togi_journal::Payload::SessionContext(context) => Some(context.bios_context()),
-            _ => None,
-        }))
+    Ok(recording.events().iter().find_map(|event| {
+        if let togi_journal::Payload::SessionContext(context) = &event.payload {
+            Some(context.bios_context())
+        } else {
+            None
+        }
+    }))
 }
 
 fn refuse(ctx: &mut Context<'_>, renderer: Renderer, message: &str) -> Exit {
@@ -172,27 +172,27 @@ fn refuse(ctx: &mut Context<'_>, renderer: Renderer, message: &str) -> Exit {
 }
 
 /// The check table and the names of the failed checks.
-fn table(diagnosis: &Diagnosis) -> (String, Vec<String>) {
+fn table(diagnosis: &Diagnosis) -> (String, Vec<&str>) {
     let mut failed = Vec::new();
-    let mut rows: Vec<(String, &str, String)> = Vec::new();
+    let mut rows: Vec<(&str, &str, String)> = Vec::new();
     for check in &diagnosis.ran {
         let result = if check.ok {
             "ok"
         } else if WARNINGS.contains(&check.name.as_str()) {
             "warn"
         } else {
-            failed.push(check.name.clone());
+            failed.push(check.name.as_str());
             "FAIL"
         };
         rows.push((
-            check.name.clone(),
+            check.name.as_str(),
             result,
             escape_text(&check.detail).to_string(),
         ));
     }
     for skipped in &diagnosis.skipped {
         rows.push((
-            skipped.name.to_string(),
+            skipped.name.as_str(),
             "skipped",
             escape_text(&skipped.reason.to_string()).to_string(),
         ));
