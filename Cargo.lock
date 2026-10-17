@@ -1847,11 +1847,8 @@ name = "togi-tool-audit"
 version = "0.0.0"
 dependencies = [
  "clap",
- "nix",
- "rustix",
  "serde",
  "serde_json",
- "signal-hook 0.4.5",
  "tempfile",
  "thiserror",
  "togi-journal",
@@ -1887,6 +1884,7 @@ dependencies = [
  "togi-sim",
  "togi-simrun",
  "togi-statecopy",
+ "togi-tool-audit",
  "togi-tool-forecast",
  "togi-tool-modelcheck",
  "togi-tool-trialfacts",
