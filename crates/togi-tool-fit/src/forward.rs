@@ -10,7 +10,7 @@ use std::io;
 use rayon::prelude::*;
 use togi_journal::SessionId;
 use togi_machine::{REGIMES, Regime, WorkloadId};
-use togi_sim::{MachineDefinition, Model};
+use togi_sim::{MachineDefinition, Model, saturating_count};
 use togi_tool_modelcheck::Checker;
 use togi_tool_trialfacts::{ProfileClassKey, TrialFact};
 
@@ -100,10 +100,6 @@ pub(crate) fn log_loss(p: f64, failure: bool) -> f64 {
     if failure { -p.ln() } else { -(-p).ln_1p() }
 }
 
-fn count(n: usize) -> f64 {
-    f64::from(u32::try_from(n).unwrap_or(u32::MAX))
-}
-
 /// The trials in session order and the index where each session begins, without the newest `seal` sessions.
 fn segment(trials: &[TrialFact], seal: usize) -> Result<(Vec<TrialFact>, Vec<usize>), Error> {
     let mut ordered = trials.to_vec();
@@ -191,7 +187,7 @@ fn chain(
         }
         let held_out = &ordered[begin..end];
         if begin > 0 {
-            let constant = count(training_failures) / count(begin);
+            let constant = saturating_count(training_failures) / saturating_count(begin);
             let (scored, breakdown) = score(training_sessions, held_out, &seen, constant)?;
             rows.push(ForwardRow {
                 session: held_out[0].session,
@@ -260,7 +256,7 @@ fn score_reference(
             eligible.insert(key);
         }
     }
-    let members = count(models.len());
+    let members = saturating_count(models.len());
     let (mut score, breakdown) = score_trials(held_out, seen, constant, |fact, class| {
         let mut sum = 0.0;
         for model in models {
@@ -399,7 +395,7 @@ fn report_rows(
 }
 
 fn report_counts(out: &mut impl io::Write, label: &str, c: &ForwardCounts) -> io::Result<()> {
-    let n = count(c.trials);
+    let n = saturating_count(c.trials);
     writeln!(
         out,
         "  {label} trials={} observed={} predicted={:.1} log_loss/trial fit={:.4} constant={:.4}",
@@ -418,7 +414,7 @@ fn report_score(
     flagged: &str,
 ) -> io::Result<()> {
     let c = &score.counts;
-    let n = count(c.trials);
+    let n = saturating_count(c.trials);
     writeln!(
         out,
         "trials={} failures={} predicted={:.1} log_loss/trial fit={:.4} constant({constant})={:.4} failures_p<0.01={} exact_matches={}/{} ({:.1}%) {flagged}={}/{}",
@@ -430,7 +426,7 @@ fn report_score(
         score.surprises,
         score.matches,
         c.trials,
-        100.0 * count(score.matches) / n,
+        100.0 * saturating_count(score.matches) / n,
         score.flagged,
         score.eligible
     )

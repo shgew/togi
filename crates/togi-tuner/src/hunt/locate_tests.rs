@@ -31,52 +31,59 @@ struct Located {
 }
 
 fn decision(action: &Action) -> &DecisionAction {
-    match action {
-        Action::Decide(decision) => decision,
-        other => panic!("expected a decision, got {other:?}"),
-    }
+    let Action::Decide(decision) = action else {
+        panic!("expected a decision, got {action:?}");
+    };
+    decision
 }
 
 fn hunt_end(action: &Action) -> &HuntEnd {
-    match &decision(action).payload {
-        DecisionPayload::HuntEnd(end) => end,
-        other => panic!("expected a hunt end, got {other:?}"),
-    }
+    let payload = &decision(action).payload;
+    let DecisionPayload::HuntEnd(end) = payload else {
+        panic!("expected a hunt end, got {payload:?}");
+    };
+    end
 }
 
 fn hunt_group(action: &Action) -> &HuntGroup {
-    match &decision(action).payload {
-        DecisionPayload::HuntGroup(group) => group,
-        other => panic!("expected a hunt group, got {other:?}"),
-    }
+    let payload = &decision(action).payload;
+    let DecisionPayload::HuntGroup(group) = payload else {
+        panic!("expected a hunt group, got {payload:?}");
+    };
+    group
 }
 
 fn hunt_start(action: &Action) -> &HuntStart {
-    match &decision(action).payload {
-        DecisionPayload::HuntStart(start) => start,
-        other => panic!("expected a hunt start, got {other:?}"),
-    }
+    let payload = &decision(action).payload;
+    let DecisionPayload::HuntStart(start) = payload else {
+        panic!("expected a hunt start, got {payload:?}");
+    };
+    start
 }
 
 fn backoff(action: &Action) -> &TunerDecision {
-    match &decision(action).payload {
-        DecisionPayload::TunerDecision(move_) if move_.decision == Decision::Backoff => move_,
-        other => panic!("expected a backoff, got {other:?}"),
+    let payload = &decision(action).payload;
+    if let DecisionPayload::TunerDecision(move_) = payload
+        && move_.decision == Decision::Backoff
+    {
+        return move_;
     }
+    panic!("expected a backoff, got {payload:?}");
 }
 
 fn dead_end(action: &Action) -> &DeadEnd {
-    match &decision(action).payload {
-        DecisionPayload::DeadEnd(dead) => dead,
-        other => panic!("expected a dead end, got {other:?}"),
-    }
+    let payload = &decision(action).payload;
+    let DecisionPayload::DeadEnd(dead) = payload else {
+        panic!("expected a dead end, got {payload:?}");
+    };
+    dead
 }
 
 fn trial(action: &Action) -> &TrialPlan {
-    match action {
-        Action::RunTrial(plan) => plan,
-        other => panic!("expected a trial, got {other:?}"),
-    }
+    let Action::RunTrial(plan) = action else {
+        panic!("expected a trial, got {action:?}");
+    };
+    plan
 }
 
 fn missing(text: &str, tokens: &[String]) -> Vec<String> {
@@ -134,7 +141,7 @@ impl Journal {
                     let ids = self.loc_ids();
                     self.ranking(&ids);
                 }
-                other => return Some(other),
+                other @ (Action::Decide(_) | Action::RunTrial(_)) => return Some(other),
             }
         }
         panic!("stuck reading the ranking");
@@ -201,7 +208,7 @@ impl Journal {
                 {
                     self.decide(decision.clone());
                 }
-                _ => return action,
+                Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking => return action,
             }
         }
     }
@@ -244,18 +251,16 @@ impl Journal {
         for _ in 0..200 {
             let action = self.loc_act();
             match &action {
-                Action::Decide(decision) => match &decision.payload {
-                    DecisionPayload::HuntStart(_) => {
-                        self.decide(decision.clone());
-                    }
-                    DecisionPayload::HuntGroup(group) => {
+                Action::Decide(decision) => {
+                    if let DecisionPayload::HuntGroup(group) = &decision.payload {
                         if stop(group) {
                             return Located { action, failures };
                         }
-                        self.decide(decision.clone());
+                    } else if !matches!(decision.payload, DecisionPayload::HuntStart(_)) {
+                        return Located { action, failures };
                     }
-                    _ => return Located { action, failures },
-                },
+                    self.decide(decision.clone());
+                }
                 Action::RunTrial(plan) if plan.condition == Condition::Parked => {
                     match fails(plan) {
                         Verdict::Pass => {
@@ -263,9 +268,10 @@ impl Journal {
                         }
                         failed @ (Verdict::Unnamed | Verdict::Named(_)) => {
                             let report = R7Report {
-                                named: match failed {
-                                    Verdict::Named(core) => Some(core),
-                                    _ => None,
+                                named: if let Verdict::Named(core) = failed {
+                                    Some(core)
+                                } else {
+                                    None
                                 },
                                 ..R7Report::default()
                             };
@@ -275,7 +281,7 @@ impl Journal {
                         }
                     }
                 }
-                _ => return Located { action, failures },
+                Action::RunTrial(_) | Action::ReadRanking => return Located { action, failures },
             }
         }
         panic!("the located hunt did not end");
@@ -516,21 +522,17 @@ fn reset_of_a_candidate_cancels_the_located_hunt() {
     for _ in 0..10 {
         let action = j.loc_act();
         let decision = decision(&action).clone();
-        match &decision.payload {
-            DecisionPayload::HuntStart(start) => {
-                assert_eq!(start.hunt.get(), 2, "{start:?}");
-                assert_eq!(start.failure, failure);
-                assert_eq!(start.candidates, set(&[2, 3]));
-                j.assert_resumes();
-                return;
-            }
-            DecisionPayload::TunerDecision(move_) => {
-                panic!("the cancelled located failure moved a core: {move_:?}")
-            }
-            _ => {
-                j.decide(decision);
-            }
+        if let DecisionPayload::HuntStart(start) = &decision.payload {
+            assert_eq!(start.hunt.get(), 2, "{start:?}");
+            assert_eq!(start.failure, failure);
+            assert_eq!(start.candidates, set(&[2, 3]));
+            j.assert_resumes();
+            return;
         }
+        if let DecisionPayload::TunerDecision(move_) = &decision.payload {
+            panic!("the cancelled located failure moved a core: {move_:?}")
+        }
+        j.decide(decision);
     }
     panic!("the failure was not located again");
 }
@@ -546,11 +548,14 @@ fn r7_escalated_failure_locates_with_idle_cores_at_zero() {
     let failed_trial = j
         .events
         .iter()
-        .find_map(|event| match &event.payload {
-            togi_journal::Payload::TrialEnd(ended) if Some(event.seq) == Some(end) => {
+        .find_map(|event| {
+            if let togi_journal::Payload::TrialEnd(ended) = &event.payload
+                && Some(event.seq) == Some(end)
+            {
                 Some(ended.trial.clone())
+            } else {
+                None
             }
-            _ => None,
         })
         .unwrap();
     let r7 = workloads(Regime::R7)[0].id();
@@ -1007,7 +1012,9 @@ fn r7_locate_failure_naming_a_loaded_core_at_zero() {
                 {
                     j.decide(decision.clone());
                 }
-                _ => break trial(&action).clone(),
+                Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking => {
+                    break trial(&action).clone();
+                }
             }
         };
         assert_eq!(
@@ -1271,7 +1278,7 @@ fn hunt_group_retry_belongs_to_its_group() {
             Some(Action::Decide(decision)) => {
                 j.decide(decision);
             }
-            _ => break,
+            Some(Action::ReadRanking) | None => break,
         }
     }
     assert!(j.run().retry.is_none());
@@ -1393,9 +1400,8 @@ fn hunt_retry_stays_with_its_group() {
 fn requirement_checks_hunt_identity() {
     let mut j = loc_failed_hunt(4, 120);
     let plan = loc_first_hunt_trial(&mut j);
-    let (hunt, group) = match plan.context {
-        TrialContext::Hunt { hunt, group } => (hunt, group),
-        other => panic!("not a hunt trial: {other:?}"),
+    let TrialContext::Hunt { hunt, group } = plan.context else {
+        panic!("not a hunt trial: {:?}", plan.context);
     };
     let needed = j.run().hunts.active.as_ref().unwrap().needed;
     assert_eq!(plan.requirement.kind, RequirementKind::Hunt);
@@ -1619,12 +1625,12 @@ fn loc_hunt_before_member_probe(carried: &[Outcome]) -> (Journal, Vec<Seq>) {
 }
 
 fn hunt_group_of(action: &Action) -> Option<&HuntGroup> {
-    match action {
-        Action::Decide(decision) => match &decision.payload {
-            DecisionPayload::HuntGroup(group) => Some(group),
-            _ => None,
-        },
-        _ => None,
+    if let Action::Decide(decision) = action
+        && let DecisionPayload::HuntGroup(group) = &decision.payload
+    {
+        Some(group)
+    } else {
+        None
     }
 }
 
@@ -1768,30 +1774,28 @@ fn skipped_together_failure_makes_progress() {
             let Action::Decide(decision) = &action else {
                 unreachable!();
             };
-            match &decision.payload {
-                DecisionPayload::HuntStart(start) => {
-                    assert!(!attributed, "{start:?}");
-                    assert_eq!(start.failure, failure);
-                    assert!(decision.cause.contains(&failure), "{:?}", decision.cause);
-                    assert_eq!(start.failing, j.profile(&[-20, -20]).offsets());
-                    assert_eq!(
-                        (start.regime, start.workload, start.duration_s),
-                        (Regime::R6, workloads(Regime::R6)[0].id(), duration)
-                    );
-                    assert_eq!(start.cores, set(&[0, 1]));
-                    found = true;
-                }
-                DecisionPayload::TunerDecision(moved) if moved.decision == Decision::Backoff => {
-                    assert!(attributed, "{moved:?}");
-                    assert_eq!(
-                        (moved.core, moved.to_offset),
-                        (core(0), off(-19)),
-                        "{moved:?}"
-                    );
-                    assert!(decision.cause.contains(&failure), "{:?}", decision.cause);
-                    found = true;
-                }
-                _ => {}
+            if let DecisionPayload::HuntStart(start) = &decision.payload {
+                assert!(!attributed, "{start:?}");
+                assert_eq!(start.failure, failure);
+                assert!(decision.cause.contains(&failure), "{:?}", decision.cause);
+                assert_eq!(start.failing, j.profile(&[-20, -20]).offsets());
+                assert_eq!(
+                    (start.regime, start.workload, start.duration_s),
+                    (Regime::R6, workloads(Regime::R6)[0].id(), duration)
+                );
+                assert_eq!(start.cores, set(&[0, 1]));
+                found = true;
+            } else if let DecisionPayload::TunerDecision(moved) = &decision.payload
+                && moved.decision == Decision::Backoff
+            {
+                assert!(attributed, "{moved:?}");
+                assert_eq!(
+                    (moved.core, moved.to_offset),
+                    (core(0), off(-19)),
+                    "{moved:?}"
+                );
+                assert!(decision.cause.contains(&failure), "{:?}", decision.cause);
+                found = true;
             }
             j.decide(decision.clone());
             if found {
@@ -2218,7 +2222,7 @@ fn rerun_derived_hunt_commitments() {
                     j.loc_finish(&plan, Outcome::Pass, &R7Report::default());
                     done.push(plan);
                 }
-                _ => break,
+                Some(Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking) | None => break,
             }
         }
         let got: Vec<u32> = done.iter().map(|plan| plan.duration.get()).collect();

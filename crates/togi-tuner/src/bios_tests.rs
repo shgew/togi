@@ -337,17 +337,18 @@ fn paired_hunt() -> (Journal, Seq, Seq) {
 fn run_paired_hunt(j: &mut Journal, mut fails: impl FnMut(&[i64]) -> bool) -> HuntEnd {
     for _ in 0..200 {
         match j.next() {
-            Action::Decide(decision) => match &decision.payload {
-                DecisionPayload::HuntGroup(_) => {
-                    j.decide(decision);
-                }
-                DecisionPayload::HuntEnd(end) => {
+            Action::Decide(decision) => {
+                if let DecisionPayload::HuntEnd(end) = &decision.payload {
                     let end = end.clone();
                     j.decide(decision);
                     return end;
                 }
-                other => panic!("unexpected {other:?}"),
-            },
+                assert!(
+                    matches!(decision.payload, DecisionPayload::HuntGroup(_)),
+                    "unexpected {decision:?}"
+                );
+                j.decide(decision);
+            }
             Action::RunTrial(plan) => {
                 let fail = fails(&current_of(&plan.profile));
                 run_group(j, &plan, fail);
@@ -510,7 +511,10 @@ fn the_shown_profile_never_reaches_what_a_paired_hunt_found_failing_while_its_co
             HuntOutcome::Fallback => {
                 hunt_end(&mut j, start, result, &[0, 1]);
             }
-            _ => {
+            HuntOutcome::Cancelled
+            | HuntOutcome::Direct
+            | HuntOutcome::Combination
+            | HuntOutcome::Loaded => {
                 let end = run_paired_hunt(&mut j, |p| p[0] <= -9 && p[1] <= -11);
                 assert_eq!(end.result, result, "{name}");
             }
@@ -637,18 +641,19 @@ fn the_shown_profile_never_reaches_a_failure_a_paired_hunt_observes_before_it_en
     let mut stepped = false;
     for _ in 0..200 {
         match j.next() {
-            Action::Decide(decision) => match &decision.payload {
-                DecisionPayload::HuntGroup(_) => {
-                    j.decide(decision);
-                    check(&j, &observed, "after hunt.group");
-                }
-                DecisionPayload::HuntEnd(_) => {
-                    j.decide(decision);
+            Action::Decide(decision) => {
+                let ended = matches!(decision.payload, DecisionPayload::HuntEnd(_));
+                assert!(
+                    ended || matches!(decision.payload, DecisionPayload::HuntGroup(_)),
+                    "unexpected {decision:?}"
+                );
+                j.decide(decision);
+                if ended {
                     check(&j, &observed, "after hunt.end");
                     break;
                 }
-                other => panic!("unexpected {other:?}"),
-            },
+                check(&j, &observed, "after hunt.group");
+            }
             Action::RunTrial(plan) => {
                 let fail = fails(&current_of(&plan.profile));
                 let (intent, trial) = j.intent(&plan);
@@ -726,7 +731,9 @@ fn an_observed_hunt_failure_steps_only_the_cores_it_held() {
                     return;
                 }
             }
-            other => panic!("the hunt ended before its member probe {probe:?} failed: {other:?}"),
+            other @ (Action::Decide(_) | Action::ReadRanking) => {
+                panic!("the hunt ended before its member probe {probe:?} failed: {other:?}")
+            }
         }
     }
     panic!("the hunt never ran its member probe");

@@ -198,21 +198,20 @@ fn a_dead_end_decision_ends_the_run_with_the_dead_end_citing_its_evidence() {
         Action::Decide(DecisionAction::new(dead_end.clone(), vec![cited])),
     )
     .unwrap();
-    match outcome {
-        Control::Stop(Stop::DeadEnd {
-            dead_end: stopped,
-            causes,
-            ..
-        }) => {
-            assert_eq!(
-                (stopped.condition, stopped.core),
-                (dead_end.condition, dead_end.core)
-            );
-            assert!(stopped.action.is_some());
-            assert_eq!(causes, [cited]);
-        }
-        other => panic!("{other:?}"),
-    }
+    let Control::Stop(Stop::DeadEnd {
+        dead_end: stopped,
+        causes,
+        ..
+    }) = outcome
+    else {
+        panic!("{outcome:?}");
+    };
+    assert_eq!(
+        (stopped.condition, stopped.core),
+        (dead_end.condition, dead_end.core)
+    );
+    assert!(stopped.action.is_some());
+    assert_eq!(causes, [cited]);
     let last = session.appender().journal().events().last().unwrap();
     assert!(matches!(last.payload, Payload::DeadEnd(_)));
     assert_eq!(last.cause, [cited]);
@@ -280,17 +279,17 @@ fn recorded_ranking(cores: i64, ranks: Ranks) -> togi_journal::HostRanking {
         run_action(&mut session, Action::ReadRanking).unwrap(),
         Control::Continue
     );
-    match &session
+    let payload = &session
         .appender()
         .journal()
         .events()
         .last()
         .unwrap()
-        .payload
-    {
-        Payload::HostRanking(ranking) => ranking.clone(),
-        other => panic!("{other:?}"),
-    }
+        .payload;
+    let Payload::HostRanking(ranking) = payload else {
+        panic!("{payload:?}");
+    };
+    ranking.clone()
 }
 
 fn order(ranking: &togi_journal::HostRanking) -> Vec<u8> {

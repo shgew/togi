@@ -27,7 +27,7 @@ pub mod voltage;
 
 pub use definition::MachineDefinition;
 pub use error::{InvalidMachine, Problem, ShapeError};
-pub use hazard::{HazardSource, Load, SourceKind};
+pub use hazard::{HazardSource, Load, SourceKind, saturating_count};
 pub use model::Model;
 pub use persisted::{Persisted, RestoreError};
 pub use runtime::{History, REBOOT_TIME, RunSettings};

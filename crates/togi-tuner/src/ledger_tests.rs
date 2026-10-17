@@ -412,7 +412,7 @@ fn search_retry_belongs_to_its_turn() {
     assert_eq!((retry.load, retry.regime), (first.load, first.regime));
     let other = match first.load {
         Load::Single(c) if c == core(0) => 1,
-        _ => 0,
+        Load::Single(_) | Load::Many(_) => 0,
     };
     j.reset(other);
     let seen = j.run_until(

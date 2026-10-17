@@ -28,9 +28,12 @@ fn phases(session: &Session) -> Vec<(CoreTransition, Vec<togi_journal::Seq>)> {
         .journal()
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CorePhase(phase) => Some((phase.clone(), event.cause.clone())),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::CorePhase(phase) = &event.payload {
+                Some((phase.clone(), event.cause.clone()))
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -372,29 +375,23 @@ fn carried_shape(events: &[Event]) -> (Vec<(SessionId, togi_journal::Seq)>, usiz
     let mut commit = None;
     let mut phase = None;
     for event in events {
-        match &event.payload {
-            Payload::SessionContext(_) => {
-                assert!(context.is_none(), "a second context");
-                context = Some(event.seq);
-            }
-            Payload::SessionCarried(_) => {
-                commitments += 1;
-                commit.get_or_insert(event.seq);
-            }
-            Payload::CorePhase(_) => {
-                phase.get_or_insert(event.seq);
-            }
-            payload => {
-                if let Some(fact) = copied_identity(payload) {
-                    assert!(
-                        commit.is_none() && phase.is_none(),
-                        "fact {} after the commitment",
-                        event.seq
-                    );
-                    assert!(context.is_some(), "fact {} before the context", event.seq);
-                    facts.push((fact.session, fact.seq));
-                }
-            }
+        let payload = &event.payload;
+        if let Payload::SessionContext(_) = payload {
+            assert!(context.is_none(), "a second context");
+            context = Some(event.seq);
+        } else if let Payload::SessionCarried(_) = payload {
+            commitments += 1;
+            commit.get_or_insert(event.seq);
+        } else if let Payload::CorePhase(_) = payload {
+            phase.get_or_insert(event.seq);
+        } else if let Some(fact) = copied_identity(payload) {
+            assert!(
+                commit.is_none() && phase.is_none(),
+                "fact {} after the commitment",
+                event.seq
+            );
+            assert!(context.is_some(), "fact {} before the context", event.seq);
+            facts.push((fact.session, fact.seq));
         }
     }
     let (Some(commit), Some(phase)) = (commit, phase) else {

@@ -10,6 +10,8 @@ description = "The stats command: summarizes a current or archived journal for r
 [dependencies]
 clap.workspace = true
 jiff.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 togi-journal.workspace = true
 togi-machine.workspace = true

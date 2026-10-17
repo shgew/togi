@@ -230,12 +230,15 @@ fn the_cap_never_hides_cleanup_or_ordinary_io_errors() {
             let rig = rig_with(TestBackend::new("/bin/true"), Timing::default());
             rig.fake
                 .on_launch(emits_lingering(Source::Stderr, vec![b'x'; 1 << 20], true));
-            rig.fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Fail(togi_command::Error::Spawn {
-                    program: "systemctl".into(),
-                    source: std::io::Error::other("no bus"),
-                })),
-                _ => None,
+            rig.fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Fail(togi_command::Error::Spawn {
+                        program: "systemctl".into(),
+                        source: std::io::Error::other("no bus"),
+                    }))
+                } else {
+                    None
+                }
             });
             let handle = rig.start(spec(Regime::R1, &[0], secs(60))).await.unwrap();
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -820,14 +823,17 @@ fn writers_confirmed_for_one_instance_keep_their_evidence_when_another_scope_fai
                     ctx.until_killed().await;
                 }))
             });
-            rig.fake.on_systemd(|call| match call {
-                Systemd::Kill { scope, .. } if scope.as_str().ends_with("c00") => {
+            rig.fake.on_systemd(|call| {
+                if let Systemd::Kill { scope, .. } = call
+                    && scope.as_str().ends_with("c00")
+                {
                     Some(Reply::Fail(togi_command::Error::Spawn {
                         program: "systemctl".into(),
                         source: std::io::Error::other("no bus"),
                     }))
+                } else {
+                    None
                 }
-                _ => None,
             });
             let cancel = CancellationToken::new();
             let handle = rig
@@ -1039,7 +1045,7 @@ fn writers_of_an_instance_whose_scope_is_already_gone_keep_their_evidence_when_a
                     success: false,
                     text: "Failed to kill unit: Unit could not be found.".into(),
                 }),
-                _ => None,
+                Systemd::Stop { .. } | Systemd::ListScopes | Systemd::Probe { .. } => None,
             });
             let cancel = CancellationToken::new();
             let handle = rig

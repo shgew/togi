@@ -445,13 +445,15 @@ fn effects_of_the_answer(recorded: &[Recorded], found: Seq) -> Vec<Payload> {
                 && cause == &[reset]
         });
         assert_eq!(restarted.count(), 1, "core {cored:?} restarts once");
-        let last = recorded
-            .iter()
-            .rev()
-            .find_map(|(_, payload, _)| match payload {
-                Payload::CorePhase(phase) if phase.core == cored => Some(phase.to),
-                _ => None,
-            });
+        let last = recorded.iter().rev().find_map(|(_, payload, _)| {
+            if let Payload::CorePhase(phase) = payload
+                && phase.core == cored
+            {
+                Some(phase.to)
+            } else {
+                None
+            }
+        });
         assert_eq!(last, Some(togi_journal::CorePhase::AtLimit), "{cored:?}");
     }
     recorded

@@ -204,13 +204,12 @@ impl Run {
                         .collect::<PerCore<TargetOffset>>(),
                 };
                 let backoff = self.combination_commitment(hunt, &recorded)?;
-                match backoff.payload {
-                    DecisionPayload::TunerDecision(backoff)
-                        if backoff.decision == Decision::Backoff =>
-                    {
-                        Some((backoff.core, backoff.to_offset))
-                    }
-                    _ => None,
+                if let DecisionPayload::TunerDecision(backoff) = backoff.payload
+                    && backoff.decision == Decision::Backoff
+                {
+                    Some((backoff.core, backoff.to_offset))
+                } else {
+                    None
                 }
             }
             DecisionPayload::HuntEnd(end) if end.result == togi_journal::HuntOutcome::Direct => {
@@ -231,7 +230,19 @@ impl Run {
                     },
                 ))
             }
-            _ => None,
+            DecisionPayload::HuntEnd(_)
+            | DecisionPayload::Failure(_)
+            | DecisionPayload::TunerWarning(_)
+            | DecisionPayload::DeadEnd(_)
+            | DecisionPayload::CorePhase(_)
+            | DecisionPayload::ProfileChange(_)
+            | DecisionPayload::CheckingCycle(_)
+            | DecisionPayload::CheckingStep(_)
+            | DecisionPayload::CheckingChain(_)
+            | DecisionPayload::HuntStart(_)
+            | DecisionPayload::HuntGroup(_)
+            | DecisionPayload::HuntSkipped(_)
+            | DecisionPayload::DeepeningRound(_) => None,
         }
     }
 

@@ -322,6 +322,13 @@ fn mul_div(a: f64, b: f64, c: f64) -> f64 {
     (a.ln() + b.ln() - c.ln()).exp()
 }
 
+/// The watts a loaded core draws at `offset`: the workload's watts at offset −35 plus its watts per count
+/// shallower, never negative.
+#[must_use]
+pub fn core_watts(watts_per_core: f64, offset_watts_per_count: f64, offset: TargetOffset) -> f64 {
+    (watts_per_core + offset_watts_per_count * steps(offset.get() + 35)).max(0.0)
+}
+
 pub(crate) fn voltage_state(
     voltage: &Voltage,
     profile: &[TargetOffset],
@@ -333,8 +340,11 @@ pub(crate) fn voltage_state(
     for core in load.cores {
         let ccd = core.index() / CCD_SIZE;
         loaded[ccd] += 1;
-        let counts = steps(profile[core.index()].get() + 35);
-        watts[ccd] += (workload.watts_per_core + workload.offset_watts_per_count * counts).max(0.0);
+        watts[ccd] += core_watts(
+            workload.watts_per_core,
+            workload.offset_watts_per_count,
+            profile[core.index()],
+        );
     }
     let package = watts[0] + watts[1];
     let pressure = (package - voltage.power_limit_w.min(voltage.thermal_limit_w)).max(0.0);

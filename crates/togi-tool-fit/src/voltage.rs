@@ -4,9 +4,10 @@
 use std::collections::BTreeMap;
 
 use togi_facts::{Decisive, TrialClass};
-use togi_machine::{CcdId, CoreId, Regime, pick_workload, workloads};
+use togi_machine::{CcdId, CoreId, Regime, TargetOffset, pick_workload, workloads};
 use togi_sim::definition::{SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef};
-use togi_sim::{MachineDefinition, Model};
+use togi_sim::voltage::core_watts;
+use togi_sim::{MachineDefinition, Model, saturating_count};
 use togi_tool_trialfacts::{Profile, TrialFact};
 
 use crate::evidence::{load_of, regime_of, trial_class};
@@ -31,16 +32,12 @@ struct RequestPoint {
     voltage: f64,
 }
 
-fn r7_ids() -> Vec<&'static str> {
-    workloads(Regime::R7).iter().map(|w| w.id).collect()
+fn r7_ids() -> impl Iterator<Item = &'static str> {
+    workloads(Regime::R7).iter().map(|w| w.id)
 }
 
 fn float(value: i64) -> f64 {
     f64::from(i32::try_from(value).unwrap_or(0))
-}
-
-fn count(n: usize) -> f64 {
-    f64::from(u32::try_from(n).unwrap_or(u32::MAX))
 }
 
 pub(crate) fn voltage_config(records: &[TrialFact]) -> SharedVoltageDef {
@@ -82,17 +79,16 @@ pub(crate) fn voltage_config(records: &[TrialFact]) -> SharedVoltageDef {
         }
         v.workload.insert(workload.id.to_owned(), w);
     }
-    let ids = r7_ids();
     let avx2 = pick_workload(Regime::R7, 0).id;
     fit_requests(&mut v, records, avx2);
-    for id in ids.iter().skip(1) {
+    for id in r7_ids().skip(1) {
         let prior = v.workload[avx2].core.clone();
-        if let Some(w) = v.workload.get_mut(*id) {
+        if let Some(w) = v.workload.get_mut(id) {
             w.core = prior;
         }
         fit_requests(&mut v, records, id);
     }
-    for id in &ids {
+    for id in r7_ids() {
         fit_clocks(&mut v, records, id);
     }
     v
@@ -106,7 +102,7 @@ fn fit_requests(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
     let Some(w) = v.workload.get_mut(id) else {
         return;
     };
-    let mut points: Vec<Vec<RequestPoint>> = (0..CORES).map(|_| Vec::new()).collect();
+    let mut points: [Vec<RequestPoint>; CORES] = std::array::from_fn(|_| Vec::new());
     for fact in records {
         let Some(class) = trial_class(fact) else {
             continue;
@@ -147,7 +143,7 @@ fn fit_requests(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
             continue;
         }
         total += ps.len();
-        let n = count(ps.len());
+        let n = saturating_count(ps.len());
         let x = ps.iter().map(|p| p.offset).sum::<f64>() / n;
         let y = ps.iter().map(|p| p.clock).sum::<f64>() / n;
         let z = ps.iter().map(|p| p.voltage).sum::<f64>() / n;
@@ -180,17 +176,18 @@ fn fit_requests(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
     }
     for ccd in 0..2 {
         let range = ccd * 8..(ccd + 1) * 8;
-        let mut values: Vec<f64> = range
-            .clone()
-            .filter(|&core| supported[core])
-            .map(|core| bases[core])
-            .collect();
-        if values.is_empty() {
+        let mut values = [0.0; 8];
+        let mut len = 0;
+        for core in range.clone().filter(|&core| supported[core]) {
+            values[len] = bases[core];
+            len += 1;
+        }
+        if len == 0 {
             continue;
         }
-        let mean = median(&mut values);
+        let mean = median(&mut values[..len]);
         for core in range {
-            let n = count(points[core].len());
+            let n = saturating_count(points[core].len());
             let c = &mut w.core[core];
             c.base_v = ((n * bases[core] + 5.0 * mean) / (n + 5.0)).clamp(0.9, 1.5);
             c.count_v = count_v;
@@ -270,10 +267,10 @@ fn fit_clocks(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
                 .profile
                 .as_slice()
                 .get(core.index())
-                .map_or(0, |offset| offset.get());
+                .copied()
+                .unwrap_or(TargetOffset::ZERO);
             if let Some(slot) = watts.get_mut(core.index() / 8) {
-                *slot +=
-                    (w.watts_per_core + w.offset_watts_per_count * float(offset + 35)).max(0.0);
+                *slot += core_watts(w.watts_per_core, w.offset_watts_per_count, offset);
             }
         }
         let (c0, c1) = (f64::from(c0), f64::from(c1));
@@ -297,7 +294,7 @@ fn fit_clocks(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
 /// their mean, and the margin width stays near 6 mV within a factor of two.
 pub(crate) fn voltage_penalty(v: &SharedVoltageDef) -> f64 {
     let mut penalty = 0.0;
-    for id in r7_ids().into_iter().take(2) {
+    for id in r7_ids().take(2) {
         let Some(w) = v.workload.get(id) else {
             continue;
         };
@@ -368,21 +365,21 @@ pub(crate) fn named_loss(model: &Model, named: &[NamedFailure]) -> f64 {
 }
 
 pub(crate) fn sync_ycruncher(v: &mut SharedVoltageDef) {
-    let ids = r7_ids();
-    let [Some(a), Some(b), Some(y)] = [0, 1, 2].map(|i| ids.get(i).copied()) else {
+    let mut ids = r7_ids();
+    let (Some(a), Some(b), Some(y)) = (ids.next(), ids.next(), ids.next()) else {
         return;
     };
-    let thresholds: Vec<f64> = match (v.workload.get(a), v.workload.get(b)) {
-        (Some(a), Some(b)) => a
-            .core
-            .iter()
-            .zip(&b.core)
-            .map(|(a, b)| a.threshold_v.max(b.threshold_v))
-            .collect(),
-        _ => return,
+    let (Some(a), Some(b)) = (v.workload.get(a), v.workload.get(b)) else {
+        return;
     };
+    let mut thresholds = [0.0; CORES];
+    let mut len = 0;
+    for (slot, (a, b)) in thresholds.iter_mut().zip(a.core.iter().zip(&b.core)) {
+        *slot = a.threshold_v.max(b.threshold_v);
+        len += 1;
+    }
     if let Some(y) = v.workload.get_mut(y) {
-        for (core, threshold) in y.core.iter_mut().zip(thresholds) {
+        for (core, &threshold) in y.core.iter_mut().zip(&thresholds[..len]) {
             core.threshold_v = threshold;
         }
     }
@@ -400,26 +397,29 @@ impl Likelihood<'_> {
         if indices.is_empty() {
             return;
         }
-        let ids = r7_ids();
-        for id in ids.into_iter().take(2) {
+        for id in r7_ids().take(2) {
             for ccd in 0..2 {
-                let original: Vec<f64> =
-                    self.cfg.shared_voltage.as_ref().map_or_else(Vec::new, |v| {
-                        v.workload[id].core[ccd * 8..(ccd + 1) * 8]
-                            .iter()
-                            .map(|c| c.threshold_v)
-                            .collect()
-                    });
-                let low = original.iter().fold(-0.10_f64, |low, t| low.max(0.8 - t));
-                let high = original.iter().fold(0.10_f64, |high, t| high.min(1.5 - t));
+                let original: Option<[f64; 8]> = self.cfg.shared_voltage.as_ref().map(|v| {
+                    let cores = &v.workload[id].core[ccd * 8..(ccd + 1) * 8];
+                    std::array::from_fn(|core| cores[core].threshold_v)
+                });
+                let low = original
+                    .iter()
+                    .flatten()
+                    .fold(-0.10_f64, |low, t| low.max(0.8 - t));
+                let high = original
+                    .iter()
+                    .flatten()
+                    .fold(0.10_f64, |high, t| high.min(1.5 - t));
                 self.linear(
                     &indices,
                     0.0,
                     |d, x| {
                         if let Some(v) = voltage_of(d) {
                             if let Some(w) = v.workload.get_mut(id) {
-                                for (core, base) in
-                                    w.core[ccd * 8..(ccd + 1) * 8].iter_mut().zip(&original)
+                                for (core, base) in w.core[ccd * 8..(ccd + 1) * 8]
+                                    .iter_mut()
+                                    .zip(original.iter().flatten())
                                 {
                                     core.threshold_v = base + x;
                                 }

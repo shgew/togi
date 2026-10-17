@@ -5,6 +5,7 @@ use crate::mailbox::{Command, MailboxError, Status, Transport};
 use crate::sysfs::Sysfs;
 use std::io::ErrorKind;
 use tempfile::TempDir;
+use test_case::test_case;
 
 const DRIVER: &str = "sys/kernel/ryzen_smu_drv";
 
@@ -23,31 +24,19 @@ fn real_fs_an_absent_driver_directory_is_not_a_mailbox() {
     assert!(Sysfs::locate(empty.path()).is_none());
 }
 
-#[test]
-fn statuses_are_typed() {
+#[test_case(0xff, Status::Failed, "status 0xff (failed)"; "failed")]
+#[test_case(0xfe, Status::UnknownCommand, "status 0xfe (unknown command)"; "unknown command")]
+#[test_case(0xfd, Status::Prerequisite, "status 0xfd (rejected: prerequisite)"; "prerequisite")]
+#[test_case(0xfc, Status::Busy, "status 0xfc (rejected: busy)"; "busy")]
+#[test_case(0x42, Status::Unknown(0x42), "status 0x42 (unknown status)"; "unknown status")]
+fn statuses_are_typed(code: u32, status: Status, text: &str) {
     let (_tree, sysfs) = mailbox_tree();
-    for (code, status, text) in [
-        (0xff, Status::Failed, "status 0xff (failed)"),
-        (
-            0xfe,
-            Status::UnknownCommand,
-            "status 0xfe (unknown command)",
-        ),
-        (
-            0xfd,
-            Status::Prerequisite,
-            "status 0xfd (rejected: prerequisite)",
-        ),
-        (0xfc, Status::Busy, "status 0xfc (rejected: busy)"),
-        (0x42, Status::Unknown(0x42), "status 0x42 (unknown status)"),
-    ] {
-        let error = sysfs.transact(code, [0; 6]).unwrap_err();
-        assert!(
-            matches!(error, MailboxError::Status { command, status: got } if command == code && got == status),
-            "{error:?}"
-        );
-        assert!(error.to_string().ends_with(text), "{error}");
-    }
+    let error = sysfs.transact(code, [0; 6]).unwrap_err();
+    assert!(
+        matches!(error, MailboxError::Status { command, status: got } if command == code && got == status),
+        "{error:?}"
+    );
+    assert!(error.to_string().ends_with(text), "{error}");
 }
 
 #[test]
@@ -116,34 +105,46 @@ fn a_response_of_the_wrong_length_is_refused() {
     );
 }
 
-#[test]
-fn unavailable_mailbox_files_fail_at_the_open_stage() {
-    for name in ["smu_args", "rsmu_cmd", "smn"] {
-        let (tree, mut sysfs) = mailbox_tree();
-        tree.remove(&format!("{DRIVER}/{name}"));
-        let error = if name == "smn" {
-            sysfs.read_smn(0).unwrap_err()
-        } else {
-            sysfs.command(Command::SetOffset, [0; 6]).unwrap_err()
-        };
-        let path = tree.path(&format!("{DRIVER}/{name}"));
-        let MailboxError::Open {
-            path: failed,
-            source,
-        } = &error
-        else {
-            panic!("{name}: {error:?}");
-        };
-        assert_eq!(failed, &path);
-        assert_eq!(source.kind(), ErrorKind::NotFound);
-        if name == "smu_args" {
-            assert_eq!(
-                tree.bytes(&format!("{DRIVER}/rsmu_cmd")),
-                [0; 4],
-                "command written after the argument write failed"
-            );
-        }
+#[test_case("smu_args"; "arguments file")]
+#[test_case("rsmu_cmd"; "command file")]
+fn unavailable_mailbox_command_files_fail_at_the_open_stage(name: &str) {
+    let (tree, mut sysfs) = mailbox_tree();
+    tree.remove(&format!("{DRIVER}/{name}"));
+    let error = sysfs.command(Command::SetOffset, [0; 6]).unwrap_err();
+    let path = tree.path(&format!("{DRIVER}/{name}"));
+    let MailboxError::Open {
+        path: failed,
+        source,
+    } = &error
+    else {
+        panic!("{error:?}");
+    };
+    assert_eq!(failed, &path);
+    assert_eq!(source.kind(), ErrorKind::NotFound);
+    if name == "smu_args" {
+        assert_eq!(
+            tree.bytes(&format!("{DRIVER}/rsmu_cmd")),
+            [0; 4],
+            "command written after the argument write failed"
+        );
     }
+}
+
+#[test]
+fn an_unavailable_smn_file_fails_at_the_open_stage() {
+    let (tree, mut sysfs) = mailbox_tree();
+    tree.remove(&format!("{DRIVER}/smn"));
+    let error = sysfs.read_smn(0).unwrap_err();
+    let path = tree.path(&format!("{DRIVER}/smn"));
+    let MailboxError::Open {
+        path: failed,
+        source,
+    } = &error
+    else {
+        panic!("{error:?}");
+    };
+    assert_eq!(failed, &path);
+    assert_eq!(source.kind(), ErrorKind::NotFound);
 }
 
 #[cfg(target_os = "linux")]

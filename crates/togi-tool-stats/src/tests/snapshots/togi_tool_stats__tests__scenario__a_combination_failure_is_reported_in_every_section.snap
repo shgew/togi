@@ -90,8 +90,20 @@ seq  decision  core  from  to   counts  causes  reason
 22   backoff   03    -22   -19  3       21,13   request 1.090 V\nto 1.100 V
 
 R7 chain derivations
-seq  cycle  step  CCD  workload                      part  request groups  loaded cores  sources
-23   1      2     1    mprime-avx2-36k-248k-allcore  2     03 > 02         02            6
+seq  cycle  step  CCD  workload                      part  request groups  loaded cores  kind   moved  result   held  trials  trial s  sources
+23   1      2     1    mprime-avx2-36k-248k-allcore  2     03 > 02         02            first  -      covered  yes   0       0        6
+
+R7 chain cost by derivation
+kind   result   derivations  trials  trial s  hours  failed s  recovery s  failures
+first  covered  1            0       0        0.000  0         0           0
+
+R7 chain attribution
+field                                           derivations  trials  trial s  hours  failed s  recovery s  failures
+unchanged after a move on the other CCD         0            0       0        0.000  0         0           0
+changed back to a set the step required before  0            0       0        0.000  0         0           0
+changed to a set the step never required        0            0       0        0.000  0         0           0
+sets the step's chain no longer holds           0            0       0        0.000  0         0           0
+reruns of derived sets, not in the cost above   0            0       0        0.000  0         0           0
 
 Failure rate by depth
 regime / workload / loaded cores / duration       shallowest offset  trials  failures  rate

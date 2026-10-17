@@ -57,11 +57,43 @@ fn hunting_machine() -> MachineDefinition {
     }
 }
 
+/// An eight-core machine, four cores a CCD. Core 0 holds -30 and the others -50, so core 0 tops CCD 0's order
+/// and its first R7 partial idles it; idle, core 0 fails deeper than -20. The tuner derives non-empty
+/// partials, backs off after the partial fails, reruns it and re-derives its chain.
+fn chain_machine() -> MachineDefinition {
+    let mut definition = hunting_machine();
+    definition.cores = 8;
+    definition.core = (0..8)
+        .map(|id| {
+            let limit = if id == 0 { -30 } else { -50 };
+            CoreDef {
+                id,
+                alone: [limit; 5],
+                together: [limit; 7],
+                flat: 0.0,
+                idle: (id == 0).then_some(-20),
+                workload: BTreeMap::new(),
+            }
+        })
+        .collect();
+    definition.joint = Vec::new();
+    definition
+}
+
 /// The events of a simulated session through its first clean cycle, over every reboot its crashes cause.
 pub(crate) fn hunting_session() -> Vec<Event> {
-    let definition = hunting_machine();
+    session(&hunting_machine())
+}
+
+/// The events of a simulated eight-core session through its first clean cycle, whose R7 chains load
+/// partials and are re-derived after a backoff.
+pub(crate) fn chain_session() -> Vec<Event> {
+    session(&chain_machine())
+}
+
+fn session(definition: &MachineDefinition) -> Vec<Event> {
     let simulator = Simulator::new(
-        Model::new(&definition, 1).unwrap(),
+        Model::new(definition, 1).unwrap(),
         RunSettings {
             seed: 1,
             ..RunSettings::default()

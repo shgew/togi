@@ -170,6 +170,64 @@ fn the_shared_voltage_fit_is_deterministic_bounded_and_leaves_its_input_alone() 
 }
 
 #[test]
+fn y_cruncher_takes_each_cores_higher_threshold_of_the_two_avx_workloads_and_nothing_else() {
+    let mut v = voltage_config(&voltage_records());
+    let ids: Vec<&str> = workloads(Regime::R7).iter().map(|w| w.id).collect();
+    let (a, b, y) = (ids[0], ids[1], ids[2]);
+    let before = v.workload[y].clone();
+    for core in 0..16_u8 {
+        let index = usize::from(core);
+        v.workload.get_mut(a).unwrap().core[index].threshold_v = 1.0 + 0.01 * f64::from(core);
+        v.workload.get_mut(b).unwrap().core[index].threshold_v = 1.08;
+    }
+    sync_ycruncher(&mut v);
+    let after = &v.workload[y];
+    for (core, synced) in after.core.iter().enumerate() {
+        let want = v.workload[a].core[core]
+            .threshold_v
+            .max(v.workload[b].core[core].threshold_v);
+        assert_eq!(synced.threshold_v.to_bits(), want.to_bits(), "core {core}");
+    }
+    let mut restored = after.clone();
+    for (core, original) in restored.core.iter_mut().zip(&before.core) {
+        core.threshold_v = original.threshold_v;
+    }
+    assert_eq!(restored, before, "syncing changed more than the thresholds");
+}
+
+#[test]
+fn the_ccd_threshold_shift_moves_every_core_from_its_original_snapshot_inside_the_physical_range() {
+    let records = voltage_records();
+    let mut cfg = shared_machine(&records, 1.15);
+    let v = cfg.shared_voltage.as_mut().unwrap();
+    let spread = [0.85, 0.95, 1.05, 1.15, 1.25, 1.35, 1.45, 1.10];
+    for (core, threshold) in v
+        .workload
+        .get_mut(avx2())
+        .unwrap()
+        .core
+        .iter_mut()
+        .zip(spread)
+    {
+        core.threshold_v = threshold;
+    }
+    sync_ycruncher(v);
+    let obs = aggregate(&records);
+    let named = named_failures(&records);
+    let mut l = Likelihood::new(cfg, &obs, None, Some(&named));
+    l.fit_voltage();
+    let fitted = l.cfg.shared_voltage.as_ref().unwrap();
+    for workload in workloads(Regime::R7) {
+        for core in &fitted.workload[workload.id].core {
+            assert!(
+                (0.8..=1.5).contains(&core.threshold_v),
+                "a threshold left the physical range: {core:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn a_failure_at_stock_offsets_is_explained_by_a_bounded_background_rate() {
     let mut records = Vec::new();
     for i in 0..149 {

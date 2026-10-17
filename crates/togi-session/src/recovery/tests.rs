@@ -1025,10 +1025,11 @@ fn a_kernel_read_error_is_sticky_on_its_open_trial_and_cursors_are_per_boot() {
 fn trial_intent_payload() -> TrialIntent {
     let mut log = Log::new();
     log.trial_intent("0001", None, Regime::R7);
-    match log.events.pop().unwrap().payload {
-        Payload::TrialIntent(intent) => intent,
-        other => panic!("{other:?}"),
-    }
+    let payload = log.events.pop().unwrap().payload;
+    let Payload::TrialIntent(intent) = payload else {
+        panic!("{payload:?}");
+    };
+    intent
 }
 
 fn config_loaded(cursor: Option<&str>, error: Option<&str>) -> togi_journal::ConfigLoaded {

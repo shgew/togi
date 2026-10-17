@@ -41,7 +41,54 @@ fn kinds(events: &[Event]) -> Vec<&'static str> {
                 togi_journal::CycleEvent::Start => "cycle-start",
                 togi_journal::CycleEvent::End => "cycle-end",
             }),
-            _ => None,
+            Payload::SessionStart(_)
+            | Payload::SessionContext(_)
+            | Payload::SessionBaseline(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::SessionArchived(_)
+            | Payload::SessionCarried(_)
+            | Payload::ConfigLoaded(_)
+            | Payload::PreflightCheck(_)
+            | Payload::SmuIntent(_)
+            | Payload::SmuWrite(_)
+            | Payload::SmuReadback(_)
+            | Payload::SmuError(_)
+            | Payload::ProfileApplied(_)
+            | Payload::ProfileChange(_)
+            | Payload::ProfileRestored(_)
+            | Payload::TrialIntent(_)
+            | Payload::TrialStart(_)
+            | Payload::TrialProgress(_)
+            | Payload::TrialSignal(_)
+            | Payload::TrialSample(_)
+            | Payload::TrialEnd(_)
+            | Payload::TrialCarried(_)
+            | Payload::Failure(_)
+            | Payload::FailureCarried(_)
+            | Payload::Mce(_)
+            | Payload::CrashDetected(_)
+            | Payload::TunerDecision(_)
+            | Payload::CorePhase(_)
+            | Payload::CheckingStep(_)
+            | Payload::CheckingChain(_)
+            | Payload::HostRanking(_)
+            | Payload::HuntStart(_)
+            | Payload::HuntGroup(_)
+            | Payload::HuntEnd(_)
+            | Payload::HuntSkipped(_)
+            | Payload::Combination(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::CommandReset(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::DeadEnd(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::Shutdown(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_) => None,
         })
         .collect()
 }
@@ -84,7 +131,7 @@ fn fail_alone(j: &mut Journal, id: u8) -> togi_journal::Seq {
                 let attribution = j.next_decision();
                 return j.decide(attribution);
             }
-            _ => {
+            Action::RunTrial(_) | Action::Decide(_) | Action::ReadRanking => {
                 j.step(&mut |_| Outcome::Pass);
             }
         }
@@ -92,10 +139,10 @@ fn fail_alone(j: &mut Journal, id: u8) -> togi_journal::Seq {
 }
 
 fn tuner_decision(action: &DecisionAction) -> &TunerDecision {
-    match &action.payload {
-        DecisionPayload::TunerDecision(decision) => decision,
-        other => panic!("expected a tuner decision, got {other:?}"),
-    }
+    let DecisionPayload::TunerDecision(decision) = &action.payload else {
+        panic!("expected a tuner decision, got {:?}", action.payload);
+    };
+    decision
 }
 
 #[test]
@@ -270,9 +317,14 @@ fn expect_revert(j: &mut Journal, failure: togi_journal::Seq, id: u8, to: i64, p
 fn round_starts(events: &[Event]) -> Vec<&togi_journal::DeepeningRound> {
     events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::DeepeningRound(round) if round.event == RoundEvent::Start => Some(round),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::DeepeningRound(round) = &event.payload
+                && round.event == RoundEvent::Start
+            {
+                Some(round)
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -295,7 +347,7 @@ fn until_r7_check(j: &mut Journal) -> TrialPlan {
             {
                 return plan;
             }
-            _ => {
+            Action::RunTrial(_) | Action::Decide(_) | Action::ReadRanking => {
                 j.step(&mut |_| Outcome::Pass);
             }
         }
@@ -973,19 +1025,24 @@ fn a_reset_closes_the_open_round_or_cycle_before_the_core_searches() {
         let reset = j.reset(0);
         let end = j.next_decision();
         assert_eq!(end.cause, [reset], "deepening {deepening}");
-        match &end.payload {
-            DecisionPayload::DeepeningRound(round) if deepening => {
-                assert_eq!(
-                    (round.round.get(), round.event, round.passed),
-                    (2, RoundEvent::End, false)
-                );
-            }
-            DecisionPayload::CheckingCycle(cycle) if !deepening => {
-                assert_eq!(cycle.cycle.get(), 4);
-                assert_eq!(cycle.event, togi_journal::CycleEvent::End);
-                assert!(!cycle.passed && !cycle.full);
-            }
-            other => panic!("deepening {deepening}: expected the close, got {other:?}"),
+        if let DecisionPayload::DeepeningRound(round) = &end.payload
+            && deepening
+        {
+            assert_eq!(
+                (round.round.get(), round.event, round.passed),
+                (2, RoundEvent::End, false)
+            );
+        } else if let DecisionPayload::CheckingCycle(cycle) = &end.payload
+            && !deepening
+        {
+            assert_eq!(cycle.cycle.get(), 4);
+            assert_eq!(cycle.event, togi_journal::CycleEvent::End);
+            assert!(!cycle.passed && !cycle.full);
+        } else {
+            panic!(
+                "deepening {deepening}: expected the close, got {:?}",
+                end.payload
+            );
         }
         j.decide(end);
         let search = j.next_decision();
