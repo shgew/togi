@@ -1,13 +1,4 @@
-#![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
-
-#[expect(
-    dead_code,
-    unused_imports,
-    reason = "this binary uses only the shared record constructor"
-)]
-mod common;
-
-use common::record;
+use crate::common::record;
 use togi_tool_bench::{
     Error, ModelCheck, Record, Status, encode_baseline_records, encode_records, read_records_from,
 };

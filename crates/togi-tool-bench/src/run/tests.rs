@@ -10,13 +10,13 @@ use togi_sim::file::Source;
     dead_code,
     reason = "orchestration tests use only part of the shared memory fixture"
 )]
-#[path = "../../tests/common/mod.rs"]
+#[path = "../../tests/bench/common/mod.rs"]
 mod common;
 #[expect(
     dead_code,
     reason = "orchestration tests inspect session events, not simulator outcomes"
 )]
-#[path = "../../tests/session/mod.rs"]
+#[path = "../../tests/bench/session/mod.rs"]
 mod session;
 
 struct Bench {

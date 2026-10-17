@@ -1,29 +1,12 @@
 //! The `togi-tool-bench` command, run as a process over a fake simulator.
-#![expect(
-    clippy::unwrap_used,
-    clippy::disallowed_methods,
-    reason = "the tests run the built command and panic on a broken fixture"
-)]
-
-#[expect(
-    dead_code,
-    reason = "CLI tests construct commands directly rather than using fixture Options"
-)]
-mod fake;
-mod git;
-#[expect(
-    dead_code,
-    reason = "process fixture setup uses session events, not simulator outcomes"
-)]
-mod session;
 
 use std::fs;
 use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
-use fake::ProcessBench as Bench;
-use git::{isolate_git, repo};
+use crate::fake::ProcessBench as Bench;
+use crate::git::{isolate_git, repo};
 use rustix::process::{Pid, Signal, kill_process, test_kill_process};
 
 fn plain_command(bench: &Bench) -> Command {

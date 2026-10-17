@@ -1,11 +1,4 @@
 //! `togi-tool-bench research`, run as a process in a fixture repository with a fake `just`.
-#![expect(
-    clippy::unwrap_used,
-    clippy::disallowed_methods,
-    reason = "the tests run the built command and panic on a broken fixture"
-)]
-
-mod git;
 
 use std::fmt::Write as _;
 use std::fs;
@@ -15,9 +8,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
+use crate::git::{isolate_git, repo};
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use git::{isolate_git, repo};
 use rustix::process::{Pid, Signal, kill_process};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};

@@ -67,7 +67,7 @@ Maxima and everything else are reported by the summary and the comparison, not g
 - `candidate.jsonl` holds the 220 scored runs, projected like the baseline (no `model_check`, `wall_s` or `partial_seconds`).
 - `report.txt` is the output as scored, less its first line, the dev shell's fetch notice, which named a local path.
 
-`the_archived_go_gate_is_kept_unchanged_and_never_re_scored` (`crates/togi-tool-bench/tests/gate.rs`) pins the four files' hashes and checks that the bench refuses the archive ([below](#judging-the-gate)); the Go bench's judgment is kept as `report.txt`, not recomputed.
+`the_archived_go_gate_is_kept_unchanged_and_never_re_scored` (`crates/togi-tool-bench/tests/bench/gate.rs`) pins the four files' hashes and checks that the bench refuses the archive ([below](#judging-the-gate)); the Go bench's judgment is kept as `report.txt`, not recomputed.
 
 **Result: FAIL, 5 of 21 criteria.** The median worst R7 hazard rose on `target-shared-voltage`, `target-r7-vf-boost` and `target-r7-request-gap` against Ruleset 10 (3.94, 3.31 and 3.17 against 1.60, 1.70 and 1.88 per hour, each interval above 0), so did the 90th percentile on `target-shared-voltage` (6.73 against 2.64), and the pooled median is higher (3.31 against 1.72). All eight conclusion criteria and all four time criteria passed: all 220 runs concluded.
 

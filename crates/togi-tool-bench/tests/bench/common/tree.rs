@@ -37,7 +37,7 @@ impl Tree {
 
     pub(crate) fn suite(&self) -> Suite {
         Suite::parse(
-            include_bytes!("../../../../tools/bench/suite.json"),
+            include_bytes!("../../../../../tools/bench/suite.json"),
             self.root.clone(),
         )
         .expect("committed suite")
@@ -53,7 +53,11 @@ impl Tree {
             ($name:literal) => {
                 tree.write(
                     tree.path().join(concat!("machines/", $name, ".json")),
-                    include_bytes!(concat!("../../../../tools/bench/machines/", $name, ".json")),
+                    include_bytes!(concat!(
+                        "../../../../../tools/bench/machines/",
+                        $name,
+                        ".json"
+                    )),
                 );
             };
         }
@@ -77,7 +81,7 @@ impl Tree {
         machine!("target-fit-8");
         tree.write(
             tree.path().join("facts/target.jsonl.gz"),
-            include_bytes!("../../../../tools/bench/facts/target.jsonl.gz"),
+            include_bytes!("../../../../../tools/bench/facts/target.jsonl.gz"),
         );
         tree
     }
