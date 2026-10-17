@@ -51,9 +51,9 @@ expression: body
 │  ○  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               08:45  room     core 06 has room again at -37
 │  ○  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   08:45  room     core 08 has room again at -5
 │  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               08:45  backoff  core 07 -30 → -29
-│  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               08:45  room     core 15 yields -14 → -13; no later round moves it
-│  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               08:45  room     core 06 yields -38 → -37; no later round moves it
-│  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               08:45  room     core 08 yields -6 → -5; no later round moves it
+│  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               08:45  room     core 15 yields -14 → -13, back to its round baseline
+│  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               08:45  room     core 06 yields -38 → -37, back to its round baseline
+│  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               08:45  room     core 08 yields -6 → -5, back to its round baseline
 │  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               08:45  round    #2 stopped: failure #7839: blame goes to the deepened cores
 │  ○ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               08:45  fail     R7 all-core on 06 07 · uncorrected hardware error · no core named
 │  ○ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               08:45  crash    with the offsets applied, rebooted

@@ -154,7 +154,7 @@ fn each_decision_has_its_tag_tone_and_phrases() {
             Decision::Yield,
             Tag::Room,
             Tone::Plain,
-            "core 03 yields -10 → -15; no later round moves it",
+            "core 03 yields -10 → -15, back to its round baseline",
             "core 03 yields -10 → -15, back to its round baseline",
         ),
         (

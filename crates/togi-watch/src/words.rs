@@ -365,7 +365,7 @@ pub fn decision_line(d: &TunerDecision) -> Line {
         },
         Decision::Yield => Line {
             tag: Tag::Room,
-            text: format!("core {core:02} yields {from} → {to}; no later round moves it"),
+            text: format!("core {core:02} yields {from} → {to}, back to its round baseline"),
             tone: Tone::Plain,
         },
         Decision::Hold => Line {
