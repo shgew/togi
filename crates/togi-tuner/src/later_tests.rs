@@ -777,9 +777,12 @@ fn skip_failure(j: &Journal) -> Seq {
     j.events
         .iter()
         .rev()
-        .find_map(|event| match &event.payload {
-            togi_journal::Payload::HuntSkipped(skip) => Some(skip.failure),
-            _ => None,
+        .find_map(|event| {
+            if let togi_journal::Payload::HuntSkipped(skip) = &event.payload {
+                Some(skip.failure)
+            } else {
+                None
+            }
         })
         .unwrap()
 }

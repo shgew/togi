@@ -109,7 +109,9 @@ impl Journal {
                 {
                     self.decide(decision.clone());
                 }
-                _ => return Some(action),
+                Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking => {
+                    return Some(action);
+                }
             }
         }
     }
@@ -214,12 +216,13 @@ impl Journal {
 fn ordinal(why: &R7Reason) -> u32 {
     why.notes
         .iter()
-        .find_map(|note| match note {
-            Note::Ordinal { n, after } => {
+        .find_map(|note| {
+            if let Note::Ordinal { n, after } = note {
                 assert_eq!(*after, ESCALATE_AFTER);
                 Some(*n)
+            } else {
+                None
             }
-            _ => None,
         })
         .expect("an ordinal note")
 }

@@ -49,20 +49,35 @@ fn close(a: f64, b: f64) -> bool {
 }
 
 fn assert_toward(why: &R7Reason, request: f64, target: f64) {
-    match why.basis {
-        Basis::Toward {
-            request: r,
-            target: t,
-        } if close(r, request) && close(t, target) => {}
-        ref other => panic!("expected {request} V toward {target} V, got {other:?}"),
-    }
+    let Basis::Toward {
+        request: r,
+        target: t,
+    } = why.basis
+    else {
+        panic!(
+            "expected {request} V toward {target} V, got {:?}",
+            why.basis
+        );
+    };
+    assert!(
+        close(r, request) && close(t, target),
+        "expected {request} V toward {target} V, got {:?}",
+        why.basis
+    );
 }
 
 fn assert_no_pass(why: &R7Reason, request: f64) {
-    match why.basis {
-        Basis::NoPass { request: r } if close(r, request) => {}
-        ref other => panic!("expected no qualifying pass at {request} V, got {other:?}"),
-    }
+    let Basis::NoPass { request: r } = why.basis else {
+        panic!(
+            "expected no qualifying pass at {request} V, got {:?}",
+            why.basis
+        );
+    };
+    assert!(
+        close(r, request),
+        "expected no qualifying pass at {request} V, got {:?}",
+        why.basis
+    );
 }
 
 #[test]

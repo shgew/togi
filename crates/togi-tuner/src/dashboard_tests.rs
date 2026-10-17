@@ -60,10 +60,10 @@ fn journal(cores: Vec<togi_machine::CoreInfo>, offsets: &[i64], cycle: Option<&s
 }
 
 fn decided(action: Action) -> DecisionAction {
-    match action {
-        Action::Decide(decision) => decision,
-        other => panic!("expected a decision, got {other:?}"),
-    }
+    let Action::Decide(decision) = action else {
+        panic!("expected a decision, got {action:?}");
+    };
+    decision
 }
 
 fn run(
@@ -309,9 +309,9 @@ fn cycle_plan_partial_failure_needs_passes() {
     let failure = j.next_decision();
     assert!(matches!(failure.payload, DecisionPayload::Failure(_)));
     j.decide(failure);
-    let again = match j.run().cycle_action().unwrap() {
-        Action::RunTrial(plan) => plan,
-        other => panic!("{other:?}"),
+    let action = j.run().cycle_action().unwrap();
+    let Action::RunTrial(again) = action else {
+        panic!("{action:?}");
     };
     j.intent(&again);
     assert_eq!(
@@ -895,12 +895,14 @@ fn repeated_core_oracle(plan: &TrialPlan) -> Outcome {
 }
 
 fn group_of(action: &Action) -> Option<&HuntGroup> {
-    match action {
-        Action::Decide(DecisionAction {
-            payload: DecisionPayload::HuntGroup(group),
-            ..
-        }) => Some(group),
-        _ => None,
+    if let Action::Decide(DecisionAction {
+        payload: DecisionPayload::HuntGroup(group),
+        ..
+    }) = action
+    {
+        Some(group)
+    } else {
+        None
     }
 }
 

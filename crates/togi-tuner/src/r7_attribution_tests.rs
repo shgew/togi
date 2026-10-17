@@ -110,12 +110,10 @@ impl Journal {
 
     fn at_next_dead_end(&self) -> DecisionAction {
         let action = self.next_decision();
-        match &action.payload {
-            DecisionPayload::DeadEnd(dead) => {
-                assert_eq!(dead.condition, DeadEndCondition::FailureAtZero);
-            }
-            other => panic!("expected a dead end, got {other:?}"),
-        }
+        let DecisionPayload::DeadEnd(dead) = &action.payload else {
+            panic!("expected a dead end, got {:?}", action.payload);
+        };
+        assert_eq!(dead.condition, DeadEndCondition::FailureAtZero);
         action
     }
 

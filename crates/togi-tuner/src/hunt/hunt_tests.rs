@@ -94,22 +94,22 @@ fn hunt_of(count: usize, duration: u32) -> Journal {
 }
 
 fn group_of(action: &Action) -> Option<&HuntGroup> {
-    match action {
-        Action::Decide(decision) => match &decision.payload {
-            DecisionPayload::HuntGroup(group) => Some(group),
-            _ => None,
-        },
-        _ => None,
+    if let Action::Decide(decision) = action
+        && let DecisionPayload::HuntGroup(group) = &decision.payload
+    {
+        Some(group)
+    } else {
+        None
     }
 }
 
 fn end_of(action: &Action) -> Option<&HuntEnd> {
-    match action {
-        Action::Decide(decision) => match &decision.payload {
-            DecisionPayload::HuntEnd(end) => Some(end),
-            _ => None,
-        },
-        _ => None,
+    if let Action::Decide(decision) = action
+        && let DecisionPayload::HuntEnd(end) = &decision.payload
+    {
+        Some(end)
+    } else {
+        None
     }
 }
 
@@ -235,10 +235,10 @@ fn reset_core_zero(j: &mut Journal) {
 }
 
 fn group_in(decision: &crate::DecisionAction) -> &HuntGroup {
-    match &decision.payload {
-        DecisionPayload::HuntGroup(group) => group,
-        other => panic!("expected a hunt group, got {other:?}"),
-    }
+    let DecisionPayload::HuntGroup(group) = &decision.payload else {
+        panic!("expected a hunt group, got {:?}", decision.payload);
+    };
+    group
 }
 
 #[test]
@@ -376,7 +376,17 @@ fn a_reset_attributes_the_pending_failure_then_cancels_the_hunt_then_closes_the_
                 assert_eq!(decision.cause, [reset]);
                 "search"
             }
-            other => panic!("unexpected {other:?}"),
+            other @ (DecisionPayload::TunerWarning(_)
+            | DecisionPayload::DeadEnd(_)
+            | DecisionPayload::TunerDecision(_)
+            | DecisionPayload::ProfileChange(_)
+            | DecisionPayload::CheckingStep(_)
+            | DecisionPayload::CheckingChain(_)
+            | DecisionPayload::HuntStart(_)
+            | DecisionPayload::HuntGroup(_)
+            | DecisionPayload::HuntSkipped(_)
+            | DecisionPayload::Combination(_)
+            | DecisionPayload::DeepeningRound(_)) => panic!("unexpected {other:?}"),
         };
         kinds.push(kind);
         j.decide(decision);
@@ -530,11 +540,14 @@ fn next_hunt_reuses_established_part_groups() {
         let action = j.next();
         match &action {
             Action::Decide(decision) => {
-                match &decision.payload {
-                    DecisionPayload::HuntStart(_) => hunts += 1,
-                    DecisionPayload::HuntGroup(group) if hunts == 1 => first.push(group.clone()),
-                    DecisionPayload::HuntGroup(group) => second.push(group.clone()),
-                    _ => {}
+                if let DecisionPayload::HuntStart(_) = &decision.payload {
+                    hunts += 1;
+                } else if let DecisionPayload::HuntGroup(group) = &decision.payload {
+                    if hunts == 1 {
+                        first.push(group.clone());
+                    } else {
+                        second.push(group.clone());
+                    }
                 }
                 j.decide(decision.clone());
             }
@@ -766,31 +779,29 @@ fn repeated_parked_core_probe_returns_to_binary_parts_after_pass() {
                 }
             }
             let seq = j.decide(decision.clone());
-            match &decision.payload {
-                DecisionPayload::Failure(failure)
-                    if failure.condition == Some(Condition::Parked)
-                        && failure.attribution == Attribution::Attributed =>
-                {
-                    direct_failure = Some(seq);
-                    if failure.core == Some(core(3)) {
-                        prior.push(seq);
-                    }
+            if let DecisionPayload::Failure(failure) = &decision.payload
+                && failure.condition == Some(Condition::Parked)
+                && failure.attribution == Attribution::Attributed
+            {
+                direct_failure = Some(seq);
+                if failure.core == Some(core(3)) {
+                    prior.push(seq);
                 }
-                DecisionPayload::HuntEnd(end) if end.result == HuntOutcome::Direct => {
-                    direct_end = Some(seq);
+            } else if let DecisionPayload::HuntEnd(end) = &decision.payload
+                && end.result == HuntOutcome::Direct
+            {
+                direct_end = Some(seq);
+            } else if let DecisionPayload::TunerDecision(moved) = &decision.payload
+                && moved.activity == Activity::Hunt
+                && direct_end.is_some()
+            {
+                assert_eq!(decision.cause, [direct_end.take().unwrap()]);
+                assert_eq!(moved.core, core(3));
+                assert_eq!(moved.to_offset.get(), moved.from_offset.get() + 1);
+                if backoffs == 0 {
+                    owed = direct_failure;
                 }
-                DecisionPayload::TunerDecision(moved)
-                    if moved.activity == Activity::Hunt && direct_end.is_some() =>
-                {
-                    assert_eq!(decision.cause, [direct_end.take().unwrap()]);
-                    assert_eq!(moved.core, core(3));
-                    assert_eq!(moved.to_offset.get(), moved.from_offset.get() + 1);
-                    if backoffs == 0 {
-                        owed = direct_failure;
-                    }
-                    backoffs += 1;
-                }
-                _ => {}
+                backoffs += 1;
             }
             continue;
         }
@@ -979,17 +990,17 @@ fn is_hunt_end(action: &Action, result: HuntOutcome) -> bool {
 }
 
 fn expect_decision(action: Action) -> crate::DecisionAction {
-    match action {
-        Action::Decide(decision) => decision,
-        other => panic!("expected a decision, got {other:?}"),
-    }
+    let Action::Decide(decision) = action else {
+        panic!("expected a decision, got {action:?}");
+    };
+    decision
 }
 
 fn backoff_of(decision: &crate::DecisionAction) -> &TunerDecision {
-    match &decision.payload {
-        DecisionPayload::TunerDecision(backoff) => backoff,
-        other => panic!("expected a backoff, got {other:?}"),
-    }
+    let DecisionPayload::TunerDecision(backoff) = &decision.payload else {
+        panic!("expected a backoff, got {:?}", decision.payload);
+    };
+    backoff
 }
 
 fn members_of(pairs: &[(u8, i64)]) -> Vec<Member> {
@@ -1022,7 +1033,7 @@ fn assert_owed_rerun(j: &mut Journal, failure: Seq, regime: Regime, loaded: &[u8
             {
                 j.decide(decision.clone());
             }
-            _ => break action,
+            Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking => break action,
         }
     };
     assert_eq!(j.resumed().next(), action);
@@ -1059,19 +1070,17 @@ fn hunt_pair_and_commitment_resume() {
         assert_eq!(j.resumed().next(), action, "hunt prefix replay");
         match &action {
             Action::Decide(decision) => {
-                match &decision.payload {
-                    DecisionPayload::HuntGroup(group) => {
-                        if group.group.get() == 1 {
-                            assert_eq!(
-                                core_ids(group.cores),
-                                [2, 3],
-                                "the recent core's part runs first"
-                            );
-                        }
-                        probes.extend(group.probe);
+                if let DecisionPayload::HuntGroup(group) = &decision.payload {
+                    if group.group.get() == 1 {
+                        assert_eq!(
+                            core_ids(group.cores),
+                            [2, 3],
+                            "the recent core's part runs first"
+                        );
                     }
-                    DecisionPayload::HuntEnd(ended) => end = Some(ended.clone()),
-                    _ => {}
+                    probes.extend(group.probe);
+                } else if let DecisionPayload::HuntEnd(ended) = &decision.payload {
+                    end = Some(ended.clone());
                 }
                 j.decide(decision.clone());
                 if end.is_some() {
@@ -1566,17 +1575,15 @@ fn hunt_duration_escalation_only_for_longer_failure() {
         loop {
             let action = j.next();
             match &action {
-                Action::Decide(decision) => match &decision.payload {
-                    DecisionPayload::HuntGroup(group) => {
+                Action::Decide(decision) => {
+                    if let DecisionPayload::HuntGroup(group) = &decision.payload {
                         groups.push((group.stage, group.duration_s, group.escalated));
-                    }
-                    DecisionPayload::HuntEnd(end) => {
+                    } else if let DecisionPayload::HuntEnd(end) = &decision.payload {
                         assert_eq!(end.result, HuntOutcome::Fallback, "{name}");
                         assert_eq!(j.resumed().next(), action, "{name}");
                         break;
                     }
-                    _ => {}
-                },
+                }
                 Action::RunTrial(plan) => {
                     let latest = j.run().hunts.active.as_ref().unwrap().latest().unwrap();
                     assert_eq!(plan.duration.get(), latest.payload.duration_s, "{name}");
@@ -2663,17 +2670,13 @@ fn a_warned_idle_failure_still_opens_its_hunt() {
         let mut started = None;
         for _ in 0..20 {
             let action = j.next_decision();
-            match &action.payload {
-                DecisionPayload::TunerWarning(warning) => {
-                    assert_eq!(warning.passes, passes, "{name}");
-                    assert_eq!(action.cause[0], failure, "{name}");
-                    warned = true;
-                }
-                DecisionPayload::HuntStart(start) => {
-                    started = Some(start.failure);
-                    break;
-                }
-                _ => {}
+            if let DecisionPayload::TunerWarning(warning) = &action.payload {
+                assert_eq!(warning.passes, passes, "{name}");
+                assert_eq!(action.cause[0], failure, "{name}");
+                warned = true;
+            } else if let DecisionPayload::HuntStart(start) = &action.payload {
+                started = Some(start.failure);
+                break;
             }
             j.decide(action);
         }

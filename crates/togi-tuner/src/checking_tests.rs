@@ -16,12 +16,14 @@ use crate::{
 };
 
 fn decision_cycle(action: &Action) -> Option<&CheckingCycle> {
-    match action {
-        Action::Decide(DecisionAction {
-            payload: DecisionPayload::CheckingCycle(cycle),
-            ..
-        }) => Some(cycle),
-        _ => None,
+    if let Action::Decide(DecisionAction {
+        payload: DecisionPayload::CheckingCycle(cycle),
+        ..
+    }) = action
+    {
+        Some(cycle)
+    } else {
+        None
     }
 }
 
@@ -59,10 +61,10 @@ fn failure_record(j: &Journal, seq: Seq) -> togi_journal::Failure {
 }
 
 fn backoff(action: &DecisionAction) -> &TunerDecision {
-    match &action.payload {
-        DecisionPayload::TunerDecision(decision) => decision,
-        other => panic!("expected a decision, got {other:?}"),
-    }
+    let DecisionPayload::TunerDecision(decision) = &action.payload else {
+        panic!("expected a decision, got {:?}", action.payload);
+    };
+    decision
 }
 
 fn mce_of(trial: &TrialId, id: u8) -> Mce {
@@ -172,7 +174,7 @@ fn r7_trials_and_shared_duration() {
             {
                 break;
             }
-            _ => {}
+            Action::Decide(_) | Action::ReadRanking => {}
         }
     }
     let part = |cores: &[u8], durations: [u32; 4]| -> Vec<(Vec<u8>, u32)> {
@@ -611,29 +613,22 @@ fn expected_counts(j: &Journal) -> BTreeMap<ClassKey, u32> {
     let mut checking: Option<Profile> = None;
     let mut start = None;
     for event in &j.events {
-        match &event.payload {
-            Payload::ProfileChange(change) => {
-                checking = Some(Profile::new(topo, change.to).unwrap());
+        let payload = &event.payload;
+        if let Payload::ProfileChange(change) = payload {
+            checking = Some(Profile::new(topo, change.to).unwrap());
+        } else if let Payload::CheckingCycle(cycle) = payload {
+            start = (cycle.event == CycleEvent::Start).then_some(event.seq);
+        } else if let Payload::TrialIntent(intent) = payload {
+            let (trial, class) = class_of(event).unwrap();
+            classes.insert(trial, (class, Profile::new(topo, intent.profile).unwrap()));
+        } else if let Payload::TrialEnd(end) = payload
+            && let Some((class, profile)) = classes.get(&end.trial).copied()
+        {
+            match end.outcome {
+                Outcome::Pass => passes.push((event.seq, class, profile)),
+                Outcome::Failure => failures.push((event.seq, class, profile)),
+                Outcome::Inconclusive => {}
             }
-            Payload::CheckingCycle(cycle) if cycle.event == CycleEvent::Start => {
-                start = Some(event.seq);
-            }
-            Payload::CheckingCycle(_) => start = None,
-            Payload::TrialIntent(intent) => {
-                let (trial, class) = class_of(event).unwrap();
-                classes.insert(trial, (class, Profile::new(topo, intent.profile).unwrap()));
-            }
-            Payload::TrialEnd(end) => {
-                let Some((class, profile)) = classes.get(&end.trial).copied() else {
-                    continue;
-                };
-                match end.outcome {
-                    Outcome::Pass => passes.push((event.seq, class, profile)),
-                    Outcome::Failure => failures.push((event.seq, class, profile)),
-                    Outcome::Inconclusive => {}
-                }
-            }
-            _ => {}
         }
     }
     let (Some(checking), Some(start)) = (checking, start) else {
@@ -682,7 +677,7 @@ fn drive(j: &mut Journal, ids: &[u8], byte: u8) -> bool {
                 end.core = named.map(core);
                 j.append(end.into(), &[intent]);
             }
-            other => {
+            other @ (Outcome::Pass | Outcome::Inconclusive) => {
                 j.trial(&plan, other);
             }
         },
@@ -788,9 +783,12 @@ fn a_single_ccd_r7_cycle_finishes_without_a_cross_ccd_trial() {
     let intents: Vec<_> = j
         .events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialIntent(intent) => Some(intent),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
+                Some(intent)
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(intents.len(), 4);

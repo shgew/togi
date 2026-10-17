@@ -120,16 +120,15 @@ fn hunt_failures(events: &[Event], hunt: u32) -> Vec<Seq> {
     let mut hunted = BTreeSet::new();
     let mut out = Vec::new();
     for event in events {
-        match &event.payload {
-            Payload::TrialIntent(intent) if intent.hunt.is_some_and(|h| h.get() == hunt) => {
-                hunted.insert(intent.trial.clone());
-            }
-            Payload::TrialEnd(end)
-                if hunted.contains(&end.trial) && end.outcome == Outcome::Failure =>
-            {
-                out.push(event.seq);
-            }
-            _ => {}
+        if let Payload::TrialIntent(intent) = &event.payload
+            && intent.hunt.is_some_and(|h| h.get() == hunt)
+        {
+            hunted.insert(intent.trial.clone());
+        } else if let Payload::TrialEnd(end) = &event.payload
+            && hunted.contains(&end.trial)
+            && end.outcome == Outcome::Failure
+        {
+            out.push(event.seq);
         }
     }
     out
@@ -148,16 +147,16 @@ fn commitments(events: &[Event]) -> Commitments {
     let mut combination = None;
     let mut backoff = None;
     for event in events {
-        match &event.payload {
-            Payload::HuntStart(payload) => start = Some((event.seq, payload.clone())),
-            Payload::HuntEnd(payload) => {
-                end = Some((event.seq, payload.clone(), event.cause.clone()));
-            }
-            Payload::Combination(_) => combination = Some((event.seq, event.cause.clone())),
-            Payload::TunerDecision(td) if td.activity == Activity::Hunt => {
-                backoff = Some((event.seq, td.clone(), event.cause.clone()));
-            }
-            _ => {}
+        if let Payload::HuntStart(payload) = &event.payload {
+            start = Some((event.seq, payload.clone()));
+        } else if let Payload::HuntEnd(payload) = &event.payload {
+            end = Some((event.seq, payload.clone(), event.cause.clone()));
+        } else if let Payload::Combination(_) = &event.payload {
+            combination = Some((event.seq, event.cause.clone()));
+        } else if let Payload::TunerDecision(td) = &event.payload
+            && td.activity == Activity::Hunt
+        {
+            backoff = Some((event.seq, td.clone(), event.cause.clone()));
         }
     }
     Commitments {
@@ -360,11 +359,10 @@ fn hunt_causes_omit_a_failure_after_the_group_passed() {
     });
     let late = late.expect("the hunt never recorded group 2");
     for event in &j.events[usize::try_from(late.get()).unwrap()..] {
-        let hunt_event = match &event.payload {
-            Payload::HuntGroup(_) | Payload::HuntEnd(_) | Payload::Combination(_) => true,
-            Payload::TunerDecision(td) => td.activity == Activity::Hunt,
-            _ => false,
-        };
+        let hunt_event = matches!(
+            &event.payload,
+            Payload::HuntGroup(_) | Payload::HuntEnd(_) | Payload::Combination(_)
+        ) || matches!(&event.payload, Payload::TunerDecision(td) if td.activity == Activity::Hunt);
         assert!(
             !hunt_event || !event.cause.contains(&late),
             "#{} cause {:?} cites failure #{late}, recorded after group 1 passed",
@@ -428,17 +426,18 @@ fn assert_covered_failure_omitted(stricter: Option<&str>) {
         .expect("group 2");
     for event in &j.events[second..] {
         let cites_passes = passes.iter().any(|pass| event.cause.contains(pass));
-        match &event.payload {
-            Payload::HuntGroup(_) | Payload::HuntEnd(_) => {
-                assert!(
-                    cites_passes,
-                    "#{} cause {:?} cites none of group 1's carried passes {passes:?}",
-                    event.seq, event.cause
-                );
-            }
-            Payload::TunerDecision(td) if td.activity != Activity::Hunt => continue,
-            Payload::TunerDecision(_) | Payload::Combination(_) => {}
-            _ => continue,
+        if matches!(&event.payload, Payload::HuntGroup(_) | Payload::HuntEnd(_)) {
+            assert!(
+                cites_passes,
+                "#{} cause {:?} cites none of group 1's carried passes {passes:?}",
+                event.seq, event.cause
+            );
+        } else if !matches!(
+            &event.payload,
+            Payload::TunerDecision(td) if td.activity == Activity::Hunt
+        ) && !matches!(&event.payload, Payload::Combination(_))
+        {
+            continue;
         }
         assert!(
             !event.cause.contains(&covered),
@@ -686,7 +685,19 @@ fn hunt_keeps_one_part_order_when_recent_moves_mid_hunt() {
                     finished = true;
                     break;
                 }
-                _ => {}
+                DecisionPayload::Failure(_)
+                | DecisionPayload::TunerWarning(_)
+                | DecisionPayload::DeadEnd(_)
+                | DecisionPayload::CorePhase(_)
+                | DecisionPayload::TunerDecision(_)
+                | DecisionPayload::ProfileChange(_)
+                | DecisionPayload::CheckingCycle(_)
+                | DecisionPayload::CheckingStep(_)
+                | DecisionPayload::CheckingChain(_)
+                | DecisionPayload::HuntStart(_)
+                | DecisionPayload::HuntSkipped(_)
+                | DecisionPayload::Combination(_)
+                | DecisionPayload::DeepeningRound(_) => {}
             }
         }
         assert!(

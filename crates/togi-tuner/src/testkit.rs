@@ -476,17 +476,19 @@ impl Journal {
     }
 
     pub(crate) fn next_trial(&self) -> TrialPlan {
-        match self.next() {
-            Action::RunTrial(plan) => plan,
-            other => panic!("expected a trial, the tuner asked for {other:?}"),
-        }
+        let action = self.next();
+        let Action::RunTrial(plan) = action else {
+            panic!("expected a trial, the tuner asked for {action:?}");
+        };
+        plan
     }
 
     pub(crate) fn next_decision(&self) -> DecisionAction {
-        match self.next() {
-            Action::Decide(decision) => decision,
-            other => panic!("expected a decision, the tuner asked for {other:?}"),
-        }
+        let action = self.next();
+        let Action::Decide(decision) = action else {
+            panic!("expected a decision, the tuner asked for {action:?}");
+        };
+        decision
     }
 
     /// Performs the tuner's next action; trials end as `oracle` says.
@@ -595,7 +597,7 @@ impl Journal {
                     step: crate::StepNo::new(std::num::NonZeroU32::MIN),
                     part: crate::PartNo::new(std::num::NonZeroU32::MIN),
                 },
-                _ => TrialContext::SoloLimit {
+                Condition::Alone | Condition::Parked => TrialContext::SoloLimit {
                     core: core(self.ids[0]),
                     regime,
                 },
