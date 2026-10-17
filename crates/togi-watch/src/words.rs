@@ -882,17 +882,25 @@ pub fn words(kind: EventKind) -> Words {
         },
         EventKind::TrialEnd => Words {
             history: History::Contextual,
-            tag: Tagging::By(|payload| match payload {
-                Payload::TrialEnd(d) => trial_end_tag(d),
-                _ => Tag::Unclear,
+            tag: Tagging::By(|payload| {
+                if let Payload::TrialEnd(d) = payload {
+                    trial_end_tag(d)
+                } else {
+                    Tag::Unclear
+                }
             }),
             ..Words::SILENT
         },
         EventKind::Failure => Words {
             history: History::Contextual,
-            tag: Tagging::By(|payload| match payload {
-                Payload::Failure(d) if d.known_failure.is_some() => Tag::Skip,
-                _ => Tag::Fail,
+            tag: Tagging::By(|payload| {
+                if let Payload::Failure(d) = payload
+                    && d.known_failure.is_some()
+                {
+                    Tag::Skip
+                } else {
+                    Tag::Fail
+                }
             }),
             detailed: Phrase::Contextual,
             ..Words::SILENT
@@ -908,9 +916,12 @@ pub fn words(kind: EventKind) -> Words {
         },
         EventKind::TunerDecision => Words {
             history: History::Line(of!(TunerDecision, |d| Some(decision_line(d)))),
-            tag: Tagging::By(|payload| match payload {
-                Payload::TunerDecision(d) => decision_line(d).tag,
-                _ => Tag::Backoff,
+            tag: Tagging::By(|payload| {
+                if let Payload::TunerDecision(d) = payload {
+                    decision_line(d).tag
+                } else {
+                    Tag::Backoff
+                }
             }),
             compact: Brief::Of(of!(TunerDecision, |d| backs_off(d))),
             detailed: Phrase::Of(of!(TunerDecision, |d| Some(decision_phrase(d, None)))),
@@ -918,11 +929,12 @@ pub fn words(kind: EventKind) -> Words {
         },
         EventKind::CorePhase => Words {
             history: History::Contextual,
-            tag: Tagging::By(|payload| match payload {
-                Payload::CorePhase(d) => {
+            tag: Tagging::By(|payload| {
+                if let Payload::CorePhase(d) = payload {
                     phase_line(d).map_or_else(|| phase_tag(d.to), |line| line.tag)
+                } else {
+                    Tag::Limit
                 }
-                _ => Tag::Limit,
             }),
             detailed: Phrase::Of(of!(CorePhase, |d| core_phase_phrase(d))),
             ..Words::SILENT
@@ -957,9 +969,12 @@ pub fn words(kind: EventKind) -> Words {
         },
         EventKind::HuntGroup => Words {
             history: History::Contextual,
-            tag: Tagging::By(|payload| match payload {
-                Payload::HuntGroup(d) => group_tag(d),
-                _ => Tag::Group,
+            tag: Tagging::By(|payload| {
+                if let Payload::HuntGroup(d) = payload {
+                    group_tag(d)
+                } else {
+                    Tag::Group
+                }
             }),
             detailed: Phrase::Contextual,
             ..Words::SILENT

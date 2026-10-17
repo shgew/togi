@@ -150,9 +150,12 @@ fn the_default_session_scenarios_reach_the_state_their_names_claim() {
     let last_start = crashed
         .iter()
         .rev()
-        .find_map(|event| match &event.payload {
-            Payload::TrialStart(start) => Some((event, start)),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialStart(start) = &event.payload {
+                Some((event, start))
+            } else {
+                None
+            }
         })
         .expect("a trial started");
     assert!(
@@ -245,9 +248,12 @@ fn the_probe_machine_scenarios_reach_the_state_their_names_claim() {
     let probing = member_probe
         .iter()
         .rev()
-        .find_map(|event| match &event.payload {
-            Payload::HuntGroup(group) => Some(group),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::HuntGroup(group) = &event.payload {
+                Some(group)
+            } else {
+                None
+            }
         })
         .expect("a hunt group precedes the trial");
     assert!(
@@ -269,9 +275,12 @@ fn the_combination_scenario_ends_on_the_probe_machines_found_combination() {
     let events = cut(Scenario::Combination);
     let found = events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::Combination(combination) => Some(combination),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::Combination(combination) = &event.payload {
+                Some(combination)
+            } else {
+                None
+            }
         })
         .expect("the session recorded a combination");
     let cores: Vec<i64> = found
@@ -326,9 +335,12 @@ fn the_later_hunt_crashes_six_consecutive_trials_from_the_first_eligible_checkin
         .expect("checking outside R7 runs after a confirmed BIOS profile, in cycle 4 or later");
     let trials: Vec<_> = events[start..]
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialIntent(intent) => Some(&intent.trial),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
+                Some(&intent.trial)
+            } else {
+                None
+            }
         })
         .take(6)
         .collect();
@@ -336,9 +348,14 @@ fn the_later_hunt_crashes_six_consecutive_trials_from_the_first_eligible_checkin
     for trial in trials {
         let end = events[start..]
             .iter()
-            .find_map(|event| match &event.payload {
-                Payload::TrialEnd(end) if &end.trial == trial => Some(end),
-                _ => None,
+            .find_map(|event| {
+                if let Payload::TrialEnd(end) = &event.payload
+                    && &end.trial == trial
+                {
+                    Some(end)
+                } else {
+                    None
+                }
             })
             .expect("each burst trial ended");
         assert_eq!(end.signal, Some(Signal::Crash), "trial {trial}");

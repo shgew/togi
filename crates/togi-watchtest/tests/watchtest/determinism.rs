@@ -49,10 +49,14 @@ fn every_scenario_names_the_fixed_build() {
     assert_eq!(want.rev, None);
     for scenario in [Scenario::Search, Scenario::Recovering, Scenario::Confirm] {
         let events = scenario.events().expect("the scenario builds");
-        let mut builds = events.iter().filter_map(|event| match &event.payload {
-            togi_journal::Payload::SessionStart(start) => Some(&start.build),
-            togi_journal::Payload::ConfigLoaded(loaded) => Some(&loaded.build),
-            _ => None,
+        let mut builds = events.iter().filter_map(|event| {
+            if let togi_journal::Payload::SessionStart(start) = &event.payload {
+                Some(&start.build)
+            } else if let togi_journal::Payload::ConfigLoaded(loaded) = &event.payload {
+                Some(&loaded.build)
+            } else {
+                None
+            }
         });
         assert!(builds.all(|build| *build == want), "{scenario}");
     }

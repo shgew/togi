@@ -418,10 +418,10 @@ fn stopped_story(reason: ShutdownReason, saved: bool) -> Story {
         ShutdownReason::Cycles => {
             "The requested clean cycles are complete, so I've stopped. Everything I learned is in the journal; togi run picks up where I left off."
         }
-        _ if saved => {
+        ShutdownReason::Signal | ShutdownReason::DeadEnd | ShutdownReason::Command if saved => {
             "I restored baseline or shallower offsets before stopping. togi run picks up where I left off."
         }
-        _ => {
+        ShutdownReason::Signal | ShutdownReason::DeadEnd | ShutdownReason::Command => {
             "I've stopped. Everything I learned is in the journal; togi run picks up where I left off."
         }
     };

@@ -372,7 +372,35 @@ impl Facts {
                     self.queued.insert(core, event.seq);
                 }
             }
-            _ => {}
+            Payload::SessionContext(_)
+            | Payload::SessionBaseline(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::SessionArchived(_)
+            | Payload::SessionCarried(_)
+            | Payload::PreflightCheck(_)
+            | Payload::SmuWrite(_)
+            | Payload::SmuError(_)
+            | Payload::ProfileApplied(_)
+            | Payload::TrialProgress(_)
+            | Payload::TrialSignal(_)
+            | Payload::TrialSample(_)
+            | Payload::Mce(_)
+            | Payload::CheckingCycle(_)
+            | Payload::CheckingStep(_)
+            | Payload::CheckingChain(_)
+            | Payload::HostRanking(_)
+            | Payload::HuntEnd(_)
+            | Payload::HuntSkipped(_)
+            | Payload::DeepeningRound(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_) => {}
         }
         if let Some(line) = self.describe(event, journal) {
             self.history.push(line);
@@ -402,7 +430,53 @@ impl Facts {
             Payload::ProfileApplied(applied) => &applied.offsets,
             Payload::ProfileChange(change) => &change.to,
             Payload::ProfileRestored(restored) => &restored.offsets,
-            _ => return event.msg.clone(),
+            Payload::SessionStart(_)
+            | Payload::SessionContext(_)
+            | Payload::SessionBaseline(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::SessionArchived(_)
+            | Payload::SessionCarried(_)
+            | Payload::ConfigLoaded(_)
+            | Payload::PreflightCheck(_)
+            | Payload::SmuIntent(_)
+            | Payload::SmuWrite(_)
+            | Payload::SmuReadback(_)
+            | Payload::SmuError(_)
+            | Payload::TrialIntent(_)
+            | Payload::TrialStart(_)
+            | Payload::TrialProgress(_)
+            | Payload::TrialSignal(_)
+            | Payload::TrialSample(_)
+            | Payload::TrialEnd(_)
+            | Payload::TrialCarried(_)
+            | Payload::Failure(_)
+            | Payload::FailureCarried(_)
+            | Payload::Mce(_)
+            | Payload::CrashDetected(_)
+            | Payload::TunerDecision(_)
+            | Payload::CorePhase(_)
+            | Payload::CheckingCycle(_)
+            | Payload::CheckingStep(_)
+            | Payload::CheckingChain(_)
+            | Payload::HostRanking(_)
+            | Payload::HuntStart(_)
+            | Payload::HuntGroup(_)
+            | Payload::HuntEnd(_)
+            | Payload::HuntSkipped(_)
+            | Payload::Combination(_)
+            | Payload::DeepeningRound(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::CommandReset(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::DeadEnd(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::Shutdown(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_) => return event.msg.clone(),
         };
         let next: BTreeMap<CoreId, TargetOffset> = profile.iter().collect();
         let before = std::mem::replace(&mut self.logged_profile, next);
