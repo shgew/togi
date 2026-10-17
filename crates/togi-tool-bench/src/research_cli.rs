@@ -1,5 +1,5 @@
 use std::io::{self, Write as _};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
@@ -103,7 +103,14 @@ pub(crate) fn run(args: ResearchArgs) -> ExitCode {
             let Some((recipe, rest)) = command.split_first() else {
                 return fail(&"exec needs a recipe after --");
             };
-            match research::exec(issue, &run, &candidate, role, recipe, rest) {
+            let waiting = |path: &Path| {
+                let _ = writeln!(
+                    io::stderr(),
+                    "research: another gate or benchmark holds {}; waiting for it",
+                    path.display()
+                );
+            };
+            match research::exec(issue, &run, &candidate, role, recipe, rest, &waiting) {
                 Ok(End::Exited { code: 0 }) => Ok("run complete".to_owned()),
                 Ok(end) => {
                     let _ = writeln!(io::stderr(), "research: run {}", end.describe());

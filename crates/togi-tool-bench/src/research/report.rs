@@ -61,6 +61,17 @@ pub fn render(campaign: &Campaign, notes: &str) -> String {
         .filter(|record| matches!(record, Record::CampaignResumed { .. }))
         .count();
     let _ = writeln!(out, "- Resumed: {resumes} times");
+    let torn = ledger
+        .records
+        .iter()
+        .filter(|record| matches!(record, Record::LedgerTorn { .. }))
+        .count();
+    if torn > 0 {
+        let _ = writeln!(
+            out,
+            "- Torn ledger lines: {torn}, kept as `ledger_torn` records and read as no record"
+        );
+    }
 
     let _ = writeln!(out, "\n## Candidates\n");
     let _ = writeln!(out, "| Candidate | Statement | Runs | Outcome | Reason |");
@@ -153,7 +164,7 @@ pub fn render(campaign: &Campaign, notes: &str) -> String {
             started.candidate,
             started.role.name(),
             started.recipe.name(),
-            started.args.join(" "),
+            started.args.join(" ").replace(&manifest.output, "$RUN"),
             end.map_or_else(|| "never ended".to_owned(), End::describe),
             short(&started.tree_sha256),
             started.stdout,
@@ -165,11 +176,21 @@ pub fn render(campaign: &Campaign, notes: &str) -> String {
         let _ = writeln!(out, "Every run completed.");
     } else {
         let list: Vec<String> = incomplete.iter().map(u32::to_string).collect();
-        let _ = writeln!(
-            out,
-            "Incomplete runs: {}. No outcome rests on an incomplete run.",
-            list.join(", ")
-        );
+        let resting: Vec<String> = ledger
+            .decisions()
+            .filter(|decision| decision.runs.iter().any(|seq| incomplete.contains(seq)))
+            .map(|decision| format!("{} ({})", decision.candidate, decision.outcome.name()))
+            .collect();
+        let _ = writeln!(out, "Incomplete runs: {}.", list.join(", "));
+        if resting.is_empty() {
+            let _ = writeln!(out, "No outcome rests on an incomplete run.");
+        } else {
+            let _ = writeln!(
+                out,
+                "Outcomes that list an incomplete run: {}.",
+                resting.join(", ")
+            );
+        }
     }
     if !confirmations.is_empty() {
         let _ = writeln!(out, "\n## Confirmations\n");
@@ -218,7 +239,8 @@ fn at(record: &Record) -> Timestamp {
     match record {
         Record::CampaignStarted { at, .. }
         | Record::CampaignResumed { at, .. }
-        | Record::CampaignStopped { at, .. } => *at,
+        | Record::CampaignStopped { at, .. }
+        | Record::LedgerTorn { at, .. } => *at,
         Record::ExperimentStarted(started) => started.at,
         Record::ExperimentEnded(ended) => ended.at,
         Record::Outcome(decision) => decision.at,

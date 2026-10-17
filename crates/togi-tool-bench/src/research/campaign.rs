@@ -99,6 +99,17 @@ pub fn start(
             manifest.reference
         )));
     }
+    let unwritable: Vec<String> = workspace
+        .changed(&manifest.reference)?
+        .into_iter()
+        .filter(|path| !manifest.may_write(path))
+        .collect();
+    if !unwritable.is_empty() {
+        return Err(Refusal::Order(format!(
+            "the reference differs from the checkout outside the writable paths, at {}; no reference run could pass the checks",
+            unwritable.join(", ")
+        )));
+    }
     manifest.check_tree(workspace)?;
     let record = Record::CampaignStarted {
         at: now,

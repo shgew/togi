@@ -2,12 +2,15 @@ use std::collections::BTreeMap;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
+use togi_machine::object_only;
+use togi_machine::serde_object::{self, Object};
 
 use super::manifest::Pinned;
+use crate::suite::hex;
 
-/// One line of `experiments.jsonl`. The ledger is only ever appended to.
+/// One line of `experiments.jsonl`. The ledger is only ever appended to; it decodes from an object only.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "event", rename_all = "snake_case")]
+#[serde(tag = "event", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Record {
     CampaignStarted {
         at: Timestamp,
@@ -25,6 +28,12 @@ pub enum Record {
         at: Timestamp,
         reason: StopReason,
         detail: String,
+    },
+    /// An append found the ledger ending in a fragment a killed or failed write left, ended it with a newline
+    /// and kept its bytes here, hex-encoded: the fragment is never a record.
+    LedgerTorn {
+        at: Timestamp,
+        discarded: String,
     },
 }
 
@@ -75,30 +84,48 @@ impl Role {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Started {
-    pub seq: u32,
-    pub at: Timestamp,
-    pub candidate: String,
-    pub role: Role,
-    pub recipe: Recipe,
-    pub args: Vec<String>,
-    pub head: String,
-    /// The SHA-256 of every path that differs from the checkout, with its content: the candidate's identity.
-    pub tree_sha256: String,
-    pub reference: String,
-    pub pins: Vec<Pinned>,
-    pub stdout: String,
-    pub stderr: String,
-}
+object_only! {
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Started {
+        pub seq: u32,
+        pub at: Timestamp,
+        pub candidate: String,
+        pub role: Role,
+        pub recipe: Recipe,
+        pub args: Vec<String>,
+        pub head: String,
+        /// The SHA-256 of every path that differs from the checkout, with its content: the candidate's identity.
+        pub tree_sha256: String,
+        pub reference: String,
+        pub pins: Vec<Pinned>,
+        pub stdout: String,
+        pub stderr: String,
+    }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Ended {
-    pub seq: u32,
-    pub at: Timestamp,
-    pub end: End,
-    pub stdout_sha256: Option<String>,
-    pub stderr_sha256: Option<String>,
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Ended {
+        pub seq: u32,
+        pub at: Timestamp,
+        #[serde(deserialize_with = "serde_object::deserialize")]
+        pub end: End,
+        pub stdout_sha256: Option<String>,
+        pub stderr_sha256: Option<String>,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Decision {
+        pub at: Timestamp,
+        pub candidate: String,
+        pub outcome: Outcome,
+        pub reason: String,
+        /// Full-precision metrics as the researcher read them from the runs' structured output.
+        pub metrics: BTreeMap<String, f64>,
+        /// The runs the outcome rests on, by sequence number.
+        pub runs: Vec<u32>,
+    }
 }
 
 /// How a run ended. Only `Exited` with code 0 is a complete run; every other end is incomplete.
@@ -135,18 +162,6 @@ impl End {
             Self::Incomplete => "incomplete: found unfinished on resume".to_owned(),
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Decision {
-    pub at: Timestamp,
-    pub candidate: String,
-    pub outcome: Outcome,
-    pub reason: String,
-    /// Full-precision metrics as the researcher read them from the runs' structured output.
-    pub metrics: BTreeMap<String, f64>,
-    /// The runs the outcome rests on, by sequence number.
-    pub runs: Vec<u32>,
 }
 
 /// The scientific outcome of a candidate, decided by the brief's keep rule, never by a command's exit status.
@@ -222,14 +237,61 @@ pub enum LedgerError {
     NoStart,
 }
 
+/// Decodes one complete ledger line, from a JSON object only.
+fn decode(line: &[u8]) -> Result<Record, serde_json::Error> {
+    serde_json::from_slice::<Object<Record>>(line).map(|Object(record)| record)
+}
+
+/// The bytes after the ledger's last newline: a fragment a killed or failed append left, if any.
+fn torn_tail(bytes: &[u8]) -> Option<&[u8]> {
+    let start = bytes
+        .iter()
+        .rposition(|&byte| byte == b'\n')
+        .map_or(0, |end| end + 1);
+    Some(&bytes[start..]).filter(|tail| !tail.is_empty())
+}
+
+/// What an append writes before its records when the ledger ends in a torn fragment: a newline that ends the
+/// fragment, then a `ledger_torn` record holding its bytes. Nothing for a ledger that ends cleanly.
+pub(super) fn end_torn_tail(ledger: &[u8], now: Timestamp) -> Result<Vec<u8>, serde_json::Error> {
+    let Some(tail) = torn_tail(ledger) else {
+        return Ok(Vec::new());
+    };
+    let mut bytes = vec![b'\n'];
+    serde_json::to_writer(
+        &mut bytes,
+        &Record::LedgerTorn {
+            at: now,
+            discarded: hex(tail),
+        },
+    )?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
 impl Ledger {
+    /// Reads the ledger's complete lines. Bytes after the last newline are a torn tail, never a record, and a
+    /// fragment directly followed by the `ledger_torn` record holding its bytes is skipped the same way.
     pub fn parse(bytes: &[u8]) -> Result<Self, LedgerError> {
+        let complete = &bytes[..bytes.len() - torn_tail(bytes).map_or(0, <[u8]>::len)];
         let mut records = Vec::new();
-        for (index, line) in bytes.split(|&byte| byte == b'\n').enumerate() {
+        let mut lines = complete.split(|&byte| byte == b'\n').enumerate().peekable();
+        while let Some((index, line)) = lines.next() {
             if line.is_empty() {
                 continue;
             }
-            let record = serde_json::from_slice(line).map_err(|source| LedgerError::Decode {
+            let repair = lines
+                .peek()
+                .and_then(|(_, next)| decode(next).ok())
+                .filter(|next| {
+                    matches!(next, Record::LedgerTorn { discarded, .. } if *discarded == hex(line))
+                });
+            if let Some(repair) = repair {
+                records.push(repair);
+                lines.next();
+                continue;
+            }
+            let record = decode(line).map_err(|source| LedgerError::Decode {
                 line: index + 1,
                 source,
             })?;

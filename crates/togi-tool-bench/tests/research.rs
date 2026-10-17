@@ -342,6 +342,63 @@ fn real_process_a_replaced_manifest_stops_the_campaign() {
     );
 }
 
+#[test]
+fn real_process_a_deleted_manifest_stops_the_campaign() {
+    let fixture = fixture();
+    let start = fixture.run(&["start", "--manifest", fixture.manifest.to_str().unwrap()]);
+    assert!(start.status.success(), "{}", text(&start.stderr));
+    fs::remove_file(fixture.run_dir().join("manifest.json")).unwrap();
+    let output = fixture.exec("reference", &FORWARD).output().unwrap();
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains("manifest.json is missing"), "{stderr}");
+    assert_eq!(
+        fixture.ledger().last().unwrap()["reason"],
+        "evidence-changed"
+    );
+}
+
+#[test]
+fn real_process_an_outcome_records_its_metrics_file() {
+    let fixture = fixture();
+    let start = fixture.run(&["start", "--manifest", fixture.manifest.to_str().unwrap()]);
+    assert!(start.status.success(), "{}", text(&start.stderr));
+    let reference = fixture.exec("reference", &FORWARD).output().unwrap();
+    assert!(reference.status.success(), "{}", text(&reference.stderr));
+    let run = fixture.run_dir();
+    let run = run.to_str().unwrap();
+    let metrics = fixture.base.join("metrics.json");
+    let metrics_arg = metrics.to_str().unwrap();
+    let outcome = |content: &[u8]| {
+        fs::write(&metrics, content).unwrap();
+        fixture.run(&[
+            "outcome",
+            "--run",
+            run,
+            "--candidate",
+            "h1",
+            "--outcome",
+            "rejected",
+            "--reason",
+            "worse than the reference",
+            "--metrics",
+            metrics_arg,
+        ])
+    };
+    let positional = outcome(b"[0.25]");
+    assert_eq!(positional.status.code(), Some(1));
+    assert!(
+        text(&positional.stderr).contains("decode the metrics"),
+        "{}",
+        text(&positional.stderr)
+    );
+    let recorded = outcome(br#"{"brier": 0.12345678901234566}"#);
+    assert!(recorded.status.success(), "{}", text(&recorded.stderr));
+    let last = fixture.ledger().last().unwrap().clone();
+    assert_eq!(last["event"], "outcome");
+    assert_eq!(last["outcome"], "rejected");
+    assert_eq!(last["metrics"]["brier"], 0.123_456_789_012_345_66);
+}
+
 fn wait_for(what: &str, mut ready: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while !ready() {

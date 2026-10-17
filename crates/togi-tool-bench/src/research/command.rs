@@ -1,5 +1,11 @@
+use std::path::{Component, Path};
+
 use super::ledger::{Recipe, Role};
-use super::manifest::{Manifest, Mode, within};
+use super::manifest::{Manifest, Mode};
+use super::run::RECORD;
+
+/// The committed baseline model development's F5 check pairs the committed machines' runs against.
+const F5_BASELINE: &str = "tools/bench/baseline.jsonl";
 
 /// Why the dispatcher refuses to run an evaluator.
 #[derive(Debug, thiserror::Error)]
@@ -14,12 +20,13 @@ pub enum CommandError {
     },
 }
 
-/// Which evaluator a campaign of `mode` may run, by its `just` recipe.
+/// Which evaluator a campaign of `mode` may run, by its `just` recipe. Model development runs `bench` only as
+/// its F5 finalization check, which [`arguments`] holds it to.
 pub(super) fn recipe(mode: Mode, name: &str) -> Result<Recipe, CommandError> {
     let recipe = match (mode, name) {
         (Mode::ModelDevelopment, "forward") => Recipe::Forward,
         (Mode::ModelDevelopment, "fit") => Recipe::Fit,
-        (Mode::FixedPolicyObservation | Mode::CounterfactualAccounting, "bench") => Recipe::Bench,
+        (_, "bench") => Recipe::Bench,
         _ => {
             return Err(CommandError::Recipe {
                 recipe: name.to_owned(),
@@ -28,6 +35,21 @@ pub(super) fn recipe(mode: Mode, name: &str) -> Result<Recipe, CommandError> {
         }
     };
     Ok(recipe)
+}
+
+/// Whether an evaluator's output `path` lies inside the run directory `run`, below none of the campaign's own
+/// record (`manifest.json`, `experiments.jsonl`, `lock`, `report.md`, `raw`) and without `..`.
+fn inside_run(path: &str, run: &str) -> bool {
+    let Some(rest) = path
+        .strip_prefix(run)
+        .and_then(|rest| rest.strip_prefix('/'))
+    else {
+        return false;
+    };
+    let mut components = Path::new(rest).components();
+    let first = components.next();
+    matches!(first, Some(Component::Normal(name)) if !RECORD.iter().any(|record| name == *record))
+        && components.all(|component| matches!(component, Component::Normal(_)))
 }
 
 /// Checks a run's arguments against the manifest and the run's role, and returns them with `--jobs` set to the
@@ -80,9 +102,9 @@ pub(super) fn arguments(
     let output = |flag: &str| -> Result<(), CommandError> {
         match value(flag) {
             None => Ok(()),
-            Some(Some(path)) if within(path, &manifest.output) && path != manifest.output => Ok(()),
+            Some(Some(path)) if inside_run(path, &manifest.output) => Ok(()),
             Some(_) => Err(refuse(format!(
-                "{flag} must name a path inside {}",
+                "{flag} must name a path inside {}, outside its record",
                 manifest.output
             ))),
         }
@@ -144,31 +166,51 @@ pub(super) fn arguments(
                 (Recipe::Bench, _) => {}
             }
         }
-        Recipe::Bench => {
-            if !matches!(role, Role::Reference | Role::Candidate) {
-                return Err(refuse(
-                    "observation and accounting runs have no confirmation".to_owned(),
-                ));
+        Recipe::Bench => match manifest.mode {
+            Mode::ModelDevelopment => {
+                if role != Role::Finalization {
+                    return Err(refuse(
+                        "model development runs bench only as the F5 finalization check".to_owned(),
+                    ));
+                }
+                if value("--suite").is_some()
+                    || value("--split") != Some(Some("all"))
+                    || value("--baseline") != Some(Some(F5_BASELINE))
+                {
+                    return Err(refuse(format!(
+                        "F5 runs the committed suite with --split all --baseline {F5_BASELINE}"
+                    )));
+                }
+                for flag in ["--out", "--keep", "--cache"] {
+                    output(flag)?;
+                }
             }
-            let Some(suite) = &manifest.suite else {
-                return Err(refuse("the manifest names no suite".to_owned()));
-            };
-            if value("--suite") != Some(Some(suite.path.as_str())) {
-                return Err(refuse(format!(
-                    "--suite must name the manifest's suite {}",
-                    suite.path
-                )));
+            Mode::FixedPolicyObservation | Mode::CounterfactualAccounting => {
+                if !matches!(role, Role::Reference | Role::Candidate) {
+                    return Err(refuse(
+                        "observation and accounting runs have no confirmation".to_owned(),
+                    ));
+                }
+                let Some(suite) = &manifest.suite else {
+                    return Err(refuse("the manifest names no suite".to_owned()));
+                };
+                if value("--suite") != Some(Some(suite.path.as_str())) {
+                    return Err(refuse(format!(
+                        "--suite must name the manifest's suite {}",
+                        suite.path
+                    )));
+                }
+                if value("--split") != Some(Some(suite.split.name())) {
+                    return Err(refuse(format!(
+                        "--split must be the manifest's {}",
+                        suite.split.name()
+                    )));
+                }
+                for flag in ["--out", "--keep", "--cache"] {
+                    output(flag)?;
+                }
             }
-            if value("--split") != Some(Some(suite.split.name())) {
-                return Err(refuse(format!(
-                    "--split must be the manifest's {}",
-                    suite.split.name()
-                )));
-            }
-            for flag in ["--out", "--keep", "--cache"] {
-                output(flag)?;
-            }
-        }
+        },
     }
     let mut args = args.to_vec();
     match value("--jobs") {

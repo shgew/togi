@@ -14,7 +14,7 @@ use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 
 use super::campaign::{self, Campaign, Halt, Refusal};
-use super::ledger::{End, Ledger, LedgerError, Outcome, Record, Role, StopReason};
+use super::ledger::{End, Ledger, LedgerError, Outcome, Record, Role, StopReason, end_torn_tail};
 use super::manifest::{Manifest, sha256};
 use super::report;
 use super::{GitWorkspace, WorkspaceError};
@@ -23,6 +23,10 @@ const MANIFEST: &str = "manifest.json";
 const LEDGER: &str = "experiments.jsonl";
 const LOCK: &str = "lock";
 const REPORT: &str = "report.md";
+const RAW: &str = "raw";
+
+/// The run directory's own record, which no evaluator output may name.
+pub(super) const RECORD: [&str; 5] = [MANIFEST, LEDGER, LOCK, REPORT, RAW];
 
 #[derive(Debug, thiserror::Error)]
 pub enum ResearchError {
@@ -73,10 +77,18 @@ pub struct RunDir {
 impl RunDir {
     /// Creates the directory, refusing one that exists, and takes its lock.
     pub fn create(path: &Path) -> Result<Self, ResearchError> {
-        if path.exists() {
-            return Err(ResearchError::Exists(path.to_owned()));
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(io_error("create", parent))?;
         }
-        fs::create_dir_all(path.join("raw")).map_err(io_error("create", path))?;
+        match fs::create_dir(path) {
+            Ok(()) => {}
+            Err(source) if source.kind() == io::ErrorKind::AlreadyExists => {
+                return Err(ResearchError::Exists(path.to_owned()));
+            }
+            Err(source) => return Err(io_error("create", path)(source)),
+        }
+        let raw = path.join(RAW);
+        fs::create_dir(&raw).map_err(io_error("create", &raw))?;
         Self::open(path)
     }
 
@@ -115,16 +127,23 @@ impl RunDir {
         })
     }
 
-    /// Appends records to the ledger, one JSON line each; nothing already written changes.
+    /// Appends records to the ledger, one JSON line each; nothing already written changes. A fragment a failed
+    /// append left is first ended with a newline and recorded as `ledger_torn`.
     pub fn append(&self, records: &[Record]) -> Result<(), ResearchError> {
         let path = self.path.join(LEDGER);
-        let mut lines = Vec::new();
+        let encode = |source: serde_json::Error| ResearchError::Io {
+            what: "encode a record for",
+            path: path.clone(),
+            source: source.into(),
+        };
+        let existing = match fs::read(&path) {
+            Ok(existing) => existing,
+            Err(source) if source.kind() == io::ErrorKind::NotFound => Vec::new(),
+            Err(source) => return Err(io_error("read", &path)(source)),
+        };
+        let mut lines = end_torn_tail(&existing, Timestamp::now()).map_err(encode)?;
         for record in records {
-            serde_json::to_writer(&mut lines, record).map_err(|source| ResearchError::Io {
-                what: "encode a record for",
-                path: path.clone(),
-                source: source.into(),
-            })?;
+            serde_json::to_writer(&mut lines, record).map_err(encode)?;
             lines.push(b'\n');
         }
         let mut file = OpenOptions::new()
@@ -226,7 +245,8 @@ pub fn resume(issue: u32, run: &Path) -> Result<Vec<u32>, ResearchError> {
 }
 
 /// Checks and records one evaluator run, runs it under the host-shared lock within the wall time left, keeps
-/// its raw output and records how it ended.
+/// its raw output and records how it ended. `waiting` is told once, with the lock's path, when another gate or
+/// benchmark holds the host-shared lock; the checks and the time left are read after the wait.
 pub fn exec(
     issue: u32,
     run: &Path,
@@ -234,16 +254,17 @@ pub fn exec(
     role: Role,
     recipe: &str,
     args: &[String],
+    waiting: &dyn Fn(&Path),
 ) -> Result<End, ResearchError> {
     let workspace = GitWorkspace::current()?;
     let dir = RunDir::open(run)?;
+    let host_lock = workspace.host_lock()?;
+    let _host = lock_host(&host_lock, waiting)?;
     let campaign = dir.campaign(issue)?;
     let now = Timestamp::now();
     let planned = campaign
         .plan(&workspace, now, candidate, role, recipe, args)
         .map_err(|halt| halted(&dir, now, halt))?;
-    let host_lock = workspace.host_lock()?;
-    let _host = lock_host(&host_lock)?;
     let started = planned.started;
     let stdout_path = dir.path.join(&started.stdout);
     let stderr_path = dir.path.join(&started.stderr);
@@ -279,7 +300,7 @@ pub fn exec(
 }
 
 /// Takes the lock every gate and benchmark on this host shares, waiting for it; dropping the file releases it.
-fn lock_host(path: &Path) -> Result<File, ResearchError> {
+fn lock_host(path: &Path, waiting: &dyn Fn(&Path)) -> Result<File, ResearchError> {
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -288,13 +309,7 @@ fn lock_host(path: &Path) -> Result<File, ResearchError> {
         .map_err(io_error("open", path))?;
     match file.try_lock() {
         Ok(()) => return Ok(file),
-        Err(TryLockError::WouldBlock) => {
-            let _ = writeln!(
-                io::stderr(),
-                "research: another gate or benchmark holds {}; waiting for it",
-                path.display()
-            );
-        }
+        Err(TryLockError::WouldBlock) => waiting(path),
         Err(TryLockError::Error(source)) => {
             return Err(ResearchError::Io {
                 what: "lock",

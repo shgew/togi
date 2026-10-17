@@ -24,6 +24,8 @@ const SPENT: &str = "20261004T211726Z";
 const FACTS: &str = "facts/original.jsonl.gz";
 const SUITE: &str = "tools/bench/suites/research.json";
 const RUN: &str = "/research/427/t1";
+/// A commit outside the checkout's history.
+const ORPHAN: &str = "dddddddddddddddddddddddddddddddddddddddd";
 
 /// A checkout in memory: its files now, and the files at each commit.
 struct Fake {
@@ -44,7 +46,7 @@ impl Workspace for Fake {
     fn is_ancestor(&self, ancestor: &str, descendant: &str) -> Result<bool, WorkspaceError> {
         Ok(ancestor == descendant
             || (ancestor == REFERENCE && descendant == CHECKOUT)
-            || ancestor == CHECKOUT)
+            || (ancestor == CHECKOUT && descendant != ORPHAN))
     }
 
     fn changed(&self, base: &str) -> Result<BTreeSet<String>, WorkspaceError> {
@@ -333,6 +335,9 @@ fn valid_manifest_starts_the_ledger_with_its_hash() {
 #[test_case(|m| m["confirmations"] = json!(2), "allows 1 confirmations" ; "too many confirmations")]
 #[test_case(|m| m["limits"] = json!({"wall_minutes": 0, "candidates": 12, "jobs": 4}), "must be positive" ; "zero limit")]
 #[test_case(|m| m["suite"] = json!({"path": SUITE, "sha256": "x", "split": "dev"}), "names no bench suite" ; "suite in model mode")]
+#[test_case(|m| m["limits"] = json!([480, 12, 4]), "expected an object" ; "limits as an array")]
+#[test_case(|m| m["frozen"][0] = json!(["Cargo.lock", sha256(b"lock")]), "expected an object" ; "pin as an array")]
+#[test_case(|m| m["hypotheses"][0] = json!(["h1", "a shared core term"]), "expected an object" ; "hypothesis as an array")]
 fn manifest_is_rejected(change: fn(&mut Value), expected: &str) {
     let fake = fake(&sessions());
     let mut manifest = model_manifest(&fake);
@@ -364,6 +369,53 @@ fn issue_without_brief_is_rejected() {
         matches!(error, Refusal::Manifest(ManifestError::NoBrief(428))),
         "{error}"
     );
+}
+
+#[test_case(480, |fake| { let mut m = model_manifest(fake); m["issue"] = json!(480); m["confirmations"] = json!(0); m }, "not an approved confirmation session" ; "480 reads no confirmation session")]
+#[test_case(896, |fake| { let mut m = observation_manifest(fake); m["issue"] = json!(896); m }, "runs in counterfactual accounting mode" ; "896 is accounting")]
+#[test_case(503, |fake| { let mut m = observation_manifest(fake); m["issue"] = json!(503); m["mode"] = json!("counterfactual-accounting"); m }, "runs in fixed-policy observation mode" ; "503 is observation")]
+fn issue_table_is_enforced(issue: u32, manifest: fn(&Fake) -> Value, expected: &str) {
+    let fake = fake(&sessions());
+    let bytes = serde_json::to_vec(&manifest(&fake)).unwrap();
+    let error = start(&bytes, issue, &fake, at(0)).unwrap_err();
+    assert!(error.to_string().contains(expected), "{error}");
+}
+
+#[test]
+fn reference_differing_outside_the_writable_paths_is_refused_at_start() {
+    let mut fake = fake(&sessions());
+    let manifest = serde_json::to_vec(&model_manifest(&fake)).unwrap();
+    fake.commits.get_mut(REFERENCE).unwrap().insert(
+        "crates/togi-tuner/src/lib.rs".to_owned(),
+        b"older tuner".to_vec(),
+    );
+    let error = start(&manifest, 427, &fake, at(0)).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("outside the writable paths, at crates/togi-tuner/src/lib.rs"),
+        "{error}"
+    );
+}
+
+#[test]
+fn reference_differing_at_writable_paths_runs_at_the_reference_tree() {
+    let mut fake = fake(&sessions());
+    fake.commits.get_mut(REFERENCE).unwrap().insert(
+        "crates/togi-sim/src/model.rs".to_owned(),
+        b"older model".to_vec(),
+    );
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    fake.edit("crates/togi-sim/src/model.rs", "older model");
+    live.run(
+        &fake,
+        "h1",
+        Role::Reference,
+        FORWARD,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    assert_eq!(live.stopped(), None);
 }
 
 #[test]
@@ -492,7 +544,7 @@ fn deleted_input_stops_the_campaign() {
     assert_eq!(live.stopped(), Some(StopReason::EvidenceChanged));
 }
 
-#[test_case("bench --suite x --split dev", "not an evaluator of model development" ; "bench in model mode")]
+#[test_case("bench --suite x --split dev", "only as the F5 finalization check" ; "bench in a model development run")]
 #[test_case("sim", "not an evaluator" ; "unlisted recipe")]
 #[test_case("forward --seal 1", "--facts must name a manifest input" ; "default extract")]
 #[test_case("forward --facts tools/bench/facts/target.jsonl.gz --seal 1", "is not a manifest input" ; "other facts")]
@@ -531,6 +583,9 @@ fn worker_limit_is_added_when_absent() {
 #[test_case("bench --split dev", "--suite must name the manifest's suite" ; "default suite")]
 #[test_case("bench --suite tools/bench/suites/research.json --split holdout", "--split must be the manifest's dev" ; "other split")]
 #[test_case("bench --suite tools/bench/suites/research.json --split dev --out runs/elsewhere", "--out must name a path inside /research/490/o" ; "output outside the run")]
+#[test_case("bench --suite tools/bench/suites/research.json --split dev --out /research/490/o/experiments.jsonl", "outside its record" ; "output over the ledger")]
+#[test_case("bench --suite tools/bench/suites/research.json --split dev --keep /research/490/o/raw/k", "outside its record" ; "output under the raw output")]
+#[test_case("bench --suite tools/bench/suites/research.json --split dev --out /research/490/o/../x", "outside its record" ; "output escaping the run")]
 #[test_case("bench --suite tools/bench/suites/research.json --split dev --baseline-out b.json", "--baseline-out is not allowed" ; "baseline refresh")]
 fn observation_evaluator_is_refused(command: &str, expected: &str) {
     let fake = fake(&sessions());
@@ -916,6 +971,121 @@ fn confirmation_runs_once_then_finalizes() {
         outside.to_string().contains("inside /research/427/t1"),
         "{outside}"
     );
+    live.run(
+        &fake,
+        "h1",
+        Role::Finalization,
+        "bench --split all --baseline tools/bench/baseline.jsonl --out /research/427/t1/f5.jsonl",
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    let unwritten = live
+        .begin(
+            &fake,
+            "h1",
+            Role::Finalization,
+            "fit --facts facts/original.jsonl.gz",
+        )
+        .unwrap_err();
+    assert!(
+        unwritten
+            .to_string()
+            .contains("--out must name a directory inside"),
+        "{unwritten}"
+    );
+}
+
+/// Runs h1 through a passed confirmation, leaving the tree at the confirmed candidate.
+fn confirmed(fake: &mut Fake) -> Live {
+    let mut live = kept(fake);
+    live.run(
+        fake,
+        "h1",
+        Role::Confirmation,
+        CONFIRM,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    fake.revert("crates/togi-sim/src/model.rs");
+    live.run(
+        fake,
+        "h1",
+        Role::ConfirmationReference,
+        CONFIRM,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    live.decide(fake, "h1", Outcome::ConfirmationPassed)
+        .unwrap();
+    live
+}
+
+#[test_case(Role::Candidate, "bench --split all --baseline tools/bench/baseline.jsonl", "only as the F5 finalization check" ; "F5 in a candidate run")]
+#[test_case(Role::Finalization, "bench --split dev --baseline tools/bench/baseline.jsonl", "F5 runs the committed suite" ; "F5 on another split")]
+#[test_case(Role::Finalization, "bench --split all --baseline other.jsonl", "F5 runs the committed suite" ; "F5 against another baseline")]
+#[test_case(Role::Finalization, "bench --suite tools/bench/suites/research.json --split all --baseline tools/bench/baseline.jsonl", "F5 runs the committed suite" ; "F5 on another suite")]
+fn model_development_benches_only_f5(role: Role, command: &str, expected: &str) {
+    let mut fake = fake(&sessions());
+    let mut live = confirmed(&mut fake);
+    let halt = live.begin(&fake, "h1", role, command).unwrap_err();
+    assert!(matches!(halt, Halt::Refuse(_)), "{halt}");
+    assert!(halt_text(&halt).contains(expected), "{}", halt_text(&halt));
+}
+
+#[test]
+fn confirmation_outcome_is_recorded_once() {
+    let mut fake = fake(&sessions());
+    let mut live = confirmed(&mut fake);
+    let before = live.campaign.ledger.records.clone();
+    let again = live
+        .decide(&fake, "h1", Outcome::ConfirmationFailed)
+        .unwrap_err();
+    assert!(
+        again
+            .to_string()
+            .contains("not a kept candidate awaiting its confirmation"),
+        "{again}"
+    );
+    assert_eq!(live.campaign.ledger.records, before);
+}
+
+#[test]
+fn confirmation_without_its_reference_run_stops_unpaired() {
+    let mut fake = fake(&sessions());
+    let mut live = kept(&mut fake);
+    live.run(
+        &fake,
+        "h1",
+        Role::Confirmation,
+        CONFIRM,
+        End::Exited { code: 0 },
+    )
+    .unwrap();
+    let halt = live
+        .decide(&fake, "h1", Outcome::ConfirmationPassed)
+        .unwrap_err();
+    assert!(
+        halt.to_string().contains("no complete reference run"),
+        "{halt}"
+    );
+    assert_eq!(live.stopped(), Some(StopReason::UnpairedComparison));
+}
+
+#[test]
+fn head_leaving_the_checkout_history_stops_the_campaign() {
+    let mut fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    fake.head = ORPHAN.to_owned();
+    let halt = live
+        .begin(&fake, "h1", Role::Reference, FORWARD)
+        .unwrap_err();
+    assert!(
+        halt.to_string()
+            .contains("does not descend from the checkout"),
+        "{halt}"
+    );
+    assert_eq!(live.stopped(), Some(StopReason::ForbiddenDiff));
 }
 
 #[test]
@@ -1109,7 +1279,7 @@ fn report_names_the_stop_outcomes_incomplete_runs_and_notes() {
         "| h2 | a structured singleton term | – | not run |  |",
         "| brier | 0.12345678901234566 |",
         "incomplete: found unfinished on resume",
-        "Incomplete runs: 3.",
+        "Incomplete runs: 3.\nNo outcome rests on an incomplete run.",
         "historical, non-blind check",
         "## Remaining uncertainty\n\nThe confirmation never completed.",
     ] {
@@ -1118,6 +1288,90 @@ fn report_names_the_stop_outcomes_incomplete_runs_and_notes() {
             "missing {expected:?} in\n{report}"
         );
     }
+}
+
+#[test]
+fn report_lists_outcomes_on_incomplete_runs_and_hides_the_run_directory() {
+    let fake = fake(&sessions());
+    let mut live = Live::start(&observation_manifest(&fake), 490, &fake);
+    live.run(
+        &fake,
+        "o1",
+        Role::Candidate,
+        "bench --suite tools/bench/suites/research.json --split dev --out /research/490/o/b.jsonl",
+        End::Exited { code: 1 },
+    )
+    .unwrap();
+    live.decide(&fake, "o1", Outcome::Rejected).unwrap();
+    let report = render_report(&live.campaign, "");
+    assert!(report.contains("--out $RUN/b.jsonl"), "{report}");
+    assert!(!report.contains("/research/490/o"), "{report}");
+    assert!(
+        report
+            .contains("Incomplete runs: 1.\nOutcomes that list an incomplete run: o1 (rejected)."),
+        "{report}"
+    );
+}
+
+fn lines(records: &[Record]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for record in records {
+        serde_json::to_writer(&mut bytes, record).unwrap();
+        bytes.push(b'\n');
+    }
+    bytes
+}
+
+#[test]
+fn torn_tail_is_no_record_and_the_next_append_keeps_it() {
+    let mut fake = fake(&sessions());
+    let live = kept(&mut fake);
+    let records = &live.campaign.ledger.records;
+    let mut bytes = lines(records);
+    let fragment = br#"{"event":"campaign_resumed","at":"#;
+    bytes.extend_from_slice(fragment);
+    assert_eq!(Ledger::parse(&bytes).unwrap().records, *records);
+    let later = Record::CampaignResumed {
+        at: at(30),
+        head: CHECKOUT.to_owned(),
+    };
+    bytes.extend(super::ledger::end_torn_tail(&bytes, at(30)).unwrap());
+    bytes.extend(lines(std::slice::from_ref(&later)));
+    let torn = Record::LedgerTorn {
+        at: at(30),
+        discarded: crate::suite::hex(fragment),
+    };
+    let expected: Vec<Record> = records.iter().cloned().chain([torn, later]).collect();
+    assert_eq!(Ledger::parse(&bytes).unwrap().records, expected);
+    assert!(
+        super::ledger::end_torn_tail(&bytes, at(31))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test_case(r#"{"event":"campaign_resumed","at":"2027-01-15T08:00:00Z"}"# ; "missing field")]
+#[test_case(r#"{"event":"campaign_resumed","at":"2027-01-15T08:00:00Z","head":"c","note":"x"}"# ; "unknown field")]
+#[test_case(r#"["campaign_resumed","2027-01-15T08:00:00Z","c"]"# ; "record as an array")]
+#[test_case(r#"{"event":"experiment_ended","seq":1,"at":"2027-01-15T08:00:00Z","end":["exited",0],"stdout_sha256":null,"stderr_sha256":null}"# ; "end as an array")]
+#[test_case(r#"{"event":"campaign_resumed","at":"# ; "fragment not followed by its ledger_torn")]
+fn ledger_line_is_refused(line: &str) {
+    let mut bytes = lines(&[Record::CampaignStarted {
+        at: at(0),
+        manifest_sha256: sha256(b"manifest"),
+        head: CHECKOUT.to_owned(),
+    }]);
+    bytes.extend_from_slice(line.as_bytes());
+    bytes.push(b'\n');
+    bytes.extend(lines(&[Record::CampaignResumed {
+        at: at(1),
+        head: CHECKOUT.to_owned(),
+    }]));
+    let error = Ledger::parse(&bytes).unwrap_err();
+    assert!(
+        matches!(error, LedgerError::Decode { line: 2, .. }),
+        "{error}"
+    );
 }
 
 #[test]
@@ -1147,4 +1401,38 @@ fn real_fs_run_dir_appends_and_holds_its_lock() {
     ));
     drop(dir);
     let _reopened = RunDir::open(&path).unwrap();
+}
+
+#[test]
+fn real_fs_append_ends_a_torn_line_and_keeps_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("t1");
+    let dir = RunDir::create(&path).unwrap();
+    let first = Record::CampaignStarted {
+        at: at(0),
+        manifest_sha256: sha256(b"manifest"),
+        head: CHECKOUT.to_owned(),
+    };
+    dir.append(std::slice::from_ref(&first)).unwrap();
+    let fragment = br#"{"event":"campaign_res"#;
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(path.join("experiments.jsonl"))
+        .unwrap();
+    file.write_all(fragment).unwrap();
+    drop(file);
+    assert_eq!(dir.ledger().unwrap().records, std::slice::from_ref(&first));
+    let second = Record::CampaignResumed {
+        at: at(1),
+        head: CHECKOUT.to_owned(),
+    };
+    dir.append(std::slice::from_ref(&second)).unwrap();
+    let records = dir.ledger().unwrap().records;
+    assert_eq!(records.len(), 3, "{records:?}");
+    assert_eq!(records[0], first);
+    assert!(
+        matches!(&records[1], Record::LedgerTorn { discarded, .. } if *discarded == crate::suite::hex(fragment)),
+        "{records:?}"
+    );
+    assert_eq!(records[2], second);
 }

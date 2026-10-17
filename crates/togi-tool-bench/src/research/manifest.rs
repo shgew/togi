@@ -5,6 +5,7 @@ use std::path::{Component, Path};
 use flate2::read::MultiGzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
+use togi_machine::object_only;
 
 use super::{Workspace, WorkspaceError};
 
@@ -156,45 +157,71 @@ const MODEL_PATHS: &[&str] = &[
 /// Files every manifest pins: the build environment.
 const ENVIRONMENT: &[&str] = &["Cargo.lock", "flake.lock", "rust-toolchain.toml"];
 
-/// The launch manifest of one campaign, as the owner writes it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Manifest {
-    pub issue: u32,
-    pub mode: Mode,
-    pub hypotheses: Vec<Hypothesis>,
-    /// The full commit the campaign starts from.
-    pub checkout: String,
-    /// The full commit of the unchanged reference.
-    pub reference: String,
-    /// Real trial-fact inputs, by canonical hash: a gzip file's decompressed bytes, any other file's bytes.
-    #[serde(default)]
-    pub inputs: Vec<Input>,
-    pub suite: Option<SuiteSelection>,
-    pub frozen: Vec<Pinned>,
-    pub writable: Vec<String>,
-    #[serde(default)]
-    pub limits: Limits,
-    /// The run directory: an absolute path outside the checkout, which the campaign creates.
-    pub output: String,
-    pub confirmations: u32,
-}
+object_only! {
+    /// The launch manifest of one campaign, as the owner writes it.
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Manifest {
+        pub issue: u32,
+        pub mode: Mode,
+        pub hypotheses: Vec<Hypothesis>,
+        /// The full commit the campaign starts from.
+        pub checkout: String,
+        /// The full commit of the unchanged reference.
+        pub reference: String,
+        /// Real trial-fact inputs, by canonical hash: a gzip file's decompressed bytes, any other file's bytes.
+        #[serde(default)]
+        pub inputs: Vec<Input>,
+        pub suite: Option<SuiteSelection>,
+        pub frozen: Vec<Pinned>,
+        pub writable: Vec<String>,
+        #[serde(default)]
+        pub limits: Limits,
+        /// The run directory: an absolute path outside the checkout, which the campaign creates.
+        pub output: String,
+        pub confirmations: u32,
+    }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Hypothesis {
-    pub id: String,
-    pub statement: String,
-}
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Hypothesis {
+        pub id: String,
+        pub statement: String,
+    }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Input {
-    pub path: String,
-    pub sha256: String,
-    pub development: Vec<String>,
-    #[serde(default)]
-    pub confirmation: Vec<String>,
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Input {
+        pub path: String,
+        pub sha256: String,
+        pub development: Vec<String>,
+        #[serde(default)]
+        pub confirmation: Vec<String>,
+    }
+
+    /// The suite whose hashed file fixes the scenarios and seeds, and the split a bench run selects.
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct SuiteSelection {
+        pub path: String,
+        pub sha256: String,
+        pub split: Split,
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Pinned {
+        pub path: String,
+        pub sha256: String,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Limits {
+        pub wall_minutes: u32,
+        pub candidates: u32,
+        pub jobs: u32,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -213,30 +240,6 @@ impl Split {
             Self::All => "all",
         }
     }
-}
-
-/// The suite whose hashed file fixes the scenarios and seeds, and the split a bench run selects.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SuiteSelection {
-    pub path: String,
-    pub sha256: String,
-    pub split: Split,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Pinned {
-    pub path: String,
-    pub sha256: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Limits {
-    pub wall_minutes: u32,
-    pub candidates: u32,
-    pub jobs: u32,
 }
 
 impl Default for Limits {
