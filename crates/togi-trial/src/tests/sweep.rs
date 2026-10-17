@@ -7,11 +7,11 @@ use tokio::task::spawn_local;
 use tokio::time::{Instant, sleep};
 
 use super::harness::{local, rig, rig_edit};
-use crate::error::{CleanupFailure, Error};
+use crate::error::{CleanupFailure, Error, SystemdError};
 use crate::id::ScopeName;
 use crate::os::fake::{Reply, ScanFault};
 use crate::os::{KillSignal, Os, Systemd};
-use crate::procfs::ScopeProcess;
+use crate::procfs::{ProcError, ScopeProcess};
 use crate::supervisor::Env;
 use crate::sweep::{parse_listing, probe, sweep as run_sweep};
 use crate::testing::TestBackend;
@@ -379,8 +379,8 @@ fn bus_unreachable() -> Reply {
 fn is_the_command_failure(failure: &CleanupFailure) -> bool {
     std::error::Error::source(failure).is_some_and(|source| {
         matches!(
-            source.downcast_ref::<togi_command::Error>(),
-            Some(togi_command::Error::Spawn { .. })
+            source.downcast_ref::<SystemdError>(),
+            Some(SystemdError::Command(togi_command::Error::Spawn { .. }))
         )
     })
 }
@@ -565,7 +565,11 @@ fn the_probe_reports_a_confined_scope_and_names_failures() {
                 }),
                 _ => None,
             });
-            assert!(matches!(probe(&rig.env).await, Err(Error::Probe { .. })));
+            assert!(matches!(
+                probe(&rig.env).await,
+                Err(Error::Probe(SystemdError::Exit { status, output }))
+                    if !status.success() && output.is_empty()
+            ));
         })
         .await;
     });
@@ -581,7 +585,13 @@ fn the_probe_is_bounded_by_thirty_seconds_and_needs_an_account() {
                 _ => None,
             });
             let begun = Instant::now();
-            assert!(matches!(probe(&rig.env).await, Err(Error::Probe { .. })));
+            assert!(matches!(
+                probe(&rig.env).await,
+                Err(Error::Probe(
+                    SystemdError::Timeout(_)
+                        | SystemdError::Command(togi_command::Error::TimedOut { .. })
+                ))
+            ));
             assert_eq!(begun.elapsed(), secs(30));
 
             let rig = rig_edit(TestBackend::new("/bin/true"), Timing::default(), |env| {
@@ -2012,8 +2022,11 @@ fn a_failed_initial_process_scan_is_containment_and_the_listed_scopes_are_still_
                 matches!(
                     failures.first(),
                     Some(failure @ CleanupFailure::Observe { what: "the trial processes", .. })
-                        if std::error::Error::source(failure)
-                            .is_some_and(|source| source.to_string() == "scan failed")
+                        if std::error::Error::source(failure).is_some_and(|source| matches!(
+                            source.downcast_ref::<ProcError>(),
+                            Some(ProcError::Read { source, .. })
+                                if source.kind() == std::io::ErrorKind::PermissionDenied
+                        ))
                 ),
                 "{failures:?}"
             );

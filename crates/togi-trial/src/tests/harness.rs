@@ -751,12 +751,11 @@ mod tests {
             let recorded = Rc::clone(&seen);
             fake.on_threads(move |pid| {
                 recorded.set(Some(pid));
-                *process.threads.borrow_mut() =
-                    Err(crate::procfs::ProcError::Observation("lost".to_owned()));
+                *process.threads.borrow_mut() = Err(crate::os::fake::lost_read());
             });
             assert!(matches!(
                 fake.threads(pid),
-                Err(crate::procfs::ProcError::Observation(_))
+                Err(crate::procfs::ProcError::Read { .. })
             ));
             assert_eq!(seen.get(), Some(pid));
         })
