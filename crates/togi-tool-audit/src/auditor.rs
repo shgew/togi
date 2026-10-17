@@ -45,7 +45,7 @@ pub(crate) fn audit(events: &[Event], skipped: &Skipped, completion: Completion)
 #[derive(Default)]
 struct Auditor<'a> {
     findings: Findings,
-    boot: Option<BootId>,
+    boot: Option<&'a BootId>,
     cores: Vec<CoreId>,
     previous: Option<Seq>,
     seen: Seen<'a>,
@@ -53,20 +53,20 @@ struct Auditor<'a> {
     marks: Marks,
     writes: Writes,
     conclusion: Conclusion,
-    build: Option<Build>,
+    build: Option<&'a Build>,
     rebuilt: Option<Seq>,
 }
 
 impl<'a> Auditor<'a> {
     fn fold(&mut self, event: &'a Event) {
         if let Payload::SessionStart(start) = &event.payload {
-            self.build = Some(start.build.clone());
+            self.build = Some(&start.build);
             self.cores = start.cores.iter().map(|info| info.core).collect();
             self.cores.sort_unstable();
         }
-        if self.boot.as_ref() != Some(&event.boot) {
+        if self.boot != Some(&event.boot) {
             self.flush_rebuild();
-            self.boot = Some(event.boot.clone());
+            self.boot = Some(&event.boot);
             self.writes.new_boot(&self.cores);
         }
         self.check_sequence(event);
@@ -208,14 +208,14 @@ impl<'a> Auditor<'a> {
         }
     }
 
-    fn fold_build(&mut self, event: &Event) {
+    fn fold_build(&mut self, event: &'a Event) {
         match &event.payload {
             Payload::ConfigLoaded(loaded) => {
-                if self.rebuilt.is_some() && self.build.as_ref() == Some(&loaded.build) {
+                if self.rebuilt.is_some() && self.build == Some(&loaded.build) {
                     self.flush_rebuild();
                 }
                 self.rebuilt = None;
-                self.build = Some(loaded.build.clone());
+                self.build = Some(&loaded.build);
             }
             Payload::StateRebuilt(rebuilt) => {
                 if !rebuilt.fields.iter().any(|field| field == "last_seq") {

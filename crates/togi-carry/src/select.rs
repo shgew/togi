@@ -230,10 +230,8 @@ impl<A: Archives> Walk<'_, A> {
                 break;
             }
             let source = self.summary(session)?;
-            let previous = sources
-                .last()
-                .map(|previous| previous.facts().build.clone());
-            let repeats = previous.is_some_and(|previous| {
+            let repeats = sources.last().is_some_and(|previous| {
+                let previous = &previous.facts().build;
                 let build = &source.facts().build;
                 build.ruleset == previous.ruleset && build.evidence == previous.evidence
             });

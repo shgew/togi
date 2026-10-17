@@ -101,7 +101,7 @@ fn offset_of(o: &Observation, core: usize) -> i64 {
 impl Likelihood<'_> {
     pub(crate) fn fit_regime_limits(&mut self) {
         let rail = self.cfg.shared_voltage.is_some();
-        for (core, id) in self.core_ids().into_iter().enumerate() {
+        for (core, id) in self.core_ids().enumerate() {
             for (r, regime) in REGIMES.into_iter().enumerate() {
                 for alone in [true, false] {
                     if alone && r >= 5 {
@@ -183,7 +183,7 @@ impl Likelihood<'_> {
     /// cores are left to the rail model.
     pub(crate) fn fit_idle(&mut self) {
         let rail = self.cfg.shared_voltage.is_some();
-        for (core, id) in self.core_ids().into_iter().enumerate() {
+        for (core, id) in self.core_ids().enumerate() {
             let indices = self.select(|o| limit_driven(rail, o) && !o.loads(id));
             let exposed = indices.iter().any(|&i| offset_of(&self.obs[i], core) < 0);
             let idle = self.cfg.core[core].idle.unwrap_or(DEEPEST);
@@ -206,7 +206,7 @@ impl Likelihood<'_> {
 
     pub(crate) fn fit_workloads(&mut self) {
         let rail = self.cfg.shared_voltage.is_some();
-        for (core, id) in self.core_ids().into_iter().enumerate() {
+        for (core, id) in self.core_ids().enumerate() {
             let workloads: BTreeSet<(&'static str, WorkloadId)> = self
                 .obs
                 .iter()
