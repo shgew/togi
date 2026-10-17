@@ -481,18 +481,7 @@ impl<'a> Ledger<'a> {
     /// offsets and every later decision may differ. A located hunt cites the passes that covered the
     /// loaded cores, which a candidate may have skipped.
     fn cite(&mut self, event: &Event) {
-        let decides = matches!(
-            event.payload,
-            Payload::TunerDecision(_)
-                | Payload::HuntStart(_)
-                | Payload::HuntGroup(_)
-                | Payload::HuntEnd(_)
-                | Payload::HuntSkipped(_)
-                | Payload::Combination(_)
-                | Payload::DeepeningRound(_)
-                | Payload::CorePhase(_)
-        );
-        if self.diverged.is_some() || !decides {
+        if self.diverged.is_some() || !decides(&event.payload) {
             return;
         }
         if let Some(&source) = event.cause.iter().find(|seq| self.skipped.contains(seq)) {
@@ -662,6 +651,63 @@ impl<'a> Ledger<'a> {
             out.push(coverage);
         }
         Some((profile.offsets(), out))
+    }
+}
+
+/// Whether `payload` records a tuner decision whose `cause` may cite the trials it rests on. Trial,
+/// failure and checking events cite trial ends too, but the accounting follows those itself.
+const fn decides(payload: &Payload) -> bool {
+    match payload {
+        Payload::TunerDecision(_)
+        | Payload::HuntStart(_)
+        | Payload::HuntGroup(_)
+        | Payload::HuntEnd(_)
+        | Payload::HuntSkipped(_)
+        | Payload::Combination(_)
+        | Payload::DeepeningRound(_)
+        | Payload::CorePhase(_) => true,
+        Payload::SessionStart(_)
+        | Payload::SessionContext(_)
+        | Payload::SessionBaseline(_)
+        | Payload::SessionNotice(_)
+        | Payload::SessionWarning(_)
+        | Payload::SessionArchived(_)
+        | Payload::SessionCarried(_)
+        | Payload::ConfigLoaded(_)
+        | Payload::PreflightCheck(_)
+        | Payload::SmuIntent(_)
+        | Payload::SmuWrite(_)
+        | Payload::SmuReadback(_)
+        | Payload::SmuError(_)
+        | Payload::ProfileApplied(_)
+        | Payload::ProfileChange(_)
+        | Payload::ProfileRestored(_)
+        | Payload::TrialIntent(_)
+        | Payload::TrialStart(_)
+        | Payload::TrialProgress(_)
+        | Payload::TrialSignal(_)
+        | Payload::TrialSample(_)
+        | Payload::TrialEnd(_)
+        | Payload::TrialCarried(_)
+        | Payload::Failure(_)
+        | Payload::FailureCarried(_)
+        | Payload::Mce(_)
+        | Payload::CrashDetected(_)
+        | Payload::CheckingCycle(_)
+        | Payload::CheckingStep(_)
+        | Payload::CheckingChain(_)
+        | Payload::HostRanking(_)
+        | Payload::TunerWarning(_)
+        | Payload::BackendRetry(_)
+        | Payload::CommandReset(_)
+        | Payload::DefectFound(_)
+        | Payload::DefectAnswered(_)
+        | Payload::DeadEnd(_)
+        | Payload::BootSavedEntry(_)
+        | Payload::BootLeaveReason(_)
+        | Payload::Shutdown(_)
+        | Payload::JournalTorn(_)
+        | Payload::StateRebuilt(_) => false,
     }
 }
 

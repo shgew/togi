@@ -254,6 +254,11 @@ fn a_skipped_failure_whose_set_the_final_chain_still_holds_is_delayed(
 
 #[test_case(EventKind::TunerDecision ; "tuner_decision")]
 #[test_case(EventKind::HuntStart ; "located_hunt")]
+#[test_case(EventKind::HuntGroup ; "hunt_group")]
+#[test_case(EventKind::HuntEnd ; "hunt_end")]
+#[test_case(EventKind::Combination ; "combination")]
+#[test_case(EventKind::DeepeningRound ; "deepening_round")]
+#[test_case(EventKind::CorePhase ; "core_phase")]
 fn a_tuner_decision_citing_a_skipped_trial_leaves_what_follows_unresolved(kind: EventKind) {
     let mut events = machine_session(TARGET_FIT_0, 2);
     let skipped = ends_of(&accounted(&events), "coalesce", &["skipped"]);
