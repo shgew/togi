@@ -2379,7 +2379,7 @@ fn singleton_without_existing_same_class_anchor_tests_it_before_accelerating() {
         let projection = j.run().hunt_plan().unwrap();
         assert_eq!(projection.probes.len(), 1);
         assert_eq!(projection.probes[0].offset, off(0));
-        assert_eq!(projection.probes[0].done, false);
+        assert!(!projection.probes[0].done);
         j.assert_resumes();
         let plan = j.next_trial();
         assert_eq!(at(&plan, 2), 0);

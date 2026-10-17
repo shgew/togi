@@ -1,10 +1,11 @@
+use std::fmt::Write as _;
 use std::num::NonZeroU32;
 
 use togi_journal::{
     Activity, Combination, DeadEnd, DeadEndCondition, Decision, HuntEnd, HuntGroup, HuntOutcome,
     HuntSkipped, HuntStage, HuntStart, Member, Seq, TunerDecision,
 };
-use togi_machine::{Condition, CoreSet, TargetOffset};
+use togi_machine::{Condition, CoreSet, PerCore, TargetOffset};
 
 use super::plan::{
     Backoff, Duration, End, Found, Group, GroupOutcome, GroupStage, MemberProbes, Probe,
@@ -310,7 +311,7 @@ impl Run {
             skipped: false,
             reason: Some("testing the probe profile".to_owned()),
         };
-        self.planned(hunt, payload, &[format!("; {reason}")], &[], &[])
+        self.planned(hunt, payload, &[reason], &[], &[])
     }
 
     pub(super) fn singleton_probing(
@@ -347,7 +348,7 @@ impl Run {
             return Some(ProbeStep::Run(Probe {
                 member: core,
                 offset: anchor,
-                held: Default::default(),
+                held: PerCore::default(),
                 index: probes.len(),
             }));
         }
@@ -388,13 +389,13 @@ impl Run {
                             let anchor = probe.offset == hunt.parked.at(core);
                             let reason = if anchor {
                                 format!(
-                                    "testing core {:02} at parked offset {} to establish a safe singleton anchor; CO 0 is not assumed to pass",
+                                    "; testing core {:02} at parked offset {} to establish a safe singleton anchor; CO 0 is not assumed to pass",
                                     core.get(),
                                     probe.offset.get()
                                 )
                             } else {
                                 format!(
-                                    "probing core {:02} between its reproduced singleton failure and the passing parked anchor {}",
+                                    "; probing core {:02} between its reproduced singleton failure and the passing parked anchor {}",
                                     core.get(),
                                     hunt.parked.at(core).get()
                                 )
@@ -409,10 +410,11 @@ impl Run {
                                     "; singleton probing stopped without a safe bracket; retain the shallowest reproduced failure",
                                 );
                             } else {
-                                reason.push_str(&format!(
+                                let _ = write!(
+                                    reason,
                                     "; singleton probes found failure at {} and a passing anchor or probe one count shallower",
                                     point.get()
-                                ));
+                                );
                             }
                         }
                     }
@@ -448,7 +450,7 @@ impl Run {
                                 hunt,
                                 &probe,
                                 format!(
-                                    "probing how shallow core {:02} must be for the combination to pass",
+                                    "; probing how shallow core {:02} must be for the combination to pass",
                                     probe.member.get()
                                 ),
                             ));
