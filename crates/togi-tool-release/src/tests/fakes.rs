@@ -2,7 +2,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::io::{self, Cursor, Write};
+use std::io::{self, Write};
 use std::os::unix::process::ExitStatusExt as _;
 use std::process::ExitStatus;
 use std::rc::Rc;
@@ -160,7 +160,7 @@ pub(crate) const API: &str = "https://api.forge.example";
 pub(crate) fn respond(status: u16, body: &str) -> io::Result<Response> {
     Ok(Response {
         status,
-        body: Box::new(Cursor::new(body.to_owned().into_bytes())),
+        body: body.as_bytes().to_vec(),
     })
 }
 
@@ -192,7 +192,7 @@ impl Transport for FakeTransport {
 /// The requests a fake API received.
 pub(crate) type Requests = Rc<RefCell<Vec<Request>>>;
 
-/// A client of a fake API that `handler` answers, with token `test-token`, and the requests it receives.
+/// A client of a fake API that `handler` answers, and the requests it receives.
 pub(crate) fn fake_api(
     handler: impl FnMut(&Request) -> io::Result<Response> + 'static,
 ) -> (GitHub, Requests) {
@@ -201,10 +201,7 @@ pub(crate) fn fake_api(
         requests: Rc::clone(&requests),
         handler: Box::new(handler),
     };
-    (
-        GitHub::new(API, "test-token", Box::new(transport)),
-        requests,
-    )
+    (GitHub::new(API, Box::new(transport)), requests)
 }
 
 /// The `METHOD /path?query` of each request received.

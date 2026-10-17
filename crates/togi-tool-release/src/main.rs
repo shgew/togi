@@ -9,7 +9,7 @@ use togi_tool_release::cli::{self, Command, Parsed, USAGE};
 use togi_tool_release::fragments::check_fragments;
 use togi_tool_release::gates::{GitHubGates, SystemClock};
 use togi_tool_release::git::ProcessGit;
-use togi_tool_release::github::{self, GitHub, HttpTransport, Repository};
+use togi_tool_release::github::{self, GhTransport, GitHub, Repository};
 use togi_tool_release::release::{Mode, Runner};
 
 fn main() -> ExitCode {
@@ -72,5 +72,8 @@ fn runner<'a>(git: &'a mut ProcessGit, out: &'a mut dyn Write) -> Runner<'a> {
 }
 
 fn github_from_env() -> Result<(GitHub, Repository), github::EnvError> {
-    github::from_env(|key| std::env::var(key).ok(), Box::new(HttpTransport))
+    github::from_env(
+        |key| std::env::var(key).ok(),
+        Box::new(GhTransport::new("gh")),
+    )
 }

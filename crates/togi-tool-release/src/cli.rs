@@ -36,10 +36,10 @@ Without flags, prints the release the release workflow would make from origin/ma
   -commit
     \tcommit the next release on top of origin/main and check it out, refusing while any issue, open or closed, \
 is labeled needs-hardware, once the check workflow passed on origin/main, waiting up to an hour for it (release \
-workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)
+workflow; reads GITHUB_API_URL, GITHUB_REPOSITORY and GH_TOKEN)
   -publish
     \tpublish the release version.txt names at HEAD, if not yet published (release workflow; reads \
-GITHUB_API_URL, GITHUB_REPOSITORY and GITHUB_TOKEN)
+GITHUB_API_URL, GITHUB_REPOSITORY and GH_TOKEN)
 ";
 
 /// Parses the arguments after the program name.

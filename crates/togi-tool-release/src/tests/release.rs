@@ -386,27 +386,18 @@ pub(super) type Posted = Rc<RefCell<Option<serde_json::Value>>>;
 pub(super) fn publish_api(lookup: u16, create: u16) -> (GitHub, Requests, Posted) {
     let posted = Posted::default();
     let record = Rc::clone(&posted);
-    let (api, requests) = fake_api(move |request| {
-        assert_eq!(
-            request
-                .headers
-                .iter()
-                .find(|(name, _)| *name == "Authorization"),
-            Some(&("Authorization", "Bearer test-token".to_owned()))
-        );
-        match uri(request).as_str() {
-            "GET /repos/o/r/releases/tags/v0.1.0" => respond(lookup, "{}"),
-            "POST /repos/o/r/releases" if create == 201 => {
-                let body = request.body.as_deref().unwrap_or_default();
-                *record.borrow_mut() = Some(serde_json::from_str(body).unwrap());
-                respond(
-                    201,
-                    r#"{"html_url":"https://forge.example/o/r/releases/tag/v0.1.0"}"#,
-                )
-            }
-            "POST /repos/o/r/releases" => respond(create, "denied"),
-            other => panic!("unexpected request {other}"),
+    let (api, requests) = fake_api(move |request| match uri(request).as_str() {
+        "GET /repos/o/r/releases/tags/v0.1.0" => respond(lookup, "{}"),
+        "POST /repos/o/r/releases" if create == 201 => {
+            let body = request.body.as_deref().unwrap_or_default();
+            *record.borrow_mut() = Some(serde_json::from_str(body).unwrap());
+            respond(
+                201,
+                r#"{"html_url":"https://forge.example/o/r/releases/tag/v0.1.0"}"#,
+            )
         }
+        "POST /repos/o/r/releases" => respond(create, "denied"),
+        other => panic!("unexpected request {other}"),
     });
     (api, requests, posted)
 }

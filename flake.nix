@@ -98,12 +98,7 @@
             strictDeps = true;
             # Crane builds the release profile by default; the checks build what `just gate` builds.
             CARGO_PROFILE = "dev";
-            # The release tool's HTTPS client is the platform's TLS library: OpenSSL on Linux, found by pkg-config.
-            nativeBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [
-              pkgs.mold
-              pkgs.pkg-config
-            ];
-            buildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.openssl ];
+            nativeBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.mold ];
           }
           // rustLinker;
           cargoWith = source: args: cargoArgs // source // args;
@@ -255,9 +250,7 @@
                 pkgs.cargo-nextest
                 pkgs.cargo-shear
                 pkgs.mold
-              ]
-              ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.pkg-config ];
-              buildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.openssl ];
+              ];
               GOTOOLCHAIN = "local";
               TOGI_DEV_SHELL = "1";
             }
