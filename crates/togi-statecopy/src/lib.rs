@@ -76,10 +76,9 @@ fn create_dirs(fs: &dyn Fs, dir: &Path) -> Result<(), CopyError> {
         create_dirs(fs, parent)?;
     }
     match fs.create_dir(dir) {
-        Err(error) if error.kind() != io::ErrorKind::AlreadyExists => {
-            Err(io_at("create directory", dir)(error))
-        }
-        _ => Ok(()),
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(io_at("create directory", dir)(error)),
     }
 }
 
