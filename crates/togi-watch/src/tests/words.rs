@@ -10,7 +10,7 @@ use togi_machine::{CoreId, Regime, Signal};
 use super::kit::*;
 use crate::words::{
     Brief, History, Phrase, Tag, Tagging, Tone, age, candidate_word, carried_groups, core_ids,
-    core_list, cores_text, decision_line, decision_phrase, failure_line, group_word,
+    core_list, cores_named, cores_text, decision_line, decision_phrase, failure_line, group_word,
     hunt_end_phrase, kind_words, lateness, load_words, noun, on_cores, phase_line, phase_word,
     plural, regime_words, signal_words, solo_limit, tag_word, trial_end_tag, words,
     workload_display,
@@ -367,11 +367,13 @@ fn cores_are_named_compactly() {
     );
     assert_eq!(core_ids(ids(&[0, 1, 2, 5])), "00-02 05");
     assert_eq!(core_ids(ids(&[3])), "03");
-    assert_eq!(cores_text(&ids(&[3]), 8), "core 03");
-    assert_eq!(cores_text(&ids(&[0, 1, 2, 3]), 4), "all 4 cores");
-    assert_eq!(cores_text(&ids(&[0, 2]), 4), "cores 00, 02");
-    assert_eq!(on_cores(&ids(&[3])), "on core 03");
-    assert_eq!(on_cores(&ids(&[0, 1, 2])), "on 00-02");
+    assert_eq!(cores_text(set(&[3]), 8), "core 03");
+    assert_eq!(cores_text(set(&[0, 1, 2, 3]), 4), "all 4 cores");
+    assert_eq!(cores_text(set(&[0, 2]), 4), "cores 00, 02");
+    assert_eq!(on_cores(set(&[3])), "on core 03");
+    assert_eq!(on_cores(set(&[0, 1, 2])), "on 00-02");
+    assert_eq!(cores_named(set(&[3])), "core 03");
+    assert_eq!(cores_named(set(&[0, 1, 2, 5])), "cores 00-02 05");
 }
 
 #[test]

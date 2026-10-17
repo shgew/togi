@@ -765,7 +765,7 @@ pub(crate) fn narrator_lines(
         let mut spans = vec![bar(), Span::raw("  ")];
         spans.extend(
             cut_styled(
-                &Line::from(Span::styled(inert(text).into_owned(), text_style)),
+                &Line::from(Span::styled(inert(text), text_style)),
                 width.saturating_sub(3),
             )
             .spans,
@@ -784,12 +784,7 @@ pub(crate) fn narrator_lines(
             story
                 .lines
                 .iter()
-                .map(|line| {
-                    cut_styled(
-                        &Line::from(Span::styled(inert(line).into_owned(), text_style)),
-                        room,
-                    )
-                })
+                .map(|line| cut_styled(&Line::from(Span::styled(inert(line), text_style)), room))
                 .collect()
         };
     }

@@ -7,7 +7,7 @@ use togi_journal::{DeadEndCondition, ShutdownReason};
 use togi_machine::{Condition, Regime};
 use togi_tuner::{CyclePart, CycleStep};
 
-use crate::model::TrialView;
+use crate::model::{CyclePlace, TrialView};
 use crate::words::{core_ids, kind_words};
 
 /// Why the session stopped, in a clause.
@@ -56,18 +56,24 @@ pub(crate) fn trial_name(trial: &TrialView) -> String {
 
 /// Where a checking trial stood in its cycle: `cycle 1 step 2, part 5, trial 4 of 4`; empty outside a cycle.
 pub(crate) fn cycle_place(trial: &TrialView) -> String {
-    let Some(place) = trial.cycle else {
+    let Some(place) = &trial.cycle else {
         return String::new();
     };
+    let mut text = step_part(place);
+    if trial.count.of > 0 {
+        let _ = write!(text, ", trial {} of {}", trial.count.index, trial.count.of);
+    }
+    text
+}
+
+/// A place in a cycle without its trial count: `cycle 1 step 2, part 5`.
+pub(crate) fn step_part(place: &CyclePlace) -> String {
     let mut text = format!("cycle {}", place.cycle);
     if let Some(step) = place.step {
         let _ = write!(text, " step {step}");
     }
     if let Some(part) = place.part.filter(|_| place.parts > 1) {
         let _ = write!(text, ", part {part}");
-    }
-    if trial.count.of > 0 {
-        let _ = write!(text, ", trial {} of {}", trial.count.index, trial.count.of);
     }
     text
 }

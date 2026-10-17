@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 
 use ratatui::text::{Line, Span};
 use togi_journal::Seq;
-use togi_machine::{CcdId, CoreId, TargetOffset};
+use togi_machine::{CcdId, CoreSet, TargetOffset};
 
 use super::super::colours::Paint;
 use super::super::dash::note_line;
@@ -94,7 +94,7 @@ pub(super) fn turn_lines(
             ],
         ));
     }
-    let found: Vec<CoreId> = scene
+    let found: CoreSet = scene
         .s
         .cores
         .iter()
@@ -272,7 +272,7 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>
             width,
         ),
     ];
-    let mut shapes: Vec<(Shape, Vec<CoreId>)> = Vec::new();
+    let mut shapes: Vec<(Shape, CoreSet)> = Vec::new();
     for candidate in &phases.candidates {
         let shape = (
             candidate.offset,
@@ -281,8 +281,10 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>
             candidate.moving,
         );
         match shapes.iter_mut().find(|(known, _)| *known == shape) {
-            Some((_, cores)) => cores.push(candidate.core),
-            None => shapes.push((shape, vec![candidate.core])),
+            Some((_, cores)) => {
+                cores.insert(candidate.core);
+            }
+            None => shapes.push((shape, std::iter::once(candidate.core).collect())),
         }
     }
     for ((offset, solo, gap, moving), cores) in shapes {
@@ -295,7 +297,7 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>
                     format!(
                         "{} {}  {} → solo {solo}  gap {gap}",
                         noun(cores.len(), "core"),
-                        core_ids(cores.iter().copied()),
+                        core_ids(cores),
                         offset.get()
                     ),
                 ),

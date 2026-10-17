@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use ratatui::text::Line;
 use togi_journal::HuntStage;
-use togi_machine::{CoreId, CoreSet, Signal};
+use togi_machine::{CoreSet, Signal};
 use togi_tuner::{GroupState, HuntGroup, MemberProbe, RerunPlan};
 
 use super::super::colours::Paint;
@@ -14,7 +14,7 @@ use super::super::measure::Tables;
 use super::super::notes::offset_list;
 use super::super::scene::{Scene, between, clock, short_duration};
 use super::super::story::{crash_evidence, known_words};
-use super::super::terms::{cycle_place, recut_words, trial_name};
+use super::super::terms::{cycle_place, recut_words, step_part, trial_name};
 use super::table::{cell, field_row, overlay, stage_marker, table_row};
 use crate::model::{HuntView, SingletonStage};
 use crate::words::{age, core_ids, group_word, kind_words, plural, signal_words};
@@ -148,15 +148,13 @@ fn cause_line(scene: &Scene<'_>, hunt: &HuntView<'_>, compact: bool, room: usize
     );
     let mut place = vec![];
     if !compact {
-        let full = cycle_place(trial);
-        if !full.is_empty() {
-            let mut bare = trial.clone();
-            bare.count.of = 0;
-            let bare = cycle_place(&bare);
-            place.push(Form::new(say(full.clone()), 5));
+        if let Some(at) = &trial.cycle {
+            let full = cycle_place(trial);
+            let bare = step_part(at);
             if bare != full {
-                place.push(Form::new(say(bare), 5));
+                place.push(Form::new(say(full), 5));
             }
+            place.push(Form::new(say(bare), 5));
             place.push(Form::empty());
         }
     }
@@ -381,7 +379,7 @@ fn holding_row(
 struct Run<'a> {
     first: &'a HuntGroup,
     last: &'a HuntGroup,
-    cores: Vec<CoreId>,
+    cores: CoreSet,
     stages: Vec<HuntStage>,
 }
 
@@ -396,11 +394,7 @@ fn runs<'a>(groups: &'a [HuntGroup]) -> Vec<Run<'a>> {
             && !matches!(group.outcome, GroupState::Running | GroupState::Failed)
         {
             run.last = group;
-            for core in group.cores {
-                if !run.cores.contains(&core) {
-                    run.cores.push(core);
-                }
-            }
+            run.cores.extend(group.cores);
             if !run.stages.contains(&group.stage) {
                 run.stages.push(group.stage);
             }
@@ -409,7 +403,7 @@ fn runs<'a>(groups: &'a [HuntGroup]) -> Vec<Run<'a>> {
         runs.push(Run {
             first: group,
             last: group,
-            cores: group.cores.iter().collect(),
+            cores: group.cores,
             stages: vec![group.stage],
         });
     }
@@ -428,13 +422,13 @@ fn group_lines(
         let label = if i == 0 { "parts" } else { "" };
         let mut which = format!("group {}", run.first.number);
         let mut what = format!("{} at failing offsets", core_ids(run.first.cores.iter()));
-        let rest: Vec<CoreId> = plan
+        let rest: CoreSet = plan
             .candidates
             .iter()
             .filter(|core| !run.first.cores.contains(*core))
             .collect();
         if !rest.is_empty() {
-            let with_rest = format!("{what}, {} parked", core_ids(rest.iter().copied()));
+            let with_rest = format!("{what}, {} parked", core_ids(rest));
             if display_width(&with_rest) <= t.groups[1].w {
                 what = with_rest;
             }
@@ -445,7 +439,7 @@ fn group_lines(
         let many = run.first.number != run.last.number;
         if many {
             which = format!("groups {}-{}", run.first.number, run.last.number);
-            what = format!("parts of {}", core_ids(run.cores.iter().copied()));
+            what = format!("parts of {}", core_ids(run.cores));
             if run.stages.contains(&HuntStage::Complement) {
                 what.push_str(" and their complements");
             }
@@ -557,27 +551,27 @@ fn probe_lines(
     }
     let trial = scene.s.trial.filter(|trial| trial.count.of > 0);
     let mut next = true;
-    let mut waiting: Vec<CoreId> = Vec::new();
-    let flush = |waiting: &mut Vec<CoreId>, out: &mut Vec<Line<'static>>| {
+    let mut waiting = CoreSet::default();
+    let flush = |waiting: &mut CoreSet, out: &mut Vec<Line<'static>>| {
         if !waiting.is_empty() {
             out.push(table_row(
                 &t.probes,
                 &[
-                    cell(scene, Paint::Text, core_ids(waiting.iter().copied())),
+                    cell(scene, Paint::Text, core_ids(*waiting)),
                     Line::default(),
                     Line::default(),
                     Line::default(),
                     cell(scene, Paint::Grey, "waiting"),
                 ],
             ));
-            waiting.clear();
+            *waiting = CoreSet::default();
         }
     };
     for probe in &hunt.plan.probes {
         let probed =
             probe.running || probe.done || !probe.passed_at.is_empty() || probe.failed_at.len() > 1;
         if !probed && !next {
-            waiting.push(probe.member);
+            waiting.insert(probe.member);
             continue;
         }
         flush(&mut waiting, &mut out);
