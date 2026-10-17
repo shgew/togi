@@ -186,6 +186,7 @@ pub fn classify_range(
             new: commit,
             subject,
             status: status.to_owned(),
+            merge: true,
             ..PatchStatus::default()
         });
     }
@@ -193,6 +194,7 @@ pub fn classify_range(
 }
 
 /// The merge commits of `new_base..new_head` that `old_head` lacks, oldest first, each with its subject.
+/// Refuses an octopus merge: git makes no remerge diff of one, so what it changed could not join the delta.
 fn merges_since(
     git: &mut dyn Programs,
     old_head: &str,
@@ -205,21 +207,29 @@ fn merges_since(
             "--merges",
             "--reverse",
             "--no-color",
-            "--format=%H %s",
+            "--format=%H%x00%P%x00%s",
             &format!("{new_base}..{new_head}"),
             &format!("^{old_head}"),
         ])
         .map_err(|error| {
             Error::wrap(format!("list the merges of {new_base}..{new_head}"), error)
         })?;
-    Ok(lossy(&out)
+    lossy(&out)
         .lines()
         .filter(|line| !line.is_empty())
         .map(|line| {
-            let (commit, subject) = line.split_once(' ').unwrap_or((line, ""));
-            (commit.to_owned(), subject.to_owned())
+            let mut fields = line.splitn(3, '\0');
+            let commit = fields.next().unwrap_or_default();
+            let parents = fields.next().unwrap_or_default().split_whitespace().count();
+            let subject = fields.next().unwrap_or_default();
+            if parents > 2 {
+                return Err(Error::new(format!(
+                    "merge {commit} has {parents} parents: git makes no remerge diff of an octopus merge, so the delta cannot show what it changed; review the layer without --previous"
+                )));
+            }
+            Ok((commit.to_owned(), subject.to_owned()))
         })
-        .collect())
+        .collect()
 }
 
 /// The reversal of a removed patch's effects that the new range lost, or `None` when the new base

@@ -11,7 +11,7 @@ use crate::manifest::{hunk_file_name, read_manifest, reviewer_count};
 use crate::process::{Output, Programs, System};
 use crate::rangediff::{DeltaResult, classify_range};
 use crate::snapshot::run_snapshot;
-use crate::snapshot::tests::{TOO_LARGE, patch_status};
+use crate::snapshot::tests::{TOO_LARGE, merge_status};
 use crate::text::quote;
 
 /// git with no inherited configuration, attributes or Git environment, and sync disabled, run in `dir`.
@@ -501,7 +501,7 @@ fn real_process_merge_resolving_a_conflict_is_a_changed_patch() {
         !d.carry_forward(),
         "a merge that resolved a conflict carried the record forward"
     );
-    let merge = patch_status("", &p.new_head, "Merge main", "changed", false);
+    let merge = merge_status(&p.new_head, "Merge main", "changed");
     assert_eq!(Some(&merge), d.patches.last(), "patches {:?}", d.patches);
     assert_eq!(vec![remerge.into_bytes()], d.texts);
     assert_eq!(
@@ -527,10 +527,59 @@ fn real_process_clean_merge_carries_the_record_forward() {
         "a clean merge of main blocked the carry-forward: {:?}",
         d.patches
     );
-    let merge = patch_status("", &p.new_head, "Merge main", "unchanged", false);
+    let merge = merge_status(&p.new_head, "Merge main", "unchanged");
     assert_eq!(Some(&merge), d.patches.last(), "patches {:?}", d.patches);
     assert!(
         d.texts.is_empty() && d.files.is_empty(),
         "a clean merge reached the delta"
+    );
+}
+
+#[test]
+fn real_process_octopus_merge_is_refused() {
+    let root = tempfile::tempdir().expect("temporary directory");
+    let home = tempfile::tempdir().expect("temporary directory");
+    let work = root.path().join("work");
+    fs::create_dir_all(&work).expect("mkdir");
+    let h = home.path();
+    let git = |args: &[&str]| run_git(h, &work, args);
+    let sha = |rev: &str| git(&["rev-parse", rev]).trim().to_owned();
+    git(&["init", "-q", "-b", "main"]);
+    write(&work, "f.txt", "a\nb\nc\n", 0o644);
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "base"]);
+    let old_base = sha("HEAD");
+    git(&["checkout", "-q", "-b", "side"]);
+    write(&work, "s.txt", "side\n", 0o644);
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "side change"]);
+    git(&["checkout", "-q", "-b", "pr", "main"]);
+    write(&work, "f.txt", "a\nPR\nc\n", 0o644);
+    git(&["commit", "-q", "-a", "-m", "pull request change"]);
+    let old_head = sha("HEAD");
+    git(&["checkout", "-q", "main"]);
+    write(&work, "g.txt", "main\n", 0o644);
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "main change"]);
+    let new_base = sha("HEAD");
+    git(&["checkout", "-q", "pr"]);
+    git(&["merge", "-q", "--no-commit", "main", "side"]);
+    write(&work, "f.txt", "a\nPR edited in the merge\nc\n", 0o644);
+    git(&["commit", "-q", "-a", "-m", "Merge main and side"]);
+    let new_head = sha("HEAD");
+    let error = classify_range(
+        &mut clean_git(h, &work),
+        &old_base,
+        &old_head,
+        &new_base,
+        &new_head,
+    )
+    .expect_err("an octopus merge was classified");
+    assert!(
+        error
+            .render()
+            .contains(&format!("merge {new_head} has 3 parents")),
+        "error = {}",
+        error.render()
     );
 }

@@ -876,7 +876,7 @@ pub(crate) struct ReReview {
     pub logs: HashMap<String, String>,
     /// Makes the ancestry check of a commit fail with the error.
     pub ancestry_err: HashMap<String, CommandError>,
-    /// git log's `<commit> <subject>` lines for the merges of the new range the previous head lacks.
+    /// git log's `<commit>\0<parents>\0<subject>` lines for the merges of the new range the previous head lacks.
     pub merges: String,
     /// The remerge diff of each of those merges by commit; empty when absent.
     pub remerges: HashMap<String, String>,
@@ -969,7 +969,7 @@ impl ReReview {
                         "--merges",
                         "--reverse",
                         "--no-color",
-                        "--format=%H %s",
+                        "--format=%H%x00%P%x00%s",
                         &format!("{BASE_SHA}..{HEAD_SHA}"),
                         &format!("^{OLD_HEAD_SHA}"),
                     ];
@@ -1082,6 +1082,15 @@ pub(crate) fn patch_status(
         subject: subject.to_owned(),
         status: status.to_owned(),
         context_only,
+        merge: false,
+    }
+}
+
+/// The patch of a merge commit the previous head lacks.
+pub(crate) fn merge_status(new: &str, subject: &str, status: &str) -> PatchStatus {
+    PatchStatus {
+        merge: true,
+        ..patch_status("", new, subject, status, false)
     }
 }
 
@@ -1199,7 +1208,7 @@ fn snapshot_re_review_merge_by_remerge_diff(
     changed: &str,
 ) {
     let mut h = ReReview {
-        merges: "eee1111 Merge main\n".to_owned(),
+        merges: "eee1111\0ccc1111 ddd1111\0Merge main\n".to_owned(),
         remerges: contents(&[("eee1111", remerge)]),
         ..ReReview::new(
             previous_body(3, OLD_BASE_SHA),
@@ -1212,7 +1221,7 @@ fn snapshot_re_review_merge_by_remerge_diff(
     let m = manifest(&h);
     let want = vec![
         patch_status("aaa1111", "bbb1111", "one", "unchanged", false),
-        patch_status("", "eee1111", "Merge main", status, false),
+        merge_status("eee1111", "Merge main", status),
     ];
     assert_eq!(want, m.patches);
     assert_eq!(carry_forward, m.carry_forward);
@@ -1223,6 +1232,27 @@ fn snapshot_re_review_merge_by_remerge_diff(
     assert!(
         summary.contains(&format!(", {changed}, 0 added, 0 removed\n")),
         "summary lacks {changed}: {summary}"
+    );
+}
+
+#[test]
+fn snapshot_re_review_refuses_an_octopus_merge() {
+    let mut h = ReReview {
+        merges: "eee1111\0ccc1111 ddd1111 fff1111\0Merge main and side\n".to_owned(),
+        ..ReReview::new(
+            previous_body(3, OLD_BASE_SHA),
+            "1:  aaa1111 = 1:  bbb1111 one\n",
+            &[],
+        )
+    }
+    .harness();
+    let error = snapshot(&mut h, &["--previous", PREVIOUS_URL, "700"])
+        .expect_err("snapshot accepted an octopus merge");
+    let error = error.render();
+    assert!(
+        error
+            .contains("merge eee1111 has 3 parents: git makes no remerge diff of an octopus merge"),
+        "error = {error}"
     );
 }
 
