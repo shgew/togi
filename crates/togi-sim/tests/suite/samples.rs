@@ -336,6 +336,43 @@ fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_
 }
 
 #[test]
+fn the_largest_finite_recorded_idle_voltage_survives_sample_storage() {
+    let mut definition = committed_machine("shared-voltage.json");
+    definition.shared_voltage.as_mut().expect("a rail").idle_v = f64::from(f32::MAX);
+    for stored in [false, true] {
+        let mut rig = Rig::new(&definition, 1);
+        if stored {
+            rig.sim
+                .set_sample_storage(std::rc::Rc::new(crate::common::MemorySamples::default()));
+        }
+        rig.pass(spec(
+            "0001",
+            Regime::R7,
+            togi_machine::pick_workload(Regime::R7, 0),
+            &[0, 1],
+            Duration::from_secs(3),
+        ));
+        let persisted = rig.sim.persisted();
+        let encoded = serde_json::to_vec(&persisted).expect("serialized machine");
+        let decoded: togi_sim::Persisted =
+            serde_json::from_slice(&encoded).expect("restorable machine");
+        assert_eq!(decoded, persisted);
+        let samples = collect(&mut rig, "0001");
+        assert_eq!(samples.len(), 2);
+        for sample in samples {
+            let lanes = sample.pm_table.expect("voltage lanes");
+            assert_eq!(lanes.voltage_request_v[8], f32::MAX);
+            assert!(
+                lanes
+                    .voltage_request_v
+                    .iter()
+                    .all(|value| value.is_finite())
+            );
+        }
+    }
+}
+
+#[test]
 fn a_machine_without_a_rail_has_no_lanes() {
     let mut rig = Rig::new(&machine(2, vec![]), 1);
     rig.pass(spec(

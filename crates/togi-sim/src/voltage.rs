@@ -74,8 +74,11 @@ object_only! {
 
 impl Voltage {
     pub(crate) fn resolve(def: &SharedVoltageDef, path: &Path<'_>) -> Result<Self, InvalidMachine> {
+        let idle_path = path.key("idle_v");
+        let idle_v = idle_path.positive(def.idle_v)?;
+        idle_path.finite(f64::from(narrow(idle_v)))?;
         let mut rail = Self {
-            idle_v: path.key("idle_v").positive(def.idle_v)?,
+            idle_v,
             margin_v: path.key("margin_v").positive(def.margin_v)?,
             rate: path.key("rate").positive(def.rate)?,
             background_rate: path

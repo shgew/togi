@@ -727,6 +727,22 @@ fn edit_rail(edit: impl FnOnce(&mut SharedVoltageDef)) -> MachineDefinition {
 }
 
 #[test]
+fn idle_voltage_must_stay_finite_at_recording_precision() {
+    for idle_v in [1e100, f64::MAX] {
+        let definition = edit_rail(|rail| rail.idle_v = idle_v);
+        assert!(
+            Model::new(&definition, 1).is_err(),
+            "idle_v {idle_v} overflows recorded f32 voltage requests"
+        );
+        let error = invalid(&definition);
+        assert_eq!(
+            (error.path.as_str(), error.problem),
+            ("shared_voltage.idle_v", Problem::NotFinite)
+        );
+    }
+}
+
+#[test]
 fn the_rail_needs_sixteen_cores_the_three_r7_workloads_and_sixteen_core_entries() {
     let mut eight = committed_machine("shared-voltage.json");
     eight.core.clear();
