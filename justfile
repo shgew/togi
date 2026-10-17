@@ -179,12 +179,12 @@ release: _dev-shell
 # Print the release the release workflow would make from origin/main
 [group('release')]
 release-preview: _dev-shell
-    go run ./tools/release
+    cargo run --quiet --locked -p togi-tool-release
 
 # Check the changelog fragments in changes/ (the changes flake check)
 [group('release')]
 changes: _dev-shell
-    go run ./tools/release -check changes
+    cargo run --quiet --locked -p togi-tool-release -- -check changes
 
 # Print who may post on the repository, what waits on the owner and on the target machine, untriaged issues, work in progress, ready work, overlaps and the open Ruleset issue
 [group('github')]

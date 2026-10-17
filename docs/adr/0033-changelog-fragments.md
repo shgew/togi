@@ -24,3 +24,7 @@ This supersedes ADR 0014 only where it reads entries from `[Unreleased]`. The wo
 ## Consequences
 
 Pull requests no longer conflict over the changelog. A fragment can only be added after its pull request has a number, so opening a pull request takes one more push. Pending changes are read from `changes/` or with `just release-preview` rather than from the top of `CHANGELOG.md`. The release commit also deletes the consumed fragments; [ADR 0016](0016-every-pull-request-runs-every-check.md)'s reason for not checking the release commit again still holds, because no package or check other than `changes` reads those files. Each fragment file change reruns only the `changes` check.
+
+## Amendment (#630)
+
+The check after [ADR 0071](0071-no-go-in-the-repository.md); the decision and its reasons are unchanged. The `changes` flake check runs `cargo run --locked -p togi-tool-release -- -check changes` on a source of the workspace manifests and lock, the code of `togi-tool-release` and `changes/`, and refuses the same fragments. The release reads the repository URL for its links from `[workspace.package].repository` in `Cargo.toml` instead of the Go module path.

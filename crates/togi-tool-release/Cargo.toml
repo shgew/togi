@@ -1,0 +1,23 @@
+[package]
+name = "togi-tool-release"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The release command: checks changelog fragments, previews the next release, commits it and publishes it from the release workflow"
+
+[dependencies]
+jiff.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml_edit.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+test-case.workspace = true
+
+[lints]
+workspace = true

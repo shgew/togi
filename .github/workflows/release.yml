@@ -24,8 +24,8 @@ jobs:
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
       - name: Commit the release
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: nix develop --command go run ./tools/release -commit
+          GH_TOKEN: ${{ github.token }}
+        run: nix develop --command cargo run --locked -p togi-tool-release -- -commit
       - name: Build the package and run its tests
         run: nix build --no-link --print-build-logs .#packages.x86_64-linux.default .#checks.x86_64-linux.nextest
       - name: Push to main
@@ -40,5 +40,5 @@ jobs:
             git -c core.hooksPath=/dev/null push "git@github.com:$GITHUB_REPOSITORY.git" HEAD:refs/heads/main
       - name: Publish
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: nix develop --command go run ./tools/release -publish
+          GH_TOKEN: ${{ github.token }}
+        run: nix develop --command cargo run --locked -p togi-tool-release -- -publish

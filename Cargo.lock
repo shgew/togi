@@ -1941,6 +1941,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-tool-release"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "test-case",
+ "thiserror",
+ "toml_edit",
+]
+
+[[package]]
 name = "togi-tool-replay"
 version = "0.0.0"
 dependencies = [
