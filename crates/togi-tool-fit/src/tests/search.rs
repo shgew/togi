@@ -221,7 +221,7 @@ fn an_outcome_the_model_calls_impossible_costs_infinity_and_a_certain_one_costs_
 
 #[test]
 fn a_workload_override_needs_ten_trials_and_a_better_likelihood() {
-    let id = pick_workload(Regime::R1, 0).id;
+    let id = pick_workload(Regime::R1, 0).id();
     for n in [9_u32, 10] {
         let mut cfg = initial_config(&[seed_fact()]);
         cfg.model.near_limit_rate = 0.0;
@@ -230,7 +230,7 @@ fn a_workload_override_needs_ten_trials_and_a_better_likelihood() {
         let before = l.score(&[0]);
         l.fit_workloads();
         assert_eq!(
-            l.cfg.core[0].workload.contains_key(id),
+            l.cfg.core[0].workload.contains_key(&id),
             n >= 10,
             "{n} trials"
         );
@@ -245,11 +245,12 @@ fn a_workload_override_needs_ten_trials_and_a_better_likelihood() {
 
 #[test]
 fn the_coupled_shift_moves_workload_limits_and_leaves_unsupported_ones() {
-    let id = pick_workload(Regime::R1, 0).id;
+    let id = pick_workload(Regime::R1, 0).id();
     let mut cfg = initial_config(&[seed_fact()]);
     cfg.model.near_limit_rate = 0.0;
     cfg.model.past_limit_rate = 0.01;
-    cfg.core[0].workload = [(id.to_owned(), -20), ("unsupported".to_owned(), -50)].into();
+    let unsupported = pick_workload(Regime::R1, 1).id();
+    cfg.core[0].workload = [(id, -20), (unsupported, -50)].into();
     let obs = [
         observation(&[-21, 0], Regime::R1, &[0], 60, 100, 0),
         observation(&[-24, 0], Regime::R1, &[0], 60, 100, 99),
@@ -259,7 +260,7 @@ fn the_coupled_shift_moves_workload_limits_and_leaves_unsupported_ones() {
     let deep = probability(l.model.as_ref().unwrap(), &[-24, 0], Regime::R1, &[0], 60);
     l.fit_limit_rate_shift(&[0, 1]);
     assert!(
-        l.score(&[0, 1]) < before && l.cfg.core[0].workload[id] < -20,
+        l.score(&[0, 1]) < before && l.cfg.core[0].workload[&id] < -20,
         "{:?}",
         l.cfg.core[0].workload
     );
@@ -268,7 +269,7 @@ fn the_coupled_shift_moves_workload_limits_and_leaves_unsupported_ones() {
         (after - deep).abs() < 1e-12,
         "the past-limit hazard changed: {deep} -> {after}"
     );
-    assert_eq!(l.cfg.core[0].workload["unsupported"], -50);
+    assert_eq!(l.cfg.core[0].workload[&unsupported], -50);
     assert_eq!(l.cfg.core[0].alone[0], -50);
 }
 

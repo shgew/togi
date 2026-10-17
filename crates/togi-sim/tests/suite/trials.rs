@@ -282,7 +282,7 @@ fn a_workload_limit_beats_the_alone_limit_and_an_outsider_switches_to_together()
         vec![],
     );
     let limited = pick_workload(Regime::R1, 1);
-    definition.core[0].workload = [(limited.id.to_owned(), -5)].into();
+    definition.core[0].workload = [(limited.id(), -5)].into();
     let mut rig = Rig::new(&definition, 1);
     assert!(
         rig.pass(basic(Regime::R1, &[0], SECOND)).failure.is_none(),

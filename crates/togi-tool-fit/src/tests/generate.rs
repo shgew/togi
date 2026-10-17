@@ -395,7 +395,11 @@ fn an_encoded_machine_retains_the_fit_evidence_and_parameters() {
     });
     cfg.facts = Some("../facts/extract.jsonl.gz".into());
     cfg.core[0].idle = Some(-30);
-    cfg.core[0].workload = [("z".to_owned(), -24), ("a".to_owned(), -20)].into();
+    cfg.core[0].workload = [
+        (WorkloadId::new(Regime::R1, 1).unwrap(), -24),
+        (WorkloadId::new(Regime::R1, 0).unwrap(), -20),
+    ]
+    .into();
     let on = |regime, signal| fact(&[0, 0], regime, &[0], 60, failure(signal));
     fit_signals(
         &mut cfg,

@@ -67,8 +67,8 @@ expression: content
       ],
       "idle": -30,
       "workload": {
-        "a": -20,
-        "z": -24
+        "mprime-sse-4k-21k": -20,
+        "ycruncher-bkt-sftv4": -24
       }
     },
     {

@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::marker::PhantomData;
 
-use togi_machine::{Regime, ResetKind, Signal};
+use togi_machine::{Regime, ResetKind, Signal, WorkloadId};
 
 pub const DEFAULT_CORES: i64 = 16;
 pub const DEFAULT_PAST_LIMIT_RATE: f64 = std::f64::consts::LN_10 / 90.0;
@@ -370,7 +370,7 @@ pub struct CoreDef {
         deserialize_with = "unique_map",
         skip_serializing_if = "BTreeMap::is_empty"
     )]
-    pub workload: BTreeMap<String, i64>,
+    pub workload: BTreeMap<WorkloadId, i64>,
 }
 
 /// Cores that crash together once all are at or past their thresholds.

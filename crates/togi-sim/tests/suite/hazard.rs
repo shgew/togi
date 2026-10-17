@@ -16,7 +16,8 @@ fn base() -> MachineDefinition {
     definition.model.growth = 4.0;
     definition.model.near_limit_rate = 0.25;
     definition.model.onset_boost = 100.0;
-    definition.core[0].workload = BTreeMap::from([("custom".to_owned(), -8)]);
+    definition.core[0].workload =
+        BTreeMap::from([(togi_machine::pick_workload(Regime::R1, 0).id(), -8)]);
     definition
 }
 
@@ -99,7 +100,7 @@ fn steady_hazard_follows_the_limits_of_the_applied_registers() {
             ..case("idle limit", [-9, 0], &[], 2.0)
         },
         Case {
-            workload: "custom",
+            workload: "mprime-sse-4k-21k",
             ..case("workload limit", [-9, 0], &[0], 2.0)
         },
         Case {
@@ -296,7 +297,7 @@ fn sources_sum_to_the_steady_hazard_and_scale_to_the_probability() {
     let mut definition = machine(4, flat_cores(4, -30, -25));
     definition.core[1].flat = 1e-5;
     definition.core[2].idle = Some(-20);
-    definition.core[3].workload = BTreeMap::from([("custom".to_owned(), -12)]);
+    definition.core[3].workload = BTreeMap::from([("mprime-sse-4k-21k".parse().unwrap(), -12)]);
     definition.model.onset_boost = 3.0;
     definition.model.onset_s = 30.0;
     definition.ccd = Some(CcdDef {
@@ -323,7 +324,7 @@ fn sources_sum_to_the_steady_hazard_and_scale_to_the_probability() {
         let profile = offsets(&profile);
         for regime in regimes {
             for cores in [&[0][..], &[2], &[0, 1], &[1, 3], &[0, 1, 2, 3]] {
-                for workload in ["", "custom"] {
+                for workload in ["", "mprime-sse-4k-21k"] {
                     let load = load(regime, workload, cores, 90.0);
                     let sources = model.sources(&profile, &load).expect("shape");
                     let rate: f64 = sources.iter().map(|source| source.rate).sum();

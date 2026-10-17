@@ -403,7 +403,11 @@ impl Model {
 }
 
 fn limit(limits: &Limits, regime: Regime, workload: &str, alone: bool) -> i64 {
-    if let Some((_, limit)) = limits.workload.iter().find(|(id, _)| id == workload) {
+    if let Some((_, limit)) = limits
+        .workload
+        .iter()
+        .find(|(id, _)| id.as_str() == workload)
+    {
         return *limit;
     }
     let index = regime_index(regime);
