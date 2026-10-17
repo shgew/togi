@@ -379,9 +379,41 @@ The crate `togi-tool-forecast` defines the record, which `togi-tool-bench foreca
 
 `--split`, `--baseline` and `--same` are usage errors with `--forecast`. `--keep DIR` retains every run directory under a new directory in DIR. Without it, each successful run is deleted as it finishes; a forecast whose runs failed keeps the failed runs and prints where, and a forecast that fails after every run succeeded, such as on writing `--out`, removes its run directory and prints none.
 
+## Counterfactual pass and cost of the R7 requirements
+
+`just pass-cost` computes, without simulating, what the checking cycle's R7 part requirements cost at a fixed profile when every trial fails with a known probability ([#490](https://github.com/shgew/togi/issues/490)). It is readiness tooling for #490's observation-only study: it reads no journal, writes nothing, and no number it prints is tuner evidence or feeds a tuner rule. Running it is not running that study.
+
+```sh
+just pass-cost [--hazard PER_HOUR,…] [--ccds 2] [--config FILE] [--launches 40] [--hours 4] [--extra-short N,…]
+just pass-cost --machine FILE --profile OFFSETS [--seed 1] [--workload ID] [--cores CORES] [--config FILE] [--launches 40] [--hours 4] [--extra-short N,…]
+```
+
+Each part's requirement comes from the tuner (`togi_tuner::r7_part_passes`), under `--config` or the built-in defaults: three passes at `short_trial_s` and one long pass whose duration depends on the part and the CCD count ([Checking](spec/tuner.md#checking)), so the defaults on two CCDs ask 3×120 s + 1×300 s of a CCD or partial part and 3×120 s + 1×600 s of the all-core part. The failure probability of each trial comes from one of two sources:
+
+- **Constant hazards** (the default): `--hazard` lists failures per hour, by default #490's grid 0, 0.1, 0.5, 1, 2, 4, 8 and 16. A trial of `d` seconds fails with probability `1 - exp(-h·d/3600)`, with no onset boost. `--ccds` sets the long durations; a partial's requirement is its CCD part's.
+- **A simulator machine**: `--machine` and `--profile` (one offset per core) evaluate the machine's model at that fixed profile with `failure_probability`, every source counted, background, onset boost and delays included. For each R7 workload (or `--workload`), the step's parts are each CCD's full part, its request-ordered partials of at least two cores when the machine has a shared rail, and the all-core part on several CCDs, as `worst_r7_hazard_per_h` derives them ([What a run records](#what-a-run-records)); `--cores` evaluates only the part that loads those cores. `--seed` draws the hidden limits of a machine file that sets none. A step row chains its parts.
+
+For each part, the output prints the passes, each trial's failure probability and:
+
+- `first`: the probability that every required trial passes on its first launch, the exact product of `1 - p` over the trials. This is the chance that a part at this profile qualifies, including by luck at a high hazard.
+- `launches` and `hours`: the expected launches and time to meet the requirement when it is retried at the same profile until met. Each requirement waits for its passes in a row, `Σ_{i=1..n} (1-p)^-i` launches, since a failure invalidates the passes of its own class and leaves those of the part's other classes ([Evidence](spec/tuner.md#evidence)).
+- `done≤L` and `done≤H`: the probability of meeting the requirement within `--launches` launches and within `--hours` hours, by dynamic programming over the passes earned and the launches or seconds elapsed; the censored share is `1 - done`. `spent_n` and `spent_h` are the expected launches and hours spent before the requirement is met or the horizon ends.
+- With `--extra-short N`, a row per part with N more short passes, and `+launches` and `+hours`, its expected extra cost over the current requirement.
+
+Only `first` describes the current rules. Everything else is **counterfactual**, and the output says so: the tuner answers a multi-core R7 failure by backing off ([R7 voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff)), not by retrying at the same profile, and it never asks for extra short passes. Trials are independent at a fixed profile; a failed trial is charged its full intended duration, so hours are an upper bound; a step counts one R7 occurrence, not the counts a later occurrence of the same workload adds. The probability that a part passes on its first attempt is not the probability that a retried part eventually earns its passes, and the two columns stay apart.
+
+A trial of 120 s at 2 failures per hour fails with probability 0.0645 and one of 300 s with 0.1535, so a CCD part qualifies on its first attempt with probability 0.6930:
+
+```text
+hazard 2.00/h
+  part                                 passes         fail_p           first  launches    hours   done≤40 done≤4.00h  spent_n spent_h +launches  +hours
+  ccd                                  3x120s+1x300s  0.0645/0.1535   0.6930       4.6     0.21    1.0000     1.0000      4.6    0.21
+  ccd +2 short                         5x120s+1x300s  0.0645/0.1535   0.6065       7.3     0.30    1.0000     1.0000      7.3    0.30       2.7    0.09
+```
+
 ## The bench (`togi-tool-bench`)
 
-`just bench` runs `togi-tool-bench`: the runs, metrics, summary, comparison and cache of the bench ([#821](https://github.com/shgew/togi/issues/821)). `just same`, `just smoke` and `just forecast` run its `same` and `forecast` commands ([#823](https://github.com/shgew/togi/issues/823)), described [below](#the-same-command). The gate report is [below](#judging-the-gate) ([#822](https://github.com/shgew/togi/issues/822)).
+`just bench` runs `togi-tool-bench`: the runs, metrics, summary, comparison and cache of the bench ([#821](https://github.com/shgew/togi/issues/821)). `just same`, `just smoke` and `just forecast` run its `same` and `forecast` commands ([#823](https://github.com/shgew/togi/issues/823)), described [below](#the-same-command). `just pass-cost` runs its `pass-cost` command, [above](#counterfactual-pass-and-cost-of-the-r7-requirements). The gate report is [below](#judging-the-gate) ([#822](https://github.com/shgew/togi/issues/822)).
 
 ```sh
 just bench --split dev --baseline BEFORE.jsonl --out AFTER.jsonl

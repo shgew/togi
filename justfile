@@ -146,6 +146,11 @@ smoke base="origin/main" *args: _dev-shell
 forecast state_dir *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- forecast "$1" "${@:2}"
 
+# Compute the counterfactual pass/cost of the R7 part requirements at a fixed profile, never tuner evidence (`just pass-cost` over the #490 hazard grid, `just pass-cost --machine FILE --profile OFFSETS`)
+[group('run')]
+pass-cost *args: _dev-shell
+    cargo run --release --locked -p togi-tool-bench -- pass-cost "$@"
+
 # Re-record the committed bench baseline over all seeds, without model checks or wall times (`just bench-baseline` writes tools/bench/baseline.jsonl, `just bench-baseline OUT` another file)
 [group('run')]
 bench-baseline out="tools/bench/baseline.jsonl": _dev-shell

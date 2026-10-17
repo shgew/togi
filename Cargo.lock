@@ -1855,6 +1855,7 @@ dependencies = [
  "sha2",
  "signal-hook 0.4.5",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-facts",

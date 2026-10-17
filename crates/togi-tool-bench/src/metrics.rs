@@ -14,7 +14,7 @@ use togi_sim::{Load, Model};
 use crate::error::{MeasureError, RunError};
 use crate::stats::share;
 
-const CORES_PER_CCD: usize = 8;
+pub(crate) const CORES_PER_CCD: usize = 8;
 const R7_CORES: usize = 16;
 
 /// What one session's journal says, in the units a record keeps.
@@ -264,7 +264,7 @@ pub(crate) fn next_partial(cores: &[CoreId], lanes: &[f32; R7_CORES]) -> Vec<Cor
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn cores(ids: &[i64]) -> Vec<CoreId> {
@@ -333,13 +333,13 @@ mod tests {
         assert!(next_partial(&cores(&[0, 1]), &requests).is_empty());
     }
 
-    mod rail {
+    pub(crate) mod rail {
         use togi_sim::MachineDefinition;
         use togi_sim::definition::{CoreDef, SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef};
 
         use super::*;
 
-        pub(super) fn definition() -> MachineDefinition {
+        pub(crate) fn definition() -> MachineDefinition {
             let core = VoltageCoreDef {
                 base_v: 1.072,
                 threshold_v: 1.08,
@@ -385,7 +385,7 @@ mod tests {
             }
         }
 
-        pub(super) fn each_workload(
+        pub(crate) fn each_workload(
             definition: &mut MachineDefinition,
             mut change: impl FnMut(&str, &mut VoltageWorkloadDef),
         ) {
@@ -394,7 +394,7 @@ mod tests {
             }
         }
 
-        pub(super) fn profile() -> Vec<TargetOffset> {
+        pub(crate) fn profile() -> Vec<TargetOffset> {
             vec![TargetOffset::clamped(-20); R7_CORES]
         }
     }

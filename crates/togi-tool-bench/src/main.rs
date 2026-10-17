@@ -13,6 +13,7 @@ use togi_machine::error_chain;
 use togi_tool_bench::{Fleet, Options, Selection, execute, inspect, sanity};
 
 mod forecast_cli;
+mod pass_cost_cli;
 mod same_cli;
 
 const USAGE: u8 = 2;
@@ -39,6 +40,8 @@ enum Command {
     Same(same_cli::SameArgs),
     /// Forecast a real run from a copy of its state directory with the suite's target scenario.
     Forecast(forecast_cli::ForecastArgs),
+    /// Compute what the R7 part requirements cost at a fixed profile, as a counterfactual study that never becomes tuner evidence.
+    PassCost(pass_cost_cli::PassCostArgs),
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -109,6 +112,7 @@ fn main() -> ExitCode {
             Some(Command::Sanity(args)) => sanity_check(&args),
             Some(Command::Same(args)) => same_cli::run(args),
             Some(Command::Forecast(args)) => forecast_cli::run(args),
+            Some(Command::PassCost(args)) => pass_cost_cli::run(args),
         },
         Err(error) => {
             if error.use_stderr() {
