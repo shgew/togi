@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::num::NonZeroU32;
 
+use test_case::test_case;
 use togi_journal::{Attribution, Failure, Outcome, Payload, TrialCarried};
 use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal};
 
@@ -77,229 +78,178 @@ fn seeds_of(source: &Source) -> Vec<togi_journal::CarriedCore> {
     pending(&mut archive, &chain, None, &[]).seeds().to_vec()
 }
 
-#[test]
-fn only_confirmed_zero_failure_points() {
-    for (name, failing, rerun, confirmed) in [
-        (
-            "unconfirmed",
-            &[(0, 0), (1, 0), (2, -20), (3, -25)],
-            None,
-            false,
-        ),
-        (
-            "failing profile all at CO 0",
-            &[(0, 0), (1, 0), (2, 0), (3, 0)],
-            None,
-            true,
-        ),
-        (
-            "all-zero rerun failed",
-            &[(0, 0), (1, 0), (2, -20), (3, -25)],
-            Some(Outcome::Failure),
-            true,
-        ),
-        (
-            "all-zero rerun passed",
-            &[(0, 0), (1, 0), (2, -20), (3, -25)],
-            Some(Outcome::Pass),
-            false,
-        ),
-    ] {
-        let mut x = Source::new(day(9), &CORES, 9, 1).with_context(&context());
-        let zero = zero_failure(&mut x, failing);
-        if let Some(outcome) = rerun {
-            zero_rerun(&mut x, zero.failure, outcome);
-        }
-        let (mut archive, chain) = chain_of(&[&x]);
-        let got = pending(&mut archive, &chain, None, &[]);
-
-        let want: Vec<_> = confirmed
-            .then(|| seed(1, None, Some(point(0, x.id, zero.failure, Signal::Crash))))
-            .into_iter()
-            .collect();
-        assert_eq!(got.seeds(), want, "{name}");
-        let fact = got
-            .fact_candidates()
-            .first()
-            .expect("the trial fact survives");
-        assert_eq!(fact.source.trial.as_ref(), Some(&zero.trial), "{name}");
-        assert!(fact.is_failure(), "{name}");
-
-        let resolved = resolve(&got, 1);
-        assert_eq!(resolved.seeds(), want, "{name}");
-        let original = x.id_of(zero.end);
-        let resolved_fact = resolved
-            .facts()
-            .iter()
-            .find(|fact| fact.id() == original)
-            .expect("the original failed trial survives resolution");
-        assert_eq!(
-            resolved_fact.source.trial.as_ref(),
-            Some(&zero.trial),
-            "{name}"
-        );
-        assert!(resolved_fact.is_failure(), "{name}");
-        let payloads = resolved.fact_payloads(&HashSet::new(), set(&CORES));
-        let emitted = payloads
-            .iter()
-            .find_map(|payload| {
-                if let Payload::TrialCarried(carried) = payload
-                    && carried.source.seq == zero.end
-                {
-                    Some(carried)
-                } else {
-                    None
-                }
-            })
-            .expect("the original failed trial is emitted");
-        assert_eq!(emitted.source.session, x.id, "{name}");
-        assert_eq!(emitted.source.trial.as_ref(), Some(&zero.trial), "{name}");
-        assert_eq!(emitted.outcome, Outcome::Failure, "{name}");
-        assert_eq!(emitted.signal, Some(Signal::Crash), "{name}");
+#[test_case(&[(0, 0), (1, 0), (2, -20), (3, -25)], None, false; "unconfirmed")]
+#[test_case(&[(0, 0), (1, 0), (2, 0), (3, 0)], None, true; "failing profile all at CO 0")]
+#[test_case(
+    &[(0, 0), (1, 0), (2, -20), (3, -25)], Some(Outcome::Failure), true;
+    "all-zero rerun failed"
+)]
+#[test_case(
+    &[(0, 0), (1, 0), (2, -20), (3, -25)], Some(Outcome::Pass), false;
+    "all-zero rerun passed"
+)]
+fn only_confirmed_zero_failure_points(
+    failing: &[(i64, i64)],
+    rerun: Option<Outcome>,
+    confirmed: bool,
+) {
+    let mut x = Source::new(day(9), &CORES, 9, 1).with_context(&context());
+    let zero = zero_failure(&mut x, failing);
+    if let Some(outcome) = rerun {
+        zero_rerun(&mut x, zero.failure, outcome);
     }
+    let (mut archive, chain) = chain_of(&[&x]);
+    let got = pending(&mut archive, &chain, None, &[]);
+
+    let want: Vec<_> = confirmed
+        .then(|| seed(1, None, Some(point(0, x.id, zero.failure, Signal::Crash))))
+        .into_iter()
+        .collect();
+    assert_eq!(got.seeds(), want);
+    let fact = got
+        .fact_candidates()
+        .first()
+        .expect("the trial fact survives");
+    assert_eq!(fact.source.trial.as_ref(), Some(&zero.trial));
+    assert!(fact.is_failure());
+
+    let resolved = resolve(&got, 1);
+    assert_eq!(resolved.seeds(), want);
+    let original = x.id_of(zero.end);
+    let resolved_fact = resolved
+        .facts()
+        .iter()
+        .find(|fact| fact.id() == original)
+        .expect("the original failed trial survives resolution");
+    assert_eq!(resolved_fact.source.trial.as_ref(), Some(&zero.trial));
+    assert!(resolved_fact.is_failure());
+    let payloads = resolved.fact_payloads(&HashSet::new(), set(&CORES));
+    let emitted = payloads
+        .iter()
+        .find_map(|payload| {
+            if let Payload::TrialCarried(carried) = payload
+                && carried.source.seq == zero.end
+            {
+                Some(carried)
+            } else {
+                None
+            }
+        })
+        .expect("the original failed trial is emitted");
+    assert_eq!(emitted.source.session, x.id);
+    assert_eq!(emitted.source.trial.as_ref(), Some(&zero.trial));
+    assert_eq!(emitted.outcome, Outcome::Failure);
+    assert_eq!(emitted.signal, Some(Signal::Crash));
 }
 
-#[test]
-fn zero_confirmation_from_failed_trial_end_seq() {
-    for (name, cites_end, outcome, confirmed) in [
-        (
-            "rerun cites the failed trial.end",
-            true,
-            Outcome::Failure,
-            true,
-        ),
-        (
-            "failed rerun cites something else",
-            false,
-            Outcome::Failure,
-            false,
-        ),
-        (
-            "passed rerun cites the failed trial.end",
-            true,
-            Outcome::Pass,
-            false,
-        ),
-    ] {
-        let mut x = Source::new(day(9), &CORES, 10, 1).with_context(&context());
-        let zero = zero_failure(&mut x, &[(0, 0), (1, 0), (2, -20), (3, -25)]);
-        let cites = if cites_end { zero.end } else { super::seq(1) };
-        zero_rerun(&mut x, cites, outcome);
-        let want: Vec<_> = confirmed
-            .then(|| seed(1, None, Some(point(0, x.id, zero.failure, Signal::Crash))))
-            .into_iter()
-            .collect();
-        assert_eq!(seeds_of(&x), want, "{name}");
-    }
+#[test_case(true, Outcome::Failure, true; "rerun cites the failed trial.end")]
+#[test_case(false, Outcome::Failure, false; "failed rerun cites something else")]
+#[test_case(true, Outcome::Pass, false; "passed rerun cites the failed trial.end")]
+fn zero_confirmation_from_failed_trial_end_seq(cites_end: bool, outcome: Outcome, confirmed: bool) {
+    let mut x = Source::new(day(9), &CORES, 10, 1).with_context(&context());
+    let zero = zero_failure(&mut x, &[(0, 0), (1, 0), (2, -20), (3, -25)]);
+    let cites = if cites_end { zero.end } else { super::seq(1) };
+    zero_rerun(&mut x, cites, outcome);
+    let want: Vec<_> = confirmed
+        .then(|| seed(1, None, Some(point(0, x.id, zero.failure, Signal::Crash))))
+        .into_iter()
+        .collect();
+    assert_eq!(seeds_of(&x), want);
 }
 
-#[test]
-fn zero_confirmation_keys_a_carried_failure_behind_a_culprit() {
-    for (outcome, confirmed) in [(Outcome::Failure, true), (Outcome::Pass, false)] {
-        let mut x = Source::new(day(9), &CORES, 10, 1).with_context(&context());
-        let failing = profile(&[(0, 0), (1, 0), (2, -20), (3, -25)]);
-        let carried = x.add(Payload::TrialCarried(TrialCarried {
-            source: togi_journal::FactSource {
-                session: day(8),
-                seq: super::seq(6),
-                build: super::build(9, 1, 0),
-                trial: None,
-                time: jiff::Timestamp::from_second(1_700_000_000).unwrap(),
-                boot: togi_machine::BootId::from("boot".to_owned()),
-                backend: None,
-            },
-            class: togi_journal::TrialClass {
-                regime: Regime::R7,
-                workload: Some(workload(Regime::R7, 0)),
-                cores: set(&CORES),
-                duration_s: 120,
-            },
-            condition: Condition::Together,
-            activity: None,
-            rerun: false,
-            profile: failing,
-            outcome: Outcome::Failure,
-            signal: Some(Signal::Stall),
-            duration_s: 30,
-            core: None,
-            stalled_core: None,
-            voltage_requests_v: PerCore::default(),
-            top_requesters: CoreSet::default(),
-            ccd_mhz: std::collections::BTreeMap::new(),
-        }));
-        x.add(hunt_start(1, carried, failing, set(&[1])));
-        let end = x.add(culprit(1, set(&[1])));
-        zero_rerun(&mut x, carried, outcome);
-        let want: Vec<_> = confirmed
-            .then(|| seed(1, None, Some(point(0, x.id, end, Signal::Stall))))
-            .into_iter()
-            .collect();
-        assert_eq!(seeds_of(&x), want, "{outcome:?}");
-    }
-}
-
-#[test]
-fn zero_proof_persisted_in_seed() {
-    for (name, failing, confirmed) in [
-        ("unconfirmed", &[(0, 0), (1, 0), (2, -20), (3, -25)], false),
-        ("confirmed", &[(0, 0), (1, 0), (2, 0), (3, 0)], true),
-    ] {
-        let mut w = Source::new(day(1), &CORES, 8, 1).with_context(&context());
-        let zero = zero_failure(&mut w, failing);
-        let (mut archive, chain) = chain_of(&[&w]);
-        let first = resolve(&pending(&mut archive, &chain, None, &[]), 1);
-
-        let mut x = Source::new(day(2), &CORES, 9, 1).with_context(&context());
-        carry_into(&mut x, &first, true);
-        let (mut archive, chain) = chain_of(&[&x]);
-        let second = pending(&mut archive, &chain, None, &[]);
-
-        let want: Vec<_> = confirmed
-            .then(|| seed(1, None, Some(point(0, w.id, zero.failure, Signal::Crash))))
-            .into_iter()
-            .collect();
-        assert_eq!(second.seeds(), want, "{name}");
-        assert_eq!(
-            archive.opened,
-            [x.id],
-            "{name}: the original archive is never consulted"
-        );
-    }
-}
-
-#[test]
-fn zero_failure_outside_a_trial_is_confirmed_by_its_recorded_profile() {
-    for (name, profile, confirmed) in [
-        (
-            "all-zero partial profile",
-            Some(profile(&[(0, 0), (1, 0)])),
-            true,
-        ),
-        (
-            "partial profile with a deeper core",
-            Some(profile(&[(0, 0), (1, -5)])),
-            false,
-        ),
-        ("no profile", None, false),
-    ] {
-        let mut x = Source::new(day(9), &CORES, 10, 1).with_context(&context());
-        let failure = x.add(Failure {
-            signal: Signal::Crash,
-            attribution: Attribution::Attributed,
-            core: Some(core(1)),
-            offset: Some(super::offset(0)),
+#[test_case(Outcome::Failure, true; "a failed rerun confirms")]
+#[test_case(Outcome::Pass, false; "a passed rerun does not")]
+fn zero_confirmation_keys_a_carried_failure_behind_a_culprit(outcome: Outcome, confirmed: bool) {
+    let mut x = Source::new(day(9), &CORES, 10, 1).with_context(&context());
+    let failing = profile(&[(0, 0), (1, 0), (2, -20), (3, -25)]);
+    let carried = x.add(Payload::TrialCarried(TrialCarried {
+        source: togi_journal::FactSource {
+            session: day(8),
+            seq: super::seq(6),
+            build: super::build(9, 1, 0),
             trial: None,
-            regime: Some(Regime::R6),
-            condition: Some(Condition::Parked),
-            profile,
-            known_failure: None,
-            reason: None,
-            round: None,
-        });
-        let want: Vec<_> = confirmed
-            .then(|| seed(1, None, Some(point(0, x.id, failure, Signal::Crash))))
-            .into_iter()
-            .collect();
-        assert_eq!(seeds_of(&x), want, "{name}");
-    }
+            time: jiff::Timestamp::from_second(1_700_000_000).unwrap(),
+            boot: togi_machine::BootId::from("boot".to_owned()),
+            backend: None,
+        },
+        class: togi_journal::TrialClass {
+            regime: Regime::R7,
+            workload: Some(workload(Regime::R7, 0)),
+            cores: set(&CORES),
+            duration_s: 120,
+        },
+        condition: Condition::Together,
+        activity: None,
+        rerun: false,
+        profile: failing,
+        outcome: Outcome::Failure,
+        signal: Some(Signal::Stall),
+        duration_s: 30,
+        core: None,
+        stalled_core: None,
+        voltage_requests_v: PerCore::default(),
+        top_requesters: CoreSet::default(),
+        ccd_mhz: std::collections::BTreeMap::new(),
+    }));
+    x.add(hunt_start(1, carried, failing, set(&[1])));
+    let end = x.add(culprit(1, set(&[1])));
+    zero_rerun(&mut x, carried, outcome);
+    let want: Vec<_> = confirmed
+        .then(|| seed(1, None, Some(point(0, x.id, end, Signal::Stall))))
+        .into_iter()
+        .collect();
+    assert_eq!(seeds_of(&x), want, "{outcome:?}");
+}
+
+#[test_case(&[(0, 0), (1, 0), (2, -20), (3, -25)], false; "unconfirmed")]
+#[test_case(&[(0, 0), (1, 0), (2, 0), (3, 0)], true; "confirmed")]
+fn zero_proof_persisted_in_seed(failing: &[(i64, i64)], confirmed: bool) {
+    let mut w = Source::new(day(1), &CORES, 8, 1).with_context(&context());
+    let zero = zero_failure(&mut w, failing);
+    let (mut archive, chain) = chain_of(&[&w]);
+    let first = resolve(&pending(&mut archive, &chain, None, &[]), 1);
+
+    let mut x = Source::new(day(2), &CORES, 9, 1).with_context(&context());
+    carry_into(&mut x, &first, true);
+    let (mut archive, chain) = chain_of(&[&x]);
+    let second = pending(&mut archive, &chain, None, &[]);
+
+    let want: Vec<_> = confirmed
+        .then(|| seed(1, None, Some(point(0, w.id, zero.failure, Signal::Crash))))
+        .into_iter()
+        .collect();
+    assert_eq!(second.seeds(), want);
+    assert_eq!(
+        archive.opened,
+        [x.id],
+        "the original archive is never consulted"
+    );
+}
+
+#[test_case(Some(profile(&[(0, 0), (1, 0)])), true; "all-zero partial profile")]
+#[test_case(Some(profile(&[(0, 0), (1, -5)])), false; "partial profile with a deeper core")]
+#[test_case(None, false; "no profile")]
+fn zero_failure_outside_a_trial_is_confirmed_by_its_recorded_profile(
+    profile: Option<PerCore<togi_machine::TargetOffset>>,
+    confirmed: bool,
+) {
+    let mut x = Source::new(day(9), &CORES, 10, 1).with_context(&context());
+    let failure = x.add(Failure {
+        signal: Signal::Crash,
+        attribution: Attribution::Attributed,
+        core: Some(core(1)),
+        offset: Some(super::offset(0)),
+        trial: None,
+        regime: Some(Regime::R6),
+        condition: Some(Condition::Parked),
+        profile,
+        known_failure: None,
+        reason: None,
+        round: None,
+    });
+    let want: Vec<_> = confirmed
+        .then(|| seed(1, None, Some(point(0, x.id, failure, Signal::Crash))))
+        .into_iter()
+        .collect();
+    assert_eq!(seeds_of(&x), want);
 }
