@@ -486,7 +486,20 @@ fn the_runner_sweeps_probes_compresses_and_reads_samples() {
     runner.ended("t1").unwrap();
     assert!(fs.contents("/rig/trials/t1/work/stdout.log.gz").is_some());
     assert!(fs.contents("/rig/trials/t1/work/stdout.log").is_none());
-    assert!(runner.samples("t1").count() >= 1);
+    let samples = runner.samples("t1").collect::<Result<Vec<_>, _>>().unwrap();
+    assert!(!samples.is_empty(), "the trial's samples read back");
+    // An entry the injected filesystem cannot open as a file is reported, not read as empty.
+    fs.create_dir(Path::new("/rig/trials/t2")).unwrap();
+    fs.create_dir(Path::new("/rig/trials/t2/samples.jsonl"))
+        .unwrap();
+    let mut unreadable = runner.samples("t2");
+    let first = unreadable.next();
+    assert!(
+        matches!(first, Some(Err(togi_machine::SampleError::Open(_)))),
+        "{first:?}"
+    );
+    assert!(unreadable.next().is_none());
+    drop(unreadable);
     assert!(runner.samples("../t1").next().unwrap().is_err());
     assert!(runner.ended("../t1").is_err());
 }
@@ -1001,6 +1014,70 @@ fn real_fs_compression_follows_the_directory_it_holds_not_its_pathname() {
     );
     assert!(!trial.join("samples.jsonl.gz").exists());
     assert!(!trial.join("c00/stdout.log.gz").exists());
+}
+
+#[test]
+fn real_fs_runner_samples_are_read_only_from_regular_files_below_the_validated_root() {
+    use std::os::unix::fs::{PermissionsExt as _, symlink};
+    let dir = crate::testing::tempdir();
+    let trials = dir.path().join("trials");
+    let options = Options {
+        dir: trials.clone(),
+        backends: Backends::new().with(Arc::new(TestBackend::new("/bin/true"))),
+        topology: topology(),
+        identity: None,
+        pm_table: None,
+    };
+    let settings = Settings {
+        timing: fast(),
+        roots: Roots::default(),
+        unscoped: false,
+        user_manager: false,
+        controller: Arc::new(crate::controller::Idle),
+        fs: None,
+        inputs: crate::procfs::Inputs::default(),
+        memory: None,
+        durability: crate::samples::Durability::Unsynced,
+    };
+    let runner = Runner::build(options, settings, || {
+        Fake::with_memory(crate::watch::Memory::new(Arc::new(MemFs::default())))
+    })
+    .unwrap();
+
+    assert!(
+        runner.samples("t1").next().is_none(),
+        "a missing trials root holds no samples"
+    );
+    let trial = trials.join("t1");
+    std::fs::create_dir_all(&trial).unwrap();
+    std::fs::set_permissions(&trials, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(
+        runner.samples("t1").next().is_none(),
+        "a trial without a samples file holds no samples"
+    );
+
+    let samples = trial.join(togi_trialfiles::SAMPLES);
+    std::fs::write(&samples, "{\"elapsed_ms\":1}\n").unwrap();
+    let read = runner.samples("t1").collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(
+        read,
+        [togi_machine::TrialConditions {
+            elapsed_ms: 1,
+            ..Default::default()
+        }]
+    );
+
+    std::fs::remove_file(&samples).unwrap();
+    let victim = dir.path().join("victim.jsonl");
+    std::fs::write(&victim, "{\"elapsed_ms\":2}\n").unwrap();
+    symlink(&victim, &samples).unwrap();
+    let mut read = runner.samples("t1");
+    let first = read.next();
+    assert!(
+        matches!(first, Some(Err(togi_machine::SampleError::Open(_)))),
+        "a symlink is never followed: {first:?}"
+    );
+    assert!(read.next().is_none());
 }
 
 /// A sweep whose caller cancels it as it sends SIGTERM to the leftover scope, which is the first
