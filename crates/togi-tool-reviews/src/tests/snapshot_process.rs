@@ -9,8 +9,9 @@ use crate::diff::parse_diff;
 use crate::fakes::{Handler, Harness, PR_URL, fail, read_file};
 use crate::manifest::{hunk_file_name, read_manifest, reviewer_count};
 use crate::process::{Output, Programs, System};
+use crate::rangediff::{DeltaResult, classify_range};
 use crate::snapshot::run_snapshot;
-use crate::snapshot::tests::TOO_LARGE;
+use crate::snapshot::tests::{TOO_LARGE, patch_status};
 use crate::text::quote;
 
 /// git with no inherited configuration, attributes or Git environment, and sync disabled, run in `dir`.
@@ -402,5 +403,134 @@ fn real_process_snapshot_too_large_diff_fetch_failure() {
     assert!(
         entries(tmp.path()).is_empty(),
         "failed snapshot left entries in its temporary directory"
+    );
+}
+
+/// A pull request whose head merged `main` since the previous record, with the previous record's base and head
+/// and the new ones. With `conflict` the pull request and `main` changed the same line and the merge resolved
+/// it by hand; without it `main` changed another file.
+struct MergedPull {
+    _root: TempDir,
+    home: TempDir,
+    work: PathBuf,
+    old_base: String,
+    old_head: String,
+    new_base: String,
+    new_head: String,
+}
+
+impl MergedPull {
+    fn new(conflict: bool) -> Self {
+        let root = tempfile::tempdir().expect("temporary directory");
+        let home = tempfile::tempdir().expect("temporary directory");
+        let work = root.path().join("work");
+        fs::create_dir_all(&work).expect("mkdir");
+        let h = home.path();
+        let git = |args: &[&str]| run_git(h, &work, args);
+        let sha = |rev: &str| git(&["rev-parse", rev]).trim().to_owned();
+        git(&["init", "-q", "-b", "main"]);
+        write(&work, "f.txt", "a\nb\nc\n", 0o644);
+        write(&work, "g.txt", "x\n", 0o644);
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "base"]);
+        let old_base = sha("HEAD");
+        git(&["checkout", "-q", "-b", "pr"]);
+        write(&work, "f.txt", "a\nPR\nc\n", 0o644);
+        git(&["commit", "-q", "-a", "-m", "pull request change"]);
+        let old_head = sha("HEAD");
+        git(&["checkout", "-q", "main"]);
+        if conflict {
+            write(&work, "f.txt", "a\nMAIN\nc\n", 0o644);
+        } else {
+            write(&work, "g.txt", "y\n", 0o644);
+        }
+        git(&["commit", "-q", "-a", "-m", "main change"]);
+        let new_base = sha("HEAD");
+        git(&["checkout", "-q", "pr"]);
+        let merged =
+            clean_git(h, &work).git(&["merge", "-q", "--no-edit", "-m", "Merge main", "main"]);
+        if conflict {
+            merged.expect_err("the conflicting merge succeeded");
+            write(&work, "f.txt", "a\nPR and MAIN\nc\n", 0o644);
+            git(&["commit", "-q", "-a", "-m", "Merge main"]);
+        } else {
+            merged.expect("clean merge");
+        }
+        let new_head = sha("HEAD");
+        Self {
+            _root: root,
+            home,
+            work,
+            old_base,
+            old_head,
+            new_base,
+            new_head,
+        }
+    }
+
+    fn classify(&self) -> DeltaResult {
+        classify_range(
+            &mut clean_git(self.home.path(), &self.work),
+            &self.old_base,
+            &self.old_head,
+            &self.new_base,
+            &self.new_head,
+        )
+        .expect("classify the range")
+    }
+
+    fn remerge_diff(&self) -> String {
+        run_git(
+            self.home.path(),
+            &self.work,
+            &["show", "--remerge-diff", "--format=", &self.new_head],
+        )
+    }
+}
+
+#[test]
+fn real_process_merge_resolving_a_conflict_is_a_changed_patch() {
+    let p = MergedPull::new(true);
+    let remerge = p.remerge_diff();
+    assert!(
+        remerge.contains("+PR and MAIN"),
+        "the fixture's merge resolved no conflict: {remerge:?}"
+    );
+    let d = p.classify();
+    assert!(
+        !d.carry_forward(),
+        "a merge that resolved a conflict carried the record forward"
+    );
+    let merge = patch_status("", &p.new_head, "Merge main", "changed", false);
+    assert_eq!(Some(&merge), d.patches.last(), "patches {:?}", d.patches);
+    assert_eq!(vec![remerge.into_bytes()], d.texts);
+    assert_eq!(
+        vec![vec!["f.txt".to_owned()]],
+        d.files
+            .iter()
+            .map(|files| files.iter().map(|f| f.path.clone()).collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn real_process_clean_merge_carries_the_record_forward() {
+    let p = MergedPull::new(false);
+    assert_eq!(
+        "",
+        p.remerge_diff(),
+        "the fixture's clean merge has a remerge diff"
+    );
+    let d = p.classify();
+    assert!(
+        d.carry_forward(),
+        "a clean merge of main blocked the carry-forward: {:?}",
+        d.patches
+    );
+    let merge = patch_status("", &p.new_head, "Merge main", "unchanged", false);
+    assert_eq!(Some(&merge), d.patches.last(), "patches {:?}", d.patches);
+    assert!(
+        d.texts.is_empty() && d.files.is_empty(),
+        "a clean merge reached the delta"
     );
 }
