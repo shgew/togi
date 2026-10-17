@@ -914,6 +914,12 @@ fn a_partial_start_joins_the_output_log_failure_with_the_start_error() {
             if failure.diagnostics.iter().any(|d| d.contains("write output log: disk full"))),
                 "{errors:?}"
             );
+            let Some(Error::Joined(joined)) = crate_error(&partial.error) else {
+                panic!("{:?}", partial.error);
+            };
+            let expected = "launch instance c05 in scope togi-trial-t1-c05: no process left; backend output could not be read cleanly: core 01 stdout.log: write output log: disk full";
+            assert_eq!(joined.to_string(), expected);
+            assert_eq!(partial.error.to_string(), expected);
         })
         .await;
     });

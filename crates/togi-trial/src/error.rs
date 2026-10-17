@@ -100,7 +100,7 @@ impl Error {
 
 /// Several errors of one operation, in the order they happened.
 #[derive(Debug, thiserror::Error)]
-#[error("{}", .errors.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))]
+#[error("{}", .errors.iter().map(|member| with_causes(member)).collect::<Vec<_>>().join("; "))]
 pub struct Joined {
     errors: Vec<Error>,
 }
@@ -309,9 +309,8 @@ impl Shared {
     }
 }
 
-/// An error with every cause behind it, for reports that have no caller to return it to: joined
-/// errors and cleanup failures are listed one by one, each followed by its own source chain.
-#[cfg(target_os = "linux")]
+/// An error with every cause behind it: joined errors and cleanup failures are listed one by
+/// one, each followed by its own source chain.
 pub(crate) fn with_causes(error: &(dyn std::error::Error + 'static)) -> String {
     if let Some(Error::Joined(joined)) = error.downcast_ref::<Error>() {
         return joined
