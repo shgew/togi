@@ -463,6 +463,7 @@ impl Session {
             match self.teardown(trial) {
                 Ok(read) => boundary = read,
                 Err(flow) if is_crash_flow(&flow) && evident => {
+                    self.fault = Some(Fault::Crashed);
                     crashed = true;
                     error.get_or_insert(Error::Crashed);
                 }
