@@ -289,11 +289,11 @@ fn a_tuner_decision_citing_a_skipped_trial_leaves_what_follows_unresolved(kind: 
     let ends: Vec<u64> = events
         .iter()
         .filter(|event| event.seq.get() > decision)
-        .filter_map(|event| match &event.payload {
-            Payload::CheckingCycle(cycle) if cycle.event == CycleEvent::End => {
-                Some(u64::from(cycle.cycle.get()))
-            }
-            _ => None,
+        .filter_map(|event| {
+            let Payload::CheckingCycle(cycle) = &event.payload else {
+                return None;
+            };
+            (cycle.event == CycleEvent::End).then(|| u64::from(cycle.cycle.get()))
         })
         .collect();
     assert!(!ends.is_empty());
