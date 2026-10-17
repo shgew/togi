@@ -66,6 +66,45 @@ fn a_current_state_document_equals_a_fresh_fold_of_its_journal() {
 }
 
 #[test]
+fn a_tuner_refusal_keeps_the_configuration_field_value_and_range() {
+    let mut events = events();
+    let mut config = crate::rebuild::snapshot();
+    config["durations"]["search_trial_s"] = json!(0);
+    let mut state = fresh(&events);
+    events.push(event(
+        3,
+        "config.loaded",
+        json!({"build": build(0), "config": config, "path": "", "file": false}),
+    ));
+    state["facts"] = serde_json::to_value(togi_journal::State::replay(&events).unwrap()).unwrap();
+    let fs = MemFs::new();
+    let journal = events
+        .iter()
+        .map(|event| event.encode().unwrap() + "\n")
+        .collect::<String>();
+    fs.put("/state/events.jsonl", journal.into_bytes());
+    fs.put("/state/state.json", serde_json::to_vec(&state).unwrap());
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "projection fixtures use only an injected in-memory journal"
+    )]
+    let dir = StateDir::simulated(fs).unwrap();
+    let audits = audit_recordings(&dir, InProgress).unwrap();
+    let refusal = audits
+        .iter()
+        .flat_map(|audit| &audit.violations)
+        .find(|violation| {
+            violation.check == Projection
+                && violation.reason.starts_with("the tuner does not replay")
+        })
+        .unwrap();
+    assert_eq!(
+        refusal.reason,
+        "the tuner does not replay the journal: config.loaded records a configuration this build refuses: durations.search_trial_s: 0 is not within [1, 86400]"
+    );
+}
+
+#[test]
 fn a_current_document_that_disagrees_with_the_journal_is_a_violation() {
     let facts = changed(|state| state["facts"]["cores"] = json!([]));
     assert_eq!(found(Some(facts)), [(2, Projection)]);

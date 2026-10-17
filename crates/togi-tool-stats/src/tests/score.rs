@@ -99,24 +99,27 @@ fn scored(record: &Record, events: Vec<Event>) -> String {
 }
 
 #[test]
-fn forecast_read_and_decode_causes_reach_the_stats_boundary_once() {
+fn a_forecast_read_cause_reaches_the_stats_boundary_once() {
     struct Missing;
     impl std::io::Read for Missing {
         fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
             Err(std::io::Error::other("missing forecast"))
         }
     }
-    let missing = Record::decode(Missing, "missing.json").unwrap_err();
-    let malformed = Record::decode(b"{\"anchor\":".as_slice(), "broken.json").unwrap_err();
-    for (error, expected) in [
-        (missing, "read forecast missing.json: missing forecast"),
-        (
-            malformed,
-            "decode forecast broken.json: EOF while parsing a value at line 1 column 10",
-        ),
-    ] {
-        assert_eq!(togi_machine::error_chain(&Error::from(error)), expected);
-    }
+    let error = Record::decode(Missing, "missing.json").unwrap_err();
+    assert_eq!(
+        togi_machine::error_chain(&Error::from(error)),
+        "read forecast missing.json: missing forecast"
+    );
+}
+
+#[test]
+fn a_forecast_decode_cause_reaches_the_stats_boundary_once() {
+    let error = Record::decode(b"{\"anchor\":".as_slice(), "broken.json").unwrap_err();
+    assert_eq!(
+        togi_machine::error_chain(&Error::from(error)),
+        "decode forecast broken.json: EOF while parsing a value at line 1 column 10"
+    );
 }
 
 #[test]

@@ -463,6 +463,19 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_session_detail_keeps_the_lock_path_and_source() {
+        let fs = MemFs::new();
+        fs.inject(togi_journal::fs::Fault::before(togi_journal::fs::Op::Open, 1).named("lock"));
+        assert_eq!(
+            outcome(fs),
+            Outcome::Failed {
+                detail: "lock the state directory: lock /state/lock: injected Open fault"
+                    .to_owned()
+            }
+        );
+    }
+
+    #[test]
     fn a_finished_session_without_its_final_state_document_is_not_clean() {
         let fs = MemFs::new();
         assert_eq!(outcome(fs.clone()), Outcome::Clean);

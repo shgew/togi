@@ -8,7 +8,7 @@ fn rebuilt(seq: u64, fields: &[&str]) -> togi_journal::Event {
     event(seq, "state.rebuilt", json!({"fields": fields}))
 }
 
-fn snapshot() -> serde_json::Value {
+pub(crate) fn snapshot() -> serde_json::Value {
     json!({
         "start_offsets": {},
         "candidate_solo_limits": {},

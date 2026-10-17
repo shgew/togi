@@ -165,9 +165,13 @@ struct PanicsWhileDrawing;
 impl super::Surface for PanicsWhileDrawing {
     fn draw(&self, _: &std::path::Path, _: u64, stop: &super::Stop) -> Result<(), String> {
         let ended = togi_watch::terminal::Stop::new();
-        super::draw_until(stop, &ended, || -> Result<(), String> {
-            panic!("injected panic while drawing")
-        })
+        super::draw_until(
+            stop,
+            &ended,
+            || -> Result<(), togi_watch::terminal::Error> {
+                panic!("injected panic while drawing")
+            },
+        )
     }
 }
 
@@ -219,6 +223,34 @@ fn a_panic_while_drawing_falls_back_to_event_lines_at_once_not_when_the_dashboar
         ],
         "the fallback waited for the dashboard to be hidden"
     );
+    dashboard.hide();
+}
+
+struct FailsWhileDrawing;
+
+impl super::Surface for FailsWhileDrawing {
+    fn draw(&self, _: &std::path::Path, _: u64, stop: &super::Stop) -> Result<(), String> {
+        super::draw_until(stop, &togi_watch::terminal::Stop::new(), || {
+            Err(togi_watch::terminal::Error::Output(std::io::Error::other(
+                "broken pipe",
+            )))
+        })
+    }
+}
+
+#[test]
+fn a_terminal_failure_keeps_its_source_in_the_fallback_notice() {
+    let said = Said::default();
+    let notices = said.clone();
+    let dashboard = super::Dashboard::isolated(
+        std::sync::Arc::new(FailsWhileDrawing),
+        std::path::Path::new("."),
+        0,
+        move |message| notices.push("notice", message),
+    );
+    dashboard.show();
+    wait_until("the fallback notice", || !said.all().is_empty());
+    assert_eq!(said.all(), ["notice: write frame: broken pipe"]);
     dashboard.hide();
 }
 

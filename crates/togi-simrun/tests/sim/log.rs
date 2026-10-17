@@ -60,10 +60,16 @@ fn a_log_that_fails_during_a_crashed_boot_fails_the_simulation_instead_of_cappin
     input.max_boots = nz(3);
     input.log = Some(log(true, false).0);
     match simulate(input) {
-        Err(SimError::Failed { boot: 1, errors }) => assert!(
-            matches!(errors.as_slice(), [SessionError::Log(_)]),
-            "{errors:?}"
-        ),
+        Err(SimError::Failed { boot: 1, errors }) => {
+            assert!(
+                matches!(errors.as_slice(), [SessionError::Log(_)]),
+                "{errors:?}"
+            );
+            assert_eq!(
+                togi_machine::error_chain(&SimError::Failed { boot: 1, errors }),
+                "boot 1 crashed and also failed: write the event log: the log is gone"
+            );
+        }
         other => panic!("the log failure was lost: {}", shown(&other)),
     }
 }

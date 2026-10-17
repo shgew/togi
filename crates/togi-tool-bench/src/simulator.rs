@@ -409,10 +409,12 @@ mod tests {
                 .is_empty()
         );
         fs.put(path, b"broken\n".to_vec());
-        assert!(matches!(
-            recorded_events(Recording::read_in(&fs, path)),
-            Err(RunError::Journal(_))
-        ));
+        let error = recorded_events(Recording::read_in(&fs, path)).unwrap_err();
+        assert!(matches!(error, RunError::Journal(_)));
+        assert_eq!(
+            error.to_string(),
+            "read the run journal: /runs/events.jsonl: first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover"
+        );
     }
 
     const MACH_O_EXECUTE: [u8; 16] = [

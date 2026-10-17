@@ -669,6 +669,19 @@ fn a_state_directory_without_a_journal_has_no_anchor() {
         error,
         togi_tool_forecast::Error::ReadJournal { .. }
     ));
+    assert_eq!(
+        ForecastError::Anchor(Box::new(error)).to_string(),
+        "read anchor: read journal /empty/events.jsonl: entity not found"
+    );
+}
+
+#[test]
+fn a_failed_forecast_read_keeps_the_file_and_original_source() {
+    let error = Anchor::of_fs(&MemFs::new(), "/empty").unwrap_err();
+    assert_eq!(
+        ForecastError::Read(Box::new(error)).to_string(),
+        "read the run: read journal /empty/events.jsonl: entity not found"
+    );
 }
 
 /// Copies a machine with a facts extract into the fixture and writes a suite that names it by absolute path.
