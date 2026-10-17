@@ -1087,7 +1087,7 @@ fn a_journal_with_an_unknown_kind_is_refused_untouched_by_the_build_that_wrote_i
         ),
         "{error}"
     );
-    let lines = original.iter().filter(|byte| **byte == b'\n').count();
+    let lines = std::str::from_utf8(&original).unwrap().lines().count();
     assert_eq!(
         togi_machine::error_chain(&error),
         format!(
