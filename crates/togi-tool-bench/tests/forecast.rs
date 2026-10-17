@@ -29,8 +29,8 @@ use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_journal::fs::FileKind;
 use togi_journal::{
-    Build, DeadEnd, DeadEndCondition, Event, MemFs, Payload, SCHEMA, Seq, SessionId, Shutdown,
-    ShutdownReason, Stamp, StateDir,
+    Build, DeadEnd, DeadEndCondition, Event, FixStamp, MemFs, Payload, SCHEMA, Seq, SessionId,
+    Shutdown, ShutdownReason, Stamp, StateDir,
 };
 use togi_machine::{BootId, CancellationToken, CoreId, ObservedOffset, PerCore};
 use togi_render::Renderer;
@@ -52,7 +52,7 @@ fn build() -> Build {
         rev: None,
         ruleset: RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: EVIDENCE_EPOCH,
     }
 }

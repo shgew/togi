@@ -8,8 +8,8 @@ use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_defect::Entry;
 use togi_journal::{
-    Activity, Build, Event, MemFs, Payload, SCHEMA, Seq, SessionBaseline, SessionStart, StateDir,
-    fs::Fault, fs::Op,
+    Activity, Build, Event, FixStamp, MemFs, Payload, SCHEMA, Seq, SessionBaseline, SessionStart,
+    StateDir, fs::Fault, fs::Op,
 };
 use togi_machine::{
     BootId, CancellationToken, Condition, CoreId, CoreSet, Machine, ObservedOffset, PerCore,
@@ -67,7 +67,7 @@ pub(crate) fn build() -> Build {
         rev: None,
         ruleset: 1,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: 1,
     }
 }

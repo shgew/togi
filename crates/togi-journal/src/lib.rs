@@ -6,6 +6,7 @@
 //! ```
 
 mod build;
+mod defect_id;
 mod dir;
 mod event;
 mod filter;
@@ -26,6 +27,7 @@ mod unknown;
 mod tests;
 
 pub use build::{Build, Dimension, Operation, Refusal, SCHEMA, Verdict};
+pub use defect_id::{DefectId, FixStamp};
 pub use dir::{
     ArchiveKind, DirError, Lifetime, LockError, Marker, StateDir, StateError, recorded_build,
     recorded_build_in,

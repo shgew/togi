@@ -4,11 +4,11 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 
 use togi_config::Config;
-use togi_defect::{Clause, DefectId, Entry};
+use togi_defect::{Clause, Entry};
 use togi_journal::fs::{Fault as FsFault, Op};
 use togi_journal::{
-    Activity, Decision, DefectDirection, Event, EventKind, Payload, RetryTarget, SessionContext,
-    ShutdownReason, TunerDecision,
+    Activity, Decision, DefectDirection, DefectId, Event, EventKind, Payload, RetryTarget,
+    SessionContext, ShutdownReason, TunerDecision,
 };
 use togi_machine::{
     BootId, CancellationToken, Clock, Error, Host, Kernel, KernelCursor, KernelRead, Partial,

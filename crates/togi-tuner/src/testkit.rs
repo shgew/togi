@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use jiff::Timestamp;
 use togi_config::Config;
 use togi_journal::{
-    Attribution, Build, ConfigLoaded, CorePhase, CoreTransition, Event, Failure, Outcome, Payload,
-    SCHEMA, Seq, SessionStart, Stamp, TrialEnd, TrialId, TunerDecision, TunerWarning,
+    Attribution, Build, ConfigLoaded, CorePhase, CoreTransition, Event, Failure, FixStamp, Outcome,
+    Payload, SCHEMA, Seq, SessionStart, Stamp, TrialEnd, TrialId, TunerDecision, TunerWarning,
 };
 use togi_machine::{
     BootId, CcdId, Condition, CoreInfo, CoreSet, PerCore, Regime, Signal, TargetOffset, WorkloadId,
@@ -22,7 +22,7 @@ pub(crate) fn build() -> Build {
         rev: None,
         ruleset: crate::RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: crate::EVIDENCE_EPOCH,
     }
 }
