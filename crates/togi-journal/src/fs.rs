@@ -38,6 +38,7 @@ pub trait FsFile: Send + fmt::Debug {
 }
 
 /// An exclusive lock; dropping it releases the lock.
+#[must_use = "dropping the lock releases it; hold it for as long as the journal is in use"]
 pub struct FsLock(
     #[expect(dead_code, reason = "held only for its Drop")] Box<dyn Any + Send + Sync>,
 );
