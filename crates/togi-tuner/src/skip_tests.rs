@@ -387,10 +387,26 @@ fn a_skipped_failure_adds_no_evidence() {
         &[-19],
         Outcome::Failure,
     );
-    let before = j.state.project();
+    let class = crate::ClassKey::new(
+        togi_machine::WorkloadId::new(Regime::R1, 0).unwrap(),
+        set(&[0]),
+        crate::Secs::new(std::num::NonZeroU32::new(duration).unwrap()),
+    );
+    let profile = j.profile(&[-19]);
+    let ruled_out = |j: &Journal| {
+        let evidence = &j.run().evidence;
+        (
+            evidence
+                .failing_seq(class, &profile, None, j.run().config.needed)
+                .unwrap(),
+            evidence.live_failures(class, &profile, None).unwrap(),
+        )
+    };
+    let before = (ruled_out(&j), j.state.project());
+    assert!(before.0.0.is_some(), "the carried failure rules -19 out");
     let action = j.next_decision();
     j.decide(action);
-    assert_eq!(j.state.project(), before);
+    assert_eq!((ruled_out(&j), j.state.project()), before);
     assert!(matches!(
         j.next_decision().payload,
         DecisionPayload::TunerDecision(_)

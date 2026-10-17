@@ -141,9 +141,7 @@ pub(crate) fn held(j: &Journal) -> Vec<Seq> {
             {
                 return event.cause.first().copied();
             }
-            if let togi_journal::Payload::HuntSkipped(skip) = &event.payload
-                && skip.reason.starts_with("held")
-            {
+            if let togi_journal::Payload::HuntSkipped(skip) = &event.payload {
                 return Some(skip.failure);
             }
             None
@@ -813,7 +811,9 @@ fn strikes_stay_bounded_by_cores_and_the_window() {
             end_cycle(&mut j);
             start_cycle(&mut j);
         }
-        let by_core = strikes(&j);
+        // An invariant on stored state, not behavior: strikes kept in memory stay bounded,
+        // including ones the BIOS profile no longer shows.
+        let by_core = j.run().later.strikes().count();
         j.assert_resumes();
         by_core
     };

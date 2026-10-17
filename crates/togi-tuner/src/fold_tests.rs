@@ -324,15 +324,17 @@ fn rotation_counts_each_regime_apart_and_all_loads_apart_from_one_core() {
     j.trial(&all, Outcome::Pass);
     j.trial(&one, Outcome::Pass);
     let r6_one = plan(&j, Regime::R6, Load::Single(core(1)), 900);
+    let r1_all = plan(&j, Regime::R1, Load::Many(set(&[0, 1])), checking);
     let other = plan(&j, Regime::R1, Load::Single(core(0)), checking);
     assert_eq!(
         (
             j.rotation(&all),
             j.rotation(&r6_one),
             j.rotation(&one),
+            j.rotation(&r1_all),
             j.rotation(&other)
         ),
-        (1, 0, 1, 0)
+        (1, 0, 1, 0, 0)
     );
 }
 

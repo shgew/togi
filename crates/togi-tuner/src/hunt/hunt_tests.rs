@@ -7,8 +7,8 @@ use togi_machine::{Condition, Regime, workloads};
 use super::plan::GroupOutcome;
 use super::support::{
     SHORT, at, attribute, cancel_hunt, ended, group_of, hunt_of, ids, limit_session, members_of,
-    passed_cycle, repeated_core_oracle, repeated_session, run_group, start_hunt_at,
-    start_regime_hunt,
+    passed_cycle, projection_cases, ran_group, reach, repeated_core_oracle, repeated_session,
+    restore_has_room, run_group, start_hunt_at, start_regime_hunt,
 };
 use crate::later_tests::{pass_cycles, start_cycle, strikes};
 use crate::testkit::{Journal, Start, config, set};
@@ -82,39 +82,6 @@ fn core_ids(cores: togi_machine::CoreSet) -> Vec<u8> {
 
 fn pass_all(_: &TrialPlan) -> Outcome {
     Outcome::Pass
-}
-
-fn ran_group(
-    j: &mut Journal,
-    hunt: u32,
-    loaded: &[u8],
-    failing: &[i64],
-    stage: HuntStage,
-    outcome: Outcome,
-    trials: usize,
-) {
-    start_hunt_at(j, hunt, loaded, failing);
-    let planned = reach(j, stage);
-    j.decide(planned);
-    for _ in 0..trials {
-        run_group(j, outcome == Outcome::Failure);
-    }
-    cancel_hunt(j, hunt);
-}
-
-fn reach(j: &mut Journal, stage: HuntStage) -> crate::DecisionAction {
-    let index = u32::from(stage == HuntStage::Complement);
-    for _ in 0..200 {
-        let action = j.next();
-        if group_of(&action).is_some_and(|group| group.stage == stage && group.index == index) {
-            let Action::Decide(decision) = action else {
-                unreachable!();
-            };
-            return decision;
-        }
-        j.step(&mut pass_all);
-    }
-    panic!("the hunt never planned a {stage:?} group");
 }
 
 fn reuse_session() -> Journal {
@@ -1231,21 +1198,6 @@ fn sixteen_core_culprit_and_pair() {
     }
 }
 
-fn restore_has_room(j: &mut Journal, id: u8, offset: i64) {
-    j.core_phase(CoreTransition {
-        core: core(id),
-        from: Some(CorePhase::Search),
-        to: CorePhase::HasRoom,
-        offset: off(offset),
-        pass: None,
-        failure_point: None,
-        check_solo_limit: false,
-        workloads: Vec::new(),
-        cleared_combination: Vec::new(),
-        reason: "test".to_owned(),
-    });
-}
-
 #[test]
 fn hunt_duration_prior_respects_evidence_and_short_failures() {
     struct Case {
@@ -1507,155 +1459,8 @@ fn hunt_escalation_and_inferred_group() {
 
 #[test]
 fn active_hunt_projection() {
-    struct Case {
-        name: &'static str,
-        stage: HuntStage,
-        prior: usize,
-        live: Vec<Outcome>,
-        inferred: Option<Inference>,
-        skipped: bool,
-        reset: bool,
-        escalated: bool,
-        probe: Option<Member>,
-        held: Vec<Member>,
-        passes: u32,
-        outcome: Option<GroupOutcome>,
-    }
-    let base = || Case {
-        name: "",
-        stage: HuntStage::Part,
-        prior: 0,
-        live: Vec::new(),
-        inferred: None,
-        skipped: false,
-        reset: false,
-        escalated: false,
-        probe: None,
-        held: Vec::new(),
-        passes: 0,
-        outcome: None,
-    };
-    let cases = vec![
-        Case {
-            name: "running reuses earlier valid passes",
-            prior: 2,
-            live: vec![Outcome::Pass],
-            passes: 3,
-            ..base()
-        },
-        Case {
-            name: "passing complement accumulates trials",
-            stage: HuntStage::Complement,
-            prior: 4,
-            live: vec![Outcome::Pass],
-            passes: 5,
-            outcome: Some(GroupOutcome::Passed),
-            ..base()
-        },
-        Case {
-            name: "failure invalidates earlier passes",
-            prior: 2,
-            live: vec![Outcome::Failure],
-            outcome: Some(GroupOutcome::Failed),
-            ..base()
-        },
-        Case {
-            name: "inferred pass",
-            prior: 5,
-            inferred: Some(Inference::Pass),
-            passes: 5,
-            outcome: Some(GroupOutcome::Passed),
-            ..base()
-        },
-        Case {
-            name: "inferred failure",
-            stage: HuntStage::Complement,
-            inferred: Some(Inference::Failure),
-            outcome: Some(GroupOutcome::Failed),
-            ..base()
-        },
-        Case {
-            name: "skipped",
-            skipped: true,
-            outcome: Some(GroupOutcome::Skipped),
-            ..base()
-        },
-        Case {
-            name: "reset excludes reused evidence",
-            prior: 4,
-            reset: true,
-            live: vec![Outcome::Pass],
-            passes: 1,
-            ..base()
-        },
-        Case {
-            name: "escalated full uses only new trials",
-            stage: HuntStage::Full,
-            prior: 4,
-            live: vec![Outcome::Pass],
-            escalated: true,
-            passes: 1,
-            ..base()
-        },
-        Case {
-            name: "member probe preserves held members",
-            stage: HuntStage::Probe,
-            prior: 4,
-            live: vec![Outcome::Pass],
-            probe: Some(Member {
-                core: core(0),
-                offset: off(-30),
-            }),
-            held: members_of(&[(1, -30)]),
-            passes: 1,
-            ..base()
-        },
-    ];
-    for case in cases {
-        let mut j = Journal::new(&ids(4), &[Start::has_room(-30); 4]);
-        j.profile_change(&[-30; 4]);
-        j.ranking(&ids(4));
-        if case.prior > 0 {
-            ran_group(
-                &mut j,
-                1,
-                &ids(4),
-                &[-30; 4],
-                HuntStage::Part,
-                Outcome::Pass,
-                case.prior,
-            );
-        }
-        if case.reset {
-            j.reset(0);
-            let transition = j.next_decision();
-            j.decide(transition);
-            restore_has_room(&mut j, 0, -30);
-        }
-        let begin = start_hunt_at(&mut j, 2, &ids(4), &[-30; 4]);
-        let group = HuntGroup {
-            hunt: std::num::NonZeroU32::new(2).unwrap(),
-            group: std::num::NonZeroU32::MIN,
-            cores: set(&[0, 1]),
-            profile: j.profile(&[-30, -30, 0, 0]).offsets(),
-            set: set(&ids(4)),
-            granularity: 2,
-            stage: case.stage,
-            index: 0,
-            duration_s: SHORT,
-            escalated: case.escalated,
-            full_checked: false,
-            any_failed: false,
-            probe: case.probe,
-            held: case.held.clone(),
-            inferred: case.inferred,
-            skipped: case.skipped,
-            reason: Some("test".to_owned()),
-        };
-        let seq = j.append(group.into(), &[begin]);
-        for outcome in &case.live {
-            run_group(&mut j, *outcome == Outcome::Failure);
-        }
+    for case in projection_cases() {
+        let (mut j, seq) = case.journal();
         let view = j.run().hunt_groups();
         assert_eq!(view.len(), 1, "{}", case.name);
         let group = &view[0];

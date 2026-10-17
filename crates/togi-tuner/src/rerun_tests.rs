@@ -1180,9 +1180,38 @@ fn ordinals(requirement: &crate::Requirement) -> (Option<u32>, Option<u32>) {
     )
 }
 
-/// The count the open trial's requirement shows: the one `plan` scheduled it for.
-fn shows_needed(j: &Journal, plan: &TrialPlan) -> bool {
-    j.requirement().needed == u32::from(plan.requirement.needed.get())
+/// A stored requirement as the dashboard shows it: the count, and the (step, part) ordinals the
+/// cycle plan marks running.
+type Shown = (u32, Vec<(Option<u32>, Option<u32>)>);
+
+/// What the open trial's stored requirement shows; the cycle plan reads the running part from
+/// that requirement.
+fn shown(j: &Journal) -> Shown {
+    let running = j
+        .state
+        .cycle_plan()
+        .steps
+        .iter()
+        .zip(1..)
+        .flat_map(|(step, number)| {
+            step.parts
+                .iter()
+                .zip(1..)
+                .filter(|(part, _)| part.running)
+                .map(move |(_, part)| (Some(number), Some(part)))
+        })
+        .collect();
+    (j.requirement().needed, running)
+}
+
+/// What `shown` reads once the fold stores `plan`'s requirement.
+fn scheduled(plan: &TrialPlan) -> Shown {
+    let running = if plan.requirement.kind == RequirementKind::Cycle {
+        vec![ordinals(&plan.requirement)]
+    } else {
+        Vec::new()
+    };
+    (u32::from(plan.requirement.needed.get()), running)
 }
 
 #[test]
@@ -1213,7 +1242,7 @@ fn resumed_short_trial_change_drops_a_rerun_retry() {
             "{name}"
         );
         j.intent(&next);
-        assert!(shows_needed(&j, &next), "{name}");
+        assert_eq!(shown(&j), scheduled(&next), "{name}");
         j.assert_resumes();
     }
 }
@@ -1251,7 +1280,7 @@ fn cycle_retries_attach_the_requirement_the_fold_stores() {
         let duration = if retry { first.duration } else { secs(100) };
         assert_eq!(next.duration, duration, "{name}");
         j.intent(&next);
-        assert!(shows_needed(&j, &next), "{name}");
+        assert_eq!(shown(&j), scheduled(&next), "{name}");
         j.assert_resumes();
     }
 }
@@ -1276,15 +1305,19 @@ fn stored_requirement_separates_class_count_and_part() {
         panic!("no partial part came");
     };
     let (intent, trial) = j.intent(&partial);
-    assert!(shows_needed(&j, &partial));
     assert_eq!(ordinals(&partial.requirement), (Some(1), Some(2)));
-    assert_eq!(j.requirement().needed, 3);
+    assert_eq!(shown(&j), (3, vec![(Some(1), Some(2))]));
     let mut end = Journal::end_payload(&trial, Outcome::Inconclusive, None);
     end.duration_s = partial.duration.get();
     j.append(end.into(), &[intent]);
     let history = j.history();
     assert_eq!(history.needed, 3);
     assert_eq!(history.step.map(|step| step.get().get()), Some(1));
+    let Action::RunTrial(again) = j.next() else {
+        panic!("expected the partial part's retry");
+    };
+    assert!(again.retry, "{again:?}");
+    assert_eq!(again.requirement, partial.requirement);
     j.assert_resumes();
 }
 

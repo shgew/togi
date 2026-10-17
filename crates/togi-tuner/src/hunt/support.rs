@@ -1,14 +1,15 @@
 use std::num::NonZeroU32;
 
 use togi_journal::{
-    Attribution, CorePhase, CoreTransition, HuntEnd, HuntGroup, HuntOutcome, HuntStart, Member,
-    Outcome, Seq,
+    Attribution, CorePhase, CoreTransition, HuntEnd, HuntGroup, HuntOutcome, HuntStage, HuntStart,
+    Inference, Member, Outcome, Seq,
 };
 use togi_machine::{Condition, Regime, workloads};
 
+use super::plan::GroupOutcome;
 use crate::testkit::{Journal, Start, config, set};
 use crate::tests::{core, off};
-use crate::{Action, DecisionPayload, TrialPlan};
+use crate::{Action, DecisionAction, DecisionPayload, Load, TrialPlan};
 
 pub(crate) const SHORT: u32 = 120;
 
@@ -35,7 +36,17 @@ pub(crate) fn hunt_of(count: usize, duration: u32) -> Journal {
             r#"{{"durations":{{"checking_idle_s":{duration}}}}}"#
         )));
     }
-    j.together_failure(Regime::R6, 0, &vec![-30; count]);
+    let all = ids(count);
+    let plan = j.manual(
+        Regime::R6,
+        0,
+        Load::Many(set(&all)),
+        Condition::Together,
+        &vec![-30; count],
+        duration,
+    );
+    j.trial(&plan, Outcome::Failure);
+    attribute(&mut j);
     j.start_hunt();
     j
 }
@@ -63,6 +74,226 @@ pub(crate) fn run_group(j: &mut Journal, fail: bool) {
     if fail {
         attribute(j);
     }
+}
+
+/// Runs hunt `hunt` up to its first `stage` group, runs that group `trials` times with
+/// `outcome`, then cancels the hunt.
+pub(crate) fn ran_group(
+    j: &mut Journal,
+    hunt: u32,
+    loaded: &[u8],
+    failing: &[i64],
+    stage: HuntStage,
+    outcome: Outcome,
+    trials: usize,
+) {
+    start_hunt_at(j, hunt, loaded, failing);
+    let planned = reach(j, stage);
+    j.decide(planned);
+    for _ in 0..trials {
+        run_group(j, outcome == Outcome::Failure);
+    }
+    cancel_hunt(j, hunt);
+}
+
+/// Passes every trial until the open hunt plans its first `stage` group, and returns that plan.
+pub(crate) fn reach(j: &mut Journal, stage: HuntStage) -> DecisionAction {
+    let index = u32::from(stage == HuntStage::Complement);
+    for _ in 0..200 {
+        let action = j.next();
+        if group_of(&action).is_some_and(|group| group.stage == stage && group.index == index) {
+            let Action::Decide(decision) = action else {
+                unreachable!();
+            };
+            return decision;
+        }
+        j.step(&mut |_: &TrialPlan| Outcome::Pass);
+    }
+    panic!("the hunt never planned a {stage:?} group");
+}
+
+/// Moves core `id` back from search to has-room at `offset`.
+pub(crate) fn restore_has_room(j: &mut Journal, id: u8, offset: i64) {
+    j.core_phase(CoreTransition {
+        core: core(id),
+        from: Some(CorePhase::Search),
+        to: CorePhase::HasRoom,
+        offset: off(offset),
+        pass: None,
+        failure_point: None,
+        check_solo_limit: false,
+        workloads: Vec::new(),
+        cleared_combination: Vec::new(),
+        reason: "test".to_owned(),
+    });
+}
+
+/// An active-hunt projection scenario: hunt 2's one group over cores 00 and 01 of four, all at
+/// -30, after `prior` passes of hunt 1's part group, an optional core-00 reset, and the group's
+/// `live` trials, failing where true. The rest is what the projections must show.
+pub(crate) struct ProjectionCase {
+    pub(crate) name: &'static str,
+    pub(crate) stage: HuntStage,
+    prior: usize,
+    live: Vec<bool>,
+    inferred: Option<Inference>,
+    skipped: bool,
+    reset: bool,
+    escalated: bool,
+    pub(crate) probe: Option<Member>,
+    pub(crate) held: Vec<Member>,
+    pub(crate) passes: u32,
+    pub(crate) outcome: Option<GroupOutcome>,
+}
+
+impl ProjectionCase {
+    /// Journals the scenario and returns the journal with the group's seq.
+    pub(crate) fn journal(&self) -> (Journal, Seq) {
+        let mut j = Journal::new(&ids(4), &[Start::has_room(-30); 4]);
+        j.profile_change(&[-30; 4]);
+        j.ranking(&ids(4));
+        if self.prior > 0 {
+            ran_group(
+                &mut j,
+                1,
+                &ids(4),
+                &[-30; 4],
+                HuntStage::Part,
+                Outcome::Pass,
+                self.prior,
+            );
+        }
+        if self.reset {
+            j.reset(0);
+            let transition = j.next_decision();
+            assert!(
+                matches!(&transition.payload, DecisionPayload::CorePhase(_)),
+                "{}",
+                self.name
+            );
+            j.decide(transition);
+            restore_has_room(&mut j, 0, -30);
+        }
+        let begin = start_hunt_at(&mut j, 2, &ids(4), &[-30; 4]);
+        let group = HuntGroup {
+            hunt: NonZeroU32::new(2).unwrap(),
+            group: NonZeroU32::MIN,
+            cores: set(&[0, 1]),
+            profile: j.profile(&[-30, -30, 0, 0]).offsets(),
+            set: set(&ids(4)),
+            granularity: 2,
+            stage: self.stage,
+            index: 0,
+            duration_s: SHORT,
+            escalated: self.escalated,
+            full_checked: false,
+            any_failed: false,
+            probe: self.probe,
+            held: self.held.clone(),
+            inferred: self.inferred,
+            skipped: self.skipped,
+            reason: Some("test".to_owned()),
+        };
+        let seq = j.append(group.into(), &[begin]);
+        for &fail in &self.live {
+            run_group(&mut j, fail);
+        }
+        (j, seq)
+    }
+}
+
+/// The scenarios the dashboard's hunt plan and the hunt's group view must both show.
+pub(crate) fn projection_cases() -> Vec<ProjectionCase> {
+    let base = || ProjectionCase {
+        name: "",
+        stage: HuntStage::Part,
+        prior: 0,
+        live: Vec::new(),
+        inferred: None,
+        skipped: false,
+        reset: false,
+        escalated: false,
+        probe: None,
+        held: Vec::new(),
+        passes: 0,
+        outcome: None,
+    };
+    vec![
+        ProjectionCase {
+            name: "running reuses earlier valid passes",
+            prior: 2,
+            live: vec![false],
+            passes: 3,
+            ..base()
+        },
+        ProjectionCase {
+            name: "passing complement accumulates trials",
+            stage: HuntStage::Complement,
+            prior: 4,
+            live: vec![false],
+            passes: 5,
+            outcome: Some(GroupOutcome::Passed),
+            ..base()
+        },
+        ProjectionCase {
+            name: "failure invalidates earlier passes",
+            prior: 2,
+            live: vec![true],
+            outcome: Some(GroupOutcome::Failed),
+            ..base()
+        },
+        ProjectionCase {
+            name: "inferred pass",
+            prior: 5,
+            inferred: Some(Inference::Pass),
+            passes: 5,
+            outcome: Some(GroupOutcome::Passed),
+            ..base()
+        },
+        ProjectionCase {
+            name: "inferred failure",
+            stage: HuntStage::Complement,
+            inferred: Some(Inference::Failure),
+            outcome: Some(GroupOutcome::Failed),
+            ..base()
+        },
+        ProjectionCase {
+            name: "skipped",
+            skipped: true,
+            outcome: Some(GroupOutcome::Skipped),
+            ..base()
+        },
+        ProjectionCase {
+            name: "reset excludes reused evidence",
+            prior: 4,
+            reset: true,
+            live: vec![false],
+            passes: 1,
+            ..base()
+        },
+        ProjectionCase {
+            name: "escalated full uses only new trials",
+            stage: HuntStage::Full,
+            prior: 4,
+            live: vec![false],
+            escalated: true,
+            passes: 1,
+            ..base()
+        },
+        ProjectionCase {
+            name: "member probe preserves held members",
+            stage: HuntStage::Probe,
+            prior: 4,
+            live: vec![false],
+            probe: Some(Member {
+                core: core(0),
+                offset: off(-30),
+            }),
+            held: members_of(&[(1, -30)]),
+            passes: 1,
+            ..base()
+        },
+    ]
 }
 
 /// Appends hunt `hunt` for a `regime` failure loading `loaded` at `failing`.

@@ -1,9 +1,6 @@
 use std::num::NonZeroU32;
 
-use togi_journal::{
-    Activity, CommandReset, HuntGroup, HuntStage, HuntStart, Inference, Member, Outcome,
-    ResetTarget, Seq,
-};
+use togi_journal::{Activity, HuntGroup, HuntStage, HuntStart, Member, Outcome, Seq};
 use togi_machine::{Condition, Regime, workloads};
 
 use crate::chain_tests::{
@@ -11,9 +8,10 @@ use crate::chain_tests::{
     pass_part, run, shallower, two_ccds,
 };
 use crate::dashboard::{CyclePart, GroupState, MemberProbe, TrialRequirement};
+use crate::hunt::plan::GroupOutcome;
 use crate::hunt::support::{
-    at, attribute, cancel_hunt, group_of, hunt_of, ids, limit_session, members_of,
-    repeated_core_oracle, repeated_session, run_group, start_hunt_at,
+    at, attribute, cancel_hunt, group_of, hunt_of, ids, limit_session, projection_cases,
+    repeated_core_oracle, repeated_session, start_hunt_at,
 };
 use crate::testkit::{Journal, Start, config, fresh, set};
 use crate::tests::{core, off};
@@ -899,151 +897,14 @@ fn hunt_probe_without_recorded_checking_profile() {
 
 #[test]
 fn active_hunt_projection() {
-    struct Case {
-        name: &'static str,
-        stage: HuntStage,
-        prior: usize,
-        live: Vec<bool>,
-        inferred: Option<Inference>,
-        skipped: bool,
-        reset: bool,
-        escalated: bool,
-        probe: Option<Member>,
-        held: Vec<Member>,
-        passes: u32,
-        outcome: GroupState,
-    }
-    let base = || Case {
-        name: "",
-        stage: HuntStage::Part,
-        prior: 0,
-        live: Vec::new(),
-        inferred: None,
-        skipped: false,
-        reset: false,
-        escalated: false,
-        probe: None,
-        held: Vec::new(),
-        passes: 0,
-        outcome: GroupState::Running,
-    };
-    let cases = vec![
-        Case {
-            name: "running reuses earlier valid passes",
-            prior: 2,
-            live: vec![false],
-            passes: 3,
-            ..base()
-        },
-        Case {
-            name: "passing complement accumulates trials",
-            stage: HuntStage::Complement,
-            prior: 4,
-            live: vec![false],
-            passes: 5,
-            outcome: GroupState::Passed,
-            ..base()
-        },
-        Case {
-            name: "failure invalidates earlier passes",
-            prior: 2,
-            live: vec![true],
-            outcome: GroupState::Failed,
-            ..base()
-        },
-        Case {
-            name: "inferred pass",
-            prior: 5,
-            inferred: Some(Inference::Pass),
-            passes: 5,
-            outcome: GroupState::Passed,
-            ..base()
-        },
-        Case {
-            name: "inferred failure",
-            stage: HuntStage::Complement,
-            inferred: Some(Inference::Failure),
-            outcome: GroupState::Failed,
-            ..base()
-        },
-        Case {
-            name: "skipped",
-            skipped: true,
-            outcome: GroupState::Skipped,
-            ..base()
-        },
-        Case {
-            name: "reset excludes reused evidence",
-            prior: 4,
-            reset: true,
-            live: vec![false],
-            passes: 1,
-            ..base()
-        },
-        Case {
-            name: "escalated full uses only new trials",
-            stage: HuntStage::Full,
-            prior: 4,
-            live: vec![false],
-            escalated: true,
-            passes: 1,
-            ..base()
-        },
-        Case {
-            name: "member probe preserves held members",
-            stage: HuntStage::Probe,
-            prior: 4,
-            live: vec![false],
-            probe: Some(Member {
-                core: core(0),
-                offset: off(-30),
-            }),
-            held: members_of(&[(1, -30)]),
-            passes: 1,
-            ..base()
-        },
-    ];
-    for case in cases {
-        let mut j = Journal::new(&ids(4), &[Start::has_room(-30); 4]);
-        j.profile_change(&[-30; 4]);
-        j.ranking(&ids(4));
-        if case.prior > 0 {
-            start_hunt_at(&mut j, 1, &ids(4), &[-30; 4]);
-            let planned = reach_group(&mut j);
-            j.decide(planned);
-            for _ in 0..case.prior {
-                run_group(&mut j, false);
-            }
-            cancel_hunt(&mut j, 1);
-        }
-        if case.reset {
-            j.append(
-                CommandReset {
-                    target: ResetTarget::Core(core(0)),
-                }
-                .into(),
-                &[],
-            );
-            let transition = j.next_decision();
-            j.decide(transition);
-            j.core_phase(crate::schedule_tests::transition(
-                0,
-                togi_journal::CorePhase::HasRoom,
-                -30,
-            ));
-        }
-        let begin = start_hunt_at(&mut j, 2, &ids(4), &[-30; 4]);
-        let mut group = group_payload(2, 1, case.stage, &ids(4), 2, 0, SHORT);
-        group.profile = j.profile(&[-30, -30, 0, 0]).offsets();
-        group.escalated = case.escalated;
-        group.probe = case.probe;
-        group.held = case.held.clone();
-        group.inferred = case.inferred;
-        group.skipped = case.skipped;
-        j.append(group.into(), &[begin]);
-        for &fail in &case.live {
-            run_group(&mut j, fail);
-        }
+    for case in projection_cases() {
+        let (mut j, _) = case.journal();
+        let outcome = match case.outcome {
+            None => GroupState::Running,
+            Some(GroupOutcome::Passed) => GroupState::Passed,
+            Some(GroupOutcome::Failed) => GroupState::Failed,
+            Some(GroupOutcome::Skipped) => GroupState::Skipped,
+        };
         let plan = j
             .state
             .hunt_plan()
@@ -1059,7 +920,7 @@ fn active_hunt_projection() {
         assert_eq!(view.held, case.held, "{}", case.name);
         assert_eq!(view.needed, 5, "{}", case.name);
         assert_eq!(view.passed, case.passes, "{}", case.name);
-        assert_eq!(view.outcome, case.outcome, "{}", case.name);
+        assert_eq!(view.outcome, outcome, "{}", case.name);
         assert!(!view.carried, "{}", case.name);
         j.assert_resumes();
         cancel_hunt(&mut j, 2);

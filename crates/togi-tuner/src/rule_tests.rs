@@ -98,8 +98,9 @@ fn thermal_reason_yields_to_mce_evidence() {
 
 #[test]
 fn a_crash_keeps_the_trial_in_flight_until_its_end() {
-    let mut j = Journal::search_at(&[-10]);
+    let mut j = Journal::new(&[0], &[crate::testkit::Start::search(-10).checking()]);
     let plan = j.next_trial();
+    assert!(plan.requirement.needed.get() > 1, "{plan:?}");
     let (intent, trial) = j.intent(&plan);
     assert!(!j.state.forecast().branches.is_empty());
     j.append(
