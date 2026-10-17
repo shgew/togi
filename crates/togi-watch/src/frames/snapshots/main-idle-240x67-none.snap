@@ -3,7 +3,7 @@ source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
 legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
-│  togi   20:21:32   session 20h21m   41 failures · 8 crashes   last observed failure 18:57   screen paused · planned end 20:36
+│  togi   20:21:32   tuning 20h21m   session 20h21m   41 failures · 8 crashes   last observed failure 18:57   screen paused · planned end 20:36
 │
 │  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 7 of 18
 │

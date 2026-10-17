@@ -32,5 +32,3 @@ expression: body
  mprime AVX2       05 08 by offset   none yet                09:38  limit    core 07 solo limit -30
  mprime AVX-512    05 08 by offset   none yet                09:35  limit    core 10 solo limit -18
  y-cruncher FFTv4  05 08 by offset   none yet                +208 more
-
-
