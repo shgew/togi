@@ -9,7 +9,7 @@ dir=$(cd "$1" && pwd -P)
 # The views find files by listing these directories; one this user may enter but not list, such as a
 # trial directory togi made 0711 for a backend account, would read as no samples instead of failing.
 for listed in "$dir/archive" "$dir/trials" "$dir"/trials/* "$dir"/archive/*-trials "$dir"/archive/*-trials/*; do
-    [[ ! -d $listed || (-r $listed && -x $listed) ]] || { echo "sql: cannot list $listed; run as root or query a copy of the state directory" >&2; exit 1; }
+    [[ ! -d $listed || (-r $listed && -x $listed) ]] || { echo "sql: cannot list $listed; run as root or query a copy you own" >&2; exit 1; }
 done
 
 quote() { printf "'%s'" "${1//\'/\'\'}"; }
