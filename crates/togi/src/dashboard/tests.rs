@@ -285,6 +285,24 @@ fn a_terminal_failure_keeps_its_source_in_the_fallback_notice() {
 }
 
 #[test]
+fn a_spawn_failure_names_the_thread_and_keeps_its_cause() {
+    assert_eq!(
+        togi_render::error_chain(&super::Failure::Spawn(std::io::Error::other("no threads"))),
+        "spawn the dashboard thread: no threads"
+    );
+}
+
+#[test]
+fn a_draw_failure_renders_the_terminal_error_without_repeating_it() {
+    assert_eq!(
+        togi_render::error_chain(&super::Failure::Draw(togi_watch::terminal::Error::Output(
+            std::io::Error::other("broken pipe")
+        ))),
+        "write frame: broken pipe"
+    );
+}
+
+#[test]
 fn drawing_that_returns_stops_the_helper_and_the_dashboard_is_still_showing_until_it_is_hidden() {
     let dashboard = super::Dashboard::isolated(
         std::sync::Arc::new(UntilStopped),

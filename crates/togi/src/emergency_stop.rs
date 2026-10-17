@@ -231,6 +231,8 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
             COMMAND,
             format!("{}; offsets unchanged", togi_render::error_chain(&failure)),
         ),
-        Err(failure) => fail(ctx, COMMAND, togi_render::error_chain(&failure)),
+        Err(failure @ Failure::NotZero { .. }) => {
+            fail(ctx, COMMAND, togi_render::error_chain(&failure))
+        }
     }
 }
