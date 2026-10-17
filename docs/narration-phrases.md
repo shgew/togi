@@ -4,14 +4,14 @@ Every phrase below is text a renderer produced in this run; none is typed in. Wo
 
 ## How it was collected
 
-- **Unit tests.** 754 unit tests ran in the same binary; 377 of them rendered at least one phrase. Each phrase is credited to the test (`tests`) that rendered it.
+- **Unit tests.** 763 unit tests ran in the same binary; 405 of them rendered at least one phrase. Each phrase is credited to the test (`tests`) that rendered it.
 - **Sweep.** 10 journals were folded one event at a time, each fold credited to its prefix's case, and every prefix was drawn at 240x67 at the event's own time, 40 s later, and, when a trial runs that nothing holds, at the trial's planned end and 90 s past it; at 160x45 and 120x33 only 40 s later and 90 s past the planned end. A started idle (R6) trial freezes its frame, so no planned-end clocks are sampled for it: it is drawn at 240x67 at the event's own time and 40 s later, and at the other two sizes 40 s later only, and the sweep asserts the frame reports itself held. 18 scenario cuts, each projected under its own case, were drawn at the three sizes too, with the journal states, help and the journal view (520285 frames in all). Credited as `sweep`.
 - **Clauses and templates.** A rendered phrase is cut into clauses at ` · `, ` ─ `, ` │ `, ` → ` and runs of two spaces, and a clause with no letter is dropped. A clause becomes a template by folding its digits, lists and ranges of numbers to `#`, the signs before offsets, hexadecimal ids, gauge and rule glyphs and runs of spaces. The numbers, core lists and error strings a phrase can carry are unbounded, so only the finite templates, forms and branches are claimed as covered.
 - **Cuts.** A template that is only a cut of a longer one of the same producer, a truncation ending in `...`, a wrapped row or a column cut, is folded into the longer one; its forms, cases and texts stay on it. A truncation no other template holds whole stays and is marked.
 - **Alternatives.** Templates of one producer that differ in one run of up to 3 tokens and agree on every token around it are one line, `before {a | b} after`. Each alternative was rendered in exactly that context, and two positions never vary at once.
 - **Provenance.** Each line names its forms, the two least case names that rendered it, and how many renderings there were. A manifest literal is `file:line`.
 
-3686 templates from 39 producers, reduced from 5690 shapes and 114071 distinct texts: 1521 cuts folded in, 810 templates merged into alternatives, 127 truncations with no full form.
+3969 templates from 41 producers, reduced from 6046 shapes and 115971 distinct texts: 1563 cuts folded in, 861 templates merged into alternatives, 134 truncations with no full form.
 
 ## Regenerating
 
@@ -39,51 +39,55 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 
 ### Phrases by producer
 
-- `band.line`: 78 templates
+- `band.line`: 79 templates
 - `band.title`: 5 templates
 - `dash.header`: 20 templates, 5 truncations with no full form
 - `dash.note`: 9 templates
+- `dash.progress`: 74 templates, 7 truncations with no full form
 - `dash.r7`: 14 templates
-- `dash.stage`: 33 templates
-- `describe`: 100 templates
+- `dash.stage`: 35 templates
+- `describe`: 101 templates
 - `frame.body`: 16 templates
 - `frame.explain`: 3 templates
 - `frame.footer`: 48 templates, 9 truncations with no full form
 - `frame.gauge`: 29 templates
 - `frame.header`: 57 templates, 14 truncations with no full form
 - `frame.help`: 483 templates, 2 truncations with no full form
-- `frame.history`: 101 templates, 2 truncations with no full form
+- `frame.history`: 102 templates, 2 truncations with no full form
 - `frame.history_head`: 1 templates
-- `frame.log`: 142 templates, 26 truncations with no full form
-- `frame.now`: 114 templates, 5 truncations with no full form
+- `frame.log`: 143 templates, 26 truncations with no full form
+- `frame.now`: 117 templates, 5 truncations with no full form
 - `frame.page`: 749 templates, 3 truncations with no full form
-- `frame.progress`: 55 templates
+- `frame.progress`: 60 templates
 - `frame.scrolled`: 298 templates, 30 truncations with no full form
 - `frame.stage`: 36 templates, 3 truncations with no full form
 - `frame.table`: 14 templates
 - `frame.title`: 23 templates, 2 truncations with no full form
 - `frame.warning`: 1 templates
 - `help.item`: 74 templates
-- `history.sentence`: 123 templates
-- `journal.message`: 259 templates
+- `history.sentence`: 124 templates
+- `journal.message`: 262 templates
 - `note`: 15 templates, 1 truncation with no full form
 - `page.bios`: 11 templates
-- `page.r7`: 277 templates, 1 truncation with no full form
+- `page.cores`: 189 templates
+- `page.r7`: 275 templates, 1 truncation with no full form
 - `panel.combinations`: 14 templates
 - `panel.cycle`: 64 templates
-- `panel.history`: 164 templates, 20 truncations with no full form
-- `panel.hunt`: 98 templates, 3 truncations with no full form
+- `panel.history`: 165 templates, 20 truncations with no full form
+- `panel.hunt`: 99 templates, 3 truncations with no full form
 - `panel.phase2`: 16 templates
 - `panel.turns`: 20 templates, 1 truncation with no full form
-- `story.brief`: 31 templates
+- `story.brief`: 32 templates
 - `story.label`: 15 templates
-- `story.line`: 76 templates
+- `story.line`: 77 templates
 
 ## Phrase catalogue
 
 
 ### `band.line`
 
+- ` # V median ` ×1
+  - forms ` BETWEEN TRIALS `; tests frames::story::tests::the_resting_band::the_last_trial_names_its_peak_tctl_and_median_voltage_request (1 renders)
 - ` #m ` ×2
   - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; sweep sweep/combination/2562-trial.end/120x33/plus40, sweep/combination/2562-trial.end/160x45/plus40 (19985 renders)
 - ` A later boot has written events, so the machine restarted before this trial recorded its end. ` ×1
@@ -95,11 +99,11 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` R# light on core # ` ×16
   - forms ` BETWEEN TRIALS `, ` STOPPED `; tests frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended (1 renders); sweep sweep/combination/0054-trial.end/120x33/plus40, sweep/combination/0054-trial.end/160x45/plus40 (16384 renders)
 - ` R# light {at | on} # ` ×14
-  - forms ` BETWEEN TRIALS `, ` CRASHED, NOT YET RECOVERED `, ` RECOVERED FROM A CRASH `; 2 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (20 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (5053 renders)
+  - forms ` BETWEEN TRIALS `, ` CRASHED, NOT YET RECOVERED `, ` RECOVERED FROM A CRASH `; 2 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (21 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (5053 renders)
 - ` R# {both threads | heavy vector | load steps | partial load} on core # ` ×64
   - forms ` BETWEEN TRIALS `; 4 templates merged; sweep sweep/combination/0774-trial.end/120x33/plus40, sweep/combination/0774-trial.end/160x45/plus40 (52730 renders)
-- ` Tctl max #°C ` ×15
-  - forms ` BETWEEN TRIALS `, ` STOPPED `; tests frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (25 renders); sweep scenario/between/120x33, scenario/between/160x45 (105079 renders)
+- ` Tctl max #°C ` ×16
+  - forms ` BETWEEN TRIALS `, ` STOPPED `; tests frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (26 renders); sweep scenario/between/120x33, scenario/between/160x45 (105079 renders)
 - ` containment: termination unconfirmed ` ×1
   - forms ` DEAD END `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::story::tests::the_story::a_dead_end_preserves_the_recorded_cause (2 renders)
 - ` containment: 日本語[#J]#;c;data  #m#;title ` ×1
@@ -137,17 +141,17 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` failure at zero: core # failed at # ` ×1
   - forms ` DEAD END `; tests frames::story::tests::the_story::a_dead_end_preserves_the_recorded_cause (1 renders)
 - ` failure at zero: the recorded detail ` ×1
-  - forms ` DEAD END `; tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (1 renders)
+  - forms ` DEAD END `; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition, frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (2 renders)
 - ` last sample # of # ` ×27
   - forms ` RECOVERED FROM A CRASH `; tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders); sweep sweep/concluded/1327-trial.end/120x33/plus40, sweep/concluded/1327-trial.end/160x45/plus40 (21725 renders)
 - ` last: {FAILURE | INCONCLUSIVE | PASS} after # ` ×59
-  - forms ` BETWEEN TRIALS `, ` STOPPED `; 3 templates merged; tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (28 renders); sweep scenario/between/120x33, scenario/between/160x45 (105172 renders)
+  - forms ` BETWEEN TRIALS `, ` STOPPED `; 3 templates merged; tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (29 renders); sweep scenario/between/120x33, scenario/between/160x45 (105172 renders)
 - ` next trial: R# heavy vector, core # alone at # ` ×209
   - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; tests frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended (1 renders); sweep sweep/combination/0765-trial.end/120x33/plus40, sweep/combination/0765-trial.end/160x45/plus40 (8675 renders)
 - ` next trial: R# light, core # alone at # ` ×239
   - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; tests frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended, frames::frame_tests::bounds::recovering (7 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (21414 renders)
 - ` next trial: deciding ` ×1
-  - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::story::tests::edges::a_forecast_between_trials_names_the_next_trial_the_ranking_or_nothing (4 renders); sweep sweep/combination/0000-session.start/120x33/plus40, sweep/combination/0000-session.start/160x45/plus40 (3250 renders)
+  - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::story::tests::edges::a_forecast_between_trials_names_the_next_trial_the_ranking_or_nothing (5 renders); sweep sweep/combination/0000-session.start/120x33/plus40, sweep/combination/0000-session.start/160x45/plus40 (3250 renders)
 - ` next trial: deepening round #: R# all-core on # ` ×16
   - forms ` BETWEEN TRIALS `, ` RECOVERED FROM A CRASH `; sweep sweep/combination/4780-trial.end/120x33/plus40, sweep/combination/4780-trial.end/160x45/plus40 (3700 renders)
 - ` next trial: deepening round #: R# heavy vector, core # alone at # ` ×32
@@ -235,20 +239,20 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` wrong result ` ×1
   - forms ` BETWEEN TRIALS `; sweep sweep/concluded/1120-trial.end/120x33/plus40, sweep/concluded/1120-trial.end/160x45/plus40 (5885 renders)
 - ` {boot loop: | no evidence: | thermal trip:} the recorded detail ` ×3
-  - forms ` DEAD END `; 3 templates merged; tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (3 renders)
+  - forms ` DEAD END `; 3 templates merged; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition, frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (6 renders)
 - ` {containment: | defect: | preflight: | smu:} the recorded detail ` ×4
-  - forms ` DEAD END `; 4 templates merged; tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (4 renders)
+  - forms ` DEAD END `; 4 templates merged; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition, frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (8 renders)
 - ` {early in | late in | midway through} the trial ` ×3
   - forms ` RECOVERED FROM A CRASH `; 3 templates merged; tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders); sweep sweep/concluded/1327-trial.end/120x33/plus40, sweep/concluded/1327-trial.end/160x45/plus40 (21725 renders)
 
 ### `band.title`
 
 - ` BETWEEN TRIALS ` ×1
-  - forms (none); tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (14 renders); sweep scenario/between/120x33, scenario/between/160x45 (107148 renders)
+  - forms (none); tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (15 renders); sweep scenario/between/120x33, scenario/between/160x45 (107148 renders)
 - ` CRASHED, NOT YET RECOVERED ` ×1
   - forms (none); tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (15 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1424 renders)
 - ` DEAD END ` ×1
-  - forms (none); tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (13 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (268 renders)
+  - forms (none); tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (14 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (268 renders)
 - ` RECOVERED FROM A CRASH ` ×1
   - forms (none); tests frames::frame_tests::bounds::recovering, frames::frame_tests::holds::every_other_frame_moves_with_the_clock (7 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (29069 renders)
 - ` STOPPED ` ×1
@@ -259,13 +263,13 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` # crash ` ×2
   - forms ` compact `, ` full `; tests frames::dash::tests::header_counts_agree_in_number, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (30 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (22682 renders)
 - ` # crashes ` ×19
-  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (312 renders); sweep scenario/between/120x33, scenario/between/160x45 (497501 renders)
+  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (314 renders); sweep scenario/between/120x33, scenario/between/160x45 (497501 renders)
 - ` # fail ` ×4
   - forms ` compact `, ` full `; tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both (7 renders); sweep sweep/deadend/skipped/60x30 (1 renders)
 - ` # failure ` ×1
   - forms ` compact `, ` full `; tests frames::dash::tests::header_counts_agree_in_number, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (19479 renders)
 - ` # failures ` ×73
-  - forms ` compact `, ` full `; 1 cuts folded in; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (331 renders); sweep scenario/between/120x33, scenario/between/160x45 (500712 renders)
+  - forms ` compact `, ` full `; 1 cuts folded in; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (333 renders); sweep scenario/between/120x33, scenario/between/160x45 (500712 renders)
 - ` age #m ` ×12
   - forms ` compact `, ` full `; tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both (14 renders); sweep sweep/combination/skipped/60x30, sweep/concluded/skipped/60x30 (9 renders)
 - ` age #m... ` ×11 — truncated, no full form rendered
@@ -283,9 +287,9 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` screen paused ` ×1
   - forms ` full `; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (24 renders); sweep scenario/idle/160x45, scenario/idle/240x67 (1742 renders)
 - ` session #m ` ×5005
-  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (337 renders); sweep scenario/between/120x33, scenario/between/160x45 (520183 renders)
+  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (339 renders); sweep scenario/between/120x33, scenario/between/160x45 (520183 renders)
 - ` togi ` ×1
-  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (365 renders); sweep scenario/between/120x33, scenario/between/160x45 (520246 renders)
+  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (367 renders); sweep scenario/between/120x33, scenario/between/160x45 (520246 renders)
 - ` togi... ` ×1 — truncated, no full form rendered
   - forms ` compact `; example ` togi... `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders); sweep sweep/combination/skipped/20x30, sweep/concluded/skipped/20x30 (9 renders)
 - ` tune #m ` ×12
@@ -295,7 +299,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` tune... ` ×1 — truncated, no full form rendered
   - forms ` compact `, ` full `; example ` tune... `; tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both (3 renders); sweep sweep/combination/skipped/28x30, sweep/combination/skipped/32x30 (18 renders)
 - ` tuning #m ` ×5004
-  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (338 renders); sweep scenario/between/120x33, scenario/between/160x45 (520183 renders)
+  - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (340 renders); sweep scenario/between/120x33, scenario/between/160x45 (520183 renders)
 
 ### `dash.note`
 
@@ -318,6 +322,157 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` solo # ` ×4
   - forms (none); tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::medium_core_notes_retain_combination_and_solo_offsets (6 renders); sweep scenario/combination/Cores-160x45, scenario/round/Cores-160x45 (2 renders)
 
+### `dash.progress`
+
+- ` # candidates ` ×6
+  - forms (none); tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart (12 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (38661 renders)
+- ` # checks ` ×1
+  - forms (none); sweep sweep/probe/skipped/50x30 (1 renders)
+- ` # clean ` ×3
+  - forms (none); sweep sweep/combination/skipped/50x30, sweep/combination/skipped/60x30 (12 renders)
+- ` # clean {cycle | cycles} recorded ` ×7
+  - forms (none); 1 cuts folded in; 2 templates merged; tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::clean_cycles_count_recorded_cycles_and_the_current_cycles_steps_never_time (31 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (57034 renders)
+- ` # credited ` ×3
+  - forms (none); tests frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut, frames::dash::stage::tests::the_progress_rows_fit_whole_clauses_and_never_cut_a_value (6 renders)
+- ` # credited checks ` ×532
+  - forms (none); tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (85 renders); sweep scenario/between/120x33, scenario/between/160x45 (458118 renders)
+- ` # known parts ` ×13
+  - forms (none); tests frames::dash::stage::tests::an_open_r7_chain_counts_known_parts_and_says_more_may_follow, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (38 renders); sweep scenario/between/120x33, scenario/between/160x45 (67106 renders)
+- ` # moving ` ×8
+  - forms (none); tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart (12 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (38565 renders)
+- ` # solo limits found ` ×19
+  - forms (none); tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (31 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (227146 renders)
+- ` # steps ` ×3
+  - forms (none); tests frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut, frames::dash::stage::tests::the_progress_rows_fit_whole_clauses_and_never_cut_a_value (2 renders); sweep sweep/combination/skipped/60x30, sweep/concluded/skipped/60x30 (6 renders)
+- ` # steps complete ` ×25
+  - forms (none); tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (111 renders); sweep scenario/between/120x33, scenario/between/160x45 (253647 renders)
+- ` # {check | checks} still needed ` ×4
+  - forms (none); 2 templates merged; tests frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut, frames::dash::stage::tests::an_open_r7_chain_counts_known_parts_and_says_more_may_follow (46 renders); sweep scenario/between/120x33, scenario/between/160x45 (176993 renders)
+- ` # {round | rounds} left if none fails ` ×2
+  - forms (none); 2 templates merged; tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (9 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (30928 renders)
+- ` #+ parts ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::under_80_by_30_main_scrolls_and_every_core_is_reachable (2 renders)
+- ` BIOS profile: page # ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (16 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (116 renders)
+- ` CLEAN CYCLES ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::clean_cycles_count_recorded_cycles_and_the_current_cycles_steps_never_time (31 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (57052 renders)
+- ` CLEAN CYCLES... ` ×1 — truncated, no full form rendered
+  - forms (none); example ` CLEAN CYCLES... `; sweep sweep/combination/skipped/32x30, sweep/concluded/skipped/32x30 (6 renders)
+- ` CLEAN... ` ×1 — truncated, no full form rendered
+  - forms (none); example ` CLEAN... `; sweep sweep/combination/skipped/28x30, sweep/concluded/skipped/28x30 (6 renders)
+- ` DEAD END ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (13 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (267 renders)
+- ` DEAD END... ` ×1 — truncated, no full form rendered
+  - forms (none); example ` DEAD END... `; sweep sweep/deadend/skipped/20x30 (1 renders)
+- ` HUNT # ` ×8
+  - forms (none); tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (19 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (27067 renders)
+- ` PHASE # ` ×2
+  - forms (none); tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast (97 renders); sweep scenario/between/120x33, scenario/between/160x45 (235776 renders)
+- ` PHASE #... ` ×2 — truncated, no full form rendered
+  - forms (none); example ` PHASE 1... `; tests frames::dash::stage::tests::the_progress_rows_fit_whole_clauses_and_never_cut_a_value, frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (2 renders); sweep sweep/deadend/skipped/28x30, sweep/deadend/skipped/32x30 (6 renders)
+- ` R# all-core ` ×1
+  - forms (none); sweep sweep/combination/4780-trial.end/120x33/plus40, sweep/combination/4780-trial.end/160x45/plus40 (7340 renders)
+- ` R# heavy vector ` ×1
+  - forms (none); sweep sweep/combination/3475-trial.end/120x33/plus40, sweep/combination/3475-trial.end/160x45/plus40 (13975 renders)
+- ` R# light ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart, frames::frame_tests::bounds::round (4 renders); sweep scenario/round/120x33, scenario/round/160x45 (16229 renders)
+- ` RECOVERY ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (13 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (30493 renders)
+- ` SOLO LIMITS ` ×1
+  - forms (none); tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (31 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (227146 renders)
+- ` STOPPED ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (26 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (116 renders)
+- ` STOPPED... ` ×1 — truncated, no full form rendered
+  - forms (none); example ` STOPPED... `; sweep sweep/combination/skipped/20x30, sweep/concluded/skipped/20x30 (8 renders)
+- ` a check before tuning failed ` ×1
+  - forms (none); tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
+- ` a clean rerun is needed ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (1 renders); sweep sweep/concluded/4132-trial.end/120x33/plus40, sweep/concluded/4132-trial.end/160x45/plus40 (655 renders)
+- ` a clean rerun with every core at # is needed ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (1 renders)
+- ` a core failed at offset # ` ×1
+  - forms (none); tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
+- ` an earlier build may have moved offsets deeper than proven ` ×1
+  - forms (none); tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
+- ` between rounds ` ×2
+  - forms (none); 1 cuts folded in; tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::frame_tests::bounds::first_result (6 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (615 renders)
+- ` check # of # ` ×107
+  - forms (none); tests frames::dash::stage::tests::a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart, frames::frame_tests::bounds::round (4 renders); sweep scenario/round/120x33, scenario/round/160x45 (37544 renders)
+- ` confirmation cycle ` ×1
+  - forms (none); tests frames::dash::stage::tests::the_confirmation_cycle_counts_steps_like_phase_one, frames::frame_tests::bounds::confirmation (4 renders); sweep scenario/confirmation/120x33, scenario/confirmation/160x45 (57094 renders)
+- ` crash detected # ` ×56
+  - forms (none); tests frames::frame_tests::bounds::recovering, frames::frame_tests::holds::every_other_frame_moves_with_the_clock (5 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (29069 renders)
+- ` current core {confirming | searching} ` ×2
+  - forms (none); 2 templates merged; tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end (14 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (193138 renders)
+- ` cycle {# | held} ` ×5
+  - forms (none); 2 templates merged; tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (79 renders); sweep scenario/between/120x33, scenario/between/160x45 (224939 renders)
+- ` every check of the round is credited ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited (1 renders); sweep sweep/combination/4919-trial.end/120x33/plus40, sweep/combination/4919-trial.end/160x45/plus40 (30 renders)
+- ` every step is done ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_rerun_after_every_step_is_done_says_the_cycle_ends_not_a_step_past_the_last (1 renders); sweep sweep/concluded/7784-trial.start/120x33/overdue, sweep/concluded/7784-trial.start/120x33/plus40 (570 renders)
+- ` every step of the cycle is done ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (2 renders); sweep scenario/rerun-passed/120x33, scenario/rerun-passed/160x45 (2504 renders)
+- ` failure on core # ` ×12
+  - forms (none); tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (1 renders); sweep sweep/concluded/4132-trial.end/120x33/plus40, sweep/concluded/4132-trial.end/160x45/plus40 (555 renders)
+- ` failure recorded ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (1 renders); sweep sweep/concluded/5893-trial.end/120x33/plus40, sweep/concluded/5893-trial.end/160x45/plus40 (100 renders)
+- ` group # ` ×72
+  - forms (none); tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (17 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (25713 renders)
+- ` locating: the failing load reruns at its failing offsets ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (1 renders)
+- ` member # probes ` ×18
+  - forms (none); tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (5 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (2709 renders)
+- ` more may follow ` ×1
+  - forms (none); tests frames::dash::stage::tests::an_open_r7_chain_counts_known_parts_and_says_more_may_follow, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (38 renders); sweep scenario/between/120x33, scenario/between/160x45 (67106 renders)
+- ` no conclusive trial evidence ` ×2
+  - forms (none); 1 cuts folded in; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (8 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (267 renders)
+- ` no... ` ×1 — truncated, no full form rendered
+  - forms (none); example ` no... `; sweep sweep/deadend/skipped/20x30 (1 renders)
+- ` on # ` ×13
+  - forms (none); sweep sweep/combination/4780-trial.end/120x33/plus40, sweep/combination/4780-trial.end/160x45/plus40 (7340 renders)
+- ` on core # ` ×15
+  - forms (none); tests frames::dash::stage::tests::a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart, frames::frame_tests::bounds::round (4 renders); sweep scenario/round/120x33, scenario/round/160x45 (30204 renders)
+- ` part # of # ` ×23
+  - forms (none); tests frames::dash::stage::tests::an_open_r7_chain_counts_known_parts_and_says_more_may_follow (1 renders); sweep sweep/combination/1580-checking.chain/120x33/plus40, sweep/combination/1580-checking.chain/160x45/plus40 (126485 renders)
+- ` part # of this split ` ×32
+  - forms (none); tests frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (9 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (15063 renders)
+- ` re-cut # ` ×9
+  - forms (none); tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (3 renders); sweep sweep/combination/2008-trial.end/120x33/plus40, sweep/combination/2008-trial.end/160x45/plus40 (9908 renders)
+- ` repairing ` ×1
+  - forms (none); tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame, frames::frame_tests::bounds::deadend (3 renders); sweep scenario/deadend/79x29, sweep/concluded/5017-tuner.decision/79x29/plus40 (1924 renders)
+- ` repairing after failure ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (15 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (26594 renders)
+- ` repeated crashes before any offset was applied ` ×1
+  - forms (none); tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
+- ` reset queued for core # ` ×2
+  - forms (none); tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (2 renders)
+- ` round # ` ×3
+  - forms (none); tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks (8 renders); sweep scenario/round/120x33, scenario/round/160x45 (38053 renders)
+- ` round #... ` ×1 — truncated, no full form rendered
+  - forms (none); example ` round 1... `; sweep sweep/probe/skipped/35x30, sweep/probe/skipped/40x30 (2 renders)
+- ` starting ` ×1
+  - forms (none); tests frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (1 renders)
+- ` step # ` ×18
+  - forms (none); tests frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut, frames::dash::stage::tests::an_open_r7_chain_counts_known_parts_and_says_more_may_follow (68 renders); sweep scenario/between/120x33, scenario/between/160x45 (194535 renders)
+- ` stress programs not confirmed contained ` ×1
+  - forms (none); tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (3 renders)
+- ` the CPU did not take an offset as written ` ×1
+  - forms (none); tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
+- ` the CPU shut down from heat ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (3 renders)
+- ` the cycle ends once the rerun passes ` ×2
+  - forms (none); 1 cuts folded in; tests frames::dash::stage::tests::a_rerun_after_every_step_is_done_says_the_cycle_ends_not_a_step_past_the_last (1 renders); sweep sweep/concluded/7784-trial.start/120x33/overdue, sweep/concluded/7784-trial.start/120x33/plus40 (570 renders)
+- ` total hunt work unknown ` ×1
+  - forms (none); tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (19 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (17772 renders)
+- ` trial {# | \u#e#\u#c\u#a#e\x#b]#;title\x#\r\n\u#b#J | t#} has no recorded end ` ×58
+  - forms (none); 3 templates merged; tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (11 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1424 renders)
+- ` waiting for the first cycle ` ×1
+  - forms (none); sweep sweep/combination/1501-core.phase/120x33/plus40, sweep/combination/1501-core.phase/160x45/plus40 (90 renders)
+- ` waiting for the next search trial ` ×1
+  - forms (none); tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended (5 renders); sweep sweep/combination/0000-session.start/120x33/plus40, sweep/combination/0000-session.start/160x45/plus40 (24225 renders)
+- ` {chain closure | checking resumes} at step # of # ` ×19
+  - forms (none); 1 cuts folded in; 2 templates merged; tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (13 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (24552 renders)
+
 ### `dash.r7`
 
 - ` #... by offset none yet ` ×1
@@ -330,8 +485,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Compact `; tests frames::dash::tests::narrow_r7_rows_keep_offset_provenance_and_fit, frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (4 renders)
 - ` R# ▮ ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
-- ` R# ▮ top requesters ▮ self-sufficient ▮ observed, not a guarantee ` ×11
-  - forms ` Medium `, ` Wide `; 1 cuts folded in; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (91 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (21 renders)
+- ` R# ▮ top requesters ▮ self-sufficient ▮ observed, not a guarantee ` ×12
+  - forms ` Medium `, ` Wide `; 1 cuts folded in; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (93 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (21 renders)
 - ` R# ▮ top ▮ self-sufficient ▮ ` ×5
   - forms ` Compact `; tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::every_r7_workload_has_its_row (44 renders)
 - ` all ` ×1
@@ -339,9 +494,9 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` by offset ` ×1
   - forms ` Compact `; tests frames::dash::tests::narrow_r7_rows_keep_offset_provenance_and_fit, frames::dash::tests::r7_lines_name_top_requesters_and_self_sufficiency (20 renders)
 - ` mprime {AVX# | AVX#K-#K | AVX-# | AVX-#K-#K} ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; 4 templates merged; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (201 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (42 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 4 templates merged; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (203 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (42 renders)
 - ` none yet ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (90 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (29 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (92 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (29 renders)
 - ` y-cruncher FFTv# + N# + VT# ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::dash::tests::every_r7_workload_has_its_row, frames::frame_tests::bounds::between (86 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (21 renders)
 - ` {# | #...} by offset ` ×12
@@ -351,16 +506,16 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 
 ### `dash.stage`
 
-- ` # left ` ×5
-  - forms ` full summary `, ` short summary `; tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bounds::checking (55 renders); sweep scenario/checking/Bios-160x45, scenario/checking/Cores-160x45 (72 renders)
+- ` # left ` ×6
+  - forms ` full summary `, ` short summary `; tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bounds::checking (56 renders); sweep scenario/checking/Bios-160x45, scenario/checking/Cores-160x45 (72 renders)
 - ` # past its end ` ×2
   - forms ` full summary `; tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (2 renders)
 - ` # {round | rounds} left if none fails ` ×2
   - forms ` full `, ` full summary `; 2 templates merged; tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bounds::round (6 renders); sweep scenario/round/120x33, scenario/round/160x45 (31247 renders)
 - ` DEAD END ` ×1
-  - forms ` full `, ` full summary `, ` short `; tests frames::dash::stage::tests::recovery_and_a_dead_end_lead_the_line_and_suppress_the_running_marker, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (13 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (277 renders)
+  - forms ` full `, ` full summary `, ` short `; tests frames::dash::stage::tests::recovery_and_a_dead_end_lead_the_line_and_suppress_the_running_marker, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (14 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (277 renders)
 - ` HUNT # ` ×7
-  - forms ` full `, ` full summary `, ` short `, ` short summary `; tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::bounds::hunt (45 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (17796 renders)
+  - forms ` full `, ` full summary `, ` short `, ` short summary `; tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::bounds::hunt (47 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (17796 renders)
 - ` RECOVERY ` ×1
   - forms ` full `, ` full summary `, ` short summary `; tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::stage::tests::recovery_and_a_dead_end_lead_the_line_and_suppress_the_running_marker (25 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (30509 renders)
 - ` STOPPED ` ×1
@@ -381,6 +536,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` full `, ` full summary `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (17 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (11436 renders)
 - ` planned end # ` ×6
   - forms ` full summary `, ` short summary `; tests frames::dash::tests::every_time_on_screen_is_local, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (16 renders); sweep scenario/idle/Bios-160x45, scenario/idle/Cores-160x45 (64 renders)
+- ` probes done ` ×1
+  - forms ` full `; tests frames::panels::hunt::tests::the_stage_line_names_a_singleton_hunt_s_probe_stage (1 renders)
 - ` probing ` ×1
   - forms ` full `, ` full summary `; tests frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (2 renders)
 - ` r# ` ×3
@@ -397,20 +554,22 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` full summary `, ` short summary `; tests frames::dash::tests::every_time_on_screen_is_local, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (16 renders); sweep scenario/idle/Bios-160x45, scenario/idle/Cores-160x45 (64 renders)
 - ` starting ` ×1
   - forms ` full `, ` full summary `, ` short `; tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (3 renders); sweep sweep/concluded/4900-hunt.start/120x33/plus40, sweep/concluded/4900-hunt.start/160x45/plus40 (25 renders)
+- ` testing anchor ` ×1
+  - forms ` full `; tests frames::panels::hunt::tests::the_stage_line_names_a_singleton_hunt_s_probe_stage (1 renders)
 - ` trial crashed ` ×1
   - forms ` full summary `, ` short summary `; tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (11 renders); sweep scenario/crashed/Bios-160x45, scenario/crashed/Cores-160x45 (8 renders)
 - ` {culprit | member} probes ` ×2
-  - forms ` full `, ` full summary `; 2 templates merged; tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_detail_page_at_the_reference_size (9 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (1752 renders)
+  - forms ` full `, ` full summary `; 2 templates merged; tests frames::frame_tests::bounds::member_probe, frames::panels::hunt::tests::the_stage_line_names_a_singleton_hunt_s_probe_stage (11 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (1752 renders)
 - ` {■ | ► | ○} PHASE # ` ×6
-  - forms ` full `, ` full summary `; 3 templates merged; tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (408 renders); sweep scenario/between/120x33, scenario/between/160x45 (965854 renders)
+  - forms ` full `, ` full summary `; 3 templates merged; tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (416 renders); sweep scenario/between/120x33, scenario/between/160x45 (965854 renders)
 - ` {■ | ► | ○} SOLO ` ×3
   - forms ` short `, ` short summary `; 3 templates merged; tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::dash::stage::tests::the_stage_line_names_the_pipeline_and_marks_the_search (47 renders); sweep scenario/concluded/79x29, scenario/confirmation/79x29 (37283 renders)
 - ` {■ | ► | ○} SOLO LIMITS ` ×3
-  - forms ` full `, ` full summary `; 3 templates merged; tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (204 renders); sweep scenario/between/120x33, scenario/between/160x45 (482927 renders)
+  - forms ` full `, ` full summary `; 3 templates merged; tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (208 renders); sweep scenario/between/120x33, scenario/between/160x45 (482927 renders)
 - ` {► | ○} CLEAN ` ×2
   - forms ` short `, ` short summary `; 2 templates merged; tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::dash::stage::tests::the_stage_line_names_the_pipeline_and_marks_the_search (47 renders); sweep scenario/concluded/79x29, scenario/confirmation/79x29 (37283 renders)
 - ` {► | ○} CLEAN CYCLES ` ×2
-  - forms ` full `, ` full summary `; 2 templates merged; tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (204 renders); sweep scenario/between/120x33, scenario/between/160x45 (482927 renders)
+  - forms ` full `, ` full summary `; 2 templates merged; tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (208 renders); sweep scenario/between/120x33, scenario/between/160x45 (482927 renders)
 - ` ■ P# ` ×2
   - forms ` short `, ` short summary `; tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bounds::concluded (29 renders); sweep scenario/concluded/79x29, scenario/confirmation/79x29 (43395 renders)
 - ` ► P# ` ×2
@@ -494,10 +653,12 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` trial.end `, ` tuner.decision `; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (4157 renders); sweep scenario/between, scenario/checking (1840 renders)
 - ` core # confirming # as its solo limit ` ×52
   - forms ` tuner.decision `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1148 renders); sweep scenario/between, scenario/checking (411 renders)
+- ` core # failure held; tuning stays at # ` ×1
+  - forms ` tuner.decision `; tests tests::history::a_held_failure_says_tuning_stays_where_it_is (1 renders)
 - ` core # has room again at # ` ×10
   - forms ` core.phase `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (112 renders); sweep scenario/concluded, scenario/confirmation (103 renders)
 - ` core # passed #; searches # on its next turn ` ×178
-  - forms ` tuner.decision `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (7546 renders); sweep scenario/between, scenario/checking (2721 renders)
+  - forms ` tuner.decision `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (7562 renders); sweep scenario/between, scenario/checking (2721 renders)
 - ` core # starts over from # ` ×1
   - forms ` core.phase `; tests tests::model::a_reset_core_drops_its_solo_limit (1 renders)
 - ` core # {at | yields} # ` ×12
@@ -532,8 +693,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` deadend `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1 renders)
 - ` dead end: termination unconfirmed ` ×1
   - forms ` deadend `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1 renders)
-- ` dead end: the SMU refused ` ×1
-  - forms ` deadend `; tests tests::describe::the_kinds_with_a_line_of_their_own (1 renders)
+- ` dead end: the {SMU refused | recorded detail} ` ×2
+  - forms ` deadend `; 2 templates merged; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition, tests::describe::the_kinds_with_a_line_of_their_own (2 renders)
 - ` dead end: 日本語[#J]#;c;data  #m#;title ` ×1
   - forms ` deadend `; tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped (1 renders)
 - ` hunt # group # ` ×1290
@@ -587,7 +748,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` session resumed ` ×1
   - forms ` config.loaded `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (86 renders); sweep scenario/between, scenario/checking (344 renders)
 - ` session started on # cores ` ×5
-  - forms ` session.start `; tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (235 renders); sweep scenario/between, scenario/checking (44 renders)
+  - forms ` session.start `; tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (238 renders); sweep scenario/between, scenario/checking (44 renders)
 - ` stays with loaded # ` ×1
   - forms ` hunt.end `; tests tests::describe::a_hunt_says_how_it_ended (1 renders)
 - ` stopped ` ×1
@@ -659,11 +820,11 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 ### `frame.explain`
 
 - ` gap=counts shallower than solo ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (311942 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (311942 renders)
 - ` red point=recorded failure ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (311942 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (311942 renders)
 - ` white=tune ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (311942 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (311942 renders)
 
 ### `frame.footer`
 
@@ -680,9 +841,9 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` # Hunts / probes ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (190 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (25 renders)
 - ` # Journal ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (208 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (82 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (209 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (82 renders)
 - ` # Main ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (371 renders); sweep journal/missing-once/120x33, journal/missing-once/160x45 (519953 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (372 renders); sweep journal/missing-once/120x33, journal/missing-once/160x45 (519953 renders)
 - ` # R# evidence ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (189 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (25 renders)
 - ` # lines skipped (unknown event kind) ` ×1
@@ -694,9 +855,9 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` End: latest ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (10 renders)
 - ` Esc ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1157 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520273 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1159 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520273 renders)
 - ` Main ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1124 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520201 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1126 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520201 renders)
 - ` Main | Cores | Cycle | R# evidence | Hunts / probes | BIOS profile | History | Journal | [Help] ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (67 renders)
 - ` Main | Cores | Cycle | R# evidence | Hunts / probes | BIOS profile | {History | [Journal] | [History] | Journal} | Help ` ×2
@@ -710,7 +871,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` Main | Cores | [Cycle] | R# evidence | Hunts / probes | BIOS profile | History | Journal | Help ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (69 renders)
 - ` PgUp/PgDn ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (805 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (416189 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (807 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (416189 renders)
 - ` age... ` ×1 — truncated, no full form rendered
   - forms ` Compact `; example ` age... `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (3 renders)
 - ` exit ` ×1
@@ -720,7 +881,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` exit {dashboard | dashboard#} crashes ` ×2
   - forms ` Compact `; 2 templates merged; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (4 renders)
 - ` exit {dashboard | dashboardes | dashboardrashes | dashboards} ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; 4 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1083 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520201 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 4 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1085 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520201 renders)
 - ` exit {dashboardailure | dashboardilure | dashboardure} #m ago ` ×3
   - forms ` Compact `; 3 templates merged; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (6 renders)
 - ` exit#... ` ×1 — truncated, no full form rendered
@@ -730,11 +891,11 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` exit... ` ×1 — truncated, no full form rendered
   - forms ` Compact `; example ` exit... `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (2 renders)
 - ` help ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1121 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520201 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1123 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520201 renders)
 - ` pages ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1147 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520201 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1149 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520201 renders)
 - ` q ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1144 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520273 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1146 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520273 renders)
 - ` q#... ` ×2 — truncated, no full form rendered
   - forms ` Compact `; example ` q0... `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::help::tests::help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size (2 renders)
 - ` q. ` ×1
@@ -754,7 +915,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` qo... ` ×1 — truncated, no full form rendered
   - forms ` Compact `; example ` qo... `; tests frames::help::tests::help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size (1 renders)
 - ` scroll ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (867 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (416190 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (869 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (416190 renders)
 - ` skipped ` ×1
   - forms ` Compact `; sweep sweep/combination/skipped/28x30, sweep/combination/skipped/32x30 (36 renders)
 - ` skipped journal content: togi events ` ×1
@@ -767,9 +928,9 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 ### `frame.gauge`
 
 - ` ! failing ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
 - ` # CCD # ` ×2
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (268 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (270 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
 - ` # now ` ×10
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (668 renders); sweep scenario/between/160x45, scenario/between/240x67 (707414 renders)
 - ` # now # ` ×2
@@ -781,13 +942,13 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` R ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (2 renders)
 - ` R reset ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
 - ` core ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
 - ` held failure ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (19 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (224572 renders)
 - ` idle ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (79 renders); sweep scenario/between/160x45, scenario/between/240x67 (2027294 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (80 renders); sweep scenario/between/160x45, scenario/between/240x67 (2027294 renders)
 - ` idle at # ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (61 renders); sweep scenario/combination/160x45, scenario/combination/240x67 (2430480 renders)
 - ` judged ` ×1
@@ -807,23 +968,23 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` s-# g# f-# ` ×105
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1336 renders); sweep scenario/between/160x45, scenario/between/240x67 (2492593 renders)
 - ` s=solo g=gap f=fail ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
 - ` s? g? f-# ` ×30
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (11 renders); sweep scenario/rerun-0/160x45, scenario/rerun-0/240x67 (1085572 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (12 renders); sweep scenario/rerun-0/160x45, scenario/rerun-0/240x67 (1085572 renders)
 - ` tune ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (668 renders); sweep scenario/between/160x45, scenario/between/240x67 (707594 renders)
 - ` tune # now ` ×31
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (853 renders); sweep scenario/combination/160x45, scenario/combination/240x67 (2199543 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (856 renders); sweep scenario/combination/160x45, scenario/combination/240x67 (2199543 renders)
 - ` tune # now # ` ×84
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1042 renders); sweep scenario/between/160x45, scenario/between/240x67 (2082101 renders)
 - ` tune now ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
 - ` {gap | ▮} fail ` ×2
-  - forms ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
+  - forms ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (136 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
 - ` {s-# g# | s? g?} f none ` ×4
   - forms ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (71 renders); sweep scenario/combination/160x45, scenario/combination/240x67 (1411073 renders)
 - ` ▮ tune ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
 
 ### `frame.header`
 
@@ -848,13 +1009,13 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` # crash ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bounds::recovering (19 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (22682 renders)
 - ` # crashes ` ×19
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (420 renders); sweep scenario/between/120x33, scenario/between/160x45 (497501 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (422 renders); sweep scenario/between/120x33, scenario/between/160x45 (497501 renders)
 - ` # fail ` ×2
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::under_80_by_30_main_scrolls_and_every_core_is_reachable (2 renders); sweep sweep/deadend/skipped/60x30 (1 renders)
 - ` # failure ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (15 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (19479 renders)
 - ` # failures ` ×72
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (424 renders); sweep scenario/between/120x33, scenario/between/160x45 (500712 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (426 renders); sweep scenario/between/120x33, scenario/between/160x45 (500712 renders)
 - ` Esc ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::help::tests::help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size (61 renders)
 - ` Main ` ×1
@@ -926,11 +1087,11 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` scroll ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::help::tests::help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size (21 renders)
 - ` session #m ` ×5005
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (439 renders); sweep scenario/between/120x33, scenario/between/160x45 (520183 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (441 renders); sweep scenario/between/120x33, scenario/between/160x45 (520183 renders)
 - ` starting ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (13 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (8 renders)
 - ` togi ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (501 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520276 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (503 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520276 renders)
 - ` togi... ` ×1 — truncated, no full form rendered
   - forms ` Compact `; example ` togi... `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (3 renders); sweep sweep/combination/skipped/20x30, sweep/concluded/skipped/20x30 (9 renders)
 - ` tune #m ` ×10
@@ -940,7 +1101,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` tune... ` ×1 — truncated, no full form rendered
   - forms ` Compact `; example ` tune... `; tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders); sweep sweep/combination/skipped/28x30, sweep/combination/skipped/32x30 (18 renders)
 - ` tuning #m ` ×5004
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (439 renders); sweep scenario/between/120x33, scenario/between/160x45 (520183 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (441 renders); sweep scenario/between/120x33, scenario/between/160x45 (520183 renders)
 
 ### `frame.help`
 
@@ -2035,6 +2196,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1 renders)
 - ` dead end: termination unconfirmed ` ×1
   - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1 renders)
+- ` dead end: the recorded detail ` ×1
+  - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
 - ` fail ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (400 renders); sweep scenario/between/120x33, scenario/between/160x45 (1187462 renders)
 - ` group ` ×1
@@ -2088,13 +2251,13 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` session resumed ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bounds::crashed (24 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (835 renders)
 - ` session started on # cores ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (30 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (34087 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (31 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (34087 renders)
 - ` start ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (30 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (34087 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (31 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (34087 renders)
 - ` step ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (1435 renders); sweep scenario/between/120x33, scenario/between/160x45 (2206238 renders)
 - ` stop ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (71 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (262 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (72 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (262 renders)
 - ` stopped ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (47 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (54 renders)
 - ` the backend {quit | stalled} ` ×2
@@ -2119,7 +2282,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 ### `frame.history_head`
 
 - ` WHAT HAPPENED ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (191 renders); sweep scenario/between/120x33, scenario/between/160x45 (415940 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (192 renders); sweep scenario/between/120x33, scenario/between/160x45 (415940 renders)
 
 ### `frame.log`
 
@@ -2198,7 +2361,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` core # has room -> at its limit at # (failure point # of core #) ` ×6
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::confirmation (13 renders); sweep sweep/deadend/log-end/160x45, sweep/deadend/log-end/240x67 (3 renders)
 - ` core # passed R#+R# at #; searches # on its next turn (coarse, no failure point yet) ` ×42
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (206 renders); sweep scenario/crashed/Log-160x45, scenario/recovering/Log-160x45 (6 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (215 renders); sweep scenario/crashed/Log-160x45, scenario/recovering/Log-160x45 (6 renders)
 - ` core # passed R#+R# at #; searches # on its next turn (fine, failure point #) ` ×23
   - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (71 renders); sweep scenario/between/Log-160x45, scenario/deadend/Log-160x45 (6 renders)
 - ` core # passed R#+R# at #; searches # on its next turn (fine, failure point... ` ×2 — truncated, no full form rendered
@@ -2266,7 +2429,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` on cpu ` ×1
   - forms ` Medium `; sweep scenario/rerun-0/Log-160x45, scenario/rerun-1/Log-160x45 (48 renders)
 - ` pass ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2815 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (581 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2832 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (581 renders)
 - ` phase # is confirmed and the profile passed the requested # clean cycles; stopping ` ×2
   - forms ` Medium `, ` Wide `; sweep sweep/concluded/log-end/160x45, sweep/concluded/log-end/240x67 (6 renders)
 - ` phase # is confirmed and the profile passed the requested clean cycle; stopping ` ×2
@@ -2308,7 +2471,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` start ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (56 renders); sweep scenario/confirm/Log-160x45, scenario/crashed/Log-160x45 (11 renders)
 - ` step ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (901 renders); sweep scenario/between/Log-160x45, scenario/confirm/Log-160x45 (80 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (910 renders); sweep scenario/between/Log-160x45, scenario/confirm/Log-160x45 (80 renders)
 - ` stop ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::deadend (24 renders); sweep sweep/combination/log-end/160x45, sweep/combination/log-end/240x67 (30 renders)
 - ` stopped at a dead end ` ×1
@@ -2326,7 +2489,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` trial # INCONCLUSIVE after # s: trial ended before its full duration; stopped by signal ` ×3
   - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; sweep sweep/probe/log-end/160x45, sweep/probe/log-end/240x67 (6 renders)
 - ` trial # PASS # s | Tctl max #°C ` ×671
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2779 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (581 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2796 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (581 renders)
 - ` trial # bursts: # continues, # stops ` ×24
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::concluded (60 renders); sweep sweep/combination/log-end/160x45, sweep/combination/log-end/240x67 (23 renders)
 - ` trial # core # R# mprime AVX#K-#K # s parked hunt # group # ` ×19
@@ -2334,13 +2497,13 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` trial # core # computation error: simulated computation error on core # ` ×4
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::unconfirmed (8 renders)
 - ` trial # core # offset # R# mprime AVX#K-#K # s alone round # ` ×292
-  - forms ` Compact `, ` Medium `, ` Wide `; 5 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (840 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (72 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 5 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (848 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (72 renders)
 - ` trial # core # offset # R# mprime AVX#K-#K # s together rerun ` ×5
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::idle (27 renders); sweep scenario/idle/Log-160x45 (1 renders)
 - ` trial # core # offset # R# mprime AVX-#K-#K # s alone ` ×13
   - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (66 renders); sweep scenario/between/Log-160x45, scenario/deadend/Log-160x45 (4 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K # s alone round # ` ×48
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (418 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (50 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (426 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (50 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K # s together cycle # step # ` ×2
   - forms ` Medium `; sweep scenario/rerun-0/Log-160x45, scenario/rerun-1/Log-160x45 (14 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K SMT pair # s together rerun ` ×1
@@ -2352,7 +2515,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` trial # core # offset # R# y-cruncher BKT + SFTv# load steps # s together cycle # step # ` ×100
   - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::concluded (293 renders); sweep scenario/combination/Log-160x45, scenario/concluded/Log-160x45 (161 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv# s alone ` ×11
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::crashed, frames::frame_tests::bounds::recovering (52 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::crashed, frames::frame_tests::bounds::recovering (53 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv#% duty # s together cycle # step # ` ×4
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::round (8 renders)
 - ` trial # core # offset # R# y-cruncher FFTv# + N# + VT# s alone ` ×3
@@ -2392,9 +2555,11 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` trial # started pid # in scope togi-trial-# on cpus... ` ×27 — truncated, no full form rendered
   - forms ` Compact `; example ` trial 0184 started pid 1184 in scope togi-trial-0184 on cpus... `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::concluded (44 renders)
 - ` trial # started pid # in scope togi-trial-# on {cpu | cpus} # ` ×958
-  - forms ` Compact `, ` Medium `, ` Wide `; 3 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (3301 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (583 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 3 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (3319 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (583 renders)
+- ` trial #: # self-test checks passed ` ×1
+  - forms ` Wide `; tests frames::frame_tests::pages::the_log_page_folds_a_trials_passed_self_tests_into_one_row (1 renders)
 - ` trial {intent | progress | signal | start} ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; 4 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (8627 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (1926 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 4 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (8663 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (1926 renders)
 - ` unattributed crash failure in parked R# trial #: the group fails, no evidence names a single core ` ×8
   - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; tests frames::frame_tests::bounds::member_probe (15 renders)
 - ` unattributed {corrected_mce | crash} failure in together R# trial #: no evidence names a single core ` ×11
@@ -2431,7 +2596,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` CYCLE # ` ×5
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (103 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (114064 renders)
 - ` DEAD END ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (24 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (208 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (32 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (208 renders)
 - ` GROUP # ` ×17
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (13 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (1215 renders)
 - ` HEAVY ` ×1
@@ -2441,7 +2606,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` LIGHT ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (53 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (91697 renders)
 - ` NOW ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (358 renders); sweep scenario/between/120x33, scenario/between/160x45 (415940 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (366 renders); sweep scenario/between/120x33, scenario/between/160x45 (415940 renders)
 - ` No trial has run yet ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped (8 renders); sweep sweep/combination/0000-session.start/120x33/plus40, sweep/combination/0000-session.start/160x45/plus40 (1680 renders)
 - ` PART # ` ×16
@@ -2510,6 +2675,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::holds::a_later_boot_releases_an_idle_trial_and_the_clock_moves_again (4 renders); sweep sweep/combination/1818-config.loaded/120x33/overdue, sweep/combination/1818-config.loaded/120x33/plus40 (488 renders)
 - ` detected # after a watchdog reset ` ×58
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::recovering, frames::frame_tests::holds::every_other_frame_moves_with_the_clock (13 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (17371 renders)
+- ` failure at zero: the recorded detail ` ×1
+  - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
 - ` heavy vector load ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (30 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (97295 renders)
 - ` idle + bursts ` ×1
@@ -2636,6 +2803,10 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (40 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (154510 renders)
 - ` {all-core | light | partial} load ` ×3
   - forms ` Compact `, ` Medium `, ` Wide `; 3 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end (115 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (171263 renders)
+- ` {boot loop: | no evidence: | thermal trip:} the recorded detail ` ×3
+  - forms ` Wide `; 3 templates merged; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (3 renders)
+- ` {containment: | defect: | preflight: | smu:} the recorded detail ` ×4
+  - forms ` Wide `; 4 templates merged; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (4 renders)
 - ` {early in | late in | midway through} the trial ` ×3
   - forms ` Compact `, ` Medium `, ` Wide `; 3 templates merged; sweep sweep/concluded/1327-trial.end/160x45/plus40, sweep/concluded/1327-trial.end/240x67/event (12185 renders)
 
@@ -4155,7 +4326,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` # round left if none fails ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::first_result, frames::frame_tests::bounds::round (17 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (30928 renders)
 - ` # solo limits found ` ×19
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (73 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (181716 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (74 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (181716 renders)
 - ` # steps complete ` ×22
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (203 renders); sweep scenario/between/120x33, scenario/between/160x45 (203224 renders)
 - ` # {check | checks} still needed ` ×4
@@ -4165,7 +4336,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` CLEAN CYCLES ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (57 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (45618 renders)
 - ` DEAD END ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (22 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (208 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (23 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (208 renders)
 - ` HUNT # ` ×7
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (36 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (21653 renders)
 - ` PHASE # ` ×2
@@ -4179,11 +4350,17 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` RECOVERY ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (31 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (24394 renders)
 - ` SOLO LIMITS ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (73 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (181716 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (74 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (181716 renders)
 - ` STOPPED ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (50 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (49 renders)
+- ` a check before tuning failed ` ×1
+  - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
 - ` a clean rerun is needed ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/concluded/4132-trial.end/120x33/plus40, sweep/concluded/4132-trial.end/160x45/plus40 (524 renders)
+- ` a core failed at offset # ` ×1
+  - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
+- ` an earlier build may have moved offsets deeper than proven ` ×1
+  - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
 - ` between rounds ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::first_result, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (10 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (488 renders)
 - ` check # of # ` ×106
@@ -4213,7 +4390,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` more may follow ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (67 renders); sweep scenario/between/120x33, scenario/between/160x45 (53684 renders)
 - ` no conclusive trial evidence ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (18 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (208 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (19 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (208 renders)
 - ` on # ` ×13
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/combination/4780-trial.end/120x33/plus40, sweep/combination/4780-trial.end/160x45/plus40 (5872 renders)
 - ` on core # ` ×15
@@ -4228,6 +4405,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Compact `; tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame, frames::frame_tests::bounds::deadend (3 renders)
 - ` repairing after failure ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (30 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (22809 renders)
+- ` repeated crashes before any offset was applied ` ×1
+  - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
 - ` reset queued for core # ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (3 renders)
 - ` round # ` ×3
@@ -4237,9 +4416,11 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` step # ` ×18
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (99 renders); sweep scenario/between/120x33, scenario/between/160x45 (155627 renders)
 - ` stress programs not confirmed contained ` ×1
-  - forms ` Compact `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped (2 renders)
+  - forms ` Compact `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (3 renders)
+- ` the CPU did not take an offset as written ` ×1
+  - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
 - ` the CPU shut down from heat ` ×1
-  - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1 renders)
+  - forms ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (2 renders)
 - ` the cycle ends once the rerun passes ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; sweep sweep/concluded/7784-trial.start/120x33/overdue, sweep/concluded/7784-trial.start/120x33/plus40 (456 renders)
 - ` total hunt work unknown ` ×1
@@ -4854,14 +5035,14 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 
 ### `frame.stage`
 
-- ` # left ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::checking, frames::frame_tests::bounds::concluded (107 renders); sweep scenario/checking/Bios-160x45, scenario/checking/Cores-160x45 (72 renders)
+- ` # left ` ×5
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::checking, frames::frame_tests::bounds::concluded (108 renders); sweep scenario/checking/Bios-160x45, scenario/checking/Cores-160x45 (72 renders)
 - ` # past its end ` ×1
   - forms ` Wide `; tests frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (1 renders)
 - ` # round left if none fails ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::round, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (15 renders); sweep scenario/round/120x33, scenario/round/160x45 (31247 renders)
 - ` DEAD END ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (19 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (282 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (20 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (282 renders)
 - ` HUNT # ` ×6
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (93 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (17796 renders)
 - ` RECOVERY ` ×1
@@ -4905,15 +5086,15 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` {culprit | member} probes ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_detail_page_at_the_reference_size (24 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (1752 renders)
 - ` {■ | ► | ○} PHASE # ` ×6
-  - forms ` Compact `, ` Medium `, ` Wide `; 3 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (834 renders); sweep scenario/between/120x33, scenario/between/160x45 (965854 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 3 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (838 renders); sweep scenario/between/120x33, scenario/between/160x45 (965854 renders)
 - ` {■ | ► | ○} SOLO ` ×3
   - forms ` Compact `; 3 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bounds::checking (47 renders); sweep scenario/concluded/79x29, scenario/confirmation/79x29 (37319 renders)
 - ` {■ | ► | ○} SOLO LIMITS ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; 3 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (418 renders); sweep scenario/between/120x33, scenario/between/160x45 (482927 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 1 cuts folded in; 3 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (420 renders); sweep scenario/between/120x33, scenario/between/160x45 (482927 renders)
 - ` {► | ○} CLEAN ` ×2
   - forms ` Compact `; 2 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bounds::checking (44 renders); sweep scenario/concluded/79x29, scenario/confirmation/79x29 (37283 renders)
 - ` {► | ○} CLEAN CYCLES ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (417 renders); sweep scenario/between/120x33, scenario/between/160x45 (482927 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (419 renders); sweep scenario/between/120x33, scenario/between/160x45 (482927 renders)
 - ` ■ P# ` ×2
   - forms ` Compact `; tests frames::frame_tests::bounds::concluded, frames::frame_tests::bounds::confirmation (28 renders); sweep scenario/concluded/79x29, scenario/confirmation/79x29 (43425 renders)
 - ` ■ P#... ` ×2 — truncated, no full form rendered
@@ -4969,7 +5150,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` < Help | Cores > ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (79 renders); sweep journal/missing-once/120x33, journal/missing-once/160x45 (208065 renders)
 - ` < History | Help > ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (87 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (82 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (88 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (82 renders)
 - ` < Hunts / probes | History > ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (75 renders); sweep scenario/between/Bios-160x45, scenario/checking/Bios-160x45 (25 renders)
 - ` < Journal | Main > ` ×1
@@ -4999,7 +5180,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` HUNTS / PROBES ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (84 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (25 renders)
 - ` JOURNAL ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (89 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (82 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (90 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (82 renders)
 - ` MAIN ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (81 renders); sweep journal/missing-once/120x33, journal/missing-once/160x45 (208083 renders)
 - ` R# EVIDENCE ` ×1
@@ -5257,6 +5438,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Failed `, ` Said `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (594 renders); sweep scenario/between/120x33, scenario/between/160x45 (2059229 renders)
 - ` core # confirming # as its solo limit ` ×52
   - forms ` Said `; tests frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (148 renders); sweep scenario/between/240x67, scenario/between/History-160x45 (611278 renders)
+- ` core # failure held; tuning stays at # ` ×1
+  - forms ` Said `; tests tests::history::a_held_failure_says_tuning_stays_where_it_is (1 renders)
 - ` core # has room again at # ` ×10
   - forms ` Said `; tests frames::frame_tests::bounds::confirmation, frames::frame_tests::bounds::unconfirmed (29 renders); sweep scenario/confirmation/240x67, scenario/confirmation/History-160x45 (125004 renders)
 - ` core # passed #; searches # on its next turn ` ×178
@@ -5311,8 +5494,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Said `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1 renders)
 - ` dead end: termination unconfirmed ` ×1
   - forms ` Said `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1 renders)
-- ` dead end: the SMU refused ` ×1
-  - forms ` Said `; tests tests::describe::the_kinds_with_a_line_of_their_own (1 renders)
+- ` dead end: the {SMU refused | recorded detail} ` ×2
+  - forms ` Said `; 2 templates merged; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition, tests::describe::the_kinds_with_a_line_of_their_own (2 renders)
 - ` dead end: 日本語[#J]#;c;data  #m#;title ` ×1
   - forms ` Said `; tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped (1 renders)
 - ` each # passed ` ×1
@@ -5380,7 +5563,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` session resumed ` ×1
   - forms ` Said `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bounds::crashed (10 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2090 renders)
 - ` session started on # cores ` ×4
-  - forms ` Said `, ` Session `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (55 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (82184 renders)
+  - forms ` Said `, ` Session `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (57 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (82184 renders)
 - ` stays with loaded # ` ×1
   - forms ` Said `; tests tests::describe::a_hunt_says_how_it_ended (1 renders)
 - ` stopped ` ×1
@@ -5470,6 +5653,387 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` unconfirmed since journal event # ` ×3
   - forms (none); tests frames::frame_tests::bounds::hunt_bios, frames::frame_tests::bounds::unconfirmed (8 renders); sweep scenario/hunt-bios/Bios-160x45, scenario/unconfirmed/Bios-160x45 (2 renders)
 
+### `page.cores`
+
+- ` ! current failure: recorded in the step now running ` ×3
+  - forms (none); 2 cuts folded in; tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (3 renders)
+- ` # to ` ×12
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (12 renders)
+- ` # while ` ×12
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (12 renders)
+- ` # while search, ` ×11
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (11 renders)
+- ` #: # counts ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` #: light #, heavy # ` ×1
+  - forms (none); tests frames::frame_tests::bounds::confirm, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (2 renders); sweep scenario/confirm/Cores-160x45 (16 renders)
+- ` A ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` AT LIMIT ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (179 renders); sweep scenario/between/Cores-160x45, scenario/combination/Cores-160x45 (114 renders)
+- ` C ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` CCD # ` ×2
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (661 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (302 renders)
+- ` CCD # · ` ×2
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` CONFIRM ` ×1
+  - forms (none); tests frames::frame_tests::bounds::confirm, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (32 renders); sweep scenario/confirm/Cores-160x45 (16 renders)
+- ` Core ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` Core # ` ×16
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (675 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (302 renders)
+- ` Core # · ` ×16
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (16 renders)
+- ` D ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` H ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` HAS ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (16 renders)
+- ` HAS ROOM ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (224 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (90 renders)
+- ` M ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` MEMBER ` ×1
+  - forms (none); tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (62 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (17 renders)
+- ` O ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` PARKED ` ×1
+  - forms (none); tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (32 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (16 renders)
+- ` PROBE ` ×1
+  - forms (none); tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (2 renders); sweep scenario/member-probe/Cores-160x45 (1 renders)
+- ` R ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` R reset queued: command #, the core searches again at the next run ` ×3
+  - forms (none); 2 cuts folded in; tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (3 renders)
+- ` R#-charged ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::concluded (21 renders); sweep scenario/concluded/Cores-160x45, scenario/confirmation/Cores-160x45 (9 renders)
+- ` R#-charged · ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- ` ROOM ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` S ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` SEARCH ` ×1
+  - forms (none); tests frames::frame_tests::bounds::crashed, frames::frame_tests::bounds::recovering (96 renders); sweep scenario/crashed/Cores-160x45, scenario/recovering/Cores-160x45 (48 renders)
+- ` SUSPECT ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- ` al ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` alo ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` alone ` ×1
+  - forms (none); tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (232 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (85 renders)
+- ` alone · ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (14 renders)
+- ` and ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` and judged in ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` che ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` check ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` ck ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` constraint or # ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- ` cou ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` counts ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` d: ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` dec ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` decisi ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` decisio ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` decision: ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` ded ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` dee ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` deepen ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` deepen in ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` e ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (2 renders)
+- ` e # ` ×11
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (11 renders)
+- ` e # · ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` e to ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` eli ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` eligib ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` eligibl ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` eligible to ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` er than ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` fai ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` failing offset ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- ` failur ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` failure ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` failure # ` ×27
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (437 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (190 renders)
+- ` failure # · ` ×12
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (12 renders)
+- ` failure at # ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (2 renders)
+- ` gap ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (3 renders)
+- ` gap #: ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` gap #: # ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (13 renders)
+- ` gap #: # counts ` ×4
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (16 renders)
+- ` gap #: # counts {deeper | shallower} than solo ` ×11
+  - forms (none); 4 cuts folded in; 2 templates merged; tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (320 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (180 renders)
+- ` gap #: at the solo limit ` ×2
+  - forms (none); 1 cuts folded in; tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::combination (30 renders); sweep scenario/combination/Cores-160x45, scenario/concluded/Cores-160x45 (44 renders)
+- ` gap ?: no solo ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- ` gap ?: no solo limit recorded yet ` ×2
+  - forms (none); 1 cuts folded in; tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::confirm (9 renders); sweep scenario/confirm/Cores-160x45, scenario/crashed/Cores-160x45 (78 renders)
+- ` ged ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` gib ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` group failed at # ` ×1
+  - forms (none); tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (2 renders); sweep scenario/member-probe/Cores-160x45 (1 renders)
+- ` held by C# ` ×1
+  - forms (none); tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (3 renders); sweep scenario/combination/Cores-160x45, scenario/round/Cores-160x45 (2 renders)
+- ` hunt: a candidate at its failing offset ` ×2
+  - forms (none); 1 cuts folded in; tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (2 renders)
+- ` hunt: a member of a kept group at its failing offset ` ×1
+  - forms (none); tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (6 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (17 renders)
+- ` hunt: the member probed shallower ` ×1
+  - forms (none); tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (2 renders); sweep scenario/member-probe/Cores-160x45 (1 renders)
+- ` in ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` in phase # ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` in this ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` in this trial ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` isi ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` it ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` jou ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` journa ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` journal ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (13 renders)
+- ` journal # ` ×68
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (449 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (190 renders)
+- ` jud ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` judged ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` l ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` las ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` last ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` last decision: backoff # to # while {checking, | deepening, | hunt,} journal # ` ×46
+  - forms (none); 2 cuts folded in; 3 templates merged; tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (196 renders); sweep scenario/between/Cores-160x45, scenario/combination/Cores-160x45 (100 renders)
+- ` last decision: check solo limit # to # while search, journal # ` ×44
+  - forms (none); 6 cuts folded in; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (215 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (71 renders)
+- ` last decision: deepen # to # while deepening, journal # ` ×25
+  - forms (none); tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::concluded (75 renders); sweep scenario/combination/Cores-160x45, scenario/concluded/Cores-160x45 (44 renders)
+- ` last decision: none recorded ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::confirm (4 renders); sweep scenario/confirm/Cores-160x45, scenario/member-probe/Cores-160x45 (39 renders)
+- ` last decision: step deeper # to # while search, journal # ` ×60
+  - forms (none); 2 cuts folded in; tests frames::frame_tests::bounds::crashed, frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (172 renders); sweep scenario/crashed/Cores-160x45, scenario/recovering/Cores-160x45 (48 renders)
+- ` le ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` le to ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` lim ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` limit ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` limit # to ` ×12
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (12 renders)
+- ` llo ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` loa ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` load: ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` load: not loaded ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (24 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (212 renders)
+- ` load: {loaded and | loaded, not} judged in this trial ` ×6
+  - forms (none); 4 cuts folded in; 2 templates merged; tests frames::frame_tests::bounds::checking, frames::frame_tests::bounds::concluded (28 renders); sweep scenario/checking/Cores-160x45, scenario/concluded/Cores-160x45 (90 renders)
+- ` load: {loaded | not} ` ×2
+  - forms (none); 2 templates merged; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (2 renders)
+- ` loaded ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` lur ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` m: ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` n ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` n: ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` named ` ×1
+  - forms (none); tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::concluded (170 renders); sweep scenario/between/Cores-160x45, scenario/concluded/Cores-160x45 (89 renders)
+- ` ne ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` next # ` ×3
+  - forms (none); tests frames::frame_tests::bounds::crashed, frames::frame_tests::bounds::recovering (12 renders); sweep scenario/crashed/Cores-160x45, scenario/recovering/Cores-160x45 (48 renders)
+- ` no failure recorded ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::combination (11 renders); sweep scenario/combination/Cores-160x45, scenario/confirm/Cores-160x45 (112 renders)
+- ` not ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` now ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (5 renders)
+- ` now # ` ×27
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (366 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (288 renders)
+- ` now # (outside ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- ` now # (outside #..#) ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- ` now ? (no readback recorded) ` ×2
+  - forms (none); 1 cuts folded in; tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (2 renders); sweep scenario/rerun-0/Cores-160x45, scenario/rerun-1/Cores-160x45 (14 renders)
+- ` nts ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` o ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (2 renders)
+- ` on: ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` park: held shallower by the hunt, returns to # ` ×3
+  - forms (none); tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (8 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (16 renders)
+- ` passed # ` ×3
+  - forms (none); tests frames::frame_tests::bounds::crashed, frames::frame_tests::bounds::recovering (12 renders); sweep scenario/crashed/Cores-160x45, scenario/recovering/Cores-160x45 (48 renders)
+- ` pen ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` pha ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` phase ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` phase # ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (3 renders)
+- ` r ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` rch ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` recorded ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- ` recorded) ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- ` returns to # ` ×3
+  - forms (none); tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (8 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (16 renders)
+- ` rna ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` roo ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` room: ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` room: a phase # candidate ` ×1
+  - forms (none); tests frames::frame_tests::bounds::first_result, frames::frame_tests::bounds::round (3 renders); sweep scenario/first-result/Cores-160x45, scenario/round/Cores-160x45 (20 renders)
+- ` room: eligible to deepen in phase # ` ×6
+  - forms (none); 5 cuts folded in; tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (18 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (55 renders)
+- ` room: none, one count deeper reaches a recorded constraint or # ` ×3
+  - forms (none); 2 cuts folded in; tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (20 renders); sweep scenario/between/Cores-160x45, scenario/combination/Cores-160x45 (114 renders)
+- ` room: phase # has concluded ` ×1
+  - forms (none); tests frames::frame_tests::bounds::combination, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (2 renders); sweep scenario/combination/Cores-160x45 (15 renders)
+- ` s ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` se ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` sea ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` search ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` search, ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` sha ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` shallo ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` shallow ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` shallower ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` sol ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` solo ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` solo # · ` ×11
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (11 renders)
+- ` solo limit # to ` ×11
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (11 renders)
+- ` solo {# | ?} ` ×25
+  - forms (none); 2 templates merged; tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (386 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (304 renders)
+- ` source not ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (2 renders)
+- ` source not recorded ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (2 renders); sweep scenario/rerun-0/Cores-160x45, scenario/rerun-1/Cores-160x45 (7 renders)
+- ` t ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` tha ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` than ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` the next run ` ×1
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- ` thi ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` this ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` this trial ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` to ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` tri ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` trial ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` tun ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` tune ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` tune # ` ×31
+  - forms (none); tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (352 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (302 renders)
+- ` tune # · ` ×10
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (10 renders)
+- ` wer ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` whi ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` while ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` while search, ` ×1
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (1 renders)
+- ` {check | than} solo ` ×2
+  - forms (none); 2 templates merged; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (3 renders)
+- ` · CCD # ` ×2
+  - forms (none); tests frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` · HAS ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::a_narrow_title_gives_up_whole_clauses_and_keeps_the_page_name (2 renders)
+- ` · HAS ROOM ` ×1
+  - forms (none); tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+
 ### `page.r7`
 
 - ` # by offset ` ×5
@@ -5484,8 +6048,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` All loaded ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
-- ` All loaded cores share one voltage rail, set by the loaded core with the highest voltage request. R# attribution keeps a separate top-request group on each loaded CCD: the cores within # mV of that CCD's highest request, tied. An ` ×26
-  - forms ` Compact `, ` Medium `, ` Wide `; 25 cuts folded in; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (182 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (21 renders)
+- ` All loaded cores share one voltage rail, set by the loaded core with the highest voltage request. R# attribution keeps a separate top-request group on each loaded CCD: the cores within # mV of that CCD's highest request, tied. An unattributed failure is charged to the affected CCD's top group first, and that group need not contain the core that sets the rail. ` ×53
+  - forms ` Compact `, ` Medium `, ` Wide `; 52 cuts folded in; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (388 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (63 renders)
 - ` An ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` An unattributed ` ×1
@@ -5493,7 +6057,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` C ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` CCD # ` ×2
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (153 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (126 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (155 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (126 renders)
 - ` CCD's ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` CCD's highest ` ×1
@@ -5508,16 +6072,16 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` R# EVIDENCE ▮ ` ×2
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (2 renders)
-- ` R# EVIDENCE ▮ observed, not a guarantee ` ×12
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (126 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (21 renders)
+- ` R# EVIDENCE ▮ observed, not a guarantee ` ×13
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (128 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (21 renders)
 - ` R# top self-sufficient ▮ ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` R# top ▮ ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` R# ▮ ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
-- ` R# ▮ top requesters ▮ self-sufficient ▮ observed, not a guarantee ` ×9
-  - forms ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (86 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (21 renders)
+- ` R# ▮ top requesters ▮ self-sufficient ▮ observed, not a guarantee ` ×10
+  - forms ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (88 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (21 renders)
 - ` R# ▮ top ▮ self-sufficient ▮ ` ×4
   - forms ` Compact `; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (40 renders)
 - ` R#... ` ×1 — truncated, no full form rendered
@@ -5527,7 +6091,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` Request order ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - `` Request order is read from the telemetry recorded for each CCD's full part. `per offset order` marks a CCD where no measurement covers a loaded core, so the order is taken from the offsets instead. `` ×32
-  - forms ` Compact `, ` Medium `, ` Wide `; 31 cuts folded in; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (387 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (168 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 31 cuts folded in; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (390 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (168 renders)
 - ` S ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` Self- ` ×1
@@ -5535,7 +6099,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` Self-sufficient ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` Self-sufficient means the core has been observed passing as a top requester at its current offset or deeper. That is evidence so far, not a guarantee against future failures. ` ×25
-  - forms ` Compact `, ` Medium `, ` Wide `; 24 cuts folded in; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (240 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (42 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 24 cuts folded in; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (243 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (42 renders)
 - ` T ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` That ` ×1
@@ -5645,7 +6209,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` curre ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` current step ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (18 renders); sweep scenario/between/R7-160x45, scenario/deadend/R7-160x45 (3 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (20 renders); sweep scenario/between/R7-160x45, scenario/deadend/R7-160x45 (3 renders)
 - ` d ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (2 renders)
 - ` ded ` ×1
@@ -5664,8 +6228,6 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` each CCD's full ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
-- ` each loaded CCD: the cores within # mV of that CCD's highest request, tied. An unattributed failure is charged to the affected CCD's top group first, and ` ×10
-  - forms ` Compact `, ` Medium `, ` Wide `; 9 cuts folded in; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (50 renders)
 - ` ed ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` ed to ` ×1
@@ -5766,8 +6328,6 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` loaded CCD: the ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
-- ` loaded CCD: the cores within # mV of that CCD's highest request, tied. An unattributed failure is charged to the affected CCD's top group first, and that ` ×1
-  - forms ` Wide `; tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (21 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (21 renders)
 - ` loaded core ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` loading now ` ×1
@@ -5795,7 +6355,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` measurement ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` mprime {AVX# | AVX#K-#K | AVX-# | AVX-#K-#K} ` ×4
-  - forms ` Compact `, ` Medium `, ` Wide `; 4 templates merged; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (325 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (84 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 4 templates merged; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (329 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (84 renders)
 - ` n ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (2 renders)
 - ` n # ` ×1
@@ -5808,8 +6368,10 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` no ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
+- ` no top requester recorded yet ` ×1
+  - forms ` Wide `; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (1 renders)
 - ` none yet ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (77 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (29 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (79 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (29 renders)
 - ` not ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` not a ` ×1
@@ -5861,7 +6423,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` per ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (3 renders)
 - ` per request order ` ×1
-  - forms ` Wide `; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (4 renders)
+  - forms ` Wide `; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (5 renders)
 - ` q ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (2 renders)
 - ` r ` ×1
@@ -5913,7 +6475,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` self-sufficient: all # cores ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (9 renders); sweep scenario/combination/R7-160x45, scenario/member-probe/R7-160x45 (12 renders)
 - ` self-sufficient: none yet ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (32 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (62 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (34 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (62 renders)
 - ` separ ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` separate ` ×1
@@ -5958,8 +6520,6 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` that ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
-- ` that CCD's highest request, tied. An unattributed failure is charged to the affected CCD's top group first, and that group need not contain the core that sets the rail. ` ×15
-  - forms ` Compact `, ` Medium `, ` Wide `; 14 cuts folded in; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (130 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (21 renders)
 - ` that changes ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` the ` ×1
@@ -5985,7 +6545,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` top requester ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` top requesters # ` ×10
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (149 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (126 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (150 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (126 renders)
 - ` top-r ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes (1 renders)
 - ` top-request ` ×1
@@ -6371,6 +6931,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms (none); tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1 renders)
 - ` dead end: termination unconfirmed ` ×1
   - forms (none); tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1 renders)
+- ` dead end: the recorded detail ` ×1
+  - forms (none); tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (1 renders)
 - ` early ` ×1
   - forms (none); sweep sweep/laterhunt/11616-trial.end/79x29/plus40, sweep/laterhunt/11617-preflight.check/79x29/plus40 (85 renders)
 - ` early in ` ×1
@@ -6472,15 +7034,15 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` session resumed ` ×1
   - forms (none); tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bounds::crashed (9 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1044 renders)
 - ` session started on # cores ` ×4
-  - forms (none); tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (19 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (39666 renders)
+  - forms (none); tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (20 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (39666 renders)
 - ` stalled ` ×1
   - forms (none); sweep sweep/crashedcycle/5930-trial.end/79x29/plus40, sweep/crashedcycle/5931-failure/79x29/plus40 (11 renders)
 - ` start ` ×1
-  - forms (none); tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (19 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (39666 renders)
+  - forms (none); tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (20 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (39666 renders)
 - ` step ` ×1
   - forms (none); tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (1012 renders); sweep scenario/between/120x33, scenario/between/160x45 (2378320 renders)
 - ` stop ` ×1
-  - forms (none); tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (35 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (406 renders)
+  - forms (none); tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (36 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (406 renders)
 - ` stopped ` ×1
   - forms (none); tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (18 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (129 renders)
 - ` stopped by a signal ` ×1
@@ -6526,30 +7088,30 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Wide `; 1 cuts folded in; tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (11 renders); sweep scenario/member-probe/Hunts-160x45 (1 renders)
 - ` # at... ` ×4 — truncated, no full form rendered
   - forms ` Compact `; example ` 00-03 08-11 at... `; tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (8 renders)
-- ` # held at failing offsets ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (4 renders); sweep scenario/hunt-bios/Hunts-160x45 (1 renders)
 - ` # kept together; probing members ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (9 renders); sweep scenario/member-probe/Hunts-160x45 (1 renders)
 - ` # of # ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (22 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
-- ` # parked at # ` ×2
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (8 renders); sweep scenario/hunt-bios/Hunts-160x45 (2 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (23 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
+- ` # parked at # ` ×3
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt_bios, frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero (9 renders); sweep scenario/hunt-bios/Hunts-160x45 (2 renders)
 - ` # x #m ` ×2
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (44 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (46 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
+- ` # {held | kept} at failing offsets ` ×3
+  - forms ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bounds::hunt_bios, frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero (6 renders); sweep scenario/hunt-bios/Hunts-160x45 (1 renders)
 - ` #, deeper at failure than at their parked offsets ` ×4
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (31 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (32 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
 - ` #, deeper at failure than parked ` ×1
   - forms ` Medium `; tests frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty (1 renders)
 - ` #s ` ×3
   - forms ` Compact `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (16 renders)
 - ` #s so far ` ×5
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (50 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (51 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
 - ` HUNT # ▮ # ` ×8
   - forms ` Compact `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (16 renders)
-- ` HUNT # ▮ started # ` ×26
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (50 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
+- ` HUNT # ▮ started # ` ×27
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (51 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
 - ` after the hunt: ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (29 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (30 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
 - ` an idle failure is already recorded at these offsets ` ×1
   - forms ` Medium `, ` Wide `; tests frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (2 renders)
 - ` answered by existing evidence ` ×1
@@ -6557,11 +7119,11 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` back off one member to a tested passing probe that keeps the profile clear ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (7 renders); sweep scenario/member-probe/Hunts-160x45 (1 renders)
 - ` back off past it ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (33 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (34 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
 - ` candidates ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (32 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (33 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
 - ` cause ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (54 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (55 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
 - ` core # failed alone; its probing is done ` ×1
   - forms ` Wide `; tests frames::panels::hunt::tests::a_stopped_singleton_keeps_its_shallowest_failure_without_claiming_a_pass (1 renders)
 - ` core # failed alone; probing between its failure and its passing anchor ` ×2
@@ -6589,7 +7151,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` crash in the rerun of R# all-core on # ` ×3
   - forms ` Medium `; 2 cuts folded in; tests frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty, frames::panels::hunt::tests::a_stalled_worker_is_named_in_the_medium_evidence (5 renders)
 - ` crash while idle, with no trial running ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row, frames::panels::hunt::tests::a_singleton_hunt_without_a_passing_anchor_names_no_pass_and_no_combination (9 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero, frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row (10 renders)
 - ` crashed ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (52 renders); sweep scenario/member-probe/Hunts-160x45 (6 renders)
 - ` cycle # step #, part #, trial # of # ` ×3
@@ -6603,7 +7165,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` failed ` ×1
   - forms ` Medium `, ` Wide `; tests frames::panels::hunt::tests::a_singleton_hunt_without_a_passing_anchor_names_no_pass_and_no_combination, frames::panels::hunt::tests::a_singleton_interior_probe_runs_between_its_failure_and_its_passing_anchor (7 renders)
 - ` failed parts are split again; complements test what remains ` ×2
-  - forms ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (20 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
+  - forms ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (21 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
 - ` failing ` ×1
   - forms ` Medium `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (12 renders)
 - ` group # ` ×8
@@ -6619,7 +7181,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` groups # parts of #... all passed ` ×6
   - forms ` Compact `, ` Medium `, ` Wide `; 2 cuts folded in; tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (30 renders); sweep scenario/member-probe/Hunts-160x45 (3 renders)
 - ` if part # passes ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (28 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (29 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
 - ` if the rerun passes, resume cycle # ` ×2
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (18 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
 - ` if... ` ×1 — truncated, no full form rendered
@@ -6632,20 +7194,22 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Wide `; tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (10 renders); sweep scenario/member-probe/Hunts-160x45 (1 renders)
 - ` no core named ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (29 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
+- ` no cores ` ×1
+  - forms ` Wide `; tests frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero (1 renders)
 - ` not enough to attribute ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt_bios, frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty (10 renders); sweep scenario/hunt-bios/Hunts-160x45 (1 renders)
 - ` now ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (13 renders); sweep scenario/member-probe/Hunts-160x45 (1 renders)
 - ` others ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (4 renders); sweep scenario/hunt-bios/Hunts-160x45 (1 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt_bios, frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero (5 renders); sweep scenario/hunt-bios/Hunts-160x45 (1 renders)
 - ` parked ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt_bios, frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty (9 renders); sweep scenario/hunt-bios/Hunts-160x45 (1 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt_bios, frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero (10 renders); sweep scenario/hunt-bios/Hunts-160x45 (1 renders)
 - ` parked at # ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (12 renders); sweep scenario/hunt/Hunts-160x45 (1 renders)
 - ` part ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (21 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (22 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
 - ` parts ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (37 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (38 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
 - ` parts of # ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (8 renders); sweep scenario/member-probe/Hunts-160x45 (1 renders)
 - ` passed ` ×1
@@ -6665,11 +7229,11 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` record core #'s shallowest reproduced failure; test its parked offset before narrowing the bracket ` ×1
   - forms ` Wide `; tests frames::panels::hunt::tests::a_singleton_hunt_without_a_passing_anchor_names_no_pass_and_no_combination, frames::panels::hunt::tests::a_singleton_parked_at_a_nonzero_offset_tests_that_offset_as_its_anchor (2 renders)
 - ` record one core's failure point or a combination ` ×2
-  - forms ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (23 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
+  - forms ` Medium `, ` Wide `; 1 cuts folded in; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (24 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
 - ` record the combination: # at the offsets that still fail ` ×2
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (7 renders); sweep scenario/member-probe/Hunts-160x45 (1 renders)
 - ` rerun R# all-core on #: # trials of #m, its original length ` ×1
-  - forms ` Wide `; tests frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row, frames::panels::hunt::tests::a_singleton_hunt_without_a_passing_anchor_names_no_pass_and_no_combination (6 renders)
+  - forms ` Wide `; tests frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero, frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row (7 renders)
 - ` rerun R# all-core on #: # x #m, original length ` ×2
   - forms ` Medium `; 1 cuts folded in; tests frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty, frames::panels::hunt::tests::a_named_wrong_result_keeps_its_core_at_medium (6 renders)
 - ` rerun R# all-core: # x #m ` ×1
@@ -6687,17 +7251,17 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` rerun R# idle + bursts: # x #m, then # x #m ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (2 renders)
 - ` running ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row, frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty (7 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero, frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row (8 renders)
 - ` schedule ` ×1
-  - forms ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (9 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
+  - forms ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (10 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
 - ` schedule state ` ×1
   - forms ` Medium `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (12 renders)
 - ` state ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (22 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (23 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
 - ` the last sample came # into the trial ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (4 renders); sweep scenario/hunt-bios/Hunts-160x45 (1 renders)
 - ` then ` ×1
-  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (36 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (37 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (3 renders)
 - ` trial # ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (2 renders)
 - ` trial # of # ` ×2
@@ -6709,9 +7273,9 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` {# | all} passed ` ×2
   - forms ` Compact `, ` Medium `, ` Wide `; 2 templates merged; tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (61 renders); sweep scenario/member-probe/Hunts-160x45 (8 renders)
 - ` ► # of # ` ×1
-  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (22 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
+  - forms ` Medium `, ` Wide `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (23 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (2 renders)
 - ` ► part # at failing offsets ` ×21
-  - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (65 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (8 renders)
+  - forms ` Compact `, ` Medium `, ` Wide `; 4 cuts folded in; tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (66 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (8 renders)
 - ` ► part # at failing... trial # ` ×1
   - forms ` Compact `; tests frames::frame_tests::bounds::hunt, frames::frame_tests::pages::every_page_titles_itself_with_its_place_and_its_neighbours_even_scrolled (4 renders)
 - ` ► running ` ×1
@@ -6809,6 +7373,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` PHASE # · ROUND # `; tests frames::story::tests::the_story::a_round_names_the_cores_it_moves, frames::story::tests::the_story::deepening_checks_say_how_they_load (2 renders)
 - ` Core # failed at #, so # is its candidate solo limit, and I'm confirming it. ` ×1
   - forms ` SOLO LIMITS `; tests frames::story::tests::the_story::a_search_trial_says_what_it_is_finding_or_confirming (1 renders)
+- ` Core # is bracketed; its failure point stands. ` ×1
+  - forms ` HUNT # `; tests frames::story::tests::the_story::a_bracketed_singleton_says_its_failure_point_stands (1 renders)
 - ` Corrected hardware error in R# heavy vector on #; no core named. Rerunning it with # parked. ` ×1
   - forms ` HUNT # `; tests frames::story::tests::the_simulated_sessions::a_hunt_session_names_its_cause_and_its_split (1 renders)
 - ` Crashed while idle; {core # | no core} named. Rerunning it with no cores parked. ` ×2
@@ -6823,8 +7389,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` HUNT # `; tests frames::story::tests::the_story::a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are (1 renders)
 - ` Probing core # stopped; the shallowest reproduced failure stands. ` ×1
   - forms ` HUNT # `; tests frames::story::tests::the_story::a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are (1 renders)
-- ` Probing members of #: core # at #. ` ×1
-  - forms ` HUNT # `; tests frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member, frames::story::tests::the_story::a_probe_says_failed_unless_its_group_crashed (3 renders)
+- ` Probing members of #: core # at #. ` ×2
+  - forms ` HUNT # `; tests frames::story::tests::the_story::a_combination_probe_of_its_first_member_says_that_member_goes_first, frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member (4 renders)
 - ` R# all-core already failed at these offsets in a carried trial. Rerunning it with no cores parked. ` ×1
   - forms ` HUNT # `; tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (1 renders)
 - ` R# all-core already failed at these offsets. Rerunning it with no cores parked. ` ×1
@@ -6871,7 +7437,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` DEAD END ` ×1
   - forms (none); tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (4 renders)
 - ` HUNT # ` ×1
-  - forms (none); tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, frames::story::tests::the_simulated_sessions::a_hunt_session_names_its_cause_and_its_split (12 renders)
+  - forms (none); tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, frames::story::tests::the_simulated_sessions::a_hunt_session_names_its_cause_and_its_split (14 renders)
 - ` JOURNAL UNREADABLE ` ×1
   - forms (none); tests frames::frame_tests::escapes::a_problem_with_controls_in_its_text_draws_them_visibly_escaped_live_and_in_one_frame, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (10 renders); sweep journal/problem-once/120x33, journal/problem-once/160x45 (8 renders)
 - ` NO SESSION YET ` ×1
@@ -6903,14 +7469,16 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` SOLO LIMITS `; tests frames::story::tests::the_story::a_search_trial_says_what_it_is_finding_or_confirming (1 renders)
 - ` # past its planned end, no trial end recorded. Its deadline or watchdog may still be running. ` ×1
   - forms ` TOGI `; tests frames::story::tests::the_story::a_trial_past_its_end_says_how_long_without_claiming_a_crash (1 renders)
-- ` # {crashed | failed} together at their offsets, and every smaller part of them that was tested passed. ` ×2
-  - forms ` HUNT # `; 2 templates merged; tests frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member, frames::story::tests::the_story::a_probe_says_failed_unless_its_group_crashed (4 renders)
+- ` # {crashed | failed} together at their offsets, and every smaller part of them that was tested passed. ` ×3
+  - forms ` HUNT # `; 2 templates merged; tests frames::story::tests::the_story::a_combination_probe_of_its_first_member_says_that_member_goes_first, frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member (5 renders)
 - ` A check before tuning failed: this isn't the environment I tune in. Fix the recorded check before tuning again. ` ×1
   - forms ` DEAD END `; tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (1 renders)
 - ` A core failed even at offset #, so the problem isn't Curve Optimizer. Check the rest of the system before tuning again. ` ×1
   - forms ` DEAD END `; tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile, frames::story::tests::the_story::a_dead_end_preserves_the_recorded_cause (2 renders)
 - ` A failure at offset # would stop tuning. Before it does, the failed load runs again with every core at offset #. ` ×1
   - forms ` RERUN AT OFFSET # `; tests frames::story::tests::the_story::an_all_zero_rerun_is_named_for_what_it_decides (1 renders)
+- ` A pass sits one count shallower than its failure point, so core # is bracketed. ` ×1
+  - forms ` HUNT # `; tests frames::story::tests::the_story::a_bracketed_singleton_says_its_failure_point_stands (1 renders)
 - ` A passing anchor is known, so I probe core # between its failure and that anchor to narrow its failure point. ` ×1
   - forms ` HUNT # `; tests frames::story::tests::the_story::a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are (1 renders)
 - ` An earlier build may have moved offsets deeper than proven. Answer the reset question at a terminal before tuning continues. ` ×1
@@ -6922,7 +7490,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` Checking the machine and the journal before the first trial; this screen follows the run as soon as it records something. ` ×1
   - forms ` STARTING `; tests frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (6 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (8 renders)
 - ` Core # crashed on its own at #, so it is the culprit. ` ×2
-  - forms ` HUNT # `; tests frames::story::tests::the_story::a_singleton_anchor_probe_claims_neither_a_combination_nor_a_pass, frames::story::tests::the_story::a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are (3 renders)
+  - forms ` HUNT # `; tests frames::story::tests::the_story::a_bracketed_singleton_says_its_failure_point_stands, frames::story::tests::the_story::a_singleton_anchor_probe_claims_neither_a_combination_nor_a_pass (4 renders)
 - ` Core # failed at #, so # is its candidate solo limit, and I'm confirming it. ` ×1
   - forms ` SOLO LIMITS `; tests frames::story::tests::the_story::a_search_trial_says_what_it_is_finding_or_confirming (1 renders)
 - ` Core # runs alone at its proposed #, like every moved core's light and heavy checks. ` ×1
@@ -6981,8 +7549,8 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` PHASE # · ROUND # `; tests frames::story::tests::the_story::deepening_checks_say_how_they_load (1 renders)
 - ` Round # moves cores # one count toward their solo limits; # round left if no round fails, then one full cycle. ` ×1
   - forms ` PHASE # · ROUND # `; tests frames::story::tests::the_story::a_round_names_the_cores_it_moves (1 renders)
-- ` So I probe each member: how shallow must it go for the combination to pass? Now core #. ` ×1
-  - forms ` HUNT # `; tests frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member, frames::story::tests::the_story::a_probe_says_failed_unless_its_group_crashed (3 renders)
+- ` So I probe each member: how shallow must it go for the combination to pass? {Core # first. | Now core #.} ` ×2
+  - forms ` HUNT # `; 2 templates merged; tests frames::story::tests::the_story::a_combination_probe_of_its_first_member_says_that_member_goes_first, frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member (4 renders)
 - ` Step # is R# all-core with mprime AVX#K-#K. ` ×1
   - forms ` CYCLE # `; tests frames::story::tests::the_simulated_sessions::a_running_checking_trial_has_a_story_and_an_operation, frames::story::tests::the_story::a_partial_explains_that_it_is_ordinary_evidence (2 renders)
 - ` Step # is R# heavy vector with mprime AVX#K-#K. ` ×1
@@ -7055,7 +7623,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 The log view and `togi status` pass these through as the journal wrote them, so a wording problem in one belongs to the tuner that wrote it, not to a dashboard phrase.
 
 - ` BIOS SIM.# on togi simulator, Simulated Zen #-Core Processor, microcode #x#, boost limit # MHz ` ×1
-  - forms ` session context `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (96 renders); sweep scenario/between, scenario/checking (36 renders)
+  - forms ` session context `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (97 renders); sweep scenario/between, scenario/checking (36 renders)
 - ` after ` ×1
   - forms ` session warning `; tests terminal::source::tests::an_event_of_an_unknown_kind_is_skipped_and_reported_in_the_snapshot (1 renders)
 - ` appended ` ×1
@@ -7065,7 +7633,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` backend mprime: retry # of # after # s: 日本語[#J]#;c;data  #m#;title ` ×1
   - forms ` backend retry `; tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped (1 renders)
 - ` baseline profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] ` ×1
-  - forms ` session baseline `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (96 renders); sweep scenario/between, scenario/checking (36 renders)
+  - forms ` session baseline `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (97 renders); sweep scenario/between, scenario/checking (36 renders)
 - ` carried # candidate solo limits from ; failure points stay behind: no reason recorded ` ×1
   - forms ` session carried `; tests tests::describe::solo_limits_found_before_the_first_trial_are_counted_on_the_session_line (1 renders)
 - ` carried failure of trial - from session #T#Z (togi #): together R# mprime AVX#K-#K all-core on cores # failed (computation_error) after # s at [#: #: #: #] (intended # s, evidence epoch #) ` ×1
@@ -7212,6 +7780,8 @@ The log view and `togi status` pass these through as the journal wrote them, so 
   - forms ` fail `; 9 templates merged; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (844 renders); sweep scenario/between, scenario/concluded (434 renders)
 - ` core # failure at CO #: {computation_error | corrected_mce | crash | stall | uncorrected_mce | unexpected_exit} in alone R# trial # (alone: attributed to the target) ` ×96
   - forms ` fail `; 6 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (2199 renders); sweep scenario/between, scenario/checking (770 renders)
+- ` core # failure held; tuning stays at # () ` ×1
+  - forms ` hold `; tests tests::history::a_held_failure_says_tuning_stays_where_it_is (1 renders)
 - ` core # has room -> at its limit at # (combination C#) ` ×1
   - forms ` limit `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (6 renders); sweep scenario/combination, scenario/round (6 renders)
 - ` core # has room -> at its limit at # (failure point # of core #) ` ×53
@@ -7219,7 +7789,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` core # passed R#+R# at #; searches # on its next turn () ` ×1
   - forms ` step `; tests tests::model::a_failure_is_current_only_in_the_operation_that_found_it, tests::model::a_failure_point_keeps_the_source_and_event_that_set_it (3 renders)
 - ` core # passed R#+R# at #; searches # on its next turn (coarse, no failure point yet) ` ×105
-  - forms ` step `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (5925 renders); sweep scenario/between, scenario/checking (2108 renders)
+  - forms ` step `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (5941 renders); sweep scenario/between, scenario/checking (2108 renders)
 - ` core # passed R#+R# at #; searches # on its next turn (fine, failure point #) ` ×78
   - forms ` step `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1634 renders); sweep scenario/between, scenario/checking (613 renders)
 - ` core # search -> at its limit at # (test) ` ×5
@@ -7229,13 +7799,13 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` core # search -> has room at # (test) ` ×7
   - forms ` limit `, ` room `; tests tests::derive::cores_the_search_has_not_reached_wait_and_found_ones_say_so, tests::describe::solo_limits_found_before_the_first_trial_are_counted_on_the_session_line (9 renders)
 - ` core # starts at its limit at # (test) ` ×19
-  - forms ` limit `; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (97 renders); sweep scenario/rerun-0, scenario/rerun-1 (16 renders)
+  - forms ` limit `; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (100 renders); sweep scenario/rerun-0, scenario/rerun-1 (16 renders)
 - ` core # starts has room at # (test) ` ×11
   - forms ` room `; tests tests::derive::a_combination_names_its_members_and_the_core_it_holds, tests::derive::a_core_confirming_its_solo_limit_shows_the_count (14 renders)
 - ` core # starts search at # (configured candidate solo limit) ` ×16
   - forms ` step `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::confirm (208 renders); sweep scenario/combination, scenario/confirm (128 renders)
 - ` core # starts search at # {(baseline) | (test)} ` ×25
-  - forms ` step `; 2 templates merged; tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (1448 renders); sweep scenario/between, scenario/checking (448 renders)
+  - forms ` step `; 2 templates merged; tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (1464 renders); sweep scenario/between, scenario/checking (448 renders)
 - ` core # yielded from # to # (round # failed on core #, so core # yields to its round baseline #; remains eligible for a later round) ` ×18
   - forms ` room `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (198 renders); sweep scenario/concluded, scenario/confirmation (103 renders)
 - ` core # {deepened | yielded} from # to # () ` ×2
@@ -7272,6 +7842,8 @@ The log view and `togi status` pass these through as the journal wrote them, so 
   - forms ` stop `; tests tests::describe::the_kinds_with_a_line_of_their_own (1 renders)
 - ` dead end thermal_trip: firmware reported a thermal trip ` ×1
   - forms ` stop `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1 renders)
+- ` dead end {boot_loop: | containment: | defect: | failure_at_zero: | no_evidence: | preflight: | smu: | thermal_trip:} the recorded detail ` ×8
+  - forms ` stop `; 8 templates merged; tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (8 renders)
 - ` deepening round # end: a failure ` ×1
   - forms ` round `; tests tests::describe::deepening_rounds_say_their_moves_and_their_verdict (1 renders)
 - ` deepening round # end: failure #: blame goes to the deepened cores ` ×6
@@ -7349,7 +7921,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` newer ` ×1
   - forms ` session warning `; tests terminal::source::tests::a_journal_of_a_newer_schema_is_a_problem_not_a_session (1 renders)
 - ` no config at /etc/togi/config.json; using defaults with togi # (schema #, ruleset #, fixes #) ` ×2
-  - forms ` config loaded `; tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (156 renders); sweep scenario/between, scenario/checking (388 renders)
+  - forms ` config loaded `; tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (158 renders); sweep scenario/between, scenario/checking (388 renders)
 - ` offsets restored before stopping: [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] (each core's baseline, or its current offset where that is shallower) ` ×1
   - forms ` profile restored `; tests frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (20 renders); sweep scenario/combination, scenario/first-result (19 renders)
 - ` offsets restored before stopping: [#: #: #: #] (each core's baseline, or its current offset where that is shallower) ` ×1
@@ -7367,11 +7939,11 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` phase # is confirmed and the profile passed the requested clean cycle; stopping ` ×1
   - forms ` stop `; tests frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (17 renders); sweep scenario/combination, scenario/stopped (8 renders)
 - ` preferred cores # ` ×2
-  - forms ` host ranking `; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (24 renders)
+  - forms ` host ranking `; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (25 renders)
 - ` preferred-core ranking unavailable (simulated preferred-core ranking unavailable); core-id order ` ×1
   - forms ` host ranking `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (77 renders); sweep scenario/between, scenario/checking (117 renders)
 - ` profile applied for alone trials: every core at CO # ` ×1
-  - forms ` profile applied `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (96 renders); sweep scenario/between, scenario/checking (230 renders)
+  - forms ` profile applied `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (97 renders); sweep scenario/between, scenario/checking (230 renders)
 - ` profile changed [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] -> [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] ` ×86
   - forms ` profile change `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (935 renders); sweep scenario/between, scenario/combination (518 renders)
 - ` profile changed [#: #: #: #: #: #: #: #: #] -> [#: #: #: #: #: #: #: #: #] ` ×10
@@ -7385,7 +7957,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` profile for checking: [#: #: #: #: #: #: #: #: #] ` ×2
   - forms ` profile change `; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, tests::hunt::a_parked_group_judges_its_members_and_not_the_parked_cores (3 renders)
 - ` profile for checking: [#: #: #: #] ` ×1
-  - forms ` profile change `; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (20 renders)
+  - forms ` profile change `; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (21 renders)
 - ` profile {applied: [#: #: | for checking: [#:} #: #] ` ×5
   - forms ` profile applied `, ` profile change `; 2 templates merged; tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (7 renders); sweep scenario/rerun-0, scenario/rerun-1 (8 renders)
 - ` projection: a later boot wrote this; continuing the session ` ×1
@@ -7411,7 +7983,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` rewritten # ` ×40
   - forms ` session warning `; tests terminal::source::tests::a_journal_rewritten_in_place_to_a_longer_one_builds_a_fresh_model_and_drops_the_held_list (40 renders)
 - ` session #T#Z started by togi # (schema #, ruleset #, evidence epoch #, fixes # cores) ` ×7
-  - forms ` start `; tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (235 renders); sweep scenario/between, scenario/checking (44 renders)
+  - forms ` start `; tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (238 renders); sweep scenario/between, scenario/checking (44 renders)
 - ` stopped at a dead end ` ×1
   - forms ` stop `; tests tests::model::smu_dead_end_keeps_the_readback, tests::model::write_after_restoration_is_not_saved (2 renders); sweep sweep/deadend/4193-shutdown, sweep/deadend/projected (2 renders)
 - ` the BIOS profile is confirmed; stopping at the first result as requested ` ×1
@@ -7439,13 +8011,13 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` trial # core # computation error: simulated computation error on core # ` ×76
   - forms ` trial progress `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1048 renders); sweep scenario/between, scenario/checking (450 renders)
 - ` trial # core # offset # R# mprime AVX#K-#K # s alone round # ` ×580
-  - forms ` trial intent `; 1 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (10705 renders); sweep scenario/between, scenario/checking (4282 renders)
+  - forms ` trial intent `; 1 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (10721 renders); sweep scenario/between, scenario/checking (4282 renders)
 - ` trial # core # offset # R# mprime AVX#K-#K # s together rerun ` ×35
   - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (631 renders); sweep scenario/concluded, scenario/confirmation (277 renders)
 - ` trial # core # offset # R# mprime AVX-#K-#K # s alone ` ×112
   - forms ` trial intent `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2740 renders); sweep scenario/between, scenario/checking (1034 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K # s alone round # ` ×608
-  - forms ` trial intent `; 1 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (11365 renders); sweep scenario/between, scenario/checking (4525 renders)
+  - forms ` trial intent `; 1 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (11381 renders); sweep scenario/between, scenario/checking (4525 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K # s together rerun ` ×21
   - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (134 renders); sweep scenario/concluded, scenario/hunt-bios (73 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K {#% duty | SMT pair | load steps} # s together cycle # step # ` ×720
@@ -7459,7 +8031,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` trial # core # offset # R# y-cruncher BKT + SFTv# load steps # s together cycle # step # ` ×240
   - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1088 renders); sweep scenario/combination, scenario/concluded (816 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv# s alone ` ×131
-  - forms ` trial intent `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (3368 renders); sweep scenario/between, scenario/checking (1243 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (3369 renders); sweep scenario/between, scenario/checking (1243 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv# s together cycle # step # ` ×240
   - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1088 renders); sweep scenario/combination, scenario/concluded (816 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv#% duty # s together cycle # step # ` ×240
@@ -7504,8 +8076,10 @@ The log view and `togi status` pass these through as the journal wrote them, so 
   - forms ` trial signal `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (3345 renders); sweep scenario/combination, scenario/concluded (2585 renders)
 - ` trial # load steps: random on/off periods from # ms, # ms, # ms, # s, # s ` ×415
   - forms ` trial signal `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (3376 renders); sweep scenario/combination, scenario/concluded (2676 renders)
+- ` trial # self-test #K passed ` ×2
+  - forms ` trial progress `; tests frames::frame_tests::pages::the_log_page_folds_a_trials_passed_self_tests_into_one_row (2 renders)
 - ` trial # started pid # in scope togi-trial-# on {cpu | cpus} # ` ×7224
-  - forms ` trial start `; 2 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (68740 renders); sweep scenario/between, scenario/checking (35974 renders)
+  - forms ` trial start `; 2 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (68773 renders); sweep scenario/between, scenario/checking (35974 renders)
 - ` trial # still running ` ×2
   - forms ` trial progress `; tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, tests::model::a_trial_reporting_progress_past_its_planned_end_is_still_running (2 renders)
 - ` trial p# {core | cores} # R# mprime AVX#K-#K all-core # s together ` ×2
@@ -7539,7 +8113,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` trial {# | other | p#} started pid # in scope scope on cpu ` ×51
   - forms ` trial start `; 1 cuts folded in; 3 templates merged; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (81 renders); sweep scenario/rerun-0, scenario/rerun-1 (57 renders)
 - ` trial {# | probe-#} PASS # s | Tctl max #°C ` ×8558
-  - forms ` pass `; 1 cuts folded in; 2 templates merged; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (67049 renders); sweep scenario/between, scenario/checking (34650 renders)
+  - forms ` pass `; 1 cuts folded in; 2 templates merged; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (67081 renders); sweep scenario/between, scenario/checking (34650 renders)
 - ` trial {# | t#} cores # R# mprime AVX#K-#K all-core # s together rerun ` ×137
   - forms ` trial intent `; 1 cuts folded in; 2 templates merged; tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (988 renders); sweep scenario/between, scenario/concluded (456 renders)
 - ` trial {a | b | c | p# | t#} PASS # s ` ×5
@@ -7575,7 +8149,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 
 ## Source-phrase manifest
 
-Every string literal of a renderer's production source that holds words (1064 of them), read from the source this binary was built from. A literal is *covered* when one recorded phrase carries every piece of it that sits between placeholders; the cases that rendered it follow. Literals the renderers format from several pieces are covered by the pieces' own literals. A literal listed as silent shows its reason first, and any phrase that happens to carry its words after it as substring evidence only.
+Every string literal of a renderer's production source that holds words (1052 of them), read from the source this binary was built from. A literal is *covered* when one recorded phrase carries every piece of it that sits between placeholders; the cases that rendered it follow. Literals the renderers format from several pieces are covered by the pieces' own literals. A literal listed as silent shows its reason first, and any phrase that happens to carry its words after it as substring evidence only.
 
 ### `describe.rs`: 36 of 36 covered
 
@@ -7584,13 +8158,13 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `describe.rs:125` ` before any offsets were applied, rebooted ` — tests tests::model::crash_classification, tests::model::recovery_ends_only_when_a_trial_starts (2 renders)
 - `describe.rs:132` ` power loss or reset, which says nothing about the offsets ` — tests tests::model::crash_classification (1 renders)
 - `describe.rs:294` ` hunt {hunt} group {group} skipped: {} ` — tests tests::describe::hunt_groups_answered_without_a_trial (3 renders)
-- `describe.rs:307` ` passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62497 renders); sweep journal/help/160x45, journal/help/240x67 (5224049 renders)
-- `describe.rs:309` ` failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2075 renders); sweep journal/help/160x45, journal/help/240x67 (3142 renders)
+- `describe.rs:307` ` passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62554 renders); sweep journal/help/160x45, journal/help/240x67 (5224097 renders)
+- `describe.rs:309` ` failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2082 renders); sweep journal/help/160x45, journal/help/240x67 (3143 renders)
 - `describe.rs:312` ` hunt {hunt} group {group} · core {:02} at {} · {verb} on existing evidence ` — tests tests::describe::hunt_groups_answered_without_a_trial (4 renders)
-- `describe.rs:338` ` #{hunt} done ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2141 renders); sweep journal/help/160x45, journal/help/240x67 (181640 renders)
-- `describe.rs:340` ` group ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (24425 renders); sweep journal/help/160x45, journal/help/240x67 (821677 renders)
+- `describe.rs:338` ` #{hunt} done ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (2145 renders); sweep journal/help/160x45, journal/help/240x67 (184714 renders)
+- `describe.rs:340` ` group ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (24454 renders); sweep journal/help/160x45, journal/help/240x67 (847408 renders)
 - `describe.rs:343` ` , all answered by existing evidence ` — tests tests::describe::a_hunt_says_how_it_ended (2 renders)
-- `describe.rs:350` ` {text} · {} named ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2227 renders); sweep journal/help/160x45, journal/help/240x67 (1085820 renders)
+- `describe.rs:350` ` {text} · {} named ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2397 renders); sweep journal/help/160x45, journal/help/240x67 (1085909 renders)
 - `describe.rs:355` ` , probed ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (32 renders); sweep scenario/combination, scenario/combination/Cycle-160x45 (28056 renders)
 - `describe.rs:360` ` {text} · {cores} kept together{probed} ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (42 renders); sweep scenario/combination, scenario/member-probe/Hunts-160x45 (28055 renders)
 - `describe.rs:364` ` {text} · {cores} unresolved ` — tests frames::panels::cycle::tests::a_combination_without_a_member_leaves_its_cell_blank_and_says_what_is_clear, tests::describe::a_hunt_says_how_it_ended (8 renders)
@@ -7598,113 +8172,113 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `describe.rs:366` ` #{hunt} cancelled ` — tests tests::describe::a_hunt_says_how_it_ended (3 renders)
 - `describe.rs:381` ` yields ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (434 renders); sweep scenario/concluded, scenario/confirmation (167386 renders)
 - `describe.rs:383` ` goes deeper ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (235 renders); sweep scenario/combination, scenario/concluded (138231 renders)
-- `describe.rs:385` ` core {:02} {verb} to {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (52113 renders); sweep journal/help/160x45, journal/help/240x67 (1006240 renders)
+- `describe.rs:385` ` core {:02} {verb} to {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (52120 renders); sweep journal/help/160x45, journal/help/240x67 (1020215 renders)
 - `describe.rs:402` ` #{round} passed, the proposed offsets held ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (67 renders); sweep scenario/combination, scenario/concluded (75016 renders)
 - `describe.rs:410` ` #{round} stopped: {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (89 renders); sweep scenario/concluded, scenario/confirmation (44743 renders)
-- `describe.rs:427` ` trial {} ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262091 renders); sweep journal/help/160x45, journal/help/240x67 (995885 renders)
-- `describe.rs:531` ` core {:02} · {what} at {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (68789 renders); sweep journal/help/160x45, journal/help/240x67 (5205345 renders)
-- `describe.rs:535` ` hunt {} group {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (9337 renders); sweep journal/help/160x45, journal/help/240x67 (699553 renders)
+- `describe.rs:427` ` trial {} ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262302 renders); sweep journal/help/160x45, journal/help/240x67 (1021891 renders)
+- `describe.rs:531` ` core {:02} · {what} at {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (68849 renders); sweep journal/help/160x45, journal/help/240x67 (5205345 renders)
+- `describe.rs:535` ` hunt {} group {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (9343 renders); sweep journal/help/160x45, journal/help/240x67 (699570 renders)
 - `describe.rs:544` ` {text} · {} with core {:02} at {} ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (2518 renders); sweep scenario/combination, scenario/member-probe (253 renders)
 - `describe.rs:551` ` {text} · locate, idle cores at 0 ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, tests::describe::a_hunt_trial_is_named_by_its_group (12 renders)
-- `describe.rs:553` ` {text} · {} at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2353 renders); sweep scenario/combination, scenario/concluded (509223 renders)
+- `describe.rs:553` ` {text} · {} at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2355 renders); sweep scenario/combination, scenario/concluded (509223 renders)
 - `describe.rs:565` ` rerun of {text} with every core at 0 ` — tests tests::describe::a_trial_is_named_by_what_it_ran (2 renders)
 - `describe.rs:566` ` rerun of {text} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (3187 renders); sweep scenario/between, scenario/between/160x45 (340874 renders)
 - `describe.rs:591` ` partial CCD {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (10507 renders); sweep scenario/combination, scenario/concluded (7184 renders)
 - `describe.rs:593` ` full CCD {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (3239 renders); sweep scenario/between, scenario/between/240x67 (60159 renders)
-- `describe.rs:609` ` {when} trial {} of {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76056 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
+- `describe.rs:609` ` {when} trial {} of {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76108 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
 - `describe.rs:611` ` {when} the trial ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (18 renders); sweep scenario/hunt-bios/Hunts-160x45, sweep/concluded/1327-trial.end/120x33/plus40 (33912 renders)
-- `describe.rs:617` ` {} at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2353 renders); sweep scenario/combination, scenario/concluded (509223 renders)
-- `describe.rs:620` ` , {} parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5559 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
+- `describe.rs:617` ` {} at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2355 renders); sweep scenario/combination, scenario/concluded (509223 renders)
+- `describe.rs:620` ` , {} parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5562 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
 
-### `frames/dash/ccd.rs`: 67 of 73 covered
+### `frames/dash/ccd.rs`: 73 of 73 covered
 
 - `frames/dash/ccd.rs:20` ` WAITING ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (52 renders)
-- `frames/dash/ccd.rs:22` ` CONFIRM ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (205 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (86713 renders)
+- `frames/dash/ccd.rs:22` ` CONFIRM ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (237 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (86729 renders)
 - `frames/dash/ccd.rs:23` ` FOUND ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (52 renders)
-- `frames/dash/ccd.rs:26` ` SUSPECT ` — **not rendered**
-- `frames/dash/ccd.rs:27` ` MEMBER ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (184 renders); sweep scenario/hunt/Cores-160x45 (5 renders)
-- `frames/dash/ccd.rs:28` ` PROBE ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (91 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (26 renders)
-- `frames/dash/ccd.rs:29` ` PARKED ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (69 renders); sweep scenario/member-probe/Cores-160x45 (4 renders)
-- `frames/dash/ccd.rs:71` ` reset queued ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (91 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/dash/ccd.rs:112` ` none ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (1827 renders); sweep journal/help/160x45, journal/help/240x67 (2445916 renders)
+- `frames/dash/ccd.rs:26` ` SUSPECT ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- `frames/dash/ccd.rs:27` ` MEMBER ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (246 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (22 renders)
+- `frames/dash/ccd.rs:28` ` PROBE ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (93 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (27 renders)
+- `frames/dash/ccd.rs:29` ` PARKED ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (101 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (20 renders)
+- `frames/dash/ccd.rs:71` ` reset queued ` — tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (95 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
+- `frames/dash/ccd.rs:112` ` none ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (1865 renders); sweep journal/help/160x45, journal/help/240x67 (2476997 renders)
 - `frames/dash/ccd.rs:128` ` held failure ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (177 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (374298 renders)
 - `frames/dash/ccd.rs:129` ` probing ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (79 renders); sweep scenario/combination, scenario/member-probe (1574 renders)
-- `frames/dash/ccd.rs:130` ` parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5559 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
-- `frames/dash/ccd.rs:138` ` judged ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (739 renders); sweep journal/help/160x45, journal/help/240x67 (459188 renders)
-- `frames/dash/ccd.rs:140` ` loaded ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (11708 renders); sweep journal/help/160x45, journal/help/240x67 (7320 renders)
-- `frames/dash/ccd.rs:142` ` reset queued ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (91 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
+- `frames/dash/ccd.rs:130` ` parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5562 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
+- `frames/dash/ccd.rs:138` ` judged ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (768 renders); sweep journal/help/160x45, journal/help/240x67 (459278 renders)
+- `frames/dash/ccd.rs:140` ` loaded ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (11767 renders); sweep journal/help/160x45, journal/help/240x67 (7622 renders)
+- `frames/dash/ccd.rs:142` ` reset queued ` — tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (95 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/dash/ccd.rs:144` ` idle at 0 ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (1139 renders); sweep journal/help/160x45, journal/help/240x67 (4051198 renders)
-- `frames/dash/ccd.rs:146` ` idle ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (5351 renders); sweep journal/help/160x45, journal/help/240x67 (7848186 renders)
-- `frames/dash/ccd.rs:177` ` CCD {} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (37104 renders); sweep journal/help/160x45, journal/help/240x67 (986168 renders)
-- `frames/dash/ccd.rs:200` ` core  tune now ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
-- `frames/dash/ccd.rs:206` `  tune   ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both (4364 renders); sweep journal/help/160x45, journal/help/240x67 (6133569 renders)
-- `frames/dash/ccd.rs:208` `  fail  ! failing  R reset ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
-- `frames/dash/ccd.rs:217` ` s=solo g=gap f=fail ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
-- `frames/dash/ccd.rs:286` ` tune  ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both (4364 renders); sweep journal/help/160x45, journal/help/240x67 (6133569 renders)
-- `frames/dash/ccd.rs:296` ` now  ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (4825 renders); sweep journal/help/160x45, journal/help/240x67 (5917757 renders)
-- `frames/dash/ccd.rs:316` ` none ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (1827 renders); sweep journal/help/160x45, journal/help/240x67 (2445916 renders)
+- `frames/dash/ccd.rs:146` ` idle ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (5353 renders); sweep journal/help/160x45, journal/help/240x67 (7848186 renders)
+- `frames/dash/ccd.rs:177` ` CCD {} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (37779 renders); sweep journal/help/160x45, journal/help/240x67 (986470 renders)
+- `frames/dash/ccd.rs:200` ` core  tune now ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
+- `frames/dash/ccd.rs:206` `  tune   ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (4732 renders); sweep journal/help/160x45, journal/help/240x67 (6133871 renders)
+- `frames/dash/ccd.rs:208` `  fail  ! failing  R reset ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
+- `frames/dash/ccd.rs:217` ` s=solo g=gap f=fail ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (623884 renders)
+- `frames/dash/ccd.rs:286` ` tune  ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (4732 renders); sweep journal/help/160x45, journal/help/240x67 (6133871 renders)
+- `frames/dash/ccd.rs:296` ` now  ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks (5263 renders); sweep journal/help/160x45, journal/help/240x67 (6002937 renders)
+- `frames/dash/ccd.rs:316` ` none ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (1865 renders); sweep journal/help/160x45, journal/help/240x67 (2476997 renders)
 - `frames/dash/ccd.rs:342` ` failing now ` — sweep sweep/concluded/0692-tuner.decision/120x33/plus40, sweep/concluded/0692-tuner.decision/79x29/plus40 (11264 renders)
-- `frames/dash/ccd.rs:344` ` reset queued ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (91 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/dash/ccd.rs:345` ` reset queued ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (91 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/dash/ccd.rs:371` ` CCD ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (37104 renders); sweep journal/help/160x45, journal/help/240x67 (986168 renders)
-- `frames/dash/ccd.rs:371` ` core ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
-- `frames/dash/ccd.rs:371` ` tune ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both (4364 renders); sweep journal/help/160x45, journal/help/240x67 (6133569 renders)
-- `frames/dash/ccd.rs:371` ` now ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (4825 renders); sweep journal/help/160x45, journal/help/240x67 (5917757 renders)
-- `frames/dash/ccd.rs:371` ` solo ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::medium_core_notes_retain_combination_and_solo_offsets (10205 renders); sweep journal/help/160x45, journal/help/240x67 (3134330 renders)
-- `frames/dash/ccd.rs:371` ` gap ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (1535 renders); sweep journal/help/160x45, journal/help/240x67 (1144072 renders)
-- `frames/dash/ccd.rs:371` ` fail ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (29934 renders); sweep journal/help/160x45, journal/help/240x67 (7243252 renders)
-- `frames/dash/ccd.rs:387` ` reset queued ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (91 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
+- `frames/dash/ccd.rs:344` ` reset queued ` — tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (95 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
+- `frames/dash/ccd.rs:345` ` reset queued ` — tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (95 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
+- `frames/dash/ccd.rs:371` ` CCD ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (37779 renders); sweep journal/help/160x45, journal/help/240x67 (986470 renders)
+- `frames/dash/ccd.rs:371` ` core ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
+- `frames/dash/ccd.rs:371` ` tune ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (4732 renders); sweep journal/help/160x45, journal/help/240x67 (6133871 renders)
+- `frames/dash/ccd.rs:371` ` now ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks (5263 renders); sweep journal/help/160x45, journal/help/240x67 (6002937 renders)
+- `frames/dash/ccd.rs:371` ` solo ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (10857 renders); sweep journal/help/160x45, journal/help/240x67 (3361851 renders)
+- `frames/dash/ccd.rs:371` ` gap ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1923 renders); sweep journal/help/160x45, journal/help/240x67 (1144374 renders)
+- `frames/dash/ccd.rs:371` ` fail ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (30489 renders); sweep journal/help/160x45, journal/help/240x67 (7301749 renders)
+- `frames/dash/ccd.rs:387` ` reset queued ` — tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (95 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/dash/ccd.rs:390` `   role ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (267 renders); sweep journal/help/160x45, journal/help/240x67 (208050 renders)
-- `frames/dash/ccd.rs:420` ` alone ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (38003 renders); sweep journal/help/160x45, journal/help/240x67 (302849 renders)
-- `frames/dash/ccd.rs:421` ` named ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2227 renders); sweep journal/help/160x45, journal/help/240x67 (1085820 renders)
-- `frames/dash/ccd.rs:422` ` R7-charged ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (145 renders); sweep scenario/concluded/Cores-160x45, scenario/confirmation/Cores-160x45 (5 renders)
-- `frames/dash/ccd.rs:423` ` source not recorded ` — sweep scenario/rerun-0/Cores-160x45, scenario/rerun-1/Cores-160x45 (7 renders)
-- `frames/dash/ccd.rs:429` ` {} {} to {} while {}, journal #{} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (1237 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (87 renders)
-- `frames/dash/ccd.rs:441` ` solo ? · gap ?: no solo limit recorded yet ` — tests frames::frame_tests::bounds::confirm, frames::frame_tests::bounds::crashed (38 renders); sweep scenario/confirm/Cores-160x45, scenario/crashed/Cores-160x45 (34 renders)
-- `frames/dash/ccd.rs:442` ` solo {solo} · gap 0: at the solo limit ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::concluded (81 renders); sweep scenario/combination/Cores-160x45, scenario/round/Cores-160x45 (11 renders)
-- `frames/dash/ccd.rs:444` ` solo {solo} · gap {gap}: {gap} counts shallower than solo ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (924 renders); sweep scenario/between/160x45, scenario/between/240x67 (312001 renders)
-- `frames/dash/ccd.rs:446` ` solo {solo} · gap {gap}: {} counts deeper than solo ` — **not rendered**
-- `frames/dash/ccd.rs:452` ` no failure recorded ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (145 renders); sweep journal/help/160x45, journal/help/240x67 (89 renders)
-- `frames/dash/ccd.rs:455` ` failure at 0 ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (91 renders); sweep journal/help/160x45, journal/help/240x67 (54 renders)
-- `frames/dash/ccd.rs:457` ` failure {} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (20212 renders); sweep journal/help/160x45, journal/help/240x67 (1819957 renders)
-- `frames/dash/ccd.rs:461` ` {head} · {} · journal #{} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (897 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (69 renders)
-- `frames/dash/ccd.rs:473` ` room: phase 2 has concluded ` — tests frames::frame_tests::bounds::combination, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (12 renders); sweep scenario/combination/Cores-160x45 (5 renders)
-- `frames/dash/ccd.rs:475` ` room: a phase 2 candidate ` — tests frames::frame_tests::bounds::first_result, frames::frame_tests::bounds::round (18 renders); sweep scenario/first-result/Cores-160x45, scenario/round/Cores-160x45 (6 renders)
-- `frames/dash/ccd.rs:478` ` room: eligible to deepen in phase 2 ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (62 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (15 renders)
-- `frames/dash/ccd.rs:482` ` room: none, one count deeper reaches a recorded constraint or -50 ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::combination (83 renders); sweep scenario/between/Cores-160x45, scenario/concluded/Cores-160x45 (48 renders)
-- `frames/dash/ccd.rs:498` ` loaded and judged in this trial ` — tests frames::frame_tests::bounds::checking, frames::frame_tests::bounds::concluded (86 renders); sweep scenario/checking/Cores-160x45, scenario/concluded/Cores-160x45 (42 renders)
-- `frames/dash/ccd.rs:499` ` loaded, not judged in this trial ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (20 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/member-probe/Cores-160x45 (4 renders)
-- `frames/dash/ccd.rs:500` ` not loaded ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (120 renders); sweep scenario/between/Cores-160x45, scenario/combination/Cores-160x45 (57 renders)
-- `frames/dash/ccd.rs:502` ` load: {load} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (231 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (103 renders)
-- `frames/dash/ccd.rs:509` ` park: held shallower by the hunt, returns to {} ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (22 renders); sweep scenario/member-probe/Cores-160x45 (3 renders)
-- `frames/dash/ccd.rs:512` ` park: held shallower by the hunt ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (22 renders); sweep scenario/member-probe/Cores-160x45 (3 renders)
-- `frames/dash/ccd.rs:514` ` hunt: a candidate at its failing offset ` — **not rendered**
-- `frames/dash/ccd.rs:516` ` hunt: a member of a kept group at its failing offset ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (29 renders); sweep scenario/hunt/Cores-160x45 (5 renders)
-- `frames/dash/ccd.rs:518` ` hunt: the member probed shallower ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (6 renders); sweep scenario/member-probe/Cores-160x45 (1 renders)
+- `frames/dash/ccd.rs:420` ` alone ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (38300 renders); sweep journal/help/160x45, journal/help/240x67 (302934 renders)
+- `frames/dash/ccd.rs:421` ` named ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2397 renders); sweep journal/help/160x45, journal/help/240x67 (1085909 renders)
+- `frames/dash/ccd.rs:422` ` R7-charged ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (167 renders); sweep scenario/concluded/Cores-160x45, scenario/confirmation/Cores-160x45 (14 renders)
+- `frames/dash/ccd.rs:423` ` source not recorded ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (2 renders); sweep scenario/rerun-0/Cores-160x45, scenario/rerun-1/Cores-160x45 (14 renders)
+- `frames/dash/ccd.rs:429` ` {} {} to {} while {}, journal #{} ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (1821 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (350 renders)
+- `frames/dash/ccd.rs:441` ` solo ? · gap ?: no solo limit recorded yet ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::confirm (46 renders); sweep scenario/confirm/Cores-160x45, scenario/crashed/Cores-160x45 (112 renders)
+- `frames/dash/ccd.rs:442` ` solo {solo} · gap 0: at the solo limit ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::combination (110 renders); sweep scenario/combination/Cores-160x45, scenario/concluded/Cores-160x45 (55 renders)
+- `frames/dash/ccd.rs:444` ` solo {solo} · gap {gap}: {gap} counts shallower than solo ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1238 renders); sweep scenario/between/160x45, scenario/between/240x67 (312181 renders)
+- `frames/dash/ccd.rs:446` ` solo {solo} · gap {gap}: {} counts deeper than solo ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- `frames/dash/ccd.rs:452` ` no failure recorded ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (156 renders); sweep journal/help/160x45, journal/help/240x67 (201 renders)
+- `frames/dash/ccd.rs:455` ` failure at 0 ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (93 renders); sweep journal/help/160x45, journal/help/240x67 (54 renders)
+- `frames/dash/ccd.rs:457` ` failure {} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (20738 renders); sweep journal/help/160x45, journal/help/240x67 (1847508 renders)
+- `frames/dash/ccd.rs:461` ` {head} · {} · journal #{} ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (1311 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (259 renders)
+- `frames/dash/ccd.rs:473` ` room: phase 2 has concluded ` — tests frames::frame_tests::bounds::combination, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (14 renders); sweep scenario/combination/Cores-160x45 (20 renders)
+- `frames/dash/ccd.rs:475` ` room: a phase 2 candidate ` — tests frames::frame_tests::bounds::first_result, frames::frame_tests::bounds::round (21 renders); sweep scenario/first-result/Cores-160x45, scenario/round/Cores-160x45 (26 renders)
+- `frames/dash/ccd.rs:478` ` room: eligible to deepen in phase 2 ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (75 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (70 renders)
+- `frames/dash/ccd.rs:482` ` room: none, one count deeper reaches a recorded constraint or -50 ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (101 renders); sweep scenario/between/Cores-160x45, scenario/combination/Cores-160x45 (162 renders)
+- `frames/dash/ccd.rs:498` ` loaded and judged in this trial ` — tests frames::frame_tests::bounds::checking, frames::frame_tests::bounds::concluded (104 renders); sweep scenario/checking/Cores-160x45, scenario/concluded/Cores-160x45 (116 renders)
+- `frames/dash/ccd.rs:499` ` loaded, not judged in this trial ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (26 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (20 renders)
+- `frames/dash/ccd.rs:500` ` not loaded ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (144 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (269 renders)
+- `frames/dash/ccd.rs:502` ` load: {load} ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (285 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (405 renders)
+- `frames/dash/ccd.rs:509` ` park: held shallower by the hunt, returns to {} ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (30 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (19 renders)
+- `frames/dash/ccd.rs:512` ` park: held shallower by the hunt ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (30 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (19 renders)
+- `frames/dash/ccd.rs:514` ` hunt: a candidate at its failing offset ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- `frames/dash/ccd.rs:516` ` hunt: a member of a kept group at its failing offset ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (35 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (22 renders)
+- `frames/dash/ccd.rs:518` ` hunt: the member probed shallower ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (8 renders); sweep scenario/member-probe/Cores-160x45 (2 renders)
 - `frames/dash/ccd.rs:534` ` No cores yet: the journal records no session to show. ` — tests frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (6 renders)
-- `frames/dash/ccd.rs:545` ` Core {:02} · CCD {} · {} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (1380 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (104 renders)
-- `frames/dash/ccd.rs:553` ` tune {} · now {}{} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (896 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (104 renders)
-- `frames/dash/ccd.rs:557` `  (no readback recorded) ` — sweep scenario/rerun-0/Cores-160x45, scenario/rerun-1/Cores-160x45 (14 renders)
-- `frames/dash/ccd.rs:558` `  (outside -50..0) ` — **not rendered**
-- `frames/dash/ccd.rs:566` ` ! current failure: recorded in the step now running ` — **not rendered**
-- `frames/dash/ccd.rs:573` ` R reset queued: command #{}, the core searches again at the next run ` — **not rendered**
-- `frames/dash/ccd.rs:578` ` reset queued ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (91 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/dash/ccd.rs:582` ` last decision: {} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (1273 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (103 renders)
-- `frames/dash/ccd.rs:583` ` last decision: none recorded ` — tests frames::frame_tests::bounds::confirm, frames::frame_tests::bounds::member_probe (18 renders); sweep scenario/confirm/Cores-160x45, scenario/member-probe/Cores-160x45 (16 renders)
+- `frames/dash/ccd.rs:545` ` Core {:02} · CCD {} · {} ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (2039 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (406 renders)
+- `frames/dash/ccd.rs:553` ` tune {} · now {}{} ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (1246 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (406 renders)
+- `frames/dash/ccd.rs:557` `  (no readback recorded) ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders); sweep scenario/rerun-0/Cores-160x45, scenario/rerun-1/Cores-160x45 (28 renders)
+- `frames/dash/ccd.rs:558` `  (outside -50..0) ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- `frames/dash/ccd.rs:566` ` ! current failure: recorded in the step now running ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- `frames/dash/ccd.rs:573` ` R reset queued: command #{}, the core searches again at the next run ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1 renders)
+- `frames/dash/ccd.rs:578` ` reset queued ` — tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (95 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
+- `frames/dash/ccd.rs:582` ` last decision: {} ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (1877 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (405 renders)
+- `frames/dash/ccd.rs:583` ` last decision: none recorded ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::confirm (22 renders); sweep scenario/confirm/Cores-160x45, scenario/member-probe/Cores-160x45 (55 renders)
 
 ### `frames/dash/header.rs`: 14 of 14 covered
 
-- `frames/dash/header.rs:15` ` togi ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (73411 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (1080446 renders)
+- `frames/dash/header.rs:15` ` togi ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (73472 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (1080446 renders)
 - `frames/dash/header.rs:36` ` no session yet ` — tests frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (21 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (14 renders)
 - `frames/dash/header.rs:55` ` paused · planned end {} ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (133 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (4736 renders)
-- `frames/dash/header.rs:83` ` tuning ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (1012 renders); sweep journal/help/160x45, journal/help/240x67 (1040475 renders)
-- `frames/dash/header.rs:83` ` tune ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both (4364 renders); sweep journal/help/160x45, journal/help/240x67 (6133569 renders)
-- `frames/dash/header.rs:84` ` session ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (12242 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (1205799 renders)
-- `frames/dash/header.rs:84` ` age ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (3501 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (521018 renders)
-- `frames/dash/header.rs:91` ` failure ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (20212 renders); sweep journal/help/160x45, journal/help/240x67 (1819957 renders)
-- `frames/dash/header.rs:93` ` crash ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (3489 renders); sweep scenario/between, scenario/between/120x33 (1612572 renders)
+- `frames/dash/header.rs:83` ` tuning ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (1021 renders); sweep journal/help/160x45, journal/help/240x67 (1040475 renders)
+- `frames/dash/header.rs:83` ` tune ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (4732 renders); sweep journal/help/160x45, journal/help/240x67 (6133871 renders)
+- `frames/dash/header.rs:84` ` session ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (12256 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (1205799 renders)
+- `frames/dash/header.rs:84` ` age ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (3521 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (521134 renders)
+- `frames/dash/header.rs:91` ` failure ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (20738 renders); sweep journal/help/160x45, journal/help/240x67 (1847508 renders)
+- `frames/dash/header.rs:93` ` crash ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (3503 renders); sweep scenario/between, scenario/between/120x33 (1641641 renders)
 - `frames/dash/header.rs:100` `  fail ·  ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both (9 renders); sweep sweep/deadend/skipped/60x30 (2 renders)
-- `frames/dash/header.rs:102` `  crash ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (3489 renders); sweep scenario/between, scenario/between/120x33 (1612572 renders)
+- `frames/dash/header.rs:102` `  crash ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (3503 renders); sweep scenario/between, scenario/between/120x33 (1641641 renders)
 - `frames/dash/header.rs:110` ` last observed failure  ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (435 renders); sweep scenario/between/120x33, scenario/between/160x45 (731422 renders)
 - `frames/dash/header.rs:132` ` screen paused · planned end {minute} ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (106 renders); sweep scenario/idle/160x45, scenario/idle/240x67 (3612 renders)
 - `frames/dash/header.rs:136` ` paused · planned end {minute} ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (133 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (4736 renders)
@@ -7714,149 +8288,149 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/dash/now.rs:53` ` idle + bursts ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1402 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (403117 renders)
 - `frames/dash/now.rs:63` ` short wake-ups, no workers in between ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (39 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (2240 renders)
 - `frames/dash/now.rs:87` `  · {workers} worker{suffix} ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (244 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (287354 renders)
-- `frames/dash/now.rs:104` ` NOW ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (456 renders); sweep scenario/between/120x33, scenario/between/160x45 (520001 renders)
+- `frames/dash/now.rs:104` ` NOW ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (464 renders); sweep scenario/between/120x33, scenario/between/160x45 (520001 renders)
 - `frames/dash/now.rs:127` ` preparing · workload has not started yet · planned {} ` — tests frames::frame_tests::holds::a_trial_intent_before_its_start_does_not_freeze, frames::frame_tests::live_panels::live_panels_keep_their_rows_from_a_running_trial_to_the_next (7 renders); sweep sweep/combination/0046-trial.intent/120x33/plus40, sweep/combination/0046-trial.intent/160x45/plus40 (113080 renders)
 - `frames/dash/now.rs:145` ` planned end {} ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (193 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (7538 renders)
-- `frames/dash/now.rs:155` ` started {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (73722 renders); sweep scenario/between, scenario/between/240x67 (750125 renders)
+- `frames/dash/now.rs:155` ` started {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (73784 renders); sweep scenario/between, scenario/between/240x67 (750125 renders)
 - `frames/dash/now.rs:169` ` {} required ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (51 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (2240 renders)
 - `frames/dash/now.rs:179` ` screen paused ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (165 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (6414 renders)
 - `frames/dash/now.rs:199` ` {} past its end ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end (16 renders); sweep sweep/combination/0050-trial.start/120x33/overdue, sweep/combination/0050-trial.start/160x45/overdue (117516 renders)
 - `frames/dash/now.rs:203` ` {} past end ` — sweep sweep/combination/0050-trial.start/79x29/overdue, sweep/combination/0051-smu.intent/79x29/overdue (39172 renders)
 - `frames/dash/now.rs:211` ` no trial end recorded ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (14 renders); sweep sweep/combination/0050-trial.start/160x45/overdue, sweep/combination/0050-trial.start/240x67/overdue (99916 renders)
 - `frames/dash/now.rs:218` ` may still be running ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (14 renders); sweep sweep/combination/0050-trial.start/120x33/overdue, sweep/combination/0050-trial.start/160x45/overdue (117516 renders)
-- `frames/dash/now.rs:233` ` trial {} of {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76056 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
+- `frames/dash/now.rs:233` ` trial {} of {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76108 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
 
-### `frames/dash/r7.rs`: 25 of 27 covered
+### `frames/dash/r7.rs`: 27 of 27 covered
 
 - `frames/dash/r7.rs:13` `  by offset ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::narrow_r7_rows_keep_offset_provenance_and_fit (1010 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (189 renders)
-- `frames/dash/r7.rs:14` ` observed, not a guarantee ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (557 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (105 renders)
+- `frames/dash/r7.rs:14` ` observed, not a guarantee ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (563 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (105 renders)
 - `frames/dash/r7.rs:77` ` by offset ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::narrow_r7_rows_keep_offset_provenance_and_fit (1010 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (189 renders)
-- `frames/dash/r7.rs:89` ` top requesters ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (982 renders); sweep journal/help/160x45, journal/help/240x67 (403 renders)
-- `frames/dash/r7.rs:89` ` top ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar (13118 renders); sweep journal/help/160x45, journal/help/240x67 (139885 renders)
-- `frames/dash/r7.rs:99` ` self-sufficient ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (881 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (315 renders)
-- `frames/dash/r7.rs:125` ` top ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar (13118 renders); sweep journal/help/160x45, journal/help/240x67 (139885 renders)
-- `frames/dash/r7.rs:131` ` self-sufficient ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (881 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (315 renders)
-- `frames/dash/r7.rs:188` ` all ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (41475 renders); sweep journal/help/160x45, journal/help/240x67 (3046384 renders)
-- `frames/dash/r7.rs:190` ` none yet ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (359 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (211 renders)
-- `frames/dash/r7.rs:195` ` {} of {total} cores ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (13943 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (23087 renders)
+- `frames/dash/r7.rs:89` ` top requesters ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (987 renders); sweep journal/help/160x45, journal/help/240x67 (403 renders)
+- `frames/dash/r7.rs:89` ` top ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar (13131 renders); sweep journal/help/160x45, journal/help/240x67 (139885 renders)
+- `frames/dash/r7.rs:99` ` self-sufficient ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (887 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (315 renders)
+- `frames/dash/r7.rs:125` ` top ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar (13131 renders); sweep journal/help/160x45, journal/help/240x67 (139885 renders)
+- `frames/dash/r7.rs:131` ` self-sufficient ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (887 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (315 renders)
+- `frames/dash/r7.rs:188` ` all ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (41811 renders); sweep journal/help/160x45, journal/help/240x67 (3053921 renders)
+- `frames/dash/r7.rs:190` ` none yet ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (365 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (211 renders)
+- `frames/dash/r7.rs:195` ` {} of {total} cores ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (13946 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (23087 renders)
 - `frames/dash/r7.rs:218` ` No R7 evidence yet: request order and self-sufficiency appear once checking has a cycle. ` — tests frames::frame_tests::bounds::confirm, frames::frame_tests::bounds::crashed (28 renders); sweep scenario/confirm/R7-160x45, scenario/crashed/R7-160x45 (4 renders)
-- `frames/dash/r7.rs:219` ` All loaded cores share one voltage rail, set by the loaded core with the highest voltage request. R7… ` — **not rendered**
-- `frames/dash/r7.rs:220` `` Request order is read from the telemetry recorded for each CCD's full part. `per offset order` marks… `` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (42 renders)
-- `frames/dash/r7.rs:221` ` Self-sufficient means the core has been observed passing as a top requester at its current offset or… ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (41 renders)
+- `frames/dash/r7.rs:219` ` All loaded cores share one voltage rail, set by the loaded core with the highest voltage request. R7… ` — tests frames::dash::r7::tests::the_rail_note_is_one_line_where_the_page_is_wide_enough (1 renders)
+- `frames/dash/r7.rs:220` `` Request order is read from the telemetry recorded for each CCD's full part. `per offset order` marks… `` — tests frames::dash::r7::tests::the_rail_note_is_one_line_where_the_page_is_wide_enough, frames::frame_tests::bounds::between (43 renders)
+- `frames/dash/r7.rs:221` ` Self-sufficient means the core has been observed passing as a top requester at its current offset or… ` — tests frames::dash::r7::tests::the_rail_note_is_one_line_where_the_page_is_wide_enough, frames::frame_tests::bounds::between (42 renders)
 - `frames/dash/r7.rs:222` ` While this R7 trial runs, any outcome is conditional: its end may add request or clock telemetry tha… ` — tests frames::frame_tests::bounds::checking, frames::frame_tests::bounds::concluded (16 renders)
-- `frames/dash/r7.rs:237` ` R7 EVIDENCE ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (355 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (67 renders)
+- `frames/dash/r7.rs:237` ` R7 EVIDENCE ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (357 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (67 renders)
 - `frames/dash/r7.rs:273` ` {} · loading now ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::frame_tests::bounds::checking (58 renders); sweep scenario/checking/R7-160x45, scenario/concluded/R7-160x45 (6 renders)
-- `frames/dash/r7.rs:274` ` {} · current step ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (41 renders); sweep scenario/between/R7-160x45, scenario/deadend/R7-160x45 (6 renders)
+- `frames/dash/r7.rs:274` ` {} · current step ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (43 renders); sweep scenario/between/R7-160x45, scenario/deadend/R7-160x45 (6 renders)
 - `frames/dash/r7.rs:287` `  · tied ` — tests frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (1 renders)
 - `frames/dash/r7.rs:290` ` top requesters {} · per offset order ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (364 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (252 renders)
-- `frames/dash/r7.rs:294` ` no top requester recorded yet ` — **not rendered**
-- `frames/dash/r7.rs:296` ` top requesters {}{tied} · per request order ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (4 renders)
+- `frames/dash/r7.rs:294` ` no top requester recorded yet ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (1 renders)
+- `frames/dash/r7.rs:296` ` top requesters {}{tied} · per request order ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (5 renders)
 - `frames/dash/r7.rs:299` ` self-sufficient: all {total} cores ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (24 renders); sweep scenario/combination/R7-160x45, scenario/member-probe/R7-160x45 (24 renders)
-- `frames/dash/r7.rs:301` ` self-sufficient: none yet ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (70 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (124 renders)
+- `frames/dash/r7.rs:301` ` self-sufficient: none yet ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (72 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (124 renders)
 - `frames/dash/r7.rs:304` ` self-sufficient: {} ({} of {} cores) ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::concluded (253 renders); sweep scenario/between/R7-160x45, scenario/concluded/R7-160x45 (104 renders)
-- `frames/dash/r7.rs:310` ` CCD {}   ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (37104 renders); sweep journal/help/160x45, journal/help/240x67 (986168 renders)
+- `frames/dash/r7.rs:310` ` CCD {}   ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (37779 renders); sweep journal/help/160x45, journal/help/240x67 (986470 renders)
 
-### `frames/dash/stage.rs`: 82 of 84 covered
+### `frames/dash/stage.rs`: 84 of 84 covered
 
-- `frames/dash/stage.rs:38` ` STOPPED ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (297 renders); sweep journal/help/160x45, journal/help/240x67 (752 renders)
-- `frames/dash/stage.rs:39` ` DEAD END ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::recovery_and_a_dead_end_lead_the_line_and_suppress_the_running_marker (102 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (1362 renders)
-- `frames/dash/stage.rs:40` ` RECOVERY ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::stage::tests::recovery_and_a_dead_end_lead_the_line_and_suppress_the_running_marker (191 renders); sweep journal/help/160x45, journal/help/240x67 (91539 renders)
-- `frames/dash/stage.rs:72` ` SOLO LIMITS ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (780 renders); sweep scenario/between/120x33, scenario/between/160x45 (1193000 renders)
-- `frames/dash/stage.rs:73` ` PHASE 1 ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (851 renders); sweep scenario/between/120x33, scenario/between/160x45 (1101029 renders)
-- `frames/dash/stage.rs:74` ` PHASE 2 ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (830 renders); sweep journal/help/160x45, journal/help/240x67 (1096085 renders)
-- `frames/dash/stage.rs:75` ` CLEAN CYCLES ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (728 renders); sweep scenario/between/120x33, scenario/between/160x45 (1022912 renders)
-- `frames/dash/stage.rs:76` ` SOLO ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (875 renders); sweep scenario/between/120x33, scenario/between/160x45 (1267602 renders)
-- `frames/dash/stage.rs:79` ` CLEAN ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (819 renders); sweep scenario/between/120x33, scenario/between/160x45 (1097484 renders)
-- `frames/dash/stage.rs:140` `  · cycle {number} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (536 renders); sweep scenario/between/120x33, scenario/between/160x45 (512513 renders)
-- `frames/dash/stage.rs:151` `  · round {round} · {} left if none fails ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bounds::round (30 renders); sweep scenario/round/120x33, scenario/round/160x45 (90574 renders)
-- `frames/dash/stage.rs:152` ` round ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4657 renders); sweep journal/help/160x45, journal/help/240x67 (406828 renders)
-- `frames/dash/stage.rs:157` `  · confirm ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bounds::between (187 renders); sweep journal/help/160x45, journal/help/240x67 (173740 renders)
-- `frames/dash/stage.rs:159` `  · confirmation cycle ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bounds::between (152 renders); sweep journal/help/160x45, journal/help/240x67 (150422 renders)
-- `frames/dash/stage.rs:165` `  · {} left if none fails ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bounds::first_result (48 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (93424 renders)
-- `frames/dash/stage.rs:165` ` round ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4657 renders); sweep journal/help/160x45, journal/help/240x67 (406828 renders)
+- `frames/dash/stage.rs:38` ` STOPPED ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (323 renders); sweep journal/help/160x45, journal/help/240x67 (876 renders)
+- `frames/dash/stage.rs:39` ` DEAD END ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast (127 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (1630 renders)
+- `frames/dash/stage.rs:40` ` RECOVERY ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time (204 renders); sweep journal/help/160x45, journal/help/240x67 (122032 renders)
+- `frames/dash/stage.rs:72` ` SOLO LIMITS ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (818 renders); sweep scenario/between/120x33, scenario/between/160x45 (1420146 renders)
+- `frames/dash/stage.rs:73` ` PHASE 1 ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (934 renders); sweep scenario/between/120x33, scenario/between/160x45 (1236204 renders)
+- `frames/dash/stage.rs:74` ` PHASE 2 ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (858 renders); sweep journal/help/160x45, journal/help/240x67 (1196692 renders)
+- `frames/dash/stage.rs:75` ` CLEAN CYCLES ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded (765 renders); sweep scenario/between/120x33, scenario/between/160x45 (1079970 renders)
+- `frames/dash/stage.rs:76` ` SOLO ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (913 renders); sweep scenario/between/120x33, scenario/between/160x45 (1494748 renders)
+- `frames/dash/stage.rs:79` ` CLEAN ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded (856 renders); sweep scenario/between/120x33, scenario/between/160x45 (1154548 renders)
+- `frames/dash/stage.rs:140` `  · cycle {number} ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (615 renders); sweep scenario/between/120x33, scenario/between/160x45 (737452 renders)
+- `frames/dash/stage.rs:151` `  · round {round} · {} left if none fails ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart (35 renders); sweep scenario/round/120x33, scenario/round/160x45 (121014 renders)
+- `frames/dash/stage.rs:152` ` round ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (4672 renders); sweep journal/help/160x45, journal/help/240x67 (445527 renders)
+- `frames/dash/stage.rs:157` `  · confirm ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::dash::stage::tests::the_confirmation_cycle_counts_steps_like_phase_one (191 renders); sweep journal/help/160x45, journal/help/240x67 (230834 renders)
+- `frames/dash/stage.rs:159` `  · confirmation cycle ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::dash::stage::tests::the_confirmation_cycle_counts_steps_like_phase_one (156 renders); sweep journal/help/160x45, journal/help/240x67 (207516 renders)
+- `frames/dash/stage.rs:165` `  · {} left if none fails ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (57 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (124352 renders)
+- `frames/dash/stage.rs:165` ` round ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (4672 renders); sweep journal/help/160x45, journal/help/240x67 (445527 renders)
 - `frames/dash/stage.rs:173` `  · repeats until stopped ` — tests frames::dash::stage::tests::clean_cycles_are_current_after_phase_two_and_repeat, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (44 renders); sweep scenario/concluded/120x33, scenario/concluded/160x45 (85234 renders)
-- `frames/dash/stage.rs:178` `  · HUNT {} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::bounds::hunt (181 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (62659 renders)
-- `frames/dash/stage.rs:184` `  · repairing ` — tests frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (77 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (66756 renders)
+- `frames/dash/stage.rs:178` `  · HUNT {} ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts (202 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (89726 renders)
+- `frames/dash/stage.rs:184` `  · repairing ` — tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (95 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (95274 renders)
 - `frames/dash/stage.rs:233` ` screen paused · planned end {} ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (106 renders); sweep scenario/idle/160x45, scenario/idle/240x67 (3612 renders)
 - `frames/dash/stage.rs:238` ` trial crashed ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (29 renders); sweep scenario/crashed/Bios-160x45, scenario/crashed/Cores-160x45 (16 renders)
 - `frames/dash/stage.rs:242` ` {} past its end ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end (16 renders); sweep sweep/combination/0050-trial.start/120x33/overdue, sweep/combination/0050-trial.start/160x45/overdue (117516 renders)
-- `frames/dash/stage.rs:248` ` {} left ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle (629 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (93661 renders)
-- `frames/dash/stage.rs:354` ` waiting for the first cycle ` — sweep sweep/combination/1501-core.phase/120x33/plus40, sweep/combination/1501-core.phase/160x45/plus40 (90 renders)
-- `frames/dash/stage.rs:358` ` cycle {number} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (56781 renders); sweep journal/help/160x45, journal/help/240x67 (6318886 renders)
-- `frames/dash/stage.rs:366` ` {done}/{steps} steps complete ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (242 renders); sweep scenario/between/120x33, scenario/between/160x45 (253647 renders)
-- `frames/dash/stage.rs:367` ` {done}/{steps} steps ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (25548 renders); sweep journal/help/160x45, journal/help/240x67 (1510598 renders)
-- `frames/dash/stage.rs:398` ` {} · {moving} moving ` — tests frames::frame_tests::bounds::first_result, frames::frame_tests::bounds::round (37 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (38567 renders)
-- `frames/dash/stage.rs:398` ` candidate ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1964 renders); sweep journal/help/160x45, journal/help/240x67 (53414 renders)
-- `frames/dash/stage.rs:399` ` candidate ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1964 renders); sweep journal/help/160x45, journal/help/240x67 (53414 renders)
-- `frames/dash/stage.rs:406` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::bounds::between (495 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (69677 renders)
-- `frames/dash/stage.rs:411` ` group {} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (24425 renders); sweep journal/help/160x45, journal/help/240x67 (821677 renders)
-- `frames/dash/stage.rs:440` ` {}/{total} solo limits found ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (182 renders); sweep journal/help/160x45, journal/help/240x67 (227174 renders)
-- `frames/dash/stage.rs:441` ` {}/{total} found ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (224 renders); sweep journal/help/160x45, journal/help/240x67 (227193 renders)
-- `frames/dash/stage.rs:457` ` repairing after failure · cycle held ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (103 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (26616 renders)
-- `frames/dash/stage.rs:458` ` repairing ` — tests frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (148 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (66778 renders)
-- `frames/dash/stage.rs:472` ` {} left if none fails ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bounds::first_result (48 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (93424 renders)
-- `frames/dash/stage.rs:473` ` round ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4657 renders); sweep journal/help/160x45, journal/help/240x67 (406828 renders)
-- `frames/dash/stage.rs:479` ` confirmation cycle ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (247 renders); sweep journal/help/160x45, journal/help/240x67 (150462 renders)
-- `frames/dash/stage.rs:483` ` between rounds ` — tests frames::frame_tests::bounds::first_result, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (12 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (614 renders)
-- `frames/dash/stage.rs:489` ` {} left if none fails ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bounds::first_result (48 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (93424 renders)
-- `frames/dash/stage.rs:490` ` round ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4657 renders); sweep journal/help/160x45, journal/help/240x67 (406828 renders)
-- `frames/dash/stage.rs:511` ` {} recorded ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (1374 renders); sweep journal/help/160x45, journal/help/240x67 (473080 renders)
-- `frames/dash/stage.rs:511` ` clean cycle ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (246 renders); sweep journal/help/160x45, journal/help/240x67 (57218 renders)
-- `frames/dash/stage.rs:514` ` {cycles} clean ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1180 renders); sweep journal/help/160x45, journal/help/240x67 (58274 renders)
-- `frames/dash/stage.rs:520` ` round {round} ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4657 renders); sweep journal/help/160x45, journal/help/240x67 (406828 renders)
-- `frames/dash/stage.rs:526` ` {credited}/{required} credited checks ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2219 renders); sweep journal/help/160x45, journal/help/240x67 (6383985 renders)
-- `frames/dash/stage.rs:527` ` {credited}/{required} checks ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (3456 renders); sweep journal/help/160x45, journal/help/240x67 (6384425 renders)
-- `frames/dash/stage.rs:558` ` {done}/{steps} steps complete ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (242 renders); sweep scenario/between/120x33, scenario/between/160x45 (253647 renders)
-- `frames/dash/stage.rs:586` ` step {} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (80196 renders); sweep journal/help/160x45, journal/help/240x67 (8460456 renders)
-- `frames/dash/stage.rs:601` ` {known} known {} · more may follow ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (185 renders); sweep scenario/between/120x33, scenario/between/160x45 (67118 renders)
-- `frames/dash/stage.rs:601` ` part ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (38280 renders); sweep journal/help/160x45, journal/help/240x67 (1643313 renders)
-- `frames/dash/stage.rs:604` ` {known}+ parts ` — tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::under_80_by_30_main_scrolls_and_every_core_is_reachable (5 renders)
-- `frames/dash/stage.rs:612` ` part {part} of {known} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (21949 renders); sweep journal/help/160x45, journal/help/240x67 (655527 renders)
-- `frames/dash/stage.rs:628` ` {credited}/{required} credited checks ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2219 renders); sweep journal/help/160x45, journal/help/240x67 (6383985 renders)
-- `frames/dash/stage.rs:629` ` {credited}/{required} credited ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2403 renders); sweep journal/help/160x45, journal/help/240x67 (6706624 renders)
-- `frames/dash/stage.rs:638` ` {} still needed ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (97 renders); sweep scenario/between/120x33, scenario/between/160x45 (176993 renders)
-- `frames/dash/stage.rs:638` ` check ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest (20160 renders); sweep journal/help/160x45, journal/help/240x67 (6734581 renders)
-- `frames/dash/stage.rs:672` ` member {at}/{} probes ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (78 renders); sweep scenario/combination, scenario/member-probe/120x33 (6225 renders)
-- `frames/dash/stage.rs:678` ` locating: the failing load reruns at its failing offsets ` — **not rendered**
-- `frames/dash/stage.rs:684` ` part {at}/{of} of this split ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (26 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (15063 renders)
-- `frames/dash/stage.rs:687` ` starting ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (26 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (58 renders)
-- `frames/dash/stage.rs:689` ` total hunt work unknown ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (49 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (17772 renders)
-- `frames/dash/stage.rs:702` ` waiting for the next search trial ` — tests frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped (8 renders); sweep sweep/combination/0000-session.start/120x33/plus40, sweep/combination/0000-session.start/160x45/plus40 (24225 renders)
-- `frames/dash/stage.rs:710` ` confirming ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1540 renders); sweep scenario/between, scenario/between/240x67 (1240130 renders)
-- `frames/dash/stage.rs:712` ` searching ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (31 renders); sweep scenario/search/120x33, scenario/search/160x45 (106434 renders)
-- `frames/dash/stage.rs:714` ` current core {verb} ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (42 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (193138 renders)
-- `frames/dash/stage.rs:720` ` {}/{} credited checks ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2219 renders); sweep journal/help/160x45, journal/help/240x67 (6383985 renders)
-- `frames/dash/stage.rs:742` ` every check of the round is credited ` — sweep sweep/combination/4919-trial.end/120x33/plus40, sweep/combination/4919-trial.end/160x45/plus40 (30 renders)
-- `frames/dash/stage.rs:749` ` check {} of {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (16602 renders); sweep journal/help/160x45, journal/help/240x67 (266555 renders)
-- `frames/dash/stage.rs:762` ` {}/{} credited checks ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2219 renders); sweep journal/help/160x45, journal/help/240x67 (6383985 renders)
-- `frames/dash/stage.rs:782` ` reset queued for {} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (3 renders)
-- `frames/dash/stage.rs:798` ` BIOS profile: page {} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (50 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (116 renders)
-- `frames/dash/stage.rs:813` ` crash detected {} ` — tests frames::frame_tests::bounds::recovering, frames::frame_tests::holds::every_other_frame_moves_with_the_clock (16 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (29069 renders)
-- `frames/dash/stage.rs:820` ` trial {} has no recorded end ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (29 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1424 renders)
-- `frames/dash/stage.rs:836` ` a clean rerun is needed ` — sweep sweep/concluded/4132-trial.end/120x33/plus40, sweep/concluded/4132-trial.end/160x45/plus40 (655 renders)
-- `frames/dash/stage.rs:837` ` a clean rerun with every core at 0 is needed ` — **not rendered**
-- `frames/dash/stage.rs:841` ` failure on core {:02} ` — sweep sweep/concluded/4132-trial.end/120x33/plus40, sweep/concluded/4132-trial.end/160x45/plus40 (555 renders)
-- `frames/dash/stage.rs:842` ` failure recorded ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (145 renders); sweep journal/help/160x45, journal/help/240x67 (189 renders)
-- `frames/dash/stage.rs:874` ` every step of the cycle is done ` — sweep scenario/rerun-passed/120x33, scenario/rerun-passed/160x45 (2504 renders)
-- `frames/dash/stage.rs:886` ` chain closure at step {closure} of {steps} ` — tests frames::frame_tests::bounds::unconfirmed, frames::panels::cycle::tests::closure_and_resume_steps_are_named_apart_when_they_differ (31 renders); sweep scenario/unconfirmed/120x33, scenario/unconfirmed/160x45 (6501 renders)
-- `frames/dash/stage.rs:891` ` every step is done · the cycle ends once the rerun passes ` — sweep sweep/concluded/7784-trial.start/120x33/overdue, sweep/concluded/7784-trial.start/120x33/plus40 (456 renders)
-- `frames/dash/stage.rs:899` ` checking resumes at step {resume} of {steps} ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::unconfirmed (32 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (18055 renders)
-- `frames/dash/stage.rs:908` ` chain closure at step {closure} of {steps} ` — tests frames::frame_tests::bounds::unconfirmed, frames::panels::cycle::tests::closure_and_resume_steps_are_named_apart_when_they_differ (31 renders); sweep scenario/unconfirmed/120x33, scenario/unconfirmed/160x45 (6501 renders)
+- `frames/dash/stage.rs:248` ` {} left ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (640 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (124589 renders)
+- `frames/dash/stage.rs:354` ` waiting for the first cycle ` — sweep sweep/combination/1501-core.phase/120x33/plus40, sweep/combination/1501-core.phase/160x45/plus40 (180 renders)
+- `frames/dash/stage.rs:358` ` cycle {number} ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (56876 renders); sweep journal/help/160x45, journal/help/240x67 (6553562 renders)
+- `frames/dash/stage.rs:366` ` {done}/{steps} steps complete ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (353 renders); sweep scenario/between/120x33, scenario/between/160x45 (507294 renders)
+- `frames/dash/stage.rs:367` ` {done}/{steps} steps ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (25661 renders); sweep journal/help/160x45, journal/help/240x67 (1764251 renders)
+- `frames/dash/stage.rs:398` ` {} · {moving} moving ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart (49 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (77132 renders)
+- `frames/dash/stage.rs:398` ` candidate ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (1982 renders); sweep journal/help/160x45, journal/help/240x67 (92095 renders)
+- `frames/dash/stage.rs:399` ` candidate ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (1982 renders); sweep journal/help/160x45, journal/help/240x67 (92095 renders)
+- `frames/dash/stage.rs:406` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts (519 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (96744 renders)
+- `frames/dash/stage.rs:411` ` group {} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (24454 renders); sweep journal/help/160x45, journal/help/240x67 (847408 renders)
+- `frames/dash/stage.rs:440` ` {}/{total} solo limits found ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (214 renders); sweep journal/help/160x45, journal/help/240x67 (454320 renders)
+- `frames/dash/stage.rs:441` ` {}/{total} found ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (256 renders); sweep journal/help/160x45, journal/help/240x67 (454339 renders)
+- `frames/dash/stage.rs:457` ` repairing after failure · cycle held ` — tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (118 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (53210 renders)
+- `frames/dash/stage.rs:458` ` repairing ` — tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (166 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (95296 renders)
+- `frames/dash/stage.rs:472` ` {} left if none fails ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (57 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (124352 renders)
+- `frames/dash/stage.rs:473` ` round ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (4672 renders); sweep journal/help/160x45, journal/help/240x67 (445527 renders)
+- `frames/dash/stage.rs:479` ` confirmation cycle ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::dash::stage::tests::the_confirmation_cycle_counts_steps_like_phase_one (251 renders); sweep journal/help/160x45, journal/help/240x67 (207556 renders)
+- `frames/dash/stage.rs:483` ` between rounds ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::frame_tests::bounds::first_result (18 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (1228 renders)
+- `frames/dash/stage.rs:489` ` {} left if none fails ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (57 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (124352 renders)
+- `frames/dash/stage.rs:490` ` round ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (4672 renders); sweep journal/help/160x45, journal/help/240x67 (445527 renders)
+- `frames/dash/stage.rs:511` ` {} recorded ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (1499 renders); sweep journal/help/160x45, journal/help/240x67 (531990 renders)
+- `frames/dash/stage.rs:511` ` clean cycle ` — tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::clean_cycles_count_recorded_cycles_and_the_current_cycles_steps_never_time (277 renders); sweep journal/help/160x45, journal/help/240x67 (114240 renders)
+- `frames/dash/stage.rs:514` ` {cycles} clean ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded (1213 renders); sweep journal/help/160x45, journal/help/240x67 (115975 renders)
+- `frames/dash/stage.rs:520` ` round {round} ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (4672 renders); sweep journal/help/160x45, journal/help/240x67 (445527 renders)
+- `frames/dash/stage.rs:526` ` {credited}/{required} credited checks ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (2304 renders); sweep journal/help/160x45, journal/help/240x67 (6842103 renders)
+- `frames/dash/stage.rs:527` ` {credited}/{required} checks ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_completed_round_says_every_check_is_credited (3542 renders); sweep journal/help/160x45, journal/help/240x67 (6842544 renders)
+- `frames/dash/stage.rs:558` ` {done}/{steps} steps complete ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (353 renders); sweep scenario/between/120x33, scenario/between/160x45 (507294 renders)
+- `frames/dash/stage.rs:586` ` step {} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (80529 renders); sweep journal/help/160x45, journal/help/240x67 (8929819 renders)
+- `frames/dash/stage.rs:601` ` {known} known {} · more may follow ` — tests frames::dash::stage::tests::an_open_r7_chain_counts_known_parts_and_says_more_may_follow, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (223 renders); sweep scenario/between/120x33, scenario/between/160x45 (134224 renders)
+- `frames/dash/stage.rs:601` ` part ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (38336 renders); sweep journal/help/160x45, journal/help/240x67 (1851967 renders)
+- `frames/dash/stage.rs:604` ` {known}+ parts ` — tests frames::frame_tests::bounds::every_page_stays_inside_the_frame_at_a_sweep_of_sizes, frames::frame_tests::pages::under_80_by_30_main_scrolls_and_every_core_is_reachable (7 renders)
+- `frames/dash/stage.rs:612` ` part {part} of {known} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (21964 renders); sweep journal/help/160x45, journal/help/240x67 (797075 renders)
+- `frames/dash/stage.rs:628` ` {credited}/{required} credited checks ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (2304 renders); sweep journal/help/160x45, journal/help/240x67 (6842103 renders)
+- `frames/dash/stage.rs:629` ` {credited}/{required} credited ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (2495 renders); sweep journal/help/160x45, journal/help/240x67 (7164772 renders)
+- `frames/dash/stage.rs:638` ` {} still needed ` — tests frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut, frames::dash::stage::tests::an_open_r7_chain_counts_known_parts_and_says_more_may_follow (143 renders); sweep scenario/between/120x33, scenario/between/160x45 (353986 renders)
+- `frames/dash/stage.rs:638` ` check ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest (20598 renders); sweep journal/help/160x45, journal/help/240x67 (7210927 renders)
+- `frames/dash/stage.rs:672` ` member {at}/{} probes ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (83 renders); sweep scenario/combination, scenario/member-probe/120x33 (8934 renders)
+- `frames/dash/stage.rs:678` ` locating: the failing load reruns at its failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (1 renders)
+- `frames/dash/stage.rs:684` ` part {at}/{of} of this split ` — tests frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (35 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (30126 renders)
+- `frames/dash/stage.rs:687` ` starting ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (27 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (58 renders)
+- `frames/dash/stage.rs:689` ` total hunt work unknown ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (68 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (35544 renders)
+- `frames/dash/stage.rs:702` ` waiting for the next search trial ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended (13 renders); sweep sweep/combination/0000-session.start/120x33/plus40, sweep/combination/0000-session.start/160x45/plus40 (48450 renders)
+- `frames/dash/stage.rs:710` ` confirming ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1544 renders); sweep scenario/between, scenario/between/240x67 (1326834 renders)
+- `frames/dash/stage.rs:712` ` searching ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end (41 renders); sweep scenario/search/120x33, scenario/search/160x45 (212868 renders)
+- `frames/dash/stage.rs:714` ` current core {verb} ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end (56 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (386276 renders)
+- `frames/dash/stage.rs:720` ` {}/{} credited checks ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (2304 renders); sweep journal/help/160x45, journal/help/240x67 (6842103 renders)
+- `frames/dash/stage.rs:742` ` every check of the round is credited ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited (1 renders); sweep sweep/combination/4919-trial.end/120x33/plus40, sweep/combination/4919-trial.end/160x45/plus40 (60 renders)
+- `frames/dash/stage.rs:749` ` check {} of {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_completed_round_says_every_check_is_credited (16752 renders); sweep journal/help/160x45, journal/help/240x67 (448740 renders)
+- `frames/dash/stage.rs:762` ` {}/{} credited checks ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (2304 renders); sweep journal/help/160x45, journal/help/240x67 (6842103 renders)
+- `frames/dash/stage.rs:782` ` reset queued for {} ` — tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (5 renders)
+- `frames/dash/stage.rs:798` ` BIOS profile: page {} ` — tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (66 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (232 renders)
+- `frames/dash/stage.rs:813` ` crash detected {} ` — tests frames::frame_tests::bounds::recovering, frames::frame_tests::holds::every_other_frame_moves_with_the_clock (21 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (58138 renders)
+- `frames/dash/stage.rs:820` ` trial {} has no recorded end ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (40 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2848 renders)
+- `frames/dash/stage.rs:836` ` a clean rerun is needed ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (1 renders); sweep sweep/concluded/4132-trial.end/120x33/plus40, sweep/concluded/4132-trial.end/160x45/plus40 (1310 renders)
+- `frames/dash/stage.rs:837` ` a clean rerun with every core at 0 is needed ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (1 renders)
+- `frames/dash/stage.rs:841` ` failure on core {:02} ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (1 renders); sweep sweep/concluded/4132-trial.end/120x33/plus40, sweep/concluded/4132-trial.end/160x45/plus40 (1110 renders)
+- `frames/dash/stage.rs:842` ` failure recorded ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (157 renders); sweep journal/help/160x45, journal/help/240x67 (401 renders)
+- `frames/dash/stage.rs:874` ` every step of the cycle is done ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (2 renders); sweep scenario/rerun-passed/120x33, scenario/rerun-passed/160x45 (5008 renders)
+- `frames/dash/stage.rs:886` ` chain closure at step {closure} of {steps} ` — tests frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes, frames::dash::stage::tests::a_rerun_after_every_step_is_done_says_the_cycle_ends_not_a_step_past_the_last (36 renders); sweep scenario/unconfirmed/120x33, scenario/unconfirmed/160x45 (13000 renders)
+- `frames/dash/stage.rs:891` ` every step is done · the cycle ends once the rerun passes ` — tests frames::dash::stage::tests::a_rerun_after_every_step_is_done_says_the_cycle_ends_not_a_step_past_the_last (1 renders); sweep sweep/concluded/7784-trial.start/120x33/overdue, sweep/concluded/7784-trial.start/120x33/plus40 (912 renders)
+- `frames/dash/stage.rs:899` ` checking resumes at step {resume} of {steps} ` — tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (39 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (36108 renders)
+- `frames/dash/stage.rs:908` ` chain closure at step {closure} of {steps} ` — tests frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes, frames::dash::stage::tests::a_rerun_after_every_step_is_done_says_the_cycle_ends_not_a_step_past_the_last (36 renders); sweep scenario/unconfirmed/120x33, scenario/unconfirmed/160x45 (13000 renders)
 
 ### `frames/draw.rs`: 1 of 1 covered
 
-- `frames/draw.rs:68` ` +{hidden} more ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (316 renders); sweep journal/help/160x45, journal/help/240x67 (78249 renders)
+- `frames/draw.rs:68` ` +{hidden} more ` — tests frames::dash::stage::tests::an_open_r7_chain_counts_known_parts_and_says_more_may_follow, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (354 renders); sweep journal/help/160x45, journal/help/240x67 (145355 renders)
 
 ### `frames/footer.rs`: 11 of 11 covered
 
-- `frames/footer.rs:85` ` pages ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1391 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520256 renders)
-- `frames/footer.rs:87` ` scroll ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1153 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520298 renders)
-- `frames/footer.rs:88` ` PgUp/PgDn ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (821 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (416189 renders)
-- `frames/footer.rs:89` ` Esc ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1291 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520300 renders)
-- `frames/footer.rs:89` ` Main ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (2824 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520567 renders)
-- `frames/footer.rs:90` ` help ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (1300 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520256 renders)
-- `frames/footer.rs:97` ` exit dashboard ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1127 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520201 renders)
-- `frames/footer.rs:98` ` exit ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1804 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520461 renders)
+- `frames/footer.rs:85` ` pages ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1393 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520256 renders)
+- `frames/footer.rs:87` ` scroll ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1155 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520298 renders)
+- `frames/footer.rs:88` ` PgUp/PgDn ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (823 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (416189 renders)
+- `frames/footer.rs:89` ` Esc ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1293 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520300 renders)
+- `frames/footer.rs:89` ` Main ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (2826 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520567 renders)
+- `frames/footer.rs:90` ` help ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (1302 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520256 renders)
+- `frames/footer.rs:97` ` exit dashboard ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1129 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520201 renders)
+- `frames/footer.rs:98` ` exit ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1806 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520461 renders)
 - `frames/footer.rs:155` ` skipped journal content: togi events ` — sweep sweep/combination/skipped/60x30, sweep/concluded/skipped/60x30 (9 renders)
 - `frames/footer.rs:156` ` skipped: togi events ` — sweep sweep/combination/skipped/45x30, sweep/combination/skipped/50x30 (18 renders)
 - `frames/footer.rs:157` ` skipped ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (95 renders); sweep journal/help/160x45, journal/help/240x67 (100 renders)
@@ -7874,11 +8448,11 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/help.rs:36` ` Go back to Main. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (115 renders); sweep journal/help/160x45, journal/help/240x67 (55 renders)
 - `frames/help.rs:39` ` Open this help. The same key on the help returns to Main. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (115 renders); sweep journal/help/160x45, journal/help/240x67 (55 renders)
 - `frames/help.rs:43` ` Open the journal, which opens at its newest event and follows new ones. The same key on the journal … ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (89 renders); sweep journal/help/160x45, journal/help/240x67 (54 renders)
-- `frames/help.rs:46` ` scroll ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1153 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520298 renders)
+- `frames/help.rs:46` ` scroll ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1155 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520298 renders)
 - `frames/help.rs:47` ` A page opens at its top. Only a key changes the page or its scroll, so a refresh never moves it. Mai… ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (42 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:55` ` q, Ctrl-C ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (74 renders); sweep journal/help/160x45, journal/help/80x24 (27 renders)
 - `frames/help.rs:56` ` Exit the dashboard; tuning itself keeps running. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (114 renders); sweep journal/help/160x45, journal/help/240x67 (55 renders)
-- `frames/help.rs:59` ` exit ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1804 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520461 renders)
+- `frames/help.rs:59` ` exit ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1806 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (520461 renders)
 - `frames/help.rs:60` ` This dashboard has no exit key: only stopping its service ends it. Tuning itself keeps running. ` — tests frames::help::tests::help_has_no_zoom_and_describes_no_panel_the_main_page_lost, frames::help::tests::help_names_the_exit_key_only_where_it_works (5 renders)
 - `frames/help.rs:64` ` THE PAGES ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (198 renders); sweep journal/help/160x45, scenario/between/Help-160x45 (26 renders)
 - `frames/help.rs:67` ` 1 Main ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, scenario/between/Help-160x45 (26 renders)
@@ -7900,17 +8474,17 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/help.rs:98` ` 9 Help ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (295 renders); sweep journal/help/160x45, journal/help/240x67 (54 renders)
 - `frames/help.rs:98` ` This page. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (91 renders); sweep journal/help/160x45, journal/help/240x67 (54 renders)
 - `frames/help.rs:103` ` THE GAUGES ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (73 renders); sweep journal/help/160x45, scenario/between/Help-160x45 (26 renders)
-- `frames/help.rs:106` ` tune ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::dash::tests::the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both (4364 renders); sweep journal/help/160x45, journal/help/240x67 (6133569 renders)
+- `frames/help.rs:106` ` tune ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (4732 renders); sweep journal/help/160x45, journal/help/240x67 (6133871 renders)
 - `frames/help.rs:107` ` The tuning profile's offset for the core: a white full-height █ bar, one cell per count, -1 at the l… ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (42 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:110` ` now ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (4825 renders); sweep journal/help/160x45, journal/help/240x67 (5917757 renders)
+- `frames/help.rs:110` ` now ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks (5263 renders); sweep journal/help/160x45, journal/help/240x67 (6002937 renders)
 - `frames/help.rs:111` ` The offset observed applied to the hardware now. After a stop, now shows the offset the stop restore… ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (42 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:114` ` red point ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (433 renders); sweep journal/help/160x45, journal/help/240x67 (312024 renders)
+- `frames/help.rs:114` ` red point ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (434 renders); sweep journal/help/160x45, journal/help/240x67 (312024 renders)
 - `frames/help.rs:115` ` One full-height red █ in a lane of its own under the bar, at the depth of the recorded failure const… ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (42 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:118` ` solo ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::medium_core_notes_retain_combination_and_solo_offsets (10205 renders); sweep journal/help/160x45, journal/help/240x67 (3134330 renders)
+- `frames/help.rs:118` ` solo ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (10857 renders); sweep journal/help/160x45, journal/help/240x67 (3361851 renders)
 - `frames/help.rs:119` ` The deepest offset the core confirmed alone under load. s? means none is known, and then g? too. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (88 renders); sweep journal/help/160x45, journal/help/240x67 (54 renders)
-- `frames/help.rs:122` ` gap ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (1535 renders); sweep journal/help/160x45, journal/help/240x67 (1144072 renders)
+- `frames/help.rs:122` ` gap ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1923 renders); sweep journal/help/160x45, journal/help/240x67 (1144374 renders)
 - `frames/help.rs:123` ` Tune minus solo, in counts shallower than solo: tune -9 and solo -45 is gap 36. It is a number, not … ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (42 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:126` ` fail ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (29934 renders); sweep journal/help/160x45, journal/help/240x67 (7243252 renders)
+- `frames/help.rs:126` ` fail ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (30489 renders); sweep journal/help/160x45, journal/help/240x67 (7301749 renders)
 - `frames/help.rs:127` ` The recorded failure constraint as an offset: f-50 is -50, f none is no failure recorded. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (88 renders); sweep journal/help/160x45, journal/help/240x67 (54 renders)
 - `frames/help.rs:130` ` role ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (267 renders); sweep journal/help/160x45, journal/help/240x67 (208050 renders)
 - `frames/help.rs:131` ` What the core does now: loaded, judged, idle at 0 or reset queued. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (81 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
@@ -7920,42 +8494,42 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/help.rs:141` ` running now ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (80 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:142` ` amber ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (121 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:142` ` a hunt or a repair, and what it paused ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (80 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:143` ` red ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (5166 renders); sweep journal/help/160x45, journal/help/240x67 (7022033 renders)
+- `frames/help.rs:143` ` red ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (5260 renders); sweep journal/help/160x45, journal/help/240x67 (7480181 renders)
 - `frames/help.rs:143` ` failures, past and present ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (80 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:144` ` green ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (38 renders)
 - `frames/help.rs:144` ` passed, done ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (80 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:145` ` grey ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (38 renders)
 - `frames/help.rs:145` ` idle, parked, still to come ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (80 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:150` ` FAILURE SOURCES ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (110 renders)
-- `frames/help.rs:153` ` alone ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (38003 renders); sweep journal/help/160x45, journal/help/240x67 (302849 renders)
+- `frames/help.rs:153` ` alone ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (38300 renders); sweep journal/help/160x45, journal/help/240x67 (302934 renders)
 - `frames/help.rs:154` ` The core failed by itself, loaded alone. Its red point is that failure. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (98 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:157` ` named ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2227 renders); sweep journal/help/160x45, journal/help/240x67 (1085820 renders)
+- `frames/help.rs:157` ` named ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2397 renders); sweep journal/help/160x45, journal/help/240x67 (1085909 renders)
 - `frames/help.rs:158` ` A failure named this core directly, or a hunt traced a group's failure to it. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (98 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:161` ` R7-charged ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (145 renders); sweep scenario/concluded/Cores-160x45, scenario/confirmation/Cores-160x45 (5 renders)
+- `frames/help.rs:161` ` R7-charged ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (167 renders); sweep scenario/concluded/Cores-160x45, scenario/confirmation/Cores-160x45 (14 renders)
 - `frames/help.rs:162` ` An all-core R7 failure the decision charged to this core. The attribution may be uncertain. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (98 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:165` ` constraint ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (449 renders); sweep journal/help/160x45, journal/help/240x67 (184 renders)
+- `frames/help.rs:165` ` constraint ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (468 renders); sweep journal/help/160x45, journal/help/240x67 (298 renders)
 - `frames/help.rs:166` ` A red point is a recorded failure constraint, not always a core that failed alone. The Cores page na… ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (80 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:172` ` THE TOP LINE ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (70 renders)
-- `frames/help.rs:175` ` failures ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (1162 renders); sweep journal/help/160x45, journal/help/240x67 (1001480 renders)
+- `frames/help.rs:175` ` failures ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (1168 renders); sweep journal/help/160x45, journal/help/240x67 (1001480 renders)
 - `frames/help.rs:176` ` failure decisions, including trials skipped because they already failed ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (88 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:178` ` crashes ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (789 renders); sweep scenario/between/120x33, scenario/between/160x45 (995002 renders)
+- `frames/help.rs:178` ` crashes ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (795 renders); sweep scenario/between/120x33, scenario/between/160x45 (995002 renders)
 - `frames/help.rs:178` ` boots that ended without a clean shutdown ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (90 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:180` ` last observed ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (487 renders); sweep scenario/between/120x33, scenario/between/160x45 (731422 renders)
 - `frames/help.rs:181` ` the last failure seen in this session that changed what togi does; skips do not count ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (90 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:187` ` WHAT TOGI DOES ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (110 renders)
-- `frames/help.rs:190` ` SOLO LIMITS ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (780 renders); sweep scenario/between/120x33, scenario/between/160x45 (1193000 renders)
+- `frames/help.rs:190` ` SOLO LIMITS ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (818 renders); sweep scenario/between/120x33, scenario/between/160x45 (1420146 renders)
 - `frames/help.rs:191` ` Finding each core's solo limit alone. The count is the solo limits found, never time. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (99 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:194` ` PHASE 1 ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (851 renders); sweep scenario/between/120x33, scenario/between/160x45 (1101029 renders)
+- `frames/help.rs:194` ` PHASE 1 ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (934 renders); sweep scenario/between/120x33, scenario/between/160x45 (1236204 renders)
 - `frames/help.rs:195` ` Checking toward the first confirmed profile, counted in the steps of its cycle. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (99 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:198` ` PHASE 2 ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (830 renders); sweep journal/help/160x45, journal/help/240x67 (1096085 renders)
+- `frames/help.rs:198` ` PHASE 2 ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (858 renders); sweep journal/help/160x45, journal/help/240x67 (1196692 renders)
 - `frames/help.rs:199` ` Deepening in rounds, counted in credited checks, with its confirmation cycle: PHASE 2 · confirmation… ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (99 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:202` ` CLEAN CYCLES ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (728 renders); sweep scenario/between/120x33, scenario/between/160x45 (1022912 renders)
+- `frames/help.rs:202` ` CLEAN CYCLES ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded (765 renders); sweep scenario/between/120x33, scenario/between/160x45 (1079970 renders)
 - `frames/help.rs:203` ` The count of clean cycles for the current profile. It has no percentage and no ETA. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (81 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:206` ` Cycle ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1070 renders); sweep journal/help/160x45, journal/help/240x67 (138 renders)
 - `frames/help.rs:207` ` Not a phase: the list of steps a phase checks through, on the Cycle page. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (81 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:210` ` HUNT ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::bounds::between (495 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (69677 renders)
+- `frames/help.rs:210` ` HUNT ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts (519 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (96744 renders)
 - `frames/help.rs:211` ` An amber detour inside a phase, not a phase of its own: the parent phase stays current while parked … ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (43 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:214` ` STOPPED ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (297 renders); sweep journal/help/160x45, journal/help/240x67 (752 renders)
+- `frames/help.rs:214` ` STOPPED ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (323 renders); sweep journal/help/160x45, journal/help/240x67 (876 renders)
 - `frames/help.rs:215` ` STOPPED or RECOVERY replaces every running marker on the stage line. A stop keeps the stages already… ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (81 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:218` ` forecasts ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (41 renders)
 - `frames/help.rs:219` ` What a result would lead to is always conditional, neutral in colour and no promise. A hunt can star… ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (81 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
@@ -7963,40 +8537,40 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/help.rs:226` ` RULES ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (47 renders)
 - `frames/help.rs:227` ` How togi decides what to do: https://github.com/shgew/togi/blob/main/docs/spec/tuner.md ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (89 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:233` ` WORDS ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (95 renders)
-- `frames/help.rs:236` ` SEARCH ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (303 renders); sweep scenario/crashed/Cores-160x45, scenario/recovering/Cores-160x45 (106449 renders)
+- `frames/help.rs:236` ` SEARCH ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (399 renders); sweep scenario/crashed/Cores-160x45, scenario/recovering/Cores-160x45 (106497 renders)
 - `frames/help.rs:237` ` finding its solo limit with light and heavy-vector trials alone ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (92 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:240` ` CONFIRM ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (205 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (86713 renders)
+- `frames/help.rs:240` ` CONFIRM ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (237 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (86729 renders)
 - `frames/help.rs:241` ` checking its candidate solo limit with repeated light and heavy-vector trials alone ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (92 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:243` ` FOUND ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (52 renders)
 - `frames/help.rs:243` ` solo limit checked; waiting at 0 ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (93 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:244` ` WAITING ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (52 renders)
 - `frames/help.rs:244` ` at 0, waiting for its first search turn ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (92 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:246` ` MEMBER ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (184 renders); sweep scenario/hunt/Cores-160x45 (5 renders)
+- `frames/help.rs:246` ` MEMBER ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (246 renders); sweep scenario/hunt-bios/Cores-160x45, scenario/hunt/Cores-160x45 (22 renders)
 - `frames/help.rs:247` ` kept with its hunt group at its failing offset; another member may be probed ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (92 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:250` ` offset ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (71969 renders); sweep journal/help/160x45, journal/help/240x67 (868375 renders)
+- `frames/help.rs:250` ` offset ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (72045 renders); sweep journal/help/160x45, journal/help/240x67 (868392 renders)
 - `frames/help.rs:251` ` Curve Optimizer counts, 0 to -50; deeper is more negative ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (92 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:253` ` trial ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262091 renders); sweep journal/help/160x45, journal/help/240x67 (995885 renders)
+- `frames/help.rs:253` ` trial ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262302 renders); sweep journal/help/160x45, journal/help/240x67 (1021891 renders)
 - `frames/help.rs:253` ` one launch of one workload on its target ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (92 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:255` ` solo limit ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (8628 renders); sweep journal/help/160x45, journal/help/240x67 (1990225 renders)
+- `frames/help.rs:255` ` solo limit ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (8909 renders); sweep journal/help/160x45, journal/help/240x67 (2217564 renders)
 - `frames/help.rs:256` ` the deepest offset a core confirmed under load alone ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (92 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:259` ` failure constraint ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (366 renders); sweep journal/help/160x45, journal/help/240x67 (136 renders)
 - `frames/help.rs:260` ` the shallowest offset recorded as ruled out for a core ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (93 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:262` ` suspect ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (54 renders)
 - `frames/help.rs:262` ` a core a hunt keeps at its failing offset ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (94 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:264` ` parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5559 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
+- `frames/help.rs:264` ` parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5562 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
 - `frames/help.rs:265` ` a core a hunt holds no deeper than its failing offset, outside the selected group ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (92 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:267` ` partial part ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (90 renders)
 - `frames/help.rs:267` ` an R7 part with the top requesters idle ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (131 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:269` ` top requester ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (1442 renders); sweep journal/help/160x45, journal/help/240x67 (473 renders)
+- `frames/help.rs:269` ` top requester ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (1450 renders); sweep journal/help/160x45, journal/help/240x67 (473 renders)
 - `frames/help.rs:270` ` an R7 workload's highest-request group on each CCD, ties included; marked top on the CCD tables ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (129 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:273` ` self-sufficient ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (881 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (315 renders)
+- `frames/help.rs:273` ` self-sufficient ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (887 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (315 renders)
 - `frames/help.rs:274` ` observed passing as top requester for this R7 workload ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (113 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:276` ` cycle ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (56781 renders); sweep journal/help/160x45, journal/help/240x67 (6318886 renders)
+- `frames/help.rs:276` ` cycle ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (56876 renders); sweep journal/help/160x45, journal/help/240x67 (6553562 renders)
 - `frames/help.rs:276` ` one pass through the checking schedule ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (113 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:281` ` KINDS OF LOAD ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (146 renders)
-- `frames/help.rs:283` ` R1 light ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (6986 renders); sweep scenario/between, scenario/between/Cycle-160x45 (1737437 renders)
+- `frames/help.rs:283` ` R1 light ` — tests frames::dash::stage::tests::a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (6991 renders); sweep scenario/between, scenario/between/Cycle-160x45 (1753666 renders)
 - `frames/help.rs:283` ` one light thread: compiling, browsing ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (114 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:285` ` R2 heavy vector ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7869 renders); sweep scenario/between, scenario/between/240x67 (1136187 renders)
+- `frames/help.rs:285` ` R2 heavy vector ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7869 renders); sweep scenario/between, scenario/between/240x67 (1150162 renders)
 - `frames/help.rs:286` ` one AVX2/AVX-512 thread: encoding, rendering ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (116 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:288` ` R3 load steps ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (5056 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (970213 renders)
 - `frames/help.rs:288` ` load switching on and off: current steps ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (116 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
@@ -8006,112 +8580,112 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/help.rs:290` ` both threads of one core: SMT pressure ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (117 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 - `frames/help.rs:292` ` R6 idle + bursts ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1348 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (399567 renders)
 - `frames/help.rs:293` ` idle with short wake-ups: idle and boost ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (132 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
-- `frames/help.rs:296` ` R7 all-core ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (4275 renders); sweep scenario/between, scenario/between/120x33 (2100806 renders)
+- `frames/help.rs:296` ` R7 all-core ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (4276 renders); sweep scenario/between, scenario/between/120x33 (2108146 renders)
 - `frames/help.rs:297` ` a CCD, part of one, or every core: power and heat ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (93 renders); sweep journal/help/160x45, journal/help/240x67 (28 renders)
 
 ### `frames/main_page.rs`: 6 of 6 covered
 
-- `frames/main_page.rs:24` ` WHAT HAPPENED ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (293 renders); sweep scenario/between/120x33, scenario/between/160x45 (520001 renders)
+- `frames/main_page.rs:24` ` WHAT HAPPENED ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (294 renders); sweep scenario/between/120x33, scenario/between/160x45 (520001 renders)
 - `frames/main_page.rs:27` ` compact · scroll for all cores ` — tests frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (53 renders); sweep scenario/between/79x29, scenario/checking/79x29 (104034 renders)
-- `frames/main_page.rs:139` ` white ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (227 renders); sweep journal/help/160x45, journal/help/240x67 (311996 renders)
-- `frames/main_page.rs:140` ` =tune ·  ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (311942 renders)
-- `frames/main_page.rs:141` ` red point ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (433 renders); sweep journal/help/160x45, journal/help/240x67 (312024 renders)
-- `frames/main_page.rs:142` ` =recorded failure · gap=counts shallower than solo ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (134 renders); sweep scenario/between/160x45, scenario/between/240x67 (311942 renders)
+- `frames/main_page.rs:139` ` white ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (228 renders); sweep journal/help/160x45, journal/help/240x67 (311996 renders)
+- `frames/main_page.rs:140` ` =tune ·  ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (311942 renders)
+- `frames/main_page.rs:141` ` red point ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (434 renders); sweep journal/help/160x45, journal/help/240x67 (312024 renders)
+- `frames/main_page.rs:142` ` =recorded failure · gap=counts shallower than solo ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/between/160x45, scenario/between/240x67 (311942 renders)
 
 ### `frames/notes.rs`: 9 of 9 covered
 
-- `frames/notes.rs:95` ` group failed at {list} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::member_probe (32 renders); sweep scenario/member-probe/Cores-160x45, scenario/member-probe/Hunts-160x45 (5 renders)
-- `frames/notes.rs:106` ` returns to {back} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::between (334 renders); sweep journal/help/160x45, journal/help/240x67 (148 renders)
-- `frames/notes.rs:123` ` {offset}: light {light}/{needed}, heavy {heavy}/{needed} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::confirm (280 renders); sweep scenario/confirm/Cores-160x45, scenario/confirm/Cycle-160x45 (69 renders)
-- `frames/notes.rs:133` ` held by {label} ` — tests frames::dash::tests::medium_core_notes_retain_combination_and_solo_offsets, frames::frame_tests::bounds::combination (16 renders); sweep scenario/combination/Cores-160x45, scenario/round/Cores-160x45 (4 renders)
+- `frames/notes.rs:95` ` group failed at {list} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::member_probe (34 renders); sweep scenario/member-probe/Cores-160x45, scenario/member-probe/Hunts-160x45 (6 renders)
+- `frames/notes.rs:106` ` returns to {back} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::between (350 renders); sweep journal/help/160x45, journal/help/240x67 (180 renders)
+- `frames/notes.rs:123` ` {offset}: light {light}/{needed}, heavy {heavy}/{needed} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::confirm (282 renders); sweep scenario/confirm/Cores-160x45, scenario/confirm/Cycle-160x45 (85 renders)
+- `frames/notes.rs:133` ` held by {label} ` — tests frames::dash::tests::medium_core_notes_retain_combination_and_solo_offsets, frames::frame_tests::bounds::combination (19 renders); sweep scenario/combination/Cores-160x45, scenario/round/Cores-160x45 (6 renders)
 - `frames/notes.rs:142` ` backed off after {label} ` — tests frames::notes::tests::every_note_shows_its_value_whole_or_nothing_at_every_width (1 renders)
-- `frames/notes.rs:153` ` solo {solo} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::medium_core_notes_retain_combination_and_solo_offsets (10205 renders); sweep journal/help/160x45, journal/help/240x67 (3134330 renders)
-- `frames/notes.rs:162` ` passed {passed} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62497 renders); sweep journal/help/160x45, journal/help/240x67 (5224049 renders)
-- `frames/notes.rs:172` ` next {next} ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (22491 renders); sweep scenario/between, scenario/between/120x33 (4933203 renders)
-- `frames/notes.rs:188` ` solo {solo} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::medium_core_notes_retain_combination_and_solo_offsets (10205 renders); sweep journal/help/160x45, journal/help/240x67 (3134330 renders)
+- `frames/notes.rs:153` ` solo {solo} ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (10857 renders); sweep journal/help/160x45, journal/help/240x67 (3361851 renders)
+- `frames/notes.rs:162` ` passed {passed} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62554 renders); sweep journal/help/160x45, journal/help/240x67 (5224097 renders)
+- `frames/notes.rs:172` ` next {next} ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks (22552 renders); sweep scenario/between, scenario/between/120x33 (4957476 renders)
+- `frames/notes.rs:188` ` solo {solo} ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (10857 renders); sweep journal/help/160x45, journal/help/240x67 (3361851 renders)
 
 ### `frames/panels/cycle.rs`: 58 of 58 covered
 
-- `frames/panels/cycle.rs:41` ` state ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::combination (1436 renders); sweep scenario/combination/Cycle-160x45, scenario/deadend/Cycle-160x45 (34 renders)
+- `frames/panels/cycle.rs:41` ` state ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::combination (1437 renders); sweep scenario/combination/Cycle-160x45, scenario/deadend/Cycle-160x45 (34 renders)
 - `frames/panels/cycle.rs:42` ` stopped · the last known work; nothing is running ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::first_result (54 renders); sweep scenario/combination/Cycle-160x45, scenario/first-result/Cycle-160x45 (6 renders)
-- `frames/panels/cycle.rs:52` ` state ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::combination (1436 renders); sweep scenario/combination/Cycle-160x45, scenario/deadend/Cycle-160x45 (34 renders)
-- `frames/panels/cycle.rs:53` ` repairing after failure · cycle held ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (103 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (26616 renders)
-- `frames/panels/cycle.rs:58` ` resumes ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::unconfirmed (33 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (18055 renders)
+- `frames/panels/cycle.rs:52` ` state ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::combination (1437 renders); sweep scenario/combination/Cycle-160x45, scenario/deadend/Cycle-160x45 (34 renders)
+- `frames/panels/cycle.rs:53` ` repairing after failure · cycle held ` — tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (118 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (53210 renders)
+- `frames/panels/cycle.rs:58` ` resumes ` — tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (40 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (36108 renders)
 - `frames/panels/cycle.rs:59` ` every step is done; checking resumes after step {steps} ` — tests frames::panels::cycle::tests::closure_and_resume_steps_are_named_apart_when_they_differ (1 renders)
-- `frames/panels/cycle.rs:64` ` closure ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::deadend (108 renders); sweep scenario/deadend/Cycle-160x45, scenario/hunt-bios/Cycle-160x45 (6521 renders)
+- `frames/panels/cycle.rs:64` ` closure ` — tests frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes, frames::dash::stage::tests::a_rerun_after_every_step_is_done_says_the_cycle_ends_not_a_step_past_the_last (113 renders); sweep scenario/deadend/Cycle-160x45, scenario/hunt-bios/Cycle-160x45 (13020 renders)
 - `frames/panels/cycle.rs:66` ` chain closure and checking resume at step {} of {steps} ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::deadend (77 renders); sweep scenario/deadend/Cycle-160x45, scenario/hunt-bios/Cycle-160x45 (20 renders)
-- `frames/panels/cycle.rs:73` ` closure ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::deadend (108 renders); sweep scenario/deadend/Cycle-160x45, scenario/hunt-bios/Cycle-160x45 (6521 renders)
-- `frames/panels/cycle.rs:74` ` chain closure at step {} of {steps} ` — tests frames::frame_tests::bounds::unconfirmed, frames::panels::cycle::tests::closure_and_resume_steps_are_named_apart_when_they_differ (31 renders); sweep scenario/unconfirmed/120x33, scenario/unconfirmed/160x45 (6501 renders)
-- `frames/panels/cycle.rs:78` ` resumes ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::unconfirmed (33 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (18055 renders)
-- `frames/panels/cycle.rs:79` ` checking resumes at step {} of {steps} ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::unconfirmed (32 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (18055 renders)
-- `frames/panels/cycle.rs:100` ` CYCLE {number} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (1402 renders); sweep scenario/between/120x33, scenario/between/160x45 (1165558 renders)
+- `frames/panels/cycle.rs:73` ` closure ` — tests frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes, frames::dash::stage::tests::a_rerun_after_every_step_is_done_says_the_cycle_ends_not_a_step_past_the_last (113 renders); sweep scenario/deadend/Cycle-160x45, scenario/hunt-bios/Cycle-160x45 (13020 renders)
+- `frames/panels/cycle.rs:74` ` chain closure at step {} of {steps} ` — tests frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes, frames::dash::stage::tests::a_rerun_after_every_step_is_done_says_the_cycle_ends_not_a_step_past_the_last (36 renders); sweep scenario/unconfirmed/120x33, scenario/unconfirmed/160x45 (13000 renders)
+- `frames/panels/cycle.rs:78` ` resumes ` — tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (40 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (36108 renders)
+- `frames/panels/cycle.rs:79` ` checking resumes at step {} of {steps} ` — tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (39 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (36108 renders)
+- `frames/panels/cycle.rs:100` ` CYCLE {number} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded (1439 renders); sweep scenario/between/120x33, scenario/between/160x45 (1222616 renders)
 - `frames/panels/cycle.rs:104` ` {} steps · {done} done ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::between (437 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (40 renders)
 - `frames/panels/cycle.rs:122` ` kind ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::between (148 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (49 renders)
-- `frames/panels/cycle.rs:123` ` where ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (738 renders); sweep journal/help/160x45, journal/help/240x67 (218 renders)
+- `frames/panels/cycle.rs:123` ` where ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (740 renders); sweep journal/help/160x45, journal/help/240x67 (218 renders)
 - `frames/panels/cycle.rs:124` ` workload ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::between (505 renders); sweep journal/help/160x45, journal/help/240x67 (113212 renders)
-- `frames/panels/cycle.rs:125` ` schedule ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::between (306 renders); sweep journal/help/160x45, journal/help/240x67 (72 renders)
+- `frames/panels/cycle.rs:125` ` schedule ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::between (307 renders); sweep journal/help/160x45, journal/help/240x67 (72 renders)
 - `frames/panels/cycle.rs:126` ` result ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1703 renders); sweep journal/help/160x45, journal/help/240x67 (672728 renders)
-- `frames/panels/cycle.rs:140` ` done ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2141 renders); sweep journal/help/160x45, journal/help/240x67 (181640 renders)
+- `frames/panels/cycle.rs:140` ` done ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (2145 renders); sweep journal/help/160x45, journal/help/240x67 (184714 renders)
 - `frames/panels/cycle.rs:143` ` hunts  ` — tests frames::panels::cycle::tests::the_cycle_lists_its_steps_and_the_running_part, frames::story::tests::edges::a_cycle_step_that_finished_after_two_hunts_lists_them (6 renders)
-- `frames/panels/cycle.rs:143` ` hunt  ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10285 renders); sweep journal/help/160x45, journal/help/240x67 (831882 renders)
+- `frames/panels/cycle.rs:143` ` hunt  ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (10351 renders); sweep journal/help/160x45, journal/help/240x67 (849702 renders)
 - `frames/panels/cycle.rs:156` ` stopped here ` — tests frames::panels::cycle::tests::a_step_row_names_no_trial_once_the_session_has_stopped, frames::panels::cycle::tests::a_stopped_session_draws_no_running_marker_in_the_checklist (2 renders)
-- `frames/panels/cycle.rs:159` ` held ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::medium_core_notes_retain_combination_and_solo_offsets (611 renders); sweep scenario/combination, scenario/combination/Cores-160x45 (490445 renders)
+- `frames/panels/cycle.rs:159` ` held ` — tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (641 renders); sweep scenario/combination, scenario/combination/Cores-160x45 (517057 renders)
 - `frames/panels/cycle.rs:161` ` held at part {part} ` — tests frames::frame_tests::bounds::deadend, frames::frame_tests::bounds::hunt (71 renders); sweep scenario/deadend/Cycle-160x45, scenario/hunt-bios/Cycle-160x45 (6 renders)
 - `frames/panels/cycle.rs:170` ` reopened · {credited}/{required} passed ` — tests frames::frame_tests::bounds::unconfirmed, frames::panels::cycle::tests::a_reopened_step_says_how_much_of_it_passed (54 renders); sweep scenario/unconfirmed/Cycle-160x45 (6 renders)
 - `frames/panels/cycle.rs:173` ` closes with the chain ` — tests frames::panels::cycle::tests::steps_between_chain_closure_and_checking_resume_close_with_the_chain (1 renders)
-- `frames/panels/cycle.rs:209` ` part {part} of {} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (21949 renders); sweep journal/help/160x45, journal/help/240x67 (655527 renders)
-- `frames/panels/cycle.rs:213` ` trial {} of {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76056 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
+- `frames/panels/cycle.rs:209` ` part {part} of {} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (21964 renders); sweep journal/help/160x45, journal/help/240x67 (797075 renders)
+- `frames/panels/cycle.rs:213` ` trial {} of {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76108 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
 - `frames/panels/cycle.rs:234` ` requires ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (146 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (16 renders)
 - `frames/panels/cycle.rs:239` ` {short} short + {long} long passes across {} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (135 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (16 renders)
-- `frames/panels/cycle.rs:240` ` part ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (38280 renders); sweep journal/help/160x45, journal/help/240x67 (1643313 renders)
-- `frames/panels/cycle.rs:289` ` {} known {} · more may follow ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (185 renders); sweep scenario/between/120x33, scenario/between/160x45 (67118 renders)
-- `frames/panels/cycle.rs:291` ` part ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (38280 renders); sweep journal/help/160x45, journal/help/240x67 (1643313 renders)
-- `frames/panels/cycle.rs:307` ` trial {} of {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76056 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
-- `frames/panels/cycle.rs:316` ` {} failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2075 renders); sweep journal/help/160x45, journal/help/240x67 (3142 renders)
-- `frames/panels/cycle.rs:318` ` {passed}/{total} passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62497 renders); sweep journal/help/160x45, journal/help/240x67 (5224049 renders)
-- `frames/panels/cycle.rs:320` ` {passed}/{total} passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62497 renders); sweep journal/help/160x45, journal/help/240x67 (5224049 renders)
-- `frames/panels/cycle.rs:348` ` part ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (38280 renders); sweep journal/help/160x45, journal/help/240x67 (1643313 renders)
-- `frames/panels/cycle.rs:350` ` {count} so far ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (778 renders); sweep scenario/between/Cycle-160x45, scenario/between/R7-160x45 (92 renders)
-- `frames/panels/cycle.rs:352` ` CCD ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (37104 renders); sweep journal/help/160x45, journal/help/240x67 (986168 renders)
+- `frames/panels/cycle.rs:240` ` part ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (38336 renders); sweep journal/help/160x45, journal/help/240x67 (1851967 renders)
+- `frames/panels/cycle.rs:289` ` {} known {} · more may follow ` — tests frames::dash::stage::tests::an_open_r7_chain_counts_known_parts_and_says_more_may_follow, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (223 renders); sweep scenario/between/120x33, scenario/between/160x45 (134224 renders)
+- `frames/panels/cycle.rs:291` ` part ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (38336 renders); sweep journal/help/160x45, journal/help/240x67 (1851967 renders)
+- `frames/panels/cycle.rs:307` ` trial {} of {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76108 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
+- `frames/panels/cycle.rs:316` ` {} failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2082 renders); sweep journal/help/160x45, journal/help/240x67 (3143 renders)
+- `frames/panels/cycle.rs:318` ` {passed}/{total} passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62554 renders); sweep journal/help/160x45, journal/help/240x67 (5224097 renders)
+- `frames/panels/cycle.rs:320` ` {passed}/{total} passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62554 renders); sweep journal/help/160x45, journal/help/240x67 (5224097 renders)
+- `frames/panels/cycle.rs:348` ` part ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (38336 renders); sweep journal/help/160x45, journal/help/240x67 (1851967 renders)
+- `frames/panels/cycle.rs:350` ` {count} so far ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (781 renders); sweep scenario/between/Cycle-160x45, scenario/between/R7-160x45 (92 renders)
+- `frames/panels/cycle.rs:352` ` CCD ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (37779 renders); sweep journal/help/160x45, journal/help/240x67 (986470 renders)
 - `frames/panels/cycle.rs:355` ` all cores idle ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::between (306 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (64 renders)
 - `frames/panels/cycle.rs:357` ` one core at a time ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2692 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (820 renders)
 - `frames/panels/cycle.rs:377` ` offsets at which these cores failed together ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (27 renders); sweep scenario/combination/Cycle-160x45, scenario/round/Cycle-160x45 (3 renders)
 - `frames/panels/cycle.rs:379` ` failed together ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (49 renders); sweep scenario/combination/Cycle-160x45, scenario/round/Cycle-160x45 (3 renders)
 - `frames/panels/cycle.rs:384` ` COMBINATIONS ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (48 renders); sweep scenario/combination/Cycle-160x45, scenario/round/Cycle-160x45 (3 renders)
 - `frames/panels/cycle.rs:411` ` found by ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (15 renders); sweep scenario/combination/Cycle-160x45, scenario/round/Cycle-160x45 (3 renders)
-- `frames/panels/cycle.rs:412` ` hunt ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10285 renders); sweep journal/help/160x45, journal/help/240x67 (831882 renders)
+- `frames/panels/cycle.rs:412` ` hunt ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (10351 renders); sweep journal/help/160x45, journal/help/240x67 (849702 renders)
 - `frames/panels/cycle.rs:414` ` found by ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (15 renders); sweep scenario/combination/Cycle-160x45, scenario/round/Cycle-160x45 (3 renders)
 - `frames/panels/cycle.rs:423` ` against the profile now ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (23 renders); sweep scenario/combination/Cycle-160x45, scenario/round/Cycle-160x45 (3 renders)
 - `frames/panels/cycle.rs:429` ` columns show {shown} of {} member cores; not shown: {} · l: last {LOG_LIMIT} events ` — tests frames::panels::cycle::tests::combination_overflow_names_the_omitted_cores_and_the_journal_bound (2 renders)
-- `frames/panels/cycle.rs:449` ` probed ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (175 renders); sweep journal/help/160x45, journal/help/240x67 (28085 renders)
+- `frames/panels/cycle.rs:449` ` probed ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (177 renders); sweep journal/help/160x45, journal/help/240x67 (28086 renders)
 - `frames/panels/cycle.rs:449` ` unresolved ` — tests frames::panels::cycle::tests::a_combination_without_a_member_leaves_its_cell_blank_and_says_what_is_clear, tests::describe::a_hunt_says_how_it_ended (8 renders)
-- `frames/panels/cycle.rs:450` ` hunt {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10285 renders); sweep journal/help/160x45, journal/help/240x67 (831882 renders)
+- `frames/panels/cycle.rs:450` ` hunt {} ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (10351 renders); sweep journal/help/160x45, journal/help/240x67 (849702 renders)
 - `frames/panels/cycle.rs:459` ` holds core {:02} at {} ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (29 renders); sweep scenario/combination/Cycle-160x45, scenario/round/Cycle-160x45 (3 renders)
 - `frames/panels/cycle.rs:465` ` clear:  ` — tests frames::panels::cycle::tests::a_combination_without_a_member_leaves_its_cell_blank_and_says_what_is_clear, frames::panels::history::tests::failures_decisions_lifecycle_and_resets_are_never_folded_away (3 renders)
-- `frames/panels/cycle.rs:468` ` {} shallower ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2451 renders); sweep journal/help/160x45, journal/help/240x67 (312606 renders)
-- `frames/panels/cycle.rs:493` ` now ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (4825 renders); sweep journal/help/160x45, journal/help/240x67 (5917757 renders)
+- `frames/panels/cycle.rs:468` ` {} shallower ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (2782 renders); sweep journal/help/160x45, journal/help/240x67 (312803 renders)
+- `frames/panels/cycle.rs:493` ` now ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks (5263 renders); sweep journal/help/160x45, journal/help/240x67 (6002937 renders)
 
 ### `frames/panels/history.rs`: 6 of 6 covered
 
 - `frames/panels/history.rs:22` ` nothing has happened yet ` — tests frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (18 renders)
-- `frames/panels/history.rs:131` ` credited check ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2394 renders); sweep journal/help/160x45, journal/help/240x67 (6706594 renders)
+- `frames/panels/history.rs:131` ` credited check ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_headline_that_does_not_fit_gives_up_whole_clauses_and_never_ends_in_a_cut (2479 renders); sweep journal/help/160x45, journal/help/240x67 (7164712 renders)
 - `frames/panels/history.rs:135` ` chain note ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (685 renders); sweep scenario/concluded/240x67, scenario/first-result/240x67 (2197825 renders)
 - `frames/panels/history.rs:206` ` {head}: {} and {more} more ` — tests frames::frame_tests::bounds::round, frames::panels::history::tests::a_round_that_lists_many_cores_keeps_whole_items_and_counts_the_rest (9 renders); sweep scenario/round/240x67, sweep/combination/3365-deepening.round/120x33/plus40 (11080 renders)
 - `frames/panels/history.rs:393` ` {NOTHING_YET}; page {} lists every event ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (66 renders)
 - `frames/panels/history.rs:421` ` {} older entries are not kept here; page {} lists every event ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (54 renders)
 
-### `frames/panels/hunt.rs`: 99 of 103 covered
+### `frames/panels/hunt.rs`: 102 of 103 covered
 
-- `frames/panels/hunt.rs:44` ` started {minute} · {since} so far ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (91 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (6 renders)
-- `frames/panels/hunt.rs:52` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::bounds::between (495 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (69677 renders)
-- `frames/panels/hunt.rs:60` ` cause ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1598 renders); sweep journal/help/160x45, journal/help/240x67 (1633 renders)
-- `frames/panels/hunt.rs:67` ` evidence ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (3401 renders); sweep journal/help/160x45, journal/help/240x67 (316282 renders)
-- `frames/panels/hunt.rs:80` ` deeper at failure than at their parked offsets ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (59 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (6 renders)
+- `frames/panels/hunt.rs:44` ` started {minute} · {since} so far ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (92 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (6 renders)
+- `frames/panels/hunt.rs:52` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts (519 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (96744 renders)
+- `frames/panels/hunt.rs:60` ` cause ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1599 renders); sweep journal/help/160x45, journal/help/240x67 (1633 renders)
+- `frames/panels/hunt.rs:67` ` evidence ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (3418 renders); sweep journal/help/160x45, journal/help/240x67 (316547 renders)
+- `frames/panels/hunt.rs:80` ` deeper at failure than at their parked offsets ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (60 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (6 renders)
 - `frames/panels/hunt.rs:81` ` deeper at failure than parked ` — tests frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty (1 renders)
-- `frames/panels/hunt.rs:87` ` candidates ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (390 renders); sweep scenario/combination, scenario/concluded (52825 renders)
-- `frames/panels/hunt.rs:120` ` {} while idle, with no trial running ` — tests frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row, frames::panels::hunt::tests::a_singleton_hunt_without_a_passing_anchor_names_no_pass_and_no_combination (13 renders)
-- `frames/panels/hunt.rs:121` ` crash ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (3489 renders); sweep scenario/between, scenario/between/120x33 (1612572 renders)
-- `frames/panels/hunt.rs:125` ` failure ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (20212 renders); sweep journal/help/160x45, journal/help/240x67 (1819957 renders)
+- `frames/panels/hunt.rs:87` ` candidates ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (403 renders); sweep scenario/combination, scenario/concluded (91486 renders)
+- `frames/panels/hunt.rs:120` ` {} while idle, with no trial running ` — tests frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero, frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row (14 renders)
+- `frames/panels/hunt.rs:121` ` crash ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (3503 renders); sweep scenario/between, scenario/between/120x33 (1641641 renders)
+- `frames/panels/hunt.rs:125` ` failure ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (20738 renders); sweep journal/help/160x45, journal/help/240x67 (1847508 renders)
 - `frames/panels/hunt.rs:126` ` the rerun of  ` — tests frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty, frames::panels::hunt::tests::a_named_wrong_result_keeps_its_core_at_medium (8 renders)
 - `frames/panels/hunt.rs:141` ` {signal} in the rerun ` — tests frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty, frames::panels::hunt::tests::a_named_wrong_result_keeps_its_core_at_medium (8 renders)
 - `frames/panels/hunt.rs:162` ` no core named ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (582 renders); sweep scenario/concluded, scenario/confirmation (458289 renders)
@@ -8122,29 +8696,29 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/panels/hunt.rs:205` ` not enough to attribute ` — tests frames::frame_tests::bounds::hunt_bios, frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty (19 renders); sweep scenario/hunt-bios/Hunts-160x45 (2 renders)
 - `frames/panels/hunt.rs:238` ` parked at 0 ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (201 renders); sweep scenario/combination, scenario/concluded (41061 renders)
 - `frames/panels/hunt.rs:239` ` parked at 0 ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (201 renders); sweep scenario/combination, scenario/concluded (41061 renders)
-- `frames/panels/hunt.rs:241` ` parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5559 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
-- `frames/panels/hunt.rs:243` ` at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2353 renders); sweep scenario/combination, scenario/concluded (509223 renders)
-- `frames/panels/hunt.rs:244` ` failing ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (2966 renders); sweep journal/help/160x45, journal/help/240x67 (1144919 renders)
-- `frames/panels/hunt.rs:246` ` at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2353 renders); sweep scenario/combination, scenario/concluded (509223 renders)
-- `frames/panels/hunt.rs:250` ` parts ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (1341 renders); sweep scenario/between/120x33, scenario/between/160x45 (318327 renders)
-- `frames/panels/hunt.rs:255` ` part ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (38280 renders); sweep journal/help/160x45, journal/help/240x67 (1643313 renders)
-- `frames/panels/hunt.rs:258` ` schedule ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::between (306 renders); sweep journal/help/160x45, journal/help/240x67 (72 renders)
-- `frames/panels/hunt.rs:259` ` state ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::combination (1436 renders); sweep scenario/combination/Cycle-160x45, scenario/deadend/Cycle-160x45 (34 renders)
-- `frames/panels/hunt.rs:283` ` trial {index}/{of} ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262091 renders); sweep journal/help/160x45, journal/help/240x67 (995885 renders)
-- `frames/panels/hunt.rs:285` ` trial {index} of {of} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76056 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
-- `frames/panels/hunt.rs:290` ` if part {i} passes ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (56 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
-- `frames/panels/hunt.rs:292` ` next ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (22491 renders); sweep scenario/between, scenario/between/120x33 (4933203 renders)
-- `frames/panels/hunt.rs:301` ` part {}/{} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (38280 renders); sweep journal/help/160x45, journal/help/240x67 (1643313 renders)
-- `frames/panels/hunt.rs:302` `  at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2353 renders); sweep scenario/combination, scenario/concluded (509223 renders)
-- `frames/panels/hunt.rs:331` ` failed parts are split again; complements test what remains ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (35 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
-- `frames/panels/hunt.rs:358` ` {} held at failing offsets ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (10 renders); sweep scenario/hunt-bios/Hunts-160x45 (2 renders)
-- `frames/panels/hunt.rs:364` ` {} kept at failing offsets ` — **not rendered**
-- `frames/panels/hunt.rs:369` ` {} parked at {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (211 renders); sweep scenario/combination, scenario/concluded (41063 renders)
-- `frames/panels/hunt.rs:375` ` others ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (10 renders); sweep scenario/hunt-bios/Hunts-160x45 (2 renders)
-- `frames/panels/hunt.rs:422` ` parts ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (1341 renders); sweep scenario/between/120x33, scenario/between/160x45 (318327 renders)
-- `frames/panels/hunt.rs:423` ` group {} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (24425 renders); sweep journal/help/160x45, journal/help/240x67 (821677 renders)
-- `frames/panels/hunt.rs:424` ` {} at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2353 renders); sweep scenario/combination, scenario/concluded (509223 renders)
-- `frames/panels/hunt.rs:431` ` {what}, {} parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5559 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
+- `frames/panels/hunt.rs:241` ` parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5562 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
+- `frames/panels/hunt.rs:243` ` at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2355 renders); sweep scenario/combination, scenario/concluded (509223 renders)
+- `frames/panels/hunt.rs:244` ` failing ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (2978 renders); sweep journal/help/160x45, journal/help/240x67 (1144936 renders)
+- `frames/panels/hunt.rs:246` ` at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2355 renders); sweep scenario/combination, scenario/concluded (509223 renders)
+- `frames/panels/hunt.rs:250` ` parts ` — tests frames::dash::stage::tests::an_open_r7_chain_counts_known_parts_and_says_more_may_follow, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1383 renders); sweep scenario/between/120x33, scenario/between/160x45 (385433 renders)
+- `frames/panels/hunt.rs:255` ` part ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (38336 renders); sweep journal/help/160x45, journal/help/240x67 (1851967 renders)
+- `frames/panels/hunt.rs:258` ` schedule ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::between (307 renders); sweep journal/help/160x45, journal/help/240x67 (72 renders)
+- `frames/panels/hunt.rs:259` ` state ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::combination (1437 renders); sweep scenario/combination/Cycle-160x45, scenario/deadend/Cycle-160x45 (34 renders)
+- `frames/panels/hunt.rs:283` ` trial {index}/{of} ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262302 renders); sweep journal/help/160x45, journal/help/240x67 (1021891 renders)
+- `frames/panels/hunt.rs:285` ` trial {index} of {of} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76108 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
+- `frames/panels/hunt.rs:290` ` if part {i} passes ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (57 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
+- `frames/panels/hunt.rs:292` ` next ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks (22552 renders); sweep scenario/between, scenario/between/120x33 (4957476 renders)
+- `frames/panels/hunt.rs:301` ` part {}/{} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (38336 renders); sweep journal/help/160x45, journal/help/240x67 (1851967 renders)
+- `frames/panels/hunt.rs:302` `  at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2355 renders); sweep scenario/combination, scenario/concluded (509223 renders)
+- `frames/panels/hunt.rs:331` ` failed parts are split again; complements test what remains ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (36 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
+- `frames/panels/hunt.rs:358` ` {} held at failing offsets ` — tests frames::frame_tests::bounds::hunt_bios, frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero (11 renders); sweep scenario/hunt-bios/Hunts-160x45 (2 renders)
+- `frames/panels/hunt.rs:364` ` {} kept at failing offsets ` — tests frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero (1 renders)
+- `frames/panels/hunt.rs:369` ` {} parked at {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (212 renders); sweep scenario/combination, scenario/concluded (41063 renders)
+- `frames/panels/hunt.rs:375` ` others ` — tests frames::frame_tests::bounds::hunt_bios, frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero (11 renders); sweep scenario/hunt-bios/Hunts-160x45 (2 renders)
+- `frames/panels/hunt.rs:422` ` parts ` — tests frames::dash::stage::tests::an_open_r7_chain_counts_known_parts_and_says_more_may_follow, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1383 renders); sweep scenario/between/120x33, scenario/between/160x45 (385433 renders)
+- `frames/panels/hunt.rs:423` ` group {} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (24454 renders); sweep journal/help/160x45, journal/help/240x67 (847408 renders)
+- `frames/panels/hunt.rs:424` ` {} at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2355 renders); sweep scenario/combination, scenario/concluded (509223 renders)
+- `frames/panels/hunt.rs:431` ` {what}, {} parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5562 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
 - `frames/panels/hunt.rs:437` ` locate: {} at 0 ` — tests frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row, tests::describe::a_locating_hunt_names_its_first_group (2 renders)
 - `frames/panels/hunt.rs:441` ` groups {}-{} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (14086 renders); sweep journal/help/160x45, journal/help/240x67 (386947 renders)
 - `frames/panels/hunt.rs:442` ` parts of {} ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame, frames::frame_tests::bounds::idle (409 renders); sweep scenario/idle/240x67, scenario/idle/History-160x45 (228271 renders)
@@ -8153,20 +8727,20 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/panels/hunt.rs:458` ` running · {}/{} passed ` — tests frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row (1 renders)
 - `frames/panels/hunt.rs:465` `  · answered by existing evidence ` — tests frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (5 renders)
 - `frames/panels/hunt.rs:483` ` → core {id:02} failed alone; testing it at its parked offset {} for a safe anchor ` — tests frames::panels::hunt::tests::a_singleton_hunt_without_a_passing_anchor_names_no_pass_and_no_combination, frames::panels::hunt::tests::a_singleton_parked_at_a_nonzero_offset_tests_that_offset_as_its_anchor (2 renders)
-- `frames/panels/hunt.rs:487` ` → core {id:02} failed alone; testing its parked offset for a safe anchor ` — **not rendered**
+- `frames/panels/hunt.rs:487` ` → core {id:02} failed alone; testing its parked offset for a safe anchor ` — silent: `HuntView::singleton` stages a probe `Anchor` only when its parked offset is the probe's offset, so an anchor without a parked offset never reaches `group_lines`
 - `frames/panels/hunt.rs:490` ` → core {id:02} failed alone; probing between its failure and its passing anchor ` — tests frames::panels::hunt::tests::a_singleton_interior_probe_runs_between_its_failure_and_its_passing_anchor, frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (6 renders)
 - `frames/panels/hunt.rs:493` ` → core {id:02} failed alone; its probing is done ` — tests frames::panels::hunt::tests::a_stopped_singleton_keeps_its_shallowest_failure_without_claiming_a_pass (1 renders)
 - `frames/panels/hunt.rs:512` ` → {} kept together; probing members ` — tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (21 renders); sweep scenario/member-probe/Hunts-160x45 (2 renders)
-- `frames/panels/hunt.rs:523` ` crashed ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (188 renders); sweep scenario/crashed/Bios-160x45, scenario/crashed/Cores-160x45 (30 renders)
-- `frames/panels/hunt.rs:539` ` probes ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1139 renders); sweep journal/help/160x45, journal/missing-once/120x33 (6350 renders)
-- `frames/panels/hunt.rs:543` ` member ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (305 renders); sweep journal/help/160x45, journal/help/240x67 (8193 renders)
-- `frames/panels/hunt.rs:544` ` now ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (4825 renders); sweep journal/help/160x45, journal/help/240x67 (5917757 renders)
-- `frames/panels/hunt.rs:545` ` group failed at ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::member_probe (32 renders); sweep scenario/member-probe/Cores-160x45, scenario/member-probe/Hunts-160x45 (5 renders)
+- `frames/panels/hunt.rs:523` ` crashed ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (190 renders); sweep scenario/crashed/Bios-160x45, scenario/crashed/Cores-160x45 (30 renders)
+- `frames/panels/hunt.rs:539` ` probes ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1146 renders); sweep journal/help/160x45, journal/missing-once/120x33 (9059 renders)
+- `frames/panels/hunt.rs:543` ` member ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (320 renders); sweep journal/help/160x45, journal/help/240x67 (10920 renders)
+- `frames/panels/hunt.rs:544` ` now ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks (5263 renders); sweep journal/help/160x45, journal/help/240x67 (6002937 renders)
+- `frames/panels/hunt.rs:545` ` group failed at ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::member_probe (34 renders); sweep scenario/member-probe/Cores-160x45, scenario/member-probe/Hunts-160x45 (6 renders)
 - `frames/panels/hunt.rs:546` ` passed at ` — tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (25 renders); sweep scenario/member-probe/Hunts-160x45 (2 renders)
-- `frames/panels/hunt.rs:547` ` state ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::combination (1436 renders); sweep scenario/combination/Cycle-160x45, scenario/deadend/Cycle-160x45 (34 renders)
-- `frames/panels/hunt.rs:564` ` waiting ` — tests frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended, frames::frame_tests::bounds::between (227 renders); sweep journal/help/160x45, journal/help/240x67 (24373 renders)
-- `frames/panels/hunt.rs:579` ` next ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (22491 renders); sweep scenario/between, scenario/between/120x33 (4933203 renders)
-- `frames/panels/hunt.rs:581` ` done ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2141 renders); sweep journal/help/160x45, journal/help/240x67 (181640 renders)
+- `frames/panels/hunt.rs:547` ` state ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::combination (1437 renders); sweep scenario/combination/Cycle-160x45, scenario/deadend/Cycle-160x45 (34 renders)
+- `frames/panels/hunt.rs:564` ` waiting ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended (232 renders); sweep journal/help/160x45, journal/help/240x67 (48688 renders)
+- `frames/panels/hunt.rs:579` ` next ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks (22552 renders); sweep scenario/between, scenario/between/120x33 (4957476 renders)
+- `frames/panels/hunt.rs:581` ` done ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (2145 renders); sweep journal/help/160x45, journal/help/240x67 (184714 renders)
 - `frames/panels/hunt.rs:590` ` ► trial {} of {} ` — tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (21 renders); sweep scenario/member-probe/Hunts-160x45 (2 renders)
 - `frames/panels/hunt.rs:593` ` ► running ` — tests frames::panels::hunt::tests::a_singleton_hunt_without_a_passing_anchor_names_no_pass_and_no_combination, frames::panels::hunt::tests::a_singleton_interior_probe_runs_between_its_failure_and_its_passing_anchor (9 renders)
 - `frames/panels/hunt.rs:628` ` {} carried ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, tests::describe::a_known_failure_names_the_hunt_it_leads_to (13 renders)
@@ -8175,56 +8749,56 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/panels/hunt.rs:667` ` record core {id:02}'s failure point, probing between it and its passing anchor ` — tests frames::panels::hunt::tests::a_singleton_interior_probe_runs_between_its_failure_and_its_passing_anchor, frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (6 renders)
 - `frames/panels/hunt.rs:670` ` record core {id:02}'s failure point at {}; a pass sits one count shallower ` — tests frames::panels::hunt::tests::a_stopped_singleton_keeps_its_shallowest_failure_without_claiming_a_pass (1 renders)
 - `frames/panels/hunt.rs:674` ` record core {id:02}'s shallowest reproduced failure at {}; probing stopped without a safe bracket ` — tests frames::panels::hunt::tests::a_stopped_singleton_keeps_its_shallowest_failure_without_claiming_a_pass (1 renders)
-- `frames/panels/hunt.rs:679` ` back off past it ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (58 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
+- `frames/panels/hunt.rs:679` ` back off past it ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (59 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
 - `frames/panels/hunt.rs:682` ` record a failure point or a combination ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (14 renders)
-- `frames/panels/hunt.rs:683` ` back off past it ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (58 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
-- `frames/panels/hunt.rs:688` ` record one core's failure point or a combination ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (41 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
-- `frames/panels/hunt.rs:691` ` back off past it ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (58 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
+- `frames/panels/hunt.rs:683` ` back off past it ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (59 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
+- `frames/panels/hunt.rs:688` ` record one core's failure point or a combination ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (42 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
+- `frames/panels/hunt.rs:691` ` back off past it ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (59 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
 - `frames/panels/hunt.rs:697` ` record the combination: {members} at the offsets that still fail ` — tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (17 renders); sweep scenario/member-probe/Hunts-160x45 (2 renders)
 - `frames/panels/hunt.rs:701` ` back off one member to a tested passing probe that keeps the profile clear ` — tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (16 renders); sweep scenario/member-probe/Hunts-160x45 (2 renders)
-- `frames/panels/hunt.rs:710` ` rerun {place}{length} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (6387 renders); sweep scenario/between, scenario/between/160x45 (383628 renders)
+- `frames/panels/hunt.rs:710` ` rerun {place}{length} ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (6392 renders); sweep scenario/between, scenario/between/160x45 (384739 renders)
 - `frames/panels/hunt.rs:718` ` if the rerun passes, resume cycle {number} ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (41 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (6 renders)
-- `frames/panels/hunt.rs:719` ` cycle {number} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (56781 renders); sweep journal/help/160x45, journal/help/240x67 (6318886 renders)
-- `frames/panels/hunt.rs:729` ` then ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (2680 renders); sweep journal/help/160x45, journal/help/240x67 (7989 renders)
-- `frames/panels/hunt.rs:736` ` then ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (2680 renders); sweep journal/help/160x45, journal/help/240x67 (7989 renders)
-- `frames/panels/hunt.rs:737` ` after the hunt: ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (54 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (6 renders)
+- `frames/panels/hunt.rs:719` ` cycle {number} ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (56876 renders); sweep journal/help/160x45, journal/help/240x67 (6553562 renders)
+- `frames/panels/hunt.rs:729` ` then ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (2681 renders); sweep journal/help/160x45, journal/help/240x67 (7989 renders)
+- `frames/panels/hunt.rs:736` ` then ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (2681 renders); sweep journal/help/160x45, journal/help/240x67 (7989 renders)
+- `frames/panels/hunt.rs:737` ` after the hunt: ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (55 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (6 renders)
 - `frames/panels/hunt.rs:775` ` {length}, then {} x {} ` — tests frames::frame_tests::bounds::crashed, frames::frame_tests::bounds::member_probe (887 renders); sweep scenario/crashed/Cycle-160x45, scenario/recovering/Cycle-160x45 (96 renders)
 - `frames/panels/hunt.rs:777` ` , original length ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (18 renders)
-- `frames/panels/hunt.rs:788` ` trial ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262091 renders); sweep journal/help/160x45, journal/help/240x67 (995885 renders)
+- `frames/panels/hunt.rs:788` ` trial ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262302 renders); sweep journal/help/160x45, journal/help/240x67 (1021891 renders)
 - `frames/panels/hunt.rs:792` ` {length}, then {} of {} ` — tests frames::frame_tests::bounds::member_probe, frames::frame_tests::panels::the_hunts_page_leads_with_the_cause_of_the_running_hunt (12 renders); sweep scenario/member-probe/Hunts-160x45 (2 renders)
-- `frames/panels/hunt.rs:794` ` , its original length ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (32 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
-- `frames/panels/hunt.rs:809` ` starting ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (26 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (58 renders)
+- `frames/panels/hunt.rs:794` ` , its original length ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (33 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (4 renders)
+- `frames/panels/hunt.rs:809` ` starting ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (27 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (58 renders)
 - `frames/panels/hunt.rs:812` ` locate ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (136 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (26 renders)
-- `frames/panels/hunt.rs:815` ` group {} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (24425 renders); sweep journal/help/160x45, journal/help/240x67 (821677 renders)
-- `frames/panels/hunt.rs:828` ` group {} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (24425 renders); sweep journal/help/160x45, journal/help/240x67 (821677 renders)
-- `frames/panels/hunt.rs:833` ` {recut}part {at} of {n} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (21949 renders); sweep journal/help/160x45, journal/help/240x67 (655527 renders)
+- `frames/panels/hunt.rs:815` ` group {} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (24454 renders); sweep journal/help/160x45, journal/help/240x67 (847408 renders)
+- `frames/panels/hunt.rs:828` ` group {} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (24454 renders); sweep journal/help/160x45, journal/help/240x67 (847408 renders)
+- `frames/panels/hunt.rs:833` ` {recut}part {at} of {n} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (21964 renders); sweep journal/help/160x45, journal/help/240x67 (797075 renders)
 - `frames/panels/hunt.rs:835` ` parts · {recut}part {at} of {n} ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (60 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (22872 renders)
-- `frames/panels/hunt.rs:842` ` testing anchor ` — **not rendered**
+- `frames/panels/hunt.rs:842` ` testing anchor ` — tests frames::panels::hunt::tests::the_stage_line_names_a_singleton_hunt_s_probe_stage (1 renders)
 - `frames/panels/hunt.rs:843` ` probing ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (79 renders); sweep scenario/combination, scenario/member-probe (1574 renders)
-- `frames/panels/hunt.rs:844` ` probes done ` — **not rendered**
-- `frames/panels/hunt.rs:849` ` culprit probes · {word} ` — tests frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (8 renders)
-- `frames/panels/hunt.rs:858` ` member {at} of {} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (191 renders); sweep journal/help/160x45, journal/help/240x67 (5479 renders)
+- `frames/panels/hunt.rs:844` ` probes done ` — tests frames::panels::hunt::tests::the_stage_line_names_a_singleton_hunt_s_probe_stage (1 renders)
+- `frames/panels/hunt.rs:849` ` culprit probes · {word} ` — tests frames::panels::hunt::tests::the_stage_line_names_a_singleton_hunt_s_probe_stage, frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (10 renders)
+- `frames/panels/hunt.rs:858` ` member {at} of {} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (198 renders); sweep journal/help/160x45, journal/help/240x67 (5496 renders)
 - `frames/panels/hunt.rs:860` ` member probes · member {at} of {} ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_detail_page_at_the_reference_size (25 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (3504 renders)
 
-### `frames/panels/log.rs`: 17 of 19 covered
+### `frames/panels/log.rs`: 19 of 19 covered
 
 - `frames/panels/log.rs:35` ` No journal entries yet. ` — tests frames::frame_tests::escapes::a_problem_with_controls_in_its_text_draws_them_visibly_escaped_live_and_in_one_frame, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (7 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (3 renders)
-- `frames/panels/log.rs:46` ` trial progress ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::concluded (119 renders); sweep sweep/combination/log-end/160x45, sweep/combination/log-end/240x67 (46 renders)
-- `frames/panels/log.rs:50` ` trial ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262091 renders); sweep journal/help/160x45, journal/help/240x67 (995885 renders)
-- `frames/panels/log.rs:53` ` core ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
-- `frames/panels/log.rs:57` ` self-test ` — **not rendered**
-- `frames/panels/log.rs:57` ` passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62497 renders); sweep journal/help/160x45, journal/help/240x67 (5224049 renders)
-- `frames/panels/log.rs:101` ` trial {trial}: {} ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262091 renders); sweep journal/help/160x45, journal/help/240x67 (995885 renders)
-- `frames/panels/log.rs:110` ` {n} self-test {} passed ` — **not rendered**
-- `frames/panels/log.rs:110` ` check ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest (20160 renders); sweep journal/help/160x45, journal/help/240x67 (6734581 renders)
-- `frames/panels/log.rs:159` ` profile ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (17754 renders); sweep journal/help/160x45, journal/help/240x67 (25028 renders)
+- `frames/panels/log.rs:46` ` trial progress ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::concluded (120 renders); sweep sweep/combination/log-end/160x45, sweep/combination/log-end/240x67 (46 renders)
+- `frames/panels/log.rs:50` ` trial ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262302 renders); sweep journal/help/160x45, journal/help/240x67 (1021891 renders)
+- `frames/panels/log.rs:53` ` core ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
+- `frames/panels/log.rs:57` ` self-test ` — tests frames::frame_tests::pages::the_log_page_folds_a_trials_passed_self_tests_into_one_row (3 renders)
+- `frames/panels/log.rs:57` ` passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62554 renders); sweep journal/help/160x45, journal/help/240x67 (5224097 renders)
+- `frames/panels/log.rs:101` ` trial {trial}: {} ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262302 renders); sweep journal/help/160x45, journal/help/240x67 (1021891 renders)
+- `frames/panels/log.rs:110` ` {n} self-test {} passed ` — tests frames::frame_tests::pages::the_log_page_folds_a_trials_passed_self_tests_into_one_row (3 renders)
+- `frames/panels/log.rs:110` ` check ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest (20598 renders); sweep journal/help/160x45, journal/help/240x67 (7210927 renders)
+- `frames/panels/log.rs:159` ` profile ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (17773 renders); sweep journal/help/160x45, journal/help/240x67 (25144 renders)
 - `frames/panels/log.rs:202` ` event ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (826 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (2514 renders)
 - `frames/panels/log.rs:206` ` last {LOG_LIMIT} of {} · SMU and preflight left out ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bounds::between (245 renders); sweep scenario/between/Log-160x45, scenario/checking/Log-160x45 (41 renders)
-- `frames/panels/log.rs:209` ` last {LOG_LIMIT} of {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (787 renders); sweep scenario/between/Cores-160x45, scenario/between/Log-160x45 (34049 renders)
+- `frames/panels/log.rs:209` ` last {LOG_LIMIT} of {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (982 renders); sweep scenario/between/Cores-160x45, scenario/between/Log-160x45 (34149 renders)
 - `frames/panels/log.rs:213` ` {} · SMU and preflight left out ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (323 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (55 renders)
-- `frames/panels/log.rs:219` ` JOURNAL ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (446 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (153 renders)
-- `frames/panels/log.rs:220` ` JOURNAL ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (446 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (153 renders)
-- `frames/panels/log.rs:226` ` JOURNAL ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (446 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (153 renders)
+- `frames/panels/log.rs:219` ` JOURNAL ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (447 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (153 renders)
+- `frames/panels/log.rs:220` ` JOURNAL ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (447 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (153 renders)
+- `frames/panels/log.rs:226` ` JOURNAL ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (447 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (153 renders)
 - `frames/panels/log.rs:266` ` new event ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bounds::between (126 renders); sweep journal/help/160x45, journal/help/240x67 (54 renders)
 - `frames/panels/log.rs:271` ` {count} · End: latest ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (10 renders)
 
@@ -8241,17 +8815,17 @@ Every string literal of a renderer's production source that holds words (1064 of
 
 - `frames/panels/search.rs:31` ` TURNS ` — tests frames::frame_tests::bounds::confirm, frames::frame_tests::bounds::crashed (82 renders); sweep scenario/confirm/Cycle-160x45, scenario/crashed/Cycle-160x45 (8 renders)
 - `frames/panels/search.rs:32` ` one core per turn, in this order ` — tests frames::frame_tests::bounds::confirm, frames::frame_tests::bounds::crashed (82 renders); sweep scenario/confirm/Cycle-160x45, scenario/crashed/Cycle-160x45 (8 renders)
-- `frames/panels/search.rs:42` ` core ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
+- `frames/panels/search.rs:42` ` core ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
 - `frames/panels/search.rs:43` ` this turn ` — tests frames::frame_tests::bounds::confirm, frames::frame_tests::bounds::crashed (44 renders); sweep scenario/confirm/Cycle-160x45, scenario/crashed/Cycle-160x45 (8 renders)
 - `frames/panels/search.rs:45` ` workload ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::between (505 renders); sweep journal/help/160x45, journal/help/240x67 (113212 renders)
-- `frames/panels/search.rs:46` ` so far ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (778 renders); sweep scenario/between/Cycle-160x45, scenario/between/R7-160x45 (92 renders)
+- `frames/panels/search.rs:46` ` so far ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (781 renders); sweep scenario/between/Cycle-160x45, scenario/between/R7-160x45 (92 renders)
 - `frames/panels/search.rs:57` ` search: 1 count deeper ` — tests frames::panels::search::tests::the_medium_turn_descriptions_fit_their_column_whole, frames::panels::search::tests::the_turns_say_which_cores_already_have_their_solo_limit (2 renders)
 - `frames/panels/search.rs:59` ` search: {} ` — tests frames::frame_tests::bounds::crashed, frames::frame_tests::bounds::recovering (883 renders); sweep scenario/crashed/Cycle-160x45, scenario/recovering/Cycle-160x45 (96 renders)
-- `frames/panels/search.rs:61` ` none yet ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (359 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (211 renders)
+- `frames/panels/search.rs:61` ` none yet ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (365 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (211 renders)
 - `frames/panels/search.rs:65` ` confirm: light trial {} of {} ` — tests frames::frame_tests::bounds::confirm, frames::panels::search::tests::a_complete_confirmation_turn_records_the_solo_limit (200 renders); sweep scenario/confirm/Cycle-160x45 (32 renders)
 - `frames/panels/search.rs:70` ` records the solo limit ` — tests frames::panels::search::tests::a_complete_confirmation_turn_records_the_solo_limit (2 renders)
 - `frames/panels/search.rs:72` ` confirm: heavy trial {} of {} ` — tests frames::panels::search::tests::a_complete_confirmation_turn_records_the_solo_limit, frames::panels::search::tests::the_medium_turn_descriptions_fit_their_column_whole (6 renders)
-- `frames/panels/search.rs:75` ` light {}/{}, heavy {}/{} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::confirm (284 renders); sweep scenario/confirm/Cores-160x45, scenario/confirm/Cycle-160x45 (69 renders)
+- `frames/panels/search.rs:75` ` light {}/{}, heavy {}/{} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::confirm (286 renders); sweep scenario/confirm/Cores-160x45, scenario/confirm/Cycle-160x45 (85 renders)
 - `frames/panels/search.rs:109` ` waiting for the cycles   ` — tests frames::panels::search::tests::the_turns_say_which_cores_already_have_their_solo_limit (1 renders)
 - `frames/panels/search.rs:111` `   · solo limits found ` — tests frames::panels::search::tests::the_turns_say_which_cores_already_have_their_solo_limit (1 renders)
 - `frames/panels/search.rs:122` ` No BIOS profile yet: it appears once the tuner has a phase for every core. ` — tests frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (6 renders)
@@ -8265,19 +8839,19 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/panels/search.rs:182` ` confirmed by a passed full cycle ` — tests frames::panels::search::tests::a_confirmation_is_described_by_its_cycle_and_local_date_with_the_event_as_evidence (1 renders)
 - `frames/panels/search.rs:186` ` evidence: journal event #{} ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::concluded (72 renders); sweep scenario/combination/Bios-160x45, scenario/concluded/Bios-160x45 (16 renders)
 - `frames/panels/search.rs:213` ` slot    ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (165 renders); sweep journal/help/160x45, journal/help/240x67 (70 renders)
-- `frames/panels/search.rs:218` ` CCD {}   ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (37104 renders); sweep journal/help/160x45, journal/help/240x67 (986168 renders)
+- `frames/panels/search.rs:218` ` CCD {}   ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (37779 renders); sweep journal/help/160x45, journal/help/240x67 (986470 renders)
 - `frames/panels/search.rs:239` ` unconfirmed since journal event #{since} ` — tests frames::frame_tests::bounds::hunt_bios, frames::frame_tests::bounds::unconfirmed (22 renders); sweep scenario/hunt-bios/Bios-160x45, scenario/unconfirmed/Bios-160x45 (4 renders)
 - `frames/panels/search.rs:258` ` PHASE 2 · ROUND {round} ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_cycle_page_shows_the_open_phase_2_round (46 renders); sweep scenario/round/120x33, scenario/round/160x45 (29596 renders)
 - `frames/panels/search.rs:268` ` {} left if none fails, then one full cycle ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_cycle_page_shows_the_open_phase_2_round (10 renders); sweep scenario/round/Cycle-160x45 (2 renders)
-- `frames/panels/search.rs:269` ` round ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4657 renders); sweep journal/help/160x45, journal/help/240x67 (406828 renders)
+- `frames/panels/search.rs:269` ` round ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (4672 renders); sweep journal/help/160x45, journal/help/240x67 (445527 renders)
 - `frames/panels/search.rs:298` ` {} {}  {} → solo {solo}  gap {gap} ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_cycle_page_shows_the_open_phase_2_round (13 renders); sweep scenario/round/Cycle-160x45 (2 renders)
-- `frames/panels/search.rs:299` ` core ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
+- `frames/panels/search.rs:299` ` core ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
 - `frames/panels/search.rs:310` ` CHECKS ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_cycle_page_shows_the_open_phase_2_round (12 renders); sweep scenario/round/Cycle-160x45 (2 renders)
-- `frames/panels/search.rs:317` ` {} on {}  {}/{} passed ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (57728 renders); sweep journal/help/160x45, journal/help/240x67 (4991257 renders)
+- `frames/panels/search.rs:317` ` {} on {}  {}/{} passed ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (57769 renders); sweep journal/help/160x45, journal/help/240x67 (4991257 renders)
 
 ### `frames/render.rs`: 2 of 2 covered
 
-- `frames/render.rs:54` ` starting ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (26 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (58 renders)
+- `frames/render.rs:54` ` starting ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (27 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (58 renders)
 - `frames/render.rs:57` ` can't read journal ` — tests frames::frame_tests::escapes::a_problem_with_controls_in_its_text_draws_them_visibly_escaped_live_and_in_one_frame, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (48 renders); sweep journal/problem-once/120x33, journal/problem-once/160x45 (24 renders)
 
 ### `frames/scene.rs`: 5 of 5 covered
@@ -8285,10 +8859,10 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/scene.rs:129` ` a moment ago ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (100 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (53230 renders)
 - `frames/scene.rs:131` ` {}m ago ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (271 renders); sweep scenario/between/120x33, scenario/between/160x45 (665970 renders)
 - `frames/scene.rs:133` ` {} ago ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (371 renders); sweep scenario/between/120x33, scenario/between/160x45 (719200 renders)
-- `frames/scene.rs:157` `  vector ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (8093 renders); sweep journal/help/160x45, journal/help/240x67 (1236544 renders)
+- `frames/scene.rs:157` `  vector ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (8093 renders); sweep journal/help/160x45, journal/help/240x67 (1250519 renders)
 - `frames/scene.rs:159` ` , then  ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1582 renders); sweep scenario/combination, scenario/concluded (575 renders)
 
-### `frames/story/mod.rs`: 156 of 159 covered
+### `frames/story/mod.rs`: 159 of 159 covered
 
 - `frames/story/mod.rs:77` ` This partial idles the top-requester groups found so far. A backoff re-derives it; an unchanged load… ` — tests frames::story::tests::the_story::a_partial_explains_that_it_is_ordinary_evidence (1 renders)
 - `frames/story/mod.rs:91` ` NO SESSION YET ` — tests frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (24 renders); sweep journal/missing-once/120x33, journal/missing-once/160x45 (16 renders)
@@ -8306,14 +8880,14 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/story/mod.rs:167` ` Core {id:02} failed at {}, so {} is its candidate solo limit, and I'm confirming it. ` — tests frames::story::tests::the_story::a_search_trial_says_what_it_is_finding_or_confirming (2 renders)
 - `frames/story/mod.rs:172` ` {} is core {id:02}'s candidate solo limit, and I'm confirming it. ` — tests frames::story::tests::the_story::a_search_trial_says_what_it_is_finding_or_confirming (2 renders)
 - `frames/story/mod.rs:176` ` I'm finding core {id:02}'s solo limit, one turn at a time, now at {}. ` — tests frames::story::tests::the_simulated_sessions::a_session_between_phases_names_a_solo_search_in_its_labels, frames::story::tests::the_story::a_search_trial_says_what_it_is_finding_or_confirming (6 renders)
-- `frames/story/mod.rs:181` ` SOLO LIMITS ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (780 renders); sweep scenario/between/120x33, scenario/between/160x45 (1193000 renders)
+- `frames/story/mod.rs:181` ` SOLO LIMITS ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (818 renders); sweep scenario/between/120x33, scenario/between/160x45 (1420146 renders)
 - `frames/story/mod.rs:184` ` One core at a time with the rest at 0, so any failure belongs to the loaded core. ` — tests frames::story::tests::the_simulated_sessions::a_session_between_phases_names_a_solo_search_in_its_labels, frames::story::tests::the_story::a_search_trial_says_what_it_is_finding_or_confirming (3 renders)
 - `frames/story/mod.rs:202` ` The failed load runs again after the offsets changed. This trial checks the new profile. ` — tests frames::story::tests::the_story::a_rerun_names_the_step_checking_resumes_at, frames::story::tests::the_story::a_rerun_that_completes_the_cycle_names_no_step_of_the_next (2 renders)
 - `frames/story/mod.rs:205` ` The failed load runs again on the new profile. ` — tests frames::story::tests::the_story::a_rerun_names_the_step_checking_resumes_at (1 renders)
 - `frames/story/mod.rs:212` ` Cycle {number} waits at step {step} until the rerun passes. ` — tests frames::story::tests::the_story::a_rerun_names_the_step_checking_resumes_at, frames::story::tests::the_story::a_rerun_that_completes_the_cycle_names_no_step_of_the_next (3 renders)
 - `frames/story/mod.rs:215` ` The failed load runs again on the new profile; cycle {number} waits at step {step} until the rerun p… ` — tests frames::story::tests::the_story::a_rerun_names_the_step_checking_resumes_at, frames::story::tests::the_story::a_rerun_that_completes_the_cycle_names_no_step_of_the_next (3 renders)
 - `frames/story/mod.rs:219` ` RERUN ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::unconfirmed (18 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (9668 renders)
-- `frames/story/mod.rs:227` ` PHASE 2 ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (830 renders); sweep journal/help/160x45, journal/help/240x67 (1096085 renders)
+- `frames/story/mod.rs:227` ` PHASE 2 ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (858 renders); sweep journal/help/160x45, journal/help/240x67 (1196692 renders)
 - `frames/story/mod.rs:228` ` PHASE 2 · ROUND {round} ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_cycle_page_shows_the_open_phase_2_round (46 renders); sweep scenario/round/120x33, scenario/round/160x45 (29596 renders)
 - `frames/story/mod.rs:238` ` Core {id:02} runs alone at its proposed {offset}, like every moved core's light and heavy checks. ` — tests frames::story::tests::the_story::deepening_checks_say_how_they_load (1 renders)
 - `frames/story/mod.rs:240` ` R7 then checks the parts where a moved core is a top requester. ` — tests frames::story::tests::the_story::deepening_checks_say_how_they_load (1 renders)
@@ -8323,14 +8897,14 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/story/mod.rs:271` ` Round {round} checks again the offsets kept from the round that ended unpassed ` — tests frames::story::tests::the_story::deepening_checks_say_how_they_load (1 renders)
 - `frames/story/mod.rs:274` ` Round {round} moves {} one count toward their solo limits ` — tests frames::story::tests::the_story::a_round_names_the_cores_it_moves (1 renders)
 - `frames/story/mod.rs:279` ` {what}; {} left if no round fails, then one full cycle. ` — tests frames::story::tests::the_story::a_round_names_the_cores_it_moves, frames::story::tests::the_story::deepening_checks_say_how_they_load (2 renders)
-- `frames/story/mod.rs:280` ` round ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4657 renders); sweep journal/help/160x45, journal/help/240x67 (406828 renders)
-- `frames/story/mod.rs:294` ` CYCLE {cycle} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (1402 renders); sweep scenario/between/120x33, scenario/between/160x45 (1165558 renders)
+- `frames/story/mod.rs:280` ` round ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (4672 renders); sweep journal/help/160x45, journal/help/240x67 (445527 renders)
+- `frames/story/mod.rs:294` ` CYCLE {cycle} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded (1439 renders); sweep scenario/between/120x33, scenario/between/160x45 (1222616 renders)
 - `frames/story/mod.rs:297` ` This step ` — tests frames::story::tests::edges::a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold (2 renders)
 - `frames/story/mod.rs:297` ` Step {step} ` — tests frames::story::tests::edges::a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold, frames::story::tests::the_simulated_sessions::a_running_checking_trial_has_a_story_and_an_operation (14 renders)
 - `frames/story/mod.rs:304` ` {step} leaves every core idle for {}, with short wake-ups, to test idle and boost states. ` — tests frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight, frames::story::tests::the_story::an_idle_trial_holds_the_story_until_its_end_is_recorded (2 renders)
 - `frames/story/mod.rs:307` ` This screen holds still while the idle trial is in flight, clock included, so drawing it cannot wake… ` — tests frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight, frames::story::tests::the_story::an_idle_trial_holds_the_story_until_its_end_is_recorded (2 renders)
 - `frames/story/mod.rs:309` ` Every core idle with short wake-ups; this screen holds still. ` — tests frames::story::tests::the_simulated_sessions::an_idle_session_holds_still_while_its_trial_is_in_flight, frames::story::tests::the_story::an_idle_trial_holds_the_story_until_its_end_is_recorded (2 renders)
-- `frames/story/mod.rs:316` ` {step} is {kind} with {}. ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (174 renders); sweep journal/help/160x45, scenario/between/Help-160x45 (68 renders)
+- `frames/story/mod.rs:316` ` {step} is {kind} with {}. ` — tests frames::dash::r7::tests::the_rail_note_is_one_line_where_the_page_is_wide_enough, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (176 renders); sweep journal/help/160x45, scenario/between/Help-160x45 (68 renders)
 - `frames/story/mod.rs:321` ` Every core runs at its profile offset. Phase 1's cycle: its pass confirms the first BIOS profile. ` — tests frames::story::tests::edges::a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold, frames::story::tests::the_story::a_checking_step_says_where_it_runs_and_what_counts (2 renders)
 - `frames/story/mod.rs:322` ` Every core runs at its profile offset. Phase 2's confirmation cycle: its pass concludes phase 2. ` — tests frames::story::tests::edges::a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold, frames::story::tests::the_story::phase_2s_confirmation_cycle_says_its_pass_concludes_phase_2 (2 renders)
 - `frames/story/mod.rs:323` ` Every core runs at its profile offset. The cycle keeps testing until stopped. ` — tests frames::story::tests::edges::a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold (1 renders)
@@ -8341,10 +8915,10 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/story/mod.rs:344` ` 1 clean cycle counts ` — tests frames::story::tests::the_story::a_checking_step_says_where_it_runs_and_what_counts (1 renders)
 - `frames/story/mod.rs:346` ` {} clean cycles count ` — tests frames::story::tests::the_story::a_checking_step_says_where_it_runs_and_what_counts (1 renders)
 - `frames/story/mod.rs:349` ` {count} for this profile. Passing trials cannot prove it will never fail. ` — tests frames::story::tests::the_story::a_checking_step_says_where_it_runs_and_what_counts (2 renders)
-- `frames/story/mod.rs:365` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::bounds::between (495 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (69677 renders)
-- `frames/story/mod.rs:368` ` SOLO LIMITS ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (780 renders); sweep scenario/between/120x33, scenario/between/160x45 (1193000 renders)
-- `frames/story/mod.rs:371` ` PHASE 2 ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (830 renders); sweep journal/help/160x45, journal/help/240x67 (1096085 renders)
-- `frames/story/mod.rs:374` ` CYCLE {number} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (1402 renders); sweep scenario/between/120x33, scenario/between/160x45 (1165558 renders)
+- `frames/story/mod.rs:365` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts (519 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (96744 renders)
+- `frames/story/mod.rs:368` ` SOLO LIMITS ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (818 renders); sweep scenario/between/120x33, scenario/between/160x45 (1420146 renders)
+- `frames/story/mod.rs:371` ` PHASE 2 ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (858 renders); sweep journal/help/160x45, journal/help/240x67 (1196692 renders)
+- `frames/story/mod.rs:374` ` CYCLE {number} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded (1439 renders); sweep scenario/between/120x33, scenario/between/160x45 (1222616 renders)
 - `frames/story/mod.rs:375` ` TOGI ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (114 renders)
 - `frames/story/mod.rs:382` ` STARTING ` — tests frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (21 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (16 renders)
 - `frames/story/mod.rs:383` ` Checking the machine and the journal before the first trial; this screen follows the run as soon as … ` — tests frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (16 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (12 renders)
@@ -8356,7 +8930,7 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/story/mod.rs:419` ` The requested clean cycles are complete, so I've stopped. Everything I learned is in the journal; to… ` — tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not, frames::story::tests::the_story::a_stopped_session_says_why_and_whether_the_offsets_were_restored (2 renders)
 - `frames/story/mod.rs:422` ` I restored baseline or shallower offsets before stopping. togi run picks up where I left off. ` — tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not, frames::story::tests::the_story::a_stopped_session_says_why_and_whether_the_offsets_were_restored (2 renders)
 - `frames/story/mod.rs:425` ` I've stopped. Everything I learned is in the journal; togi run picks up where I left off. ` — tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not, frames::story::tests::the_story::a_stopped_session_says_why_and_whether_the_offsets_were_restored (4 renders)
-- `frames/story/mod.rs:428` ` STOPPED ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (297 renders); sweep journal/help/160x45, journal/help/240x67 (752 renders)
+- `frames/story/mod.rs:428` ` STOPPED ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (323 renders); sweep journal/help/160x45, journal/help/240x67 (876 renders)
 - `frames/story/mod.rs:434` ` A core failed even at offset 0, so the problem isn't Curve Optimizer. Check the rest of the system b… ` — tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile, frames::story::tests::the_story::a_dead_end_preserves_the_recorded_cause (2 renders)
 - `frames/story/mod.rs:437` ` The CPU didn't take an offset the way I wrote it, so I can't trust what is applied. Nothing else wil… ` — tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (1 renders)
 - `frames/story/mod.rs:440` ` I couldn't obtain conclusive trial evidence, so I can't continue testing safely. Check the recorded … ` — tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile, frames::story::tests::the_simulated_sessions::a_dead_end_session_keeps_its_recorded_detail (4 renders)
@@ -8365,35 +8939,35 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/story/mod.rs:449` ` A check before tuning failed: this isn't the environment I tune in. Fix the recorded check before tu… ` — tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (1 renders)
 - `frames/story/mod.rs:452` ` An earlier build may have moved offsets deeper than proven. Answer the reset question at a terminal … ` — tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (1 renders)
 - `frames/story/mod.rs:455` ` The CPU shut down from heat. Check the cooling before tuning again. ` — tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile, frames::story::tests::the_story::a_dead_end_preserves_the_recorded_cause (2 renders)
-- `frames/story/mod.rs:458` ` DEAD END ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::recovery_and_a_dead_end_lead_the_line_and_suppress_the_running_marker (102 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (1362 renders)
+- `frames/story/mod.rs:458` ` DEAD END ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast (127 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (1630 renders)
 - `frames/story/mod.rs:462` ` parked at 0 ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (201 renders); sweep scenario/combination, scenario/concluded (41061 renders)
-- `frames/story/mod.rs:462` ` parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5559 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
-- `frames/story/mod.rs:478` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::bounds::between (495 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (69677 renders)
+- `frames/story/mod.rs:462` ` parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5562 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
+- `frames/story/mod.rs:478` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts (519 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (96744 renders)
 - `frames/story/mod.rs:481` ` I look for the cause among {candidates}, the cores with an offset in the failing profile. ` — tests frames::story::tests::the_story::a_hunt_after_a_recovery_speaks_of_the_hunt_not_the_recovery (1 renders)
 - `frames/story/mod.rs:484` ` I rerun that load with part of them at their failing offsets and the rest {parked}. ` — tests frames::story::tests::the_story::a_hunt_after_a_recovery_speaks_of_the_hunt_not_the_recovery (1 renders)
 - `frames/story/mod.rs:487` ` To find the cause, I rerun that load with part of {candidates} {parked}. ` — tests frames::story::tests::the_story::a_hunt_after_a_recovery_speaks_of_the_hunt_not_the_recovery (1 renders)
 - `frames/story/mod.rs:492` ` I picked up from the journal after the reboot; nothing it recorded is lost. ` — tests frames::story::tests::the_story::a_hunt_after_a_recovery_speaks_of_the_hunt_not_the_recovery (2 renders)
 - `frames/story/mod.rs:496` ` Core {:02} was named: its failure point is recorded and it backs off. ` — tests frames::story::tests::the_story::a_hunt_after_a_recovery_speaks_of_the_hunt_not_the_recovery (1 renders)
 - `frames/story/mod.rs:501` ` RECOVERED ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (77 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (60986 renders)
-- `frames/story/mod.rs:505` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::bounds::between (495 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (69677 renders)
-- `frames/story/mod.rs:519` ` crashed ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (188 renders); sweep scenario/crashed/Bios-160x45, scenario/crashed/Cores-160x45 (30 renders)
-- `frames/story/mod.rs:521` ` failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2075 renders); sweep journal/help/160x45, journal/help/240x67 (3142 renders)
-- `frames/story/mod.rs:528` ` Core {id:02} first. ` — **not rendered**
+- `frames/story/mod.rs:505` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts (519 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (96744 renders)
+- `frames/story/mod.rs:519` ` crashed ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (190 renders); sweep scenario/crashed/Bios-160x45, scenario/crashed/Cores-160x45 (30 renders)
+- `frames/story/mod.rs:521` ` failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2082 renders); sweep journal/help/160x45, journal/help/240x67 (3143 renders)
+- `frames/story/mod.rs:528` ` Core {id:02} first. ` — tests frames::story::tests::the_story::a_combination_probe_of_its_first_member_says_that_member_goes_first (1 renders)
 - `frames/story/mod.rs:530` ` Now core {id:02}. ` — tests frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member, frames::story::tests::the_story::a_probe_says_failed_unless_its_group_crashed (3 renders)
-- `frames/story/mod.rs:537` ` {members} {verb} together at their offsets, and every smaller part of them that was tested passed. ` — tests frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member, frames::story::tests::the_story::a_probe_says_failed_unless_its_group_crashed (4 renders)
-- `frames/story/mod.rs:540` ` So I probe each member: how shallow must it go for the combination to pass? {which} ` — tests frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member, frames::story::tests::the_story::a_probe_says_failed_unless_its_group_crashed (3 renders)
-- `frames/story/mod.rs:543` ` Probing members of {members}: core {id:02} at {offset}. ` — tests frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member, frames::story::tests::the_story::a_probe_says_failed_unless_its_group_crashed (3 renders)
+- `frames/story/mod.rs:537` ` {members} {verb} together at their offsets, and every smaller part of them that was tested passed. ` — tests frames::story::tests::the_story::a_combination_probe_of_its_first_member_says_that_member_goes_first, frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member (5 renders)
+- `frames/story/mod.rs:540` ` So I probe each member: how shallow must it go for the combination to pass? {which} ` — tests frames::story::tests::the_story::a_combination_probe_of_its_first_member_says_that_member_goes_first, frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member (4 renders)
+- `frames/story/mod.rs:543` ` Probing members of {members}: core {id:02} at {offset}. ` — tests frames::story::tests::the_story::a_combination_probe_of_its_first_member_says_that_member_goes_first, frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member (4 renders)
 - `frames/story/mod.rs:555` ` {named}I rerun that load with {candidates} at 0 and the loaded cores at their offsets: a pass puts t… ` — tests frames::story::tests::the_story::a_locating_hunt_reruns_its_load_with_the_candidates_at_zero (1 renders)
 - `frames/story/mod.rs:558` ` {brief} Rerunning it with {candidates} at 0. ` — tests frames::story::tests::the_story::a_locating_hunt_reruns_its_load_with_the_candidates_at_zero (1 renders)
 - `frames/story/mod.rs:567` ` {named}I rerun that load with {}. ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, frames::story::tests::the_simulated_sessions::a_hunt_session_names_its_cause_and_its_split (7 renders)
 - `frames/story/mod.rs:572` ` {brief} Rerunning it with {} parked. ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, frames::story::tests::the_simulated_sessions::a_hunt_session_names_its_cause_and_its_split (16 renders)
-- `frames/story/mod.rs:589` ` Core {id:02} {verb} on its own at {}, so it is the culprit. ` — tests frames::story::tests::the_story::a_singleton_anchor_probe_claims_neither_a_combination_nor_a_pass, frames::story::tests::the_story::a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are (3 renders)
+- `frames/story/mod.rs:589` ` Core {id:02} {verb} on its own at {}, so it is the culprit. ` — tests frames::story::tests::the_story::a_bracketed_singleton_says_its_failure_point_stands, frames::story::tests::the_story::a_singleton_anchor_probe_claims_neither_a_combination_nor_a_pass (4 renders)
 - `frames/story/mod.rs:595` ` No pass is known at its parked offset yet, and CO 0 is not assumed to pass, so I test core {id:02} a… ` — tests frames::story::tests::the_story::a_singleton_anchor_probe_claims_neither_a_combination_nor_a_pass, frames::story::tests::the_story::a_singleton_parked_at_a_nonzero_offset_tests_that_offset_as_its_safe_anchor (2 renders)
 - `frames/story/mod.rs:597` ` Testing core {id:02} at {offset}, its parked offset, for a safe anchor. ` — tests frames::story::tests::the_story::a_singleton_anchor_probe_claims_neither_a_combination_nor_a_pass, frames::story::tests::the_story::a_singleton_parked_at_a_nonzero_offset_tests_that_offset_as_its_safe_anchor (2 renders)
 - `frames/story/mod.rs:601` ` A passing anchor is known, so I probe core {id:02} between its failure and that anchor to narrow its… ` — tests frames::story::tests::the_story::a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are (1 renders)
 - `frames/story/mod.rs:603` ` Probing core {id:02} at {offset} between its failure and its passing anchor. ` — tests frames::story::tests::the_story::a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are (1 renders)
-- `frames/story/mod.rs:607` ` A pass sits one count shallower than its failure point, so core {id:02} is bracketed. ` — **not rendered**
-- `frames/story/mod.rs:609` ` Core {id:02} is bracketed; its failure point stands. ` — **not rendered**
+- `frames/story/mod.rs:607` ` A pass sits one count shallower than its failure point, so core {id:02} is bracketed. ` — tests frames::story::tests::the_story::a_bracketed_singleton_says_its_failure_point_stands (1 renders)
+- `frames/story/mod.rs:609` ` Core {id:02} is bracketed; its failure point stands. ` — tests frames::story::tests::the_story::a_bracketed_singleton_says_its_failure_point_stands (1 renders)
 - `frames/story/mod.rs:613` ` Probing stopped without a safe bracket, so I keep the shallowest failure I reproduced for core {id:0… ` — tests frames::story::tests::the_story::a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are (1 renders)
 - `frames/story/mod.rs:615` ` Probing core {id:02} stopped; the shallowest reproduced failure stands. ` — tests frames::story::tests::the_story::a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are (1 renders)
 - `frames/story/mod.rs:628` ` {} at their failing offsets, {} {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::story::tests::the_simulated_sessions::a_hunt_session_names_its_cause_and_its_split (33 renders)
@@ -8403,7 +8977,7 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/story/mod.rs:653` ` Core {id:02} was named:  ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, frames::story::tests::the_story::a_hunt_after_a_recovery_speaks_of_the_hunt_not_the_recovery (2 renders)
 - `frames/story/mod.rs:654` ` ; core {id:02} named. ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (5 renders)
 - `frames/story/mod.rs:666` ` With no trial running and the offsets applied, the machine reported a {}. ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, frames::story::tests::the_story::a_locating_hunt_reruns_its_load_with_the_candidates_at_zero (2 renders)
-- `frames/story/mod.rs:671` ` {} while idle{name_brief} ` — tests frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row, frames::panels::hunt::tests::a_singleton_hunt_without_a_passing_anchor_names_no_pass_and_no_combination (18 renders)
+- `frames/story/mod.rs:671` ` {} while idle{name_brief} ` — tests frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero, frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row (19 renders)
 - `frames/story/mod.rs:676` ` The machine crashed while idle, with no trial running, and rebooted. ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (1 renders)
 - `frames/story/mod.rs:678` ` Crashed while idle{name_brief} ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (2 renders)
 - `frames/story/mod.rs:683` ` the {} {} trial on {} ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (8 renders)
@@ -8421,22 +8995,22 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/story/mod.rs:745` ` second ` — tests frames::frame_tests::bounds::hunt_bios, frames::frame_tests::panels::the_bios_page_stars_unconfirmed_offsets_and_dates_the_confirmation (55 renders); sweep scenario/hunt-bios, scenario/hunt-bios/120x33 (13929 renders)
 - `frames/story/mod.rs:813` ` on core {:02} alone at {} ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (63 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (213829 renders)
 - `frames/story/mod.rs:828` ` {place}, every CCD ` — sweep sweep/combination/1581-trial.intent/120x33/plus40, sweep/combination/1581-trial.intent/160x45/plus40 (3420 renders)
-- `frames/story/mod.rs:864` ` core {:02} at {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (68789 renders); sweep journal/help/160x45, journal/help/240x67 (5205345 renders)
-- `frames/story/mod.rs:872` ` {} at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2353 renders); sweep scenario/combination, scenario/concluded (509223 renders)
-- `frames/story/mod.rs:876` ` {} parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5559 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
+- `frames/story/mod.rs:864` ` core {:02} at {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (68849 renders); sweep journal/help/160x45, journal/help/240x67 (5205345 renders)
+- `frames/story/mod.rs:872` ` {} at failing offsets ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2355 renders); sweep scenario/combination, scenario/concluded (509223 renders)
+- `frames/story/mod.rs:876` ` {} parked ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5562 renders); sweep journal/help/160x45, journal/help/240x67 (274096 renders)
 - `frames/story/mod.rs:881` ` , idle ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bounds::between (105 renders); sweep journal/help/160x45, journal/help/240x67 (13647 renders)
-- `frames/story/mod.rs:895` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::frame_tests::bounds::between (495 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (69677 renders)
+- `frames/story/mod.rs:895` ` HUNT {} ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts (519 renders); sweep scenario/between/Hunts-160x45, scenario/checking/Hunts-160x45 (96744 renders)
 - `frames/story/mod.rs:899` `  · GROUP {} · CORE {:02} AT {} ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (16 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (1519 renders)
 - `frames/story/mod.rs:907` `  · {}PART {part} OF {} ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (41 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (6313 renders)
 - `frames/story/mod.rs:912` `  · GROUP {} ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (16 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (1519 renders)
-- `frames/story/mod.rs:917` ` CONFIRM ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (205 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (86713 renders)
-- `frames/story/mod.rs:919` ` SEARCH ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (303 renders); sweep scenario/crashed/Cores-160x45, scenario/recovering/Cores-160x45 (106449 renders)
+- `frames/story/mod.rs:917` ` CONFIRM ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (237 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (86729 renders)
+- `frames/story/mod.rs:919` ` SEARCH ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (399 renders); sweep scenario/crashed/Cores-160x45, scenario/recovering/Cores-160x45 (106497 renders)
 - `frames/story/mod.rs:923` ` {verb} CORE {:02} AT {}{} ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (82 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (220521 renders)
 - `frames/story/mod.rs:931` ` RERUN AT OFFSET 0 ` — tests frames::story::tests::the_story::an_all_zero_rerun_is_named_for_what_it_decides (1 renders)
 - `frames/story/mod.rs:933` ` RERUN AFTER BACKOFF ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::unconfirmed (15 renders); sweep scenario/rerun-0/120x33, scenario/rerun-0/160x45 (9668 renders)
 - `frames/story/mod.rs:935` ` PHASE 2 · ROUND {round} ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_cycle_page_shows_the_open_phase_2_round (46 renders); sweep scenario/round/120x33, scenario/round/160x45 (29596 renders)
 - `frames/story/mod.rs:939` `  · CORE {:02} AT {}{} ` — tests frames::frame_tests::bounds::member_probe, frames::frame_tests::bounds::round (32 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (27383 renders)
-- `frames/story/mod.rs:948` ` CYCLE {} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_repair_holds_the_cycle_without_leaving_the_phase (1402 renders); sweep scenario/between/120x33, scenario/between/160x45 (1165558 renders)
+- `frames/story/mod.rs:948` ` CYCLE {} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded (1439 renders); sweep scenario/between/120x33, scenario/between/160x45 (1222616 renders)
 - `frames/story/mod.rs:950` `  · STEP {step} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (135 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (142581 renders)
 - `frames/story/mod.rs:956` `  · PART {part} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bounds::checking (134 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (150750 renders)
 - `frames/story/mod.rs:961` `  · PARTIAL ` — tests frames::frame_tests::panels::a_partial_trial_is_named_by_its_ordinary_evidence (3 renders); sweep sweep/combination/2643-trial.intent/120x33/plus40, sweep/combination/2643-trial.intent/160x45/plus40 (39135 renders)
@@ -8452,32 +9026,32 @@ Every string literal of a renderer's production source that holds words (1064 of
 
 ### `frames/story/outcome.rs`: 12 of 12 covered
 
-- `frames/story/outcome.rs:17` ` next trial:  ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (77 renders); sweep scenario/between/120x33, scenario/between/160x45 (271275 renders)
-- `frames/story/outcome.rs:81` `  alone ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (38003 renders); sweep journal/help/160x45, journal/help/240x67 (302849 renders)
+- `frames/story/outcome.rs:17` ` next trial:  ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (78 renders); sweep scenario/between/120x33, scenario/between/160x45 (271275 renders)
+- `frames/story/outcome.rs:81` `  alone ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (38300 renders); sweep journal/help/160x45, journal/help/240x67 (302934 renders)
 - `frames/story/outcome.rs:85` ` {kind}, core {:02}{alone} at {offset} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (99 renders); sweep scenario/concluded, scenario/confirmation (94606 renders)
-- `frames/story/outcome.rs:102` ` part {part}: {shown} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (38280 renders); sweep journal/help/160x45, journal/help/240x67 (1643313 renders)
-- `frames/story/outcome.rs:105` ` hunt {hunt} group {group}: {what} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (9337 renders); sweep journal/help/160x45, journal/help/240x67 (699553 renders)
+- `frames/story/outcome.rs:102` ` part {part}: {shown} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (38336 renders); sweep journal/help/160x45, journal/help/240x67 (1851967 renders)
+- `frames/story/outcome.rs:105` ` hunt {hunt} group {group}: {what} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (9343 renders); sweep journal/help/160x45, journal/help/240x67 (699570 renders)
 - `frames/story/outcome.rs:114` ` rerun {what} with every core at 0 · {duration} ` — tests tests::describe::a_trial_is_named_by_what_it_ran (2 renders)
-- `frames/story/outcome.rs:116` ` rerun {what} · {duration} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (6387 renders); sweep scenario/between, scenario/between/160x45 (383628 renders)
-- `frames/story/outcome.rs:130` ` step {step}: {kind} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (80196 renders); sweep journal/help/160x45, journal/help/240x67 (8460456 renders)
-- `frames/story/outcome.rs:135` `  with {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (5346 renders); sweep journal/help/160x45, journal/help/240x67 (358726 renders)
+- `frames/story/outcome.rs:116` ` rerun {what} · {duration} ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (6392 renders); sweep scenario/between, scenario/between/160x45 (384739 renders)
+- `frames/story/outcome.rs:130` ` step {step}: {kind} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (80529 renders); sweep journal/help/160x45, journal/help/240x67 (8929819 renders)
+- `frames/story/outcome.rs:135` `  with {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (5353 renders); sweep journal/help/160x45, journal/help/240x67 (358726 renders)
 - `frames/story/outcome.rs:140` ` deepening round {round}: {what} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (185 renders); sweep scenario/combination, scenario/concluded (16893 renders)
 - `frames/story/outcome.rs:178` ` part {index}: core {:02} at {offset}, {duration} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (450 renders); sweep scenario/combination, scenario/concluded (296 renders)
 - `frames/story/outcome.rs:183` ` part {index}: {name} on {}, {duration} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (17040 renders); sweep journal/help/160x45, journal/help/240x67 (380645 renders)
 
-### `frames/story/resting.rs`: 31 of 32 covered
+### `frames/story/resting.rs`: 32 of 32 covered
 
-- `frames/story/resting.rs:34` ` DEAD END ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::recovery_and_a_dead_end_lead_the_line_and_suppress_the_running_marker (102 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (1362 renders)
+- `frames/story/resting.rs:34` ` DEAD END ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast (127 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (1630 renders)
 - `frames/story/resting.rs:41` ` CRASHED, NOT YET RECOVERED ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (53 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2848 renders)
-- `frames/story/resting.rs:53` ` last: {} ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (112 renders); sweep scenario/between/120x33, scenario/between/160x45 (210281 renders)
-- `frames/story/resting.rs:56` ` STOPPED ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (297 renders); sweep journal/help/160x45, journal/help/240x67 (752 renders)
+- `frames/story/resting.rs:53` ` last: {} ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (113 renders); sweep scenario/between/120x33, scenario/between/160x45 (210281 renders)
+- `frames/story/resting.rs:56` ` STOPPED ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (323 renders); sweep journal/help/160x45, journal/help/240x67 (876 renders)
 - `frames/story/resting.rs:63` ` RECOVERED FROM A CRASH ` — tests frames::frame_tests::bounds::recovering, frames::frame_tests::holds::every_other_frame_moves_with_the_clock (23 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (58138 renders)
-- `frames/story/resting.rs:70` ` last: {} ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (112 renders); sweep scenario/between/120x33, scenario/between/160x45 (210281 renders)
+- `frames/story/resting.rs:70` ` last: {} ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (113 renders); sweep scenario/between/120x33, scenario/between/160x45 (210281 renders)
 - `frames/story/resting.rs:71` ` No trial has run yet ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended (20 renders); sweep sweep/combination/0000-session.start/120x33/plus40, sweep/combination/0000-session.start/160x45/plus40 (4200 renders)
-- `frames/story/resting.rs:75` ` BETWEEN TRIALS ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (50 renders); sweep scenario/between/120x33, scenario/between/160x45 (214296 renders)
+- `frames/story/resting.rs:75` ` BETWEEN TRIALS ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (51 renders); sweep scenario/between/120x33, scenario/between/160x45 (214296 renders)
 - `frames/story/resting.rs:89` ` {NEXT_TRIAL}read the core ranking before deciding ` — tests frames::frame_tests::pages::one_full_ccd_at_160_by_45_shows_every_core_in_the_numeric_table_over_the_gauges_rows, frames::story::tests::edges::a_forecast_between_trials_names_the_next_trial_the_ranking_or_nothing (4 renders); sweep sweep/combination/1485-trial.end/120x33/plus40, sweep/combination/1485-trial.end/160x45/plus40 (800 renders)
-- `frames/story/resting.rs:91` ` {NEXT_TRIAL}deciding ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::frame_tests::pages::one_full_ccd_at_160_by_45_shows_every_core_in_the_numeric_table_over_the_gauges_rows (8 renders); sweep sweep/combination/0000-session.start/120x33/plus40, sweep/combination/0000-session.start/160x45/plus40 (7300 renders)
-- `frames/story/resting.rs:97` ` detected {} ` — tests frames::frame_tests::bounds::recovering, frames::frame_tests::holds::every_other_frame_moves_with_the_clock (37 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (75581 renders)
+- `frames/story/resting.rs:91` ` {NEXT_TRIAL}deciding ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::frame_tests::pages::one_full_ccd_at_160_by_45_shows_every_core_in_the_numeric_table_over_the_gauges_rows (9 renders); sweep sweep/combination/0000-session.start/120x33/plus40, sweep/combination/0000-session.start/160x45/plus40 (7300 renders)
+- `frames/story/resting.rs:97` ` detected {} ` — tests frames::frame_tests::bounds::recovering, frames::frame_tests::holds::every_other_frame_moves_with_the_clock (42 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (104650 renders)
 - `frames/story/resting.rs:101` `  after a {} reset ` — tests frames::frame_tests::bounds::recovering, frames::frame_tests::holds::every_other_frame_moves_with_the_clock (20 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (46512 renders)
 - `frames/story/resting.rs:107` ` crash with no trial in flight · {detected} ` — tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders)
 - `frames/story/resting.rs:111` ` crash in {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (357 renders); sweep scenario/between, scenario/checking (58240 renders)
@@ -8487,63 +9061,63 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `frames/story/resting.rs:134` ` last sample {} of {} ` — tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders); sweep sweep/concluded/1327-trial.end/120x33/plus40, sweep/concluded/1327-trial.end/160x45/plus40 (33910 renders)
 - `frames/story/resting.rs:135` ` last sample {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (578 renders); sweep scenario/between, scenario/checking (34148 renders)
 - `frames/story/resting.rs:139` ` core {:02}'s worker had stalled by then ` — tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders); sweep sweep/concluded/7693-trial.end/120x33/plus40, sweep/concluded/7693-trial.end/160x45/plus40 (6682 renders)
-- `frames/story/resting.rs:153` ` trial {} · {} ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262091 renders); sweep journal/help/160x45, journal/help/240x67 (995885 renders)
+- `frames/story/resting.rs:153` ` trial {} · {} ` — tests frames::dash::now::tests::between_trials_the_status_replaces_the_bar, frames::dash::r7::tests::only_a_running_r7_trial_loads_now (262302 renders); sweep journal/help/160x45, journal/help/240x67 (1021891 renders)
 - `frames/story/resting.rs:159` `  · started {} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (82 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (4771 renders)
 - `frames/story/resting.rs:163` ` A later boot has written events, so the machine restarted before this trial recorded its end. ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (38 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2278 renders)
 - `frames/story/resting.rs:164` ` togi run records the crash and picks up from the journal. ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (51 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2848 renders)
 - `frames/story/resting.rs:171` ` CRASH ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (81 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (60986 renders)
 - `frames/story/resting.rs:174` ` FAILURE ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::frame_tests::bounds::between (111 renders); sweep sweep/concluded/1120-trial.end/120x33/plus40, sweep/concluded/1120-trial.end/160x45/plus40 (21230 renders)
 - `frames/story/resting.rs:175` ` INCONCLUSIVE ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame, frames::frame_tests::bounds::deadend (17 renders); sweep scenario/deadend, sweep/deadend/4142-trial.end (52 renders)
-- `frames/story/resting.rs:176` ` PASS ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (69944 renders); sweep scenario/between, scenario/between/120x33 (224241 renders)
+- `frames/story/resting.rs:176` ` PASS ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (69994 renders); sweep scenario/between, scenario/between/120x33 (224241 renders)
 - `frames/story/resting.rs:194` ` core {:02} named ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (1842 renders); sweep journal/help/160x45, journal/help/240x67 (1085053 renders)
-- `frames/story/resting.rs:197` ` Tctl max {tctl}°C ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (110284 renders); sweep scenario/between, scenario/between/120x33 (249312 renders)
-- `frames/story/resting.rs:200` ` {volts:.2} V median ` — **not rendered**
-- `frames/story/resting.rs:209` `  after {} ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (13874 renders); sweep scenario/between, scenario/between/120x33 (291485 renders)
+- `frames/story/resting.rs:197` ` Tctl max {tctl}°C ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (110334 renders); sweep scenario/between, scenario/between/120x33 (249312 renders)
+- `frames/story/resting.rs:200` ` {volts:.2} V median ` — tests frames::story::tests::the_resting_band::the_last_trial_names_its_peak_tctl_and_median_voltage_request (1 renders)
+- `frames/story/resting.rs:209` `  after {} ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded (13891 renders); sweep scenario/between, scenario/between/120x33 (318079 renders)
 
-### `frames/terms.rs`: 20 of 25 covered
+### `frames/terms.rs`: 25 of 25 covered
 
 - `frames/terms.rs:16` ` stopped by a signal ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (6 renders); sweep sweep/probe/3440-shutdown/120x33/plus40, sweep/probe/3440-shutdown/160x45/plus40 (22 renders)
 - `frames/terms.rs:17` ` requested clean cycles completed ` — tests frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (62 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (136 renders)
 - `frames/terms.rs:18` ` stopped at the first confirmed result ` — tests frames::frame_tests::bounds::first_result, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (15 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (28 renders)
 - `frames/terms.rs:19` ` read-only command finished; no applied offsets changed ` — tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not (1 renders)
 - `frames/terms.rs:20` ` tuning stopped at a dead end ` — tests frames::story::tests::edges::every_stop_reason_is_narrated_saved_or_not (1 renders)
-- `frames/terms.rs:27` ` a core failed at offset 0 ` — **not rendered**
-- `frames/terms.rs:28` ` the CPU did not take an offset as written ` — **not rendered**
-- `frames/terms.rs:29` ` no conclusive trial evidence ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (22 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (265 renders)
-- `frames/terms.rs:30` ` repeated crashes before any offset was applied ` — **not rendered**
-- `frames/terms.rs:31` ` stress programs not confirmed contained ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped (2 renders)
-- `frames/terms.rs:32` ` a check before tuning failed ` — **not rendered**
-- `frames/terms.rs:33` ` an earlier build may have moved offsets deeper than proven ` — **not rendered**
-- `frames/terms.rs:34` ` the CPU shut down from heat ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1 renders)
-- `frames/terms.rs:42` ` core {:02} · {} {} at {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (68789 renders); sweep journal/help/160x45, journal/help/240x67 (5205345 renders)
+- `frames/terms.rs:27` ` a core failed at offset 0 ` — tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (2 renders)
+- `frames/terms.rs:28` ` the CPU did not take an offset as written ` — tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (2 renders)
+- `frames/terms.rs:29` ` no conclusive trial evidence ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (31 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (530 renders)
+- `frames/terms.rs:30` ` repeated crashes before any offset was applied ` — tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (2 renders)
+- `frames/terms.rs:31` ` stress programs not confirmed contained ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (6 renders)
+- `frames/terms.rs:32` ` a check before tuning failed ` — tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (2 renders)
+- `frames/terms.rs:33` ` an earlier build may have moved offsets deeper than proven ` — tests frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (2 renders)
+- `frames/terms.rs:34` ` the CPU shut down from heat ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (5 renders)
+- `frames/terms.rs:42` ` core {:02} · {} {} at {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (68849 renders); sweep journal/help/160x45, journal/help/240x67 (5205345 renders)
 - `frames/terms.rs:64` ` , trial {} of {} ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (49 renders); sweep scenario/hunt-bios/Hunts-160x45, scenario/hunt/Hunts-160x45 (11715 renders)
-- `frames/terms.rs:71` ` cycle {} ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (56781 renders); sweep journal/help/160x45, journal/help/240x67 (6318886 renders)
-- `frames/terms.rs:73` `  step {step} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (80196 renders); sweep journal/help/160x45, journal/help/240x67 (8460456 renders)
+- `frames/terms.rs:71` ` cycle {} ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (56876 renders); sweep journal/help/160x45, journal/help/240x67 (6553562 renders)
+- `frames/terms.rs:73` `  step {step} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (80529 renders); sweep journal/help/160x45, journal/help/240x67 (8929819 renders)
 - `frames/terms.rs:76` ` , part {part} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (133 renders); sweep journal/help/160x45, journal/help/240x67 (10643 renders)
-- `frames/terms.rs:84` ` core {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
-- `frames/terms.rs:86` ` full ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (5286 renders); sweep journal/help/160x45, journal/help/240x67 (215421 renders)
+- `frames/terms.rs:84` ` core {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
+- `frames/terms.rs:86` ` full ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (5288 renders); sweep journal/help/160x45, journal/help/240x67 (215421 renders)
 - `frames/terms.rs:86` ` partial ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (35580 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (952023 renders)
-- `frames/terms.rs:88` ` {label} CCD {} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (37104 renders); sweep journal/help/160x45, journal/help/240x67 (986168 renders)
+- `frames/terms.rs:88` ` {label} CCD {} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (37779 renders); sweep journal/help/160x45, journal/help/240x67 (986470 renders)
 - `frames/terms.rs:89` ` {label} CCD 0+1 ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1085 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (714 renders)
 - `frames/terms.rs:106` ` RE-CUT {n} ·  ` — sweep sweep/combination/2081-trial.start/120x33/plus40, sweep/combination/2081-trial.start/160x45/plus40 (1820 renders)
-- `frames/terms.rs:107` ` re-cut {n} ·  ` — sweep sweep/combination/2008-trial.end/120x33/plus40, sweep/combination/2008-trial.end/160x45/plus40 (21868 renders)
+- `frames/terms.rs:107` ` re-cut {n} ·  ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (3 renders); sweep sweep/combination/2008-trial.end/120x33/plus40, sweep/combination/2008-trial.end/160x45/plus40 (31776 renders)
 
-### `history.rs`: 38 of 47 covered
+### `history.rs`: 35 of 35 covered
 
-- `history.rs:35` ` cycle {} step {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (54909 renders); sweep journal/help/160x45, journal/help/240x67 (5826875 renders)
-- `history.rs:114` ` trial {first} of {of} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76056 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
-- `history.rs:116` ` trials {first}-{} of {of} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (4570 renders); sweep journal/help/160x45, journal/help/240x67 (1541 renders)
+- `history.rs:35` ` cycle {} step {} ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (55004 renders); sweep journal/help/160x45, journal/help/240x67 (6061074 renders)
+- `history.rs:114` ` trial {first} of {of} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (76108 renders); sweep journal/help/160x45, journal/help/240x67 (566323 renders)
+- `history.rs:116` ` trials {first}-{} of {of} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (4572 renders); sweep journal/help/160x45, journal/help/240x67 (1541 renders)
 - `history.rs:149` ` hunt {} groups {}-{} · member probes · each {} passed ` — tests frames::frame_tests::bounds::round, frames::snapshots::every_scenario_fits_the_frame_on_every_page_at_every_size (11 renders); sweep scenario/round/History-160x45 (2 renders)
-- `history.rs:157` ` {} · {} passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62497 renders); sweep journal/help/160x45, journal/help/240x67 (5224049 renders)
+- `history.rs:157` ` {} · {} passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62554 renders); sweep journal/help/160x45, journal/help/240x67 (5224097 renders)
 - `history.rs:159` ` {} · passed ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (23752 renders); sweep scenario/between, scenario/between/History-160x45 (105171 renders)
-- `history.rs:162` `  · Tctl max {peak}°C ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (38123 renders); sweep scenario/between, scenario/between/120x33 (213147 renders)
+- `history.rs:162` `  · Tctl max {peak}°C ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (38124 renders); sweep scenario/between, scenario/between/120x33 (213147 renders)
 - `history.rs:181` ` core {:02} named ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (1842 renders); sweep journal/help/160x45, journal/help/240x67 (1085053 renders)
 - `history.rs:182` ` no core named ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (582 renders); sweep scenario/concluded, scenario/confirmation (458289 renders)
 - `history.rs:204` ` rebooted ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (642 renders); sweep scenario/between, scenario/between/History-160x45 (810549 renders)
-- `history.rs:206` ` failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2075 renders); sweep journal/help/160x45, journal/help/240x67 (3142 renders)
+- `history.rs:206` ` failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2082 renders); sweep journal/help/160x45, journal/help/240x67 (3143 renders)
 - `history.rs:262` ` a trial ` — tests tests::describe::a_known_crash_without_a_regime, tests::model::failure_counters_separate_observed_and_skipped (3 renders)
-- `history.rs:268` ` crashed ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (188 renders); sweep scenario/crashed/Bios-160x45, scenario/crashed/Cores-160x45 (30 renders)
-- `history.rs:268` ` failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2075 renders); sweep journal/help/160x45, journal/help/240x67 (3142 renders)
+- `history.rs:268` ` crashed ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (190 renders); sweep scenario/crashed/Bios-160x45, scenario/crashed/Cores-160x45 (30 renders)
+- `history.rs:268` ` failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2082 renders); sweep journal/help/160x45, journal/help/240x67 (3143 renders)
 - `history.rs:269` `  at these offsets already {verb} ` — tests tests::describe::a_known_crash_without_a_regime, tests::describe::a_known_failure_names_the_hunt_it_leads_to (6 renders)
 - `history.rs:271` `  in a carried trial ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, tests::describe::a_known_failure_names_the_hunt_it_leads_to (5 renders)
 - `history.rs:274` `  → hunt {} ` — tests tests::describe::a_known_failure_names_the_hunt_it_leads_to (1 renders)
@@ -8551,67 +9125,55 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `history.rs:306` ` #{hunt} started · locate: {} at 0 ` — tests tests::describe::a_locating_hunt_names_its_first_group (1 renders)
 - `history.rs:310` ` #{hunt} started · part 1: {} ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame, frames::frame_tests::bounds::first_result (141 renders); sweep scenario/first-result/History-160x45, scenario/hunt-bios/120x33 (180209 renders)
 - `history.rs:485` ` session started · {} carried from the last session ` — tests tests::describe::solo_limits_found_before_the_first_trial_are_counted_on_the_session_line (1 renders)
-- `history.rs:486` ` solo limit ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (8628 renders); sweep journal/help/160x45, journal/help/240x67 (1990225 renders)
-- `history.rs:489` ` session started on {cores} cores ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (366 renders); sweep scenario/between, scenario/checking (160766 renders)
+- `history.rs:486` ` solo limit ` — tests frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (8909 renders); sweep journal/help/160x45, journal/help/240x67 (2217564 renders)
+- `history.rs:489` ` session started on {cores} cores ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (373 renders); sweep scenario/between, scenario/checking (160766 renders)
 - `history.rs:501` ` idle with the offsets applied, rebooted ` — tests tests::describe::a_resumed_session_is_not_a_resumed_session_when_it_crashed, tests::history::reboot_history_requires_matching_cause (6 renders)
 - `history.rs:502` ` with the offsets applied, rebooted ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (210 renders); sweep scenario/between, scenario/between/History-160x45 (249456 renders)
 - `history.rs:506` ` core {:02} solo limit {offset} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (7728 renders); sweep journal/help/160x45, journal/help/240x67 (1762931 renders)
 - `history.rs:508` ` cores {} solo limit {offset} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (398 renders); sweep scenario/between/240x67, scenario/between/History-160x45 (172266 renders)
 - `history.rs:517` ` , the deepest offset ` — tests tests::history::repeated_outcomes_fold_into_one_line (1 renders)
 - `history.rs:528` ` groups {}-{} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (14086 renders); sweep journal/help/160x45, journal/help/240x67 (386947 renders)
-- `history.rs:530` ` group {} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (24425 renders); sweep journal/help/160x45, journal/help/240x67 (821677 renders)
+- `history.rs:530` ` group {} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (24454 renders); sweep journal/help/160x45, journal/help/240x67 (847408 renders)
 - `history.rs:534` ` failed on existing evidence ` — tests tests::describe::hunt_groups_answered_without_a_trial, tests::history::inferred_group_answers_do_not_hide_outcome_changes (4 renders)
 - `history.rs:537` ` parts of {cores} ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame, frames::frame_tests::bounds::idle (409 renders); sweep scenario/idle/240x67, scenario/idle/History-160x45 (228271 renders)
 - `history.rs:538` ` all passed on existing evidence ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame, frames::frame_tests::bounds::idle (218 renders); sweep scenario/idle/240x67, scenario/idle/History-160x45 (225171 renders)
 - `history.rs:541` ` passed on existing evidence ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (682 renders); sweep scenario/combination, scenario/concluded (314802 renders)
-- `history.rs:543` ` hunt {} {range} · {what} · {verdict} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10285 renders); sweep journal/help/160x45, journal/help/240x67 (831882 renders)
-- `history.rs:580` ` Said ` — **not rendered**
-- `history.rs:581` ` OfHunt ` — **not rendered**
-- `history.rs:582` ` List ` — **not rendered**
-- `history.rs:583` ` Session ` — **not rendered**
-- `history.rs:584` ` Step ` — tests frames::story::tests::edges::a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold, frames::story::tests::the_simulated_sessions::a_running_checking_trial_has_a_story_and_an_operation (14 renders)
-- `history.rs:585` ` Passes ` — tests frames::story::tests::the_story::a_partial_explains_that_it_is_ordinary_evidence (1 renders)
-- `history.rs:586` ` Failed ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (2 renders)
-- `history.rs:587` ` Reboot ` — **not rendered**
-- `history.rs:588` ` Limits ` — **not rendered**
-- `history.rs:589` ` Answered ` — **not rendered**
-- `history.rs:590` ` KnownFailure ` — **not rendered**
-- `history.rs:591` ` HuntStart ` — **not rendered**
+- `history.rs:543` ` hunt {} {range} · {what} · {verdict} ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (10351 renders); sweep journal/help/160x45, journal/help/240x67 (849702 renders)
 
-### `words.rs`: 117 of 135 covered
+### `words.rs`: 118 of 135 covered
 
-- `words.rs:83` ` start ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts (78888 renders); sweep journal/help/160x45, journal/help/240x67 (751962 renders)
-- `words.rs:84` ` pass ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (78940 renders); sweep journal/help/160x45, journal/help/240x67 (5734683 renders)
-- `words.rs:85` ` fail ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (29934 renders); sweep journal/help/160x45, journal/help/240x67 (7243252 renders)
-- `words.rs:86` ` crash ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (3489 renders); sweep scenario/between, scenario/between/120x33 (1612572 renders)
+- `words.rs:83` ` start ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts (78970 renders); sweep journal/help/160x45, journal/help/240x67 (751962 renders)
+- `words.rs:84` ` pass ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (79020 renders); sweep journal/help/160x45, journal/help/240x67 (5735187 renders)
+- `words.rs:85` ` fail ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (30489 renders); sweep journal/help/160x45, journal/help/240x67 (7301749 renders)
+- `words.rs:86` ` crash ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (3503 renders); sweep scenario/between, scenario/between/120x33 (1641641 renders)
 - `words.rs:87` ` unclear ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame, frames::frame_tests::bounds::deadend (50 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (516 renders)
 - `words.rs:88` ` skip ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (251 renders); sweep journal/help/160x45, journal/help/240x67 (128 renders)
-- `words.rs:89` ` reset ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from (1161 renders); sweep journal/help/160x45, journal/help/240x67 (670795 renders)
-- `words.rs:90` ` step ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (80196 renders); sweep journal/help/160x45, journal/help/240x67 (8460456 renders)
-- `words.rs:91` ` limit ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (9624 renders); sweep journal/help/160x45, journal/help/240x67 (1991133 renders)
-- `words.rs:92` ` room ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (3238 renders); sweep scenario/between, scenario/between/Cores-160x45 (877853 renders)
-- `words.rs:93` ` backoff ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (1314 renders); sweep scenario/between, scenario/between/160x45 (868409 renders)
-- `words.rs:94` ` cycle ` — tests frames::dash::stage::tests::a_hunt_is_an_amber_sub_state_of_the_phase_it_interrupts, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (56781 renders); sweep journal/help/160x45, journal/help/240x67 (6318886 renders)
-- `words.rs:95` ` hunt ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10285 renders); sweep journal/help/160x45, journal/help/240x67 (831882 renders)
+- `words.rs:89` ` reset ` — tests frames::dash::stage::tests::a_stop_keeps_the_last_work_and_gives_its_reason_and_queued_resets, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (1166 renders); sweep journal/help/160x45, journal/help/240x67 (670795 renders)
+- `words.rs:90` ` step ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (80529 renders); sweep journal/help/160x45, journal/help/240x67 (8929819 renders)
+- `words.rs:91` ` limit ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::stage::tests::the_search_counts_solo_limits_found_and_the_current_cores_credited_checks (9936 renders); sweep journal/help/160x45, journal/help/240x67 (2218472 renders)
+- `words.rs:92` ` room ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3281 renders); sweep scenario/between, scenario/between/Cores-160x45 (878057 renders)
+- `words.rs:93` ` backoff ` — tests frames::dash::r7::tests::only_a_running_r7_trial_loads_now, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (1509 renders); sweep scenario/between, scenario/between/160x45 (868509 renders)
+- `words.rs:94` ` cycle ` — tests frames::dash::stage::tests::a_dead_end_and_a_recovery_say_why_without_a_next_forecast, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (56876 renders); sweep journal/help/160x45, journal/help/240x67 (6553562 renders)
+- `words.rs:95` ` hunt ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (10351 renders); sweep journal/help/160x45, journal/help/240x67 (849702 renders)
 - `words.rs:96` ` combo ` — tests frames::frame_tests::bounds::round (5 renders); sweep sweep/combination/2564-combination/120x33/plus40, sweep/combination/2564-combination/160x45/plus40 (13923 renders)
-- `words.rs:97` ` round ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4657 renders); sweep journal/help/160x45, journal/help/240x67 (406828 renders)
-- `words.rs:98` ` stop ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (9368 renders); sweep journal/help/160x45, journal/help/240x67 (137664 renders)
+- `words.rs:97` ` round ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done (4672 renders); sweep journal/help/160x45, journal/help/240x67 (445527 renders)
+- `words.rs:98` ` stop ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (9370 renders); sweep journal/help/160x45, journal/help/240x67 (137664 renders)
 - `words.rs:99` ` mce ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1990 renders); sweep scenario/between, scenario/checking (806 renders)
 - `words.rs:100` ` note ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (694 renders); sweep scenario/concluded/240x67, scenario/first-result/240x67 (2197825 renders)
-- `words.rs:101` ` chain ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (4058 renders); sweep scenario/combination, scenario/concluded (2215642 renders)
-- `words.rs:102` ` group ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (24425 renders); sweep journal/help/160x45, journal/help/240x67 (821677 renders)
-- `words.rs:103` ` probe ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (3855 renders); sweep journal/help/160x45, journal/help/240x67 (34519 renders)
-- `words.rs:104` ` confirm ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (2868 renders); sweep journal/help/160x45, journal/help/240x67 (1414260 renders)
-- `words.rs:105` ` resume ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (296 renders); sweep scenario/between, scenario/checking (22604 renders)
+- `words.rs:101` ` chain ` — tests frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes, frames::dash::stage::tests::a_rerun_after_every_step_is_done_says_the_cycle_ends_not_a_step_past_the_last (4063 renders); sweep scenario/combination, scenario/concluded (2222141 renders)
+- `words.rs:102` ` group ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (24454 renders); sweep journal/help/160x45, journal/help/240x67 (847408 renders)
+- `words.rs:103` ` probe ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (3865 renders); sweep journal/help/160x45, journal/help/240x67 (37229 renders)
+- `words.rs:104` ` confirm ` — tests frames::dash::stage::tests::phase_two_names_its_round_and_its_confirmation_cycle, frames::dash::stage::tests::the_confirmation_cycle_counts_steps_like_phase_one (2880 renders); sweep journal/help/160x45, journal/help/240x67 (1558058 renders)
+- `words.rs:105` ` resume ` — tests frames::dash::stage::tests::a_hunt_or_a_repair_in_the_clean_cycles_keeps_the_clean_cycles_recorded, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (303 renders); sweep scenario/between, scenario/checking (40657 renders)
 - `words.rs:106` ` hold ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bounds::between (365 renders); sweep journal/help/160x45, journal/help/240x67 (113 renders)
-- `words.rs:165` ` SEARCH ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (303 renders); sweep scenario/crashed/Cores-160x45, scenario/recovering/Cores-160x45 (106449 renders)
-- `words.rs:166` ` HAS ROOM ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (474 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (26 renders)
-- `words.rs:167` ` AT LIMIT ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::combination (425 renders); sweep scenario/between/Cores-160x45, scenario/concluded/Cores-160x45 (48 renders)
-- `words.rs:175` ` running ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (540 renders); sweep journal/help/160x45, journal/help/240x67 (117655 renders)
-- `words.rs:176` ` passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62497 renders); sweep journal/help/160x45, journal/help/240x67 (5224049 renders)
-- `words.rs:177` ` failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2075 renders); sweep journal/help/160x45, journal/help/240x67 (3142 renders)
+- `words.rs:165` ` SEARCH ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (399 renders); sweep scenario/crashed/Cores-160x45, scenario/recovering/Cores-160x45 (106497 renders)
+- `words.rs:166` ` HAS ROOM ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (699 renders); sweep scenario/between/Cores-160x45, scenario/checking/Cores-160x45 (116 renders)
+- `words.rs:167` ` AT LIMIT ` — tests frames::dash::tests::the_cores_page_explains_each_value_and_where_the_failure_came_from, frames::frame_tests::bounds::between (604 renders); sweep scenario/between/Cores-160x45, scenario/combination/Cores-160x45 (162 renders)
+- `words.rs:175` ` running ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (544 renders); sweep journal/help/160x45, journal/help/240x67 (117655 renders)
+- `words.rs:176` ` passed ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (62554 renders); sweep journal/help/160x45, journal/help/240x67 (5224097 renders)
+- `words.rs:177` ` failed ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (2082 renders); sweep journal/help/160x45, journal/help/240x67 (3143 renders)
 - `words.rs:178` ` skipped ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (95 renders); sweep journal/help/160x45, journal/help/240x67 (100 renders)
-- `words.rs:185` ` moving ` — tests frames::frame_tests::bounds::first_result, frames::frame_tests::bounds::round (37 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (38567 renders)
+- `words.rs:185` ` moving ` — tests frames::dash::stage::tests::a_completed_round_says_every_check_is_credited, frames::dash::stage::tests::a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart (49 renders); sweep scenario/first-result/120x33, scenario/first-result/160x45 (77132 renders)
 - `words.rs:187` ` checked again in place ` — tests frames::panels::search::tests::the_round_lists_its_candidates_by_shape_and_its_checks (1 renders)
 - `words.rs:194` ` light load ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (173 renders); sweep journal/help/160x45, journal/help/240x67 (107214 renders)
 - `words.rs:195` ` heavy vector load ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (30 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (100301 renders)
@@ -8621,47 +9183,47 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `words.rs:199` ` idle with short bursts ` — silent: `regime_words(R6)` has no production caller: `load_words` words R6 itself
 - `words.rs:200` ` all-core load ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bounds::checking (86 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (46406 renders)
 - `words.rs:207` ` idle + bursts ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1402 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (403117 renders)
-- `words.rs:217` ` light ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (9733 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (1845298 renders)
-- `words.rs:218` ` heavy vector ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7900 renders); sweep scenario/between, scenario/between/240x67 (1236488 renders)
+- `words.rs:217` ` light ` — tests frames::dash::now::tests::a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest, frames::dash::stage::tests::a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart (9743 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (1861543 renders)
+- `words.rs:218` ` heavy vector ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7900 renders); sweep scenario/between, scenario/between/240x67 (1250463 renders)
 - `words.rs:219` ` load steps ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (24130 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (1018494 renders)
 - `words.rs:220` ` partial load ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (5993 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (863511 renders)
 - `words.rs:221` ` both threads ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (2320 renders); sweep journal/help/160x45, journal/help/240x67 (530972 renders)
 - `words.rs:222` ` idle + bursts ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1402 renders); sweep scenario/between/Cycle-160x45, scenario/checking/Cycle-160x45 (403117 renders)
-- `words.rs:223` ` all-core ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (35856 renders); sweep journal/help/160x45, journal/help/240x67 (2165704 renders)
+- `words.rs:223` ` all-core ` — tests frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied, frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split (35857 renders); sweep journal/help/160x45, journal/help/240x67 (2173044 renders)
 - `words.rs:230` ` wrong result ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1441 renders); sweep scenario/between, scenario/between/History-160x45 (672627 renders)
 - `words.rs:231` ` the backend quit ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (453 renders); sweep scenario/between, scenario/between/240x67 (148219 renders)
 - `words.rs:232` ` the backend stalled ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (767 renders); sweep scenario/between, scenario/between/160x45 (252947 renders)
 - `words.rs:233` ` corrected hardware error ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1243 renders); sweep scenario/between, scenario/between/History-160x45 (595795 renders)
 - `words.rs:234` ` uncorrected hardware error ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (411 renders); sweep scenario/between, scenario/between/History-160x45 (219346 renders)
-- `words.rs:235` ` crash ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (3489 renders); sweep scenario/between, scenario/between/120x33 (1612572 renders)
-- `words.rs:265` ` no cores ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (14 renders)
-- `words.rs:281` ` core ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
-- `words.rs:281` ` cores ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (37224 renders); sweep journal/help/160x45, journal/help/240x67 (519396 renders)
-- `words.rs:289` ` cores  ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (37224 renders); sweep journal/help/160x45, journal/help/240x67 (519396 renders)
-- `words.rs:290` ` core  ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
-- `words.rs:303` ` core {:02} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
+- `words.rs:235` ` crash ` — tests frames::dash::stage::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (3503 renders); sweep scenario/between, scenario/between/120x33 (1641641 renders)
+- `words.rs:265` ` no cores ` — tests frames::panels::hunt::tests::a_hunt_never_calls_kept_or_nonzero_parked_cores_zero, frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (15 renders)
+- `words.rs:281` ` core ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
+- `words.rs:281` ` cores ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (37239 renders); sweep journal/help/160x45, journal/help/240x67 (519396 renders)
+- `words.rs:289` ` cores  ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (37239 renders); sweep journal/help/160x45, journal/help/240x67 (519396 renders)
+- `words.rs:290` ` core  ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
+- `words.rs:303` ` core {:02} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
 - `words.rs:304` ` all {total} cores ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (31369 renders); sweep scenario/between, scenario/between/79x29 (125367 renders)
-- `words.rs:312` ` on core {:02} ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (23018 renders); sweep scenario/between, scenario/checking (861513 renders)
-- `words.rs:320` ` core {:02} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
-- `words.rs:321` ` cores {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (37224 renders); sweep journal/help/160x45, journal/help/240x67 (519396 renders)
+- `words.rs:312` ` on core {:02} ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::dash::stage::tests::a_round_counts_credited_checks_and_keeps_candidates_and_movers_apart (23023 renders); sweep scenario/between, scenario/checking (892272 renders)
+- `words.rs:320` ` core {:02} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
+- `words.rs:321` ` cores {} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet (37239 renders); sweep journal/help/160x45, journal/help/240x67 (519396 renders)
 - `words.rs:341` ` during ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (6 renders)
 - `words.rs:344` ` during ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (6 renders)
 - `words.rs:348` ` early in ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (103 renders); sweep scenario/between/History-160x45, scenario/checking/History-160x45 (274912 renders)
 - `words.rs:350` ` midway through ` — tests frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame, frames::frame_tests::bounds::between (71 renders); sweep scenario/between/History-160x45, scenario/checking/240x67 (93016 renders)
 - `words.rs:352` ` late in ` — tests tests::describe::a_crash_says_how_late_it_came (2 renders); sweep sweep/concluded/7827-trial.end/120x33/plus40, sweep/concluded/7827-trial.end/160x45/plus40 (20468 renders)
-- `words.rs:369` ` core {core:02} passed {from}; searches {to} on its next turn ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (19109 renders); sweep scenario/between, scenario/between/History-160x45 (4635474 renders)
+- `words.rs:369` ` core {core:02} passed {from}; searches {to} on its next turn ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (19150 renders); sweep scenario/between, scenario/between/History-160x45 (4635474 renders)
 - `words.rs:374` ` core {core:02} confirming {to} as its solo limit ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1518 renders); sweep scenario/between, scenario/between/240x67 (1153426 renders)
-- `words.rs:379` ` core {core:02} {from} → {to} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
+- `words.rs:379` ` core {core:02} {from} → {to} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
 - `words.rs:384` ` core {core:02} yields {from} → {to}, back to its round baseline ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (230 renders); sweep scenario/concluded, scenario/confirmation (167283 renders)
-- `words.rs:389` ` core {core:02} failure held; tuning stays at {from} ` — **not rendered**
-- `words.rs:394` ` core {core:02} {from} → {to} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
+- `words.rs:389` ` core {core:02} failure held; tuning stays at {from} ` — tests tests::history::a_held_failure_says_tuning_stays_where_it_is (3 renders)
+- `words.rs:394` ` core {core:02} {from} → {to} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
 - `words.rs:406` ` core {core:02} starts over from {} ` — tests tests::model::a_reset_core_drops_its_solo_limit (1 renders)
 - `words.rs:412` ` core {core:02} solo limit {limit} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (7728 renders); sweep journal/help/160x45, journal/help/240x67 (1762931 renders)
 - `words.rs:418` ` core {core:02} has room again at {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (272 renders); sweep scenario/concluded, scenario/confirmation (235131 renders)
 - `words.rs:433` ` core {:02} fails at {} ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4130 renders); sweep scenario/between, scenario/between/120x33 (2963933 renders)
 - `words.rs:441` ` idle with the offsets applied, {} ` — tests tests::describe::a_resumed_session_is_not_a_resumed_session_when_it_crashed, tests::history::reboot_history_requires_matching_cause (6 renders)
 - `words.rs:453` ` cycle {cycle} started · {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (380 renders); sweep scenario/between, scenario/between/240x67 (238250 renders)
-- `words.rs:453` ` step ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (80196 renders); sweep journal/help/160x45, journal/help/240x67 (8460456 renders)
+- `words.rs:453` ` step ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (80529 renders); sweep journal/help/160x45, journal/help/240x67 (8929819 renders)
 - `words.rs:457` ` cycle {cycle} passed, a full cycle ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (229 renders); sweep scenario/combination, scenario/combination/120x33 (154595 renders)
 - `words.rs:460` ` cycle {cycle} passed but missing {} ` — tests frames::story::tests::the_story::a_rerun_that_completes_the_cycle_names_no_step_of_the_next, tests::history::cycle_history (3 renders); sweep sweep/rerun-completes-cycle/0036-checking.cycle, sweep/rerun-completes-cycle/0036-checking.cycle/120x33/plus40 (19 renders)
 - `words.rs:466` ` cycle {cycle} ended early: {} ` — tests tests::history::cycle_history (2 renders)
@@ -8669,109 +9231,77 @@ Every string literal of a renderer's production source that holds words (1064 of
 - `words.rs:516` ` corrected ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (4142 renders); sweep scenario/between, scenario/between/History-160x45 (598809 renders)
 - `words.rs:518` ` uncorrected ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (1368 renders); sweep scenario/between, scenario/between/History-160x45 (221090 renders)
 - `words.rs:521` ` logical CPU {} ` — tests tests::describe::the_kinds_with_a_line_of_their_own (2 renders)
-- `words.rs:522` ` core {:02} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
+- `words.rs:522` ` core {:02} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
 - `words.rs:526` ` {who} {kind} error between trials (recorded only) ` — tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden, tests::describe::the_kinds_with_a_line_of_their_own (6 renders)
-- `words.rs:537` ` the hunt ends ` — **not rendered**
-- `words.rs:539` ` hunt {hunt} ends: {cores} named ` — **not rendered**
+- `words.rs:537` ` the hunt ends ` — silent: `hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself
+- `words.rs:539` ` hunt {hunt} ends: {cores} named ` — silent: `hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself
 - `words.rs:541` ` hunt {hunt} unresolved ` — tests frames::panels::cycle::tests::a_combination_without_a_member_leaves_its_cell_blank_and_says_what_is_clear, tests::describe::a_hunt_says_how_it_ended (4 renders)
-- `words.rs:542` ` hunt {hunt} keeps {cores} together ` — **not rendered**
+- `words.rs:542` ` hunt {hunt} keeps {cores} together ` — silent: `hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself
 - `words.rs:543` ` hunt {hunt} cancelled ` — tests tests::describe::a_hunt_says_how_it_ended (1 renders)
-- `words.rs:545` ` hunt {hunt} keeps the failure on loaded {cores} ` — **not rendered**
+- `words.rs:545` ` hunt {hunt} keeps the failure on loaded {cores} ` — silent: `hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself
 - `words.rs:559` ` core {core:02} fails at {}, {from} → {to} ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4130 renders); sweep scenario/between, scenario/between/120x33 (2963933 renders)
-- `words.rs:561` ` core {core:02} {from} → {to} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175643 renders); sweep journal/help/160x45, journal/help/240x67 (19040607 renders)
-- `words.rs:563` ` core {core:02} searches {to} on its next turn ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (20243 renders); sweep scenario/between, scenario/between/History-160x45 (4635874 renders)
-- `words.rs:565` ` core {core:02} starts confirming {to} as its solo limit ` — **not rendered**
-- `words.rs:567` ` core {core:02} deepens {from} → {to} ` — **not rendered**
+- `words.rs:561` ` core {core:02} {from} → {to} ` — tests facts::tests::the_journal_view_shows_a_profile_change_as_the_cores_it_moved, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (175808 renders); sweep journal/help/160x45, journal/help/240x67 (19271844 renders)
+- `words.rs:563` ` core {core:02} searches {to} on its next turn ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (20284 renders); sweep scenario/between, scenario/between/History-160x45 (4635874 renders)
+- `words.rs:565` ` core {core:02} starts confirming {to} as its solo limit ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs:567` ` core {core:02} deepens {from} → {to} ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
 - `words.rs:569` ` core {core:02} yields {from} → {to}, back to its round baseline ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (230 renders); sweep scenario/concluded, scenario/confirmation (167283 renders)
-- `words.rs:571` ` core {core:02} failure held at {from}; no tuning move ` — **not rendered**
+- `words.rs:571` ` core {core:02} failure held at {from}; no tuning move ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
 - `words.rs:589` ` core {core:02} solo limit {limit} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (7728 renders); sweep journal/help/160x45, journal/help/240x67 (1762931 renders)
-- `words.rs:591` ` core {core:02} starts its search over ` — silent: `decision_detail` is never given a core phase: `outcome.rs` words the core phases of a decision itself
-- `words.rs:592` ` core {core:02} starts its search ` — silent: `decision_detail` is never given a core phase: `outcome.rs` words the core phases of a decision itself
+- `words.rs:591` ` core {core:02} starts its search over ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs:592` ` core {core:02} starts its search ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
 - `words.rs:602` ` CCD {} partials end ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (962 renders); sweep scenario/combination, scenario/concluded (31577 renders)
-- `words.rs:604` ` CCD {} partial on {} ` — **not rendered**
+- `words.rs:604` ` CCD {} partial on {} ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
 - `words.rs:613` ` cycle {cycle} step {step} · CCD {ccd} partials end ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (962 renders); sweep scenario/combination, scenario/concluded (31577 renders)
 - `words.rs:616` ` cycle {cycle} step {step} · CCD {ccd} partial {} loads {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (5149 renders); sweep scenario/combination, scenario/concluded (41047 renders)
 - `words.rs:626` ` cycle {cycle} starts ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (412 renders); sweep scenario/between, scenario/checking (179 renders)
 - `words.rs:628` ` cycle {cycle} passed, a full cycle ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (229 renders); sweep scenario/combination, scenario/combination/120x33 (154595 renders)
 - `words.rs:630` ` cycle {cycle} passed ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (587 renders); sweep scenario/between/Bios-160x45, scenario/checking/Bios-160x45 (169026 renders)
-- `words.rs:632` ` cycle {cycle} ends ` — tests frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1278 renders); sweep scenario/combination, scenario/concluded (2146 renders)
-- `words.rs:639` ` deepening round {round} starts ` — **not rendered**
+- `words.rs:632` ` cycle {cycle} ends ` — tests frames::dash::stage::tests::a_rerun_after_every_step_is_done_says_the_cycle_ends_not_a_step_past_the_last, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (1279 renders); sweep scenario/combination, scenario/concluded (2716 renders)
+- `words.rs:639` ` deepening round {round} starts ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
 - `words.rs:641` ` deepening round {round} passed ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage (33 renders); sweep scenario/combination, scenario/concluded (18 renders)
-- `words.rs:643` ` deepening round {round} ends ` — **not rendered**
-- `words.rs:648` ` tuning stops: {} ` — **not rendered**
-- `words.rs:653` ` hunt {} starts over {} ` — **not rendered**
+- `words.rs:643` ` deepening round {round} ends ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs:648` ` tuning stops: {} ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs:653` ` hunt {} starts over {} ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
 - `words.rs:660` ` backs off ` — tests frames::story::tests::the_story::a_hunt_after_a_recovery_speaks_of_the_hunt_not_the_recovery (1 renders)
-- `words.rs:664` ` hunt {} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10285 renders); sweep journal/help/160x45, journal/help/240x67 (831882 renders)
-- `words.rs:673` ` C{} over {} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (231 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (42 renders)
-- `words.rs:679` ` hunt ends ` — **not rendered**
+- `words.rs:664` ` hunt {} ` — tests frames::dash::stage::tests::a_hunt_in_a_round_keeps_the_round_and_its_credited_checks, frames::dash::stage::tests::a_hunt_names_its_group_re_cut_and_the_part_of_this_split (10351 renders); sweep journal/help/160x45, journal/help/240x67 (849702 renders)
+- `words.rs:673` ` C{} over {} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (233 renders); sweep scenario/between/R7-160x45, scenario/checking/R7-160x45 (42 renders)
+- `words.rs:679` ` hunt ends ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
 - `words.rs:680` ` tuning stops ` — tests frames::story::tests::the_story::an_all_zero_rerun_is_named_for_what_it_decides (2 renders)
-- `words.rs:681` ` no hunt ` — **not rendered**
-- `words.rs:693` ` step {} is done ` — tests frames::panels::cycle::tests::closure_and_resume_steps_are_named_apart_when_they_differ (1 renders); sweep scenario/rerun-passed/120x33, scenario/rerun-passed/160x45 (3074 renders)
+- `words.rs:681` ` no hunt ` — silent: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs:693` ` step {} is done ` — tests frames::dash::stage::tests::a_failure_whose_rerun_runs_next_says_what_the_rerun_must_do_not_that_the_cycle_is_done, frames::dash::stage::tests::a_repair_names_the_chain_closure_step_and_where_checking_resumes (4 renders); sweep scenario/rerun-passed/120x33, scenario/rerun-passed/160x45 (6148 renders)
 - `words.rs:977` ` not hunted ` — tests frames::frame_tests::bounds::hunt_bios, frames::frame_tests::panels::the_bios_page_stars_unconfirmed_offsets_and_dates_the_confirmation (57 renders); sweep scenario/hunt-bios, scenario/hunt-bios/120x33 (14477 renders)
 - `words.rs:1006` ` requested from the command line ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, tests::history::a_reset_and_an_mce_have_lines (12 renders)
-- `words.rs:1015` ` dead end: {} ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame (82 renders); sweep scenario/deadend, scenario/deadend/120x33 (1014 renders)
+- `words.rs:1015` ` dead end: {} ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition (86 renders); sweep scenario/deadend, scenario/deadend/120x33 (1014 renders)
 - `words.rs:1027` ` stopped ` — tests frames::dash::now::tests::a_stop_replaces_the_operation_and_the_bar, frames::dash::now::tests::a_stop_says_its_reason_once_and_its_last_trial_under_it_never_the_rows_as_unapplied (530 renders); sweep journal/help/160x45, journal/help/240x67 (130728 renders)
 - `words.rs:1050` ` groups {first}-{last} ` — tests frames::dash::stage::tests::a_hunt_says_whether_it_reruns_the_failing_load_or_tests_a_split, frames::dash::tests::an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events (14086 renders); sweep journal/help/160x45, journal/help/240x67 (386947 renders)
-- `words.rs:1052` ` group {first} ` — tests frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request, frames::dash::r7::tests::measured_top_requesters_within_a_millivolt_are_tied (24425 renders); sweep journal/help/160x45, journal/help/240x67 (821677 renders)
+- `words.rs:1052` ` group {first} ` — tests frames::dash::r7::tests::a_ccd_with_no_top_requester_says_none_is_recorded_yet, frames::dash::r7::tests::a_measured_top_requester_says_its_order_is_per_request (24454 renders); sweep journal/help/160x45, journal/help/240x67 (847408 renders)
 - `words.rs:1055` ` {groups} answered by existing evidence ` — tests frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash, tests::describe::a_hunt_says_how_it_ended (7 renders)
 - `words.rs:1057` ` {groups} failed on existing evidence ` — tests tests::describe::hunt_groups_answered_without_a_trial, tests::history::inferred_group_answers_do_not_hide_outcome_changes (4 renders)
 
 ### Uncovered literals
 
-- `frames/dash/ccd.rs:26` ` SUSPECT `
-- `frames/dash/ccd.rs:446` ` solo {solo} · gap {gap}: {} counts deeper than solo `
-- `frames/dash/ccd.rs:514` ` hunt: a candidate at its failing offset `
-- `frames/dash/ccd.rs:558` `  (outside -50..0) `
-- `frames/dash/ccd.rs:566` ` ! current failure: recorded in the step now running `
-- `frames/dash/ccd.rs:573` ` R reset queued: command #{}, the core searches again at the next run `
-- `frames/dash/r7.rs:219` ` All loaded cores share one voltage rail, set by the loaded core with the highest voltage request. R7… `
-- `frames/dash/r7.rs:294` ` no top requester recorded yet `
-- `frames/dash/stage.rs:678` ` locating: the failing load reruns at its failing offsets `
-- `frames/dash/stage.rs:837` ` a clean rerun with every core at 0 is needed `
-- `frames/panels/hunt.rs:364` ` {} kept at failing offsets `
-- `frames/panels/hunt.rs:487` ` → core {id:02} failed alone; testing its parked offset for a safe anchor `
-- `frames/panels/hunt.rs:842` ` testing anchor `
-- `frames/panels/hunt.rs:844` ` probes done `
-- `frames/panels/log.rs:57` ` self-test `
-- `frames/panels/log.rs:110` ` {n} self-test {} passed `
-- `frames/story/mod.rs:528` ` Core {id:02} first. `
-- `frames/story/mod.rs:607` ` A pass sits one count shallower than its failure point, so core {id:02} is bracketed. `
-- `frames/story/mod.rs:609` ` Core {id:02} is bracketed; its failure point stands. `
-- `frames/story/resting.rs:200` ` {volts:.2} V median `
-- `frames/terms.rs:27` ` a core failed at offset 0 `
-- `frames/terms.rs:28` ` the CPU did not take an offset as written `
-- `frames/terms.rs:30` ` repeated crashes before any offset was applied `
-- `frames/terms.rs:32` ` a check before tuning failed `
-- `frames/terms.rs:33` ` an earlier build may have moved offsets deeper than proven `
-- `history.rs:580` ` Said `
-- `history.rs:581` ` OfHunt `
-- `history.rs:582` ` List `
-- `history.rs:583` ` Session `
-- `history.rs:587` ` Reboot `
-- `history.rs:588` ` Limits `
-- `history.rs:589` ` Answered `
-- `history.rs:590` ` KnownFailure `
-- `history.rs:591` ` HuntStart `
-- `words.rs:389` ` core {core:02} failure held; tuning stays at {from} `
-- `words.rs:537` ` the hunt ends `
-- `words.rs:539` ` hunt {hunt} ends: {cores} named `
-- `words.rs:542` ` hunt {hunt} keeps {cores} together `
-- `words.rs:545` ` hunt {hunt} keeps the failure on loaded {cores} `
-- `words.rs:565` ` core {core:02} starts confirming {to} as its solo limit `
-- `words.rs:567` ` core {core:02} deepens {from} → {to} `
-- `words.rs:571` ` core {core:02} failure held at {from}; no tuning move `
-- `words.rs:604` ` CCD {} partial on {} `
-- `words.rs:639` ` deepening round {round} starts `
-- `words.rs:643` ` deepening round {round} ends `
-- `words.rs:648` ` tuning stops: {} `
-- `words.rs:653` ` hunt {} starts over {} `
-- `words.rs:679` ` hunt ends `
-- `words.rs:681` ` no hunt `
+None.
+
 
 ### Silent on purpose
 
 - `words.rs` ` idle with short bursts `: `regime_words(R6)` has no production caller: `load_words` words R6 itself
-- `words.rs` ` core {core:02} starts its search `: `decision_detail` is never given a core phase: `outcome.rs` words the core phases of a decision itself
+- `words.rs` ` core {core:02} starts its search `: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs` ` the hunt ends `: `hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself
+- `words.rs` ` hunt {hunt} ends:  `: `hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself
+- `words.rs` ` hunt {hunt} keeps {cores} together `: `hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself
+- `words.rs` ` hunt {hunt} keeps the failure on loaded `: `hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself
+- `words.rs` ` core {core:02} starts confirming `: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs` ` core {core:02} deepens `: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs` ` core {core:02} failure held at `: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs` ` CCD {} partial on `: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs` ` deepening round {round} starts `: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs` ` deepening round {round} ends `: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs` ` tuning stops:  `: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs` ` hunt {} starts over `: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs` ` hunt ends `: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `words.rs` ` no hunt `: read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves
+- `frames/panels/hunt.rs` ` → core {id:02} failed alone; testing its parked offset `: `HuntView::singleton` stages a probe `Anchor` only when its parked offset is the probe's offset, so an anchor without a parked offset never reaches `group_lines`
 
 ## `togi status` corpus
 
@@ -8782,20 +9312,20 @@ Every string literal of a renderer's production source that holds words (1064 of
 Generated by `TOGI_NARRATION_CORPUS=<absolute file> cargo test --locked -p togi narration_corpus -- --ignored --nocapture` (`crates/togi/src/status/corpus.rs`). Every text below is the status renderer's own output at its only width, 80 columns (`table.rs` `WIDTH`); the status reads no clock, so each journal prefix has exactly one rendering.
 
 - Sweep: every prefix of every `Base::ALL` journal, folded event by event:
-  - `base:session`: 9183 events, 9183 prefixes rendered; 45 of them checked equal to `status::render`.
-  - `base:concluded`: 10518 events, 10518 prefixes rendered; 44 of them checked equal to `status::render`.
-  - `base:unconfirmed`: 11923 events, 11923 prefixes rendered; 49 of them checked equal to `status::render`.
-  - `base:later-hunt`: 12520 events, 12520 prefixes rendered; 52 of them checked equal to `status::render`.
+  - `base:session`: 9520 events, 9520 prefixes rendered; 47 of them checked equal to `status::render`.
+  - `base:concluded`: 10855 events, 10855 prefixes rendered; 45 of them checked equal to `status::render`.
+  - `base:unconfirmed`: 12216 events, 12216 prefixes rendered; 50 of them checked equal to `status::render`.
+  - `base:later-hunt`: 13799 events, 13799 prefixes rendered; 57 of them checked equal to `status::render`.
   - `base:first-result`: 7179 events, 7179 prefixes rendered; 29 of them checked equal to `status::render`.
   - `base:probe`: 3441 events, 3441 prefixes rendered; 17 of them checked equal to `status::render`.
   - `base:combination`: 5955 events, 5955 prefixes rendered; 24 of them checked equal to `status::render`.
-  - `base:crashed-cycle`: 10015 events, 10015 prefixes rendered; 41 of them checked equal to `status::render`.
+  - `base:crashed-cycle`: 10021 events, 10021 prefixes rendered; 41 of them checked equal to `status::render`.
   - `base:dead-end`: 4194 events, 4194 prefixes rendered; 18 of them checked equal to `status::render`.
 - Scenario cuts: the 18 `Scenario::ALL` journals through `status::render`.
 - Edge fixtures: 37 recipes from `crates/togi/tests/read/status.rs` and the finite variants no simulated journal reaches (every dead-end condition, defect directions and resets, carried-session forms, R7 with and without request telemetry, Tctl-less evidence, a carried failure with no signal, solo limits three counts deep, a skipped hunt group). Each is rendered through `status::render`; the roster states which ones the status rendered and which it refused, and a refused one contributes no phrase.
 - Synthetic renderer cases: 6 cases that hand the private `Status::write` an altered projection or snapshot. They are NOT session states; they show a template branch whose rendering is otherwise unreachable, and the manifest names each such branch as synthetic only.
 - Diagnostics: 11 runs of the `status` command itself over state directories on disk; their stderr is listed separately and is not part of the phrase catalogue.
-- Renderings recorded: 74988; distinct block templates: 274.
+- Renderings recorded: 77240; distinct block templates: 282.
 
 **What is enumerated and what is not.** The unit is a template branch of the status writer, with the values the journals above produce. Unbounded parameters are represented, not enumerated: core IDs and lists, offsets, seqs, counts, durations, timestamps, session IDs, BIOS context strings and defect titles. Recorded journal messages are forwarded verbatim (`in flight`, `carried`, `last decision`, `between-trial evidence`) and so are external error strings in diagnostics; the corpus shows the messages these journals record, not every message `togi-journal`'s `payload/message.rs` can build. The catalogue keeps one actual rendering per template: a block's text with every number as `N` and every run of bare numbers as `N…`. Its cases list the first three fixtures (hand-built ones first) with the number of base-journal prefixes that produced the text and the first and last seq, then the number of further fixtures and renderings. A case ID is `status·<fixture>·80col`.
 
@@ -8809,26 +9339,26 @@ Each branch of `crates/togi/src/status.rs` (and the shared words it calls), deci
 
 | Branch | Source | Renders | Reached | Cases | Examples |
 |---|---|---|---|---|---|
-| `header.search` | status.rs:search_left | search: N cores left | journal | 32126 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +23 more fixtures; 32126 renderings in all |
+| `header.search` | status.rs:search_left | search: N cores left | journal | 32123 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +23 more fixtures; 32123 renderings in all |
 | `header.search-one` | status.rs:search_left | search: 1 core left | journal | 54 | `status·base:combination·80col` ×2 (#30 … #1501); `status·base:concluded·80col` ×2 (#30 … #4076); `status·base:crashed-cycle·80col` ×29 (#30 … #4447); +6 more fixtures; 54 renderings in all |
-| `header.hunt` | status.rs:header, hunt_plan | hunt N, group N | journal | 4122 | `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +16 more fixtures; 4122 renderings in all |
-| `header.round` | status.rs:header, deepening | phase 2 round N, checks N/N | journal | 4989 | `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 4989 renderings in all |
-| `header.round-check-done` | status.rs:header, deepening checks | a round header counting a check with all its passes | journal | 4268 | `status·edge:round-check-completed·80col`; `status·base:combination·80col` ×1445 (#3476 … #4920); `status·base:concluded·80col` ×471 (#7235 … #7705); +4 more fixtures; 4268 renderings in all |
-| `header.cycle` | status.rs:header, cycle_plan | checking cycle N, steps N/N | journal | 33417 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +32 more fixtures; 33417 renderings in all |
+| `header.hunt` | status.rs:header, hunt_plan | hunt N, group N | journal | 4976 | `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +15 more fixtures; 4976 renderings in all |
+| `header.round` | status.rs:header, deepening | phase 2 round N, checks N/N | journal | 5633 | `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 5633 renderings in all |
+| `header.round-check-done` | status.rs:header, deepening checks | a round header counting a check with all its passes | journal | 4912 | `status·edge:round-check-completed·80col`; `status·base:combination·80col` ×1445 (#3476 … #4920); `status·base:concluded·80col` ×619 (#7235 … #8039); +4 more fixtures; 4912 renderings in all |
+| `header.cycle` | status.rs:header, cycle_plan | checking cycle N, steps N/N | journal | 34174 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +32 more fixtures; 34174 renderings in all |
 | `header.cycle-not-full` | status.rs:header, missing_coverage | the cycle's missing coverage | journal | 1 | `status·edge:short-cycle·80col` |
 | `header.cycle-missing-one-step` | status.rs:missing_coverage | a regime one step short: `1 more step` | journal | 1 | `status·edge:short-cycle·80col` |
 | `header.cycle-missing-steps` | status.rs:missing_coverage | a regime several steps short: `N more steps` | journal | 1 | `status·edge:short-cycle·80col` |
 | `header.not-started` | status.rs:header, final arm | checking not started | journal | 280 | `status·edge:no-plan·80col`; `status·base:combination·80col` ×31 (#1 … #1503); `status·base:concluded·80col` ×31 (#1 … #4078); +7 more fixtures; 280 renderings in all |
 | `phase.none` | status.rs:header, phase_clause None | no phase plan: no clause | synthetic only; unreachable | 1 | `status·synthetic:no-phase-plan·80col` |
-| `phase.one` | status.rs:phase_clause, PhaseNo::One | \| phase 1 | journal | 53845 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 53845 renderings in all |
-| `phase.concluded` | status.rs:phase_clause, PhaseNo::Concluded | \| phase 2 concluded: clean cycles N, latest clean cycle N | journal | 7733 | `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +10 more fixtures; 7733 renderings in all |
-| `phase.confirming` | status.rs:phase_clause, plan.confirming | \| phase 2: confirmation cycle | journal | 8330 | `status·scenario:confirmation·80col`; `status·scenario:unconfirmed·80col`; `status·base:combination·80col` ×984 (#4921 … #5904); +5 more fixtures; 8330 renderings in all |
-| `phase.rounds-one` | status.rs:phase_clause, rounds | \| phase 2: at most 1 round left | journal | 5077 | `status·edge:round-check-completed·80col`; `status·scenario:first-result·80col`; `status·scenario:round·80col`; +10 more fixtures; 5077 renderings in all |
-| `phase.rounds-many` | status.rs:phase_clause, rounds | \| phase 2: at most N rounds left | journal | 2 | `status·edge:solo-limits-three-counts-deep·80col`; `status·synthetic:rounds-left-three·80col` |
-| `session` | status.rs:write, session line | session ID started TIME | journal | 74988 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all |
-| `bios.context` | status.rs:write, BIOS context line | BIOS context | journal | 74888 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74888 renderings in all |
-| `in-flight.trial` | status.rs:write, in_flight Some | in flight: [#N] msg | journal | 51376 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +41 more fixtures; 51376 renderings in all |
-| `in-flight.none` | status.rs:write, in_flight None | in flight: none | journal | 23612 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +31 more fixtures; 23612 renderings in all |
+| `phase.one` | status.rs:phase_clause, PhaseNo::One | \| phase 1 | journal | 54006 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 54006 renderings in all |
+| `phase.concluded` | status.rs:phase_clause, PhaseNo::Concluded | \| phase 2 concluded: clean cycles N, latest clean cycle N | journal | 8468 | `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +10 more fixtures; 8468 renderings in all |
+| `phase.confirming` | status.rs:phase_clause, plan.confirming | \| phase 2: confirmation cycle | journal | 8406 | `status·scenario:confirmation·80col`; `status·scenario:unconfirmed·80col`; `status·base:combination·80col` ×984 (#4921 … #5904); +5 more fixtures; 8406 renderings in all |
+| `phase.rounds-one` | status.rs:phase_clause, rounds | \| phase 2: 1 round left if none fails | journal | 6357 | `status·edge:round-check-completed·80col`; `status·scenario:first-result·80col`; `status·scenario:round·80col`; +10 more fixtures; 6357 renderings in all |
+| `phase.rounds-many` | status.rs:phase_clause, rounds | \| phase 2: N rounds left if none fails | journal | 2 | `status·edge:solo-limits-three-counts-deep·80col`; `status·synthetic:rounds-left-three·80col` |
+| `session` | status.rs:write, session line | session ID started TIME | journal | 77240 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 77240 renderings in all |
+| `bios.context` | status.rs:write, BIOS context line | BIOS context | journal | 77140 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 77140 renderings in all |
+| `in-flight.trial` | status.rs:write, in_flight Some | in flight: [#N] msg | journal | 52284 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +41 more fixtures; 52284 renderings in all |
+| `in-flight.none` | status.rs:write, in_flight None | in flight: none | journal | 24956 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +31 more fixtures; 24956 renderings in all |
 | `dead-end.failure_at_zero` | status.rs:dead_end_label | dead end: failure at offset 0 [#N] | journal | 1 | `status·edge:dead-end-failure_at_zero·80col` |
 | `dead-end.smu` | status.rs:dead_end_label | dead end: SMU error [#N] | journal | 1 | `status·edge:dead-end-smu·80col` |
 | `dead-end.no_evidence` | status.rs:dead_end_label | dead end: no conclusive evidence [#N] | journal | 53 | `status·edge:dead-end-no_evidence·80col`; `status·scenario:deadend·80col`; `status·base:dead-end·80col` ×51 (#4144 … #4194) |
@@ -8840,72 +9370,72 @@ Each branch of `crates/togi/src/status.rs` (and the shared words it calls), deci
 | `carried.failure-points` | status.rs:Scan::of; message.rs:session_carried | carried: … and N failure point(s) from … | journal | 1 | `status·edge:session-carried-failure-points·80col` |
 | `carried.points-behind-reason` | status.rs:Scan::of; message.rs:session_carried | carried: …; failure points stay behind: REASON | journal | 1 | `status·edge:session-carried-points-behind-reason·80col` |
 | `carried.points-behind-no-reason` | status.rs:Scan::of; message.rs:session_carried | carried: …; failure points stay behind: no reason recorded | journal | 1 | `status·edge:session-carried-points-behind-no-reason·80col` |
-| `cores.bios-none` | status.rs:bios_cell, no BIOS profile or offset | BIOS cell - | journal | 53846 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +50 more fixtures; 53846 renderings in all |
-| `cores.bios-confirmed` | status.rs:bios_cell, plain offset | BIOS cell N | journal | 20576 | `status·edge:combination-fallback·80col`; `status·edge:queued-reset·80col`; `status·edge:round-check-completed·80col`; +19 more fixtures; 20576 renderings in all |
-| `cores.bios-unconfirmed` | status.rs:bios_cell, starred offset | BIOS cell N* | journal | 2259 | `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·scenario:unconfirmed·80col`; +2 more fixtures; 2259 renderings in all |
-| `cores.phase-search` | status.rs:cores; words.rs:phase_word | PHASE SEARCH | journal | 32180 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +23 more fixtures; 32180 renderings in all |
-| `cores.phase-has-room` | status.rs:cores; words.rs:phase_word | PHASE HAS ROOM | journal | 41467 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 41467 renderings in all |
-| `cores.phase-at-limit` | status.rs:cores; words.rs:phase_word | PHASE AT LIMIT | journal | 39996 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +43 more fixtures; 39996 renderings in all |
+| `cores.bios-none` | status.rs:bios_cell, no BIOS profile or offset | BIOS cell - | journal | 54007 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +50 more fixtures; 54007 renderings in all |
+| `cores.bios-confirmed` | status.rs:bios_cell, plain offset | BIOS cell N | journal | 23233 | `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +21 more fixtures; 23233 renderings in all |
+| `cores.bios-unconfirmed` | status.rs:bios_cell, starred offset | BIOS cell N* | journal | 3156 | `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·scenario:unconfirmed·80col`; +2 more fixtures; 3156 renderings in all |
+| `cores.phase-search` | status.rs:cores; words.rs:phase_word | PHASE SEARCH | journal | 32177 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +23 more fixtures; 32177 renderings in all |
+| `cores.phase-has-room` | status.rs:cores; words.rs:phase_word | PHASE HAS ROOM | journal | 28932 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +41 more fixtures; 28932 renderings in all |
+| `cores.phase-at-limit` | status.rs:cores; words.rs:phase_word | PHASE AT LIMIT | journal | 42251 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +43 more fixtures; 42251 renderings in all |
 | `cores.phase-none` | status.rs:cores, absent phase | PHASE - | journal | 397 | `status·edge:no-plan·80col`; `status·base:combination·80col` ×44 (#1 … #44); `status·base:concluded·80col` ×44 (#1 … #44); +7 more fixtures; 397 renderings in all |
-| `cores.failure-none` | status.rs:cores, absent failure point | FAILURE - | journal | 27265 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +34 more fixtures; 27265 renderings in all |
-| `cores.failure-point` | status.rs:cores, failure point | FAILURE N | journal | 60280 | `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +36 more fixtures; 60280 renderings in all |
-| `cores.queued-none` | status.rs:cores, no queued reset | QUEUED - | journal | 74988 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all |
+| `cores.failure-none` | status.rs:cores, absent failure point | FAILURE - | journal | 27262 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +34 more fixtures; 27262 renderings in all |
+| `cores.failure-point` | status.rs:cores, failure point | FAILURE N | journal | 62532 | `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +36 more fixtures; 62532 renderings in all |
+| `cores.queued-none` | status.rs:cores, no queued reset | QUEUED - | journal | 77240 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 77240 renderings in all |
 | `cores.queued-reset` | status.rs:cores, queued reset | QUEUED reset | journal | 3 | `status·edge:defect-reset-each-core·80col`; `status·edge:defect-reset-one-core·80col`; `status·edge:queued-reset·80col` |
-| `cores.note-combinations` | status.rs:cores, combos note | combinations CN, … | journal | 5240 | `status·edge:combination-fallback·80col`; `status·edge:round-check-completed·80col`; `status·scenario:combination·80col`; +7 more fixtures; 5240 renderings in all |
-| `cores.note-last-decision` | status.rs:cores, last_decision note | last decision [#N] msg | journal | 74726 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74726 renderings in all |
+| `cores.note-combinations` | status.rs:cores, combos note | combinations CN, … | journal | 5243 | `status·edge:combination-fallback·80col`; `status·edge:round-check-completed·80col`; `status·scenario:combination·80col`; +7 more fixtures; 5243 renderings in all |
+| `cores.note-last-decision` | status.rs:cores, last_decision note | last decision [#N] msg | journal | 76978 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 76978 renderings in all |
 | `bios.silent` | status.rs:bios_note, `None => return` | no BIOS note: none confirmed outside phase 1 | synthetic only; unreachable | 2 | `status·synthetic:no-confirmed-bios-profile-in-phase-2·80col`; `status·synthetic:no-phase-plan·80col` |
-| `bios.none-in-phase-one` | status.rs:bios_note, `None if phase_one` | BIOS profile: none confirmed yet; … | journal | 53845 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 53845 renderings in all |
-| `bios.confirmed` | status.rs:bios_note, no unconfirmed marks | BIOS profile confirmed by the passed full cycle [#N] | journal | 18882 | `status·edge:combination-fallback·80col`; `status·edge:queued-reset·80col`; `status·edge:round-check-completed·80col`; +17 more fixtures; 18882 renderings in all |
-| `bios.unconfirmed` | status.rs:unconfirmed_note | * unconfirmed since [#N]: cores … show stepped-back offsets; … | journal | 1479 | `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×1477 (#10993 … #12469) |
-| `bios.unconfirmed-one` | status.rs:unconfirmed_note | * unconfirmed since [#N]: core N shows a stepped-back offset; … | journal | 780 | `status·scenario:unconfirmed·80col`; `status·base:later-hunt·80col` ×51 (#12470 … #12520); `status·base:unconfirmed·80col` ×728 (#8397 … #9124) |
-| `combinations.observed` | status.rs:combinations, observed source | CN core … , observed in hunt N [#N] | journal | 5239 | `status·edge:round-check-completed·80col`; `status·scenario:combination·80col`; `status·scenario:round·80col`; +6 more fixtures; 5239 renderings in all |
+| `bios.none-in-phase-one` | status.rs:bios_note, `None if phase_one` | BIOS profile: none confirmed yet; … | journal | 54006 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 54006 renderings in all |
+| `bios.confirmed` | status.rs:bios_note, no unconfirmed marks | BIOS profile confirmed by the passed full cycle [#N] | journal | 20076 | `status·edge:combination-fallback·80col`; `status·edge:queued-reset·80col`; `status·edge:round-check-completed·80col`; +17 more fixtures; 20076 renderings in all |
+| `bios.unconfirmed` | status.rs:unconfirmed_note | * unconfirmed since [#N]: cores … show stepped-back offsets; … | journal | 2204 | `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×2202 (#11459 … #13748) |
+| `bios.unconfirmed-one` | status.rs:unconfirmed_note | * unconfirmed since [#N]: core N shows a stepped-back offset; … | journal | 952 | `status·scenario:unconfirmed·80col`; `status·base:later-hunt·80col` ×88 (#11630 … #11717); `status·base:unconfirmed·80col` ×863 (#8633 … #9495) |
+| `combinations.observed` | status.rs:combinations, observed source | CN core … , observed in hunt N [#N] | journal | 5242 | `status·edge:round-check-completed·80col`; `status·scenario:combination·80col`; `status·scenario:round·80col`; +6 more fixtures; 5242 renderings in all |
 | `combinations.fallback` | status.rs:combinations, fallback source | CN …, fallback over every candidate of hunt N [#N] | journal | 1 | `status·edge:combination-fallback·80col` |
-| `r7.heading` | status.rs:r7, heading line | R7 self-sufficiency (…; not a guarantee) | journal | 74988 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all |
-| `r7.self-sufficient` | status.rs:self_sufficiency | observed (N passing trials) | journal | 41532 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:evidence-without-tctl·80col`; +35 more fixtures; 41532 renderings in all |
-| `r7.self-sufficient-one` | status.rs:self_sufficiency | observed (1 passing trial) | journal | 820 | `status·edge:r7-with-request-telemetry·80col`; `status·base:combination·80col` ×36 (#1558 … #4910); `status·base:concluded·80col` ×99 (#4155 … #4650); +6 more fixtures; 820 renderings in all |
-| `r7.not-yet` | status.rs:self_sufficiency | not yet demonstrated | journal | 70499 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +61 more fixtures; 70499 renderings in all |
+| `r7.heading` | status.rs:r7, heading line | R7 self-sufficiency (…; not a guarantee) | journal | 77240 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 77240 renderings in all |
+| `r7.self-sufficient` | status.rs:self_sufficiency | observed (N passing trials) | journal | 43712 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:evidence-without-tctl·80col`; +35 more fixtures; 43712 renderings in all |
+| `r7.self-sufficient-one` | status.rs:self_sufficiency | observed (1 passing trial) | journal | 901 | `status·edge:r7-with-request-telemetry·80col`; `status·base:combination·80col` ×36 (#1558 … #4910); `status·base:concluded·80col` ×117 (#4155 … #8029); +6 more fixtures; 901 renderings in all |
+| `r7.not-yet` | status.rs:self_sufficiency | not yet demonstrated | journal | 72751 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +61 more fixtures; 72751 renderings in all |
 | `r7.top-yes` | status.rs:r7, top_requester, measured lane | TOP REQUESTER yes | journal | 1 | `status·edge:r7-with-request-telemetry·80col` |
 | `r7.top-no` | status.rs:r7, top_requester, measured lane | TOP REQUESTER no | journal | 1 | `status·edge:r7-with-request-telemetry·80col` |
-| `r7.top-yes-offset-fallback` | status.rs:r7, top_requester and offset_proxy | TOP REQUESTER yes (offset fallback) | journal | 74988 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all |
-| `r7.top-no-offset-fallback` | status.rs:r7, top_requester and offset_proxy | TOP REQUESTER no (offset fallback) | journal | 69164 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +47 more fixtures; 69164 renderings in all |
+| `r7.top-yes-offset-fallback` | status.rs:r7, top_requester and offset_proxy | TOP REQUESTER yes (offset fallback) | journal | 77240 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 77240 renderings in all |
+| `r7.top-no-offset-fallback` | status.rs:r7, top_requester and offset_proxy | TOP REQUESTER no (offset fallback) | journal | 71416 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +47 more fixtures; 71416 renderings in all |
 | `between` | status.rs:Scan::of, write | between-trial evidence [#N]: msg | journal | 2 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col` |
-| `hunt.parked-zero` | status.rs:parked_source, Parked::Zero | …; parked offsets all-zero | journal | 4070 | `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +13 more fixtures; 4070 renderings in all |
-| `hunt.parked-cycle-end` | status.rs:parked_source | …; parked offsets from cycle end #N | journal | 1 | `status·edge:hunt-parked-cycle-end·80col` |
-| `groups.locate` | status.rs:group_cores | CORES locate, note locate reruns the failed load … | journal | 50 | `status·edge:hunt-located-held·80col`; `status·base:unconfirmed·80col` ×49 (#4895 … #4943) |
-| `hunt.parked-held` | status.rs:parked_source, Parked::Held | …; loaded cores … held at their failing offsets, the rest parked at 0 | journal | 51 | `status·edge:hunt-located-held·80col`; `status·base:unconfirmed·80col` ×50 (#4894 … #4943) |
-| `hunt.signal-named` | status.rs:hunt, signal; hunt_failure | unattributed SIGNAL in … | journal | 4121 | `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +15 more fixtures; 4121 renderings in all |
+| `hunt.parked-zero` | status.rs:parked_source, Parked::Zero | …; parked offsets all-zero | journal | 4885 | `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +12 more fixtures; 4885 renderings in all |
+| `hunt.parked-cycle-end` | status.rs:parked_source | …; parked offsets from cycle end #N | journal | 90 | `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×88 (#11544 … #11717) |
+| `groups.locate` | status.rs:group_cores | CORES locate, note locate reruns the failed load … | journal | 1 | `status·edge:hunt-located-held·80col` |
+| `hunt.parked-held` | status.rs:parked_source, Parked::Held | …; loaded cores … held at their failing offsets, the rest parked at 0 | journal | 1 | `status·edge:hunt-located-held·80col` |
+| `hunt.signal-named` | status.rs:hunt, signal; hunt_failure | unattributed SIGNAL in … | journal | 4975 | `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +14 more fixtures; 4975 renderings in all |
 | `hunt.signal-fallback` | status.rs:hunt_failure | unattributed failure … (no signal) | synthetic only | 1 | `status·synthetic:hunt-cause-without-signal·80col` |
 | `hunt.no-trial` | status.rs:hunt_failure | unattributed SIGNAL with no trial in flight; | journal | 1 | `status·edge:hunt-carried-idle·80col` |
-| `hunt.trial` | status.rs:hunt_failure | unattributed SIGNAL in RN trial ID; | journal | 4121 | `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; +15 more fixtures; 4121 renderings in all |
-| `hunt.candidates` | status.rs:hunt, candidates line | candidates N… | journal | 4122 | `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +16 more fixtures; 4122 renderings in all |
-| `groups.probe` | status.rs:group_cores, probe | CORES probe, note probe NN at N with … | journal | 269 | `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +3 more fixtures; 269 renderings in all |
-| `groups.many-cores` | status.rs:group_cores, GROUP_CORES_MAX | CORES N cores, note cores … | journal | 3764 | `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; `status·edge:hunt-parked-cycle-end·80col`; +12 more fixtures; 3764 renderings in all |
-| `groups.running` | status.rs:hunt; words.rs:group_word | OUTCOME running | journal | 3662 | `status·edge:hunt-group-skipped·80col`; `status·edge:hunt-located-held·80col`; `status·edge:hunt-parked-cycle-end·80col`; +13 more fixtures; 3662 renderings in all |
-| `groups.passed` | status.rs:hunt; words.rs:group_word | OUTCOME passed | journal | 2835 | `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; +8 more fixtures; 2835 renderings in all |
-| `groups.failed` | status.rs:hunt; words.rs:group_word | OUTCOME failed | journal | 1566 | `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +8 more fixtures; 1566 renderings in all |
+| `hunt.trial` | status.rs:hunt_failure | unattributed SIGNAL in RN trial ID; | journal | 4975 | `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; +14 more fixtures; 4975 renderings in all |
+| `hunt.candidates` | status.rs:hunt, candidates line | candidates N… | journal | 4976 | `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +15 more fixtures; 4976 renderings in all |
+| `groups.probe` | status.rs:group_cores, probe | CORES probe, note probe NN at N with … | journal | 522 | `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +3 more fixtures; 522 renderings in all |
+| `groups.many-cores` | status.rs:group_cores, GROUP_CORES_MAX | CORES N cores, note cores … | journal | 4539 | `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; `status·scenario:hunt·80col`; +10 more fixtures; 4539 renderings in all |
+| `groups.running` | status.rs:hunt; words.rs:group_word | OUTCOME running | journal | 4462 | `status·edge:hunt-group-skipped·80col`; `status·edge:hunt-located-held·80col`; `status·edge:hunt-parked-cycle-end·80col`; +12 more fixtures; 4462 renderings in all |
+| `groups.passed` | status.rs:hunt; words.rs:group_word | OUTCOME passed | journal | 3704 | `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; +8 more fixtures; 3704 renderings in all |
+| `groups.failed` | status.rs:hunt; words.rs:group_word | OUTCOME failed | journal | 2247 | `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +7 more fixtures; 2247 renderings in all |
 | `groups.skipped` | status.rs:hunt; words.rs:group_word | OUTCOME skipped | journal | 2 | `status·edge:hunt-group-skipped·80col`; `status·synthetic:hunt-group-skipped·80col` |
-| `groups.excess-evidence` | status.rs:hunt, group.passed and group.needed | PASS EVIDENCE above NEED, uncapped | journal | 851 | `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; +4 more fixtures; 851 renderings in all |
-| `phase2.round` | status.rs:phase2, round line | phase 2 round N [#N] | journal | 4989 | `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 4989 renderings in all |
-| `candidates.waits` | status.rs:phase2, candidate state | STATE waits | journal | 68 | `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:first-result·80col`; `status·base:combination·80col` ×2 (#3364 … #3365); +7 more fixtures; 68 renderings in all |
-| `candidates.moving` | status.rs:phase2; words.rs:candidate_word | STATE moving | journal | 4989 | `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 4989 renderings in all |
-| `candidates.in-place` | status.rs:phase2; words.rs:candidate_word | STATE checked again in place | journal | 22 | `status·base:concluded·80col` ×5 (#7706 … #7710); `status·base:later-hunt·80col` ×5 (#7706 … #7710); `status·base:session·80col` ×5 (#7706 … #7710); +1 more fixtures; 22 renderings in all |
+| `groups.excess-evidence` | status.rs:hunt, group.passed and group.needed | PASS EVIDENCE above NEED, uncapped | journal | 1563 | `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; +4 more fixtures; 1563 renderings in all |
+| `phase2.round` | status.rs:phase2, round line | phase 2 round N [#N] | journal | 5633 | `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 5633 renderings in all |
+| `candidates.waits` | status.rs:phase2, candidate state | STATE waits | journal | 718 | `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:first-result·80col`; `status·base:combination·80col` ×2 (#3364 … #3365); +7 more fixtures; 718 renderings in all |
+| `candidates.moving` | status.rs:phase2; words.rs:candidate_word | STATE moving | journal | 5633 | `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 5633 renderings in all |
+| `candidates.in-place` | status.rs:phase2; words.rs:candidate_word | STATE checked again in place | journal | 40 | `status·base:concluded·80col` ×9 (#7706 … #7843); `status·base:later-hunt·80col` ×9 (#7836 … #7972); `status·base:session·80col` ×9 (#7706 … #7843); +1 more fixtures; 40 renderings in all |
 | `candidates.solo-none` | status.rs:phase2, candidate solo_limit | SOLO - | synthetic only; unreachable | 1 | `status·synthetic:candidate-without-solo-limit·80col` |
-| `candidates.solo-limit` | status.rs:phase2, candidate solo_limit | SOLO N | journal | 5078 | `status·edge:round-check-completed·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:first-result·80col`; +11 more fixtures; 5078 renderings in all |
-| `phase2.no-core-can-move` | status.rs:phase2, plan.confirming without a round | no core can move: the confirmation cycle is all that is left | journal | 8330 | `status·scenario:confirmation·80col`; `status·scenario:unconfirmed·80col`; `status·base:combination·80col` ×984 (#4921 … #5904); +5 more fixtures; 8330 renderings in all |
-| `phase2.worst-case-one` | status.rs:phase2, rounds | worst case if no round fails: 1 round left, … | journal | 5077 | `status·edge:round-check-completed·80col`; `status·scenario:first-result·80col`; `status·scenario:round·80col`; +10 more fixtures; 5077 renderings in all |
+| `candidates.solo-limit` | status.rs:phase2, candidate solo_limit | SOLO N | journal | 6358 | `status·edge:round-check-completed·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:first-result·80col`; +11 more fixtures; 6358 renderings in all |
+| `phase2.no-core-can-move` | status.rs:phase2, plan.confirming without a round | no core can move: the confirmation cycle is all that is left | journal | 8406 | `status·scenario:confirmation·80col`; `status·scenario:unconfirmed·80col`; `status·base:combination·80col` ×984 (#4921 … #5904); +5 more fixtures; 8406 renderings in all |
+| `phase2.worst-case-one` | status.rs:phase2, rounds | worst case if no round fails: 1 round left, … | journal | 6357 | `status·edge:round-check-completed·80col`; `status·scenario:first-result·80col`; `status·scenario:round·80col`; +10 more fixtures; 6357 renderings in all |
 | `phase2.worst-case-many` | status.rs:phase2, rounds | worst case if no round fails: N rounds left, … | journal | 2 | `status·edge:solo-limits-three-counts-deep·80col`; `status·synthetic:rounds-left-three·80col` |
-| `checks.complete` | status.rs:phase2, check passes | PASSES N/N with every pass | journal | 4268 | `status·edge:round-check-completed·80col`; `status·base:combination·80col` ×1445 (#3476 … #4920); `status·base:concluded·80col` ×471 (#7235 … #7705); +4 more fixtures; 4268 renderings in all |
-| `checks.pending` | status.rs:phase2, check passes | PASSES N/N short of its passes | journal | 4987 | `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 4987 renderings in all |
+| `checks.complete` | status.rs:phase2, check passes | PASSES N/N with every pass | journal | 4912 | `status·edge:round-check-completed·80col`; `status·base:combination·80col` ×1445 (#3476 … #4920); `status·base:concluded·80col` ×619 (#7235 … #8039); +4 more fixtures; 4912 renderings in all |
+| `checks.pending` | status.rs:phase2, check passes | PASSES N/N short of its passes | journal | 5627 | `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 5627 renderings in all |
 | `defect.listed` | status.rs:defects, defect line | defect N: TITLE (fixed by pull request #N); decisions … affected cores … | journal | 3 | `status·edge:defect-answered·80col`; `status·edge:defect-found·80col`; `status·edge:defect-reset-one-core·80col` |
 | `defect.reset-commands` | status.rs:defects, reset command lines | togi reset --core N | journal | 3 | `status·edge:defect-answered·80col`; `status·edge:defect-found·80col`; `status·edge:defect-reset-one-core·80col` |
 | `defect.cleared-core-by-core` | status.rs:Scan::of CommandReset Core, defects empty-cores skip | nothing once every affected core is reset (silent; proven by `edge:defect-reset-each-core`) | journal | 1 | `status·edge:defect-reset-each-core·80col` |
 | `defect.cleared-by-reset-all` | status.rs:Scan::of CommandReset All | nothing after a reset of every core (silent; proven by `edge:defect-reset-all`) | journal | 1 | `status·edge:defect-reset-all·80col` |
 | `defect.too-aggressive-unlisted` | status.rs:Scan::of DefectFound TooCautious filter | nothing for a too-aggressive defect (silent; proven by `edge:defect-too-aggressive`) | journal | 1 | `status·edge:defect-too-aggressive·80col` |
-| `evidence.silent` | status.rs:evidence, no checking profile | no evidence table before a checking profile | journal | 32451 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +24 more fixtures; 32451 renderings in all |
-| `evidence.table` | status.rs:evidence, exposure rows | REGIME WORKLOAD VALID PASSES | journal | 42537 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 42537 renderings in all |
-| `evidence.heading` | status.rs:EVIDENCE_HEADING, evidence | Valid passes supporting the checking profile (live and not alone, …; carried passes excluded) | journal | 42537 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 42537 renderings in all |
-| `evidence.tctl` | status.rs:evidence, checking.peak | Tctl max since last profile change N°C [#N] | journal | 34207 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:hunt-carried-idle·80col`; +27 more fixtures; 34207 renderings in all |
-| `evidence.no-tctl` | status.rs:evidence, checking.peak None | an evidence table with no Tctl peak | journal | 8330 | `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; `status·edge:dead-end-defect·80col`; +26 more fixtures; 8330 renderings in all |
+| `evidence.silent` | status.rs:evidence, no checking profile | no evidence table before a checking profile | journal | 32448 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +24 more fixtures; 32448 renderings in all |
+| `evidence.table` | status.rs:evidence, exposure rows | REGIME WORKLOAD VALID PASSES | journal | 44792 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 44792 renderings in all |
+| `evidence.heading` | status.rs:EVIDENCE_HEADING, evidence | Valid passes supporting the checking profile (live and not alone, …; carried passes excluded) | journal | 44792 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 44792 renderings in all |
+| `evidence.tctl` | status.rs:evidence, checking.peak | Tctl max since last profile change N°C [#N] | journal | 34654 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:hunt-carried-idle·80col`; +28 more fixtures; 34654 renderings in all |
+| `evidence.no-tctl` | status.rs:evidence, checking.peak None | an evidence table with no Tctl peak | journal | 10138 | `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; `status·edge:dead-end-defect·80col`; +25 more fixtures; 10138 renderings in all |
 | `parser.unclassified` | this exporter | a block the parser does not place (should stay unreached) | **not reached** | 0 |  |
 
 #### Coverage gaps
@@ -8930,7 +9460,7 @@ Not mapped branch by branch here: the message builders of `togi-journal/src/payl
 checking cycle 1, steps 0/18 | phase 1
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +22 more fixtures; 17659 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +22 more fixtures; 17692 renderings in all
 
 **status.header.2** · template `checking cycle N, steps N/N | phase N concluded: clean cycles N, latest clean cycle N`
 
@@ -8939,22 +9469,22 @@ checking cycle 2, steps 18/18 | phase 2 concluded: clean cycles 1, latest clean
   cycle 2
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:queued-reset·80col`; `status·scenario:combination·80col`; +8 more fixtures; 7337 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:queued-reset·80col`; `status·scenario:combination·80col`; +8 more fixtures; 7349 renderings in all
 
-**status.header.3** · template `checking cycle N, steps N/N | phase N: at most N round left, then one full cycle`
+**status.header.3** · template `checking cycle N, steps N/N | phase N: N round left if none fails, then one full cycle`
 
 ```text
-checking cycle 1, steps 18/18 | phase 2: at most 1 round left, then one full
-  cycle
+checking cycle 1, steps 18/18 | phase 2: 1 round left if none fails, then one
+  full cycle
 ```
 
-Cases: `status·scenario:first-result·80col`; `status·base:combination·80col` ×2 (#3364 … #3365); `status·base:concluded·80col` ×7 (#7128 … #7710); +6 more fixtures; 89 renderings in all
+Cases: `status·scenario:first-result·80col`; `status·base:combination·80col` ×2 (#3364 … #3365); `status·base:concluded·80col` ×188 (#7128 … #7931); +6 more fixtures; 725 renderings in all
 
-**status.header.4** · template `checking cycle N, steps N/N | phase N: at most N rounds left, then one full cycle`
+**status.header.4** · template `checking cycle N, steps N/N | phase N: N rounds left if none fails, then one full cycle`
 
 ```text
-checking cycle 1, steps 18/18 | phase 2: at most 3 rounds left, then one full
-  cycle
+checking cycle 1, steps 18/18 | phase 2: 3 rounds left if none fails, then one
+  full cycle
 ```
 
 Cases: `status·edge:solo-limits-three-counts-deep·80col`
@@ -8965,7 +9495,7 @@ Cases: `status·edge:solo-limits-three-counts-deep·80col`
 checking cycle 1, steps 18/18 | phase 2: confirmation cycle
 ```
 
-Cases: `status·scenario:confirmation·80col`; `status·scenario:unconfirmed·80col`; `status·base:combination·80col` ×984 (#4921 … #5904); +5 more fixtures; 8330 renderings in all
+Cases: `status·scenario:confirmation·80col`; `status·scenario:unconfirmed·80col`; `status·base:combination·80col` ×984 (#4921 … #5904); +5 more fixtures; 8406 renderings in all
 
 **status.header.6** · template `checking cycle N, steps N/N, not full: RN: N more steps; RN: N more steps; RN: N more step; RN: N more step; RN: N more step; RN: N more step; RN: N more steps | phase N`
 
@@ -8991,30 +9521,30 @@ Cases: `status·edge:no-plan·80col`; `status·base:combination·80col` ×31 (#1
 hunt 1, group 0 | phase 1
 ```
 
-Cases: `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +14 more fixtures; 3726 renderings in all
+Cases: `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +13 more fixtures; 3857 renderings in all
 
 **status.header.9** · template `hunt N, group N | phase N concluded: clean cycles N, latest clean cycle N`
 
 ```text
-hunt 4, group 0 | phase 2 concluded: clean cycles 2, latest clean cycle 3
+hunt 5, group 0 | phase 2 concluded: clean cycles 2, latest clean cycle 3
 ```
 
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×394 (#11163 … #11556)
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×1117 (#11544 … #12832)
 
-**status.header.10** · template `phase N round N, checks N/N | phase N: at most N round left, then one full cycle`
+**status.header.10** · template `phase N round N, checks N/N | phase N: N round left if none fails, then one full cycle`
 
 ```text
-phase 2 round 1, checks 0/22 | phase 2: at most 1 round left, then one full
-  cycle
+phase 2 round 1, checks 0/22 | phase 2: 1 round left if none fails, then one
+  full cycle
 ```
 
-Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +8 more fixtures; 4988 renderings in all
+Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +8 more fixtures; 5632 renderings in all
 
-**status.header.11** · template `phase N round N, checks N/N | phase N: at most N rounds left, then one full cycle`
+**status.header.11** · template `phase N round N, checks N/N | phase N: N rounds left if none fails, then one full cycle`
 
 ```text
-phase 2 round 1, checks 0/36 | phase 2: at most 3 rounds left, then one full
-  cycle
+phase 2 round 1, checks 0/36 | phase 2: 3 rounds left if none fails, then one
+  full cycle
 ```
 
 Cases: `status·synthetic:rounds-left-three·80col`
@@ -9041,7 +9571,7 @@ Cases: `status·synthetic:no-phase-plan·80col`
 search: 2 cores left | phase 1
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +22 more fixtures; 32125 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +22 more fixtures; 32122 renderings in all
 
 #### `session` — status.rs Status::write, session line
 
@@ -9051,7 +9581,7 @@ Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 77240 renderings in all
 
 #### `bios.context` — status.rs Status::write, BIOS context line
 
@@ -9071,7 +9601,7 @@ BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:carried-r7-evidence·80col`; +64 more fixtures; 74887 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:carried-r7-evidence·80col`; +64 more fixtures; 77139 renderings in all
 
 #### `in-flight` — status.rs Status::write, the in-flight event's msg
 
@@ -9081,7 +9611,7 @@ Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-
 in flight: [#694] SMU set all cores to offset 0
 ```
 
-Cases: `status·base:combination·80col` ×8 (#1835 … #2481); `status·base:concluded·80col` ×12 (#694 … #7717); `status·base:crashed-cycle·80col` ×16 (#1911 … #9254); +6 more fixtures; 100 renderings in all
+Cases: `status·base:combination·80col` ×8 (#1835 … #2481); `status·base:concluded·80col` ×13 (#694 … #7849); `status·base:crashed-cycle·80col` ×16 (#1911 … #9260); +6 more fixtures; 104 renderings in all
 
 **status.in-flight.2** · template `in flight: [#N] SMU set core N to offset -N`
 
@@ -9089,7 +9619,7 @@ Cases: `status·base:combination·80col` ×8 (#1835 … #2481); `status·base:co
 in flight: [#352] SMU set core 00 to offset -5
 ```
 
-Cases: `status·base:combination·80col` ×427 (#48 … #4827); `status·base:concluded·80col` ×588 (#352 … #7780); `status·base:crashed-cycle·80col` ×645 (#352 … #9317); +6 more fixtures; 4690 renderings in all
+Cases: `status·base:combination·80col` ×427 (#48 … #4827); `status·base:concluded·80col` ×612 (#352 … #8798); `status·base:crashed-cycle·80col` ×645 (#352 … #9323); +6 more fixtures; 4895 renderings in all
 
 **status.in-flight.3** · template `in flight: [#N] SMU set core N to offset N`
 
@@ -9097,7 +9627,7 @@ Cases: `status·base:combination·80col` ×427 (#48 … #4827); `status·base:co
 in flight: [#48] SMU set core 00 to offset 0
 ```
 
-Cases: `status·base:combination·80col` ×358 (#52 … #5951); `status·base:concluded·80col` ×557 (#48 … #10514); `status·base:crashed-cycle·80col` ×582 (#48 … #10011); +6 more fixtures; 4339 renderings in all
+Cases: `status·base:combination·80col` ×358 (#52 … #5951); `status·base:concluded·80col` ×557 (#48 … #10851); `status·base:crashed-cycle·80col` ×582 (#48 … #10017); +6 more fixtures; 4395 renderings in all
 
 **status.in-flight.4** · template `in flight: [#N] trial N core N RN mprime AVXN NK-NK N s parked hunt N group N`
 
@@ -9106,16 +9636,16 @@ in flight: [#4907] trial 0604 core 05 R2 mprime AVX2 36K-248K 120 s parked hunt
   1 group 1
 ```
 
-Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt·80col`; +6 more fixtures; 175 renderings in all
+Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt·80col`; +6 more fixtures; 371 renderings in all
 
 **status.in-flight.5** · template `in flight: [#N] trial N core N RN mprime SSE NK-NK N% duty N s parked hunt N group N`
 
 ```text
-in flight: [#7014] trial 0891 core 04 R4 mprime SSE 4K-21K 25% duty 120 s parked
+in flight: [#7020] trial 0893 core 04 R4 mprime SSE 4K-21K 25% duty 120 s parked
   hunt 2 group 1
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×48 (#7014 … #7172)
+Cases: `status·base:crashed-cycle·80col` ×48 (#7020 … #7178)
 
 **status.in-flight.6** · template `in flight: [#N] trial N core N RN mprime SSE NK-NK SMT pair N s parked hunt N group N`
 
@@ -9124,7 +9654,7 @@ in flight: [#5526] trial 0693 core 00 R5 mprime SSE 4K-21K SMT pair 120 s parked
   hunt 2 group 1
 ```
 
-Cases: `status·base:concluded·80col` ×23 (#5526 … #5620); `status·base:crashed-cycle·80col` ×23 (#5782 … #5877); `status·base:first-result·80col` ×23 (#5526 … #5620); +2 more fixtures; 115 renderings in all
+Cases: `status·base:concluded·80col` ×23 (#5526 … #5620); `status·base:crashed-cycle·80col` ×23 (#5788 … #5883); `status·base:first-result·80col` ×23 (#5526 … #5620); +2 more fixtures; 138 renderings in all
 
 **status.in-flight.7** · template `in flight: [#N] trial N core N RN mprime SSE NK-NK load steps N s parked hunt N group N`
 
@@ -9133,7 +9663,7 @@ in flight: [#6274] trial 0801 core 00 R3 mprime SSE 4K-21K load steps 120 s
   parked hunt 3 group 1
 ```
 
-Cases: `status·base:concluded·80col` ×45 (#6274 … #6390); `status·base:first-result·80col` ×45 (#6274 … #6390); `status·base:later-hunt·80col` ×45 (#6274 … #6390); +1 more fixtures; 180 renderings in all
+Cases: `status·base:concluded·80col` ×45 (#6274 … #6390); `status·base:first-result·80col` ×45 (#6274 … #6390); `status·base:later-hunt·80col` ×45 (#6404 … #6520); +1 more fixtures; 180 renderings in all
 
 **status.in-flight.8** · template `in flight: [#N] trial N core N offset -N RN mprime AVX-N NK-NK N s alone`
 
@@ -9142,7 +9672,7 @@ in flight: [#360] trial 0034 core 00 offset -5 R2 mprime AVX-512 36K-248K 90 s
   alone
 ```
 
-Cases: `status·base:concluded·80col` ×216 (#360 … #3045); `status·base:crashed-cycle·80col` ×290 (#360 … #4446); `status·base:dead-end·80col` ×216 (#360 … #3045); +4 more fixtures; 1745 renderings in all
+Cases: `status·base:concluded·80col` ×216 (#360 … #3045); `status·base:crashed-cycle·80col` ×290 (#360 … #4446); `status·base:dead-end·80col` ×216 (#360 … #3045); +4 more fixtures; 1744 renderings in all
 
 **status.in-flight.9** · template `in flight: [#N] trial N core N offset -N RN mprime AVX-N NK-NK N s together cycle N step N`
 
@@ -9151,7 +9681,7 @@ in flight: [#5151] trial 0625 core 00 offset -25 R2 mprime AVX-512 36K-248K 120
   s together cycle 1 step 5
 ```
 
-Cases: `status·base:combination·80col` ×64 (#1720 … #5173); `status·base:concluded·80col` ×96 (#5151 … #9736); `status·base:crashed-cycle·80col` ×64 (#5382 … #9009); +5 more fixtures; 608 renderings in all
+Cases: `status·base:combination·80col` ×64 (#1720 … #5173); `status·base:concluded·80col` ×96 (#5151 … #10073); `status·base:crashed-cycle·80col` ×64 (#5388 … #9015); +5 more fixtures; 608 renderings in all
 
 **status.in-flight.10** · template `in flight: [#N] trial N core N offset -N RN mprime AVXN NK-NK N s alone`
 
@@ -9169,7 +9699,7 @@ in flight: [#7236] trial 0948 core 08 offset -6 R2 mprime AVX2 36K-248K 120 s
   alone round 1
 ```
 
-Cases: `status·base:combination·80col` ×450 (#3477 … #4780); `status·base:concluded·80col` ×150 (#7236 … #7639); `status·base:crashed-cycle·80col` ×180 (#7598 … #8091); +3 more fixtures; 1290 renderings in all
+Cases: `status·base:combination·80col` ×450 (#3477 … #4780); `status·base:concluded·80col` ×150 (#7236 … #7639); `status·base:crashed-cycle·80col` ×180 (#7604 … #8097); +3 more fixtures; 1290 renderings in all
 
 **status.in-flight.12** · template `in flight: [#N] trial N core N offset -N RN mprime AVXN NK-NK N s together cycle N step N`
 
@@ -9178,7 +9708,7 @@ in flight: [#4671] trial 0558 core 00 offset -25 R2 mprime AVX2 36K-248K 120 s
   together cycle 1 step 4
 ```
 
-Cases: `status·base:combination·80col` ×64 (#1672 … #5125); `status·base:concluded·80col` ×99 (#4671 … #9688); `status·base:crashed-cycle·80col` ×66 (#5163 … #8961); +5 more fixtures; 632 renderings in all
+Cases: `status·base:combination·80col` ×64 (#1672 … #5125); `status·base:concluded·80col` ×99 (#4671 … #10025); `status·base:crashed-cycle·80col` ×66 (#5169 … #8967); +5 more fixtures; 627 renderings in all
 
 **status.in-flight.13** · template `in flight: [#N] trial N core N offset -N RN mprime AVXN NK-NK N s together rerun`
 
@@ -9187,7 +9717,7 @@ in flight: [#4697] trial 0564 core 10 offset -15 R2 mprime AVX2 36K-248K 120 s
   together rerun
 ```
 
-Cases: `status·base:concluded·80col` ×32 (#4697 … #5101); `status·base:crashed-cycle·80col` ×10 (#5274 … #5287); `status·base:first-result·80col` ×32 (#4697 … #5101); +3 more fixtures; 171 renderings in all
+Cases: `status·base:concluded·80col` ×32 (#4697 … #5101); `status·base:crashed-cycle·80col` ×10 (#5280 … #5293); `status·base:first-result·80col` ×32 (#4697 … #5101); +3 more fixtures; 167 renderings in all
 
 **status.in-flight.14** · template `in flight: [#N] trial N core N offset -N RN mprime SSE NK-NK N s alone`
 
@@ -9195,7 +9725,7 @@ Cases: `status·base:concluded·80col` ×32 (#4697 … #5101); `status·base:cra
 in flight: [#979] trial 0096 core 00 offset -15 R1 mprime SSE 4K-21K 90 s alone
 ```
 
-Cases: `status·scenario:confirm·80col`; `status·base:combination·80col` ×480 (#47 … #765); `status·base:concluded·80col` ×693 (#979 … #3893); +7 more fixtures; 5816 renderings in all
+Cases: `status·scenario:confirm·80col`; `status·base:combination·80col` ×480 (#47 … #765); `status·base:concluded·80col` ×693 (#979 … #3893); +7 more fixtures; 5815 renderings in all
 
 **status.in-flight.15** · template `in flight: [#N] trial N core N offset -N RN mprime SSE NK-NK N s alone round N`
 
@@ -9213,16 +9743,16 @@ in flight: [#6046] trial 0752 core 00 offset -24 R1 mprime SSE 4K-21K 120 s
   together cycle 1 step 9
 ```
 
-Cases: `status·edge:short-cycle·80col`; `status·base:combination·80col` ×64 (#2735 … #5322); `status·base:concluded·80col` ×96 (#6046 … #9885); +6 more fixtures; 611 renderings in all
+Cases: `status·edge:short-cycle·80col`; `status·base:combination·80col` ×64 (#2735 … #5322); `status·base:concluded·80col` ×97 (#6046 … #10222); +6 more fixtures; 614 renderings in all
 
 **status.in-flight.17** · template `in flight: [#N] trial N core N offset -N RN mprime SSE NK-NK N s together rerun`
 
 ```text
-in flight: [#6161] trial 0764 core 06 offset -26 R1 mprime SSE 4K-21K 120 s
+in flight: [#8802] trial 1272 core 15 offset -13 R1 mprime SSE 4K-21K 120 s
   together rerun
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×10 (#9321 … #9334); `status·base:unconfirmed·80col` ×13 (#6161 … #6185)
+Cases: `status·base:concluded·80col` ×10 (#8802 … #8815); `status·base:crashed-cycle·80col` ×10 (#9327 … #9340); `status·base:later-hunt·80col` ×10 (#8931 … #8944); +2 more fixtures; 53 renderings in all
 
 **status.in-flight.18** · template `in flight: [#N] trial N core N offset -N RN mprime SSE NK-NK N% duty N s together cycle N step N`
 
@@ -9231,7 +9761,7 @@ in flight: [#6765] trial 0876 core 00 offset -23 R4 mprime SSE 4K-21K 25% duty
   120 s together cycle 1 step 15
 ```
 
-Cases: `status·base:combination·80col` ×128 (#3119 … #5738); `status·base:concluded·80col` ×193 (#6765 … #10301); `status·base:crashed-cycle·80col` ×129 (#6960 … #9798); +5 more fixtures; 1222 renderings in all
+Cases: `status·base:combination·80col` ×128 (#3119 … #5738); `status·base:concluded·80col` ×193 (#6765 … #10638); `status·base:crashed-cycle·80col` ×129 (#6966 … #9804); +5 more fixtures; 1223 renderings in all
 
 **status.in-flight.19** · template `in flight: [#N] trial N core N offset -N RN mprime SSE NK-NK N% duty N s together rerun`
 
@@ -9240,7 +9770,7 @@ in flight: [#6843] trial 0890 core 14 offset -13 R4 mprime SSE 4K-21K 25% duty
   120 s together rerun
 ```
 
-Cases: `status·base:concluded·80col` ×25 (#6843 … #6879); `status·base:crashed-cycle·80col` ×20 (#7224 … #7247); `status·base:first-result·80col` ×25 (#6843 … #6879); +3 more fixtures; 140 renderings in all
+Cases: `status·base:concluded·80col` ×25 (#6843 … #6879); `status·base:crashed-cycle·80col` ×20 (#7230 … #7253); `status·base:first-result·80col` ×25 (#6843 … #6879); +3 more fixtures; 160 renderings in all
 
 **status.in-flight.20** · template `in flight: [#N] trial N core N offset -N RN mprime SSE NK-NK SMT pair N s together cycle N step N`
 
@@ -9249,7 +9779,7 @@ in flight: [#5443] trial 0692 core 00 offset -25 R5 mprime SSE 4K-21K SMT pair
   120 s together cycle 1 step 8
 ```
 
-Cases: `status·base:combination·80col` ×64 (#2687 … #5274); `status·base:concluded·80col` ×100 (#5443 … #9837); `status·base:crashed-cycle·80col` ×70 (#5696 … #9198); +5 more fixtures; 632 renderings in all
+Cases: `status·base:combination·80col` ×64 (#2687 … #5274); `status·base:concluded·80col` ×100 (#5443 … #10174); `status·base:crashed-cycle·80col` ×70 (#5702 … #9204); +5 more fixtures; 632 renderings in all
 
 **status.in-flight.21** · template `in flight: [#N] trial N core N offset -N RN mprime SSE NK-NK SMT pair N s together rerun`
 
@@ -9258,7 +9788,7 @@ in flight: [#5666] trial 0704 core 00 offset -24 R5 mprime SSE 4K-21K SMT pair
   120 s together rerun
 ```
 
-Cases: `status·scenario:unconfirmed·80col`; `status·base:concluded·80col` ×44 (#5666 … #6002); `status·base:crashed-cycle·80col` ×60 (#5923 … #6390); +4 more fixtures; 257 renderings in all
+Cases: `status·scenario:unconfirmed·80col`; `status·base:concluded·80col` ×44 (#5666 … #6002); `status·base:crashed-cycle·80col` ×60 (#5929 … #6396); +4 more fixtures; 256 renderings in all
 
 **status.in-flight.22** · template `in flight: [#N] trial N core N offset -N RN mprime SSE NK-NK load steps N s together cycle N step N`
 
@@ -9267,7 +9797,7 @@ in flight: [#6190] trial 0800 core 00 offset -24 R3 mprime SSE 4K-21K load steps
   120 s together cycle 1 step 12
 ```
 
-Cases: `status·base:combination·80col` ×128 (#2879 … #5498); `status·base:concluded·80col` ×192 (#6190 … #10061); `status·base:crashed-cycle·80col` ×129 (#6647 … #9558); +5 more fixtures; 1217 renderings in all
+Cases: `status·base:combination·80col` ×128 (#2879 … #5498); `status·base:concluded·80col` ×192 (#6190 … #10398); `status·base:crashed-cycle·80col` ×129 (#6653 … #9564); +5 more fixtures; 1218 renderings in all
 
 **status.in-flight.23** · template `in flight: [#N] trial N core N offset -N RN mprime SSE NK-NK load steps N s together rerun`
 
@@ -9276,7 +9806,7 @@ in flight: [#6436] trial 0812 core 00 offset -23 R3 mprime SSE 4K-21K load steps
   120 s together rerun
 ```
 
-Cases: `status·base:concluded·80col` ×20 (#6436 … #6459); `status·base:crashed-cycle·80col` ×20 (#6681 … #6704); `status·base:first-result·80col` ×20 (#6436 … #6459); +2 more fixtures; 100 renderings in all
+Cases: `status·base:concluded·80col` ×20 (#6436 … #6459); `status·base:crashed-cycle·80col` ×20 (#6687 … #6710); `status·base:first-result·80col` ×20 (#6436 … #6459); +3 more fixtures; 120 renderings in all
 
 **status.in-flight.24** · template `in flight: [#N] trial N core N offset -N RN y-cruncher BKT + SFTvN N s alone`
 
@@ -9285,7 +9815,7 @@ in flight: [#351] trial 0033 core 00 offset -5 R1 y-cruncher BKT + SFTv4 90 s
   alone
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +18 more fixtures; 2138 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +18 more fixtures; 2137 renderings in all
 
 **status.in-flight.25** · template `in flight: [#N] trial N core N offset -N RN y-cruncher BKT + SFTvN N s together cycle N step N`
 
@@ -9294,7 +9824,7 @@ in flight: [#6094] trial 0768 core 00 offset -24 R1 y-cruncher BKT + SFTv4 120 s
   together cycle 1 step 10
 ```
 
-Cases: `status·base:combination·80col` ×64 (#2783 … #5370); `status·base:concluded·80col` ×96 (#6094 … #9933); `status·base:crashed-cycle·80col` ×64 (#6551 … #9430); +5 more fixtures; 608 renderings in all
+Cases: `status·base:combination·80col` ×64 (#2783 … #5370); `status·base:concluded·80col` ×96 (#6094 … #10270); `status·base:crashed-cycle·80col` ×64 (#6557 … #9436); +5 more fixtures; 608 renderings in all
 
 **status.in-flight.26** · template `in flight: [#N] trial N core N offset -N RN y-cruncher BKT + SFTvN N% duty N s together cycle N step N`
 
@@ -9303,7 +9833,7 @@ in flight: [#6963] trial 0910 core 00 offset -23 R4 y-cruncher BKT + SFTv4 50%
   duty 120 s together cycle 1 step 16
 ```
 
-Cases: `status·base:combination·80col` ×128 (#3199 … #5818); `status·base:concluded·80col` ×192 (#6963 … #10381); `status·base:crashed-cycle·80col` ×128 (#7323 … #9878); +5 more fixtures; 1216 renderings in all
+Cases: `status·base:combination·80col` ×128 (#3199 … #5818); `status·base:concluded·80col` ×192 (#6963 … #10718); `status·base:crashed-cycle·80col` ×128 (#7329 … #9884); +5 more fixtures; 1216 renderings in all
 
 **status.in-flight.27** · template `in flight: [#N] trial N core N offset -N RN y-cruncher BKT + SFTvN load steps N s together cycle N step N`
 
@@ -9312,7 +9842,7 @@ in flight: [#6605] trial 0844 core 00 offset -23 R3 y-cruncher BKT + SFTv4 load
   steps 120 s together cycle 1 step 13
 ```
 
-Cases: `status·base:combination·80col` ×128 (#2959 … #5578); `status·base:concluded·80col` ×192 (#6605 … #10141); `status·base:crashed-cycle·80col` ×128 (#6800 … #9638); +5 more fixtures; 1216 renderings in all
+Cases: `status·base:combination·80col` ×128 (#2959 … #5578); `status·base:concluded·80col` ×192 (#6605 … #10478); `status·base:crashed-cycle·80col` ×128 (#6806 … #9644); +5 more fixtures; 1216 renderings in all
 
 **status.in-flight.28** · template `in flight: [#N] trial N core N offset -N RN y-cruncher FFTvN + NN + VTN N s alone`
 
@@ -9330,7 +9860,7 @@ in flight: [#5199] trial 0641 core 00 offset -25 R2 y-cruncher FFTv4 + N63 + VT3
   120 s together cycle 1 step 6
 ```
 
-Cases: `status·base:combination·80col` ×64 (#1768 … #5221); `status·base:concluded·80col` ×96 (#5199 … #9784); `status·base:crashed-cycle·80col` ×64 (#5430 … #9057); +5 more fixtures; 608 renderings in all
+Cases: `status·base:combination·80col` ×64 (#1768 … #5221); `status·base:concluded·80col` ×96 (#5199 … #10121); `status·base:crashed-cycle·80col` ×64 (#5436 … #9063); +5 more fixtures; 608 renderings in all
 
 **status.in-flight.30** · template `in flight: [#N] trial N core N offset -N RN y-cruncher SNT + SVT N s alone`
 
@@ -9348,7 +9878,7 @@ in flight: [#6142] trial 0784 core 00 offset -24 R1 y-cruncher SNT + SVT 120 s
   together cycle 1 step 11
 ```
 
-Cases: `status·base:combination·80col` ×64 (#2831 … #5418); `status·base:concluded·80col` ×96 (#6142 … #9981); `status·base:crashed-cycle·80col` ×64 (#6599 … #9478); +5 more fixtures; 608 renderings in all
+Cases: `status·base:combination·80col` ×64 (#2831 … #5418); `status·base:concluded·80col` ×96 (#6142 … #10318); `status·base:crashed-cycle·80col` ×64 (#6605 … #9484); +5 more fixtures; 608 renderings in all
 
 **status.in-flight.32** · template `in flight: [#N] trial N core N offset -N RN y-cruncher SNT + SVT N% duty N s together cycle N step N`
 
@@ -9357,7 +9887,7 @@ in flight: [#7043] trial 0926 core 00 offset -23 R4 y-cruncher SNT + SVT 75%
   duty 120 s together cycle 1 step 17
 ```
 
-Cases: `status·base:combination·80col` ×128 (#3279 … #5898); `status·base:concluded·80col` ×192 (#7043 … #10461); `status·base:crashed-cycle·80col` ×128 (#7403 … #9958); +5 more fixtures; 1216 renderings in all
+Cases: `status·base:combination·80col` ×128 (#3279 … #5898); `status·base:concluded·80col` ×192 (#7043 … #10798); `status·base:crashed-cycle·80col` ×128 (#7409 … #9964); +5 more fixtures; 1216 renderings in all
 
 **status.in-flight.33** · template `in flight: [#N] trial N core N offset -N RN y-cruncher SNT + SVT load steps N s together cycle N step N`
 
@@ -9366,7 +9896,7 @@ in flight: [#6685] trial 0860 core 00 offset -23 R3 y-cruncher SNT + SVT load
   steps 120 s together cycle 1 step 14
 ```
 
-Cases: `status·base:combination·80col` ×128 (#3039 … #5658); `status·base:concluded·80col` ×192 (#6685 … #10221); `status·base:crashed-cycle·80col` ×128 (#6880 … #9718); +5 more fixtures; 1216 renderings in all
+Cases: `status·base:combination·80col` ×128 (#3039 … #5658); `status·base:concluded·80col` ×192 (#6685 … #10558); `status·base:crashed-cycle·80col` ×128 (#6886 … #9724); +5 more fixtures; 1216 renderings in all
 
 **status.in-flight.34** · template `in flight: [#N] trial N core N offset N RN mprime AVXN NK-NK N s alone`
 
@@ -9391,360 +9921,405 @@ in flight: [#4412] trial 0478 cores 06, 07 R7 mprime AVX-512 36K-248K all-core
   120 s together cycle 1 step 2
 ```
 
-Cases: `status·base:concluded·80col` ×48 (#4412 … #9458); `status·base:crashed-cycle·80col` ×32 (#4891 … #8718); `status·base:first-result·80col` ×16 (#4412 … #4500); +3 more fixtures; 256 renderings in all
+Cases: `status·base:concluded·80col` ×48 (#4412 … #9795); `status·base:crashed-cycle·80col` ×32 (#4897 … #8724); `status·base:first-result·80col` ×16 (#4412 … #4500); +3 more fixtures; 256 renderings in all
 
-**status.in-flight.37** · template `in flight: [#N] trial N cores N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
+**status.in-flight.37** · template `in flight: [#N] trial N cores N, N RN mprime AVX-N NK-NK all-core N s together round N`
+
+```text
+in flight: [#7904] trial 1013 cores 12, 13 R7 mprime AVX-512 36K-248K all-core
+  120 s together round 3
+```
+
+Cases: `status·base:unconfirmed·80col` ×10 (#7904 … #7917)
+
+**status.in-flight.38** · template `in flight: [#N] trial N cores N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4211] trial 0425 cores 06, 07 R7 mprime AVX2 36K-248K all-core 120
   s together cycle 1 step 1
 ```
 
-Cases: `status·base:concluded·80col` ×48 (#4211 … #9289); `status·base:crashed-cycle·80col` ×32 (#4596 … #8536); `status·base:first-result·80col` ×16 (#4211 … #4344); +3 more fixtures; 256 renderings in all
+Cases: `status·base:concluded·80col` ×48 (#4211 … #9626); `status·base:crashed-cycle·80col` ×32 (#4596 … #8542); `status·base:first-result·80col` ×16 (#4211 … #4344); +3 more fixtures; 256 renderings in all
 
-**status.in-flight.38** · template `in flight: [#N] trial N cores N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
+**status.in-flight.39** · template `in flight: [#N] trial N cores N, N RN mprime AVXN NK-NK all-core N s together rerun`
+
+```text
+in flight: [#7916] trial 1000 cores 06, 07 R7 mprime AVX2 36K-248K all-core 120
+  s together rerun
+```
+
+Cases: `status·base:concluded·80col` ×10 (#7916 … #7929); `status·base:later-hunt·80col` ×10 (#8045 … #8058); `status·base:session·80col` ×10 (#7916 … #7929)
+
+**status.in-flight.40** · template `in flight: [#N] trial N cores N, N RN mprime AVXN NK-NK all-core N s together round N`
+
+```text
+in flight: [#7823] trial 0999 cores 06, 07 R7 mprime AVX2 36K-248K all-core 120
+  s together round 2
+```
+
+Cases: `status·base:concluded·80col` ×4 (#7823 … #7826); `status·base:later-hunt·80col` ×3 (#7953 … #7955); `status·base:session·80col` ×4 (#7823 … #7826); +1 more fixtures; 21 renderings in all
+
+**status.in-flight.41** · template `in flight: [#N] trial N cores N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
 
 ```text
 in flight: [#4568] trial 0526 cores 06, 07 R7 y-cruncher FFTv4 + N63 + VT3
   all-core 120 s together cycle 1 step 3
 ```
 
-Cases: `status·base:concluded·80col` ×48 (#4568 … #9627); `status·base:crashed-cycle·80col` ×32 (#5060 … #8900); `status·base:first-result·80col` ×16 (#4568 … #4656); +3 more fixtures; 256 renderings in all
+Cases: `status·base:concluded·80col` ×48 (#4568 … #9964); `status·base:crashed-cycle·80col` ×32 (#5066 … #8906); `status·base:first-result·80col` ×16 (#4568 … #4656); +3 more fixtures; 256 renderings in all
 
-**status.in-flight.39** · template `in flight: [#N] trial N cores N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
+**status.in-flight.42** · template `in flight: [#N] trial N cores N, N RN y-cruncher FFTvN + NN + VTN all-core N s together round N`
+
+```text
+in flight: [#7949] trial 1028 cores 12, 13 R7 y-cruncher FFTv4 + N63 + VT3
+  all-core 120 s together round 3
+```
+
+Cases: `status·base:unconfirmed·80col` ×10 (#7949 … #7962)
+
+**status.in-flight.43** · template `in flight: [#N] trial N cores N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4744] trial 0573 cores 09, 12, 13 R7 mprime AVX-512 36K-248K
   all-core 120 s together cycle 1 step 2
 ```
 
-Cases: `status·base:concluded·80col` ×32 (#4744 … #9445); `status·base:crashed-cycle·80col` ×32 (#4956 … #8705); `status·base:first-result·80col` ×16 (#4744 … #5718); +3 more fixtures; 184 renderings in all
+Cases: `status·base:concluded·80col` ×32 (#4744 … #9782); `status·base:crashed-cycle·80col` ×32 (#4962 … #8711); `status·base:first-result·80col` ×16 (#4744 … #5718); +3 more fixtures; 184 renderings in all
 
-**status.in-flight.40** · template `in flight: [#N] trial N cores N, N, N RN mprime AVX-N NK-NK all-core N s together round N`
+**status.in-flight.44** · template `in flight: [#N] trial N cores N, N, N RN mprime AVX-N NK-NK all-core N s together round N`
 
 ```text
-in flight: [#8247] trial 1043 cores 01, 03, 06 R7 mprime AVX-512 36K-248K
+in flight: [#8253] trial 1045 cores 01, 03, 06 R7 mprime AVX-512 36K-248K
   all-core 120 s together round 1
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×10 (#8247 … #8260)
+Cases: `status·base:crashed-cycle·80col` ×10 (#8253 … #8266)
 
-**status.in-flight.41** · template `in flight: [#N] trial N cores N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
+**status.in-flight.45** · template `in flight: [#N] trial N cores N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4721] trial 0569 cores 09, 12, 13 R7 mprime AVX2 36K-248K all-core
   120 s together cycle 1 step 1
 ```
 
-Cases: `status·base:concluded·80col` ×32 (#4721 … #9276); `status·base:crashed-cycle·80col` ×32 (#4787 … #8523); `status·base:first-result·80col` ×16 (#4721 … #5695); +3 more fixtures; 184 renderings in all
+Cases: `status·base:concluded·80col` ×32 (#4721 … #9613); `status·base:crashed-cycle·80col` ×32 (#4793 … #8529); `status·base:first-result·80col` ×16 (#4721 … #5695); +3 more fixtures; 184 renderings in all
 
-**status.in-flight.42** · template `in flight: [#N] trial N cores N, N, N RN mprime AVXN NK-NK all-core N s together rerun`
+**status.in-flight.46** · template `in flight: [#N] trial N cores N, N, N RN mprime AVXN NK-NK all-core N s together rerun`
 
 ```text
 in flight: [#7784] trial 0994 cores 03, 06, 07 R7 mprime AVX2 36K-248K all-core
   120 s together rerun
 ```
 
-Cases: `status·scenario:confirmation·80col`; `status·base:concluded·80col` ×10 (#7784 … #7797); `status·base:later-hunt·80col` ×10 (#7784 … #7797); +1 more fixtures; 31 renderings in all
+Cases: `status·base:concluded·80col` ×10 (#7784 … #7797); `status·base:later-hunt·80col` ×10 (#7914 … #7927); `status·base:session·80col` ×10 (#7784 … #7797)
 
-**status.in-flight.43** · template `in flight: [#N] trial N cores N, N, N RN mprime AVXN NK-NK all-core N s together round N`
+**status.in-flight.47** · template `in flight: [#N] trial N cores N, N, N RN mprime AVXN NK-NK all-core N s together round N`
 
 ```text
 in flight: [#7690] trial 0993 cores 03, 06, 07 R7 mprime AVX2 36K-248K all-core
   120 s together round 1
 ```
 
-Cases: `status·base:concluded·80col` ×3 (#7690 … #7692); `status·base:crashed-cycle·80col` ×10 (#8172 … #8185); `status·base:later-hunt·80col` ×3 (#7690 … #7692); +1 more fixtures; 19 renderings in all
+Cases: `status·base:concluded·80col` ×3 (#7690 … #7692); `status·base:crashed-cycle·80col` ×10 (#8178 … #8191); `status·base:later-hunt·80col` ×3 (#7820 … #7822); +1 more fixtures; 19 renderings in all
 
-**status.in-flight.44** · template `in flight: [#N] trial N cores N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
+**status.in-flight.48** · template `in flight: [#N] trial N cores N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
 
 ```text
 in flight: [#4767] trial 0577 cores 09, 12, 13 R7 y-cruncher FFTv4 + N63 + VT3
   all-core 120 s together cycle 1 step 3
 ```
 
-Cases: `status·base:concluded·80col` ×32 (#4767 … #9614); `status·base:crashed-cycle·80col` ×32 (#5125 … #8887); `status·base:first-result·80col` ×16 (#4767 … #5741); +3 more fixtures; 184 renderings in all
+Cases: `status·base:concluded·80col` ×32 (#4767 … #9951); `status·base:crashed-cycle·80col` ×32 (#5131 … #8893); `status·base:first-result·80col` ×16 (#4767 … #5741); +3 more fixtures; 184 renderings in all
 
-**status.in-flight.45** · template `in flight: [#N] trial N cores N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together round N`
+**status.in-flight.49** · template `in flight: [#N] trial N cores N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together round N`
 
 ```text
-in flight: [#8322] trial 1068 cores 01, 03, 06 R7 y-cruncher FFTv4 + N63 + VT3
+in flight: [#8328] trial 1070 cores 01, 03, 06 R7 y-cruncher FFTv4 + N63 + VT3
   all-core 120 s together round 1
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×10 (#8322 … #8335)
+Cases: `status·base:crashed-cycle·80col` ×10 (#8328 … #8341)
 
-**status.in-flight.46** · template `in flight: [#N] trial N cores N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
+**status.in-flight.50** · template `in flight: [#N] trial N cores N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4399] trial 0474 cores 00, 02, 06, 07 R7 mprime AVX-512 36K-248K
   all-core 120 s together cycle 1 step 2
 ```
 
-Cases: `status·base:concluded·80col` ×56 (#4399 … #9367); `status·base:crashed-cycle·80col` ×40 (#4878 … #8692); `status·base:first-result·80col` ×40 (#4399 … #6498); +3 more fixtures; 312 renderings in all
+Cases: `status·base:concluded·80col` ×64 (#4399 … #9704); `status·base:crashed-cycle·80col` ×40 (#4884 … #8698); `status·base:first-result·80col` ×40 (#4399 … #6498); +3 more fixtures; 344 renderings in all
 
-**status.in-flight.47** · template `in flight: [#N] trial N cores N, N, N, N RN mprime AVX-N NK-NK all-core N s together round N`
+**status.in-flight.51** · template `in flight: [#N] trial N cores N, N, N, N RN mprime AVX-N NK-NK all-core N s together round N`
 
 ```text
-in flight: [#8277] trial 1053 cores 08, 09, 12, 13 R7 mprime AVX-512 36K-248K
-  all-core 120 s together round 1
+in flight: [#7995] trial 1020 cores 09, 12, 13, 15 R7 mprime AVX-512 36K-248K
+  all-core 120 s together round 3
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×10 (#8277 … #8290)
+Cases: `status·base:concluded·80col` ×10 (#7995 … #8008); `status·base:crashed-cycle·80col` ×10 (#8283 … #8296); `status·base:later-hunt·80col` ×10 (#8124 … #8137); +1 more fixtures; 40 renderings in all
 
-**status.in-flight.48** · template `in flight: [#N] trial N cores N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
+**status.in-flight.52** · template `in flight: [#N] trial N cores N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4198] trial 0421 cores 00, 02, 06, 07 R7 mprime AVX2 36K-248K
   all-core 120 s together cycle 1 step 1
 ```
 
-Cases: `status·base:concluded·80col` ×56 (#4198 … #9198); `status·base:crashed-cycle·80col` ×40 (#4583 … #8510); `status·base:first-result·80col` ×40 (#4198 … #6475); +3 more fixtures; 312 renderings in all
+Cases: `status·base:concluded·80col` ×64 (#4198 … #9535); `status·base:crashed-cycle·80col` ×40 (#4583 … #8516); `status·base:first-result·80col` ×40 (#4198 … #6475); +3 more fixtures; 344 renderings in all
 
-**status.in-flight.49** · template `in flight: [#N] trial N cores N, N, N, N RN mprime AVXN NK-NK all-core N s together round N`
+**status.in-flight.53** · template `in flight: [#N] trial N cores N, N, N, N RN mprime AVXN NK-NK all-core N s together round N`
 
 ```text
-in flight: [#8202] trial 1028 cores 08, 09, 12, 13 R7 mprime AVX2 36K-248K
-  all-core 120 s together round 1
+in flight: [#7965] trial 1010 cores 09, 12, 13, 15 R7 mprime AVX2 36K-248K
+  all-core 120 s together round 3
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×10 (#8202 … #8215)
+Cases: `status·base:concluded·80col` ×10 (#7965 … #7978); `status·base:crashed-cycle·80col` ×10 (#8208 … #8221); `status·base:later-hunt·80col` ×10 (#8094 … #8107); +1 more fixtures; 40 renderings in all
 
-**status.in-flight.50** · template `in flight: [#N] trial N cores N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
+**status.in-flight.54** · template `in flight: [#N] trial N cores N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
 
 ```text
 in flight: [#4555] trial 0522 cores 00, 02, 06, 07 R7 y-cruncher FFTv4 + N63 +
   VT3 all-core 120 s together cycle 1 step 3
 ```
 
-Cases: `status·base:concluded·80col` ×56 (#4555 … #9536); `status·base:crashed-cycle·80col` ×40 (#5047 … #8874); `status·base:first-result·80col` ×40 (#4555 … #6521); +3 more fixtures; 312 renderings in all
+Cases: `status·base:concluded·80col` ×64 (#4555 … #9873); `status·base:crashed-cycle·80col` ×40 (#5053 … #8880); `status·base:first-result·80col` ×40 (#4555 … #6521); +3 more fixtures; 344 renderings in all
 
-**status.in-flight.51** · template `in flight: [#N] trial N cores N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together round N`
+**status.in-flight.55** · template `in flight: [#N] trial N cores N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together round N`
 
 ```text
-in flight: [#8352] trial 1078 cores 08, 09, 12, 13 R7 y-cruncher FFTv4 + N63 +
-  VT3 all-core 120 s together round 1
+in flight: [#8025] trial 1030 cores 09, 12, 13, 15 R7 y-cruncher FFTv4 + N63 +
+  VT3 all-core 120 s together round 3
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×10 (#8352 … #8365)
+Cases: `status·base:concluded·80col` ×10 (#8025 … #8038); `status·base:crashed-cycle·80col` ×10 (#8358 … #8371); `status·base:later-hunt·80col` ×10 (#8154 … #8167); +1 more fixtures; 40 renderings in all
 
-**status.in-flight.52** · template `in flight: [#N] trial N cores N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
+**status.in-flight.56** · template `in flight: [#N] trial N cores N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4386] trial 0470 cores 00, 02, 03, 06, 07 R7 mprime AVX-512
   36K-248K all-core 120 s together cycle 1 step 2
 ```
 
-Cases: `status·base:concluded·80col` ×56 (#4386 … #9432); `status·base:crashed-cycle·80col` ×40 (#4865 … #8601); `status·base:first-result·80col` ×24 (#4386 … #6924); +3 more fixtures; 296 renderings in all
+Cases: `status·base:concluded·80col` ×56 (#4386 … #9769); `status·base:crashed-cycle·80col` ×40 (#4871 … #8607); `status·base:first-result·80col` ×24 (#4386 … #6924); +3 more fixtures; 296 renderings in all
 
-**status.in-flight.53** · template `in flight: [#N] trial N cores N, N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
+**status.in-flight.57** · template `in flight: [#N] trial N cores N, N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4185] trial 0417 cores 00, 02, 03, 06, 07 R7 mprime AVX2 36K-248K
   all-core 120 s together cycle 1 step 1
 ```
 
-Cases: `status·base:concluded·80col` ×56 (#4185 … #9263); `status·base:crashed-cycle·80col` ×40 (#4570 … #8419); `status·base:first-result·80col` ×24 (#4185 … #6900); +3 more fixtures; 296 renderings in all
+Cases: `status·base:concluded·80col` ×56 (#4185 … #9600); `status·base:crashed-cycle·80col` ×40 (#4570 … #8425); `status·base:first-result·80col` ×24 (#4185 … #6900); +3 more fixtures; 296 renderings in all
 
-**status.in-flight.54** · template `in flight: [#N] trial N cores N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
+**status.in-flight.58** · template `in flight: [#N] trial N cores N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
 
 ```text
 in flight: [#4542] trial 0518 cores 00, 02, 03, 06, 07 R7 y-cruncher FFTv4 + N63
   + VT3 all-core 120 s together cycle 1 step 3
 ```
 
-Cases: `status·base:concluded·80col` ×56 (#4542 … #9601); `status·base:crashed-cycle·80col` ×40 (#5034 … #8783); `status·base:first-result·80col` ×24 (#4542 … #6948); +3 more fixtures; 296 renderings in all
+Cases: `status·base:concluded·80col` ×56 (#4542 … #9938); `status·base:crashed-cycle·80col` ×40 (#5040 … #8789); `status·base:first-result·80col` ×24 (#4542 … #6948); +3 more fixtures; 296 renderings in all
 
-**status.in-flight.55** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
+**status.in-flight.59** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4451] trial 0490 cores 09, 10, 12, 13, 14, 15 R7 mprime AVX-512
   36K-248K all-core 120 s together cycle 1 step 2
 ```
 
-Cases: `status·base:concluded·80col` ×48 (#4451 … #9419); `status·base:crashed-cycle·80col` ×32 (#4852 … #8679); `status·base:first-result·80col` ×16 (#4451 … #5385); +3 more fixtures; 256 renderings in all
+Cases: `status·base:concluded·80col` ×48 (#4451 … #9756); `status·base:crashed-cycle·80col` ×32 (#4858 … #8685); `status·base:first-result·80col` ×16 (#4451 … #5385); +3 more fixtures; 232 renderings in all
 
-**status.in-flight.56** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together round N`
+**status.in-flight.60** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together round N`
 
 ```text
-in flight: [#8262] trial 1048 cores 08, 09, 10, 12, 13, 14 R7 mprime AVX-512
-  36K-248K all-core 120 s together round 1
+in flight: [#7874] trial 1003 cores 00, 02, 04, 05, 06, 07 R7 mprime AVX-512
+  36K-248K all-core 120 s together round 3
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×10 (#8262 … #8275)
+Cases: `status·base:crashed-cycle·80col` ×10 (#8268 … #8281); `status·base:unconfirmed·80col` ×10 (#7874 … #7887)
 
-**status.in-flight.57** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
+**status.in-flight.61** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4295] trial 0442 cores 09, 10, 12, 13, 14, 15 R7 mprime AVX2
   36K-248K all-core 120 s together cycle 1 step 1
 ```
 
-Cases: `status·base:concluded·80col` ×48 (#4295 … #9250); `status·base:crashed-cycle·80col` ×32 (#4557 … #8497); `status·base:first-result·80col` ×16 (#4295 … #5350); +3 more fixtures; 256 renderings in all
+Cases: `status·base:concluded·80col` ×48 (#4295 … #9587); `status·base:crashed-cycle·80col` ×32 (#4557 … #8503); `status·base:first-result·80col` ×16 (#4295 … #5350); +3 more fixtures; 226 renderings in all
 
-**status.in-flight.58** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together rerun`
+**status.in-flight.62** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together rerun`
 
 ```text
-in flight: [#7675] trial 0978 cores 00, 02, 04, 05, 06, 07 R7 mprime AVX2
+in flight: [#4964] trial 0474 cores 00, 02, 04, 05, 06, 07 R7 mprime AVX2
   36K-248K all-core 120 s together rerun
 ```
 
-Cases: `status·base:unconfirmed·80col` ×10 (#7675 … #7688)
+Cases: `status·base:unconfirmed·80col` ×24 (#4964 … #7713)
 
-**status.in-flight.59** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together round N`
+**status.in-flight.63** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together round N`
 
 ```text
-in flight: [#7634] trial 0977 cores 00, 02, 04, 05, 06, 07 R7 mprime AVX2
+in flight: [#7658] trial 0976 cores 00, 02, 04, 05, 06, 07 R7 mprime AVX2
   36K-248K all-core 120 s together round 1
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×10 (#8187 … #8200); `status·base:unconfirmed·80col` ×2 (#7634 … #7635)
+Cases: `status·base:crashed-cycle·80col` ×10 (#8193 … #8206); `status·base:unconfirmed·80col` ×13 (#7658 … #7762)
 
-**status.in-flight.60** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
+**status.in-flight.64** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
 
 ```text
 in flight: [#4607] trial 0538 cores 09, 10, 12, 13, 14, 15 R7 y-cruncher FFTv4 +
   N63 + VT3 all-core 120 s together cycle 1 step 3
 ```
 
-Cases: `status·base:concluded·80col` ×48 (#4607 … #9588); `status·base:crashed-cycle·80col` ×32 (#5021 … #8861); `status·base:first-result·80col` ×16 (#4607 … #5420); +3 more fixtures; 256 renderings in all
+Cases: `status·base:concluded·80col` ×48 (#4607 … #9925); `status·base:crashed-cycle·80col` ×32 (#5027 … #8867); `status·base:first-result·80col` ×16 (#4607 … #5420); +3 more fixtures; 232 renderings in all
 
-**status.in-flight.61** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together round N`
+**status.in-flight.65** · template `in flight: [#N] trial N cores N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together round N`
 
 ```text
-in flight: [#8337] trial 1073 cores 08, 09, 10, 12, 13, 14 R7 y-cruncher FFTv4 +
-  N63 + VT3 all-core 120 s together round 1
+in flight: [#7919] trial 1018 cores 00, 02, 04, 05, 06, 07 R7 y-cruncher FFTv4 +
+  N63 + VT3 all-core 120 s together round 3
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×10 (#8337 … #8350)
+Cases: `status·base:crashed-cycle·80col` ×10 (#8343 … #8356); `status·base:unconfirmed·80col` ×10 (#7919 … #7932)
 
-**status.in-flight.62** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
+**status.in-flight.66** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4373] trial 0466 cores 00, 01, 02, 03, 04, 06, 07 R7 mprime AVX-512
   36K-248K all-core 120 s together cycle 1 step 2
 ```
 
-Cases: `status·base:combination·80col` ×16 (#2659 … #5012); `status·base:concluded·80col` ×48 (#4373 … #9406); `status·base:crashed-cycle·80col` ×32 (#4839 … #8666); +5 more fixtures; 280 renderings in all
+Cases: `status·base:combination·80col` ×16 (#2659 … #5012); `status·base:concluded·80col` ×48 (#4373 … #9743); `status·base:crashed-cycle·80col` ×32 (#4845 … #8672); +5 more fixtures; 280 renderings in all
 
-**status.in-flight.63** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together round N`
+**status.in-flight.67** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together round N`
 
 ```text
-in flight: [#4876] trial 0627 cores 08, 09, 10, 12, 13, 14, 15 R7 mprime AVX-512
-  36K-248K all-core 120 s together round 1
+in flight: [#7889] trial 1008 cores 08, 09, 11, 12, 13, 14, 15 R7 mprime AVX-512
+  36K-248K all-core 120 s together round 3
 ```
 
-Cases: `status·base:combination·80col` ×10 (#4876 … #4889); `status·base:crashed-cycle·80col` ×10 (#8232 … #8245)
+Cases: `status·base:combination·80col` ×10 (#4876 … #4889); `status·base:crashed-cycle·80col` ×10 (#8238 … #8251); `status·base:unconfirmed·80col` ×10 (#7889 … #7902)
 
-**status.in-flight.64** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
+**status.in-flight.68** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4172] trial 0413 cores 00, 01, 02, 03, 04, 06, 07 R7 mprime AVX2
   36K-248K all-core 120 s together cycle 1 step 1
 ```
 
-Cases: `status·base:combination·80col` ×16 (#2644 … #4960); `status·base:concluded·80col` ×48 (#4172 … #9237); `status·base:crashed-cycle·80col` ×32 (#4544 … #8484); +5 more fixtures; 280 renderings in all
+Cases: `status·base:combination·80col` ×16 (#2644 … #4960); `status·base:concluded·80col` ×48 (#4172 … #9574); `status·base:crashed-cycle·80col` ×26 (#4544 … #8490); +5 more fixtures; 268 renderings in all
 
-**status.in-flight.65** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together round N`
+**status.in-flight.69** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together rerun`
 
 ```text
-in flight: [#4846] trial 0617 cores 08, 09, 10, 12, 13, 14, 15 R7 mprime AVX2
-  36K-248K all-core 120 s together round 1
+in flight: [#4759] trial 0469 cores 00, 01, 02, 04, 05, 06, 07 R7 mprime AVX2
+  36K-248K all-core 120 s together rerun
 ```
 
-Cases: `status·base:combination·80col` ×10 (#4846 … #4859); `status·base:crashed-cycle·80col` ×10 (#8157 … #8170)
+Cases: `status·base:crashed-cycle·80col` ×13 (#4711 … #4751); `status·base:unconfirmed·80col` ×26 (#4759 … #7813)
 
-**status.in-flight.66** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
+**status.in-flight.70** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together round N`
+
+```text
+in flight: [#7764] trial 0987 cores 08, 09, 11, 12, 13, 14, 15 R7 mprime AVX2
+  36K-248K all-core 120 s together round 2
+```
+
+Cases: `status·base:combination·80col` ×10 (#4846 … #4859); `status·base:crashed-cycle·80col` ×10 (#8163 … #8176); `status·base:unconfirmed·80col` ×12 (#7764 … #7857)
+
+**status.in-flight.71** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
 
 ```text
 in flight: [#4529] trial 0514 cores 00, 01, 02, 03, 04, 06, 07 R7 y-cruncher
   FFTv4 + N63 + VT3 all-core 120 s together cycle 1 step 3
 ```
 
-Cases: `status·base:combination·80col` ×16 (#2674 … #5064); `status·base:concluded·80col` ×48 (#4529 … #9575); `status·base:crashed-cycle·80col` ×32 (#5008 … #8848); +5 more fixtures; 280 renderings in all
+Cases: `status·base:combination·80col` ×16 (#2674 … #5064); `status·base:concluded·80col` ×48 (#4529 … #9912); `status·base:crashed-cycle·80col` ×32 (#5014 … #8854); +5 more fixtures; 280 renderings in all
 
-**status.in-flight.67** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together round N`
+**status.in-flight.72** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together round N`
 
 ```text
-in flight: [#4906] trial 0637 cores 08, 09, 10, 12, 13, 14, 15 R7 y-cruncher
-  FFTv4 + N63 + VT3 all-core 120 s together round 1
+in flight: [#7934] trial 1023 cores 08, 09, 11, 12, 13, 14, 15 R7 y-cruncher
+  FFTv4 + N63 + VT3 all-core 120 s together round 3
 ```
 
-Cases: `status·base:combination·80col` ×10 (#4906 … #4919); `status·base:crashed-cycle·80col` ×10 (#8307 … #8320)
+Cases: `status·base:combination·80col` ×10 (#4906 … #4919); `status·base:crashed-cycle·80col` ×10 (#8313 … #8326); `status·base:unconfirmed·80col` ×10 (#7934 … #7947)
 
-**status.in-flight.68** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
+**status.in-flight.73** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4360] trial 0462 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime
   AVX-512 36K-248K all-core 120 s together cycle 1 step 2
 ```
 
-Cases: `status·base:combination·80col` ×32 (#1595 … #4999); `status·base:concluded·80col` ×48 (#4360 … #9393); `status·base:crashed-cycle·80col` ×32 (#4826 … #8653); +5 more fixtures; 304 renderings in all
+Cases: `status·base:combination·80col` ×32 (#1595 … #4999); `status·base:concluded·80col` ×48 (#4360 … #9730); `status·base:crashed-cycle·80col` ×32 (#4832 … #8659); +5 more fixtures; 304 renderings in all
 
-**status.in-flight.69** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together round N`
+**status.in-flight.74** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together round N`
 
 ```text
-in flight: [#4861] trial 0622 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime
-  AVX-512 36K-248K all-core 120 s together round 1
+in flight: [#7980] trial 1015 cores 08, 09, 10, 11, 12, 13, 14, 15 R7 mprime
+  AVX-512 36K-248K all-core 120 s together round 3
 ```
 
-Cases: `status·base:combination·80col` ×10 (#4861 … #4874); `status·base:crashed-cycle·80col` ×10 (#8217 … #8230)
+Cases: `status·base:combination·80col` ×10 (#4861 … #4874); `status·base:concluded·80col` ×10 (#7980 … #7993); `status·base:crashed-cycle·80col` ×10 (#8223 … #8236); +2 more fixtures; 50 renderings in all
 
-**status.in-flight.70** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s parked hunt N group N`
+**status.in-flight.75** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s parked hunt N group N`
 
 ```text
-in flight: [#4939] trial 0474 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime
+in flight: [#4684] trial 0454 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime
   AVX2 36K-248K all-core 120 s parked hunt 1 group 1
 ```
 
-Cases: `status·edge:hunt-located-held·80col`; `status·base:unconfirmed·80col` ×3 (#4939 … #4941)
+Cases: `status·edge:hunt-located-held·80col`
 
-**status.in-flight.71** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
+**status.in-flight.76** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4131] trial 0405 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime
   AVX2 36K-248K all-core 120 s together cycle 1 step 1
 ```
 
-Cases: `status·scenario:checking·80col`; `status·scenario:concluded·80col`; `status·base:combination·80col` ×32 (#1556 … #4947); +8 more fixtures; 263 renderings in all
+Cases: `status·scenario:checking·80col`; `status·scenario:concluded·80col`; `status·scenario:confirmation·80col`; +9 more fixtures; 265 renderings in all
 
-**status.in-flight.72** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together rerun`
+**status.in-flight.77** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together rerun`
 
 ```text
 in flight: [#4142] trial 0406 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime
   AVX2 36K-248K all-core 120 s together rerun
 ```
 
-Cases: `status·base:concluded·80col` ×28 (#4142 … #4271); `status·base:crashed-cycle·80col` ×31 (#4514 … #4736); `status·base:dead-end·80col` at #4142; +4 more fixtures; 185 renderings in all
+Cases: `status·base:concluded·80col` ×28 (#4142 … #4271); `status·base:crashed-cycle·80col` ×28 (#4514 … #4736); `status·base:dead-end·80col` at #4142; +4 more fixtures; 176 renderings in all
 
-**status.in-flight.73** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together round N`
+**status.in-flight.78** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together round N`
 
 ```text
-in flight: [#4831] trial 0612 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 mprime
-  AVX2 36K-248K all-core 120 s together round 1
+in flight: [#7950] trial 1005 cores 08, 09, 10, 11, 12, 13, 14, 15 R7 mprime
+  AVX2 36K-248K all-core 120 s together round 3
 ```
 
-Cases: `status·base:combination·80col` ×10 (#4831 … #4844); `status·base:crashed-cycle·80col` ×10 (#8142 … #8155)
+Cases: `status·base:combination·80col` ×10 (#4831 … #4844); `status·base:concluded·80col` ×10 (#7950 … #7963); `status·base:crashed-cycle·80col` ×10 (#8148 … #8161); +2 more fixtures; 50 renderings in all
 
-**status.in-flight.74** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
+**status.in-flight.79** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
 
 ```text
 in flight: [#4516] trial 0510 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 y-cruncher
   FFTv4 + N63 + VT3 all-core 120 s together cycle 1 step 3
 ```
 
-Cases: `status·base:combination·80col` ×32 (#1634 … #5051); `status·base:concluded·80col` ×48 (#4516 … #9562); `status·base:crashed-cycle·80col` ×32 (#4995 … #8835); +5 more fixtures; 304 renderings in all
+Cases: `status·base:combination·80col` ×32 (#1634 … #5051); `status·base:concluded·80col` ×48 (#4516 … #9899); `status·base:crashed-cycle·80col` ×32 (#5001 … #8841); +5 more fixtures; 304 renderings in all
 
-**status.in-flight.75** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together round N`
+**status.in-flight.80** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together round N`
 
 ```text
-in flight: [#4891] trial 0632 cores 00, 01, 02, 03, 04, 05, 06, 07 R7 y-cruncher
-  FFTv4 + N63 + VT3 all-core 120 s together round 1
+in flight: [#8010] trial 1025 cores 08, 09, 10, 11, 12, 13, 14, 15 R7 y-cruncher
+  FFTv4 + N63 + VT3 all-core 120 s together round 3
 ```
 
-Cases: `status·base:combination·80col` ×10 (#4891 … #4904); `status·base:crashed-cycle·80col` ×10 (#8292 … #8305)
+Cases: `status·base:combination·80col` ×10 (#4891 … #4904); `status·base:concluded·80col` ×10 (#8010 … #8023); `status·base:crashed-cycle·80col` ×10 (#8298 … #8311); +2 more fixtures; 50 renderings in all
 
-**status.in-flight.76** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
+**status.in-flight.81** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN mprime AVX-N NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4503] trial 0506 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
@@ -9752,9 +10327,9 @@ in flight: [#4503] trial 0506 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
   step 2
 ```
 
-Cases: `status·base:combination·80col` ×16 (#1621 … #5025); `status·base:concluded·80col` ×24 (#4503 … #9471); `status·base:crashed-cycle·80col` ×16 (#4982 … #8731); +5 more fixtures; 152 renderings in all
+Cases: `status·base:combination·80col` ×16 (#1621 … #5025); `status·base:concluded·80col` ×24 (#4503 … #9808); `status·base:crashed-cycle·80col` ×16 (#4988 … #8737); +5 more fixtures; 152 renderings in all
 
-**status.in-flight.77** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
+**status.in-flight.82** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN mprime AVXN NK-NK all-core N s together cycle N step N`
 
 ```text
 in flight: [#4347] trial 0458 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
@@ -9762,9 +10337,9 @@ in flight: [#4347] trial 0458 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
   step 1
 ```
 
-Cases: `status·base:combination·80col` ×16 (#1582 … #4973); `status·base:concluded·80col` ×24 (#4347 … #9302); `status·base:crashed-cycle·80col` ×16 (#4813 … #8549); +5 more fixtures; 152 renderings in all
+Cases: `status·base:combination·80col` ×16 (#1582 … #4973); `status·base:concluded·80col` ×24 (#4347 … #9639); `status·base:crashed-cycle·80col` ×16 (#4819 … #8555); +5 more fixtures; 152 renderings in all
 
-**status.in-flight.78** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN mprime SSE NK-NK idle then bursts N s parked hunt N group N`
+**status.in-flight.83** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN mprime SSE NK-NK idle then bursts N s parked hunt N group N`
 
 ```text
 in flight: [#1878] trial 0246 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
@@ -9774,7 +10349,7 @@ in flight: [#1878] trial 0246 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
 
 Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +2 more fixtures; 299 renderings in all
 
-**status.in-flight.79** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN mprime SSE NK-NK idle then bursts N s together cycle N step N`
+**status.in-flight.84** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN mprime SSE NK-NK idle then bursts N s together cycle N step N`
 
 ```text
 in flight: [#5247] trial 0657 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
@@ -9782,18 +10357,18 @@ in flight: [#5247] trial 0657 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
   1 step 7
 ```
 
-Cases: `status·scenario:idle·80col`; `status·base:combination·80col` ×8 (#1816 … #5226); `status·base:concluded·80col` ×11 (#5247 … #9789); +6 more fixtures; 74 renderings in all
+Cases: `status·scenario:idle·80col`; `status·base:combination·80col` ×8 (#1816 … #5226); `status·base:concluded·80col` ×11 (#5247 … #10126); +6 more fixtures; 74 renderings in all
 
-**status.in-flight.80** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN mprime SSE NK-NK idle then bursts N s together rerun`
+**status.in-flight.85** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN mprime SSE NK-NK idle then bursts N s together rerun`
 
 ```text
 in flight: [#5259] trial 0658 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
   11, 12, 13, 14, 15 R6 mprime SSE 4K-21K idle then bursts 120 s together rerun
 ```
 
-Cases: `status·base:combination·80col` ×24 (#2612 … #2640); `status·base:concluded·80col` ×40 (#5259 … #5336); `status·base:crashed-cycle·80col` ×62 (#5490 … #9111); +5 more fixtures; 309 renderings in all
+Cases: `status·base:combination·80col` ×24 (#2612 … #2640); `status·base:concluded·80col` ×40 (#5259 … #5336); `status·base:crashed-cycle·80col` ×62 (#5496 … #9117); +5 more fixtures; 309 renderings in all
 
-**status.in-flight.81** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN y-cruncher BKT + SFTvN idle then bursts N s together cycle N step N`
+**status.in-flight.86** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN y-cruncher BKT + SFTvN idle then bursts N s together cycle N step N`
 
 ```text
 in flight: [#7123] trial 0942 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
@@ -9801,9 +10376,9 @@ in flight: [#7123] trial 0942 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
   cycle 1 step 18
 ```
 
-Cases: `status·base:combination·80col` ×8 (#3359 … #5903); `status·base:concluded·80col` ×12 (#7123 … #10466); `status·base:crashed-cycle·80col` ×8 (#7483 … #9963); +5 more fixtures; 76 renderings in all
+Cases: `status·base:combination·80col` ×8 (#3359 … #5903); `status·base:concluded·80col` ×12 (#7123 … #10803); `status·base:crashed-cycle·80col` ×8 (#7489 … #9969); +5 more fixtures; 76 renderings in all
 
-**status.in-flight.82** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
+**status.in-flight.87** · template `in flight: [#N] trial N cores N, N, N, N, N, N, N, N, N, N, N, N, N, N, N, N RN y-cruncher FFTvN + NN + VTN all-core N s together cycle N step N`
 
 ```text
 in flight: [#4659] trial 0554 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
@@ -9811,15 +10386,15 @@ in flight: [#4659] trial 0554 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
   cycle 1 step 3
 ```
 
-Cases: `status·base:combination·80col` ×16 (#1660 … #5077); `status·base:concluded·80col` ×24 (#4659 … #9640); `status·base:crashed-cycle·80col` ×16 (#5151 … #8913); +5 more fixtures; 152 renderings in all
+Cases: `status·base:combination·80col` ×16 (#1660 … #5077); `status·base:concluded·80col` ×24 (#4659 … #9977); `status·base:crashed-cycle·80col` ×16 (#5157 … #8919); +5 more fixtures; 152 renderings in all
 
-**status.in-flight.83** · template `in flight: none`
+**status.in-flight.88** · template `in flight: none`
 
 ```text
 in flight: none
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +31 more fixtures; 23612 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +31 more fixtures; 24956 renderings in all
 
 #### `dead-end` — status.rs Status::write with dead_end_label
 
@@ -9893,7 +10468,7 @@ Cases: `status·edge:dead-end-containment·80col`
 
 ```text
 carried: [#356] carried 0 candidate solo limits and 0 failure points from
-  session 20260101T000000Z (schema 1, ruleset 1)
+  session 20260101T000000Z (schema 1, ruleset 2)
 ```
 
 Cases: `status·edge:session-carried-failure-points·80col`
@@ -9902,7 +10477,7 @@ Cases: `status·edge:session-carried-failure-points·80col`
 
 ```text
 carried: [#356] carried 0 candidate solo limits from session 20260101T000000Z
-  (schema 1, ruleset 1); failure points stay behind: no reason recorded
+  (schema 1, ruleset 2); failure points stay behind: no reason recorded
 ```
 
 Cases: `status·edge:session-carried-points-behind-no-reason·80col`
@@ -9911,7 +10486,7 @@ Cases: `status·edge:session-carried-points-behind-no-reason·80col`
 
 ```text
 carried: [#356] carried 0 candidate solo limits from session 20260101T000000Z
-  (schema 1, ruleset 1); failure points stay behind: the evidence epoch changed
+  (schema 1, ruleset 2); failure points stay behind: the evidence epoch changed
 ```
 
 Cases: `status·edge:session-carried-points-behind-reason·80col`
@@ -9924,7 +10499,7 @@ Cases: `status·edge:session-carried-points-behind-reason·80col`
 CORE  CCD  SLOT  OFFSET  BIOS  PHASE  FAILURE  QUEUED
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 77240 renderings in all
 
 #### `cores.row` — status.rs Status::cores, bios_cell, notes: the last decision's msg
 
@@ -9964,7 +10539,7 @@ Cases: `status·base:combination·80col` ×797 (#2567 … #3363); `status·base:
                 point -25)
 ```
 
-Cases: `status·base:concluded·80col` ×1504 (#5624 … #7127); `status·base:first-result·80col` ×1504 (#5624 … #7127); `status·base:later-hunt·80col` ×1504 (#5624 … #7127); +1 more fixtures; 6016 renderings in all
+Cases: `status·base:concluded·80col` ×1504 (#5624 … #7127); `status·base:first-result·80col` ×1504 (#5624 … #7127); `status·base:later-hunt·80col` ×1628 (#5630 … #7257); +1 more fixtures; 6140 renderings in all
 
 **status.cores.row.5** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in together RN trial N; failure point -N)`
 
@@ -9975,18 +10550,18 @@ Cases: `status·base:concluded·80col` ×1504 (#5624 … #7127); `status·base:f
                 point -16)
 ```
 
-Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·scenario:hunt·80col`; `status·scenario:idle·80col`; +7 more fixtures; 12414 renderings in all
+Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·scenario:hunt·80col`; `status·scenario:idle·80col`; +7 more fixtures; 12484 renderings in all
 
 **status.cores.row.6** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed corrected_mce in parked RN trial N; failure point -N)`
 
 ```text
 08    1    0     -28     -     AT LIMIT  -29      -
-  last decision [#5881] core 08 backed off from -29 to -28 (backed off:
-                attributed corrected_mce in parked R5 trial 0701; failure point
+  last decision [#5887] core 08 backed off from -29 to -28 (backed off:
+                attributed corrected_mce in parked R5 trial 0703; failure point
                 -29)
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×46 (#5881 … #5926)
+Cases: `status·base:crashed-cycle·80col` ×46 (#5887 … #5932)
 
 **status.cores.row.7** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed corrected_mce in together RN trial N; failure point -N)`
 
@@ -9997,7 +10572,7 @@ Cases: `status·base:crashed-cycle·80col` ×46 (#5881 … #5926)
                 point -14)
 ```
 
-Cases: `status·base:concluded·80col` ×1826 (#5302 … #7127); `status·base:crashed-cycle·80col` ×25 (#5497 … #5521); `status·base:first-result·80col` ×1826 (#5302 … #7127); +3 more fixtures; 8191 renderings in all
+Cases: `status·base:concluded·80col` ×1826 (#5302 … #7127); `status·base:crashed-cycle·80col` ×25 (#5503 … #5527); `status·base:first-result·80col` ×1826 (#5302 … #7127); +3 more fixtures; 8315 renderings in all
 
 **status.cores.row.8** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed stall in together RN trial N; failure point -N)`
 
@@ -10007,7 +10582,7 @@ Cases: `status·base:concluded·80col` ×1826 (#5302 … #7127); `status·base:c
                 attributed stall in together R6 trial 0659; failure point -15)
 ```
 
-Cases: `status·base:concluded·80col` ×25 (#5277 … #5301); `status·base:crashed-cycle·80col` ×1561 (#5927 … #7487); `status·base:first-result·80col` ×25 (#5277 … #5301); +2 more fixtures; 1661 renderings in all
+Cases: `status·base:concluded·80col` ×25 (#5277 … #5301); `status·base:crashed-cycle·80col` ×1561 (#5933 … #7493); `status·base:first-result·80col` ×25 (#5277 … #5301); +2 more fixtures; 1661 renderings in all
 
 **status.cores.row.9** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed uncorrected_mce in together RN trial N; failure point -N)`
 
@@ -10018,18 +10593,18 @@ Cases: `status·base:concluded·80col` ×25 (#5277 … #5301); `status·base:cra
                 point -36)
 ```
 
-Cases: `status·base:concluded·80col` ×1208 (#5920 … #7127); `status·base:crashed-cycle·80col` ×1966 (#5522 … #7487); `status·base:first-result·80col` ×1208 (#5920 … #7127); +2 more fixtures; 6798 renderings in all
+Cases: `status·base:concluded·80col` ×1208 (#5920 … #7127); `status·base:crashed-cycle·80col` ×1966 (#5528 … #7493); `status·base:first-result·80col` ×1208 (#5920 … #7127); +1 more fixtures; 5590 renderings in all
 
 **status.cores.row.10** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed unexpected_exit in parked RN trial N; failure point -N)`
 
 ```text
 04    0    4     -29     -     AT LIMIT  -30      -
-  last decision [#7176] core 04 backed off from -30 to -29 (backed off:
-                attributed unexpected_exit in parked R4 trial 0902; failure
+  last decision [#7182] core 04 backed off from -30 to -29 (backed off:
+                attributed unexpected_exit in parked R4 trial 0904; failure
                 point -30)
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×312 (#7176 … #7487)
+Cases: `status·base:crashed-cycle·80col` ×312 (#7182 … #7493)
 
 **status.cores.row.11** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed unexpected_exit in together RN trial N; failure point -N)`
 
@@ -10040,7 +10615,7 @@ Cases: `status·base:crashed-cycle·80col` ×312 (#7176 … #7487)
                 point -15)
 ```
 
-Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·scenario:hunt·80col`; `status·scenario:idle·80col`; +6 more fixtures; 9303 renderings in all
+Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·scenario:hunt·80col`; `status·scenario:idle·80col`; +6 more fixtures; 9436 renderings in all
 
 **status.cores.row.12** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count)`
 
@@ -10051,22 +10626,23 @@ Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·scenario:hunt·
                 CO -8; no request telemetry, 1 count)
 ```
 
-Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-located-held·80col`; `status·scenario:hunt·80col`; +7 more fixtures; 13682 renderings in all
+Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-located-held·80col`; `status·scenario:hunt·80col`; +7 more fixtures; 13840 renderings in all
 
-**status.cores.row.13** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count; hunt N ended loaded after failure #N named loaded core N, which also answers failure #N)`
+**status.cores.row.13** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count; the unloaded cores have not been checked by a located hunt yet; voltage-targeted backoff N for this load since its last passing trial; a later failure can trigger a located hunt after N backoffs)`
 
 ```text
-02    0    2     -30     -     AT LIMIT  -31      -
-  last decision [#4945] core 02 backed off from -31 to -30 (voltage-targeted R7
-                backoff after failure #4943: core 02 order came from offsets at
-                CO -31; no request telemetry, 1 count; hunt 1 ended loaded after
-                failure #4942 named loaded core 02, which also answers failure
-                #4893)
+07    0    7     -7      -     AT LIMIT  -8       -
+  last decision [#4605] core 07 backed off from -8 to -7 (voltage-targeted R7
+                backoff after failure #4604: core 07 order came from offsets at
+                CO -8; no request telemetry, 1 count; the unloaded cores have
+                not been checked by a located hunt yet; voltage-targeted backoff
+                2 for this load since its last passing trial; a later failure
+                can trigger a located hunt after 2 backoffs)
 ```
 
-Cases: `status·base:unconfirmed·80col` ×1943 (#4945 … #6887)
+Cases: `status·edge:hunt-located-held·80col`
 
-**status.cores.row.14** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count; the unloaded cores have not been checked by a located hunt yet; voltage-targeted backoff N for this load since its last passing trial; a later failure can trigger a located hunt after N backoffs)`
+**status.cores.row.14** · template `N… -N - AT LIMIT -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count; the unloaded cores have not been checked by a located hunt yet; voltage-targeted backoff N for this load since its last passing trial; a later failure can trigger a located hunt after N backoffs; before the full load reruns, probe its part idling tied group [N]: core N stalled outside that group; this chooses a probe, not a culprit)`
 
 ```text
 03    0    3     -13     -     AT LIMIT  -14      -
@@ -10075,10 +10651,12 @@ Cases: `status·base:unconfirmed·80col` ×1943 (#4945 … #6887)
                 CO -14; no request telemetry, 1 count; the unloaded cores have
                 not been checked by a located hunt yet; voltage-targeted backoff
                 2 for this load since its last passing trial; a later failure
-                can trigger a located hunt after 2 backoffs)
+                can trigger a located hunt after 2 backoffs; before the full
+                load reruns, probe its part idling tied group [3]: core 02
+                stalled outside that group; this chooses a probe, not a culprit)
 ```
 
-Cases: `status·edge:hunt-located-held·80col`; `status·base:unconfirmed·80col` ×2080 (#4808 … #6887)
+Cases: `status·base:unconfirmed·80col` ×2105 (#4808 … #6912)
 
 **status.cores.row.15** · template `N… -N - AT LIMIT -N - last decision [#N] core N has room -> at its limit at -N (failure point -N of core N)`
 
@@ -10088,7 +10666,7 @@ Cases: `status·edge:hunt-located-held·80col`; `status·base:unconfirmed·80col
                 -26 of core 00)
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +24 more fixtures; 16990 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +25 more fixtures; 17337 renderings in all
 
 **status.cores.row.16** · template `N… -N - HAS ROOM - - combinations CN last decision [#N] core N backed off from -N to -N (combination CN: backing off core N to -N, where hunt N group N passed with the rest of the combination at its failing offsets)`
 
@@ -10129,7 +10707,17 @@ Cases: `status·base:combination·80col` ×799 (#2565 … #3363); `status·base:
 
 Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +2 more fixtures; 3757 renderings in all
 
-**status.cores.row.19** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in together RN trial N; failure point -N)`
+**status.cores.row.19** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in parked RN trial N; failure point -N)`
+
+```text
+05    0    5     -8      -     HAS ROOM  -9       -
+  last decision [#5045] core 05 backed off from -9 to -8 (backed off: attributed
+                computation_error in parked R2 trial 0615; failure point -9)
+```
+
+Cases: `status·base:later-hunt·80col` at #5045
+
+**status.cores.row.20** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in together RN trial N; failure point -N)`
 
 ```text
 12    1    4     -15     -     HAS ROOM  -16      -
@@ -10138,9 +10726,9 @@ Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe�
                 point -16)
 ```
 
-Cases: `status·base:concluded·80col` ×4 (#4795 … #5821); `status·base:crashed-cycle·80col` ×2 (#6001 … #6674); `status·base:first-result·80col` ×4 (#4795 … #5821); +3 more fixtures; 19 renderings in all
+Cases: `status·base:concluded·80col` ×4 (#4795 … #5821); `status·base:crashed-cycle·80col` ×2 (#6007 … #6680); `status·base:first-result·80col` ×4 (#4795 … #5821); +3 more fixtures; 19 renderings in all
 
-**status.cores.row.20** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed corrected_mce in together RN trial N; failure point -N)`
+**status.cores.row.21** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed corrected_mce in together RN trial N; failure point -N)`
 
 ```text
 13    1    5     -36     -     HAS ROOM  -37      -
@@ -10149,9 +10737,9 @@ Cases: `status·base:concluded·80col` ×4 (#4795 … #5821); `status·base:cras
                 point -37)
 ```
 
-Cases: `status·base:concluded·80col` at #5896; `status·base:first-result·80col` at #5896; `status·base:later-hunt·80col` at #5896; +2 more fixtures; 7 renderings in all
+Cases: `status·base:concluded·80col` at #5896; `status·base:first-result·80col` at #5896; `status·base:later-hunt·80col` at #5902; +2 more fixtures; 6 renderings in all
 
-**status.cores.row.21** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed stall in together RN trial N; failure point -N)`
+**status.cores.row.22** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed stall in together RN trial N; failure point -N)`
 
 ```text
 04    0    4     -14     -     HAS ROOM  -15      -
@@ -10159,9 +10747,9 @@ Cases: `status·base:concluded·80col` at #5896; `status·base:first-result·80c
                 attributed stall in together R6 trial 0657; failure point -15)
 ```
 
-Cases: `status·base:concluded·80col` at #5252; `status·base:first-result·80col` at #5252; `status·base:later-hunt·80col` at #5252; +2 more fixtures; 5 renderings in all
+Cases: `status·base:concluded·80col` at #5252; `status·base:first-result·80col` at #5252; `status·base:later-hunt·80col` at #5258; +2 more fixtures; 5 renderings in all
 
-**status.cores.row.22** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed uncorrected_mce in parked RN trial N; failure point -N)`
+**status.cores.row.23** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed uncorrected_mce in parked RN trial N; failure point -N)`
 
 ```text
 05    0    5     -8      -     HAS ROOM  -9       -
@@ -10169,31 +10757,31 @@ Cases: `status·base:concluded·80col` at #5252; `status·base:first-result·80c
                 uncorrected_mce in parked R2 trial 0614; failure point -9)
 ```
 
-Cases: `status·base:concluded·80col` at #5018; `status·base:first-result·80col` at #5018; `status·base:later-hunt·80col` at #5018; +1 more fixtures; 4 renderings in all
+Cases: `status·base:concluded·80col` at #5018; `status·base:first-result·80col` at #5018; `status·base:session·80col` at #5018
 
-**status.cores.row.23** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed uncorrected_mce in together RN trial N; failure point -N)`
+**status.cores.row.24** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed uncorrected_mce in together RN trial N; failure point -N)`
 
 ```text
 04    0    4     -30     -     HAS ROOM  -31      -
-  last decision [#5204] core 04 backed off from -31 to -30 (backed off:
-                attributed uncorrected_mce in together R2 trial 0611; failure
+  last decision [#5210] core 04 backed off from -31 to -30 (backed off:
+                attributed uncorrected_mce in together R2 trial 0613; failure
                 point -31)
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×2 (#5204 … #6209)
+Cases: `status·base:crashed-cycle·80col` ×2 (#5210 … #6215)
 
-**status.cores.row.24** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed unexpected_exit in together RN trial N; failure point -N)`
+**status.cores.row.25** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (backed off: attributed unexpected_exit in together RN trial N; failure point -N)`
 
 ```text
 15    1    7     -19     -     HAS ROOM  -20      -
-  last decision [#6349] core 15 backed off from -20 to -19 (backed off:
-                attributed unexpected_exit in together R5 trial 0749; failure
+  last decision [#6355] core 15 backed off from -20 to -19 (backed off:
+                attributed unexpected_exit in together R5 trial 0751; failure
                 point -20)
 ```
 
-Cases: `status·base:crashed-cycle·80col` at #6349
+Cases: `status·base:crashed-cycle·80col` at #6355
 
-**status.cores.row.25** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count)`
+**status.cores.row.26** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count)`
 
 ```text
 00    0    0     -25     -     HAS ROOM  -26      -
@@ -10204,7 +10792,7 @@ Cases: `status·base:crashed-cycle·80col` at #6349
 
 Cases: `status·base:concluded·80col` ×4 (#4135 … #4251); `status·base:crashed-cycle·80col` ×4 (#4507 … #4716); `status·base:dead-end·80col` at #4135; +4 more fixtures; 24 renderings in all
 
-**status.cores.row.26** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count; the unloaded cores have not been checked by a located hunt yet; voltage-targeted backoff N for this load since its last passing trial; a later failure can trigger a located hunt after N backoffs)`
+**status.cores.row.27** · template `N… -N - HAS ROOM -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count; the unloaded cores have not been checked by a located hunt yet; voltage-targeted backoff N for this load since its last passing trial; a later failure can trigger a located hunt after N backoffs; before the full load reruns, probe its part idling tied group [N]: core N stalled outside that group; this chooses a probe, not a culprit)`
 
 ```text
 03    0    3     -14     -     HAS ROOM  -15      -
@@ -10213,12 +10801,14 @@ Cases: `status·base:concluded·80col` ×4 (#4135 … #4251); `status·base:cras
                 CO -15; no request telemetry, 1 count; the unloaded cores have
                 not been checked by a located hunt yet; voltage-targeted backoff
                 1 for this load since its last passing trial; a later failure
-                can trigger a located hunt after 2 backoffs)
+                can trigger a located hunt after 2 backoffs; before the full
+                load reruns, probe its part idling tied group [3]: core 02
+                stalled outside that group; this chooses a probe, not a culprit)
 ```
 
-Cases: `status·base:crashed-cycle·80col` at #4641; `status·base:unconfirmed·80col` at #4689
+Cases: `status·base:crashed-cycle·80col` at #4641; `status·base:unconfirmed·80col` ×2 (#4689 … #4894)
 
-**status.cores.row.27** · template `N… -N - HAS ROOM -N - last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
+**status.cores.row.28** · template `N… -N - HAS ROOM -N - last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
 
 ```text
 08    1    0     -5      -     HAS ROOM  -7       -
@@ -10229,9 +10819,9 @@ Cases: `status·base:crashed-cycle·80col` at #4641; `status·base:unconfirmed·
                 combination)
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +27 more fixtures; 21540 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +27 more fixtures; 21704 renderings in all
 
-**status.cores.row.28** · template `N… -N - HAS ROOM -N - last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN ycruncher-bkt-sftvN and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
+**status.cores.row.29** · template `N… -N - HAS ROOM -N - last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN ycruncher-bkt-sftvN and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
 
 ```text
 02    0    2     -33     -     HAS ROOM  -35      -
@@ -10242,9 +10832,9 @@ Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_lo
                 reaches no failure point or combination)
 ```
 
-Cases: `status·edge:hunt-located-held·80col`; `status·base:crashed-cycle·80col` ×3040 (#4448 … #7487); `status·base:unconfirmed·80col` ×1605 (#4549 … #6153)
+Cases: `status·edge:hunt-located-held·80col`; `status·base:crashed-cycle·80col` ×3046 (#4448 … #7493); `status·base:unconfirmed·80col` ×1630 (#4549 … #6178)
 
-**status.cores.row.29** · template `N… -N - SEARCH - - last decision [#N] core N passed RN+RN at -N; searches -N on its next turn (coarse, no failure point yet)`
+**status.cores.row.30** · template `N… -N - SEARCH - - last decision [#N] core N passed RN+RN at -N; searches -N on its next turn (coarse, no failure point yet)`
 
 ```text
 00    0    0     -10     -     SEARCH  -        -
@@ -10252,9 +10842,9 @@ Cases: `status·edge:hunt-located-held·80col`; `status·base:crashed-cycle·80c
                 (coarse, no failure point yet)
 ```
 
-Cases: `status·scenario:crashed·80col`; `status·scenario:recovering·80col`; `status·base:concluded·80col` ×2177 (#369 … #2545); +6 more fixtures; 15267 renderings in all
+Cases: `status·scenario:crashed·80col`; `status·scenario:recovering·80col`; `status·base:concluded·80col` ×2177 (#369 … #2545); +6 more fixtures; 15264 renderings in all
 
-**status.cores.row.30** · template `N… -N - SEARCH - - last decision [#N] core N passed RN+RN at N; searches -N on its next turn (coarse, no failure point yet)`
+**status.cores.row.31** · template `N… -N - SEARCH - - last decision [#N] core N passed RN+RN at N; searches -N on its next turn (coarse, no failure point yet)`
 
 ```text
 00    0    0     -5      -     SEARCH  -        -
@@ -10264,7 +10854,7 @@ Cases: `status·scenario:crashed·80col`; `status·scenario:recovering·80col`; 
 
 Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +18 more fixtures; 4137 renderings in all
 
-**status.cores.row.31** · template `N… -N - SEARCH - - last decision [#N] core N starts search at -N (configured candidate solo limit)`
+**status.cores.row.32** · template `N… -N - SEARCH - - last decision [#N] core N starts search at -N (configured candidate solo limit)`
 
 ```text
 00    0    0     -11     -     SEARCH  -        -
@@ -10274,7 +10864,7 @@ Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-
 
 Cases: `status·scenario:confirm·80col`; `status·base:combination·80col` ×1472 (#30 … #1501); `status·base:probe·80col` ×1472 (#30 … #1501)
 
-**status.cores.row.32** · template `N… -N - SEARCH - reset last decision [#N] core N passed RN+RN at N; searches -N on its next turn (coarse, no failure point yet)`
+**status.cores.row.33** · template `N… -N - SEARCH - reset last decision [#N] core N passed RN+RN at N; searches -N on its next turn (coarse, no failure point yet)`
 
 ```text
 03    0    3     -5      -     SEARCH  -        reset
@@ -10284,7 +10874,7 @@ Cases: `status·scenario:confirm·80col`; `status·base:combination·80col` ×14
 
 Cases: `status·edge:defect-reset-each-core·80col`; `status·edge:defect-reset-one-core·80col`
 
-**status.cores.row.33** · template `N… -N - SEARCH -N - last decision [#N] core N checks candidate solo limit -N (candidate solo limit -N: failure point -N; the full pass rule needs N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk)`
+**status.cores.row.34** · template `N… -N - SEARCH -N - last decision [#N] core N checks candidate solo limit -N (candidate solo limit -N: failure point -N; the full pass rule needs N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk)`
 
 ```text
 15    1    7     -14     -     SEARCH  -15      -
@@ -10293,9 +10883,9 @@ Cases: `status·edge:defect-reset-each-core·80col`; `status·edge:defect-reset-
                 each of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k)
 ```
 
-Cases: `status·base:concluded·80col` ×1630 (#2350 … #3979); `status·base:dead-end·80col` ×1630 (#2350 … #3979); `status·base:first-result·80col` ×1630 (#2350 … #3979); +3 more fixtures; 10130 renderings in all
+Cases: `status·base:concluded·80col` ×1630 (#2350 … #3979); `status·base:dead-end·80col` ×1630 (#2350 … #3979); `status·base:first-result·80col` ×1630 (#2350 … #3979); +3 more fixtures; 10129 renderings in all
 
-**status.cores.row.34** · template `N… -N - SEARCH -N - last decision [#N] core N checks candidate solo limit -N (candidate solo limit -N: failure point -N; the full pass rule needs N trials each of RN ycruncher-bkt-sftvN and RN mprime-avxN-Nk-Nk)`
+**status.cores.row.35** · template `N… -N - SEARCH -N - last decision [#N] core N checks candidate solo limit -N (candidate solo limit -N: failure point -N; the full pass rule needs N trials each of RN ycruncher-bkt-sftvN and RN mprime-avxN-Nk-Nk)`
 
 ```text
 02    0    2     -34     -     SEARCH  -35      -
@@ -10306,7 +10896,7 @@ Cases: `status·base:concluded·80col` ×1630 (#2350 … #3979); `status·base:d
 
 Cases: `status·base:crashed-cycle·80col` ×817 (#3631 … #4447); `status·base:unconfirmed·80col` ×806 (#3790 … #4595)
 
-**status.cores.row.35** · template `N… -N - SEARCH -N - last decision [#N] core N checks candidate solo limit -N (from -N; candidate solo limit -N: failure point -N; the full pass rule needs N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk)`
+**status.cores.row.36** · template `N… -N - SEARCH -N - last decision [#N] core N checks candidate solo limit -N (from -N; candidate solo limit -N: failure point -N; the full pass rule needs N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk)`
 
 ```text
 08    1    0     -6      -     SEARCH  -7       -
@@ -10316,9 +10906,9 @@ Cases: `status·base:crashed-cycle·80col` ×817 (#3631 … #4447); `status·bas
                 mprime-avx2-36k-248k)
 ```
 
-Cases: `status·base:concluded·80col` ×2758 (#1319 … #4076); `status·base:crashed-cycle·80col` ×3324 (#1096 … #4419); `status·base:dead-end·80col` ×2758 (#1319 … #4076); +4 more fixtures; 19804 renderings in all
+Cases: `status·base:concluded·80col` ×2758 (#1319 … #4076); `status·base:crashed-cycle·80col` ×3324 (#1096 … #4419); `status·base:dead-end·80col` ×2758 (#1319 … #4076); +4 more fixtures; 19802 renderings in all
 
-**status.cores.row.36** · template `N… -N - SEARCH -N - last decision [#N] core N failed at -N; searches -N on its next turn (coarse, no passed step; passed step at -N discarded, the failure contradicts it)`
+**status.cores.row.37** · template `N… -N - SEARCH -N - last decision [#N] core N failed at -N; searches -N on its next turn (coarse, no passed step; passed step at -N discarded, the failure contradicts it)`
 
 ```text
 02    0    2     -30     -     SEARCH  -35      -
@@ -10329,7 +10919,7 @@ Cases: `status·base:concluded·80col` ×2758 (#1319 … #4076); `status·base:c
 
 Cases: `status·base:crashed-cycle·80col` ×305 (#2633 … #2937); `status·base:unconfirmed·80col` ×551 (#2906 … #3761)
 
-**status.cores.row.37** · template `N… -N - SEARCH -N - last decision [#N] core N failed at -N; searches -N on its next turn (fine, deepest pass -N)`
+**status.cores.row.38** · template `N… -N - SEARCH -N - last decision [#N] core N failed at -N; searches -N on its next turn (fine, deepest pass -N)`
 
 ```text
 08    1    0     -6      -     SEARCH  -10      -
@@ -10337,9 +10927,9 @@ Cases: `status·base:crashed-cycle·80col` ×305 (#2633 … #2937); `status·bas
                 (fine, deepest pass -5)
 ```
 
-Cases: `status·base:concluded·80col` ×1755 (#693 … #2737); `status·base:crashed-cycle·80col` ×1966 (#799 … #2890); `status·base:dead-end·80col` ×1755 (#693 … #2737); +4 more fixtures; 12365 renderings in all
+Cases: `status·base:concluded·80col` ×1755 (#693 … #2737); `status·base:crashed-cycle·80col` ×1966 (#799 … #2890); `status·base:dead-end·80col` ×1755 (#693 … #2737); +4 more fixtures; 12362 renderings in all
 
-**status.cores.row.38** · template `N… -N - SEARCH -N - last decision [#N] core N passed RN+RN at -N; searches -N on its next turn (fine, failure point -N)`
+**status.cores.row.39** · template `N… -N - SEARCH -N - last decision [#N] core N passed RN+RN at -N; searches -N on its next turn (fine, failure point -N)`
 
 ```text
 08    1    0     -7      -     SEARCH  -10      -
@@ -10347,9 +10937,9 @@ Cases: `status·base:concluded·80col` ×1755 (#693 … #2737); `status·base:cr
                 (fine, failure point -10)
 ```
 
-Cases: `status·base:concluded·80col` ×1889 (#1016 … #3259); `status·base:crashed-cycle·80col` ×2122 (#1509 … #3630); `status·base:dead-end·80col` ×1889 (#1016 … #3259); +4 more fixtures; 14510 renderings in all
+Cases: `status·base:concluded·80col` ×1889 (#1016 … #3259); `status·base:crashed-cycle·80col` ×2122 (#1509 … #3630); `status·base:dead-end·80col` ×1889 (#1016 … #3259); +4 more fixtures; 14508 renderings in all
 
-**status.cores.row.39** · template `N… -N -N AT LIMIT - - combinations CN last decision [#N] core N has room -> at its limit at -N (combination CN)`
+**status.cores.row.40** · template `N… -N -N AT LIMIT - - combinations CN last decision [#N] core N has room -> at its limit at -N (combination CN)`
 
 ```text
 11    1    3     -9      -9    AT LIMIT  -        -
@@ -10359,31 +10949,138 @@ Cases: `status·base:concluded·80col` ×1889 (#1016 … #3259); `status·base:c
 
 Cases: `status·edge:combination-fallback·80col`; `status·edge:round-check-completed·80col`; `status·scenario:combination·80col`; +6 more fixtures; 2677 renderings in all
 
-**status.cores.row.40** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (combination CN: backing off core N to -N, where hunt N group N passed with the rest of the combination at its failing offsets; after failures #N and #N)`
+**status.cores.row.41** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in parked RN trial N; failure point -N)`
 
 ```text
-04    0    4     -12     -12   AT LIMIT  -14      -
+13    1    5     -35     -35   AT LIMIT  -36      -
   combinations C1
-  last decision [#11557] core 04 backed off from -13 to -12 (combination C1:
-                backing off core 04 to -12, where hunt 4 group 17 passed with
-                the rest of the combination at its failing offsets; after
-                failures #10992 and #11161)
+  last decision [#6077] core 13 backed off from -36 to -35 (backed off:
+                attributed computation_error in parked R5 trial 0754; failure
+                point -36)
 ```
 
-Cases: `status·base:later-hunt·80col` ×51 (#12470 … #12520)
+Cases: `status·base:later-hunt·80col` ×968 (#12832 … #13799)
 
-**status.cores.row.41** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N has room -> at its limit at -N (failure point -N of core N)`
+**status.cores.row.42** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in together RN trial N; failure point -N)`
+
+```text
+04    0    4     -13     -13   AT LIMIT  -14      -
+  combinations C1
+  last decision [#5295] core 04 backed off from -14 to -13 (backed off:
+                attributed computation_error in together R6 trial 0661; failure
+                point -14)
+```
+
+Cases: `status·base:later-hunt·80col` ×968 (#12832 … #13799)
+
+**status.cores.row.43** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (backed off: attributed corrected_mce in together RN trial N; failure point -N)`
+
+```text
+10    1    2     -13     -13   AT LIMIT  -14      -
+  combinations C1
+  last decision [#5308] core 10 backed off from -14 to -13 (backed off:
+                attributed corrected_mce in together R6 trial 0662; failure
+                point -14)
+```
+
+Cases: `status·base:later-hunt·80col` ×968 (#12832 … #13799)
+
+**status.cores.row.44** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (backed off: attributed unexpected_exit in together RN trial N; failure point -N)`
+
+```text
+12    1    4     -14     -14   AT LIMIT  -15      -
+  combinations C1
+  last decision [#4803] core 12 backed off from -15 to -14 (backed off:
+                attributed unexpected_exit in together R2 trial 0585; failure
+                point -15)
+```
+
+Cases: `status·base:later-hunt·80col` ×968 (#12832 … #13799)
+
+**status.cores.row.45** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (combination CN: backing off core N to -N, where hunt N group N passed with the rest of the combination at its failing offsets)`
+
+```text
+15    1    7     -12     -12   AT LIMIT  -14      -
+  combinations C1
+  last decision [#12833] core 15 backed off from -13 to -12 (combination C1:
+                backing off core 15 to -12, where hunt 7 group 72 passed with
+                the rest of the combination at its failing offsets)
+```
+
+Cases: `status·base:later-hunt·80col` ×51 (#13749 … #13799)
+
+**status.cores.row.46** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (failure #N (RN trial N) charged to deepened core N; phase N confirmation, last confirmed offset -N; failure point -N)`
+
+```text
+15    1    7     -13     -13   AT LIMIT  -14      -
+  combinations C1
+  last decision [#8925] core 15 backed off from -14 to -13 (failure #8924 (R1
+                trial 1283) charged to deepened core 15; phase 2 confirmation,
+                last confirmed offset -13; failure point -14)
+```
+
+Cases: `status·base:later-hunt·80col` at #12832
+
+**status.cores.row.47** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (failure #N (RN trial N) charged to deepened core N; round N, last passed offset -N; failure point -N)`
+
+```text
+03    0    3     -24     -24   AT LIMIT  -25      -
+  combinations C1
+  last decision [#7841] core 03 backed off from -25 to -24 (failure #7835 (R7
+                trial 1005) charged to deepened core 03; round 1, last passed
+                offset -24; failure point -25)
+```
+
+Cases: `status·base:later-hunt·80col` ×968 (#12832 … #13799)
+
+**status.cores.row.48** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (hunt N found core N; failure point -N; passed step at -N discarded, the failure contradicts it)`
+
+```text
+08    1    0     -5      -5    AT LIMIT  -6       -
+  combinations C1
+  last decision [#11718] core 08 backed off from -6 to -5 (hunt 6 found core 08;
+                failure point -6; passed step at -6 discarded, the failure
+                contradicts it)
+```
+
+Cases: `status·base:later-hunt·80col` ×51 (#13749 … #13799)
+
+**status.cores.row.49** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (hunt N found core N; failure point -N; passed step at -N discarded, the failure contradicts it; after failures #N and #N)`
+
+```text
+06    0    6     -37     -37   AT LIMIT  -38      -
+  combinations C1
+  last decision [#11630] core 06 backed off from -38 to -37 (hunt 5 found core
+                06; failure point -38; passed step at -38 discarded, the failure
+                contradicts it; after failures #11458 and #11542)
+```
+
+Cases: `status·base:later-hunt·80col` ×51 (#13749 … #13799)
+
+**status.cores.row.50** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count)`
+
+```text
+11    1    3     -7      -7    AT LIMIT  -8       -
+  combinations C1
+  last decision [#4237] core 11 backed off from -8 to -7 (voltage-targeted R7
+                backoff after failure #4236: core 11 order came from offsets at
+                CO -8; no request telemetry, 1 count)
+```
+
+Cases: `status·base:later-hunt·80col` ×968 (#12832 … #13799)
+
+**status.cores.row.51** · template `N… -N -N AT LIMIT -N - combinations CN last decision [#N] core N has room -> at its limit at -N (failure point -N of core N)`
 
 ```text
 01    0    1     -15     -15   AT LIMIT  -16      -
   combinations C1
-  last decision [#4147] core 01 has room -> at its limit at -15 (failure point
+  last decision [#4144] core 01 has room -> at its limit at -15 (failure point
                 -16 of core 01)
 ```
 
-Cases: `status·base:later-hunt·80col` ×964 (#11557 … #12520)
+Cases: `status·base:later-hunt·80col` ×968 (#12832 … #13799)
 
-**status.cores.row.42** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in parked RN trial N; failure point -N)`
+**status.cores.row.52** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in parked RN trial N; failure point -N)`
 
 ```text
 00    0    0     -23     -23   AT LIMIT  -24      -
@@ -10392,9 +11089,9 @@ Cases: `status·base:later-hunt·80col` ×964 (#11557 … #12520)
                 point -24)
 ```
 
-Cases: `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:concluded·80col`; +7 more fixtures; 10334 renderings in all
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; +9 more fixtures; 12723 renderings in all
 
-**status.cores.row.43** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in together RN trial N; failure point -N)`
+**status.cores.row.53** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in together RN trial N; failure point -N)`
 
 ```text
 04    0    4     -13     -13   AT LIMIT  -14      -
@@ -10403,9 +11100,9 @@ Cases: `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-count
                 point -14)
 ```
 
-Cases: `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:concluded·80col`; +10 more fixtures; 16935 renderings in all
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; +12 more fixtures; 19588 renderings in all
 
-**status.cores.row.44** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed corrected_mce in together RN trial N; failure point -N)`
+**status.cores.row.54** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed corrected_mce in together RN trial N; failure point -N)`
 
 ```text
 10    1    2     -13     -13   AT LIMIT  -14      -
@@ -10414,19 +11111,19 @@ Cases: `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-count
                 point -14)
 ```
 
-Cases: `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:concluded·80col`; +9 more fixtures; 15371 renderings in all
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; +11 more fixtures; 17060 renderings in all
 
-**status.cores.row.45** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed stall in together RN trial N; failure point -N)`
+**status.cores.row.55** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed stall in together RN trial N; failure point -N)`
 
 ```text
 08    1    0     -27     -27   AT LIMIT  -28      -
-  last decision [#5927] core 08 backed off from -28 to -27 (backed off:
-                attributed stall in together R5 trial 0702; failure point -28)
+  last decision [#5933] core 08 backed off from -28 to -27 (backed off:
+                attributed stall in together R5 trial 0704; failure point -28)
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×2528 (#7488 … #10015)
+Cases: `status·base:crashed-cycle·80col` ×2528 (#7494 … #10021)
 
-**status.cores.row.46** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed uncorrected_mce in together RN trial N; failure point -N)`
+**status.cores.row.56** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed uncorrected_mce in together RN trial N; failure point -N)`
 
 ```text
 13    1    5     -35     -35   AT LIMIT  -36      -
@@ -10435,20 +11132,20 @@ Cases: `status·base:crashed-cycle·80col` ×2528 (#7488 … #10015)
                 point -36)
 ```
 
-Cases: `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:concluded·80col`; +8 more fixtures; 12862 renderings in all
+Cases: `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:concluded·80col`; +7 more fixtures; 8707 renderings in all
 
-**status.cores.row.47** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed unexpected_exit in parked RN trial N; failure point -N)`
+**status.cores.row.57** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed unexpected_exit in parked RN trial N; failure point -N)`
 
 ```text
 04    0    4     -29     -29   AT LIMIT  -30      -
-  last decision [#7176] core 04 backed off from -30 to -29 (backed off:
-                attributed unexpected_exit in parked R4 trial 0902; failure
+  last decision [#7182] core 04 backed off from -30 to -29 (backed off:
+                attributed unexpected_exit in parked R4 trial 0904; failure
                 point -30)
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×2528 (#7488 … #10015)
+Cases: `status·base:crashed-cycle·80col` ×2528 (#7494 … #10021)
 
-**status.cores.row.48** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed unexpected_exit in together RN trial N; failure point -N)`
+**status.cores.row.58** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed unexpected_exit in together RN trial N; failure point -N)`
 
 ```text
 12    1    4     -14     -14   AT LIMIT  -15      -
@@ -10457,20 +11154,20 @@ Cases: `status·base:crashed-cycle·80col` ×2528 (#7488 … #10015)
                 point -15)
 ```
 
-Cases: `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:concluded·80col`; +7 more fixtures; 10334 renderings in all
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; +9 more fixtures; 11755 renderings in all
 
-**status.cores.row.49** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (failure #N (RN trial N) charged to deepened core N; phase N confirmation, last confirmed offset -N; failure point -N)`
+**status.cores.row.59** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (failure #N (RN trial N) charged to deepened core N; phase N confirmation, last confirmed offset -N; failure point -N)`
 
 ```text
-01    0    1     -31     -31   AT LIMIT  -32      -
-  last decision [#9066] core 01 backed off from -32 to -31 (failure #9065 (R6
-                trial 1299) charged to deepened core 01; phase 2 confirmation,
-                last confirmed offset -31; failure point -32)
+15    1    7     -13     -13   AT LIMIT  -14      -
+  last decision [#8796] core 15 backed off from -14 to -13 (failure #8795 (R1
+                trial 1271) charged to deepened core 15; phase 2 confirmation,
+                last confirmed offset -13; failure point -14)
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×950 (#9066 … #10015)
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; `status·scenario:concluded·80col`; +7 more fixtures; 10984 renderings in all
 
-**status.cores.row.50** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (failure #N (RN trial N) charged to deepened core N; round N, last passed offset -N; failure point -N)`
+**status.cores.row.60** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (failure #N (RN trial N) charged to deepened core N; round N, last passed offset -N; failure point -N)`
 
 ```text
 03    0    3     -24     -24   AT LIMIT  -25      -
@@ -10479,9 +11176,9 @@ Cases: `status·base:crashed-cycle·80col` ×950 (#9066 … #10015)
                 offset -24; failure point -25)
 ```
 
-Cases: `status·scenario:concluded·80col`; `status·scenario:confirmation·80col`; `status·scenario:stopped·80col`; +5 more fixtures; 11846 renderings in all
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; `status·scenario:concluded·80col`; +8 more fixtures; 14500 renderings in all
 
-**status.cores.row.51** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count)`
+**status.cores.row.61** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count)`
 
 ```text
 11    1    3     -7      -7    AT LIMIT  -8       -
@@ -10490,22 +11187,9 @@ Cases: `status·scenario:concluded·80col`; `status·scenario:confirmation·80co
                 CO -8; no request telemetry, 1 count)
 ```
 
-Cases: `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:concluded·80col`; +9 more fixtures; 15371 renderings in all
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; +11 more fixtures; 17060 renderings in all
 
-**status.cores.row.52** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count; hunt N ended loaded after failure #N named loaded core N, which also answers failure #N)`
-
-```text
-02    0    2     -30     -30   AT LIMIT  -31      -
-  last decision [#4945] core 02 backed off from -31 to -30 (voltage-targeted R7
-                backoff after failure #4943: core 02 order came from offsets at
-                CO -31; no request telemetry, 1 count; hunt 1 ended loaded after
-                failure #4942 named loaded core 02, which also answers failure
-                #4893)
-```
-
-Cases: `status·scenario:unconfirmed·80col`; `status·base:unconfirmed·80col` ×5036 (#6888 … #11923)
-
-**status.cores.row.53** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count; the unloaded cores have not been checked by a located hunt yet; voltage-targeted backoff N for this load since its last passing trial; a later failure can trigger a located hunt after N backoffs)`
+**status.cores.row.62** · template `N… -N -N AT LIMIT -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count; the unloaded cores have not been checked by a located hunt yet; voltage-targeted backoff N for this load since its last passing trial; a later failure can trigger a located hunt after N backoffs; before the full load reruns, probe its part idling tied group [N]: core N stalled outside that group; this chooses a probe, not a culprit)`
 
 ```text
 03    0    3     -13     -13   AT LIMIT  -14      -
@@ -10514,12 +11198,14 @@ Cases: `status·scenario:unconfirmed·80col`; `status·base:unconfirmed·80col` 
                 CO -14; no request telemetry, 1 count; the unloaded cores have
                 not been checked by a located hunt yet; voltage-targeted backoff
                 2 for this load since its last passing trial; a later failure
-                can trigger a located hunt after 2 backoffs)
+                can trigger a located hunt after 2 backoffs; before the full
+                load reruns, probe its part idling tied group [3]: core 02
+                stalled outside that group; this chooses a probe, not a culprit)
 ```
 
-Cases: `status·scenario:unconfirmed·80col`; `status·base:unconfirmed·80col` ×5036 (#6888 … #11923)
+Cases: `status·scenario:unconfirmed·80col`; `status·base:unconfirmed·80col` ×5304 (#6913 … #12216)
 
-**status.cores.row.54** · template `N… -N -N AT LIMIT -N - last decision [#N] core N has room -> at its limit at -N (failure point -N of core N)`
+**status.cores.row.63** · template `N… -N -N AT LIMIT -N - last decision [#N] core N has room -> at its limit at -N (failure point -N of core N)`
 
 ```text
 01    0    1     -15     -15   AT LIMIT  -16      -
@@ -10527,19 +11213,20 @@ Cases: `status·scenario:unconfirmed·80col`; `status·base:unconfirmed·80col` 
                 -16 of core 01)
 ```
 
-Cases: `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:concluded·80col`; +9 more fixtures; 14371 renderings in all
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; `status·edge:solo-limits-three-counts-deep·80col`; +12 more fixtures; 19588 renderings in all
 
-**status.cores.row.55** · template `N… -N -N AT LIMIT -N - last decision [#N] core N yielded from -N to -N (round N failed on core N, so core N returns to its last passed offset -N)`
+**status.cores.row.64** · template `N… -N -N AT LIMIT -N - last decision [#N] core N yielded from -N to -N (round N failed on core N, so core N yields to its round baseline -N; remains eligible for a later round)`
 
 ```text
 08    1    0     -5      -5    AT LIMIT  -7       -
   last decision [#7707] core 08 yielded from -6 to -5 (round 1 failed on core
-                03, so core 08 returns to its last passed offset -5)
+                03, so core 08 yields to its round baseline -5; remains eligible
+                for a later round)
 ```
 
-Cases: `status·base:concluded·80col` ×8 (#7707 … #7714); `status·base:later-hunt·80col` ×8 (#7707 … #7714); `status·base:session·80col` ×8 (#7707 … #7714); +1 more fixtures; 36 renderings in all
+Cases: `status·base:concluded·80col` ×14 (#7707 … #7846); `status·base:later-hunt·80col` ×14 (#7837 … #7975); `status·base:session·80col` ×14 (#7707 … #7846); +1 more fixtures; 64 renderings in all
 
-**status.cores.row.56** · template `N… -N -N AT LIMIT -N reset last decision [#N] core N backed off from -N to -N (failure #N (RN trial N) charged to deepened core N; round N, last passed offset -N; failure point -N)`
+**status.cores.row.65** · template `N… -N -N AT LIMIT -N reset last decision [#N] core N backed off from -N to -N (failure #N (RN trial N) charged to deepened core N; round N, last passed offset -N; failure point -N)`
 
 ```text
 03    0    3     -24     -24   AT LIMIT  -25      reset
@@ -10550,7 +11237,7 @@ Cases: `status·base:concluded·80col` ×8 (#7707 … #7714); `status·base:late
 
 Cases: `status·edge:queued-reset·80col`
 
-**status.cores.row.57** · template `N… -N -N HAS ROOM - - combinations CN last decision [#N] core N deepened from -N to -N (round N: one count toward solo limit -N)`
+**status.cores.row.66** · template `N… -N -N HAS ROOM - - combinations CN last decision [#N] core N deepened from -N to -N (round N: one count toward solo limit -N)`
 
 ```text
 03    0    3     -11     -10   HAS ROOM  -        -
@@ -10561,7 +11248,7 @@ Cases: `status·edge:queued-reset·80col`
 
 Cases: `status·edge:combination-fallback·80col`; `status·edge:round-check-completed·80col`; `status·scenario:combination·80col`; +6 more fixtures; 2659 renderings in all
 
-**status.cores.row.58** · template `N… -N -N HAS ROOM - - combinations CN last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
+**status.cores.row.67** · template `N… -N -N HAS ROOM - - combinations CN last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
 
 ```text
 03    0    3     -10     -10   HAS ROOM  -        -
@@ -10575,7 +11262,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:round-check-com
 
 Cases: `status·base:combination·80col` ×9 (#3364 … #3372); `status·base:probe·80col` ×9 (#3364 … #3372)
 
-**status.cores.row.59** · template `N… -N -N HAS ROOM - - last decision [#N] core N deepened from -N to -N (round N: one count toward solo limit -N)`
+**status.cores.row.68** · template `N… -N -N HAS ROOM - - last decision [#N] core N deepened from -N to -N (round N: one count toward solo limit -N)`
 
 ```text
 00    0    0     -11     -10   HAS ROOM  -        -
@@ -10585,7 +11272,7 @@ Cases: `status·base:combination·80col` ×9 (#3364 … #3372); `status·base:pr
 
 Cases: `status·edge:combination-fallback·80col`; `status·edge:round-check-completed·80col`; `status·scenario:combination·80col`; +6 more fixtures; 2671 renderings in all
 
-**status.cores.row.60** · template `N… -N -N HAS ROOM - - last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
+**status.cores.row.69** · template `N… -N -N HAS ROOM - - last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
 
 ```text
 00    0    0     -10     -10   HAS ROOM  -        -
@@ -10598,7 +11285,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:round-check-com
 
 Cases: `status·base:combination·80col` ×17 (#3364 … #3380); `status·base:probe·80col` ×17 (#3364 … #3380)
 
-**status.cores.row.61** · template `N… -N -N HAS ROOM -N - last decision [#N] core N at its limit -> has room at -N (one count deeper reaches no failure point or combination)`
+**status.cores.row.70** · template `N… -N -N HAS ROOM -N - last decision [#N] core N at its limit -> has room at -N (one count deeper reaches no failure point or combination)`
 
 ```text
 08    1    0     -5      -5    HAS ROOM  -7       -
@@ -10606,9 +11293,9 @@ Cases: `status·base:combination·80col` ×17 (#3364 … #3380); `status·base:p
                 reaches no failure point or combination)
 ```
 
-Cases: `status·edge:queued-reset·80col`; `status·scenario:concluded·80col`; `status·scenario:confirmation·80col`; +6 more fixtures; 12807 renderings in all
+Cases: `status·base:concluded·80col` ×182 (#7712 … #7934); `status·base:later-hunt·80col` ×182 (#7842 … #8063); `status·base:session·80col` ×182 (#7712 … #7934); +1 more fixtures; 643 renderings in all
 
-**status.cores.row.62** · template `N… -N -N HAS ROOM -N - last decision [#N] core N deepened from -N to -N (round N: one count toward solo limit -N)`
+**status.cores.row.71** · template `N… -N -N HAS ROOM -N - last decision [#N] core N deepened from -N to -N (round N: one count toward solo limit -N)`
 
 ```text
 08    1    0     -6      -5    HAS ROOM  -7       -
@@ -10616,9 +11303,9 @@ Cases: `status·edge:queued-reset·80col`; `status·scenario:concluded·80col`; 
                 toward solo limit -6)
 ```
 
-Cases: `status·base:concluded·80col` ×9 (#7131 … #7139); `status·base:crashed-cycle·80col` ×11 (#7491 … #7501); `status·base:later-hunt·80col` ×9 (#7131 … #7139); +2 more fixtures; 51 renderings in all
+Cases: `status·base:concluded·80col` ×21 (#7131 … #7937); `status·base:crashed-cycle·80col` ×11 (#7497 … #7507); `status·base:later-hunt·80col` ×21 (#7261 … #8066); +2 more fixtures; 107 renderings in all
 
-**status.cores.row.63** · template `N… -N -N HAS ROOM -N - last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
+**status.cores.row.72** · template `N… -N -N HAS ROOM -N - last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN mprime-sse-Nk-Nk and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
 
 ```text
 03    0    3     -24     -24   HAS ROOM  -26      -
@@ -10629,9 +11316,9 @@ Cases: `status·base:concluded·80col` ×9 (#7131 … #7139); `status·base:cras
                 reaches no failure point or combination)
 ```
 
-Cases: `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:first-result·80col`; `status·base:concluded·80col` ×7 (#7128 … #7134); +5 more fixtures; 91 renderings in all
+Cases: `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:first-result·80col`; `status·base:concluded·80col` ×7 (#7128 … #7134); +5 more fixtures; 90 renderings in all
 
-**status.cores.row.64** · template `N… -N -N HAS ROOM -N - last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN ycruncher-bkt-sftvN and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
+**status.cores.row.73** · template `N… -N -N HAS ROOM -N - last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN ycruncher-bkt-sftvN and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
 
 ```text
 07    0    7     -11     -11   HAS ROOM  -13      -
@@ -10642,190 +11329,110 @@ Cases: `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:fi
                 reaches no failure point or combination)
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×8 (#7488 … #7495)
+Cases: `status·base:crashed-cycle·80col` ×8 (#7494 … #7501)
 
-**status.cores.row.65** · template `N… -N -N* AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in together RN trial N; failure point -N)`
+**status.cores.row.74** · template `N… -N -N* AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (combination CN: backing off core N to -N, where hunt N group N passed with the rest of the combination at its failing offsets)`
 
 ```text
-04    0    4     -13     -12*  AT LIMIT  -14      -
+15    1    7     -12     -12*  AT LIMIT  -14      -
   combinations C1
-  last decision [#5289] core 04 backed off from -14 to -13 (backed off:
-                attributed computation_error in together R6 trial 0660; failure
-                point -14)
+  last decision [#12833] core 15 backed off from -13 to -12 (combination C1:
+                backing off core 15 to -12, where hunt 7 group 72 passed with
+                the rest of the combination at its failing offsets)
 ```
 
-Cases: `status·base:later-hunt·80col` at #11556
+Cases: `status·base:later-hunt·80col` ×916 (#12833 … #13748)
 
-**status.cores.row.66** · template `N… -N -N* AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (combination CN: backing off core N to -N, where hunt N group N passed with the rest of the combination at its failing offsets; after failures #N and #N)`
+**status.cores.row.75** · template `N… -N -N* AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (hunt N found core N; failure point -N; passed step at -N discarded, the failure contradicts it)`
 
 ```text
-04    0    4     -12     -12*  AT LIMIT  -14      -
+08    1    0     -5      -5*   AT LIMIT  -6       -
   combinations C1
-  last decision [#11557] core 04 backed off from -13 to -12 (combination C1:
-                backing off core 04 to -12, where hunt 4 group 17 passed with
-                the rest of the combination at its failing offsets; after
-                failures #10992 and #11161)
+  last decision [#11718] core 08 backed off from -6 to -5 (hunt 6 found core 08;
+                failure point -6; passed step at -6 discarded, the failure
+                contradicts it)
 ```
 
-Cases: `status·base:later-hunt·80col` ×913 (#11557 … #12469)
+Cases: `status·base:later-hunt·80col` ×917 (#12832 … #13748)
 
-**status.cores.row.67** · template `N… -N -N* AT LIMIT -N - combinations CN last decision [#N] core N failure held; tuning stays at -N (holds at -N: failure #N (cycle N) is the first counting against core N since the profile passed cycle N (#N); a second failure against it by cycle N (K = N) steps it back)`
+**status.cores.row.76** · template `N… -N -N* AT LIMIT -N - combinations CN last decision [#N] core N backed off from -N to -N (hunt N found core N; failure point -N; passed step at -N discarded, the failure contradicts it; after failures #N and #N)`
 
 ```text
-03    0    3     -24     -23*  AT LIMIT  -25      -
+06    0    6     -37     -37*  AT LIMIT  -38      -
   combinations C1
-  last decision [#11078] core 03 failure held; tuning stays at -24 (holds at
-                -24: failure #11077 (cycle 4) is the first counting against core
-                03 since the profile passed cycle 3 (#10468); a second failure
-                against it by cycle 8 (K = 5) steps it back)
+  last decision [#11630] core 06 backed off from -38 to -37 (hunt 5 found core
+                06; failure point -38; passed step at -38 discarded, the failure
+                contradicts it; after failures #11458 and #11542)
 ```
 
-Cases: `status·base:later-hunt·80col` ×965 (#11556 … #12520)
+Cases: `status·base:later-hunt·80col` ×917 (#12832 … #13748)
 
-**status.cores.row.68** · template `N… -N -N* AT LIMIT -N - combinations CN last decision [#N] core N has room -> at its limit at -N (failure point -N of core N)`
-
-```text
-01    0    1     -15     -14*  AT LIMIT  -16      -
-  combinations C1
-  last decision [#4147] core 01 has room -> at its limit at -15 (failure point
-                -16 of core 01)
-```
-
-Cases: `status·base:later-hunt·80col` at #11556
-
-**status.cores.row.69** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in parked RN trial N; failure point -N)`
-
-```text
-00    0    0     -23     -22*  AT LIMIT  -24      -
-  last decision [#6394] core 00 backed off from -24 to -23 (backed off:
-                attributed computation_error in parked R3 trial 0811; failure
-                point -24)
-```
-
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×564 (#10993 … #11556)
-
-**status.cores.row.70** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in together RN trial N; failure point -N)`
+**status.cores.row.77** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed computation_error in together RN trial N; failure point -N)`
 
 ```text
 01    0    1     -15     -15*  AT LIMIT  -16      -
-  last decision [#8397] core 01 backed off from -16 to -15 (backed off:
-                attributed computation_error in together R5 trial 1202; failure
+  last decision [#8633] core 01 backed off from -16 to -15 (backed off:
+                attributed computation_error in together R5 trial 1240; failure
                 point -16)
 ```
 
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·scenario:unconfirmed·80col`; +2 more fixtures; 1294 renderings in all
+Cases: `status·scenario:unconfirmed·80col`; `status·base:unconfirmed·80col` ×863 (#8633 … #9495)
 
-**status.cores.row.71** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed corrected_mce in together RN trial N; failure point -N)`
-
-```text
-10    1    2     -13     -12*  AT LIMIT  -14      -
-  last decision [#5302] core 10 backed off from -14 to -13 (backed off:
-                attributed corrected_mce in together R6 trial 0661; failure
-                point -14)
-```
-
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×564 (#10993 … #11556)
-
-**status.cores.row.72** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed uncorrected_mce in together RN trial N; failure point -N)`
+**status.cores.row.78** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N backed off from -N to -N (hunt N found core N; failure point -N; passed step at -N discarded, the failure contradicts it)`
 
 ```text
-13    1    5     -35     -34*  AT LIMIT  -36      -
-  last decision [#5920] core 13 backed off from -36 to -35 (backed off:
-                attributed uncorrected_mce in together R5 trial 0742; failure
-                point -36)
+08    1    0     -5      -5*   AT LIMIT  -6       -
+  last decision [#11718] core 08 backed off from -6 to -5 (hunt 6 found core 08;
+                failure point -6; passed step at -6 discarded, the failure
+                contradicts it)
 ```
 
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×564 (#10993 … #11556)
+Cases: `status·base:later-hunt·80col` ×1114 (#11718 … #12831)
 
-**status.cores.row.73** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N backed off from -N to -N (backed off: attributed unexpected_exit in together RN trial N; failure point -N)`
+**status.cores.row.79** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N backed off from -N to -N (hunt N found core N; failure point -N; passed step at -N discarded, the failure contradicts it; after failures #N and #N)`
 
 ```text
-12    1    4     -14     -13*  AT LIMIT  -15      -
-  last decision [#4806] core 12 backed off from -15 to -14 (backed off:
-                attributed unexpected_exit in together R2 trial 0585; failure
-                point -15)
+06    0    6     -37     -37*  AT LIMIT  -38      -
+  last decision [#11630] core 06 backed off from -38 to -37 (hunt 5 found core
+                06; failure point -38; passed step at -38 discarded, the failure
+                contradicts it; after failures #11458 and #11542)
 ```
 
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×564 (#10993 … #11556)
+Cases: `status·base:later-hunt·80col` ×1202 (#11630 … #12831)
 
-**status.cores.row.74** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N backed off from -N to -N (failure #N (RN trial N) charged to deepened core N; round N, last passed offset -N; failure point -N)`
+**status.cores.row.80** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N has room -> at its limit at -N (failure point -N of core N)`
 
 ```text
-03    0    3     -24     -23*  AT LIMIT  -25      -
-  last decision [#7711] core 03 backed off from -25 to -24 (failure #7705 (R7
-                trial 0993) charged to deepened core 03; round 1, last passed
-                offset -24; failure point -25)
+06    0    6     -38     -37*  AT LIMIT  -39      -
+  last decision [#8066] core 06 has room -> at its limit at -38 (failure point
+                -39 of core 06)
 ```
 
-Cases: `status·base:later-hunt·80col` ×85 (#10993 … #11077)
-
-**status.cores.row.75** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N backed off from -N to -N (voltage-targeted RN backoff after failure #N: core N order came from offsets at CO -N; no request telemetry, N count)`
-
-```text
-11    1    3     -7      -6*   AT LIMIT  -8       -
-  last decision [#4240] core 11 backed off from -8 to -7 (voltage-targeted R7
-                backoff after failure #4239: core 11 order came from offsets at
-                CO -8; no request telemetry, 1 count)
-```
-
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×564 (#10993 … #11556)
-
-**status.cores.row.76** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N failure held; tuning stays at -N (holds at -N: failure #N (cycle N) is the first counting against core N since the profile passed cycle N (#N); a second failure against it by cycle N (K = N) steps it back)`
-
-```text
-03    0    3     -24     -23*  AT LIMIT  -25      -
-  last decision [#11078] core 03 failure held; tuning stays at -24 (holds at
-                -24: failure #11077 (cycle 4) is the first counting against core
-                03 since the profile passed cycle 3 (#10468); a second failure
-                against it by cycle 8 (K = 5) steps it back)
-```
-
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×478 (#11078 … #11555)
-
-**status.cores.row.77** · template `N… -N -N* AT LIMIT -N - last decision [#N] core N has room -> at its limit at -N (failure point -N of core N)`
-
-```text
-01    0    1     -15     -14*  AT LIMIT  -16      -
-  last decision [#4147] core 01 has room -> at its limit at -15 (failure point
-                -16 of core 01)
-```
-
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×564 (#10993 … #11556)
-
-**status.cores.row.78** · template `N… -N -N* HAS ROOM -N - last decision [#N] core N at its limit -> has room at -N (one count deeper reaches no failure point or combination)`
-
-```text
-06    0    6     -37     -36*  HAS ROOM  -39      -
-  last decision [#7713] core 06 at its limit -> has room at -37 (one count
-                deeper reaches no failure point or combination)
-```
-
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×564 (#10993 … #11556)
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×171 (#11459 … #11629)
 
 #### `bios.note` — status.rs Status::bios_note, unconfirmed_note
 
 **status.bios.note.1** · template `* unconfirmed since [#N]: core N shows a stepped-back offset; other BIOS offsets come from the profile confirmed by the passed full cycle [#N]. A passed full cycle confirms the changes, except a held failure's stepped-back offset, which stays marked until the hold ends`
 
 ```text
-* unconfirmed since [#8397]: core 01 shows a stepped-back offset; other BIOS
-  offsets come from the profile confirmed by the passed full cycle [#6888]. A
+* unconfirmed since [#8633]: core 01 shows a stepped-back offset; other BIOS
+  offsets come from the profile confirmed by the passed full cycle [#6913]. A
   passed full cycle confirms the changes, except a held failure's stepped-back
   offset, which stays marked until the hold ends
 ```
 
-Cases: `status·scenario:unconfirmed·80col`; `status·base:later-hunt·80col` ×51 (#12470 … #12520); `status·base:unconfirmed·80col` ×728 (#8397 … #9124)
+Cases: `status·scenario:unconfirmed·80col`; `status·base:later-hunt·80col` ×88 (#11630 … #11717); `status·base:unconfirmed·80col` ×863 (#8633 … #9495)
 
 **status.bios.note.2** · template `* unconfirmed since [#N]: cores N… show stepped-back offsets; other BIOS offsets come from the profile confirmed by the passed full cycle [#N]. A passed full cycle confirms the changes, except a held failure's stepped-back offset, which stays marked until the hold ends`
 
 ```text
-* unconfirmed since [#10993]: cores 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14
-  15 show stepped-back offsets; other BIOS offsets come from the profile
-  confirmed by the passed full cycle [#10468]. A passed full cycle confirms the
-  changes, except a held failure's stepped-back offset, which stays marked until
-  the hold ends
+* unconfirmed since [#11459]: cores 06 08 show stepped-back offsets; other BIOS
+  offsets come from the profile confirmed by the passed full cycle [#10934]. A
+  passed full cycle confirms the changes, except a held failure's stepped-back
+  offset, which stays marked until the hold ends
 ```
 
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×1477 (#10993 … #12469)
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×2202 (#11459 … #13748)
 
 **status.bios.note.3** · template `BIOS profile confirmed by the passed full cycle [#N]`
 
@@ -10833,7 +11440,7 @@ Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios�
 BIOS profile confirmed by the passed full cycle [#7128]
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:queued-reset·80col`; `status·edge:round-check-completed·80col`; +17 more fixtures; 18882 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:queued-reset·80col`; `status·edge:round-check-completed·80col`; +17 more fixtures; 20076 renderings in all
 
 **status.bios.note.4** · template `BIOS profile: none confirmed yet; phase N has not passed a full cycle`
 
@@ -10841,19 +11448,21 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:queued-reset·8
 BIOS profile: none confirmed yet; phase 1 has not passed a full cycle
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 53845 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 54006 renderings in all
 
 #### `combinations` — status.rs Status::combinations
 
-**status.combinations.1** · template `combinations: CN core N -N + core N -N + core N -N + core N -N, observed in hunt N [#N]`
+**status.combinations.1** · template `combinations: CN core N -N + core N -N + core N -N + core N -N + core N -N + core N -N + core N -N + core N -N + core N -N + core N -N + core N -N + core N -N + core N -N + core N -N + core N -N, observed in hunt N [#N]`
 
 ```text
 combinations:
-  C1 core 01 -15 + core 02 -24 + core 03 -24 + core 04 -13, observed in hunt 4
-      [#11556]
+  C1 core 01 -15 + core 02 -24 + core 03 -24 + core 04 -13 + core 05 -8 + core
+      06 -37 + core 07 -29 + core 08 -5 + core 09 -33 + core 10 -13 + core 11 -7
+      + core 12 -14 + core 13 -35 + core 14 -12 + core 15 -13, observed in hunt
+      7 [#12832]
 ```
 
-Cases: `status·base:later-hunt·80col` ×965 (#11556 … #12520)
+Cases: `status·base:later-hunt·80col` ×968 (#12832 … #13799)
 
 **status.combinations.2** · template `combinations: CN core N -N + core N -N, fallback over every candidate of hunt N [#N]`
 
@@ -10882,7 +11491,7 @@ R7 self-sufficiency (passed as top requester at equal or deeper offsets; not a
   guarantee)
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 77240 renderings in all
 
 #### `r7.header` — status.rs Status::r7, header row
 
@@ -10892,7 +11501,7 @@ Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-
 CORE  CCD  SELF-SUFFICIENT       TOP REQUESTER
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 77240 renderings in all
 
 #### `r7.row` — status.rs Status::r7, self_sufficiency
 
@@ -10903,7 +11512,7 @@ Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-
   workload mprime-avx2-36k-248k-allcore
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +45 more fixtures; 66482 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +45 more fixtures; 68734 renderings in all
 
 **status.r7.row.2** · template `N… not yet demonstrated no (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
@@ -10912,7 +11521,7 @@ Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_lo
   workload ycruncher-fftv4-n63-vt3-allcore
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +45 more fixtures; 66512 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +45 more fixtures; 68764 renderings in all
 
 **status.r7.row.3** · template `N… not yet demonstrated no workload mprime-avxN-Nk-Nk-allcore`
 
@@ -10930,7 +11539,7 @@ Cases: `status·edge:r7-with-request-telemetry·80col`
   workload mprime-avx2-36k-248k-allcore
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 39339 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 39696 renderings in all
 
 **status.r7.row.5** · template `N… not yet demonstrated yes (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
@@ -10939,7 +11548,7 @@ Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-
   workload ycruncher-fftv4-n63-vt3-allcore
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 40497 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 40944 renderings in all
 
 **status.r7.row.6** · template `N… observed (N passing trial) no (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
 
@@ -10948,7 +11557,7 @@ Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-
   workload mprime-avx2-36k-248k-allcore
 ```
 
-Cases: `status·base:combination·80col` ×6 (#4848 … #4880); `status·base:concluded·80col` ×54 (#4174 … #4494); `status·base:crashed-cycle·80col` ×84 (#4546 … #8281); +4 more fixtures; 372 renderings in all
+Cases: `status·base:combination·80col` ×6 (#4848 … #4880); `status·base:concluded·80col` ×60 (#4174 … #7999); `status·base:crashed-cycle·80col` ×84 (#4546 … #8287); +4 more fixtures; 408 renderings in all
 
 **status.r7.row.7** · template `N… observed (N passing trial) no (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
@@ -10957,7 +11566,7 @@ Cases: `status·base:combination·80col` ×6 (#4848 … #4880); `status·base:co
   workload ycruncher-fftv4-n63-vt3-allcore
 ```
 
-Cases: `status·base:combination·80col` ×3 (#4908 … #4910); `status·base:concluded·80col` ×27 (#4531 … #4650); `status·base:crashed-cycle·80col` ×42 (#5010 … #8356); +4 more fixtures; 186 renderings in all
+Cases: `status·base:combination·80col` ×3 (#4908 … #4910); `status·base:concluded·80col` ×30 (#4531 … #8029); `status·base:crashed-cycle·80col` ×42 (#5016 … #8362); +4 more fixtures; 204 renderings in all
 
 **status.r7.row.8** · template `N… observed (N passing trial) yes (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
 
@@ -10966,7 +11575,7 @@ Cases: `status·base:combination·80col` ×3 (#4908 … #4910); `status·base:co
   workload mprime-avx2-36k-248k-allcore
 ```
 
-Cases: `status·base:combination·80col` ×18 (#1558 … #4865); `status·base:concluded·80col` ×12 (#4155 … #4429); `status·base:crashed-cycle·80col` ×117 (#4527 … #8221); +5 more fixtures; 207 renderings in all
+Cases: `status·base:combination·80col` ×18 (#1558 … #4865); `status·base:concluded·80col` ×18 (#4155 … #7984); `status·base:crashed-cycle·80col` ×117 (#4527 … #8227); +5 more fixtures; 225 renderings in all
 
 **status.r7.row.9** · template `N… observed (N passing trial) yes (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
@@ -10975,7 +11584,7 @@ Cases: `status·base:combination·80col` ×18 (#1558 … #4865); `status·base:c
   workload ycruncher-fftv4-n63-vt3-allcore
 ```
 
-Cases: `status·base:combination·80col` ×9 (#1636 … #4895); `status·base:concluded·80col` ×6 (#4518 … #4585); `status·base:crashed-cycle·80col` ×9 (#4997 … #8296); +5 more fixtures; 54 renderings in all
+Cases: `status·base:combination·80col` ×9 (#1636 … #4895); `status·base:concluded·80col` ×9 (#4518 … #8014); `status·base:crashed-cycle·80col` ×9 (#5003 … #8302); +5 more fixtures; 63 renderings in all
 
 **status.r7.row.10** · template `N… observed (N passing trial) yes workload mprime-avxN-Nk-Nk-allcore`
 
@@ -10993,7 +11602,7 @@ Cases: `status·edge:r7-with-request-telemetry·80col`
   workload mprime-avx2-36k-248k-allcore
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-parked-cycle-end·80col`; +20 more fixtures; 37838 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-parked-cycle-end·80col`; +20 more fixtures; 40022 renderings in all
 
 **status.r7.row.12** · template `N… observed (N passing trials) no (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
@@ -11002,7 +11611,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pas
   workload ycruncher-fftv4-n63-vt3-allcore
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-parked-cycle-end·80col`; +20 more fixtures; 35498 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-parked-cycle-end·80col`; +20 more fixtures; 37659 renderings in all
 
 **status.r7.row.13** · template `N… observed (N passing trials) yes (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
 
@@ -11011,7 +11620,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pas
   workload mprime-avx2-36k-248k-allcore
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:evidence-without-tctl·80col`; +34 more fixtures; 41507 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:evidence-without-tctl·80col`; +34 more fixtures; 43687 renderings in all
 
 **status.r7.row.14** · template `N… observed (N passing trials) yes (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
@@ -11020,7 +11629,7 @@ Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fall
   workload ycruncher-fftv4-n63-vt3-allcore
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; +28 more fixtures; 39029 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; +28 more fixtures; 41190 renderings in all
 
 #### `between` — status.rs Status::write, the mce msg held by Scan::of
 
@@ -11062,28 +11671,48 @@ hunt 1 [#4901]: unattributed corrected_mce in R2 trial 0603; parked offsets
   candidates 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
 ```
 
-Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·scenario:hunt·80col`; `status·base:concluded·80col` ×117 (#4901 … #5017); +4 more fixtures; 638 renderings in all
+Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·scenario:hunt·80col`; `status·base:concluded·80col` ×117 (#4901 … #5017); +4 more fixtures; 668 renderings in all
 
-**status.hunt.3** · template `hunt N [#N]: unattributed crash in RN trial N; parked offsets all-zero candidates N…`
+**status.hunt.3** · template `hunt N [#N]: unattributed crash in RN trial N; loaded cores N… held at their failing offsets, the rest parked at N candidates N…`
+
+```text
+hunt 1 [#4639]: unattributed crash in R7 trial 0453; loaded cores 00 01 02 03 04
+  05 06 07 held at their failing offsets, the rest parked at 0
+  candidates 08 09 10 11 12 13 14 15
+```
+
+Cases: `status·edge:hunt-located-held·80col`
+
+**status.hunt.4** · template `hunt N [#N]: unattributed crash in RN trial N; parked offsets all-zero candidates N…`
 
 ```text
 hunt 2 [#5460]: unattributed crash in R5 trial 0692; parked offsets all-zero
   candidates 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
 ```
 
-Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:hunt-bios·80col`; `status·scenario:member-probe·80col`; +7 more fixtures; 3264 renderings in all
+Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +6 more fixtures; 4049 renderings in all
 
-**status.hunt.4** · template `hunt N [#N]: unattributed crash in RN trial N; parked offsets from cycle end #N candidates N…`
+**status.hunt.5** · template `hunt N [#N]: unattributed crash in RN trial N; parked offsets from cycle end #N candidates N`
 
 ```text
-hunt 4 [#11163]: unattributed crash in R2 trial 1889; parked offsets from cycle
-  end #10468
-  candidates 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
+hunt 6 [#11716]: unattributed crash in R2 trial 1955; parked offsets from cycle
+  end #7258
+  candidates 08
 ```
 
-Cases: `status·edge:hunt-parked-cycle-end·80col`
+Cases: `status·base:later-hunt·80col` ×2 (#11716 … #11717)
 
-**status.hunt.5** · template `hunt N [#N]: unattributed crash with no trial in flight; parked offsets all-zero candidates N…`
+**status.hunt.6** · template `hunt N [#N]: unattributed crash in RN trial N; parked offsets from cycle end #N candidates N…`
+
+```text
+hunt 5 [#11544]: unattributed crash in R2 trial 1953; parked offsets from cycle
+  end #7258
+  candidates 06 08
+```
+
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×86 (#11544 … #11629)
+
+**status.hunt.7** · template `hunt N [#N]: unattributed crash with no trial in flight; parked offsets all-zero candidates N…`
 
 ```text
 hunt 1 [#4172]: unattributed crash with no trial in flight; parked offsets
@@ -11093,7 +11722,7 @@ hunt 1 [#4172]: unattributed crash with no trial in flight; parked offsets
 
 Cases: `status·edge:hunt-carried-idle·80col`
 
-**status.hunt.6** · template `hunt N [#N]: unattributed failure in RN trial N; parked offsets all-zero candidates N…`
+**status.hunt.8** · template `hunt N [#N]: unattributed failure in RN trial N; parked offsets all-zero candidates N…`
 
 ```text
 hunt 1 [#4901]: unattributed failure in R2 trial 0603; parked offsets all-zero
@@ -11102,25 +11731,15 @@ hunt 1 [#4901]: unattributed failure in R2 trial 0603; parked offsets all-zero
 
 Cases: `status·synthetic:hunt-cause-without-signal·80col`
 
-**status.hunt.7** · template `hunt N [#N]: unattributed uncorrected_mce in RN trial N; loaded cores N… held at their failing offsets, the rest parked at N candidates N…`
+**status.hunt.9** · template `hunt N [#N]: unattributed uncorrected_mce in RN trial N; parked offsets all-zero candidates N…`
 
 ```text
-hunt 1 [#4894]: unattributed uncorrected_mce in R7 trial 0473; loaded cores 00
-  01 02 03 04 05 06 07 held at their failing offsets, the rest parked at 0
-  candidates 08 09 10 11 12 13 14 15
-```
-
-Cases: `status·edge:hunt-located-held·80col`; `status·base:unconfirmed·80col` ×50 (#4894 … #4943)
-
-**status.hunt.8** · template `hunt N [#N]: unattributed uncorrected_mce in RN trial N; parked offsets all-zero candidates N…`
-
-```text
-hunt 1 [#5716]: unattributed uncorrected_mce in R5 trial 0690; parked offsets
+hunt 1 [#5722]: unattributed uncorrected_mce in R5 trial 0692; parked offsets
   all-zero
   candidates 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
 ```
 
-Cases: `status·base:crashed-cycle·80col` ×165 (#5716 … #5880)
+Cases: `status·base:crashed-cycle·80col` ×165 (#5722 … #5886)
 
 #### `groups.header` — status.rs Status::hunt, header row
 
@@ -11130,7 +11749,7 @@ Cases: `status·base:crashed-cycle·80col` ×165 (#5716 … #5880)
 GROUP  CORES  OUTCOME  PASS EVIDENCE  NEED
 ```
 
-Cases: `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +16 more fixtures; 4122 renderings in all
+Cases: `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +15 more fixtures; 4976 renderings in all
 
 #### `groups.row` — status.rs Status::hunt, group_cores
 
@@ -11141,7 +11760,7 @@ G1     15 cores  failed   0              5
   cores 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
 ```
 
-Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +3 more fixtures; 1440 renderings in all
+Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +3 more fixtures; 2076 renderings in all
 
 **status.groups.row.2** · template `GN N cores passed N… cores N…`
 
@@ -11150,7 +11769,7 @@ G1     15 cores  passed   5              5
   cores 00 01 02 03 04 06 07 08 09 10 11 12 13 14 15
 ```
 
-Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·base:concluded·80col` ×277 (#4921 … #6393); `status·base:crashed-cycle·80col` ×223 (#5796 … #7175); +3 more fixtures; 1332 renderings in all
+Cases: `status·edge:hunt-excess-pass-evidence·80col`; `status·base:concluded·80col` ×277 (#4921 … #6393); `status·base:crashed-cycle·80col` ×223 (#5802 … #7181); +3 more fixtures; 1410 renderings in all
 
 **status.groups.row.3** · template `GN N cores running N… cores N…`
 
@@ -11159,65 +11778,63 @@ G1     15 cores  running  0              5
   cores 00 01 02 03 04 06 07 08 09 10 11 12 13 14 15
 ```
 
-Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt·80col`; `status·scenario:hunt-bios·80col`; +8 more fixtures; 992 renderings in all
+Cases: `status·scenario:hunt·80col`; `status·synthetic:hunt-cause-without-signal·80col`; `status·base:combination·80col` ×31 (#1978 … #2008); +6 more fixtures; 1053 renderings in all
 
-**status.groups.row.4** · template `GN N passed N…`
+**status.groups.row.4** · template `GN N failed N…`
+
+```text
+G1     06     failed   0              5
+```
+
+Cases: `status·base:later-hunt·80col` ×13 (#11617 … #11629)
+
+**status.groups.row.5** · template `GN N passed N…`
 
 ```text
 G2     05        passed   5              5
 ```
 
-Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +7 more fixtures; 895 renderings in all
+Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +7 more fixtures; 1607 renderings in all
 
-**status.groups.row.5** · template `GN N running N…`
+**status.groups.row.6** · template `GN N running N…`
 
 ```text
 G2     05        running  0              5
 ```
 
-Cases: `status·base:concluded·80col` ×202 (#4922 … #6372); `status·base:crashed-cycle·80col` ×138 (#5797 … #7112); `status·base:first-result·80col` ×202 (#4922 … #6372); +2 more fixtures; 946 renderings in all
+Cases: `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:concluded·80col` ×202 (#4922 … #6372); +4 more fixtures; 1057 renderings in all
 
-**status.groups.row.6** · template `GN N… failed N…`
+**status.groups.row.7** · template `GN N… failed N…`
 
 ```text
 G5     04 05 06 07  failed   0              5
 ```
 
-Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +7 more fixtures; 1248 renderings in all
+Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +7 more fixtures; 1019 renderings in all
 
-**status.groups.row.7** · template `GN N… passed N…`
+**status.groups.row.8** · template `GN N… passed N…`
 
 ```text
 G3     12 13 14 15  passed   5              5
 ```
 
-Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +7 more fixtures; 1860 renderings in all
+Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +7 more fixtures; 2616 renderings in all
 
-**status.groups.row.8** · template `GN N… running N…`
+**status.groups.row.9** · template `GN N… running N…`
 
 ```text
 G5     04 05 06 07  running  0              5
 ```
 
-Cases: `status·base:combination·80col` ×497 (#1834 … #2465); `status·base:concluded·80col` ×46 (#4989 … #6390); `status·base:crashed-cycle·80col` ×60 (#5864 … #7172); +4 more fixtures; 1421 renderings in all
+Cases: `status·base:combination·80col` ×497 (#1834 … #2465); `status·base:concluded·80col` ×46 (#4989 … #6390); `status·base:crashed-cycle·80col` ×60 (#5870 … #7178); +4 more fixtures; 1854 renderings in all
 
-**status.groups.row.9** · template `GN N… skipped N…`
+**status.groups.row.10** · template `GN N… skipped N…`
 
 ```text
 G1     00 01 02 03 04 05 06 07              skipped  5              5
 ```
 
 Cases: `status·edge:hunt-group-skipped·80col`; `status·synthetic:hunt-group-skipped·80col`
-
-**status.groups.row.10** · template `GN locate failed N… locate reruns the failed load with its loaded cores at their failing offsets and every unloaded core at N`
-
-```text
-G1     locate  failed   0              5
-  locate reruns the failed load with its loaded cores at their failing offsets
-         and every unloaded core at 0
-```
-
-Cases: `status·base:unconfirmed·80col` ×2 (#4942 … #4943)
 
 **status.groups.row.11** · template `GN locate running N… locate reruns the failed load with its loaded cores at their failing offsets and every unloaded core at N`
 
@@ -11227,7 +11844,7 @@ G1     locate  running  0              5
          and every unloaded core at 0
 ```
 
-Cases: `status·edge:hunt-located-held·80col`; `status·base:unconfirmed·80col` ×47 (#4895 … #4941)
+Cases: `status·edge:hunt-located-held·80col`
 
 **status.groups.row.12** · template `GN probe passed N… probe N at -N with N at -N`
 
@@ -11238,14 +11855,16 @@ G42    probe                                passed   5              5
 
 Cases: `status·base:combination·80col` ×36 (#2530 … #2565); `status·base:probe·80col` ×36 (#2530 … #2565)
 
-**status.groups.row.13** · template `GN probe passed N… probe N at -N with N at -N, N at -N, N at -N`
+**status.groups.row.13** · template `GN probe passed N… probe N at -N with N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N`
 
 ```text
-G14    probe                    passed   5              5
-  probe 01 at -14 with 02 at -24, 03 at -24, 04 at -13
+G58    probe                                      passed   5              5
+  probe 01 at -14 with 02 at -24, 03 at -24, 04 at -13, 05 at -8, 06 at -37, 07
+        at -29, 08 at -5, 09 at -33, 10 at -13, 11 at -7, 12 at -14, 13 at -35,
+        14 at -12, 15 at -13
 ```
 
-Cases: `status·base:later-hunt·80col` ×72 (#11485 … #11556)
+Cases: `status·base:later-hunt·80col` ×325 (#12508 … #12832)
 
 **status.groups.row.14** · template `GN probe running N… probe N at -N with N at -N`
 
@@ -11256,14 +11875,16 @@ G42    probe                                running  0              5
 
 Cases: `status·edge:hunt-group-skipped·80col`; `status·scenario:member-probe·80col`; `status·synthetic:hunt-group-skipped·80col`; +2 more fixtures; 167 renderings in all
 
-**status.groups.row.15** · template `GN probe running N… probe N at -N with N at -N, N at -N, N at -N`
+**status.groups.row.15** · template `GN probe running N… probe N at -N with N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N, N at -N`
 
 ```text
-G14    probe                    running  0              5
-  probe 01 at -14 with 02 at -24, 03 at -24, 04 at -13
+G58    probe                                      running  0              5
+  probe 01 at -14 with 02 at -24, 03 at -24, 04 at -13, 05 at -8, 06 at -37, 07
+        at -29, 08 at -5, 09 at -33, 10 at -13, 11 at -7, 12 at -14, 13 at -35,
+        14 at -12, 15 at -13
 ```
 
-Cases: `status·base:later-hunt·80col` ×88 (#11463 … #11553)
+Cases: `status·base:later-hunt·80col` ×330 (#12486 … #12829)
 
 #### `phase2.round` — status.rs Status::phase2, round line
 
@@ -11273,7 +11894,7 @@ Cases: `status·base:later-hunt·80col` ×88 (#11463 … #11553)
 phase 2 round 1 [#7130]
 ```
 
-Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 4989 renderings in all
+Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 5633 renderings in all
 
 #### `candidates.header` — status.rs Status::phase2, candidate header row
 
@@ -11283,7 +11904,7 @@ Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80c
 CANDIDATE  OFFSET  SOLO  GAP  STATE
 ```
 
-Cases: `status·edge:round-check-completed·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:first-result·80col`; +12 more fixtures; 5079 renderings in all
+Cases: `status·edge:round-check-completed·80col`; `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:first-result·80col`; +12 more fixtures; 6359 renderings in all
 
 #### `candidates.row` — status.rs Status::phase2, candidate rows
 
@@ -11301,7 +11922,7 @@ Cases: `status·synthetic:candidate-without-solo-limit·80col`
 03         -25     -25   0    checked again in place
 ```
 
-Cases: `status·base:concluded·80col` ×5 (#7706 … #7710); `status·base:later-hunt·80col` ×5 (#7706 … #7710); `status·base:session·80col` ×5 (#7706 … #7710); +1 more fixtures; 22 renderings in all
+Cases: `status·base:concluded·80col` ×9 (#7706 … #7843); `status·base:later-hunt·80col` ×9 (#7836 … #7972); `status·base:session·80col` ×9 (#7706 … #7843); +1 more fixtures; 40 renderings in all
 
 **status.candidates.row.3** · template `N -N -N N moving`
 
@@ -11309,7 +11930,7 @@ Cases: `status·base:concluded·80col` ×5 (#7706 … #7710); `status·base:late
 03         -24     -25   1    moving
 ```
 
-Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:no-confirmed-bios-profile-in-phase-2·80col`; +8 more fixtures; 4988 renderings in all
+Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:no-confirmed-bios-profile-in-phase-2·80col`; +8 more fixtures; 5632 renderings in all
 
 **status.candidates.row.4** · template `N -N -N N waits`
 
@@ -11317,7 +11938,7 @@ Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80c
 03         -24     -25   1    waits
 ```
 
-Cases: `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:first-result·80col`; `status·base:combination·80col` ×2 (#3364 … #3365); +7 more fixtures; 68 renderings in all
+Cases: `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:first-result·80col`; `status·base:combination·80col` ×2 (#3364 … #3365); +7 more fixtures; 718 renderings in all
 
 #### `phase2.remaining` — status.rs Status::phase2, remaining-rounds line
 
@@ -11327,7 +11948,7 @@ Cases: `status·edge:solo-limits-three-counts-deep·80col`; `status·scenario:fi
 no core can move: the confirmation cycle is all that is left
 ```
 
-Cases: `status·scenario:confirmation·80col`; `status·scenario:unconfirmed·80col`; `status·base:combination·80col` ×984 (#4921 … #5904); +5 more fixtures; 8330 renderings in all
+Cases: `status·scenario:confirmation·80col`; `status·scenario:unconfirmed·80col`; `status·base:combination·80col` ×984 (#4921 … #5904); +5 more fixtures; 8406 renderings in all
 
 **status.phase2.remaining.2** · template `worst case if no round fails: N round left, then one full cycle`
 
@@ -11335,7 +11956,7 @@ Cases: `status·scenario:confirmation·80col`; `status·scenario:unconfirmed·80
 worst case if no round fails: 1 round left, then one full cycle
 ```
 
-Cases: `status·edge:round-check-completed·80col`; `status·scenario:first-result·80col`; `status·scenario:round·80col`; +10 more fixtures; 5077 renderings in all
+Cases: `status·edge:round-check-completed·80col`; `status·scenario:first-result·80col`; `status·scenario:round·80col`; +10 more fixtures; 6357 renderings in all
 
 **status.phase2.remaining.3** · template `worst case if no round fails: N rounds left, then one full cycle`
 
@@ -11353,7 +11974,7 @@ Cases: `status·edge:solo-limits-three-counts-deep·80col`; `status·synthetic:r
 CHECK                               CORES                    PASSES
 ```
 
-Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 4989 renderings in all
+Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 5633 renderings in all
 
 #### `checks.row` — status.rs Status::phase2, check rows
 
@@ -11363,7 +11984,7 @@ Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80c
 R2 mprime-avx2-36k-248k             08                       0/5
 ```
 
-Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 4989 renderings in all
+Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 5633 renderings in all
 
 **status.checks.row.2** · template `RN mprime-avxN-Nk-Nk-allcore N… N/N`
 
@@ -11371,7 +11992,7 @@ Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80c
 R7 mprime-avx2-36k-248k-allcore     03 06 07                 0/5
 ```
 
-Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 4989 renderings in all
+Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 5633 renderings in all
 
 **status.checks.row.3** · template `RN mprime-sse-Nk-Nk N N/N`
 
@@ -11379,7 +12000,7 @@ Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80c
 R1 mprime-sse-4k-21k                08                       0/5
 ```
 
-Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 4989 renderings in all
+Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 5633 renderings in all
 
 **status.checks.row.4** · template `RN ycruncher-fftvN-nN-vtN-allcore N… N/N`
 
@@ -11387,7 +12008,7 @@ Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80c
 R7 ycruncher-fftv4-n63-vt3-allcore  03 06 07                 0/5
 ```
 
-Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 4989 renderings in all
+Cases: `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 5633 renderings in all
 
 #### `defect` — status.rs Status::defects
 
@@ -11421,7 +12042,7 @@ Valid passes supporting the checking profile (live and not alone, on the active
   backend, at equal or deeper offsets; carried passes excluded)
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 42537 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 44792 renderings in all
 
 #### `evidence.header` — status.rs Status::evidence, header row
 
@@ -11431,7 +12052,7 @@ Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fall
 REGIME  WORKLOAD  VALID PASSES
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 42537 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 44792 renderings in all
 
 #### `evidence.row` — status.rs Status::evidence, exposure rows
 
@@ -11441,7 +12062,7 @@ Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fall
 R2      mprime-avx2-36k-248k             1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; +23 more fixtures; 32358 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; +22 more fixtures; 31866 renderings in all
 
 **status.evidence.row.2** · template `RN mprime-avxN-Nk-Nk-allcore N`
 
@@ -11449,7 +12070,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pas
 R7      mprime-avx2-36k-248k-allcore  1
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:evidence-without-tctl·80col`; +30 more fixtures; 36903 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:evidence-without-tctl·80col`; +30 more fixtures; 38905 renderings in all
 
 **status.evidence.row.3** · template `RN mprime-sse-Nk-Nk N`
 
@@ -11457,7 +12078,7 @@ Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fall
 R1      mprime-sse-4k-21k                1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +16 more fixtures; 22340 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +14 more fixtures; 20930 renderings in all
 
 **status.evidence.row.4** · template `RN mprime-sse-Nk-Nk-dutyN N`
 
@@ -11465,7 +12086,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 R4      mprime-sse-4k-21k-duty25         1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +16 more fixtures; 16857 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +14 more fixtures; 13549 renderings in all
 
 **status.evidence.row.5** · template `RN mprime-sse-Nk-Nk-idle N`
 
@@ -11473,7 +12094,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 R6      mprime-sse-4k-21k-idle           1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:solo-limits-three-counts-deep·80col`; +15 more fixtures; 26820 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:solo-limits-three-counts-deep·80col`; +14 more fixtures; 25798 renderings in all
 
 **status.evidence.row.6** · template `RN mprime-sse-Nk-Nk-smt N`
 
@@ -11481,7 +12102,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 R5      mprime-sse-4k-21k-smt            1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +16 more fixtures; 24972 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +15 more fixtures; 23938 renderings in all
 
 **status.evidence.row.7** · template `RN mprime-sse-Nk-Nk-steps N`
 
@@ -11489,7 +12110,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 R3      mprime-sse-4k-21k-steps          1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +16 more fixtures; 19686 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +14 more fixtures; 17394 renderings in all
 
 **status.evidence.row.8** · template `RN ycruncher-bkt-sftvN N`
 
@@ -11497,7 +12118,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 R1      ycruncher-bkt-sftv4              1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +16 more fixtures; 21650 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +14 more fixtures; 19763 renderings in all
 
 **status.evidence.row.9** · template `RN ycruncher-bkt-sftvN-dutyN N`
 
@@ -11505,7 +12126,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 R4      ycruncher-bkt-sftv4-duty50       1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +16 more fixtures; 15230 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +14 more fixtures; 11533 renderings in all
 
 **status.evidence.row.10** · template `RN ycruncher-bkt-sftvN-idle N`
 
@@ -11513,7 +12134,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 R6      ycruncher-bkt-sftv4-idle         1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:solo-limits-three-counts-deep·80col`; +15 more fixtures; 13629 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:solo-limits-three-counts-deep·80col`; +13 more fixtures; 9292 renderings in all
 
 **status.evidence.row.11** · template `RN ycruncher-bkt-sftvN-steps N`
 
@@ -11521,7 +12142,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 R3      ycruncher-bkt-sftv4-steps        1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +16 more fixtures; 18457 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +14 more fixtures; 15789 renderings in all
 
 **status.evidence.row.12** · template `RN ycruncher-fftvN-nN-vtN N`
 
@@ -11529,7 +12150,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 R2      ycruncher-fftv4-n63-vt3          1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-group-skipped·80col`; `status·edge:hunt-parked-cycle-end·80col`; +20 more fixtures; 29359 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-group-skipped·80col`; `status·edge:hunt-parked-cycle-end·80col`; +19 more fixtures; 28537 renderings in all
 
 **status.evidence.row.13** · template `RN ycruncher-fftvN-nN-vtN-allcore N`
 
@@ -11537,7 +12158,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-group-skip
 R7      ycruncher-fftv4-n63-vt3-allcore  1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; +23 more fixtures; 34214 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-group-skipped·80col`; +23 more fixtures; 35894 renderings in all
 
 **status.evidence.row.14** · template `RN ycruncher-snt-svt N`
 
@@ -11545,7 +12166,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pas
 R1      ycruncher-snt-svt                1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +16 more fixtures; 21170 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +14 more fixtures; 19091 renderings in all
 
 **status.evidence.row.15** · template `RN ycruncher-snt-svt-dutyN N`
 
@@ -11553,7 +12174,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 R4      ycruncher-snt-svt-duty75         1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +16 more fixtures; 14430 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +14 more fixtures; 10413 renderings in all
 
 **status.evidence.row.16** · template `RN ycruncher-snt-svt-steps N`
 
@@ -11561,7 +12182,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 R3      ycruncher-snt-svt-steps          1
 ```
 
-Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +16 more fixtures; 17657 renderings in all
+Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +14 more fixtures; 14669 renderings in all
 
 #### `evidence.tctl` — status.rs Status::evidence, Tctl peak line
 
@@ -11571,7 +12192,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 Tctl max since last profile change 76°C [#4155]
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:hunt-carried-idle·80col`; +27 more fixtures; 34207 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:hunt-carried-idle·80col`; +28 more fixtures; 34654 renderings in all
 
 ### Fixture roster
 
@@ -11584,10 +12205,10 @@ Every fixture except the base-journal sweep (listed in the scope above). `Outcom
 | `status·scenario:hunt·80col` | scenario cut | `Scenario::Hunt` cut from `Base::Session`, 4908 events | rendered, 209 lines |
 | `status·scenario:member-probe·80col` | scenario cut | `Scenario::MemberProbe` cut from `Base::Probe`, 2507 events | rendered, 265 lines |
 | `status·scenario:round·80col` | scenario cut | `Scenario::Round` cut from `Base::Probe`, 3436 events | rendered, 224 lines |
-| `status·scenario:confirmation·80col` | scenario cut | `Scenario::Confirmation` cut from `Base::Session`, 7785 events | rendered, 189 lines |
-| `status·scenario:concluded·80col` | scenario cut | `Scenario::Concluded` cut from `Base::Concluded`, 9137 events | rendered, 189 lines |
-| `status·scenario:unconfirmed·80col` | scenario cut | `Scenario::Unconfirmed` cut from `Base::Unconfirmed`, 8404 events | rendered, 198 lines |
-| `status·scenario:hunt-bios·80col` | scenario cut | `Scenario::HuntBios` cut from `Base::LaterHunt`, 11230 events | rendered, 199 lines |
+| `status·scenario:confirmation·80col` | scenario cut | `Scenario::Confirmation` cut from `Base::Session`, 8044 events | rendered, 176 lines |
+| `status·scenario:concluded·80col` | scenario cut | `Scenario::Concluded` cut from `Base::Concluded`, 9474 events | rendered, 191 lines |
+| `status·scenario:unconfirmed·80col` | scenario cut | `Scenario::Unconfirmed` cut from `Base::Unconfirmed`, 8640 events | rendered, 189 lines |
+| `status·scenario:hunt-bios·80col` | scenario cut | `Scenario::HuntBios` cut from `Base::LaterHunt`, 11614 events | rendered, 199 lines |
 | `status·scenario:idle·80col` | scenario cut | `Scenario::Idle` cut from `Base::Session`, 5248 events | rendered, 202 lines |
 | `status·scenario:crashed·80col` | scenario cut | `Scenario::Crashed` cut from `Base::Session`, 679 events | rendered, 157 lines |
 | `status·scenario:recovering·80col` | scenario cut | `Scenario::Recovering` cut from `Base::Session`, 680 events | rendered, 156 lines |
@@ -11596,7 +12217,7 @@ Every fixture except the base-journal sweep (listed in the scope above). `Outcom
 | `status·scenario:confirm·80col` | scenario cut | `Scenario::Confirm` cut from `Base::Probe`, 51 events | rendered, 156 lines |
 | `status·scenario:deadend·80col` | scenario cut | `Scenario::Deadend` cut from `Base::DeadEnd`, 4144 events | rendered, 206 lines |
 | `status·scenario:first-result·80col` | scenario cut | `Scenario::FirstResult` cut from `Base::FirstResult`, 7179 events | rendered, 211 lines |
-| `status·scenario:stopped·80col` | scenario cut | `Scenario::Stopped` cut from `Base::Session`, 9183 events | rendered, 188 lines |
+| `status·scenario:stopped·80col` | scenario cut | `Scenario::Stopped` cut from `Base::Session`, 9520 events | rendered, 190 lines |
 | `status·edge:defect-found·80col` | edge | search + a too-cautious defect.found on cores 3 5 | rendered, 162 lines |
 | `status·edge:defect-answered·80col` | edge | defect-found + defect.answered no | rendered, 162 lines |
 | `status·edge:defect-reset-one-core·80col` | edge | defect-answered + command.reset core 3 | rendered, 161 lines |
@@ -11613,12 +12234,12 @@ Every fixture except the base-journal sweep (listed in the scope above). `Outcom
 | `status·edge:r7-without-request-telemetry·80col` | edge | between with every trial.end's per-core voltage requests removed | rendered, 204 lines |
 | `status·edge:r7-with-request-telemetry·80col` | edge | Base::Session cut at its first passing R7 trial.end that loads one whole CCD, that end carrying the request telemetry a measured trial records: the CCD's deepest-offset core requests the most | rendered, 204 lines |
 | `status·edge:evidence-without-tctl·80col` | edge | between with every trial.end's Tctl maximum removed | rendered, 203 lines |
-| `status·edge:queued-reset·80col` | edge | stopped + command.reset core 3 | rendered, 186 lines |
+| `status·edge:queued-reset·80col` | edge | stopped + command.reset core 3 | rendered, 188 lines |
 | `status·edge:hunt-carried-trial·80col` | edge | between + a carried failed trial + the hunt it opens | rendered, 209 lines |
 | `status·edge:hunt-carried-idle·80col` | edge | between + a carried idle crash + the hunt it opens | rendered, 209 lines |
 | `status·edge:hunt-carried-trial-no-signal·80col` | edge | between + a carried failed trial that recorded no signal + the hunt it opens | **refused**: `a failed trial carries no signal` |
-| `status·edge:hunt-located-held·80col` | edge | the first hunt trial of Base::Unconfirmed: loaded cores held at failing offsets | rendered, 214 lines |
-| `status·edge:hunt-parked-cycle-end·80col` | edge | Base::LaterHunt to hunt 4's first trial, hunt 4 parked from the last passed full cycle | rendered, 200 lines |
+| `status·edge:hunt-located-held·80col` | edge | the default machine on seed 6 to its located hunt's first trial: loaded cores held at failing offsets | rendered, 213 lines |
+| `status·edge:hunt-parked-cycle-end·80col` | edge | Base::LaterHunt to the first hunt trial after a passed full cycle, that hunt parked from the last one | rendered, 199 lines |
 | `status·edge:round-check-completed·80col` | edge | Base::Combination cut when one phase 2 round check has its passes | rendered, 223 lines |
 | `status·edge:short-cycle·80col` | edge | config checking.cycle [R1, R2], cut at the first checking trial | rendered, 211 lines |
 | `status·edge:combination-fallback·80col` | edge | combination with its combination event marked fallback | rendered, 184 lines |
@@ -11702,7 +12323,7 @@ togi status: <state-dir>/events.jsonl: first line is not a complete header of th
 Exit `Error`; stdout empty.
 
 ```text
-togi status: this journal was written by togi 0.0.0 (schema 99, ruleset 1); this build, togi 0.11.2+dev, uses schema 1. Install togi 0.0.0 to continue this session, or run togi reset --all to archive it and start over.
+togi status: this journal was written by togi 0.0.0 (schema 99, ruleset 2); this build, togi 0.11.2+dev, uses schema 1. Install togi 0.0.0 to continue this session, or run togi reset --all to archive it and start over.
 ```
 
 #### `status·diag:schema-older·stderr`
@@ -11710,7 +12331,7 @@ togi status: this journal was written by togi 0.0.0 (schema 99, ruleset 1); this
 Exit `Error`; stdout empty.
 
 ```text
-togi status: this journal was written by togi 0.0.0 (schema 0, ruleset 1); this build, togi 0.11.2+dev, uses schema 1. togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over.
+togi status: this journal was written by togi 0.0.0 (schema 0, ruleset 2); this build, togi 0.11.2+dev, uses schema 1. togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over.
 ```
 
 #### `status·diag:ruleset-differs·stderr`
@@ -11718,7 +12339,7 @@ togi status: this journal was written by togi 0.0.0 (schema 0, ruleset 1); this 
 Exit `Ok`; stdout 157 lines (the status itself).
 
 ```text
-togi status: the journal's ruleset is 7, this build's is 1; what it shows may not follow this build's rules
+togi status: the journal's ruleset is 7, this build's is 2; what it shows may not follow this build's rules
 ```
 
 #### `status·diag:torn-tail·stderr`
