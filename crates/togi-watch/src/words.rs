@@ -826,9 +826,12 @@ impl Words {
 
 macro_rules! of {
     ($variant:ident, |$d:ident| $body:expr) => {
-        |payload: &Payload| match payload {
-            Payload::$variant($d) => $body,
-            _ => None,
+        |payload: &Payload| {
+            if let Payload::$variant($d) = payload {
+                $body
+            } else {
+                None
+            }
         }
     };
 }

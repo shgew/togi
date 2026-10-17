@@ -320,7 +320,7 @@ fn cycle_story(scene: &Scene<'_>, trial: &TrialView) -> Story {
     let mut place_words = match s.phases.map(|phases| phases.phase) {
         Some(PhaseNo::One) => "Every core runs at its profile offset. Phase 1's cycle: its pass confirms the first BIOS profile.".to_owned(),
         Some(PhaseNo::Two) => "Every core runs at its profile offset. Phase 2's confirmation cycle: its pass concludes phase 2.".to_owned(),
-        _ => "Every core runs at its profile offset. The cycle keeps testing until stopped.".to_owned(),
+        Some(PhaseNo::Concluded) | None => "Every core runs at its profile offset. The cycle keeps testing until stopped.".to_owned(),
     };
     if let Some(place) = place.filter(|place| place.parts > 1) {
         let part = place.part.unwrap_or_default();
