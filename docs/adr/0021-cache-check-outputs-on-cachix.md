@@ -32,3 +32,7 @@ The mechanism after the Rust cutover; the decision and its reasons are unchanged
 ## Amendment (#902)
 
 The decision is unchanged; what a check's output holds is trimmed so the cache fits the free Cachix tier's 5 GiB. Crane copies a check's Cargo `target` directory into its output unless told otherwise, and `clippy`, `nextest` and `doc` did: archives no other derivation reads, about 0.8 GiB compressed for one Linux tree out of 1.3 GiB resident ([#920](https://github.com/shgew/togi/issues/920)). Those outputs' references were also the only way the shared dependency artifact reached Cachix. The checks built on the dependency artifact (`clippy`, `nextest`, `doc`, `changes`, `trial-scope-tests` and `vm-recovery-tests`) now install no target archive, and the dependency artifact is a check of its own, `cargo-deps`, whose job pushes it like any other check output.
+
+## Amendment (#633, #1038)
+
+With the last Go tool gone ([ADR 0071](0071-no-go-in-the-repository.md)), the `go-tools` check is removed, so no check runs `-shuffle=on`; the decision and its reasons are unchanged.

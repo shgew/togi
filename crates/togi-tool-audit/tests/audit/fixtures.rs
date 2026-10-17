@@ -280,12 +280,6 @@ pub(crate) fn run(cases: Vec<Case>) {
     }
 }
 
-/// Compares a compiled snapshot's body without a runtime snapshot filesystem adapter.
-pub(crate) fn assert_snapshot(actual: &str, expected: &str) {
-    let (_, body) = expected.split_once("\n---\n").unwrap();
-    assert_eq!(actual.trim_end(), body.trim_end());
-}
-
 #[expect(
     clippy::disallowed_methods,
     reason = "kernel audit fixtures explicitly inject an unsynced journal adapter; production keeps durable locking"
@@ -293,11 +287,7 @@ pub(crate) fn assert_snapshot(actual: &str, expected: &str) {
 pub(crate) fn disk_inspect(
     path: &std::path::Path,
     completion: togi_tool_audit::Completion,
-) -> (
-    Vec<togi_tool_audit::Finding>,
-    usize,
-    Vec<togi_tool_audit::JournalSkip>,
-) {
+) -> togi_tool_audit::DirectoryAudit {
     togi_tool_audit::audit_directory_with(path, completion, |path| {
         if !path.is_dir() {
             return Err(togi_tool_audit::OpenError::NotADirectory);

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use togi_config::Config;
-use togi_journal::fs::{Fault, Op};
+use togi_journal::fs::{AppendPoint, AppendTrigger};
 use togi_journal::{
     Activity, Attribution, Decision, Event, Outcome, Payload, Seq, TrialEnd, TrialId, TrialIntent,
 };
@@ -113,36 +113,33 @@ enum Fate {
 }
 
 /// Drives like [`drive`], but the journal's `after`th event is the last one the first run to reach it makes
-/// durable: that run's append fails right after its line is synced, then `fate` befalls the machine.
+/// durable: that run's append fails right after its line is written, before it is synced, then `fate` befalls the
+/// machine.
 fn interrupted(bench: &Bench, after: usize, fate: Fate) -> Ended {
-    let mut fired = false;
+    let trigger = AppendTrigger::new(after, AppendPoint::BeforeSync);
     for _ in 0..BOOTS {
         let mut input = bench.input();
         input.policy.cycles = Some(NonZeroU32::MIN);
         let base = input.journal.events().len();
-        let armed = !fired && after > base;
-        if armed {
-            let nth = u64::try_from(after - base).unwrap();
-            bench
-                .mem
-                .inject(Fault::before(Op::Sync, nth).named("events.jsonl"));
-        }
+        trigger.arm(&bench.mem, base);
         let ended = run(input);
-        bench.mem.clear_faults();
-        let end = RunEnd { ended, base };
-        if armed && end.ended.capsule.is_none() {
-            drop(end);
+        if trigger.disarm(&bench.mem) {
+            assert!(
+                ended.capsule.is_none(),
+                "event #{after} failed, yet the run went on"
+            );
+            drop(ended);
             assert_eq!(durable_lines(bench), after);
-            fired = true;
             if matches!(fate, Fate::Crashed) {
                 bench.sim.crash();
                 bench.sim.reboot();
             }
             continue;
         }
+        let end = RunEnd { ended, base };
         if end.finished() {
             assert!(
-                fired || after <= end.base,
+                trigger.reached(end.base),
                 "event #{after} was never reached"
             );
             return end.ended;
@@ -918,11 +915,13 @@ fn every_early_append_failure_respects_the_sweep_gate() {
             started: Rc::clone(&started),
             stopped: Rc::clone(&stopped),
         });
-        let nth = u64::try_from(k).unwrap();
-        bench
-            .mem
-            .inject(Fault::before(Op::Write, nth).named("events.jsonl"));
+        let trigger = AppendTrigger::new(k, AppendPoint::BeforeWrite);
+        assert!(trigger.arm(&bench.mem, input.journal.events().len()));
         let result = run(input);
+        assert!(
+            trigger.disarm(&bench.mem),
+            "append #{k} was never attempted"
+        );
         assert!(
             format!("{:?}", result.errors).contains("injected Write fault"),
             "append #{k}: {:?}",
