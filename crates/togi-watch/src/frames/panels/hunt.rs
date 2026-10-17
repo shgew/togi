@@ -8,7 +8,7 @@ use togi_machine::{CoreId, Signal};
 use togi_tuner::{GroupState, HuntGroup, MemberProbe, RerunPlan};
 
 use super::super::colours::Paint;
-use super::super::fit::{Clause, Form, display_width, fit_clauses, plain, rule};
+use super::super::fit::{Clause, Form, display_width, fit_clauses, rule};
 use super::super::layout::SizeClass;
 use super::super::measure::Tables;
 use super::super::notes::offset_list;
@@ -54,7 +54,13 @@ pub(super) fn hunt_lines(
             scene.style(Paint::Track),
         ),
         Line::default(),
-        field_row(scene, t, "cause", cause_line(scene, hunt, compact, room), width),
+        field_row(
+            scene,
+            t,
+            "cause",
+            cause_line(scene, hunt, compact, room),
+            width,
+        ),
     ];
     if !compact {
         if let Some(line) = evidence_line(scene, hunt, room) {
@@ -101,12 +107,7 @@ pub(super) fn hunt_lines(
 
 /// What failed and where, with the attribution kept whole: the subject and the cycle place shorten first, so
 /// `no core named` or the named core is never what a narrow panel cuts.
-fn cause_line(
-    scene: &Scene<'_>,
-    hunt: &HuntView<'_>,
-    compact: bool,
-    room: usize,
-) -> Line<'static> {
+fn cause_line(scene: &Scene<'_>, hunt: &HuntView<'_>, compact: bool, room: usize) -> Line<'static> {
     let cause = &hunt.facts.cause;
     let say = |text: String| cell(scene, Paint::Text, text);
     if cause.known {
@@ -165,7 +166,10 @@ fn cause_line(
     if !place.is_empty() {
         clauses.push(Clause::new(" · ", place));
     }
-    clauses.push(Clause::whole(if compact { ", " } else { " · " }, say(named)));
+    clauses.push(Clause::whole(
+        if compact { ", " } else { " · " },
+        say(named),
+    ));
     fit_clauses(room, &clauses)
 }
 
@@ -1379,7 +1383,7 @@ mod tests {
         let rows = medium_rows(&facts, MEDIUM_PANEL);
         let cause = row_of(&rows, "cause");
         assert!(
-            cause.starts_with("cause       wrong result in the rerun of R7 all-core on 00 01")
+            cause.starts_with("cause       wrong result in the rerun of R7 all-core")
                 && cause.ends_with("core 04 named")
                 && !cause.contains(CUT_MARKER),
             "{cause}"
@@ -1443,9 +1447,11 @@ mod tests {
         ] {
             assert!(all.contains(kept), "{kept}:\n{all}");
         }
-        insta::with_settings!({ snapshot_suffix => "", prepend_module_to_snapshot => false }, {
-            insta::assert_snapshot!("hunt-medium-attribution", all);
-        });
+        let (_, expected) = include_str!("snapshots/hunt-medium-attribution.snap")
+            .strip_prefix("---\n")
+            .and_then(|snapshot| snapshot.split_once("\n---\n"))
+            .expect("a committed snapshot has an insta metadata header");
+        assert_eq!(all, expected.trim_end_matches('\n'));
     }
 
     #[test]

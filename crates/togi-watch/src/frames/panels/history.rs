@@ -629,9 +629,11 @@ mod tests {
             parked(&mut h);
             let (kept, _) = h.facts.history.recent();
             let rows = texts(&panel(&kept, 0, WIDTH, 12));
-            insta::with_settings!({ snapshot_suffix => "", prepend_module_to_snapshot => false }, {
-                insta::assert_snapshot!("history-attribution-75", rows.join("\n"));
-            });
+            let (_, expected) = include_str!("snapshots/history-attribution-75.snap")
+                .strip_prefix("---\n")
+                .and_then(|snapshot| snapshot.split_once("\n---\n"))
+                .expect("a committed snapshot has an insta metadata header");
+            assert_eq!(rows.join("\n"), expected.trim_end_matches('\n'));
         }
     }
 }

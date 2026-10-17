@@ -426,10 +426,14 @@ mod tests {
                 "{words} in {column}"
             );
         }
-        for (light, heavy, want) in [(0, 0, "confirm: light trial 1 of 5"), (5, 4, "confirm: heavy trial 5 of 5")] {
+        for (light, heavy, want) in [
+            (0, 0, "confirm: light trial 1 of 5"),
+            (5, 4, "confirm: heavy trial 5 of 5"),
+        ] {
             let rows = confirm_turn(light, heavy);
             assert!(
-                rows.iter().any(|row| row.contains(want) && !row.contains("...")),
+                rows.iter()
+                    .any(|row| row.contains(want) && !row.contains("...")),
                 "{rows:?}"
             );
         }

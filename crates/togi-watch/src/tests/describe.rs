@@ -632,9 +632,15 @@ fn a_checking_chain_note_is_summarised_in_the_history_and_whole_in_the_log() {
     assert!(
         before.msg.contains("request groups [[00], [01], [02]]")
             && before.msg.contains("from request measurements #1, #2")
-            && before.msg.contains("partial 2 loads cores 00, 01, 02 at profile"),
+            && before
+                .msg
+                .contains("partial 2 loads cores 00, 01, 02 at profile"),
         "{}",
         before.msg
     );
-    assert!(last.msg.contains("partial chain ends because"), "{}", last.msg);
+    assert!(
+        last.msg.contains("partial chain ends because"),
+        "{}",
+        last.msg
+    );
 }
