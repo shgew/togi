@@ -71,9 +71,12 @@ pub fn reset_all(
     let session = journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SessionStart(start) => Some(start.session),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::SessionStart(start) = &event.payload {
+                Some(start.session)
+            } else {
+                None
+            }
         })
         .ok_or(CommandError::NoSession)?;
     if operation == Verdict::Archive {
