@@ -249,7 +249,13 @@ impl Fs for DiskFs {
                 FileType::Unknown => FileType::from_raw_mode(
                     rustix::fs::statat(&dir, name, AtFlags::SYMLINK_NOFOLLOW)?.st_mode,
                 ),
-                known => known,
+                known @ (FileType::RegularFile
+                | FileType::Directory
+                | FileType::Symlink
+                | FileType::Fifo
+                | FileType::Socket
+                | FileType::CharacterDevice
+                | FileType::BlockDevice) => known,
             };
             entries.push(DirEntry {
                 name: OsString::from_vec(name.to_bytes().to_vec()),
@@ -293,7 +299,11 @@ fn rustix_kind(kind: FileType) -> FileKind {
         FileType::RegularFile => FileKind::File,
         FileType::Directory => FileKind::Dir,
         FileType::Symlink => FileKind::Symlink,
-        _ => FileKind::Other,
+        FileType::Fifo
+        | FileType::Socket
+        | FileType::CharacterDevice
+        | FileType::BlockDevice
+        | FileType::Unknown => FileKind::Other,
     }
 }
 

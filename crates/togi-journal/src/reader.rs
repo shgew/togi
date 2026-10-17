@@ -360,9 +360,12 @@ pub fn recorded_context(path: &Path) -> Result<Option<SessionContext>, FileError
 }
 
 pub fn recorded_context_in(fs: &dyn Fs, path: &Path) -> Result<Option<SessionContext>, FileError> {
-    find_in(fs, path, |event| match event.payload {
-        Payload::SessionContext(context) => Some(context),
-        _ => None,
+    find_in(fs, path, |event| {
+        if let Payload::SessionContext(context) = event.payload {
+            Some(context)
+        } else {
+            None
+        }
     })
 }
 
