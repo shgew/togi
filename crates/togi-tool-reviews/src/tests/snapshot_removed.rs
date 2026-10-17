@@ -89,7 +89,7 @@ fn snapshot_removed_patch_inherited_with_later_lower_edits(name: &str) {
     );
     assert_eq!(
         usize::from(name == "rewritten"),
-        git_calls(&h, "git log").len(),
+        git_calls(&h, "git log --no-merges").len(),
         "the rewrite check is only asked when the commit is not an ancestor"
     );
 }
@@ -130,7 +130,7 @@ fn snapshot_removed_patch_whitespace_rewrite_is_no_proof() {
     snapshot(&mut h, &["--previous", PREVIOUS_URL, "700"]).expect("snapshot");
     assert_eq!(
         1,
-        git_calls(&h, "git log").len(),
+        git_calls(&h, "git log --no-merges").len(),
         "git calls = {:?}, want one rewrite check",
         h.fake.git_joined()
     );
@@ -162,13 +162,13 @@ fn snapshot_removed_patch_without_provenance_is_traced_by_lines() {
         ],
     );
     snapshot(&mut h, &["--previous", PREVIOUS_URL, "700"]).expect("snapshot");
-    // fetch and range-diff come first.
+    // fetch and range-diff come first, the listing of the range's merges last.
     let kinds: Vec<String> = h.fake.git_calls[2..]
         .iter()
         .map(|args| args[0].clone())
         .collect();
     assert_eq!(
-        vec!["merge-base", "diff", "log", "diff", "diff"],
+        vec!["merge-base", "diff", "log", "diff", "diff", "log"],
         kinds,
         "git calls after range-diff"
     );

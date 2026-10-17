@@ -1,6 +1,7 @@
 //! `publish`: posts the record and the `review` check as robotogi.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use serde::{Deserialize, Serialize};
 
@@ -117,12 +118,20 @@ pub fn carry_summary(m: &Manifest) -> String {
         (p.url.as_str(), p.base_sha.as_str(), p.head_sha.as_str())
     });
     let context = m.patches.iter().filter(|s| s.context_only).count();
-    format!(
+    let merges = m.patches.iter().filter(|s| s.merge).count();
+    let mut summary = format!(
         "Review record: {url} carried forward. git range-diff {old_base}..{old_head} {}..{} pairs all {} patches unchanged, {context} of them with only context lines changed.",
         m.base_sha,
         m.head_sha,
-        m.patches.len()
-    )
+        m.patches.iter().filter(|s| !s.merge).count()
+    );
+    if merges > 0 {
+        let _ = write!(
+            summary,
+            " Each of the {merges} merge commits the previous head lacks has an empty remerge diff."
+        );
+    }
+    summary
 }
 
 /// Posts the parts of `md` that robotogi has not posted for the head yet, in order, and returns the record

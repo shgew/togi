@@ -153,6 +153,14 @@ object_only! {
             skip_serializing_if = "is_false"
         )]
         pub context_only: bool,
+        /// A merge commit the previous head lacks, classified by its remerge diff, which range-diff never
+        /// pairs.
+        #[serde(
+            default,
+            deserialize_with = "nullable",
+            skip_serializing_if = "is_false"
+        )]
+        pub merge: bool,
     }
 
     #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
