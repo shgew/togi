@@ -3,10 +3,11 @@ use std::io;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 
-use togi_defect::{Clause, DefectId, Entry};
+use togi_defect::{Clause, Entry};
 use togi_journal::fs::{Fault, Op};
 use togi_journal::{
-    Activity, Decision, DefectAnswer, DefectDirection, EventKind, SessionWarning, TunerDecision,
+    Activity, Decision, DefectAnswer, DefectDirection, DefectId, EventKind, SessionWarning,
+    TunerDecision,
 };
 use togi_machine::TargetOffset;
 use togi_sim::MachineDefinition;
@@ -183,7 +184,7 @@ fn a_question_that_cannot_be_asked_is_an_error_and_records_no_answer() {
     );
     assert!(matches!(
         session.check_defects(),
-        Err(SessionError::Prompt { defect: 1, .. })
+        Err(SessionError::Prompt { defect, .. }) if defect.get() == 1
     ));
     assert_eq!(kinds_after_start(&session), ["defect.found"]);
 }
@@ -195,7 +196,7 @@ fn a_yes_answer_whose_resets_were_lost_is_finished_without_asking_again() {
     let id = DefectId::new(1).unwrap();
     let found = session.appender().defects().finding_seq(id).unwrap();
     let answered = DefectAnswered {
-        id: id.0,
+        id,
         cores: [core(1)].into_iter().collect(),
         answer: DefectAnswer::Yes,
     };
@@ -240,7 +241,7 @@ fn resumed_with_an_unlisted_finding(
     assert_eq!(first.start().unwrap(), Control::Continue);
     let start = first.appender().journal().events()[0].seq;
     let found = DefectFound {
-        id: DefectId::new(UNLISTED).unwrap().0,
+        id: DefectId::new(UNLISTED).unwrap(),
         title: "unlisted".into(),
         detail: "recorded by a build that listed it".into(),
         pr: 200,
@@ -303,7 +304,7 @@ fn a_resumed_finding_of_an_unlisted_defect_is_asked_and_its_yes_resets_the_recor
         [
             (
                 Payload::DefectAnswered(DefectAnswered {
-                    id: DefectId::new(UNLISTED).unwrap().0,
+                    id: DefectId::new(UNLISTED).unwrap(),
                     cores: [core(1)].into_iter().collect(),
                     answer: DefectAnswer::Yes,
                 }),
@@ -346,7 +347,7 @@ fn tuned_with_an_unlisted_finding_over_two_cores(bench: &Bench) -> Seq {
     assert_eq!(session.start().unwrap(), Control::Continue);
     let cited = session.appender().journal().events()[0].seq;
     let found = DefectFound {
-        id: DefectId::new(UNLISTED).unwrap().0,
+        id: DefectId::new(UNLISTED).unwrap(),
         title: "unlisted".into(),
         detail: "recorded by a build that listed it".into(),
         pr: 200,

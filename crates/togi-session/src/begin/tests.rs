@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::io;
 
 use jiff::Timestamp;
@@ -9,7 +8,7 @@ use togi_journal::{
     Activity, Attribution, CorePhase, Event, Failure, Notice, Outcome, Payload, SessionId,
     SessionStart, Stamp, TrialEnd, TrialId, TrialIntent,
 };
-use togi_machine::{BootId, Condition, PerCore, Signal};
+use togi_machine::{BootId, Condition, Signal};
 use togi_sim::MachineDefinition;
 
 use super::*;
@@ -271,31 +270,13 @@ fn archive_with_facts(bench: &Bench) -> (SessionId, Vec<Event>, Vec<u64>) {
         rerun: false,
     };
     let end = |trial: &str, outcome: Outcome, signal: Option<Signal>, on: i64| TrialEnd {
-        trial: TrialId::from(trial.to_owned()),
-        kernel_cursor: None,
-        kernel_error: None,
-        outcome,
         signal,
         core: signal.map(|_| core(on)),
-        duration_s: if outcome == Outcome::Failure { 11 } else { 90 },
-        tctl_max_c: None,
-        voltage_request_median_v: None,
-        voltage_request_min_v: None,
-        voltage_requests_v: PerCore::default(),
-        top_requesters: CoreSet::default(),
-        ccd_mhz: BTreeMap::new(),
-        last_sample_s: None,
-        last_sample_tctl_c: None,
-        last_sample_min_mhz: None,
-        last_sample_max_mhz: None,
-        stalled_core: None,
-        worker_stalled_ms: None,
-        reason: None,
-        interrupted: false,
-        last_evidence: false,
-        escaped: Vec::new(),
-        backend_missing: false,
-        containment_error: None,
+        ..crate::evidence::trial_end(
+            TrialId::from(trial.to_owned()),
+            outcome,
+            if outcome == Outcome::Failure { 11 } else { 90 },
+        )
     };
     add(Payload::TrialIntent(intent("0001", 0, -12)), &[]);
     let pass = add(Payload::TrialEnd(end("0001", Outcome::Pass, None, 0)), &[]);

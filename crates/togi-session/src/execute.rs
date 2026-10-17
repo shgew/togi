@@ -72,7 +72,7 @@ impl Session<'_> {
         if let Err(error) = &outcome
             && error.is_crash()
         {
-            self.fault.get_or_insert(Fault::Crashed);
+            self.lifecycle.latch(Fault::Crashed);
         }
         outcome
     }

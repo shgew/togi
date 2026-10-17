@@ -264,8 +264,11 @@ pub struct JournalSkip {
 /// live journal of a simulated run must also have concluded. The audit holds the directory's writer lock, so a
 /// directory a live process holds is refused. Taking the lock creates the directory's `lock` file and sets the
 /// directory's mode to 0711; the audit writes nothing else.
-pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize, Vec<JournalSkip>) {
-    audit_directory_with(dir, simulated, |dir| {
+pub fn audit_directory(
+    dir: &Path,
+    completion: Completion,
+) -> (Vec<Finding>, usize, Vec<JournalSkip>) {
+    audit_directory_with(dir, completion, |dir| {
         if !dir.is_dir() {
             return Err(OpenError::NotADirectory);
         }
@@ -276,7 +279,7 @@ pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize, Vec
 /// Audits a directory through an injected state-directory opener, retaining the same finding attribution.
 pub fn audit_directory_with(
     dir: &Path,
-    simulated: bool,
+    completion: Completion,
     open: impl FnOnce(&Path) -> Result<StateDir, OpenError>,
 ) -> (Vec<Finding>, usize, Vec<JournalSkip>) {
     let unreadable = |reason: String| Finding {
@@ -287,11 +290,6 @@ pub fn audit_directory_with(
         seq: None,
         check: Kind::Unreadable,
         reason,
-    };
-    let completion = if simulated {
-        Completion::Finished
-    } else {
-        Completion::InProgress
     };
     let audits = match open(dir) {
         Ok(state) => {
@@ -365,7 +363,7 @@ pub fn audit_with<G>(
     records: &[Record],
     root: &Path,
     hold: impl Fn() -> G,
-    inspect: impl Fn(&Path, bool) -> (Vec<Finding>, usize, Vec<JournalSkip>),
+    inspect: impl Fn(&Path, Completion) -> (Vec<Finding>, usize, Vec<JournalSkip>),
 ) -> std::io::Result<Report> {
     let mut by_dir = BTreeMap::new();
     for record in records {
@@ -379,7 +377,12 @@ pub fn audit_with<G>(
     for dir in dirs {
         let record = by_dir.get(&lexical(dir)?);
         let guard = hold();
-        let (mut found, journals, mut skips) = inspect(dir, record.is_some());
+        let completion = if record.is_some() {
+            Completion::Finished
+        } else {
+            Completion::InProgress
+        };
+        let (mut found, journals, mut skips) = inspect(dir, completion);
         drop(guard);
         report.journals += journals;
         for finding in &mut found {
