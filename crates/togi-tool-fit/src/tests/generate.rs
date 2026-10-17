@@ -385,6 +385,7 @@ fn an_encoded_machine_retains_the_fit_evidence_and_parameters() {
         boost_limit_mhz: 5600,
     };
     let mut first = fact(&[0, 0], Regime::R1, &[0], 60, Decisive::Pass);
+    first.profile = super::profile(&[0, 0]);
     first.context = Some(ctx);
     let mut cfg = initial_config(&[first]);
     cfg.ccd = Some(CcdDef {

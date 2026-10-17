@@ -17,17 +17,11 @@ fn fit(args: &[&str]) -> Output {
 }
 
 fn two_sessions(dir: &Path) -> std::path::PathBuf {
+    let mut offsets = [0; 16];
+    offsets[0] = -10;
     let facts = vec![
-        fact(
-            "20260101T000000Z",
-            1,
-            &[-10, 0],
-            Regime::R1,
-            &[0],
-            60,
-            false,
-        ),
-        fact("20260102T000000Z", 1, &[-10, 0], Regime::R1, &[0], 60, true),
+        fact("20260101T000000Z", 1, &offsets, Regime::R1, &[0], 60, false),
+        fact("20260102T000000Z", 1, &offsets, Regime::R1, &[0], 60, true),
     ];
     write_extract(dir, &facts)
 }

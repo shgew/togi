@@ -261,9 +261,9 @@ impl Model {
             .map(|voltage| voltage_state(voltage, profile, load).requests))
     }
 
-    /// The loaded core's shared-voltage rate over the total steady-state hazard, including the
-    /// background and unloaded-core hazards. Zero outside a multi-core shared-voltage R7 load, for a core
-    /// that is not loaded, and when the total hazard is zero.
+    /// The loaded core's shared-voltage rate over the total steady-state voltage and background hazard.
+    /// Zero outside a multi-core shared-voltage R7 load, for a core that is not loaded, and when the total
+    /// hazard is zero.
     pub fn r7_failure_share(
         &self,
         profile: &[TargetOffset],

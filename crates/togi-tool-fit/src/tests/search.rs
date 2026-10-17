@@ -2,15 +2,21 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use togi_facts::{Decisive, TrialClass};
 use togi_machine::{Regime, WorkloadId, pick_workload};
-use togi_sim::definition::{CcdDef, JointDef};
 use togi_sim::{Load, MachineDefinition, Model};
 use togi_tool_modelcheck::{Checker, Status};
-use togi_tool_trialfacts::TrialFact;
+use togi_tool_trialfacts::{Profile, TrialFact};
 
-use super::{SESSION, blank_machine, cores, crash, fact, profile, repeated};
-use crate::evidence::{Observation, aggregate, core_def, initial_config, load_of};
+use super::{blank_machine, cores, crash, fact, padded, repeated};
+use crate::error::Error;
+use crate::evidence::{Observation, core_def, initial_config, load_of};
 use crate::likelihood::Likelihood;
 use crate::search::{fit, fit_from};
+use crate::voltage::voltage_config;
+
+/// The 16-core profile whose first offsets are `offsets`.
+fn profile(offsets: &[i64]) -> Profile {
+    super::profile(&padded(offsets))
+}
 
 fn observation(
     offsets: &[i64],
@@ -94,16 +100,11 @@ impl<'a> Draw<'a> {
 }
 
 #[test]
-fn a_fit_recovers_the_limits_hazard_shape_and_ccd_hazard_of_the_machine_that_drew_the_trials() {
-    let mut known = blank_machine(4);
+fn a_fit_recovers_the_limits_and_hazard_shape_of_the_machine_that_drew_the_trials() {
+    let mut known = blank_machine(16);
     known.model.past_limit_rate = 0.008;
     known.model.growth = 3.0;
-    known.ccd = Some(CcdDef {
-        log_rate: 0.006_f64.ln(),
-        slope: 0.15,
-        effect: [0.0, 0.6],
-    });
-    for (c, limits) in known.core.iter_mut().enumerate() {
+    for (c, limits) in known.core.iter_mut().enumerate().take(4) {
         let c = i64::try_from(c).unwrap();
         limits.alone = [-20 - c; 5];
         limits.together = [-18 - c, -18 - c, -18 - c, -18 - c, -18 - c, -18 - c, -50];
@@ -125,18 +126,8 @@ fn a_fit_recovers_the_limits_hazard_shape_and_ccd_hazard_of_the_machine_that_dre
             }
         }
     }
-    for ccd in 0..2_i64 {
-        let loaded = [ccd * 2, ccd * 2 + 1];
-        for depth in (15..=40).step_by(5) {
-            let mut offsets = [0_i64; 4];
-            offsets[usize::try_from(loaded[0]).unwrap()] = -depth;
-            offsets[usize::try_from(loaded[1]).unwrap()] = -depth;
-            draw.add(&offsets, Regime::R7, &loaded, 60, 150);
-        }
-    }
-    let records = draw.records;
-    let (got, _) = fit(&records).unwrap();
-    for (found, want) in got.core.iter().zip(&known.core) {
+    let (got, _) = fit(&draw.records).unwrap();
+    for (found, want) in got.core.iter().zip(&known.core).take(4) {
         assert_eq!(&found.alone[..2], &want.alone[..2], "core {}", want.id);
         assert_eq!(
             &found.together[..2],
@@ -147,71 +138,42 @@ fn a_fit_recovers_the_limits_hazard_shape_and_ccd_hazard_of_the_machine_that_dre
     }
     assert!((got.model.past_limit_rate / known.model.past_limit_rate - 1.0).abs() < 0.25);
     assert!((got.model.growth - known.model.growth).abs() < 0.6);
-    let fitted = Model::new(&got, 0).unwrap();
-    for o in aggregate(&records)
-        .iter()
-        .filter(|o| o.regime() == Regime::R7)
-    {
-        let load = load_of(&o.class);
-        let want = source
-            .failure_probability(o.profile.as_slice(), &load)
-            .unwrap();
-        let actual = fitted
-            .failure_probability(o.profile.as_slice(), &load)
-            .unwrap();
-        assert!(
-            (actual - want).abs() < 0.12,
-            "CCD profile {:?}: p={actual} want {want}",
-            o.profile.as_slice()
-        );
-    }
 }
 
 #[test]
-fn a_fit_recovers_a_flat_rate_and_an_idle_limit() {
-    let mut known = blank_machine(2);
-    known.model.past_limit_rate = 0.008;
-    known.model.growth = 3.0;
-    known.core[0].flat = 0.000_15;
-    known.core[1].idle = Some(-30);
-    let source = Model::new(&known, 0).unwrap();
-    let mut draw = Draw::new(&source, 56);
-    for (offsets, loaded, duration) in [
-        ([0, 0], 0, 600),
-        ([-5, 0], 0, 600),
-        ([-15, 0], 0, 600),
-        ([-25, 0], 0, 600),
-        ([-5, -20], 1, 600),
-        ([0, -20], 0, 600),
-        ([0, -30], 0, 60),
-        ([0, -31], 0, 60),
-        ([0, -32], 0, 60),
-        ([0, -33], 0, 60),
-    ] {
-        draw.add(&offsets, Regime::R1, &[loaded], duration, 150);
-    }
-    let (got, _) = fit(&draw.records).unwrap();
-    assert_eq!(
-        got.core[1].idle,
-        Some(-30),
-        "past_limit_rate={} growth={}",
-        got.model.past_limit_rate,
-        got.model.growth
-    );
+fn a_fit_of_a_sample_that_is_not_sixteen_cores_is_refused() {
+    let mut small = seed_fact();
+    small.profile = super::profile(&[0, -1]);
+    let error = fit(&[small]).unwrap_err();
     assert!(
-        (got.core[0].flat / known.core[0].flat - 1.0).abs() < 0.4,
-        "flat {}",
-        got.core[0].flat
+        matches!(error, Error::NeedsSixteenCores { cores: 2, .. }),
+        "{error}"
     );
 }
 
 #[test]
 fn a_constrained_refit_maximizes_the_resampled_likelihood_inside_the_original_evidence() {
-    let mut base = blank_machine(2);
-    base.core[0].flat = -(0.8_f64).ln() / 900.0;
     let template = fact(&[-10, 0], Regime::R1, &[0], 900, Decisive::Pass);
-    let original = repeated(&template, 40, 8);
     let sample = repeated(&template, 40, 32);
+    let mut base = blank_machine(16);
+    base.model.past_limit_rate = -(0.8_f64).ln() / 900.0;
+    base.core[0].alone[0] = -9;
+    base.shared_voltage = Some(voltage_config(&sample));
+    let p = probability(
+        &Model::new(&base, 0).unwrap(),
+        &[-10, 0],
+        Regime::R1,
+        &[0],
+        900,
+    );
+    assert!((0.1..0.5).contains(&p), "the fixture's base prediction {p}");
+    let failing = (0..=40_usize)
+        .min_by(|&a, &b| {
+            let distance = |k: usize| (f64::from(u32::try_from(k).unwrap()) - 40.0 * p).abs();
+            distance(a).total_cmp(&distance(b))
+        })
+        .unwrap();
+    let original = repeated(&template, 40, failing);
     let checker = Checker::new(&Model::new(&base, 0).unwrap(), &original).unwrap();
     let before = base.clone();
     let (fitted, _) = fit_from(&sample, Some(&base), Some(&checker)).unwrap();
@@ -219,54 +181,13 @@ fn a_constrained_refit_maximizes_the_resampled_likelihood_inside_the_original_ev
         .check("synthetic", "synthetic", &Model::new(&fitted, 0).unwrap())
         .unwrap();
     assert_eq!(check.status, Status::Ok, "{check:?}");
-    assert!(check.groups[0].mean_p > 0.25, "{}", check.groups[0].mean_p);
+    assert!(check.groups[0].mean_p > p, "{}", check.groups[0].mean_p);
     assert_eq!(
         base, before,
         "the refit changed the all-facts starting machine"
     );
-}
-
-#[test]
-fn a_constrained_refit_refits_the_ccd_hazard_and_keeps_the_r7_structure() {
-    let mut base = blank_machine(2);
-    base.ccd = Some(CcdDef {
-        log_rate: (-(0.8_f64).ln() / 60.0).ln(),
-        ..CcdDef::default()
-    });
-    base.joint = vec![JointDef {
-        members: [(1, -40)].into(),
-        regimes: vec![Regime::R7],
-        rate: Some(0.001),
-        ..JointDef::default()
-    }];
-    let before = base.clone();
-    let template = fact(&[-20, -20], Regime::R7, &[0], 60, Decisive::Pass);
-    let original = repeated(&template, 40, 8);
-    let sample = repeated(&template, 40, 24);
-    let checker = Checker::new(&Model::new(&base, 0).unwrap(), &original).unwrap();
-    let (first, loss) = fit_from(&sample, Some(&base), Some(&checker)).unwrap();
-    let check = checker
-        .check("synthetic", "synthetic", &Model::new(&first, 0).unwrap())
-        .unwrap();
-    assert_eq!(check.status, Status::Ok, "{check:?}");
-    assert!(check.groups[0].mean_p > 0.25, "{}", check.groups[0].mean_p);
-    assert_ne!(first.ccd, before.ccd, "the CCD hazard did not refit");
-    assert_eq!(
-        first.joint, before.joint,
-        "the refit changed the frozen joints"
-    );
-    for (found, want) in first.core.iter().zip(&before.core) {
-        assert_eq!(found.together[6], want.together[6]);
-        assert!(
-            found.workload.is_empty(),
-            "core {}: {:?}",
-            found.id,
-            found.workload
-        );
-    }
-    assert_eq!(base, before, "the refit changed its all-facts seed");
-    let (second, second_loss) = fit_from(&sample, Some(&base), Some(&checker)).unwrap();
-    assert_eq!((first, loss.to_bits()), (second, second_loss.to_bits()));
+    let (again, _) = fit_from(&sample, Some(&base), Some(&checker)).unwrap();
+    assert_eq!(fitted, again);
 }
 
 #[test]
@@ -279,7 +200,7 @@ fn an_outcome_the_model_calls_impossible_costs_infinity_and_a_certain_one_costs_
         (0.0, 0, false),
         (100.0, 1, false),
     ] {
-        let mut cfg = blank_machine(2);
+        let mut cfg = blank_machine(16);
         cfg.core[0].flat = flat;
         obs[0].k = failures;
         let l = Likelihood::new(cfg, &obs, None, None);
@@ -294,64 +215,6 @@ fn an_outcome_the_model_calls_impossible_costs_infinity_and_a_certain_one_costs_
                 loss.abs() < f64::EPSILON,
                 "flat={flat} failures={failures}: {loss}"
             );
-        }
-    }
-}
-
-#[test]
-fn the_joint_search_separates_a_clean_boundary_from_a_failing_one() {
-    let mut cfg = initial_config(&[seed_fact()]);
-    cfg.ccd = None;
-    cfg.model.near_limit_rate = 0.0;
-    cfg.joint = vec![JointDef {
-        members: [(0, -10), (1, -10)].into(),
-        regimes: vec![Regime::R7],
-        rate: Some(0.01),
-        ..JointDef::default()
-    }];
-    let obs = [
-        observation(&[-20, -20], Regime::R7, &[0, 1], 60, 100, 0),
-        observation(&[-30, -30], Regime::R7, &[0, 1], 60, 100, 50),
-    ];
-    let mut l = Likelihood::new(cfg, &obs, None, None);
-    let before = l.score(&[0, 1]);
-    l.fit_joints();
-    l.fit_joints();
-    let after = l.score(&[0, 1]);
-    assert!(after < before - 1.0, "{before} -> {after}");
-    let model = l.model.as_ref().unwrap();
-    assert!(probability(model, &[-20, -20], Regime::R7, &[0, 1], 60).abs() < f64::EPSILON);
-    let failing = probability(model, &[-30, -30], Regime::R7, &[0, 1], 60);
-    assert!((failing - 0.5).abs() < 0.01, "{failing}");
-}
-
-#[test]
-fn a_ninth_joint_on_a_ccd_is_never_added_but_an_eighth_is() {
-    let template = fact(&[-30, 0], Regime::R7, &[0, 1], 60, Decisive::Pass);
-    let mut records = repeated(&template, 10, 0);
-    records.extend(repeated(&template, 90, 90));
-    for count in [7_i64, 8] {
-        let mut cfg = initial_config(&records);
-        cfg.model.near_limit_rate = 0.0;
-        cfg.joint = (0..count)
-            .map(|j| JointDef {
-                members: [(0, -20 - j)].into(),
-                regimes: vec![Regime::R7],
-                rate: Some(0.001),
-                ..JointDef::default()
-            })
-            .collect();
-        let want = cfg.clone();
-        let obs = aggregate(&records);
-        let mut l = Likelihood::new(cfg, &obs, None, None);
-        let before = l.score(&[0]);
-        l.add_joint(&records, 0);
-        if count == 8 {
-            assert_eq!(l.cfg, want, "a ninth joint was admitted");
-        } else {
-            assert_eq!(l.cfg.joint.len(), 8);
-            assert!(l.score(&[0]) < before - 0.5);
-            assert_eq!(l.cfg.joint[7].members, [(0, -30)].into());
         }
     }
 }
@@ -409,8 +272,56 @@ fn the_coupled_shift_moves_workload_limits_and_leaves_unsupported_ones() {
     assert_eq!(l.cfg.core[0].alone[0], -50);
 }
 
+#[test]
+fn an_initial_machine_seeds_no_joint_whatever_failed_below_zero() {
+    let mut records = vec![fact(&[-30; 8], Regime::R7, &[0, 1], 60, crash())];
+    records.push(fact(&[-25; 8], Regime::R7, &[0, 1], 60, crash()));
+    let cfg: MachineDefinition = initial_config(&records);
+    assert!(cfg.joint.is_empty() && cfg.ccd.is_none() && cfg.shared_voltage.is_none());
+    assert_eq!(cfg.core.len(), 16);
+    assert_eq!(cfg.core[3], core_def(3));
+}
+
+#[test]
+fn a_fit_recovers_a_flat_rate_and_an_idle_limit() {
+    let mut known = blank_machine(16);
+    known.model.past_limit_rate = 0.008;
+    known.model.growth = 3.0;
+    known.core[0].flat = 0.000_15;
+    known.core[1].idle = Some(-30);
+    let source = Model::new(&known, 0).unwrap();
+    let mut draw = Draw::new(&source, 56);
+    for (offsets, loaded, duration) in [
+        ([0, 0], 0, 600),
+        ([-5, 0], 0, 600),
+        ([-15, 0], 0, 600),
+        ([-25, 0], 0, 600),
+        ([-5, -20], 1, 600),
+        ([0, -20], 0, 600),
+        ([0, -30], 0, 60),
+        ([0, -31], 0, 60),
+        ([0, -32], 0, 60),
+        ([0, -33], 0, 60),
+    ] {
+        draw.add(&offsets, Regime::R1, &[loaded], duration, 150);
+    }
+    let (got, _) = fit(&draw.records).unwrap();
+    assert_eq!(
+        got.core[1].idle,
+        Some(-30),
+        "past_limit_rate={} growth={}",
+        got.model.past_limit_rate,
+        got.model.growth
+    );
+    assert!(
+        (got.core[0].flat / known.core[0].flat - 1.0).abs() < 0.4,
+        "flat {}",
+        got.core[0].flat
+    );
+}
+
 fn idle_machine() -> MachineDefinition {
-    let mut cfg = blank_machine(2);
+    let mut cfg = blank_machine(16);
     cfg.model.past_limit_rate = 0.015;
     cfg.model.growth = 2.0;
     cfg.core[0].flat = 0.001;
@@ -444,16 +355,4 @@ fn an_idle_limit_needs_a_negative_offset_on_an_unloaded_core_to_be_fitted() {
         l.fit_idle();
         assert_eq!(l.cfg.core[1].idle, want, "initial {initial:?}");
     }
-}
-
-#[test]
-fn an_initial_machine_has_one_joint_per_ccd_whose_every_core_failed_below_zero() {
-    let mut records = vec![fact(&[-30, -20, 0, 0], Regime::R7, &[0, 1], 60, crash())];
-    records.push(fact(&[-25, -35, 0, 0], Regime::R7, &[0, 1], 60, crash()));
-    let cfg = initial_config(&records);
-    assert_eq!(cfg.joint.len(), 1);
-    assert_eq!(cfg.joint[0].members, [(0, -25), (1, -20)].into());
-    assert_eq!(cfg.core.len(), 4);
-    assert_eq!(cfg.core[3], core_def(3));
-    let _ = SESSION;
 }

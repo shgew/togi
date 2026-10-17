@@ -64,7 +64,7 @@ pub enum Error {
     Path(PathBuf),
     #[error("--seal {seal} leaves no held-out session to score ({held_out} held out)")]
     Seal { seal: usize, held_out: usize },
-    #[error("shared-voltage in-sample fit requires 16 cores: fact {session}:{seq} has {cores}")]
+    #[error("the shared-voltage fit requires 16 cores: fact {session}:{seq} has {cores}")]
     NeedsSixteenCores {
         session: SessionId,
         seq: Seq,

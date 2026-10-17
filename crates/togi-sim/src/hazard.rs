@@ -211,7 +211,8 @@ impl Model {
     /// joints in file order, then the background. Sources with no rate are skipped.
     ///
     /// A multi-core R7 load on a shared-voltage machine replaces its loaded cores', CCDs' and joints'
-    /// sources with the rail's.
+    /// sources with the rail's, and its unloaded cores' flat and idle sources go too: its hazard is the
+    /// rail's and the background, whatever the unloaded cores' offsets.
     pub fn visit_sources(
         &self,
         profile: &[TargetOffset],
@@ -227,9 +228,9 @@ impl Model {
         for core in ids(self.cores()) {
             let loaded = load.cores.contains(core);
             let rate = match (loaded, shared.is_some()) {
-                (true, true) => 0.0,
+                (_, true) => 0.0,
                 (true, false) => self.loaded_rate(profile, regime, load.workload, core, nonzero),
-                (false, _) => self.idle_rate(profile, core),
+                (false, false) => self.idle_rate(profile, core),
             };
             if rate > 0.0 {
                 let kind = if loaded {

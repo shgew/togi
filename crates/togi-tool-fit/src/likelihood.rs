@@ -10,7 +10,7 @@
 //! many threads ran or which finished first.
 
 use rayon::prelude::*;
-use togi_machine::{CoreId, Regime};
+use togi_machine::CoreId;
 use togi_sim::{MachineDefinition, Model};
 use togi_tool_modelcheck::Checker;
 
@@ -81,10 +81,6 @@ impl<'a> Likelihood<'a> {
         (0..self.obs.len()).collect()
     }
 
-    pub(crate) fn r7(&self) -> Vec<usize> {
-        self.select(|o| o.regime() == Regime::R7)
-    }
-
     pub(crate) fn value_of(&self, model: &Model, i: usize) -> f64 {
         let o = &self.obs[i];
         let Ok(p) = model.failure_probability(o.profile.as_slice(), &load_of(&o.class)) else {
@@ -106,30 +102,17 @@ impl<'a> Likelihood<'a> {
         loss
     }
 
-    /// The negative log likelihood of `indices` under `model`, with the CCD shrinkage of `def`.
-    pub(crate) fn raw_score_on(
-        &self,
-        def: &MachineDefinition,
-        model: &Model,
-        indices: &[usize],
-    ) -> f64 {
-        let mut loss = 0.0;
-        for &i in indices {
-            loss += self.value_of(model, i);
-        }
-        if let Some(ccd) = &def.ccd {
-            loss += 0.5 * ccd.effect.iter().map(|effect| effect * effect).sum::<f64>();
-        }
-        loss
+    /// The negative log likelihood of `indices` under `model`.
+    pub(crate) fn raw_score_on(&self, model: &Model, indices: &[usize]) -> f64 {
+        indices.iter().map(|&i| self.value_of(model, i)).sum()
     }
 
-    /// What a search minimizes for the machine `def` that `model` was built from.
+    /// What every search minimizes and every sweep is accepted on, for the machine `def` that `model` was
+    /// built from: the raw loss plus, on a shared-voltage machine, the threshold shrinkage and margin prior
+    /// and the named-core attribution term.
     fn objective_on(&self, def: &MachineDefinition, model: &Model, indices: &[usize]) -> f64 {
-        let raw = self.raw_score_on(def, model, indices);
-        let Some(named) = self.named else {
-            return raw;
-        };
-        let Some(voltage) = &def.shared_voltage else {
+        let raw = self.raw_score_on(model, indices);
+        let (Some(named), Some(voltage)) = (self.named, &def.shared_voltage) else {
             return raw;
         };
         raw + voltage_penalty(voltage) + named_loss(model, named)
@@ -140,11 +123,12 @@ impl<'a> Likelihood<'a> {
             .is_none_or(|checker| checker.accepts(model).unwrap_or(false))
     }
 
-    /// The reported likelihood of `indices`: the objective without the shared-voltage terms.
+    /// The reported likelihood of `indices`: the raw Bernoulli loss, without the shrinkage, prior and
+    /// named-core terms of the objective.
     pub(crate) fn raw_score(&self, indices: &[usize]) -> f64 {
-        self.model.as_ref().map_or(f64::INFINITY, |model| {
-            self.raw_score_on(&self.cfg, model, indices)
-        })
+        self.model
+            .as_ref()
+            .map_or(f64::INFINITY, |model| self.raw_score_on(model, indices))
     }
 
     pub(crate) fn score(&self, indices: &[usize]) -> f64 {
@@ -155,7 +139,8 @@ impl<'a> Likelihood<'a> {
     }
 
     /// Builds and scores one candidate machine per item: `apply` edits a copy of the current machine. The
-    /// result has one slot per item, in item order. `apply` must not change the CCD or shared-voltage terms.
+    /// result has one slot per item, in item order. Every candidate is scored on the augmented objective of its
+    /// own machine, so a change to any parameter reaches the prior and the named-core term.
     pub(crate) fn scan<T: Sync>(
         &self,
         items: &[T],

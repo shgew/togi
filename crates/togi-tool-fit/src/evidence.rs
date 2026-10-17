@@ -5,7 +5,7 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use togi_facts::{Decisive, TrialClass};
 use togi_machine::{BiosContext, CoreId, Regime};
-use togi_sim::definition::{BiosContextDef, CoreDef, JointDef, ModelDef};
+use togi_sim::definition::{BiosContextDef, CoreDef, ModelDef};
 use togi_sim::{Load, MachineDefinition};
 use togi_tool_trialfacts::{Class, Profile, ProfileClassKey, TrialFact};
 
@@ -93,13 +93,6 @@ pub(crate) struct Observation {
 }
 
 impl Observation {
-    pub(crate) fn offset(&self, core: usize) -> i64 {
-        self.profile
-            .as_slice()
-            .get(core)
-            .map_or(0, |offset| offset.get())
-    }
-
     pub(crate) fn loads(&self, core: CoreId) -> bool {
         self.class.loaded.contains(core)
     }
@@ -164,13 +157,13 @@ pub(crate) fn core_def(id: usize) -> CoreDef {
     }
 }
 
-/// The machine a fit starts from: every limit at the deepest offset, the hazard shape's starting values and
-/// one all-member R7 joint per CCD that has a failure with every one of its cores below 0.
+/// The machine a fit starts from: every limit at the deepest offset and the hazard shape's starting values,
+/// with no joint, no residual hazard and no shared-voltage model yet.
 pub(crate) fn initial_config(records: &[TrialFact]) -> MachineDefinition {
     let cores = records
         .first()
         .map_or(0, |fact| fact.profile.as_slice().len());
-    let mut cfg = MachineDefinition {
+    MachineDefinition {
         cores: i64::try_from(cores).unwrap_or(i64::MAX),
         model: ModelDef {
             past_limit_rate: 0.015,
@@ -184,38 +177,5 @@ pub(crate) fn initial_config(records: &[TrialFact]) -> MachineDefinition {
             .and_then(|fact| fact.context.as_ref())
             .map(bios_context_def),
         ..MachineDefinition::default()
-    };
-    for ccd in 0..2 {
-        let half = cores / 2;
-        let range = ccd * half..(ccd + 1) * half;
-        let mut members: BTreeMap<i64, i64> = range
-            .clone()
-            .map(|core| (i64::try_from(core).unwrap_or(i64::MAX), DEEPEST))
-            .collect();
-        let mut found = false;
-        for fact in records {
-            if regime_of(fact) != Regime::R7 || !is_failure(fact) {
-                continue;
-            }
-            let profile = fact.profile.as_slice();
-            if !range.clone().all(|core| profile[core].get() < 0) {
-                continue;
-            }
-            found = true;
-            for core in range.clone() {
-                if let Some(limit) = members.get_mut(&i64::try_from(core).unwrap_or(i64::MAX)) {
-                    *limit = (*limit).max(profile[core].get());
-                }
-            }
-        }
-        if found {
-            cfg.joint.push(JointDef {
-                members,
-                regimes: vec![Regime::R7],
-                rate: Some(0.005),
-                ..JointDef::default()
-            });
-        }
     }
-    cfg
 }

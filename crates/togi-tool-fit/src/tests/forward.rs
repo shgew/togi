@@ -1,23 +1,26 @@
 use std::collections::{BTreeMap, HashSet};
 
 use togi_facts::Decisive;
-use togi_machine::Regime;
+use togi_machine::{Regime, WorkloadId};
 use togi_tool_trialfacts::{ProfileClassKey, TrialFact};
 
 use super::{blank_machine, crash, fact_at};
 use crate::error::Error;
 use crate::forward::{
-    ForwardCheck, ForwardCounts, ForwardRow, ForwardScore, forward_check, log_loss, report_forward,
-    score_forward,
+    ForwardCheck, ForwardCounts, ForwardRow, ForwardScore, R7Ccd, R7Rows, forward_check, log_loss,
+    reference_check, report_forward, report_reference, score_forward,
 };
 
 const S1: &str = "20260101T000000Z";
 const S2: &str = "20260102T000000Z";
 const S3: &str = "20260103T000000Z";
 
+/// A 16-core trial of the first workload of R1 loading core 0, the shape the fitter accepts.
 fn trial(session: &str, seq: u64, ruleset: u32, failing: bool) -> TrialFact {
     let outcome = if failing { crash() } else { Decisive::Pass };
-    let mut fact = fact_at(session, seq, &[-20, 0], Regime::R1, 0, &[0], 1, outcome);
+    let mut offsets = [0; 16];
+    offsets[0] = -20;
+    let mut fact = fact_at(session, seq, &offsets, Regime::R1, 0, &[0], 1, outcome);
     fact.build.ruleset = ruleset;
     fact
 }
@@ -138,7 +141,8 @@ fn the_log_loss_clamps_the_probability_and_the_constant_predictor_is_scored_alon
     }
     held_out[2].profile = super::profile(&[-2, 0]);
     let seen: HashSet<ProfileClassKey> = [ProfileClassKey::from(&held_out[0])].into();
-    let (score, regimes) = score_forward(&cfg, &held_out, &seen, 0.25).unwrap();
+    let (score, breakdown) = score_forward(&cfg, &held_out, &seen, 0.25).unwrap();
+    let regimes = breakdown.regimes;
     // Three one-second trials have p = 1 - exp(-ln 2) = 0.5, whatever their measured duration; the constant
     // assigns p = 1/4 to two failures and one pass.
     let counts = ForwardCounts {
@@ -194,6 +198,7 @@ fn the_regime_rows_show_mean_log_loss_in_regime_order() {
             (Regime::R7, counts(2, 1, 0.5, 1.0, 2.0)),
             (Regime::R1, counts(1, 0, 0.3, 0.3, 0.6)),
         ]),
+        r7: R7Rows::default(),
     };
     let check = ForwardCheck {
         rows: vec![row],
@@ -225,5 +230,156 @@ fn fewer_than_two_sessions_leave_nothing_to_score() {
         String::from_utf8(out)
             .unwrap()
             .contains("No held-out sessions")
+    );
+}
+
+fn r7_trial(seq: u64, workload: usize, loaded: &[i64], failing: bool) -> TrialFact {
+    let outcome = if failing { crash() } else { Decisive::Pass };
+    fact_at(S2, seq, &[0; 16], Regime::R7, workload, loaded, 1, outcome)
+}
+
+fn shape(counts: &ForwardCounts) -> (usize, usize) {
+    (counts.trials, counts.failures)
+}
+
+/// R7 starts of the three catalog workloads (the last is y-cruncher) on one CCD, both CCDs and one core,
+/// and an R1 trial that no R7 row may count.
+fn r7_starts() -> Vec<TrialFact> {
+    vec![
+        r7_trial(1, 0, &[0, 1, 2], false),
+        r7_trial(2, 0, &[8, 9], true),
+        r7_trial(3, 1, &[0, 8], false),
+        r7_trial(4, 2, &[3], false),
+        r7_trial(5, 2, &[12], true),
+        fact_at(S2, 6, &[0; 16], Regime::R1, 0, &[0], 1, crash()),
+    ]
+}
+
+#[test]
+fn r7_starts_are_grouped_by_workload_and_by_loaded_ccd_with_singletons_counted_once_more() {
+    let held_out = r7_starts();
+    let (score, breakdown) =
+        score_forward(&blank_machine(16), &held_out, &HashSet::new(), 0.25).unwrap();
+    assert_eq!(shape(&score.counts), (6, 3));
+    assert_eq!(shape(&breakdown.regimes[&Regime::R7]), (5, 2));
+    let workloads: Vec<(WorkloadId, (usize, usize))> = breakdown
+        .r7
+        .workloads
+        .iter()
+        .map(|(id, counts)| (*id, shape(counts)))
+        .collect();
+    let id = |i| WorkloadId::new(Regime::R7, i).unwrap();
+    assert_eq!(
+        workloads,
+        [(id(0), (2, 1)), (id(1), (1, 0)), (id(2), (2, 1))],
+        "y-cruncher is a row of its own"
+    );
+    let ccds: Vec<(R7Ccd, (usize, usize))> = breakdown
+        .r7
+        .ccds
+        .iter()
+        .map(|(ccd, counts)| (*ccd, shape(counts)))
+        .collect();
+    assert_eq!(
+        ccds,
+        [
+            (R7Ccd::Ccd0, (2, 0)),
+            (R7Ccd::Ccd1, (2, 2)),
+            (R7Ccd::Both, (1, 0))
+        ],
+        "a load on both CCDs is its own group, counted in neither CCD row; a singleton is in its CCD's"
+    );
+    assert_eq!(shape(&breakdown.r7.singleton), (2, 1));
+    let rows: usize = breakdown.r7.ccds.values().map(|c| c.trials).sum();
+    assert_eq!(rows, breakdown.regimes[&Regime::R7].trials);
+}
+
+#[test]
+fn the_r7_rows_follow_the_regime_rows_by_workload_then_ccd_then_singleton() {
+    let held_out = r7_starts();
+    let (score, breakdown) =
+        score_forward(&blank_machine(16), &held_out, &HashSet::new(), 0.25).unwrap();
+    let check = ForwardCheck {
+        rows: vec![ForwardRow {
+            session: S2.parse().unwrap(),
+            ruleset: 1,
+            training_sessions: 1,
+            constant: 0.25,
+            score,
+            regimes: breakdown.regimes,
+            r7: breakdown.r7,
+        }],
+        pooled: score,
+    };
+    let mut out = Vec::new();
+    report_forward(&mut out, &check, 0).unwrap();
+    let text = String::from_utf8(out).unwrap();
+    let labels = [
+        "  R1 trials=1",
+        "  R7 trials=5",
+        "  R7 workload mprime-avx2-36k-248k-allcore trials=2 observed=1",
+        "  R7 workload mprime-avx512-36k-248k-allcore trials=1 observed=0",
+        "  R7 workload ycruncher-fftv4-n63-vt3-allcore trials=2 observed=1",
+        "  R7 CCD0 loaded trials=2 observed=0",
+        "  R7 CCD1 loaded trials=2 observed=2",
+        "  R7 both CCDs loaded trials=1 observed=0",
+        "  R7 singleton (also in its CCD row) trials=2 observed=1",
+        "Pooled: ",
+    ];
+    let at: Vec<usize> = labels
+        .iter()
+        .map(|label| {
+            text.find(label)
+                .unwrap_or_else(|| panic!("{label}: {text}"))
+        })
+        .collect();
+    assert!(at.is_sorted(), "{text}");
+}
+
+#[test]
+fn the_reference_ensemble_scores_each_trial_with_the_mean_probability_of_all_members() {
+    let member = |p: f64| {
+        let mut cfg = blank_machine(2);
+        cfg.model.past_limit_rate = 0.0;
+        cfg.core[0].flat = -(1.0 - p).ln();
+        cfg
+    };
+    let mut trials = vec![trial(S1, 1, 1, false), trial(S1, 2, 1, false)];
+    trials.extend((0..3).map(|i| trial(S2, i + 1, 2, i == 0)));
+    for fact in &mut trials {
+        fact.profile = super::profile(&[-1, 0]);
+    }
+    let check = reference_check(&trials, 0, &[member(0.5), member(0.1)]).unwrap();
+    assert_eq!(check.rows.len(), 1);
+    let row = &check.rows[0];
+    assert_eq!(
+        (row.session.to_string().as_str(), row.training_sessions),
+        (S2, 1)
+    );
+    // The mean of 0.5 and 0.1 is 0.3 for each of the three one-second trials, one of which failed.
+    let c = &row.score.counts;
+    assert_eq!(shape(c), (3, 1));
+    assert!((c.predicted - 0.9).abs() < 1e-12);
+    let want = -(0.3_f64).ln() - 2.0 * (0.7_f64).ln();
+    assert!((c.fit_log_loss - want).abs() < 1e-12);
+    assert_eq!(check.pooled.counts, *c);
+    assert_eq!((row.score.flagged, row.score.eligible), (0, 0));
+    assert!(
+        matches!(
+            reference_check(&trials, 1, &[member(0.5)]),
+            Err(Error::Seal { .. })
+        ),
+        "the reference keeps the forward check's seal"
+    );
+    assert!(reference_check(&trials, 0, &[]).is_err());
+
+    let mut out = Vec::new();
+    report_reference(&mut out, &check, 0, 2).unwrap();
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.contains("(2 members, committed, not fitted, not a gate)")
+            && text.contains("the mean over all 2 members")
+            && text.contains("flagged_by_any_member/eligible=0/0"),
+        "{text}"
     );
 }

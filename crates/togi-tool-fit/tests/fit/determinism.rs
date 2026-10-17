@@ -68,8 +68,8 @@ fn the_same_input_and_seed_give_byte_identical_output_on_every_pool_size() {
     let records = roundtrip(&evidence());
     let reference = ensemble_on(1, dir, &extract, &records);
     assert!(
-        reference.machines[0].contains("\"joint\""),
-        "the fixture must exercise the joint search: {}",
+        reference.machines[0].contains("\"shared_voltage\""),
+        "the fixture must exercise the shared-voltage fit: {}",
         reference.machines[0]
     );
     assert_eq!(reference.forward.rows.len(), 2);

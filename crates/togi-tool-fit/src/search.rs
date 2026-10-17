@@ -1,51 +1,74 @@
 //! The coordinate search: each step fits one group of parameters with the others held.
+//!
+//! There is one fitting path. Every sample, whether all facts, a bootstrap draw or a forward-check prefix,
+//! is fitted with the shared-voltage model for multi-core R7 and per-core limits for everything else,
+//! and every step of it minimizes the same augmented objective.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
-use rayon::prelude::*;
 use togi_machine::{REGIMES, Regime};
-use togi_sim::definition::{CcdDef, JointDef};
 use togi_sim::{MachineDefinition, Model};
 use togi_tool_modelcheck::Checker;
 use togi_tool_trialfacts::TrialFact;
 
 use crate::error::Error;
-use crate::evidence::{DEEPEST, aggregate, initial_config, is_failure, regime_of};
+use crate::evidence::{DEEPEST, Observation, aggregate, initial_config};
 use crate::likelihood::Likelihood;
 use crate::signals::fit_signals;
+use crate::voltage::{named_failures, sync_ycruncher, voltage_config};
 
 const SWEEPS: usize = 12;
 const CONVERGED: f64 = 1e-5;
-const MAX_JOINTS_PER_CCD: usize = 8;
 const MIN_WORKLOAD_TRIALS: u32 = 10;
 const LIMIT_RANGE: (i64, i64) = (DEEPEST, 1);
+const CORES: usize = 16;
 
-/// Fits the records and returns the machine with its negative log likelihood.
+/// Fits the records and returns the machine with its raw negative log likelihood.
 pub(crate) fn fit(records: &[TrialFact]) -> Result<(MachineDefinition, f64), Error> {
     fit_from(records, None, None)
 }
 
 /// [`fit`] starting from `initial` rather than the default start, and, with a `guard`, keeping only models
 /// the model check admits.
+///
+/// The default start is the sample's own: the shared-voltage model is initialized from the request and
+/// clock telemetry of `records`, so a bootstrap draw starts from the telemetry its trials carry. Flat
+/// rates and idle limits are fitted on the observations the per-core mechanism explains, never on a
+/// multi-core R7 load. No joint and no residual hazard is ever fitted. The returned loss is the raw
+/// Bernoulli loss, without the prior and named-core terms every step minimized.
 pub(crate) fn fit_from(
     records: &[TrialFact],
     initial: Option<&MachineDefinition>,
     guard: Option<&Checker>,
 ) -> Result<(MachineDefinition, f64), Error> {
-    let cfg = initial.map_or_else(|| initial_config(records), Clone::clone);
+    for fact in records {
+        let cores = fact.profile.as_slice().len();
+        if cores != CORES {
+            return Err(Error::NeedsSixteenCores {
+                session: fact.session,
+                seq: fact.seq,
+                cores,
+            });
+        }
+    }
+    let mut cfg = match initial {
+        Some(initial) => initial.clone(),
+        None => {
+            let mut cfg = initial_config(records);
+            let mut shared = voltage_config(records);
+            sync_ycruncher(&mut shared);
+            cfg.shared_voltage = Some(shared);
+            cfg
+        }
+    };
+    fit_signals(&mut cfg, records);
     let obs = aggregate(records);
-    let mut l = Likelihood::new(cfg, &obs, guard, None);
+    let named = named_failures(records);
+    let mut l = Likelihood::new(cfg, &obs, guard, Some(&named));
     let all = l.all();
     let mut previous = f64::INFINITY;
     for _ in 0..SWEEPS {
-        if l.cfg.ccd.is_none() {
-            l.fit_joints();
-            for ccd in 0..2 {
-                l.add_joint(records, ccd);
-            }
-        } else {
-            l.fit_ccd();
-        }
+        l.fit_voltage();
         l.fit_regime_limits();
         l.fit_workloads();
         l.fit_hazard_shape(&all);
@@ -58,98 +81,35 @@ pub(crate) fn fit_from(
         }
         previous = score;
     }
-    if l.cfg.ccd.is_none() {
-        l.cfg.ccd = Some(CcdDef {
-            log_rate: -9.0,
-            slope: 0.1,
-            effect: [0.0; 2],
-        });
-        l.rebuild();
-        l.fit_ccd();
-    }
-    fit_signals(&mut l.cfg, records);
     Model::new(&l.cfg, 0)?;
-    let loss = l.score(&all);
+    let loss = l.raw_score(&all);
     Ok((l.cfg, loss))
 }
 
-fn with_ccd(def: &mut MachineDefinition, change: impl FnOnce(&mut CcdDef)) {
-    if let Some(ccd) = def.ccd.as_mut() {
-        change(ccd);
-    }
+/// Whether per-core limits, rather than the shared-voltage model, explain `o`: a multi-core R7 load on a
+/// machine with the rail is explained by the rail alone.
+fn limit_driven(rail: bool, o: &Observation) -> bool {
+    !(rail && o.regime() == Regime::R7 && o.class.loaded.len() > 1)
+}
+
+fn offset_of(o: &Observation, core: usize) -> i64 {
+    o.profile
+        .as_slice()
+        .get(core)
+        .map_or(0, |offset| offset.get())
 }
 
 impl Likelihood<'_> {
-    pub(crate) fn fit_ccd(&mut self) {
-        let indices = self.r7();
-        let floor = (-5.0_f64).exp();
-        for _ in 0..SWEEPS {
-            let before = self.score(&indices);
-            self.continuous(
-                &indices,
-                |d| d.ccd.as_ref().map_or(0.0, |c| c.log_rate.exp()),
-                |d, x| with_ccd(d, |c| c.log_rate = x.max(1e-12).ln()),
-                1e-7,
-                0.1,
-            );
-            self.continuous(
-                &indices,
-                |d| d.ccd.as_ref().map_or(0.0, |c| c.slope),
-                |d, x| with_ccd(d, |c| c.slope = x),
-                1e-4,
-                0.5,
-            );
-            for ccd in 0..2 {
-                self.continuous(
-                    &indices,
-                    |d| d.ccd.as_ref().map_or(0.0, |c| c.effect[ccd].exp()),
-                    |d, x| with_ccd(d, |c| c.effect[ccd] = x.max(floor).ln()),
-                    floor,
-                    floor.recip(),
-                );
-            }
-            if before - self.score(&indices) < CONVERGED {
-                break;
-            }
-        }
-    }
-
-    pub(crate) fn fit_joints(&mut self) {
-        for j in 0..self.cfg.joint.len() {
-            let regimes = self.cfg.joint[j].regimes.clone();
-            let indices = self.select(|o| regimes.contains(&o.regime()));
-            self.continuous(
-                &indices,
-                |d| d.joint[j].rate.unwrap_or(0.0),
-                |d, x| d.joint[j].rate = Some(x.max(1e-12)),
-                1e-7,
-                0.5,
-            );
-            let members: Vec<i64> = self.cfg.joint[j].members.keys().copied().collect();
-            for core in members {
-                self.discrete(
-                    |d| d.joint[j].members.entry(core).or_insert(DEEPEST),
-                    &indices,
-                    DEEPEST,
-                    0,
-                );
-            }
-        }
-    }
-
     pub(crate) fn fit_regime_limits(&mut self) {
-        let ccd = self.cfg.ccd.is_some();
+        let rail = self.cfg.shared_voltage.is_some();
         for (core, id) in self.core_ids().into_iter().enumerate() {
             for (r, regime) in REGIMES.into_iter().enumerate() {
-                if ccd && regime == Regime::R7 {
-                    continue;
-                }
                 for alone in [true, false] {
                     if alone && r >= 5 {
                         continue;
                     }
                     let indices = self.select(|o| {
-                        if o.regime() != regime || !o.loads(id) {
+                        if !limit_driven(rail, o) || o.regime() != regime || !o.loads(id) {
                             return false;
                         }
                         let only = r < 5
@@ -204,9 +164,12 @@ impl Likelihood<'_> {
         );
     }
 
+    /// Fits each core's flat rate on the observations its limits explain, so a multi-core R7 load, which
+    /// the rail alone explains, never moves it.
     pub(crate) fn fit_flat(&mut self) {
+        let rail = self.cfg.shared_voltage.is_some();
         for core in 0..self.cores() {
-            let indices = self.select(|o| o.offset(core) < 0);
+            let indices = self.select(|o| limit_driven(rail, o) && offset_of(o, core) < 0);
             self.continuous(
                 &indices,
                 |d| d.core[core].flat,
@@ -217,10 +180,13 @@ impl Likelihood<'_> {
         }
     }
 
+    /// Fits each core's idle limit on the observations its limits explain; a multi-core R7 load's unloaded
+    /// cores are left to the rail model.
     pub(crate) fn fit_idle(&mut self) {
+        let rail = self.cfg.shared_voltage.is_some();
         for (core, id) in self.core_ids().into_iter().enumerate() {
-            let indices = self.select(|o| !o.loads(id));
-            let exposed = indices.iter().any(|&i| self.obs[i].offset(core) < 0);
+            let indices = self.select(|o| limit_driven(rail, o) && !o.loads(id));
+            let exposed = indices.iter().any(|&i| offset_of(&self.obs[i], core) < 0);
             let idle = self.cfg.core[core].idle.unwrap_or(DEEPEST);
             self.cfg.core[core].idle = Some(idle);
             self.rebuild();
@@ -239,101 +205,19 @@ impl Likelihood<'_> {
         }
     }
 
-    /// Adds, to CCD `ccd`, the failure-profile joint that most improves the R7 likelihood, if one improves
-    /// it by at least 0.5.
-    pub(crate) fn add_joint(&mut self, records: &[TrialFact], ccd: usize) {
-        let cores = self.cores();
-        let half = cores / 2;
-        let first = ccd * half;
-        let count = self
-            .cfg
-            .joint
-            .iter()
-            .filter(|joint| {
-                i64::try_from(first).is_ok_and(|first| joint.members.contains_key(&first))
-            })
-            .count();
-        if count >= MAX_JOINTS_PER_CCD {
-            return;
-        }
-        let indices = self.r7();
-        let baseline = self.score(&indices);
-        let mut best_score = baseline - 0.5;
-        let original = self.cfg.joint.len();
-        let mut seen: HashSet<BTreeMap<i64, i64>> = HashSet::new();
-        let mut candidates: Vec<BTreeMap<i64, i64>> = Vec::new();
-        for fact in records {
-            if regime_of(fact) != Regime::R7 || !is_failure(fact) {
-                continue;
-            }
-            let mut members = BTreeMap::new();
-            for (core, offset) in fact
-                .profile
-                .as_slice()
-                .iter()
-                .enumerate()
-                .skip(first)
-                .take(half)
-            {
-                if offset.get() == 0 {
-                    break;
-                }
-                members.insert(i64::try_from(core).unwrap_or(i64::MAX), offset.get());
-            }
-            if members.len() != half || !seen.insert(members.clone()) {
-                continue;
-            }
-            if self.cfg.joint.iter().any(|joint| joint.members == members) {
-                continue;
-            }
-            candidates.push(members);
-        }
-        let results: Vec<(JointDef, f64)> = candidates
-            .into_par_iter()
-            .map(|members| {
-                let mut cfg = self.cfg.clone();
-                cfg.joint.push(JointDef {
-                    members,
-                    regimes: vec![Regime::R7],
-                    rate: Some(0.001),
-                    ..JointDef::default()
-                });
-                let mut trial = Likelihood::new(cfg, self.obs, self.guard, self.named);
-                trial.continuous(
-                    &indices,
-                    |d| d.joint[original].rate.unwrap_or(0.0),
-                    |d, x| d.joint[original].rate = Some(x.max(1e-12)),
-                    1e-7,
-                    0.5,
-                );
-                let score = trial.score(&indices);
-                (trial.cfg.joint.swap_remove(original), score)
-            })
-            .collect();
-        let mut best = None;
-        for (joint, score) in results {
-            if score < best_score {
-                best_score = score;
-                best = Some(joint);
-            }
-        }
-        if let Some(joint) = best {
-            self.cfg.joint.push(joint);
-        }
-        self.rebuild();
-    }
-
     pub(crate) fn fit_workloads(&mut self) {
-        let ccd = self.cfg.ccd.is_some();
+        let rail = self.cfg.shared_voltage.is_some();
         for (core, id) in self.core_ids().into_iter().enumerate() {
             let workloads: BTreeSet<&'static str> = self
                 .obs
                 .iter()
-                .filter(|o| !(ccd && o.regime() == Regime::R7) && o.k > 0 && o.loads(id))
+                .filter(|o| limit_driven(rail, o) && o.k > 0 && o.loads(id))
                 .map(|o| o.class.workload.as_str())
                 .collect();
             for workload in workloads {
-                let indices = self.select(|o| o.class.workload.as_str() == workload && o.loads(id));
+                let indices = self.select(|o| {
+                    limit_driven(rail, o) && o.class.workload.as_str() == workload && o.loads(id)
+                });
                 let trials: u32 = indices.iter().map(|&i| self.obs[i].n).sum();
                 if trials < MIN_WORKLOAD_TRIALS {
                     continue;

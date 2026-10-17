@@ -34,7 +34,8 @@ use std::time::{Duration, Instant};
 pub use anchor::{shared_voltage_anchor, shared_voltage_anchor_records};
 pub use error::{Error, EvidenceError, Problem};
 pub use forward::{
-    ForwardCheck, ForwardCounts, ForwardRow, ForwardScore, forward_check, report_forward,
+    ForwardCheck, ForwardCounts, ForwardRow, ForwardScore, R7Ccd, R7Rows, forward_check,
+    reference_check, report_forward, report_reference,
 };
 pub use generate::{Ensemble, Fitted, Generated, generate, generate_records};
 pub use output::MachineOutput;
@@ -58,6 +59,9 @@ pub struct Options {
     pub out: PathBuf,
     /// Threads to run on; the ambient rayon pool when absent. The results do not depend on it.
     pub jobs: Option<NonZeroUsize>,
+    /// With [`Mode::Forward`], machine files of a committed ensemble to score on the same held-out
+    /// sessions beside the candidate, without fitting them. Empty scores no reference.
+    pub reference: Vec<PathBuf>,
     pub mode: Mode,
 }
 
@@ -78,12 +82,26 @@ pub fn run(options: &Options, report: &mut (impl io::Write + Send)) -> Result<El
                 Ok(Some(generated.forward_elapsed))
             }
             Mode::Forward { seal } => {
+                let members = options
+                    .reference
+                    .iter()
+                    .map(|path| {
+                        togi_sim::file::load(path).map_err(|source| Error::Load {
+                            path: path.clone(),
+                            source,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 let records = togi_tool_trialfacts::read(&options.facts)?;
                 let trials = evidence::decisive(&records)?;
                 let forward = Instant::now();
                 let check = forward_check(&trials, seal)?;
                 let elapsed = forward.elapsed();
                 report_forward(report, &check, seal)?;
+                if !members.is_empty() {
+                    let reference = reference_check(&trials, seal, &members)?;
+                    report_reference(report, &reference, seal, members.len())?;
+                }
                 Ok(Some(elapsed))
             }
             Mode::SharedVoltage => {

@@ -67,6 +67,15 @@ pub(crate) fn fact(
     fact_at(SESSION, 1, offsets, regime, 0, loaded, duration_s, outcome)
 }
 
+/// `offsets` extended with stock offsets to the 16 cores the shared-voltage fit requires.
+fn padded(offsets: &[i64]) -> Vec<i64> {
+    let mut padded = offsets.to_vec();
+    if padded.len() < 16 {
+        padded.resize(16, 0);
+    }
+    padded
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "a fixture names every field it varies"
@@ -102,7 +111,7 @@ pub(crate) fn fact_at(
         condition: Condition::Alone,
         phase: Some(Phase::Search),
         record_only: false,
-        profile: profile(offsets),
+        profile: profile(&padded(offsets)),
         outcome,
         duration_s,
         voltage_requests_v: PerCore::default(),

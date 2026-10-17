@@ -4,12 +4,11 @@ use togi_sim::{Load, MachineDefinition, Model};
 use togi_tool_modelcheck::Checker;
 use togi_tool_trialfacts::TrialFact;
 
-use super::{crash, fact, failure, repeated};
-use crate::evidence::{aggregate, initial_config, load_of};
+use super::{crash, fact, repeated};
+use crate::evidence::{aggregate, bootstrap, initial_config, load_of};
 use crate::likelihood::Likelihood;
-use crate::voltage::{
-    NamedFailure, fit_shared_voltage, named_failures, sync_ycruncher, voltage_config,
-};
+use crate::search::{fit, fit_from};
+use crate::voltage::{named_failures, sync_ycruncher, voltage_config};
 
 fn loaded_16() -> Vec<i64> {
     (0..16).collect()
@@ -85,8 +84,6 @@ fn the_request_regression_recovers_the_count_and_clock_slopes_and_the_clock_medi
 fn a_named_core_failure_pins_the_hazard_to_the_named_core() {
     let records = voltage_records();
     let mut cfg = initial_config(&records);
-    cfg.joint.clear();
-    cfg.ccd = None;
     let mut shared = voltage_config(&records);
     {
         let w = shared.workload.get_mut(avx2()).unwrap();
@@ -141,8 +138,8 @@ fn a_named_core_failure_pins_the_hazard_to_the_named_core() {
 fn the_shared_voltage_fit_is_deterministic_bounded_and_leaves_its_input_alone() {
     let records = voltage_records();
     let before = voltage_config(&records);
-    let (cfg, loss) = fit_shared_voltage(&records).unwrap();
-    let (again, again_loss) = fit_shared_voltage(&records).unwrap();
+    let (cfg, loss) = fit(&records).unwrap();
+    let (again, again_loss) = fit(&records).unwrap();
     assert_eq!(cfg, again);
     assert_eq!(loss.to_bits(), again_loss.to_bits());
     assert!(cfg.shared_voltage.is_some() && cfg.ccd.is_none() && cfg.joint.is_empty());
@@ -186,7 +183,7 @@ fn a_failure_at_stock_offsets_is_explained_by_a_bounded_background_rate() {
         });
         records.push(record);
     }
-    let (cfg, _) = fit_shared_voltage(&records).unwrap();
+    let (cfg, _) = fit(&records).unwrap();
     let background = cfg.shared_voltage.as_ref().unwrap().background_rate;
     assert!(background > 0.0 && background <= 0.001, "{background}");
     let model = Model::new(&cfg, 0).unwrap();
@@ -203,8 +200,6 @@ fn a_failure_at_stock_offsets_is_explained_by_a_bounded_background_rate() {
 
 fn shared_machine(records: &[TrialFact], threshold: f64) -> togi_sim::MachineDefinition {
     let mut cfg = initial_config(records);
-    cfg.joint.clear();
-    cfg.ccd = None;
     let mut shared = voltage_config(records);
     for core in &mut shared.workload.get_mut(avx2()).unwrap().core {
         core.threshold_v = threshold;
@@ -212,63 +207,6 @@ fn shared_machine(records: &[TrialFact], threshold: f64) -> togi_sim::MachineDef
     sync_ycruncher(&mut shared);
     cfg.shared_voltage = Some(shared);
     cfg
-}
-
-#[test]
-fn the_constrained_rate_search_keeps_the_voltage_geometry_and_refuses_incompatible_groups() {
-    let template = fact(
-        &[-25; 16],
-        Regime::R7,
-        &[0, 1, 2, 3, 4, 5, 6, 7],
-        120,
-        Decisive::Pass,
-    );
-    let mut records = repeated(&template, 20, 5);
-    let cfg = shared_machine(&records, 1.135);
-    let mut expected = cfg.clone();
-    let obs = aggregate(&records);
-    let named = [];
-    let mut l = Likelihood::new(cfg.clone(), &obs, None, Some(&named));
-    let checker = Checker::new(&Model::new(&cfg, 0).unwrap(), &records).unwrap();
-    assert!(
-        !checker.accepts(l.model.as_ref().unwrap()).unwrap(),
-        "the fixture must initially violate the unchanged group interval"
-    );
-    assert!(l.constrain_rate(&records).unwrap());
-    assert!(
-        checker.accepts(l.model.as_ref().unwrap()).unwrap(),
-        "a bounded per-time rate must explain the group's failures"
-    );
-    let rate = l.cfg.shared_voltage.as_ref().unwrap().rate;
-    assert!((1e-5..=0.03).contains(&rate), "{rate}");
-    expected.shared_voltage.as_mut().unwrap().rate = rate;
-    assert_eq!(
-        expected, l.cfg,
-        "the rate repair changed the voltage geometry or the background"
-    );
-
-    for record in &mut records {
-        record.outcome = Decisive::Pass;
-    }
-    let mut failing = records[..20].to_vec();
-    for record in &mut failing {
-        record.outcome = failure(togi_machine::Signal::Crash);
-        if let togi_tool_trialfacts::Class::Trial(class) = &mut record.class {
-            class.duration_s = 300;
-        }
-    }
-    records.extend(failing);
-    let cfg = shared_machine(&records, 1.155);
-    let obs = aggregate(&records);
-    let mut l = Likelihood::new(cfg.clone(), &obs, None, Some(&named));
-    assert!(
-        !l.constrain_rate(&records).unwrap(),
-        "incompatible duration groups must not create a passing anchor"
-    );
-    assert_eq!(
-        cfg, l.cfg,
-        "a failed constraint search must restore the best fit"
-    );
 }
 
 fn telemetry(loaded: &[i64], offsets: &[i64; 16], mhz: &[(u8, u32)]) -> TrialFact {
@@ -333,7 +271,7 @@ fn single_core_evidence_still_fits_its_limits_beside_the_shared_voltage_model() 
     };
     records.extend(at(-10, 0));
     records.extend(at(-30, 40));
-    let (cfg, _) = fit_shared_voltage(&records).unwrap();
+    let (cfg, _) = fit(&records).unwrap();
     assert!(
         (-30..0).contains(&cfg.core[0].alone[0]),
         "{}",
@@ -342,7 +280,8 @@ fn single_core_evidence_still_fits_its_limits_beside_the_shared_voltage_model() 
 }
 
 #[test]
-fn a_rate_that_is_too_low_for_a_group_is_raised_into_its_interval() {
+fn constrained_voltage_candidates_stay_inside_the_original_groups_and_an_unconstrained_fit_does_not()
+ {
     let template = fact(
         &[-25; 16],
         Regime::R7,
@@ -350,75 +289,62 @@ fn a_rate_that_is_too_low_for_a_group_is_raised_into_its_interval() {
         120,
         Decisive::Pass,
     );
-    let records = repeated(&template, 20, 8);
-    let cfg = shared_machine(&records, 1.135);
-    let obs = aggregate(&records);
-    let named = [];
-    let mut l = Likelihood::new(cfg.clone(), &obs, None, Some(&named));
-    let checker = Checker::new(&Model::new(&cfg, 0).unwrap(), &records).unwrap();
-    assert!(!checker.accepts(l.model.as_ref().unwrap()).unwrap());
-    assert!(l.constrain_rate(&records).unwrap());
-    assert!(checker.accepts(l.model.as_ref().unwrap()).unwrap());
-    assert!(
-        l.cfg.shared_voltage.as_ref().unwrap().rate > cfg.shared_voltage.as_ref().unwrap().rate
-    );
-}
-
-#[test]
-fn a_rate_bisection_midpoint_below_the_feasible_interval_is_raised_into_it() {
-    let template = fact(
-        &[-25; 16],
-        Regime::R7,
-        &[0, 1, 2, 3, 4, 5, 6, 7],
-        120,
-        Decisive::Pass,
-    );
-    let records = repeated(&template, 20, 8);
-    let cfg = shared_machine(&records, 1.135);
-    let obs = aggregate(&records);
-    let named = [];
-    let checker = Checker::new(&Model::new(&cfg, 0).unwrap(), &records).unwrap();
-    let accepts = |rate: f64| {
-        let mut def = cfg.clone();
-        def.shared_voltage.as_mut().unwrap().rate = rate;
-        checker.accepts(&Model::new(&def, 0).unwrap()).unwrap()
+    let togi_tool_trialfacts::Class::Trial(class) = template.class else {
+        unreachable!("the fixture is a trial");
     };
-    let mut repaired = Likelihood::new(cfg.clone(), &obs, None, Some(&named));
-    assert!(repaired.constrain_rate(&records).unwrap());
-    let (mut infeasible, mut lowest) = (
-        cfg.shared_voltage.as_ref().unwrap().rate,
-        repaired.cfg.shared_voltage.as_ref().unwrap().rate,
-    );
-    assert!(!accepts(infeasible) && accepts(lowest));
-    for _ in 0..60 {
-        let mid = f64::midpoint(infeasible, lowest);
-        if accepts(mid) {
-            lowest = mid;
-        } else {
-            infeasible = mid;
-        }
-    }
-    let ceiling = 1.5 * lowest;
+    let load: Load<'_> = load_of(&class);
+    let mut base = shared_machine(&repeated(&template, 1, 0), 1.135);
+    let p0 = Model::new(&base, 0)
+        .unwrap()
+        .failure_probability(template.profile.as_slice(), &load)
+        .unwrap();
     assert!(
-        !accepts(f64::midpoint(1e-5, ceiling)),
-        "the first midpoint must lie below the feasible interval"
+        p0 > 0.0 && p0 < 1.0,
+        "the fixture's starting prediction {p0}"
     );
-    let mut l = Likelihood::new(cfg.clone(), &obs, None, Some(&named));
+    // The hazard is linear in the rate, so this scales the group's failure probability to one half.
+    base.shared_voltage.as_mut().unwrap().rate *= std::f64::consts::LN_2 / -(-p0).ln_1p();
+    let base_model = Model::new(&base, 0).unwrap();
+    let half = base_model
+        .failure_probability(template.profile.as_slice(), &load)
+        .unwrap();
+    assert!((half - 0.5).abs() < 0.05, "{half}");
+    let original = repeated(&template, 40, 20);
+    let sample = repeated(&template, 40, 40);
+    let checker = Checker::new(&base_model, &original).unwrap();
+    assert!(checker.accepts(&base_model).unwrap());
+    let (guarded, _) = fit_from(&sample, Some(&base), Some(&checker)).unwrap();
+    let guarded_model = Model::new(&guarded, 0).unwrap();
     assert!(
-        l.constrain_time_rate(&records, |v| &mut v.rate, 1e-5, ceiling)
-            .unwrap(),
-        "the search must raise a too-low midpoint until a group interval admits it"
+        checker.accepts(&guarded_model).unwrap(),
+        "a voltage candidate outside the original group's interval was kept"
     );
-    let rate = l.cfg.shared_voltage.as_ref().unwrap().rate;
     assert!(
-        (lowest..=ceiling).contains(&rate),
-        "{lowest} <= {rate} <= {ceiling}"
+        guarded_model
+            .failure_probability(template.profile.as_slice(), &load)
+            .unwrap()
+            > half,
+        "the all-failing resample did not move the voltage model"
     );
-    assert!(checker.accepts(l.model.as_ref().unwrap()).unwrap());
+    let (free, _) = fit_from(&sample, Some(&base), None).unwrap();
+    assert!(
+        !checker.accepts(&Model::new(&free, 0).unwrap()).unwrap(),
+        "the unconstrained fit stays inside the interval, so the guard binds nothing"
+    );
+}
+
+fn set_background(def: &mut MachineDefinition, rate: &f64) {
+    def.shared_voltage.as_mut().unwrap().background_rate = *rate;
+}
+
+fn raise_core_threshold(def: &mut MachineDefinition, volts: &f64) {
+    let v = def.shared_voltage.as_mut().unwrap();
+    v.workload.get_mut(avx2()).unwrap().core[0].threshold_v += volts;
+    sync_ycruncher(v);
 }
 
 #[test]
-fn the_shared_steps_minimize_the_objective_the_anchor_sweep_converges_on() {
+fn every_candidate_of_every_step_is_scored_on_the_augmented_objective() {
     let template = fact(
         &[-30; 16],
         Regime::R7,
@@ -438,29 +364,148 @@ fn the_shared_steps_minimize_the_objective_the_anchor_sweep_converges_on() {
     let obs = aggregate(&records);
     let named = named_failures(&records);
     assert_eq!(named.len(), 8);
-    let measured = |def: &MachineDefinition| {
-        let l = Likelihood::new(def.clone(), &obs, None, Some(&named));
-        l.score(&l.all())
+    let with = |change: &dyn Fn(&mut MachineDefinition)| {
+        let mut def: MachineDefinition = cfg.clone();
+        change(&mut def);
+        Likelihood::new(def, &obs, None, Some(&named))
     };
-    let flat_step = |named: Option<&[NamedFailure]>| {
-        let mut l = Likelihood::new(cfg.clone(), &obs, None, named);
-        l.fit_flat();
+    let l = with(&|_| {});
+    let all = l.all();
+
+    let backgrounds = [0.0, 5e-4];
+    let scanned = l.scan(&backgrounds, set_background, &all);
+    for (candidate, rate) in scanned.iter().zip(&backgrounds) {
+        let own = with(&|def| set_background(def, rate));
+        assert_eq!(
+            candidate.loss.to_bits(),
+            own.score(&all).to_bits(),
+            "a scanned candidate was not scored on the augmented objective of its own machine"
+        );
+    }
+    let objective_step = scanned[1].loss - scanned[0].loss;
+    let raw_step = with(&|def| set_background(def, &backgrounds[1])).raw_score(&all)
+        - with(&|def| set_background(def, &backgrounds[0])).raw_score(&all);
+    assert!(
+        objective_step - raw_step > 1e-6,
+        "the background rate, which no prior touches, did not move the named-core term: {objective_step} vs {raw_step}"
+    );
+
+    let shifts = [0.0, 0.01];
+    let scanned = l.scan(&shifts, raise_core_threshold, &all);
+    for (candidate, shift) in scanned.iter().zip(&shifts) {
+        let own = with(&|def| raise_core_threshold(def, shift));
+        assert_eq!(
+            candidate.loss.to_bits(),
+            own.score(&all).to_bits(),
+            "a scanned threshold candidate was not scored on its own augmented objective"
+        );
+    }
+    let objective_step = scanned[1].loss - scanned[0].loss;
+    let raw_step = with(&|def| raise_core_threshold(def, &shifts[1])).raw_score(&all)
+        - with(&|def| raise_core_threshold(def, &shifts[0])).raw_score(&all);
+    assert!(
+        (objective_step - raw_step).abs() > 1e-6,
+        "a loaded threshold did not move the prior and named-core terms: {objective_step} vs {raw_step}"
+    );
+}
+
+#[test]
+fn the_default_fit_is_one_shared_voltage_model_without_joints_or_residual() {
+    let mut records = voltage_records();
+    let mut offsets = [0_i64; 16];
+    offsets[0] = -30;
+    offsets[9] = -30;
+    let template = fact(&offsets, Regime::R1, &[0], 60, Decisive::Pass);
+    records.extend(repeated(&template, 40, 20));
+    let (cfg, loss) = fit(&records).unwrap();
+    assert!(cfg.joint.is_empty() && cfg.ccd.is_none());
+    let voltage = cfg.shared_voltage.as_ref().unwrap();
+    let ids: Vec<&str> = workloads(Regime::R7).iter().map(|w| w.id).collect();
+    for core in 0..16 {
+        let threshold = |id: &str| voltage.workload[id].core[core].threshold_v;
+        assert!(
+            (threshold(ids[2]) - threshold(ids[0]).max(threshold(ids[1]))).abs() < f64::EPSILON,
+            "core {core}: y-cruncher's threshold is not the higher of the mprime thresholds"
+        );
+    }
+    let obs = aggregate(&records);
+    let named = named_failures(&records);
+    let l = Likelihood::new(cfg, &obs, None, Some(&named));
+    let all = l.all();
+    assert_eq!(l.raw_score(&all).to_bits(), loss.to_bits());
+    assert!(
+        l.score(&all) > loss,
+        "the reported loss holds the prior or the named-core terms"
+    );
+}
+
+#[test]
+fn a_bootstrap_draw_is_fitted_from_the_telemetry_its_trials_carry() {
+    let records = voltage_records();
+    let sample = bootstrap(&records, 263);
+    assert!(
+        sample.iter().all(|fact| records.contains(fact)),
+        "a draw lost its trials' telemetry"
+    );
+    let (cfg, _) = fit(&sample).unwrap();
+    assert_eq!(
+        cfg.shared_voltage.as_ref().unwrap().workload[avx2()].full_mhz,
+        voltage_config(&sample).workload[avx2()].full_mhz,
+        "the draw's fit does not start from its own clocks"
+    );
+}
+
+#[test]
+fn a_singleton_r7_load_keeps_its_per_core_limit_beside_the_rail() {
+    let mut records = voltage_records();
+    let at = |depth: i64, failing: usize| {
+        let mut offsets = [0_i64; 16];
+        offsets[0] = depth;
+        let template = fact(&offsets, Regime::R7, &[0], 60, Decisive::Pass);
+        repeated(&template, 40, failing)
+    };
+    records.extend(at(-10, 0));
+    records.extend(at(-30, 40));
+    let (cfg, _) = fit(&records).unwrap();
+    let limit = cfg.core[0].together[6];
+    assert!((-29..=-10).contains(&limit), "{limit}");
+    let model = Model::new(&cfg, 0).unwrap();
+    let singleton = |depth: i64| {
+        let mut offsets = [0_i64; 16];
+        offsets[0] = depth;
+        let template = fact(&offsets, Regime::R7, &[0], 60, Decisive::Pass);
+        let togi_tool_trialfacts::Class::Trial(class) = template.class else {
+            unreachable!("the fixture is a trial");
+        };
+        model
+            .failure_probability(template.profile.as_slice(), &load_of(&class))
+            .unwrap()
+    };
+    assert!(singleton(-30) > 0.5 && singleton(-10) < 0.5);
+}
+
+#[test]
+fn flat_and_idle_fits_never_use_a_multi_core_r7_load() {
+    let template = fact(
+        &[-30; 16],
+        Regime::R7,
+        &[0, 1, 2, 3, 4, 5, 6, 7],
+        120,
+        Decisive::Pass,
+    );
+    let records = repeated(&template, 20, 8);
+    let cfg = shared_machine(&records, 1.135);
+    let obs = aggregate(&records);
+    let named = named_failures(&records);
+    let mut l = Likelihood::new(cfg.clone(), &obs, None, Some(&named));
+    l.fit_flat();
+    l.fit_idle();
+    assert!(
         l.cfg
-    };
-    let merged = flat_step(Some(&named));
-    let raw_only = flat_step(None);
-    let unloaded_flat = |def: &MachineDefinition| def.core[8].flat;
-    let (start, after_merged, after_raw) = (measured(&cfg), measured(&merged), measured(&raw_only));
-    assert!(
-        after_merged <= start,
-        "a shared step raised the measured objective: {start} -> {after_merged}"
+            .core
+            .iter()
+            .all(|core| core.flat == 0.0 && core.idle.is_none()),
+        "a multi-core R7 failure bought an unloaded-core flat rate or idle limit"
     );
-    assert!(
-        unloaded_flat(&raw_only) > unloaded_flat(&merged),
-        "the raw likelihood alone must buy the failures with unloaded-core hazard the named cores refute"
-    );
-    assert!(
-        after_raw > start && after_raw > after_merged,
-        "the raw-only step must worsen the measured objective: {start} -> {after_raw} vs {after_merged}"
-    );
+    assert_eq!(l.cfg, cfg);
 }
