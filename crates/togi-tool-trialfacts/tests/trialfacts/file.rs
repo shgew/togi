@@ -3,6 +3,7 @@ use std::io::{self, Write};
 
 use flate2::Compression;
 use flate2::write::GzEncoder;
+use test_case::test_case;
 use togi_facts::{Decisive, TrialClass};
 use togi_machine::{CcdId, Condition, PerCore, Regime, Signal};
 use togi_tool_trialfacts::{
@@ -227,53 +228,54 @@ fn a_voltage_request_that_is_not_finite_is_refused() {
 }
 
 #[test]
-fn an_unreadable_extract_is_an_error_and_never_a_partial_result() {
+fn a_truncated_gzip_is_an_unexpected_end() {
     let valid = line(&sample()[0]);
     let mut truncated = gz(&format!("{valid}\n"));
     truncated.truncate(truncated.len() - 8);
     let error = decode(truncated.as_slice()).unwrap_err();
     assert!(
         matches!(&error, ReadError::Io(source) if source.kind() == io::ErrorKind::UnexpectedEof),
-        "truncated gzip: {error}"
+        "{error}"
     );
-    let mut trailing = gz(&format!("{valid}\n"));
+}
+
+fn not_gzip() -> Vec<u8> {
+    b"not compressed".to_vec()
+}
+
+fn trailing_garbage() -> Vec<u8> {
+    let mut trailing = gz(&format!("{}\n", line(&sample()[0])));
     trailing.extend_from_slice(b"not a gzip member");
-    for (name, bytes) in [
-        ("not gzip", b"not compressed".to_vec()),
-        ("trailing garbage", trailing),
-    ] {
-        assert!(
-            matches!(decode(bytes.as_slice()), Err(ReadError::Io(_))),
-            "{name}"
-        );
+    trailing
+}
+
+#[test_case(not_gzip; "not gzip")]
+#[test_case(trailing_garbage; "trailing garbage")]
+fn an_unreadable_extract_is_an_error_and_never_a_partial_result(bytes: fn() -> Vec<u8>) {
+    assert!(matches!(decode(bytes().as_slice()), Err(ReadError::Io(_))));
+}
+
+#[test_case(|valid| format!("{valid}\n{{invalid}}\n"), 2; "malformed second line")]
+#[test_case(|_| "{}\n".to_owned(), 1; "empty record")]
+#[test_case(|valid| format!("{valid}\n\n{valid}\n"), 2; "blank line")]
+#[test_case(|valid| format!("{valid}{valid}\n"), 1; "two records on one line")]
+#[test_case(|valid| format!("[{valid}]\n"), 1; "a record array")]
+fn an_extract_is_one_valid_record_per_line(text: fn(&str) -> String, bad_line: u64) {
+    let valid = line(&sample()[0]);
+    match decode(gz(&text(&valid)).as_slice()) {
+        Err(ReadError::Line { line, .. }) => assert_eq!(line, bad_line),
+        other => panic!("{other:?}"),
     }
 }
 
 #[test]
-fn an_extract_is_one_valid_record_per_line() {
+fn the_last_line_needs_no_newline() {
     let valid = line(&sample()[0]);
-    for (name, text, bad_line) in [
-        (
-            "malformed second line",
-            format!("{valid}\n{{invalid}}\n"),
-            2,
-        ),
-        ("empty record", "{}\n".to_owned(), 1),
-        ("blank line", format!("{valid}\n\n{valid}\n"), 2),
-        ("two records on one line", format!("{valid}{valid}\n"), 1),
-        ("a record array", format!("[{valid}]\n"), 1),
-    ] {
-        match decode(gz(&text).as_slice()) {
-            Err(ReadError::Line { line, .. }) => assert_eq!(line, bad_line, "{name}"),
-            other => panic!("{name}: {other:?}"),
-        }
-    }
     assert_eq!(
         decode(gz(&format!("{valid}\n{valid}")).as_slice())
             .unwrap()
             .len(),
-        2,
-        "the last line needs no newline"
+        2
     );
 }
 
@@ -282,160 +284,73 @@ fn an_extract_without_records_is_refused() {
     assert!(matches!(decode(gz("").as_slice()), Err(ReadError::Empty)));
 }
 
+const PASS: usize = 0;
+const FAILURE: usize = 1;
+const IDLE: usize = 2;
+
+#[test_case(PASS, |v| v["ruleset"] = 9.into(); "ruleset differs from the build")]
+#[test_case(PASS, |v| v["boot"] = "private-boot".into(); "a private key")]
+#[test_case(PASS, |v| v["context"]["host"] = "private".into(); "a private key in the context")]
+#[test_case(PASS, |v| v["signal"] = "crash".into(); "a pass with a signal")]
+#[test_case(FAILURE, |v| {
+    v.as_object_mut().unwrap().remove("signal");
+}; "a failure without a signal")]
+#[test_case(PASS, |v| {
+    v["class"].as_object_mut().unwrap().remove("workload");
+}; "a trial without a workload")]
+#[test_case(PASS, |v| v["class"]["regime"] = "R2".into(); "a regime that is not the workload's")]
+#[test_case(PASS, |v| v["class"]["workload"] = "nonesuch".into(); "a workload outside the catalog")]
+#[test_case(IDLE, |v| v["class"]["workload"] = "mprime-sse-4k-21k".into(); "an idle failure naming a workload")]
+#[test_case(IDLE, |v| {
+    v["outcome"] = "pass".into();
+    v.as_object_mut().unwrap().remove("signal");
+}; "an idle pass")]
+#[test_case(PASS, |v| v["profile"][0] = (-51).into(); "an offset below the clamp")]
+#[test_case(PASS, |v| v["profile"][0] = 1.into(); "a positive offset")]
+#[test_case(PASS, |v| v["profile"] = serde_json::json!([]); "no profile")]
+#[test_case(PASS, |v| v["profile"] = serde_json::Value::from(vec![0; 17]); "seventeen offsets")]
+#[test_case(PASS, |v| v["class"]["cores"] = serde_json::json!([0, 0]); "a repeated core")]
+#[test_case(FAILURE, |v| v["core"] = 16.into(); "a core that does not exist")]
+#[test_case(PASS, |v| v["seq"] = 0.into(); "a seq of zero")]
+#[test_case(FAILURE, |v| v["signal"] = "reboot".into(); "an unknown signal")]
+#[test_case(PASS, |v| v["condition"] = "isolated".into(); "an unknown condition")]
+#[test_case(PASS, |v| v["phase"] = "guard".into(); "an unknown phase")]
+#[test_case(PASS, |v| v["session"] = "yesterday".into(); "a malformed session")]
+#[test_case(IDLE, |v| v["class"]["duration_s"] = 90.into(); "an idle failure with a trial duration")]
+#[test_case(PASS, |v| *v = positional(v, &WIRE_KEYS); "a record as a positional array")]
+#[test_case(PASS, |v| {
+    v["build"] = positional(
+        &v["build"],
+        &["version", "rev", "ruleset", "schema", "fixes", "evidence"],
+    );
+}; "a build stamp as a positional array")]
+#[test_case(PASS, |v| {
+    v["class"] = positional(&v["class"], &["regime", "workload", "cores", "duration_s"]);
+}; "a class as a positional array")]
+#[test_case(PASS, |v| {
+    v["context"] = positional(
+        &v["context"],
+        &["bios_version", "board", "cpu_model", "microcode", "boost_limit_mhz"],
+    );
+}; "a context as a positional array")]
+fn a_record_that_contradicts_itself_or_the_vocabulary_is_refused(
+    base: usize,
+    change: fn(&mut serde_json::Value),
+) {
+    let mut value = serde_json::to_value(&sample()[base]).unwrap();
+    change(&mut value);
+    let text = format!("{value}\n");
+    assert!(matches!(
+        decode(gz(&text).as_slice()),
+        Err(ReadError::Line { line: 1, .. })
+    ));
+}
+
 #[test]
-fn a_record_that_contradicts_itself_or_the_vocabulary_is_refused() {
+fn a_pass_a_failure_and_an_idle_record_read_back() {
     let facts = sample();
-    let pass = serde_json::to_value(&facts[0]).unwrap();
-    let failure = serde_json::to_value(&facts[1]).unwrap();
-    let idle = serde_json::to_value(&facts[2]).unwrap();
-    let edit = |base: &serde_json::Value, change: &dyn Fn(&mut serde_json::Value)| {
-        let mut value = base.clone();
-        change(&mut value);
-        value
-    };
-    let cases = [
-        (
-            "ruleset differs from the build",
-            edit(&pass, &|v| v["ruleset"] = 9.into()),
-        ),
-        (
-            "a private key",
-            edit(&pass, &|v| v["boot"] = "private-boot".into()),
-        ),
-        (
-            "a private key in the context",
-            edit(&pass, &|v| v["context"]["host"] = "private".into()),
-        ),
-        (
-            "a pass with a signal",
-            edit(&pass, &|v| v["signal"] = "crash".into()),
-        ),
-        (
-            "a failure without a signal",
-            edit(&failure, &|v| {
-                v.as_object_mut().unwrap().remove("signal");
-            }),
-        ),
-        (
-            "a trial without a workload",
-            edit(&pass, &|v| {
-                v["class"].as_object_mut().unwrap().remove("workload");
-            }),
-        ),
-        (
-            "a regime that is not the workload's",
-            edit(&pass, &|v| v["class"]["regime"] = "R2".into()),
-        ),
-        (
-            "a workload outside the catalog",
-            edit(&pass, &|v| v["class"]["workload"] = "nonesuch".into()),
-        ),
-        (
-            "an idle failure naming a workload",
-            edit(&idle, &|v| {
-                v["class"]["workload"] = "mprime-sse-4k-21k".into();
-            }),
-        ),
-        (
-            "an idle pass",
-            edit(&idle, &|v| {
-                v["outcome"] = "pass".into();
-                v.as_object_mut().unwrap().remove("signal");
-            }),
-        ),
-        (
-            "an offset below the clamp",
-            edit(&pass, &|v| v["profile"][0] = (-51).into()),
-        ),
-        (
-            "a positive offset",
-            edit(&pass, &|v| v["profile"][0] = 1.into()),
-        ),
-        (
-            "no profile",
-            edit(&pass, &|v| v["profile"] = serde_json::json!([])),
-        ),
-        (
-            "seventeen offsets",
-            edit(&pass, &|v| {
-                v["profile"] = serde_json::Value::from(vec![0; 17]);
-            }),
-        ),
-        (
-            "a repeated core",
-            edit(&pass, &|v| v["class"]["cores"] = serde_json::json!([0, 0])),
-        ),
-        (
-            "a core that does not exist",
-            edit(&failure, &|v| v["core"] = 16.into()),
-        ),
-        ("a seq of zero", edit(&pass, &|v| v["seq"] = 0.into())),
-        (
-            "an unknown signal",
-            edit(&failure, &|v| v["signal"] = "reboot".into()),
-        ),
-        (
-            "an unknown condition",
-            edit(&pass, &|v| v["condition"] = "isolated".into()),
-        ),
-        (
-            "an unknown phase",
-            edit(&pass, &|v| v["phase"] = "guard".into()),
-        ),
-        (
-            "a malformed session",
-            edit(&pass, &|v| v["session"] = "yesterday".into()),
-        ),
-        (
-            "an idle failure with a trial duration",
-            edit(&idle, &|v| v["class"]["duration_s"] = 90.into()),
-        ),
-        (
-            "a record as a positional array",
-            positional(&pass, &WIRE_KEYS),
-        ),
-        (
-            "a build stamp as a positional array",
-            edit(&pass, &|v| {
-                v["build"] = positional(
-                    &v["build"],
-                    &["version", "rev", "ruleset", "schema", "fixes", "evidence"],
-                );
-            }),
-        ),
-        (
-            "a class as a positional array",
-            edit(&pass, &|v| {
-                v["class"] =
-                    positional(&v["class"], &["regime", "workload", "cores", "duration_s"]);
-            }),
-        ),
-        (
-            "a context as a positional array",
-            edit(&pass, &|v| {
-                v["context"] = positional(
-                    &v["context"],
-                    &[
-                        "bios_version",
-                        "board",
-                        "cpu_model",
-                        "microcode",
-                        "boost_limit_mhz",
-                    ],
-                );
-            }),
-        ),
-    ];
-    for (name, value) in cases {
-        let text = format!("{value}\n");
-        assert!(
-            matches!(
-                decode(gz(&text).as_slice()),
-                Err(ReadError::Line { line: 1, .. })
-            ),
-            "{name}"
-        );
-    }
+    let [pass, failure, idle] =
+        [PASS, FAILURE, IDLE].map(|index| serde_json::to_value(&facts[index]).unwrap());
     let ok = format!("{pass}\n{failure}\n{idle}\n");
     assert_eq!(decode(gz(&ok).as_slice()).unwrap(), facts);
 }
