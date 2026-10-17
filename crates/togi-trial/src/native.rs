@@ -328,32 +328,35 @@ impl Trials for Runner {
         compress(&trial).map_err(|errors| Error::Compress(errors).into())
     }
 
-    fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
-        let reader = TrialId::parse(id).ok().and_then(|id| {
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<dyn Iterator<Item = Result<TrialConditions, togi_machine::SampleError>> + 'a> {
+        let reader = (|| {
+            let id = TrialId::parse(id).map_err(std::io::Error::other)?;
             if let Some(fs) = &self.fs {
                 let path = self.dir.join(id.as_str());
-                let reader: Option<Box<dyn std::io::Read>> =
-                    match fs.open_read(&path.join(togi_trialfiles::SAMPLES)) {
-                        Ok(reader) => Some(reader),
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs
-                            .open_read(&path.join(format!("{}.gz", togi_trialfiles::SAMPLES)))
-                            .ok()
-                            .map(|reader| {
-                                Box::new(flate2::read::MultiGzDecoder::new(reader))
-                                    as Box<dyn std::io::Read>
-                            }),
-                        Err(_) => None,
-                    };
-                return reader;
+                return match fs.open_read(&path.join(togi_trialfiles::SAMPLES)) {
+                    Ok(reader) => Ok(reader as Box<dyn std::io::Read>),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs
+                        .open_read(&path.join(format!("{}.gz", togi_trialfiles::SAMPLES)))
+                        .map(|reader| {
+                            Box::new(flate2::read::MultiGzDecoder::new(reader))
+                                as Box<dyn std::io::Read>
+                        }),
+                    Err(error) => Err(error),
+                };
             }
-            TrialsRoot::open(&self.dir, false)
-                .ok()
-                .and_then(|root| root.samples(&id))
-        });
-        match reader {
-            Some(reader) => Box::new(togi_machine::ReadSamples::from_reader(reader)),
-            None => Box::new(std::iter::empty()),
-        }
+            let root = TrialsRoot::open(&self.dir, false).map_err(|error| {
+                let kind = match &error {
+                    crate::error::PrepareError::Directory { source, .. } => source.kind(),
+                    _ => std::io::ErrorKind::Other,
+                };
+                std::io::Error::new(kind, error)
+            })?;
+            root.samples(&id)
+        })();
+        Box::new(togi_machine::ReadSamples::from_open(reader))
     }
 }
 

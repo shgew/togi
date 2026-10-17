@@ -22,7 +22,10 @@ pub trait SampleStorage {
         id: &str,
         encode: &mut dyn FnMut(&mut dyn Write) -> io::Result<()>,
     ) -> io::Result<()>;
-    fn read(&self, id: &str) -> Box<dyn Iterator<Item = TrialConditions>>;
+    fn read(
+        &self,
+        id: &str,
+    ) -> Box<dyn Iterator<Item = Result<TrialConditions, togi_machine::SampleError>>>;
     fn ended(&self, id: &str) -> Result<(), togi_machine::Error>;
 }
 

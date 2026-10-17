@@ -82,7 +82,10 @@ impl Trials for Sweeping {
         self.inner.ended(id)
     }
 
-    fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<dyn Iterator<Item = Result<TrialConditions, togi_machine::SampleError>> + 'a> {
         self.inner.samples(id)
     }
 }

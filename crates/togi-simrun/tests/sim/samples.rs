@@ -41,7 +41,12 @@ fn a_new_session_after_an_earlier_one(
     run(&sim, observer);
     let first = events(persistence).unwrap();
     assert!(trial_end(&first, "0001").is_some());
-    let samples: Vec<_> = sim.seams().trials.samples("0001").collect();
+    let samples: Vec<_> = sim
+        .seams()
+        .trials
+        .samples("0001")
+        .collect::<Result<_, _>>()
+        .unwrap();
     assert!(
         !samples.is_empty(),
         "the first session's trial 0001 kept no samples to leak"
@@ -137,7 +142,9 @@ fn real_fs_a_new_sessions_trial_gets_no_serialized_samples_from_an_earlier_invoc
     assert!(archived.join("samples.jsonl.gz").is_file());
     assert!(!archived.join("samples.jsonl").exists());
     assert_eq!(
-        togi_machine::read_samples(&archived).collect::<Vec<_>>(),
+        togi_machine::read_samples(&archived)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap(),
         samples,
         "the earlier session's compressed samples must remain intact after trial 0001 is reused"
     );

@@ -145,7 +145,10 @@ impl Trials for SimTrials {
             .map_err(|errors| Error::Other(Box::new(errors)))
     }
 
-    fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<dyn Iterator<Item = Result<TrialConditions, togi_machine::SampleError>> + 'a> {
         let runtime = self.0.borrow();
         if let Some(storage) = &runtime.sample_storage {
             return storage.read(id);
@@ -153,7 +156,7 @@ impl Trials for SimTrials {
         match &runtime.samples_dir {
             Some(dir) => Box::new(togi_machine::read_samples(&dir.join(id))),
             None if runtime.samples.id.as_deref() == Some(id) => {
-                Box::new(runtime.samples.conditions())
+                Box::new(runtime.samples.conditions().map(Ok))
             }
             None => Box::new(std::iter::empty()),
         }

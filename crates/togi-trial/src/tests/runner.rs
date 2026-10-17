@@ -487,7 +487,7 @@ fn the_runner_sweeps_probes_compresses_and_reads_samples() {
     assert!(fs.contents("/rig/trials/t1/work/stdout.log.gz").is_some());
     assert!(fs.contents("/rig/trials/t1/work/stdout.log").is_none());
     assert!(runner.samples("t1").count() >= 1);
-    assert_eq!(runner.samples("../t1").count(), 0);
+    assert!(runner.samples("../t1").next().unwrap().is_err());
     assert!(runner.ended("../t1").is_err());
 }
 

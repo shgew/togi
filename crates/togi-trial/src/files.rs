@@ -449,9 +449,9 @@ impl TrialsRoot {
 
     /// The trial's conditions samples, plain or compressed, read through validated descriptors:
     /// a symlink, FIFO or other nonregular file is never opened for reading.
-    pub(crate) fn samples(&self, id: &TrialId) -> Option<Box<dyn io::Read>> {
-        let trial = self.trial(id).ok()?;
-        let open = |name: &str| -> Result<File, Errno> {
+    pub(crate) fn samples(&self, id: &TrialId) -> io::Result<Box<dyn io::Read>> {
+        let trial = open_directory(self.dir.as_fd(), id.as_str())?;
+        let open = |name: &str| -> io::Result<File> {
             let fd = openat(
                 &trial,
                 name,
@@ -462,17 +462,17 @@ impl TrialsRoot {
             if rustix::fs::FileType::from_raw_mode(stat.st_mode)
                 != rustix::fs::FileType::RegularFile
             {
-                return Err(Errno::INVAL);
+                return Err(Errno::INVAL.into());
             }
             Ok(File::from(fd))
         };
         match open(togi_trialfiles::SAMPLES) {
-            Ok(file) => Some(Box::new(file)),
-            Err(Errno::NOENT) => {
-                let compressed = open(&format!("{}.gz", togi_trialfiles::SAMPLES)).ok()?;
-                Some(Box::new(flate2::read::MultiGzDecoder::new(compressed)))
+            Ok(file) => Ok(Box::new(file)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let compressed = open(&format!("{}.gz", togi_trialfiles::SAMPLES))?;
+                Ok(Box::new(flate2::read::MultiGzDecoder::new(compressed)))
             }
-            Err(_) => None,
+            Err(error) => Err(error),
         }
     }
 }
@@ -760,12 +760,15 @@ mod tests {
         let root_path = tmp.path().join("trials");
         let container = recreate(&root_path, &id("t1"), None).unwrap();
         let root = TrialsRoot::open(&root_path, false).unwrap();
-        assert!(root.samples(&id("t1")).is_none(), "missing is empty");
+        assert_eq!(
+            root.samples(&id("t1")).err().unwrap().kind(),
+            io::ErrorKind::NotFound
+        );
         let victim = tmp.path().join("victim.jsonl");
         fs::write(&victim, "{\"elapsed_ms\":1}\n").unwrap();
         symlink(&victim, container.path.join("samples.jsonl")).unwrap();
         assert!(
-            root.samples(&id("t1")).is_none(),
+            root.samples(&id("t1")).is_err(),
             "a symlink is never followed"
         );
         fs::remove_file(container.path.join("samples.jsonl")).unwrap();
@@ -778,7 +781,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            root.samples(&id("t1")).is_none(),
+            root.samples(&id("t1")).is_err(),
             "a FIFO is never opened for reading"
         );
         fs::remove_file(container.path.join("samples.jsonl")).unwrap();

@@ -36,9 +36,20 @@ pub struct TrialConditions {
     pub pm_table: Option<PmTable>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum SampleError {
+    #[error("open conditions samples: {0}")]
+    Open(#[source] std::io::Error),
+    #[error("read conditions samples (including gzip decoding): {0}")]
+    Read(#[source] std::io::Error),
+    #[error("decode conditions sample: {0}")]
+    Decode(#[source] serde_json::Error),
+}
+
 pub struct ReadSamples<R: Read = TrialFile> {
     reader: Option<BufReader<R>>,
     line: Vec<u8>,
+    error: Option<SampleError>,
 }
 
 impl<R: Read> ReadSamples<R> {
@@ -46,33 +57,50 @@ impl<R: Read> ReadSamples<R> {
         Self {
             reader: Some(BufReader::new(reader)),
             line: Vec::new(),
+            error: None,
+        }
+    }
+
+    pub fn from_open(reader: std::io::Result<R>) -> Self {
+        match reader {
+            Ok(reader) => Self::from_reader(reader),
+            Err(error) => Self {
+                reader: None,
+                line: Vec::new(),
+                error: (error.kind() != std::io::ErrorKind::NotFound)
+                    .then_some(SampleError::Open(error)),
+            },
         }
     }
 }
 
 pub fn read_samples(dir: &Path) -> ReadSamples {
-    ReadSamples {
-        reader: togi_trialfiles::open(&dir.join(togi_trialfiles::SAMPLES))
-            .ok()
-            .map(BufReader::new),
-        line: Vec::new(),
-    }
+    ReadSamples::from_open(togi_trialfiles::open(&dir.join(togi_trialfiles::SAMPLES)))
 }
 
 impl<R: Read> Iterator for ReadSamples<R> {
-    type Item = TrialConditions;
+    type Item = Result<TrialConditions, SampleError>;
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            self.line.clear();
-            match self.reader.as_mut()?.read_until(b'\n', &mut self.line) {
-                Ok(length) if length > 0 && self.line.last() == Some(&b'\n') => {}
-                Ok(_) | Err(_) => {
-                    self.reader = None;
-                    return None;
-                }
+        if let Some(error) = self.error.take() {
+            return Some(Err(error));
+        }
+        self.line.clear();
+        match self.reader.as_mut()?.read_until(b'\n', &mut self.line) {
+            Ok(length) if length > 0 && self.line.last() == Some(&b'\n') => {}
+            Ok(_) => {
+                self.reader = None;
+                return None;
             }
-            if let Ok(sample) = serde_json::from_slice(&self.line) {
-                return Some(sample);
+            Err(error) => {
+                self.reader = None;
+                return Some(Err(SampleError::Read(error)));
+            }
+        }
+        match serde_json::from_slice(&self.line) {
+            Ok(sample) => Some(Ok(sample)),
+            Err(error) => {
+                self.reader = None;
+                Some(Err(SampleError::Decode(error)))
             }
         }
     }

@@ -583,7 +583,7 @@ mod tests {
     fn recovered_samples(bytes: &Arc<Mutex<Vec<u8>>>) -> Vec<i64> {
         let bytes = bytes.lock().unwrap_or_else(PoisonError::into_inner).clone();
         togi_machine::ReadSamples::from_reader(io::Cursor::new(bytes))
-            .map(|sample| sample.elapsed_ms)
+            .map(|sample| sample.unwrap().elapsed_ms)
             .collect()
     }
 

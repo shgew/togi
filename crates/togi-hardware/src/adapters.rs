@@ -160,7 +160,10 @@ impl<R: Trials> Trials for RunnerHandle<R> {
     }
 
     /// A guard cannot outlive the call, so the trial's samples are read before it returns.
-    fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<dyn Iterator<Item = Result<TrialConditions, togi_machine::SampleError>> + 'a> {
         let samples: Vec<_> = lock(&self.0).samples(id).collect();
         Box::new(samples.into_iter())
     }

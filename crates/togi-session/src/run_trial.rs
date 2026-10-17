@@ -502,7 +502,7 @@ impl Session {
         } else {
             adjudication.reason
         };
-        let mut end = TrialEnd {
+        let end = TrialEnd {
             trial: trial.id.clone(),
             kernel_cursor: boundary.cursor,
             kernel_error,
@@ -540,10 +540,16 @@ impl Session {
             trial.plan.regime,
             |core| topology.get(&core).copied(),
         );
-        summary.fill(&mut end, crashed);
         let mut causes = vec![trial.start];
         causes.extend(machine_checks);
-        append_trial_end(&mut self.appender, &mut *self.trials, end, &causes)?;
+        append_trial_end(
+            &mut self.appender,
+            &mut *self.trials,
+            end,
+            summary,
+            crashed,
+            &causes,
+        )?;
         if crashed {
             return Err(SessionError::Machine(Error::Crashed).into());
         }

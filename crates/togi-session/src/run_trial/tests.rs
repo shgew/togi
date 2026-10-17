@@ -200,6 +200,7 @@ struct Rigging {
     cancel: Option<CancellationToken>,
     on_start: Option<Rc<dyn Fn()>>,
     samples: Option<Vec<togi_machine::TrialConditions>>,
+    samples_file: Option<(Vec<u8>, bool)>,
     instances: Option<Vec<Instance>>,
     schedule: Option<LoadSchedule>,
     /// Makes the start fail with this error and hand back no proof that nothing runs.
@@ -257,9 +258,22 @@ impl Trials for Rigged {
     fn samples<'a>(
         &'a self,
         id: &'a str,
-    ) -> Box<dyn Iterator<Item = togi_machine::TrialConditions> + 'a> {
-        match self.rigs.borrow().samples.clone() {
-            Some(samples) => Box::new(samples.into_iter()),
+    ) -> Box<
+        dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
+    > {
+        let rigs = self.rigs.borrow();
+        if let Some((bytes, compressed)) = &rigs.samples_file {
+            let reader: Box<dyn std::io::Read> = if *compressed {
+                Box::new(flate2::read::MultiGzDecoder::new(std::io::Cursor::new(
+                    bytes.clone(),
+                )))
+            } else {
+                Box::new(std::io::Cursor::new(bytes.clone()))
+            };
+            return Box::new(togi_machine::ReadSamples::from_reader(reader));
+        }
+        match rigs.samples.clone() {
+            Some(samples) => Box::new(samples.into_iter().map(Ok)),
             None => self.inner.samples(id),
         }
     }
@@ -1158,6 +1172,94 @@ fn request_telemetry_needs_twenty_samples_after_the_warmup() {
         let end = ends(&rig.session).pop().unwrap();
         assert_eq!(!end.voltage_requests_v.is_empty(), recorded, "{count}");
         assert_eq!(!end.ccd_mhz.is_empty(), recorded, "{count}");
+    }
+}
+
+#[test]
+fn unreadable_samples_warn_and_omit_all_sample_fields_without_changing_the_outcome() {
+    use std::io::Write as _;
+
+    let mut bytes = Vec::new();
+    for sample in request_samples(20) {
+        serde_json::to_writer(&mut bytes, &sample).unwrap();
+        bytes.push(b'\n');
+    }
+    let mut malformed = bytes.clone();
+    malformed.extend_from_slice(b"not json\n");
+    let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gzip.write_all(&bytes).unwrap();
+    let mut corrupt_gzip = gzip.finish().unwrap();
+    corrupt_gzip.extend_from_slice(b"not a second gzip member");
+    for (bytes, compressed, error) in [
+        (malformed, false, "decode conditions sample"),
+        (corrupt_gzip, true, "gzip decoding"),
+    ] {
+        for failure in [false, true] {
+            let mut rig = rigged(Bench::new(2));
+            {
+                let mut rigs = rig.rigs.borrow_mut();
+                rigs.samples_file = Some((bytes.clone(), compressed));
+                rigs.result = Some(TrialResult {
+                    ran: full_run(),
+                    tctl_max_c: Some(77),
+                    failure: failure.then_some(TrialFailure {
+                        signal: Signal::ComputationError,
+                        core: core(0),
+                    }),
+                    ..TrialResult::default()
+                });
+            }
+            trial(&mut rig).unwrap();
+            let end = ends(&rig.session).pop().unwrap();
+            assert_eq!(
+                end.outcome,
+                if failure {
+                    Verdict::Failure
+                } else {
+                    Verdict::Pass
+                }
+            );
+            assert_sample_fields_absent(&end);
+            let events = rig.session.appender().journal().events();
+            let warning = events
+                .iter()
+                .find_map(|event| match &event.payload {
+                    Payload::SessionWarning(warning)
+                        if warning.operation == "read conditions samples" =>
+                    {
+                        Some((event, warning))
+                    }
+                    _ => None,
+                })
+                .unwrap();
+            assert_eq!(warning.1.trial.as_ref(), Some(&end.trial));
+            assert!(warning.1.error.contains(error), "{}", warning.1.error);
+            let ended = events
+                .iter()
+                .find(|event| matches!(&event.payload, Payload::TrialEnd(_)))
+                .unwrap();
+            assert_eq!(warning.0.cause, [ended.seq]);
+        }
+    }
+}
+
+fn assert_sample_fields_absent(end: &TrialEnd) {
+    let data = serde_json::to_value(end).unwrap();
+    for field in [
+        "tctl_max_c",
+        "voltage_request_median_v",
+        "voltage_request_min_v",
+        "voltage_requests_v",
+        "top_requesters",
+        "ccd_mhz",
+        "last_sample_s",
+        "last_sample_tctl_c",
+        "last_sample_min_mhz",
+        "last_sample_max_mhz",
+        "stalled_core",
+        "worker_stalled_ms",
+    ] {
+        assert!(data.get(field).is_none(), "{field}: {data}");
     }
 }
 

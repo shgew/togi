@@ -1758,6 +1758,7 @@ dependencies = [
 name = "togi-session"
 version = "0.0.0"
 dependencies = [
+ "flate2",
  "jiff",
  "proptest",
  "serde",

@@ -96,9 +96,21 @@ pub(crate) fn same_boot_trial(mut recovery: Recovery<'_>, _cleared: SweepCleared
 pub(crate) fn append_trial_end(
     appender: &mut Appender,
     trials: &mut dyn Trials,
-    end: TrialEnd,
+    mut end: TrialEnd,
+    samples: Result<evidence::SampleSummary, togi_machine::SampleError>,
+    crashed: bool,
     causes: &[Seq],
 ) -> Step<Seq> {
+    let sample_error = match samples {
+        Ok(summary) => {
+            summary.fill(&mut end, crashed);
+            None
+        }
+        Err(error) => {
+            end.tctl_max_c = None;
+            Some(error)
+        }
+    };
     let trial = end.trial.clone();
     let compressed = match end.containment_error {
         Some(_) => Ok(()),
@@ -108,6 +120,16 @@ pub(crate) fn append_trial_end(
         return Err(SessionError::Machine(Error::Crashed).into());
     }
     let seq = appender.append(Payload::TrialEnd(end), causes)?;
+    if let Some(error) = sample_error {
+        appender.append(
+            Payload::SessionWarning(SessionWarning {
+                operation: "read conditions samples".into(),
+                trial: Some(trial.clone()),
+                error: error.to_string(),
+            }),
+            &[seq],
+        )?;
+    }
     if let Err(error) = compressed {
         appender.append(
             Payload::SessionWarning(SessionWarning {
@@ -613,7 +635,7 @@ fn close_open_trial(recovery: &mut Recovery<'_>) -> Step<()> {
     });
     let ruling = closure.ruling();
     let trial: TrialId = open.intent.trial.clone();
-    let mut end = TrialEnd {
+    let end = TrialEnd {
         trial: trial.clone(),
         kernel_cursor: state.kernel_cursor(current).cloned(),
         kernel_error: open.kernel_error.clone(),
@@ -652,8 +674,14 @@ fn close_open_trial(recovery: &mut Recovery<'_>) -> Step<()> {
         open.intent.regime,
         |core| topology.get(&core).copied(),
     );
-    summary.fill(&mut end, crash.is_some());
-    append_trial_end(recovery.appender, recovery.trials, end, closure.causes())?;
+    append_trial_end(
+        recovery.appender,
+        recovery.trials,
+        end,
+        summary,
+        crash.is_some(),
+        closure.causes(),
+    )?;
     Ok(())
 }
 

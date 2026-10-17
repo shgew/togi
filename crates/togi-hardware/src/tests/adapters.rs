@@ -53,7 +53,10 @@ impl Trials for Samples {
         panic!("sample reads must not end trials")
     }
 
-    fn samples<'a>(&'a self, id: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<dyn Iterator<Item = Result<TrialConditions, togi_machine::SampleError>> + 'a> {
         assert_eq!(id, "t1");
         Box::new(ReadSamples::from_reader(self.0.as_bytes()))
     }
@@ -70,6 +73,7 @@ fn samples_read_through_the_handle_keep_the_files_order_and_values() {
     );
     let samples: Vec<_> = handle
         .samples("t1")
+        .map(Result::unwrap)
         .map(|sample| (sample.elapsed_ms, sample.tctl_c))
         .collect();
     assert_eq!(samples, [(30, None), (10, Some(61)), (20, None)]);
@@ -81,7 +85,10 @@ fn a_live_samples_iterator_does_not_hold_the_runner_lock() {
     let clone = handle.clone();
     let mut samples = handle.samples("t1");
     assert!(clone.is_unlocked());
-    assert_eq!(samples.next().map(|sample| sample.elapsed_ms), Some(1));
+    assert_eq!(
+        samples.next().map(|sample| sample.unwrap().elapsed_ms),
+        Some(1)
+    );
     assert!(clone.is_unlocked());
 }
 

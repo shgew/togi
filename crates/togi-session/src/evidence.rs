@@ -356,14 +356,22 @@ impl Observer {
 /// readings of two or more cores outside R6, where the workers are suspended on purpose), the loaded cores'
 /// requested voltage, and the request telemetry, which needs every loaded core on a known CCD.
 pub(crate) fn summarize_samples(
-    samples: impl IntoIterator<Item = TrialConditions>,
+    samples: impl IntoIterator<Item = Result<TrialConditions, togi_machine::SampleError>>,
     loaded: CoreSet,
     regime: Regime,
     ccd_of: impl Fn(CoreId) -> Option<CcdId>,
-) -> SampleSummary {
+) -> Result<SampleSummary, togi_machine::SampleError> {
     let mut observer = Observer::new(loaded, regime);
+    let mut error = None;
     let observed = samples
         .into_iter()
+        .map_while(|sample| match sample {
+            Ok(sample) => Some(sample),
+            Err(failure) => {
+                error = Some(failure);
+                None
+            }
+        })
         .inspect(|sample| observer.observe(sample));
     let telemetry = if !loaded.is_empty() && loaded.iter().all(|core| ccd_of(core).is_some()) {
         togi_requests::summarize(observed, loaded, |core| ccd_of(core).unwrap_or_default())
@@ -371,11 +379,14 @@ pub(crate) fn summarize_samples(
         observed.for_each(drop);
         None
     };
-    SampleSummary {
-        stalled: observer.stalled(),
-        voltage: observer.voltage(),
-        last: observer.last,
-        telemetry,
+    match error {
+        Some(error) => Err(error),
+        None => Ok(SampleSummary {
+            stalled: observer.stalled(),
+            voltage: observer.voltage(),
+            last: observer.last,
+            telemetry,
+        }),
     }
 }
 

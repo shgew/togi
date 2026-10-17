@@ -49,7 +49,10 @@ impl Trials for Runner {
         match self.0 {}
     }
 
-    fn samples<'a>(&'a self, _: &'a str) -> Box<dyn Iterator<Item = TrialConditions> + 'a> {
+    fn samples<'a>(
+        &'a self,
+        _: &'a str,
+    ) -> Box<dyn Iterator<Item = Result<TrialConditions, togi_machine::SampleError>> + 'a> {
         match self.0 {}
     }
 }
