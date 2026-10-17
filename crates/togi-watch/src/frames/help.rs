@@ -464,6 +464,7 @@ mod tests {
         assert_frame_bounds, assert_glyphs_drawable, render_missing, rows_of, screen,
     };
     use crate::screen::{Colours, Drawn, Hold, Quit, View};
+    use test_case::test_case;
 
     const C: Colours = Colours::Full;
 
@@ -531,54 +532,53 @@ mod tests {
         );
     }
 
-    #[test]
-    fn short_wide_help_scrolls_with_a_scrollbar_to_its_last_row() {
-        for width in [195, 235] {
-            let (top, scroll) = help_body(width, 19, 0, C, Quit::Keys);
-            let (end, end_scroll) = help_body(width, 19, usize::MAX, C, Quit::Keys);
-            let (clamped, _) = help_body(width, 19, scroll + 100, C, Quit::Keys);
-            assert!(
-                scroll != 0 && end_scroll == scroll,
-                "short wide help must scroll: top={scroll} end={end_scroll}"
-            );
-            assert_eq!(plain_rows(&end), plain_rows(&clamped), "scroll beyond end");
-            assert!(plain(&top[0]).contains("NAVIGATION"));
-            let thumb = (19 * 19 / (scroll + 19)).max(1);
-            for (name, page, bar) in [
-                (
-                    "top",
-                    &top,
-                    format!("{}{}", "█".repeat(thumb), "│".repeat(19 - thumb)),
-                ),
-                (
-                    "end",
-                    &end,
-                    format!("{}{}", "│".repeat(19 - thumb), "█".repeat(thumb)),
-                ),
-            ] {
-                assert_eq!(page.len(), 19, "{name} page rows");
-                let mut got = String::new();
-                for (row, line) in page.iter().enumerate() {
-                    assert!(
-                        line_width(line) <= width,
-                        "{name} row {row} exceeds the help rectangle"
-                    );
-                    let text = plain(line);
-                    assert_eq!(
-                        text.chars().nth(1),
-                        Some(' '),
-                        "{name} row {row} loses the scrollbar's two columns: {text:?}"
-                    );
-                    got.push(first_char(&text));
-                }
-                assert_eq!(got, bar, "{name} scrollbar");
+    #[test_case(195; "195 columns")]
+    #[test_case(235; "235 columns")]
+    fn short_wide_help_scrolls_with_a_scrollbar_to_its_last_row(width: usize) {
+        let (top, scroll) = help_body(width, 19, 0, C, Quit::Keys);
+        let (end, end_scroll) = help_body(width, 19, usize::MAX, C, Quit::Keys);
+        let (clamped, _) = help_body(width, 19, scroll + 100, C, Quit::Keys);
+        assert!(
+            scroll != 0 && end_scroll == scroll,
+            "short wide help must scroll: top={scroll} end={end_scroll}"
+        );
+        assert_eq!(plain_rows(&end), plain_rows(&clamped), "scroll beyond end");
+        assert!(plain(&top[0]).contains("NAVIGATION"));
+        let thumb = (19 * 19 / (scroll + 19)).max(1);
+        for (name, page, bar) in [
+            (
+                "top",
+                &top,
+                format!("{}{}", "█".repeat(thumb), "│".repeat(19 - thumb)),
+            ),
+            (
+                "end",
+                &end,
+                format!("{}{}", "│".repeat(19 - thumb), "█".repeat(thumb)),
+            ),
+        ] {
+            assert_eq!(page.len(), 19, "{name} page rows");
+            let mut got = String::new();
+            for (row, line) in page.iter().enumerate() {
+                assert!(
+                    line_width(line) <= width,
+                    "{name} row {row} exceeds the help rectangle"
+                );
+                let text = plain(line);
+                assert_eq!(
+                    text.chars().nth(1),
+                    Some(' '),
+                    "{name} row {row} loses the scrollbar's two columns: {text:?}"
+                );
+                got.push(first_char(&text));
             }
-            let last = plain(&end[end.len() - 1]);
-            assert!(
-                !chars_from(&last, 2).trim().is_empty(),
-                "short wide help ends on a blank content row"
-            );
+            assert_eq!(got, bar, "{name} scrollbar");
         }
+        let last = plain(&end[end.len() - 1]);
+        assert!(
+            !chars_from(&last, 2).trim().is_empty(),
+            "short wide help ends on a blank content row"
+        );
     }
 
     #[test]
@@ -743,39 +743,38 @@ mod tests {
         }
     }
 
-    #[test]
-    fn help_keeps_the_state_explanations_whole_at_every_width() {
-        for width in [115, 235] {
-            let (body, scroll) = help_body(width, 1000, 0, C, Quit::Keys);
-            assert!(
-                scroll == 0 && !body.is_empty(),
-                "{width} columns: full help was not rendered"
-            );
-            let words = plain_rows(&body)
-                .iter()
-                .map(|row| row.chars().skip(2).collect::<String>())
-                .collect::<Vec<_>>()
-                .join("\n");
-            let one: String = words.split_whitespace().collect::<Vec<_>>().join(" ");
-            if width < THREE_COLUMNS {
-                for explanation in [
-                    "SEARCH finding its solo limit with light and heavy-vector trials alone",
-                    "CONFIRM checking its candidate solo limit with repeated light and heavy-vector trials alone",
-                    "FOUND solo limit checked; waiting at 0 WAITING",
-                    "WAITING at 0, waiting for its first search turn",
-                    "MEMBER kept with its hunt group at its failing offset; another member may be probed",
-                ] {
-                    assert!(
-                        one.contains(explanation),
-                        "{width} columns: help lost state explanation {explanation:?}"
-                    );
-                }
+    #[test_case(115; "115 columns")]
+    #[test_case(235; "235 columns")]
+    fn help_keeps_the_state_explanations_whole(width: usize) {
+        let (body, scroll) = help_body(width, 1000, 0, C, Quit::Keys);
+        assert!(
+            scroll == 0 && !body.is_empty(),
+            "{width} columns: full help was not rendered"
+        );
+        let words = plain_rows(&body)
+            .iter()
+            .map(|row| row.chars().skip(2).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let one: String = words.split_whitespace().collect::<Vec<_>>().join(" ");
+        if width < THREE_COLUMNS {
+            for explanation in [
+                "SEARCH finding its solo limit with light and heavy-vector trials alone",
+                "CONFIRM checking its candidate solo limit with repeated light and heavy-vector trials alone",
+                "FOUND solo limit checked; waiting at 0 WAITING",
+                "WAITING at 0, waiting for its first search turn",
+                "MEMBER kept with its hunt group at its failing offset; another member may be probed",
+            ] {
+                assert!(
+                    one.contains(explanation),
+                    "{width} columns: help lost state explanation {explanation:?}"
+                );
             }
-            assert!(
-                !plain(&body[body.len() - 1]).trim().is_empty(),
-                "{width} columns: full help ends on a blank content row"
-            );
         }
+        assert!(
+            !plain(&body[body.len() - 1]).trim().is_empty(),
+            "{width} columns: full help ends on a blank content row"
+        );
     }
 
     #[test]
@@ -867,43 +866,43 @@ mod tests {
         }
     }
 
-    #[test]
-    fn help_labels_keep_whole_words() {
-        for (items, width, label_width, want) in [
-            (&[("requester", "evidence")], 20, 6, ""),
-            (&[("top requester", "evidence")], 30, 10, "top..."),
-            (&[("top requester", "evidence")], 60, 15, "top requester"),
-        ] {
-            let section = Section {
-                title: "WORDS",
-                items,
-            };
-            let lines = section_lines(&section, width, false, C);
-            let row = plain(&lines[2]);
-            assert_eq!(
-                row[..label_width].trim(),
-                want,
-                "width {width}: help label must fit by whole words"
-            );
-            assert_eq!(
-                row[label_width..].trim(),
-                "evidence",
-                "width {width}: fitted label lost its text gap: {row:?}"
-            );
-        }
+    #[test_case(&[("requester", "evidence")], 20, 6, ""; "a label too long for its column is dropped")]
+    #[test_case(&[("top requester", "evidence")], 30, 10, "top..."; "a label is cut at a word")]
+    #[test_case(&[("top requester", "evidence")], 60, 15, "top requester"; "a label that fits stays whole")]
+    fn help_labels_keep_whole_words(
+        items: &[(&'static str, &'static str)],
+        width: usize,
+        label_width: usize,
+        want: &str,
+    ) {
+        let section = Section {
+            title: "WORDS",
+            items,
+        };
+        let lines = section_lines(&section, width, false, C);
+        let row = plain(&lines[2]);
+        assert_eq!(
+            row[..label_width].trim(),
+            want,
+            "width {width}: help label must fit by whole words"
+        );
+        assert_eq!(
+            row[label_width..].trim(),
+            "evidence",
+            "width {width}: fitted label lost its text gap: {row:?}"
+        );
     }
 
-    #[test]
-    fn the_sections_end_on_text_not_padding() {
-        for section in [&TUNING, &LOAD] {
-            for width in [40, 70, 115] {
-                let lines = section_lines(section, width, section.title == TUNING.title, C);
-                assert!(
-                    !plain(&lines[lines.len() - 1]).trim().is_empty(),
-                    "{:?} at {width} ends on blank padding",
-                    section.title
-                );
-            }
+    #[test_case(&TUNING; "tuning")]
+    #[test_case(&LOAD; "load")]
+    fn a_section_ends_on_text_not_padding(section: &Section) {
+        for width in [40, 70, 115] {
+            let lines = section_lines(section, width, section.title == TUNING.title, C);
+            assert!(
+                !plain(&lines[lines.len() - 1]).trim().is_empty(),
+                "{:?} at {width} ends on blank padding",
+                section.title
+            );
         }
     }
 
@@ -967,49 +966,55 @@ mod tests {
         assert!(rows[usize::from(layout.footer.y)].contains("9/9 Help"));
     }
 
-    #[test]
-    fn a_scroll_at_or_past_the_extent_follows_the_end() {
-        for (width, height) in [(80, 24), (160, 45), (240, 67), (240, 30)] {
-            let mut sc = screen(View::Help, width, height, C, true);
-            sc.scroll = usize::MAX;
-            let (end, drawn) = render_missing(&sc);
-            for scroll in [drawn.scroll, drawn.scroll + 1, 100_000] {
-                sc.scroll = scroll;
-                assert_eq!(
-                    render_missing(&sc).0,
-                    end,
-                    "{width}x{height} scroll {scroll}"
-                );
-            }
-            sc.scroll = drawn.scroll.saturating_sub(1);
-            if drawn.scroll > 0 {
-                assert_ne!(
-                    render_missing(&sc).0,
-                    end,
-                    "{width}x{height}: one line above the end is not the end"
-                );
+    #[test_case(80, 24; "80 by 24")]
+    #[test_case(160, 45; "160 by 45")]
+    #[test_case(240, 67; "240 by 67")]
+    #[test_case(240, 30; "240 by 30")]
+    fn a_scroll_at_or_past_the_extent_follows_the_end(width: u16, height: u16) {
+        let mut sc = screen(View::Help, width, height, C, true);
+        sc.scroll = usize::MAX;
+        let (end, drawn) = render_missing(&sc);
+        for scroll in [drawn.scroll, drawn.scroll + 1, 100_000] {
+            sc.scroll = scroll;
+            assert_eq!(
+                render_missing(&sc).0,
+                end,
+                "{width}x{height} scroll {scroll}"
+            );
+        }
+        sc.scroll = drawn.scroll.saturating_sub(1);
+        if drawn.scroll > 0 {
+            assert_ne!(
+                render_missing(&sc).0,
+                end,
+                "{width}x{height}: one line above the end is not the end"
+            );
+        }
+    }
+
+    #[test_case(240, 67; "240 by 67")]
+    #[test_case(160, 45; "160 by 45")]
+    #[test_case(120, 33; "120 by 33")]
+    #[test_case(80, 24; "80 by 24")]
+    fn help_stays_in_bounds_and_draws_only_console_glyphs_at_the_size(width: u16, height: u16) {
+        for colours in [Colours::Full, Colours::Console, Colours::None] {
+            for quit in [Quit::Keys, Quit::Ignored] {
+                for scroll in [0, 3, usize::MAX, 100_000] {
+                    for keys in [true, false] {
+                        let mut sc = screen(View::Help, width, height, colours, keys);
+                        sc.scroll = scroll;
+                        sc.quit = quit;
+                        let (buf, _) = render_missing(&sc);
+                        assert_frame_bounds(&buf, &sc);
+                        assert_glyphs_drawable(&buf, &format!("help {width}x{height}"));
+                    }
+                }
             }
         }
     }
 
     #[test]
-    fn help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size() {
-        for (width, height) in [(240, 67), (160, 45), (120, 33), (80, 24)] {
-            for colours in [Colours::Full, Colours::Console, Colours::None] {
-                for quit in [Quit::Keys, Quit::Ignored] {
-                    for scroll in [0, 3, usize::MAX, 100_000] {
-                        for keys in [true, false] {
-                            let mut sc = screen(View::Help, width, height, colours, keys);
-                            sc.scroll = scroll;
-                            sc.quit = quit;
-                            let (buf, _) = render_missing(&sc);
-                            assert_frame_bounds(&buf, &sc);
-                            assert_glyphs_drawable(&buf, &format!("help {width}x{height}"));
-                        }
-                    }
-                }
-            }
-        }
+    fn help_stays_in_bounds_at_every_tiny_size() {
         for width in 0..=80 {
             for height in [0, 1, 2, 3, 4, 5, 8, 24] {
                 let sc = screen(View::Help, width, height, Colours::Full, true);

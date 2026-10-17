@@ -1,6 +1,7 @@
 //! What the frame says about the session's state: the story, the NOW band and the stage line, whole.
 
 use ratatui::buffer::Buffer;
+use test_case::test_case;
 use togi_journal::{
     CommandReset, DeadEnd, DeadEndCondition, EventKind, Outcome, ResetTarget, Shutdown,
     ShutdownReason, TrialProgress,
@@ -97,44 +98,47 @@ fn a_running_stage_line_keeps_its_marker_and_its_repeat_note() {
     );
 }
 
-#[test]
-fn a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis() {
-    for (condition, detail, wrong) in [
-        (
-            DeadEndCondition::NoEvidence,
-            "kernel log unreadable: permission denied",
-            "installed",
-        ),
-        (
-            DeadEndCondition::Containment,
-            "termination unconfirmed",
-            "termination confirmed",
-        ),
-        (
-            DeadEndCondition::ThermalTrip,
-            "firmware reported a thermal trip",
-            "wrong result",
-        ),
-    ] {
-        let mut script = Script::at_limit();
-        script.append(
-            DeadEnd {
-                condition,
-                core: None,
-                detail: detail.to_owned(),
-                action: None,
-            }
-            .into(),
-            &[],
-        );
-        let fx = Fixture::of(&script.events);
-        let (buf, _) = fx.main(240, 67);
-        let shown = text(&buf);
-        assert!(
-            shown.contains("DEAD END") && shown.contains(detail) && !shown.contains(wrong),
-            "a dead end loses its recorded cause or invents one:\n{shown}"
-        );
-    }
+#[test_case(
+    DeadEndCondition::NoEvidence,
+    "kernel log unreadable: permission denied",
+    "installed";
+    "no evidence"
+)]
+#[test_case(
+    DeadEndCondition::Containment,
+    "termination unconfirmed",
+    "termination confirmed";
+    "containment"
+)]
+#[test_case(
+    DeadEndCondition::ThermalTrip,
+    "firmware reported a thermal trip",
+    "wrong result";
+    "thermal trip"
+)]
+fn a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis(
+    condition: DeadEndCondition,
+    detail: &str,
+    wrong: &str,
+) {
+    let mut script = Script::at_limit();
+    script.append(
+        DeadEnd {
+            condition,
+            core: None,
+            detail: detail.to_owned(),
+            action: None,
+        }
+        .into(),
+        &[],
+    );
+    let fx = Fixture::of(&script.events);
+    let (buf, _) = fx.main(240, 67);
+    let shown = text(&buf);
+    assert!(
+        shown.contains("DEAD END") && shown.contains(detail) && !shown.contains(wrong),
+        "a dead end loses its recorded cause or invents one:\n{shown}"
+    );
 }
 
 #[test]
@@ -160,37 +164,45 @@ fn a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition() {
     }
 }
 
-#[test]
-fn no_trial_yet_does_not_claim_one_ended() {
+fn trial_events() -> (Vec<togi_journal::Event>, usize) {
     let events = session_events();
     let first_intent = events
         .iter()
         .position(|event| event.kind() == EventKind::TrialIntent)
         .expect("a trial intent");
+    (events, first_intent)
+}
+
+#[test]
+fn a_session_with_no_trial_yet_does_not_claim_one_ended() {
+    let (events, first_intent) = trial_events();
+    let fx = Fixture::of(&events[..first_intent]);
+    assert!(fx.model.snapshot().trial.is_none());
+    for (width, height) in SIZES {
+        let said = words(&fx.main(width, height).0);
+        assert!(
+            said.contains("No trial has run yet"),
+            "{width}x{height} lacks the no-trial words: {said}"
+        );
+        assert!(
+            !said.contains("has ended"),
+            "{width}x{height} claims a trial ended: {said}"
+        );
+    }
+}
+
+#[test]
+fn a_first_trial_that_ended_is_reported_as_the_last_one() {
+    let (events, _) = trial_events();
     let ended = cut_at(&events, |event| event.kind() == EventKind::TrialEnd).expect("a trial end");
-    for (name, cut, want) in [
-        (
-            "session start to readback",
-            &events[..first_intent],
-            "No trial has run yet",
-        ),
-        ("first trial ended", ended, "last: PASS"),
-    ] {
-        let fx = Fixture::of(cut);
-        assert!(fx.model.snapshot().trial.is_none(), "{name}");
-        for (width, height) in SIZES {
-            let said = words(&fx.main(width, height).0);
-            assert!(
-                said.contains(want),
-                "{name} at {width}x{height} lacks {want:?}: {said}"
-            );
-            if want == "No trial has run yet" {
-                assert!(
-                    !said.contains("has ended"),
-                    "{name} at {width}x{height} claims a trial ended: {said}"
-                );
-            }
-        }
+    let fx = Fixture::of(ended);
+    assert!(fx.model.snapshot().trial.is_none());
+    for (width, height) in SIZES {
+        let said = words(&fx.main(width, height).0);
+        assert!(
+            said.contains("last: PASS"),
+            "{width}x{height} lacks \"last: PASS\": {said}"
+        );
     }
 }
 

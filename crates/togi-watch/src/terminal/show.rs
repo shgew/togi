@@ -168,6 +168,7 @@ mod tests {
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
     use ratatui::style::Style;
+    use test_case::test_case;
     use tokio::sync::{mpsc, watch};
     use tokio::task::{JoinHandle, LocalSet, spawn_local, yield_now};
     use tokio::time::{Instant, advance, timeout};
@@ -400,29 +401,30 @@ mod tests {
         });
     }
 
-    #[test]
-    fn tiny_terminals_draw_nothing_and_do_not_fail() {
+    #[test_case(1, 1; "one by one")]
+    #[test_case(1, 5; "one column")]
+    #[test_case(5, 1; "one row")]
+    #[test_case(2, 2; "two by two")]
+    fn tiny_terminals_draw_nothing_and_do_not_fail(width: u16, height: u16) {
         crate::terminal::testing::paused(async {
             local(async {
-                for (width, height) in [(1, 1), (1, 5), (5, 1), (2, 2)] {
-                    let recorder = Recorder::new(width, height);
-                    let h = Harness::start(&recorder, &Setup::default());
-                    h.script.fill.set(true);
-                    h.send(Event::Resize).await;
-                    for cells in recorder.draws() {
-                        assert!(
-                            cells
-                                .iter()
-                                .all(|(x, y, _)| *x < width - 1 && *y < height - 1)
-                        );
-                    }
-                    assert_eq!(
-                        h.script.areas.borrow()[0],
-                        Rect::new(0, 0, width - 1, height - 1)
+                let recorder = Recorder::new(width, height);
+                let h = Harness::start(&recorder, &Setup::default());
+                h.script.fill.set(true);
+                h.send(Event::Resize).await;
+                for cells in recorder.draws() {
+                    assert!(
+                        cells
+                            .iter()
+                            .all(|(x, y, _)| *x < width - 1 && *y < height - 1)
                     );
-                    h.send(Event::Cancel).await;
-                    h.finish().await.unwrap();
                 }
+                assert_eq!(
+                    h.script.areas.borrow()[0],
+                    Rect::new(0, 0, width - 1, height - 1)
+                );
+                h.send(Event::Cancel).await;
+                h.finish().await.unwrap();
             })
             .await;
         });
@@ -832,43 +834,41 @@ mod tests {
         });
     }
 
-    #[test]
-    fn the_console_palette_is_set_on_entry_and_reset_on_every_exit() {
+    #[test_case(true, Event::Cancel, false; "a palette and a cancel")]
+    #[test_case(true, Event::InputClosed, false; "a palette and a closed input")]
+    #[test_case(true, Event::Key(Key::Char('q')), false; "a palette and a quit key")]
+    #[test_case(true, Event::Failed(WatchError { operation: "watch journal", source: std::io::Error::other("gone") }), true; "a palette and a failure")]
+    #[test_case(false, Event::Cancel, false; "no palette and a cancel")]
+    #[test_case(false, Event::InputClosed, false; "no palette and a closed input")]
+    #[test_case(false, Event::Key(Key::Char('q')), false; "no palette and a quit key")]
+    #[test_case(false, Event::Failed(WatchError { operation: "watch journal", source: std::io::Error::other("gone") }), true; "no palette and a failure")]
+    fn the_console_palette_is_set_on_entry_and_reset_on_every_exit(
+        palette: bool,
+        exit: Event,
+        fails: bool,
+    ) {
         crate::terminal::testing::paused(async {
             local(async {
-                for palette in [true, false] {
-                    for exit in ["cancel", "input closed", "quit", "failure"] {
-                        let recorder = Recorder::new(80, 12);
-                        let h = Harness::start(
-                            &recorder,
-                            &Setup {
-                                palette,
-                                ..Setup::default()
-                            },
-                        );
-                        settle().await;
-                        let result = match exit {
-                            "cancel" => Event::Cancel,
-                            "input closed" => Event::InputClosed,
-                            "quit" => Event::Key(Key::Char('q')),
-                            _ => Event::Failed(WatchError {
-                                operation: "watch journal",
-                                source: std::io::Error::other("gone"),
-                            }),
-                        };
-                        h.send(result).await;
-                        let outcome = h.finish().await;
-                        assert_eq!(outcome.is_err(), exit == "failure");
-                        let raw = recorder.raw();
-                        if palette {
-                            assert_eq!(raw.first().unwrap(), &super::super::console::set_palette());
-                            assert_eq!(raw.last().unwrap(), super::super::console::RESET_PALETTE);
-                        } else {
-                            assert!(!raw.iter().any(|text| text.contains("\x1b]")), "{raw:?}");
-                        }
-                        assert!(recorder.restored(), "{exit}");
-                    }
+                let recorder = Recorder::new(80, 12);
+                let h = Harness::start(
+                    &recorder,
+                    &Setup {
+                        palette,
+                        ..Setup::default()
+                    },
+                );
+                settle().await;
+                h.send(exit).await;
+                let outcome = h.finish().await;
+                assert_eq!(outcome.is_err(), fails);
+                let raw = recorder.raw();
+                if palette {
+                    assert_eq!(raw.first().unwrap(), &super::super::console::set_palette());
+                    assert_eq!(raw.last().unwrap(), super::super::console::RESET_PALETTE);
+                } else {
+                    assert!(!raw.iter().any(|text| text.contains("\x1b]")), "{raw:?}");
                 }
+                assert!(recorder.restored());
             })
             .await;
         });
@@ -912,87 +912,51 @@ mod tests {
         });
     }
 
-    #[test]
-    fn terminal_failures_name_the_operation_keep_the_cause_and_restore_what_was_set_up() {
+    #[test_case("clear terminal", Faults { clear: true, ..Faults::default() }, 0; "clearing the terminal")]
+    #[test_case("read terminal size", Faults { size_from: Some(3), ..Faults::default() }, 0; "reading the size for the first frame")]
+    #[test_case("draw frame", Faults { draw_from: Some(1), ..Faults::default() }, 0; "drawing the first frame")]
+    #[test_case("read terminal size", Faults { size_from: Some(5), ..Faults::default() }, 1; "reading the size for a redraw")]
+    #[test_case("draw frame", Faults { draw_from: Some(2), ..Faults::default() }, 1; "drawing a redraw")]
+    fn terminal_failures_name_the_operation_keep_the_cause_and_restore_what_was_set_up(
+        operation: &'static str,
+        faults: Faults,
+        good_frames: usize,
+    ) {
         crate::terminal::testing::paused(async {
             local(async {
-                let cases = [
-                    (
-                        "clear terminal",
-                        Faults {
-                            clear: true,
-                            ..Faults::default()
-                        },
-                        0,
-                    ),
-                    (
-                        "read terminal size",
-                        Faults {
-                            size_from: Some(3),
-                            ..Faults::default()
-                        },
-                        0,
-                    ),
-                    (
-                        "draw frame",
-                        Faults {
-                            draw_from: Some(1),
-                            ..Faults::default()
-                        },
-                        0,
-                    ),
-                    (
-                        "read terminal size",
-                        Faults {
-                            size_from: Some(5),
-                            ..Faults::default()
-                        },
-                        1,
-                    ),
-                    (
-                        "draw frame",
-                        Faults {
-                            draw_from: Some(2),
-                            ..Faults::default()
-                        },
-                        1,
-                    ),
-                ];
-                for (operation, faults, good_frames) in cases {
-                    let recorder = Recorder::failing(80, 12, faults);
-                    let h = Harness::start(
-                        &recorder,
-                        &Setup {
-                            palette: true,
-                            ..Setup::default()
-                        },
-                    );
-                    settle().await;
-                    assert_eq!(
-                        recorder.draws().len(),
-                        good_frames,
-                        "{operation}: the first frame"
-                    );
-                    if good_frames > 0 {
-                        advance(Duration::from_secs(1)).await;
-                    }
-                    let error = h.finish().await.unwrap_err();
-                    let Error::Terminal {
-                        operation: got,
-                        source,
-                    } = &error
-                    else {
-                        panic!("{error:?}");
-                    };
-                    assert_eq!(*got, operation);
-                    assert_eq!(source.to_string(), "terminal unavailable");
-                    let raw = recorder.raw();
-                    assert_eq!(
-                        raw.last().map(String::as_str),
-                        Some(super::super::console::RESET_PALETTE),
-                        "{operation}: the palette was not restored"
-                    );
+                let recorder = Recorder::failing(80, 12, faults);
+                let h = Harness::start(
+                    &recorder,
+                    &Setup {
+                        palette: true,
+                        ..Setup::default()
+                    },
+                );
+                settle().await;
+                assert_eq!(
+                    recorder.draws().len(),
+                    good_frames,
+                    "{operation}: the first frame"
+                );
+                if good_frames > 0 {
+                    advance(Duration::from_secs(1)).await;
                 }
+                let error = h.finish().await.unwrap_err();
+                let Error::Terminal {
+                    operation: got,
+                    source,
+                } = &error
+                else {
+                    panic!("{error:?}");
+                };
+                assert_eq!(*got, operation);
+                assert_eq!(source.to_string(), "terminal unavailable");
+                let raw = recorder.raw();
+                assert_eq!(
+                    raw.last().map(String::as_str),
+                    Some(super::super::console::RESET_PALETTE),
+                    "{operation}: the palette was not restored"
+                );
             })
             .await;
         });
