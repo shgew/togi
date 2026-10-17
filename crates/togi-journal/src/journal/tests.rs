@@ -370,33 +370,24 @@ fn a_reboot_whose_sync_fails_poisons_the_journal_and_keeps_its_boot() {
     ));
 }
 
-#[test_case(Fault::before(Op::Write, 1), 1, "write never happened"; "write never happened")]
-#[test_case(Fault::short_write(1), 1, "short write"; "short write")]
-#[test_case(
-    Fault::after(Op::Write, 1), 2, "write landed, error reported";
-    "write landed, error reported"
-)]
-#[test_case(
-    Fault::before(Op::Sync, 1), 2, "sync failed after the write landed";
-    "sync failed after the write landed"
-)]
-#[test_case(Fault::after(Op::Sync, 1), 2, "sync reported failure"; "sync reported failure")]
+#[test_case(Fault::before(Op::Write, 1), 1, 0; "write never happened")]
+#[test_case(Fault::short_write(1), 1, 1; "short write")]
+#[test_case(Fault::after(Op::Write, 1), 2, 0; "write landed, error reported")]
+#[test_case(Fault::before(Op::Sync, 1), 2, 0; "sync failed after the write landed")]
+#[test_case(Fault::after(Op::Sync, 1), 2, 0; "sync reported failure")]
 fn a_write_or_fsync_failure_poisons_without_further_io_and_the_survivor_replays_once(
     fault: Fault,
     survivors: usize,
-    why: &str,
+    torn: usize,
 ) {
     let fs = MemFs::new();
     let mut journal = begin_default(&fs);
     fs.inject(fault);
-    assert!(
-        matches!(
-            journal.append(stamp(1), note("lost?"), &[]),
-            Err(AppendError::Failed(_))
-        ),
-        "{why}"
-    );
-    assert_eq!(journal.events().len(), 1, "{why}: nothing is published");
+    assert!(matches!(
+        journal.append(stamp(1), note("lost?"), &[]),
+        Err(AppendError::Failed(_))
+    ));
+    assert_eq!(journal.events().len(), 1, "nothing is published");
     let mutations = fs.mutations();
     for _ in 0..3 {
         assert!(matches!(
@@ -409,11 +400,7 @@ fn a_write_or_fsync_failure_poisons_without_further_io_and_the_survivor_replays_
         Err(AppendError::Poisoned(_))
     ));
     assert!(matches!(journal.flush(), Err(AppendError::Poisoned(_))));
-    assert_eq!(
-        fs.mutations(),
-        mutations,
-        "{why}: a poisoned journal does no I/O"
-    );
+    assert_eq!(fs.mutations(), mutations, "a poisoned journal does no I/O");
 
     let dir = journal.close().unwrap();
     assert_eq!(fs.mutations(), mutations);
@@ -423,25 +410,21 @@ fn a_write_or_fsync_failure_poisons_without_further_io_and_the_survivor_replays_
         .iter()
         .filter(|event| event.kind() == EventKind::SessionWarning)
         .count();
-    assert_eq!(replayed, survivors - 1, "{why}");
-    let torn = journal
+    assert_eq!(replayed, survivors - 1);
+    let torn_events = journal
         .events()
         .iter()
         .filter(|event| event.kind() == EventKind::JournalTorn)
         .count();
-    assert_eq!(torn, usize::from(why == "short write"), "{why}");
+    assert_eq!(torn_events, torn);
     let next = journal
         .append(stamp(3), note("after"), &[])
         .unwrap()
         .seq
         .get();
-    assert_eq!(
-        next,
-        journal.events().len() as u64,
-        "{why}: seqs stay contiguous"
-    );
+    assert_eq!(next, journal.events().len() as u64, "seqs stay contiguous");
     let bytes = journal.close().map(|_| live(&fs)).unwrap();
-    assert!(Recording::parse(&bytes).unwrap().torn().is_none(), "{why}");
+    assert!(Recording::parse(&bytes).unwrap().torn().is_none());
 }
 
 #[test]

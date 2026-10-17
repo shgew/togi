@@ -453,25 +453,25 @@ fn scenario() -> Log {
     log
 }
 
-#[test]
-fn fold_prefix_equals_fresh_fold() {
-    for registry in [&PAIR[..], &CAUTIOUS[..], &ALTERNATIVES[..], &NONE[..]] {
-        let registry: &'static [Entry] = registry;
-        let log = scenario();
-        let mut incremental = DefectState::new(registry);
-        assert_eq!(incremental, log.prefix(registry, 0));
-        for (at, event) in log.events.iter().enumerate() {
-            incremental.fold(event);
-            let fresh = log.prefix(registry, at + 1);
-            assert_eq!(incremental, fresh, "prefix {}", at + 1);
-            assert_eq!(pending_ids(&incremental), pending_ids(&fresh));
-            assert_eq!(unanswered_ids(&incremental), unanswered_ids(&fresh));
-            assert_eq!(missing(&incremental), missing(&fresh));
-            assert_eq!(
-                incremental.excluded_failures().collect::<Vec<_>>(),
-                fresh.excluded_failures().collect::<Vec<_>>()
-            );
-        }
+#[test_case(&PAIR; "pair")]
+#[test_case(&CAUTIOUS; "cautious")]
+#[test_case(&ALTERNATIVES; "alternatives")]
+#[test_case(&NONE; "no registry")]
+fn fold_prefix_equals_fresh_fold(registry: &'static [Entry]) {
+    let log = scenario();
+    let mut incremental = DefectState::new(registry);
+    assert_eq!(incremental, log.prefix(registry, 0));
+    for (at, event) in log.events.iter().enumerate() {
+        incremental.fold(event);
+        let fresh = log.prefix(registry, at + 1);
+        assert_eq!(incremental, fresh, "prefix {}", at + 1);
+        assert_eq!(pending_ids(&incremental), pending_ids(&fresh));
+        assert_eq!(unanswered_ids(&incremental), unanswered_ids(&fresh));
+        assert_eq!(missing(&incremental), missing(&fresh));
+        assert_eq!(
+            incremental.excluded_failures().collect::<Vec<_>>(),
+            fresh.excluded_failures().collect::<Vec<_>>()
+        );
     }
 }
 
