@@ -2,6 +2,8 @@
 
 `togi-tool-sim` (`just sim`) runs a whole tuning session on the seeded simulator of the `togi-sim` crate: a 16-core Zen 5 machine with hidden per-core limits, random failures and crashes. It needs no hardware and no root, and works on every development platform. It is a development program: the package does not ship it, so it runs from a source checkout.
 
+The simulator is a model, not the machine. Research that runs it follows [Research campaigns](benchmarking.md#research-campaigns): model development changes the model under the [model program](../tools/fit/program.md), every other mode keeps the simulator frozen, and a simulated gain never lifts the tuner program's [evidence volume](../tools/bench/program.md#hard-rules) freeze. A simulated session concludes where a real one does, at the confirmation cycle's first passed full end ([Phase 2](spec/tuner.md#phase-2)).
+
 ```sh
 just sim [--seed N] [--machine FILE] [--replay-facts] [--cycles N] [--state-dir DIR] [--samples] [--max-boots N] [--verify-every N] [--cold-boots]
 ```

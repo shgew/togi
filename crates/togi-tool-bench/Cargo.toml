@@ -9,6 +9,8 @@ description = "The bench: runs the suite of simulated sessions on the simulator 
 
 [dependencies]
 clap.workspace = true
+flate2.workspace = true
+jiff.workspace = true
 rand.workspace = true
 rustix = { workspace = true, features = ["process"] }
 serde.workspace = true
@@ -29,8 +31,8 @@ togi-tuner.workspace = true
 togi-version.workspace = true
 
 [dev-dependencies]
-jiff.workspace = true
 proptest.workspace = true
+test-case.workspace = true
 togi-config.workspace = true
 togi-render.workspace = true
 togi-session.workspace = true
