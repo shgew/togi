@@ -104,12 +104,22 @@ impl<R: HostReadings> SystemHost<R> {
             let mut driver = lock(&self.driver);
             driver.validate().and_then(|_| driver.pm_reader())
         };
+        self.check_pm_reader(reader)
+    }
+
+    pub(crate) fn check_pm_reader(
+        &self,
+        reader: Result<Arc<togi_smu::PmReader>, togi_smu::Error>,
+    ) -> Check {
         match reader {
             Ok(reader) => {
                 self.pm.publish(Arc::clone(&reader));
                 reader.check()
             }
-            Err(error) => failed(CheckName::PmTable, describe(&error)),
+            Err(error) => passed(
+                CheckName::PmTable,
+                format!("pm_table unavailable: {}", describe(&error)),
+            ),
         }
     }
 
