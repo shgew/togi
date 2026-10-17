@@ -1,8 +1,11 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::OnceLock;
 
 use togi_config::Config;
 use togi_journal::{Activity, Event, Payload};
 use togi_machine::{Backend, Regime};
+use togi_tuner::State;
 
 use crate::Error;
 use crate::simulate::{Stop, Until, crash_trial, default_machine, probe_machine, simulate};
@@ -12,8 +15,8 @@ use crate::simulate::{Stop, Until, crash_trial, default_machine, probe_machine, 
 /// does not leave one here.]
 const UNCONFIRMED_SEED: u64 = 43;
 
-/// How many trials from the first checking trial of cycle 4 on crash without naming a core. [INFERENCE: found by
-/// scanning; a shorter burst stays within the hold.]
+/// How many consecutive trials crash without naming a core, starting at the first non-R7 checking trial of cycle 4
+/// on after a BIOS profile is confirmed. [INFERENCE: found by scanning; a shorter burst stays within the hold.]
 const BURST: u32 = 6;
 
 /// The simulated sessions the scenarios and the other named journals are cut from.
@@ -26,10 +29,9 @@ pub enum Base {
     Concluded,
     /// The default machine on seed 43 through three clean cycles.
     Unconfirmed,
-    /// The default machine through three clean cycles, with a burst of crashes naming no core on the trials from the
-    /// first checking trial of cycle 4 on: after a held first failure, a second makes a hunt while the confirmed
-    /// profile shows a held, unconfirmed core. Go ran six cycles and found the burst's start in a first, unscripted
-    /// simulation; three cycles reach the same hunt, and the start is pinned and checked.
+    /// The default machine through three clean cycles, with six consecutive crashes naming no core starting at the
+    /// first non-R7 checking trial of cycle 4 on after a BIOS profile is confirmed: after a held first failure, a
+    /// second makes a hunt while the confirmed profile shows a held, unconfirmed core.
     LaterHunt,
     /// The default machine stopped at its first confirmed BIOS profile.
     FirstResult,
@@ -129,30 +131,55 @@ impl Base {
     }
 }
 
-/// The default machine's first checking trial of cycle 4 on, outside R7, which the burst starts at. Trials before it
-/// run alike with the burst scripted or not, so the burst's own journal shows it; [`later_hunt`] checks that it does
-/// instead of simulating the session a second time to find it.
-const BURST_START: u32 = 1887;
-
 fn later_hunt() -> Result<Vec<Event>, Error> {
     let machine = default_machine(1)?;
-    for id in BURST_START..BURST_START + BURST {
-        crash_trial(&machine, &format!("{id:04}"), 7.0, 3)?;
-    }
-    let events = simulate(machine, Config::default(), None, Stop::cycles(3))?;
-    let first = events.iter().find_map(|event| match &event.payload {
-        Payload::TrialIntent(intent)
-            if intent.activity == Some(Activity::Checking)
-                && intent.cycle.is_some_and(|cycle| cycle.get() >= 4)
-                && intent.regime != Regime::R7 =>
-        {
-            intent.trial.as_str().parse::<u32>().ok()
+    let fault = machine.clone();
+    let armed = Rc::new(RefCell::new(Ok(0)));
+    let result = Rc::clone(&armed);
+    let mut state = State::new();
+    let arm: Until = Box::new(move |event| {
+        let mut result = result.borrow_mut();
+        let Ok(count) = result.as_mut() else {
+            return true;
+        };
+        if *count == BURST {
+            return false;
         }
-        _ => None,
+        if *count == 0
+            && let Err(error) = state.fold(event)
+        {
+            *result = Err(error.into());
+            return true;
+        }
+        let Payload::TrialIntent(intent) = &event.payload else {
+            return false;
+        };
+        if *count == 0
+            && !(intent.activity == Some(Activity::Checking)
+                && intent.cycle.is_some_and(|cycle| cycle.get() >= 4)
+                && intent.regime != Regime::R7
+                && state
+                    .bios_profile()
+                    .is_some_and(|bios| bios.confirmed.is_some()))
+        {
+            return false;
+        }
+        match crash_trial(&fault, intent.trial.as_str(), 7.0, 3) {
+            Ok(()) => {
+                *count += 1;
+                false
+            }
+            Err(error) => {
+                *result = Err(error);
+                true
+            }
+        }
     });
-    if first != Some(BURST_START) {
+    let events = simulate(machine, Config::default(), Some(arm), Stop::cycles(3))?;
+    let count = armed.replace(Ok(0))?;
+    if count != BURST {
         return Err(Error::Fixture(format!(
-            "the first checking trial of cycle 4 on is {first:?}, not the burst's start {BURST_START}"
+            "the later hunt armed {count} crash trials, not the full burst of {BURST}"
         )));
     }
     Ok(events)
