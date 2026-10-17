@@ -151,26 +151,29 @@ fn a_failure_before_publication_preserves_the_previous_reader_state() {
                 fail: Some(failure),
                 ..Storage::default()
             }));
+            let input = format!("previous extract {}, after {failure:?}", old.is_some());
             let before = storage.borrow().read();
             let error = publish(&storage, &facts).unwrap_err();
             match failure {
-                Operation::Rename => assert!(matches!(error, WriteError::Replace { .. })),
+                Operation::Rename => {
+                    assert!(matches!(error, WriteError::Replace { .. }), "{input}");
+                }
                 Operation::Create | Operation::Write | Operation::Flush | Operation::Sync => {
-                    assert!(matches!(error, WriteError::Io(_)));
+                    assert!(matches!(error, WriteError::Io(_)), "{input}");
                 }
             }
             let state = storage.borrow();
-            assert_eq!(state.read(), before, "after {failure:?}");
-            assert_eq!(state.published, old, "after {failure:?}");
-            assert!(state.temporary.is_none(), "after {failure:?}");
+            assert_eq!(state.read(), before, "{input}");
+            assert_eq!(state.published, old, "{input}");
+            assert!(state.temporary.is_none(), "{input}");
             if failure != Operation::Rename {
-                assert!(!state.operations.contains(&Operation::Rename));
+                assert!(!state.operations.contains(&Operation::Rename), "{input}");
             }
             if matches!(
                 failure,
                 Operation::Create | Operation::Write | Operation::Flush
             ) {
-                assert!(!state.operations.contains(&Operation::Sync));
+                assert!(!state.operations.contains(&Operation::Sync), "{input}");
             }
         }
     }
