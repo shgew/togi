@@ -264,6 +264,9 @@ impl Run {
         if let Some(action) = self.locate_action() {
             return Some(action);
         }
+        if let Some(action) = self.r7_probe_action() {
+            return Some(action);
+        }
         if let Some(action) = self.rerun_action() {
             return Some(action);
         }

@@ -12,6 +12,8 @@ Transitions record eligible same-BIOS trial and idle-failure facts before `sessi
 
 Multi-core R7 means whole-CCD, partial and all-core loads. R1–R6 evidence and search, R6 idle failures, single-core failures and their hunts, failure points and combinations from those paths, and their first-failure rules are separate from it. The tuner charges an unattributed multi-core R7 failure to the loaded cores by voltage-targeted backoff and locates it on its unloaded cores only when that stops helping or the load's passes show it cannot help ([Escalation to a located hunt](#escalation-to-a-located-hunt), [Hunt](#hunt)), and reruns a failing trial with every core at CO 0 before any `failure_at_zero` dead end ([Dead ends](#dead-ends)).
 
+To break self-confirming charges, repeated live unattributed charges also schedule a part that idles the charged request group before full-load reruns, including for all-core loads ([Testing a repeatedly charged requester](#testing-a-repeatedly-charged-requester), [ADR 0065](../adr/0065-test-repeated-r7-charges.md)).
+
 ## Invariants
 
 1. Every offset stays within [-50, 0]. togi never writes a positive offset.
@@ -132,7 +134,7 @@ The following ordered table summarizes the multi-core R7 failure path. Attributi
 | 8 | The failed profile was already all-zero, or its all-zero rerun fails | Record `failure_at_zero`. A failed locate with every loaded core at 0 already supplies the all-zero rerun |
 | 9 | The all-zero rerun passes | Do not dead-end. Drop both named-core and `stalled_core` restrictions and route as unattributed against CCDs with movable loaded cores, including a located hunt if required |
 | 10 | A movable core is selected, but its current offset is already shallower than its offset in that failed trial | No move now. Keep the failure pending in case that core returns to the failing offset or deeper; this alone does not end a phase-2 round |
-| 11 | A move is still required | End an open phase-2 round first. Apply [R7 voltage-targeted backoff](#r7-voltage-targeted-backoff), record the moved core's failure point, and satisfy [Checking](#checking)'s rerun obligations before resuming the open cycle |
+| 11 | A move is still required | End an open phase-2 round first. Apply [R7 voltage-targeted backoff](#r7-voltage-targeted-backoff), record the moved core's failure point, and run any [requester probe](#testing-a-repeatedly-charged-requester) before [Checking](#checking)'s full-load rerun obligations; then resume the open cycle |
 
 ## R7 self-sufficiency evidence
 
@@ -154,6 +156,18 @@ A carried failure takes no V*: a new session evaluates it after every carried fa
 
 Record the moved core's failure point at its applied offset in the failed trial, keeping the shallowest point. Phase 2 cannot return there; ordinary backoff rerun obligations follow.
 
+### Testing a repeatedly charged requester
+
+A backoff raises a core's request, so remaining top requester after repeated charges is not independent evidence against that core. For each `(R7 workload, sorted loaded cores, charged core)`, remember its live unattributed checking backoffs since its last completed requester probe or reset. **A passing trial of the parent load does not clear this count.** After the second charge, before the parent load reruns, test the part that idles the whole tied request group containing the charged core on its CCD. Derive that group from the failed trial's frozen request order, including recorded top groups and step-down past CO-0 groups. Keep every other core's tuning offset unchanged. No request telemetry is required: the usual offset order is sufficient.
+
+An all-core failure can charge one core on each affected CCD. Queue one probe for each charged core that reaches the threshold, in charge-decision order. Each probe idles only that CCD's selected group and keeps the other CCDs loaded. These are diagnostic partials of the failed load, not new all-core checking chains. If removing the tied group leaves fewer than two loaded cores in total, omit the probe; do not split a tie, launch single-core R7, or infer a culprit from this lack of an experiment.
+
+A loaded `stalled_core` outside the selected group on the charged CCD accelerates this same probe after the first charge. It is a reason to retain the stalled core in an informative load, never direct attribution or permission to charge it. A stall in the group, outside the load, or on another CCD does not accelerate the probe. Backend signals and core-local MCE attribution still take precedence.
+
+The probe runs the failed workload at its **intended** failed duration on the current together tuning profile. It requires `n` fresh valid live passes since the charge that queued it; neither earlier observations nor carried passes answer it. Its first failure ends the probe and follows ordinary attribution for that partial load, including named-core charging, request-order backoff or locating an unloaded cause. A pass or failure completes the experiment and restarts that core's parent-load charge count. Passing the probe does not prove the idled group caused the parent failure; it simply resumes the parent's ordinary reruns and future failure response. The probe's evidence is ordinary evidence for its own class and may cover a checking part that later derives the same load.
+
+Named charges, carried failures, phase-2 blame/reverts, and held later failures schedule no requester probe. A reset of any loaded core clears the load's counts and probes. An inconclusive probe retries in the same charge-and-class context, unless reset or completion ends it. Resume reconstructs the counts, queue and progress from ordinary decisions and trial events. State retains at most one prior charge and one pending experiment per `(load, charged core)`, not a growing decision history.
+
 ### Escalation to a located hunt
 
 A live unattributed multi-core R7 failure whose failing profile has an unloaded core off CO 0 escalates to a located hunt ([Hunt](#hunt)) only when stepping back busy cores stops helping or cannot help:
@@ -161,6 +175,8 @@ A live unattributed multi-core R7 failure whose failing profile has an unloaded 
 - Its load, the R7 workload and the sorted loaded cores whatever the duration, already has two voltage-targeted backoffs since its latest passing trial before the failure.
 - Or `n` passes of its load hold every loaded core at least as deep as in the failing profile and some unloaded core shallower: its loaded cores already pass on their own at their failing offsets, so stepping one back cannot be what the failure needs ([ADR 0064](../adr/0064-locate-when-passes-clear-the-loaded-cores.md)). The passes count whatever their duration, under each class's active backend, while valid under [Evidence](#evidence): no failure of their class at a componentwise equal-or-shallower profile follows them. A pass at a profile the failing profile is within shows nothing about the unloaded cores and never counts. They are the passes valid when the failure is folded, frozen as a count and their earliest witnesses up to the supported trial bound (1000). A pending failure rechecks that count against the current `n` after a configuration change and cites exactly the earliest `n` frozen witnesses, so a larger `n` the frozen passes cannot meet does not locate it; later passes, invalidations, resets and reloads never add to, remove or change them.
 - Or every loaded core on the failure's affected CCDs is at CO 0 while an unloaded core is not: no loaded core can step back.
+
+A located hunt ending `loaded` suppresses further located hunts of that exact workload and loaded set until a passing live or carried trial of that load, or a change to any unloaded core's tuning offset, rearms it. A reset also clears the remembered result. Loaded-core offset changes alone do not rearm it: they do not change the unloaded side that was already tested at 0. This suppresses both backoff-count and covering-pass escalation, not the all-zero diagnostic needed before a dead end. The remembered result is captured when a failure folds, like its request order; later events do not reinterpret that failure. A different loaded set or workload has no remembered result.
 
 A carried unattributed failure is never located on the second ground. When its load's passes cover it as that bullet says, it needs no move: it records no decision and stays pending, since those passes show that its loaded cores need none, and the live failures of the load find the unloaded core. A reset of a loaded core discards it with its facts.
 
@@ -174,7 +190,7 @@ Phase-2 blames and confirmation reverts are `deepening`-phase decisions: they an
 
 A held later failure ([Later failures](#later-failures)) moved no voltage, so it never counts toward escalation; the step-back a second failure causes counts as any backoff does.
 
-Each such backoff's reason says which backoff of its load it is since the last pass and that a located hunt follows only after two. A located hunt's `hunt.start` reason says why the failure was located: it cites the backoffs that escalated it, or else the passes that cover its loaded cores, or says that every loaded core of the affected CCDs is at CO 0 while an unloaded core is not.
+Each such backoff's reason says which backoff of its load it is since the last pass and that a located hunt follows only after two, unless a prior `loaded` result suppresses it; then it cites that hunt end and explains the rearm boundary. A decision queuing a requester probe names its idled tied group and the two cumulative charges or the disagreeing stalled core. Probe intents are together checking reruns and cite their source failure and charge decisions. A located hunt's `hunt.start` reason says why the failure was located: it cites the backoffs that escalated it, or else the passes that cover its loaded cores, or says that every loaded core of the affected CCDs is at CO 0 while an unloaded core is not.
 
 ## Failure points and combinations
 
@@ -457,6 +473,8 @@ Known defects identify decisions made under earlier builds whose decisions canno
 
 - `reset --core N`: records `command.reset` and queues the reset. The next `run`, after pending attribution, cancels an open hunt or phase-2 round and ends an open cycle without passing, then records `core.phase` to `search` at the baseline clamped to [-50, 0]. It clears the core's failure point and pass and every combination that includes it (listed in `cleared_combination`). A failure point at 0 is cleared too. It also returns the session to [phase 1](#phase-1): the phase state clears, including that core's solo limit and any conclusion, and is rebuilt at the next phase-1 passed full cycle, after which a new phase 2 and confirmation follow.
 - `reset --all`: archives the session (`journal.md`). The next `run` starts a new session with a fresh baseline and BIOS context, carrying nothing from the archived one.
+
+A core reset clears requester-probe counts and pending probes of every load containing it, and clears all remembered `loaded` locate results: an unloaded reset also invalidates the unchanged-unloaded-side premise.
 
 `reset` writes to the journal, so it refuses while a `run` holds it (`journal.md`).
 

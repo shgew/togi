@@ -155,6 +155,7 @@ impl Run {
         self.constraints.remove_combinations(&cleared);
         let seq = event.seq;
         let before = self.core(core).offset;
+        self.r7_offset_changed(core, before, transition.offset);
         let entering_search = transition.to == CorePhase::Search;
         self.update_core(core, |state| {
             if transition.from == Some(CorePhase::Search)
@@ -205,6 +206,7 @@ impl Run {
             .set_failure_point(core, decision.failure_point.map(FailurePoint::new))?;
         let seq = event.seq;
         let before = self.core(core).offset;
+        self.r7_offset_changed(core, before, decision.to_offset);
         let hold = self.hold_strike(event, decision);
         self.r7_decided(event, decision);
         let yielded = self.phase2_yield(decision);

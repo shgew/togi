@@ -289,6 +289,9 @@ impl Run {
             .loaded()
             .iter()
             .all(|core| Self::at_zero_in(view.profile(), core));
+        if view.trial.located_loaded.is_some() && !loaded_at_zero && rerun_passed.is_none() {
+            return None;
+        }
         let affected: Vec<CcdId> = self
             .failure_targets(view)
             .iter()
@@ -347,7 +350,7 @@ impl Run {
 
     /// The request groups of the loaded cores on `ccd`, highest first: the trial's recorded top
     /// requesters of the CCD lead when it recorded any.
-    fn ccd_groups(view: &Failed<'_>, ccd: CcdId) -> Vec<CoreSet> {
+    pub(crate) fn ccd_groups(view: &Failed<'_>, ccd: CcdId) -> Vec<CoreSet> {
         let Some(order) = view.trial.order.ccd(ccd) else {
             return Vec::new();
         };
@@ -503,6 +506,11 @@ impl Run {
             charge.notes.push(Note::Located(text.clone()));
             clause = Some(text);
             located_seqs = seqs;
+        } else if let Some(end) = view.trial.located_loaded {
+            charge.notes.push(Note::Located(format!(
+                "locate ending #{end} already kept this load's failure on the loaded cores; no load pass or unloaded-offset change has rearmed it"
+            )));
+            located_seqs.push(end);
         } else if live && !self.named_culprit(view) && !self.locate_candidates(record).is_empty() {
             charge.notes.push(Note::Ordinal {
                 n: view.trial.backoffs.failures() + 1,
@@ -557,7 +565,7 @@ impl Run {
         view: &Failed<'_>,
         id: CoreId,
         mut cause: Vec<Seq>,
-        charge: Charge,
+        mut charge: Charge,
     ) -> R7Response {
         let record = view.record;
         let failing = view.trial.failing_request(id);
@@ -616,6 +624,16 @@ impl Run {
         cause.extend(failing.sources.iter().copied());
         if let Some(target) = &target {
             cause.extend(target.cited.iter().copied());
+        }
+        if !charge.named {
+            if let Some((_, idled, early)) = self.r7_probe_part(view, id) {
+                if self.r7.probes.due(record.pending.class.load(), id, early) {
+                    charge.notes.push(Note::Probe {
+                        idled,
+                        stalled: view.stalled.filter(|_| early),
+                    });
+                }
+            }
         }
         let mut seen: Vec<Seq> = Vec::new();
         cause.retain(|seq| {

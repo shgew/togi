@@ -5,6 +5,7 @@ pub(crate) mod escalation;
 pub(crate) mod failed;
 pub(crate) mod measurements;
 pub(crate) mod order;
+pub(crate) mod probe;
 pub(crate) mod query;
 pub(crate) mod reason;
 pub(crate) mod respond;

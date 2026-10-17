@@ -306,6 +306,7 @@ impl Run {
                 self.hunts.active = None;
             }
             HuntOutcome::Loaded => {
+                self.r7_located_loaded(source, seq);
                 if let (Some(entry), Some(end)) = (self.hunts.located.get_mut(&source), loaded) {
                     entry.end = Some(end);
                 }

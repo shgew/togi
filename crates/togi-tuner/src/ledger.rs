@@ -259,6 +259,7 @@ impl Run {
         );
         if let Some(trial) = failed.as_mut() {
             trial.backoffs = self.r7.strikes.snapshot(class.load());
+            trial.located_loaded = self.r7_loaded_verdict(class.load(), &profile);
             trial.cover = self.evidence.loaded_cover(class.load(), &profile)?;
         }
         let observation = Observation {

@@ -112,7 +112,7 @@ The phase that finds and checks a core's candidate solo limit with R1 and R2 tri
 Parked trials that identify the core or combination behind an unattributed failure outside multi-core R7, or a located hunt's unloaded cores.
 
 **Located hunt**:
-The hunt of an unattributed multi-core R7 failure whose unloaded cores were not all at 0, started only when stepping back its load's top requesters stops helping or cannot help: two voltage-targeted backoffs since its last passing trial, passes of the load that already held its loaded cores as deep with an unloaded core shallower, or no loaded core able to step back ([Escalation](docs/spec/tuner.md#escalation-to-a-located-hunt)). Its first group, locate, reruns the failed load with the unloaded cores at 0 ([Hunt](docs/spec/tuner.md#hunt)).
+The hunt of an unattributed multi-core R7 failure whose unloaded cores were not all at 0, started only when stepping back its load's top requesters stops helping or cannot help. Its first group, locate, reruns the failed load with the unloaded cores at 0. The escalation grounds and reuse of a prior `loaded` result are in [Escalation](docs/spec/tuner.md#escalation-to-a-located-hunt).
 
 **Member probe**:
 A hunt's parked trial after it finds a combination, which moves one member to find how shallow it must be for the combination to pass ([Hunt](docs/spec/tuner.md#hunt)).

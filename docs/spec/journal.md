@@ -171,6 +171,8 @@ A `trial.intent` with condition `parked`, `rerun` and no `hunt` is the all-zero 
 
 An unattributed multi-core R7 `backoff` that a located hunt could still follow says which backoff of its load it is since the load's last passing trial and that a located hunt follows only after two. A voltage-targeted R7 `backoff` names measured failing and target requests in volts with three decimal places, matching `trial.end`, and the rounded-up counts, or explains the one-count fallback when no qualifying passed voltage exists. If the failing request already meets the passed target, the message says so and explains the one-count move. A carried failure's message names its failing request and says that a carried failure takes no voltage target. With no request telemetry, the message instead says the order came from offsets, names the failing CO offset and explains the one-count fallback; it does not print an offset-derived pseudo-voltage. When measurements cover other loaded cores but not the moved one, it names those measurements, says they do not cover the moved core and explains the one-count fallback. Causes include the failure, request measurements and trials defining the target. A CO-0 top-group stepdown explains why the next movable group on the same CCD was selected, and a failure naming a CO-0 core whose CCD had no loaded core explains why it counts against the loaded CCD's top group. A `failure_at_zero` dead end distinguishes a named core that was top in its trial from an unattributed failure with every loaded core of its affected CCD at 0.
 
+A requester probe after repeated unattributed R7 charges is also a together `checking` trial with `rerun: true` and no cycle, hunt or round. Its loaded set is the source load minus the charged CCD's selected tied group. The charge decision's reason names that group and why the experiment is due; the probe intent cites the failure first and its charge decisions. Distinguishing it from the full-load rerun requires those causes, not a new event or flag ([tuner.md](tuner.md#testing-a-repeatedly-charged-requester)).
+
 Carried-fact payloads retain the original fact rather than deriving a new trial:
 
 | Kind | Fields |
@@ -202,13 +204,13 @@ Plan kinds and their payloads (optional fields are omitted when empty):
 
 ### Trial activity
 
-A `trial.intent` names the activity that asked for the trial through these fields, all from the event itself except the hunt stage:
+A `trial.intent` names the activity that asked for the trial through these fields, all from the event itself except the hunt stage and the requester-probe distinction:
 
 | Activity | `activity` | `condition` | Identifying fields | Absent |
 |---|---|---|---|---|
 | Search | `search` | `alone` | `core`, `offset` | `cycle`, `hunt`, `round` |
 | Checking cycle trial | `checking` | `together` | `cycle`; R7 parts also `step` | `rerun`, `hunt`, `round` |
-| Backoff rerun in checking | `checking` | `together` | `rerun: true` | `cycle` (the rerun belongs to no cycle) |
+| Backoff rerun or requester probe in checking | `checking` | `together` | `rerun: true`; a requester probe is identified through its charge causes | `cycle` (the rerun belongs to no cycle) |
 | Hunt group trial | `hunt` | `parked` | `hunt`, `group` | `cycle`, `round`, `rerun` |
 | Located hunt trial | `hunt` | `parked` | `hunt`, `group`, as for any hunt trial; no flag marks it | `cycle`, `round`, `rerun` |
 | Deepening check | `deepening` | `alone` for R1/R2, `together` for R7 | `round` | `cycle`, `hunt` |

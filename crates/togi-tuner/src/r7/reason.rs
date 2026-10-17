@@ -65,6 +65,10 @@ pub(crate) enum Note {
         end: Seq,
     },
     Located(String),
+    Probe {
+        idled: CoreSet,
+        stalled: Option<CoreId>,
+    },
 }
 
 impl fmt::Display for Note {
@@ -106,6 +110,17 @@ impl fmt::Display for Note {
                 "the unloaded cores have not been checked by a located hunt yet; voltage-targeted backoff {n} for this load since its last passing trial; a later failure can trigger a located hunt after {after} backoffs"
             ),
             Self::Located(clause) => f.write_str(clause),
+            Self::Probe { idled, stalled } => {
+                write!(
+                    f,
+                    "before the full load reruns, probe its part idling tied group {}",
+                    ids(*idled)
+                )?;
+                match stalled {
+                    Some(core) => write!(f, ": core {:02} stalled outside that group; this chooses a probe, not a culprit", core.get()),
+                    None => f.write_str(": the charged core has taken two unattributed charges, including across load passes"),
+                }
+            }
             Self::RerunPassed { failure, end } => write!(
                 f,
                 "the rerun of failure #{failure} with every core at CO 0 passed (#{end}), so it counts as unattributed against the cores off CO 0"

@@ -2,14 +2,14 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   16:53:43   tuning 40h53m   session 40h53m   52 failures · 8 crashes   last observed failure 16:53, a moment ago
+│  togi   16:53:23   tuning 40h53m   session 40h53m   51 failures · 9 crashes   last observed failure 16:52, a moment ago
 │
 │  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ► PHASE 2  confirmation cycle  ───  CLEAN CYCLES 0  ───  ○ CYCLE 2  paused at step 8 of 18, part 3
 │
 │  ▌  RERUN   The failed load runs again after the offsets changed. This trial checks the new profile.                     last trial      FAILURE  0:12 on core 01 · wrong result · core 01 named · Tctl max 76°C
 │  ▌          Cycle 2 waits at step 8 until the rerun passes.
 │
-│  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 1203
+│  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 1202
 │   R5   both threads  on 01   mprime SSE 4K-21K · 2 workers                                                                                                                                                               RERUN AFTER BACKOFF
 │
 │  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          ▀█    ▀▀█ █▀█
@@ -31,11 +31,11 @@ expression: body
 │    06  -25  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                          -26                                            14  -11  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄·▬                                         -13
 │    07  -20  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                -22                                            15  -18  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬···                                -19
 │
-│  BIOS PROFILE ─────────────────────────────────────────────────────────────────── UNCONFIRMED since #8397 · cores 01     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+│  BIOS PROFILE ─────────────────────────────────────────────────────────────────── UNCONFIRMED since #8422 · cores 01     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 │  slot      0    1    2    3    4    5    6    7
-│  CCD 0   -33  -15* -30  -13  -25  -23  -25  -20                                                                          16:53  backoff  core 01 -16 → -15
-│  CCD 1   -16  -10   -7  -12  -33  -24  -11  -18                                                                          16:53  fail     core 01 fails at -16
-│  * unconfirmed: a passed full cycle confirms it, unless a failure is held                                                16:53  fail     R5 both threads on core 01 at -16 · wrong result · core 01 named
+│  CCD 0   -33  -15* -30  -13  -25  -23  -25  -20                                                                          16:52  backoff  core 01 -16 → -15
+│  CCD 1   -16  -10   -7  -12  -33  -24  -11  -18                                                                          16:52  fail     core 01 fails at -16
+│  * unconfirmed: a passed full cycle confirms it, unless a failure is held                                                16:52  fail     R5 both threads on core 01 at -16 · wrong result · core 01 named
 │                                                                                                                          16:52  pass     R5 both threads on core 08 at -16 · passed · Tctl max 75°C
 │  CYCLE 2 ───────────────────────────────────────────────────────────────────────────────────────── 18 steps · 4 done     16:50  pass     R5 both threads on core 00 at -33 · passed · Tctl max 75°C
 │                                                                                                                          16:48  pass     R6 idle + bursts on 00-15 · passed · Tctl max 72°C
@@ -52,7 +52,7 @@ expression: body
 │  ■  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m        done                   16:13  pass     R2 heavy vector on core 10 at -7 · passed · Tctl max 64°C
 │  ■  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m            done                   16:11  pass     R2 heavy vector on core 02 at -30 · passed · Tctl max 72°C
 │  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               16:09  pass     R2 heavy vector on core 09 at -10 · passed · Tctl max 72°C
-│  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               16:07  pass     R2 heavy vector on core 01 at -16 · passed · Tctl max 67°C
+│  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               16:07  pass     R2 heavy vector on core 01 at -16 · passed · Tctl max 68°C
 │  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               16:05  pass     R2 heavy vector on core 08 at -16 · passed · Tctl max 63°C
 │  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               16:03  pass     R2 heavy vector on core 00 at -33 · passed · Tctl max 65°C
 │  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               16:01  pass     R2 heavy vector on core 15 at -18 · passed · Tctl max 68°C
@@ -65,6 +65,6 @@ expression: body
 │  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     15:47  pass     R2 heavy vector on core 04 at -25 · passed · Tctl max 75°C
 │  mprime AVX2 36K-248K           03 10 by offset          01-11 13-15                                                     15:45  pass     R2 heavy vector on core 11 at -12 · passed · Tctl max 69°C
 │  mprime AVX-512 36K-248K        03 10 by offset          01-11 13-15                                                     15:43  pass     R2 heavy vector on core 03 at -13 · passed · Tctl max 68°C
-│  y-cruncher FFTv4 + N63 + VT3   03 10 by offset          01-11 13-15                                                     +979 more
+│  y-cruncher FFTv4 + N63 + VT3   03 10 by offset          01-11 13-15                                                     +939 more
 │
 │   ?  help    l  log    esc  back    q  exit dashboard

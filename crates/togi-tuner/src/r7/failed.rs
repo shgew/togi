@@ -67,6 +67,7 @@ pub(crate) struct FailedTrial {
     pub(crate) order: RequestOrder,
     named_lane: Option<(CoreId, RequestOrder)>,
     pub(crate) backoffs: Backoffs,
+    pub(crate) located_loaded: Option<Seq>,
     /// The passes of the load, as the failure folds, that hold every loaded core at least as
     /// deep with an unloaded core shallower ([`crate::Evidence::loaded_cover`]): the count of
     /// them and the earliest ones, up to the supported trial bound. Frozen at the fold; a later
@@ -120,6 +121,7 @@ impl FailedTrial {
             order,
             named_lane,
             backoffs: Backoffs::default(),
+            located_loaded: None,
             cover: Count::default(),
         }
     }

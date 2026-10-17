@@ -205,6 +205,7 @@ impl Run {
         self.record_end(event.seq, &open, end)?;
         let cited = cited_mces(&open.mces, &event.cause);
         let (failed, zero) = self.end_r7_and_zero(event.seq, &open, end, cited);
+        self.r7_probe_end(&open, end.outcome);
         let conclusive = matches!(end.outcome, Outcome::Pass | Outcome::Failure);
         if conclusive {
             self.advance_rotation(open.intent.core, open.intent.regime);
