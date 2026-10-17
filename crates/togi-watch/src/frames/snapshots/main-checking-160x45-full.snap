@@ -1,0 +1,88 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
+│ togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
+~ gggg   wwwwwwww   gggggggttttt   ggggggggttttt   ttggggggggggggtgggggggg   ggggggggggggggggggggggtttttggggggggggg
+│ ■ SOLO LIMITS  16/16 → ► PHASE 1 · cycle 1 → ○ PHASE 2 → ○ CLEAN CYCLES
+~ pptttttttttttgggggggtktccwwwwwwwtttttttttttktkkgggggggtktkkgggggggggggg
+│
+│ PHASE 1 · cycle 1 · 0/18 steps complete
+~ wwwwwwwgggtttttttgggttttttttttttttttttt
+│ step 1 · 3 known parts · more may follow · 0/4 credited checks · 4 checks still needed
+~ wwwwwwgggtttttttttttttttttttttttttttttttgggtttttttttttttttttttgggggggggggggggggggggggg
+│
+│ NOW  CYCLE 1 · STEP 1 · PART 1   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers
+~ ggg  ccccccccccccccccccccccccc  hhhh  wwwwwwwwwwwww  tttttttt   gggggggggggggggggggggggggggggggg
+│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 1 of 4
+~ cccccccckkkkkkkkkkkkkkkk  ttttggggggg   gggggggggggg
+│
+│    0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
+~    g wwwww ggg       ggg       ggg       ggg       ggg                             g wwwww ggg       ggg       ggg       ggg       ggg
+│ core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
+~ gggggggggggggg  wggggggg?ggggggggggggggggggggggggg     ggggggggggggggggggg      gggggggggggggg  wggggggg?ggggggggggggggggggggggggg     ggggggggggggggggggg
+│ 00  ██████████████████████████                         tune -26 now -26         08  █████                                              tune  -5 now  -5
+~ ww  wwwwwwwwwwwwwwwwwwwwwwwwww                         gggggwww ggggttt         tt  wwwww                                              gggggwww ggggttt
+│                                █                       s-27 g1 f-28                       █                                            s-6 g1 f-7
+~                                ?                       gttt gt g???                       ?                                            gtt gt g??
+│                                                        judged                                                                          idle
+~                                                        tttttt                                                                          tttt
+│ 01  ████████████████                                   tune -16 now -16         09  ██████████████████████████████████                 tune -34 now -34
+~ ww  wwwwwwwwwwwwwwww                                   gggggwww ggggttt         tt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww                 gggggwww ggggttt
+│                      █                                 s-17 g1 f-18                                                    █               s-35 g1 f-36
+~                      ?                                 gttt gt g???                                                    ?               gttt gt g???
+│                                                        judged                                                                          idle
+~                                                        tttttt                                                                          tttt
+│ 02  █████████████████████████                          tune -25 now -25         10  █████████████████                                  tune -17 now -17
+~ ww  wwwwwwwwwwwwwwwwwwwwwwwww                          gggggwww ggggttt         tt  wwwwwwwwwwwwwwwww                                  gggggwww ggggttt
+│                               █                        s-26 g1 f-27                                   █                                s-18 g1 f-19
+~                               ?                        gttt gt g???                                   ?                                gttt gt g???
+│                                                        judged                                                                          idle
+~                                                        tttttt                                                                          tttt
+│ 03  ████████████████████████                           tune -24 now -24         11  █████████                                          tune  -9 now  -9
+~ ww  wwwwwwwwwwwwwwwwwwwwwwww                           gggggwww ggggttt         tt  wwwwwwwww                                          gggggwww ggggttt
+│                              █                         s-25 g1 f-26                           █                                        s-10 g1 f-11
+~                              ?                         gttt gt g???                           ?                                        gttt gt g???
+│                                                        judged                                                                          idle
+~                                                        tttttt                                                                          tttt
+│ 04  ███████████████                                    tune -15 now -15         12  ████████████████                                   tune -16 now -16
+~ ww  wwwwwwwwwwwwwww                                    gggggwww ggggttt         tt  wwwwwwwwwwwwwwww                                   gggggwww ggggttt
+│                     █                                  s-16 g1 f-17                                  █                                 s-17 g1 f-18
+~                     ?                                  gttt gt g???                                  ?                                 gttt gt g???
+│                                                        judged                                                                          idle
+~                                                        tttttt                                                                          tttt
+│ 05  █████████                                          tune  -9 now  -9         13  █████████████████████████████████████              tune -37 now -37
+~ ww  wwwwwwwww                                          gggggwww ggggttt         tt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww              gggggwww ggggttt
+│               █                                        s-10 g1 f-11                                                       █            s-38 g1 f-39
+~               ?                                        gttt gt g???                                                       ?            gttt gt g???
+│                                                        judged                                                                          idle
+~                                                        tttttt                                                                          tttt
+│ 06  █████████████████████████████████████              tune -37 now -37         14  ███████████████                                    tune -15 now -15
+~ ww  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww              gggggwww ggggttt         tt  wwwwwwwwwwwwwww                                    gggggwww ggggttt
+│                                           █            s-38 g1 f-39                                 █                                  s-16 g1 f-17
+~                                           ?            gttt gt g???                                 ?                                  gttt gt g???
+│                                                        judged                                                                          idle
+~                                                        tttttt                                                                          tttt
+│ 07  █████████████████████████████                      tune -29 now -29         15  █████████████                                      tune -13 now -13
+~ ww  wwwwwwwwwwwwwwwwwwwwwwwwwwwww                      gggggwww ggggttt         tt  wwwwwwwwwwwww                                      gggggwww ggggttt
+│                                   █                    s-30 g1 f-31                               █                                    s-14 g1 f-15
+~                                   ?                    gttt gt g???                               ?                                    gttt gt g???
+│                                                        judged                                                                          idle
+~                                                        tttttt                                                                          tttt
+│ white=tune · red point=recorded failure · gap=counts shallower than solo
+~ wwwwwggggggggfffffffffgggggggggggggggggggggggggggggggggggggggggggggggggg
+│
+│ WHAT HAPPENED
+~ ttttttttttttt
+│ 09:47  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 09:47  cycle    cycle 1 started · 18 steps
+~ ggggg  tttttttt tttttttttttttttttttttttttt
+│ 09:47  limit    cores 06, 13 solo limit -38
+~ ggggg  pppppppp ttttttttttttttttttttttttttt
+│ 07:34  fail     core 06 fails at -39
+~ ggggg  aaaaaaaa tttttttttttttttttttt
+│
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
+~ hhhhh ggggg  wwwwwwww  hhhhh gggggg  hhhhhhhhhhh  kkkkk kkkk  hhh gggg  hhh gggggggggggggg

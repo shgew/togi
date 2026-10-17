@@ -2,47 +2,47 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
-│
-│  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 1 of 18 · part 1 of 3 · trial 1 of 4  ───  1:20 left
-│
-│  █ READING THE SCREEN ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-│  █
-│  █ ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░▬                -36
-│  █                     at its limit: it cannot go deeper
-│  █
-│  █ ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····▬                    -32
-│  █                     has room: backed off after a hunt, may deepen
-│  █
-│  █   09    0  PARKED   ···············································▬    -48
-│  █                     parked at 0 by a hunt; returns to -47
-│  █
-│  █ ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ ▬                    -32
-│  █                     probe: the group failed with core 00 at -30, -29, -27
-│  █
-│  █ ►         the core carries load in this trial
-│  │ ▄▄▄       offset applied now, or saved after a stop restored the hardware; white when this trial judges the core
-│  │ grey ▄▄▄  the same depth, grey when the core is not judged
-│  │ ···       depth it reached but does not use now: given back, parked, waiting
-│  │ ░░░       depth a combination blocks now
-│  │ ▬         its failure point: the shallowest offset ruled out for this core
-│  │ ▀         a group trial failed with this core at that offset
-│  │ cyan      running now
-│  │ amber     a hunt, and what it paused
-│  │ red       failures, past and present
-│  │ green     passed, done
-│  │ magenta   combinations
-│  │ grey      idle, parked, still to come
-│  │
-│  │
-│  │ THE TOP LINE ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-│  │
-│  │ failures       failure decisions, including trials skipped because they already failed
-│  │ crashes        boots that ended without a clean shutdown
-│  │ last observed  the last failure seen in this session that changed what togi does; skips do not count
-│  │ q              exit dashboard; tuning itself keeps running
-│  │
-│  │
-│  │ WHAT TOGI DOES ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-│
-│   ?  help    l  log    esc  back    q  exit dashboard
+│ togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
+│ ■ SOLO LIMITS  16/16 → ► PHASE 1 · cycle 1 → ○ PHASE 2 → ○ CLEAN CYCLES   1:20 left
+│ HELP · 9/9 · < Journal | Main >
+│ █ NAVIGATION ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│ █
+│ █ ← →        Move through the nine pages in a fixed cycle that wraps, from Main to Help and back to Main. The footer shows the page's place, such as 2/9
+│ █            Cores.
+│ █ ↑ ↓        Scroll a page one line. j and k do the same.
+│ █ PgUp PgDn  Scroll a page by its height less one line. b, f and space do the same.
+│ █ Home End   Go to the top or the end of a page. g and G do the same.
+│ █ Esc, m     Go back to Main.
+│ █ ?, h       Open this help. The same key on the help returns to Main.
+│ █ l          Open the journal, which opens at its newest event and follows new ones. The same key on the journal returns to Main.
+│ █ scroll     A page opens at its top. Only a key changes the page or its scroll, so a refresh never moves it. Main scrolls only on a screen smaller than
+│ █            160x45, where it shows numbers instead of gauges.
+│ █ q, Ctrl-C  Exit the dashboard; tuning itself keeps running.
+│ │
+│ │
+│ │ THE PAGES ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│ │
+│ │ 1 Main            Which phase and how far through it, what runs now, every core's gauge and a short What happened.
+│ │ 2 Cores           Each core's exact tune, now, solo, gap and failure, its role and where its failure came from.
+│ │ 3 Cycle           The current phase's work list: search turns, the cycle's steps or the phase 2 round.
+│ │ 4 R7 evidence     R7 request order, top requesters and which cores passed as top requester.
+│ │ 5 Hunts / probes  The cause of a failure and how sure the attribution is, hunt groups, splits and probe evidence.
+│ │ 6 BIOS profile    The profile to enter in BIOS, one row per CCD in slot order. A * marks an offset not yet confirmed.
+│ │ 7 History         What happened, expanded, with the local date of each day.
+│ │ 8 Journal         The newest 400 journal events. Scrolled back, it holds its list still and counts new events until End.
+│ │ 9 Help            This page.
+│ │
+│ │
+│ │ THE GAUGES ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│ │
+│ │ tune       The tuning profile's offset for the core: a white full-height █ bar, one cell per count, -1 at the left to -50 at the right. It is drawn from
+│ │            the profile in every phase, never from what is applied. A core at 0 has an empty bar.
+│ │ now        The offset observed applied to the hardware now. After a stop, now shows the offset the stop restored, such as 0 for a zero baseline, while tune
+│ │            keeps the profile. now ? means no application was observed; it is not a zero.
+│ │ red point  One full-height red █ in a lane of its own under the bar, at the depth of the recorded failure constraint. No recorded failure reads f none; a
+│ │            failure at 0 reads f0 and draws no cell.
+│ │ solo       The deepest offset the core confirmed alone under load. s? means none is known, and then g? too.
+│ │ gap        Tune minus solo, in counts shallower than solo: tune -9 and solo -45 is gap 36. It is a number, not a verdict. A negative gap means tune is
+│ │            deeper than solo.
+│ │ fail       The recorded failure constraint as an offset: f-50 is -50, f none is no failure recorded.
+│  ←/→  pages  9/9 Help   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

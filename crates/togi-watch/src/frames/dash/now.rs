@@ -1,52 +1,21 @@
+//! Main's `NOW` rows: one operation sentence, and under it the trial bar or the status that replaces it.
+
 use std::time::Duration;
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 
-use super::at;
 use crate::frames::colours::Paint;
-use crate::frames::draw::{put, put_cells};
-use crate::frames::fit::{Clause, Form, fit_clauses, line_width, rule};
-use crate::frames::layout::SizeClass;
-use crate::frames::measure::Measure;
+use crate::frames::fit::{Clause, Form, fit_clauses, line_width, truncate_styled};
 use crate::frames::scene::{Scene, between, clock};
 use crate::frames::story::{operation, resting_band, trial_where};
 use crate::model::TrialView;
 use crate::words::{cores_text, load_words, workload_display};
 
-const DIGITS: [[&str; 3]; 11] = [
-    ["█▀█", "█ █", "▀▀▀"],
-    ["▀█ ", " █ ", "▀▀▀"],
-    ["▀▀█", "█▀▀", "▀▀▀"],
-    ["▀▀█", " ▀█", "▀▀▀"],
-    ["█ █", "▀▀█", "  ▀"],
-    ["█▀▀", "▀▀█", "▀▀▀"],
-    ["█▀▀", "█▀█", "▀▀▀"],
-    ["▀▀█", "  █", "  ▀"],
-    ["█▀█", "█▀█", "▀▀▀"],
-    ["█▀█", "▀▀█", "▀▀▀"],
-    [" ", "▀", "▀"],
-];
+/// The cells of the trial bar, whatever the width and the trial's length.
+const BAR_CELLS: usize = 24;
 
-/// The three rows of `text` in large digits; characters other than digits and `:` are skipped.
-pub(super) fn big_digits(text: &str) -> [String; 3] {
-    let mut rows = [String::new(), String::new(), String::new()];
-    for (i, c) in text.chars().enumerate() {
-        let glyph = match c {
-            ':' => 10,
-            '0'..='9' => usize::from(u8::try_from(c).unwrap_or(b'0') - b'0'),
-            _ => continue,
-        };
-        for (row, part) in rows.iter_mut().zip(DIGITS[glyph]) {
-            if i > 0 {
-                row.push(' ');
-            }
-            row.push_str(part);
-        }
-    }
-    rows
-}
+/// The cells of `NOW` and the gap after it.
+const LABEL_CELLS: usize = 5;
 
 /// The cells of a `cells`-wide bar `elapsed` of `total` has filled, rounded down.
 pub(super) fn filled(cells: usize, elapsed: Duration, total: Duration) -> usize {
@@ -73,68 +42,6 @@ pub(super) fn progress_bar(
     ])
 }
 
-/// `1 passed · trial 2 of 4  ■ ► · ·`, or its short form.
-pub(super) fn requirement_line(
-    scene: &Scene<'_>,
-    trial: &TrialView,
-    compact: bool,
-) -> Line<'static> {
-    let count = trial.count;
-    if count.of == 0 {
-        return Line::default();
-    }
-    let label = if compact {
-        format!("{}/{} ", count.passed, count.of)
-    } else {
-        format!(
-            "{} passed · trial {} of {}  ",
-            count.passed, count.index, count.of
-        )
-    };
-    let mut spans = vec![scene.paint(Paint::Text, label)];
-    for i in 0..count.of {
-        spans.push(if i < count.passed {
-            scene.paint(Paint::Good, "■")
-        } else if i + 1 == count.index {
-            scene.paint(Paint::Running, "►")
-        } else {
-            scene.paint(Paint::Grey, "·")
-        });
-        if i + 1 < count.of {
-            spans.push(Span::raw(" "));
-        }
-    }
-    Line::from(spans)
-}
-
-fn draw_resting(buf: &mut Buffer, r: Rect, class: SizeClass, scene: &Scene<'_>) {
-    let band = resting_band(scene);
-    let title = Line::from(scene.paint(band.paint, band.title));
-    let text = |line: &String| Line::from(scene.paint(Paint::Text, line.clone()));
-    if class == SizeClass::Compact {
-        let mut first = title.spans;
-        first.push(Span::raw("  "));
-        if let Some(line) = band.lines.first() {
-            first.extend(text(line).spans);
-        }
-        put(buf, r, 0, 0, &Line::from(first));
-        for (i, line) in band.lines.iter().enumerate().skip(1) {
-            put(buf, r, 0, at(i), &text(line));
-        }
-        return;
-    }
-    let rule = rule(
-        usize::from(r.width),
-        &title,
-        &Line::default(),
-        scene.style(Paint::Track),
-    );
-    put(buf, r, 0, 0, &rule);
-    for (i, line) in band.lines.iter().enumerate() {
-        put(buf, r, 0, at(i + 1), &text(line));
-    }
-}
-
 fn description(scene: &Scene<'_>, trial: &TrialView) -> Vec<Clause> {
     let leave = |sep: &'static str, line: Line<'static>, rank: u8| {
         Clause::new(sep, vec![Form::new(line, rank), Form::empty()])
@@ -143,7 +50,7 @@ fn description(scene: &Scene<'_>, trial: &TrialView) -> Vec<Clause> {
     if scene.hold.is_some() {
         let cores: Vec<_> = trial.cores.iter().collect();
         return vec![
-            Clause::whole("", paint(Paint::Chip, " R6 ".into())),
+            Clause::whole("  ", paint(Paint::Chip, " R6 ".into())),
             leave("  ", paint(Paint::White, "idle + bursts".into()), 2),
             Clause::whole(
                 "  ",
@@ -160,7 +67,7 @@ fn description(scene: &Scene<'_>, trial: &TrialView) -> Vec<Clause> {
         ];
     }
     let mut out = vec![
-        Clause::whole("", paint(Paint::Chip, format!(" {} ", trial.regime))),
+        Clause::whole("  ", paint(Paint::Chip, format!(" {} ", trial.regime))),
         leave(
             "  ",
             paint(Paint::White, load_words(trial.regime).into()),
@@ -185,162 +92,214 @@ fn description(scene: &Scene<'_>, trial: &TrialView) -> Vec<Clause> {
     out
 }
 
-/// Draws the trial band into `measure.now`: the trial in flight with its bar, or the resting band.
-pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
-    let r = measure.now;
-    let class = measure.layout.class;
+/// The trial the session runs now: none once it stopped, met a dead end, recovered from a crash or lost the
+/// trial to one.
+fn running_trial<'a>(scene: &Scene<'a>) -> Option<&'a TrialView> {
     let s = &scene.s;
-    let trial = match s.trial {
-        Some(trial)
-            if s.dead_end.is_none()
-                && s.stopped.is_none()
-                && s.recover.is_none()
-                && !trial.crashed =>
-        {
-            trial
-        }
-        _ => return draw_resting(buf, r, class, scene),
-    };
-    let width = usize::from(r.width);
-    let paint = |p: Paint, text: String| scene.paint(p, text);
-    let op = operation(scene, trial);
-    if class != SizeClass::Compact {
-        let title = Line::from(paint(Paint::Grey, "NOW".into()));
-        let right = Line::from(paint(Paint::Grey, format!("trial {}", trial.id.as_str())));
-        put(
-            buf,
-            r,
-            0,
-            0,
-            &rule(width, &title, &right, scene.style(Paint::Track)),
-        );
-    }
-    let desc_y = u16::from(class != SizeClass::Compact);
-    let op_width = line_width(&op);
-    put(
-        buf,
-        r,
-        0,
-        desc_y,
-        &fit_clauses(
-            width.saturating_sub(op_width + 3),
-            &description(scene, trial),
-        ),
-    );
-    put(buf, r, at(width.saturating_sub(op_width)), desc_y, &op);
-    let last = r.height.saturating_sub(1);
+    s.trial.filter(|trial| {
+        s.dead_end.is_none() && s.stopped.is_none() && s.recover.is_none() && !trial.crashed
+    })
+}
+
+fn label(scene: &Scene<'_>, rest: Line<'static>) -> Line<'static> {
+    let mut spans = vec![scene.paint(Paint::Grey, "NOW"), Span::raw("  ")];
+    spans.extend(rest.spans);
+    Line::from(spans)
+}
+
+fn text(scene: &Scene<'_>, paint: Paint, text: impl Into<String>) -> Line<'static> {
+    Line::from(scene.paint(paint, text.into()))
+}
+
+/// The operation in one sentence: what runs, its load and where.
+fn sentence(scene: &Scene<'_>, trial: &TrialView, width: usize) -> Line<'static> {
+    let mut clauses = vec![Clause::whole("", operation(scene, trial))];
+    clauses.extend(description(scene, trial));
+    label(
+        scene,
+        fit_clauses(width.saturating_sub(LABEL_CELLS), &clauses),
+    )
+}
+
+/// The bar under the sentence: elapsed over required, a frozen R6's planned end, or why there is no bar yet.
+fn trial_row(scene: &Scene<'_>, trial: &TrialView, width: usize) -> Line<'static> {
     let Some(started) = trial.started else {
         let planned = format!(
             "preparing · workload has not started yet · planned {}",
             clock(trial.duration)
         );
-        put(buf, r, 0, last, &Line::from(paint(Paint::Grey, planned)));
-        return;
+        return fit_clauses(
+            width,
+            &[Clause::whole("", text(scene, Paint::Grey, planned))],
+        );
     };
-    let quiet = scene.hold;
-    let elapsed = between(started, scene.now).min(trial.duration);
-    let remaining = trial.duration.saturating_sub(elapsed);
     let past = trial.past_end(scene.now);
-    let done = if quiet.is_some() {
-        Duration::ZERO
+    let (done, mut clauses) = if let Some(hold) = scene.hold {
+        (
+            0,
+            vec![
+                Clause::whole(
+                    "",
+                    text(
+                        scene,
+                        Paint::Text,
+                        format!("planned end {}", scene.wall_minute(hold.planned_end)),
+                    ),
+                ),
+                Clause::new(
+                    " · ",
+                    vec![
+                        Form::new(
+                            text(
+                                scene,
+                                Paint::Grey,
+                                format!("started {}", scene.wall_minute(started)),
+                            ),
+                            3,
+                        ),
+                        Form::empty(),
+                    ],
+                ),
+                Clause::new(
+                    " · ",
+                    vec![
+                        Form::new(
+                            text(
+                                scene,
+                                Paint::Grey,
+                                format!("{} required", clock(trial.duration)),
+                            ),
+                            2,
+                        ),
+                        Form::empty(),
+                    ],
+                ),
+                Clause::new(
+                    " · ",
+                    vec![
+                        Form::new(text(scene, Paint::Grey, "screen paused"), 1),
+                        Form::empty(),
+                    ],
+                ),
+            ],
+        )
     } else {
-        elapsed
-    };
-    if class == SizeClass::Wide {
-        let cells = width.saturating_sub(23);
-        let n = filled(cells, done, trial.duration);
-        let (mut digits, mut style, mut label) = (clock(remaining), Paint::White, "left");
+        let elapsed = between(started, scene.now).min(trial.duration);
+        let mut clauses = vec![Clause::whole(
+            "",
+            Line::from(vec![
+                scene.paint(Paint::Text, clock(elapsed)),
+                scene.paint(Paint::Grey, format!(" / {}", clock(trial.duration))),
+            ]),
+        )];
         if !past.is_zero() {
-            (digits, style, label) = (clock(past), Paint::Hunt, "past end");
+            clauses.push(Clause::new(
+                " · ",
+                vec![
+                    Form::new(
+                        text(scene, Paint::Hunt, format!("{} past its end", clock(past))),
+                        2,
+                    ),
+                    Form::new(
+                        text(scene, Paint::Hunt, format!("{} past end", clock(past))),
+                        0,
+                    ),
+                ],
+            ));
+            clauses.push(Clause::new(
+                " · ",
+                vec![
+                    Form::new(text(scene, Paint::Grey, "no trial end recorded"), 3),
+                    Form::empty(),
+                ],
+            ));
+            clauses.push(Clause::new(
+                " · ",
+                vec![
+                    Form::new(text(scene, Paint::Hunt, "may still be running"), 1),
+                    Form::empty(),
+                ],
+            ));
         }
-        if let Some(hold) = quiet {
-            (digits, style) = (scene.wall_minute(hold.planned_end), Paint::Grey);
-        }
-        for y in 3..=5 {
-            let (done_glyph, rest) = if y == 5 {
-                ("▀", "▀")
-            } else {
-                ("█", "░")
-            };
-            put_cells(
-                buf,
-                r,
-                0,
-                y,
-                &progress_bar(scene, cells, n, done_glyph, rest),
-            );
-        }
-        for (y, row) in big_digits(&digits).into_iter().enumerate() {
-            let x = width.saturating_sub(row.chars().count());
-            put_cells(buf, r, at(x), 3 + at(y), &Line::from(paint(style, row)));
-        }
-        if let Some(hold) = quiet {
-            let msg = format!(
-                "  screen paused · planned end {digits}, so it cannot wake the idle cores  "
-            );
-            let x = cells.saturating_sub(msg.chars().count()) / 2;
-            put(buf, r, at(x), 4, &Line::from(paint(Paint::Text, msg)));
-            let begun = Line::from(vec![
-                paint(Paint::Grey, "started ".into()),
-                paint(Paint::Text, scene.wall_minute(hold.started)),
-                paint(Paint::Grey, format!(" · {}", clock(trial.duration))),
-            ]);
-            put(buf, r, 0, 6, &begun);
-            put(
-                buf,
-                r,
-                at(width.saturating_sub(7)),
-                6,
-                &Line::from(paint(Paint::Grey, "ends at".into())),
-            );
-        } else {
-            let progress = Line::from(vec![
-                paint(Paint::Text, clock(elapsed)),
-                paint(Paint::Grey, format!(" of {}", clock(trial.duration))),
-            ]);
-            put(buf, r, 0, 6, &progress);
-            let trials = requirement_line(scene, trial, false);
-            put(
-                buf,
-                r,
-                at(cells.saturating_sub(line_width(&trials))),
-                6,
-                &trials,
-            );
-            put(
-                buf,
-                r,
-                at(width.saturating_sub(label.len())),
-                6,
-                &Line::from(paint(Paint::Grey, label.into())),
-            );
-        }
-        return;
+        (filled(BAR_CELLS, elapsed, trial.duration), clauses)
+    };
+    if scene.hold.is_none() && trial.count.of > 1 {
+        clauses.push(Clause::new(
+            " · ",
+            vec![
+                Form::new(
+                    text(
+                        scene,
+                        Paint::Grey,
+                        format!("trial {} of {}", trial.count.index, trial.count.of),
+                    ),
+                    1,
+                ),
+                Form::empty(),
+            ],
+        ));
     }
-    let requirement = requirement_line(scene, trial, true);
-    let mut label = vec![
-        paint(Paint::White, clock(remaining)),
-        paint(Paint::Grey, " left".into()),
-        Span::raw("  "),
-    ];
-    label.extend(requirement.spans.iter().cloned());
-    if !past.is_zero() {
-        label = vec![
-            paint(Paint::Hunt, format!("{} past its end", clock(past))),
-            Span::raw("  "),
-        ];
-        label.extend(requirement.spans);
+    let bar = progress_bar(scene, BAR_CELLS, done, "█", "░");
+    if width <= BAR_CELLS {
+        return truncate_styled(&bar, width);
     }
-    if let Some(hold) = quiet {
-        label = vec![
-            paint(Paint::Grey, "screen paused · planned end ".into()),
-            paint(Paint::Text, scene.wall_minute(hold.planned_end)),
-        ];
+    let gap = if width > BAR_CELLS + 2 { "  " } else { " " };
+    let rest = fit_clauses(width - BAR_CELLS - gap.len(), &clauses);
+    let mut spans = bar.spans;
+    if line_width(&rest) > 0 {
+        spans.push(Span::raw(gap));
+        spans.extend(rest.spans);
     }
-    let label = Line::from(label);
-    let cells = width.saturating_sub(line_width(&label) + 2);
-    let mut bar = progress_bar(scene, cells, filled(cells, done, trial.duration), "█", "░").spans;
-    bar.push(Span::raw("  "));
-    bar.extend(label.spans);
-    put_cells(buf, r, 0, last, &Line::from(bar));
+    Line::from(spans)
 }
+
+/// The band that replaces the sentence and the bar between trials, after a stop, at a dead end and around a
+/// crash: its title and first line in place of the operation, the rest under it.
+fn resting(scene: &Scene<'_>, width: usize) -> [Line<'static>; 2] {
+    let band = resting_band(scene);
+    let room = width.saturating_sub(LABEL_CELLS);
+    let mut lines = band.lines.iter();
+    let mut head = vec![Clause::whole("", text(scene, band.paint, band.title))];
+    if let Some(first) = lines.next() {
+        head.push(Clause::whole(
+            " · ",
+            text(scene, Paint::Text, first.clone()),
+        ));
+    }
+    let kept = band.lines.len().saturating_sub(1);
+    let rest: Vec<Clause> = lines
+        .enumerate()
+        .map(|(i, line)| {
+            let rank = u8::try_from(kept - i).unwrap_or(u8::MAX);
+            Clause::new(
+                " · ",
+                vec![
+                    Form::new(text(scene, Paint::Grey, line.clone()), rank),
+                    Form::empty(),
+                ],
+            )
+        })
+        .collect();
+    [
+        label(scene, fit_clauses(room, &head)),
+        fit_clauses(width, &rest),
+    ]
+}
+
+/// Main's NOW sentence and the trial row under it (bar with elapsed and required, R6's planned end, or the
+/// status that replaces them), each fitted to `width` cells.
+pub(crate) fn now_lines(scene: &Scene<'_>, width: usize) -> [Line<'static>; 2] {
+    if scene.s.session.is_none() {
+        return [Line::default(), Line::default()];
+    }
+    match running_trial(scene) {
+        Some(trial) => [
+            sentence(scene, trial, width),
+            trial_row(scene, trial, width),
+        ],
+        None => resting(scene, width),
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -70,6 +70,17 @@ pub struct Verdict {
     pub named: Option<String>,
 }
 
+/// The checking step a trial passed in, named as the step's marker names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StepAt {
+    /// The cycle.
+    pub cycle: u32,
+    /// The step, counting from 1.
+    pub step: u32,
+    /// The step's place, regime and workload: `cycle 1 step 2: R2 heavy vector, y-cruncher FFTv4`.
+    pub label: String,
+}
+
 /// One line of what happened, in plain words or merged from several events.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
@@ -102,6 +113,9 @@ pub struct Entry {
     pub reboot: Option<Seq>,
     /// The hunt it belongs to.
     pub hunt: Option<u32>,
+    /// The checking step a passed trial ran in, when it ran in one outside a hunt; neighbouring passes of
+    /// different steps never merge.
+    pub step: Option<StepAt>,
     /// The first hunt group it covers.
     pub first_group: u32,
     /// The last hunt group it covers.
@@ -149,6 +163,7 @@ impl Entry {
             peak: None,
             reboot: None,
             hunt: None,
+            step: None,
             first_group: 0,
             last_group: 0,
             probe: false,
@@ -301,7 +316,7 @@ pub(crate) fn fold_entry(history: &mut Vec<Entry>, line: Entry) {
         history.push(line);
         return;
     };
-    if line.key.is_none() || last.key != line.key {
+    if line.key.is_none() || last.key != line.key || last.step != line.step {
         history.push(line);
         return;
     }

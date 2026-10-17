@@ -1,13 +1,13 @@
-//! The panels under the core tables: the BIOS profile, the cycle and its parts, a hunt with its groups and
-//! probes, the search turns, a phase 2 round, the combinations and the history; and the journal view.
+//! The panels behind the detail pages: the cycle and its parts, a hunt with its groups and probes, the search
+//! turns, a phase 2 round, the combinations, the BIOS profile and the history; and the journal view.
 
-mod context;
 mod cycle;
 #[cfg(test)]
 mod fixtures;
 mod history;
 mod hunt;
 mod log;
+mod pages;
 mod search;
 mod table;
 
@@ -15,20 +15,18 @@ use jiff::tz::TimeZone;
 use ratatui::text::Line;
 
 use super::fit::Clause;
-use super::measure::Measure;
+use super::layout::SizeClass;
 use super::scene::Scene;
-use crate::screen::{Colours, Log};
+use crate::screen::{Colours, Log, View};
 
-/// The context panel's rows: the BIOS profile with the panel under it (a hunt, the search turns, a round, or the
-/// cycle, the combinations and R7), at most `measure.context.height` of them.
-pub(crate) fn context_lines(scene: &Scene<'_>, measure: &Measure) -> Vec<Line<'static>> {
-    context::context(scene, measure)
+/// Main's folded What happened: at most `height` rows of `width` cells, newest meaningful first.
+pub(crate) fn main_history(scene: &Scene<'_>, width: usize, height: usize) -> Vec<Line<'static>> {
+    history::main_history(scene, width, height)
 }
 
-/// What happened, newest first, in `height` rows of `width` cells. Its last row counts every entry it leaves
-/// out: those that do not fit and those older than the entries the model keeps.
-pub(crate) fn history_panel(scene: &Scene<'_>, width: usize, height: usize) -> Vec<Line<'static>> {
-    history::history(scene, width, height)
+/// The History page's body in `width` cells, unscrolled: expanded entries with local date separators.
+pub(crate) fn history_page(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> {
+    history::history_page(scene, width)
 }
 
 /// Where the stage line says a hunt stands: `group 2 of 3`, `part 1 of 2`; empty when it says nothing.
@@ -57,4 +55,16 @@ pub(crate) fn log_body(
 /// arrived.
 pub(crate) fn log_arrivals(log: &Log<'_>, colours: Colours) -> Vec<Clause> {
     log::arrivals(log, colours)
+}
+
+/// The body of detail page `view` (Cycle, R7 evidence, Hunts / probes or BIOS profile) in `width` cells,
+/// unscrolled, with `class`'s table columns; an explicit empty-state sentence when the page has nothing to show yet.
+/// The other views have no body here.
+pub(crate) fn page_lines(
+    scene: &Scene<'_>,
+    view: View,
+    width: usize,
+    class: SizeClass,
+) -> Vec<Line<'static>> {
+    pages::page_lines(scene, view, width, class)
 }

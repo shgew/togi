@@ -44,8 +44,8 @@ const SOURCES: &[(&str, &str)] = &[
     ("frames/dash/r7.rs", include_str!("../frames/dash/r7.rs")),
     ("frames/notes.rs", include_str!("../frames/notes.rs")),
     (
-        "frames/panels/context.rs",
-        include_str!("../frames/panels/context.rs"),
+        "frames/panels/pages.rs",
+        include_str!("../frames/panels/pages.rs"),
     ),
     (
         "frames/panels/cycle.rs",
@@ -70,6 +70,10 @@ const SOURCES: &[(&str, &str)] = &[
     ("frames/footer.rs", include_str!("../frames/footer.rs")),
     ("frames/help.rs", include_str!("../frames/help.rs")),
     ("frames/render.rs", include_str!("../frames/render.rs")),
+    (
+        "frames/main_page.rs",
+        include_str!("../frames/main_page.rs"),
+    ),
     ("frames/scene.rs", include_str!("../frames/scene.rs")),
     ("frames/draw.rs", include_str!("../frames/draw.rs")),
     ("words.rs", include_str!("../words.rs")),

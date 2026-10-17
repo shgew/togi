@@ -93,7 +93,7 @@ fn every_time_on_screen_is_local() {
         .expect("started");
     require(
         "hunt",
-        &frame(&hunt, View::Main, &zone),
+        &frame(&hunt, View::Hunts, &zone),
         &[format!("started {}", at(began, "%H:%M"))],
     );
 

@@ -15,7 +15,9 @@ use togi_tuner::{
 
 use super::super::fit::plain;
 use super::super::scene::Scene;
-use crate::model::{CoreState, CoreView, Count, HuntCause, HuntFacts, Snapshot, TrialView};
+use crate::model::{
+    CoreEvidence, CoreState, CoreView, Count, HuntCause, HuntFacts, Snapshot, TrialView,
+};
 use crate::screen::Colours;
 use crate::tests::kit::{core, infos, off, offsets, seq, set};
 
@@ -34,7 +36,7 @@ pub(super) fn core_view(id: u8, ccd: u8) -> CoreView {
         ccd: CcdId(ccd),
         state: CoreState::Waiting,
         queued: None,
-        applied: ObservedOffset(0),
+        applied: Some(ObservedOffset(0)),
         profile: off(0),
         solo: None,
         pass: None,
@@ -47,6 +49,7 @@ pub(super) fn core_view(id: u8, ccd: u8) -> CoreView {
         confirm: None,
         loaded: false,
         judged: false,
+        evidence: CoreEvidence::default(),
     }
 }
 

@@ -12,7 +12,9 @@ use togi_tuner::{
 use super::kit::*;
 use crate::derive::{group_failures, hunt_facts, trial_role};
 use crate::facts::Facts;
-use crate::model::{CoreState, CoreView, Count, CycleView, HuntShape, HuntView, TrialView};
+use crate::model::{
+    CoreEvidence, CoreState, CoreView, Count, CycleView, HuntShape, HuntView, TrialView,
+};
 
 fn core_view(id: u8) -> CoreView {
     CoreView {
@@ -20,7 +22,7 @@ fn core_view(id: u8) -> CoreView {
         ccd: CcdId(id / 8),
         state: CoreState::Waiting,
         queued: None,
-        applied: ObservedOffset(0),
+        applied: Some(ObservedOffset(0)),
         profile: off(0),
         solo: None,
         pass: None,
@@ -33,6 +35,7 @@ fn core_view(id: u8) -> CoreView {
         confirm: None,
         loaded: false,
         judged: false,
+        evidence: CoreEvidence::default(),
     }
 }
 

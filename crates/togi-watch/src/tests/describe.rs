@@ -7,6 +7,7 @@ use togi_journal::{
 use togi_machine::{BankType, CcdId, Condition, CpuId, Regime, Signal};
 
 use super::kit::*;
+use crate::words::Tag;
 
 fn phase(id: u8, from: CorePhase, to: CorePhase, offset: i64) -> Payload {
     let mut start = Start::search(offset);
@@ -152,6 +153,40 @@ fn a_checking_step_names_its_regime_then_its_workload() {
     unknown.step = nz(1);
     h.push(unknown.into());
     assert_eq!(last(&h), "step: cycle 9 step 1");
+}
+
+#[test]
+fn a_passed_trial_names_its_checking_step_and_passes_of_different_steps_never_merge() {
+    let mut h = Hist::three();
+    let mut start = cycle(1, CycleEvent::Start);
+    start.steps = vec![Regime::R1, Regime::R2, Regime::R2];
+    h.push(start.into());
+    let mut pass_in = |id: &str, step: u32| {
+        let mut plan = intent(id, Regime::R2, Condition::Together, &[0, 0, 0], &[0, 1, 2]);
+        plan.cycle = Some(nz(1));
+        plan.step = Some(nz(step));
+        h.push(plan.into());
+        h.push(end_payload(&TrialId::from(id.to_owned()), Outcome::Pass, None).into());
+    };
+    pass_in("a", 2);
+    pass_in("b", 2);
+    pass_in("c", 3);
+    let passes: Vec<_> = h
+        .facts
+        .history
+        .entries
+        .iter()
+        .filter(|entry| entry.tag == Tag::Pass)
+        .collect();
+    assert_eq!(passes.len(), 2, "{passes:?}");
+    assert_eq!(passes[0].runs, 2);
+    let (first, second) = (passes[0].step.as_ref(), passes[1].step.as_ref());
+    assert_eq!(first.map(|at| (at.cycle, at.step)), Some((1, 2)));
+    assert_eq!(second.map(|at| (at.cycle, at.step)), Some((1, 3)));
+    assert!(
+        first.is_some_and(|at| at.label.starts_with("cycle 1 step 2: R2 heavy vector, ")),
+        "{first:?}"
+    );
 }
 
 #[test]
@@ -620,8 +655,8 @@ fn a_checking_chain_note_is_summarised_in_the_history_and_whole_in_the_log() {
     assert_eq!(
         tail,
         [
-            "note: cycle 1 step 1 · CCD 0 partial 2 loads 00-02",
-            "note: cycle 1 step 1 · CCD 0 partials end"
+            "chain: cycle 1 step 1 · CCD 0 partial 2 loads 00-02",
+            "chain: cycle 1 step 1 · CCD 0 partials end"
         ]
     );
     assert!(tail.iter().all(|line| line.chars().count() < 59));

@@ -256,6 +256,24 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn fragmented_left_and_right_arrows_are_one_key_each_in_both_forms() {
+        for (lead, final_byte, want) in [
+            (&b"["[..], &b"C"[..], Key::Right),
+            (b"[", b"D", Key::Left),
+            (b"O", b"C", Key::Right),
+            (b"O", b"D", Key::Left),
+        ] {
+            let (keys, _) = keys([
+                Step::Data(b"\x1b"),
+                Step::Data(lead),
+                Step::Data(final_byte),
+                Step::Eof,
+            ]);
+            assert_eq!(keys, [want], "{lead:?}{final_byte:?}");
+        }
+    }
+
+    #[test]
     fn a_quiet_escape_prefix_times_out_into_esc_or_nothing_and_keeps_the_next_key() {
         for (prefix, want) in [
             (&b"\x1b"[..], vec![Key::Esc]),

@@ -2,14 +2,10 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   22:13:20   starting
+│ togi   22:13:20   starting
 │
-│
-│
-│  ▌  STARTING   Checking the machine and the journal before the first trial; this screen follows the run as soon as it records something.
-│
-│
-│
+│ MAIN · 1/9 · < Help | Cores >
+│ ▌  STARTING   Checking the machine and the journal before the first trial; this screen follows the run as soon as it records something.
 │
 │
 │
@@ -45,4 +41,8 @@ expression: body
 │
 │
 │
-│   ?  help    l  log    esc  back    q  exit dashboard
+│
+│
+│
+│
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

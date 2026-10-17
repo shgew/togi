@@ -12,7 +12,7 @@ use togi_journal::{
 use togi_machine::{Condition, CoreId, Regime, Signal};
 
 use crate::facts::{Facts, HuntStartFacts, trial_cores};
-use crate::history::{Entry, EntryKind, Key, Verdict};
+use crate::history::{Entry, EntryKind, Key, StepAt, Verdict};
 use crate::words::{
     History, Tag, Tone, age, core_ids, kind_words, lateness, on_cores, phase_line, plural,
     signal_words, words, workload_display,
@@ -181,8 +181,8 @@ impl Facts {
         Some(line)
     }
 
-    fn checking_step(&self, at: Timestamp, d: &CheckingStep) -> Entry {
-        let (cycle, step) = (d.cycle.get(), d.step.get());
+    /// `cycle 1 step 2: R2 heavy vector`: the step's place and, when the cycle's plan is known, its regime.
+    fn step_head(&self, cycle: u32, step: u32) -> String {
         let mut text = format!("cycle {cycle} step {step}");
         if let Some(regime) = self
             .cycle_steps
@@ -191,7 +191,12 @@ impl Facts {
         {
             let _ = write!(text, ": {regime} {}", kind_words(*regime));
         }
-        let mut line = entry(at, Tag::Step, text, Tone::Plain);
+        text
+    }
+
+    fn checking_step(&self, at: Timestamp, d: &CheckingStep) -> Entry {
+        let (cycle, step) = (d.cycle.get(), d.step.get());
+        let mut line = entry(at, Tag::Step, self.step_head(cycle, step), Tone::Plain);
         line.key = Some(Key::Step { cycle, step });
         line
     }
@@ -445,6 +450,21 @@ impl Facts {
                 line.tone = Tone::Good;
                 line.peak = d.tctl_max_c;
                 line.key = Some(Key::Pass(line.text.clone()));
+                line.step = intent
+                    .as_ref()
+                    .filter(|intent| intent.hunt.is_none())
+                    .and_then(|intent| {
+                        let (cycle, step) = (intent.cycle?.get(), intent.step?.get());
+                        Some(StepAt {
+                            cycle,
+                            step,
+                            label: format!(
+                                "{}, {}",
+                                self.step_head(cycle, step),
+                                workload_display(intent.workload)
+                            ),
+                        })
+                    });
             }
             Outcome::Failure => {
                 let named = if let Some(core) = d.core {

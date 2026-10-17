@@ -9,9 +9,10 @@ use togi_watchtest::{Scenario, cut_at};
 
 use super::bands::{stage_line, summary_screen};
 use super::{
-    ALL_SIZES, Fixture, SIZES, VIEWS, append, bar, clock, draw_journal, later, main_screen,
-    one_frame, text, words,
+    ALL_SIZES, Fixture, SIZES, VIEWS, append, clock, draw_journal, later, main_screen, one_frame,
+    rows_of, text, words,
 };
+use crate::frames::measure::{Main, MainForm};
 use crate::frames::testing::screen;
 use crate::screen::{Colours, Hold, Journal, Screen, View};
 
@@ -50,7 +51,7 @@ fn an_idle_trial_freezes_every_view_until_its_end_is_recorded() {
                     );
                     assert_eq!(later_drawn, drawn);
                 }
-                if view == View::Main {
+                if view == View::Main && Main::new(&sc).form != MainForm::Scrolled {
                     let shown = text(&first);
                     for crash in ["crashed", "CRASHED", "togi run records the crash"] {
                         assert!(
@@ -81,7 +82,7 @@ fn an_idle_trial_freezes_every_view_until_its_end_is_recorded() {
 }
 
 #[test]
-fn an_idle_trial_shows_its_clock_at_the_trials_start_and_an_unfilled_bar() {
+fn an_idle_trial_shows_its_clock_at_the_trials_start_and_its_planned_end_without_a_bar() {
     let fx = Fixture::scenario(Scenario::Idle);
     let hold = fx
         .model
@@ -102,10 +103,11 @@ fn an_idle_trial_shows_its_clock_at_the_trials_start_and_an_unfilled_bar() {
                 shown.contains(&format!("planned end {planned_end}")),
                 "{width}x{height}:\n{shown}"
             );
-            let bar = bar(&buf).expect("the trial bar");
+            let trial =
+                &rows_of(&buf)[usize::from(Main::new(&main_screen(width, height)).now.y) + 1];
             assert!(
-                bar.chars().all(|c| c == '░') && bar.chars().count() > 20,
-                "{width}x{height}: an idle bar has no elapsed fill: {bar:?}"
+                trial.contains("planned end") && trial.contains('░') && !trial.contains('█'),
+                "{width}x{height}: an idle trial shows its planned end and an unfilled bar: {trial:?}"
             );
         }
     }

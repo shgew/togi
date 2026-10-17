@@ -2,20 +2,17 @@
 
 use ratatui::buffer::Buffer;
 use togi_journal::{
-    CommandReset, DeadEnd, DeadEndCondition, EventKind, Outcome, ProfileRestored, ResetTarget,
-    Shutdown, ShutdownReason, TrialProgress,
+    CommandReset, DeadEnd, DeadEndCondition, EventKind, Outcome, ResetTarget, Shutdown,
+    ShutdownReason, TrialProgress,
 };
 use togi_machine::Signal;
 use togi_watchtest::{Scenario, cut_at};
 
-use super::{
-    ALL_SIZES, Fixture, SIZES, append, later, main_screen, one_frame, row_of, row_starting, text,
-    words,
-};
+use super::{ALL_SIZES, Fixture, SIZES, append, later, main_screen, one_frame, text, words};
 use crate::frames::layout::Layout;
 use crate::frames::testing::rows_of;
 use crate::screen::{Hold, Screen, View};
-use crate::tests::kit::{Script, crash, end_payload, offsets, warning};
+use crate::tests::kit::{Script, crash, end_payload, warning};
 
 pub(super) fn stage_line(buf: &Buffer, screen: &Screen) -> String {
     rows_of(buf)[usize::from(Layout::new(screen).stage.y)]
@@ -63,17 +60,15 @@ fn between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown() {
 }
 
 #[test]
-fn a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage() {
+fn a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage() {
     let fx = Fixture::scenario(Scenario::Stopped);
     assert!(fx.model.snapshot().stopped.is_some_and(|stop| stop.saved));
     for (width, height) in ALL_SIZES {
         let (buf, _) = fx.main(width, height);
         let shown = text(&buf).to_lowercase();
         assert!(
-            shown.contains("stopped")
-                && shown.contains("saved")
-                && (shown.contains("not applied") || shown.contains("not set")),
-            "{width}x{height} misrepresents restored hardware:\n{shown}"
+            shown.contains("stopped") && shown.contains("tune") && shown.contains("now"),
+            "{width}x{height} hides the saved tune against the offset now:\n{shown}"
         );
         let stage = stage_line(&buf, &main_screen(width, height));
         assert!(
@@ -82,9 +77,10 @@ fn a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stag
         );
     }
     let (wide, _) = fx.main(240, 67);
+    let said = words(&wide);
     assert!(
-        words(&wide).contains("The requested clean cycles are complete"),
-        "the story says why the session stopped"
+        said.contains("requested clean cycles completed"),
+        "the stop sentence says why the session stopped: {said}"
     );
 }
 
@@ -98,33 +94,6 @@ fn a_running_stage_line_keeps_its_marker_and_its_repeat_note() {
         stage.contains('►') && stage.contains("repeats until stopped"),
         "{stage:?}"
     );
-}
-
-#[test]
-fn a_resting_band_of_one_line_leaves_the_ccd_table_its_rows() {
-    let mut script = Script::new(&[(0, 0)], &[crate::tests::kit::Start::search(0)]);
-    script.append(
-        Shutdown {
-            reason: ShutdownReason::Signal,
-            kernel_cursor: None,
-            kernel_error: None,
-            cycles: None,
-        }
-        .into(),
-        &[],
-    );
-    let fx = Fixture::of(&script.events);
-    for (width, height, gap) in [(240, 67, 3), (160, 45, 3), (120, 33, 2)] {
-        let (buf, _) = fx.main(width, height);
-        let band = row_starting(&buf, "STOPPED").expect("the resting band");
-        let ccd = row_of(&buf, "CCD 0").expect("the CCD table");
-        assert_eq!(
-            ccd - band,
-            gap,
-            "{width}x{height}: a one-line band at row {band} leaves the CCD table at row {ccd}\n{}",
-            text(&buf)
-        );
-    }
 }
 
 #[test]
@@ -168,48 +137,6 @@ fn a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis() {
 }
 
 #[test]
-fn a_restored_dead_end_labels_its_rows_as_saved() {
-    let mut script = Script::at_limit();
-    script.append(
-        DeadEnd {
-            condition: DeadEndCondition::NoEvidence,
-            core: None,
-            detail: "five trials in a row proved nothing".to_owned(),
-            action: None,
-        }
-        .into(),
-        &[],
-    );
-    script.append(
-        ProfileRestored {
-            offsets: offsets(&[0, 0, 0]),
-        }
-        .into(),
-        &[],
-    );
-    script.append(
-        Shutdown {
-            reason: ShutdownReason::DeadEnd,
-            kernel_cursor: None,
-            kernel_error: None,
-            cycles: None,
-        }
-        .into(),
-        &[],
-    );
-    let fx = Fixture::of(&script.events);
-    let snapshot = fx.model.snapshot();
-    assert!(snapshot.dead_end.is_some() && snapshot.stopped.is_some_and(|stop| stop.saved));
-    for (width, height) in SIZES {
-        let said = words(&fx.main(width, height).0);
-        assert!(
-            said.contains("Rows show the saved profile, not applied now."),
-            "{width}x{height} presents saved offsets as applied: {said}"
-        );
-    }
-}
-
-#[test]
 fn no_trial_yet_does_not_claim_one_ended() {
     let events = session_events();
     let first_intent = events
@@ -223,7 +150,7 @@ fn no_trial_yet_does_not_claim_one_ended() {
             &events[..first_intent],
             "No trial has run yet",
         ),
-        ("first trial ended", ended, "The last trial has ended"),
+        ("first trial ended", ended, "last: PASS"),
     ] {
         let fx = Fixture::of(cut);
         assert!(fx.model.snapshot().trial.is_none(), "{name}");
@@ -258,7 +185,7 @@ fn a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running() {
         let (buf, drawn) = fx.main(width, height);
         let said = words(&buf);
         for want in [
-            "crashed",
+            "CRASHED",
             "togi run records the crash",
             &format!("trial {id}"),
         ] {
@@ -300,8 +227,12 @@ fn a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash() {
     for (width, height) in SIZES {
         let sc = main_screen(width, height);
         let before = words(&fx.draw(&sc, later(end, -1)).0);
+        let required = trial.duration.as_secs();
+        let clock = |secs: u64| format!("{}:{:02}", secs / 60, secs % 60);
         assert!(
-            before.contains("left") && !before.contains("past"),
+            before.contains(&format!("{} / {}", clock(required - 1), clock(required)))
+                && !before.contains("left")
+                && !before.contains("past"),
             "{width}x{height} before the planned end: {before}"
         );
         let (buf, drawn) = fx.draw(&sc, later(end, 42));
@@ -498,7 +429,7 @@ fn a_command_shutdown_does_not_mask_an_unrecovered_crash() {
                     "{width}x{height} lacks {want:?}: {said}"
                 );
             }
-            for bad in ["STOPPED", "left", "past its end", "RECOVERED FROM A CRASH"] {
+            for bad in ["left", "past its end", "RECOVERED FROM A CRASH"] {
                 assert!(
                     !said.contains(bad),
                     "{width}x{height} says {bad:?} instead of the unrecovered crash: {said}"
@@ -510,7 +441,7 @@ fn a_command_shutdown_does_not_mask_an_unrecovered_crash() {
     let (wide, _) = fx.draw(&summary, fx.now);
     let stage = stage_line(&wide, &summary);
     assert!(
-        !stage.contains('►') && !stage.contains("left") && stage.contains("trial crashed"),
+        stage.contains("STOPPED") && !stage.contains('►') && !stage.contains("left"),
         "a reset after a reboot presents a running stage: {stage:?}"
     );
 }
@@ -522,14 +453,18 @@ fn a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the
     for (n, events) in built.running.iter().enumerate() {
         let fx = Fixture::of(events);
         let (wide, _) = fx.main(240, 67);
-        let said = words(&wide);
+        let cycle = Screen {
+            view: View::Cycle,
+            ..main_screen(240, 67)
+        };
+        let said = format!("{} {}", words(&wide), words(&fx.draw(&cycle, fx.now).0));
         assert!(
-            said.contains("Cycle 1 waits at step 2 until the rerun passes."),
+            said.contains("checking resumes at step 2"),
             "rerun {}: {said}",
             n + 1
         );
         assert!(
-            !said.contains("waits at step 1 "),
+            !said.contains("resumes at step 1") && !said.contains("resumes at step 3"),
             "rerun {}: {said}",
             n + 1
         );
@@ -537,7 +472,7 @@ fn a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the
             let sc = main_screen(width, height);
             let stage = stage_line(&fx.draw(&sc, fx.now).0, &sc);
             assert!(
-                stage.contains("paused at step 2 of"),
+                stage.contains("repairing"),
                 "rerun {} at {width}x{height}: {stage:?}",
                 n + 1
             );

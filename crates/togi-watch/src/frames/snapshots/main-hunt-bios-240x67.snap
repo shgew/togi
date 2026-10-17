@@ -2,69 +2,69 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   00:06:25   tuning 72h06m   session 72h06m   63 failures · 15 crashes   last observed failure 00:05, a moment ago
+│ togi   00:06:25   tuning 72h06m   session 72h06m   63 failures · 15 crashes   last observed failure 00:05, a moment ago
+│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ► CLEAN CYCLES · repeats until stopped · HUNT 5 · parts · part 1 of 2
 │
-│  ■ SOLO LIMITS  16/16  ───  ►  HUNT 5   parts · part 1 of 2  ───  ■ PHASE 1  ───  ■ PHASE 2  concluded  ───  CLEAN CYCLES 2  · repeats until stopped  ───  ○ CYCLE 4  paused at step 4 of 18, part 1
+│ CLEAN CYCLES · HUNT 5 · group 1 · 2 clean cycles recorded · 3/18 steps complete
+│ part 1/2 of this split · total hunt work unknown
 │
-│  ▌  HUNT 5   The machine crashed early in the 2-minute heavy vector trial on 00 and rebooted.                            last trial      CRASH  on core 00
-│  ▌           No core was named: I rerun that load with 06 at their failing offsets, 00-05 07-15 parked.
+│ NOW  HUNT 5 · PART 1 OF 2   R2   heavy vector load  on 00 · 06 at failing offsets, 08 parked, idle   mprime AVX2 36K-248K · 1 worker
+│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 3 of 5
 │
-│  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 1954
-│   R2   heavy vector load  on 00 · 06 at failing offsets, 08 parked, idle   mprime AVX2 36K-248K · 1 worker                                                                                                              HUNT 5 · PART 1 OF 2
+│                                            0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
+│                                         core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
+│                                         00  ███████████████████████                            tune -23 now -23         08  ██████                                             tune  -6 now  -5
+│                                                                    █                           s-27 g4 f-24                       █                                            s-6 g0 f-7
+│                                                                                                loaded                                                                          parked
+│                                         01  ███████████████                                    tune -15 now -15         09  █████████████████████████████████                  tune -33 now -33
+│                                                            █                                   s-17 g2 f-16                                                  █                 s-35 g2 f-34
+│                                                                                                idle                                                                            idle
+│                                         02  ████████████████████████                           tune -24 now -24         10  █████████████                                      tune -13 now -13
+│                                                                     █                          s-26 g2 f-25                              █                                     s-18 g5 f-14
+│                                                                                                idle                                                                            idle
+│                                         03  ████████████████████████                           tune -24 now -24         11  ███████                                            tune  -7 now  -7
+│                                                                     █                          s-25 g1 f-25                        █                                           s-10 g3 f-8
+│                                                                                                idle                                                                            idle
+│                                         04  █████████████                                      tune -13 now -13         12  ██████████████                                     tune -14 now -14
+│                                                          █                                     s-16 g3 f-14                               █                                    s-17 g3 f-15
+│                                                                                                idle                                                                            idle
+│                                         05  ████████                                           tune  -8 now  -8         13  ███████████████████████████████████                tune -35 now -35
+│                                                     █                                          s-10 g2 f-9                                                     █               s-38 g3 f-36
+│                                                                                                idle                                                                            idle
+│                                         06  ██████████████████████████████████████             tune -38 now -38         14  ████████████                                       tune -12 now -12
+│                                                                                   █            s-38 g0 f-39                             █                                      s-16 g4 f-13
+│                                                                                                held failure                                                                    idle
+│                                         07  █████████████████████████████                      tune -29 now -29         15  █████████████                                      tune -13 now -13
+│                                                                          █                     s-30 g1 f-30                              █                                     s-14 g1 f-14
+│                                                                                                idle                                                                            idle
+│                                         white=tune · red point=recorded failure · gap=counts shallower than solo
 │
-│  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          ▀█    ▀▀█ █▀█
-│  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░           █  ▀ █▀▀ █ █
-│  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
-│  0:40 of 2:00                                                                                                                                                                      2 passed · trial 3 of 5  ■ ■ ► · ·                   left
+│ WHAT HAPPENED
+│ 00:05  hunt     #5 started · part 1: 06 at failing offsets, 08 parked
+│ 00:05  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
+│ 00:04  hunt     not hunted: held: first unattributed failure loading cores [00] since the profile passed cycle 3 (#10934); a second failure loading any of them by cycle 8 (K = 5) is hunted
+│ 00:04  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
+│ 00:02  step     cycle 4 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 39 credited checks · 12 chain notes
+│ 21:34  step     cycle 4 step 2: R7 all-core, mprime AVX-512 36K-248K · 39 credited checks · 12 chain notes
+│ 19:06  step     cycle 4 step 1: R7 all-core, mprime AVX2 36K-248K · 39 credited checks · 12 chain notes
+│ 16:38  cycle    cycle 4 started · 18 steps
+│ 16:38  cycle    cycle 3 passed, a full cycle
+│ 16:38  step     cycle 3 step 18: R6 idle + bursts, y-cruncher BKT + SFTv4 · 1 credited check
+│ 16:23  step     cycle 3 step 17: R4 partial load, y-cruncher SNT + SVT · 16 credited checks
+│ 15:51  step     cycle 3 step 16: R4 partial load, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 15:19  step     cycle 3 step 15: R4 partial load, mprime SSE 4K-21K · 16 credited checks
+│ 14:47  step     cycle 3 step 14: R3 load steps, y-cruncher SNT + SVT · 16 credited checks
+│ 14:15  step     cycle 3 step 13: R3 load steps, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 13:43  step     cycle 3 step 12: R3 load steps, mprime SSE 4K-21K · 16 credited checks
+│ 13:11  step     cycle 3 step 11: R1 light, y-cruncher SNT + SVT · 16 credited checks
+│ 12:39  step     cycle 3 step 10: R1 light, y-cruncher BKT + SFTv4 · 3 credited checks
 │
-│  if 5 of 5 pass:      next trial: part 2: 08 at failing offsets, 06 parked, idle
-│  if none is named:    hunt 5 ends: 06 named → core 06 -38 → -37; next trial: rerun R2 heavy vector, core 00 at -23 · 2m
-│  if a core is named:  its failure point is recorded → the hunt ends → it backs off; next trial: rerun R2 heavy vector, core 00 at -22 · 2m
 │
-│  CCD 0               0       -10       -20       -30       -40       -50 fail pt  one core under load at a time          CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
-│  ► 00  -23  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬···                           -24                                            08   -5  PARKED    ▄▄▄▄▄·▬                                                -7   returns to -6
-│    01  -15  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                                     -16                                            09  -33  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                   -34
-│    02  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                            -25                                            10  -13  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▬····                                    -14
-│    03  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬                             -25                                            11   -7  AT LIMIT  ▄▄▄▄▄▄▄▬··                                             -8
-│    04  -13  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                                      -14                                            12  -14  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                                     -15
-│    05   -8  AT LIMIT  ▄▄▄▄▄▄▄▄▬·                                             -9                                            13  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                -36
-│    06  -38  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬               -39                                            14  -12  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▬···                                      -13
-│    07  -29  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬                        -30                                            15  -13  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▬                                        -14
 │
-│  BIOS PROFILE ─────────────────────────────────────────────────────────────── UNCONFIRMED since #11459 · cores 06 08     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
-│  slot      0    1    2    3    4    5    6    7
-│  CCD 0   -23  -15  -24  -24  -13   -8  -37* -29                                                                          00:05  hunt     #5 started · part 1: 06 at failing offsets, 08 parked
-│  CCD 1    -5* -33  -13   -7  -14  -35  -12  -13                                                                          00:05  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
-│  * unconfirmed: a passed full cycle confirms it, unless a failure is held                                                00:04  hunt     not hunted: held: first unattributed failure loading cores [00] since the profile passed cycle 3...
-│                                                                                                                          00:04  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
-│  HUNT 5 ───────────────────────────────────────────────────────────────────────────────── started 00:05 · 40s so far     00:02  pass     R7 full CCD 0+1 on 00-15 · 4 passed · Tctl max 74°C
-│                                                                                                                          23:46  note     cycle 4 step 3 · CCD 1 partials end
-│  cause       crash in R2 heavy vector on 00 · cycle 4 step 4, part 1, trial 1 of 1 · no core named                       23:46  pass     R7 partial CCD 1 on 09 13 · 4 passed · Tctl max 70°C
-│  evidence    the last sample came 0:06 into the trial · not enough to attribute                                          23:35  note     cycle 4 step 3 · CCD 1 partial 5 loads 09 13
-│  candidates  06 08, deeper at failure than at their parked offsets                                                       23:35  pass     R7 partial CCD 1 on 09 12 13 · 4 passed · Tctl max 75°C
-│                                                                                                                          23:24  note     cycle 4 step 3 · CCD 1 partial 4 loads 09 12 13
-│  parts       part        at failing offsets   parked        schedule   state                                             23:24  pass     R7 partial CCD 1 on 09 10 12 13 15 · 4 passed · Tctl max 71°C
-│            ► 1 of 2      06                   08            5 x 2m     trial 3 of 5                                      23:13  note     cycle 4 step 3 · CCD 1 partial 3 loads 09 10 12 13 15
-│              2 of 2      08                   06            5 x 2m     if part 1 passes                                  23:13  pass     R7 partial CCD 1 on 09 10 12-15 · 4 passed · Tctl max 74°C
-│  others      00-05 07 09-15 held at failing offsets · 06 parked at -37 · 08 parked at -5                                 23:02  note     cycle 4 step 3 · CCD 1 partial 2 loads 09 10 12-15
-│              failed parts are split again; complements test what remains                                                 23:02  pass     R7 partial CCD 1 on 09-15 · 4 passed · Tctl max 74°C
-│                                                                                                                          22:51  note     cycle 4 step 3 · CCD 1 partial 1 loads 09-15
-│  then        after the hunt:                                                                                             22:51  pass     R7 full CCD 1 on 08-15 · 4 passed · Tctl max 74°C
-│              1  record one core's failure point or a combination                                                         22:40  note     cycle 4 step 3 · CCD 0 partials end
-│              2  back off past it                                                                                         22:40  pass     R7 partial CCD 0 on 06 07 · 4 passed · Tctl max 72°C
-│              3  rerun R2 heavy vector on 00: 5 trials of 2m, its original length                                         22:29  note     cycle 4 step 3 · CCD 0 partial 5 loads 06 07
-│              4  if the rerun passes, resume cycle 4                                                                      22:29  pass     R7 partial CCD 0 on 02 03 06 07 · 4 passed · Tctl max 74°C
-│                                                                                                                          22:18  note     cycle 4 step 3 · CCD 0 partial 4 loads 02 03 06 07
-│                                                                                                                          22:18  pass     R7 partial CCD 0 on 00 02 03 06 07 · 4 passed · Tctl max 73°C
-│                                                                                                                          22:07  note     cycle 4 step 3 · CCD 0 partial 3 loads 00 02 03 06 07
-│                                                                                                                          22:07  pass     R7 partial CCD 0 on 00-03 06 07 · 4 passed · Tctl max 72°C
-│                                                                                                                          21:56  note     cycle 4 step 3 · CCD 0 partial 2 loads 00-03 06 07
-│                                                                                                                          21:56  pass     R7 partial CCD 0 on 00-04 06 07 · 4 passed · Tctl max 67°C
-│                                                                                                                          21:45  note     cycle 4 step 3 · CCD 0 partial 1 loads 00-04 06 07
-│                                                                                                                          21:45  pass     R7 full CCD 0 on 00-07 · 4 passed · Tctl max 76°C
-│                                                                                                                          21:34  step     cycle 4 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3
-│                                                                                                                          21:34  pass     R7 full CCD 0+1 on 00-15 · 4 passed · Tctl max 72°C
-│                                                                                                                          21:18  note     cycle 4 step 2 · CCD 1 partials end
-│                                                                                                                          +1656 more
 │
-│   ?  help    l  log    esc  back    q  exit dashboard
+│
+│
+│
+│
+│
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

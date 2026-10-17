@@ -1,5 +1,4 @@
-//! The narration: why the screen looks the way it does, what the last trial did, what each outcome of the trial
-//! in flight leads to, and the resting band when no trial runs.
+//! The narration: why the screen looks the way it does, and the resting band when no trial runs.
 
 #[cfg(test)]
 mod corpus;
@@ -28,8 +27,7 @@ use crate::words::{
     core_ids, core_list, kind_words, lateness, plural, signal_words, workload_display,
 };
 
-pub(crate) use outcome::outcome_lines;
-pub(crate) use resting::{last_lines, resting_band};
+pub(crate) use resting::resting_band;
 
 /// What the narrator says: why the screen looks the way it does, never what the trial band or the outcome lines
 /// already say.
@@ -278,7 +276,7 @@ fn round_moves(scene: &Scene<'_>, round: u32) -> String {
         )
     };
     format!(
-        "{what}; at most {} left, then one full cycle.",
+        "{what}; {} left if no round fails, then one full cycle.",
         plural(left as usize, "round")
     )
 }

@@ -6,8 +6,8 @@
 //! - [`cut_words`], [`fit_clauses`], [`CoreNote`] and the rest of the fitting:
 //!   every line is measured as the console shows it, escaped, and never cut
 //!   inside a value or a word.
-//! - [`Layout`] and [`check_frame_bounds`]: the size classes and the frame area,
-//!   `(width - 1) x (height - 1)`.
+//! - [`Layout`], [`body_rows`] and [`check_frame_bounds`]: the size classes, the rows a page's body has and the
+//!   frame area, `(width - 1) x (height - 1)`.
 //! - [`help_body`] and [`footer`]: the help view and the key hints.
 
 mod colours;
@@ -21,6 +21,7 @@ mod footer;
 mod frame_tests;
 mod help;
 mod layout;
+mod main_page;
 mod measure;
 mod notes;
 mod panels;
@@ -33,6 +34,7 @@ mod story;
 mod terms;
 #[cfg(test)]
 mod testing;
+mod title;
 
 pub use colours::{Paint, colours_for, console_palette};
 pub use draw::{bounded_rows, put, put_cells, rows};
@@ -42,7 +44,7 @@ pub use fit::{
 };
 pub use footer::{footer, key_hints};
 pub use help::{help_body, title_rule};
-pub use layout::{Layout, Rows, SizeClass, check_frame_bounds, frame_area};
-pub use notes::{CoreNote, offset_list, top_note};
+pub use layout::{Layout, SizeClass, body_rows, check_frame_bounds, frame_area};
+pub use notes::{CoreNote, offset_list};
 pub use render::render;
 pub use scroll::{scroll_body_with_bar, scrollbar};

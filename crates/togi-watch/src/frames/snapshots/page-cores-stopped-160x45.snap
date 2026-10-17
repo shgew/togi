@@ -1,0 +1,48 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   01:27:54   tuning 49h27m   session 49h27m   59 failures · 13 crashes   last observed failure 20:13, 5h14m ago
+│ STOPPED  ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ○ CLEAN CYCLES
+│ CORES · 2/9 · < Main | Cycle >
+│ █ Core 00 · CCD 0 · AT LIMIT
+│ █   tune -23 · now 0
+│ █   solo -27 · gap 4: 4 counts shallower than solo
+│ █   failure -24 · named · journal #6394
+│ █   room: none, one count deeper reaches a recorded constraint or -50
+│ █   load: not loaded
+│ █   last decision: backoff -24 to -23 while hunt, journal #6394
+│ █
+│ █ Core 01 · CCD 0 · AT LIMIT
+│ █   tune -15 · now 0
+│ █   solo -17 · gap 2: 2 counts shallower than solo
+│ █   failure -16 · named · journal #4146
+│ │   room: none, one count deeper reaches a recorded constraint or -50
+│ │   load: not loaded
+│ │   last decision: backoff -16 to -15 while checking, journal #4146
+│ │
+│ │ Core 02 · CCD 0 · AT LIMIT
+│ │   tune -24 · now 0
+│ │   solo -26 · gap 2: 2 counts shallower than solo
+│ │   failure -25 · named · journal #5821
+│ │   room: none, one count deeper reaches a recorded constraint or -50
+│ │   load: not loaded
+│ │   last decision: backoff -25 to -24 while checking, journal #5821
+│ │
+│ │ Core 03 · CCD 0 · AT LIMIT
+│ │   tune -24 · now 0
+│ │   solo -25 · gap 1: 1 counts shallower than solo
+│ │   failure -25 · R7-charged · journal #7711
+│ │   room: none, one count deeper reaches a recorded constraint or -50
+│ │   load: not loaded
+│ │   last decision: backoff -25 to -24 while deepening, journal #7711
+│ │
+│ │ Core 04 · CCD 0 · AT LIMIT
+│ │   tune -13 · now 0
+│ │   solo -16 · gap 3: 3 counts shallower than solo
+│ │   failure -14 · named · journal #5289
+│ │   room: none, one count deeper reaches a recorded constraint or -50
+│ │   load: not loaded
+│ │   last decision: backoff -14 to -13 while checking, journal #5289
+│ │
+│  ←/→  pages  2/9 Cores   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

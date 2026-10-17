@@ -9,26 +9,20 @@ use togi_journal::{DeadEndCondition, Event, Shutdown, ShutdownReason, Stamp};
 use togi_machine::{
     BootId, CcdId, Condition, CoreSet, ObservedOffset, PerCore, Regime, WorkloadId,
 };
-use togi_tuner::{
-    CombinationId, CyclePlan, CycleStep, HuntPlan, Limit, PhaseNo, PhasePlan, R7CoreStatus,
-    Reached, RerunPlan,
-};
+use togi_tuner::{CombinationId, CyclePlan, Limit, R7CoreStatus, Reached};
 
-use super::ccd::{ccd_role, gauge, note_line, state_word};
+use super::ccd::{core_table, cores_page, draw_core_overview, note_line, state_word};
 use super::header::{header, status_header};
-use super::now::{big_digits, filled, progress_bar, requirement_line};
+use super::now::{filled, progress_bar};
 use super::r7::{r7_rows, top_cell};
 use super::stage::stage_line;
 use crate::frames::colours::Paint;
 use crate::frames::fit::{line_width, plain};
 use crate::frames::layout::SizeClass;
-use crate::frames::measure::{Ccd, CoreColumns};
-use crate::frames::notes::top_note;
 use crate::frames::scene::Scene;
-use crate::frames::testing::rows_of;
 use crate::model::{
-    CoreState, CoreView, Count, CycleView, DeadEndView, HuntCause, HuntFacts, HuntView, IdleHold,
-    Model, SessionView, Snapshot, StopView, TrialView,
+    CoreEvidence, CoreState, CoreView, Count, CycleView, DeadEndView, IdleHold, Model, SessionView,
+    Snapshot, StopView, TrialView,
 };
 use crate::screen::Colours;
 use crate::tests::kit::{config_loaded, core, off, seq};
@@ -44,7 +38,7 @@ fn core_view(id: u8, ccd: u8, state: CoreState) -> CoreView {
         ccd: CcdId(ccd),
         state,
         queued: None,
-        applied: ObservedOffset(0),
+        applied: Some(ObservedOffset(0)),
         profile: off(0),
         solo: None,
         pass: None,
@@ -57,6 +51,7 @@ fn core_view(id: u8, ccd: u8, state: CoreState) -> CoreView {
         confirm: None,
         loaded: false,
         judged: false,
+        evidence: CoreEvidence::default(),
     }
 }
 
@@ -333,224 +328,12 @@ fn every_time_on_screen_is_local() {
     assert!(head.starts_with("togi   19:00:00"), "{head}");
     assert!(head.contains("paused · planned end 19:10"), "{head}");
     assert!(!head.contains("paused until"), "{head}");
-    let stage = plain(&stage_line(&held, SizeClass::Wide, true));
+    let stage = plain(&stage_line(&held, 240, true));
     assert!(
         stage.contains("screen paused · planned end 19:10"),
         "{stage}"
     );
     assert!(!stage.contains("paused until"), "{stage}");
-}
-
-#[test]
-fn the_stage_line_marks_what_runs_and_what_stopped() {
-    let model = Model::new();
-    let start = at("2026-10-12T10:00:00Z");
-    let view = session(start);
-    let cores = [
-        core_view(0, 0, CoreState::Search),
-        core_view(1, 0, CoreState::Waiting),
-    ];
-    let mut s = model.snapshot();
-    s.session = Some(&view);
-    s.cores = &cores;
-    let stage = |s: Snapshot<'_>, class| {
-        plain(&stage_line(
-            &scene(&s, start, &TimeZone::UTC, Colours::Full),
-            class,
-            false,
-        ))
-    };
-    let running = stage(s, SizeClass::Wide);
-    assert!(
-        running.starts_with("► SOLO LIMITS  0 of 2 found"),
-        "{running}"
-    );
-    assert!(running.contains("○ PHASE 1"), "{running}");
-    assert!(running.contains("CLEAN CYCLES 0"), "{running}");
-    let short = stage(s, SizeClass::Compact);
-    assert!(short.starts_with("► SOLO  0 of 2 found"), "{short}");
-    assert!(short.contains(" ─ "), "{short}");
-    let stopped = StopView {
-        at: start,
-        reason: ShutdownReason::Signal,
-        saved: false,
-    };
-    s.stopped = Some(&stopped);
-    let after = stage(s, SizeClass::Wide);
-    assert!(after.starts_with("○ SOLO LIMITS"), "{after}");
-    assert!(!after.contains('►'), "{after}");
-    let none = stage_line(
-        &scene(
-            &Model::new().snapshot(),
-            start,
-            &TimeZone::UTC,
-            Colours::Full,
-        ),
-        SizeClass::Wide,
-        false,
-    );
-    assert_eq!(line_width(&none), 0);
-}
-
-fn cycle_step(done: bool) -> CycleStep {
-    CycleStep {
-        regime: Regime::R1,
-        workload: WorkloadId::new(Regime::R1, 0).expect("a workload"),
-        parts: Vec::new(),
-        chains_complete: true,
-        done,
-    }
-}
-
-fn hunt_plan() -> HuntPlan {
-    HuntPlan {
-        number: 1,
-        regime: Regime::R7,
-        failure: seq(1),
-        trial: None,
-        candidates: CoreSet::default(),
-        cut: 0,
-        parts: Vec::new(),
-        groups: Vec::new(),
-        probes: Vec::new(),
-        rerun: RerunPlan {
-            regime: Regime::R7,
-            cores: CoreSet::default(),
-            short: 0,
-            short_s: 0,
-            long: 0,
-            long_s: 0,
-        },
-    }
-}
-
-fn hunt_facts() -> HuntFacts {
-    HuntFacts {
-        started: None,
-        cause: HuntCause {
-            at: None,
-            trial: None,
-            end: None,
-            signal: None,
-            core: None,
-            known: false,
-            carried: false,
-            regime: None,
-            rerun_of: false,
-            trial_number: 0,
-        },
-        parking: None,
-        group_signals: Vec::new(),
-    }
-}
-
-#[test]
-fn a_cycle_with_every_step_done_names_no_step_it_pauses_at() {
-    let model = Model::new();
-    let start = at("2026-10-12T10:00:00Z");
-    let view = session(start);
-    let mut plan = CyclePlan {
-        number: std::num::NonZeroU32::new(1),
-        open: true,
-        steps: vec![cycle_step(true), cycle_step(true)],
-        current: 2,
-        paused: true,
-    };
-    let mut s = model.snapshot();
-    s.session = Some(&view);
-    let line = |plan: &CyclePlan, class| {
-        let mut s = s;
-        s.cycle = Some(CycleView {
-            plan,
-            step_hunts: &[],
-            resume: None,
-        });
-        plain(&stage_line(
-            &scene(&s, start, &TimeZone::UTC, Colours::Full),
-            class,
-            false,
-        ))
-    };
-    for class in [SizeClass::Wide, SizeClass::Compact] {
-        let done = line(&plan, class);
-        assert!(done.ends_with("■ CYCLE 1"), "{done}");
-        assert!(!done.contains("paused"), "{done}");
-    }
-    plan.steps[1].done = false;
-    plan.current = 1;
-    let open = line(&plan, SizeClass::Wide);
-    assert!(open.ends_with("○ CYCLE 1  paused at step 2 of 2"), "{open}");
-}
-
-#[test]
-fn a_hunt_in_phase_two_holds_the_stage_without_running_it() {
-    let model = Model::new();
-    let start = at("2026-10-12T10:00:00Z");
-    let view = session(start);
-    let phases = PhasePlan {
-        phase: PhaseNo::Two,
-        phase1_end: Some(seq(10)),
-        concluded: None,
-        confirming: false,
-        rounds_left: 2,
-        round: Some(3),
-        candidates: Vec::new(),
-    };
-    let plan = hunt_plan();
-    let facts = hunt_facts();
-    let mut s = model.snapshot();
-    s.session = Some(&view);
-    s.phases = Some(&phases);
-    let line = |hunting: bool| {
-        let mut s = s;
-        if hunting {
-            s.hunt = Some(HuntView {
-                plan: &plan,
-                facts: &facts,
-            });
-        }
-        plain(&stage_line(
-            &scene(&s, start, &TimeZone::UTC, Colours::Full),
-            SizeClass::Wide,
-            false,
-        ))
-    };
-    let hunting = line(true);
-    assert!(
-        hunting.contains("○ PHASE 2  round 3 · at most 2 left"),
-        "{hunting}"
-    );
-    assert!(!hunting.contains("► PHASE 2"), "{hunting}");
-    let quiet = line(false);
-    assert!(
-        quiet.contains("► PHASE 2  round 3 · at most 2 left"),
-        "{quiet}"
-    );
-}
-
-#[test]
-fn a_summary_stage_line_ends_in_the_trials_time() {
-    let model = Model::new();
-    let start = at("2026-10-12T10:00:00Z");
-    let view = session(start);
-    let running = trial(Regime::R1, Some(start), 600);
-    let mut s = model.snapshot();
-    s.session = Some(&view);
-    s.trial = Some(&running);
-    let line = |now: &str, crashed: bool| {
-        let mut t = running.clone();
-        t.crashed = crashed;
-        let mut s = s;
-        s.trial = Some(&t);
-        plain(&stage_line(
-            &scene(&s, at(now), &TimeZone::UTC, Colours::Full),
-            SizeClass::Medium,
-            true,
-        ))
-    };
-    assert!(line("2026-10-12T10:04:00Z", false).ends_with("6:00 left"));
-    assert!(line("2026-10-12T10:11:00Z", false).ends_with("1:00 past its end"));
-    assert!(line("2026-10-12T10:04:00Z", true).ends_with("trial crashed"));
 }
 
 fn held(combination: u32) -> Option<Limit> {
@@ -637,202 +420,18 @@ fn every_state_has_its_word() {
     assert_eq!(state_word(CoreState::Parked), "PARKED");
 }
 
-#[test]
-fn a_ccd_role_counts_load_and_probes() {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    for (name, cores, want) in [
-        (
-            "parked with a load left",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Parked)
-                },
-                core_view(1, 0, CoreState::Parked),
-            ],
-            "parked at 0, 1 under load",
-        ),
-        (
-            "parked and idle",
-            vec![
-                core_view(0, 0, CoreState::Parked),
-                core_view(1, 0, CoreState::Parked),
-            ],
-            "parked at 0, idle",
-        ),
-        (
-            "a member probed",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Member)
-                },
-                CoreView {
-                    loaded: true,
-                    ..core_view(1, 0, CoreState::Probe)
-                },
-            ],
-            "members, one probed shallower than its failing offset",
-        ),
-        (
-            "parked and every core still loaded",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Parked)
-                },
-                CoreView {
-                    loaded: true,
-                    ..core_view(1, 0, CoreState::Parked)
-                },
-            ],
-            "parked at 0, still under load",
-        ),
-        (
-            "every suspect loaded",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Suspect)
-                },
-                CoreView {
-                    loaded: true,
-                    ..core_view(1, 0, CoreState::Suspect)
-                },
-            ],
-            "suspects at their failing offsets",
-        ),
-        (
-            "every member loaded and none probed",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Member)
-                },
-                CoreView {
-                    loaded: true,
-                    ..core_view(1, 0, CoreState::Member)
-                },
-            ],
-            "members at their failing offsets",
-        ),
-        (
-            "every core loaded in mixed states",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Suspect)
-                },
-                CoreView {
-                    loaded: true,
-                    ..core_view(1, 0, CoreState::Member)
-                },
-            ],
-            "all under load",
-        ),
-    ] {
-        let mut s = model.snapshot();
-        s.cores = &cores;
-        let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-        assert_eq!(ccd_role(&scene, CcdId(0)).0, want, "{name}");
-    }
-    let mut s = model.snapshot();
-    let none: [CoreView; 0] = [];
-    s.cores = &none;
-    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-    assert_eq!(ccd_role(&scene, CcdId(0)), (String::new(), String::new()));
+const OVERVIEW: Rect = Rect::new(0, 0, 77, 26);
+
+fn drawn(cores: &[CoreView], stopped: Option<&StopView>, colours: Colours) -> Buffer {
+    drawn_with(cores, stopped, None, colours)
 }
 
-fn gauge_text(core: &CoreView, applied: i64) -> String {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let scene = scene(
-        &model.snapshot(),
-        Timestamp::UNIX_EPOCH,
-        &zone,
-        Colours::None,
-    );
-    plain(&gauge(&scene, core, applied, 50))
-        .trim_end()
-        .to_owned()
-}
-
-#[test]
-fn a_gauge_shows_the_depth_a_combination_holds() {
-    let core = |profile: i64, solo: i64| CoreView {
-        profile: off(profile),
-        solo: Some(off(solo)),
-        fail: Some(off(-45)),
-        holder: held(4),
-        ..core_view(0, 0, CoreState::AtLimit)
-    };
-    assert_eq!(
-        gauge_text(&core(-43, -44), -43),
-        format!("{}░▬", "▄".repeat(43))
-    );
-    assert_eq!(
-        gauge_text(&core(-43, -44), 0),
-        format!("{}░▬", "·".repeat(43))
-    );
-    assert_eq!(
-        gauge_text(&core(-43, -43), -43),
-        format!("{} ▬", "▄".repeat(43))
-    );
-}
-
-#[test]
-fn a_failure_point_is_a_half_height_bar_in_both_cell_widths() {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let core = CoreView {
-        fail: Some(off(-8)),
-        ..core_view(0, 0, CoreState::AtLimit)
-    };
-    for (cells, colours) in [
-        (50, Colours::None),
-        (25, Colours::None),
-        (25, Colours::Full),
-    ] {
-        let scene = scene(&model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
-        let line = gauge(&scene, &core, -4, cells);
-        let text = plain(&line);
-        assert_eq!(text.matches('▬').count(), 1, "{cells} cells: {text:?}");
-        assert!(!text.contains('█'), "{cells} cells: {text:?}");
-        let bad = line
-            .spans
-            .iter()
-            .find(|span| span.content.contains('▬'))
-            .map(|span| span.style);
-        assert_eq!(bad, Some(Paint::Bad.style(colours)), "{cells} cells");
-    }
-}
-
-#[test]
-fn a_gauge_shows_group_failures_and_judging() {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let scene = scene(
-        &model.snapshot(),
-        Timestamp::UNIX_EPOCH,
-        &zone,
-        Colours::Full,
-    );
-    let mut core = core_view(0, 0, CoreState::Probe);
-    core.group_fails = vec![off(-4)];
-    let line = gauge(&scene, &core, -2, 25);
-    assert!(plain(&line).starts_with("▄▀"), "{}", plain(&line));
-    let painted = |judged: bool| {
-        let mut core = core.clone();
-        core.judged = judged;
-        gauge(&scene, &core, -2, 25).spans[0].style
-    };
-    assert_eq!(painted(true), Paint::White.style(Colours::Full));
-    assert_eq!(painted(false), Paint::Grey.style(Colours::Full));
-    assert_eq!(line_width(&gauge(&scene, &core, 0, 0)), 0);
-}
-
-fn table(cores: &[CoreView], stopped: Option<&StopView>, width: u16, brief: bool) -> Vec<String> {
+fn drawn_with(
+    cores: &[CoreView],
+    stopped: Option<&StopView>,
+    running: Option<&TrialView>,
+    colours: Colours,
+) -> Buffer {
     let model = Model::new();
     let zone = TimeZone::UTC;
     let view = session(Timestamp::UNIX_EPOCH);
@@ -840,192 +439,486 @@ fn table(cores: &[CoreView], stopped: Option<&StopView>, width: u16, brief: bool
     s.session = Some(&view);
     s.cores = cores;
     s.stopped = stopped;
-    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-    let columns = if brief {
-        CoreColumns {
-            id: 2,
-            offset: 5,
-            state: 9,
-            gauge: 18,
-            cells: 25,
-            failure: 44,
-            note: 50,
-            brief: true,
-        }
-    } else {
-        CoreColumns {
-            id: 2,
-            offset: 6,
-            state: 11,
-            gauge: 21,
-            cells: 25,
-            failure: 48,
-            note: 56,
-            brief: false,
-        }
-    };
-    let rect = Rect::new(0, 0, width, 6);
-    let mut buf = Buffer::empty(rect);
-    super::draw_ccd(
-        &mut buf,
-        &Ccd {
-            id: CcdId(0),
-            rect,
-            columns,
-        },
-        &scene,
-    );
-    rows_of(&buf)
+    s.trial = running;
+    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, colours);
+    let mut buf = Buffer::empty(OVERVIEW);
+    draw_core_overview(&mut buf, OVERVIEW, &scene, CcdId(0));
+    buf
+}
+
+fn cells(buf: &Buffer, y: u16, from: u16, to: u16) -> String {
+    (from..=to).map(|x| buf[(x, y)].symbol()).collect()
+}
+
+fn lane(buf: &Buffer, y: u16) -> String {
+    cells(buf, y, 4, 53)
+}
+
+fn values(buf: &Buffer, y: u16) -> String {
+    cells(buf, y, 55, 76).trim_end().to_owned()
+}
+
+fn filled_columns(lane: &str) -> Vec<usize> {
+    lane.chars()
+        .enumerate()
+        .filter(|(_, c)| *c == '█')
+        .map(|(at, _)| at)
+        .collect()
+}
+
+/// A core whose record starts at row 2: the tuning profile `tune`, the recorded failure `fail`.
+fn recorded(tune: i64, solo: Option<i64>, fail: Option<i64>) -> CoreView {
+    CoreView {
+        profile: off(tune),
+        solo: solo.map(off),
+        fail: fail.map(off),
+        ..core_view(0, 0, CoreState::AtLimit)
+    }
 }
 
 #[test]
-fn a_restored_session_shows_the_saved_profile_in_its_rows() {
-    let mut row = core_view(0, 0, CoreState::HasRoom);
-    row.profile = off(-25);
-    row.applied = ObservedOffset(0);
-    let cores = [row];
+fn a_failure_one_count_deeper_than_the_tune_is_its_own_cell_in_the_next_lane() {
+    let buf = drawn(&[recorded(-1, Some(-2), Some(-2))], None, Colours::None);
+    assert_eq!(filled_columns(&lane(&buf, 2)), [0]);
+    assert_eq!(filled_columns(&lane(&buf, 3)), [1]);
+    assert_eq!(buf[(4, 2)].symbol(), "█");
+    assert_eq!(buf[(5, 3)].symbol(), "█");
+    assert_eq!(lane(&buf, 4).trim(), "");
+    assert_eq!(values(&buf, 3), "s-2 g1 f-2");
+}
+
+#[test]
+fn a_failure_at_the_tune_is_the_same_column_in_its_own_lane() {
+    let buf = drawn(&[recorded(-45, Some(-45), Some(-45))], None, Colours::None);
+    assert_eq!(filled_columns(&lane(&buf, 2)), (0..45).collect::<Vec<_>>());
+    assert_eq!(filled_columns(&lane(&buf, 3)), [44]);
+    assert_eq!(values(&buf, 2), "tune -45 now   0");
+    assert_eq!(values(&buf, 3), "s-45 g0 f-45");
+}
+
+#[test]
+fn a_tune_of_zero_is_an_empty_lane_and_a_missing_failure_says_none() {
+    let buf = drawn(&[recorded(0, None, None)], None, Colours::None);
+    assert!(filled_columns(&lane(&buf, 2)).is_empty());
+    assert!(filled_columns(&lane(&buf, 3)).is_empty());
+    assert_eq!(values(&buf, 2), "tune   0 now   0");
+    assert_eq!(values(&buf, 3), "s? g? f none");
+}
+
+#[test]
+fn a_failure_at_zero_draws_no_cell_and_says_f0() {
+    let buf = drawn(&[recorded(0, Some(-10), Some(0))], None, Colours::None);
+    assert!(filled_columns(&lane(&buf, 3)).is_empty());
+    assert_eq!(values(&buf, 3), "s-10 g10 f0");
+}
+
+#[test]
+fn an_unobserved_offset_is_a_question_mark_never_a_zero() {
+    let mut unobserved = recorded(-9, None, None);
+    unobserved.applied = None;
+    let buf = drawn(&[unobserved], None, Colours::None);
+    assert_eq!(values(&buf, 2), "tune  -9 now   ?");
+    assert_eq!(filled_columns(&lane(&buf, 2)), (0..9).collect::<Vec<_>>());
+}
+
+#[test]
+fn the_deepest_and_shallowest_depths_fill_the_first_and_last_cells() {
+    let buf = drawn(
+        &[
+            recorded(-50, Some(-50), Some(-50)),
+            recorded(-1, None, Some(-1)),
+        ],
+        None,
+        Colours::None,
+    );
+    assert_eq!(filled_columns(&lane(&buf, 2)), (0..50).collect::<Vec<_>>());
+    assert_eq!(filled_columns(&lane(&buf, 3)), [49]);
+    assert_eq!(buf[(53, 3)].symbol(), "█");
+    assert_eq!(filled_columns(&lane(&buf, 5)), [0]);
+    assert_eq!(filled_columns(&lane(&buf, 6)), [0]);
+}
+
+#[test]
+fn an_observed_offset_never_moves_the_tune_bar_and_is_never_clamped() {
+    let mut restored = recorded(-25, Some(-30), None);
+    restored.applied = Some(ObservedOffset(0));
     let stopped = StopView {
         at: Timestamp::UNIX_EPOCH,
         reason: ShutdownReason::Signal,
         saved: true,
     };
-    let saved = table(&cores, Some(&stopped), 80, false);
-    assert!(saved[1].contains("00  -25"), "{:?}", saved[1]);
-    assert!(saved[1].contains('▄'), "{:?}", saved[1]);
-    let live = table(&cores, None, 80, false);
-    assert!(live[1].contains("00    0"), "{:?}", live[1]);
-    assert!(!live[1].contains('▄'), "{:?}", live[1]);
-    let model = Model::new();
-    let role = |stopped: Option<&StopView>| {
-        let mut s = model.snapshot();
-        s.cores = &cores;
-        s.stopped = stopped;
-        let zone = TimeZone::UTC;
-        ccd_role(
-            &scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None),
-            CcdId(0),
-        )
-        .0
-    };
-    assert_eq!(role(None), "waiting at 0");
-    assert_eq!(role(Some(&stopped)), "not under load");
-}
-
-#[test]
-fn a_readback_is_never_clamped() {
-    let mut row = core_view(0, 0, CoreState::HasRoom);
-    row.applied = ObservedOffset(-73);
-    let text = table(&[row], None, 80, false);
-    assert!(text[1].contains("-73"), "{:?}", text[1]);
-}
-
-#[test]
-fn a_ccd_table_names_its_columns_and_counts_what_it_leaves_out() {
-    let cores: Vec<_> = (0..6)
-        .map(|id| core_view(id, 0, CoreState::Waiting))
-        .collect();
-    let text = table(&cores, None, 80, false);
-    assert!(text[0].starts_with("CCD 0"), "{:?}", text[0]);
-    assert!(
-        text[0].contains("2 counts/cell") && text[0].contains("fail pt"),
-        "{:?}",
-        text[0]
+    let after = drawn(&[restored.clone()], Some(&stopped), Colours::None);
+    let before = drawn(
+        &[CoreView {
+            applied: Some(ObservedOffset(-25)),
+            ..restored.clone()
+        }],
+        None,
+        Colours::None,
     );
-    assert!(text[5].starts_with("+2 more"), "{:?}", text[5]);
-    let brief = table(&cores[..2], None, 60, true);
-    assert!(brief[0].contains("fail"), "{:?}", brief[0]);
+    assert_eq!(lane(&after, 2), lane(&before, 2));
+    assert_eq!(filled_columns(&lane(&after, 2)).len(), 25);
+    assert_eq!(values(&after, 2), "tune -25 now   0");
+    assert_eq!(values(&before, 2), "tune -25 now -25");
+    let wild = CoreView {
+        applied: Some(ObservedOffset(-73)),
+        ..restored
+    };
+    let buf = drawn(&[wild], None, Colours::None);
+    assert_eq!(values(&buf, 2), "tune -25 now -73");
+    assert_eq!(filled_columns(&lane(&buf, 2)).len(), 25);
 }
 
 #[test]
-fn core_rows_mark_the_running_workloads_top_requesters() {
-    let first = WorkloadId::new(Regime::R7, 0).expect("a workload");
-    let second = WorkloadId::new(Regime::R7, 1).expect("a workload");
-    let status = |core_id: u8, workload, proxy| R7CoreStatus {
-        core: core(core_id),
-        ccd: CcdId(0),
-        workload,
-        top_requester: true,
-        offset_proxy: proxy,
-        self_sufficient: false,
-        passes: 0,
+fn the_gap_is_tune_minus_solo_and_keeps_its_sign() {
+    let shallower = drawn(&[recorded(-9, Some(-45), None)], None, Colours::None);
+    assert_eq!(values(&shallower, 3), "s-45 g36 f none");
+    let deeper = drawn(&[recorded(-50, Some(-45), None)], None, Colours::None);
+    assert_eq!(values(&deeper, 3), "s-45 g-5 f none");
+}
+
+#[test]
+fn a_queued_reset_and_a_current_failure_badge_both_records_beside_the_load_role() {
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let view = session(Timestamp::UNIX_EPOCH);
+    let running = trial(Regime::R1, Some(Timestamp::UNIX_EPOCH), 60);
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.trial = Some(&running);
+    let mut core = recorded(-20, Some(-25), Some(-21));
+    core.loaded = true;
+    core.queued = Some(seq(9));
+    core.evidence.current_failure = true;
+    let both = [core.clone()];
+    s.cores = &both;
+    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
+    let mut buf = Buffer::empty(OVERVIEW);
+    draw_core_overview(&mut buf, OVERVIEW, &scene, CcdId(0));
+    assert_eq!(cells(&buf, 2, 0, 2), "00!");
+    assert_eq!(cells(&buf, 3, 0, 2), "!R ");
+    assert_eq!(values(&buf, 4), "loaded");
+    assert_eq!(lane(&buf, 4).trim(), "");
+    let idle = drawn(
+        &[CoreView {
+            loaded: false,
+            evidence: CoreEvidence::default(),
+            ..core.clone()
+        }],
+        None,
+        Colours::None,
+    );
+    assert_eq!(cells(&idle, 2, 0, 2), "00R");
+    assert_eq!(cells(&idle, 3, 0, 2), " R ");
+    assert_eq!(values(&idle, 4), "reset queued");
+}
+
+#[test]
+fn roles_name_what_each_core_does() {
+    let running = trial(Regime::R1, Some(Timestamp::UNIX_EPOCH), 60);
+    let role = |core: CoreView, trial: Option<&TrialView>| {
+        let buf = drawn_with(&[core], None, trial, Colours::None);
+        values(&buf, 4)
     };
-    let statuses = [status(0, first, false), status(1, second, true)];
-    let cores = [
-        core_view(0, 0, CoreState::AtLimit),
-        core_view(1, 0, CoreState::AtLimit),
-    ];
-    let running = trial(Regime::R7, None, 120);
-    let mut running = running;
-    running.workload = second;
-    for (width, brief, want) in [
-        (75, false, "top by offset"),
-        (60, true, "offset top"),
-        (57, true, ""),
-    ] {
-        let model = Model::new();
-        let zone = TimeZone::UTC;
-        let view = session(Timestamp::UNIX_EPOCH);
-        let mut s = model.snapshot();
-        s.session = Some(&view);
-        s.cores = &cores;
-        s.r7 = &statuses;
-        s.trial = Some(&running);
-        let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-        let rect = Rect::new(0, 0, width, 4);
-        let mut buf = Buffer::empty(rect);
-        let columns = if brief {
-            CoreColumns {
-                id: 2,
-                offset: 5,
-                state: 9,
-                gauge: 18,
-                cells: 25,
-                failure: 44,
-                note: 50,
-                brief: true,
-            }
-        } else {
-            CoreColumns {
-                id: 2,
-                offset: 6,
-                state: 11,
-                gauge: 21,
-                cells: 25,
-                failure: 48,
-                note: 56,
-                brief: false,
-            }
-        };
-        super::draw_ccd(
-            &mut buf,
-            &Ccd {
-                id: CcdId(0),
-                rect,
-                columns,
-            },
-            &scene,
-        );
-        let rows = rows_of(&buf);
-        assert!(!rows[1].contains("top"), "{:?}", rows[1]);
-        if want.is_empty() {
-            assert!(!rows[2].contains("top"), "{width}: {:?}", rows[2]);
-        } else {
-            assert!(rows[2].trim_end().ends_with(want), "{width}: {:?}", rows[2]);
-        }
+    let state = |state, loaded, judged| CoreView {
+        loaded,
+        judged,
+        ..core_view(0, 0, state)
+    };
+    assert_eq!(
+        role(state(CoreState::Search, true, true), Some(&running)),
+        "judged"
+    );
+    assert_eq!(
+        role(state(CoreState::Search, true, false), Some(&running)),
+        "loaded"
+    );
+    assert_eq!(
+        role(state(CoreState::Search, false, false), Some(&running)),
+        "idle at 0"
+    );
+    assert_eq!(
+        role(state(CoreState::Search, true, true), None),
+        "idle at 0"
+    );
+    let mut away = state(CoreState::HasRoom, false, false);
+    away.applied = Some(ObservedOffset(-5));
+    assert_eq!(role(away, None), "idle");
+    assert_eq!(
+        role(state(CoreState::Suspect, true, true), Some(&running)),
+        "held failure"
+    );
+    assert_eq!(
+        role(state(CoreState::Member, true, true), Some(&running)),
+        "held failure"
+    );
+    assert_eq!(
+        role(state(CoreState::Probe, true, true), Some(&running)),
+        "probing"
+    );
+    assert_eq!(
+        role(state(CoreState::Parked, false, false), Some(&running)),
+        "parked"
+    );
+}
+
+#[test]
+fn the_heading_row_carries_the_scale_and_the_label_row_the_columns() {
+    let buf = drawn(&[], None, Colours::None);
+    let heading = cells(&buf, 0, 0, 76);
+    assert_eq!(&heading[3..4], "0");
+    assert_eq!(&heading[5..10], "CCD 0");
+    for (count, column) in [(10, 11), (20, 21), (30, 31), (40, 41), (50, 51)] {
+        assert_eq!(&heading[column..column + 3], format!("-{count}"));
+    }
+    assert_eq!(cells(&buf, 1, 0, 13), "core  tune now");
+    assert_eq!(cells(&buf, 1, 16, 49), "█ tune  █ fail  ! failing  R reset");
+    assert_eq!(cells(&buf, 1, 55, 73), "s=solo g=gap f=fail");
+}
+
+#[test]
+fn the_lane_and_its_neighbours_in_the_record_carry_only_their_own_marks() {
+    let cores: Vec<CoreView> = (0..8)
+        .map(|id| CoreView {
+            id: core(id),
+            ..recorded(-30, Some(-35), Some(-36))
+        })
+        .collect();
+    let buf = drawn(&cores, None, Colours::None);
+    for record in 0..8u16 {
+        let top = 2 + 3 * record;
+        assert_eq!(cells(&buf, top, 0, 1), format!("{record:02}"));
+        assert_eq!(buf[(3, top)].symbol(), " ");
+        assert_eq!(buf[(54, top)].symbol(), " ");
+        assert_eq!(filled_columns(&lane(&buf, top)).len(), 30);
+        assert_eq!(filled_columns(&lane(&buf, top + 1)), [35]);
+        assert_eq!(lane(&buf, top + 2).trim(), "");
+        assert_eq!(cells(&buf, top + 2, 0, 3).trim(), "");
+        assert_eq!(values(&buf, top + 1), "s-35 g5 f-36");
     }
 }
 
 #[test]
-fn the_top_note_fits_beside_a_note_at_its_exact_width() {
-    let note = Line::from("held by C4 · solo -31");
-    let width = line_width(&note) + 3 + "top requester".len();
+fn the_overview_stays_inside_its_rectangle() {
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let view = session(Timestamp::UNIX_EPOCH);
+    let cores: Vec<CoreView> = (0..12)
+        .map(|id| CoreView {
+            id: core(id),
+            evidence: crate::model::CoreEvidence {
+                current_failure: true,
+                ..Default::default()
+            },
+            queued: Some(seq(3)),
+            ..recorded(-50, Some(-50), Some(-50))
+        })
+        .collect();
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.cores = &cores;
+    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
+    let area = Rect::new(0, 0, 90, 34);
+    let inside = Rect::new(6, 4, 77, 26);
+    let mut buf = Buffer::filled(area, ratatui::buffer::Cell::new("~"));
+    draw_core_overview(&mut buf, inside, &scene, CcdId(0));
+    for y in 0..area.height {
+        for x in 0..area.width {
+            if !inside.contains(ratatui::layout::Position::new(x, y)) {
+                assert_eq!(buf[(x, y)].symbol(), "~", "({x}, {y})");
+            }
+        }
+    }
+    assert_eq!(buf[(6 + 4, 4 + 2)].symbol(), "█");
+    let last = 4 + 2 + 3 * 7;
+    assert_eq!(buf[(6 + 53, last + 1)].symbol(), "█");
+}
+
+#[test]
+fn colours_tell_a_current_failure_from_a_recorded_one_and_monochrome_keeps_the_shapes() {
+    let mut current = recorded(-10, Some(-12), Some(-11));
+    current.evidence.current_failure = true;
+    let recorded_core = recorded(-10, Some(-12), Some(-11));
+    for colours in [Colours::Full, Colours::Console] {
+        let now = drawn(&[current.clone()], None, colours);
+        let then = drawn(std::slice::from_ref(&recorded_core), None, colours);
+        assert_eq!(now[(14, 3)].symbol(), "█");
+        assert_eq!(now[(14, 3)].fg, Paint::Bad.style(colours).fg.expect("fg"));
+        assert_eq!(
+            then[(14, 3)].fg,
+            Paint::Recorded.style(colours).fg.expect("fg")
+        );
+        assert_eq!(then[(4, 2)].fg, Paint::White.style(colours).fg.expect("fg"));
+        assert_ne!(now[(14, 3)].fg, then[(14, 3)].fg);
+    }
+    let plain = drawn(&[current], None, Colours::None);
+    assert_eq!(plain[(14, 3)].symbol(), "█");
+    assert_eq!(plain[(14, 3)].fg, ratatui::style::Color::Reset);
+    assert_eq!(plain[(4, 2)].symbol(), "█");
+    assert_eq!(values(&plain, 3), "s-12 g2 f-11");
+}
+
+fn table_text(cores: &[CoreView], width: usize) -> Vec<String> {
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let view = session(Timestamp::UNIX_EPOCH);
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.cores = cores;
+    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
+    core_table(&scene, width).iter().map(plain).collect()
+}
+
+#[test]
+fn the_compact_table_lists_every_core_in_ccd_and_core_order_with_exact_values() {
+    let mut cores: Vec<CoreView> = Vec::new();
+    for id in 0..16u8 {
+        cores.push(CoreView {
+            id: core(id),
+            ccd: CcdId(id % 2),
+            ..recorded(-(i64::from(id)), Some(-30), (id == 3).then_some(-31))
+        });
+    }
+    cores[1].applied = None;
+    cores[5].queued = Some(seq(4));
+    let rows = table_text(&cores, 79);
+    assert_eq!(rows.len(), 17);
+    assert_eq!(rows[0], "CCD core tune  now solo  gap fail  role");
+    assert_eq!(rows[1], "  0   00    0    0  -30   30 none  idle at 0");
+    assert_eq!(rows[8], "  0   14  -14    0  -30   16 none  idle at 0");
+    assert_eq!(rows[9], "  1   01   -1    ?  -30   29 none  idle");
+    assert_eq!(rows[10], "  1   03   -3    0  -30   27  -31  idle at 0");
+    assert_eq!(rows[11], "  1   05   -5    0  -30   25 none  reset queued");
+    let order: Vec<&str> = rows[1..].iter().map(|row| &row[..8]).collect();
+    let mut sorted = order.clone();
+    sorted.sort_unstable();
+    assert_eq!(order, sorted);
+}
+
+#[test]
+fn a_narrow_table_drops_the_role_words_before_any_number() {
+    let cores = [CoreView {
+        solo: Some(off(-45)),
+        fail: Some(off(0)),
+        queued: Some(seq(2)),
+        ..core_view(2, 1, CoreState::AtLimit)
+    }];
+    let wide = table_text(&cores, 79);
+    assert_eq!(wide[1], "  1   02    0    0  -45   45    0  reset queued");
+    let narrow = table_text(&cores, 33);
+    assert_eq!(narrow[0], "CCD core tune  now solo  gap fail");
+    assert_eq!(narrow[1], "  1   02    0    0  -45   45    0");
+}
+
+#[test]
+fn a_table_too_narrow_for_every_role_word_keeps_the_failure_and_reset_badges() {
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let view = session(Timestamp::UNIX_EPOCH);
+    let running = trial(Regime::R1, Some(Timestamp::UNIX_EPOCH), 60);
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.trial = Some(&running);
+    let mut loaded = recorded(-20, Some(-25), Some(-21));
+    loaded.loaded = true;
+    loaded.queued = Some(seq(9));
+    loaded.evidence.current_failure = true;
+    let held = CoreView {
+        state: CoreState::Suspect,
+        ..loaded.clone()
+    };
+    let table = |core: &CoreView, width| {
+        let cores = [core.clone()];
+        let mut snapshot = s;
+        snapshot.cores = &cores;
+        let scene = scene(&snapshot, Timestamp::UNIX_EPOCH, &zone, Colours::None);
+        plain(&core_table(&scene, width)[1])
+    };
+    let numbers = "  0   00  -20    0  -25    5  -21";
     assert_eq!(
-        plain(&top_note(&note, false, width, Colours::Full)),
-        "held by C4 · solo -31 · top requester"
+        table(&loaded, 79),
+        format!("{numbers}  loaded · failing now · reset queued")
     );
+    assert_eq!(table(&loaded, 60), format!("{numbers}  !R loaded"));
+    assert_eq!(table(&held, 47), format!("{numbers}  !R"));
+    let only_queued = CoreView {
+        evidence: CoreEvidence::default(),
+        ..loaded
+    };
+    assert_eq!(table(&only_queued, 47), format!("{numbers}  R loaded"));
+}
+
+#[test]
+fn the_cores_page_explains_each_value_and_where_the_failure_came_from() {
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let view = session(Timestamp::UNIX_EPOCH);
+    let mut gapped = recorded(-9, Some(-45), Some(-46));
+    gapped.state = CoreState::HasRoom;
+    gapped.evidence = crate::model::CoreEvidence {
+        failure: Some(crate::model::FailureEvidence {
+            offset: off(-46),
+            source: crate::model::FailureSource::R7Charged,
+            seq: seq(812),
+        }),
+        decision: Some(crate::model::OffsetDecision {
+            seq: seq(812),
+            decision: togi_journal::Decision::Backoff,
+            activity: togi_journal::Activity::Checking,
+            from: off(-46),
+            to: off(-9),
+        }),
+        current_failure: true,
+    };
+    let mut zero = CoreView {
+        id: core(1),
+        applied: None,
+        ..recorded(0, None, Some(0))
+    };
+    zero.queued = Some(seq(5));
+    let none = CoreView {
+        id: core(2),
+        ..recorded(-3, Some(-3), None)
+    };
+    let deeper = CoreView {
+        id: core(3),
+        ..recorded(-50, Some(-45), None)
+    };
+    let cores = [gapped, zero, none, deeper];
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.cores = &cores;
+    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
+    let page: Vec<String> = cores_page(&scene, 100).iter().map(plain).collect();
+    let text = page.join("\n");
+    for want in [
+        "Core 00 · CCD 0 · HAS ROOM",
+        "  tune -9 · now 0",
+        "  solo -45 · gap 36: 36 counts shallower than solo",
+        "  failure -46 · R7-charged · journal #812",
+        "  ! current failure: recorded in the step now running",
+        "  room: eligible to deepen in phase 2",
+        "  last decision: backoff -46 to -9 while checking, journal #812",
+        "  tune 0 · now ? (no readback recorded)",
+        "  solo ? · gap ?: no solo limit recorded yet",
+        "  failure at 0 · source not recorded",
+        "  R reset queued: command #5, the core searches again at the next run",
+        "  last decision: none recorded",
+        "  solo -3 · gap 0: at the solo limit",
+        "  solo -45 · gap -5: 5 counts deeper than solo",
+        "  no failure recorded",
+    ] {
+        assert!(page.iter().any(|line| line == want), "{want:?} in\n{text}");
+    }
+    let narrow = cores_page(&scene, 30);
+    assert!(narrow.iter().all(|line| line_width(line) <= 30));
+    let none: [CoreView; 0] = [];
+    let mut bare = model.snapshot();
+    bare.cores = &none;
+    let bare = Scene::new(bare, Timestamp::UNIX_EPOCH, &zone, Colours::None);
     assert_eq!(
-        plain(&top_note(&note, false, width - 1, Colours::Full)),
-        "held by C4 · solo -31"
+        plain(&cores_page(&bare, 60)[0]),
+        "No cores yet: the journal records no session to show."
     );
 }
 
@@ -1290,44 +1183,6 @@ fn the_trial_bar_shows_elapsed_without_colour() {
     let line = progress_bar(&full, 4, 1, "█", "░");
     assert_eq!(line.spans[0].style, Paint::Running.style(Colours::Full));
     assert_eq!(line.spans[1].style, Paint::Track.style(Colours::Full));
-}
-
-#[test]
-fn large_digits_are_three_rows_and_a_colon() {
-    let rows = big_digits("1:05");
-    assert_eq!(rows[0], "▀█    █▀█ █▀▀");
-    assert!(
-        rows.iter()
-            .all(|row| row.chars().count() == rows[0].chars().count())
-    );
-    assert_eq!(
-        big_digits("x"),
-        [String::new(), String::new(), String::new()]
-    );
-}
-
-#[test]
-fn the_requirement_line_counts_passes_and_marks_the_running_trial() {
-    let model = Model::new();
-    let zone = TimeZone::UTC;
-    let scene = scene(
-        &model.snapshot(),
-        Timestamp::UNIX_EPOCH,
-        &zone,
-        Colours::None,
-    );
-    let mut t = trial(Regime::R1, None, 60);
-    assert_eq!(line_width(&requirement_line(&scene, &t, false)), 0);
-    t.count = Count {
-        passed: 1,
-        index: 2,
-        of: 4,
-    };
-    assert_eq!(
-        plain(&requirement_line(&scene, &t, false)),
-        "1 passed · trial 2 of 4  ■ ► · ·"
-    );
-    assert_eq!(plain(&requirement_line(&scene, &t, true)), "1/4 ■ ► · ·");
 }
 
 #[test]

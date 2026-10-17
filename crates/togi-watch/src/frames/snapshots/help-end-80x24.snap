@@ -3,15 +3,16 @@ source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
 │ togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes
-│ ■ SOLO ─ ► P1 ─ ○ P2 ─ CLEAN 0 ─ ► CYCLE 1 ─ 1:20 left
-│
-│ │ parked           a core a hunt holds no deeper than its failing offset,
-│ │                  outside the selected group
-│ │ partial part     an R7 part with the top requesters idle
-│ │ top requester    an R7 workload's highest-request group on each CCD, ties
-│ │                  included; marked top on the CCD tables
-│ │ self-sufficient  observed passing as top requester for this R7 workload
-│ │ cycle            one pass through the checking schedule
+│ ■ SOLO → ► P1 → ○ P2 → ○ CLEAN   1:20 left
+│ HELP · 9/9 · < Journal | Main >
+│ │ suspect             a core a hunt keeps at its failing offset
+│ │ parked              a core a hunt holds no deeper than its failing offset,
+│ │                     outside the selected group
+│ │ partial part        an R7 part with the top requesters idle
+│ │ top requester       an R7 workload's highest-request group on each CCD,
+│ │                     ties included; marked top on the CCD tables
+│ │ self-sufficient     observed passing as top requester for this R7 workload
+│ │ cycle               one pass through the checking schedule
 │ │
 │ │
 │ │ KINDS OF LOAD ─────────────────────────────────────────────────────────────
@@ -23,5 +24,4 @@ expression: body
 │ │ R5 both threads   both threads of one core: SMT pressure
 │ █ R6 idle + bursts  idle with short wake-ups: idle and boost
 │ █ R7 all-core       a CCD, part of one, or every core: power and heat
-│
-│  ?  help    l  log    esc  back    q  exit dashboard
+│  ←/→  pages  9/9 Help   ↑/↓  scroll   Esc  Main   ?  help   q  exit dashboard

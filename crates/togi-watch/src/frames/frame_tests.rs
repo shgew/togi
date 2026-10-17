@@ -8,6 +8,7 @@ mod escapes;
 mod holds;
 mod live_panels;
 mod local_time;
+mod pages;
 mod panels;
 mod without_journal;
 
@@ -24,8 +25,19 @@ use crate::model::{Model, project};
 use crate::screen::{Colours, Drawn, Journal, Screen, View};
 
 pub(super) const SIZES: [(u16, u16); 3] = [(240, 67), (160, 45), (120, 33)];
-pub(super) const ALL_SIZES: [(u16, u16); 4] = [(240, 67), (160, 45), (120, 33), (80, 24)];
-pub(super) const VIEWS: [View; 3] = [View::Main, View::Help, View::Log];
+/// Every size the frames are checked at: the classes' boundaries on both sides, the numeric table's 80 by 30 and
+/// the scrolled form under it.
+pub(super) const ALL_SIZES: [(u16, u16); 8] = [
+    (240, 67),
+    (160, 45),
+    (159, 45),
+    (160, 44),
+    (120, 33),
+    (80, 30),
+    (80, 24),
+    (79, 29),
+];
+pub(super) const VIEWS: [View; 9] = View::ALL;
 pub(super) const PROFILES: [Colours; 3] = [Colours::Full, Colours::Console, Colours::None];
 
 pub(super) struct Fixture {
@@ -113,16 +125,6 @@ pub(super) fn words(buf: &Buffer) -> String {
 
 pub(super) fn squash(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-pub(super) fn row_of(buf: &Buffer, needle: &str) -> Option<usize> {
-    rows_of(buf).iter().position(|row| row.contains(needle))
-}
-
-pub(super) fn row_starting(buf: &Buffer, prefix: &str) -> Option<usize> {
-    rows_of(buf)
-        .iter()
-        .position(|row| row.trim_start().starts_with(prefix))
 }
 
 pub(super) fn clock(time: Timestamp, zone: &TimeZone, format: &str) -> String {

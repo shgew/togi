@@ -1,0 +1,49 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
+│ togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
+│ ■ SOLO LIMITS  16/16 → ► PHASE 1 · cycle 1 → ○ PHASE 2 → ○ CLEAN CYCLES
+│
+│ PHASE 1 · cycle 1 · 0/18 steps complete
+│ step 1 · 3 known parts · more may follow · 0/4 credited checks · 4 checks still needed
+│
+│ NOW  CYCLE 1 · STEP 1 · PART 1   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers
+│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 1 of 4
+│
+│    0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
+│ core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
+│ 00  ██████████████████████████                         tune -26 now -26         08  █████                                              tune  -5 now  -5
+│                                █                       s-27 g1 f-28                       █                                            s-6 g1 f-7
+│                                                        judged                                                                          idle
+│ 01  ████████████████                                   tune -16 now -16         09  ██████████████████████████████████                 tune -34 now -34
+│                      █                                 s-17 g1 f-18                                                    █               s-35 g1 f-36
+│                                                        judged                                                                          idle
+│ 02  █████████████████████████                          tune -25 now -25         10  █████████████████                                  tune -17 now -17
+│                               █                        s-26 g1 f-27                                   █                                s-18 g1 f-19
+│                                                        judged                                                                          idle
+│ 03  ████████████████████████                           tune -24 now -24         11  █████████                                          tune  -9 now  -9
+│                              █                         s-25 g1 f-26                           █                                        s-10 g1 f-11
+│                                                        judged                                                                          idle
+│ 04  ███████████████                                    tune -15 now -15         12  ████████████████                                   tune -16 now -16
+│                     █                                  s-16 g1 f-17                                  █                                 s-17 g1 f-18
+│                                                        judged                                                                          idle
+│ 05  █████████                                          tune  -9 now  -9         13  █████████████████████████████████████              tune -37 now -37
+│               █                                        s-10 g1 f-11                                                       █            s-38 g1 f-39
+│                                                        judged                                                                          idle
+│ 06  █████████████████████████████████████              tune -37 now -37         14  ███████████████                                    tune -15 now -15
+│                                           █            s-38 g1 f-39                                 █                                  s-16 g1 f-17
+│                                                        judged                                                                          idle
+│ 07  █████████████████████████████                      tune -29 now -29         15  █████████████                                      tune -13 now -13
+│                                   █                    s-30 g1 f-31                               █                                    s-14 g1 f-15
+│                                                        judged                                                                          idle
+│ white=tune · red point=recorded failure · gap=counts shallower than solo
+│
+│ WHAT HAPPENED
+│ 09:47  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
+│ 09:47  cycle    cycle 1 started · 18 steps
+│ 09:47  limit    cores 06, 13 solo limit -38
+│ 07:34  fail     core 06 fails at -39
+│
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

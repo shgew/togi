@@ -749,6 +749,7 @@ fn every_tag_has_a_word() {
         (Tag::Reset, "reset"),
         (Tag::Mce, "mce"),
         (Tag::Note, "note"),
+        (Tag::Chain, "chain"),
         (Tag::Confirm, "confirm"),
         (Tag::Resume, "resume"),
         (Tag::Hold, "hold"),

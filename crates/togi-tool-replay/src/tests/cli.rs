@@ -157,8 +157,14 @@ fn every_page_can_be_printed() {
     let events = Scenario::Checking.events().unwrap();
     for (name, view) in [
         ("main", View::Main),
+        ("cores", View::Cores),
+        ("cycle", View::Cycle),
+        ("r7", View::R7),
+        ("hunts", View::Hunts),
+        ("bios", View::Bios),
+        ("history", View::History),
+        ("journal", View::Log),
         ("help", View::Help),
-        ("log", View::Log),
     ] {
         let cli = parse(&["--at", "30", "--view", name]).unwrap();
         let mut out = Vec::new();
@@ -172,6 +178,25 @@ fn every_page_can_be_printed() {
         };
         let want = draw(&events, prefix(&events, 30), &frame, &TimeZone::UTC).unwrap();
         assert_eq!(String::from_utf8(out).unwrap(), want, "{name}");
+    }
+}
+
+#[test]
+fn the_page_names_are_the_nine_pages_and_log_still_names_the_journal() {
+    for (name, view) in [
+        ("main", View::Main),
+        ("cores", View::Cores),
+        ("cycle", View::Cycle),
+        ("r7", View::R7),
+        ("hunts", View::Hunts),
+        ("bios", View::Bios),
+        ("history", View::History),
+        ("journal", View::Log),
+        ("log", View::Log),
+        ("help", View::Help),
+    ] {
+        let cli = parse(&["--at", "2", "--view", name]).unwrap();
+        assert_eq!(View::from(cli.view), view, "{name}");
     }
 }
 

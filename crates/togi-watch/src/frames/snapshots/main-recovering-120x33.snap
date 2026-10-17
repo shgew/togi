@@ -3,34 +3,34 @@ source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
 │ togi   01:41:10   tuning 1h41m   session 1h41m   0 failures · 1 crash
-│ ► SOLO  0 of 16 found ─ ○ P1 ─ ○ P2 ─ CLEAN 0 ─ ○ CYCLE
+│ RECOVERY  ○ SOLO LIMITS  0/16 → ○ PHASE 1 → ○ PHASE 2 → ○ CLEAN CYCLES
+│ MAIN · 1/9 · < Help | Cores >
+│ RECOVERY · SOLO LIMITS · 0/16 solo limits found
+│ crash detected 01:40
 │
-│ ▌  I picked up from the journal after the reboot; nothing it recorded is lost.
+│ NOW  RECOVERED FROM A CRASH · crash in core 08 · R1 light at -10
+│ detected 01:40:30 after a watchdog reset · next trial: R1 light, core 01 alone at -10
 │
-│ RECOVERED FROM A CRASH  crash in core 08 · R1 light at -10
-│ detected 01:40:30 after a watchdog reset
-│ next trial: R1 light, core 01 alone at -10
+│ CCD core tune  now solo  gap fail  role
+│   0   00  -15    0    ?    ? none  idle at 0
+│   0   01  -10    0    ?    ? none  idle at 0
+│   0   02  -10    0    ?    ? none  idle at 0
+│   0   03  -10    0    ?    ? none  idle at 0
+│   0   04  -10    0    ?    ? none  idle at 0
+│   0   05  -10    0    ?    ? none  idle at 0
+│   0   06  -10    0    ?    ? none  idle at 0
+│   0   07  -10    0    ?    ? none  idle at 0
+│   1   08  -10  -10    ?    ? none  idle
+│   1   09  -10    0    ?    ? none  idle at 0
+│   1   10  -10    0    ?    ? none  idle at 0
+│   1   11  -10    0    ?    ? none  idle at 0
+│   1   12  -10    0    ?    ? none  idle at 0
+│   1   13  -10    0    ?    ? none  idle at 0
+│   1   14  -10    0    ?    ? none  idle at 0
+│   1   15  -10    0    ?    ? none  idle at 0
+│ WHAT HAPPENED
+│ 01:40  crash    with the offsets applied, rebooted
+│ 01:39  step     core 00 passed -10; searches -15 on its next turn
+│ 01:36  step     core 15 passed -5; searches -10 on its next turn
 │
-│ CCD 0 waiting    0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
-│   00   0 SEARCH   ·····                           → -15       08 -10 SEARCH   ▄▄▄▄▄                           → -10
-│   01   0 SEARCH   ···                             → -10       09   0 SEARCH   ···                             → -10
-│   02   0 SEARCH   ···                             → -10       10   0 SEARCH   ···                             → -10
-│   03   0 SEARCH   ···                             → -10       11   0 SEARCH   ···                             → -10
-│   04   0 SEARCH   ···                             → -10       12   0 SEARCH   ···                             → -10
-│   05   0 SEARCH   ···                             → -10       13   0 SEARCH   ···                             → -10
-│   06   0 SEARCH   ···                             → -10       14   0 SEARCH   ···                             → -10
-│   07   0 SEARCH   ···                             → -10       15   0 SEARCH   ···                             → -10
-│
-│ TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ─────────────────────────────── l: last 400
-│
-│   01  search: light, then heavy  -10  p -5 · next -10       01:40  crash    with the offsets applied, rebooted
-│   09  search: light, then heavy  -10  p -5 · next -10       01:39  step     core 00 passed -10; searches -15 on...
-│   02  search: light, then heavy  -10  p -5 · next -10       01:36  step     core 15 passed -5; searches -10 on its...
-│   10  search: light, then heavy  -10  p -5 · next -10       01:33  step     core 07 passed -5; searches -10 on its...
-│   03  search: light, then heavy  -10  p -5 · next -10       01:30  step     core 14 passed -5; searches -10 on its...
-│   11  search: light, then heavy  -10  p -5 · next -10       01:27  step     core 06 passed -5; searches -10 on its...
-│   04  search: light, then heavy  -10  p -5 · next -10       01:24  step     core 13 passed -5; searches -10 on its...
-│   12  search: light, then heavy  -10  p -5 · next -10       01:21  step     core 05 passed -5; searches -10 on its...
-│ +8 more                                                     +27 more
-│
-│  ?  help    l  log    esc  back    q  exit dashboard
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

@@ -2,14 +2,10 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   22:13:20   no session yet
+│ togi   22:13:20   no session yet
 │
-│
-│
-│  ▌  NO SESSION YET   Nothing has been recorded yet. Start with togi run, or boot the togi entry, and I'll tell you what I'm doing here.
-│
-│
-│
+│ MAIN · 1/9 · < Help | Cores >
+│ ▌  NO SESSION YET   Nothing has been recorded yet. Start with togi run, or boot the togi entry, and I'll tell you what I'm doing here.
 │
 │
 │
@@ -67,4 +63,8 @@ expression: body
 │
 │
 │
-│   ?  help    l  log    esc  back    q  exit dashboard
+│
+│
+│
+│
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

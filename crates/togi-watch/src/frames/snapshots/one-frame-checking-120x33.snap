@@ -3,34 +3,34 @@ source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
 │ togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
-│ ■ SOLO ─ ► P1 ─ ○ P2 ─ CLEAN 0 ─ ► CYCLE 1
+│ ■ SOLO LIMITS  16/16 → ► PHASE 1 · cycle 1 → ○ PHASE 2 → ○ CLEAN CYCLES
+│ MAIN · 1/9 · < Help | Cores >
+│ PHASE 1 · cycle 1 · 0/18 steps complete
+│ step 1 · 3 known parts · more may follow · 0/4 credited checks · 4 checks still needed
 │
-│ ▌  Step 1, R7 all-core: part 1 of 3 loads 00-07 for 2 minutes.
+│ NOW  CYCLE 1 · STEP 1 · PART 1   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers
+│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 1 of 4
 │
-│  R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers                            CYCLE 1 · STEP 1 · PART 1
-│ ███████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/4 ► · · ·
+│ CCD core tune  now solo  gap fail  role
+│   0   00  -26  -26  -27    1  -28  judged
+│   0   01  -16  -16  -17    1  -18  judged
+│   0   02  -25  -25  -26    1  -27  judged
+│   0   03  -24  -24  -25    1  -26  judged
+│   0   04  -15  -15  -16    1  -17  judged
+│   0   05   -9   -9  -10    1  -11  judged
+│   0   06  -37  -37  -38    1  -39  judged
+│   0   07  -29  -29  -30    1  -31  judged
+│   1   08   -5   -5   -6    1   -7  idle
+│   1   09  -34  -34  -35    1  -36  idle
+│   1   10  -17  -17  -18    1  -19  idle
+│   1   11   -9   -9  -10    1  -11  idle
+│   1   12  -16  -16  -17    1  -18  idle
+│   1   13  -37  -37  -38    1  -39  idle
+│   1   14  -15  -15  -16    1  -17  idle
+│   1   15  -13  -13  -14    1  -15  idle
+│ WHAT HAPPENED
+│ 09:47  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
+│ 09:47  cycle    cycle 1 started · 18 steps
+│ 07:34  fail     core 06 fails at -39
 │
-│ 3/4 pass → trial 4 of 4 · 5m   core named → backs off   none named → backs off   backoffs per offset order
-│
-│ CCD 0 all loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
-│ ► 00 -26 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▬              -28             08  -5 HAS ROOM ▄▄▄▬                         -7
-│ ► 01 -16 HAS ROOM ▄▄▄▄▄▄▄▄▬                   -18             09 -34 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬          -36
-│ ► 02 -25 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▬              -27             10 -17 HAS ROOM ▄▄▄▄▄▄▄▄▄▬                  -19
-│ ► 03 -24 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▬               -26             11  -9 HAS ROOM ▄▄▄▄▄▬                      -11
-│ ► 04 -15 HAS ROOM ▄▄▄▄▄▄▄▄▬                   -17             12 -16 HAS ROOM ▄▄▄▄▄▄▄▄▬                   -18
-│ ► 05  -9 HAS ROOM ▄▄▄▄▄▬                      -11             13 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬        -39
-│ ► 06 -37 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬        -39             14 -15 HAS ROOM ▄▄▄▄▄▄▄▄▬                   -17
-│ ► 07 -29 HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬            -31             15 -13 HAS ROOM ▄▄▄▄▄▄▄▬                    -15
-│
-│ CYCLE 1 ─────────────────────────────── 18 steps · 0 done   WHAT HAPPENED ─────────────────────────────── l: last 400
-│
-│ ►  1 R7 all-core       3+ parts      part 1 of 3            09:47  step     cycle 1 step 1: R7 all-core, mprime...
-│ ►    ├ full CCD 0      00-07         trial 1 of 4           09:47  cycle    cycle 1 started · 18 steps
-│ +20 more                                                    09:47  limit    cores 06, 13 solo limit -38
-│                                                             09:38  limit    core 09 solo limit -35
-│ R7 ────────────── top ───────────── self-sufficient ─────   09:38  limit    core 00 solo limit -27
-│ mprime AVX2       05 08 by offset   none yet                09:38  limit    core 07 solo limit -30
-│ mprime AVX-512    05 08 by offset   none yet                09:35  limit    core 10 solo limit -18
-│ y-cruncher FFTv4  05 08 by offset   none yet                +208 more
-│
-│
+│ 1/9 Main  [Main] | Cores | Cycle | R7 evidence | Hunts / probes | BIOS profile | History | Journal | Help
