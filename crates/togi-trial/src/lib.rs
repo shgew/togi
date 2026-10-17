@@ -10,11 +10,18 @@ mod runner;
 
 #[cfg(target_os = "linux")]
 mod controller;
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
 mod evidence;
 #[cfg(target_os = "linux")]
 mod files;
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        dead_code,
+        reason = "off Linux only the fixture tests compile; the Linux runner uses the rest"
+    )
+)]
 mod id;
 #[cfg(target_os = "linux")]
 mod instance;
@@ -22,7 +29,7 @@ mod instance;
 mod join;
 #[cfg(target_os = "linux")]
 mod judge;
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
 mod launch;
 #[cfg(target_os = "linux")]
 mod logs;
@@ -30,23 +37,44 @@ mod logs;
 mod native;
 #[cfg(target_os = "linux")]
 mod os;
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
 mod output;
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        dead_code,
+        reason = "off Linux only the fixture tests compile; the Linux runner uses the rest"
+    )
+)]
 mod plan;
 #[cfg(target_os = "linux")]
 mod prepare;
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        dead_code,
+        reason = "off Linux only the fixture tests compile; the Linux runner uses the rest"
+    )
+)]
 mod procfs;
 #[cfg(target_os = "linux")]
 mod runtime;
 #[cfg(target_os = "linux")]
 mod samples;
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
 mod schedule;
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        dead_code,
+        reason = "off Linux only the fixture tests compile; the Linux runner uses the rest"
+    )
+)]
 mod sensors;
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
 mod stall;
 #[cfg(target_os = "linux")]
 mod supervisor;
@@ -60,7 +88,14 @@ mod testing;
 #[cfg(test)]
 #[cfg(target_os = "linux")]
 mod tests;
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        dead_code,
+        reason = "off Linux only the fixture tests compile; the Linux runner uses the rest"
+    )
+)]
 mod timing;
 #[cfg(not(target_os = "linux"))]
 mod unsupported;

@@ -42,7 +42,7 @@ pub struct VoltageWorkload {
     pub package_mhz_per_w: f64,
     pub balance_mhz_per_w: f64,
     /// Sixteen cores in core-ID order.
-    pub cores: Vec<VoltageCore>,
+    pub cores: [VoltageCore; CORES],
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -141,6 +141,12 @@ fn resolve_workload(
         .key("balance_mhz_per_w")
         .nonnegative(def.balance_mhz_per_w)?;
     cores.length(CORES, def.core.len())?;
+    let resolved: Vec<VoltageCore> = def
+        .core
+        .iter()
+        .enumerate()
+        .map(|(i, core)| resolve_core(core, reference_mhz, rail, &cores.index(i)))
+        .collect::<Result<_, _>>()?;
     Ok(VoltageWorkload {
         id,
         reference_mhz,
@@ -150,12 +156,12 @@ fn resolve_workload(
         offset_watts_per_count,
         package_mhz_per_w,
         balance_mhz_per_w,
-        cores: def
-            .core
-            .iter()
-            .enumerate()
-            .map(|(i, core)| resolve_core(core, reference_mhz, rail, &cores.index(i)))
-            .collect::<Result<_, _>>()?,
+        cores: resolved.try_into().map_err(|resolved: Vec<_>| {
+            cores.error(Problem::Length {
+                expected: CORES,
+                found: resolved.len(),
+            })
+        })?,
     })
 }
 

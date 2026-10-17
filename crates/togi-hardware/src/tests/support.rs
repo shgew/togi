@@ -1,30 +1,21 @@
-#[cfg(target_os = "linux")]
 use std::cell::Cell;
 use std::collections::BTreeMap;
-#[cfg(target_os = "linux")]
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
-#[cfg(target_os = "linux")]
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-#[cfg(target_os = "linux")]
 use togi_config::Config;
 use togi_machine::{Check, CoreInfo, CoreRank, Partial};
-#[cfg(target_os = "linux")]
 use togi_smu::Driver;
-#[cfg(target_os = "linux")]
 use togi_trial::{BackendIdentity, IdentityError};
 
 use crate::adapters::lock;
-#[cfg(target_os = "linux")]
 use crate::assemble::Parts;
 use crate::host::HostReadings;
-#[cfg(target_os = "linux")]
 use crate::host::{Privilege, ScopeProbe, SystemHost};
-#[cfg(target_os = "linux")]
 use crate::preflight::Account;
 
 pub(super) const MAILBOX_AND_PM_FILES: [&str; 5] = [
@@ -55,7 +46,6 @@ impl Tree {
         }
     }
 
-    #[cfg(target_os = "linux")]
     /// A supported identity with one physical core: mapping must refuse before SMN access.
     pub(super) fn new() -> Self {
         let tree = Self::empty();
@@ -105,12 +95,10 @@ impl Tree {
         lock(&self.entries).insert(path, Entry::File(text.as_bytes().to_vec()));
     }
 
-    #[cfg(target_os = "linux")]
     pub(super) fn remove(&self, relative: &str) {
         assert!(lock(&self.entries).remove(&self.path(relative)).is_some());
     }
 
-    #[cfg(target_os = "linux")]
     pub(super) fn remove_dir(&self, relative: &str) {
         let path = self.path(relative);
         lock(&self.entries).retain(|entry, _| !entry.starts_with(&path));
@@ -153,7 +141,6 @@ impl Tree {
         }
     }
 
-    #[cfg(target_os = "linux")]
     pub(super) fn driver(&self, identity_only: bool) -> Driver {
         let cpu_names = self
             .list(&self.path("sys/devices/system/cpu"))
@@ -241,13 +228,11 @@ impl HostReadings for Tree {
     }
 }
 
-#[cfg(target_os = "linux")]
 pub(super) struct Watch {
     touched: Arc<Mutex<Vec<&'static str>>>,
     start: usize,
 }
 
-#[cfg(target_os = "linux")]
 impl Watch {
     pub(super) fn on(tree: &Tree) -> Self {
         Self {
@@ -266,7 +251,6 @@ impl Watch {
     }
 }
 
-#[cfg(target_os = "linux")]
 pub(super) fn resolved_account() -> Account {
     Account::Resolved {
         name: "trial-user".to_owned(),
@@ -274,12 +258,10 @@ pub(super) fn resolved_account() -> Account {
     }
 }
 
-#[cfg(target_os = "linux")]
 pub(super) fn refused_account() -> Account {
     Account::Refused(IdentityError::NotConfigured)
 }
 
-#[cfg(target_os = "linux")]
 /// A scope probe that counts its calls and answers with a canned reply.
 #[derive(Clone)]
 pub(super) struct Scope {
@@ -287,7 +269,6 @@ pub(super) struct Scope {
     reply: Rc<dyn Fn() -> Result<String, togi_trial::Error>>,
 }
 
-#[cfg(target_os = "linux")]
 impl Scope {
     pub(super) fn creating() -> Self {
         Self::answering(|| Ok("scope confined to cpu 0 created".to_owned()))
@@ -317,7 +298,6 @@ impl Scope {
     }
 }
 
-#[cfg(target_os = "linux")]
 impl ScopeProbe for Scope {
     fn probe(&self) -> Result<String, togi_trial::Error> {
         self.calls.set(self.calls.get() + 1);
@@ -325,7 +305,6 @@ impl ScopeProbe for Scope {
     }
 }
 
-#[cfg(target_os = "linux")]
 pub(super) fn host(
     tree: &Tree,
     privilege: Privilege,
@@ -335,7 +314,6 @@ pub(super) fn host(
     host_with_driver(tree, tree.driver(false), privilege, account, scope)
 }
 
-#[cfg(target_os = "linux")]
 pub(super) fn host_with_driver(
     tree: &Tree,
     driver: Driver,

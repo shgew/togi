@@ -5,12 +5,12 @@ use super::support::{Log, config_loaded, crash_detected, intent, shutdown, trial
 use crate::project::Projection;
 use crate::report::compute;
 
-fn endings(log: &Log) -> Vec<String> {
+fn endings(log: &Log) -> Vec<Option<ShutdownReason>> {
     let journal = log.journal();
     Projection::new(&journal)
         .runs
         .iter()
-        .map(|run| run.ending.clone())
+        .map(|run| run.ending)
         .collect()
 }
 
@@ -24,7 +24,7 @@ fn a_crash_reboot_continues_the_run_until_a_shutdown() {
     log.boot("c");
     log.add(config_loaded(super::support::build("test", None)));
     log.add(shutdown(ShutdownReason::Signal));
-    assert_eq!(endings(&log), ["signal"]);
+    assert_eq!(endings(&log), [Some(ShutdownReason::Signal)]);
 }
 
 #[test]
@@ -35,7 +35,10 @@ fn a_shutdown_splits_the_boots_into_runs() {
     log.boot("b");
     log.add(config_loaded(super::support::build("test", None)));
     log.add(shutdown(ShutdownReason::Command));
-    assert_eq!(endings(&log), ["signal", "command"]);
+    assert_eq!(
+        endings(&log),
+        [Some(ShutdownReason::Signal), Some(ShutdownReason::Command)]
+    );
 }
 
 #[test]
@@ -43,7 +46,7 @@ fn a_restart_within_a_boot_starts_a_run_that_stays_open() {
     let mut log = Log::new(&[(0, 0)]);
     log.add(config_loaded(super::support::build("test", None)));
     log.add(config_loaded(super::support::build("test", None)));
-    assert_eq!(endings(&log), ["open", "open"]);
+    assert_eq!(endings(&log), [None, None]);
 }
 
 #[test]

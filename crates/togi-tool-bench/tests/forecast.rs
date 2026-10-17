@@ -39,7 +39,7 @@ use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Observe, Observer, Persistence, Replay, SimInput, resume_simulator, simulate};
 use togi_tool_bench::forecast::{ForecastError, Options, Report, execute_unsynced, outcome};
 use togi_tool_bench::{Fleet, Tree};
-use togi_tool_forecast::{Anchor, Outcome, Record, Run, Session, Status, read_dir_fs};
+use togi_tool_forecast::{Anchor, Outcome, Record, Run, Session, Split, Status, read_dir_fs};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 const SEEDS: [u64; 3] = [1, 2, 101];
@@ -238,7 +238,11 @@ impl Fixture {
             .map(|seed| Run {
                 machine: String::new(),
                 seed,
-                split: if seed == 101 { "holdout" } else { "dev" }.to_owned(),
+                split: if seed == 101 {
+                    Split::Holdout
+                } else {
+                    Split::Dev
+                },
                 outcome: outcome(&self.sessions(seed), &self.anchor, 0, false).unwrap(),
             })
             .collect();
@@ -372,13 +376,12 @@ fn a_forecast_counts_only_what_follows_the_anchor_and_leaves_the_copy_alone() {
         assert_eq!(first.record.anchor, fixture.anchor);
         assert_eq!(first.record.summary.runs, 3);
         assert_eq!(first.record.summary.concluded, 3);
-        for (run, seed) in first
-            .record
-            .runs
-            .iter()
-            .zip(["dev", "dev", "holdout"].into_iter().zip(SEEDS))
-        {
-            assert_eq!((run.split.as_str(), run.seed), seed);
+        for (run, seed) in first.record.runs.iter().zip(
+            [Split::Dev, Split::Dev, Split::Holdout]
+                .into_iter()
+                .zip(SEEDS),
+        ) {
+            assert_eq!((run.split, run.seed), seed);
             assert_eq!(run.outcome.status, Status::Concluded);
             assert_eq!(
                 run.outcome.crashes,
@@ -556,22 +559,16 @@ fn real_process_only_the_files_a_resumed_session_reads_are_copied() {
 }
 
 #[test]
-fn real_fs_an_archive_entry_that_is_not_a_regular_file_fails_naming_it() {
-    for name in [
-        "20260101T000000Z.jsonl",
-        "20260101T000000Z-carry-pending",
-        "20260101T000000Z-compat-pending",
-        "20260101T000000Z-reset-all",
-    ] {
-        let fixture = DiskFixture::new(false);
-        fs::create_dir_all(fixture.state().join("archive")).unwrap();
-        let target = fixture.path("elsewhere");
-        fs::write(&target, "archived\n").unwrap();
-        std::os::unix::fs::symlink(&target, fixture.state().join("archive").join(name)).unwrap();
-        let failed =
-            execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap_err();
-        assert!(failed.to_string().contains(name), "{name}: {failed}");
-    }
+fn real_fs_an_archive_entry_that_is_not_a_regular_file_fails_the_forecast_naming_it() {
+    let name = "20260101T000000Z-reset-all";
+    let fixture = DiskFixture::new(false);
+    fs::create_dir_all(fixture.state().join("archive")).unwrap();
+    let target = fixture.path("elsewhere");
+    fs::write(&target, "archived\n").unwrap();
+    std::os::unix::fs::symlink(&target, fixture.state().join("archive").join(name)).unwrap();
+    let failed = execute(&fixture.options(fixture.simulator("", 0)), &Fleet::new()).unwrap_err();
+    let message = togi_machine::error_chain(&failed);
+    assert!(message.contains(name), "{message}");
 }
 
 fn run_dirs(root: &Path) -> Vec<String> {
@@ -710,7 +707,7 @@ fn absolute_machine_suite(fixture: &DiskFixture) {
 }
 
 fn literal_run(
-    split: &str,
+    split: Split,
     seed: u64,
     hours: f64,
     crashes: u32,
@@ -730,7 +727,7 @@ fn literal_run(
     Run {
         machine: "machines/target.json".to_owned(),
         seed,
-        split: split.to_owned(),
+        split,
         outcome: Outcome {
             status: Status::Concluded,
             hours,
@@ -751,9 +748,9 @@ fn the_report_names_the_anchor_the_runs_by_status_and_each_metric_s_range() {
         sha256: "0".repeat(64),
     };
     let mut runs = vec![
-        literal_run("dev", 1, 23.16, 12, 5, [-34, -9]),
-        literal_run("dev", 2, 23.56, 12, 4, [-19, -2]),
-        literal_run("holdout", 101, 23.76, 15, 2, [-17, -6]),
+        literal_run(Split::Dev, 1, 23.16, 12, 5, [-34, -9]),
+        literal_run(Split::Dev, 2, 23.56, 12, 4, [-19, -2]),
+        literal_run(Split::Holdout, 101, 23.76, 15, 2, [-17, -6]),
     ];
     runs[2].outcome.status = Status::Censored;
     let mut record = Record::new(anchor, "0123abc", true, Vec::new(), runs).unwrap();

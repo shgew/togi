@@ -76,6 +76,95 @@ fn dot(leaf: &Value) -> Value {
     json!({"kind": "dot", "leaf": leaf, "leaves": []})
 }
 
+/// serde's message for `error`, without the position `serde_json` appends.
+fn diagnostic(error: &serde_json::Error) -> String {
+    let text = error.to_string();
+    let position = format!(" at line {} column {}", error.line(), error.column());
+    text.strip_suffix(&position).unwrap_or(&text).to_owned()
+}
+
+fn refusal<T: for<'de> Deserialize<'de> + std::fmt::Debug>(text: &str) -> (String, String, bool) {
+    let tracked =
+        serde_path_to_error::deserialize::<_, T>(&mut serde_json::Deserializer::from_str(text))
+            .unwrap_err();
+    (
+        diagnostic(tracked.inner()),
+        tracked.path().to_string(),
+        is_unknown_field(tracked.inner()),
+    )
+}
+
+/// [`locate`] reads serde's refusal as a protocol: the message starts ``unknown field ` ``, names the field unescaped
+/// and closes it with `` `, ``, and the path of a field refused inside an internally tagged enum ends at the enum's
+/// object. A `serde` or `serde_json` release that changes any of this fails here before it changes what a lenient
+/// read ignores.
+#[test]
+fn serde_refuses_an_unknown_field_in_the_words_locate_reads() {
+    #[derive(Debug, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Empty {}
+
+    let cases: [(&str, (String, String, bool)); 7] = [
+        (
+            "a struct",
+            refusal::<Leaf>(r#"{"id":1,"zz":2,"label":"a"}"#),
+        ),
+        ("a struct without fields", refusal::<Empty>(r#"{"zz":2}"#)),
+        (
+            "a struct inside a tagged variant",
+            refusal::<Holder>(
+                r#"{"shape":{"kind":"dot","leaf":{"id":1,"label":"a","zz":1}},"label":"x"}"#,
+            ),
+        ),
+        (
+            "a tagged variant",
+            refusal::<Holder>(
+                r#"{"shape":{"kind":"dot","zz":1,"leaf":{"id":1,"label":"a"}},"label":"x"}"#,
+            ),
+        ),
+        (
+            "escaped names",
+            refusal::<Leaf>(r#"{"id":1,"z\u0060z":2,"label":"a"}"#),
+        ),
+        (
+            "a NUL in the name",
+            refusal::<Leaf>(r#"{"id":1,"\u0000z":2,"label":"a"}"#),
+        ),
+        (
+            "a repeated known field",
+            refusal::<Leaf>(r#"{"id":1,"id":2,"label":"a"}"#),
+        ),
+    ];
+    let expected = [
+        ("unknown field `zz`, expected `id` or `label`", "zz", true),
+        ("unknown field `zz`, there are no fields", "zz", true),
+        (
+            "unknown field `zz`, expected `id` or `label`",
+            "shape",
+            true,
+        ),
+        (
+            "unknown field `zz`, expected `leaf` or `leaves`",
+            "shape",
+            true,
+        ),
+        ("unknown field `z`z`, expected `id` or `label`", "z`z", true),
+        (
+            "unknown field `\u{0}z`, expected `id` or `label`",
+            "\u{0}z",
+            true,
+        ),
+        ("duplicate field `id`", ".", false),
+    ];
+    for ((case, actual), (message, path, unknown)) in cases.into_iter().zip(expected) {
+        assert_eq!(
+            actual,
+            (message.to_owned(), path.to_owned(), unknown),
+            "{case}"
+        );
+    }
+}
+
 #[test]
 fn an_unknown_field_in_a_struct_inside_a_tagged_variant_is_located() {
     let leaf = json!({"id": 1, "label": "a"});

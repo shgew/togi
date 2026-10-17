@@ -326,13 +326,9 @@ pub fn compare(current: &[Record], baseline: &[BaselineRun]) -> Vec<Line> {
             .filter(|key| baseline_keys.contains(key))
             .collect()
     };
-    let in_both = |rows: &[Row]| -> Vec<Row> {
-        rows.iter()
-            .filter(|r| shared.contains(&(r.scenario.as_str(), r.seed)))
-            .cloned()
-            .collect()
-    };
-    let (current, baseline) = (in_both(&current), in_both(&baseline));
+    let in_both = |row: &&Row| shared.contains(&(row.scenario.as_str(), row.seed));
+    let current: Vec<&Row> = current.iter().filter(in_both).collect();
+    let baseline: Vec<&Row> = baseline.iter().filter(in_both).collect();
     let mut scenarios: Vec<&str> = Vec::new();
     for row in &current {
         if !scenarios.contains(&row.scenario.as_str()) {
@@ -343,8 +339,9 @@ pub fn compare(current: &[Record], baseline: &[BaselineRun]) -> Vec<Line> {
     for scenario in scenarios.iter().copied().map(Some).chain([None]) {
         let members: Vec<&str> = scenario.map_or_else(|| scenarios.clone(), |name| vec![name]);
         for metric in &METRICS {
-            let values = |rows: &[Row], name: &str| -> Vec<f64> {
+            let values = |rows: &[&Row], name: &str| -> Vec<f64> {
                 rows.iter()
+                    .copied()
                     .filter(|r| r.scenario == name)
                     .filter_map(metric.value)
                     .collect()

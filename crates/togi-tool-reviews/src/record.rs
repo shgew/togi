@@ -79,6 +79,18 @@ pub enum RecordError {
     Priority { from: String, priority: String },
     #[error("finding from {from}: unknown outcome {}", quote(.status))]
     Outcome { from: String, status: String },
+    #[error("unterminated togi-review-part block")]
+    PartUnterminated,
+    #[error("decode togi-review-part block")]
+    PartDecode(#[source] serde_json::Error),
+    #[error("record part {part} of {parts} on head {} is out of range", quote(.head_sha))]
+    PartNumber {
+        head_sha: String,
+        part: usize,
+        parts: usize,
+    },
+    #[error("record part {part} of {parts} lacks its note")]
+    PartNote { part: usize, parts: usize },
 }
 
 /// Reads the hidden block that ends a review record comment.
