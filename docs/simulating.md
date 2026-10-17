@@ -62,7 +62,7 @@ If an active joint has any member on a loaded CCD, that CCD's smooth hazard is s
 
 Here multi-core R7 means an R7 trial loading at least two cores; single-core R7 loads exactly one. It does not mean a failure attributed to one core within a multi-core load. The shared-rail model applies to a load of more than one core; the tuner's normal R7 partial chains stop before a one-core load ([workloads](spec/workloads.md#regimes)).
 
-The default [target fitter](benchmarking.md#fitting-the-target-machine), its bootstrap refits and its forward-prefix fits all use this rail model for multi-core R7, with zero onset and no fitted joints or CCD residual. The committed `target-fit-*` files are still the legacy Go-generated ensemble: changing the fitter alone does not change those machines. Their replacement depends on #480's once-only held-out score and no-new-model-check-flag bar.
+The default [target fitter](benchmarking.md#fitting-the-target-machine), its bootstrap refits and its forward-prefix fits all use this rail model for multi-core R7, with zero onset and no fitted joints or CCD residual. The committed `target-fit-*` files remain the legacy Go-generated ensemble: the [2026-10-17 frozen forward score failed](benchmarking.md#the-2026-10-17-frozen-score), so no machines, overlays, anchor or baseline were regenerated, and no Ruleset 12 gate was registered. The refreshed replay extract contains the nine scored sessions; it does not validate the fallback model.
 
 ```sh
 just sim --seed 1 --machine tools/bench/machines/shared-voltage.json
