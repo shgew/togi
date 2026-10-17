@@ -765,13 +765,7 @@ mod tests {
 /// The crate's own error inside a seam error, when it carries one.
 pub(super) fn crate_error(error: &togi_machine::Error) -> Option<&crate::Error> {
     match error {
-        togi_machine::Error::Other(inner) | togi_machine::Error::Containment(inner) => {
-            inner.downcast_ref::<crate::Error>().or_else(|| {
-                inner
-                    .downcast_ref::<crate::error::Shared>()
-                    .map(crate::error::Shared::error)
-            })
-        }
+        togi_machine::Error::Other(inner) => inner.downcast_ref::<crate::Error>(),
         _ => None,
     }
 }

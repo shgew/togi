@@ -1688,6 +1688,41 @@ fn an_unconfirmed_partial_start_journals_each_setup_and_cleanup_cause_once() {
 }
 
 #[test]
+fn a_cause_that_displays_exactly_its_parent_is_journaled_once() {
+    #[derive(Debug, thiserror::Error)]
+    #[error("the start failed: launch backend")]
+    struct Kept(#[source] std::io::Error);
+
+    #[derive(Debug)]
+    struct Shared(Kept);
+
+    impl std::fmt::Display for Shared {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            std::fmt::Display::fmt(&self.0, f)
+        }
+    }
+
+    impl std::error::Error for Shared {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.0)
+        }
+    }
+
+    let run = whole(Faults::default(), |rigging| {
+        rigging.start_error = Some(|| {
+            Error::Containment(Box::new(Shared(Kept(std::io::Error::other(
+                "launch cause",
+            )))))
+        });
+    });
+    let end = containment_dead_end(&run);
+    let text =
+        "trial cleanup could not be confirmed: the start failed: launch backend: launch cause";
+    assert_eq!(end.containment_error.as_deref(), Some(text));
+    assert_eq!(end.reason, Some(format!("setup failed: {text}")));
+}
+
+#[test]
 fn an_unconfirmed_non_containment_start_keeps_its_existing_reason_text() {
     #[derive(Debug, thiserror::Error)]
     #[error("launch backend")]

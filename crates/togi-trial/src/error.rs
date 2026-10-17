@@ -285,17 +285,12 @@ impl std::fmt::Display for Shared {
 #[cfg(target_os = "linux")]
 impl std::error::Error for Shared {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        std::error::Error::source(&*self.0)
+        Some(&*self.0)
     }
 }
 
 #[cfg(target_os = "linux")]
 impl Shared {
-    #[cfg(test)]
-    pub(crate) fn error(&self) -> &Error {
-        &self.0
-    }
-
     /// The seam error for a kept error, the same each time it is asked for.
     pub(crate) fn seam(error: &Arc<Error>) -> togi_machine::Error {
         match &**error {
@@ -315,7 +310,8 @@ impl Shared {
 }
 
 /// An error with every cause behind it: joined errors and cleanup failures are listed one by
-/// one, each followed by its own source chain.
+/// one, each followed by its own source chain. A source that displays exactly its parent (a
+/// kept error behind its wrapper) is the same cause, so only the source is rendered.
 pub(crate) fn with_causes(error: &(dyn std::error::Error + 'static)) -> String {
     if let Some(Error::Joined(joined)) = error.downcast_ref::<Error>() {
         return joined
@@ -338,6 +334,7 @@ pub(crate) fn with_causes(error: &(dyn std::error::Error + 'static)) -> String {
             .join("; ");
     }
     match error.source() {
+        Some(source) if source.to_string() == error.to_string() => with_causes(source),
         Some(source) => format!("{error}: {}", with_causes(source)),
         None => error.to_string(),
     }

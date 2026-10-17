@@ -813,6 +813,49 @@ fn shared_errors_render_each_cause_once() {
 }
 
 #[test]
+fn a_kept_joined_error_is_reachable_through_the_public_source_chain() {
+    let other = Error::join_after(
+        Error::Launch {
+            instance: "c01".into(),
+            scope: "togi-trial-t1-c01".into(),
+            source: std::io::Error::other("systemd-run missing"),
+        },
+        vec![Error::Cancelled],
+    );
+    let containment = Error::join_after(
+        Error::Stuck {
+            operation: "stop",
+            bound: Duration::from_secs(1),
+        },
+        vec![Error::Cancelled],
+    );
+    for (error, is_other) in [(other, true), (containment, false)] {
+        let seam = crate::error::Shared::seam(&Arc::new(error));
+        let (togi_machine::Error::Other(inner) | togi_machine::Error::Containment(inner)) = &seam
+        else {
+            panic!("{seam:?}");
+        };
+        assert_eq!(matches!(seam, togi_machine::Error::Other(_)), is_other);
+        let kept = std::iter::successors(
+            Some(&**inner as &(dyn std::error::Error + 'static)),
+            |error| error.source(),
+        )
+        .find_map(|error| error.downcast_ref::<Error>());
+        assert!(matches!(kept, Some(Error::Joined(_))), "{seam:?}");
+    }
+    let stuck = Error::Stuck {
+        operation: "stop",
+        bound: Duration::from_secs(1),
+    };
+    let text = stuck.to_string();
+    let seam = crate::error::Shared::seam(&Arc::new(stuck));
+    assert_eq!(
+        crate::error::with_causes(&seam),
+        format!("trial cleanup could not be confirmed: {text}")
+    );
+}
+
+#[test]
 fn a_cancelled_trial_keeps_the_output_failure_that_followed_its_cancellation() {
     let (mut runner, _dir) = runner(
         |fake| {
@@ -842,8 +885,8 @@ fn a_cancelled_trial_keeps_the_output_failure_that_followed_its_cancellation() {
         panic!("a cancellation that carries an output failure must not read as a bare one");
     };
     let Some(Error::Joined(joined)) = inner
-        .downcast_ref::<crate::error::Shared>()
-        .map(crate::error::Shared::error)
+        .source()
+        .and_then(|source| source.downcast_ref::<Error>())
     else {
         panic!("{inner}");
     };
@@ -1699,8 +1742,8 @@ fn a_cached_cancellation_joined_to_a_failed_teardown_stays_containment_with_ever
             panic!("round {round}: the machine category is not containment: {partial:?}");
         };
         let Some(Error::Joined(joined)) = inner
-            .downcast_ref::<crate::error::Shared>()
-            .map(crate::error::Shared::error)
+            .source()
+            .and_then(|source| source.downcast_ref::<Error>())
         else {
             panic!("round {round}: no joined diagnostics behind {inner}");
         };
