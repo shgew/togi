@@ -1,0 +1,151 @@
+
+Forward-chained check
+20260926T151414Z ruleset=2 training_sessions=1: trials=479 failures=22 predicted=2.9 log_loss/trial fit=0.3468 constant(0.064)=0.1892 failures_p<0.01=20 exact_matches=44/479 (9.2%) flagged/eligible=0/0
+  R1 trials=195 observed=1 predicted=0.4 log_loss/trial fit=0.0268 constant=0.0794
+  R2 trials=155 observed=17 predicted=0.3 log_loss/trial fit=0.9171 constant=0.3608
+  R3 trials=56 observed=0 predicted=0.1 log_loss/trial fit=0.0023 constant=0.0656
+  R4 trials=50 observed=0 predicted=0.1 log_loss/trial fit=0.0022 constant=0.0656
+  R5 trials=18 observed=2 predicted=0.0 log_loss/trial fit=1.0239 constant=0.3646
+  R6 trials=3 observed=0 predicted=0.1 log_loss/trial fit=0.0235 constant=0.0656
+  R7 trials=2 observed=2 predicted=2.0 log_loss/trial fit=0.0001 constant=2.7565
+  R7 workload mprime-avx2-36k-248k-allcore trials=1 observed=1 predicted=1.0 log_loss/trial fit=0.0001 constant=2.7565
+  R7 workload mprime-avx512-36k-248k-allcore trials=1 observed=1 predicted=1.0 log_loss/trial fit=0.0001 constant=2.7565
+  R7 CCD0 loaded trials=2 observed=2 predicted=2.0 log_loss/trial fit=0.0001 constant=2.7565
+20260927T221954Z ruleset=3 training_sessions=2: trials=403 failures=18 predicted=17.1 log_loss/trial fit=0.2573 constant(0.057)=0.1840 failures_p<0.01=6 exact_matches=89/403 (22.1%) flagged/eligible=0/0
+  R1 trials=51 observed=0 predicted=0.0 log_loss/trial fit=0.0003 constant=0.0586
+  R2 trials=281 observed=4 predicted=0.4 log_loss/trial fit=0.1126 constant=0.0986
+  R3 trials=17 observed=0 predicted=0.0 log_loss/trial fit=0.0003 constant=0.0586
+  R4 trials=17 observed=0 predicted=0.0 log_loss/trial fit=0.0003 constant=0.0586
+  R5 trials=17 observed=1 predicted=0.0 log_loss/trial fit=0.5421 constant=0.2238
+  R7 trials=20 observed=13 predicted=16.7 log_loss/trial fit=3.1414 constant=1.8832
+  R7 workload mprime-avx2-36k-248k-allcore trials=7 observed=5 predicted=7.0 log_loss/trial fit=2.6316 constant=2.0637
+  R7 workload mprime-avx512-36k-248k-allcore trials=5 observed=4 predicted=1.7 log_loss/trial fit=1.5131 constant=2.3043
+  R7 workload ycruncher-fftv4-n63-vt3-allcore trials=8 observed=4 predicted=8.0 log_loss/trial fit=4.6052 constant=1.4622
+  R7 CCD0 loaded trials=13 observed=7 predicted=9.7 log_loss/trial fit=4.1244 constant=1.5701
+  R7 CCD1 loaded trials=6 observed=5 predicted=6.0 log_loss/trial fit=1.5351 constant=2.3979
+  R7 both CCDs loaded trials=1 observed=1 predicted=1.0 log_loss/trial fit=0.0001 constant=2.8657
+20260929T180308Z ruleset=4 training_sessions=3: trials=894 failures=59 predicted=102.3 log_loss/trial fit=0.1649 constant(0.054)=0.2445 failures_p<0.01=0 exact_matches=10/894 (1.1%) flagged/eligible=2/8
+  R1 trials=80 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0555
+  R2 trials=80 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0555
+  R7 trials=734 observed=59 predicted=102.3 log_loss/trial fit=0.2008 constant=0.2857
+  R7 workload mprime-avx2-36k-248k-allcore trials=734 observed=59 predicted=102.3 log_loss/trial fit=0.2008 constant=0.2857
+  R7 CCD0 loaded trials=734 observed=59 predicted=102.3 log_loss/trial fit=0.2008 constant=0.2857
+20261002T004254Z ruleset=6 training_sessions=4: trials=317 failures=8 predicted=5.7 log_loss/trial fit=0.0338 constant(0.058)=0.1302 failures_p<0.01=0 exact_matches=246/317 (77.6%) flagged/eligible=0/4
+  R1 trials=80 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0599
+  R2 trials=80 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0599
+  R7 trials=157 observed=8 predicted=5.7 log_loss/trial fit=0.0682 constant=0.2018
+  R7 workload mprime-avx2-36k-248k-allcore trials=157 observed=8 predicted=5.7 log_loss/trial fit=0.0682 constant=0.2018
+  R7 CCD0 loaded trials=142 observed=6 predicted=5.4 log_loss/trial fit=0.0423 constant=0.1776
+  R7 CCD1 loaded trials=15 observed=2 predicted=0.3 log_loss/trial fit=0.3135 constant=0.4312
+20261002T235548Z ruleset=7 training_sessions=5: trials=264 failures=45 predicted=40.6 log_loss/trial fit=0.4159 constant(0.055)=0.5423 failures_p<0.01=0 exact_matches=1/264 (0.4%) flagged/eligible=2/7
+  R7 trials=264 observed=45 predicted=40.6 log_loss/trial fit=0.4159 constant=0.5423
+  R7 workload mprime-avx2-36k-248k-allcore trials=264 observed=45 predicted=40.6 log_loss/trial fit=0.4159 constant=0.5423
+  R7 CCD0 loaded trials=137 observed=25 predicted=37.5 log_loss/trial fit=0.3827 constant=0.5766
+  R7 CCD1 loaded trials=127 observed=20 predicted=3.1 log_loss/trial fit=0.4518 constant=0.5053
+20261004T000701Z ruleset=8 training_sessions=6: trials=137 failures=17 predicted=36.0 log_loss/trial fit=0.2695 constant(0.064)=0.3988 failures_p<0.01=0 exact_matches=0/137 (0.0%) flagged/eligible=1/4
+  R7 trials=137 observed=17 predicted=36.0 log_loss/trial fit=0.2695 constant=0.3988
+  R7 workload mprime-avx2-36k-248k-allcore trials=72 observed=9 predicted=26.6 log_loss/trial fit=0.3705 constant=0.4012
+  R7 workload mprime-avx512-36k-248k-allcore trials=65 observed=8 predicted=9.4 log_loss/trial fit=0.1576 constant=0.3961
+  R7 CCD0 loaded trials=68 observed=9 predicted=23.6 log_loss/trial fit=0.3203 constant=0.4209
+  R7 CCD1 loaded trials=16 observed=4 predicted=6.8 log_loss/trial fit=0.3926 constant=0.7361
+  R7 both CCDs loaded trials=53 observed=4 predicted=5.6 log_loss/trial fit=0.1671 constant=0.2686
+20261004T211726Z ruleset=9 training_sessions=7: trials=149 failures=0 predicted=4.4 log_loss/trial fit=0.0528 constant(0.067)=0.0691 failures_p<0.01=0 exact_matches=0/149 (0.0%) flagged/eligible=0/0
+  R1 trials=48 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0691
+  R2 trials=48 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0691
+  R7 trials=53 observed=0 predicted=4.4 log_loss/trial fit=0.1482 constant=0.0691
+  R7 workload mprime-avx2-36k-248k-allcore trials=35 observed=0 predicted=3.2 log_loss/trial fit=0.1872 constant=0.0691
+  R7 workload mprime-avx512-36k-248k-allcore trials=18 observed=0 predicted=1.2 log_loss/trial fit=0.0723 constant=0.0691
+  R7 CCD0 loaded trials=30 observed=0 predicted=2.9 log_loss/trial fit=0.2064 constant=0.0691
+  R7 CCD1 loaded trials=11 observed=0 predicted=1.1 log_loss/trial fit=0.1110 constant=0.0691
+  R7 both CCDs loaded trials=12 observed=0 predicted=0.4 log_loss/trial fit=0.0368 constant=0.0691
+20261010T230611Z ruleset=11 training_sessions=8: trials=443 failures=22 predicted=90.6 log_loss/trial fit=0.4612 constant(0.064)=0.1993 failures_p<0.01=1 exact_matches=18/443 (4.1%) flagged/eligible=1/2
+  R1 trials=57 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0660
+  R2 trials=57 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0660
+  R3 trials=6 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0660
+  R5 trials=16 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0660
+  R6 trials=1 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0660
+  R7 trials=306 observed=22 predicted=90.6 log_loss/trial fit=0.6676 constant=0.2590
+  R7 workload mprime-avx2-36k-248k-allcore trials=100 observed=1 predicted=23.7 log_loss/trial fit=0.5882 constant=0.0928
+  R7 workload mprime-avx512-36k-248k-allcore trials=124 observed=15 predicted=42.8 log_loss/trial fit=0.6365 constant=0.3908
+  R7 workload ycruncher-fftv4-n63-vt3-allcore trials=82 observed=6 predicted=24.0 log_loss/trial fit=0.8114 constant=0.2625
+  R7 CCD0 loaded trials=93 observed=5 predicted=41.2 log_loss/trial fit=1.1274 constant=0.2103
+  R7 CCD1 loaded trials=197 observed=16 predicted=49.2 log_loss/trial fit=0.4745 constant=0.2841
+  R7 both CCDs loaded trials=16 observed=1 predicted=0.2 log_loss/trial fit=0.3722 constant=0.2338
+Pooled: trials=3086 failures=191 predicted=299.6 log_loss/trial fit=0.2550 constant(per-prefix)=0.2336 failures_p<0.01=27 exact_matches=408/3086 (13.2%) flagged/eligible=6/25
+
+Reference ensemble score on the same sessions (9 members, committed, not fitted, not a gate)
+Convention: each trial's probability is the mean over all 9 members of the member's failure probability; fit loss, predicted failures and failures_p<0.01 use that mean; flagged counts model-check groups flagged by any member; constant as in the forward check.
+20260926T151414Z ruleset=2 training_sessions=1: trials=479 failures=22 predicted=21.8 log_loss/trial fit=0.0403 constant(0.064)=0.1892 failures_p<0.01=0 exact_matches=44/479 (9.2%) flagged_by_any_member/eligible=0/0
+  R1 trials=195 observed=1 predicted=0.8 log_loss/trial fit=0.0043 constant=0.0794
+  R2 trials=155 observed=17 predicted=16.6 log_loss/trial fit=0.1060 constant=0.3608
+  R3 trials=56 observed=0 predicted=0.0 log_loss/trial fit=0.0003 constant=0.0656
+  R4 trials=50 observed=0 predicted=0.0 log_loss/trial fit=0.0003 constant=0.0656
+  R5 trials=18 observed=2 predicted=2.4 log_loss/trial fit=0.1100 constant=0.3646
+  R6 trials=3 observed=0 predicted=0.0 log_loss/trial fit=0.0025 constant=0.0656
+  R7 trials=2 observed=2 predicted=2.0 log_loss/trial fit=0.0001 constant=2.7565
+  R7 workload mprime-avx2-36k-248k-allcore trials=1 observed=1 predicted=1.0 log_loss/trial fit=0.0001 constant=2.7565
+  R7 workload mprime-avx512-36k-248k-allcore trials=1 observed=1 predicted=1.0 log_loss/trial fit=0.0001 constant=2.7565
+  R7 CCD0 loaded trials=2 observed=2 predicted=2.0 log_loss/trial fit=0.0001 constant=2.7565
+20260927T221954Z ruleset=3 training_sessions=2: trials=403 failures=18 predicted=17.2 log_loss/trial fit=0.0453 constant(0.057)=0.1840 failures_p<0.01=0 exact_matches=89/403 (22.1%) flagged_by_any_member/eligible=0/0
+  R1 trials=51 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0586
+  R2 trials=281 observed=4 predicted=3.1 log_loss/trial fit=0.0230 constant=0.0986
+  R3 trials=17 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0586
+  R4 trials=17 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0586
+  R5 trials=17 observed=1 predicted=1.0 log_loss/trial fit=0.0583 constant=0.2238
+  R7 trials=20 observed=13 predicted=13.0 log_loss/trial fit=0.5389 constant=1.8832
+  R7 workload mprime-avx2-36k-248k-allcore trials=7 observed=5 predicted=4.0 log_loss/trial fit=0.5603 constant=2.0637
+  R7 workload mprime-avx512-36k-248k-allcore trials=5 observed=4 predicted=3.9 log_loss/trial fit=0.5403 constant=2.3043
+  R7 workload ycruncher-fftv4-n63-vt3-allcore trials=8 observed=4 predicted=5.1 log_loss/trial fit=0.5193 constant=1.4622
+  R7 CCD0 loaded trials=13 observed=7 predicted=7.6 log_loss/trial fit=0.6669 constant=1.5701
+  R7 CCD1 loaded trials=6 observed=5 predicted=4.7 log_loss/trial fit=0.2942 constant=2.3979
+  R7 both CCDs loaded trials=1 observed=1 predicted=0.7 log_loss/trial fit=0.3435 constant=2.8657
+20260929T180308Z ruleset=4 training_sessions=3: trials=894 failures=59 predicted=61.8 log_loss/trial fit=0.0717 constant(0.054)=0.2445 failures_p<0.01=0 exact_matches=10/894 (1.1%) flagged_by_any_member/eligible=0/8
+  R1 trials=80 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0555
+  R2 trials=80 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0555
+  R7 trials=734 observed=59 predicted=61.8 log_loss/trial fit=0.0873 constant=0.2857
+  R7 workload mprime-avx2-36k-248k-allcore trials=734 observed=59 predicted=61.8 log_loss/trial fit=0.0873 constant=0.2857
+  R7 CCD0 loaded trials=734 observed=59 predicted=61.8 log_loss/trial fit=0.0873 constant=0.2857
+20261002T004254Z ruleset=6 training_sessions=4: trials=317 failures=8 predicted=12.7 log_loss/trial fit=0.0376 constant(0.058)=0.1302 failures_p<0.01=0 exact_matches=246/317 (77.6%) flagged_by_any_member/eligible=0/4
+  R1 trials=80 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0599
+  R2 trials=80 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0599
+  R7 trials=157 observed=8 predicted=12.7 log_loss/trial fit=0.0758 constant=0.2018
+  R7 workload mprime-avx2-36k-248k-allcore trials=157 observed=8 predicted=12.7 log_loss/trial fit=0.0758 constant=0.2018
+  R7 CCD0 loaded trials=142 observed=6 predicted=11.7 log_loss/trial fit=0.0654 constant=0.1776
+  R7 CCD1 loaded trials=15 observed=2 predicted=1.0 log_loss/trial fit=0.1743 constant=0.4312
+20261002T235548Z ruleset=7 training_sessions=5: trials=264 failures=45 predicted=33.6 log_loss/trial fit=0.2138 constant(0.055)=0.5423 failures_p<0.01=0 exact_matches=1/264 (0.4%) flagged_by_any_member/eligible=2/7
+  R7 trials=264 observed=45 predicted=33.6 log_loss/trial fit=0.2138 constant=0.5423
+  R7 workload mprime-avx2-36k-248k-allcore trials=264 observed=45 predicted=33.6 log_loss/trial fit=0.2138 constant=0.5423
+  R7 CCD0 loaded trials=137 observed=25 predicted=25.5 log_loss/trial fit=0.2144 constant=0.5766
+  R7 CCD1 loaded trials=127 observed=20 predicted=8.2 log_loss/trial fit=0.2131 constant=0.5053
+20261004T000701Z ruleset=8 training_sessions=6: trials=137 failures=17 predicted=19.8 log_loss/trial fit=0.1335 constant(0.064)=0.3988 failures_p<0.01=0 exact_matches=0/137 (0.0%) flagged_by_any_member/eligible=0/4
+  R7 trials=137 observed=17 predicted=19.8 log_loss/trial fit=0.1335 constant=0.3988
+  R7 workload mprime-avx2-36k-248k-allcore trials=72 observed=9 predicted=11.9 log_loss/trial fit=0.0559 constant=0.4012
+  R7 workload mprime-avx512-36k-248k-allcore trials=65 observed=8 predicted=7.9 log_loss/trial fit=0.2195 constant=0.3961
+  R7 CCD0 loaded trials=68 observed=9 predicted=11.6 log_loss/trial fit=0.0539 constant=0.4209
+  R7 CCD1 loaded trials=16 observed=4 predicted=3.7 log_loss/trial fit=0.4041 constant=0.7361
+  R7 both CCDs loaded trials=53 observed=4 predicted=4.5 log_loss/trial fit=0.1539 constant=0.2686
+20261004T211726Z ruleset=9 training_sessions=7: trials=149 failures=0 predicted=0.0 log_loss/trial fit=0.0002 constant(0.067)=0.0691 failures_p<0.01=0 exact_matches=0/149 (0.0%) flagged_by_any_member/eligible=0/0
+  R1 trials=48 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0691
+  R2 trials=48 observed=0 predicted=0.0 log_loss/trial fit=0.0001 constant=0.0691
+  R7 trials=53 observed=0 predicted=0.0 log_loss/trial fit=0.0004 constant=0.0691
+  R7 workload mprime-avx2-36k-248k-allcore trials=35 observed=0 predicted=0.0 log_loss/trial fit=0.0004 constant=0.0691
+  R7 workload mprime-avx512-36k-248k-allcore trials=18 observed=0 predicted=0.0 log_loss/trial fit=0.0005 constant=0.0691
+  R7 CCD0 loaded trials=30 observed=0 predicted=0.0 log_loss/trial fit=0.0004 constant=0.0691
+  R7 CCD1 loaded trials=11 observed=0 predicted=0.0 log_loss/trial fit=0.0004 constant=0.0691
+  R7 both CCDs loaded trials=12 observed=0 predicted=0.0 log_loss/trial fit=0.0005 constant=0.0691
+20261010T230611Z ruleset=11 training_sessions=8: trials=443 failures=22 predicted=0.2 log_loss/trial fit=0.3926 constant(0.064)=0.1993 failures_p<0.01=22 exact_matches=18/443 (4.1%) flagged_by_any_member/eligible=2/2
+  R1 trials=57 observed=0 predicted=0.0 log_loss/trial fit=0.0003 constant=0.0660
+  R2 trials=57 observed=0 predicted=0.0 log_loss/trial fit=0.0003 constant=0.0660
+  R3 trials=6 observed=0 predicted=0.0 log_loss/trial fit=0.0003 constant=0.0660
+  R5 trials=16 observed=0 predicted=0.0 log_loss/trial fit=0.0003 constant=0.0660
+  R6 trials=1 observed=0 predicted=0.0 log_loss/trial fit=0.0025 constant=0.0660
+  R7 trials=306 observed=22 predicted=0.1 log_loss/trial fit=0.5682 constant=0.2590
+  R7 workload mprime-avx2-36k-248k-allcore trials=100 observed=1 predicted=0.0 log_loss/trial fit=0.0807 constant=0.0928
+  R7 workload mprime-avx512-36k-248k-allcore trials=124 observed=15 predicted=0.1 log_loss/trial fit=0.9560 constant=0.3908
+  R7 workload ycruncher-fftv4-n63-vt3-allcore trials=82 observed=6 predicted=0.0 log_loss/trial fit=0.5762 constant=0.2625
+  R7 CCD0 loaded trials=93 observed=5 predicted=0.0 log_loss/trial fit=0.4218 constant=0.2103
+  R7 CCD1 loaded trials=197 observed=16 predicted=0.1 log_loss/trial fit=0.6426 constant=0.2841
+  R7 both CCDs loaded trials=16 observed=1 predicted=0.0 log_loss/trial fit=0.5019 constant=0.2338
+Pooled: trials=3086 failures=191 predicted=167.1 log_loss/trial fit=0.1174 constant(per-prefix)=0.2336 failures_p<0.01=22 exact_matches=408/3086 (13.2%) flagged_by_any_member/eligible=4/25
+Forward-chained elapsed: 3.154s
+Fit elapsed: 3.179s

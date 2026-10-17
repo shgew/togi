@@ -15,7 +15,7 @@ const COMMITTED: &[u8] = include_bytes!("../../../../tools/bench/facts/target.js
 #[test]
 fn the_committed_extract_reads_unchanged() {
     let facts = decode(COMMITTED).unwrap();
-    assert_eq!(facts.len(), 3297);
+    assert_eq!(facts.len(), 3889);
 
     let context = facts[0].context.clone().unwrap();
     let target = BiosContext {
@@ -36,7 +36,7 @@ fn the_committed_extract_reads_unchanged() {
         .iter()
         .filter(|f| matches!(f.outcome, Decisive::Failure { .. }))
         .count();
-    assert_eq!((failures, facts.len() - failures), (220, 3077));
+    assert_eq!((failures, facts.len() - failures), (242, 3647));
     assert_eq!(facts.iter().filter(|f| f.record_only).count(), 16);
     assert_eq!(
         facts
@@ -46,9 +46,9 @@ fn the_committed_extract_reads_unchanged() {
         530
     );
     for (condition, count) in [
-        (Condition::Alone, 1226),
+        (Condition::Alone, 1340),
         (Condition::Parked, 1215),
-        (Condition::Together, 856),
+        (Condition::Together, 1334),
     ] {
         assert_eq!(
             facts.iter().filter(|f| f.condition == condition).count(),
@@ -57,13 +57,13 @@ fn the_committed_extract_reads_unchanged() {
         );
     }
     for (regime, count) in [
-        (Regime::R1, 799),
-        (Regime::R2, 872),
-        (Regime::R3, 127),
+        (Regime::R1, 904),
+        (Regime::R2, 977),
+        (Regime::R3, 133),
         (Regime::R4, 121),
-        (Regime::R5, 57),
-        (Regime::R6, 5),
-        (Regime::R7, 1316),
+        (Regime::R5, 73),
+        (Regime::R6, 6),
+        (Regime::R7, 1675),
     ] {
         assert_eq!(
             facts.iter().filter(|f| f.class.regime() == regime).count(),
@@ -89,12 +89,14 @@ fn the_committed_extract_reads_unchanged() {
             (4, 894),
             (6, 317),
             (7, 264),
-            (8, 137)
+            (8, 137),
+            (9, 149),
+            (11, 443)
         ]
     );
     assert!(facts.iter().all(|f| f.seq >= Seq::new(1).unwrap()));
     let sessions: BTreeSet<_> = facts.iter().map(|f| f.session).collect();
-    assert!(sessions.len() > 1);
+    assert_eq!(sessions.len(), 9);
     let classes: BTreeSet<_> = facts
         .iter()
         .map(|f| format!("{:?}", ProfileClassKey::from(f)))
@@ -130,5 +132,5 @@ fn the_committed_extract_builds_a_replay_oracle() {
     let replayed = replay_facts(&facts);
     assert_eq!(replayed.len(), facts.len());
     let replay = Replay::new(replayed).unwrap();
-    assert_eq!(replay.len(), 3297);
+    assert_eq!(replay.len(), 3889);
 }
