@@ -42,23 +42,23 @@ pub enum Error {
     Read(#[from] ReadError),
     #[error(transparent)]
     Evidence(#[from] EvidenceError),
-    #[error("invalid fitted machine: {0}")]
+    #[error("invalid fitted machine")]
     Machine(#[from] InvalidMachine),
     #[error(transparent)]
     Encode(#[from] EncodeError),
-    #[error("load fitted machine {}: {source}", path.display())]
+    #[error("load fitted machine {}", path.display())]
     Load { path: PathBuf, source: LoadError },
     #[error(transparent)]
     Check(#[from] togi_tool_modelcheck::Error),
-    #[error("predict a trial: {0}")]
+    #[error("predict a trial")]
     Shape(#[from] ShapeError),
-    #[error("{action} {}: {source}", path.display())]
+    #[error("{action} {}", path.display())]
     Io {
         action: &'static str,
         path: PathBuf,
         source: io::Error,
     },
-    #[error("write the report: {0}")]
+    #[error("write the report")]
     Report(#[from] io::Error),
     #[error("{} is not valid UTF-8", .0.display())]
     Path(PathBuf),
@@ -76,6 +76,6 @@ pub enum Error {
     NotSharedVoltage,
     #[error("in-sample shared-voltage fit fails the unchanged model check; anchor not written")]
     AnchorFlagged,
-    #[error("build the thread pool: {0}")]
+    #[error("build the thread pool")]
     Pool(#[from] rayon::ThreadPoolBuildError),
 }

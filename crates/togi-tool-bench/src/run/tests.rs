@@ -479,7 +479,8 @@ fn a_suite_with_no_selected_runs_is_refused_before_any_simulator_runs() {
     let mut options = bench.options(bench.simulator("sim", 0, "", ""));
     options.selection = Selection::Dev;
     let error = execute(&options, &Fleet::new()).unwrap_err();
-    assert!(error.to_string().contains("no selected runs"), "{error}");
+    let chain = togi_machine::error_chain(&error);
+    assert!(chain.contains("no selected runs"), "{chain}");
     assert_eq!(bench.calls.load(Ordering::SeqCst), 0);
 }
 

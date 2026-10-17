@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use togi_config::Config;
 use togi_journal::{Activity, Event, Payload};
@@ -124,13 +124,13 @@ impl Base {
 
     /// The simulated journal, simulated once per process.
     pub fn events(self) -> Result<&'static [Event], Error> {
-        static CELLS: [OnceLock<Result<Vec<Event>, String>>; Base::ALL.len()] =
+        static CELLS: [OnceLock<Result<Vec<Event>, Arc<Error>>>; Base::ALL.len()] =
             [const { OnceLock::new() }; Base::ALL.len()];
         let index = Self::ALL.iter().position(|base| *base == self).unwrap_or(0);
         CELLS[index]
-            .get_or_init(|| self.simulate().map_err(|error| error.to_string()))
+            .get_or_init(|| self.simulate().map_err(Arc::new))
             .as_deref()
-            .map_err(|message| Error::Shared(message.clone()))
+            .map_err(|error| Error::Shared(Arc::clone(error)))
     }
 }
 

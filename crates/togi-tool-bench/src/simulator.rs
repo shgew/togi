@@ -12,7 +12,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 use togi_journal::{FileError, Payload, ReadError, Recording, ShutdownReason};
 
-use crate::error::{Error, RunError, Unrunnable};
+use crate::error::{BuildFailure, Error, RunError, Unrunnable};
 use crate::process::{self, Fleet};
 use crate::suite::RunSpec;
 
@@ -218,9 +218,9 @@ fn build() -> Result<PathBuf, Error> {
         .stdin(Stdio::null())
         .stderr(Stdio::inherit())
         .output()
-        .map_err(|error| build_failed(format!("run cargo: {error}")))?;
+        .map_err(|error| Error::BuildSimulator(BuildFailure::Spawn(error)))?;
     if !output.status.success() {
-        return Err(build_failed(format!("cargo build {}", output.status)));
+        return Err(Error::BuildSimulator(BuildFailure::Status(output.status)));
     }
     built(&output.stdout)
 }
@@ -232,7 +232,7 @@ pub(crate) fn build_in(
     tree: &Path,
     target: Option<&Path>,
 ) -> Result<PathBuf, Error> {
-    let unkept = |error: io::Error| build_failed(format!("keep cargo's messages: {error}"));
+    let unkept = |error: io::Error| Error::BuildSimulator(BuildFailure::Messages(error));
     let mut messages = tempfile::tempfile().map_err(unkept)?;
     let mut command = cargo_build(target);
     command
@@ -240,16 +240,14 @@ pub(crate) fn build_in(
         .stdin(Stdio::null())
         .stdout(messages.try_clone().map_err(unkept)?)
         .stderr(Stdio::inherit());
-    let finished =
-        process::run(fleet, &mut command, Duration::MAX).map_err(|error| match error {
-            RunError::Start(error) => build_failed(format!("run cargo: {error}")),
-            error => build_failed(format!("cargo build: {error}")),
-        })?;
+    let finished = process::run(fleet, &mut command, Duration::MAX).map_err(|error| {
+        Error::BuildSimulator(match error {
+            RunError::Start(error) => BuildFailure::Spawn(error),
+            error => BuildFailure::Run(error),
+        })
+    })?;
     if finished.exit != 0 {
-        return Err(build_failed(format!(
-            "cargo build exit status: {}",
-            finished.exit
-        )));
+        return Err(Error::BuildSimulator(BuildFailure::Exit(finished.exit)));
     }
     let mut bytes = Vec::new();
     messages
@@ -276,13 +274,8 @@ fn cargo_build(target: Option<&Path>) -> Command {
     command
 }
 
-fn build_failed(message: String) -> Error {
-    Error::BuildSimulator { message }
-}
-
 fn built(messages: &[u8]) -> Result<PathBuf, Error> {
-    executable(messages)
-        .ok_or_else(|| build_failed(format!("cargo reported no {BINARY} executable")))
+    executable(messages).ok_or(Error::BuildSimulator(BuildFailure::NoExecutable))
 }
 
 /// The executable of the `togi-tool-sim` binary in cargo's JSON build messages.
@@ -412,7 +405,7 @@ mod tests {
         let error = recorded_events(Recording::read_in(&fs, path)).unwrap_err();
         assert!(matches!(error, RunError::Journal(_)));
         assert_eq!(
-            error.to_string(),
+            togi_machine::error_chain(&error),
             "read the run journal: /runs/events.jsonl: first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover"
         );
     }

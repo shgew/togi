@@ -87,7 +87,10 @@ fn a_recording_of_another_ruleset_or_a_newer_schema_is_refused() {
     );
     let error = loaded(&ruleset).unwrap_err();
     assert!(matches!(error, Error::Refused(_)), "{error}");
-    assert!(error.to_string().contains("ruleset"), "{error}");
+    assert!(
+        togi_machine::error_chain(&error).contains("ruleset is"),
+        "{error}"
+    );
 
     let mut schema = recording(Scenario::Checking);
     let current = togi_journal::SCHEMA;
@@ -98,7 +101,10 @@ fn a_recording_of_another_ruleset_or_a_newer_schema_is_refused() {
     );
     let error = loaded(&schema).unwrap_err();
     assert!(matches!(error, Error::Refused(_)), "{error}");
-    assert!(error.to_string().contains("schema"), "{error}");
+    assert!(
+        togi_machine::error_chain(&error).contains("schema"),
+        "{error}"
+    );
 }
 
 pub(super) struct Missing;

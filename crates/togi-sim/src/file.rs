@@ -17,9 +17,9 @@ use crate::model::Model;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
-    #[error("read machine file {path}: {source}")]
+    #[error("read machine file {path}")]
     Read { path: PathBuf, source: io::Error },
-    #[error("parse machine file {path}: {source}")]
+    #[error("parse machine file {path}")]
     Parse {
         path: PathBuf,
         source: serde_json::Error,
@@ -29,15 +29,15 @@ pub enum LoadError {
         path: PathBuf,
         problem: OverlayProblem,
     },
-    #[error("machine file {path}: parent: {source}")]
+    #[error("machine file {path}: parent")]
     Parent { path: PathBuf, source: Box<Self> },
-    #[error("machine file {path}: resolve directory {directory}: {source}")]
+    #[error("machine file {path}: resolve directory {directory}")]
     Directory {
         path: PathBuf,
         directory: PathBuf,
         source: io::Error,
     },
-    #[error("machine file {path}: {source}")]
+    #[error("machine file {path}")]
     Invalid {
         path: PathBuf,
         source: InvalidMachine,
@@ -82,9 +82,9 @@ pub enum OverlayProblem {
 
 #[derive(Debug, thiserror::Error)]
 pub enum EncodeError {
-    #[error("encode simulator machine: {0}")]
+    #[error("encode simulator machine")]
     Invalid(#[from] InvalidMachine),
-    #[error("encode simulator machine: {0}")]
+    #[error("encode simulator machine")]
     Serialize(#[from] serde_json::Error),
 }
 

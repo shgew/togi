@@ -64,7 +64,7 @@ pub enum Unavailable {
     Topology,
     #[error("table unreadable")]
     TableUnreadable,
-    #[error("unsupported table: {0}")]
+    #[error("unsupported table")]
     Table(#[from] DecodeError),
     #[error("table read exceeded {}ms", READ_BUDGET.as_millis())]
     ReadExceeded,
@@ -464,9 +464,10 @@ impl PmReader {
             Ok(_) => format!(
                 "pm_table version {version}: decoding per-core power, voltage request, temperature and C-state lanes"
             ),
-            Err(reason) => {
-                format!("pm_table version {version}: per-core lanes absent ({reason})")
-            }
+            Err(reason) => format!(
+                "pm_table version {version}: per-core lanes absent ({})",
+                togi_machine::error_chain(&reason)
+            ),
         };
         Check {
             name: "pm_table".to_owned(),
