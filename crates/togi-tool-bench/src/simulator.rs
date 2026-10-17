@@ -466,19 +466,27 @@ mod tests {
         (found, reader.largest)
     }
 
+    /// Scans a single 16 MiB line of `x` followed by `tail`, checking the scanner never offers more than its buffer.
+    fn after_a_large_line(tail: &[u8]) -> bool {
+        let log = io::repeat(b'x').take(16 << 20).chain(tail);
+        let (found, largest) = offered(log, usize::MAX);
+        assert!(largest <= SCAN_CHUNK, "offered {largest} bytes");
+        found
+    }
+
     #[test]
-    fn a_log_far_larger_than_the_scan_buffer_is_read_through_it() {
-        let line = 16 << 20;
-        for (tail, want) in [
-            (&b"\xff\xfe sim: dead end 3"[..], true),
-            (b"\xff\xfe sim: dead en", false),
-            (b"", false),
-        ] {
-            let log = io::repeat(b'x').take(line).chain(tail);
-            let (found, largest) = offered(log, usize::MAX);
-            assert_eq!(found, want, "{tail:?}");
-            assert!(largest <= SCAN_CHUNK, "offered {largest} bytes");
-        }
+    fn a_marker_after_a_log_far_larger_than_the_scan_buffer_is_found() {
+        assert!(after_a_large_line(b"\xff\xfe sim: dead end 3"));
+    }
+
+    #[test]
+    fn a_near_miss_after_a_log_far_larger_than_the_scan_buffer_is_not_found() {
+        assert!(!after_a_large_line(b"\xff\xfe sim: dead en"));
+    }
+
+    #[test]
+    fn a_log_far_larger_than_the_scan_buffer_without_the_marker_is_read_through_it() {
+        assert!(!after_a_large_line(b""));
     }
 
     #[test]
