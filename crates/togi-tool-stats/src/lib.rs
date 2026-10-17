@@ -32,4 +32,4 @@ pub use counterfactual::{Counterfactual, counterfactual};
 pub use error::Error;
 pub use forecast::{Scored, score};
 pub use journal::Journal;
-pub use report::{chain_records, report};
+pub use report::{backoff_records, chain_records, report};

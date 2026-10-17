@@ -25,6 +25,12 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+    #[error("write backoff records {path}")]
+    Backoffs {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("fold the journal into the tuner")]
     Fold(#[source] togi_tuner::FoldError),
     #[error("encode the counterfactual records")]

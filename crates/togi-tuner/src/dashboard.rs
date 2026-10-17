@@ -6,7 +6,7 @@ use togi_machine::{CoreId, CoreSet, PerCore, Regime, TargetOffset, WorkloadId};
 
 use crate::hunt::plan::GroupOutcome;
 use crate::state::Run;
-use crate::{Limit, Profile, State, TrialContext, TrialHistory, Window};
+use crate::{Limit, Profile, Requirement, State, TrialContext, TrialHistory, Window};
 
 mod wire;
 
@@ -240,6 +240,11 @@ impl State {
             .last_closed
             .as_ref()
             .map(|closed| closed.history)
+    }
+
+    /// The requirement the open trial was scheduled for, as its `trial.intent` folded.
+    pub fn open_requirement(&self) -> Option<Requirement> {
+        self.live()?.flight.open().map(|open| open.requirement)
     }
 
     pub fn hunt_plan(&self) -> Option<HuntPlan> {
