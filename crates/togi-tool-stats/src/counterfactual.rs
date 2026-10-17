@@ -13,7 +13,7 @@ use serde::Serialize;
 use togi_journal::{CycleEvent, Event, Outcome, Payload, Seq, TrialId};
 use togi_machine::{CcdId, CoreSet, PerCore, Regime, TargetOffset, WorkloadId};
 use togi_requests::VOLTS_PER_COUNT;
-use togi_tuner::{ChainOrder, ClassKey, FoldError, LoadKey, Secs, State, Window};
+use togi_tuner::{ChainOrder, ClassKey, FoldError, LoadKey, Quota, Secs, State, Window};
 
 use crate::chains::{self, Derivation, Kind};
 use crate::error::Error;
@@ -601,7 +601,8 @@ impl<'a> Ledger<'a> {
                 };
                 let tuner = earlier(&tuner_sets, part.cores);
                 let own = earlier(&held_sets, cores);
-                for (count, secs) in [(part.short, part.short_s), (part.long, part.long_s)] {
+                for Quota { count, secs } in part.lengths.iter().flat_map(|lengths| lengths.iter())
+                {
                     let Some(secs) = NonZeroU32::new(secs).filter(|_| count > 0) else {
                         continue;
                     };
