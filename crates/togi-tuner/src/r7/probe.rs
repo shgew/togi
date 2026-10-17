@@ -91,7 +91,7 @@ impl Run {
     ) -> Option<(ClassKey, CoreSet, bool)> {
         let record = view.record;
         if record.pending.carried
-            || record.pending.failure.condition != Some(Condition::Together)
+            || record.pending.fact.failure.condition != Some(Condition::Together)
             || self.named_culprit(view)
         {
             return None;
@@ -100,7 +100,7 @@ impl Run {
         let idled = Self::ccd_groups(view, ccd)
             .into_iter()
             .find(|group| group.contains(core))?;
-        let loaded = record.pending.class.loaded();
+        let loaded = record.pending.fact.class.loaded();
         let rest: CoreSet = loaded.iter().filter(|&id| !idled.contains(id)).collect();
         if rest.len() < 2 {
             return None;
@@ -110,9 +110,9 @@ impl Run {
         });
         Some((
             ClassKey::new(
-                record.pending.class.workload(),
+                record.pending.fact.class.workload(),
                 rest,
-                record.pending.class.duration(),
+                record.pending.fact.class.duration(),
             ),
             idled,
             stalled_elsewhere,

@@ -466,7 +466,7 @@ impl Run {
             .hunts
             .rejecting
             .as_ref()
-            .is_some_and(|rejecting| rejecting.open.pending.class.loaded().contains(core))
+            .is_some_and(|rejecting| rejecting.open.pending.fact.class.loaded().contains(core))
         {
             self.hunts.rejecting = None;
         }
@@ -516,8 +516,8 @@ impl Run {
         trial: Option<&crate::r7::failed::FailedTrial>,
     ) {
         use togi_machine::Condition;
-        let group = pending.failure.condition == Some(Condition::Parked)
-            && pending.failure.trial.is_some()
+        let group = pending.fact.failure.condition == Some(Condition::Parked)
+            && pending.fact.failure.trial.is_some()
             && !pending.carried;
         let (true, true, Some(trial)) = (self.hunts.active_located(), group, trial) else {
             return;

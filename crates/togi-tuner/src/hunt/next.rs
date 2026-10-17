@@ -822,7 +822,7 @@ impl Run {
             .active
             .as_ref()
             .filter(|hunt| hunt.end.is_none())?;
-        (record.failure.condition == Some(Condition::Parked)).then(|| {
+        (record.fact.failure.condition == Some(Condition::Parked)).then(|| {
             DecisionAction::new(
                 HuntEnd {
                     hunt: hunt.id,
@@ -877,7 +877,7 @@ impl Run {
         if self.hunts.active.is_some() {
             return None;
         }
-        if let Ok(Some(reached)) = self.constraints.reaches(&record.profile) {
+        if let Ok(Some(reached)) = self.constraints.reaches(&record.fact.profile) {
             return Some(Action::Decide(DecisionAction::new(
                 HuntSkipped {
                     failure: seq,
@@ -892,11 +892,11 @@ impl Run {
         if self.ranking_stale() {
             return Some(Action::ReadRanking);
         }
-        let class = record.class;
-        let parked = park(&record.profile, self.hunts.passed_newest_first());
+        let class = record.fact.class;
+        let parked = park(&record.fact.profile, self.hunts.passed_newest_first());
         let mut cause = vec![seq];
         cause.extend(parked.source);
-        let mut reason = record.failure.reason.clone();
+        let mut reason = record.fact.failure.reason.clone();
         if let Some((strike, clause)) = self.later_hunt_pair(seq) {
             cause.push(strike);
             reason = Some(match reason {
@@ -909,12 +909,12 @@ impl Run {
             HuntStart {
                 hunt: id,
                 failure: seq,
-                trial: record.failure.trial.clone(),
+                trial: record.fact.failure.trial.clone(),
                 regime: class.regime(),
                 workload: class.workload(),
                 cores: class.loaded(),
                 duration_s: class.duration().get(),
-                failing: record.profile.offsets(),
+                failing: record.fact.profile.offsets(),
                 parked: parked.profile.offsets(),
                 parked_seq: parked.source,
                 candidates: parked.candidates,
@@ -948,8 +948,8 @@ impl Run {
         }
         let record = self.r7.open.get(&failure)?;
         let pending = &record.pending;
-        let class: ClassKey = pending.class;
-        let parked = park_located(&pending.profile, class.loaded());
+        let class: ClassKey = pending.fact.class;
+        let parked = park_located(&pending.fact.profile, class.loaded());
         let mut cause = vec![failure];
         cause.extend(reason.cause());
         let id = NonZeroU32::new(self.hunts.next_id + 1).unwrap_or(NonZeroU32::MIN);
@@ -957,12 +957,12 @@ impl Run {
             HuntStart {
                 hunt: id,
                 failure,
-                trial: pending.failure.trial.clone(),
+                trial: pending.fact.failure.trial.clone(),
                 regime: class.regime(),
                 workload: class.workload(),
                 cores: class.loaded(),
                 duration_s: class.duration().get(),
-                failing: pending.profile.offsets(),
+                failing: pending.fact.profile.offsets(),
                 parked: parked.profile.offsets(),
                 parked_seq: None,
                 candidates: parked.candidates,

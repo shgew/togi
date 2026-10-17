@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use togi_journal::{Attribution, Event, Failure, Seq};
 use togi_machine::{Condition, CoreId, CoreSet, TargetOffset};
@@ -7,9 +8,11 @@ use togi_machine::{Condition, CoreId, CoreSet, TargetOffset};
 use crate::state::Run;
 use crate::{ClassKey, DecisionAction, FoldError, Load, Profile};
 
-/// A failure as the known-failure rule needs it: what a skipped trial copies from it.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Witness {
+/// A failure, its class and the profile it failed under: what the known-failure rule copies to
+/// a skipped trial and what a decision answering it reads. A failure that is both witnessed and
+/// pending shares one.
+#[derive(Debug, PartialEq)]
+pub(crate) struct FailureFact {
     pub(crate) failure: Failure,
     pub(crate) class: ClassKey,
     pub(crate) profile: Profile,
@@ -27,9 +30,7 @@ pub(crate) fn load_of(class: ClassKey) -> Load {
 /// A failure no decision has answered yet.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Pending {
-    pub(crate) failure: Failure,
-    pub(crate) class: ClassKey,
-    pub(crate) profile: Profile,
+    pub(crate) fact: Arc<FailureFact>,
     pub(crate) carried: bool,
     pub(crate) load: Load,
     pub(crate) ledger: Seq,
@@ -39,7 +40,7 @@ pub(crate) struct Pending {
 
 impl Pending {
     pub(crate) fn offset(&self) -> Option<TargetOffset> {
-        self.failure.offset
+        self.fact.failure.offset
     }
 }
 
@@ -51,22 +52,23 @@ impl Pending {
 pub(crate) struct Failures {
     pending: BTreeMap<Seq, Pending>,
     queue: VecDeque<Seq>,
-    witnesses: BTreeMap<Seq, Witness>,
+    witnesses: BTreeMap<Seq, Arc<FailureFact>>,
     newest: HashMap<(ClassKey, Profile, bool), Seq>,
 }
 
 impl Failures {
-    /// Keeps `witness` for the ledger fact `seq`, replacing the one it supersedes in its cell.
-    pub(crate) fn witness(&mut self, seq: Seq, carried: bool, witness: Witness) {
-        let key = (witness.class, witness.profile, carried);
+    /// Keeps `fact` as the witness for the ledger fact `seq`, replacing the one it supersedes in
+    /// its cell.
+    pub(crate) fn witness(&mut self, seq: Seq, carried: bool, fact: Arc<FailureFact>) {
+        let key = (fact.class, fact.profile, carried);
         if let Some(older) = self.newest.insert(key, seq) {
             self.witnesses.remove(&older);
         }
-        self.witnesses.insert(seq, witness);
+        self.witnesses.insert(seq, fact);
     }
 
-    pub(crate) fn witnessed(&self, seq: Seq) -> Option<&Witness> {
-        self.witnesses.get(&seq)
+    pub(crate) fn witnessed(&self, seq: Seq) -> Option<&FailureFact> {
+        self.witnesses.get(&seq).map(Arc::as_ref)
     }
 
     pub(crate) fn pend(&mut self, seq: Seq, pending: Pending) {
@@ -129,7 +131,7 @@ impl Failures {
             class.loaded().contains(core) || (class.multi_r7() && failure.core == Some(core))
         };
         self.pending
-            .retain(|_, record| !drops(record.class, &record.failure));
+            .retain(|_, record| !drops(record.fact.class, &record.fact.failure));
         let pending = &self.pending;
         self.queue.retain(|seq| pending.contains_key(seq));
         self.witnesses
@@ -266,6 +268,11 @@ impl Run {
         if awaiting.is_some() {
             self.flight.current = crate::flight::InFlight::Idle;
         }
+        let fact = Arc::new(FailureFact {
+            failure: failure.clone(),
+            class,
+            profile,
+        });
         if known_seq.is_some() {
             self.retry = None;
         } else {
@@ -273,15 +280,7 @@ impl Run {
                 self.evidence
                     .name_failure(class, &profile, ledger_seq, core)?;
             }
-            self.failures.witness(
-                ledger_seq,
-                false,
-                Witness {
-                    failure: failure.clone(),
-                    class,
-                    profile,
-                },
-            );
+            self.failures.witness(ledger_seq, false, Arc::clone(&fact));
         }
         let cited = known_seq.unwrap_or(event.seq);
         if known_seq.is_none() {
@@ -291,9 +290,7 @@ impl Run {
             return Ok(());
         }
         let pending = Pending {
-            failure: failure.clone(),
-            class,
-            profile,
+            fact,
             carried: false,
             load,
             ledger: ledger_seq,

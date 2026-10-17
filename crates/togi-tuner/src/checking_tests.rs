@@ -57,7 +57,7 @@ fn named_failure(j: &mut Journal, plan: &TrialPlan, named: Option<u8>) -> Seq {
 }
 
 fn failure_record(j: &Journal, seq: Seq) -> togi_journal::Failure {
-    j.run().failures.pending(seq).unwrap().failure.clone()
+    j.run().failures.pending(seq).unwrap().fact.failure.clone()
 }
 
 fn backoff(action: &DecisionAction) -> &TunerDecision {

@@ -103,7 +103,7 @@ impl Run {
         let queued_seq = self.failures.queue().find(|&seq| {
             self.failures
                 .pending(seq)
-                .is_some_and(|record| record.profile.is_zero())
+                .is_some_and(|record| record.fact.profile.is_zero())
         })?;
         Some(DecisionAction::new(
             DeadEnd {

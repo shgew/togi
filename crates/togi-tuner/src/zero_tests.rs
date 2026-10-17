@@ -242,7 +242,7 @@ fn single_core_zero_rerun_keeps_its_shape() {
     let mut j = Journal::has_room(&[0, -10]);
     let plan = together(&j, Regime::R5, &[0], &[0, -10]);
     let failure = j.failed(&plan, Some(0));
-    let record = &j.run().failures.pending(failure).unwrap().failure;
+    let record = &j.run().failures.pending(failure).unwrap().fact.failure;
     assert_eq!((record.core, record.offset), (Some(core(0)), Some(off(0))));
     let rerun = j.zero_rerun(failure);
     assert_eq!(
@@ -262,7 +262,7 @@ fn single_core_zero_rerun_keeps_its_shape() {
     assert!(intent.rerun);
     assert_eq!(intent.condition, Condition::Parked);
     assert_eq!(
-        j.run().failures.pending(failure).unwrap().class,
+        j.run().failures.pending(failure).unwrap().fact.class,
         class(Regime::R5, &[0])
     );
     assert!(j.queued(failure));
@@ -340,7 +340,7 @@ fn direct_failure_at_zero() {
                 j.manual(regime, 0, load, condition, &case.profile, duration(regime))
             };
             let failure = j.failed(&plan, case.named);
-            let record = &j.run().failures.pending(failure).unwrap().failure;
+            let record = &j.run().failures.pending(failure).unwrap().fact.failure;
             assert_eq!(record.core, case.named.map(core), "{name}");
             failure
         } else {

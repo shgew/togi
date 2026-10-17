@@ -156,13 +156,13 @@ fn an_idle_failure_without_a_profile_is_charged_to_the_checking_profile() {
     let mut j = Journal::has_room(&[-10, -20]);
     let first = j.failure(failure(Some(Condition::Together), None), &[]);
     assert_eq!(
-        j.run().failures.pending(first).unwrap().profile,
+        j.run().failures.pending(first).unwrap().fact.profile,
         j.profile(&[-10, -20])
     );
     j.profile_change(&[-9, -19]);
     let second = j.failure(failure(Some(Condition::Together), None), &[]);
     assert_eq!(
-        j.run().failures.pending(second).unwrap().profile,
+        j.run().failures.pending(second).unwrap().fact.profile,
         j.profile(&[-9, -19])
     );
 }

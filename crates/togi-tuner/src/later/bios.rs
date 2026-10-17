@@ -218,6 +218,7 @@ impl Run {
                 let failing = self
                     .failures
                     .pending(*decision.cause.first()?)?
+                    .fact
                     .failure
                     .offset?;
                 let offset = self.core(core).offset;

@@ -248,9 +248,9 @@ impl Run {
             .pending(seq)
             .or_else(|| self.r7.open.get(&seq).map(|open| &open.pending))?;
         let eligible = !record.carried
-            && record.failure.known_failure.is_none()
+            && record.fact.failure.known_failure.is_none()
             && seq > concluded
-            && record.failure.offset != Some(TargetOffset::ZERO);
+            && record.fact.failure.offset != Some(TargetOffset::ZERO);
         eligible.then_some(LaterFailure {
             seq,
             record,
@@ -294,7 +294,8 @@ impl Run {
         }
         let last = self.later_gate()?;
         let current = self.core(core);
-        if failure.seq <= last.seq || failure.record.profile.get(core) != Some(current.offset) {
+        if failure.seq <= last.seq || failure.record.fact.profile.get(core) != Some(current.offset)
+        {
             return None;
         }
         let reason = format!(
@@ -329,7 +330,7 @@ impl Run {
         let failure = self.later_failure(seq)?;
         let strike = self
             .later
-            .paired(seq, failure.cycle, failure.record.class.loaded())?;
+            .paired(seq, failure.cycle, failure.record.fact.class.loaded())?;
         Some((strike.failure, pair_clause(strike, &failure)))
     }
 
@@ -338,7 +339,7 @@ impl Run {
     pub(crate) fn later_hunt_hold(&self) -> Option<DecisionAction> {
         let seq = self.failures.queue().next()?;
         let failure = self.later_failure(seq)?;
-        let cores = failure.record.class.loaded();
+        let cores = failure.record.fact.class.loaded();
         if self.later.paired(seq, failure.cycle, cores).is_some() {
             return None;
         }
@@ -438,23 +439,27 @@ impl Run {
         let Some(failure) = self.later_failure(skipped.failure) else {
             return;
         };
-        if self.constraints.reaches(&failure.record.profile) != Ok(None) {
+        if self.constraints.reaches(&failure.record.fact.profile) != Ok(None) {
             return;
         }
         let cores = failure
             .record
+            .fact
             .class
             .loaded()
             .iter()
             .map(|core| (core, self.core(core).offset))
             .collect();
-        let display = park(&failure.record.profile, self.hunts.passed_newest_first())
-            .candidates
-            .iter()
-            .map(|core| (core, self.core(core).offset))
-            .filter(|&(_, offset)| offset != TargetOffset::ZERO)
-            .map(|(core, offset)| (core, offset.shallower_by(1)))
-            .collect();
+        let display = park(
+            &failure.record.fact.profile,
+            self.hunts.passed_newest_first(),
+        )
+        .candidates
+        .iter()
+        .map(|core| (core, self.core(core).offset))
+        .filter(|&(_, offset)| offset != TargetOffset::ZERO)
+        .map(|(core, offset)| (core, offset.shallower_by(1)))
+        .collect();
         let strike = Strike {
             failure: failure.seq,
             ledger: failure.record.ledger,

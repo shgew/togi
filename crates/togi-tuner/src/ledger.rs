@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use std::path::Path;
+use std::sync::Arc;
 
 use togi_journal::{
     Attribution, Event, Failure, FailureCarried, Outcome, Seq, TrialCarried, TrialClass,
@@ -8,7 +9,7 @@ use togi_journal::{
 };
 use togi_machine::{Condition, CoreId, Regime, WorkloadId, workloads};
 
-use crate::failures::{Pending, Witness};
+use crate::failures::{FailureFact, Pending};
 use crate::flight::OpenTrial;
 use crate::r7::failed::{Ended, Telemetry};
 use crate::state::Run;
@@ -314,26 +315,21 @@ impl Run {
                     reason: None,
                     round: None,
                 };
-                self.failures.witness(
-                    event.seq,
-                    true,
-                    Witness {
-                        failure: failure.clone(),
-                        class,
-                        profile,
-                    },
-                );
-                let pending = Pending {
+                let fact = Arc::new(FailureFact {
                     failure,
                     class,
                     profile,
+                });
+                self.failures.witness(event.seq, true, Arc::clone(&fact));
+                let pending = Pending {
+                    fact,
                     carried: true,
                     load: crate::failures::load_of(class),
                     ledger: event.seq,
                     cycle: None,
                     round: None,
                 };
-                self.hunt_note_parked_failure(event.seq, class, &pending.failure, true);
+                self.hunt_note_parked_failure(event.seq, class, &pending.fact.failure, true);
                 self.failures.pend(event.seq, pending.clone());
                 self.r7_open_failure(event.seq, pending, failed);
             }
@@ -358,21 +354,16 @@ impl Run {
         let class = self.idle_class();
         let source = source_ref(&carried.source);
         self.admit_idle(event.seq, &profile, Some(source))?;
-        self.failures.witness(
-            event.seq,
-            true,
-            Witness {
-                failure: carried.failure.clone(),
-                class,
-                profile,
-            },
-        );
+        let fact = Arc::new(FailureFact {
+            failure: carried.failure.clone(),
+            class,
+            profile,
+        });
+        self.failures.witness(event.seq, true, Arc::clone(&fact));
         self.failures.pend(
             event.seq,
             Pending {
-                failure: carried.failure.clone(),
-                class,
-                profile,
+                fact,
                 carried: true,
                 load: crate::Load::Many(class.loaded()),
                 ledger: event.seq,
