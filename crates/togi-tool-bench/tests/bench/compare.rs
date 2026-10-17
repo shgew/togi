@@ -1,13 +1,4 @@
-#![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
-
-#[expect(
-    dead_code,
-    unused_imports,
-    reason = "this binary uses records and snapshots, not memory trees"
-)]
-mod common;
-
-use common::record;
+use crate::common::{self, record};
 use togi_tool_bench::compare::{Pair, Verdict, compare, pairing, report};
 use togi_tool_bench::summary;
 use togi_tool_bench::{ModelCheck, Record, Status, set_scenario_shares};

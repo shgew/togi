@@ -6,7 +6,8 @@ use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 use std::time::Duration;
-use togi_machine::{CoreId, CoreSet, PerCore, PmTable, TrialConditions, object_only};
+use togi_machine::{CoreId, CoreSet, PerCore, PmTable, ReadSamples, TrialConditions, object_only};
+use togi_trialfiles::TrialFile;
 
 use crate::voltage::VoltageState;
 
@@ -98,6 +99,14 @@ impl LastTrial {
     }
 }
 
+/// Reads the samples [`LastTrial::persist`] wrote to `dir/<id>`, plain or compressed once the trial
+/// ended; a trial without a samples file has none.
+pub(crate) fn read(dir: &Path, id: &str) -> ReadSamples<TrialFile> {
+    ReadSamples::from_open(togi_trialfiles::open(
+        &dir.join(id).join(togi_trialfiles::SAMPLES),
+    ))
+}
+
 pub(crate) struct Conditions {
     trial: LastTrial,
     pm_table: Option<PmTable>,
@@ -126,5 +135,54 @@ impl Iterator for Conditions {
             pm_table: self.pm_table,
             ..TrialConditions::default()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flate2::{Compression, write::GzEncoder};
+    use test_case::test_case;
+
+    const SAMPLE_LINE: &str = "{\"elapsed_ms\":1000}\n";
+
+    fn gzip(content: &str) -> Vec<u8> {
+        let mut writer = GzEncoder::new(Vec::new(), Compression::default());
+        writer.write_all(content.as_bytes()).unwrap();
+        writer.finish().unwrap()
+    }
+
+    // These exercise path selection in the file adapter, not sample decoding.
+    #[test_case(Some(SAMPLE_LINE), None; "plain only")]
+    #[test_case(None, Some(gzip(SAMPLE_LINE).as_slice()); "gzip only")]
+    #[test_case(Some(SAMPLE_LINE), Some(b"torn".as_slice()); "plain preferred over torn gzip")]
+    #[test_case(None, None; "neither")]
+    fn real_fs_read_opens_plain_or_gzip_and_prefers_plain(
+        plain: Option<&str>,
+        compressed: Option<&[u8]>,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let trial = dir.path().join("t1");
+        fs::create_dir(&trial).unwrap();
+        if let Some(content) = plain {
+            fs::write(trial.join(togi_trialfiles::SAMPLES), content).unwrap();
+        }
+        if let Some(bytes) = compressed {
+            fs::write(
+                trial.join(format!("{}.gz", togi_trialfiles::SAMPLES)),
+                bytes,
+            )
+            .unwrap();
+        }
+        let samples: Vec<_> = read(dir.path(), "t1").collect::<Result<_, _>>().unwrap();
+        let expected = if plain.is_some() || compressed.is_some() {
+            vec![TrialConditions {
+                elapsed_ms: 1000,
+                ..TrialConditions::default()
+            }]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(samples, expected);
     }
 }

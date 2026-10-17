@@ -2,6 +2,7 @@ use clap::Parser;
 use clap::error::ErrorKind;
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
+use test_case::test_case;
 use togi_watch::screen::View;
 use togi_watchtest::Scenario;
 
@@ -25,20 +26,28 @@ fn the_defaults_play_from_the_first_event_at_300_times() {
     assert_eq!((cli.after, cli.color), (None, false));
 }
 
+#[test_case("NaN")]
+#[test_case("inf")]
+#[test_case("+inf"; "plus inf")]
+#[test_case("-inf"; "minus inf")]
+#[test_case("Infinity")]
+#[test_case("0"; "zero")]
+#[test_case("-0"; "negative zero")]
+#[test_case("-1"; "negative")]
+#[test_case("1e999"; "overflow")]
+fn an_invalid_speed_is_rejected_when_the_arguments_are_read_before_any_journal_is(speed: &str) {
+    let error = parse(&[&format!("--speed={speed}")]).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::ValueValidation);
+    assert!(
+        error
+            .to_string()
+            .contains("--speed must be finite and positive"),
+        "{error}"
+    );
+}
+
 #[test]
-fn an_invalid_speed_is_rejected_when_the_arguments_are_read_before_any_journal_is() {
-    for speed in [
-        "NaN", "inf", "+inf", "-inf", "Infinity", "0", "-0", "-1", "1e999",
-    ] {
-        let error = parse(&[&format!("--speed={speed}")]).unwrap_err();
-        assert_eq!(error.kind(), ErrorKind::ValueValidation, "{speed}");
-        assert!(
-            error
-                .to_string()
-                .contains("--speed must be finite and positive"),
-            "{speed}: {error}"
-        );
-    }
+fn a_negative_speed_in_its_own_argument_is_rejected() {
     let error = parse(&["--speed", "-1"]).unwrap_err();
     assert!(error.to_string().contains("finite and positive"), "{error}");
 }
@@ -49,43 +58,42 @@ fn the_state_directory_is_required_and_nothing_else_may_follow() {
     assert!(parse(&["extra"]).is_err());
 }
 
+#[test_case(&["--after", "40s"]; "after")]
+#[test_case(&["--width", "80"]; "width")]
+#[test_case(&["--height", "24"]; "height")]
+#[test_case(&["--color"]; "color")]
+#[test_case(&["--view", "log"]; "view")]
+fn the_frame_options_need_a_frame_to_apply_to(option: &[&str]) {
+    assert_eq!(
+        parse(option).unwrap_err().kind(),
+        ErrorKind::MissingRequiredArgument
+    );
+    let mut with_at = vec!["--at", "2"];
+    with_at.extend_from_slice(option);
+    parse(&with_at).unwrap();
+}
+
 #[test]
-fn the_frame_options_need_a_frame_to_apply_to() {
-    for option in [
-        &["--after", "40s"][..],
-        &["--width", "80"],
-        &["--height", "24"],
-        &["--color"],
-        &["--view", "log"],
-    ] {
-        assert_eq!(
-            parse(option).unwrap_err().kind(),
-            ErrorKind::MissingRequiredArgument,
-            "{option:?}"
-        );
-        let mut with_at = vec!["--at", "2"];
-        with_at.extend_from_slice(option);
-        parse(&with_at).unwrap();
-    }
+fn from_and_at_conflict() {
     assert_eq!(
         parse(&["--from", "2", "--at", "3"]).unwrap_err().kind(),
         ErrorKind::ArgumentConflict
     );
 }
 
+#[test_case(&["--width", "0"]; "zero width")]
+#[test_case(&["--height", "0"]; "zero height")]
+#[test_case(&["--width", "70000"]; "width past u16")]
+#[test_case(&["--view", "nope"]; "unknown view")]
+#[test_case(&["--after", "soon"]; "delay that is not a duration")]
+fn a_bad_frame_size_view_or_delay_is_refused_when_the_arguments_are_read(bad: &[&str]) {
+    let mut args = vec!["--at", "2"];
+    args.extend_from_slice(bad);
+    assert!(parse(&args).is_err());
+}
+
 #[test]
-fn a_frame_size_view_and_delay_are_checked_when_the_arguments_are_read() {
-    for bad in [
-        &["--width", "0"][..],
-        &["--height", "0"],
-        &["--width", "70000"],
-        &["--view", "nope"],
-        &["--after", "soon"],
-    ] {
-        let mut args = vec!["--at", "2"];
-        args.extend_from_slice(bad);
-        assert!(parse(&args).is_err(), "{bad:?}");
-    }
+fn a_frame_delay_is_read_as_a_signed_duration() {
     let cli = parse(&["--at", "2", "--after", "1m30s", "--view", "help"]).unwrap();
     assert_eq!(cli.after, Some(SignedDuration::from_secs(90)));
     let cli = parse(&["--at", "2", "--after=-40s"]).unwrap();
@@ -151,53 +159,45 @@ fn at_prints_one_frame_of_the_recording_in_the_supplied_time_zone() {
     assert_eq!(String::from_utf8(out).unwrap(), want);
 }
 
-#[test]
-fn every_page_can_be_printed() {
+#[test_case("main", View::Main)]
+#[test_case("cores", View::Cores)]
+#[test_case("cycle", View::Cycle)]
+#[test_case("r7", View::R7)]
+#[test_case("hunts", View::Hunts)]
+#[test_case("bios", View::Bios)]
+#[test_case("history", View::History)]
+#[test_case("journal", View::Log)]
+#[test_case("help", View::Help)]
+fn every_page_can_be_printed(name: &str, view: View) {
     let bytes = recording(Scenario::Checking);
     let events = Scenario::Checking.events().unwrap();
-    for (name, view) in [
-        ("main", View::Main),
-        ("cores", View::Cores),
-        ("cycle", View::Cycle),
-        ("r7", View::R7),
-        ("hunts", View::Hunts),
-        ("bios", View::Bios),
-        ("history", View::History),
-        ("journal", View::Log),
-        ("help", View::Help),
-    ] {
-        let cli = parse(&["--at", "30", "--view", name]).unwrap();
-        let mut out = Vec::new();
-        assert!(run(&cli, &bytes, &mut out).is_empty());
-        let frame = Frame {
-            view,
-            width: 240,
-            height: 67,
-            colour: false,
-            after: SignedDuration::ZERO,
-        };
-        let want = draw(&events, prefix(&events, 30), &frame, &TimeZone::UTC).unwrap();
-        assert_eq!(String::from_utf8(out).unwrap(), want, "{name}");
-    }
+    let cli = parse(&["--at", "30", "--view", name]).unwrap();
+    let mut out = Vec::new();
+    assert!(run(&cli, &bytes, &mut out).is_empty());
+    let frame = Frame {
+        view,
+        width: 240,
+        height: 67,
+        colour: false,
+        after: SignedDuration::ZERO,
+    };
+    let want = draw(&events, prefix(&events, 30), &frame, &TimeZone::UTC).unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), want);
 }
 
-#[test]
-fn the_page_names_are_the_nine_pages_and_log_still_names_the_journal() {
-    for (name, view) in [
-        ("main", View::Main),
-        ("cores", View::Cores),
-        ("cycle", View::Cycle),
-        ("r7", View::R7),
-        ("hunts", View::Hunts),
-        ("bios", View::Bios),
-        ("history", View::History),
-        ("journal", View::Log),
-        ("log", View::Log),
-        ("help", View::Help),
-    ] {
-        let cli = parse(&["--at", "2", "--view", name]).unwrap();
-        assert_eq!(View::from(cli.view), view, "{name}");
-    }
+#[test_case("main", View::Main)]
+#[test_case("cores", View::Cores)]
+#[test_case("cycle", View::Cycle)]
+#[test_case("r7", View::R7)]
+#[test_case("hunts", View::Hunts)]
+#[test_case("bios", View::Bios)]
+#[test_case("history", View::History)]
+#[test_case("journal", View::Log)]
+#[test_case("log", View::Log)]
+#[test_case("help", View::Help)]
+fn the_page_names_are_the_nine_pages_and_log_still_names_the_journal(name: &str, view: View) {
+    let cli = parse(&["--at", "2", "--view", name]).unwrap();
+    assert_eq!(View::from(cli.view), view);
 }
 
 #[test]

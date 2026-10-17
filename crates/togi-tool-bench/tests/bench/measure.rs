@@ -1,12 +1,4 @@
 //! Measurements of journals of whole simulated sessions, which the real tuner and simulator produce in memory.
-#![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
-
-#[expect(
-    dead_code,
-    reason = "this binary uses only committed memory machine inputs"
-)]
-mod common;
-mod session;
 
 use std::path::Path;
 use std::time::Duration;
@@ -22,7 +14,8 @@ use togi_simrun::SimOutcome;
 use togi_tool_bench::{Measured, Status, measure};
 use togi_tool_trialfacts::Extracts;
 
-use session::{Session, session};
+use crate::common;
+use crate::session::{Session, session};
 
 fn definition(name: &str) -> MachineDefinition {
     let tree = common::Tree::committed();
@@ -142,7 +135,7 @@ fn trials_a_real_fact_answers_are_counted_against_the_trials_that_ended() {
     let replay = Extracts::new()
         .replay_with(path, &definition, |_| {
             togi_tool_trialfacts::decode(
-                include_bytes!("../../../tools/bench/facts/target.jsonl.gz").as_slice(),
+                include_bytes!("../../../../tools/bench/facts/target.jsonl.gz").as_slice(),
             )
         })
         .unwrap();

@@ -55,7 +55,7 @@ fn member(out: &Path, n: usize) -> PathBuf {
     out.join(format!("target-fit-{n}.json"))
 }
 
-fn failures(sample: &[TrialFact]) -> usize {
+fn failures(sample: &[&TrialFact]) -> usize {
     sample
         .iter()
         .filter(|f| matches!(f.outcome, Decisive::Failure { .. }))
@@ -387,7 +387,7 @@ fn an_encoded_machine_retains_the_fit_evidence_and_parameters() {
     let mut first = fact(&[0, 0], Regime::R1, &[0], 60, Decisive::Pass);
     first.profile = super::profile(&[0, 0]);
     first.context = Some(ctx);
-    let mut cfg = initial_config(&[first]);
+    let mut cfg = initial_config(&[&first]);
     cfg.ccd = Some(CcdDef {
         log_rate: -9.0,
         slope: 0.1,
@@ -404,11 +404,11 @@ fn an_encoded_machine_retains_the_fit_evidence_and_parameters() {
     fit_signals(
         &mut cfg,
         &[
-            on(Regime::R7, Signal::Crash),
-            on(Regime::R7, Signal::UncorrectedMce),
-            on(Regime::R7, Signal::ComputationError),
-            on(Regime::R2, Signal::ComputationError),
-            fact(&[0, 0], Regime::R1, &[0], 60, Decisive::Pass),
+            &on(Regime::R7, Signal::Crash),
+            &on(Regime::R7, Signal::UncorrectedMce),
+            &on(Regime::R7, Signal::ComputationError),
+            &on(Regime::R2, Signal::ComputationError),
+            &fact(&[0, 0], Regime::R1, &[0], 60, Decisive::Pass),
         ],
     );
     let class = |duration_s| TrialClass {

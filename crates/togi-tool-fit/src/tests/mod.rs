@@ -12,6 +12,7 @@ use togi_tool_trialfacts::{BuildStamp, Class, Phase, Profile, TrialFact};
 
 mod anchor;
 mod artifact;
+mod compare;
 mod evidence;
 mod forward;
 mod generate;
@@ -134,6 +135,11 @@ pub(crate) fn repeated(template: &TrialFact, n: usize, failures: usize) -> Vec<T
             fact
         })
         .collect()
+}
+
+/// The facts as the borrowed slice the fitter takes.
+pub(crate) fn refs(facts: &[TrialFact]) -> Vec<&TrialFact> {
+    facts.iter().collect()
 }
 
 /// A machine of `n` cores with every limit at the deepest offset and the model's defaults.

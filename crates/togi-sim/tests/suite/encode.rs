@@ -2,6 +2,7 @@
 
 use proptest::prelude::*;
 use std::collections::BTreeMap;
+use test_case::test_case;
 use togi_machine::{Regime, ResetKind, Signal};
 use togi_sim::definition::{
     BiosContextDef, CcdDef, CoreDef, JointDef, ModelDef, ScriptDef, Weights,
@@ -196,30 +197,6 @@ fn an_invalid_machine_is_refused_before_anything_is_written() {
         }
         other => panic!("{other:?}"),
     }
-    for (edit, path) in [
-        (
-            (|d: &mut MachineDefinition| d.core[0].flat = f64::INFINITY)
-                as fn(&mut MachineDefinition),
-            "core[0].flat",
-        ),
-        (
-            |d| d.joint[0].after_s = f64::NEG_INFINITY,
-            "joint[0].after_s",
-        ),
-        (
-            |d| d.ccd.as_mut().expect("ccd").effect[1] = f64::NAN,
-            "ccd.effect[1]",
-        ),
-        (|d| d.model.signals = Weights::default(), "model.signals"),
-        (|d| d.bios = Some(vec![0]), "bios"),
-    ] {
-        let mut definition = full();
-        edit(&mut definition);
-        let Err(EncodeError::Invalid(error)) = file::encode(&definition) else {
-            panic!("{path} was encoded");
-        };
-        assert_eq!(error.path, path);
-    }
     let mut voltage = committed_machine("shared-voltage.json");
     voltage.shared_voltage.as_mut().expect("a rail").margin_v = f64::NAN;
     assert!(matches!(
@@ -228,21 +205,33 @@ fn an_invalid_machine_is_refused_before_anything_is_written() {
     ));
 }
 
+#[test_case(|d| d.core[0].flat = f64::INFINITY, "core[0].flat"; "infinite core flat")]
+#[test_case(|d| d.joint[0].after_s = f64::NEG_INFINITY, "joint[0].after_s"; "infinite joint delay")]
+#[test_case(|d| d.ccd.as_mut().expect("ccd").effect[1] = f64::NAN, "ccd.effect[1]"; "nan ccd effect")]
+#[test_case(|d| d.model.signals = Weights::default(), "model.signals"; "no signal weights")]
+#[test_case(|d| d.bios = Some(vec![0]), "bios"; "short bios")]
+fn an_invalid_field_is_refused_by_its_path(edit: fn(&mut MachineDefinition), path: &str) {
+    let mut definition = full();
+    edit(&mut definition);
+    let Err(EncodeError::Invalid(error)) = file::encode(&definition) else {
+        panic!("{path} was encoded");
+    };
+    assert_eq!(error.path, path);
+}
+
 #[test]
 fn every_committed_machine_round_trips_through_the_encoder() {
     for path in committed() {
+        let name = path.display();
         let loaded = file::load_from(&path, &crate::common::committed_files())
             .map(|(machine, _)| machine)
-            .expect("loads");
-        let text = file::encode(&loaded).expect("encodes");
-        assert_eq!(
-            file::decode(&text).expect("decodes"),
-            loaded,
-            "{}",
-            path.display()
-        );
-        let again = file::decode(&text).expect("decodes");
-        assert!(Model::new(&again, 1).is_ok(), "{}", path.display());
+            .unwrap_or_else(|error| panic!("{name} loads: {}", togi_machine::error_chain(&error)));
+        let text = file::encode(&loaded).unwrap_or_else(|error| {
+            panic!("{name} encodes: {}", togi_machine::error_chain(&error))
+        });
+        let again = file::decode(&text).unwrap_or_else(|error| panic!("{name} decodes: {error}"));
+        assert_eq!(again, loaded, "{name}");
+        assert!(Model::new(&again, 1).is_ok(), "{name}");
     }
 }
 

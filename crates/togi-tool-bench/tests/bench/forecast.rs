@@ -1,9 +1,5 @@
 //! `forecast` over a fake simulator that answers each seed with the journal a real simulator wrote when it resumed
 //! the same copy, so the runs, the anchor and the outcomes are the real tuner's.
-#![expect(
-    clippy::unwrap_used,
-    reason = "the tests run the built command and panic on a broken fixture"
-)]
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -15,15 +11,8 @@ use std::process::Command;
 use std::rc::Rc;
 use std::time::Duration;
 
-#[expect(
-    dead_code,
-    unused_imports,
-    reason = "only the compiled snapshot helper is used in this test binary"
-)]
-mod common;
-mod git;
-
-use git::{isolate_git, repo};
+use crate::common;
+use crate::git::{isolate_git, repo};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use togi_config::Config;
@@ -687,12 +676,12 @@ fn absolute_machine_suite(fixture: &DiskFixture) {
     fs::create_dir_all(fixture.path("facts")).unwrap();
     fs::write(
         fixture.path("machines/target-fit-0.json"),
-        include_bytes!("../../../tools/bench/machines/target-fit-0.json"),
+        include_bytes!("../../../../tools/bench/machines/target-fit-0.json"),
     )
     .unwrap();
     fs::write(
         fixture.path("facts/target.jsonl.gz"),
-        include_bytes!("../../../tools/bench/facts/target.jsonl.gz"),
+        include_bytes!("../../../../tools/bench/facts/target.jsonl.gz"),
     )
     .unwrap();
     let absolute = fs::canonicalize(fixture.path("machines/target-fit-0.json")).unwrap();

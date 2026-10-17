@@ -1,16 +1,8 @@
-#![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
-
-#[expect(
-    dead_code,
-    reason = "this binary does not use every memory tree fixture method"
-)]
-mod common;
-
 use std::fmt::Write as _;
 use std::path::Path;
 use std::thread;
 
-use common::record;
+use crate::common::{self, record};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use togi_tool_bench::gate::{self, Criterion, Measure, Resolved, Verdict, quantile_change};
@@ -767,22 +759,22 @@ fn the_archived_go_gate_is_kept_unchanged_and_never_re_scored() {
     for (name, bytes, want) in [
         (
             "suite.json",
-            include_bytes!("../../../tools/bench/gates/ruleset-11/suite.json").as_slice(),
+            include_bytes!("../../../../tools/bench/gates/ruleset-11/suite.json").as_slice(),
             "afcd7feacbd6a5ddbaf30f1d69b2750749d92f30d52bde95816168ef2f2c895b",
         ),
         (
             "baseline.jsonl",
-            include_bytes!("../../../tools/bench/gates/ruleset-11/baseline.jsonl").as_slice(),
+            include_bytes!("../../../../tools/bench/gates/ruleset-11/baseline.jsonl").as_slice(),
             "4cb9921ec9f31bba9899e3c4cd6dc0ebe4cbead1039fd5947f3f39ec8fb1f78c",
         ),
         (
             "candidate.jsonl",
-            include_bytes!("../../../tools/bench/gates/ruleset-11/candidate.jsonl").as_slice(),
+            include_bytes!("../../../../tools/bench/gates/ruleset-11/candidate.jsonl").as_slice(),
             "6aaa3781211f46b207af2ef8b6810c7cd398b9641ea227ddfedb1bdf7352fc05",
         ),
         (
             "report.txt",
-            include_bytes!("../../../tools/bench/gates/ruleset-11/report.txt").as_slice(),
+            include_bytes!("../../../../tools/bench/gates/ruleset-11/report.txt").as_slice(),
             "68a1af81c8de041ca863ac004dbac4de83c2d854ada2588558eed9040516e7c6",
         ),
     ] {
@@ -793,7 +785,7 @@ fn the_archived_go_gate_is_kept_unchanged_and_never_re_scored() {
         );
     }
     let suite = Suite::parse(
-        include_bytes!("../../../tools/bench/gates/ruleset-11/suite.json"),
+        include_bytes!("../../../../tools/bench/gates/ruleset-11/suite.json"),
         ".".into(),
     )
     .unwrap();
@@ -804,11 +796,11 @@ fn the_archived_go_gate_is_kept_unchanged_and_never_re_scored() {
     for (name, bytes) in [
         (
             "baseline.jsonl",
-            include_bytes!("../../../tools/bench/gates/ruleset-11/baseline.jsonl").as_slice(),
+            include_bytes!("../../../../tools/bench/gates/ruleset-11/baseline.jsonl").as_slice(),
         ),
         (
             "candidate.jsonl",
-            include_bytes!("../../../tools/bench/gates/ruleset-11/candidate.jsonl").as_slice(),
+            include_bytes!("../../../../tools/bench/gates/ruleset-11/candidate.jsonl").as_slice(),
         ),
     ] {
         let error = read_records_from(bytes, Path::new(name), "records")
@@ -828,7 +820,7 @@ fn the_committed_suite_registers_no_gate() {
 fn the_committed_baseline_covers_every_run_of_the_suite() {
     let tree = common::Tree::committed();
     let plan = tree.suite().plan_from(Selection::All, &tree).unwrap();
-    let text = include_str!("../../../tools/bench/baseline.jsonl");
+    let text = include_str!("../../../../tools/bench/baseline.jsonl");
     let have: std::collections::BTreeSet<(String, u64)> = text
         .lines()
         .map(|line| {

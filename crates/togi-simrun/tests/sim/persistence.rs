@@ -8,6 +8,8 @@ use togi_session::Stop;
 use togi_sim::MachineDefinition;
 use togi_simrun::{Observe, Persistence, Replay, SimInput, SimOutcome, events, simulate};
 
+use test_case::test_case;
+
 use crate::common::{STATE, hunt_machine, input, machine_file, nz, simulator};
 
 const BOOTS: u32 = 20;
@@ -55,7 +57,10 @@ fn in_memory(definition: &MachineDefinition, seed: u64, replay: Replay) -> Left 
     }
 }
 
-fn same_files(definition: &MachineDefinition, seed: u64) {
+#[test_case(&machine_file("shared-voltage"), 1000; "shared voltage 1000")]
+#[test_case(&MachineDefinition::default(), 1; "default machine 1")]
+#[test_case(&machine_file("target-fit-0"), 1; "target fit 0 1")]
+fn warm_and_cold_replays_leave_the_same_files(definition: &MachineDefinition, seed: u64) {
     let cold = in_memory(definition, seed, Replay::Cold);
     let warm = in_memory(definition, seed, Replay::Warm);
     assert_eq!(cold.stop, warm.stop, "stop (left cold, right warm)");
@@ -85,21 +90,6 @@ fn same_files(definition: &MachineDefinition, seed: u64) {
         "a short session proves little"
     );
     assert_eq!(cold.state, warm.state, "state.json (left cold, right warm)");
-}
-
-#[test]
-fn shared_voltage_1000() {
-    same_files(&machine_file("shared-voltage"), 1000);
-}
-
-#[test]
-fn default_machine_1() {
-    same_files(&MachineDefinition::default(), 1);
-}
-
-#[test]
-fn target_fit_0_1() {
-    same_files(&machine_file("target-fit-0"), 1);
 }
 
 type Seen = Rc<RefCell<Vec<(BootId, Option<Vec<u8>>)>>>;
