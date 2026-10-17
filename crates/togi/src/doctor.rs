@@ -156,13 +156,13 @@ fn recorded_context(
             None => fail(ctx, COMMAND, togi_render::error_chain(&error)),
         }
     })?;
-    Ok(recording
-        .events()
-        .iter()
-        .find_map(|event| match &event.payload {
-            togi_journal::Payload::SessionContext(context) => Some(context.bios_context()),
-            _ => None,
-        }))
+    Ok(recording.events().iter().find_map(|event| {
+        if let togi_journal::Payload::SessionContext(context) = &event.payload {
+            Some(context.bios_context())
+        } else {
+            None
+        }
+    }))
 }
 
 fn refuse(ctx: &mut Context<'_>, renderer: Renderer, message: &str) -> Exit {

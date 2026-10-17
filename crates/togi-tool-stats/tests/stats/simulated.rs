@@ -41,9 +41,12 @@ fn a_simulated_sessions_report_agrees_with_its_events() {
     assert!(exposure <= intents && exposure > 0, "{text}");
     let ended: Vec<_> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::HuntEnd(end) => Some(end),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::HuntEnd(end) = &event.payload {
+                Some(end)
+            } else {
+                None
+            }
         })
         .map(|end| {
             let members = if end.members.is_empty() {
