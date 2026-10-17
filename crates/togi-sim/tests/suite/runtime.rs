@@ -123,8 +123,14 @@ fn each_signal_has_its_result_shape() {
         match signal {
             Signal::ComputationError | Signal::Stall | Signal::UnexpectedExit => {
                 let result = waited.unwrap_or_else(|error| panic!("{signal}: {error:?}"));
-                let failure = result.failure.expect("a failure");
-                assert_eq!((failure.signal, failure.core), (signal, core(0)));
+                let Some(failure) = result.failure else {
+                    panic!("{signal}: no failure in {result:?}");
+                };
+                assert_eq!(
+                    (failure.signal, failure.core),
+                    (signal, core(0)),
+                    "{signal}"
+                );
                 assert!(result.ran < NINETY, "{signal}: {:?}", result.ran);
             }
             Signal::CorrectedMce => {

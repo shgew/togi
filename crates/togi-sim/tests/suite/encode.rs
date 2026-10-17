@@ -225,8 +225,10 @@ fn every_committed_machine_round_trips_through_the_encoder() {
         let name = path.display();
         let loaded = file::load_from(&path, &crate::common::committed_files())
             .map(|(machine, _)| machine)
-            .unwrap_or_else(|error| panic!("{name} loads: {error}"));
-        let text = file::encode(&loaded).unwrap_or_else(|error| panic!("{name} encodes: {error}"));
+            .unwrap_or_else(|error| panic!("{name} loads: {}", togi_machine::error_chain(&error)));
+        let text = file::encode(&loaded).unwrap_or_else(|error| {
+            panic!("{name} encodes: {}", togi_machine::error_chain(&error))
+        });
         let again = file::decode(&text).unwrap_or_else(|error| panic!("{name} decodes: {error}"));
         assert_eq!(again, loaded, "{name}");
         assert!(Model::new(&again, 1).is_ok(), "{name}");

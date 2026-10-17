@@ -114,7 +114,9 @@ fn only_identity_checks_block_smu_validation_and_the_watchdog_fails_separately()
     let mut rig = Rig::new(&two_cores(), 1);
     for name in ["cpu", "ryzen_smu"] {
         rig.sim.fail_check(name, "unsupported");
-        let error = rig.machine.host.validate_smu().expect_err("a refusal");
+        let Err(error) = rig.machine.host.validate_smu() else {
+            panic!("a failed {name} check was accepted");
+        };
         assert_eq!(error.to_string(), format!("validate {name}: unsupported"));
         rig.sim.fail_check(name, "");
     }
@@ -123,8 +125,8 @@ fn only_identity_checks_block_smu_validation_and_the_watchdog_fails_separately()
     for detail in ["not armed", ""] {
         rig.sim.fail_check("watchdog", detail);
         let check = rig.machine.host.watchdog();
-        assert_eq!(check.name, "watchdog");
-        assert_eq!(check.ok, detail.is_empty());
+        assert_eq!(check.name, "watchdog", "{detail:?}");
+        assert_eq!(check.ok, detail.is_empty(), "{detail:?}");
         if !detail.is_empty() {
             assert_eq!(check.detail, detail);
         }

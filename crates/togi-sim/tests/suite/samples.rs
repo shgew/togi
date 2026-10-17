@@ -327,7 +327,9 @@ fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_
         }
         let idle_v = rig.sim.model().voltage().expect("a rail").idle_v;
         for sample in &samples {
-            let pm = sample.pm_table.expect("every sample has lanes");
+            let Some(pm) = sample.pm_table else {
+                panic!("{storage}: a sample without lanes");
+            };
             assert_eq!(sample.core_mhz.len(), 3, "{storage}");
             assert!(
                 (f64::from(pm.voltage_request_v[8]) - idle_v).abs() < 1e-6,
