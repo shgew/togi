@@ -65,14 +65,14 @@ pub trait Prompt {
     fn reset_cores(&mut self, finding: &FindingView<'_>) -> Result<bool, PromptError>;
 }
 
-pub struct RunInput {
+pub struct RunInput<'machine> {
     pub config: Config,
     pub source: ConfigSource,
     /// This binary's build, which the journal's must match to be appended to.
     pub build: Build,
     pub boot: BootId,
     pub journal: Journal,
-    pub machine: Machine,
+    pub machine: Machine<'machine>,
     pub policy: StopPolicy,
     pub publication: crate::publication::PublicationPolicy,
     /// Set only in the tuning boot, where a dead end hands the next boot back to the normal system.
@@ -212,12 +212,12 @@ pub(crate) enum Fault {
     Crashed,
 }
 
-pub(crate) struct Session {
-    pub(crate) appender: Appender,
-    pub(crate) smu: Box<dyn Smu>,
-    pub(crate) host: Box<dyn Host>,
-    pub(crate) trials: Box<dyn Trials>,
-    pub(crate) kernel: Box<dyn Kernel>,
+pub(crate) struct Session<'machine> {
+    pub(crate) appender: Appender<'machine>,
+    pub(crate) smu: Box<dyn Smu + 'machine>,
+    pub(crate) host: Box<dyn Host + 'machine>,
+    pub(crate) trials: Box<dyn Trials + 'machine>,
+    pub(crate) kernel: Box<dyn Kernel + 'machine>,
     pub(crate) boot: BootId,
     pub(crate) build: Build,
     pub(crate) config: Config,
@@ -249,10 +249,10 @@ pub(crate) struct Session {
     pub(crate) confirmed: Option<Verified>,
 }
 
-impl Session {
+impl<'machine> Session<'machine> {
     /// Takes over the journal: refuses one this build may not append to, reads the pending tuning-boot reason, folds
     /// the journal and reads the topology. Nothing is appended.
-    pub(crate) fn open(input: RunInput) -> Result<Self, Box<Ended>> {
+    pub(crate) fn open(input: RunInput<'machine>) -> Result<Self, Box<Ended>> {
         let RunInput {
             config,
             source,
@@ -367,7 +367,7 @@ impl Session {
     }
 
     #[cfg(test)]
-    pub(crate) const fn appender(&self) -> &Appender {
+    pub(crate) const fn appender(&self) -> &Appender<'machine> {
         &self.appender
     }
 

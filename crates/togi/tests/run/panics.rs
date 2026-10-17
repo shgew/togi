@@ -237,7 +237,11 @@ impl Running for PanickingRunning {
     }
 }
 
-fn logging(machine: Machine, order: &Order, first_write: Option<Box<dyn FnMut()>>) -> Machine {
+fn logging(
+    machine: Machine<'static>,
+    order: &Order,
+    first_write: Option<Box<dyn FnMut()>>,
+) -> Machine<'static> {
     Machine {
         smu: Box::new(Logging {
             inner: machine.smu,
@@ -250,7 +254,7 @@ fn logging(machine: Machine, order: &Order, first_write: Option<Box<dyn FnMut()>
 }
 
 /// What a panic in the trial leaves behind, with the order its teardown ran in noted by `order`.
-fn panicking(machine: Machine, order: &Order, faults: Faults) -> Machine {
+fn panicking(machine: Machine<'static>, order: &Order, faults: Faults) -> Machine<'static> {
     let panicked = Arc::new(AtomicBool::new(false));
     let machine = Machine {
         smu: Box::new(Logging {
@@ -933,6 +937,13 @@ fn real_process_a_panic_closes_the_journal_before_the_host_lock_is_released() {
     let child = run("lock_order");
     assert_eq!(child.status, Some(2), "{}", child.stderr);
     let order = child.order();
+    let stopped = order.iter().position(|line| line == "stop").unwrap();
+    let restored = order.iter().rposition(|line| line == "write").unwrap();
+    let released = order
+        .iter()
+        .position(|line| line == "journal_closed_before_host_lock_released")
+        .unwrap();
+    assert!(stopped < restored && restored < released, "{order:?}");
     assert!(
         order
             .iter()

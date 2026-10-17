@@ -15,7 +15,7 @@ use crate::write;
 const WATCHDOG_WAIT: Duration = Duration::from_secs(30);
 const WATCHDOG_STEP: Duration = Duration::from_secs(1);
 
-impl Session {
+impl Session<'_> {
     /// Classifies and records every crashed boot before this one. A kernel log that stays unreadable is evidence
     /// for a no-evidence dead end, which [`Session::check_dead_end`] places after a thermal trip. A pending dead
     /// end is finished first, so nothing is read for it.
@@ -214,7 +214,7 @@ impl Session {
     }
 }
 
-impl Session {
+impl Session<'_> {
     /// On a boot a run already used: reads the offsets that run left, puts the baseline back as bounded by `held`
     /// and only then lets the boot's cancellation count. A failed read or write is SMU evidence.
     pub(crate) fn reconcile(&mut self, held: &PerCore<TargetOffset>) -> Outcome {

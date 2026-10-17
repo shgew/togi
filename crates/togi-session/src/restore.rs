@@ -59,7 +59,7 @@ impl Restoration {
     }
 }
 
-impl Session {
+impl Session<'_> {
     /// Restores the baseline offsets, as bounded by [`restore_target`], when this run touched the machine and the
     /// profile on it is not that one. Without the proof that no workload runs nothing is written. The restoration
     /// cites the baseline.

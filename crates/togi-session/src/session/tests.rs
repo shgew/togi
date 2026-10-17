@@ -573,7 +573,7 @@ fn partial(mces: Vec<togi_machine::Mce>, error: Error) -> Read {
 }
 
 /// A session that opens the bench's journal on the simulator's current boot over a kernel that answers `script`.
-fn resumed_over(bench: &Bench, script: Vec<Read>) -> (Session, Seen) {
+fn resumed_over(bench: &Bench, script: Vec<Read>) -> (Session<'static>, Seen) {
     let mut input = bench.input();
     let seen = Seen::default();
     let inner = input.machine.kernel;
@@ -589,7 +589,7 @@ fn resumed_over(bench: &Bench, script: Vec<Read>) -> (Session, Seen) {
 }
 
 /// The same, after a first session recorded a kernel cursor, which is returned.
-fn scripted(bench: &Bench, script: Vec<Read>) -> (Session, KernelCursor, Seen) {
+fn scripted(bench: &Bench, script: Vec<Read>) -> (Session<'static>, KernelCursor, Seen) {
     let mut first = bench.open();
     first.start().unwrap();
     let cursor = first

@@ -9,7 +9,7 @@ use crate::session::{Control, Ended, Outcome, Panic, RunInput, Session, Stop, me
 /// Runs the session. A panic in it is caught only to take the cleanup every exit takes: the run is cancelled, the
 /// workload joined, the offsets restored unless that join is unconfirmed, and the journal handed back with the
 /// panic in [`Ended::panic`] for the caller to resume.
-pub fn run(input: RunInput) -> Ended {
+pub fn run(input: RunInput<'_>) -> Ended {
     let mut session = match Session::open(input) {
         Ok(session) => session,
         Err(ended) => return *ended,
@@ -32,7 +32,7 @@ pub fn run(input: RunInput) -> Ended {
     }
 }
 
-impl Session {
+impl Session<'_> {
     fn startup(&mut self) -> Outcome {
         self.rebuild_state()?;
         for step in [Self::start, Self::recover_prior] {

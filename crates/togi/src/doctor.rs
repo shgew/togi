@@ -70,7 +70,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         }
     };
     let privileged = system.privileged();
-    let _lock = if privileged {
+    let lock = if privileged {
         let (path, _) = system.host_lock();
         match system.acquire_host_lock() {
             Ok(lock) => Some(lock),
@@ -86,7 +86,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     } else {
         None
     };
-    let diagnosis = match system.diagnose(&config, recorded.as_ref(), privileged) {
+    let diagnosis = match system.diagnose(&config, recorded.as_ref(), lock.as_ref()) {
         Ok(diagnosis) => diagnosis,
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };

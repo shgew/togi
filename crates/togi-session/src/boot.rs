@@ -67,7 +67,7 @@ impl BootHandoff {
 
     pub(crate) fn after_durable_append(
         &mut self,
-        appender: &mut Appender,
+        appender: &mut Appender<'_>,
     ) -> Result<(), AppendFailure> {
         if self.progressed {
             return Ok(());
@@ -86,7 +86,7 @@ impl BootHandoff {
     }
 
     /// Acknowledges the pending reason in the journal, then clears it from the bootloader.
-    pub(crate) fn import(&mut self, appender: &mut Appender) -> Result<(), AppendFailure> {
+    pub(crate) fn import(&mut self, appender: &mut Appender<'_>) -> Result<(), AppendFailure> {
         let Some(pending) = &self.pending else {
             return Ok(());
         };

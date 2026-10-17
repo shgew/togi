@@ -15,7 +15,7 @@ use togi_sim::MachineDefinition;
 use super::*;
 use crate::testing::{Bench, build, core, kinds_of, target};
 
-fn begun(bench: &Bench) -> Session {
+fn begun(bench: &Bench) -> Session<'static> {
     let mut session = bench.open();
     assert_eq!(session.start().unwrap(), Control::Continue);
     assert_eq!(session.begin().unwrap(), Control::Continue);
@@ -350,7 +350,10 @@ fn pending_carry(bench: &Bench) -> (PendingCarry, SessionId, Vec<u64>) {
 }
 
 /// One run's start and begin with the carry, on a fresh session over the bench's journal.
-fn carried_run(bench: &Bench, pending: &PendingCarry) -> (Session, Result<(), SessionError>) {
+fn carried_run(
+    bench: &Bench,
+    pending: &PendingCarry,
+) -> (Session<'static>, Result<(), SessionError>) {
     let mut input = bench.input();
     input.carry = Some(pending.clone());
     let Ok(mut session) = Session::open(input) else {

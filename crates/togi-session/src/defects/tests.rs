@@ -48,7 +48,10 @@ fn asked(answer: Result<bool, PromptError>) -> Box<dyn Prompt> {
     Box::new(Asked(Some(answer)))
 }
 
-fn session_with_a_match(defects: &'static [Entry], prompt: Option<Box<dyn Prompt>>) -> Session {
+fn session_with_a_match(
+    defects: &'static [Entry],
+    prompt: Option<Box<dyn Prompt>>,
+) -> Session<'static> {
     let mut bench = Bench::new(2);
     bench.defects = defects;
     let mut input = bench.input();
@@ -229,7 +232,9 @@ impl Prompt for Counted {
 const UNLISTED: u32 = 7;
 
 /// A session reopened on a journal holding a too-aggressive finding of a defect this build does not list.
-fn resumed_with_an_unlisted_finding(prompt: Option<Box<dyn Prompt>>) -> (Bench, Session, Seq) {
+fn resumed_with_an_unlisted_finding(
+    prompt: Option<Box<dyn Prompt>>,
+) -> (Bench, Session<'static>, Seq) {
     let bench = Bench::new(2);
     let mut first = bench.open();
     assert_eq!(first.start().unwrap(), Control::Continue);
@@ -378,7 +383,7 @@ fn after(bench: &Bench, found: Seq) -> Vec<Recorded> {
         .collect()
 }
 
-fn opened_with(bench: &Bench, asked: &Rc<Cell<u32>>) -> Session {
+fn opened_with(bench: &Bench, asked: &Rc<Cell<u32>>) -> Session<'static> {
     let mut input = bench.input();
     input.prompt = Some(yes_for_both_cores(asked));
     let Ok(mut session) = Session::open(input) else {

@@ -205,7 +205,6 @@
             nativeCheckInputs = [ pkgs.gitMinimal ];
             subPackages = [
               "tools/release"
-              "tools/board"
               "tools/reviews"
               "tools/cover"
             ];
@@ -262,6 +261,17 @@
 
           checks = {
             go-tools = goTools;
+            board-test =
+              pkgs.runCommand "togi-board-test"
+                {
+                  nativeBuildInputs = [ pkgs.nushell ];
+                  src = ./tools/board;
+                }
+                ''
+                  cd "$src"
+                  HOME=$TMPDIR nu --no-config-file tests.nu
+                  touch "$out"
+                '';
             clippy = craneLib.mkCargoDerivation (
               cargoCheck testSource {
                 pnameSuffix = "-clippy";

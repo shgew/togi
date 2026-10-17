@@ -71,6 +71,23 @@ fn the_main_view_of_a_prefix_is_printed_as_plain_text() {
 }
 
 #[test]
+fn a_refused_batch_reports_the_sequence_of_the_first_invalid_event() {
+    let mut events = scenario(Scenario::Checking);
+    events[1] = events[0].clone();
+    let error = draw(
+        &events,
+        events.len(),
+        &frame(View::Main, (120, 33)),
+        &TimeZone::UTC,
+    )
+    .unwrap_err();
+    let Error::Fold { seq, .. } = error else {
+        panic!("expected a fold error, got {error}");
+    };
+    assert_eq!(seq, events[1].seq.get());
+}
+
+#[test]
 fn the_help_and_log_views_are_printed_with_their_page_names_and_no_key_hints() {
     let events = scenario(Scenario::Checking);
     let help = text(&events, events.len(), &frame(View::Help, (80, 24)));

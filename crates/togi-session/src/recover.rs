@@ -21,8 +21,8 @@ use crate::recovery::{RecoveryState, Registers};
 
 /// What recovery works with: the journal through its appender, the kernel log, the trial files, the boot the run is
 /// in and the token that cancels a retry wait.
-pub(crate) struct Recovery<'a> {
-    pub appender: &'a mut Appender,
+pub(crate) struct Recovery<'a, 'machine> {
+    pub appender: &'a mut Appender<'machine>,
     pub kernel: &'a mut dyn Kernel,
     pub trials: &'a mut dyn Trials,
     pub boot: &'a BootId,
@@ -49,7 +49,7 @@ pub(crate) struct KernelUnreadable {
 /// Classifies and records every crashed boot before the current one, oldest first, then closes the trial they left
 /// open and answers their idle crashes. A trial open in the current boot waits for [`same_boot_trial`]: only the
 /// sweep proves nothing writes its files any more. Repeating it records nothing new.
-pub(crate) fn prior_boots(recovery: Recovery<'_>) -> Step<Recovered> {
+pub(crate) fn prior_boots(recovery: Recovery<'_, '_>) -> Step<Recovered> {
     let mut crashes = Crashes {
         recovery,
         waited: false,
@@ -76,7 +76,7 @@ pub(crate) fn prior_boots(recovery: Recovery<'_>) -> Step<Recovered> {
 
 /// Closes the trial an earlier run left open in the current boot, once the sweep cleared what it left running. With
 /// a dead end pending it only closes the trial: the dead end ends the run before any failure could be acted on.
-pub(crate) fn same_boot_trial(mut recovery: Recovery<'_>, _cleared: SweepCleared) -> Step<()> {
+pub(crate) fn same_boot_trial(mut recovery: Recovery<'_, '_>, _cleared: SweepCleared) -> Step<()> {
     let state = recovery.appender.recovery();
     if state
         .open_trial()
@@ -159,14 +159,14 @@ fn machine(error: Error) -> Halt {
     Halt::Flow(SessionError::Machine(error).into())
 }
 
-struct Crashes<'a> {
-    recovery: Recovery<'a>,
+struct Crashes<'a, 'machine> {
+    recovery: Recovery<'a, 'machine>,
     /// Whether this run sat out a retry wait since the last crash was classified: a run that resumes after a recorded
     /// retry waits it out first, and records it again only if the read fails after it.
     waited: bool,
 }
 
-impl Crashes<'_> {
+impl Crashes<'_, '_> {
     fn state(&self) -> &RecoveryState {
         self.recovery.appender.recovery()
     }
@@ -423,7 +423,7 @@ fn unread_reason() -> ResetReason {
 }
 
 /// Closes the open trial, then answers every idle crash with a failure.
-fn finish(recovery: &mut Recovery<'_>) -> Step<()> {
+fn finish(recovery: &mut Recovery<'_, '_>) -> Step<()> {
     close_open_trial(recovery)?;
     let failures: Vec<(Failure, Vec<Seq>)> = {
         let state = recovery.appender.recovery();
@@ -655,7 +655,7 @@ impl Closure {
 }
 
 /// Ends the open trial with what the journal and the crash that cut it short prove of it.
-fn close_open_trial(recovery: &mut Recovery<'_>) -> Step<()> {
+fn close_open_trial(recovery: &mut Recovery<'_, '_>) -> Step<()> {
     let state = recovery.appender.recovery();
     let Some(open) = state.open_trial() else {
         return Ok(());

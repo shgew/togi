@@ -119,12 +119,12 @@ pub trait System {
     /// The zone event lines are shown in.
     fn zone(&self) -> TimeZone;
 
-    /// The checks `run` makes at startup, without writing anything.
+    /// The checks `run` makes at startup; privileged checks borrow the held host lock.
     fn diagnose(
         &self,
         config: &Config,
         recorded: Option<&BiosContext>,
-        privileged: bool,
+        lock: Option<&HostLock>,
     ) -> Result<Diagnosis, togi_hardware::Error>;
 
     /// The GRUB environment file `grubenv`.
@@ -151,13 +151,13 @@ pub trait System {
         )
     }
 
-    /// The machine `run` tunes, assembled under the held host lock.
-    fn open_machine(
+    /// The machine `run` tunes, borrowing the host lock until every hardware seam is dropped.
+    fn open_machine<'lock>(
         &self,
         config: &Config,
         state_dir: &Path,
-        lock: &HostLock,
-    ) -> Result<Machine, togi_hardware::Error>;
+        lock: &'lock HostLock,
+    ) -> Result<Machine<'lock>, togi_hardware::Error>;
 
     /// Whether stdin and stderr are both terminals.
     fn interactive(&self) -> bool;
@@ -225,9 +225,9 @@ impl System for Real {
         &self,
         config: &Config,
         recorded: Option<&BiosContext>,
-        privileged: bool,
+        lock: Option<&HostLock>,
     ) -> Result<Diagnosis, togi_hardware::Error> {
-        togi_hardware::diagnose(config, recorded, privileged)
+        togi_hardware::diagnose(config, recorded, lock)
     }
 
     fn bootloader(&self, grubenv: &Path) -> Box<dyn Bootloader> {
@@ -262,12 +262,12 @@ impl System for Real {
         )
     }
 
-    fn open_machine(
+    fn open_machine<'lock>(
         &self,
         config: &Config,
         state_dir: &Path,
-        lock: &HostLock,
-    ) -> Result<Machine, togi_hardware::Error> {
+        lock: &'lock HostLock,
+    ) -> Result<Machine<'lock>, togi_hardware::Error> {
         togi_hardware::open(config, state_dir, lock)
     }
 

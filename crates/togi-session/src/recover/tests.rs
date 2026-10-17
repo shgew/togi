@@ -238,7 +238,7 @@ impl Trials for TestTrials {
 
 struct Harness {
     mem: MemFs,
-    appender: Option<Appender>,
+    appender: Option<Appender<'static>>,
     kernel: Rc<RefCell<KernelScript>>,
     trials: Rc<RefCell<TrialsScript>>,
     clock: Rc<RefCell<ClockState>>,
@@ -246,7 +246,7 @@ struct Harness {
     cancel: CancellationToken,
 }
 
-fn open(mem: &MemFs, boot: &BootId, clock: &Rc<RefCell<ClockState>>) -> Appender {
+fn open(mem: &MemFs, boot: &BootId, clock: &Rc<RefCell<ClockState>>) -> Appender<'static> {
     let journal = simulated(mem)
         .open_at(boot.clone(), Timestamp::from_second(1_800_000_000).unwrap())
         .unwrap();
@@ -314,7 +314,7 @@ impl Harness {
         }
     }
 
-    fn appender(&self) -> &Appender {
+    fn appender(&self) -> &Appender<'static> {
         self.appender.as_ref().unwrap()
     }
 

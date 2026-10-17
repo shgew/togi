@@ -262,10 +262,11 @@ impl Source {
             _ => (Box::new(Model::new()), 0),
         };
         let batch = &events[folded..];
-        let last_end = batch
-            .iter()
-            .rposition(|event| matches!(event.payload, Payload::TrialEnd(_)));
-        for (at, event) in batch.iter().enumerate() {
+        let checked = model
+            .fold_batch(batch)
+            .err()
+            .map_or(batch, |error| &batch[..=error.index]);
+        for event in checked {
             if let Payload::SessionStart(start) = &event.payload {
                 if let Verdict::Refuse(refusal) =
                     shown_build().verdict(&start.build, Operation::Inspect)
@@ -273,9 +274,6 @@ impl Source {
                     self.content = Content::Problem(refusal.into());
                     return;
                 }
-            }
-            if model.fold_ending(event, last_end == Some(at)).is_err() {
-                break;
             }
         }
         let skipped = recording.skipped();
