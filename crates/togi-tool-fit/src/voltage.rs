@@ -4,8 +4,9 @@
 use std::collections::BTreeMap;
 
 use togi_facts::{Decisive, TrialClass};
-use togi_machine::{CcdId, CoreId, Regime, pick_workload, workloads};
+use togi_machine::{CcdId, CoreId, Regime, TargetOffset, pick_workload, workloads};
 use togi_sim::definition::{SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef};
+use togi_sim::voltage::core_watts;
 use togi_sim::{MachineDefinition, Model};
 use togi_tool_trialfacts::{Profile, TrialFact};
 
@@ -270,10 +271,10 @@ fn fit_clocks(v: &mut SharedVoltageDef, records: &[TrialFact], id: &str) {
                 .profile
                 .as_slice()
                 .get(core.index())
-                .map_or(0, |offset| offset.get());
+                .copied()
+                .unwrap_or(TargetOffset::ZERO);
             if let Some(slot) = watts.get_mut(core.index() / 8) {
-                *slot +=
-                    (w.watts_per_core + w.offset_watts_per_count * float(offset + 35)).max(0.0);
+                *slot += core_watts(w.watts_per_core, w.offset_watts_per_count, offset);
             }
         }
         let (c0, c1) = (f64::from(c0), f64::from(c1));
