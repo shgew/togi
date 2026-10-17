@@ -4,7 +4,8 @@
 use togi_journal::{Member, State as JournalState};
 use togi_machine::{CoreId, CoreSet, Regime, TargetOffset};
 use togi_tuner::{
-    CombinationId, CyclePlan, Forecast, GroupState, Limit, Projection, Reached, State as TunerState,
+    CombinationId, CyclePlan, Forecast, GroupState, Limit, Projection, Reached,
+    State as TunerState, TurnKind,
 };
 
 use crate::facts::{Facts, secs, trial_cores};
@@ -202,7 +203,7 @@ pub(crate) fn place_in_cycle(plan: &CyclePlan, trial: &mut TrialView) {
     let put = |trial: &mut TrialView, step: usize, index: usize| {
         let parts = &plan.steps[step].parts;
         let part = &parts[index];
-        let of = part.short + part.long;
+        let of = part.trials();
         trial.cycle = Some(CyclePlace {
             cycle: place.cycle,
             step: Some(ord(step) + 1),
@@ -397,7 +398,7 @@ fn core_views(
         for turn in turns.iter().filter(|turn| turn.core == id) {
             v.next = Some(turn.offset);
             v.state = CoreState::Search;
-            if turn.confirm {
+            if turn.kind == TurnKind::Confirm {
                 v.state = CoreState::Confirm;
                 v.confirm = Some(Confirm {
                     offset: turn.offset,

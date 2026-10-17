@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, HashMap};
 use togi_journal::{Activity, Decision, Event, Outcome, Seq, TunerDecision};
 use togi_machine::{Condition, CoreId, CoreSet, Regime};
 
-use super::Applied;
 use super::escalation::{BackoffKind, Strikes};
 use super::failed::{Ended, FailedTrial, OpenFailure, Telemetry, effective_top, order_at};
 use super::measurements::{Measurement, Measurements};
@@ -295,7 +294,7 @@ impl Run {
             .all()
             .iter()
             .filter(|&core| !load.loaded.contains(core))
-            .all(|core| profile.at(core) == located.at(core))
+            .all(|core| profile.get(core) == located.get(core))
             .then_some(*seq)
     }
 }

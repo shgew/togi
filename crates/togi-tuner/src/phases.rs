@@ -5,7 +5,6 @@ use togi_journal::Seq;
 use togi_machine::{CoreId, TargetOffset};
 
 use crate::cores::Phase;
-use crate::r7::Applied;
 use crate::rounds::{Blame, Shape};
 use crate::state::Run;
 use crate::{Depth, FoldError, Profile};
@@ -128,7 +127,9 @@ impl Phases {
         };
         for core in round.cores() {
             if round.deepened(core) && offsets.get(core) == round.baseline().get(core) {
-                let offset = round.profile().at(core);
+                let Some(offset) = round.profile().get(core) else {
+                    continue;
+                };
                 match settled.moved.get_mut(&core) {
                     Some(mark) if mark.offset == offset => mark.attempt = round.id(),
                     _ => {

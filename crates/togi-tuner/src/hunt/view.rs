@@ -8,8 +8,9 @@ use super::plan::{
 };
 use super::state::{Active, GroupRecord};
 use crate::Profile;
-use crate::dashboard::{GroupState, HuntGroup, HuntPart, HuntPlan, MemberProbe, RerunPlan};
-use crate::r7::Applied;
+use crate::dashboard::{
+    GroupState, HuntGroup, HuntPart, HuntPlan, Lengths, MemberProbe, Quota, RerunPlan,
+};
 use crate::state::Run;
 
 /// One group of the active hunt as a dashboard shows it, its outcome read from the answer the
@@ -216,10 +217,16 @@ impl Run {
         RerunPlan {
             regime: hunt.class.regime(),
             cores: hunt.class.loaded(),
-            short: u32::from(self.config.needed.get()),
-            short_s: short.get(),
-            long: u32::from(long != short),
-            long_s: if long == short { 0 } else { long.get() },
+            lengths: Lengths {
+                short: Quota {
+                    count: u32::from(self.config.needed.get()),
+                    secs: short.get(),
+                },
+                long: (long != short).then_some(Quota {
+                    count: 1,
+                    secs: long.get(),
+                }),
+            },
         }
     }
 
@@ -303,10 +310,7 @@ impl Run {
             return self.singleton_probing(hunt, set.first()?);
         }
         let checking = self.checking.profile()?;
-        let failing: PerCore<TargetOffset> = set
-            .iter()
-            .map(|core| (core, hunt.failing.at(core)))
-            .collect();
+        let failing: PerCore<TargetOffset> = hunt.failing.among(set).collect();
         if already_broken(&failing, &checking) {
             return Some(ProbeStep::Done(Found {
                 members: failing,
@@ -331,9 +335,10 @@ impl Run {
     fn hunt_probes(&self, hunt: &Active, shape: Shape, views: &[GroupView]) -> Vec<MemberProbe> {
         let set = shape.set();
         let step = self.probe_step(hunt, set);
-        set.iter()
-            .map(|core| {
-                let mut probe = member_ladder(hunt, core, views);
+        hunt.failing
+            .among(set)
+            .map(|(core, origin)| {
+                let mut probe = member_ladder(hunt, core, origin, views);
                 match step {
                     Some(ProbeStep::Run(next)) => {
                         if next.member == core && !probe.running {
@@ -356,8 +361,12 @@ impl Run {
     }
 }
 
-fn member_ladder(hunt: &Active, core: CoreId, views: &[GroupView]) -> MemberProbe {
-    let origin = hunt.failing.at(core);
+fn member_ladder(
+    hunt: &Active,
+    core: CoreId,
+    origin: TargetOffset,
+    views: &[GroupView],
+) -> MemberProbe {
     let mut probe = MemberProbe {
         member: core,
         offset: origin,

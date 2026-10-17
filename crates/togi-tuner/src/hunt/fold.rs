@@ -11,7 +11,6 @@ use super::state::{
     Active, Cut, Ended, GroupRecord, LoadedEnd, Located, LocatedEnd, Named, ParkedFailure,
     Recorded, Rejected, Repeated,
 };
-use crate::r7::Applied;
 use crate::state::Run;
 use crate::{ClassKey, CombinationId, FoldError, Profile, Ranking, Secs};
 
@@ -87,7 +86,9 @@ impl Run {
         let adjacent = newer.core == core
             && older.core == core
             && older.offset.get() + 1 == newer.offset.get()
-            && failing.at(core).get() == newer.offset.get() + 1;
+            && failing
+                .get(core)
+                .is_some_and(|offset| offset.get() == newer.offset.get() + 1);
         adjacent.then_some(Repeated {
             core,
             failures: [older.seq, newer.seq],
@@ -130,7 +131,7 @@ impl Run {
         );
         let loaded_at_zero = loaded
             .iter()
-            .all(|core| failing.at(core) == TargetOffset::ZERO);
+            .all(|core| failing.get(core) == Some(TargetOffset::ZERO));
         let plan = Plan::new(Start {
             candidates: start.candidates,
             loaded,
@@ -366,7 +367,7 @@ impl Run {
             .class
             .loaded()
             .iter()
-            .all(|core| active.failing.at(core) == TargetOffset::ZERO)
+            .all(|core| active.failing.get(core) == Some(TargetOffset::ZERO))
     }
 
     pub(crate) fn rejecting_failure(&self, active: &Active) -> Option<Seq> {

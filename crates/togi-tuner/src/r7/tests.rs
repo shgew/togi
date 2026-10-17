@@ -8,7 +8,6 @@ use togi_machine::WorkloadId;
 use togi_machine::{CcdId, Condition, CoreId, CoreInfo, CoreSet, PerCore, Regime, TargetOffset};
 use togi_requests::{VOLTS_PER_COUNT, top};
 
-use super::Applied;
 use super::escalation::{
     BackoffKind, ESCALATE_AFTER, Escalation, Strikes, loaded_stuck_at_zero, unloaded_off_zero,
 };
@@ -1719,7 +1718,8 @@ mod props {
             for id in part.iter().filter(|&id| key.loaded.contains(id)) {
                 let lane = source.and_then(|m| {
                     m.request(id).map(|request| {
-                        let shift = profile.at(id).signed() - m.profile().at(id).signed();
+                        let shift = profile.get(id).unwrap().signed()
+                            - m.profile().get(id).unwrap().signed();
                         (request + VOLTS_PER_COUNT * f64::from(shift), m.seq())
                     })
                 });

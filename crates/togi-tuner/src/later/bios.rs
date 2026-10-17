@@ -7,7 +7,6 @@ use togi_machine::{CoreId, PerCore, TargetOffset};
 use super::Strike;
 use crate::hunt::plan::GroupOutcome;
 use crate::hunt::state::{Active, Recorded};
-use crate::r7::Applied;
 use crate::state::Run;
 use crate::{Action, CombinationId, DecisionPayload, Depth, Profile};
 
@@ -160,8 +159,10 @@ impl Run {
                     continue;
                 }
                 for (core, failing) in profile.iter() {
-                    let held = failing.deeper_than(hunt.parked.at(core));
-                    if !held || shown.at(core).shallower_than(failing) {
+                    let (Some(parked), Some(at)) = (hunt.parked.get(core), shown.get(core)) else {
+                        continue;
+                    };
+                    if !failing.deeper_than(parked) || at.shallower_than(failing) {
                         continue;
                     }
                     *shown = shown.with(core, failing.shallower_by(1));

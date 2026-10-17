@@ -7,10 +7,9 @@ use super::context::round_requirement;
 use super::{Check, Round};
 use crate::failures::{Pending, load_of};
 use crate::ledger::carried_clause;
-use crate::r7::Applied;
 use crate::r7::respond::R7Response;
 use crate::state::Run;
-use crate::{Action, DecisionAction, Load, Profile, TrialPlan, Window, WorkloadChoice};
+use crate::{Action, DecisionAction, Load, TrialPlan, Window, WorkloadChoice};
 
 pub(super) fn round_end(
     round: NonZeroU32,
@@ -119,14 +118,11 @@ impl Run {
         let base = *self.phases.first_confirmed()?;
         let base_seq = self.phases.phase1_end()?;
         let cores: CoreSet = moves.moved.iter().chain(&moves.carried).copied().collect();
-        let target = Profile::over(self.topo.all(), |core| {
+        let target = offsets.map(|core, offset| {
             if cores.contains(core) {
-                self.core(core)
-                    .phase
-                    .solo_limit()
-                    .unwrap_or_else(|| offsets.at(core))
+                self.core(core).phase.solo_limit().unwrap_or(offset)
             } else {
-                offsets.at(core)
+                offset
             }
         });
         let mut clauses = Vec::new();

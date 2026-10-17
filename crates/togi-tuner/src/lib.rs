@@ -101,8 +101,8 @@ pub use constraints::{
 };
 pub use crash::{CrashFacts, CrashKind, classify_crash, recorded_kind};
 pub use dashboard::{
-    CyclePart, CyclePlan, CycleStep, GroupState, HuntGroup, HuntPart, HuntPlan, MemberProbe,
-    RerunPlan, SearchTurn, TrialRequirement,
+    CyclePart, CyclePlan, CycleStep, GroupState, HuntGroup, HuntPart, HuntPlan, Lengths,
+    MemberProbe, Quota, RerunPlan, SearchTurn, TrialRequirement, TurnKind,
 };
 pub use depth::Depth;
 pub use error::FoldError;

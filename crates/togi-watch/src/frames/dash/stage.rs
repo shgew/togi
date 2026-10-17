@@ -616,7 +616,7 @@ fn part_requirement(scene: &Scene<'_>, step: &CycleStep) -> Vec<Clause> {
     let Some(part) = open.and_then(|number| step.parts.get(number - 1)) else {
         return out;
     };
-    let required = part.short + part.long;
+    let required = part.trials();
     if required == 0 {
         return out;
     }

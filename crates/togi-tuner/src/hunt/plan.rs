@@ -1,7 +1,6 @@
 use togi_journal::Seq;
 use togi_machine::{CoreId, CoreSet, PerCore, TargetOffset};
 
-use crate::r7::Applied;
 use crate::{Constraints, Depth, Profile, Ranking};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -453,14 +452,11 @@ pub(crate) fn park<'a>(
     passed: impl IntoIterator<Item = (Seq, &'a Profile)>,
 ) -> Parked {
     let raised = passed.into_iter().find_map(|(seq, profile)| {
-        let raised = Profile::over(failing.cores(), |core| {
-            let offset = profile.at(core);
-            let fails_at = failing.at(core);
-            if offset.shallower_than(fails_at) {
-                offset
-            } else {
-                fails_at
-            }
+        let raised = failing.map(|core, fails_at| {
+            profile
+                .get(core)
+                .filter(|offset| offset.shallower_than(fails_at))
+                .unwrap_or(fails_at)
         });
         (raised != *failing).then_some((seq, raised))
     });
@@ -470,7 +466,11 @@ pub(crate) fn park<'a>(
     };
     let candidates = failing
         .iter()
-        .filter(|&(core, offset)| offset.deeper_than(profile.at(core)))
+        .filter(|&(core, offset)| {
+            profile
+                .get(core)
+                .is_some_and(|parked| offset.deeper_than(parked))
+        })
         .map(|(core, _)| core)
         .collect();
     Parked {
@@ -483,9 +483,9 @@ pub(crate) fn park<'a>(
 /// A located hunt's parking: loaded cores keep their failing offsets, every unloaded core parks
 /// at zero, and the candidates are the unloaded cores that failed off zero.
 pub(crate) fn park_located(failing: &Profile, loaded: CoreSet) -> Parked {
-    let profile = Profile::over(failing.cores(), |core| {
+    let profile = failing.map(|core, offset| {
         if loaded.contains(core) {
-            failing.at(core)
+            offset
         } else {
             TargetOffset::ZERO
         }
@@ -504,9 +504,11 @@ pub(crate) fn park_located(failing: &Profile, loaded: CoreSet) -> Parked {
 
 /// The parked profile with `cores` at their failing offsets.
 pub(crate) fn group_profile(parked: &Profile, failing: &Profile, cores: CoreSet) -> Profile {
-    cores.iter().fold(*parked, |profile, core| {
-        profile.with(core, failing.at(core))
-    })
+    failing
+        .among(cores)
+        .fold(*parked, |profile, (core, offset)| {
+            profile.with(core, offset)
+        })
 }
 
 /// A member probe: `member` at `offset` with the other combination members `held` at their
@@ -534,7 +536,7 @@ impl Probe {
     pub(crate) fn holds_failing(&self, failing: &Profile) -> bool {
         self.held
             .iter()
-            .all(|(core, offset)| offset == failing.at(core))
+            .all(|(core, offset)| failing.get(core) == Some(offset))
     }
 }
 
@@ -582,14 +584,13 @@ impl MemberProbes {
     /// pass, then bisect between its deepest failure and shallowest pass until they are one count
     /// apart.
     pub(crate) fn step(&self, results: &[ProbeResult]) -> ProbeStep {
-        let mut found: PerCore<TargetOffset> = self
-            .members
-            .iter()
-            .map(|core| (core, self.failing.at(core)))
-            .collect();
+        let mut found: PerCore<TargetOffset> = self.failing.among(self.members).collect();
         for member in self.members {
-            let origin = self.failing.at(member);
-            let (mut lo, mut hi) = (origin, self.parked.at(member));
+            let (Some(origin), Some(parked)) = (self.failing.get(member), self.parked.get(member))
+            else {
+                continue;
+            };
+            let (mut lo, mut hi) = (origin, parked);
             let (mut failed, mut passed) = (0u32, false);
             for result in results.iter().filter(|r| r.member == member) {
                 match result.outcome {
@@ -644,9 +645,11 @@ impl MemberProbes {
 /// Whether some member's offset is already deeper than the profile holds it: the profile cannot
 /// reach the combination, so no backoff or probing is needed.
 pub(crate) fn already_broken(members: &PerCore<TargetOffset>, profile: &Profile) -> bool {
-    members
-        .iter()
-        .any(|(core, offset)| profile.at(core).shallower_than(offset))
+    members.iter().any(|(core, offset)| {
+        profile
+            .get(core)
+            .is_some_and(|at| at.shallower_than(offset))
+    })
 }
 
 /// The move a combination asks of the tuner.
@@ -689,7 +692,9 @@ pub(crate) fn combination_backoff(
     };
     let mut tested: Option<(usize, i64, usize)> = None;
     for (i, probe) in passed.iter().enumerate() {
-        let at = current.at(probe.member);
+        let Some(at) = current.get(probe.member) else {
+            continue;
+        };
         if !probe.holds_failing(failing) || !probe.offset.shallower_than(at) {
             continue;
         }
@@ -717,7 +722,9 @@ pub(crate) fn combination_backoff(
     let mut untested: Option<(CoreId, TargetOffset, i32, usize)> = None;
     for (member, offset) in members.iter() {
         let past = offset.shallower_by(1);
-        let at = current.at(member);
+        let Some(at) = current.get(member) else {
+            continue;
+        };
         let to = if at.shallower_than(past) { at } else { past };
         let Ok(Some(target)) = constraints.optimum(&current.with(member, to), ranking) else {
             continue;

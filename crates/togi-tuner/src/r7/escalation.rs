@@ -5,7 +5,6 @@ use togi_machine::{CcdId, CoreId};
 
 use togi_journal::Seq;
 
-use super::Applied;
 use crate::{Depth, LoadKey, Profile, Topology};
 
 /// Voltage-targeted backoffs of one load, since its latest pass, after which its next
@@ -225,10 +224,9 @@ impl Strikes {
 
 /// Whether some core outside `load` is off CO 0 in `profile`.
 pub(crate) fn unloaded_off_zero(topology: &Topology, load: LoadKey, profile: &Profile) -> bool {
-    topology
-        .all()
-        .iter()
-        .any(|core| !load.loaded.contains(core) && profile.at(core).signed() != 0)
+    topology.all().iter().any(|core| {
+        !load.loaded.contains(core) && profile.get(core).is_some_and(|at| at.signed() != 0)
+    })
 }
 
 /// Whether no loaded core on the `affected` CCDs is off CO 0 in `profile`: backing off the loaded
@@ -243,6 +241,6 @@ pub(crate) fn loaded_stuck_at_zero(
         topology
             .ccd_of(core)
             .is_some_and(|ccd| affected.contains(&ccd))
-            && profile.at(core).signed() != 0
+            && profile.get(core).is_some_and(|at| at.signed() != 0)
     })
 }

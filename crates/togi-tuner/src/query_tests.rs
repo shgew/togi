@@ -245,11 +245,11 @@ fn project_cost(passes: usize) -> u64 {
     assert_eq!(projection.search_turns.len(), 1);
     let turn = &projection.search_turns[0];
     assert_eq!(turn.core, core(0));
-    assert!(turn.confirm);
+    assert_eq!(turn.kind, crate::TurnKind::Confirm);
     assert!(!turn.running);
     assert_eq!(
-        (turn.step, turn.light, turn.heavy, turn.needed),
-        (0, u32::try_from(passes).unwrap(), 0, 5)
+        (turn.light, turn.heavy, turn.needed),
+        (u32::try_from(passes).unwrap(), 0, 5)
     );
     assert_eq!(turn.regimes, [Regime::R1, Regime::R2]);
     assert_eq!(turn.workload.regime(), Regime::R2);

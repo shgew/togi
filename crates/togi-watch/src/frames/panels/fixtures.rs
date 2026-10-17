@@ -10,7 +10,8 @@ use togi_journal::{HuntStage, Member, TrialId};
 use togi_machine::{CcdId, CoreSet, ObservedOffset, Regime, workloads};
 use togi_tuner::{
     BiosProfile, Confirmed, CyclePart, CyclePlan, CycleStep, GroupState, HuntGroup, HuntPart,
-    HuntPlan, MemberProbe, PhaseNo, PhasePlan, Profile, RerunPlan, Topology, Unconfirmed,
+    HuntPlan, Lengths, MemberProbe, PhaseNo, PhasePlan, Profile, Quota, RerunPlan, Topology,
+    Unconfirmed,
 };
 
 use super::super::fit::plain;
@@ -150,10 +151,13 @@ pub(super) fn hunt_plan(groups: Vec<HuntGroup>, parts: Vec<HuntPart>) -> HuntPla
         rerun: RerunPlan {
             regime: Regime::R7,
             cores: set(&[0, 1, 2]),
-            short: 5,
-            short_s: 600,
-            long: 0,
-            long_s: 0,
+            lengths: Lengths {
+                short: Quota {
+                    count: 5,
+                    secs: 600,
+                },
+                long: None,
+            },
         },
     }
 }
@@ -190,10 +194,13 @@ pub(super) fn cycle_part(
         ccd: ccd.map(CcdId),
         full,
         partial: !full,
-        short: 1,
-        short_s: 600,
-        long: 0,
-        long_s: 0,
+        lengths: Some(Lengths {
+            short: Quota {
+                count: 1,
+                secs: 600,
+            },
+            long: None,
+        }),
         passed: u32::from(done),
         failed: 0,
         done,

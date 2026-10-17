@@ -5,8 +5,8 @@ use togi_journal::{
 };
 use togi_machine::{Condition, CoreSet};
 
-use super::OpenCycle;
 use super::schedule::{self, Quota};
+use super::{Link, OpenCycle};
 use crate::failures::load_of;
 use crate::r7::order::RequestOrder;
 use crate::state::Run;
@@ -174,16 +174,16 @@ impl Run {
             .iter()
             .filter(|&core| !top.contains(core))
             .collect();
-        let cores = if rest.len() < 2 {
-            CoreSet::default()
+        let link = if rest.len() < 2 {
+            Link::End
         } else {
-            rest
+            Link::Partial(rest)
         };
         let rederived = started
             .chain(ccd)
             .and_then(|chain| chain.recorded(index))
             .map(|old| {
-                if old.cores == cores {
+                if old.link == link {
                     Rederived::Unchanged
                 } else {
                     Rederived::Changed
@@ -201,7 +201,7 @@ impl Run {
                 ccd,
                 workload,
                 groups,
-                cores,
+                cores: link.recorded_cores(),
                 source_seqs: order.sources().to_vec(),
                 profile: profile.offsets(),
                 part: ordinal(index),

@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU8, NonZeroU32};
 
 use serde::{Deserialize, Serialize};
 use togi_journal::{Activity, HuntStage, Member, Seq, TrialId};
@@ -8,26 +8,67 @@ use crate::hunt::plan::GroupOutcome;
 use crate::state::Run;
 use crate::{Limit, Profile, State, TrialContext, TrialHistory, Window};
 
+mod wire;
+
+/// Trials of one length: how many, and how long each runs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Quota {
+    pub count: u32,
+    pub secs: u32,
+}
+
+/// The trial lengths of a schedule: its first, and a longer one after it when it has one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Lengths {
+    pub short: Quota,
+    pub long: Option<Quota>,
+}
+
+impl Lengths {
+    pub fn iter(self) -> impl Iterator<Item = Quota> {
+        std::iter::once(self.short).chain(self.long)
+    }
+
+    pub fn trials(self) -> u32 {
+        self.iter().map(|quota| quota.count).sum()
+    }
+}
+
 #[expect(
     clippy::struct_excessive_bools,
     reason = "independent facts of one part shown as the dashboard shows them"
 )]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(into = "wire::CyclePart", from = "wire::CyclePart")]
 pub struct CyclePart {
     pub cores: CoreSet,
     pub ccd: Option<togi_machine::CcdId>,
     pub full: bool,
     pub partial: bool,
-    pub short: u32,
-    pub short_s: u32,
-    pub long: u32,
-    pub long_s: u32,
+    /// The part's quotas with trials to run, none when it has none.
+    pub lengths: Option<Lengths>,
     /// Credited passes: each quota's valid passes clipped to that quota's count, so surplus
     /// evidence in one class never fills another. Raw evidence stays in the evidence counts.
     pub passed: u32,
     pub failed: u32,
     pub done: bool,
     pub running: bool,
+}
+
+impl CyclePart {
+    /// The part's short and long trial counts, zero for a length it lacks.
+    pub fn counts(&self) -> (u32, u32) {
+        self.lengths.map_or((0, 0), |lengths| {
+            (
+                lengths.short.count,
+                lengths.long.map_or(0, |long| long.count),
+            )
+        })
+    }
+
+    pub fn trials(&self) -> u32 {
+        self.lengths.map_or(0, Lengths::trials)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -48,14 +89,21 @@ pub struct CyclePlan {
     pub paused: bool,
 }
 
+/// What a search turn does: confirm the candidate solo limit, or search deeper by `step` counts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TurnKind {
+    Confirm,
+    Search { step: NonZeroU8 },
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(into = "wire::SearchTurn", try_from = "wire::SearchTurn")]
 pub struct SearchTurn {
     pub core: CoreId,
-    pub confirm: bool,
+    pub kind: TurnKind,
     pub regimes: Vec<Regime>,
     pub offset: TargetOffset,
     pub workload: WorkloadId,
-    pub step: u8,
     pub light: u32,
     pub heavy: u32,
     pub needed: u32,
@@ -128,13 +176,11 @@ pub struct MemberProbe {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(into = "wire::RerunPlan", try_from = "wire::RerunPlan")]
 pub struct RerunPlan {
     pub regime: Regime,
     pub cores: CoreSet,
-    pub short: u32,
-    pub short_s: u32,
-    pub long: u32,
-    pub long_s: u32,
+    pub lengths: Lengths,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -257,23 +303,25 @@ impl Run {
                             ccd,
                             full,
                             partial: step.regime == Regime::R7 && !full,
-                            short: 0,
-                            short_s: 0,
-                            long: 0,
-                            long_s: 0,
+                            lengths: None,
                             passed: 0,
                             failed: 0,
                             done: true,
                             running: is_running,
                         };
                         for quota in part.quotas.iter().filter(|quota| quota.count > 0) {
-                            let secs = quota.class.duration().get();
-                            if view.short_s == 0 {
-                                view.short = quota.count;
-                                view.short_s = secs;
-                            } else {
-                                view.long = quota.count;
-                                view.long_s = secs;
+                            let length = Quota {
+                                count: quota.count,
+                                secs: quota.class.duration().get(),
+                            };
+                            match &mut view.lengths {
+                                None => {
+                                    view.lengths = Some(Lengths {
+                                        short: length,
+                                        long: None,
+                                    });
+                                }
+                                Some(lengths) => lengths.long = Some(length),
                             }
                             let passed = if stored.is_some() {
                                 self.cycle_count(cycle, quota.class)
@@ -383,12 +431,16 @@ impl Run {
             None if second_only => (0, 0, Regime::R2, None),
             None => (0, 0, Regime::R1, None),
         };
-        let step = if core.phase.check().is_some() {
-            0
+        let kind = if core.phase.check().is_some() {
+            TurnKind::Confirm
         } else if self.failure_point(id).is_some() {
-            1
+            TurnKind::Search {
+                step: NonZeroU8::MIN,
+            }
         } else {
-            5
+            TurnKind::Search {
+                step: NonZeroU8::MIN.saturating_add(4),
+            }
         };
         let regimes = if core.phase.check().is_none() && second_only {
             vec![Regime::R2]
@@ -398,11 +450,10 @@ impl Run {
         let plan = self.search_trial(id, regime, frozen);
         SearchTurn {
             core: id,
-            confirm: core.phase.check().is_some(),
+            kind,
             regimes,
             offset: core.offset,
             workload: plan.workload_at(self.rotation(&plan)),
-            step,
             light,
             heavy,
             needed: u32::from(needed.get()),
