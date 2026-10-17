@@ -2,7 +2,7 @@ use std::io;
 
 use jiff::tz::{self, TimeZone};
 use serde_json::{Value, json};
-use togi_journal::{Event, Payload};
+use togi_journal::{Event, HuntOutcome, Payload};
 
 use crate::{OutputFacts, Renderer, Style, escape_text, style_for};
 
@@ -393,15 +393,15 @@ fn every_nonplain_style_wraps_the_whole_line_in_owned_sgr() {
 
 #[test]
 fn hunt_end_lines_colour_only_the_wrapper() {
-    for (result, open) in [
-        ("culprit", Some("\x1b[32m")),
-        ("direct", Some("\x1b[32m")),
-        ("combination", Some("\x1b[33m")),
-        ("fallback", Some("\x1b[33m")),
-        ("loaded", Some("\x1b[33m")),
-        ("cancelled", None),
-    ] {
-        let event = hunt_end(result);
+    for &result in HuntOutcome::ALL {
+        let open = match result {
+            HuntOutcome::Culprit | HuntOutcome::Direct => Some("\x1b[32m"),
+            HuntOutcome::Combination | HuntOutcome::Fallback | HuntOutcome::Loaded => {
+                Some("\x1b[33m")
+            }
+            HuntOutcome::Cancelled => None,
+        };
+        let event = hunt_end(result.as_str());
         let no_color = Renderer::new(OutputFacts {
             is_terminal: true,
             no_color: true,
