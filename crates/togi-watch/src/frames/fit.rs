@@ -402,108 +402,60 @@ pub fn rule(width: usize, title: &Line<'_>, right: &Line<'_>, track: Style) -> L
 mod tests {
     use ratatui::style::{Color, Style};
     use ratatui::text::{Line, Span};
+    use test_case::test_case;
 
     use super::{
         CUT_MARKER, Clause, Form, console_text, cut_styled, cut_words, display_width, fit_clauses,
         inert, is_console_glyph, line_width, plain, rule, truncate_styled, wrap_line, wrap_styled,
     };
 
-    #[test]
-    fn cut_words_keeps_whole_words_and_marks_the_cut() {
-        for (name, text, width, want) in [
-            ("fits", "idle until noon", 15, "idle until noon"),
-            (
-                "cut at a word",
-                "so a freeze needs a manual reset",
-                22,
-                "so a freeze needs a...",
-            ),
-            ("never inside a word", "heavy vector load", 13, "heavy..."),
-            (
-                "separator before the marker goes",
-                "31 failures · 8 crashes",
-                17,
-                "31 failures...",
-            ),
-            ("one word that does not fit is omitted", "top", 2, ""),
-            (
-                "a long word that does not fit is omitted",
-                "requester",
-                8,
-                "",
-            ),
-            ("no room", "top", 0, ""),
-            ("width counts cells, not bytes", "██ ██ ██", 7, "██..."),
-            (
-                "marker glyph counts as its console form",
-                "a … b",
-                5,
-                "a...",
-            ),
-        ] {
-            let got = cut_words(text, width);
-            assert_eq!(got, want, "{name}: cut_words({text:?}, {width})");
-            assert!(
-                display_width(&got) <= width,
-                "{name}: {got:?} is wider than {width}"
-            );
-        }
+    #[test_case("idle until noon", 15, "idle until noon"; "fits")]
+    #[test_case("so a freeze needs a manual reset", 22, "so a freeze needs a..."; "cut at a word")]
+    #[test_case("heavy vector load", 13, "heavy..."; "never inside a word")]
+    #[test_case("31 failures · 8 crashes", 17, "31 failures..."; "separator before the marker goes")]
+    #[test_case("top", 2, ""; "one word that does not fit is omitted")]
+    #[test_case("requester", 8, ""; "a long word that does not fit is omitted")]
+    #[test_case("top", 0, ""; "no room")]
+    #[test_case("██ ██ ██", 7, "██..."; "width counts cells, not bytes")]
+    #[test_case("a … b", 5, "a..."; "marker glyph counts as its console form")]
+    fn cut_words_keeps_whole_words_and_marks_the_cut(text: &str, width: usize, want: &str) {
+        let got = cut_words(text, width);
+        assert_eq!(got, want, "cut_words({text:?}, {width})");
+        assert!(
+            display_width(&got) <= width,
+            "{got:?} is wider than {width}"
+        );
     }
 
-    #[test]
-    fn cut_words_with_no_fitting_word_leaves_nothing() {
-        let red = Style::new().fg(Color::Red);
-        for (name, line, width, want) in [
-            ("below marker", Line::from("requester"), 2, ""),
-            ("marker only", Line::from("requester"), 3, ""),
-            ("one cell short", Line::from("requester"), 8, ""),
-            ("exact word", Line::from("requester"), 9, "requester"),
-            (
-                "styled first word",
-                Line::from(Span::styled("requester", red)),
-                8,
-                "",
-            ),
-            (
-                "styled exact word",
-                Line::from(Span::styled("requester", red)),
-                9,
-                "requester",
-            ),
-            (
-                "word fits but marker does not",
-                Line::from("top requester"),
-                5,
-                "",
-            ),
-            (
-                "exact word plus marker",
-                Line::from("top requester"),
-                6,
-                "top...",
-            ),
-            (
-                "styled word plus marker",
-                Line::from(Span::styled("top requester", red)),
-                6,
-                "top...",
-            ),
-            ("console escaped word", Line::from("界"), 5, ""),
-            ("console escaped exact word", Line::from("界"), 6, r"\u754c"),
-        ] {
-            let got = cut_styled(&line, width);
-            assert_eq!(plain(&got), want, "{name}");
-            if want.is_empty() {
-                assert!(
-                    got.spans.is_empty(),
-                    "{name}: no fitting word leaves no marker or styling: {got:?}"
-                );
-            }
+    fn red() -> Style {
+        Style::new().fg(Color::Red)
+    }
+
+    #[test_case(&Line::from("requester"), 2, ""; "below marker")]
+    #[test_case(&Line::from("requester"), 3, ""; "marker only")]
+    #[test_case(&Line::from("requester"), 8, ""; "one cell short")]
+    #[test_case(&Line::from("requester"), 9, "requester"; "exact word")]
+    #[test_case(&Line::from(Span::styled("requester", red())), 8, ""; "styled first word")]
+    #[test_case(&Line::from(Span::styled("requester", red())), 9, "requester"; "styled exact word")]
+    #[test_case(&Line::from("top requester"), 5, ""; "word fits but marker does not")]
+    #[test_case(&Line::from("top requester"), 6, "top..."; "exact word plus marker")]
+    #[test_case(&Line::from(Span::styled("top requester", red())), 6, "top..."; "styled word plus marker")]
+    #[test_case(&Line::from("界"), 5, ""; "console escaped word")]
+    #[test_case(&Line::from("界"), 6, r"\u754c"; "console escaped exact word")]
+    fn cut_words_with_no_fitting_word_leaves_nothing(
+        line: &Line<'static>,
+        width: usize,
+        want: &str,
+    ) {
+        let got = cut_styled(line, width);
+        assert_eq!(plain(&got), want);
+        if want.is_empty() {
             assert!(
-                line_width(&got) <= width,
-                "{name}: cut exceeds {width} cells"
+                got.spans.is_empty(),
+                "no fitting word leaves no marker or styling: {got:?}"
             );
         }
+        assert!(line_width(&got) <= width, "cut exceeds {width} cells");
     }
 
     #[test]
@@ -517,28 +469,24 @@ mod tests {
         assert_eq!(cut.spans[0].style, red);
     }
 
-    #[test]
-    fn the_rule_keeps_whole_title_words() {
-        for (title, width, want) in [
-            ("SOLO LIMITS", 0, ""),
-            ("SOLO LIMITS", 2, ""),
-            ("SOLO LIMITS", 8, "SOLO..."),
-            ("SOLO LIMITS", 10, "SOLO..."),
-            ("SOLO LIMITS", 11, "SOLO LIMITS"),
-            ("REQUESTERS", 8, ""),
-        ] {
-            let line = rule(width, &Line::from(title), &Line::default(), Style::new());
-            assert_eq!(
-                plain(&line).trim_end_matches(['─', ' ']),
-                want,
-                "rule({width}, {title:?})"
-            );
-            assert!(
-                line_width(&line) <= width,
-                "rule exceeds {width} cells: {}",
-                plain(&line)
-            );
-        }
+    #[test_case("SOLO LIMITS", 0, ""; "no room")]
+    #[test_case("SOLO LIMITS", 2, ""; "two cells")]
+    #[test_case("SOLO LIMITS", 8, "SOLO..."; "eight cells")]
+    #[test_case("SOLO LIMITS", 10, "SOLO..."; "one cell short")]
+    #[test_case("SOLO LIMITS", 11, "SOLO LIMITS"; "the whole title")]
+    #[test_case("REQUESTERS", 8, ""; "a word wider than the room")]
+    fn the_rule_keeps_whole_title_words(title: &str, width: usize, want: &str) {
+        let line = rule(width, &Line::from(title), &Line::default(), Style::new());
+        assert_eq!(
+            plain(&line).trim_end_matches(['─', ' ']),
+            want,
+            "rule({width}, {title:?})"
+        );
+        assert!(
+            line_width(&line) <= width,
+            "rule exceeds {width} cells: {}",
+            plain(&line)
+        );
     }
 
     #[test]
@@ -571,22 +519,18 @@ mod tests {
         ]
     }
 
-    #[test]
-    fn fit_clauses_leaves_out_lower_priority_clauses_before_cutting() {
-        for (width, want) in [
-            (40, "returns to -37 · solo -40 · held by C2"),
-            (37, "returns to -37 · solo -40 · C2"),
-            (29, "returns to -37 · solo -40"),
-            (24, "returns to -37"),
-            (14, "returns to -37"),
-            (13, "returns to..."),
-        ] {
-            assert_eq!(
-                plain(&fit_clauses(width, &clauses())),
-                want,
-                "width {width}"
-            );
-        }
+    #[test_case(40, "returns to -37 · solo -40 · held by C2"; "everything fits")]
+    #[test_case(37, "returns to -37 · solo -40 · C2"; "the longest form gives way")]
+    #[test_case(29, "returns to -37 · solo -40"; "the last clause is left out")]
+    #[test_case(24, "returns to -37"; "the second clause is left out")]
+    #[test_case(14, "returns to -37"; "the first clause fits exactly")]
+    #[test_case(13, "returns to..."; "the first clause is cut")]
+    fn fit_clauses_leaves_out_lower_priority_clauses_before_cutting(width: usize, want: &str) {
+        assert_eq!(
+            plain(&fit_clauses(width, &clauses())),
+            want,
+            "width {width}"
+        );
     }
 
     #[test]
@@ -594,20 +538,16 @@ mod tests {
         assert!(fit_clauses(10, &[]).spans.is_empty());
     }
 
-    #[test]
-    fn console_text_replaces_what_the_font_cannot_draw() {
-        for (text, want) in [
-            ("5 × 2m", "5 x 2m"),
-            ("parts…", "parts..."),
-            ("a — b – c", "a - b - c"),
-            ("‘a’ “b”", "'a' \"b\""),
-            ("░▄█ ·►", "░▄█ ·►"),
-            ("Tctl 95°C", "Tctl 95°C"),
-            ("done ✓ 日", r"done \u2713 \u65e5"),
-            ("plain ascii text", "plain ascii text"),
-        ] {
-            assert_eq!(console_text(text), want, "console_text({text:?})");
-        }
+    #[test_case("5 × 2m", "5 x 2m"; "a multiplication sign")]
+    #[test_case("parts…", "parts..."; "an ellipsis")]
+    #[test_case("a — b – c", "a - b - c"; "dashes")]
+    #[test_case("‘a’ “b”", "'a' \"b\""; "curly quotes")]
+    #[test_case("░▄█ ·►", "░▄█ ·►"; "drawable block glyphs")]
+    #[test_case("Tctl 95°C", "Tctl 95°C"; "a degree sign")]
+    #[test_case("done ✓ 日", r"done \u2713 \u65e5"; "glyphs the font lacks")]
+    #[test_case("plain ascii text", "plain ascii text"; "plain ascii")]
+    fn console_text_replaces_what_the_font_cannot_draw(text: &str, want: &str) {
+        assert_eq!(console_text(text), want, "console_text({text:?})");
     }
 
     #[test]

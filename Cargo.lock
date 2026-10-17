@@ -2156,6 +2156,7 @@ dependencies = [
  "rustix",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-journal",
@@ -2172,6 +2173,7 @@ name = "togi-watchtest"
 version = "0.0.0"
 dependencies = [
  "jiff",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-journal",

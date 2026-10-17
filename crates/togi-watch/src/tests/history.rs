@@ -2,6 +2,7 @@
 //! refuse, which is the point: the history must say what the events say.
 
 use jiff::Timestamp;
+use test_case::test_case;
 use togi_journal::{
     CorePhase, CycleEvent, Decision, DeepeningRound, HuntOutcome, Inference, Mce, Member, Outcome,
     Payload, ProfileApplied, RoundEvent, TrialId, TrialProgress, TunerDecision,
@@ -54,113 +55,100 @@ fn reboot_history_during_smu_application() {
     assert_eq!(entries[0].tone, Tone::Bad);
 }
 
-#[test]
-fn reboot_history_during_trial() {
-    struct Case {
-        name: &'static str,
-        signal: Signal,
-        evidence: Option<Payload>,
-        end: &'static str,
-    }
-    let cases = [
-        Case {
-            name: "ordinary crash",
-            signal: Signal::Crash,
-            evidence: None,
-            end: "crash: R2 heavy vector on core 00 at -20 · rebooted · no core named",
-        },
-        Case {
-            name: "retained computation failure",
-            signal: Signal::ComputationError,
-            evidence: Some(
-                TrialProgress {
-                    trial: trial_id("trial"),
-                    detail: String::new(),
-                    signal: Some(Signal::ComputationError),
-                    core: Some(core(0)),
-                }
-                .into(),
-            ),
-            end: "fail: R2 heavy vector on core 00 at -20 · wrong result · no core named",
-        },
-        Case {
-            name: "retained corrected MCE",
-            signal: Signal::CorrectedMce,
-            evidence: Some(mce(true)),
-            end: "fail: R2 heavy vector on core 00 at -20 · corrected hardware error · no core named",
-        },
-        Case {
-            name: "retained uncorrected MCE",
-            signal: Signal::UncorrectedMce,
-            evidence: Some(mce(false)),
-            end: "fail: R2 heavy vector on core 00 at -20 · uncorrected hardware error · no core named",
-        },
-    ];
-    for case in cases {
-        let mut h = Hist::three();
-        let mut trial = intent(
-            "trial",
-            Regime::R2,
-            Condition::Together,
-            &[-20, -10, -10],
-            &[],
-        );
-        trial.core = Some(core(0));
-        let intent_seq = h.push(trial.into());
-        h.push(applied());
-        h.push(
-            togi_journal::TrialStart {
-                trial: trial_id("trial"),
-                window_start_ns: None,
-                scope: String::new(),
-                pid: 1,
-                cpus: Vec::new(),
-                argv: Vec::new(),
-                files: Vec::new(),
-                instances: Vec::new(),
-            }
-            .into(),
-        );
-        let evidence_seq = case.evidence.clone().map(|payload| h.push(payload));
-        h.boot = "next".to_owned();
-        let crash_seq = h.push(crash("boot", Some(intent_seq)).into());
-        assert_eq!(
-            h.sentences(),
-            [
-                "start: session started on 3 cores",
-                "crash: with the offsets applied, rebooted"
-            ],
-            "{}: a reboot is visible before the trial end is appended",
-            case.name
-        );
-        let cause = [intent_seq, evidence_seq.unwrap_or(crash_seq)];
-        let mut end = end_payload(&trial_id("trial"), Outcome::Failure, Some(case.signal));
-        end.interrupted = case.evidence.is_some();
-        h.push_with(end.into(), &cause);
-        let mut failed = failure(case.signal, Some("trial"));
-        failed.regime = Some(Regime::R2);
-        h.push(failed.into());
-        let mut want = vec!["start: session started on 3 cores"];
-        if case.evidence.is_some() {
-            want.push("crash: with the offsets applied, rebooted");
+#[test_case(
+    Signal::Crash,
+    None,
+    "crash: R2 heavy vector on core 00 at -20 · rebooted · no core named";
+    "ordinary crash"
+)]
+#[test_case(
+    Signal::ComputationError,
+    Some(
+        TrialProgress {
+            trial: trial_id("trial"),
+            detail: String::new(),
+            signal: Some(Signal::ComputationError),
+            core: Some(core(0)),
         }
-        want.push(case.end);
-        assert_eq!(
-            h.sentences(),
-            want,
-            "{}: only a crash outcome represents the reboot",
-            case.name
-        );
-        let (entries, _) = h.facts.history.recent();
-        let reboot = &entries[usize::from(case.evidence.is_some())];
-        assert_eq!(reboot.reboot(), Some(crash_seq), "{}", case.name);
-        assert_eq!(
-            reboot.at,
-            Timestamp::from_second(1000 + i64::try_from(crash_seq.get()).unwrap()).unwrap(),
-            "{}: the reboot keeps its original time",
-            case.name
-        );
+        .into(),
+    ),
+    "fail: R2 heavy vector on core 00 at -20 · wrong result · no core named";
+    "retained computation failure"
+)]
+#[test_case(
+    Signal::CorrectedMce,
+    Some(mce(true)),
+    "fail: R2 heavy vector on core 00 at -20 · corrected hardware error · no core named";
+    "retained corrected MCE"
+)]
+#[test_case(
+    Signal::UncorrectedMce,
+    Some(mce(false)),
+    "fail: R2 heavy vector on core 00 at -20 · uncorrected hardware error · no core named";
+    "retained uncorrected MCE"
+)]
+fn reboot_history_during_trial(signal: Signal, evidence: Option<Payload>, end_sentence: &str) {
+    let retained = evidence.is_some();
+    let mut h = Hist::three();
+    let mut trial = intent(
+        "trial",
+        Regime::R2,
+        Condition::Together,
+        &[-20, -10, -10],
+        &[],
+    );
+    trial.core = Some(core(0));
+    let intent_seq = h.push(trial.into());
+    h.push(applied());
+    h.push(
+        togi_journal::TrialStart {
+            trial: trial_id("trial"),
+            window_start_ns: None,
+            scope: String::new(),
+            pid: 1,
+            cpus: Vec::new(),
+            argv: Vec::new(),
+            files: Vec::new(),
+            instances: Vec::new(),
+        }
+        .into(),
+    );
+    let evidence_seq = evidence.map(|payload| h.push(payload));
+    h.boot = "next".to_owned();
+    let crash_seq = h.push(crash("boot", Some(intent_seq)).into());
+    assert_eq!(
+        h.sentences(),
+        [
+            "start: session started on 3 cores",
+            "crash: with the offsets applied, rebooted"
+        ],
+        "a reboot is visible before the trial end is appended"
+    );
+    let cause = [intent_seq, evidence_seq.unwrap_or(crash_seq)];
+    let mut end = end_payload(&trial_id("trial"), Outcome::Failure, Some(signal));
+    end.interrupted = retained;
+    h.push_with(end.into(), &cause);
+    let mut failed = failure(signal, Some("trial"));
+    failed.regime = Some(Regime::R2);
+    h.push(failed.into());
+    let mut want = vec!["start: session started on 3 cores"];
+    if retained {
+        want.push("crash: with the offsets applied, rebooted");
     }
+    want.push(end_sentence);
+    assert_eq!(
+        h.sentences(),
+        want,
+        "only a crash outcome represents the reboot"
+    );
+    let (entries, _) = h.facts.history.recent();
+    let reboot = &entries[usize::from(retained)];
+    assert_eq!(reboot.reboot(), Some(crash_seq));
+    assert_eq!(
+        reboot.at,
+        Timestamp::from_second(1000 + i64::try_from(crash_seq.get()).unwrap()).unwrap(),
+        "the reboot keeps its original time"
+    );
 }
 
 fn mce(corrected: bool) -> Payload {
@@ -254,38 +242,34 @@ fn reboot_history_requires_matching_cause() {
     );
 }
 
-#[test]
-fn fallback_history() {
-    for (name, result, fallback, want) in [
-        (
-            "unresolved fallback",
-            HuntOutcome::Fallback,
-            true,
-            [
-                "start: session started on 3 cores",
-                "combo: C1 over 00 02 · hunt 3 unresolved",
-                "hunt: #3 done · 00 02 unresolved",
-            ],
-        ),
-        (
-            "proven combination",
-            HuntOutcome::Combination,
-            false,
-            [
-                "start: session started on 3 cores",
-                "combo: C1: 00 -20  02 -10",
-                "hunt: #3 done · 00 02 kept together",
-            ],
-        ),
-    ] {
-        let mut h = Hist::three();
-        h.push(combination(1, 3, &[(0, -20), (2, -10)], fallback).into());
-        h.push(hunt_end(3, result, &[0, 2]).into());
-        assert_eq!(h.sentences(), want, "{name}");
-        let (entries, _) = h.facts.history.recent();
-        assert_eq!(entries[1].tone, Tone::Combo, "{name}");
-        assert_eq!(entries[0].tone, Tone::Warn, "{name}");
-    }
+#[test_case(
+    HuntOutcome::Fallback,
+    true,
+    [
+        "start: session started on 3 cores",
+        "combo: C1 over 00 02 · hunt 3 unresolved",
+        "hunt: #3 done · 00 02 unresolved",
+    ];
+    "unresolved fallback"
+)]
+#[test_case(
+    HuntOutcome::Combination,
+    false,
+    [
+        "start: session started on 3 cores",
+        "combo: C1: 00 -20  02 -10",
+        "hunt: #3 done · 00 02 kept together",
+    ];
+    "proven combination"
+)]
+fn fallback_history(result: HuntOutcome, fallback: bool, want: [&str; 3]) {
+    let mut h = Hist::three();
+    h.push(combination(1, 3, &[(0, -20), (2, -10)], fallback).into());
+    h.push(hunt_end(3, result, &[0, 2]).into());
+    assert_eq!(h.sentences(), want);
+    let (entries, _) = h.facts.history.recent();
+    assert_eq!(entries[1].tone, Tone::Combo);
+    assert_eq!(entries[0].tone, Tone::Warn);
 }
 
 #[test]
@@ -459,26 +443,22 @@ fn inferred_group_answers_do_not_hide_outcome_changes() {
     );
 }
 
-#[test]
-fn tally_never_counts_past_the_requirement() {
-    for (first, runs, of, want) in [
-        (1, 4, 4, "4 of 4"),
-        (1, 3, 4, "trials 1-3 of 4"),
-        (2, 1, 4, "trial 2 of 4"),
-        (2, 4, 5, "trials 2-5 of 5"),
-        (2, 5, 5, "5"),
-        (1, 1, 1, "1"),
-    ] {
-        let passes = Passes {
-            subject: String::new(),
-            runs,
-            first,
-            of,
-            peak: None,
-            within: None,
-        };
-        assert_eq!(passes.tally(), want, "first {first}, runs {runs}, of {of}");
-    }
+#[test_case(1, 4, 4, "4 of 4"; "a full requirement")]
+#[test_case(1, 3, 4, "trials 1-3 of 4"; "a range short of the requirement")]
+#[test_case(2, 1, 4, "trial 2 of 4"; "one later trial")]
+#[test_case(2, 4, 5, "trials 2-5 of 5"; "a range that ends at the requirement")]
+#[test_case(2, 5, 5, "5"; "a run past the requirement counts only the requirement")]
+#[test_case(1, 1, 1, "1"; "a single required trial")]
+fn tally_never_counts_past_the_requirement(first: u32, runs: u32, of: u32, want: &str) {
+    let passes = Passes {
+        subject: String::new(),
+        runs,
+        first,
+        of,
+        peak: None,
+        within: None,
+    };
+    assert_eq!(passes.tally(), want, "first {first}, runs {runs}, of {of}");
 }
 
 #[test]

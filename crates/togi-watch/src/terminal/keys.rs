@@ -193,6 +193,7 @@ mod tests {
     use super::{Decoder, Key, decode, press};
     use crate::frames::body_rows;
     use crate::screen::{Colours, Quit, Screen, View};
+    use test_case::test_case;
 
     const FOLLOW: usize = usize::MAX;
 
@@ -219,240 +220,86 @@ mod tests {
         }
     }
 
-    struct Case {
-        name: &'static str,
+    #[test_case(screen(View::Main, 3, 0), Key::Char('?'), 0, View::Help, 0; "question mark opens the help at its top")]
+    #[test_case(screen(View::Help, 4, 0), Key::Char('?'), 9, View::Main, 0; "question mark closes the help")]
+    #[test_case(screen(View::Main, 0, 0), Key::Char('L'), 0, View::Log, FOLLOW; "capital l opens the log at its end")]
+    #[test_case(screen(View::Log, 0, 0), Key::Char('l'), 0, View::Main, 0; "l closes the log")]
+    #[test_case(screen(View::Help, 2, 0), Key::Char('l'), 9, View::Log, FOLLOW; "l from the help opens the log")]
+    #[test_case(screen(View::Log, 5, 0), Key::Esc, 9, View::Main, 0; "esc returns to the main view")]
+    #[test_case(screen(View::Cores, 5, 0), Key::Char('m'), 9, View::Main, 0; "m returns to the main view")]
+    #[test_case(screen(View::Main, 6, 0), Key::Esc, 20, View::Main, 6; "esc on the main view leaves its scroll alone")]
+    #[test_case(screen(View::Help, 0, 0), Key::Down, 9, View::Help, 1; "down scrolls the help one line")]
+    #[test_case(screen(View::Help, 9, 0), Key::Char('j'), 9, View::Help, 9; "j stops at the end")]
+    #[test_case(screen(View::Log, FOLLOW, 0), Key::Up, 9, View::Log, 8; "up from the log's end leaves it")]
+    #[test_case(screen(View::Log, 8, 0), Key::Down, 9, View::Log, FOLLOW; "down to the log's end follows it again")]
+    #[test_case(screen(View::Help, 5, 30), Key::PageUp, 90, View::Help, 0; "page up stops at the top")]
+    #[test_case(screen(View::Log, FOLLOW, 0), Key::Char('g'), 9, View::Log, 0; "g goes to the top")]
+    #[test_case(screen(View::Help, 0, 0), Key::End, 9, View::Help, 9; "end goes to the help's end")]
+    #[test_case(screen(View::Help, 50, 0), Key::Up, 9, View::Help, 8; "a scroll beyond the content clamps first")]
+    #[test_case(screen(View::Main, 0, 0), Key::Down, 0, View::Main, 0; "a main view that fits does not scroll")]
+    #[test_case(screen(View::Main, 3, 0), Key::Down, 20, View::Main, 4; "a main view that does not fit scrolls by the extent the frame reports")]
+    #[test_case(screen(View::Main, 20, 0), Key::End, 20, View::Main, 20; "the compact main view stops at its end")]
+    #[test_case(screen(View::Help, 2, 0), Key::Char('x'), 9, View::Help, 2; "other keys change nothing")]
+    fn press_maps_each_key_to_its_view_and_scroll(
         from: Screen,
         key: Key,
         scrolled: usize,
         view: View,
         scroll: usize,
+    ) {
+        let (got, quit) = press(from, key, scrolled);
+        assert!(!quit);
+        assert_eq!((got.view, got.scroll), (view, scroll));
+        assert_eq!(
+            (got.width, got.height, got.keys),
+            (from.width, from.height, true),
+            "the terminal's size and the keys survive"
+        );
     }
 
-    #[test]
-    fn press_maps_every_key_of_go_test_press() {
-        let follow = usize::MAX;
-        let cases = [
-            Case {
-                name: "? opens the help at its top",
-                from: screen(View::Main, 3, 0),
-                key: Key::Char('?'),
-                scrolled: 0,
-                view: View::Help,
-                scroll: 0,
-            },
-            Case {
-                name: "? closes the help",
-                from: screen(View::Help, 4, 0),
-                key: Key::Char('?'),
-                scrolled: 9,
-                view: View::Main,
-                scroll: 0,
-            },
-            Case {
-                name: "L opens the log at its end",
-                from: screen(View::Main, 0, 0),
-                key: Key::Char('L'),
-                scrolled: 0,
-                view: View::Log,
-                scroll: follow,
-            },
-            Case {
-                name: "l closes the log",
-                from: screen(View::Log, 0, 0),
-                key: Key::Char('l'),
-                scrolled: 0,
-                view: View::Main,
-                scroll: 0,
-            },
-            Case {
-                name: "l from the help opens the log",
-                from: screen(View::Help, 2, 0),
-                key: Key::Char('l'),
-                scrolled: 9,
-                view: View::Log,
-                scroll: follow,
-            },
-            Case {
-                name: "Esc returns to the main view",
-                from: screen(View::Log, 5, 0),
-                key: Key::Esc,
-                scrolled: 9,
-                view: View::Main,
-                scroll: 0,
-            },
-            Case {
-                name: "m returns to the main view",
-                from: screen(View::Cores, 5, 0),
-                key: Key::Char('m'),
-                scrolled: 9,
-                view: View::Main,
-                scroll: 0,
-            },
-            Case {
-                name: "Esc on the main view leaves its scroll alone",
-                from: screen(View::Main, 6, 0),
-                key: Key::Esc,
-                scrolled: 20,
-                view: View::Main,
-                scroll: 6,
-            },
-            Case {
-                name: "down scrolls the help one line",
-                from: screen(View::Help, 0, 0),
-                key: Key::Down,
-                scrolled: 9,
-                view: View::Help,
-                scroll: 1,
-            },
-            Case {
-                name: "j stops at the end",
-                from: screen(View::Help, 9, 0),
-                key: Key::Char('j'),
-                scrolled: 9,
-                view: View::Help,
-                scroll: 9,
-            },
-            Case {
-                name: "up from the log's end leaves it",
-                from: screen(View::Log, follow, 0),
-                key: Key::Up,
-                scrolled: 9,
-                view: View::Log,
-                scroll: 8,
-            },
-            Case {
-                name: "down to the log's end follows it again",
-                from: screen(View::Log, 8, 0),
-                key: Key::Down,
-                scrolled: 9,
-                view: View::Log,
-                scroll: follow,
-            },
-            Case {
-                name: "page up stops at the top",
-                from: screen(View::Help, 5, 30),
-                key: Key::PageUp,
-                scrolled: 90,
-                view: View::Help,
-                scroll: 0,
-            },
-            Case {
-                name: "g goes to the top",
-                from: screen(View::Log, follow, 0),
-                key: Key::Char('g'),
-                scrolled: 9,
-                view: View::Log,
-                scroll: 0,
-            },
-            Case {
-                name: "End goes to the help's end",
-                from: screen(View::Help, 0, 0),
-                key: Key::End,
-                scrolled: 9,
-                view: View::Help,
-                scroll: 9,
-            },
-            Case {
-                name: "a scroll beyond the content clamps first",
-                from: screen(View::Help, 50, 0),
-                key: Key::Up,
-                scrolled: 9,
-                view: View::Help,
-                scroll: 8,
-            },
-            Case {
-                name: "a main view that fits does not scroll",
-                from: screen(View::Main, 0, 0),
-                key: Key::Down,
-                scrolled: 0,
-                view: View::Main,
-                scroll: 0,
-            },
-            Case {
-                name: "a main view that does not fit scrolls by the extent the frame reports",
-                from: screen(View::Main, 3, 0),
-                key: Key::Down,
-                scrolled: 20,
-                view: View::Main,
-                scroll: 4,
-            },
-            Case {
-                name: "the compact main view stops at its end",
-                from: screen(View::Main, 20, 0),
-                key: Key::End,
-                scrolled: 20,
-                view: View::Main,
-                scroll: 20,
-            },
-            Case {
-                name: "other keys change nothing",
-                from: screen(View::Help, 2, 0),
-                key: Key::Char('x'),
-                scrolled: 9,
-                view: View::Help,
-                scroll: 2,
-            },
-        ];
-        for case in cases {
-            let (got, quit) = press(case.from, case.key, case.scrolled);
-            assert!(!quit, "{}: quit", case.name);
-            assert_eq!(
-                (got.view, got.scroll),
-                (case.view, case.scroll),
-                "{}",
-                case.name
-            );
-            assert_eq!(
-                (got.width, got.height, got.keys),
-                (case.from.width, case.from.height, true),
-                "{}: the terminal's size and the keys survive",
-                case.name
-            );
-        }
-    }
-
-    #[test]
-    fn left_and_right_walk_the_nine_pages_with_wrap_from_every_page() {
+    #[test_case(Key::Right, 1; "right walks to the next page")]
+    #[test_case(Key::Left, 8; "left walks to the previous page")]
+    fn an_arrow_walks_the_nine_pages_with_wrap_from_every_page(key: Key, step: usize) {
         assert_eq!(View::ALL.len(), 9);
         for (at, view) in View::ALL.into_iter().enumerate() {
-            let next = View::ALL[(at + 1) % 9];
-            let prev = View::ALL[(at + 8) % 9];
+            let want = View::ALL[(at + step) % 9];
             for scroll in [0, 7, FOLLOW] {
                 let from = screen(view, scroll, 24);
-                for (key, want) in [(Key::Right, next), (Key::Left, prev)] {
-                    let (got, quit) = press(from, key, 40);
-                    assert!(!quit);
-                    assert_eq!(got.view, want, "{view:?} {key:?}");
-                    assert_eq!(
-                        got.scroll,
-                        opening(want),
-                        "{view:?} {key:?} from scroll {scroll}: the new page opens where pages open"
-                    );
-                    assert_eq!(
-                        (got.width, got.height, got.keys, got.quit),
-                        (from.width, from.height, true, from.quit)
-                    );
-                }
+                let (got, quit) = press(from, key, 40);
+                assert!(!quit);
+                assert_eq!(got.view, want, "{view:?} {key:?}");
+                assert_eq!(
+                    got.scroll,
+                    opening(want),
+                    "{view:?} {key:?} from scroll {scroll}: the new page opens where pages open"
+                );
+                assert_eq!(
+                    (got.width, got.height, got.keys, got.quit),
+                    (from.width, from.height, true, from.quit)
+                );
             }
         }
     }
 
-    #[test]
-    fn nine_arrows_either_way_visit_every_page_once_and_come_home() {
-        for key in [Key::Right, Key::Left] {
-            for start in View::ALL {
-                let mut now = screen(start, 0, 24);
-                let mut seen = vec![now.view];
-                for _ in 0..9 {
-                    now = press(now, key, 40).0;
-                    seen.push(now.view);
-                }
-                assert_eq!(now.view, start, "{key:?} from {start:?}");
-                seen.pop();
-                seen.sort_by_key(|view| view.number());
-                assert_eq!(seen, View::ALL, "{key:?} from {start:?}");
+    #[test_case(Key::Right; "right")]
+    #[test_case(Key::Left; "left")]
+    fn nine_arrows_visit_every_page_once_and_come_home(key: Key) {
+        for start in View::ALL {
+            let mut now = screen(start, 0, 24);
+            let mut seen = vec![now.view];
+            for _ in 0..9 {
+                now = press(now, key, 40).0;
+                seen.push(now.view);
             }
+            assert_eq!(now.view, start, "{key:?} from {start:?}");
+            seen.pop();
+            seen.sort_by_key(|view| view.number());
+            assert_eq!(seen, View::ALL, "{key:?} from {start:?}");
         }
+    }
+
+    #[test]
+    fn left_from_main_wraps_to_the_last_page_and_right_returns() {
         let main = press(screen(View::Main, 0, 24), Key::Left, 0).0;
         assert_eq!(
             main.view,
@@ -462,85 +309,129 @@ mod tests {
         assert_eq!(press(main, Key::Right, 0).0.view, View::Main);
     }
 
-    #[test]
-    fn every_shortcut_opens_its_page_and_returns_to_main_on_its_own_page() {
+    #[test_case('?', View::Help; "question mark opens the help")]
+    #[test_case('h', View::Help; "h opens the help")]
+    #[test_case('H', View::Help; "capital h opens the help")]
+    #[test_case('l', View::Log; "l opens the log")]
+    #[test_case('L', View::Log; "capital l opens the log")]
+    fn a_shortcut_opens_its_page_and_returns_to_main_on_its_own_page(key: char, target: View) {
         for view in View::ALL {
             for scroll in [0, 6, FOLLOW] {
                 let from = screen(view, scroll, 24);
-                for (keys, target) in [(['?', 'h', 'H'], View::Help), (['l', 'L', 'l'], View::Log)]
-                {
-                    for key in keys {
-                        let (got, quit) = press(from, Key::Char(key), 40);
-                        assert!(!quit);
-                        let want = if view == target {
-                            (View::Main, 0)
-                        } else {
-                            (target, opening(target))
-                        };
-                        assert_eq!(
-                            (got.view, got.scroll),
-                            want,
-                            "{key:?} on {view:?} at {scroll}"
-                        );
-                    }
-                }
-                for key in [Key::Esc, Key::Char('m')] {
-                    let (got, quit) = press(from, key, 40);
-                    assert!(!quit);
-                    let want_scroll = if view == View::Main { from.scroll } else { 0 };
-                    assert_eq!(
-                        (got.view, got.scroll),
-                        (View::Main, want_scroll),
-                        "{key:?} on {view:?} at {scroll}"
-                    );
-                }
+                let (got, quit) = press(from, Key::Char(key), 40);
+                assert!(!quit);
+                let want = if view == target {
+                    (View::Main, 0)
+                } else {
+                    (target, opening(target))
+                };
+                assert_eq!(
+                    (got.view, got.scroll),
+                    want,
+                    "{key:?} on {view:?} at {scroll}"
+                );
             }
         }
     }
 
-    #[test]
-    fn every_scroll_key_scrolls_every_page_and_never_changes_it() {
-        let extent = 400;
+    #[test_case(Key::Esc; "escape")]
+    #[test_case(Key::Char('m'); "m")]
+    fn a_return_key_goes_to_main_and_keeps_the_main_scroll(key: Key) {
+        for view in View::ALL {
+            for scroll in [0, 6, FOLLOW] {
+                let from = screen(view, scroll, 24);
+                let (got, quit) = press(from, key, 40);
+                assert!(!quit);
+                let want_scroll = if view == View::Main { from.scroll } else { 0 };
+                assert_eq!(
+                    (got.view, got.scroll),
+                    (View::Main, want_scroll),
+                    "{key:?} on {view:?} at {scroll}"
+                );
+            }
+        }
+    }
+
+    const EXTENT: usize = 400;
+
+    /// Presses `key` on every page at three sizes, checking that it stays on the page, and passes `check` the scroll
+    /// `key` reaches from a given scroll, the page step, the page's end and a label naming the case.
+    fn on_every_page(key: Key, check: impl Fn(&dyn Fn(usize) -> usize, usize, usize, &str)) {
         for view in View::ALL {
             for (width, height) in [(80, 24), (160, 45), (240, 67)] {
                 let base = Screen {
                     width,
                     ..screen(view, 0, height)
                 };
-                let page = page(&base);
-                let at = |scroll| Screen { scroll, ..base };
-                let after = |from: Screen, key| {
-                    let (got, quit) = press(from, key, extent);
+                let after = |scroll| {
+                    let (got, quit) = press(Screen { scroll, ..base }, key, EXTENT);
                     assert!(!quit);
                     assert_eq!(got.view, view, "{key:?} changed the page");
                     got.scroll
                 };
-                let last = if view == View::Log { FOLLOW } else { extent };
-                for key in [Key::Down, Key::Char('j')] {
-                    assert_eq!(after(at(10), key), 11, "{view:?} {key:?}");
-                    assert_eq!(after(at(extent - 1), key), last, "{view:?} {key:?} end");
-                }
-                for key in [Key::Up, Key::Char('k')] {
-                    assert_eq!(after(at(10), key), 9, "{view:?} {key:?}");
-                    assert_eq!(after(at(0), key), 0, "{view:?} {key:?} top");
-                }
-                for key in [Key::PageDown, Key::Char(' '), Key::Char('f')] {
-                    assert_eq!(after(at(10), key), 10 + page, "{view:?} {key:?} {height}");
-                    assert_eq!(after(at(extent - 1), key), last, "{view:?} {key:?} end");
-                }
-                for key in [Key::PageUp, Key::Char('b')] {
-                    assert_eq!(after(at(100), key), 100 - page, "{view:?} {key:?} {height}");
-                    assert_eq!(after(at(1), key), 0, "{view:?} {key:?} top");
-                }
-                for key in [Key::Home, Key::Char('g')] {
-                    assert_eq!(after(at(77), key), 0, "{view:?} {key:?}");
-                    assert_eq!(after(at(FOLLOW), key), 0, "{view:?} {key:?} from the end");
-                }
-                for key in [Key::End, Key::Char('G')] {
-                    assert_eq!(after(at(3), key), last, "{view:?} {key:?}");
-                }
+                let last = if view == View::Log { FOLLOW } else { EXTENT };
+                check(
+                    &after,
+                    page(&base),
+                    last,
+                    &format!("{view:?} {key:?} {height}"),
+                );
             }
         }
+    }
+
+    #[test_case(Key::Down; "down")]
+    #[test_case(Key::Char('j'); "j")]
+    fn a_line_down_key_scrolls_one_line_to_the_end(key: Key) {
+        on_every_page(key, |after, _, last, case| {
+            assert_eq!(after(10), 11, "{case}");
+            assert_eq!(after(EXTENT - 1), last, "{case} end");
+        });
+    }
+
+    #[test_case(Key::Up; "up")]
+    #[test_case(Key::Char('k'); "k")]
+    fn a_line_up_key_scrolls_one_line_to_the_top(key: Key) {
+        on_every_page(key, |after, _, _, case| {
+            assert_eq!(after(10), 9, "{case}");
+            assert_eq!(after(0), 0, "{case} top");
+        });
+    }
+
+    #[test_case(Key::PageDown; "page down")]
+    #[test_case(Key::Char(' '); "space")]
+    #[test_case(Key::Char('f'); "f")]
+    fn a_page_down_key_scrolls_one_page_to_the_end(key: Key) {
+        on_every_page(key, |after, page, last, case| {
+            assert_eq!(after(10), 10 + page, "{case}");
+            assert_eq!(after(EXTENT - 1), last, "{case} end");
+        });
+    }
+
+    #[test_case(Key::PageUp; "page up")]
+    #[test_case(Key::Char('b'); "b")]
+    fn a_page_up_key_scrolls_one_page_to_the_top(key: Key) {
+        on_every_page(key, |after, page, _, case| {
+            assert_eq!(after(100), 100 - page, "{case}");
+            assert_eq!(after(1), 0, "{case} top");
+        });
+    }
+
+    #[test_case(Key::Home; "home")]
+    #[test_case(Key::Char('g'); "g")]
+    fn a_home_key_goes_to_the_top(key: Key) {
+        on_every_page(key, |after, _, _, case| {
+            assert_eq!(after(77), 0, "{case}");
+            assert_eq!(after(FOLLOW), 0, "{case} from the end");
+        });
+    }
+
+    #[test_case(Key::End; "end")]
+    #[test_case(Key::Char('G'); "capital g")]
+    fn an_end_key_goes_to_the_end(key: Key) {
+        on_every_page(key, |after, _, last, case| {
+            assert_eq!(after(3), last, "{case}");
+        });
     }
 
     #[test]
@@ -568,77 +459,76 @@ mod tests {
         );
     }
 
-    #[test]
-    fn plus_and_minus_do_nothing_on_every_page() {
+    #[test_case('+'; "plus")]
+    #[test_case('-'; "minus")]
+    #[test_case('='; "equals")]
+    #[test_case('_'; "underscore")]
+    fn zoom_keys_do_nothing_on_every_page(key: char) {
         for view in View::ALL {
             for scroll in [0, 4, FOLLOW] {
-                for key in ['+', '-', '=', '_'] {
-                    let from = screen(view, scroll, 30);
-                    assert_eq!(
-                        press(from, Key::Char(key), 90),
-                        (from, false),
-                        "{key:?} on {view:?}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn quit_keys_quit_and_change_nothing_on_every_page() {
-        for view in View::ALL {
-            for key in ['q', 'Q', '\x03', '\x04'] {
-                let from = screen(view, 3, 20);
-                let (got, quit) = press(from, Key::Char(key), 9);
-                assert!(quit, "{view:?} {key:?}");
-                assert_eq!(got, from);
-            }
-        }
-    }
-
-    #[test]
-    fn the_tuning_boot_ignores_every_quit_key_on_every_page_and_scroll() {
-        for view in View::ALL {
-            for scroll in [0, 3, FOLLOW] {
-                for key in ['q', 'Q', '\x03', '\x04'] {
-                    let from = Screen {
-                        quit: Quit::Ignored,
-                        ..screen(view, scroll, 20)
-                    };
-                    let (got, quit) = press(from, Key::Char(key), 9);
-                    assert!(!quit, "{view:?} scroll {scroll} {key:?} quit");
-                    assert_eq!(
-                        got, from,
-                        "{view:?} scroll {scroll} {key:?} changed the screen"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn letter_aliases_act_like_the_named_keys_on_every_page() {
-        for view in View::ALL {
-            let from = screen(view, 10, 30);
-            for (alias, named) in [
-                ('k', Key::Up),
-                ('j', Key::Down),
-                ('b', Key::PageUp),
-                (' ', Key::PageDown),
-                ('f', Key::PageDown),
-                ('g', Key::Home),
-                ('G', Key::End),
-                ('h', Key::Char('?')),
-                ('H', Key::Char('?')),
-                ('L', Key::Char('l')),
-                ('m', Key::Esc),
-            ] {
+                let from = screen(view, scroll, 30);
                 assert_eq!(
-                    press(from, Key::Char(alias), 90),
-                    press(from, named, 90),
-                    "{alias:?} on {view:?}"
+                    press(from, Key::Char(key), 90),
+                    (from, false),
+                    "{key:?} on {view:?}"
                 );
             }
+        }
+    }
+
+    #[test_case('q'; "q")]
+    #[test_case('Q'; "capital q")]
+    #[test_case('\x03'; "ctrl c")]
+    #[test_case('\x04'; "ctrl d")]
+    fn a_quit_key_quits_and_changes_nothing_on_every_page(key: char) {
+        for view in View::ALL {
+            let from = screen(view, 3, 20);
+            let (got, quit) = press(from, Key::Char(key), 9);
+            assert!(quit, "{view:?} {key:?}");
+            assert_eq!(got, from);
+        }
+    }
+
+    #[test_case('q'; "q")]
+    #[test_case('Q'; "capital q")]
+    #[test_case('\x03'; "ctrl c")]
+    #[test_case('\x04'; "ctrl d")]
+    fn the_tuning_boot_ignores_a_quit_key_on_every_page_and_scroll(key: char) {
+        for view in View::ALL {
+            for scroll in [0, 3, FOLLOW] {
+                let from = Screen {
+                    quit: Quit::Ignored,
+                    ..screen(view, scroll, 20)
+                };
+                let (got, quit) = press(from, Key::Char(key), 9);
+                assert!(!quit, "{view:?} scroll {scroll} {key:?} quit");
+                assert_eq!(
+                    got, from,
+                    "{view:?} scroll {scroll} {key:?} changed the screen"
+                );
+            }
+        }
+    }
+
+    #[test_case('k', Key::Up; "k is up")]
+    #[test_case('j', Key::Down; "j is down")]
+    #[test_case('b', Key::PageUp; "b is page up")]
+    #[test_case(' ', Key::PageDown; "space is page down")]
+    #[test_case('f', Key::PageDown; "f is page down")]
+    #[test_case('g', Key::Home; "g is home")]
+    #[test_case('G', Key::End; "capital g is end")]
+    #[test_case('h', Key::Char('?'); "h is the help key")]
+    #[test_case('H', Key::Char('?'); "capital h is the help key")]
+    #[test_case('L', Key::Char('l'); "capital l is the log key")]
+    #[test_case('m', Key::Esc; "m is escape")]
+    fn a_letter_alias_acts_like_the_named_key_on_every_page(alias: char, named: Key) {
+        for view in View::ALL {
+            let from = screen(view, 10, 30);
+            assert_eq!(
+                press(from, Key::Char(alias), 90),
+                press(from, named, 90),
+                "{alias:?} on {view:?}"
+            );
         }
     }
 
@@ -652,82 +542,66 @@ mod tests {
         assert_eq!(press(from, Key::PageDown, 90).0.scroll, FOLLOW);
     }
 
-    #[test]
-    fn decode_maps_every_case_of_go_test_decode_keys() {
-        let c = Key::Char;
-        for (input, want) in [
-            ("?", vec![c('?')]),
-            ("\x1b", vec![Key::Esc]),
-            ("\x1b[A\x1b[B", vec![Key::Up, Key::Down]),
-            ("\x1bOA", vec![Key::Up]),
-            ("\x1b[C\x1b[D", vec![Key::Right, Key::Left]),
-            ("\x1bOC\x1bOD", vec![Key::Right, Key::Left]),
-            ("\x1b[D\x1bOCq", vec![Key::Left, Key::Right, c('q')]),
-            ("\x1b[5~\x1b[6~", vec![Key::PageUp, Key::PageDown]),
-            (
-                "\x1b[1~\x1b[4~\x1b[H\x1b[F",
-                vec![Key::Home, Key::End, Key::Home, Key::End],
-            ),
-            ("\x1b[15~q", vec![c('q')]),
-            ("\x1bq", vec![Key::Esc, c('q')]),
-            ("\x1b[", vec![]),
-        ] {
-            assert_eq!(decode(input.as_bytes()), want, "{input:?}");
-        }
+    #[test_case("?", &[Key::Char('?')]; "a printable character")]
+    #[test_case("\x1b", &[Key::Esc]; "a lone escape")]
+    #[test_case("\x1b[A\x1b[B", &[Key::Up, Key::Down]; "csi up and down")]
+    #[test_case("\x1bOA", &[Key::Up]; "ss3 up")]
+    #[test_case("\x1b[C\x1b[D", &[Key::Right, Key::Left]; "csi right and left")]
+    #[test_case("\x1bOC\x1bOD", &[Key::Right, Key::Left]; "ss3 right and left")]
+    #[test_case("\x1b[D\x1bOCq", &[Key::Left, Key::Right, Key::Char('q')]; "mixed csi and ss3 arrows then a character")]
+    #[test_case("\x1b[5~\x1b[6~", &[Key::PageUp, Key::PageDown]; "page up and page down")]
+    #[test_case("\x1b[1~\x1b[4~\x1b[H\x1b[F", &[Key::Home, Key::End, Key::Home, Key::End]; "home and end in every form")]
+    #[test_case("\x1b[15~q", &[Key::Char('q')]; "an unmapped tilde sequence is dropped")]
+    #[test_case("\x1bq", &[Key::Esc, Key::Char('q')]; "escape then a character")]
+    #[test_case("\x1b[", &[]; "an unfinished sequence yields nothing")]
+    fn decode_maps_input_bytes_to_keys(input: &str, want: &[Key]) {
+        assert_eq!(decode(input.as_bytes()), want);
     }
 
-    #[test]
-    fn every_sequence_decodes_at_every_split_point() {
-        for (bytes, want) in [
-            ("\x1b[A", Key::Up),
-            ("\x1b[B", Key::Down),
-            ("\x1b[C", Key::Right),
-            ("\x1b[D", Key::Left),
-            ("\x1bOC", Key::Right),
-            ("\x1bOD", Key::Left),
-            ("\x1bOA", Key::Up),
-            ("\x1bOB", Key::Down),
-            ("\x1b[5~", Key::PageUp),
-            ("\x1b[6~", Key::PageDown),
-            ("\x1b[H", Key::Home),
-            ("\x1bOF", Key::End),
-        ] {
-            for split in 1..bytes.len() {
-                let mut decoder = Decoder::default();
-                assert_eq!(
-                    decoder.push(&bytes.as_bytes()[..split]),
-                    [],
-                    "{bytes:?}/{split}"
-                );
-                assert!(decoder.is_pending(), "{bytes:?}/{split}");
-                assert_eq!(
-                    decoder.push(&bytes.as_bytes()[split..]),
-                    [want],
-                    "{bytes:?}/{split}"
-                );
-                assert!(!decoder.is_pending());
-            }
-        }
-    }
-
-    #[test]
-    fn a_byte_by_byte_arrow_is_one_key() {
-        for (arrow, key) in [
-            (&b"\x1b[A"[..], Key::Up),
-            (b"\x1bOA", Key::Up),
-            (b"\x1b[C", Key::Right),
-            (b"\x1bOC", Key::Right),
-            (b"\x1b[D", Key::Left),
-            (b"\x1bOD", Key::Left),
-        ] {
+    #[test_case("\x1b[A", Key::Up; "csi up")]
+    #[test_case("\x1b[B", Key::Down; "csi down")]
+    #[test_case("\x1b[C", Key::Right; "csi right")]
+    #[test_case("\x1b[D", Key::Left; "csi left")]
+    #[test_case("\x1bOC", Key::Right; "ss3 right")]
+    #[test_case("\x1bOD", Key::Left; "ss3 left")]
+    #[test_case("\x1bOA", Key::Up; "ss3 up")]
+    #[test_case("\x1bOB", Key::Down; "ss3 down")]
+    #[test_case("\x1b[5~", Key::PageUp; "page up")]
+    #[test_case("\x1b[6~", Key::PageDown; "page down")]
+    #[test_case("\x1b[H", Key::Home; "csi home")]
+    #[test_case("\x1bOF", Key::End; "ss3 end")]
+    fn a_sequence_decodes_at_every_split_point(bytes: &str, want: Key) {
+        for split in 1..bytes.len() {
             let mut decoder = Decoder::default();
-            let keys: Vec<Key> = arrow
-                .iter()
-                .chain(b"j")
-                .flat_map(|byte| decoder.push(&[*byte]))
-                .collect();
-            assert_eq!(keys, [key, Key::Char('j')], "{arrow:?}");
+            assert_eq!(
+                decoder.push(&bytes.as_bytes()[..split]),
+                [],
+                "{bytes:?}/{split}"
+            );
+            assert!(decoder.is_pending(), "{bytes:?}/{split}");
+            assert_eq!(
+                decoder.push(&bytes.as_bytes()[split..]),
+                [want],
+                "{bytes:?}/{split}"
+            );
+            assert!(!decoder.is_pending());
         }
+    }
+
+    #[test_case(b"\x1b[A", Key::Up; "csi up")]
+    #[test_case(b"\x1bOA", Key::Up; "ss3 up")]
+    #[test_case(b"\x1b[C", Key::Right; "csi right")]
+    #[test_case(b"\x1bOC", Key::Right; "ss3 right")]
+    #[test_case(b"\x1b[D", Key::Left; "csi left")]
+    #[test_case(b"\x1bOD", Key::Left; "ss3 left")]
+    fn a_byte_by_byte_arrow_is_one_key(arrow: &[u8], key: Key) {
+        let mut decoder = Decoder::default();
+        let keys: Vec<Key> = arrow
+            .iter()
+            .chain(b"j")
+            .flat_map(|byte| decoder.push(&[*byte]))
+            .collect();
+        assert_eq!(keys, [key, Key::Char('j')]);
     }
 
     #[test]
@@ -740,23 +614,19 @@ mod tests {
         assert!(!decoder.is_pending());
     }
 
-    #[test]
-    fn a_held_prefix_flushes_as_escape_or_nothing() {
-        for (prefix, want) in [
-            ("\x1b", vec![Key::Esc]),
-            ("\x1b[", vec![]),
-            ("\x1bO", vec![]),
-        ] {
-            let mut decoder = Decoder::default();
-            assert_eq!(decoder.push(prefix.as_bytes()), []);
-            assert_eq!(decoder.flush(), want, "{prefix:?}");
-            assert!(!decoder.is_pending());
-            assert_eq!(
-                decoder.push(b"j"),
-                [Key::Char('j')],
-                "the key after a flush is not swallowed"
-            );
-        }
+    #[test_case("\x1b", &[Key::Esc]; "a lone escape flushes as escape")]
+    #[test_case("\x1b[", &[]; "a csi prefix flushes as nothing")]
+    #[test_case("\x1bO", &[]; "an ss3 prefix flushes as nothing")]
+    fn a_held_prefix_flushes_as_escape_or_nothing(prefix: &str, want: &[Key]) {
+        let mut decoder = Decoder::default();
+        assert_eq!(decoder.push(prefix.as_bytes()), []);
+        assert_eq!(decoder.flush(), want);
+        assert!(!decoder.is_pending());
+        assert_eq!(
+            decoder.push(b"j"),
+            [Key::Char('j')],
+            "the key after a flush is not swallowed"
+        );
     }
 
     #[test]
