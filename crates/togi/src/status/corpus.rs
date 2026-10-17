@@ -584,7 +584,10 @@ fn r7_with_request_telemetry() -> Vec<Event> {
         .iter()
         .min_by_key(|&core| {
             (
-                intent.profile.get(core).map_or(0, |offset| offset.get()),
+                intent
+                    .profile
+                    .get(core)
+                    .map_or(0, togi_machine::TargetOffset::get),
                 core,
             )
         })
