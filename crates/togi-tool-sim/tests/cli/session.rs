@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 
 use jiff::tz::TimeZone;
+use test_case::test_case;
 use togi_config::Config;
 use togi_journal::{DeadEndCondition, MemFs, Payload, ShutdownReason};
 use togi_machine::CancellationToken;
@@ -69,50 +70,49 @@ fn without_a_state_directory_a_temporary_one_is_kept_and_announced_first() {
     assert_eq!(boots.len(), 2);
 }
 
-#[test]
-fn samples_reach_the_state_directory_only_when_asked_for() {
-    for write in [false, true] {
-        let mut host = Host::default();
-        let mut args = vec!["--state-dir", "/state"];
-        if write {
-            args.push("--samples");
-        }
-        let mut called = false;
-        let ran = host.execute(args, |mut input| {
-            called = true;
-            assert_eq!(input.write_samples, write);
-            assert!(matches!(&input.persistence, Persistence::Memory(_)));
-            // Record the disk-output request at the execution seam, then use the simulator's existing
-            // in-memory sample collection for the whole session. The disk adapter is exercised separately.
-            input.write_samples = false;
-            let simulator = input.simulator.clone();
-            let persistence = input.persistence.clone();
-            let outcome = simulate(input)?;
-            let trial = togi_simrun::events(&persistence)
-                .unwrap()
-                .into_iter()
-                .rev()
-                .find_map(|event| {
-                    if let Payload::TrialEnd(end) = event.payload {
-                        Some(end.trial)
-                    } else {
-                        None
-                    }
-                })
-                .expect("the completed session ended a trial");
-            assert!(
-                simulator
-                    .seams()
-                    .trials
-                    .samples(trial.as_str())
-                    .next()
-                    .is_some()
-            );
-            Ok(outcome)
-        });
-        assert!(called);
-        assert_eq!(ran.code, Some(0), "{}", ran.stderr);
+#[test_case(false; "without the flag")]
+#[test_case(true; "with the flag")]
+fn samples_reach_the_state_directory_only_when_asked_for(write: bool) {
+    let mut host = Host::default();
+    let mut args = vec!["--state-dir", "/state"];
+    if write {
+        args.push("--samples");
     }
+    let mut called = false;
+    let ran = host.execute(args, |mut input| {
+        called = true;
+        assert_eq!(input.write_samples, write);
+        assert!(matches!(&input.persistence, Persistence::Memory(_)));
+        // Record the disk-output request at the execution seam, then use the simulator's existing
+        // in-memory sample collection for the whole session. The disk adapter is exercised separately.
+        input.write_samples = false;
+        let simulator = input.simulator.clone();
+        let persistence = input.persistence.clone();
+        let outcome = simulate(input)?;
+        let trial = togi_simrun::events(&persistence)
+            .unwrap()
+            .into_iter()
+            .rev()
+            .find_map(|event| {
+                if let Payload::TrialEnd(end) = event.payload {
+                    Some(end.trial)
+                } else {
+                    None
+                }
+            })
+            .expect("the completed session ended a trial");
+        assert!(
+            simulator
+                .seams()
+                .trials
+                .samples(trial.as_str())
+                .next()
+                .is_some()
+        );
+        Ok(outcome)
+    });
+    assert!(called);
+    assert_eq!(ran.code, Some(0), "{}", ran.stderr);
 }
 
 #[test]
