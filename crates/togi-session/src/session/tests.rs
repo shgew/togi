@@ -254,15 +254,33 @@ fn a_host_that_cannot_be_read_does_not_start_tuning() {
     use crate::testing::ReadFails;
 
     let bench = Bench::new(2);
-    let mut session = bench.open();
-    let inner = std::mem::replace(&mut session.host, bench.sim.seams().host);
-    session.host = Box::new(ReadFails {
-        inner,
-        topology: Some(unreadable),
-        context: None,
-    });
+    let unreadable_topology = |bench: &Bench| {
+        let mut input = bench.input();
+        let inner = input.machine.host;
+        input.machine.host = Box::new(ReadFails {
+            inner,
+            topology: Some(unreadable),
+            context: None,
+        });
+        input
+    };
+    let Err(ended) = Session::open(unreadable_topology(&bench)) else {
+        panic!("a new session opened without its topology");
+    };
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [SessionError::Machine(_)]
+    ));
+    assert!(ended.journal.events().is_empty());
+    drop(ended);
+
+    bench.open().start().unwrap();
+    let Ok(mut session) = Session::open(unreadable_topology(&bench)) else {
+        panic!("open");
+    };
+    let before = crate::testing::kinds_of(session.appender());
     assert!(matches!(session.start(), Err(SessionError::Machine(_))));
-    assert!(crate::testing::kinds_of(session.appender()).is_empty());
+    assert_eq!(crate::testing::kinds_of(session.appender()), before);
     untouched(&bench, &session);
     drop(session);
 
@@ -360,6 +378,70 @@ fn with_core_five(mut cores: Vec<togi_machine::CoreInfo>) -> Vec<togi_machine::C
     added.core = crate::testing::core(5);
     cores.push(added);
     cores
+}
+
+fn in_four_ccds(mut cores: Vec<togi_machine::CoreInfo>) -> Vec<togi_machine::CoreInfo> {
+    for info in &mut cores {
+        info.ccd = togi_machine::CcdId(info.core.get() / 2);
+    }
+    cores
+}
+
+fn on_four_ccds(bench: &Bench) -> RunInput<'static> {
+    let mut input = bench.input();
+    let host = input.machine.host;
+    input.machine.host = Box::new(Cores(host, in_four_ccds));
+    input
+}
+
+#[test]
+fn a_topology_the_tuner_cannot_work_on_is_refused_before_any_append_on_every_run() {
+    let bench = Bench::new(8);
+    let before = smu_offsets(&bench);
+    for run in 0..2 {
+        let ended = crate::run::run(on_four_ccds(&bench));
+        assert!(
+            matches!(
+                ended.errors.as_slice(),
+                [SessionError::UnsupportedTopology(
+                    togi_tuner::TopologyError::TooManyCcds(4)
+                )]
+            ),
+            "run {run}: {:?}",
+            ended.errors
+        );
+        assert_eq!(ended.stop, None, "run {run}");
+        assert!(ended.journal.events().is_empty(), "run {run}");
+    }
+    assert_eq!(smu_offsets(&bench), before);
+    let mut session = bench.open();
+    session.start().unwrap();
+    assert_eq!(
+        crate::testing::kinds_of(session.appender()),
+        ["session.start", "config.loaded"]
+    );
+}
+
+#[test]
+fn a_refused_topology_leaves_the_tuning_boot_and_keeps_a_failed_clear() {
+    let bench = Bench::new(8);
+    let mut input = on_four_ccds(&bench);
+    input.bootloader = Some(Box::new(crate::testing::ClearFails::default()));
+    let Err(ended) = Session::open(input) else {
+        panic!("opened");
+    };
+    assert!(
+        matches!(
+            ended.errors.as_slice(),
+            [
+                SessionError::UnsupportedTopology(_),
+                SessionError::ClearSavedEntry(_)
+            ]
+        ),
+        "{:?}",
+        ended.errors
+    );
+    assert!(ended.journal.events().is_empty());
 }
 
 #[test]

@@ -105,6 +105,9 @@ pub enum SessionError {
         listed(*removed)
     )]
     TopologyChanged { added: CoreSet, removed: CoreSet },
+    /// The machine's topology is one the tuner cannot work on, so no session can start on it.
+    #[error("this machine's topology is not supported")]
+    UnsupportedTopology(#[source] togi_tuner::TopologyError),
     #[error(
         "a trial is planned on core {core:02}, which this machine does not have or gives no CPU"
     )]
@@ -117,7 +120,7 @@ pub enum SessionError {
     PlanDisagrees,
     #[error("the tuner cannot choose the next action after startup")]
     NotReady(#[from] togi_tuner::NotReady),
-    #[error("clear GRUB's saved entry after an incompatible journal")]
+    #[error("clear GRUB's saved entry after refusing to start")]
     ClearSavedEntry(#[source] io::Error),
     #[error("allocate the session id")]
     SessionId(#[from] DirError),
