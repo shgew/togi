@@ -538,7 +538,7 @@ mod hardware {
                     .create(&["trials", "hardware"], "retained", b"prepared input\n");
             }
             let mode = match self.mode {
-                "pin" => format!("pin:{}", cpus.last().map_or(0, |cpu| cpu.0 + 1)),
+                "pin" => format!("pin:{}", cpus.last().map_or(0, |cpu| cpu.get() + 1)),
                 other => other.to_owned(),
             };
             Ok(Plan {
@@ -572,7 +572,7 @@ mod hardware {
             .map(|n| CoreInfo {
                 core: CoreId::new(n).unwrap(),
                 ccd: CcdId::new(0).unwrap(),
-                cpus: vec![CpuId(u16::try_from(n).unwrap() + 2)],
+                cpus: vec![CpuId::from(u16::try_from(n).unwrap() + 2)],
             })
             .collect()
     }
