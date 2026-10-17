@@ -104,9 +104,12 @@ fn open_containing_directory(resolved: &Path, lock: &Path, caller: u32) -> Resul
         .map_err(|errno| io_error(lock, Operation::OpenDirectory, errno))?;
     let mut names = resolved
         .components()
-        .filter_map(|component| match component {
-            Component::Normal(name) => Some(name),
-            _ => None,
+        .filter_map(|component| {
+            if let Component::Normal(name) = component {
+                Some(name)
+            } else {
+                None
+            }
         })
         .peekable();
     let mut descended = false;

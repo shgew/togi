@@ -142,9 +142,14 @@ fn only_confirmed_zero_failure_points() {
         let payloads = resolved.fact_payloads(&HashSet::new(), set(&CORES));
         let emitted = payloads
             .iter()
-            .find_map(|payload| match payload {
-                Payload::TrialCarried(carried) if carried.source.seq == zero.end => Some(carried),
-                _ => None,
+            .find_map(|payload| {
+                if let Payload::TrialCarried(carried) = payload
+                    && carried.source.seq == zero.end
+                {
+                    Some(carried)
+                } else {
+                    None
+                }
             })
             .expect("the original failed trial is emitted");
         assert_eq!(emitted.source.session, x.id, "{name}");

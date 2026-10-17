@@ -184,12 +184,10 @@ fn unknown_payload_field_names_the_kind() {
         let mut line = line_of(payload);
         line["data"]["bogus_field"] = json!(1);
         let error = Event::decode(&line.to_string()).unwrap_err();
-        match &error {
-            DecodeError::UnknownField { kind: named, field } => {
-                assert_eq!((*named, field.as_str()), (kind, "data.bogus_field"));
-            }
-            other => panic!("{kind}: {other}"),
-        }
+        let DecodeError::UnknownField { kind: named, field } = &error else {
+            panic!("{kind}: {error}");
+        };
+        assert_eq!((*named, field.as_str()), (kind, "data.bogus_field"));
         assert!(error.to_string().contains(kind.as_str()), "{error}");
     }
 }

@@ -385,9 +385,11 @@ fn compress_reports_each_failed_file_one_per_line_in_name_order() {
     let failed: Vec<_> = errors
         .errors()
         .iter()
-        .map(|error| match error {
-            Error::Compress { path, .. } => path.to_str().unwrap(),
-            other => panic!("unexpected error {other:?}"),
+        .map(|error| {
+            let Error::Compress { path, .. } = error else {
+                panic!("unexpected error {error:?}");
+            };
+            path.to_str().unwrap()
         })
         .collect();
     assert_eq!(

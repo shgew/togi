@@ -222,14 +222,15 @@ fn real_fs_missing_parent_is_not_created() {
     let missing = dir.path().join("missing");
     let path = missing.join("togi.lock");
     let refused = acquire(&path).unwrap_err();
-    match &refused {
-        Error::Io {
-            operation: Operation::ResolveParent,
-            source,
-            ..
-        } => assert_eq!(source.kind(), io::ErrorKind::NotFound),
-        other => panic!("unexpected {other}"),
-    }
+    let Error::Io {
+        operation: Operation::ResolveParent,
+        source,
+        ..
+    } = &refused
+    else {
+        panic!("unexpected {refused}");
+    };
+    assert_eq!(source.kind(), io::ErrorKind::NotFound);
     assert!(refused.to_string().contains(path.to_str().unwrap()));
     assert!(!missing.exists());
 }
@@ -283,14 +284,15 @@ fn real_fs_create_permission_failure_is_reported_as_create() {
     let created = path.exists();
     set_mode(&read_only, 0o700);
     let refused = outcome.unwrap_err();
-    match &refused {
-        Error::Io {
-            operation: Operation::Create,
-            source,
-            ..
-        } => assert_eq!(source.kind(), io::ErrorKind::PermissionDenied),
-        other => panic!("unexpected {other}"),
-    }
+    let Error::Io {
+        operation: Operation::Create,
+        source,
+        ..
+    } = &refused
+    else {
+        panic!("unexpected {refused}");
+    };
+    assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
     assert!(refused.to_string().contains(path.to_str().unwrap()));
     assert!(!created);
 }
@@ -304,14 +306,15 @@ fn real_fs_unopenable_lock_is_refused_untouched() {
     let path = legacy_lock(&dir, "persistent", 0o000);
     let before = identity(&path);
     let refused = acquire(&path).unwrap_err();
-    match &refused {
-        Error::Io {
-            operation: Operation::Open,
-            source,
-            ..
-        } => assert_eq!(source.kind(), io::ErrorKind::PermissionDenied),
-        other => panic!("unexpected {other}"),
-    }
+    let Error::Io {
+        operation: Operation::Open,
+        source,
+        ..
+    } = &refused
+    else {
+        panic!("unexpected {refused}");
+    };
+    assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
     assert!(refused.to_string().contains(path.to_str().unwrap()));
     assert_eq!(identity(&path), before);
     assert_eq!(mode_of(&path), 0o000);

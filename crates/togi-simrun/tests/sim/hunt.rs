@@ -138,21 +138,20 @@ pub(crate) fn adversarial_evidence(
     let (mut hunts, mut crashes) = (0, 0);
     let mut last = None;
     for event in events {
-        let profile = match &event.payload {
-            Payload::TrialIntent(intent) => Some(intent.profile),
-            Payload::ProfileChange(change) => {
-                last = Some(change.to);
-                Some(change.to)
-            }
-            Payload::HuntStart(_) => {
-                hunts += 1;
-                None
-            }
-            Payload::CrashDetected(_) => {
-                crashes += 1;
-                None
-            }
-            _ => None,
+        let payload = &event.payload;
+        let profile = if let Payload::TrialIntent(intent) = payload {
+            Some(intent.profile)
+        } else if let Payload::ProfileChange(change) = payload {
+            last = Some(change.to);
+            Some(change.to)
+        } else if let Payload::HuntStart(_) = payload {
+            hunts += 1;
+            None
+        } else if let Payload::CrashDetected(_) = payload {
+            crashes += 1;
+            None
+        } else {
+            None
         };
         if let (Some(profile), Some(topology), Some(constraints)) =
             (profile, state.topology(), state.constraints())
@@ -190,26 +189,21 @@ fn idle_failures(events: &[Event], core: CoreId, idle: i64) -> Vec<&Failure> {
     let mut intents = BTreeMap::new();
     let mut failures = Vec::new();
     for event in events {
-        match &event.payload {
-            Payload::TrialIntent(intent) => {
-                intents.insert(intent.trial.clone(), intent);
+        if let Payload::TrialIntent(intent) = &event.payload {
+            intents.insert(intent.trial.clone(), intent);
+        } else if let Payload::Failure(failure) = &event.payload {
+            let Some(intent) = failure.trial.as_ref().and_then(|trial| intents.get(trial)) else {
+                continue;
+            };
+            let offset = intent.profile.get(core).map_or(0, TargetOffset::get);
+            if intent.regime == Regime::R1
+                && intent.condition == Condition::Together
+                && offset < idle
+                && !intent.cores.contains(core)
+                && intent.core != Some(core)
+            {
+                failures.push(failure);
             }
-            Payload::Failure(failure) => {
-                let Some(intent) = failure.trial.as_ref().and_then(|trial| intents.get(trial))
-                else {
-                    continue;
-                };
-                let offset = intent.profile.get(core).map_or(0, TargetOffset::get);
-                if intent.regime == Regime::R1
-                    && intent.condition == Condition::Together
-                    && offset < idle
-                    && !intent.cores.contains(core)
-                    && intent.core != Some(core)
-                {
-                    failures.push(failure);
-                }
-            }
-            _ => {}
         }
     }
     failures
@@ -356,13 +350,15 @@ fn a_failure_at_a_held_cores_parked_offset_raises_the_parked_offsets_of_the_next
     .expect("no partial group");
     let trial = probe
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialIntent(intent)
-                if intent.hunt == Some(first.hunt) && intent.group == Some(group.group) =>
+        .find_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload
+                && intent.hunt == Some(first.hunt)
+                && intent.group == Some(group.group)
             {
                 Some(intent.trial.clone())
+            } else {
+                None
             }
-            _ => None,
         })
         .expect("no parked trial of the partial group");
     let held = first
@@ -430,28 +426,28 @@ fn a_joint_crash_makes_a_combination_instead_of_single_core_failure_points() {
     assert_eq!(members, [(3, -10), (11, -10)]);
     let (mut combinations, mut backoffs) = (0, 0);
     for event in &events {
-        match &event.payload {
-            Payload::Combination(p) if p.combination == combination.combination => {
-                combinations += 1;
+        let payload = &event.payload;
+        if let Payload::Combination(p) = payload
+            && p.combination == combination.combination
+        {
+            combinations += 1;
+        } else if let Payload::TunerDecision(p) = payload {
+            assert!(
+                p.failure_point.is_none(),
+                "joint crash produced a single-core failure point: {p:?}"
+            );
+            if p.decision == Decision::Backoff && p.activity == Activity::Hunt {
+                backoffs += 1;
             }
-            Payload::TunerDecision(p) => {
-                assert!(
-                    p.failure_point.is_none(),
-                    "joint crash produced a single-core failure point: {p:?}"
-                );
-                if p.decision == Decision::Backoff && p.activity == Activity::Hunt {
-                    backoffs += 1;
-                }
-            }
-            Payload::TrialIntent(p) if combinations > 0 => {
-                let at = |id| p.profile.get(core(id)).map_or(0, TargetOffset::get);
-                assert!(
-                    !(at(3) <= -10 && at(11) <= -10),
-                    "trial {} reaches the combination",
-                    p.trial
-                );
-            }
-            _ => {}
+        } else if let Payload::TrialIntent(p) = payload
+            && combinations > 0
+        {
+            let at = |id| p.profile.get(core(id)).map_or(0, TargetOffset::get);
+            assert!(
+                !(at(3) <= -10 && at(11) <= -10),
+                "trial {} reaches the combination",
+                p.trial
+            );
         }
     }
     assert_eq!((combinations, backoffs), (1, 1));
@@ -507,30 +503,25 @@ fn delayed_hunt_escalates(after_s: f64) {
     let mut full_trials = BTreeSet::new();
     let (mut full_passes, mut escalated, mut resolved) = (0, false, false);
     for event in &events {
-        match &event.payload {
-            Payload::HuntGroup(group) => {
-                if group.stage == HuntStage::Full && !group.escalated {
-                    full_groups.insert((group.hunt, group.group));
-                }
-                escalated |= group.escalated && group.duration_s == 900;
+        let payload = &event.payload;
+        if let Payload::HuntGroup(group) = payload {
+            if group.stage == HuntStage::Full && !group.escalated {
+                full_groups.insert((group.hunt, group.group));
             }
-            Payload::TrialIntent(intent) => {
-                if let (Some(hunt), Some(group)) = (intent.hunt, intent.group)
-                    && full_groups.contains(&(hunt, group))
-                {
-                    full_trials.insert(intent.trial.clone());
-                }
+            escalated |= group.escalated && group.duration_s == 900;
+        } else if let Payload::TrialIntent(intent) = payload {
+            if let (Some(hunt), Some(group)) = (intent.hunt, intent.group)
+                && full_groups.contains(&(hunt, group))
+            {
+                full_trials.insert(intent.trial.clone());
             }
-            Payload::TrialEnd(end) => {
-                if full_trials.contains(&end.trial) && end.outcome == Outcome::Pass {
-                    full_passes += 1;
-                }
+        } else if let Payload::TrialEnd(end) = payload {
+            if full_trials.contains(&end.trial) && end.outcome == Outcome::Pass {
+                full_passes += 1;
             }
-            Payload::HuntEnd(end) => {
-                resolved |= matches!(end.result, HuntOutcome::Culprit | HuntOutcome::Direct)
-                    && end.cores == cores(&[1]);
-            }
-            _ => {}
+        } else if let Payload::HuntEnd(end) = payload {
+            resolved |= matches!(end.result, HuntOutcome::Culprit | HuntOutcome::Direct)
+                && end.cores == cores(&[1]);
         }
     }
     assert_eq!(full_passes, 5);

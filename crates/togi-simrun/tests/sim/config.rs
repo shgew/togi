@@ -35,9 +35,12 @@ fn nth(n: usize, kind: EventKind) -> togi_simrun::Observer {
 fn intents(events: &[Event]) -> Vec<&TrialIntent> {
     events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialIntent(intent) => Some(intent),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
+                Some(intent)
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -104,9 +107,15 @@ fn first_action(
     run_until(
         bench,
         config,
-        Box::new(|event| match event.kind() {
-            EventKind::TunerDecision | EventKind::TrialIntent => Observe::Stop,
-            _ => Observe::Continue,
+        Box::new(|event| {
+            if matches!(
+                event.kind(),
+                EventKind::TunerDecision | EventKind::TrialIntent
+            ) {
+                Observe::Stop
+            } else {
+                Observe::Continue
+            }
         }),
     );
     let events = bench.events();
@@ -119,15 +128,17 @@ fn first_action(
             )
         })
         .unwrap();
-    match &event.payload {
-        Payload::TunerDecision(decision) => (
+    if let Payload::TunerDecision(decision) = &event.payload {
+        (
             event.kind(),
             Some(decision.decision),
             Some(decision.core),
             event.cause.clone(),
-        ),
-        Payload::TrialIntent(intent) => (event.kind(), None, intent.core, event.cause.clone()),
-        _ => unreachable!(),
+        )
+    } else if let Payload::TrialIntent(intent) = &event.payload {
+        (event.kind(), None, intent.core, event.cause.clone())
+    } else {
+        unreachable!()
     }
 }
 
