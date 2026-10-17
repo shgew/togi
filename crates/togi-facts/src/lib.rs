@@ -1,3 +1,6 @@
+//! Trial evidence extracted from a session journal: [`extract`] produces [`SessionFacts`] containing
+//! trial classes, observations and reset cutoffs for consumers of recorded evidence.
+
 mod error;
 mod extract;
 mod fact;

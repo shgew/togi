@@ -14,9 +14,8 @@ use crate::simulate::{
     Stop, Until, crash_trial, default_machine, machine, probe_machine, simulate,
 };
 
-/// The seed whose default machine, run through three clean cycles, leaves a core's BIOS offset unconfirmed after a
-/// failure. [INFERENCE: other seeds steer clear of it; found by scanning seeds 1 to 60. The Go simulator's seed 30
-/// does not leave one here.]
+/// The seed whose default machine, run through three clean cycles, leaves a core's BIOS offset unconfirmed
+/// after a failure, found by scanning seeds 1 to 60.
 const UNCONFIRMED_SEED: u64 = 43;
 
 /// How many consecutive trials crash without naming a core, starting at the first non-R7 checking trial of cycle 4

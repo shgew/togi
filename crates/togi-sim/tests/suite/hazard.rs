@@ -1,7 +1,4 @@
 // Steady rates, hazard sources and the model as the predictor.
-// Go: TestHazard, TestPredictorMatchesMachine, TestPredictorOwnsItsConfig, TestCloneSharesNothingWithItsSource
-// (a model owns its data and clones share it, so the Go deep-copy checks reduce to the two tests at the end),
-// the hazard half of TestTogetherOnlyLimit and TestNearLimitRate.
 
 use std::collections::BTreeMap;
 use togi_machine::{CoreId, Regime};

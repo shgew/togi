@@ -1,3 +1,6 @@
+//! The y-cruncher backend: [`Ycruncher`] selects a package binary, plans workload inputs and launch
+//! arguments, and classifies progress and failure output through the backend contract.
+
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
@@ -74,7 +77,7 @@ fn pattern(source: &str) -> Result<Regex, Error> {
 impl Patterns {
     fn new() -> Result<Self, Error> {
         Ok(Self {
-            // `(?-u)` lets `.` match any byte but `\n`, as Go's `.` did on invalid UTF-8.
+            // `(?-u)` lets `.` match any byte but `\n`, including invalid UTF-8 in file names.
             binary_name: BytesRegex::new(r"(?-u)^[0-9]{2}-[A-Za-z0-9]+ ~ .+$")
                 .map_err(|source| Error::Pattern { name: NAME, source })?,
             sgr: pattern(r"\x1b\[[0-9;]*m")?,

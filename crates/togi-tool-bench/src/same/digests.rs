@@ -72,7 +72,7 @@ pub struct DigestCache {
 
 impl DigestCache {
     /// The cache for `key` under `root`: marked recently used, the least recently used others beyond
-    /// [`KEPT_TREES`] removed.
+    /// `KEPT_TREES` removed.
     pub fn open(root: &Path, key: &str) -> io::Result<Self> {
         let parent = root.join("same");
         let dir = parent.join(key);

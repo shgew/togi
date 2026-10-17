@@ -322,7 +322,7 @@ impl togi_tuningboot::Bootloader for PanicsClearing {
     }
 }
 
-/// Go `TestRunOwnerEveryExit`, panic mode, for the one step of a clean stop the run's own catch does not cover.
+/// A panic during the one step of a clean stop the run's own catch does not cover.
 #[test]
 fn a_panic_draining_a_signalled_stop_still_restores_the_offsets_with_readback_and_is_handed_back() {
     let bench = Bench::new(2);
@@ -1172,8 +1172,8 @@ fn a_stop_at_a_durable_boundary_drains_what_it_owes_and_starts_no_new_work() {
     }
 }
 
-/// Go `TestRunOwnerEveryExit`, panic mode, for a panic that is the only failure and strikes the restoration's own
-/// append: the cleanup must not unwind out of the close with the tuned offsets still on the machine.
+/// A panic that is the only failure strikes the restoration's own append: cleanup must not unwind
+/// out of the close with the tuned offsets still on the machine.
 #[test]
 fn a_panic_taking_in_the_restoration_intent_of_an_ordinary_stop_gets_the_emergency_and_is_handed_back()
  {

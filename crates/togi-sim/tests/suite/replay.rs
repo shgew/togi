@@ -1,8 +1,4 @@
 // Replay facts: validation, matching and the uniform choice among matches.
-// Go: TestReplayDraws (the matching and uniform-choice half), TestReplayFallback (every key mismatch),
-// TestReplayRequiresDeclaredContext, TestReplayRejectsInvalidEvidence (the cores of a fact are a
-// sorted-unique `CoreSet`, so Go's negative and duplicate core cases cannot be written).
-// TestReplayCrashTime and TestReplayCorrectedMCETime need the runtime.
 
 use std::collections::BTreeSet;
 use std::time::Duration;

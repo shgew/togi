@@ -1,6 +1,4 @@
 // The machine-file document: what decodes, what is refused as malformed, and the defaults.
-// Go: TestLoadMachine, TestLoadMachineInvalidDefinitions, TestLoadMachineEmptyObjectUsesDefaults,
-// TestLoadMachineBIOSContext.
 
 use std::collections::BTreeMap;
 use std::time::Duration;

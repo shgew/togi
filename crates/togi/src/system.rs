@@ -3,7 +3,7 @@
 //! Every command reaches the host through [`System`]: the platform, the host lock, the default
 //! configuration file, the boot id, the clock, the hardware checks, GRUB, the reboot, the machine
 //! `run` tunes and the process's own terminal, stderr and dashboard. [`Real`] is the host;
-//! [`crate::run`] uses it. [`crate::run_with`] takes any other, so a test on Linux can stand for
+//! [`crate::run()`] uses it. [`crate::run_with`] takes any other, so a test on Linux can stand for
 //! another platform (`check_platform` fails with [`togi_hardware::Error::Unsupported`]), acquire a
 //! descriptor-free host lock, read configuration and journals from an in-memory filesystem, or
 //! answer the hardware checks without touching hardware.

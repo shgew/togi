@@ -2,7 +2,7 @@
 //!
 //! The pure model: the machine-file document ([`definition`]), the validated [`Model`] that
 //! resolves it, the hazard model ([`hazard`], [`voltage`]), seeded randomness ([`random`]), machine files
-//! on disk ([`file`]) and replay facts ([`replay`]).
+//! on disk ([`mod@file`]) and replay facts ([`replay`]).
 //!
 //! The runtime: a [`Simulator`] owns the virtual clocks, boots, registers, kernel logs and armed
 //! [`faults`] of one machine, and hands out its seams as a [`togi_machine::Machine`].

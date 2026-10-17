@@ -207,8 +207,8 @@ impl Launched {
     }
 }
 
-/// Builds `togi-tool-sim` in the tree the bench runs in, as the Go bench builds `tools/sim`, and returns the
-/// binary cargo reports. Cargo's own progress goes to this process's stderr.
+/// Builds `togi-tool-sim` in the tree the bench runs in and returns the binary cargo reports.
+/// Cargo's own progress goes to this process's stderr.
 #[expect(
     clippy::disallowed_methods,
     reason = "the bench builds the simulator it benchmarks with cargo"

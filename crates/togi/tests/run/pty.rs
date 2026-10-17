@@ -394,8 +394,8 @@ fn last(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .rposition(|window| window == needle)
 }
 
-/// The Go `TestRunHardwareRestoresCursorAndPaletteWhenSessionPanics`: the real dashboard on the Linux console
-/// hides the cursor and sets the palette, then the session panics and both are restored before the panic shows.
+/// The real dashboard on the Linux console hides the cursor and sets the palette, then the session
+/// panics and both are restored before the panic shows.
 #[test]
 fn real_process_a_session_panic_over_the_real_linux_console_dashboard_restores_the_cursor_and_the_palette()
  {

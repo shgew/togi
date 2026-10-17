@@ -1,6 +1,4 @@
 // The CCD residual hazard.
-// Go: TestCCDLoadedHazardAndDraws (analytic part; the empirical draw share waits for the runtime),
-// TestCCDValidation (validation.rs), TestCCDResidualDefersToExistingJoint.
 
 use togi_machine::Regime;
 use togi_sim::definition::{CcdDef, JointDef};

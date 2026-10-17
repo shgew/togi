@@ -1,5 +1,4 @@
 // The SMU hook sees every actual access before and after its effect, and can fail either.
-// Go: smu_interrupt_test.go (TestSMUInterruptionSurroundsActualEffect).
 
 use std::cell::RefCell;
 use std::rc::Rc;

@@ -1,5 +1,8 @@
 #![cfg(unix)]
 
+//! Bounded external commands: [`run`] executes an [`Invocation`] with a deadline and capped output,
+//! tearing down its process group before returning; [`run_blocking`] serves synchronous callers.
+
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io;

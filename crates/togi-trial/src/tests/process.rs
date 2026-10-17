@@ -711,9 +711,8 @@ fn real_process_oversized_output_on_any_source_is_inconclusive_with_the_exact_pr
     }
 }
 
-/// Go `TestProcessOutputLimitEvidencePrecedence`: the helper makes the cap and the classified
-/// failure both reach the selector, in either order, because it writes the second only after the
-/// teardown's SIGTERM, which only the first can have caused.
+/// The helper makes the cap and the classified failure both reach the selector, in either order,
+/// because it writes the second only after teardown's SIGTERM, which only the first can have caused.
 #[test]
 fn real_process_affinity_and_computation_errors_beat_an_overlong_line() {
     for mode in [
@@ -899,8 +898,7 @@ fn real_process_a_flooding_watched_file_is_drained_once_while_the_helper_ignores
     );
 }
 
-/// Go `TestProcessWatchedFloodCancellation`: the backend's classifier cancels the trial while the
-/// first batch of the flood is being classified.
+/// The backend's classifier cancels the trial while the first batch of the flood is being classified.
 #[test]
 fn real_process_cancelling_during_a_watched_flood_ends_supervision_and_the_teardown_drains_the_backlog()
  {
@@ -986,8 +984,7 @@ fn real_process_a_relative_trial_directory_works_and_the_watched_file_lands_in_t
     );
 }
 
-/// The ownership replacement of Go `TestProcessOwnedGroupIdentity`: the unreaped leader keeps the
-/// group, so a same-group descendant is still reached.
+/// The unreaped leader keeps the group id, so a same-group descendant is still reached.
 #[test]
 fn real_process_a_zombie_leader_keeps_its_group_signalable_until_it_is_reaped() {
     let dir = crate::testing::tempdir();
@@ -1163,8 +1160,7 @@ fn failures(error: &togi_machine::Error) -> Option<&[crate::error::CleanupFailur
     }
 }
 
-/// Go `TestProcessPartialStartRollback`: the first real helper has created a detached holder of
-/// its pipes when the second launch fails.
+/// The first real helper has created a detached holder of its pipes when the second launch fails.
 #[test]
 fn real_process_a_failed_second_launch_keeps_its_cause_first_targets_both_scopes_and_is_containment_while_a_holder_lives()
  {

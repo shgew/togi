@@ -153,7 +153,7 @@ pub struct Found {
     pub difference: Difference,
 }
 
-/// A session whose head took more than [`SLOW_RATIO`] times its base's time.
+/// A session whose head took more than `SLOW_RATIO` times its base's time.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Slow {
     pub key: Key,

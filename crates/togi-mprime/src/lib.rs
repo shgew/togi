@@ -1,3 +1,6 @@
+//! The mprime backend: [`Mprime`] checks its package, plans workload inputs and launch arguments,
+//! and classifies progress and failure output through the backend contract.
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 

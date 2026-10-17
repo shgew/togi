@@ -1,3 +1,6 @@
+//! Known tuning defects: [`KNOWN_DEFECTS`] describes the affected decisions, and [`DefectState`]
+//! folds journal events into findings and guidance for the affected cores.
+
 mod registry;
 mod state;
 

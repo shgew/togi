@@ -1,3 +1,6 @@
+//! The backend contract: [`Backend`] checks an external stress program, builds a [`Plan`] for a
+//! workload and classifies its output as [`Line`] evidence for the trial runner.
+
 mod error;
 mod file_name;
 

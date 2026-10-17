@@ -1,5 +1,8 @@
 #![cfg(unix)]
 
+//! Host-wide exclusion: [`HostLock`] acquires the advisory lock at [`DEFAULT_PATH`] or a supplied
+//! path under a [`Policy`], retaining ownership until the lock is dropped.
+
 mod error;
 #[cfg(any(test, feature = "test-support"))]
 mod memory;

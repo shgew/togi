@@ -1,11 +1,4 @@
 // What a trial's outcome depends on: limits, hazards, scripts, replay facts and reset draws.
-// Go: trial_test.go (TestTrialRNGStableConditionDomains and TestFailureDrawAfterOnset pinned Go's draw streams;
-// the draw properties they stood for are `a_retry_reproduces_the_class_outcome` and the onset tests),
-// TestModelHazards, TestUnloadedDrawFollowsLoadedSet, TestJointCrashMachineEvidence, TestScriptsAndClocks,
-// TestScriptThenCrashReportsOnlyBackendSignals, TestScriptCrashResetAndBackendReport, TestWeightedCrashReset,
-// TestCrashResetWithoutWeights (a validation error now: validation.rs), nonmember_mce_test.go,
-// regime_signals_test.go, replay_test.go (TestReplayCrashTime, TestReplayCorrectedMCETime),
-// TestScriptTrialAfterNew.
 
 use jiff::SignedDuration;
 use std::time::Duration;

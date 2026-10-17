@@ -223,8 +223,8 @@ fn a_signalled_run_publishes_state_json_when_it_stops() {
     assert!(fs.contents(format!("{STATE}/state.json")).is_some());
 }
 
-/// Go `TestRunOwnerEveryExit`, panic mode, through the simulator: the panic of a boot reaches the caller only after
-/// the boot's journal is closed, so the buffered events can be read back.
+/// A boot's panic reaches the caller only after its journal is closed, so the buffered events
+/// can be read back.
 #[test]
 fn an_observer_panic_flushes_the_boots_events_before_it_propagates() {
     let persistence = Persistence::Memory(MemFs::new());
