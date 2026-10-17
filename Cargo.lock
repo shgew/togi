@@ -1879,6 +1879,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "togi-tool-cover"
+version = "0.0.0"
+dependencies = [
+ "regex",
+ "tempfile",
+ "test-case",
+ "thiserror",
+]
+
+[[package]]
 name = "togi-tool-facts"
 version = "0.0.0"
 dependencies = [
