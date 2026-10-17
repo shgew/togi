@@ -4,7 +4,7 @@ Rules for the **production policy experiment** mode of a [research campaign](../
 
 Observation and accounting campaigns change no tuner code: they measure the unchanged tuner, adding only the analysis tools and research-only fixtures their brief names and leaving the frozen environment below as it is. Their briefs:
 
-- [#490](research/490.md): fixed-policy observation of intermittent R7 hazards.
+- [#490](research/490.md): fixed-policy observation of intermittent R7 hazards over a frozen synthetic grid, analysed with `just stats --backoffs` and `just pass-cost` outside the dispatcher's `exec`.
 - [#896](research/896.md): counterfactual accounting of re-derived R7 parts.
 - [#503](research/503.md): fixed-policy observation, feasibility of an online risk learner.
 
