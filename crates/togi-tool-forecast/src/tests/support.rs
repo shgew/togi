@@ -4,8 +4,8 @@ use jiff::{SignedDuration, Timestamp};
 use togi_config::Config;
 use togi_journal::{
     BootLeaveReason, Build, CommandReset, ConfigLoaded, CrashDetected, DeadEnd, DeadEndCondition,
-    Event, JournalTorn, Mce, Payload, ResetTarget, SCHEMA, Seq, SessionBaseline, SessionId,
-    SessionStart, Shutdown, ShutdownReason, Stamp, StateRebuilt, TrialId, TrialIntent,
+    Event, FixStamp, JournalTorn, Mce, Payload, ResetTarget, SCHEMA, Seq, SessionBaseline,
+    SessionId, SessionStart, Shutdown, ShutdownReason, Stamp, StateRebuilt, TrialId, TrialIntent,
 };
 use togi_machine::{
     BankType, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, ObservedOffset, PerCore,
@@ -14,7 +14,7 @@ use togi_machine::{
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use crate::outcome::Replay;
-use crate::{Outcome, Run, Session, Status};
+use crate::{Outcome, Run, Session, Split, Status};
 
 pub(super) const A: &str = "20261007T000000Z";
 pub(super) const B: &str = "20261007T010000Z";
@@ -35,7 +35,7 @@ pub(super) fn build(rev: &str) -> Build {
         rev: Some(rev.to_owned()),
         ruleset: RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: EVIDENCE_EPOCH,
     }
 }
@@ -269,7 +269,7 @@ pub(super) fn run(status: Status, hours: f64, crashes: u32, hunts: u32, profile:
     Run {
         machine: "m.json".to_owned(),
         seed: 0,
-        split: "dev".to_owned(),
+        split: Split::Dev,
         outcome: outcome(status, hours, crashes, hunts, profile),
     }
 }

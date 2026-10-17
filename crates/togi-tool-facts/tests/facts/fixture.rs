@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Build, MemFs, Outcome, Payload, Recording, SCHEMA, SessionContext, SessionStart, Stamp,
-    StateDir, TrialEnd, TrialId, TrialIntent,
+    Build, FixStamp, MemFs, Outcome, Payload, Recording, SCHEMA, SessionContext, SessionStart,
+    Stamp, StateDir, TrialEnd, TrialId, TrialIntent,
 };
 use togi_machine::{
     BiosContext, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Regime,
@@ -36,7 +36,7 @@ fn start(cores: &[i64]) -> SessionStart {
             rev: Some("abc".into()),
             ruleset: 6,
             schema: SCHEMA,
-            fixes: 0,
+            fixes: FixStamp::none(),
             evidence: 1,
         },
         session: SESSION.parse().unwrap(),

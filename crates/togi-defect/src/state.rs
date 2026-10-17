@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use togi_journal::{
-    CommandReset, DefectAnswer, DefectAnswered, DefectDirection, DefectFound, Event, EventKind,
-    Payload, ResetTarget, Seq, TunerDecision,
+    CommandReset, DefectAnswer, DefectAnswered, DefectDirection, DefectFound, DefectId, Event,
+    EventKind, FixStamp, Payload, ResetTarget, Seq, TunerDecision,
 };
 use togi_machine::{CoreId, CoreSet};
 
-use crate::registry::{DefectId, Entry, KNOWN_DEFECTS, is_ordered};
+use crate::registry::{Entry, KNOWN_DEFECTS, is_ordered};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Matches {
@@ -71,7 +71,7 @@ pub struct DefectState {
     registry: &'static [Entry],
     watched: Vec<EventKind>,
     kinds: BTreeMap<Seq, EventKind>,
-    fixes: u32,
+    fixes: FixStamp,
     unrecorded: BTreeMap<DefectId, Matches>,
     findings: BTreeMap<DefectId, Finding>,
     order: Vec<DefectId>,
@@ -104,7 +104,7 @@ impl DefectState {
             registry,
             watched,
             kinds: BTreeMap::new(),
-            fixes: 0,
+            fixes: FixStamp::none(),
             unrecorded: BTreeMap::new(),
             findings: BTreeMap::new(),
             order: Vec::new(),
@@ -199,7 +199,7 @@ impl DefectState {
 
     fn fold_decision(&mut self, event: &Event, decision: &TunerDecision) {
         for entry in self.registry {
-            if self.fixes >= entry.id.get() {
+            if self.fixes.fixes(entry.id) {
                 continue;
             }
             let mut matched = false;
@@ -238,7 +238,7 @@ impl DefectState {
     }
 
     fn fold_found(&mut self, seq: Seq, found: &DefectFound) {
-        let id = DefectId(found.id);
+        let id = found.id;
         if self.findings.contains_key(&id) {
             return;
         }
@@ -264,7 +264,7 @@ impl DefectState {
     }
 
     fn fold_answer(&mut self, seq: Seq, answered: &DefectAnswered) {
-        self.answered.insert(DefectId(answered.id));
+        self.answered.insert(answered.id);
         if answered.answer == DefectAnswer::Yes && !answered.cores.is_empty() {
             self.pending_resets.insert(seq, answered.cores);
         }

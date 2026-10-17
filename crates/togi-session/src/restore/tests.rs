@@ -3,6 +3,7 @@ use togi_machine::{PerCore, TargetOffset};
 use togi_tuner::FailurePoint;
 
 use super::*;
+use crate::session::Fault;
 use crate::testing::{
     Bench, core, kinds_of, observed, offsets, put, recorded_baseline, swept, target,
 };
@@ -157,7 +158,7 @@ fn without_the_proof_that_nothing_runs_nothing_is_written() {
     let mut session = swept(&bench);
     recorded_baseline(&mut session, &[0, 0]);
     put(&mut session, &[-10, -10]);
-    session.stopped = None;
+    session.lifecycle.lose_stopped();
     let before = kinds_of(session.appender());
     assert_eq!(
         session.restore(&offsets(&[0, 0])).unwrap(),
@@ -175,6 +176,6 @@ fn a_crash_during_the_restoration_marks_the_machine_out_of_reach() {
     bench.sim.crash_at_write(1);
     let flow = session.restore(&offsets(&[0, 0])).unwrap_err();
     assert!(matches!(flow, Flow::Fatal(ref error) if error.is_crash()));
-    assert_eq!(session.fault, Some(Fault::Crashed));
+    assert_eq!(session.lifecycle.fault(), Some(Fault::Crashed));
     assert_eq!(session.hardware.profile(), None);
 }

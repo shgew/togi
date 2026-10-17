@@ -13,7 +13,8 @@ use crate::cache::{Costs, longest_first};
 use crate::error::RunError;
 use crate::pool;
 use crate::process::Fleet;
-use crate::suite::{RunSpec, Split};
+use crate::suite::RunSpec;
+use togi_tool_forecast::Split;
 
 use super::SameError;
 use super::digests::{DigestCache, SideRecord, inputs};

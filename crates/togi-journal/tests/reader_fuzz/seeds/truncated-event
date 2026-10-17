@@ -1,0 +1,2 @@
+{"seq":1,"time":"2023-11-14T22:13:20Z","boot":"boot-1","kind":"session.start","msg":"session 20231114T221320Z started by togi 0.1.0 (schema 1, ruleset 1, evidence epoch 1, fixes 0, 1 cores)","data":{"build":{"version":"0.1.0","ruleset":1,"schema":1,"fixes":0,"evidence":1},"session":"20231114T221320Z","cores":[{"core":0,"ccd":0,"cpus":[0]}]}}
+{"seq":2,"time":"2023-11-14T22:13:21Z","boot":"boot-1","kind":"session.warning","msg":
