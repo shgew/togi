@@ -30,10 +30,10 @@ enum State {
 
 /// An interruption at the journal's `ordinal`th line, counted from 1 across every boot, that fires once.
 ///
-/// A test arms it before each boot with the lines the journal already holds and disarms it after the boot; the
-/// trigger works out which append of that boot is the selected one and whether it fired. What the interruption does
-/// (a crash, a power loss, a failed I/O operation) stays with the caller. Clones share one trigger, so a boot's hooks
-/// and the test driving it see the same state.
+/// A test arms it in each boot, once the journal is open, with the lines the journal already holds and disarms it
+/// after the boot; the trigger works out which append of that boot is the selected one and whether it fired. What the
+/// interruption does (a crash, a power loss, a failed I/O operation) stays with the caller. Clones share one trigger,
+/// so a boot's hooks and the test driving it see the same state.
 #[derive(Clone, Debug)]
 pub struct AppendTrigger {
     ordinal: usize,
@@ -54,8 +54,12 @@ impl AppendTrigger {
         }
     }
 
-    /// Arms the trigger for a boot whose journal starts with `lines` lines, injecting into `fs` the fault its point
+    /// Arms the trigger for a boot whose open journal holds `lines` lines, injecting into `fs` the fault its point
     /// needs. Arms nothing and returns false once the trigger fired or when the journal already holds the line.
+    ///
+    /// A fault counts every write or sync of the journal file from here on, not only appends: arm it after the journal
+    /// is open, whose opening syncs it, and with no buffered append, reboot, close or archive of the journal before
+    /// the selected line, or the fault fails that operation instead.
     ///
     /// # Panics
     ///
@@ -111,7 +115,8 @@ impl AppendTrigger {
         fired
     }
 
-    /// Whether the interruption has fired, during the current boot or an earlier one.
+    /// Whether the interruption has fired: a landed trigger as soon as [`AppendTrigger::lands`] reports its event, a
+    /// fault only once [`AppendTrigger::disarm`] has ended the boot it fired in.
     pub fn fired(&self) -> bool {
         matches!(self.state.get(), State::Hit | State::Fired)
     }
