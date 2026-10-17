@@ -360,13 +360,13 @@ fn chain_order_is_the_order_the_next_derivation_reads() {
     let chain = chain_of(&action).clone();
     let state = fresh(&j.events);
     let load = crate::LoadKey::new(chain.workload, set(&[0, 1, 2, 3]));
-    let order = state.chain_order(load, CcdId(0)).unwrap();
+    let order = state.chain_order(load, CcdId::new(0).unwrap()).unwrap();
     assert_eq!(order.groups, chain.groups);
     assert_eq!(order.sources, chain.source_seqs);
     assert_eq!(order.sources, [seq]);
     assert!(order.proxy.is_empty());
     assert_eq!(order.values.get(core(2)), Some(1.2));
-    assert_eq!(state.chain_order(load, CcdId(1)), None);
+    assert_eq!(state.chain_order(load, CcdId::new(1).unwrap()), None);
 }
 
 #[test]

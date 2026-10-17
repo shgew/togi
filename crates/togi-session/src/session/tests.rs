@@ -377,7 +377,7 @@ fn with_core_five(mut cores: Vec<togi_machine::CoreInfo>) -> Vec<togi_machine::C
 
 fn in_four_ccds(mut cores: Vec<togi_machine::CoreInfo>) -> Vec<togi_machine::CoreInfo> {
     for info in &mut cores {
-        info.ccd = togi_machine::CcdId(info.core.get() / 2);
+        info.ccd = togi_machine::CcdId::try_from(info.core.get() / 2).unwrap();
     }
     cores
 }
