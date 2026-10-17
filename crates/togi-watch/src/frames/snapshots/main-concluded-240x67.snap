@@ -2,7 +2,7 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   23:32:41   tuning 47h32m   session 47h32m   57 failures · 12 crashes   last observed failure 08:32, 15h00m ago
+│ togi   01:27:54   tuning 49h27m   session 49h27m   59 failures · 13 crashes   last observed failure 20:13, 5h14m ago
 │ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ► CLEAN CYCLES · repeats until stopped
 │
 │ CLEAN CYCLES · 1 clean cycle recorded · cycle 3 · 0/18 steps complete
@@ -13,8 +13,8 @@ expression: body
 │
 │                                            0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
 │                                         core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
-│                                         00  ███████████████████████                            tune -23 now -23         08  █████                                              tune  -5 now  -5
-│                                                                    █                           s-27 g4 f-24                       █                                            s-6 g1 f-7
+│                                         00  ███████████████████████                            tune -23 now -23         08  ██████                                             tune  -6 now  -6
+│                                                                    █                           s-27 g4 f-24                       █                                            s-6 g0 f-7
 │                                                                                                judged                                                                          idle
 │                                         01  ███████████████                                    tune -15 now -15         09  █████████████████████████████████                  tune -33 now -33
 │                                                            █                                   s-17 g2 f-16                                                  █                 s-35 g2 f-34
@@ -31,36 +31,36 @@ expression: body
 │                                         05  ████████                                           tune  -8 now  -8         13  ███████████████████████████████████                tune -35 now -35
 │                                                     █                                          s-10 g2 f-9                                                     █               s-38 g3 f-36
 │                                                                                                judged                                                                          idle
-│                                         06  █████████████████████████████████████              tune -37 now -37         14  ████████████                                       tune -12 now -12
-│                                                                                   █            s-38 g1 f-39                             █                                      s-16 g4 f-13
+│                                         06  ██████████████████████████████████████             tune -38 now -38         14  ████████████                                       tune -12 now -12
+│                                                                                   █            s-38 g0 f-39                             █                                      s-16 g4 f-13
 │                                                                                                judged                                                                          idle
 │                                         07  █████████████████████████████                      tune -29 now -29         15  █████████████                                      tune -13 now -13
-│                                                                           █                    s-30 g1 f-31                               █                                    s-14 g1 f-15
+│                                                                          █                     s-30 g1 f-30                              █                                     s-14 g1 f-14
 │                                                                                                judged                                                                          idle
 │                                         white=tune · red point=recorded failure · gap=counts shallower than solo
 │
 │ WHAT HAPPENED
-│ 23:32  step     cycle 3 step 1: R7 all-core, mprime AVX2 36K-248K
-│ 23:32  cycle    cycle 3 started · 18 steps
-│ 23:32  cycle    cycle 2 passed, a full cycle
-│ 23:32  step     cycle 2 step 18: R6 idle + bursts, y-cruncher BKT + SFTv4 · 1 credited check
-│ 23:17  step     cycle 2 step 17: R4 partial load, y-cruncher SNT + SVT · 16 credited checks
-│ 22:45  step     cycle 2 step 16: R4 partial load, y-cruncher BKT + SFTv4 · 16 credited checks
-│ 22:13  step     cycle 2 step 15: R4 partial load, mprime SSE 4K-21K · 16 credited checks
-│ 21:41  step     cycle 2 step 14: R3 load steps, y-cruncher SNT + SVT · 16 credited checks
-│ 21:09  step     cycle 2 step 13: R3 load steps, y-cruncher BKT + SFTv4 · 16 credited checks
-│ 20:37  step     cycle 2 step 12: R3 load steps, mprime SSE 4K-21K · 16 credited checks
-│ 20:05  step     cycle 2 step 11: R1 light, y-cruncher SNT + SVT · 16 credited checks
-│ 19:33  step     cycle 2 step 10: R1 light, y-cruncher BKT + SFTv4 · 16 credited checks
-│ 19:01  step     cycle 2 step 9: R1 light, mprime SSE 4K-21K · 16 credited checks
-│ 18:29  step     cycle 2 step 8: R5 both threads, mprime SSE 4K-21K · 16 credited checks
-│ 17:57  step     cycle 2 step 7: R6 idle + bursts, mprime SSE 4K-21K · 1 credited check
-│ 17:42  step     cycle 2 step 6: R2 heavy vector, y-cruncher FFTv4 + N63 + VT3 · 16 credited checks
-│ 17:10  step     cycle 2 step 5: R2 heavy vector, mprime AVX-512 36K-248K · 16 credited checks
-│ 16:38  step     cycle 2 step 4: R2 heavy vector, mprime AVX2 36K-248K · 3 credited checks
-│
-│
-│
+│ 01:27  step     cycle 3 step 1: R7 all-core, mprime AVX2 36K-248K
+│ 01:27  cycle    cycle 3 started · 18 steps
+│ 01:27  cycle    cycle 2 passed, a full cycle
+│ 01:27  step     cycle 2 step 18: R6 idle + bursts, y-cruncher BKT + SFTv4 · 1 credited check
+│ 01:12  step     cycle 2 step 17: R4 partial load, y-cruncher SNT + SVT · 16 credited checks
+│ 00:40  step     cycle 2 step 16: R4 partial load, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 00:08  step     cycle 2 step 15: R4 partial load, mprime SSE 4K-21K · 16 credited checks
+│ 23:36  step     cycle 2 step 14: R3 load steps, y-cruncher SNT + SVT · 16 credited checks
+│ 23:04  step     cycle 2 step 13: R3 load steps, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 22:32  step     cycle 2 step 12: R3 load steps, mprime SSE 4K-21K · 16 credited checks
+│ 22:00  step     cycle 2 step 11: R1 light, y-cruncher SNT + SVT · 16 credited checks
+│ 21:28  step     cycle 2 step 10: R1 light, y-cruncher BKT + SFTv4 · 16 credited checks
+│ 20:56  step     cycle 2 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 3 credited checks · 2 chain notes
+│ 20:45  step     cycle 2 step 2: R7 all-core, mprime AVX-512 36K-248K · 3 credited checks · 12 chain notes
+│ 20:34  step     cycle 2 step 1: R7 all-core, mprime AVX2 36K-248K · 3 credited checks · 12 chain notes
+│ 20:23  pass     5 credited checks · 10 chain notes
+│ 20:13  backoff  core 15 -14 → -13
+│ 20:13  fail     core 15 fails at -14
+│ 20:13  fail     R1 light on core 15 at -14 · wrong result · core 15 named
+│ 20:12  step     cycle 2 step 9: R1 light, mprime SSE 4K-21K · 15 credited checks
+│ 19:42  step     cycle 2 step 8: R5 both threads, mprime SSE 4K-21K · 10 credited checks
 │
 │
 │

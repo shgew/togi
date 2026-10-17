@@ -2,20 +2,20 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   21:51:32   tuning 69h51m   session 69h51m   60 failures · 15 crashes   last observed failure 21:50, a moment ago
-│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ► CLEAN CYCLES · repeats until stopped · HUNT 4 · parts · part 1 of 2   1:20 left
+│ togi   00:06:25   tuning 72h06m   session 72h06m   63 failures · 15 crashes   last observed failure 00:05, a moment ago
+│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ► CLEAN CYCLES · repeats until stopped · HUNT 5 · parts · part 1 of 2   1:20 left
 │ BIOS PROFILE · 6/9 · < Hunts / probes | History >
-│   BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────── UNCONFIRMED · cores 00-15
+│   BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────── UNCONFIRMED · cores 06 08
 │
-│   confirmed by the passed full cycle 3 that ended 2026-01-03 14:22
-│   evidence: journal event #10468
+│   confirmed by the passed full cycle 3 that ended 2026-01-03 16:38
+│   evidence: journal event #10934
 │
 │   slot      0    1    2    3    4    5    6    7
-│   CCD 0   -22* -14* -23* -23* -12*  -7* -36* -28*
-│   CCD 1    -4* -32* -12*  -6* -13* -34* -11* -12*
+│   CCD 0   -23  -15  -24  -24  -13   -8  -37* -29
+│   CCD 1    -5* -33  -13   -7  -14  -35  -12  -13
 │
 │   * unconfirmed: a passed full cycle confirms it, unless a failure is held
-│   unconfirmed since journal event #10993
+│   unconfirmed since journal event #11459
 │
 │
 │

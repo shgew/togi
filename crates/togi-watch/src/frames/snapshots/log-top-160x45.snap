@@ -2,47 +2,47 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   23:32:41   tuning 47h32m   session 47h32m   57 failures · 12 crashes   last observed failure 08:32, 15h00m ago
+│ togi   01:27:54   tuning 49h27m   session 49h27m   59 failures · 13 crashes   last observed failure 20:13, 5h14m ago
 │ STOPPED  ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ○ CLEAN CYCLES
 │ JOURNAL · 8/9 · < History | Help >
-│ █ JOURNAL ────────────────────────────────────────────────────────────────────────────────────────────── last 400 of 5387 events · SMU and preflight left out
+│ █ JOURNAL ────────────────────────────────────────────────────────────────────────────────────────────── last 400 of 5624 events · SMU and preflight left out
 │ █
 │ █ 2026-01-02 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-│ │ 20:41:01  trial signal          trial 1285 load steps: 39 stops, 38 continues
-│ │ 20:41:01  pass                  trial 1285 PASS 120 s | Tctl max 74°C
-│ │ 20:41:01  trial intent          trial 1286 core 01 offset -15 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
-│ │ 20:41:01  trial start           trial 1286 started pid 2286 in scope togi-trial-1286 on cpu 1
-│ │ 20:41:01  trial signal          trial 1286 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
-│ │ 20:43:01  trial signal          trial 1286 load steps: 65 stops, 64 continues
-│ │ 20:43:01  pass                  trial 1286 PASS 120 s | Tctl max 69°C
-│ │ 20:43:01  trial intent          trial 1287 core 09 offset -33 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
-│ │ 20:43:01  trial start           trial 1287 started pid 2287 in scope togi-trial-1287 on cpu 9
-│ │ 20:43:01  trial signal          trial 1287 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
-│ │ 20:45:01  trial signal          trial 1287 load steps: 52 stops, 52 continues
-│ │ 20:45:01  pass                  trial 1287 PASS 120 s | Tctl max 64°C
-│ │ 20:45:01  trial intent          trial 1288 core 02 offset -24 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
-│ │ 20:45:01  trial start           trial 1288 started pid 2288 in scope togi-trial-1288 on cpu 2
-│ │ 20:45:01  trial signal          trial 1288 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
-│ │ 20:47:01  trial signal          trial 1288 load steps: 39 stops, 38 continues
-│ │ 20:47:01  pass                  trial 1288 PASS 120 s | Tctl max 70°C
-│ │ 20:47:01  trial intent          trial 1289 core 10 offset -13 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
-│ │ 20:47:01  trial start           trial 1289 started pid 2289 in scope togi-trial-1289 on cpu 10
-│ │ 20:47:01  trial signal          trial 1289 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
-│ │ 20:49:01  trial signal          trial 1289 load steps: 45 stops, 44 continues
-│ │ 20:49:01  pass                  trial 1289 PASS 120 s | Tctl max 73°C
-│ │ 20:49:01  trial intent          trial 1290 core 03 offset -24 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
-│ │ 20:49:01  trial start           trial 1290 started pid 2290 in scope togi-trial-1290 on cpu 3
-│ │ 20:49:01  trial signal          trial 1290 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
-│ │ 20:51:01  trial signal          trial 1290 load steps: 65 stops, 65 continues
-│ │ 20:51:01  pass                  trial 1290 PASS 120 s | Tctl max 76°C
-│ │ 20:51:01  trial intent          trial 1291 core 11 offset -7 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
-│ │ 20:51:01  trial start           trial 1291 started pid 2291 in scope togi-trial-1291 on cpu 11
-│ │ 20:51:01  trial signal          trial 1291 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
-│ │ 20:53:01  trial signal          trial 1291 load steps: 50 stops, 50 continues
-│ │ 20:53:01  pass                  trial 1291 PASS 120 s | Tctl max 69°C
-│ │ 20:53:01  trial intent          trial 1292 core 04 offset -13 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
-│ │ 20:53:01  trial start           trial 1292 started pid 2292 in scope togi-trial-1292 on cpu 4
-│ │ 20:53:01  trial signal          trial 1292 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
-│ │ 20:55:01  trial signal          trial 1292 load steps: 42 stops, 42 continues
-│ │ 20:55:01  pass                  trial 1292 PASS 120 s | Tctl max 68°C
+│ │ 22:36:14  trial signal          trial 1338 load steps: 61 stops, 61 continues
+│ │ 22:36:14  pass                  trial 1338 PASS 120 s | Tctl max 68°C
+│ │ 22:36:14  trial intent          trial 1339 core 01 offset -15 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
+│ │ 22:36:14  trial start           trial 1339 started pid 2339 in scope togi-trial-1339 on cpu 1
+│ │ 22:36:14  trial signal          trial 1339 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
+│ │ 22:38:14  trial signal          trial 1339 load steps: 41 stops, 40 continues
+│ │ 22:38:14  pass                  trial 1339 PASS 120 s | Tctl max 69°C
+│ │ 22:38:14  trial intent          trial 1340 core 09 offset -33 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
+│ │ 22:38:14  trial start           trial 1340 started pid 2340 in scope togi-trial-1340 on cpu 9
+│ │ 22:38:14  trial signal          trial 1340 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
+│ │ 22:40:14  trial signal          trial 1340 load steps: 38 stops, 37 continues
+│ │ 22:40:14  pass                  trial 1340 PASS 120 s | Tctl max 64°C
+│ │ 22:40:14  trial intent          trial 1341 core 02 offset -24 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
+│ │ 22:40:14  trial start           trial 1341 started pid 2341 in scope togi-trial-1341 on cpu 2
+│ │ 22:40:14  trial signal          trial 1341 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
+│ │ 22:42:14  trial signal          trial 1341 load steps: 40 stops, 39 continues
+│ │ 22:42:14  pass                  trial 1341 PASS 120 s | Tctl max 70°C
+│ │ 22:42:14  trial intent          trial 1342 core 10 offset -13 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
+│ │ 22:42:14  trial start           trial 1342 started pid 2342 in scope togi-trial-1342 on cpu 10
+│ │ 22:42:14  trial signal          trial 1342 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
+│ │ 22:44:14  trial signal          trial 1342 load steps: 57 stops, 56 continues
+│ │ 22:44:14  pass                  trial 1342 PASS 120 s | Tctl max 73°C
+│ │ 22:44:14  trial intent          trial 1343 core 03 offset -24 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
+│ │ 22:44:14  trial start           trial 1343 started pid 2343 in scope togi-trial-1343 on cpu 3
+│ │ 22:44:14  trial signal          trial 1343 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
+│ │ 22:46:14  trial signal          trial 1343 load steps: 52 stops, 52 continues
+│ │ 22:46:14  pass                  trial 1343 PASS 120 s | Tctl max 76°C
+│ │ 22:46:14  trial intent          trial 1344 core 11 offset -7 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
+│ │ 22:46:14  trial start           trial 1344 started pid 2344 in scope togi-trial-1344 on cpu 11
+│ │ 22:46:14  trial signal          trial 1344 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
+│ │ 22:48:14  trial signal          trial 1344 load steps: 36 stops, 36 continues
+│ │ 22:48:14  pass                  trial 1344 PASS 120 s | Tctl max 69°C
+│ │ 22:48:14  trial intent          trial 1345 core 04 offset -13 R3 y-cruncher BKT + SFTv4 load steps 120 s together cycle 2 step 13
+│ │ 22:48:14  trial start           trial 1345 started pid 2345 in scope togi-trial-1345 on cpu 4
+│ │ 22:48:14  trial signal          trial 1345 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
+│ │ 22:50:14  trial signal          trial 1345 load steps: 35 stops, 34 continues
+│ │ 22:50:14  pass                  trial 1345 PASS 120 s | Tctl max 68°C
 │  ←/→  pages  8/9 Journal   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

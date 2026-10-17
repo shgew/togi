@@ -2,35 +2,35 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   21:51:32   tuning 69h51m   session 69h51m   60 failures · 15 crashes   last observed failure 21:50
-│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ► CLEAN CYCLES · repeats until stopped · HUNT 4 · parts · part 1 of 2
+│ togi   00:06:25   tuning 72h06m   session 72h06m   63 failures · 15 crashes   last observed failure 00:05
+│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ► CLEAN CYCLES · repeats until stopped · HUNT 5 · parts · part 1 of 2
 │ MAIN · 1/9 · < Help | Cores >
-│ CLEAN CYCLES · HUNT 4 · group 1 · 2 clean cycles recorded · 3/18 steps complete
+│ CLEAN CYCLES · HUNT 5 · group 1 · 2 clean cycles recorded · 3/18 steps complete
 │ part 1/2 of this split · total hunt work unknown
 │
-│ NOW  HUNT 4 · PART 1 OF 2   R2   heavy vector load  on 00 · 01-15 at failing offsets, 00 parked at 0
-│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 4 of 5
+│ NOW  HUNT 5 · PART 1 OF 2   R2   heavy vector load  on 00 · 06 at failing offsets, 08 parked, idle
+│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 3 of 5
 │
 │ CCD core tune  now solo  gap fail  role
-│   0   00  -23    0  -27    4  -24  parked
-│   0   01  -15  -15  -17    2  -16  held failure
-│   0   02  -24  -24  -26    2  -25  held failure
-│   0   03  -24  -24  -25    1  -25  held failure
-│   0   04  -13  -13  -16    3  -14  held failure
-│   0   05   -8   -8  -10    2   -9  held failure
-│   0   06  -37  -37  -38    1  -39  held failure
-│   0   07  -29  -29  -30    1  -31  held failure
-│   1   08   -5   -5   -6    1   -7  held failure
-│   1   09  -33  -33  -35    2  -34  held failure
-│   1   10  -13  -13  -18    5  -14  held failure
-│   1   11   -7   -7  -10    3   -8  held failure
-│   1   12  -14  -14  -17    3  -15  held failure
-│   1   13  -35  -35  -38    3  -36  held failure
-│   1   14  -12  -12  -16    4  -13  held failure
-│   1   15  -13  -13  -14    1  -15  held failure
+│   0   00  -23  -23  -27    4  -24  loaded
+│   0   01  -15  -15  -17    2  -16  idle
+│   0   02  -24  -24  -26    2  -25  idle
+│   0   03  -24  -24  -25    1  -25  idle
+│   0   04  -13  -13  -16    3  -14  idle
+│   0   05   -8   -8  -10    2   -9  idle
+│   0   06  -38  -38  -38    0  -39  held failure
+│   0   07  -29  -29  -30    1  -30  idle
+│   1   08   -6   -5   -6    0   -7  parked
+│   1   09  -33  -33  -35    2  -34  idle
+│   1   10  -13  -13  -18    5  -14  idle
+│   1   11   -7   -7  -10    3   -8  idle
+│   1   12  -14  -14  -17    3  -15  idle
+│   1   13  -35  -35  -38    3  -36  idle
+│   1   14  -12  -12  -16    4  -13  idle
+│   1   15  -13  -13  -14    1  -14  idle
 │ WHAT HAPPENED
-│ 21:50  hunt     #4 started · part 1: 01-15 at failing offsets, 00 parked
-│ 21:50  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
-│ 21:49  hold     core 03 failure held; tuning stays at -24
+│ 00:05  hunt     #5 started · part 1: 06 at failing offsets, 08 parked
+│ 00:05  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
+│ 00:04  hunt     not hunted: held: first unattributed failure loading cores [00] since the profile passed cycle 3...
 │
 │  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

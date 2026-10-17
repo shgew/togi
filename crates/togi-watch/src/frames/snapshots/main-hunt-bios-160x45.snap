@@ -2,47 +2,47 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   21:51:32   tuning 69h51m   session 69h51m   60 failures · 15 crashes   last observed failure 21:50, a moment ago
-│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ► CLEAN CYCLES · repeats until stopped · HUNT 4 · parts · part 1 of 2
+│ togi   00:06:25   tuning 72h06m   session 72h06m   63 failures · 15 crashes   last observed failure 00:05, a moment ago
+│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ► CLEAN CYCLES · repeats until stopped · HUNT 5 · parts · part 1 of 2
 │
-│ CLEAN CYCLES · HUNT 4 · group 1 · 2 clean cycles recorded · 3/18 steps complete
+│ CLEAN CYCLES · HUNT 5 · group 1 · 2 clean cycles recorded · 3/18 steps complete
 │ part 1/2 of this split · total hunt work unknown
 │
-│ NOW  HUNT 4 · PART 1 OF 2   R2   heavy vector load  on 00 · 01-15 at failing offsets, 00 parked at 0   mprime AVX2 36K-248K · 1 worker
-│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 4 of 5
+│ NOW  HUNT 5 · PART 1 OF 2   R2   heavy vector load  on 00 · 06 at failing offsets, 08 parked, idle   mprime AVX2 36K-248K · 1 worker
+│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 3 of 5
 │
 │    0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
 │ core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
-│ 00  ███████████████████████                            tune -23 now   0         08  █████                                              tune  -5 now  -5
-│                            █                           s-27 g4 f-24                       █                                            s-6 g1 f-7
-│                                                        parked                                                                          held failure
+│ 00  ███████████████████████                            tune -23 now -23         08  ██████                                             tune  -6 now  -5
+│                            █                           s-27 g4 f-24                       █                                            s-6 g0 f-7
+│                                                        loaded                                                                          parked
 │ 01  ███████████████                                    tune -15 now -15         09  █████████████████████████████████                  tune -33 now -33
 │                    █                                   s-17 g2 f-16                                                  █                 s-35 g2 f-34
-│                                                        held failure                                                                    held failure
+│                                                        idle                                                                            idle
 │ 02  ████████████████████████                           tune -24 now -24         10  █████████████                                      tune -13 now -13
 │                             █                          s-26 g2 f-25                              █                                     s-18 g5 f-14
-│                                                        held failure                                                                    held failure
+│                                                        idle                                                                            idle
 │ 03  ████████████████████████                           tune -24 now -24         11  ███████                                            tune  -7 now  -7
 │                             █                          s-25 g1 f-25                        █                                           s-10 g3 f-8
-│                                                        held failure                                                                    held failure
+│                                                        idle                                                                            idle
 │ 04  █████████████                                      tune -13 now -13         12  ██████████████                                     tune -14 now -14
 │                  █                                     s-16 g3 f-14                               █                                    s-17 g3 f-15
-│                                                        held failure                                                                    held failure
+│                                                        idle                                                                            idle
 │ 05  ████████                                           tune  -8 now  -8         13  ███████████████████████████████████                tune -35 now -35
 │             █                                          s-10 g2 f-9                                                     █               s-38 g3 f-36
-│                                                        held failure                                                                    held failure
-│ 06  █████████████████████████████████████              tune -37 now -37         14  ████████████                                       tune -12 now -12
-│                                           █            s-38 g1 f-39                             █                                      s-16 g4 f-13
-│                                                        held failure                                                                    held failure
+│                                                        idle                                                                            idle
+│ 06  ██████████████████████████████████████             tune -38 now -38         14  ████████████                                       tune -12 now -12
+│                                           █            s-38 g0 f-39                             █                                      s-16 g4 f-13
+│                                                        held failure                                                                    idle
 │ 07  █████████████████████████████                      tune -29 now -29         15  █████████████                                      tune -13 now -13
-│                                   █                    s-30 g1 f-31                               █                                    s-14 g1 f-15
-│                                                        held failure                                                                    held failure
+│                                  █                     s-30 g1 f-30                              █                                     s-14 g1 f-14
+│                                                        idle                                                                            idle
 │ white=tune · red point=recorded failure · gap=counts shallower than solo
 │
 │ WHAT HAPPENED
-│ 21:50  hunt     #4 started · part 1: 01-15 at failing offsets, 00 parked
-│ 21:50  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
-│ 21:49  hold     core 03 failure held; tuning stays at -24
-│ 21:49  fail     core 03 fails at -24
+│ 00:05  hunt     #5 started · part 1: 06 at failing offsets, 08 parked
+│ 00:05  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
+│ 00:04  hunt     not hunted: held: first unattributed failure loading cores [00] since the profile passed cycle 3 (#10934); a second failure loading any of...
+│ 00:04  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
 │
 │  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
