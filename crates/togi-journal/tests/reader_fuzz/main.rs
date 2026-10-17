@@ -13,7 +13,11 @@ fn every_fuzz_seed_keeps_the_reader_properties() {
         let path = entry.unwrap().path();
         let data = fs::read(&path).unwrap();
         let kept = panic::catch_unwind(|| properties::check(&data));
-        assert!(kept.is_ok(), "seed {} breaks a reader property", path.display());
+        assert!(
+            kept.is_ok(),
+            "seed {} breaks a reader property",
+            path.display()
+        );
         seeds += 1;
     }
     assert!(seeds > 0, "no seeds in {}", dir.display());
