@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, HashMap};
 
 use togi_machine::{CcdId, CoreId, PerCore};
 
@@ -37,6 +37,8 @@ impl Measurement {
     }
 }
 
+type LoadClocks = (BackendId, BTreeMap<CcdId, (Seq, i64)>);
+
 /// The newest request measurement of every load. A load answers with its newest measurement
 /// whatever the duration or outcome of the trial that took it, so older ones are dropped as
 /// newer ones arrive. The newest full part of a CCD is the measurement of the load that is the
@@ -44,7 +46,7 @@ impl Measurement {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Measurements {
     newest: HashMap<LoadKey, Measurement>,
-    clocks: HashMap<LoadKey, (BackendId, std::collections::BTreeMap<CcdId, (Seq, i64)>)>,
+    clocks: HashMap<LoadKey, LoadClocks>,
 }
 
 impl Measurements {
@@ -53,7 +55,7 @@ impl Measurements {
         load: LoadKey,
         backend: BackendId,
         seq: Seq,
-        clocks: &std::collections::BTreeMap<CcdId, u32>,
+        clocks: &BTreeMap<CcdId, u32>,
     ) {
         if clocks.is_empty() {
             return;
@@ -61,9 +63,9 @@ impl Measurements {
         let entry = self
             .clocks
             .entry(load)
-            .or_insert_with(|| (backend, Default::default()));
+            .or_insert_with(|| (backend, BTreeMap::default()));
         if entry.0 != backend {
-            *entry = (backend, Default::default());
+            *entry = (backend, BTreeMap::default());
         }
         for (&ccd, &mhz) in clocks {
             if entry

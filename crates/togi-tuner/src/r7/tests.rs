@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::num::{NonZeroU16, NonZeroU32};
 
 use proptest::array::uniform4;
@@ -524,12 +525,42 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
     ]);
     let ccd1 = [8, 9, 10, 11, 12, 13, 14, 15];
     for (at, duration, mhz, top, own) in [
-        (929, 120, 5029, 1.0470696687698364, 1.0286043882369995),
-        (930, 120, 5029, 1.0468533039093018, 1.0283397436141968),
-        (931, 120, 5028, 1.047316312789917, 1.028660774230957),
-        (932, 120, 5029, 1.047187328338623, 1.0287102460861206),
-        (933, 120, 5026, 1.046082615852356, 1.0274772644042969),
-        (934, 300, 5024, 1.0464084148406982, 1.028059482574463),
+        (
+            929,
+            120,
+            5029,
+            1.047_069_668_769_836_4,
+            1.028_604_388_236_999_5,
+        ),
+        (
+            930,
+            120,
+            5029,
+            1.046_853_303_909_301_8,
+            1.028_339_743_614_196_8,
+        ),
+        (931, 120, 5028, 1.047_316_312_789_917, 1.028_660_774_230_957),
+        (
+            932,
+            120,
+            5029,
+            1.047_187_328_338_623,
+            1.028_710_246_086_120_6,
+        ),
+        (
+            933,
+            120,
+            5026,
+            1.046_082_615_852_356,
+            1.027_477_264_404_296_9,
+        ),
+        (
+            934,
+            300,
+            5024,
+            1.046_408_414_840_698_2,
+            1.028_059_482_574_463,
+        ),
     ] {
         fx.pass(&record(
             at,
@@ -549,7 +580,7 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
         ("0119", 5034),
     ] {
         let target = fx.named(workload(0), 11, Some(clock)).unwrap();
-        assert_eq!(target.volts, 1.046082615852356, "{trial}");
+        assert_eq!(target.volts, 1.046_082_615_852_356, "{trial}");
         assert_eq!(
             target.cited,
             vec![seq(929), seq(930), seq(931), seq(932), seq(933)]
@@ -558,7 +589,7 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
     let target = fx.named(workload(0), 11, Some(5040)).unwrap();
     assert_eq!(
         backoff_counts(
-            OwnRequest::Measured(1.0315487384796143),
+            OwnRequest::Measured(1.031_548_738_479_614_3),
             Some(&target),
             None
         ),
@@ -576,11 +607,11 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
     journal.profile_change(&failing_profile);
     let mut sources = Vec::new();
     for (top, own, mhz) in [
-        (1.0470696687698364, 1.0286043882369995, 5029),
-        (1.0468533039093018, 1.0283397436141968, 5029),
-        (1.047316312789917, 1.028660774230957, 5028),
-        (1.047187328338623, 1.0287102460861206, 5029),
-        (1.046082615852356, 1.0274772644042969, 5026),
+        (1.047_069_668_769_836_4, 1.028_604_388_236_999_5, 5029),
+        (1.046_853_303_909_301_8, 1.028_339_743_614_196_8, 5029),
+        (1.047_316_312_789_917, 1.028_660_774_230_957, 5028),
+        (1.047_187_328_338_623, 1.028_710_246_086_120_6, 5029),
+        (1.046_082_615_852_356, 1.027_477_264_404_296_9, 5026),
     ] {
         sources.push(
             journal.r7_fact(
@@ -625,13 +656,13 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
         &failing_profile,
         &crate::testkit::R7Report::default()
             .requests(&[
-                (11, 1.0315487384796143),
-                (12, 1.0052189826965332),
-                (13, 1.0353376865386963),
-                (14, 1.0153366327285767),
-                (15, 1.0205724239349365),
-                (8, 1.0000171661376953),
-                (9, 1.0376709699630737),
+                (11, 1.031_548_738_479_614_3),
+                (12, 1.005_218_982_696_533_2),
+                (13, 1.035_337_686_538_696_3),
+                (14, 1.015_336_632_728_576_7),
+                (15, 1.020_572_423_934_936_5),
+                (8, 1.000_017_166_137_695_3),
+                (9, 1.037_670_969_963_073_7),
             ])
             .top(&[9])
             .named(11)
@@ -656,7 +687,7 @@ fn latest_load_clocks_survive_empty_reports_but_not_backend_changes_or_reset() {
     let mut evidence = Evidence::new(two_ccds().all());
     let backend = evidence.active_backend(togi_machine::Backend::Mprime);
     store.record_clocks(load, backend, seq(1), &[(CcdId(0), 5000)].into());
-    store.record_clocks(load, backend, seq(2), &Default::default());
+    store.record_clocks(load, backend, seq(2), &BTreeMap::default());
     store.record_clocks(load, backend, seq(3), &[(CcdId(0), 5100)].into());
     store.record_clocks(load, backend, seq(2), &[(CcdId(0), 4900)].into());
     assert_eq!(
@@ -1786,7 +1817,8 @@ mod props {
         passes: &[PassRecord],
         pick: impl Fn(&PassRecord) -> Option<f64>,
     ) -> Option<(f64, Seq, Vec<Seq>)> {
-        let mut groups: Vec<((LoadKey, Profile), Vec<(Seq, f64)>)> = Vec::new();
+        type PassGroup = ((LoadKey, Profile), Vec<(Seq, f64)>);
+        let mut groups: Vec<PassGroup> = Vec::new();
         for pass in passes {
             let valid = fx
                 .evidence
