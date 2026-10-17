@@ -10,7 +10,7 @@ use togi_tuner::{Action, PhaseNo};
 
 use super::kit::*;
 use crate::history::{LOG_LIMIT, LogEntry};
-use crate::model::{CoreState, FoldError, Model, project};
+use crate::model::{CoreState, FailureSource, FoldError, Model, project};
 use crate::words::Tag;
 
 fn searching() -> Script {
@@ -135,7 +135,7 @@ fn trial_lifecycle() {
     assert!(first.loaded);
     assert_eq!(
         (first.applied, first.profile),
-        (ObservedOffset(-25), off(-25))
+        (Some(ObservedOffset(-25)), off(-25))
     );
     let waiting = &snap.cores[1];
     assert!(!waiting.loaded && waiting.state != CoreState::Parked);
@@ -162,7 +162,7 @@ fn trial_preparation_does_not_claim_load() {
     assert!(trial.started.is_none());
     let first = &snap.cores[0];
     assert!(!first.loaded && !first.judged);
-    assert_eq!(first.applied, ObservedOffset(-25));
+    assert_eq!(first.applied, Some(ObservedOffset(-25)));
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn stopped_shows_the_saved_profile_not_the_applied_offsets() {
     let snap = model.snapshot();
     let stopped = snap.stopped.expect("stopped");
     assert!(stopped.saved);
-    assert_eq!(snap.cores[0].applied, ObservedOffset(0));
+    assert_eq!(snap.cores[0].applied, Some(ObservedOffset(0)));
     assert_eq!(snap.cores[0].profile, off(-20));
     assert!(snap.resting());
 }
@@ -293,7 +293,7 @@ fn smu_dead_end_keeps_the_readback() {
     let first = &model.snapshot().cores[0];
     assert_eq!(
         (first.applied, first.profile),
-        (ObservedOffset(0), off(-25))
+        (Some(ObservedOffset(0)), off(-25))
     );
 }
 
@@ -313,7 +313,7 @@ fn sparse_core_ids() {
     let snap = model.snapshot();
     let ids: Vec<u8> = snap.cores.iter().map(|c| c.id.get()).collect();
     assert_eq!(ids, [0, 8]);
-    assert_eq!(snap.cores[1].applied, ObservedOffset(-9));
+    assert_eq!(snap.cores[1].applied, Some(ObservedOffset(-9)));
     assert_eq!(snap.order, [core(0), core(8)]);
 }
 
@@ -1030,4 +1030,110 @@ fn a_trial_reporting_progress_past_its_planned_end_is_still_running() {
         .checked_add(jiff::SignedDuration::from_secs(42))
         .unwrap();
     assert_eq!(running.past_end(now), Duration::from_secs(42));
+}
+
+fn decided(activity: Activity, failure_point: Option<i64>) -> Payload {
+    togi_journal::TunerDecision {
+        core: core(0),
+        activity,
+        decision: togi_journal::Decision::StepDeeper,
+        from_offset: off(-20),
+        to_offset: off(-25),
+        pass: None,
+        failure_point: failure_point.map(off),
+        workloads: Vec::new(),
+        reason: String::new(),
+    }
+    .into()
+}
+
+#[test]
+fn a_core_nobody_read_back_has_no_observed_offset() {
+    let model = searching().model();
+    let snap = model.snapshot();
+    assert_eq!(snap.cores[0].applied, None);
+    assert_eq!(snap.cores[0].profile, off(-25));
+}
+
+#[test]
+fn a_failure_point_keeps_the_source_and_event_that_set_it() {
+    let mut h = Hist::three();
+    let first = h.push(decided(Activity::Search, Some(-21)));
+    let evidence = h.facts.evidence[&core(0)];
+    let failure = evidence.failure.expect("a failure");
+    assert_eq!(
+        (failure.offset, failure.source, failure.seq),
+        (off(-21), FailureSource::Alone, first)
+    );
+    let decision = evidence.decision.expect("a decision");
+    assert_eq!(
+        (
+            decision.seq,
+            decision.decision,
+            decision.activity,
+            decision.from,
+            decision.to
+        ),
+        (
+            first,
+            togi_journal::Decision::StepDeeper,
+            Activity::Search,
+            off(-20),
+            off(-25)
+        )
+    );
+    let second = h.push(decided(Activity::Hunt, Some(-21)));
+    let evidence = h.facts.evidence[&core(0)];
+    assert_eq!(
+        evidence.failure.expect("a failure").seq,
+        first,
+        "the same point keeps its evidence"
+    );
+    assert_eq!(evidence.decision.expect("a decision").seq, second);
+    let third = h.push(decided(Activity::Hunt, Some(-22)));
+    let moved = h.facts.evidence[&core(0)].failure.expect("a failure");
+    assert_eq!(
+        (moved.offset, moved.source, moved.seq),
+        (off(-22), FailureSource::Named, third)
+    );
+    h.push(decided(Activity::Hunt, None));
+    assert_eq!(h.facts.evidence[&core(0)].failure, None);
+}
+
+#[test]
+fn a_failure_is_current_only_in_the_operation_that_found_it() {
+    let mut h = Hist::three();
+    let mut first = intent(
+        "t1",
+        Regime::R1,
+        Condition::Together,
+        &[-20, -20, -20],
+        &[0, 1, 2],
+    );
+    first.cycle = Some(nz(1));
+    h.push(first.into());
+    h.push(decided(Activity::Hunt, Some(-21)));
+    assert!(h.facts.failed_in.contains_key(&core(0)));
+    let mut next = intent(
+        "t2",
+        Regime::R1,
+        Condition::Together,
+        &[-20, -20, -20],
+        &[0, 1, 2],
+    );
+    next.cycle = Some(nz(2));
+    h.push(next.into());
+    assert!(h.facts.failed_in.is_empty(), "a different operation starts");
+    assert_eq!(
+        h.facts.evidence[&core(0)]
+            .failure
+            .expect("a failure")
+            .offset,
+        off(-21)
+    );
+    h.push(decided(Activity::Hunt, Some(-22)));
+    assert!(h.facts.failed_in.contains_key(&core(0)));
+    h.push(config_loaded());
+    assert!(h.facts.failed_in.is_empty(), "a new config starts over");
+    assert!(h.facts.evidence[&core(0)].failure.is_some());
 }

@@ -1,4 +1,4 @@
-//! Where things sit: the size class, the frame area and the rectangles every view shares.
+//! Where things sit: the size class, the frame area and the rectangles every page shares.
 //!
 //! The frame area is `(width - 1) x (height - 1)`, so the last row and the last column of
 //! the terminal are never written and the terminal never scrolls.
@@ -12,11 +12,12 @@ use crate::screen::Screen;
 /// How much the screen has room for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SizeClass {
-    /// Narration is shortened and the lower panels give way to the core tables.
+    /// Under 160 columns or 45 rows: Main is the numeric table, not the gauges.
     Compact,
-    /// Width 150 and height 40 or more: the two CCD tables sit side by side and the countdown is inline.
+    /// 160 columns and 45 rows or more: Main draws the two 77-cell CCD gauges.
     Medium,
-    /// Width 200 and height 60 or more: a three-row trial bar and large remaining-time digits.
+    /// 200 columns and 60 rows or more: the same gauges at the same scale; the extra room goes to What happened
+    /// and the detail tables.
     Wide,
 }
 
@@ -26,7 +27,7 @@ impl SizeClass {
     pub const fn of(width: u16, height: u16) -> Self {
         if width >= 200 && height >= 60 {
             Self::Wide
-        } else if width >= 150 && height >= 40 {
+        } else if width >= 160 && height >= 45 {
             Self::Medium
         } else {
             Self::Compact
@@ -45,56 +46,28 @@ pub const fn frame_area(screen: &Screen) -> Rect {
     )
 }
 
-/// The rows of the dashboard that depend only on the size class.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Rows {
-    /// The stage line.
-    pub stage: u16,
-    /// The narration.
-    pub say: u16,
-    /// The trial band.
-    pub now: u16,
-    /// The first CCD table.
-    pub ccd: u16,
-    /// The height of the trial band.
-    pub now_height: u16,
-    /// The outcome lines.
-    pub outcomes: u16,
-    /// The height of the outcome lines.
-    pub outcomes_height: u16,
-}
-
-/// The rectangles every view shares, measured from the screen alone. Panels that depend on the model are
-/// measured by the panels from these.
+/// The rectangles every page shares, measured from the screen alone. Main's own rows are in
+/// [`Main`](super::measure::Main).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Layout {
     /// The size class.
     pub class: SizeClass,
     /// The frame area: nothing is written outside it.
     pub area: Rect,
-    /// Cells between the area's left edge and every panel.
+    /// Cells between the area's left edge and every panel; the same on the right.
     pub margin: u16,
-    /// Cells between two panels side by side.
-    pub gap: u16,
     /// The width inside the margins.
     pub full: u16,
-    /// The width of a left or right half.
-    pub left: u16,
-    /// Where the right half starts.
-    pub right_x: u16,
-    /// The row classes place by size.
-    pub rows: Rows,
     /// The footer row, `area.height - 1`.
     pub hint: u16,
     /// The header: clock, tuning time, session age and counts.
     pub header: Rect,
     /// The stage line.
     pub stage: Rect,
-    /// The narration, beside the last outcome unless compact.
-    pub say: Rect,
-    /// The last outcome, right of the narration; empty width when compact.
-    pub last: Rect,
-    /// Between the narration and the footer: where help and the journal view draw.
+    /// The page title under the stage line: on every page but Main at the reference size, where the row is blank.
+    pub title: Rect,
+    /// Between the title and the footer: a page's scrolled body, the help, the journal and the narration of a
+    /// journal without a session.
     pub body: Rect,
     /// The key hints.
     pub footer: Rect,
@@ -105,79 +78,29 @@ impl Layout {
     #[must_use]
     pub fn new(screen: &Screen) -> Self {
         let area = frame_area(screen);
-        let class = SizeClass::of(screen.width, screen.height);
-        let (margin, gap, rows) = match class {
-            SizeClass::Wide => (
-                2,
-                5,
-                Rows {
-                    stage: 2,
-                    say: 4,
-                    now: 7,
-                    ccd: 19,
-                    now_height: 7,
-                    outcomes: 15,
-                    outcomes_height: 3,
-                },
-            ),
-            SizeClass::Medium => (
-                2,
-                5,
-                Rows {
-                    stage: 2,
-                    say: 4,
-                    now: 7,
-                    ccd: 15,
-                    now_height: 3,
-                    outcomes: 11,
-                    outcomes_height: 3,
-                },
-            ),
-            SizeClass::Compact => (
-                1,
-                3,
-                Rows {
-                    stage: 1,
-                    say: 3,
-                    now: 5,
-                    ccd: 10,
-                    now_height: 2,
-                    outcomes: 8,
-                    outcomes_height: 1,
-                },
-            ),
-        };
-        let mut full = area.width.saturating_sub(2 * margin);
-        let mut left = full.saturating_sub(gap) / 2;
-        let mut right_x = margin + left + gap;
-        if class == SizeClass::Wide && full >= 235 {
-            (left, right_x, full) = (115, 122, 235);
-        }
+        let margin = 1;
+        let full = area.width.saturating_sub(2 * margin);
         let hint = area.height.saturating_sub(1);
-        let say_height = if class == SizeClass::Compact { 1 } else { 2 };
-        let say_width = if class == SizeClass::Compact {
-            full
-        } else {
-            left
-        };
         Self {
-            class,
+            class: SizeClass::of(screen.width, screen.height),
             area,
             margin,
-            gap,
             full,
-            left,
-            right_x,
-            rows,
             hint,
             header: Rect::new(margin, 0, full, 1),
-            stage: Rect::new(margin, rows.stage, full, 1),
-            say: Rect::new(margin, rows.say, say_width, say_height),
-            last: Rect::new(right_x, rows.say, left, 2),
-            body: Rect::new(margin, rows.say, full, hint.saturating_sub(rows.say + 1)),
+            stage: Rect::new(margin, 1, full, u16::from(hint > 1)),
+            title: Rect::new(margin, 2, full, u16::from(hint > 2)),
+            body: Rect::new(margin, 3, full, hint.saturating_sub(3)),
             footer: Rect::new(margin, hint, full, 1),
         }
     }
+}
+
+/// How many rows the scrolled body of `screen`'s page has: the rows under the title and above the footer. The key
+/// handling pages by it; Main at the reference size does not scroll.
+#[must_use]
+pub fn body_rows(screen: &Screen) -> usize {
+    usize::from(Layout::new(screen).body.height)
 }
 
 /// Checks that a frame buffer follows the frame rules for `screen`: its area is exactly [`frame_area`], so no
@@ -222,7 +145,7 @@ mod tests {
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
 
-    use super::{Layout, SizeClass, check_frame_bounds, frame_area};
+    use super::{Layout, SizeClass, body_rows, check_frame_bounds, frame_area};
     use crate::frames::testing::screen;
     use crate::screen::{Colours, View};
 
@@ -234,9 +157,9 @@ mod tests {
             (199, 60, SizeClass::Medium),
             (200, 59, SizeClass::Medium),
             (160, 45, SizeClass::Medium),
-            (150, 40, SizeClass::Medium),
-            (149, 40, SizeClass::Compact),
-            (150, 39, SizeClass::Compact),
+            (159, 45, SizeClass::Compact),
+            (160, 44, SizeClass::Compact),
+            (150, 40, SizeClass::Compact),
             (120, 33, SizeClass::Compact),
             (80, 24, SizeClass::Compact),
             (0, 0, SizeClass::Compact),
@@ -265,22 +188,33 @@ mod tests {
     }
 
     #[test]
-    fn the_standard_sizes_measure_as_the_spec_describes() {
+    fn the_reference_size_keeps_one_margin_column_each_side() {
+        let reference = Layout::new(&screen(View::Main, 160, 45, Colours::Full, true));
+        assert_eq!((reference.margin, reference.full), (1, 157));
+        assert_eq!(reference.header, Rect::new(1, 0, 157, 1));
+        assert_eq!(reference.stage, Rect::new(1, 1, 157, 1));
+        assert_eq!(reference.title, Rect::new(1, 2, 157, 1));
+        assert_eq!(reference.footer, Rect::new(1, 43, 157, 1));
+        assert_eq!(reference.body, Rect::new(1, 3, 157, 40));
         let wide = Layout::new(&screen(View::Main, 240, 67, Colours::Full, true));
+        assert_eq!(wide.footer, Rect::new(1, 65, 237, 1));
+        let compact = Layout::new(&screen(View::Main, 80, 30, Colours::Full, true));
+        assert_eq!(compact.footer, Rect::new(1, 28, 77, 1));
+        assert_eq!(compact.body, Rect::new(1, 3, 77, 25));
+    }
+
+    #[test]
+    fn the_body_rows_are_the_rows_under_the_title() {
+        for (width, height, want) in [(160, 45, 40), (80, 30, 25), (79, 29, 24), (240, 67, 62)] {
+            for view in View::ALL {
+                let sc = screen(view, width, height, Colours::Full, true);
+                assert_eq!(body_rows(&sc), want, "{view:?} {width}x{height}");
+            }
+        }
         assert_eq!(
-            (wide.margin, wide.gap, wide.full, wide.left, wide.right_x),
-            (2, 5, 235, 115, 122)
+            body_rows(&screen(View::Cores, 10, 2, Colours::Full, true)),
+            0
         );
-        assert_eq!(wide.body, Rect::new(2, 4, 235, 60));
-        assert_eq!(wide.footer, Rect::new(2, 65, 235, 1));
-        let medium = Layout::new(&screen(View::Main, 160, 45, Colours::Full, true));
-        assert_eq!((medium.full, medium.left, medium.right_x), (155, 75, 82));
-        assert_eq!(medium.body, Rect::new(2, 4, 155, 38));
-        let compact = Layout::new(&screen(View::Main, 80, 24, Colours::Full, true));
-        assert_eq!((compact.margin, compact.gap, compact.full), (1, 3, 77));
-        assert_eq!(compact.body, Rect::new(1, 3, 77, 18));
-        assert_eq!(compact.say, Rect::new(1, 3, 77, 1));
-        assert_eq!(compact.footer.y, 22);
     }
 
     #[test]
@@ -290,6 +224,8 @@ mod tests {
                 let layout = Layout::new(&screen(View::Main, width, height, Colours::Full, true));
                 for (name, rect) in [
                     ("header", layout.header),
+                    ("stage", layout.stage),
+                    ("title", layout.title),
                     ("footer", layout.footer),
                     ("body", layout.body),
                 ] {

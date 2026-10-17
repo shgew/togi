@@ -2,69 +2,69 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   09:55:47   tuning 33h55m   session 33h55m   58 failures · 13 crashes   last observed failure 08:45, 1h10m ago
+│ togi   08:32:41   tuning 32h32m   session 32h32m   57 failures · 12 crashes   last observed failure 08:32, a moment ago
+│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ► PHASE 2 · confirmation cycle · repairing → ○ CLEAN CYCLES
 │
-│  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ► PHASE 2  confirmation cycle  ───  CLEAN CYCLES 0  ───  ► CYCLE 2  step 1 of 18 · part 1 of 3 · trial 1 of 4
+│ PHASE 2 · repairing after failure · cycle held · 18/18 steps complete
+│ chain closure at step 18 of 18 · checking resumes at step 19 of 18
 │
-│  ▌  CYCLE 2   Step 1 is R7 all-core with mprime AVX2 36K-248K.                                                           last trial      PASS  2:00 on 09 12 13 15 · Tctl max 70°C
-│  ▌            Part 1 of 3 loads 00-07 for 2 minutes.
+│ NOW  RERUN AFTER BACKOFF · PARTIAL   R7   all-core load  on 03 06 07   mprime AVX2 36K-248K · 3 workers
+│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 1 of 5
 │
-│  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 1035
-│   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers                                                                                                                                                  CYCLE 2 · STEP 1 · PART 1
+│                                            0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
+│                                         core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
+│                                         00  ███████████████████████                            tune -23 now -23         08  █████                                              tune  -5 now  -5
+│                                                                    █                           s-27 g4 f-24                       █                                            s-6 g1 f-7
+│                                                                                                idle                                                                            idle
+│                                         01  ███████████████                                    tune -15 now -15         09  █████████████████████████████████                  tune -33 now -33
+│                                                            █                                   s-17 g2 f-16                                                  █                 s-35 g2 f-34
+│                                                                                                idle                                                                            idle
+│                                         02  ████████████████████████                           tune -24 now -24         10  █████████████                                      tune -13 now -13
+│                                                                     █                          s-26 g2 f-25                              █                                     s-18 g5 f-14
+│                                                                                                idle                                                                            idle
+│                                         03  ████████████████████████                           tune -24 now -24         11  ███████                                            tune  -7 now  -7
+│                                                                     █                          s-25 g1 f-25                        █                                           s-10 g3 f-8
+│                                                                                                judged                                                                          idle
+│                                         04  █████████████                                      tune -13 now -13         12  ██████████████                                     tune -14 now -14
+│                                                          █                                     s-16 g3 f-14                               █                                    s-17 g3 f-15
+│                                                                                                idle                                                                            idle
+│                                         05  ████████                                           tune  -8 now  -8         13  ███████████████████████████████████                tune -35 now -35
+│                                                     █                                          s-10 g2 f-9                                                     █               s-38 g3 f-36
+│                                                                                                idle                                                                            idle
+│                                         06  █████████████████████████████████████              tune -37 now -37         14  ████████████                                       tune -12 now -12
+│                                                                                   █            s-38 g1 f-39                             █                                      s-16 g4 f-13
+│                                                                                                judged                                                                          idle
+│                                         07  █████████████████████████████                      tune -29 now -29         15  █████████████                                      tune -13 now -13
+│                                                                           █                    s-30 g1 f-31                               █                                    s-14 g1 f-15
+│                                                                                                judged                                                                          idle
+│                                         white=tune · red point=recorded failure · gap=counts shallower than solo
 │
-│  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          ▀█    ▀▀█ █▀█
-│  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░           █  ▀ █▀▀ █ █
-│  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
-│  0:40 of 2:00                                                                                                                                                                        0 passed · trial 1 of 4  ► · · ·                   left
+│ WHAT HAPPENED
+│ 08:32  room     core 15 has room again at -13
+│ 08:32  room     core 07 has room again at -29
+│ 08:32  room     core 06 has room again at -37
+│ 08:32  room     core 08 has room again at -5
+│ 08:32  backoff  core 03 -25 → -24
+│ 08:32  room     core 15 yields -14 → -13; no later round moves it
+│ 08:32  room     core 07 yields -30 → -29; no later round moves it
+│ 08:32  room     core 06 yields -38 → -37; no later round moves it
+│ 08:32  room     core 08 yields -6 → -5; no later round moves it
+│ 08:32  round    #1 stopped: failure #7705: blame goes to the deepened cores
+│ 08:32  crash    R7 all-core on 03 06 07 · rebooted · midway through trial 1 of 5 · no core named
+│ 06:49  room     core 15 -13 → -14
+│ 06:49  room     core 07 -29 → -30
+│ 06:49  room     core 06 -37 → -38
+│ 06:49  room     core 03 -24 → -25
+│ 06:49  room     core 08 -5 → -6
+│ 06:49  round    #1: core 03 goes deeper to -25, core 06 goes deeper to -38, core 07 goes deeper to -30, core 08 goes deeper to -6, core 15 goes deeper to -14
+│ 06:49  cycle    cycle 1 passed, a full cycle
+│ 06:49  pass     49 credited checks · 36 chain notes
+│ 04:43  backoff  core 14 -13 → -12
+│ 04:43  fail     core 14 fails at -13
+│ 04:43  fail     rerun of R4 partial load on core 14 at -13 · corrected hardware error · no core named
+│ 04:41  backoff  core 14 -14 → -13
+│ 04:41  fail     core 14 fails at -14
+│ 04:41  fail     R4 partial load on core 14 at -14 · wrong result · core 14 named
+│ 04:41  pass     74 credited checks · 33 chain notes
 │
-│  if 3 of 4 pass:      next trial: trial 4 of 4 · 5m
-│  if it fails:         core 06 -38 → -37 per offset order; next trial: rerun R7 all-core on 00-07 · 2m
-│  if inconclusive:     the same trial runs again
-│
-│  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
-│  ► 00  -23  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬···                           -24                                            08   -6  AT LIMIT  ▄▄▄▄▄▄▬                                                -7   top by offset
-│  ► 01  -15  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                                     -16                                            09  -33  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                   -34
-│  ► 02  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                            -25                                            10  -13  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▬····                                    -14
-│  ► 03  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬                             -25                                            11   -7  AT LIMIT  ▄▄▄▄▄▄▄▬··                                             -8
-│  ► 04  -13  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                                      -14                                            12  -14  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                                     -15
-│  ► 05   -8  AT LIMIT  ▄▄▄▄▄▄▄▄▬·                                             -9   top by offset                            13  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                -36
-│  ► 06  -38  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬               -39                                            14  -12  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▬···                                      -13
-│  ► 07  -29  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬                        -30                                            15  -14  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬                                       -15
-│
-│  BIOS PROFILE ────────────────────────────────────────────────────────────────── confirmed by the cycle ending #7128     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
-│  slot      0    1    2    3    4    5    6    7
-│  CCD 0   -23  -15  -24  -24  -13   -8  -37  -29                                                                          09:55  step     cycle 2 step 1: R7 all-core, mprime AVX2 36K-248K
-│  CCD 1    -5  -33  -13   -7  -14  -35  -12  -13                                                                          09:55  cycle    cycle 2 started · 18 steps
-│                                                                                                                          09:55  round    #3 passed, the proposed offsets held
-│  CYCLE 2 ───────────────────────────────────────────────────────────────────────────────────────── 18 steps · 0 done     09:55  pass     R7 all-core on 09 12 13 15 · 5 of 5 passed · Tctl max 75°C
-│                                                                                                                          09:45  pass     R7 all-core on 08-15 · 5 of 5 passed · Tctl max 75°C
-│    #   kind                  where                   workload                      schedule       result                 09:35  pass     R7 all-core on 09 12 13 15 · 5 of 5 passed · Tctl max 76°C
-│  ►  1  R7 all-core           2 CCDs · 3+ parts       mprime AVX2 36K-248K          3+ parts       part 1 of 3            09:25  pass     R7 all-core on 08-15 · 5 of 5 passed · Tctl max 74°C
-│  ►     ├ full CCD 0          00-07                                                 3 x 2m + 5m    trial 1 of 4           09:15  pass     R7 all-core on 09 12 13 15 · 5 of 5 passed · Tctl max 72°C
-│        ├ full CCD 1          08-15                                                 3 x 2m + 5m                           09:05  pass     R7 all-core on 08-15 · 5 of 5 passed · Tctl max 76°C
-│        ├ full CCD 0+1        00-15                                                 3 x 2m + 10m                          08:55  room     core 15 -13 → -14
-│        └ partials may follow                                                                                             08:55  room     core 06 -37 → -38
-│  ○  2  R7 all-core           2 CCDs · 3+ parts       mprime AVX-512 36K-248K       3+ parts                              08:55  room     core 08 -5 → -6
-│  ○  3  R7 all-core           2 CCDs · 3+ parts       y-cruncher FFTv4 + N63 + VT3  3+ parts                              08:55  round    #3: core 06 goes deeper to -38, core 08 goes deeper to -6, core 15 goes deeper to -14
-│  ○  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m                               08:55  pass     rerun of R7 all-core on 06 07 · 5 of 5 passed · Tctl max 73°C
-│  ○  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m                               08:45  room     core 15 has room again at -13
-│  ○  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               08:45  room     core 06 has room again at -37
-│  ○  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   08:45  room     core 08 has room again at -5
-│  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               08:45  backoff  core 07 -30 → -29
-│  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               08:45  room     core 15 yields -14 → -13, back to its round baseline
-│  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               08:45  room     core 06 yields -38 → -37, back to its round baseline
-│  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               08:45  room     core 08 yields -6 → -5, back to its round baseline
-│  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               08:45  round    #2 stopped: failure #7839: blame goes to the deepened cores
-│  ○ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               08:45  fail     R7 all-core on 06 07 · uncorrected hardware error · no core named
-│  ○ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               08:45  crash    with the offsets applied, rebooted
-│  ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               08:42  room     core 15 -13 → -14
-│  ○ 16  R4 partial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               08:42  room     core 07 -29 → -30
-│  ○ 17  R4 partial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               08:42  room     core 06 -37 → -38
-│  ○ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   08:42  room     core 08 -5 → -6
-│                                                                                                                          08:42  round    #2: core 06 goes deeper to -38, core 07 goes deeper to -30, core 08 goes deeper to -6, core 15...
-│  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     08:42  pass     rerun of R7 all-core on 03 06 07 · 5 of 5 passed · Tctl max 76°C
-│  mprime AVX2 36K-248K           05 08 by offset          00-05 07-12 14 15                                               08:32  room     core 15 has room again at -13
-│  mprime AVX-512 36K-248K        05 08 by offset          00-05 07-12 14 15                                               08:32  room     core 07 has room again at -29
-│  y-cruncher FFTv4 + N63 + VT3   05 08 by offset          00-05 07-12 14 15                                               +953 more
-│
-│   ?  help    l  log    esc  back    q  exit dashboard
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

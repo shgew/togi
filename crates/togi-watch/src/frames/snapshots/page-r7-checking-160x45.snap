@@ -1,0 +1,48 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
+│ ■ SOLO LIMITS  16/16 → ► PHASE 1 · cycle 1 → ○ PHASE 2 → ○ CLEAN CYCLES   1:20 left
+│ R7 EVIDENCE · 4/9 · < Cycle | Hunts / probes >
+│   R7 EVIDENCE ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────── observed, not a guarantee
+│
+│   The cores of a CCD share one voltage rail, and the loaded core that requests the most voltage sets it, so a failure is charged to that top requester first.
+│   Cores within 1 mV of the highest request tie.
+│   Request order is read from the telemetry recorded for each CCD's full part. `per offset order` marks a CCD where no measurement covers a loaded core, so
+│   the order is taken from the offsets instead.
+│   Self-sufficient means the core has been observed passing as a top requester at its current offset or deeper. That is evidence so far, not a guarantee
+│   against future failures.
+│
+│   While this R7 trial runs, any outcome is conditional: its end may add request or clock telemetry that changes the top requesters, the backoff targets and
+│   the partials derived from them.
+│
+│   R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────────────────────────────────────────────── observed, not a guarantee
+│   mprime AVX2 36K-248K           05 08 by offset          none yet
+│   mprime AVX-512 36K-248K        05 08 by offset          none yet
+│   y-cruncher FFTv4 + N63 + VT3   05 08 by offset          none yet
+│
+│   mprime AVX2 36K-248K · loading now
+│   CCD 0  top requesters 05 · per offset order
+│          self-sufficient: none yet
+│   CCD 1  top requesters 08 · per offset order
+│          self-sufficient: none yet
+│
+│   mprime AVX-512 36K-248K
+│   CCD 0  top requesters 05 · per offset order
+│          self-sufficient: none yet
+│   CCD 1  top requesters 08 · per offset order
+│          self-sufficient: none yet
+│
+│   y-cruncher FFTv4 + N63 + VT3
+│   CCD 0  top requesters 05 · per offset order
+│          self-sufficient: none yet
+│   CCD 1  top requesters 08 · per offset order
+│          self-sufficient: none yet
+│
+│
+│
+│
+│
+│
+│  ←/→  pages  4/9 R7 evidence   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

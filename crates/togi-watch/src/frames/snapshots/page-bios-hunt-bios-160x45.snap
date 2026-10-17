@@ -1,0 +1,48 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   21:51:32   tuning 69h51m   session 69h51m   60 failures · 15 crashes   last observed failure 21:50, a moment ago
+│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ► CLEAN CYCLES · repeats until stopped · HUNT 4 · parts · part 1 of 2   1:20 left
+│ BIOS PROFILE · 6/9 · < Hunts / probes | History >
+│   BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────── UNCONFIRMED · cores 00-15
+│
+│   confirmed by the passed full cycle 3 that ended 2026-01-03 14:22
+│   evidence: journal event #10468
+│
+│   slot      0    1    2    3    4    5    6    7
+│   CCD 0   -22* -14* -23* -23* -12*  -7* -36* -28*
+│   CCD 1    -4* -32* -12*  -6* -13* -34* -11* -12*
+│
+│   * unconfirmed: a passed full cycle confirms it, unless a failure is held
+│   unconfirmed since journal event #10993
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│  ←/→  pages  6/9 BIOS profile   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

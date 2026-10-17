@@ -1,0 +1,48 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   00:48:40   tuning 0h48m   session 0h48m   0 failures · 0 crashes
+│ ► SOLO LIMITS  0/16 → ○ PHASE 1 → ○ PHASE 2 → ○ CLEAN CYCLES   0:50 left
+│ HISTORY · 7/9 · < BIOS profile | Journal >
+│   2026-01-01 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│   00:48  step     core 15 passed 0; searches -5 on its next turn
+│   00:45  step     core 07 passed 0; searches -5 on its next turn
+│   00:42  step     core 14 passed 0; searches -5 on its next turn
+│   00:39  step     core 06 passed 0; searches -5 on its next turn
+│   00:36  step     core 13 passed 0; searches -5 on its next turn
+│   00:33  step     core 05 passed 0; searches -5 on its next turn
+│   00:30  step     core 12 passed 0; searches -5 on its next turn
+│   00:27  step     core 04 passed 0; searches -5 on its next turn
+│   00:24  step     core 11 passed 0; searches -5 on its next turn
+│   00:21  step     core 03 passed 0; searches -5 on its next turn
+│   00:18  step     core 10 passed 0; searches -5 on its next turn
+│   00:15  step     core 02 passed 0; searches -5 on its next turn
+│   00:12  step     core 09 passed 0; searches -5 on its next turn
+│   00:09  step     core 01 passed 0; searches -5 on its next turn
+│   00:06  step     core 08 passed 0; searches -5 on its next turn
+│   00:03  step     core 00 passed 0; searches -5 on its next turn
+│   00:00  start    session started on 16 cores
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│  ←/→  pages  7/9 History   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

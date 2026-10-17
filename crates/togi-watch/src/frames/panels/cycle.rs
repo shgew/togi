@@ -13,34 +13,84 @@ use super::super::layout::SizeClass;
 use super::super::measure::Tables;
 use super::super::scene::{Scene, short_duration};
 use super::super::terms::{first_open_part, part_name};
-use super::table::{cell, number_ranges, stage_marker, table_row};
+use super::table::{cell, field_row, number_ranges, stage_marker, table_row};
 use crate::history::LOG_LIMIT;
 use crate::model::CycleView;
-use crate::words::{core_ids, kind_words, workload_display};
-
-/// A cycle's rows and the index of the row it keeps in view: the running part, else the current step.
-pub(super) struct CycleRows {
-    /// The rows, rule first.
-    pub(super) lines: Vec<Line<'static>>,
-    /// The row of the running part, or of the current step; none when no step is open.
-    pub(super) focus: Option<usize>,
-}
+use crate::words::{core_ids, kind_words, noun, plural, workload_display};
 
 fn seconds(n: u32) -> String {
     short_duration(Duration::from_secs(u64::from(n)))
 }
 
-/// The cycle within `height` rows: it leaves out the rows above the focus from the top, then the blank under
-/// the rule. With no step open it keeps every row, but gives up the blank under the rule when it is too tall,
-/// so a `+N more` under it does not count that blank.
+/// The lifecycle rows under the rule: that checking is stopped, or held for a repair with the step the chain
+/// closes at and the step checking resumes at, each named once and together only when they are one step.
+fn state_rows(
+    scene: &Scene<'_>,
+    cycle: &CycleView<'_>,
+    t: &Tables,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let plan = cycle.plan;
+    let steps = plan.steps.len();
+    let say = |paint: Paint, label: &str, text: String| {
+        field_row(scene, t, label, cell(scene, paint, text), width)
+    };
+    if scene.s.stopped.is_some() {
+        return vec![say(
+            Paint::Grey,
+            "state",
+            "stopped · the last known work; nothing is running".to_owned(),
+        )];
+    }
+    if !(plan.paused || scene.s.hunt.is_some()) {
+        return Vec::new();
+    }
+    let closure = plan.current;
+    let resume = cycle.resume_step();
+    let mut out = vec![say(
+        Paint::Hunt,
+        "state",
+        "repairing after failure · cycle held".to_owned(),
+    )];
+    if resume >= steps {
+        out.push(say(
+            Paint::Text,
+            "resumes",
+            format!("every step is done; checking resumes after step {steps}"),
+        ));
+    } else if resume == closure {
+        out.push(say(
+            Paint::Text,
+            "closure",
+            format!(
+                "chain closure and checking resume at step {} of {steps}",
+                closure + 1
+            ),
+        ));
+    } else {
+        out.push(say(
+            Paint::Text,
+            "closure",
+            format!("chain closure at step {} of {steps}", closure + 1),
+        ));
+        out.push(say(
+            Paint::Text,
+            "resumes",
+            format!("checking resumes at step {} of {steps}", resume + 1),
+        ));
+    }
+    out
+}
+
+/// The cycle in full: its rule, its lifecycle, a row per step with the current step's requirements and parts
+/// under it. The page scrolls, so no row is left out.
 pub(super) fn cycle_lines(
     scene: &Scene<'_>,
     cycle: &CycleView<'_>,
     t: &Tables,
     width: usize,
     class: SizeClass,
-    height: usize,
-) -> CycleRows {
+) -> Vec<Line<'static>> {
     let plan = cycle.plan;
     let done = plan.steps.iter().filter(|step| step.done).count();
     let number = plan.number.map_or(0, std::num::NonZeroU32::get);
@@ -57,11 +107,13 @@ pub(super) fn cycle_lines(
         ),
         Line::default(),
     ];
-    let mut keep = vec![0];
-    let mut focus = None;
+    let state = state_rows(scene, cycle, t, width);
+    if !state.is_empty() {
+        out.extend(state);
+        out.push(Line::default());
+    }
     let schedule_shown = t.cycle[5].w > 0;
     if class != SizeClass::Compact {
-        keep.push(out.len());
         out.push(table_row(
             &t.cycle,
             &[
@@ -76,10 +128,13 @@ pub(super) fn cycle_lines(
         ));
     }
     let hunt_open = scene.s.hunt.is_some();
+    let stopped = scene.s.stopped.is_some();
+    let resume = cycle.resume_step();
     for (i, step) in plan.steps.iter().enumerate() {
         let (mut marker, mut style, mut code) =
             (stage_marker(scene, "○"), Paint::Grey, Paint::Text);
         let mut result = Line::default();
+        let current = i == plan.current && !step.done;
         if step.done {
             (marker, style, code) = (stage_marker(scene, "■"), Paint::Text, Paint::White);
             let mut spans = vec![scene.paint(Paint::Good, "done")];
@@ -89,25 +144,33 @@ pub(super) fn cycle_lines(
                 spans.push(scene.paint(Paint::Grey, format!(" · {word}{}", number_ranges(hunts))));
             }
             result = Line::from(spans);
-        } else if i == plan.current {
-            let marker_glyph = if scene.s.stopped.is_some() {
-                "○"
-            } else {
-                "►"
-            };
+        } else if current {
+            let marker_glyph = if stopped { "○" } else { "►" };
             (marker, style, code) = (
                 stage_marker(scene, marker_glyph),
                 Paint::White,
                 Paint::White,
             );
             result = cell(scene, Paint::Running, step_position(scene, step));
-            if plan.paused || hunt_open {
+            if stopped {
+                result = cell(scene, Paint::Grey, "stopped here");
+            } else if plan.paused || hunt_open {
                 marker = scene.paint(Paint::Hunt, "○");
-                result = cell(scene, Paint::Hunt, "paused");
+                result = cell(scene, Paint::Hunt, "held");
                 if let Some(part) = first_open_part(step).filter(|_| step.parts.len() > 1) {
-                    result = cell(scene, Paint::Hunt, format!("paused at part {part}"));
+                    result = cell(scene, Paint::Hunt, format!("held at part {part}"));
                 }
             }
+        } else if step.parts.iter().any(|part| part.passed + part.failed > 0) {
+            let credited: u32 = step.parts.iter().map(|part| part.passed).sum();
+            let required: u32 = step.parts.iter().map(|part| part.short + part.long).sum();
+            result = cell(
+                scene,
+                Paint::Hunt,
+                format!("reopened · {credited}/{required} passed"),
+            );
+        } else if i > plan.current && i < resume {
+            result = cell(scene, Paint::Grey, "closes with the chain");
         }
         let (mut place, schedule) = step_schedule(step);
         if !schedule_shown {
@@ -117,11 +180,6 @@ pub(super) fn cycle_lines(
             scene.paint(code, step.regime.to_string()),
             scene.paint(style, format!(" {}", kind_words(step.regime))),
         ]);
-        let current = i == plan.current && !step.done;
-        if current {
-            keep.push(out.len());
-            focus = Some(out.len());
-        }
         out.push(table_row(
             &t.cycle,
             &[
@@ -135,48 +193,12 @@ pub(super) fn cycle_lines(
             ],
         ));
         if current {
-            for (j, line) in part_lines(scene, t, step).into_iter().enumerate() {
-                if step.parts.get(j).is_some_and(|part| part.running) && scene.trial_runs() {
-                    focus = Some(out.len());
-                }
-                out.push(line);
-            }
+            out.extend(part_lines(scene, t, step));
         }
     }
-    let Some(at) = focus else {
-        if out.len() > height {
-            out.remove(1);
-        }
-        return CycleRows { lines: out, focus };
-    };
-    let excess = (at + 1).saturating_sub(height);
-    if excess == 0 {
-        return CycleRows { lines: out, focus };
-    }
-    let mut drop = BTreeSet::new();
-    for i in 2..at {
-        if drop.len() >= excess {
-            break;
-        }
-        if !keep.contains(&i) {
-            drop.insert(i);
-        }
-    }
-    if drop.len() < excess {
-        drop.insert(1);
-    }
-    let dropped = drop.len();
-    let lines: Vec<Line<'static>> = out
-        .into_iter()
-        .enumerate()
-        .filter_map(|(i, line)| (!drop.contains(&i)).then_some(line))
-        .collect();
     #[cfg(test)]
-    crate::corpus::lines("panel.cycle", &format!("{class:?}"), &lines);
-    CycleRows {
-        lines,
-        focus: Some(at - dropped),
-    }
+    crate::corpus::lines("panel.cycle", &format!("{class:?}"), &out);
+    out
 }
 
 /// Where the running step is: its part, or its trial when it has one part.
@@ -200,7 +222,26 @@ fn part_lines(scene: &Scene<'_>, t: &Tables, step: &CycleStep) -> Vec<Line<'stat
     }
     let more = !step.chains_complete;
     let mut out = Vec::new();
-    let mut partials = false;
+    let (short, long) = step
+        .parts
+        .iter()
+        .fold((0, 0), |(s, l), part| (s + part.short, l + part.long));
+    out.push(table_row(
+        &t.cycle,
+        &[
+            Line::default(),
+            Line::default(),
+            cell(scene, Paint::Grey, "requires"),
+            cell(
+                scene,
+                Paint::Grey,
+                format!(
+                    "{short} short + {long} long passes across {}",
+                    plural(step.parts.len(), "part")
+                ),
+            ),
+        ],
+    ));
     for (j, part) in step.parts.iter().enumerate() {
         let (marker, style, faint) = if part.running && scene.trial_runs() {
             (
@@ -216,7 +257,6 @@ fn part_lines(scene: &Scene<'_>, t: &Tables, step: &CycleStep) -> Vec<Line<'stat
         } else {
             "├"
         };
-        partials = partials || !part.full;
         out.push(table_row(
             &t.cycle,
             &[
@@ -235,11 +275,6 @@ fn part_lines(scene: &Scene<'_>, t: &Tables, step: &CycleStep) -> Vec<Line<'stat
         ));
     }
     if more {
-        let pending = if partials {
-            "more partials may follow"
-        } else {
-            "partials may follow"
-        };
         out.push(table_row(
             &t.cycle,
             &[
@@ -248,7 +283,14 @@ fn part_lines(scene: &Scene<'_>, t: &Tables, step: &CycleStep) -> Vec<Line<'stat
                 Line::from(vec![
                     scene.paint(Paint::Track, "└"),
                     scene.paint(Paint::Text, " "),
-                    scene.paint(Paint::Grey, pending),
+                    scene.paint(
+                        Paint::Grey,
+                        format!(
+                            "{} known {} · more may follow",
+                            step.parts.len(),
+                            noun(step.parts.len(), "part")
+                        ),
+                    ),
                 ]),
             ],
         ));
@@ -291,23 +333,23 @@ fn part_schedule(part: &CyclePart) -> String {
     out.join(" + ")
 }
 
-/// Where a step loads and how long it runs, in the two columns that say it.
+/// Where a step loads and how long it runs, in the two columns that say it. Each value fits the narrowest
+/// column it is drawn in, so no cell cuts it; an R7 step whose chains may still grow counts its parts `so far`.
 fn step_schedule(step: &CycleStep) -> (String, String) {
     if step.regime == Regime::R7 {
-        let mut parts = step.parts.len().to_string();
-        if !step.chains_complete {
-            parts.push('+');
-        }
+        let count = step.parts.len();
         let ccds = step
             .parts
             .iter()
             .filter_map(|part| part.ccd)
             .collect::<BTreeSet<_>>()
             .len();
-        return (
-            format!("{ccds} CCDs · {parts} parts"),
-            format!("{parts} parts"),
-        );
+        let schedule = if step.chains_complete {
+            plural(count, "part")
+        } else {
+            format!("{count} so far")
+        };
+        return (plural(ccds, "CCD"), schedule);
     }
     let place = if step.regime == Regime::R6 {
         "all cores idle"
@@ -474,7 +516,7 @@ mod tests {
     use crate::model::{ComboView, CycleView, HuntView, Model, SessionView, StopView};
     use crate::tests::kit::{core, nz, off, set};
     use togi_journal::{Member, ShutdownReason};
-    use togi_tuner::CombinationId;
+    use togi_tuner::{CombinationId, StepNo};
 
     fn plan() -> CyclePlan {
         cycle_plan(
@@ -511,12 +553,16 @@ mod tests {
         )
     }
 
-    fn cycle_rows(
+    fn cycle_rows(plan: &CyclePlan, hunts: &[Vec<u32>], hunting: bool) -> Vec<String> {
+        cycle_rows_resuming(plan, hunts, hunting, None)
+    }
+
+    fn cycle_rows_resuming(
         plan: &CyclePlan,
         hunts: &[Vec<u32>],
-        height: usize,
         hunting: bool,
-    ) -> (Vec<String>, Option<usize>) {
+        resume: Option<StepNo>,
+    ) -> Vec<String> {
         let model = Model::new();
         let trial = trial_view(3, 5);
         let hunt_plan = hunt_plan(Vec::new(), Vec::new());
@@ -534,82 +580,148 @@ mod tests {
         let cycle = CycleView {
             plan,
             step_hunts: hunts,
-            resume: None,
+            resume,
         };
-        let drawn = cycle_lines(
+        texts(&cycle_lines(
             &scene,
             &cycle,
             &Tables::new(SizeClass::Wide, 120),
             120,
             SizeClass::Wide,
-            height,
-        );
-        (texts(&drawn.lines), drawn.focus)
+        ))
     }
 
     #[test]
     fn the_cycle_lists_its_steps_and_the_running_part() {
-        let (rows, focus) = cycle_rows(&plan(), &[vec![1, 2, 3, 7], Vec::new()], 40, false);
+        let rows = cycle_rows(&plan(), &[vec![1, 2, 3, 7], Vec::new()], false);
         assert!(rows[0].starts_with("CYCLE 2") && rows[0].ends_with("3 steps · 1 done"));
         assert!(rows[2].contains("kind") && rows[2].contains("schedule"));
         assert!(rows[3].contains("R1 light") && rows[3].contains("done · hunts 1-3, 7"));
         assert!(rows[4].contains("R3 load steps") && rows[4].contains("part 3 of 4"));
         assert!(rows[4].starts_with('►'));
-        assert!(rows[5].contains("├ core 00") && rows[5].contains("1/1 passed"));
+        assert!(rows[5].contains("requires") && rows[5].contains("across 4 parts"));
+        assert!(rows[6].contains("├ core 00") && rows[6].contains("1/1 passed"));
         assert!(
-            rows[7].starts_with('►') && !rows[7].contains('└') && rows[7].contains("├ core 02")
+            rows[8].starts_with('►') && !rows[8].contains('└') && rows[8].contains("├ core 02")
         );
-        assert!(rows[7].contains("trial 3 of 5"));
-        assert!(rows[8].contains("└ core 03"));
-        assert!(rows[9].starts_with('○') && rows[9].contains("2 CCDs · 2+ parts"));
-        assert_eq!(focus, Some(7));
+        assert!(rows[8].contains("trial 3 of 5"));
+        assert!(rows[9].contains("└ core 03"));
+        assert!(
+            rows[10].starts_with('○')
+                && rows[10].contains("2 CCDs")
+                && rows[10].contains("2 so far")
+        );
     }
 
     #[test]
-    fn a_hunt_pauses_the_running_step_at_its_part() {
-        let (rows, _) = cycle_rows(&plan(), &[], 40, true);
+    fn a_long_cycle_lists_every_step_without_cutting_rows() {
+        let steps = (0..40)
+            .map(|_| {
+                cycle_step(
+                    Regime::R1,
+                    vec![cycle_part(&[0], None, true, false, false)],
+                    false,
+                    true,
+                )
+            })
+            .collect();
+        let rows = cycle_rows(&cycle_plan(steps, 0, false), &[], false);
+        assert_eq!(
+            rows.iter().filter(|row| row.contains("R1 light")).count(),
+            40
+        );
+        assert!(rows.iter().all(|row| !row.contains("more")), "{rows:?}");
+    }
+
+    #[test]
+    fn a_hunt_holds_the_running_step_at_its_part() {
+        let rows = cycle_rows(&plan(), &[], true);
         assert!(
-            rows[4].starts_with('○') && rows[4].contains("paused at part 3"),
-            "{}",
-            rows[4]
+            rows[2].contains("repairing after failure · cycle held"),
+            "{rows:?}"
+        );
+        assert!(
+            rows[3].contains("chain closure and checking resume at step 2 of 3"),
+            "{rows:?}"
+        );
+        let step = rows
+            .iter()
+            .find(|row| row.contains("R3 load steps"))
+            .expect("the step");
+        assert!(
+            step.starts_with('○') && step.contains("held at part 3"),
+            "{step}"
         );
         let mut paused = plan();
         paused.steps[1].parts.truncate(1);
         paused.paused = true;
-        let (rows, _) = cycle_rows(&paused, &[], 40, false);
-        assert!(rows[4].ends_with("paused"), "{}", rows[4]);
+        let rows = cycle_rows(&paused, &[], false);
+        let step = rows
+            .iter()
+            .find(|row| row.contains("R3 load steps"))
+            .expect("the step");
+        assert!(step.ends_with("held"), "{step}");
     }
 
     #[test]
-    fn a_short_panel_leaves_out_the_rows_above_the_running_part() {
-        let (full, at) = cycle_rows(&plan(), &[], 40, false);
-        assert_eq!(at, Some(7));
-        let (short, focus) = cycle_rows(&plan(), &[], 6, false);
-        let focus = focus.expect("a running part");
-        assert!(short[focus].contains("core 02"), "{short:?}");
-        assert!(short.len() < full.len());
-        assert!(short[0].starts_with("CYCLE 2"));
-        assert!(short[2].contains("kind"), "the header stays: {short:?}");
-        assert!(focus < 6, "{short:?}");
-    }
-
-    #[test]
-    fn a_step_with_chains_to_come_says_partials_may_follow() {
-        let mut open = plan();
-        open.current = 2;
-        let (rows, _) = cycle_rows(&open, &[], 40, false);
+    fn closure_and_resume_steps_are_named_apart_when_they_differ() {
+        let mut repair = plan();
+        repair.paused = true;
+        let resume = Some(StepNo::new(nz(3)));
+        let rows = cycle_rows_resuming(&repair, &[], false, resume);
+        assert!(rows[3].contains("chain closure at step 2 of 3"), "{rows:?}");
         assert!(
-            rows.last()
-                .is_some_and(|row| row.contains("└ partials may follow")),
+            rows[4].contains("checking resumes at step 3 of 3"),
             "{rows:?}"
         );
-        open.steps[2].parts[0].full = false;
-        let (rows, _) = cycle_rows(&open, &[], 40, false);
+        let mut finished = plan();
+        finished.paused = true;
+        finished.current = 3;
+        let rows = cycle_rows_resuming(&finished, &[], false, None);
+        assert!(rows[3].contains("every step is done"), "{rows:?}");
+        assert!(rows.iter().all(|row| !row.contains("step 4")), "{rows:?}");
+    }
+
+    #[test]
+    fn a_step_with_chains_to_come_counts_its_known_parts() {
+        let mut open = plan();
+        open.current = 2;
+        let rows = cycle_rows(&open, &[], false);
+        let step = rows
+            .iter()
+            .find(|row| row.contains("R7"))
+            .expect("the R7 step");
+        assert!(
+            step.contains("2 CCDs") && step.contains("2 so far"),
+            "{step}"
+        );
         assert!(
             rows.last()
-                .is_some_and(|row| row.contains("└ more partials may follow"))
+                .is_some_and(|row| row.contains("└ 2 known parts · more may follow")),
+            "{rows:?}"
+        );
+        open.steps[2].chains_complete = true;
+        open.steps[2].parts[0].full = false;
+        let rows = cycle_rows(&open, &[], false);
+        assert!(
+            rows.iter().all(|row| !row.contains("more may follow")),
+            "{rows:?}"
         );
         assert!(rows.iter().any(|row| row.contains("partial CCD 0")));
+    }
+
+    #[test]
+    fn a_reopened_step_says_how_much_of_it_passed() {
+        let mut reopened = plan();
+        reopened.steps[0].done = false;
+        reopened.steps[0].parts[0].short = 2;
+        reopened.steps[0].parts[0].passed = 1;
+        let rows = cycle_rows(&reopened, &[], false);
+        let step = rows
+            .iter()
+            .find(|row| row.contains("R1 light"))
+            .expect("the step");
+        assert!(step.contains("reopened · 1/2 passed"), "{step}");
     }
 
     fn combos(members: &[u8]) -> Vec<ComboView> {
@@ -732,15 +844,16 @@ mod tests {
                 step_hunts: &[],
                 resume: None,
             };
-            let drawn = cycle_lines(
+            texts(&cycle_lines(
                 &scene,
                 &cycle,
                 &Tables::new(SizeClass::Wide, 120),
                 120,
                 SizeClass::Wide,
-                40,
-            );
-            texts(&drawn.lines)[3].clone()
+            ))
+            .into_iter()
+            .find(|row| row.contains("R6"))
+            .expect("the step row")
         };
         assert!(step_row(None).ends_with("trial 1 of 1"));
         let row = step_row(Some(&stopped));
@@ -773,22 +886,26 @@ mod tests {
                 step_hunts: &[],
                 resume: None,
             };
-            texts(
-                &cycle_lines(
-                    &scene,
-                    &cycle,
-                    &Tables::new(SizeClass::Wide, 120),
-                    120,
-                    SizeClass::Wide,
-                    40,
-                )
-                .lines,
-            )
+            texts(&cycle_lines(
+                &scene,
+                &cycle,
+                &Tables::new(SizeClass::Wide, 120),
+                120,
+                SizeClass::Wide,
+            ))
         };
         assert!(rows(None).iter().any(|row| row.starts_with('►')));
         let over = rows(Some(&stopped));
+        let step = over
+            .iter()
+            .find(|row| row.contains("R3"))
+            .expect("the step");
         assert!(
-            over[4].starts_with('○') && over[4].contains("R3"),
+            step.starts_with('○') && step.contains("stopped here"),
+            "{over:?}"
+        );
+        assert!(
+            over[2].contains("stopped · the last known work"),
             "{over:?}"
         );
         assert!(over.iter().all(|row| !row.contains('►')), "{over:?}");
@@ -806,7 +923,7 @@ mod tests {
             0,
             false,
         );
-        let (rows, _) = cycle_rows(&plan, &[], 40, false);
+        let rows = cycle_rows(&plan, &[], false);
         let first = rows
             .iter()
             .find(|row| row.contains("core 00"))

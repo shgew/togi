@@ -59,6 +59,8 @@ pub enum Tag {
     Mce,
     /// A note.
     Note,
+    /// An R7 chain was derived or closed.
+    Chain,
     /// A hunt group.
     Group,
     /// A member probe.
@@ -96,6 +98,7 @@ impl Tag {
             Self::Stop => "stop",
             Self::Mce => "mce",
             Self::Note => "note",
+            Self::Chain => "chain",
             Self::Group => "group",
             Self::Probe => "probe",
             Self::Confirm => "confirm",
@@ -925,7 +928,7 @@ pub fn words(kind: EventKind) -> Words {
         },
         EventKind::CheckingChain => Words {
             history: History::Line(of!(CheckingChain, |d| Some(Line {
-                tag: Tag::Note,
+                tag: Tag::Chain,
                 text: chain_summary(d),
                 tone: Tone::Plain,
             }))),

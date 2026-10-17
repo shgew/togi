@@ -3,34 +3,34 @@ source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
 │ togi   07:08:40   tuning 31h08m   session 31h08m   8 failures · 8 crashes   last observed failure 08:22, 22h46m ago
-│ ■ SOLO ─ ■ P1 ─ ■ P2 ─ CLEAN 1 ─ ■ CYCLE 2
+│ STOPPED  ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ○ CLEAN CYCLES
+│ MAIN · 1/9 · < Help | Cores >
+│ STOPPED · CLEAN CYCLES · 1 clean cycle recorded · cycle 2 · 18/18 steps complete
+│ BIOS profile: page 6
 │
-│ ▌  The requested clean cycles are complete, so I restored baseline or shallower offsets and stopped. togi run...
+│ NOW  STOPPED · 07:08:00 · requested clean cycles completed
+│ last: PASS after 15:00 · R6 idle + bursts on 00-15 · Tctl max 67°C
 │
-│ STOPPED  07:08:00 · requested clean cycles completed
-│ Rows show the saved profile, not applied now.
+│ CCD core tune  now solo  gap fail  role
+│   0   00  -11    0  -11    0 none  idle at 0
+│   0   01  -11    0  -11    0 none  idle at 0
+│   0   02  -11    0  -11    0 none  idle at 0
+│   0   03  -11    0  -11    0 none  idle at 0
+│   0   04  -11    0  -11    0 none  idle at 0
+│   0   05  -11    0  -11    0 none  idle at 0
+│   0   06  -11    0  -11    0 none  idle at 0
+│   0   07  -11    0  -11    0 none  idle at 0
+│   1   08  -11    0  -11    0 none  idle at 0
+│   1   09  -11    0  -11    0 none  idle at 0
+│   1   10  -11    0  -11    0 none  idle at 0
+│   1   11   -9    0  -11    2 none  idle at 0
+│   1   12  -11    0  -11    0 none  idle at 0
+│   1   13  -11    0  -11    0 none  idle at 0
+│   1   14  -11    0  -11    0 none  idle at 0
+│   1   15  -11    0  -11    0 none  idle at 0
+│ WHAT HAPPENED
+│ 07:08  stop     stopped
+│ 07:08  cycle    cycle 2 passed, a full cycle
+│ 07:08  pass     198 credited checks
 │
-│ CCD 0 idle       0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
-│   00 -11 HAS ROOM ▄▄▄▄▄▄                                      08 -11 HAS ROOM ▄▄▄▄▄▄
-│   01 -11 HAS ROOM ▄▄▄▄▄▄                                      09 -11 HAS ROOM ▄▄▄▄▄▄
-│   02 -11 HAS ROOM ▄▄▄▄▄▄                                      10 -11 HAS ROOM ▄▄▄▄▄▄
-│   03 -11 HAS ROOM ▄▄▄▄▄▄                                      11  -9 AT LIMIT ▄▄▄▄▄░                          C1
-│   04 -11 HAS ROOM ▄▄▄▄▄▄                                      12 -11 HAS ROOM ▄▄▄▄▄▄
-│   05 -11 HAS ROOM ▄▄▄▄▄▄                                      13 -11 HAS ROOM ▄▄▄▄▄▄
-│   06 -11 HAS ROOM ▄▄▄▄▄▄                                      14 -11 HAS ROOM ▄▄▄▄▄▄
-│   07 -11 HAS ROOM ▄▄▄▄▄▄                                      15 -11 HAS ROOM ▄▄▄▄▄▄
-│
-│ BIOS PROFILE ──────────────────────────── confirmed #5905   WHAT HAPPENED ─────────────────────────────── l: last 400
-│ slot      0    1    2    3    4    5    6    7
-│ CCD 0   -11  -11  -11  -11  -11  -11  -11  -11              07:08  stop     stopped
-│ CCD 1   -11  -11  -11   -9  -11  -11  -11  -11              07:08  cycle    cycle 2 passed, a full cycle
-│                                                             07:08  pass     R6 idle + bursts on 00-15 · passed...
-│ CYCLE 2 ────────────────────────────── 18 steps · 18 done   06:53  pass     R4 partial load on core 15 at -11...
-│ +22 more                                                    06:51  pass     R4 partial load on core 07 at -11...
-│                                                             06:49  pass     R4 partial load on core 14 at -11...
-│ R7 ────────────── top ───────────── self-sufficient ─────   06:47  pass     R4 partial load on core 06 at -11...
-│ mprime AVX2       by offset         all                     06:45  pass     R4 partial load on core 13 at -11...
-│ mprime AVX-512    by offset         all                     06:43  pass     R4 partial load on core 05 at -11...
-│ y-cruncher FFTv4  by offset         all                     +519 more
-│
-│  ?  help    l  log    esc  back    q  exit dashboard
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

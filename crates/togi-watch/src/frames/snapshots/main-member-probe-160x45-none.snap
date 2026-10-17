@@ -1,0 +1,49 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
+│ togi   08:22:00   tuning 8h22m   session 8h22m   8 failures · 8 crashes   last observed failure 08:22   screen paused · planned end 08:24
+│ ■ SOLO LIMITS  16/16 → ► PHASE 1 · cycle 1 · HUNT 1 · member probes · member 1 of 2 → ○ PHASE 2 → ○ CLEAN CYCLES
+│
+│ PHASE 1 · HUNT 1 · group 42 · 6/18 steps complete
+│ member 1/2 probes · total hunt work unknown
+│
+│ NOW  HUNT 1 · GROUP 42 · CORE 03 AT -9   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between
+│ ░░░░░░░░░░░░░░░░░░░░░░░░  planned end 08:24 · started 08:22 · 2:00 required · screen paused
+│
+│    0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
+│ core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
+│ 00  ██████████                                         tune -10 now   0         08  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 01  ██████████                                         tune -10 now   0         09  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 02  ██████████                                         tune -10 now   0         10  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 03  ██████████                                         tune -10 now  -9         11  ██████████                                         tune -10 now -10
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        probing                                                                         held failure
+│ 04  ██████████                                         tune -10 now   0         12  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 05  ██████████                                         tune -10 now   0         13  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 06  ██████████                                         tune -10 now   0         14  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 07  ██████████                                         tune -10 now   0         15  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ white=tune · red point=recorded failure · gap=counts shallower than solo
+│
+│ WHAT HAPPENED
+│ 08:22  group    hunt 1 groups 40-41 · parts of 03 11 · all passed on existing evidence
+│ 08:22  crash    hunt 1 group 39 · 03 11 at failing offsets · rebooted
+│ 08:20  group    hunt 1 groups 35-38 · parts of 03 10 11 · all passed on existing evidence
+│ 08:20  crash    hunt 1 group 34 · 03 10 11 at failing offsets · rebooted
+│
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

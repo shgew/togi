@@ -2,35 +2,35 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   00:06:25   tuning 72h06m   session 72h06m   63 failures · 15 crashes   last observed failure 00:05
-│ ■ SOLO ─ ►  HUNT 5   part 1 of 2 ─ ■ P1 ─ ■ P2 ─ CLEAN 2 ─ ○ CYCLE 4 paused at 4/18
+│ togi   21:51:32   tuning 69h51m   session 69h51m   60 failures · 15 crashes   last observed failure 21:50
+│ ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ► CLEAN CYCLES · repeats until stopped · HUNT 4 · parts · part 1 of 2
+│ MAIN · 1/9 · < Help | Cores >
+│ CLEAN CYCLES · HUNT 4 · group 1 · 3/18 steps complete
+│ part 1/2 of this split · total hunt work unknown
 │
-│ ▌  Crashed early in R2 heavy vector on 00; no core named. Rerunning it with 00-05 07-15 parked.
+│ NOW  HUNT 4 · PART 1 OF 2   R2   heavy vector load  on 00 · 01-15 at failing offsets, 00 parked at 0
+│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 4 of 5
 │
-│  R2   heavy vector load  on 00 · 06 at failing offsets, 08 parked, idle   mprime AVX2 36K-248K   HUNT 5 · PART 1 OF 2
-│ ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  2/5 ■ ■ ► · ·
+│ CCD core tune  now solo  gap fail  role
+│   0   00  -23    0  -27    4  -24  parked
+│   0   01  -15  -15  -17    2  -16  held failure
+│   0   02  -24  -24  -26    2  -25  held failure
+│   0   03  -24  -24  -25    1  -25  held failure
+│   0   04  -13  -13  -16    3  -14  held failure
+│   0   05   -8   -8  -10    2   -9  held failure
+│   0   06  -37  -37  -38    1  -39  held failure
+│   0   07  -29  -29  -30    1  -31  held failure
+│   1   08   -5   -5   -6    1   -7  held failure
+│   1   09  -33  -33  -35    2  -34  held failure
+│   1   10  -13  -13  -18    5  -14  held failure
+│   1   11   -7   -7  -10    3   -8  held failure
+│   1   12  -14  -14  -17    3  -15  held failure
+│   1   13  -35  -35  -38    3  -36  held failure
+│   1   14  -12  -12  -16    4  -13  held failure
+│   1   15  -13  -13  -14    1  -15  held failure
+│ WHAT HAPPENED
+│ 21:50  hunt     #4 started · part 1: 01-15 at failing offsets, 00 parked
+│ 21:50  crash    R2 heavy vector on core 00 at -23 · rebooted · early in trial 1 of 1 · no core named
+│ 21:49  hold     core 03 failure held; tuning stays at -24
 │
-│ 5/5 pass → part 2: 08   none named → hunt ends   core named → hunt ends
-│
-│ CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail  back
-│ ► 00 -23 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▬··              -24             08  -5 PARKED   ▄▄▄▬                         -7   -6
-│   01 -15 AT LIMIT ▄▄▄▄▄▄▄▬·                   -16             09 -33 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·          -34
-│   02 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▬               -25             10 -13 AT LIMIT ▄▄▄▄▄▄▬··                   -14
-│   03 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▬               -25             11  -7 AT LIMIT ▄▄▄▬·                        -8
-│   04 -13 AT LIMIT ▄▄▄▄▄▄▬·                    -14             12 -14 AT LIMIT ▄▄▄▄▄▄▄▬·                   -15
-│   05  -8 AT LIMIT ▄▄▄▄▬                        -9             13 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·         -36
-│   06 -38 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬        -39             14 -12 AT LIMIT ▄▄▄▄▄▄▬·                    -13
-│   07 -29 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬             -30             15 -13 AT LIMIT ▄▄▄▄▄▄▬                     -14
-│
-│ BIOS PROFILE ─────────────────── UNCONFIRMED since #11459   WHAT HAPPENED ─────────────────────────────── l: last 400
-│ slot      0    1    2    3    4    5    6    7
-│ CCD 0   -23  -15  -24  -24  -13   -8  -37* -29              00:05  hunt     #5 started · part 1: 06 at failing...
-│ CCD 1    -5* -33  -13   -7  -14  -35  -12  -13              00:05  crash    R2 heavy... · rebooted · no core named
-│ * a passed full cycle confirms, unless a failure is held    00:04  hunt     not hunted: held: first unattributed...
-│                                                             00:04  crash    R2 heavy... · rebooted · no core named
-│ HUNT 5 ────────────────────────────────────── 00:05 · 40s   00:02  pass     R7 full CCD 0+1 on 00-15 · 4 passed...
-│ cause      crash in R2 heavy vector on 00, no core named    23:46  note     cycle 4 step 3 · CCD 1 partials end
-│ ► part 1/2 06 at failing offsets     trial 3/5              23:46  pass     R7 partial CCD 1 on 09 13 · 4 passed...
-│ +4 more                                                     +1681 more
-│
-│  ?  help    l  log    esc  back    q  exit dashboard
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

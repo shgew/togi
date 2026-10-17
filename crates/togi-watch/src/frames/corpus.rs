@@ -3,11 +3,11 @@
 //!
 //! The sweep folds every prefix of every [`Base`] journal and of the cycle a rerun completes, each fold credited to
 //! the case of the prefix it makes. It draws each state at the widest main size at its last event and 40 seconds
-//! after, and at the other two sizes 40 seconds after. A state with a trial in flight that nothing holds is also
-//! drawn at the trial's planned end at the widest size only, and 90 seconds past it at all three sizes. An idle
-//! (R6) trial holds the frame frozen from its start, so it has no planned-end clocks and must report
-//! [`Hold::Frozen`]. The 18 [`Scenario`] cuts, each projected under its own case, the journal states and the help
-//! and journal views are drawn too.
+//! after, and at the other sizes 40 seconds after. A state with a trial in flight that nothing holds is also drawn
+//! at the trial's planned end at the widest size only, and 90 seconds past it at every size. An idle (R6) trial
+//! holds the frame frozen from its start, so it has no planned-end clocks and must report [`Hold::Frozen`]. The 18
+//! [`Scenario`] cuts, each projected under its own case, are drawn at every main size and on every other page at
+//! 160 by 45; the journal states and the help and journal views are drawn too.
 
 use std::io;
 
@@ -17,15 +17,15 @@ use togi_journal::Event;
 use togi_watchtest::{Base, Scenario, cycle_completed_by_rerun};
 
 use super::layout::Layout;
-use super::measure::Measure;
+use super::measure::{Main, MainForm};
 use super::scene::Scene;
 use super::testing::{FIXED_NOW, ready, render_checked, screen};
 use crate::corpus::{case, region};
 use crate::model::{Model, Snapshot, project};
 use crate::screen::{Colours, Hold, Journal, Screen, View};
 
-/// The three main sizes, wide to compact.
-const SIZES: [(u16, u16); 3] = [(240, 67), (160, 45), (120, 33)];
+/// The main sizes, wide to compact, the last below the numeric table's 80 by 30.
+const SIZES: [(u16, u16); 4] = [(240, 67), (160, 45), (120, 33), (79, 29)];
 
 /// The sizes of the help and journal views.
 const VIEW_SIZES: [(u16, u16); 3] = [(80, 24), (160, 45), (240, 67)];
@@ -46,37 +46,70 @@ pub(crate) struct Swept {
 }
 
 /// Records each region of the frame drawn from `scene` into `buf`, as the reader sees it at its size class.
-pub(super) fn frame(m: &Measure, scene: &Scene<'_>, buf: &Buffer, screen: &Screen) {
+pub(super) fn frame(
+    layout: &Layout,
+    main: &Main,
+    scene: &Scene<'_>,
+    buf: &Buffer,
+    screen: &Screen,
+) {
     if !crate::corpus::collecting() {
         return;
     }
-    let layout = &m.layout;
     let form = format!("{:?}", layout.class);
     region("frame.header", &form, buf, layout.header);
     region("frame.footer", &form, buf, layout.footer);
+    if scene.s.session.is_some() {
+        region("frame.stage", &form, buf, layout.stage);
+    }
     match screen.view {
         View::Help if layout.body.width < THREE_COLUMNS => {
+            region("frame.title", &form, buf, layout.title);
             region("frame.help", &form, buf, layout.body);
         }
-        View::Help => {}
-        View::Log => region("frame.log", &form, buf, layout.body),
-        View::Main if scene.s.session.is_none() => region("frame.body", &form, buf, layout.body),
-        View::Main => {
-            region("frame.stage", &form, buf, layout.stage);
-            region("frame.say", &form, buf, layout.say);
-            region("frame.last", &form, buf, layout.last);
-            region("frame.now", &form, buf, m.now);
-            region("frame.outcomes", &form, buf, m.outcomes);
-            for ccd in &m.ccds {
-                region("frame.ccd", &form, buf, ccd.rect);
-            }
-            region("frame.context", &form, buf, m.context);
-            region("frame.history", &form, buf, m.history);
+        View::Help => region("frame.title", &form, buf, layout.title),
+        View::Log => {
+            region("frame.title", &form, buf, layout.title);
+            region("frame.log", &form, buf, layout.body);
         }
+        View::Cores | View::Cycle | View::R7 | View::Hunts | View::Bios | View::History => {
+            region("frame.title", &form, buf, layout.title);
+            region("frame.page", &form, buf, layout.body);
+        }
+        View::Main if scene.s.session.is_none() => {
+            region("frame.title", &form, buf, layout.title);
+            region("frame.body", &form, buf, layout.body);
+        }
+        View::Main => match main.form {
+            MainForm::Gauges => {
+                region("frame.progress", &form, buf, main.progress);
+                region("frame.now", &form, buf, main.now);
+                for gauge in main.gauges {
+                    region("frame.gauge", &form, buf, gauge);
+                }
+                region("frame.explain", &form, buf, main.explain);
+                region("frame.history_head", &form, buf, main.history_head);
+                region("frame.history", &form, buf, main.history);
+                region("frame.warning", &form, buf, main.warning);
+            }
+            MainForm::Table => {
+                region("frame.title", &form, buf, layout.title);
+                region("frame.progress", &form, buf, main.progress);
+                region("frame.now", &form, buf, main.now);
+                region("frame.table", &form, buf, main.table);
+                region("frame.history_head", &form, buf, main.history_head);
+                region("frame.history", &form, buf, main.history);
+                region("frame.warning", &form, buf, main.warning);
+            }
+            MainForm::Scrolled => {
+                region("frame.title", &form, buf, layout.title);
+                region("frame.scrolled", &form, buf, layout.body);
+            }
+        },
     }
 }
 
-/// Records the regions of a frame that has no journal to fold: the header and the body.
+/// Records the regions of a frame that has no journal to fold: the header, the title and the body.
 pub(super) fn unfolded(layout: &Layout, buf: &Buffer, screen: &Screen) {
     if !crate::corpus::collecting() {
         return;
@@ -84,8 +117,15 @@ pub(super) fn unfolded(layout: &Layout, buf: &Buffer, screen: &Screen) {
     let form = format!("{:?}", layout.class);
     region("frame.header", &form, buf, layout.header);
     region("frame.footer", &form, buf, layout.footer);
+    region("frame.title", &form, buf, layout.title);
     match screen.view {
-        View::Main => region("frame.body", &form, buf, layout.body),
+        View::Main
+        | View::Cores
+        | View::Cycle
+        | View::R7
+        | View::Hunts
+        | View::Bios
+        | View::History => region("frame.body", &form, buf, layout.body),
         View::Log => region("frame.log", &form, buf, layout.body),
         View::Help if layout.body.width < THREE_COLUMNS => {
             region("frame.help", &form, buf, layout.body);
@@ -183,6 +223,16 @@ pub(crate) fn whole(swept: &mut Swept, id: &str, events: &[Event]) {
             &name,
             &journal,
             &screen_of(View::Main, size, false),
+            now,
+        );
+    }
+    for view in View::ALL.into_iter().filter(|&view| view != View::Main) {
+        let name = format!("{id}/{view:?}-160x45");
+        draw(
+            swept,
+            &name,
+            &journal,
+            &screen_of(view, (160, 45), false),
             now,
         );
     }

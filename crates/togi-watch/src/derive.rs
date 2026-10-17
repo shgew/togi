@@ -2,7 +2,7 @@
 //! with what the journal recorded.
 
 use togi_journal::{Member, State as JournalState};
-use togi_machine::{CoreId, CoreSet, ObservedOffset, Regime, TargetOffset};
+use togi_machine::{CoreId, CoreSet, Regime, TargetOffset};
 use togi_tuner::{
     CombinationId, CyclePlan, Forecast, GroupState, Limit, Projection, Reached, State as TunerState,
 };
@@ -10,8 +10,8 @@ use togi_tuner::{
 use crate::facts::{Facts, secs, trial_cores};
 use crate::history::Entry;
 use crate::model::{
-    ComboView, Confirm, CoreState, CoreView, Count, CyclePlace, HuntCause, HuntFacts, HuntPlace,
-    HuntShape, Parking, RecoveryView, TrialView,
+    ComboView, Confirm, CoreEvidence, CoreState, CoreView, Count, CyclePlace, HuntCause, HuntFacts,
+    HuntPlace, HuntShape, Parking, RecoveryView, TrialView,
 };
 
 #[derive(Debug)]
@@ -335,6 +335,17 @@ pub(crate) fn hunt_facts(
     }
 }
 
+/// What the journal records about `core`: the evidence for its failure constraint only while that constraint
+/// still stands at the offset the evidence recorded.
+fn core_evidence(facts: &Facts, core: CoreId, constraint: Option<TargetOffset>) -> CoreEvidence {
+    let mut evidence = facts.evidence.get(&core).copied().unwrap_or_default();
+    evidence.failure = evidence
+        .failure
+        .filter(|known| constraint == Some(known.offset));
+    evidence.current_failure = evidence.failure.is_some() && facts.failed_in.contains_key(&core);
+    evidence
+}
+
 fn core_views(
     journal: &JournalState,
     tuner: &TunerState,
@@ -356,11 +367,7 @@ fn core_views(
             ccd: facts_core.ccd,
             state: CoreState::Waiting,
             queued: facts.queued.get(&id).copied(),
-            applied: facts
-                .applied
-                .get(&id)
-                .copied()
-                .unwrap_or(ObservedOffset(c.offset.get())),
+            applied: facts.applied.get(&id).copied(),
             profile: c.offset,
             solo: c.solo_limit,
             pass: c.pass,
@@ -373,6 +380,7 @@ fn core_views(
             confirm: None,
             loaded: false,
             judged: false,
+            evidence: core_evidence(facts, id, c.failure_point),
         };
         if v.solo.is_some_and(|solo| v.profile.get() > solo.get()) {
             v.gave_back = facts.backs.get(&id).copied().flatten();

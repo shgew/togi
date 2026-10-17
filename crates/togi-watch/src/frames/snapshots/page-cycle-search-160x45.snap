@@ -1,0 +1,48 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   00:48:40   tuning 0h48m   session 0h48m   0 failures · 0 crashes
+│ ► SOLO LIMITS  0/16 → ○ PHASE 1 → ○ PHASE 2 → ○ CLEAN CYCLES   0:50 left
+│ CYCLE · 3/9 · < Cores | R7 evidence >
+│   TURNS ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────── one core per turn, in this order
+│
+│     core   this turn                      at     workload                  so far
+│     08     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     01     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     09     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     02     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     10     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     03     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     11     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     04     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     12     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     05     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     13     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     06     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     14     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     07     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│     15     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│   ► 00     search: light, then heavy      -5     y-cruncher BKT + SFTv4    passed 0 · next -5
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│  ←/→  pages  3/9 Cycle   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

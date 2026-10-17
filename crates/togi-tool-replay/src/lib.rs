@@ -43,20 +43,34 @@ pub enum Error {
     Output(#[source] std::io::Error),
 }
 
-/// The page one frame shows.
+/// The page one frame shows, by the name the dashboard's footer gives it.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum Page {
     Main,
+    Cores,
+    Cycle,
+    R7,
+    Hunts,
+    Bios,
+    History,
+    /// Also accepted as `log`, the name the journal page had before the pages were numbered.
+    #[value(alias = "log")]
+    Journal,
     Help,
-    Log,
 }
 
 impl From<Page> for View {
     fn from(page: Page) -> Self {
         match page {
             Page::Main => Self::Main,
+            Page::Cores => Self::Cores,
+            Page::Cycle => Self::Cycle,
+            Page::R7 => Self::R7,
+            Page::Hunts => Self::Hunts,
+            Page::Bios => Self::Bios,
+            Page::History => Self::History,
+            Page::Journal => Self::Log,
             Page::Help => Self::Help,
-            Page::Log => Self::Log,
         }
     }
 }

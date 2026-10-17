@@ -71,16 +71,20 @@ fn the_main_view_of_a_prefix_is_printed_as_plain_text() {
 }
 
 #[test]
-fn the_help_and_log_views_are_printed_without_the_key_footer() {
+fn the_help_and_log_views_are_printed_with_their_page_names_and_no_key_hints() {
     let events = scenario(Scenario::Checking);
-    shown_snapshot(
-        include_str!("snapshots/help-80x24.snap"),
-        &text(&events, events.len(), &frame(View::Help, (80, 24))),
-    );
-    shown_snapshot(
-        include_str!("snapshots/log-80x24.snap"),
-        &text(&events, events.len(), &frame(View::Log, (80, 24))),
-    );
+    let help = text(&events, events.len(), &frame(View::Help, (80, 24)));
+    let log = text(&events, events.len(), &frame(View::Log, (80, 24)));
+    for (print, place) in [(&help, "9/9 Help"), (&log, "8/9 Journal")] {
+        let footer = print.lines().last().unwrap_or_default();
+        assert!(footer.contains(place), "{footer:?}");
+        assert!(
+            !footer.contains("Esc") && !footer.contains("PgUp"),
+            "{footer:?}"
+        );
+    }
+    shown_snapshot(include_str!("snapshots/help-80x24.snap"), &help);
+    shown_snapshot(include_str!("snapshots/log-80x24.snap"), &log);
 }
 
 /// The newest short message the log lists as of the first `shown` events.

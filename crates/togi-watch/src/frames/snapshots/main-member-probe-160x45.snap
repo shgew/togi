@@ -2,47 +2,47 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   08:22:00   tuning 8h22m   session 8h22m   8 failures · 8 crashes   last observed failure 08:22   screen paused · planned end 08:24
+│ togi   08:22:00   tuning 8h22m   session 8h22m   8 failures · 8 crashes   last observed failure 08:22   screen paused · planned end 08:24
+│ ■ SOLO LIMITS  16/16 → ► PHASE 1 · cycle 1 · HUNT 1 · member probes · member 1 of 2 → ○ PHASE 2 → ○ CLEAN CYCLES
 │
-│  ■ SOLO LIMITS  16/16  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE 1  paused at...
+│ PHASE 1 · HUNT 1 · group 42 · 6/18 steps complete
+│ member 1/2 probes · total hunt work unknown
 │
-│  ▌  HUNT 1   Probing members of 03 11: core 03 at -9.                            last trial      CRASH  on 00-15
+│ NOW  HUNT 1 · GROUP 42 · CORE 03 AT -9   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between
+│ ░░░░░░░░░░░░░░░░░░░░░░░░  planned end 08:24 · started 08:22 · 2:00 required · screen paused
 │
+│    0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
+│ core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
+│ 00  ██████████                                         tune -10 now   0         08  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 01  ██████████                                         tune -10 now   0         09  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 02  ██████████                                         tune -10 now   0         10  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 03  ██████████                                         tune -10 now  -9         11  ██████████                                         tune -10 now -10
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        probing                                                                         held failure
+│ 04  ██████████                                         tune -10 now   0         12  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 05  ██████████                                         tune -10 now   0         13  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 06  ██████████                                         tune -10 now   0         14  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ 07  ██████████                                         tune -10 now   0         15  ██████████                                         tune -10 now   0
+│                                                        s-11 g1 f none                                                                  s-11 g1 f none
+│                                                        parked                                                                          parked
+│ white=tune · red point=recorded failure · gap=counts shallower than solo
 │
-│  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0273
-│   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                                              HUNT 1 · GROUP 42 · CORE 03 AT -9
-│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · planned end 08:24
+│ WHAT HAPPENED
+│ 08:22  group    hunt 1 groups 40-41 · parts of 03 11 · all passed on existing evidence
+│ 08:22  crash    hunt 1 group 39 · 03 11 at failing offsets · rebooted
+│ 08:20  group    hunt 1 groups 35-38 · parts of 03 10 11 · all passed on existing evidence
+│ 08:20  crash    hunt 1 group 34 · 03 10 11 at failing offsets · rebooted
 │
-│  if 5 of 5 pass:      next trial: hunt 1 group 43: R6 idle + bursts on 00-15 · 03 at failing offsets, core 11 at -9, 00-02 04-10 12-15 parked at 0
-│  if none is named:    next trial: hunt 1 group 43: R6 idle + bursts on 00-15 · 11 at failing offsets, core 03 at -8, 00-02 04-10 12-15 parked at 0
-│  if a core is named:  its failure point is recorded → ... → it backs off; next trial: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun at offset 0
-│
-│  CCD 0               0  2 counts/cell       -50 fail pt  all under load          CCD 1               0  2 counts/cell       -50 fail pt  all under load
-│  ► 00    0  PARKED    ····▀·                             returns to -10          ► 08    0  PARKED    ····▀·                             returns to -10
-│  ► 01    0  PARKED    ····▀·                             returns to -10          ► 09    0  PARKED    ····▀·                             returns to -10
-│  ► 02    0  PARKED    ····▀·                             returns to -10          ► 10    0  PARKED    ····▀·                             returns to -10
-│  ► 03   -9  PROBE     ▄▄▄▄▀·                             group failed at -10     ► 11  -10  MEMBER    ▄▄▄▄▀·
-│  ► 04    0  PARKED    ····▀·                             returns to -10          ► 12    0  PARKED    ····▀·                             returns to -10
-│  ► 05    0  PARKED    ····▀·                             returns to -10          ► 13    0  PARKED    ····▀·                             returns to -10
-│  ► 06    0  PARKED    ····▀·                             returns to -10          ► 14    0  PARKED    ····▀·                             returns to -10
-│  ► 07    0  PARKED    ····▀·                             returns to -10          ► 15    0  PARKED    ····▀·                             returns to -10
-│
-│  BIOS PROFILE ──────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
-│  none confirmed yet: phase 1 has not passed a full cycle
-│                                                                                  08:22  group    hunt 1 groups 40-41 · parts of 03 11 · all passed on...
-│  HUNT 1 ────────────────────────────────────── started 07:31 · 50m30s so far     08:22  crash    hunt 1 group 39 · 03 11 at failing offsets · rebooted
-│                                                                                  08:20  group    hunt 1 groups 35-38 · parts of 03 10 11 · all passed on...
-│  cause       crash in R6 idle + bursts on 00-15 · no core named                  08:20  crash    hunt 1 group 34 · 03 10 11 at failing offsets · rebooted
-│  candidates  00-15, deeper at failure than at their parked offsets               08:19  group    hunt 1 groups 28-33 · parts of 02 03 10 11 · all passed...
-│                                                                                  08:19  crash    hunt 1 group 27 · 02 03 10 11 at failing offsets · rebooted
-│  parts       groups 1-2   parts of 00-15                all passed               08:17  group    hunt 1 groups 23-26 · parts of 02 03 08-11 · all passed...
-│              group 3      00-15 at failing offsets      crashed                  08:17  crash    hunt 1 group 22 · 02 03 08-11 at failing offsets · rebooted
-│              groups 4-8   parts of 00-15 and their...   all passed               08:16  group    hunt 1 groups 16-21 · parts of 00-03 08-11 · all passed...
-│              group 9      00-03 08-15 at failing...     crashed                  08:16  crash    hunt 1 group 15 · 00-03 08-11 at failing offsets · rebooted
-│              groups 10-14 parts of 00-03 08-15 and...   all passed               08:14  pass     hunt 1 group 14 · 00-03 12-15 at failing offsets · 5 of...
-│              group 15     00-03 08-11 at failing...     crashed                  08:04  group    hunt 1 groups 10-13 · parts of 00-03 08-15 · all passed...
-│              groups 16-21 parts of 00-03 08-11          all passed               08:04  crash    hunt 1 group 9 · 00-03 08-15 at failing offsets · rebooted
-│              group 22     02 03 08-11 at failing...     crashed                  08:03  pass     hunt 1 group 8 · 04-15 at failing offsets · 5 of 5...
-│  +18 more                                                                        +75 more
-│
-│   ?  help    l  log    esc  back    q  exit dashboard
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

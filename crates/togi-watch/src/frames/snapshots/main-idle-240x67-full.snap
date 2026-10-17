@@ -3,126 +3,126 @@ source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
 legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
-│  togi   20:21:32   tuning 20h21m   session 20h21m   41 failures · 8 crashes   last observed failure 18:57   screen paused · planned end 20:36
-~  gggg   wwwwwwww   gggggggtttttt   ggggggggtttttt   ttggggggggggggtgggggggg   ggggggggggggggggggggggttttt   aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+│ togi   20:21:32   tuning 20h21m   session 20h21m   41 failures · 8 crashes   last observed failure 18:57   screen paused · planned end 20:36
+~ gggg   wwwwwwww   gggggggtttttt   ggggggggtttttt   ttggggggggggggtgggggggg   ggggggggggggggggggggggttttt   aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+│ ■ SOLO LIMITS  16/16 → ► PHASE 1 · cycle 1 → ○ PHASE 2 → ○ CLEAN CYCLES
+~ pptttttttttttgggggggtktccwwwwwwwtttttttttttktkkgggggggtktkkgggggggggggg
 │
-│  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 7 of 18
-~  pptttttttttttgggggggttkkkttccwwwwwwwttkkkttgggggggggttkkkttggggggggggggggttkkkttccwwwwwwwtttttttttttttt
+│ PHASE 1 · cycle 1 · 6/18 steps complete
+~ wwwwwwwgggtttttttgggttttttttttttttttttt
+│ step 7 · 0/1 credited checks · 1 check still needed
+~ wwwwwwgggtttttttttttttttttttggggggggggggggggggggggg
 │
-│  ▌  CYCLE 1   Every core idle with short wake-ups; this screen holds still.                                              last trial      PASS  2:00 on core 15 · Tctl max 74°C
-~  c  ccccccccccttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                              ggggggggggggggggppppggggggggggggggggggggggggggggggggg
+│ NOW  CYCLE 1 · STEP 7   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between
+~ ggg  cccccccccccccccc  hhhh  wwwwwwwwwwwww  ttttttttttttttt   ggggggggggggggggggggggggggggggggggggg
+│ ░░░░░░░░░░░░░░░░░░░░░░░░  planned end 20:36 · started 20:21 · 15:00 required · screen paused
+~ kkkkkkkkkkkkkkkkkkkkkkkk  ttttttttttttttttt   ggggggggggggg   gggggggggggggg   ggggggggggggg
+│
+│                                            0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
+~                                            g wwwww ggg       ggg       ggg       ggg       ggg                             g wwwww ggg       ggg       ggg       ggg       ggg
+│                                         core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
+~                                         gggggggggggggg  wggggggg?ggggggggggggggggggggggggg     ggggggggggggggggggg      gggggggggggggg  wggggggg?ggggggggggggggggggggggggg     ggggggggggggggggggg
+│                                         00  █████████████████████████                          tune -25 now -25         08  █████                                              tune  -5 now  -5
+~                                         ww  wwwwwwwwwwwwwwwwwwwwwwwww                          gggggwww ggggttt         ww  wwwww                                              gggggwww ggggttt
+│                                                                      █                         s-27 g2 f-26                       █                                            s-6 g1 f-7
+~                                                                      ?                         gttt gt g???                       ?                                            gtt gt g??
+│                                                                                                judged                                                                          judged
+~                                                                                                tttttt                                                                          tttttt
+│                                         01  ███████████████                                    tune -15 now -15         09  ██████████████████████████████████                 tune -34 now -34
+~                                         ww  wwwwwwwwwwwwwww                                    gggggwww ggggttt         ww  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww                 gggggwww ggggttt
+│                                                            █                                   s-17 g2 f-16                                                    █               s-35 g1 f-36
+~                                                            ?                                   gttt gt g???                                                    ?               gttt gt g???
+│                                                                                                judged                                                                          judged
+~                                                                                                tttttt                                                                          tttttt
+│                                         02  █████████████████████████                          tune -25 now -25         10  ███████████████                                    tune -15 now -15
+~                                         ww  wwwwwwwwwwwwwwwwwwwwwwwww                          gggggwww ggggttt         ww  wwwwwwwwwwwwwww                                    gggggwww ggggttt
+│                                                                       █                        s-26 g1 f-27                                █                                   s-18 g3 f-16
+~                                                                       ?                        gttt gt g???                                ?                                   gttt gt g???
+│                                                                                                judged                                                                          judged
+~                                                                                                tttttt                                                                          tttttt
+│                                         03  ████████████████████████                           tune -24 now -24         11  ███████                                            tune  -7 now  -7
+~                                         ww  wwwwwwwwwwwwwwwwwwwwwwww                           gggggwww ggggttt         ww  wwwwwww                                            gggggwww ggggttt
+│                                                                      █                         s-25 g1 f-26                        █                                           s-10 g3 f-8
+~                                                                      ?                         gttt gt g???                        ?                                           gttt gt g??
+│                                                                                                judged                                                                          judged
+~                                                                                                tttttt                                                                          tttttt
+│                                         04  ███████████████                                    tune -15 now -15         12  ██████████████                                     tune -14 now -14
+~                                         ww  wwwwwwwwwwwwwww                                    gggggwww ggggttt         ww  wwwwwwwwwwwwww                                     gggggwww ggggttt
+│                                                             █                                  s-16 g1 f-17                               █                                    s-17 g3 f-15
+~                                                             ?                                  gttt gt g???                               ?                                    gttt gt g???
+│                                                                                                judged                                                                          judged
+~                                                                                                tttttt                                                                          tttttt
+│                                         05  ████████                                           tune  -8 now  -8         13  █████████████████████████████████████              tune -37 now -37
+~                                         ww  wwwwwwww                                           gggggwww ggggttt         ww  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww              gggggwww ggggttt
+│                                                     █                                          s-10 g2 f-9                                                        █            s-38 g1 f-39
+~                                                     ?                                          gttt gt g??                                                        ?            gttt gt g???
+│                                                                                                judged                                                                          judged
+~                                                                                                tttttt                                                                          tttttt
+│                                         06  █████████████████████████████████████              tune -37 now -37         14  ███████████████                                    tune -15 now -15
+~                                         ww  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww              gggggwww ggggttt         ww  wwwwwwwwwwwwwww                                    gggggwww ggggttt
+│                                                                                   █            s-38 g1 f-39                                 █                                  s-16 g1 f-17
+~                                                                                   ?            gttt gt g???                                 ?                                  gttt gt g???
+│                                                                                                judged                                                                          judged
+~                                                                                                tttttt                                                                          tttttt
+│                                         07  █████████████████████████████                      tune -29 now -29         15  █████████████                                      tune -13 now -13
+~                                         ww  wwwwwwwwwwwwwwwwwwwwwwwwwwwww                      gggggwww ggggttt         ww  wwwwwwwwwwwww                                      gggggwww ggggttt
+│                                                                           █                    s-30 g1 f-31                               █                                    s-14 g1 f-15
+~                                                                           ?                    gttt gt g???                               ?                                    gttt gt g???
+│                                                                                                judged                                                                          judged
+~                                                                                                tttttt                                                                          tttttt
+│                                         white=tune · red point=recorded failure · gap=counts shallower than solo
+~                                         wwwwwggggggggfffffffffgggggggggggggggggggggggggggggggggggggggggggggggggg
+│
+│ WHAT HAPPENED
+~ ttttttttttttt
+│ 20:21  pass     42 credited checks · 33 chain notes
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttt
+│ 18:57  backoff  core 05 -9 → -8
+~ ggggg  aaaaaaaa ttttttttttttttt
+│ 18:57  hunt     #1 done · 5 groups in 21m34s · core 05 named
+~ ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttt
+│ 18:57  fail     core 05 fails at -9
+~ ggggg  aaaaaaaa ttttttttttttttttttt
+│ 18:57  fail     hunt 1 group 5 · 04-07 at failing offsets · uncorrected hardware error
+~ ggggg  ffffffff ttttttttttttttttttttttttttttttttttttttttttttffffffffffffffffffffffffff
+│ 18:57  crash    with the offsets applied, rebooted
+~ ggggg  ffffffff tttttttttttttttttttttttttttttttttt
+│ 18:55  group    hunt 1 groups 3-4 · parts of 00-03 12-15 · all passed on existing evidence
+~ ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 18:55  pass     10 credited checks
+~ ggggg  tttttttt tttttttttttttttttt
+│ 18:35  hunt     #1 started · part 1: 00-04 06-15 at failing offsets, 05 parked
+~ ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 18:35  fail     R2 heavy vector on core 05 at -9 · corrected hardware error · no core named
+~ ggggg  ffffffff tttttttttttttttttttttttttttttttttttfffffffffffffffffffffffftttttttttttttttt
+│ 18:33  pass     14 credited checks · 33 chain notes
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttt
+│ 17:50  backoff  core 12 -15 → -14
+~ ggggg  aaaaaaaa ttttttttttttttttt
+│ 17:50  fail     core 12 fails at -15
+~ ggggg  aaaaaaaa tttttttttttttttttttt
+│ 17:50  fail     rerun of R2 heavy vector on core 12 at -15 · the backend quit · core 12 named
+~ ggggg  ffffffff tttttttttttttttttttttttttttttttttttttttttttttfffffffffffffffftttttttttttttttt
+│ 17:49  backoff  core 12 -16 → -15
+~ ggggg  aaaaaaaa ttttttttttttttttt
+│ 17:49  fail     core 12 fails at -16
+~ ggggg  aaaaaaaa tttttttttttttttttttt
+│ 17:49  fail     R2 heavy vector on core 12 at -16 · wrong result · core 12 named
+~ ggggg  ffffffff ttttttttttttttttttttttttttttttttttttfffffffffffftttttttttttttttt
+│ 17:49  pass     17 credited checks · 33 chain notes
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttt
+│ 17:00  backoff  core 10 -16 → -15
+~ ggggg  aaaaaaaa ttttttttttttttttt
+│ 17:00  fail     core 10 fails at -16
+~ ggggg  aaaaaaaa tttttttttttttttttttt
+│ 17:00  fail     R2 heavy vector on core 10 at -16 · wrong result · core 10 named
+~ ggggg  ffffffff ttttttttttttttttttttttttttttttttttttfffffffffffftttttttttttttttt
+│ 17:00  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 47 credited checks · 13 chain notes
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │
 │
-│  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0657
-~  ggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk gggggggggg
-│   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                                                                                                                                               CYCLE 1 · STEP 7
-~  hhhh  wwwwwwwwwwwww  ttttttttttttttt   ggggggggggggggggggggggggggggggggggggg                                                                                                                                               cccccccccccccccc
 │
-│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      ▀▀█ █▀█   ▀▀█ █▀▀
-~  kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk      ggggggggggggggggg
-│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · planned end 20:36, so it cannot wake the idle cores  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █▀▀ █ █ ▀  ▀█ █▀█
-~  kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkktttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk      ggggggggggggggggg
-│  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ▀▀▀ ▀▀▀ ▀ ▀▀▀ ▀▀▀
-~  kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk      ggggggggggggggggg
-│  started 20:21 · 15:00                                                                                                                                                                                                               ends at
-~  ggggggggtttttgggggggg                                                                                                                                                                                                               ggggggg
 │
-│  if it passes:        step 7 is done; next trial: step 8: R5 both threads with mprime SSE 4K-21K
-~  ppppppppppppppppppppptttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  if a core is named:  its failure point is recorded → it backs off; next trial: rerun R6 idle + bursts on 00-15 · 2m
-~  ffffffffffffffffffffftttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  if none is named:    hunt 2 starts over 00-15; next trial: hunt 2 group 1: R6 idle + bursts on 00-15 · 00-07 at failing offsets, 08-15 parked at 0
-~  fffffffffffffffffffffttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │
-│  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  all under load
-~  wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg                         wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg
-│  ► 00  -25  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                           -26                                          ► 08   -5  HAS ROOM  ▄▄▄▄▄·▬                                                -7
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwfg                         ttttt                                          c ww  www  tttttttt  wwwwwgf                                             ttttt
-│  ► 01  -15  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                                     -16                                          ► 09  -34  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                  -36
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwfg                                   ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf                ttttt
-│  ► 02  -25  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                           -27                                          ► 10  -15  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                                    -16
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwgf                         ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwwwfgg                                  ttttt
-│  ► 03  -24  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                            -26                                          ► 11   -7  AT LIMIT  ▄▄▄▄▄▄▄▬··                                             -8
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwgf                          ttttt                                          c ww  www  tttttttt  wwwwwwwfgg                                          ttttt
-│  ► 04  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                     -17                                          ► 12  -14  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                                     -15
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwgf                                   ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwwfgg                                   ttttt
-│  ► 05   -8  AT LIMIT  ▄▄▄▄▄▄▄▄▬·                                             -9                                          ► 13  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬               -39
-~  c ww  www  tttttttt  wwwwwwwwfg                                          ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf             ttttt
-│  ► 06  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬               -39                                          ► 14  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                     -17
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf             ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwwwgf                                   ttttt
-│  ► 07  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                       -31                                          ► 15  -13  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                       -15
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf                     ttttt                                          c ww  www  tttttttt  wwwwwwwwwwwwwgf                                     ttttt
-│
-│  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
-~  gggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk     ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggggggggggggggggggggggggg
-│  none confirmed yet: phase 1 has not passed a full cycle
-~  ggggggggggggggggggggggggggggggggggggggggggggggggggggggg
-│                                                                                                                          20:21  pass     R2 heavy vector on core 15 at -13 · passed · Tctl max 74°C
-~                                                                                                                          ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  CYCLE 1 ───────────────────────────────────────────────────────────────────────────────────────── 18 steps · 6 done     20:19  pass     R2 heavy vector on core 07 at -29 · passed · Tctl max 71°C
-~  ggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggggggggg     ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                          20:17  pass     R2 heavy vector on core 14 at -15 · passed · Tctl max 62°C
-~                                                                                                                          ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│    #   kind                  where                   workload                      schedule       result                 20:15  pass     R2 heavy vector on core 06 at -37 · passed · Tctl max 73°C
-~    g   gggg                  ggggg                   gggggggg                      gggggggg       gggggg                 ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ■  1  R7 all-core           2 CCDs · 12 parts       mprime AVX2 36K-248K          12 parts       done                   20:13  pass     R2 heavy vector on core 13 at -37 · passed · Tctl max 64°C
-~  p tt  wwttttttttt           ttttttttttttttttt       gggggggggggggggggggg          tttttttt       pppp                   ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ■  2  R7 all-core           2 CCDs · 12 parts       mprime AVX-512 36K-248K       12 parts       done                   20:11  pass     R2 heavy vector on core 05 at -8 · passed · Tctl max 75°C
-~  p tt  wwttttttttt           ttttttttttttttttt       ggggggggggggggggggggggg       tttttttt       pppp                   ggggg  pppppppp ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ■  3  R7 all-core           2 CCDs · 12 parts       y-cruncher FFTv4 + N63 + VT3  12 parts       done                   20:09  pass     R2 heavy vector on core 12 at -14 · passed · Tctl max 75°C
-~  p tt  wwttttttttt           ttttttttttttttttt       gggggggggggggggggggggggggggg  tttttttt       pppp                   ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ■  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m        done · hunt 1          20:07  pass     R2 heavy vector on core 04 at -15 · passed · Tctl max 64°C
-~  p tt  wwttttttttttttt       tttttttttttttttttt      gggggggggggggggggggg          ttttttt        ppppggggggggg          ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ■  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m        done                   20:05  pass     R2 heavy vector on core 11 at -7 · passed · Tctl max 68°C
-~  p tt  wwttttttttttttt       tttttttttttttttttt      ggggggggggggggggggggggg       ttttttt        pppp                   ggggg  pppppppp ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ■  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m        done                   20:03  pass     R2 heavy vector on core 03 at -24 · passed · Tctl max 64°C
-~  p tt  wwttttttttttttt       tttttttttttttttttt      gggggggggggggggggggggggggggg  ttttttt        pppp                   ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ►  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m            trial 1 of 1           20:01  pass     R2 heavy vector on core 10 at -15 · passed · Tctl max 70°C
-~  c ww  wwwwwwwwwwwwwwww      wwwwwwwwwwwwww          ggggggggggggggggg             www            cccccccccccc           ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               19:59  pass     R2 heavy vector on core 02 at -25 · passed · Tctl max 72°C
-~  k gg  ttggggggggggggg       gggggggggggggggggg      ggggggggggggggggg             ggggggg                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               19:57  pass     R2 heavy vector on core 09 at -34 · passed · Tctl max 62°C
-~  k gg  ttgggggg              gggggggggggggggggg      ggggggggggggggggg             ggggggg                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               19:55  pass     R2 heavy vector on core 01 at -15 · passed · Tctl max 64°C
-~  k gg  ttgggggg              gggggggggggggggggg      gggggggggggggggggggggg        ggggggg                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               19:53  pass     R2 heavy vector on core 08 at -5 · passed · Tctl max 65°C
-~  k gg  ttgggggg              gggggggggggggggggg      gggggggggggggggggggg          ggggggg                               ggggg  pppppppp ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               19:51  pass     R2 heavy vector on core 00 at -25 · passed · Tctl max 62°C
-~  k gg  ttggggggggggg         gggggggggggggggggg      ggggggggggggggggg             ggggggg                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               19:49  pass     R2 heavy vector on core 15 at -13 · passed · Tctl max 72°C
-~  k gg  ttggggggggggg         gggggggggggggggggg      gggggggggggggggggggggg        ggggggg                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               19:47  pass     R2 heavy vector on core 07 at -29 · passed · Tctl max 64°C
-~  k gg  ttggggggggggg         gggggggggggggggggg      gggggggggggggggggggg          ggggggg                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               19:45  pass     R2 heavy vector on core 14 at -15 · passed · Tctl max 73°C
-~  k gg  ttggggggggggggg       gggggggggggggggggg      ggggggggggggggggg             ggggggg                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 16  R4 partial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               19:43  pass     R2 heavy vector on core 06 at -37 · passed · Tctl max 75°C
-~  k gg  ttggggggggggggg       gggggggggggggggggg      gggggggggggggggggggggg        ggggggg                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 17  R4 partial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               19:41  pass     R2 heavy vector on core 13 at -37 · passed · Tctl max 67°C
-~  k gg  ttggggggggggggg       gggggggggggggggggg      gggggggggggggggggggg          ggggggg                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   19:39  pass     R2 heavy vector on core 05 at -8 · passed · Tctl max 74°C
-~  k gg  ttgggggggggggggg      gggggggggggggg          gggggggggggggggggggggg        ggg                                   ggggg  pppppppp ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                          19:37  pass     R2 heavy vector on core 12 at -14 · passed · Tctl max 73°C
-~                                                                                                                          ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     19:35  pass     R2 heavy vector on core 04 at -15 · passed · Tctl max 64°C
-~  gg kkkkkkkkkkkkkkkkkkkkkkkkkkk gggggggggggggg kkkkkkkkk ggggggggggggggg kkkkkkkkkkkkkkkkk ggggggggggggggggggggggggg     ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  mprime AVX2 36K-248K           05 08 by offset          00-05 07-12 14 15                                               19:33  pass     R2 heavy vector on core 11 at -7 · passed · Tctl max 67°C
-~  ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                               ggggg  pppppppp ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  mprime AVX-512 36K-248K        05 08 by offset          00-05 07-12 14 15                                               19:31  pass     R2 heavy vector on core 03 at -24 · passed · Tctl max 68°C
-~  ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  y-cruncher FFTv4 + N63 + VT3   05 08 by offset          00-05 07-12 14 15                                               19:29  pass     R2 heavy vector on core 10 at -15 · passed · Tctl max 63°C
-~  ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                          19:27  pass     R2 heavy vector on core 02 at -25 · passed · Tctl max 62°C
-~                                                                                                                          ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                          19:25  pass     R2 heavy vector on core 09 at -34 · passed · Tctl max 72°C
-~                                                                                                                          ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                          19:23  pass     R2 heavy vector on core 01 at -15 · passed · Tctl max 69°C
-~                                                                                                                          ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                          19:21  pass     R2 heavy vector on core 08 at -5 · passed · Tctl max 63°C
-~                                                                                                                          ggggg  pppppppp ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                          19:19  pass     R2 heavy vector on core 00 at -25 · passed · Tctl max 76°C
-~                                                                                                                          ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                          +448 more
-~                                                                                                                          ggggggggg
-│
-│   ?  help    l  log    esc  back    q  exit dashboard
-~  hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
+~ hhhhh ggggg  wwwwwwww  hhhhh gggggg  hhhhhhhhhhh  kkkkk kkkk  hhh gggg  hhh gggggggggggggg

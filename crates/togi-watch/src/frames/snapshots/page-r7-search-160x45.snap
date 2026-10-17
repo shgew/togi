@@ -1,0 +1,48 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   00:48:40   tuning 0h48m   session 0h48m   0 failures · 0 crashes
+│ ► SOLO LIMITS  0/16 → ○ PHASE 1 → ○ PHASE 2 → ○ CLEAN CYCLES   0:50 left
+│ R7 EVIDENCE · 4/9 · < Cycle | Hunts / probes >
+│   No R7 evidence yet: request order and self-sufficiency appear once checking has a cycle.
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│  ←/→  pages  4/9 R7 evidence   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

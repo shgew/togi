@@ -1,0 +1,48 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   00:48:40   tuning 0h48m   session 0h48m   0 failures · 0 crashes
+│ ► SOLO LIMITS  0/16 → ○ PHASE 1 → ○ PHASE 2 → ○ CLEAN CYCLES   0:50 left
+│ HUNTS / PROBES · 5/9 · < R7 evidence | BIOS profile >
+│   No hunt is running and none is recorded in this session. A hunt starts when a multi-core failure needs its cause located; its cause, groups and probes
+│   appear here.
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│
+│  ←/→  pages  5/9 Hunts / probes   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

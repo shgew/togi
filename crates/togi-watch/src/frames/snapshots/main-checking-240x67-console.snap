@@ -3,127 +3,130 @@ source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
 legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
-│  togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
-~  gggg   wwwwwwww   gggggggttttt   ggggggggttttt   ttggggggggggggtgggggggg   ggggggggggggggggggggggtttttggggggggggg
+│ togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
+~ gggg   wwwwwwww   gggggggttttt   ggggggggttttt   ttggggggggggggtgggggggg   ggggggggggggggggggggggtttttggggggggggg
+│ ■ SOLO LIMITS  16/16 → ► PHASE 1 · cycle 1 → ○ PHASE 2 → ○ CLEAN CYCLES
+~ pptttttttttttgggggggtktccwwwwwwwtttttttttttktkkgggggggtktkkgggggggggggg
 │
-│  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 1 of 18 · part 1 of 3 · trial 1 of 4
-~  pptttttttttttgggggggttkkkttccwwwwwwwttkkkttgggggggggttkkkttggggggggggggggttkkkttccwwwwwwwttttttttttttttttttttttttttttttttttttttttttt
+│ PHASE 1 · cycle 1 · 0/18 steps complete
+~ wwwwwwwgggtttttttgggttttttttttttttttttt
+│ step 1 · 3 known parts · more may follow · 0/4 credited checks · 4 checks still needed
+~ wwwwwwgggtttttttttttttttttttttttttttttttgggtttttttttttttttttttgggggggggggggggggggggggg
 │
-│  ▌  CYCLE 1   Step 1 is R7 all-core with mprime AVX2 36K-248K.                                                           last trial      PASS  1:30 on core 06 · Tctl max 66°C
-~  c  cccccccccctttttttttttttttttttttttttttttttttttttttttttttttt                                                           ggggggggggggggggppppggggggggggggggggggggggggggggggggg
-│  ▌            Part 1 of 3 loads 00-07 for 2 minutes.
-~  c            tttttttttttttttttttttttttttttttttttttt
+│ NOW  CYCLE 1 · STEP 1 · PART 1   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers
+~ ggg  ccccccccccccccccccccccccc  hhhh  wwwwwwwwwwwww  tttttttt   gggggggggggggggggggggggggggggggg
+│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 1 of 4
+~ cccccccckkkkkkkkkkkkkkkk  ttttggggggg   gggggggggggg
 │
-│  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0405
-~  ggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk gggggggggg
-│   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers                                                                                                                                                  CYCLE 1 · STEP 1 · PART 1
-~  hhhh  wwwwwwwwwwwww  tttttttt   gggggggggggggggggggggggggggggggg                                                                                                                                                  ccccccccccccccccccccccccc
+│                                            0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
+~                                            g wwwww ggg       ggg       ggg       ggg       ggg                             g wwwww ggg       ggg       ggg       ggg       ggg
+│                                         core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
+~                                         gggggggggggggg  wggggggg?ggggggggggggggggggggggggg     ggggggggggggggggggg      gggggggggggggg  wggggggg?ggggggggggggggggggggggggg     ggggggggggggggggggg
+│                                         00  ██████████████████████████                         tune -26 now -26         08  █████                                              tune  -5 now  -5
+~                                         ww  wwwwwwwwwwwwwwwwwwwwwwwwww                         gggggwww ggggttt         tt  wwwww                                              gggggwww ggggttt
+│                                                                        █                       s-27 g1 f-28                       █                                            s-6 g1 f-7
+~                                                                        ?                       gttt gt g???                       ?                                            gtt gt g??
+│                                                                                                judged                                                                          idle
+~                                                                                                tttttt                                                                          tttt
+│                                         01  ████████████████                                   tune -16 now -16         09  ██████████████████████████████████                 tune -34 now -34
+~                                         ww  wwwwwwwwwwwwwwww                                   gggggwww ggggttt         tt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww                 gggggwww ggggttt
+│                                                              █                                 s-17 g1 f-18                                                    █               s-35 g1 f-36
+~                                                              ?                                 gttt gt g???                                                    ?               gttt gt g???
+│                                                                                                judged                                                                          idle
+~                                                                                                tttttt                                                                          tttt
+│                                         02  █████████████████████████                          tune -25 now -25         10  █████████████████                                  tune -17 now -17
+~                                         ww  wwwwwwwwwwwwwwwwwwwwwwwww                          gggggwww ggggttt         tt  wwwwwwwwwwwwwwwww                                  gggggwww ggggttt
+│                                                                       █                        s-26 g1 f-27                                   █                                s-18 g1 f-19
+~                                                                       ?                        gttt gt g???                                   ?                                gttt gt g???
+│                                                                                                judged                                                                          idle
+~                                                                                                tttttt                                                                          tttt
+│                                         03  ████████████████████████                           tune -24 now -24         11  █████████                                          tune  -9 now  -9
+~                                         ww  wwwwwwwwwwwwwwwwwwwwwwww                           gggggwww ggggttt         tt  wwwwwwwww                                          gggggwww ggggttt
+│                                                                      █                         s-25 g1 f-26                           █                                        s-10 g1 f-11
+~                                                                      ?                         gttt gt g???                           ?                                        gttt gt g???
+│                                                                                                judged                                                                          idle
+~                                                                                                tttttt                                                                          tttt
+│                                         04  ███████████████                                    tune -15 now -15         12  ████████████████                                   tune -16 now -16
+~                                         ww  wwwwwwwwwwwwwww                                    gggggwww ggggttt         tt  wwwwwwwwwwwwwwww                                   gggggwww ggggttt
+│                                                             █                                  s-16 g1 f-17                                  █                                 s-17 g1 f-18
+~                                                             ?                                  gttt gt g???                                  ?                                 gttt gt g???
+│                                                                                                judged                                                                          idle
+~                                                                                                tttttt                                                                          tttt
+│                                         05  █████████                                          tune  -9 now  -9         13  █████████████████████████████████████              tune -37 now -37
+~                                         ww  wwwwwwwww                                          gggggwww ggggttt         tt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww              gggggwww ggggttt
+│                                                       █                                        s-10 g1 f-11                                                       █            s-38 g1 f-39
+~                                                       ?                                        gttt gt g???                                                       ?            gttt gt g???
+│                                                                                                judged                                                                          idle
+~                                                                                                tttttt                                                                          tttt
+│                                         06  █████████████████████████████████████              tune -37 now -37         14  ███████████████                                    tune -15 now -15
+~                                         ww  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww              gggggwww ggggttt         tt  wwwwwwwwwwwwwww                                    gggggwww ggggttt
+│                                                                                   █            s-38 g1 f-39                                 █                                  s-16 g1 f-17
+~                                                                                   ?            gttt gt g???                                 ?                                  gttt gt g???
+│                                                                                                judged                                                                          idle
+~                                                                                                tttttt                                                                          tttt
+│                                         07  █████████████████████████████                      tune -29 now -29         15  █████████████                                      tune -13 now -13
+~                                         ww  wwwwwwwwwwwwwwwwwwwwwwwwwwwww                      gggggwww ggggttt         tt  wwwwwwwwwwwww                                      gggggwww ggggttt
+│                                                                           █                    s-30 g1 f-31                               █                                    s-14 g1 f-15
+~                                                                           ?                    gttt gt g???                               ?                                    gttt gt g???
+│                                                                                                judged                                                                          idle
+~                                                                                                tttttt                                                                          tttt
+│                                         white=tune · red point=recorded failure · gap=counts shallower than solo
+~                                         wwwwwggggggggfffffffffgggggggggggggggggggggggggggggggggggggggggggggggggg
 │
-│  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          ▀█    ▀▀█ █▀█
-~  cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk          wwwwwwwwwwwww
-│  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░           █  ▀ █▀▀ █ █
-~  cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk          wwwwwwwwwwwww
-│  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
-~  cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk          wwwwwwwwwwwww
-│  0:40 of 2:00                                                                                                                                                                        0 passed · trial 1 of 4  ► · · ·                   left
-~  ttttgggggggg                                                                                                                                                                        tttttttttttttttttttttttttc g g g                   gggg
+│ WHAT HAPPENED
+~ ttttttttttttt
+│ 09:47  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 09:47  cycle    cycle 1 started · 18 steps
+~ ggggg  tttttttt tttttttttttttttttttttttttt
+│ 09:47  limit    cores 06, 13 solo limit -38
+~ ggggg  pppppppp ttttttttttttttttttttttttttt
+│ 09:38  limit    core 09 solo limit -35
+~ ggggg  pppppppp tttttttttttttttttttttt
+│ 09:38  limit    core 00 solo limit -27
+~ ggggg  pppppppp tttttttttttttttttttttt
+│ 09:38  limit    core 07 solo limit -30
+~ ggggg  pppppppp tttttttttttttttttttttt
+│ 09:35  limit    core 10 solo limit -18
+~ ggggg  pppppppp tttttttttttttttttttttt
+│ 09:35  limit    core 02 solo limit -26
+~ ggggg  pppppppp tttttttttttttttttttttt
+│ 09:32  limit    core 15 solo limit -14
+~ ggggg  pppppppp tttttttttttttttttttttt
+│ 09:28  limit    core 12 solo limit -17
+~ ggggg  pppppppp tttttttttttttttttttttt
+│ 09:28  limit    core 03 solo limit -25
+~ ggggg  pppppppp tttttttttttttttttttttt
+│ 09:23  limit    core 01 solo limit -17
+~ ggggg  pppppppp tttttttttttttttttttttt
+│ 09:19  limit    cores 04, 14 solo limit -16
+~ ggggg  pppppppp ttttttttttttttttttttttttttt
+│ 08:38  limit    cores 05, 11 solo limit -10
+~ ggggg  pppppppp ttttttttttttttttttttttttttt
+│ 08:28  limit    core 08 solo limit -6
+~ ggggg  pppppppp ttttttttttttttttttttt
+│ 07:34  confirm  core 06 confirming -38 as its solo limit
+~ ggggg  tttttttt tttttttttttttttttttttttttttttttttttttttt
+│ 07:34  fail     core 06 fails at -39
+~ ggggg  aaaaaaaa tttttttttttttttttttt
+│ 07:34  fail     core 06 · R2 heavy vector at -39 · the backend stalled
+~ ggggg  ffffffff tttttttttttttttttttttttttttttttttttfffffffffffffffffff
+│ 07:32  confirm  core 13 confirming -38 as its solo limit
+~ ggggg  tttttttt tttttttttttttttttttttttttttttttttttttttt
+│ 07:32  fail     core 13 fails at -39
+~ ggggg  aaaaaaaa tttttttttttttttttttt
+│ 07:32  crash    core 13 · R2 heavy vector at -39 · rebooted · midway through trial 1 of 1
+~ ggggg  ffffffff ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 07:07  step     core 06 passed -38; searches -39 on its next turn
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 07:04  step     core 13 passed -38; searches -39 on its next turn
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 06:40  step     core 06 passed -37; searches -38 on its next turn
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 06:37  step     core 13 passed -37; searches -38 on its next turn
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
+│ 06:13  step     core 06 passed -36; searches -37 on its next turn
+~ ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
 │
-│  if 3 of 4 pass:      next trial: trial 4 of 4 · 5m
-~  pppppppppppppppppppppttttttttttttttttttttttttttttt
-│  if a core is named:  its failure point is recorded → it backs off per offset order; next trial: rerun R7 all-core on 00-07 · 2m
-~  ffffffffffffffffffffftttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  if none is named:    core 05 -9 → -8 per offset order; next trial: rerun R7 all-core on 00-07 · 2m
-~  fffffffffffffffffffffttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│
-│  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
-~  wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg                         wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg
-│  ► 00  -26  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                          -28                                            08   -5  HAS ROOM  ▄▄▄▄▄·▬                                                -7   top by offset
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwgf                        ttttt                                            tt  ttt  tttttttt  ggggggf                                             ggggg   ttttttttttttt
-│  ► 01  -16  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                    -18                                            09  -34  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                  -36
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwgf                                  ttttt                                            tt  ttt  tttttttt  gggggggggggggggggggggggggggggggggggf                ggggg
-│  ► 02  -25  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                           -27                                            10  -17  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                   -19
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwgf                         ttttt                                            tt  ttt  tttttttt  ggggggggggggggggggf                                 ggggg
-│  ► 03  -24  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                            -26                                            11   -9  HAS ROOM  ▄▄▄▄▄▄▄▄▄·▬                                           -11
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwgf                          ttttt                                            tt  ttt  tttttttt  ggggggggggf                                         ggggg
-│  ► 04  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                     -17                                            12  -16  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                    -18
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwgf                                   ttttt                                            tt  ttt  tttttttt  gggggggggggggggggf                                  ggggg
-│  ► 05   -9  HAS ROOM  ▄▄▄▄▄▄▄▄▄·▬                                           -11   top by offset                            13  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬               -39
-~  c ww  www  tttttttt  wwwwwwwwwgf                                         ttttt   ttttttttttttt                            tt  ttt  tttttttt  ggggggggggggggggggggggggggggggggggggggf             ggggg
-│  ► 06  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬               -39                                            14  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                     -17
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf             ttttt                                            tt  ttt  tttttttt  ggggggggggggggggf                                   ggggg
-│  ► 07  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                       -31                                            15  -13  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                       -15
-~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf                     ttttt                                            tt  ttt  tttttttt  ggggggggggggggf                                     ggggg
-│
-│  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
-~  gggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk     ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggggggggggggggggggggggggg
-│  none confirmed yet: phase 1 has not passed a full cycle
-~  ggggggggggggggggggggggggggggggggggggggggggggggggggggggg
-│                                                                                                                          09:47  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
-~                                                                                                                          ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
-│  CYCLE 1 ───────────────────────────────────────────────────────────────────────────────────────── 18 steps · 0 done     09:47  cycle    cycle 1 started · 18 steps
-~  ggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggggggggg     ggggg  tttttttt tttttttttttttttttttttttttt
-│                                                                                                                          09:47  limit    cores 06, 13 solo limit -38
-~                                                                                                                          ggggg  pppppppp ttttttttttttttttttttttttttt
-│    #   kind                  where                   workload                      schedule       result                 09:38  limit    core 09 solo limit -35
-~    g   gggg                  ggggg                   gggggggg                      gggggggg       gggggg                 ggggg  pppppppp tttttttttttttttttttttt
-│  ►  1  R7 all-core           2 CCDs · 3+ parts       mprime AVX2 36K-248K          3+ parts       part 1 of 3            09:38  limit    core 00 solo limit -27
-~  c ww  wwwwwwwwwww           wwwwwwwwwwwwwwwww       gggggggggggggggggggg          wwwwwwww       ccccccccccc            ggggg  pppppppp tttttttttttttttttttttt
-│  ►     ├ full CCD 0          00-07                                                 3 x 2m + 5m    trial 1 of 4           09:38  limit    core 07 solo limit -30
-~  c     ktwwwwwwwwww          wwwww                                                 wwwwwwwwwww    cccccccccccc           ggggg  pppppppp tttttttttttttttttttttt
-│        ├ full CCD 1          08-15                                                 3 x 2m + 5m                           09:35  limit    core 10 solo limit -18
-~        kttttttttttt          ttttt                                                 ggggggggggg                           ggggg  pppppppp tttttttttttttttttttttt
-│        ├ full CCD 0+1        00-15                                                 3 x 2m + 10m                          09:35  limit    core 02 solo limit -26
-~        kttttttttttttt        ttttt                                                 gggggggggggg                          ggggg  pppppppp tttttttttttttttttttttt
-│        └ partials may follow                                                                                             09:32  limit    core 15 solo limit -14
-~        ktggggggggggggggggggg                                                                                             ggggg  pppppppp tttttttttttttttttttttt
-│  ○  2  R7 all-core           2 CCDs · 3+ parts       mprime AVX-512 36K-248K       3+ parts                              09:28  limit    core 12 solo limit -17
-~  k gg  ttggggggggg           ggggggggggggggggg       ggggggggggggggggggggggg       gggggggg                              ggggg  pppppppp tttttttttttttttttttttt
-│  ○  3  R7 all-core           2 CCDs · 3+ parts       y-cruncher FFTv4 + N63 + VT3  3+ parts                              09:28  limit    core 03 solo limit -25
-~  k gg  ttggggggggg           ggggggggggggggggg       gggggggggggggggggggggggggggg  gggggggg                              ggggg  pppppppp tttttttttttttttttttttt
-│  ○  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m                               09:23  limit    core 01 solo limit -17
-~  k gg  ttggggggggggggg       gggggggggggggggggg      gggggggggggggggggggg          ggggggg                               ggggg  pppppppp tttttttttttttttttttttt
-│  ○  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m                               09:19  limit    cores 04, 14 solo limit -16
-~  k gg  ttggggggggggggg       gggggggggggggggggg      ggggggggggggggggggggggg       ggggggg                               ggggg  pppppppp ttttttttttttttttttttttttttt
-│  ○  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m                               08:38  limit    cores 05, 11 solo limit -10
-~  k gg  ttggggggggggggg       gggggggggggggggggg      gggggggggggggggggggggggggggg  ggggggg                               ggggg  pppppppp ttttttttttttttttttttttttttt
-│  ○  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   08:28  limit    core 08 solo limit -6
-~  k gg  ttgggggggggggggg      gggggggggggggg          ggggggggggggggggg             ggg                                   ggggg  pppppppp ttttttttttttttttttttt
-│  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               07:34  confirm  core 06 confirming -38 as its solo limit
-~  k gg  ttggggggggggggg       gggggggggggggggggg      ggggggggggggggggg             ggggggg                               ggggg  tttttttt tttttttttttttttttttttttttttttttttttttttt
-│  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               07:34  fail     core 06 fails at -39
-~  k gg  ttgggggg              gggggggggggggggggg      ggggggggggggggggg             ggggggg                               ggggg  aaaaaaaa tttttttttttttttttttt
-│  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:34  fail     core 06 · R2 heavy vector at -39 · the backend stalled
-~  k gg  ttgggggg              gggggggggggggggggg      gggggggggggggggggggggg        ggggggg                               ggggg  ffffffff tttttttttttttttttttttttttttttttttttfffffffffffffffffff
-│  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:32  confirm  core 13 confirming -38 as its solo limit
-~  k gg  ttgggggg              gggggggggggggggggg      gggggggggggggggggggg          ggggggg                               ggggg  tttttttt tttttttttttttttttttttttttttttttttttttttt
-│  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               07:32  fail     core 13 fails at -39
-~  k gg  ttggggggggggg         gggggggggggggggggg      ggggggggggggggggg             ggggggg                               ggggg  aaaaaaaa tttttttttttttttttttt
-│  ○ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:32  crash    core 13 · R2 heavy vector at -39 · rebooted · midway through trial 1 of 1
-~  k gg  ttggggggggggg         gggggggggggggggggg      gggggggggggggggggggggg        ggggggg                               ggggg  ffffffff ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:07  step     core 06 passed -38; searches -39 on its next turn
-~  k gg  ttggggggggggg         gggggggggggggggggg      gggggggggggggggggggg          ggggggg                               ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               07:04  step     core 13 passed -38; searches -39 on its next turn
-~  k gg  ttggggggggggggg       gggggggggggggggggg      ggggggggggggggggg             ggggggg                               ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 16  R4 partial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               06:40  step     core 06 passed -37; searches -38 on its next turn
-~  k gg  ttggggggggggggg       gggggggggggggggggg      gggggggggggggggggggggg        ggggggg                               ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 17  R4 partial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               06:37  step     core 13 passed -37; searches -38 on its next turn
-~  k gg  ttggggggggggggg       gggggggggggggggggg      gggggggggggggggggggg          ggggggg                               ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
-│  ○ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   06:13  step     core 06 passed -36; searches -37 on its next turn
-~  k gg  ttgggggggggggggg      gggggggggggggg          gggggggggggggggggggggg        ggg                                   ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                          06:10  step     core 13 passed -36; searches -37 on its next turn
-~                                                                                                                          ggggg  tttttttt ttttttttttttttttttttttttttttttttttttttttttttttttt
-│  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     05:57  confirm  core 09 confirming -35 as its solo limit
-~  gg kkkkkkkkkkkkkkkkkkkkkkkkkkk gggggggggggggg kkkkkkkkk ggggggggggggggg kkkkkkkkkkkkkkkkk ggggggggggggggggggggggggg     ggggg  tttttttt tttttttttttttttttttttttttttttttttttttttt
-│  mprime AVX2 36K-248K           05 08 by offset          none yet                                                        05:57  fail     core 09 fails at -36
-~  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                        ggggg  aaaaaaaa tttttttttttttttttttt
-│  mprime AVX-512 36K-248K        05 08 by offset          none yet                                                        05:57  fail     core 09 · R1 light at -36 · wrong result
-~  gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                        ggggg  ffffffff ttttttttttttttttttttttttttttffffffffffff
-│  y-cruncher FFTv4 + N63 + VT3   05 08 by offset          none yet                                                        05:53  confirm  core 00 confirming -27 as its solo limit
-~  gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                        ggggg  tttttttt tttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                          05:53  fail     core 00 fails at -28
-~                                                                                                                          ggggg  aaaaaaaa tttttttttttttttttttt
-│                                                                                                                          +183 more
-~                                                                                                                          ggggggggg
-│
-│   ?  help    l  log    esc  back    q  exit dashboard
-~  hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
+~ hhhhh ggggg  wwwwwwww  hhhhh gggggg  hhhhhhhhhhh  kkkkk kkkk  hhh gggg  hhh gggggggggggggg

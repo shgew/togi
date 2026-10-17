@@ -1,21 +1,24 @@
-//! One dashboard frame: the header and the stage line over the main view, the help or the journal view, and the
-//! key hints under them.
+//! One dashboard frame: the header and the stage line over a page, and the key hints under it.
+//!
+//! Every page but Main at the reference size has a sticky title row of its name, its place in the cycle and its
+//! neighbours, and a body that scrolls under it. Main is composed in [`main_page`](super::main_page).
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use ratatui::buffer::Buffer;
 
-use super::dash::{draw_ccd, draw_now, header, stage_line, status_header};
+use super::dash::{cores_page, header, stage_line, status_header};
 use super::draw::{put, rows};
 use super::footer::{footer, skipped_clause};
 use super::help::help_body;
 use super::layout::{Layout, SizeClass};
-use super::measure::measure;
-use super::panels::{context_lines, history_panel, log_arrivals, log_body};
+use super::main_page;
+use super::measure::{Main, MainForm};
+use super::panels::{history_page, log_arrivals, log_body, page_lines};
 use super::scene::Scene;
-use super::story::{
-    Story, last_lines, narrator_lines, outcome_lines, problem_story, starting_story, story,
-};
+use super::scroll::scroll_body_with_bar;
+use super::story::{Story, narrator_lines, problem_story, starting_story, story};
+use super::title::page_title;
 use crate::model::Model;
 use crate::screen::{Drawn, Hold, Journal, Log, Screen, View};
 
@@ -29,8 +32,8 @@ const NO_LOG: Log<'static> = Log {
 /// reports how far the view scrolls and how long the frame stays true. Every time on it is local to `zone`.
 ///
 /// A started idle (R6) trial holds the frame at the trial's start: nothing on it moves with the clock, and the
-/// frame is [`Hold::Frozen`] until a later event releases it. Every other frame shows the clock and holds
-/// [`Hold::Never`].
+/// frame is [`Hold::Frozen`] on every page until a later event releases it. Every other frame shows the clock and
+/// holds [`Hold::Never`].
 pub fn render(
     journal: &Journal<'_>,
     screen: &Screen,
@@ -61,8 +64,8 @@ pub fn render(
 }
 
 fn folded(scene: &Scene<'_>, log: &Log<'_>, screen: &Screen, buf: &mut Buffer) -> Drawn {
-    let m = measure(scene, screen);
-    let layout = &m.layout;
+    let layout = Layout::new(screen);
+    let main = Main::new(screen);
     let compact = layout.class == SizeClass::Compact;
     put(
         buf,
@@ -76,11 +79,20 @@ fn folded(scene: &Scene<'_>, log: &Log<'_>, screen: &Screen, buf: &mut Buffer) -
         layout.stage,
         0,
         0,
-        &stage_line(scene, layout.class, screen.view != View::Main),
+        &stage_line(
+            scene,
+            usize::from(layout.stage.width),
+            screen.view != View::Main,
+        ),
     );
+    let main_has_gauges =
+        screen.view == View::Main && scene.s.session.is_some() && main.form == MainForm::Gauges;
+    if !main_has_gauges {
+        title(&layout, screen, buf);
+    }
     let mut scroll = 0;
     match screen.view {
-        View::Help => scroll = help(layout, screen, buf),
+        View::Help => scroll = help(&layout, screen, buf),
         View::Log => {
             let (body, extent) = log_body(
                 log,
@@ -93,50 +105,44 @@ fn folded(scene: &Scene<'_>, log: &Log<'_>, screen: &Screen, buf: &mut Buffer) -
             rows(buf, layout.body, body, screen.colours);
             scroll = extent;
         }
+        View::Cores | View::Cycle | View::R7 | View::Hunts | View::Bios | View::History => {
+            let width = usize::from(layout.body.width);
+            let inner = width.saturating_sub(2).max(1);
+            let lines = match screen.view {
+                View::Cores => cores_page(scene, inner),
+                View::History => history_page(scene, inner),
+                view => page_lines(scene, view, inner, layout.class),
+            };
+            let (body, extent) = scroll_body_with_bar(
+                &lines,
+                width,
+                usize::from(layout.body.height),
+                screen.scroll,
+                screen.colours,
+            );
+            rows(buf, layout.body, body, screen.colours);
+            scroll = extent;
+        }
         View::Main if scene.s.session.is_none() => {
-            let said = story(scene);
-            narrate(&said, layout.body, false, screen, buf);
+            narrate(&story(scene), &layout, screen, buf);
         }
-        View::Main => {
-            let said = story(scene);
-            narrate(&said, layout.say, compact, screen, buf);
-            if !compact {
-                rows(buf, layout.last, last_lines(scene), screen.colours);
-            }
-            draw_now(buf, &m, scene);
-            rows(
-                buf,
-                m.outcomes,
-                outcome_lines(scene, usize::from(m.outcomes.width), compact),
-                screen.colours,
-            );
-            for ccd in &m.ccds {
-                draw_ccd(buf, ccd, scene);
-            }
-            rows(buf, m.context, context_lines(scene, &m), screen.colours);
-            rows(
-                buf,
-                m.history,
-                history_panel(
-                    scene,
-                    usize::from(m.history.width),
-                    usize::from(m.history.height),
-                ),
-                screen.colours,
-            );
-        }
+        View::Main => scroll = main_page::draw(scene, screen, &layout, &main, buf),
     }
     let mut after = if screen.view == View::Log {
         log_arrivals(log, screen.colours)
     } else {
         Vec::new()
     };
-    if let Some(skipped) = scene.s.skipped {
+    let warned =
+        screen.view == View::Main && scene.s.session.is_some() && main_page::has_warning_row(&main);
+    if let Some(skipped) = scene.s.skipped
+        && !warned
+    {
         after.push(skipped_clause(skipped, screen.colours));
     }
     footer(screen, &after, buf);
     #[cfg(test)]
-    super::corpus::frame(&m, scene, buf, screen);
+    super::corpus::frame(&layout, &main, scene, buf, screen);
     Drawn {
         scroll,
         hold: if scene.hold.is_some() {
@@ -169,6 +175,7 @@ fn unfolded(
             usize::from(layout.header.width),
         ),
     );
+    title(&layout, screen, buf);
     let mut scroll = 0;
     match screen.view {
         View::Help => scroll = help(&layout, screen, buf),
@@ -184,7 +191,13 @@ fn unfolded(
             rows(buf, layout.body, body, screen.colours);
             scroll = extent;
         }
-        View::Main => narrate(said, layout.body, false, screen, buf),
+        View::Main
+        | View::Cores
+        | View::Cycle
+        | View::R7
+        | View::Hunts
+        | View::Bios
+        | View::History => narrate(said, &layout, screen, buf),
     }
     footer(screen, &[], buf);
     #[cfg(test)]
@@ -193,6 +206,16 @@ fn unfolded(
         scroll,
         hold: Hold::Never,
     }
+}
+
+fn title(layout: &Layout, screen: &Screen, buf: &mut Buffer) {
+    put(
+        buf,
+        layout.title,
+        0,
+        0,
+        &page_title(screen.view, usize::from(layout.title.width), screen.colours),
+    );
 }
 
 fn help(layout: &Layout, screen: &Screen, buf: &mut Buffer) -> usize {
@@ -207,21 +230,15 @@ fn help(layout: &Layout, screen: &Screen, buf: &mut Buffer) -> usize {
     extent
 }
 
-fn narrate(
-    said: &Story,
-    rect: ratatui::layout::Rect,
-    brief: bool,
-    screen: &Screen,
-    buf: &mut Buffer,
-) {
+fn narrate(said: &Story, layout: &Layout, screen: &Screen, buf: &mut Buffer) {
     rows(
         buf,
-        rect,
+        layout.body,
         narrator_lines(
             said,
-            usize::from(rect.width),
-            usize::from(rect.height),
-            brief,
+            usize::from(layout.body.width),
+            usize::from(layout.body.height),
+            false,
             screen.colours,
         ),
         screen.colours,

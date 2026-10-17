@@ -1,17 +1,17 @@
 use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use togi_journal::CorePhase;
-use togi_machine::{CcdId, TargetOffset};
-use togi_tuner::{Limit, Reached};
+use togi_machine::{CcdId, ObservedOffset, TargetOffset};
+use togi_tuner::{Limit, PhaseNo, Reached};
 
 use super::at;
 use crate::frames::colours::Paint;
 use crate::frames::draw::{put, put_cells};
-use crate::frames::fit::{Clause, Form, cut_words, fit_clauses, tint};
-use crate::frames::measure::Ccd;
-use crate::frames::notes::{CoreNote, top_note};
+use crate::frames::fit::{Clause, fit_clauses, plain, wrap_styled};
+use crate::frames::notes::CoreNote;
 use crate::frames::scene::Scene;
-use crate::model::{CoreState, CoreView};
+use crate::model::{CoreState, CoreView, FailureSource, OffsetDecision};
 use crate::words::phase_word;
 
 /// The word a core's state is shown as.
@@ -34,85 +34,6 @@ fn combination(core: &CoreView) -> Option<u32> {
     match core.holder {
         Some(Limit::Reached(Reached::Combination(id))) => Some(id.get()),
         _ => None,
-    }
-}
-
-/// The offset a row shows: the saved profile once a stopped session restored its offsets, else the readback,
-/// never clamped.
-fn shown_offset(scene: &Scene<'_>, core: &CoreView) -> i64 {
-    if scene.s.stopped.is_some_and(|stop| stop.saved) {
-        core.profile.get()
-    } else {
-        core.applied.0
-    }
-}
-
-/// The gauge of a core in `cells` cells, 2 counts to a cell at 25 cells and 1 at 50; `applied` is the offset it
-/// draws as applied.
-pub(super) fn gauge(
-    scene: &Scene<'_>,
-    core: &CoreView,
-    applied: i64,
-    cells: usize,
-) -> Line<'static> {
-    if cells == 0 {
-        return Line::default();
-    }
-    let back = [core.solo, core.pass, core.returns_to]
-        .into_iter()
-        .flatten()
-        .map(TargetOffset::get)
-        .fold(0, i64::min);
-    let (held_from, held_to) = if combination(core).is_some() {
-        (
-            1 - core.profile.get(),
-            core.solo.map_or(-back, |solo| -solo.get()),
-        )
-    } else {
-        (1, 0)
-    };
-    let total = i64::try_from(cells).unwrap_or(i64::MAX);
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut run = String::new();
-    let mut run_glyph = ' ';
-    let mut run_paint = None;
-    for i in 0..total {
-        let (lo, hi) = (i * 50 / total + 1, (i + 1) * 50 / total);
-        let hits = |point: i64| (lo..=hi).contains(&-point);
-        let (glyph, paint) = if core.fail.is_some_and(|fail| hits(fail.get())) {
-            ('▬', Some(Paint::Bad))
-        } else if core.group_fails.iter().any(|mark| hits(mark.get())) {
-            ('▀', Some(Paint::Bad))
-        } else if -applied >= lo {
-            (
-                '▄',
-                Some(if core.judged {
-                    Paint::White
-                } else {
-                    Paint::Grey
-                }),
-            )
-        } else if lo.max(held_from) <= hi.min(held_to) {
-            ('░', Some(Paint::Combination))
-        } else if -back >= lo {
-            ('·', Some(Paint::Grey))
-        } else {
-            (' ', None)
-        };
-        if (glyph, paint) != (run_glyph, run_paint) && !run.is_empty() {
-            spans.push(span(scene, run_paint, std::mem::take(&mut run)));
-        }
-        (run_glyph, run_paint) = (glyph, paint);
-        run.push(glyph);
-    }
-    spans.push(span(scene, run_paint, run));
-    Line::from(spans)
-}
-
-fn span(scene: &Scene<'_>, paint: Option<Paint>, text: String) -> Span<'static> {
-    match paint {
-        Some(paint) => scene.paint(paint, text),
-        None => Span::raw(text),
     }
 }
 
@@ -157,232 +78,502 @@ pub(crate) fn note_line(scene: &Scene<'_>, core: &CoreView, width: usize) -> Lin
     line
 }
 
-/// What this trial does with a CCD's cores, in full and in a word.
-pub(super) fn ccd_role(scene: &Scene<'_>, id: CcdId) -> (String, String) {
-    let role = role(scene, id);
-    #[cfg(test)]
-    {
-        crate::corpus::text("dash.role", "full", &role.0);
-        crate::corpus::text("dash.role", "short", &role.1);
-    }
-    role
+const RECORDS: usize = 8;
+const LANE: usize = 50;
+const GAUGE_X: usize = 4;
+const VALUES_X: usize = 55;
+const VALUES_WIDTH: usize = 22;
+
+/// The number of lane cells a depth fills: depth 1 is offset -1.
+fn depth(offset: TargetOffset) -> usize {
+    usize::try_from(-offset.get()).unwrap_or(0).min(LANE)
 }
 
-fn role(scene: &Scene<'_>, id: CcdId) -> (String, String) {
-    let (mut loaded, mut judged, mut parked, mut total) = (0, 0, 0, 0);
-    let (mut suspects, mut members, mut probes) = (0, 0, 0);
-    let (mut at_zero, mut parked_zero) = (true, true);
-    let runs = scene.trial_runs();
-    for core in scene.s.cores.iter().filter(|core| core.ccd == id) {
-        total += 1;
-        let zero = shown_offset(scene, core) == 0;
-        at_zero &= zero;
-        loaded += usize::from(core.loaded && runs);
-        judged += usize::from(core.judged && runs);
-        match core.state {
-            CoreState::Parked => {
-                parked += 1;
-                parked_zero &= zero;
-            }
-            CoreState::Suspect => suspects += 1,
-            CoreState::Member => members += 1,
-            CoreState::Probe => {
-                members += 1;
-                probes += 1;
-            }
-            _ => {}
-        }
-    }
-    let parked_words = if parked_zero { "parked at 0" } else { "parked" };
-    let pair = |full: String, short: &str| (full, short.to_owned());
-    match () {
-        () if total == 0 => (String::new(), String::new()),
-        () if parked == total && loaded == total => {
-            pair(format!("{parked_words}, still under load"), "parked")
-        }
-        () if parked == total && loaded > 0 => {
-            pair(format!("{parked_words}, {loaded} under load"), "parked")
-        }
-        () if parked == total => pair(format!("{parked_words}, idle"), "parked"),
-        () if loaded == total && suspects == total => {
-            pair("suspects at their failing offsets".into(), "suspects")
-        }
-        () if loaded == total && members == total && probes > 0 => pair(
-            "members, one probed shallower than its failing offset".into(),
-            "members",
-        ),
-        () if loaded == total && members == total => {
-            pair("members at their failing offsets".into(), "members")
-        }
-        () if loaded == total => pair("all under load".into(), "all loaded"),
-        () if judged == total && loaded == 0 => pair("all idle, all judged".into(), "judged"),
-        () if loaded == 0 && at_zero => pair("waiting at 0".into(), "waiting"),
-        () if loaded == 0 => pair("not under load".into(), "idle"),
-        () if loaded == 1 => pair("one core under load at a time".into(), "one loaded"),
-        () => (
-            format!("{loaded} under load · {judged} judged"),
-            format!("{loaded} loaded"),
-        ),
-    }
+fn gap(core: &CoreView) -> Option<i64> {
+    core.solo.map(|solo| core.profile.get() - solo.get())
 }
 
-/// Draws one CCD's core table.
-pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
-    let (r, col, id) = (ccd.rect, ccd.columns, ccd.id);
-    let width = usize::from(r.width);
-    let paint = |p: Paint, text: String| Line::from(scene.paint(p, text));
-    let (role, short) = ccd_role(scene, id);
-    let name = format!("CCD {}", id.0);
-    if col.brief {
-        let room = col.gauge.saturating_sub(name.len() + 3);
-        let head = Line::from(vec![
-            scene.paint(Paint::White, name),
-            Span::raw(" "),
-            scene.paint(Paint::Grey, cut_words(&short, room)),
-        ]);
-        put(buf, r, 0, 0, &head);
+fn now_text(core: &CoreView) -> String {
+    core.applied
+        .map_or_else(|| "?".to_owned(), |observed| observed.0.to_string())
+}
+
+fn solo_text(core: &CoreView) -> String {
+    core.solo
+        .map_or_else(|| "?".to_owned(), |solo| solo.get().to_string())
+}
+
+fn gap_text(core: &CoreView) -> String {
+    gap(core).map_or_else(|| "?".to_owned(), |gap| gap.to_string())
+}
+
+fn fail_text(core: &CoreView) -> String {
+    core.fail
+        .map_or_else(|| "none".to_owned(), |fail| fail.get().to_string())
+}
+
+fn failure_paint(core: &CoreView) -> Paint {
+    if core.evidence.current_failure {
+        Paint::Bad
     } else {
-        put(buf, r, 0, 0, &paint(Paint::White, name));
+        Paint::Recorded
+    }
+}
+
+/// The word for what the core does in the trial in flight, or at rest when none runs. A queued reset names an
+/// otherwise idle core; a loaded one keeps its load word and shows the reset as a badge.
+fn role_word(scene: &Scene<'_>, core: &CoreView) -> &'static str {
+    let runs = scene.trial_runs();
+    match core.state {
+        CoreState::Suspect | CoreState::Member => "held failure",
+        CoreState::Probe => "probing",
+        CoreState::Parked => "parked",
+        CoreState::Waiting
+        | CoreState::Search
+        | CoreState::Confirm
+        | CoreState::Found
+        | CoreState::AtLimit
+        | CoreState::HasRoom => {
+            if runs && core.judged {
+                "judged"
+            } else if runs && core.loaded {
+                "loaded"
+            } else if core.queued.is_some() {
+                "reset queued"
+            } else if core.applied == Some(ObservedOffset(0)) {
+                "idle at 0"
+            } else {
+                "idle"
+            }
+        }
+    }
+}
+
+fn parts(scene: &Scene<'_>, parts: Vec<(Paint, String)>) -> Line<'static> {
+    Line::from(
+        parts
+            .into_iter()
+            .map(|(paint, text)| scene.paint(paint, text))
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn text_line(scene: &Scene<'_>, paint: Paint, text: impl Into<String>) -> Line<'static> {
+    Line::from(scene.paint(paint, text.into()))
+}
+
+/// Draws CCD `ccd`'s overview into `rect`, exactly 77 cells wide and 26 rows tall: a heading row, a column-label
+/// row, then eight three-row core records. Draws nowhere outside `rect`.
+///
+/// Columns: 0-2 id and badges, 3 the zero mark, 4-53 the lane (column `j` is depth `j + 1`), 54 spacer, 55-76
+/// the values. Row A of a record is the id, the tuning profile bar and `tune`/`now`; row B the failure lane and
+/// `s`olo, `g`ap, `f`ail; row C is blank under the lane and names the role.
+pub(crate) fn draw_core_overview(buf: &mut Buffer, rect: Rect, scene: &Scene<'_>, ccd: CcdId) {
+    put(
+        buf,
+        rect,
+        at(GAUGE_X + 1),
+        0,
+        &text_line(scene, Paint::White, format!("CCD {}", ccd.0)),
+    );
+    put(
+        buf,
+        rect,
+        at(GAUGE_X - 1),
+        0,
+        &text_line(scene, Paint::Grey, "0"),
+    );
+    for count in (10..=LANE).step_by(10) {
+        put(
+            buf,
+            rect,
+            at(GAUGE_X + count - 3),
+            0,
+            &text_line(scene, Paint::Grey, format!("-{count}")),
+        );
     }
     put(
         buf,
-        r,
-        at(col.gauge.saturating_sub(1)),
+        rect,
         0,
-        &paint(Paint::Grey, "0".into()),
+        1,
+        &text_line(scene, Paint::Grey, "core  tune now"),
     );
-    if col.cells == 50 {
-        for n in (10..=50).step_by(10) {
-            put(
-                buf,
-                r,
-                at((col.gauge + n).saturating_sub(3)),
-                0,
-                &paint(Paint::Grey, format!("-{n}")),
-            );
-        }
+    let legend = parts(
+        scene,
+        vec![
+            (Paint::White, "█".to_owned()),
+            (Paint::Grey, " tune  ".to_owned()),
+            (Paint::Recorded, "█".to_owned()),
+            (Paint::Grey, " fail  ! failing  R reset".to_owned()),
+        ],
+    );
+    put(buf, rect, at(GAUGE_X + 12), 1, &legend);
+    put(
+        buf,
+        rect,
+        at(VALUES_X),
+        1,
+        &text_line(scene, Paint::Grey, "s=solo g=gap f=fail"),
+    );
+    for (record, core) in scene
+        .s
+        .cores
+        .iter()
+        .filter(|core| core.ccd == ccd)
+        .take(RECORDS)
+        .enumerate()
+    {
+        draw_record(buf, rect, scene, core, 2 + 3 * record);
+    }
+}
+
+fn draw_record(buf: &mut Buffer, rect: Rect, scene: &Scene<'_>, core: &CoreView, top: usize) {
+    let (a, b, c) = (at(top), at(top + 1), at(top + 2));
+    let failing = core.evidence.current_failure;
+    let queued = core.queued.is_some();
+    let id_paint = if core.judged && scene.trial_runs() {
+        Paint::White
     } else {
-        put(
-            buf,
-            r,
-            at(col.gauge + 2),
-            0,
-            &paint(Paint::Track, "2 counts/cell".into()),
-        );
-        put(
-            buf,
-            r,
-            at((col.gauge + col.cells).saturating_sub(3)),
-            0,
-            &paint(Paint::Grey, "-50".into()),
-        );
+        Paint::Text
+    };
+    put(
+        buf,
+        rect,
+        0,
+        a,
+        &text_line(scene, id_paint, format!("{:02}", core.id.get())),
+    );
+    if failing {
+        put(buf, rect, 2, a, &text_line(scene, Paint::Bad, "!"));
+        put(buf, rect, 0, b, &text_line(scene, Paint::Bad, "!"));
+    } else if queued {
+        put(buf, rect, 2, a, &text_line(scene, Paint::White, "R"));
     }
-    let cores: Vec<&CoreView> = scene.s.cores.iter().filter(|core| core.ccd == id).collect();
-    if col.brief {
-        put(
-            buf,
-            r,
-            at(col.failure),
-            0,
-            &paint(Paint::Grey, "fail".into()),
-        );
-        if cores.iter().any(|core| core.returns_to.is_some()) {
-            put(buf, r, at(col.note), 0, &paint(Paint::Grey, "back".into()));
-        }
-    } else {
-        put(
-            buf,
-            r,
-            at(col.failure.saturating_sub(1)),
-            0,
-            &paint(Paint::Grey, "fail pt".into()),
-        );
-        let both = fit_clauses(
-            width.saturating_sub(col.note),
-            &[Clause::new(
-                "",
-                vec![Form::new(role, 1), Form::new(short, 0)],
-            )],
-        );
-        put(
-            buf,
-            r,
-            at(col.note),
-            0,
-            &tint(both, scene.style(Paint::Grey)),
-        );
+    if queued {
+        put(buf, rect, 1, b, &text_line(scene, Paint::White, "R"));
     }
-    let rows = usize::from(r.height.saturating_sub(1));
-    let mut shown = cores.len().min(rows);
-    if cores.len() > shown && shown > 0 {
-        shown -= 1;
-        let more = paint(Paint::Grey, format!("+{} more", cores.len() - shown));
-        put(buf, r, 0, r.height - 1, &more);
-    }
-    let top = scene.s.r7_top();
-    for (i, core) in cores.iter().take(shown).enumerate() {
-        let y = at(i + 1);
-        let applied = shown_offset(scene, core);
-        let own = if core.judged {
-            Paint::White
-        } else {
-            Paint::Text
-        };
-        if core.loaded && scene.trial_runs() {
-            put(buf, r, 0, y, &paint(Paint::Running, "►".into()));
-        }
-        put(
-            buf,
-            r,
-            at(col.id),
-            y,
-            &paint(own, format!("{:02}", core.id.get())),
-        );
-        put(
-            buf,
-            r,
-            at(col.offset),
-            y,
-            &paint(own, format!("{applied:3}")),
-        );
-        let state = match core.state {
-            CoreState::Parked | CoreState::Waiting => Paint::Grey,
-            CoreState::Probe => Paint::Hunt,
-            _ => Paint::Text,
-        };
-        put(
-            buf,
-            r,
-            at(col.state),
-            y,
-            &paint(state, state_word(core.state).into()),
-        );
+    let tuned = depth(core.profile);
+    if tuned > 0 {
         put_cells(
             buf,
-            r,
-            at(col.gauge),
-            y,
-            &gauge(scene, core, applied, col.cells),
+            rect,
+            at(GAUGE_X),
+            a,
+            &text_line(scene, Paint::White, "█".repeat(tuned)),
         );
-        if let Some(fail) = core.fail {
-            let fail_paint = if core.judged {
-                Paint::Text
-            } else {
-                Paint::Grey
-            };
-            put(
+    }
+    if let Some(fail) = core.fail {
+        let at_depth = depth(fail);
+        if at_depth > 0 {
+            put_cells(
                 buf,
-                r,
-                at(col.failure),
-                y,
-                &paint(fail_paint, format!("{:5}", fail.get())),
+                rect,
+                at(GAUGE_X + at_depth - 1),
+                b,
+                &text_line(scene, failure_paint(core), "█"),
             );
         }
-        let room = width.saturating_sub(col.note);
-        let mut note = note_line(scene, core, room);
-        if let Some(&by_offset) = top.get(&core.id) {
-            note = top_note(&note, by_offset, room, scene.colours);
-        }
-        put(buf, r, at(col.note), y, &note);
     }
+    let tune_now = fit_clauses(
+        VALUES_WIDTH,
+        &[
+            Clause::whole(
+                "",
+                parts(
+                    scene,
+                    vec![
+                        (Paint::Grey, "tune ".to_owned()),
+                        (Paint::White, format!("{:>3}", core.profile.get())),
+                    ],
+                ),
+            ),
+            Clause::whole(
+                " ",
+                parts(
+                    scene,
+                    vec![
+                        (Paint::Grey, "now ".to_owned()),
+                        (Paint::Text, format!("{:>3}", now_text(core))),
+                    ],
+                ),
+            ),
+        ],
+    );
+    put(buf, rect, at(VALUES_X), a, &tune_now);
+    let labelled = |label: &str, value: String, paint: Paint| {
+        parts(scene, vec![(Paint::Grey, label.to_owned()), (paint, value)])
+    };
+    let evidence = fit_clauses(
+        VALUES_WIDTH,
+        &[
+            Clause::whole("", labelled("s", solo_text(core), Paint::Text)),
+            Clause::whole(" ", labelled("g", gap_text(core), Paint::Text)),
+            Clause::whole(
+                " ",
+                match core.fail {
+                    Some(fail) => labelled("f", fail.get().to_string(), failure_paint(core)),
+                    None => labelled("f ", "none".to_owned(), Paint::Text),
+                },
+            ),
+        ],
+    );
+    put(buf, rect, at(VALUES_X), b, &evidence);
+    put(
+        buf,
+        rect,
+        at(VALUES_X),
+        c,
+        &text_line(scene, Paint::Text, role_word(scene, core)),
+    );
+}
+
+/// The cores in CCD order, then core order.
+fn in_ccd_order<'a>(scene: &Scene<'a>) -> Vec<&'a CoreView> {
+    let mut cores: Vec<&CoreView> = scene.s.cores.iter().collect();
+    cores.sort_by_key(|core| (core.ccd.0, core.id));
+    cores
+}
+
+/// What a core does, with the failure and reset flags, as the table's last column reads in full.
+fn role_full(scene: &Scene<'_>, core: &CoreView) -> String {
+    let mut words = vec![role_word(scene, core)];
+    if core.evidence.current_failure {
+        words.push("failing now");
+    }
+    if core.queued.is_some() && !words.contains(&"reset queued") {
+        words.push("reset queued");
+    }
+    words.join(" · ")
+}
+
+const TABLE_HEADINGS: [&str; 7] = ["CCD", "core", "tune", "now", "solo", "gap", "fail"];
+const TABLE_WIDTHS: [usize; 7] = [3, 4, 4, 4, 4, 4, 4];
+const TABLE_NUMBERS: usize = 3 + 4 * 6 + 6;
+
+fn table_row(cells: &[String; 7]) -> String {
+    cells
+        .iter()
+        .zip(TABLE_WIDTHS)
+        .map(|(cell, width)| format!("{cell:>width$}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The compact numeric core table in `width` cells: one heading row, then one row per core in CCD and core order.
+/// The numbers keep their columns; the role words go first when the width falls short.
+pub(crate) fn core_table(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> {
+    let roles = width >= TABLE_NUMBERS + 2 + "reset queued".len();
+    let mut heading = table_row(&TABLE_HEADINGS.map(str::to_owned));
+    if roles {
+        heading.push_str("  role");
+    }
+    let mut lines = vec![text_line(scene, Paint::Grey, heading)];
+    for core in in_ccd_order(scene) {
+        let numbers = |until: usize| {
+            table_row(&[
+                core.ccd.0.to_string(),
+                format!("{:02}", core.id.get()),
+                core.profile.get().to_string(),
+                now_text(core),
+                solo_text(core),
+                gap_text(core),
+                fail_text(core),
+            ])
+            .chars()
+            .take(until)
+            .collect::<String>()
+        };
+        let mut row = vec![(Paint::Text, numbers(usize::MAX))];
+        if roles {
+            let full = role_full(scene, core);
+            let room = width - TABLE_NUMBERS - 2;
+            let role = if full.chars().count() <= room {
+                full
+            } else {
+                role_word(scene, core).to_owned()
+            };
+            row.push((Paint::Text, "  ".to_owned()));
+            row.push((Paint::Grey, role));
+        }
+        lines.push(parts(scene, row));
+    }
+    lines
+}
+
+fn source_words(source: FailureSource) -> &'static str {
+    match source {
+        FailureSource::Alone => "alone",
+        FailureSource::Named => "named",
+        FailureSource::R7Charged => "R7-charged",
+        FailureSource::Unrecorded => "source not recorded",
+    }
+}
+
+fn decision_words(decision: &OffsetDecision) -> String {
+    format!(
+        "{} {} to {} while {}, journal #{}",
+        decision.decision.as_str().replace('_', " "),
+        decision.from.get(),
+        decision.to.get(),
+        decision.activity,
+        decision.seq.get()
+    )
+}
+
+fn gap_words(core: &CoreView) -> String {
+    let solo = solo_text(core);
+    match gap(core) {
+        None => "solo ? · gap ?: no solo limit recorded yet".to_owned(),
+        Some(0) => format!("solo {solo} · gap 0: at the solo limit"),
+        Some(gap) if gap > 0 => {
+            format!("solo {solo} · gap {gap}: {gap} counts shallower than solo")
+        }
+        Some(gap) => format!("solo {solo} · gap {gap}: {} counts deeper than solo", -gap),
+    }
+}
+
+fn failure_words(core: &CoreView) -> String {
+    let Some(fail) = core.fail else {
+        return "no failure recorded".to_owned();
+    };
+    let head = if fail.get() == 0 {
+        "failure at 0".to_owned()
+    } else {
+        format!("failure {}", fail.get())
+    };
+    match core.evidence.failure {
+        Some(evidence) => format!(
+            "{head} · {} · journal #{}",
+            source_words(evidence.source),
+            evidence.seq.get()
+        ),
+        None => format!("{head} · {}", source_words(FailureSource::Unrecorded)),
+    }
+}
+
+fn room_words(scene: &Scene<'_>, core: &CoreView) -> Option<String> {
+    let phase = scene.s.phases.map(|plan| (plan.phase, plan));
+    match core.state {
+        CoreState::HasRoom => Some(match phase {
+            Some((PhaseNo::Concluded, _)) => "room: phase 2 has concluded".to_owned(),
+            Some((PhaseNo::Two, plan)) if plan.candidates.iter().any(|c| c.core == core.id) => {
+                "room: a phase 2 candidate".to_owned()
+            }
+            Some((PhaseNo::One | PhaseNo::Two, _)) | None => {
+                "room: eligible to deepen in phase 2".to_owned()
+            }
+        }),
+        CoreState::AtLimit => {
+            Some("room: none, one count deeper reaches a recorded constraint or -50".to_owned())
+        }
+        CoreState::Waiting
+        | CoreState::Search
+        | CoreState::Confirm
+        | CoreState::Found
+        | CoreState::Suspect
+        | CoreState::Member
+        | CoreState::Probe
+        | CoreState::Parked => None,
+    }
+}
+
+fn load_words(scene: &Scene<'_>, core: &CoreView) -> String {
+    let runs = scene.trial_runs();
+    let load = match (runs && core.loaded, runs && core.judged) {
+        (_, true) => "loaded and judged in this trial",
+        (true, false) => "loaded, not judged in this trial",
+        (false, false) => "not loaded",
+    };
+    format!("load: {load}")
+}
+
+fn park_words(core: &CoreView) -> Option<String> {
+    match core.state {
+        CoreState::Parked => Some(match core.returns_to {
+            Some(back) => format!(
+                "park: held shallower by the hunt, returns to {}",
+                back.get()
+            ),
+            None => "park: held shallower by the hunt".to_owned(),
+        }),
+        CoreState::Suspect => Some("hunt: a candidate at its failing offset".to_owned()),
+        CoreState::Member => {
+            Some("hunt: a member of a kept group at its failing offset".to_owned())
+        }
+        CoreState::Probe => Some("hunt: the member probed shallower".to_owned()),
+        CoreState::Waiting
+        | CoreState::Search
+        | CoreState::Confirm
+        | CoreState::Found
+        | CoreState::AtLimit
+        | CoreState::HasRoom => None,
+    }
+}
+
+/// The Cores page's body in `width` cells, unscrolled: one block per core with every exact value and where it
+/// came from.
+pub(crate) fn cores_page(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> {
+    let cores = in_ccd_order(scene);
+    if cores.is_empty() {
+        return wrap_styled(
+            "No cores yet: the journal records no session to show.",
+            width,
+            scene.style(Paint::Text),
+        );
+    }
+    let mut lines = Vec::new();
+    for (index, core) in cores.into_iter().enumerate() {
+        if index > 0 {
+            lines.push(Line::default());
+        }
+        let heading = format!(
+            "Core {:02} · CCD {} · {}",
+            core.id.get(),
+            core.ccd.0,
+            state_word(core.state)
+        );
+        lines.extend(wrap_styled(&heading, width, scene.style(Paint::White)));
+        let mut facts = vec![
+            format!(
+                "tune {} · now {}{}",
+                core.profile.get(),
+                now_text(core),
+                match core.applied {
+                    None => " (no readback recorded)",
+                    Some(observed) if !(-50..=0).contains(&observed.0) => " (outside -50..0)",
+                    Some(_) => "",
+                }
+            ),
+            gap_words(core),
+            failure_words(core),
+        ];
+        if core.evidence.current_failure {
+            facts.push("! current failure: recorded in the step now running".to_owned());
+        }
+        facts.extend(room_words(scene, core));
+        facts.push(load_words(scene, core));
+        facts.extend(park_words(core));
+        if let Some(seq) = core.queued {
+            facts.push(format!(
+                "R reset queued: command #{}, the core searches again at the next run",
+                seq.get()
+            ));
+        }
+        let note = plain(&note_line(scene, core, width.saturating_sub(2)));
+        if !note.is_empty() && (core.queued.is_none() || note != "reset queued") {
+            facts.push(note);
+        }
+        facts.push(match core.evidence.decision {
+            Some(decision) => format!("last decision: {}", decision_words(&decision)),
+            None => "last decision: none recorded".to_owned(),
+        });
+        for fact in facts {
+            for mut line in wrap_styled(&fact, width.saturating_sub(2), scene.style(Paint::Text)) {
+                line.spans.insert(0, Span::raw("  "));
+                lines.push(line);
+            }
+        }
+    }
+    lines
 }

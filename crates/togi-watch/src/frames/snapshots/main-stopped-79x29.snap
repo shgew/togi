@@ -1,0 +1,32 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   23:32:41   tuning 47h32m   session 47h32m   57 failures · 12 crashes
+│ STOPPED  ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ○ CLEAN CYCLES
+│ MAIN · 1/9 · < Help | Cores >
+│ █ STOPPED · CLEAN CYCLES · 1 clean cycle recorded · 18/18 steps complete
+│ █ BIOS profile: page 6
+│ █ NOW  STOPPED · 23:32:01 · requested clean cycles completed
+│ █ last: PASS after 15:00 · R6 idle + bursts on 00-15 · Tctl max 76°C
+│ █ compact · scroll for all cores
+│ █ CCD core tune  now solo  gap fail  role
+│ █   0   00  -23    0  -27    4  -24  idle at 0
+│ █   0   01  -15    0  -17    2  -16  idle at 0
+│ █   0   02  -24    0  -26    2  -25  idle at 0
+│ █   0   03  -24    0  -25    1  -25  idle at 0
+│ █   0   04  -13    0  -16    3  -14  idle at 0
+│ █   0   05   -8    0  -10    2   -9  idle at 0
+│ █   0   06  -37    0  -38    1  -39  idle at 0
+│ █   0   07  -29    0  -30    1  -31  idle at 0
+│ █   1   08   -5    0   -6    1   -7  idle at 0
+│ █   1   09  -33    0  -35    2  -34  idle at 0
+│ █   1   10  -13    0  -18    5  -14  idle at 0
+│ █   1   11   -7    0  -10    3   -8  idle at 0
+│ █   1   12  -14    0  -17    3  -15  idle at 0
+│ █   1   13  -35    0  -38    3  -36  idle at 0
+│ █   1   14  -12    0  -16    4  -13  idle at 0
+│ █   1   15  -13    0  -14    1  -15  idle at 0
+│ │ WHAT HAPPENED
+│ │ 23:32  stop     stopped
+│  ←/→  pages  1/9 Main   Esc  Main   ?  help   q  exit dashboard

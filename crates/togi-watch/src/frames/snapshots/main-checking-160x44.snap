@@ -1,0 +1,47 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
+│ ■ SOLO LIMITS  16/16 → ► PHASE 1 · cycle 1 → ○ PHASE 2 → ○ CLEAN CYCLES
+│ MAIN · 1/9 · < Help | Cores >
+│ PHASE 1 · cycle 1 · 0/18 steps complete
+│ step 1 · 3 known parts · more may follow · 0/4 credited checks · 4 checks still needed
+│
+│ NOW  CYCLE 1 · STEP 1 · PART 1   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers
+│ ████████░░░░░░░░░░░░░░░░  0:40 / 2:00 · trial 1 of 4
+│
+│ CCD core tune  now solo  gap fail  role
+│   0   00  -26  -26  -27    1  -28  judged
+│   0   01  -16  -16  -17    1  -18  judged
+│   0   02  -25  -25  -26    1  -27  judged
+│   0   03  -24  -24  -25    1  -26  judged
+│   0   04  -15  -15  -16    1  -17  judged
+│   0   05   -9   -9  -10    1  -11  judged
+│   0   06  -37  -37  -38    1  -39  judged
+│   0   07  -29  -29  -30    1  -31  judged
+│   1   08   -5   -5   -6    1   -7  idle
+│   1   09  -34  -34  -35    1  -36  idle
+│   1   10  -17  -17  -18    1  -19  idle
+│   1   11   -9   -9  -10    1  -11  idle
+│   1   12  -16  -16  -17    1  -18  idle
+│   1   13  -37  -37  -38    1  -39  idle
+│   1   14  -15  -15  -16    1  -17  idle
+│   1   15  -13  -13  -14    1  -15  idle
+│ WHAT HAPPENED
+│ 09:47  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
+│ 09:47  cycle    cycle 1 started · 18 steps
+│ 09:47  limit    cores 06, 13 solo limit -38
+│ 09:38  limit    core 09 solo limit -35
+│ 09:38  limit    core 00 solo limit -27
+│ 09:38  limit    core 07 solo limit -30
+│ 09:35  limit    core 10 solo limit -18
+│ 09:35  limit    core 02 solo limit -26
+│ 09:32  limit    core 15 solo limit -14
+│ 09:28  limit    core 12 solo limit -17
+│ 09:28  limit    core 03 solo limit -25
+│ 09:23  limit    core 01 solo limit -17
+│ 09:19  limit    cores 04, 14 solo limit -16
+│ 07:34  fail     core 06 fails at -39
+│
+│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

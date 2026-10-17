@@ -620,8 +620,8 @@ fn a_checking_chain_note_is_summarised_in_the_history_and_whole_in_the_log() {
     assert_eq!(
         tail,
         [
-            "note: cycle 1 step 1 · CCD 0 partial 2 loads 00-02",
-            "note: cycle 1 step 1 · CCD 0 partials end"
+            "chain: cycle 1 step 1 · CCD 0 partial 2 loads 00-02",
+            "chain: cycle 1 step 1 · CCD 0 partials end"
         ]
     );
     assert!(tail.iter().all(|line| line.chars().count() < 59));

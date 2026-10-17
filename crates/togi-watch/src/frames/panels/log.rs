@@ -4,10 +4,11 @@ use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};
 
 use super::super::colours::Paint;
-use super::super::fit::{Clause, Form, cut_words, display_width, fit_clauses};
+use super::super::fit::{Clause, Form, cut_words, display_width, fit_clauses, rule};
 use super::super::help::title_rule;
 use super::super::scene::wall_second;
 use super::super::scroll::scroll_body_with_bar;
+use super::table::wall_date;
 use crate::history::{LOG_LIMIT, LogEntry};
 use crate::screen::{Colours, Log};
 use crate::words::{noun, plural};
@@ -35,12 +36,75 @@ pub(super) fn body(
             Paint::Grey.style(colours),
         ));
     }
-    lines.extend(
-        log.entries
-            .iter()
-            .map(|entry| row(entry, inner, zone, colours)),
-    );
+    lines.extend(entry_rows(log.entries, inner, zone, colours));
     scroll_body_with_bar(&lines, width, height, scroll, colours)
+}
+
+/// The trial a `trial progress` entry reports a passed self-test for, from its message `trial N self-test 4K
+/// passed` or `trial N core 02 self-test 4K passed`.
+fn self_test_trial(entry: &LogEntry) -> Option<&str> {
+    if entry.tag != "trial progress" {
+        return None;
+    }
+    let mut words = entry.msg.split_whitespace().peekable();
+    let (Some("trial"), Some(trial)) = (words.next(), words.next()) else {
+        return None;
+    };
+    if words.next_if_eq(&"core").is_some() {
+        words.next()?;
+    }
+    let rest: Vec<&str> = words.collect();
+    (rest.first() == Some(&"self-test") && rest.last() == Some(&"passed")).then_some(trial)
+}
+
+/// The journal's rows: a separator at each local date, and each run of one trial's passed self-tests folded
+/// into one row that counts them. Everything else is one row per event.
+fn entry_rows(
+    entries: &[LogEntry],
+    width: usize,
+    zone: &TimeZone,
+    colours: Colours,
+) -> Vec<Line<'static>> {
+    let mut out = Vec::new();
+    let mut date = String::new();
+    let mut i = 0;
+    while i < entries.len() {
+        let entry = &entries[i];
+        let today = wall_date(zone, entry.at);
+        if today != date {
+            out.push(rule(
+                width,
+                &Line::from(Paint::Grey.span(colours, today.clone())),
+                &Line::default(),
+                Paint::Track.style(colours),
+            ));
+            date = today;
+        }
+        let Some(trial) = self_test_trial(entry) else {
+            out.push(row(entry, width, zone, colours));
+            i += 1;
+            continue;
+        };
+        let run = entries[i..]
+            .iter()
+            .take_while(|next| {
+                self_test_trial(next) == Some(trial) && wall_date(zone, next.at) == date
+            })
+            .count();
+        let folded = LogEntry {
+            seq: entry.seq,
+            at: entry.at,
+            tag: entry.tag.clone(),
+            msg: format!("trial {trial}: {}", folded_count(run)),
+        };
+        out.push(row(&folded, width, zone, colours));
+        i += run;
+    }
+    out
+}
+
+fn folded_count(n: usize) -> String {
+    format!("{n} self-test {} passed", noun(n, "check"))
 }
 
 /// The rule that heads the journal view: how many events the journal holds that the view lists, and how many
@@ -193,12 +257,12 @@ mod tests {
             (155, format!("{stamp}  start{pad}  {START}")),
         ] {
             let (page, _) = rows(&log, text + 2, 20, 0);
-            assert_eq!(text_cells(&page[2]), want, "{text} text cells");
+            assert_eq!(text_cells(&page[3]), want, "{text} text cells");
         }
         let words: Vec<&str> = START.split_whitespace().collect();
         for width in 6..=160 {
             let (page, _) = rows(&log, width, 20, 0);
-            let row = text_cells(&page[2]);
+            let row = text_cells(&page[3]);
             assert!(row.chars().count() < width.max(3), "width {width}: {row:?}");
             let fields: Vec<&str> = row.split_whitespace().collect();
             if let Some(first) = fields.first() {
@@ -259,23 +323,91 @@ mod tests {
         let (page, _) = body(&log, 120, 10, 0, &east, Colours::None);
         let page: Vec<String> = page.iter().map(plain).collect();
         assert_eq!(
-            text_cells(&page[2]),
+            text_cells(&page[3]),
             format!("02:59:58  start{}  first message", " ".repeat(15))
         );
         assert_eq!(
-            text_cells(&page[3]),
+            text_cells(&page[4]),
             format!("02:59:59  crash.detected{}  second message", " ".repeat(6))
         );
         let (utc, _) = rows(&log, 120, 10, 0);
-        assert!(utc[2].contains("23:59:58"), "{}", utc[2]);
+        assert!(utc[3].contains("23:59:58"), "{}", utc[3]);
     }
 
     #[test]
     fn untrusted_tags_and_messages_are_escaped_at_output() {
         let entries = [entry(1, at(1000), "trial.end", "bad \u{1b}[31mnews\u{7}")];
         let (page, _) = rows(&log(&entries), 80, 10, 0);
-        assert!(page[2].contains("bad \\x1b[31mnews\\x07"), "{}", page[2]);
-        assert!(!page[2].contains('\u{1b}') && !page[2].contains('\u{7}'));
+        assert!(page[3].contains("bad \\x1b[31mnews\\x07"), "{}", page[3]);
+        assert!(!page[3].contains('\u{1b}') && !page[3].contains('\u{7}'));
+    }
+
+    #[test]
+    fn a_separator_names_each_local_date_before_its_events() {
+        let late = Timestamp::from_second(1_767_311_998).expect("a timestamp");
+        let entries = [
+            entry(1, late, "start", "first"),
+            entry(
+                2,
+                late + jiff::SignedDuration::from_secs(1),
+                "start",
+                "same day in UTC",
+            ),
+            entry(
+                3,
+                late + jiff::SignedDuration::from_secs(90_000),
+                "start",
+                "next day",
+            ),
+        ];
+        let log = log(&entries);
+        let (utc, _) = rows(&log, 80, 20, 0);
+        assert!(utc[2].contains("2026-01-01"), "{utc:?}");
+        assert!(utc[5].contains("2026-01-03"), "{utc:?}");
+        let east = TimeZone::fixed(offset(3));
+        let (page, _) = body(&log, 80, 20, 0, &east, Colours::None);
+        let page: Vec<String> = page.iter().map(plain).collect();
+        assert!(page[2].contains("2026-01-02"), "{page:?}");
+        assert!(page[3].contains("02:59:58"), "{page:?}");
+        assert!(page[4].contains("02:59:59"), "{page:?}");
+        assert!(page[5].contains("2026-01-03"), "{page:?}");
+    }
+
+    #[test]
+    fn one_trials_passed_self_tests_fold_into_a_count() {
+        let progress = |n: u64, msg: &str| {
+            entry(
+                n,
+                at(1000 + i64::try_from(n).unwrap()),
+                "trial progress",
+                msg,
+            )
+        };
+        let entries = [
+            progress(1, "trial t1 core 02 self-test 4K passed"),
+            progress(2, "trial t1 core 03 self-test 8K passed"),
+            progress(3, "trial t1 self-test 16K passed"),
+            progress(4, "trial t2 core 00 self-test 4K passed"),
+            progress(5, "trial t2 core 01 self-test 4K failed"),
+        ];
+        let (page, _) = rows(&log(&entries), 100, 20, 0);
+        let texts: Vec<String> = page.iter().map(|row| text_cells(row)).collect();
+        assert!(
+            texts[3].ends_with("trial t1: 3 self-test checks passed"),
+            "{texts:?}"
+        );
+        assert!(
+            texts[4].ends_with("trial t2: 1 self-test check passed"),
+            "{texts:?}"
+        );
+        assert!(
+            texts[5].ends_with("trial t2 core 01 self-test 4K failed"),
+            "{texts:?}"
+        );
+        assert!(
+            texts.iter().all(|row| !row.contains("4K passed")),
+            "{texts:?}"
+        );
     }
 
     fn thirty(extra: bool) -> Vec<LogEntry> {
@@ -443,7 +575,7 @@ mod tests {
 
     #[test]
     fn the_arrival_count_keeps_the_keys_in_the_footer() {
-        let keys = ["?", "l", "esc", "q"];
+        let keys = ["←/→", "Esc", "?", "q"];
         for arrived in [1, 8] {
             let held = Log {
                 entries: &[],
@@ -460,7 +592,7 @@ mod tests {
             let wide = plain(&footer(120));
             assert!(wide.contains(&format!("{count} · End: latest")), "{wide}");
             let reference = footer(120);
-            for width in [20, 30, 40, 50] {
+            for width in [24, 30, 40, 50] {
                 let line = footer(width);
                 let text = plain(&line);
                 let fields: Vec<&str> = text.split_whitespace().collect();

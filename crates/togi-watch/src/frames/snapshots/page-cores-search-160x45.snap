@@ -1,0 +1,48 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+│ togi   00:48:40   tuning 0h48m   session 0h48m   0 failures · 0 crashes
+│ ► SOLO LIMITS  0/16 → ○ PHASE 1 → ○ PHASE 2 → ○ CLEAN CYCLES   0:50 left
+│ CORES · 2/9 · < Main | Cycle >
+│ █ Core 00 · CCD 0 · SEARCH
+│ █   tune -5 · now -5
+│ █   solo ? · gap ?: no solo limit recorded yet
+│ █   no failure recorded
+│ █   load: loaded and judged in this trial
+│ █   passed 0 · next -5
+│ █   last decision: step deeper 0 to -5 while search, journal #65
+│ █
+│ █ Core 01 · CCD 0 · SEARCH
+│ █   tune -5 · now 0
+│ █   solo ? · gap ?: no solo limit recorded yet
+│ █   no failure recorded
+│ │   load: not loaded
+│ │   passed 0 · next -5
+│ │   last decision: step deeper 0 to -5 while search, journal #103
+│ │
+│ │ Core 02 · CCD 0 · SEARCH
+│ │   tune -5 · now 0
+│ │   solo ? · gap ?: no solo limit recorded yet
+│ │   no failure recorded
+│ │   load: not loaded
+│ │   passed 0 · next -5
+│ │   last decision: step deeper 0 to -5 while search, journal #141
+│ │
+│ │ Core 03 · CCD 0 · SEARCH
+│ │   tune -5 · now 0
+│ │   solo ? · gap ?: no solo limit recorded yet
+│ │   no failure recorded
+│ │   load: not loaded
+│ │   passed 0 · next -5
+│ │   last decision: step deeper 0 to -5 while search, journal #179
+│ │
+│ │ Core 04 · CCD 0 · SEARCH
+│ │   tune -5 · now 0
+│ │   solo ? · gap ?: no solo limit recorded yet
+│ │   no failure recorded
+│ │   load: not loaded
+│ │   passed 0 · next -5
+│ │   last decision: step deeper 0 to -5 while search, journal #217
+│ │
+│  ←/→  pages  2/9 Cores   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard

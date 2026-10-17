@@ -2,18 +2,24 @@
 //! such as when a trial started, how a group failed, which backoff cleared which combination.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::num::NonZeroU32;
 use std::time::Duration;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Event, HuntStart, Outcome, Payload, ResetTarget, Seq, State as JournalState, TrialEnd, TrialId,
-    TrialIntent,
+    Activity, Attribution, DeadEndCondition, Event, Failure, HuntStart, Outcome, Payload,
+    ResetTarget, Seq, State as JournalState, TrialEnd, TrialId, TrialIntent,
 };
-use togi_machine::{BootId, CoreId, CoreSet, ObservedOffset, Regime, Signal, TargetOffset};
+use togi_machine::{
+    BootId, Condition, CoreId, CoreSet, ObservedOffset, Regime, Signal, TargetOffset,
+};
 use togi_tuner::{CombinationId, State as TunerState, TrialHistory};
 
 use crate::history::{History, LOG_LIMIT, LogEntry};
-use crate::model::{Count, DeadEndView, HuntShape, SessionView, StopView, TrialEndView};
+use crate::model::{
+    CoreEvidence, Count, DeadEndView, FailureEvidence, FailureSource, HuntShape, OffsetDecision,
+    SessionView, StopView, TrialEndView,
+};
 use crate::tuning::TuningClock;
 use crate::words::{tag_word, words};
 
@@ -32,6 +38,40 @@ pub(crate) struct FailureFacts {
     pub(crate) known: bool,
     pub(crate) carried: bool,
     pub(crate) regime: Option<Regime>,
+    pub(crate) source: FailureSource,
+}
+
+/// What a trial works on: the step, hunt, round, core and offset its intent names. A failure recorded while the
+/// operation stands is the current one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Operation {
+    cycle: Option<NonZeroU32>,
+    step: Option<NonZeroU32>,
+    hunt: Option<NonZeroU32>,
+    round: Option<NonZeroU32>,
+    core: Option<CoreId>,
+    offset: Option<TargetOffset>,
+}
+
+impl Operation {
+    fn of(intent: &TrialIntent) -> Self {
+        Self {
+            cycle: intent.cycle,
+            step: intent.step,
+            hunt: intent.hunt,
+            round: intent.round,
+            core: intent.core,
+            offset: intent.offset,
+        }
+    }
+}
+
+fn failure_source(failure: &Failure) -> FailureSource {
+    match (failure.attribution, failure.regime, failure.condition) {
+        (Attribution::Unattributed, Some(Regime::R7), _) => FailureSource::R7Charged,
+        (Attribution::Attributed, _, Some(Condition::Alone)) => FailureSource::Alone,
+        (Attribution::Attributed | Attribution::Unattributed, _, _) => FailureSource::Named,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -81,12 +121,16 @@ pub(crate) struct Facts {
     pub(crate) carrying: bool,
     pub(crate) check_hunts: HashMap<(u32, u32), Vec<u32>>,
     pub(crate) cycle_steps: HashMap<u32, Vec<Regime>>,
+    pub(crate) cycle_ends: HashMap<Seq, (u32, Timestamp)>,
     pub(crate) hunt_starts: HashMap<u32, HuntStartFacts>,
     pub(crate) groups: HashMap<(u32, u32), togi_journal::HuntGroup>,
     pub(crate) carried: BTreeSet<Seq>,
     pub(crate) shapes: BTreeMap<u32, HuntShape>,
     pub(crate) hunt_started: BTreeMap<u32, Timestamp>,
     pub(crate) queued: BTreeMap<CoreId, Seq>,
+    pub(crate) evidence: BTreeMap<CoreId, CoreEvidence>,
+    pub(crate) operation: Option<Operation>,
+    pub(crate) failed_in: BTreeMap<CoreId, Operation>,
     pub(crate) failures: u32,
     pub(crate) crashes: u32,
     pub(crate) last_failure: Option<Timestamp>,
@@ -98,6 +142,8 @@ pub(crate) struct Facts {
     pub(crate) tuning: TuningClock,
     pub(crate) log: Vec<LogEntry>,
     pub(crate) log_total: usize,
+    /// The profile the latest profile event in the log put in force, which the next one is shown against.
+    pub(crate) logged_profile: BTreeMap<CoreId, TargetOffset>,
 }
 
 pub(crate) fn secs(seconds: u32) -> Duration {
@@ -128,18 +174,26 @@ impl Facts {
         }
         match &event.payload {
             Payload::SessionStart(_) => {
+                self.failed_in.clear();
                 self.session = Some(SessionView {
                     start: event.time,
                     activity: None,
                 });
             }
             Payload::ConfigLoaded(_) => {
+                self.failed_in.clear();
                 self.configs += 1;
                 self.stopped = false;
             }
             Payload::CheckingCycle(cycle) if cycle.event == togi_journal::CycleEvent::Start => {
                 self.cycle_steps
                     .insert(cycle.cycle.get(), cycle.steps.clone());
+            }
+            Payload::CheckingCycle(cycle)
+                if cycle.event == togi_journal::CycleEvent::End && cycle.passed && cycle.full =>
+            {
+                self.cycle_ends
+                    .insert(event.seq, (cycle.cycle.get(), event.time));
             }
             Payload::SmuIntent(_) => self.restored = false,
             Payload::SmuReadback(readback) => {
@@ -158,6 +212,9 @@ impl Facts {
                     boot_ended: false,
                 });
                 self.intents.insert(intent.trial.clone(), intent.clone());
+                let operation = Operation::of(intent);
+                self.failed_in.retain(|_, failed| *failed == operation);
+                self.operation = Some(operation);
                 self.restored = false;
                 self.set_activity(intent.activity);
             }
@@ -169,6 +226,13 @@ impl Facts {
             Payload::CorePhase(transition) => {
                 self.tuned.insert(transition.core, transition.offset);
                 self.queued.remove(&transition.core);
+                let source = self.cited_source(event);
+                self.record_failure_point(
+                    transition.core,
+                    transition.failure_point,
+                    event.seq,
+                    source,
+                );
             }
             Payload::TunerDecision(decision) => {
                 self.tuned.insert(decision.core, decision.to_offset);
@@ -177,6 +241,19 @@ impl Facts {
                     self.backs
                         .insert(decision.core, self.sources.get(&event.seq).copied());
                 }
+                let source = match decision.activity {
+                    Activity::Hunt => FailureSource::Named,
+                    Activity::Search => FailureSource::Alone,
+                    Activity::Checking | Activity::Deepening => self.cited_source(event),
+                };
+                self.record_failure_point(decision.core, decision.failure_point, event.seq, source);
+                self.evidence.entry(decision.core).or_default().decision = Some(OffsetDecision {
+                    seq: event.seq,
+                    decision: decision.decision,
+                    activity: decision.activity,
+                    from: decision.from_offset,
+                    to: decision.to_offset,
+                });
             }
             Payload::ProfileChange(change) => {
                 for (core, offset) in change.to.iter() {
@@ -197,6 +274,7 @@ impl Facts {
                         known: failure.known_failure.is_some(),
                         carried,
                         regime: failure.regime,
+                        source: failure_source(failure),
                     },
                 );
                 if failure.known_failure.is_none() {
@@ -230,6 +308,7 @@ impl Facts {
                         known: true,
                         carried: true,
                         regime: Some(carried.class.regime),
+                        source: FailureSource::Unrecorded,
                     },
                 );
             }
@@ -243,6 +322,7 @@ impl Facts {
                         known: true,
                         carried: true,
                         regime: None,
+                        source: failure_source(&carried.failure),
                     },
                 );
             }
@@ -264,6 +344,16 @@ impl Facts {
                 );
             }
             Payload::DeadEnd(dead_end) => {
+                if let (DeadEndCondition::FailureAtZero, Some(core)) =
+                    (dead_end.condition, dead_end.core)
+                {
+                    self.record_failure_point(
+                        core,
+                        Some(TargetOffset::ZERO),
+                        event.seq,
+                        FailureSource::Named,
+                    );
+                }
                 self.dead_end = Some(DeadEndView {
                     at: event.time,
                     condition: dead_end.condition,
@@ -293,15 +383,68 @@ impl Facts {
             self.log_total += 1;
             #[cfg(test)]
             crate::corpus::journal_message(&tag_word(&event.payload), &event.msg);
+            let msg = self.log_message(event);
             self.log.push(LogEntry {
                 seq: event.seq,
                 at: event.time,
                 tag: tag_word(&event.payload),
-                msg: event.msg.clone(),
+                msg,
             });
             if self.log.len() >= 2 * LOG_LIMIT {
                 self.log.drain(..self.log.len() - LOG_LIMIT);
             }
+        }
+    }
+
+    /// The log's message for `event`: the recorded one, except that a profile event names only the cores whose
+    /// offset it moved from the profile before it. The journal keeps the whole list for `togi events`.
+    fn log_message(&mut self, event: &Event) -> String {
+        let profile = match &event.payload {
+            Payload::ProfileApplied(applied) => &applied.offsets,
+            Payload::ProfileChange(change) => &change.to,
+            Payload::ProfileRestored(restored) => &restored.offsets,
+            _ => return event.msg.clone(),
+        };
+        let next: BTreeMap<CoreId, TargetOffset> = profile.iter().collect();
+        let before = std::mem::replace(&mut self.logged_profile, next);
+        profile_diff(&event.msg, &before, &self.logged_profile)
+    }
+
+    /// The source of the failure `event` cites, when it cites one the journal recorded.
+    fn cited_source(&self, event: &Event) -> FailureSource {
+        event
+            .cause
+            .iter()
+            .find_map(|cause| self.by_failure.get(cause))
+            .map_or(FailureSource::Unrecorded, |failure| failure.source)
+    }
+
+    /// Folds the failure constraint `event` leaves on `core`: a new offset records its source and event, the
+    /// same offset keeps the evidence it has, none clears it.
+    fn record_failure_point(
+        &mut self,
+        core: CoreId,
+        point: Option<TargetOffset>,
+        seq: Seq,
+        source: FailureSource,
+    ) {
+        let evidence = self.evidence.entry(core).or_default();
+        match point {
+            None => {
+                evidence.failure = None;
+                self.failed_in.remove(&core);
+            }
+            Some(offset) if evidence.failure.is_none_or(|known| known.offset != offset) => {
+                evidence.failure = Some(FailureEvidence {
+                    offset,
+                    source,
+                    seq,
+                });
+                if let Some(operation) = &self.operation {
+                    self.failed_in.insert(core, operation.clone());
+                }
+            }
+            Some(_) => {}
         }
     }
 
@@ -416,5 +559,101 @@ impl Facts {
                     .push(hunt);
             }
         }
+    }
+}
+
+/// `recorded`, a profile event's message, with its core list replaced by the cores `now` moves from `before`
+/// (`03 -15 → -14`); a message without a list, or the first profile there is, stays as recorded.
+fn profile_diff(
+    recorded: &str,
+    before: &BTreeMap<CoreId, TargetOffset>,
+    now: &BTreeMap<CoreId, TargetOffset>,
+) -> String {
+    let Some(list) = recorded.find(" [") else {
+        return recorded.to_owned();
+    };
+    if before.is_empty() {
+        return recorded.to_owned();
+    }
+    let moved: Vec<String> = now
+        .iter()
+        .filter(|(core, offset)| before.get(core) != Some(offset))
+        .map(|(core, offset)| match before.get(core) {
+            Some(was) => format!("{:02} {} → {}", core.get(), was.get(), offset.get()),
+            None => format!("{:02} → {}", core.get(), offset.get()),
+        })
+        .collect();
+    let head = recorded[..list].trim_end_matches(':');
+    if moved.is_empty() {
+        format!("{head}: no core's offset moved")
+    } else {
+        format!("{head}: {}", moved.join(", "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use togi_journal::ProfileChange;
+
+    use super::profile_diff;
+    use crate::tests::kit::{Script, Start, core, off};
+
+    fn profile(
+        offsets: &[(u8, i64)],
+    ) -> std::collections::BTreeMap<togi_machine::CoreId, togi_machine::TargetOffset> {
+        offsets
+            .iter()
+            .map(|&(id, value)| (core(id), off(value)))
+            .collect()
+    }
+
+    #[test]
+    fn a_profile_message_names_only_the_cores_that_moved() {
+        let before = profile(&[(0, -43), (1, -33), (3, -15)]);
+        let now = profile(&[(0, -43), (1, -33), (3, -14)]);
+        let recorded = "profile applied: [00: -43, 01: -33, 03: -14]";
+        assert_eq!(
+            profile_diff(recorded, &before, &now),
+            "profile applied: 03 -15 → -14"
+        );
+        assert_eq!(
+            profile_diff(recorded, &now, &now),
+            "profile applied: no core's offset moved"
+        );
+        assert_eq!(
+            profile_diff(
+                "profile changed [00: -43]",
+                &profile(&[(1, -5)]),
+                &profile(&[(0, -43), (1, -5)])
+            ),
+            "profile changed: 00 → -43"
+        );
+    }
+
+    #[test]
+    fn the_first_profile_and_a_message_without_a_list_stay_as_recorded() {
+        let now = profile(&[(0, 0)]);
+        let recorded = "profile applied: [00: 0]";
+        assert_eq!(profile_diff(recorded, &profile(&[]), &now), recorded);
+        let alone = "profile applied for alone trials: every core at CO 0";
+        assert_eq!(profile_diff(alone, &now, &profile(&[(0, -1)])), alone);
+    }
+
+    #[test]
+    fn the_journal_view_shows_a_profile_change_as_the_cores_it_moved() {
+        let mut script = Script::new(&[(0, 0), (1, 0)], &[Start::search(0), Start::search(0)]);
+        let change = |values: [i64; 2]| ProfileChange {
+            from: None,
+            to: [(core(0), off(values[0])), (core(1), off(values[1]))]
+                .into_iter()
+                .collect(),
+        };
+        script.append(change([-10, -10]).into(), &[]);
+        script.append(change([-10, -12]).into(), &[]);
+        let model = script.model();
+        let log = model.snapshot().log();
+        let last = log.entries.last().expect("a log entry");
+        assert_eq!(last.tag, "profile change");
+        assert!(last.msg.ends_with(": 01 -10 → -12"), "{}", last.msg);
     }
 }
