@@ -780,6 +780,39 @@ fn a_repeated_wait_reports_the_failure_the_first_one_did() {
 }
 
 #[test]
+fn shared_errors_render_each_cause_once() {
+    let launch = || Error::Launch {
+        instance: "c01".into(),
+        scope: "togi-trial-t1-c01".into(),
+        source: std::io::Error::other("systemd-run missing"),
+    };
+    let containment = crate::Containment::new(CleanupFailure::Reap {
+        instance: "c00".into(),
+        source: std::io::Error::other("the leader did not exit"),
+    })
+    .caused_by(launch());
+    let joined = Error::join_after(
+        Error::Containment(std::sync::Arc::new(containment)),
+        vec![Error::Cancelled],
+    );
+    for (error, expected) in [
+        (
+            launch(),
+            "launch instance c01 in scope togi-trial-t1-c01: systemd-run missing",
+        ),
+        (
+            joined,
+            "trial cleanup could not be confirmed: trial cleanup could not be confirmed: \
+             the start failed: launch instance c01 in scope togi-trial-t1-c01: systemd-run missing; \
+             reap instance c00: the leader did not exit; cancelled",
+        ),
+    ] {
+        let error = crate::error::Shared::seam(&std::sync::Arc::new(error));
+        assert_eq!(crate::error::with_causes(&error), expected);
+    }
+}
+
+#[test]
 fn a_cancelled_trial_keeps_the_output_failure_that_followed_its_cancellation() {
     let (mut runner, _dir) = runner(
         |fake| {
@@ -809,8 +842,8 @@ fn a_cancelled_trial_keeps_the_output_failure_that_followed_its_cancellation() {
         panic!("a cancellation that carries an output failure must not read as a bare one");
     };
     let Some(Error::Joined(joined)) = inner
-        .source()
-        .and_then(|source| source.downcast_ref::<Error>())
+        .downcast_ref::<crate::error::Shared>()
+        .map(crate::error::Shared::error)
     else {
         panic!("{inner}");
     };
@@ -1666,8 +1699,8 @@ fn a_cached_cancellation_joined_to_a_failed_teardown_stays_containment_with_ever
             panic!("round {round}: the machine category is not containment: {partial:?}");
         };
         let Some(Error::Joined(joined)) = inner
-            .source()
-            .and_then(|source| source.downcast_ref::<Error>())
+            .downcast_ref::<crate::error::Shared>()
+            .map(crate::error::Shared::error)
         else {
             panic!("round {round}: no joined diagnostics behind {inner}");
         };

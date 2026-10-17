@@ -14,7 +14,7 @@ use togi_machine::{
 };
 use togi_tuner::{Load, TrialPlan};
 
-use crate::error::{Flow, SessionError, Step};
+use crate::error::{Flow, SessionError, Step, describe};
 use crate::evidence::{self, RecordedMce, TrialEvidence};
 use crate::execute::{TunerValues, is_crash_flow};
 use crate::recover::append_trial_end;
@@ -26,6 +26,13 @@ const fn retry_target(backend: Backend) -> RetryTarget {
     match backend {
         Backend::Mprime => RetryTarget::Mprime,
         Backend::Ycruncher => RetryTarget::Ycruncher,
+    }
+}
+
+fn trial_error(error: &Error) -> String {
+    match error {
+        Error::Containment(_) => describe(error),
+        _ => error.to_string(),
     }
 }
 
@@ -279,7 +286,7 @@ impl Session {
             Err(Partial { value, error }) => {
                 self.stopped = value;
                 let crashed = matches!(error, Error::Crashed);
-                let containment = (self.stopped.is_none() && !crashed).then(|| error.to_string());
+                let containment = (self.stopped.is_none() && !crashed).then(|| trial_error(&error));
                 if containment.is_some() {
                     self.fault.get_or_insert(Fault::Containment);
                 }
@@ -389,7 +396,7 @@ impl Session {
         };
         let mut crashed = matches!(error, Some(Error::Crashed));
         let mut containment = match &error {
-            Some(error @ Error::Containment(_)) => Some(error.to_string()),
+            Some(error @ Error::Containment(_)) => Some(describe(error)),
             _ => None,
         };
         match stopping {
@@ -400,7 +407,7 @@ impl Session {
                 error.get_or_insert(Error::Crashed);
             }
             Err(unconfirmed) => {
-                containment.get_or_insert_with(|| unconfirmed.to_string());
+                containment.get_or_insert_with(|| trial_error(&unconfirmed));
             }
         }
         if containment.is_some() {
@@ -489,7 +496,7 @@ impl Session {
         let runner = error
             .as_ref()
             .filter(|error| !matches!(error, Error::Cancelled))
-            .map(|error| format!("{what}: {error}"));
+            .map(|error| format!("{what}: {}", trial_error(error)));
         let missing = evidence::join_diagnostic(kernel_error.as_deref(), runner.as_deref());
         let adjudication = evidence::adjudicate(&TrialEvidence {
             result: &result,

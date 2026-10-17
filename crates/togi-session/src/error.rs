@@ -7,6 +7,17 @@ use togi_machine::{CoreId, CoreSet};
 use crate::boot::BootError;
 use crate::write::{ProfileFailure, WriteFailure};
 
+pub(crate) fn describe(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        text.push_str(": ");
+        text.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    text
+}
+
 /// Why the journal can no longer be trusted to match the run: an append failed, or an event reached the journal that
 /// the run's state cannot absorb.
 #[derive(Debug, thiserror::Error)]

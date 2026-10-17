@@ -11,7 +11,7 @@ use togi_journal::{BootLeaveReason, BootSavedEntry, LookupError, Payload};
 use togi_tuningboot::{self as tuningboot, Bootloader, LeaveReason, RestartCount};
 
 use crate::appender::Appender;
-use crate::error::AppendFailure;
+use crate::error::{AppendFailure, describe};
 
 #[derive(Debug, thiserror::Error)]
 pub enum BootError {
@@ -19,17 +19,6 @@ pub enum BootError {
     Bootloader(#[from] tuningboot::Error),
     #[error("look up the journaled tuning-boot reason: {0}")]
     Lookup(#[from] LookupError),
-}
-
-fn describe(error: &dyn std::error::Error) -> String {
-    let mut text = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        text.push_str(": ");
-        text.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    text
 }
 
 /// What leaving the tuning boot for a dead end did.

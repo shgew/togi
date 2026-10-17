@@ -1665,6 +1665,59 @@ fn a_start_that_returns_no_proof_dead_ends_on_containment_and_the_machine_is_lef
 }
 
 #[test]
+fn an_unconfirmed_partial_start_journals_each_setup_and_cleanup_cause_once() {
+    const FAILURES: &str = "the start failed: \
+        launch instance c01 in scope togi-trial-t1-c01: systemd-run missing; \
+        reap instance c00: the leader did not exit; \
+        backend exit and output drain not confirmed before the teardown deadline; \
+        a process remains in scope togi-trial-t1-c00 at the teardown deadline";
+    let run = whole(Faults::default(), |rigging| {
+        rigging.start_error = Some(|| Error::Containment(FAILURES.into()));
+    });
+    let end = containment_dead_end(&run);
+    assert_eq!(
+        end.containment_error,
+        Some(format!("trial cleanup could not be confirmed: {FAILURES}"))
+    );
+    assert_eq!(
+        end.reason,
+        Some(format!(
+            "setup failed: trial cleanup could not be confirmed: {FAILURES}"
+        ))
+    );
+}
+
+#[test]
+fn an_unconfirmed_non_containment_start_keeps_its_existing_reason_text() {
+    #[derive(Debug, thiserror::Error)]
+    #[error("launch backend")]
+    struct Setup(#[source] std::io::Error);
+
+    let run = whole(Faults::default(), |rigging| {
+        rigging.start_error =
+            Some(|| Error::Other(Box::new(Setup(std::io::Error::other("launch cause")))));
+    });
+    let end = containment_dead_end(&run);
+    assert_eq!(end.containment_error.as_deref(), Some("launch backend"));
+    assert_eq!(end.reason.as_deref(), Some("setup failed: launch backend"));
+}
+
+#[test]
+fn containment_from_wait_or_stop_journals_its_cause() {
+    for fail in [
+        (|rigging: &mut Rigging| rigging.wait_error = Some(contained)) as fn(&mut Rigging),
+        |rigging: &mut Rigging| rigging.stop_error = Some(contained),
+    ] {
+        let run = whole(Faults::default(), fail);
+        let end = containment_dead_end(&run);
+        assert_eq!(
+            end.containment_error.as_deref(),
+            Some("trial cleanup could not be confirmed: workload still running")
+        );
+    }
+}
+
+#[test]
 fn a_containment_error_from_the_wait_withholds_the_proof_a_successful_stop_gives() {
     let run = whole(Faults::default(), |rigging| {
         rigging.wait_error = Some(contained);

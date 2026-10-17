@@ -208,6 +208,16 @@ fn a_partial_start_that_cannot_confirm_is_containment_with_both_scopes_targeted(
                 .unwrap();
             assert!(begun.elapsed() <= secs(15));
             assert!(partial.value.is_none());
+            assert_eq!(
+                std::error::Error::source(&partial.error)
+                    .unwrap()
+                    .to_string(),
+                "the start failed: \
+                 launch instance c01 in scope togi-trial-t1-c01: systemd-run missing; \
+                 reap instance c00: the leader did not exit; \
+                 backend exit and output drain not confirmed before the teardown deadline; \
+                 a process remains in scope togi-trial-t1-c00 at the teardown deadline"
+            );
             let failures = containment_of(&partial.error).failures();
             let [
                 CleanupFailure::Start(cause),

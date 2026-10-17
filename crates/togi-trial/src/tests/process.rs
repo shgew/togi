@@ -598,16 +598,10 @@ fn run(runner: &mut Runner, spec: togi_machine::TrialSpec) -> Outcome {
 
 /// The crate errors a failed wait carries, in order.
 fn crate_errors(error: &togi_machine::Error) -> Vec<&crate::Error> {
-    let togi_machine::Error::Other(inner) = error else {
-        return Vec::new();
-    };
-    match inner
-        .source()
-        .and_then(|source| source.downcast_ref::<crate::Error>())
-    {
+    match crate_error(error) {
         Some(crate::Error::Joined(joined)) => joined.errors().iter().collect(),
         Some(other) => vec![other],
-        None => crate_error(error).into_iter().collect(),
+        None => Vec::new(),
     }
 }
 

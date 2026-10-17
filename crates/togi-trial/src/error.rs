@@ -285,12 +285,17 @@ impl std::fmt::Display for Shared {
 #[cfg(target_os = "linux")]
 impl std::error::Error for Shared {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&*self.0)
+        std::error::Error::source(&*self.0)
     }
 }
 
 #[cfg(target_os = "linux")]
 impl Shared {
+    #[cfg(test)]
+    pub(crate) fn error(&self) -> &Error {
+        &self.0
+    }
+
     /// The seam error for a kept error, the same each time it is asked for.
     pub(crate) fn seam(error: &Arc<Error>) -> togi_machine::Error {
         match &**error {
