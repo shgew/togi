@@ -140,47 +140,76 @@ where
 /// The commands that take `--config`, as the usage error names them.
 const CONFIG_SCOPE: &str = "--config applies only to doctor, run and reset";
 
+/// An argument before the command name, as [`token`] reads it.
+enum Token {
+    /// A `--config` or `--state-dir` flag spanning `width` arguments with its value.
+    Flag { config: bool, width: usize },
+    /// The command name, or the end of the arguments.
+    Command,
+    /// An argument of any other shape.
+    Other,
+}
+
+/// Reads the argument at `index` before the command name. Only `--config` and `--state-dir` may
+/// precede the command name, each with a value; the value of either flag is never taken for the
+/// command name.
+fn token(args: &[OsString], index: usize) -> Token {
+    let Some(token) = args.get(index).and_then(|token| token.to_str()) else {
+        return Token::Command;
+    };
+    let takes_value = |name: &str| token == name && index + 1 < args.len();
+    if takes_value("--config") {
+        Token::Flag {
+            config: true,
+            width: 2,
+        }
+    } else if token.starts_with("--config=") {
+        Token::Flag {
+            config: true,
+            width: 1,
+        }
+    } else if takes_value("--state-dir") {
+        Token::Flag {
+            config: false,
+            width: 2,
+        }
+    } else if token.starts_with("--state-dir=") {
+        Token::Flag {
+            config: false,
+            width: 1,
+        }
+    } else if token.starts_with('-') {
+        Token::Other
+    } else {
+        Token::Command
+    }
+}
+
 /// The flags written before the command name, as [`split_leading`] finds them.
 struct Leading {
-    /// The `--state-dir` flags with their values.
-    state_dir: Vec<OsString>,
-    /// The `--config` flags with their values.
-    config: Vec<OsString>,
+    /// Whether a `--config` flag is among them.
+    config: bool,
     /// The index of the command name, or the length when no command follows.
     command: usize,
 }
 
-/// Reads the leading flags. Only `--config` and `--state-dir` may precede the command name, each
-/// with a value; `None` when an argument of any other shape comes first. The value of either flag
-/// is never taken for the command name.
+/// Reads the leading flags; `None` when an argument of a shape other than [`Token::Flag`] comes
+/// before the command name.
 fn split_leading(args: &[OsString]) -> Option<Leading> {
     let mut leading = Leading {
-        state_dir: Vec::new(),
-        config: Vec::new(),
+        config: false,
         command: 1,
     };
-    while let Some(token) = args.get(leading.command).and_then(|token| token.to_str()) {
-        let index = leading.command;
-        let takes_value = |name: &str| token == name && index + 1 < args.len();
-        if takes_value("--config") {
-            leading.config.extend_from_slice(&args[index..index + 2]);
-            leading.command += 2;
-        } else if token.starts_with("--config=") {
-            leading.config.push(args[index].clone());
-            leading.command += 1;
-        } else if takes_value("--state-dir") {
-            leading.state_dir.extend_from_slice(&args[index..index + 2]);
-            leading.command += 2;
-        } else if token.starts_with("--state-dir=") {
-            leading.state_dir.push(args[index].clone());
-            leading.command += 1;
-        } else if token.starts_with('-') {
-            return None;
-        } else {
-            break;
+    loop {
+        match token(args, leading.command) {
+            Token::Flag { config, width } => {
+                leading.config |= config;
+                leading.command += width;
+            }
+            Token::Command => return Some(leading),
+            Token::Other => return None,
         }
     }
-    Some(leading)
 }
 
 /// Moves a `--config <path>` or `--config=<path>` written before the command name to just after
@@ -188,19 +217,33 @@ fn split_leading(args: &[OsString]) -> Option<Leading> {
 /// and `--state-dir` may precede the command name; arguments of any other shape are left as
 /// they are, and so are arguments without a command name.
 #[must_use]
-pub fn config_after_command(args: Vec<OsString>) -> Vec<OsString> {
-    let Some(leading) = split_leading(&args) else {
+pub fn config_after_command(mut args: Vec<OsString>) -> Vec<OsString> {
+    let Some(Leading {
+        config: true,
+        mut command,
+    }) = split_leading(&args)
+    else {
         return args;
     };
-    if leading.config.is_empty() || leading.command >= args.len() {
+    if command >= args.len() {
         return args;
     }
-    let mut normalized = vec![args[0].clone()];
-    normalized.extend(leading.state_dir);
-    normalized.push(args[leading.command].clone());
-    normalized.extend(leading.config);
-    normalized.extend_from_slice(&args[leading.command + 1..]);
-    normalized
+    // Each `--config` flag rotates to the end of the leading run, behind the command name and the
+    // flags moved before it, so both the flags and the rest keep their order.
+    let end = command + 1;
+    let mut index = 1;
+    while index < command {
+        let Token::Flag { config, width } = token(&args, index) else {
+            break;
+        };
+        if config {
+            args[index..end].rotate_left(width);
+            command -= width;
+        } else {
+            index += width;
+        }
+    }
+    args
 }
 
 /// Words the unknown-flag error for `--config` as the scope rule: the flag belongs to three

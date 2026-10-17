@@ -3,7 +3,8 @@ use std::fmt::Write as _;
 
 use jiff::{SignedDuration, Timestamp};
 use togi_journal::{
-    Event, HuntEnd, HuntGroup, HuntStart, Outcome, Payload, Seq, TrialEnd, TrialId, TrialIntent,
+    Event, HuntEnd, HuntGroup, HuntStart, Outcome, Payload, Seq, ShutdownReason, TrialEnd, TrialId,
+    TrialIntent,
 };
 use togi_machine::{BootId, CoreId, CoreSet, Signal, WorkloadId};
 use togi_tuner::{Profile, Topology};
@@ -127,7 +128,8 @@ pub(crate) struct Run {
     pub(crate) builds: std::collections::BTreeMap<String, u32>,
     pub(crate) trials: u32,
     pub(crate) crashes: u32,
-    pub(crate) ending: String,
+    /// `None` while the run has not shut down.
+    pub(crate) ending: Option<ShutdownReason>,
     boot: BootId,
 }
 
@@ -161,7 +163,7 @@ pub(crate) struct IdleFailure {
 /// A journal's trials, runs, hunts and boots, joined by the events' own references.
 pub(crate) struct Projection<'a> {
     pub(crate) events: &'a [Event],
-    pub(crate) topology: Topology,
+    pub(crate) topology: &'a Topology,
     pub(crate) trials: Vec<Trial<'a>>,
     pub(crate) by_id: HashMap<&'a TrialId, usize>,
     pub(crate) idle: Vec<IdleFailure>,
@@ -175,7 +177,7 @@ impl<'a> Projection<'a> {
     pub(crate) fn new(journal: &'a Journal) -> Self {
         let mut p = Self {
             events: journal.events(),
-            topology: journal.topology().clone(),
+            topology: journal.topology(),
             trials: Vec::new(),
             by_id: HashMap::new(),
             idle: Vec::new(),
@@ -230,7 +232,7 @@ impl<'a> Projection<'a> {
                                 builds: std::collections::BTreeMap::new(),
                                 trials: 0,
                                 crashes: 0,
-                                ending: "open".to_owned(),
+                                ending: None,
                                 boot: event.boot.clone(),
                             });
                             self.runs.len() - 1
@@ -245,7 +247,7 @@ impl<'a> Projection<'a> {
                 }
                 Payload::Shutdown(shutdown) => {
                     if let Some(run) = active.take() {
-                        self.runs[run].ending = shutdown.reason.to_string();
+                        self.runs[run].ending = Some(shutdown.reason);
                         self.runs[run].end = event.time;
                     }
                 }
@@ -257,7 +259,7 @@ impl<'a> Projection<'a> {
                         boot: &event.boot,
                         cause: &event.cause,
                         intent,
-                        profile: Profile::new(&self.topology, intent.profile).ok(),
+                        profile: Profile::new(self.topology, intent.profile).ok(),
                         class: Class::of(intent),
                         started: false,
                         last_evidence: event.time,
@@ -311,7 +313,7 @@ impl<'a> Projection<'a> {
                             seq: event.seq,
                             profile: failure
                                 .profile
-                                .and_then(|offsets| Profile::new(&self.topology, offsets).ok()),
+                                .and_then(|offsets| Profile::new(self.topology, offsets).ok()),
                         });
                     }
                 }

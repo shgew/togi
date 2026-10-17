@@ -4,7 +4,7 @@ use togi_journal::{
     Build, DeadEnd, DeadEndCondition, Event, SCHEMA, SessionBaseline, ShutdownReason,
 };
 use togi_machine::{ObservedOffset, PerCore};
-use togi_tool_forecast::{Anchor, Outcome, Record, Run, Session, Status};
+use togi_tool_forecast::{Anchor, Outcome, Record, Run, Session, Split, Status};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use super::support::{Log, config_loaded, crash_detected, shutdown};
@@ -48,7 +48,7 @@ fn run(status: Status, hours: f64, crashes: u32, hunts: u32, profile: [i64; 2]) 
     Run {
         machine: "m.json".to_owned(),
         seed: 0,
-        split: "dev".to_owned(),
+        split: Split::Dev,
         outcome: Outcome {
             status,
             hours,

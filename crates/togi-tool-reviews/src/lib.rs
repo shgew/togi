@@ -11,6 +11,7 @@ pub mod diff;
 pub mod error;
 pub mod files;
 pub mod manifest;
+pub mod parts;
 pub mod process;
 pub mod publish;
 pub mod rangediff;

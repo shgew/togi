@@ -108,9 +108,12 @@ fn a_simulated_sessions_chain_records_attribute_each_trial_once_to_its_own_set()
         togi_tool_stats::chain_records(&Journal::new(events.clone()).unwrap(), None).unwrap();
     let intents: std::collections::HashMap<u64, &togi_journal::TrialIntent> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialIntent(intent) => Some((event.seq.get(), intent)),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
+                Some((event.seq.get(), intent))
+            } else {
+                None
+            }
         })
         .collect();
     let mut seen = std::collections::HashSet::new();

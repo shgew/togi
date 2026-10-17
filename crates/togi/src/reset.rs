@@ -450,14 +450,14 @@ fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, system: &dyn Syste
         }
         Err(_) => return Vec::new(),
     };
-    let limits: Vec<(CoreId, i64)> = config
+    let mut limits = config
         .overrides()
         .filter_map(|(core, entry)| match entry {
             InitialOverride::CandidateSoloLimit(offset) => Some((core, offset.get())),
             InitialOverride::Start(_) => None,
         })
-        .collect();
-    if limits.is_empty() {
+        .peekable();
+    if limits.peek().is_none() {
         return Vec::new();
     }
     let state = match togi_tuner::replay(events) {
@@ -473,7 +473,6 @@ fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, system: &dyn Syste
         return Vec::new();
     };
     limits
-        .into_iter()
         .filter_map(|(core, limit)| {
             let point = constraints.failure_points().get(core)?.offset().get();
             (limit <= point).then(|| {
