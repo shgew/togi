@@ -1429,6 +1429,29 @@ fn ledger_line_is_refused(line: &str) {
     );
 }
 
+#[test_case(r#"{"event":"campaign_resumed","at":"2027-01-15T08:00:00Z","head":"c","note":"x"}"# ; "unknown field")]
+#[test_case(r#"["campaign_resumed","2027-01-15T08:00:00Z","c"]"# ; "record as an array")]
+#[test_case(r#"{"event":"campaign_stopped","at":"2027-01-15T08:00:00Z","reason":"wall-limit","detail":1}"# ; "damaged stop line")]
+fn invalid_last_line_is_refused_not_torn(line: &str) {
+    let mut bytes = lines(&[Record::CampaignStarted {
+        at: at(0),
+        manifest_sha256: sha256(b"manifest"),
+        head: CHECKOUT.to_owned(),
+    }]);
+    bytes.extend_from_slice(line.as_bytes());
+    bytes.push(b'\n');
+    let error = Ledger::parse(&bytes).unwrap_err();
+    assert!(
+        matches!(error, LedgerError::Decode { line: 2, .. }),
+        "{error}"
+    );
+    assert!(
+        super::ledger::end_torn_tail(&bytes, at(1))
+            .unwrap()
+            .is_empty()
+    );
+}
+
 #[test]
 fn real_fs_run_dir_appends_and_holds_its_lock() {
     let temp = tempfile::tempdir().unwrap();

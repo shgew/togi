@@ -242,8 +242,9 @@ fn decode(line: &[u8]) -> Result<Record, serde_json::Error> {
     serde_json::from_slice::<Object<Record>>(line).map(|Object(record)| record)
 }
 
-/// The bytes after the ledger's last line that decodes: what killed or failed appends left, if anything. A
-/// failed append can tear the line that ends an earlier fragment too, so the region may span several lines.
+/// The bytes after the ledger's last newline and the cut-off lines before them: what killed or failed appends
+/// left, if anything. A failed append can tear the line that ends an earlier fragment too, so the region may
+/// span several lines. A complete line that is merely invalid is no fragment, so its decoding error stands.
 fn torn_tail(bytes: &[u8]) -> &[u8] {
     let mut cut = bytes
         .iter()
@@ -256,7 +257,7 @@ fn torn_tail(bytes: &[u8]) -> &[u8] {
             .rposition(|&byte| byte == b'\n')
             .map_or(0, |end| end + 1);
         let line = &bytes[line_start..line_end];
-        if line.is_empty() || decode(line).is_ok() {
+        if line.is_empty() || !decode(line).is_err_and(|error| error.is_eof()) {
             break;
         }
         cut = line_start;
