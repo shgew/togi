@@ -1591,6 +1591,7 @@ version = "0.0.0"
 dependencies = [
  "regex",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-machine",
 ]
@@ -1678,6 +1679,7 @@ dependencies = [
  "jiff",
  "rustix",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-backend",
  "togi-command",
@@ -1741,6 +1743,7 @@ version = "0.0.0"
 dependencies = [
  "regex",
  "tempfile",
+ "test-case",
  "togi-backend",
  "togi-machine",
 ]
@@ -2211,6 +2214,7 @@ version = "0.0.0"
 dependencies = [
  "regex",
  "tempfile",
+ "test-case",
  "togi-backend",
  "togi-machine",
 ]

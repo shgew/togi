@@ -28,6 +28,7 @@ togi-ycruncher.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+test-case.workspace = true
 
 [lints]
 workspace = true
