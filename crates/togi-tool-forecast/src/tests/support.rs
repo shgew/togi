@@ -3,13 +3,13 @@ use std::num::NonZeroU32;
 use jiff::{SignedDuration, Timestamp};
 use togi_config::Config;
 use togi_journal::{
-    BootLeaveReason, Build, ConfigLoaded, CrashDetected, DeadEnd, DeadEndCondition, Event, Payload,
-    SCHEMA, Seq, SessionBaseline, SessionId, SessionStart, Shutdown, ShutdownReason, Stamp,
-    TrialId, TrialIntent,
+    BootLeaveReason, Build, CommandReset, ConfigLoaded, CrashDetected, DeadEnd, DeadEndCondition,
+    Event, JournalTorn, Mce, Payload, ResetTarget, SCHEMA, Seq, SessionBaseline, SessionId,
+    SessionStart, Shutdown, ShutdownReason, Stamp, StateRebuilt, TrialId, TrialIntent,
 };
 use togi_machine::{
-    BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, ObservedOffset, PerCore, Regime,
-    TargetOffset,
+    BankType, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, ObservedOffset, PerCore,
+    Regime, TargetOffset,
 };
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
@@ -118,6 +118,40 @@ pub(super) fn leave_reason() -> Payload {
         reason_id: "id".to_owned(),
         restart_limit_count: 1,
         reason: "watchdog".to_owned(),
+    })
+}
+
+pub(super) fn mce() -> Payload {
+    Payload::Mce(Mce {
+        cpu: CpuId(0),
+        core: Some(core(0)),
+        bank: 0,
+        bank_type: BankType::LoadStore,
+        corrected: true,
+        monotonic_ns: None,
+        from_boot: None,
+        trial: None,
+        between_trials: true,
+        lines: Vec::new(),
+    })
+}
+
+pub(super) fn state_rebuilt() -> Payload {
+    Payload::StateRebuilt(StateRebuilt {
+        fields: vec!["last_seq".to_owned()],
+    })
+}
+
+pub(super) fn journal_torn() -> Payload {
+    Payload::JournalTorn(JournalTorn {
+        offset: 1024,
+        bytes_hex: "7b22".to_owned(),
+    })
+}
+
+pub(super) fn command_reset() -> Payload {
+    Payload::CommandReset(CommandReset {
+        target: ResetTarget::Core(core(0)),
     })
 }
 

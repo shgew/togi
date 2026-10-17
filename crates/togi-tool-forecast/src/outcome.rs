@@ -246,18 +246,37 @@ impl Scan {
 ///
 /// An invocation starts at its `session.start`, or at its `config.loaded` when no `session.start` precedes it,
 /// or at its first event in another boot. The gap before an invocation counts only once the invocation records
-/// `crash.detected`, and never after a `shutdown` or before a `session.start`. `mce` and `boot.leave_reason`
-/// may be what a starting invocation records ahead of its `config.loaded`, and `command.reset` and
-/// `session.archived` are recorded outside any run, so none of them moves where a gap starts or ends.
+/// `crash.detected`, and never after a `shutdown` or before a `session.start`. `mce`, `boot.leave_reason`,
+/// `journal.torn` and `state.rebuilt` may be what a starting invocation records ahead of its `config.loaded`,
+/// and `command.reset` and `session.archived` are recorded outside any run, so none of them moves where a gap
+/// starts or ends.
 struct RunTime {
     total: SignedDuration,
     /// The latest event that settles where a gap starts.
     last: Timestamp,
     boot: BootId,
-    stopped: bool,
-    started: bool,
+    after: After,
     /// The gap before the current invocation, run time once it records `crash.detected`.
     downtime: Option<SignedDuration>,
+}
+
+/// What the latest event that settles where a gap starts was.
+enum After {
+    Shutdown,
+    SessionStart,
+    Other,
+}
+
+impl After {
+    fn of(payload: &Payload) -> Self {
+        if matches!(payload, Payload::Shutdown(_)) {
+            Self::Shutdown
+        } else if matches!(payload, Payload::SessionStart(_)) {
+            Self::SessionStart
+        } else {
+            Self::Other
+        }
+    }
 }
 
 impl RunTime {
@@ -266,8 +285,7 @@ impl RunTime {
             total: SignedDuration::ZERO,
             last: anchor.time,
             boot: anchor.boot.clone(),
-            stopped: matches!(anchor.payload, Payload::Shutdown(_)),
-            started: matches!(anchor.payload, Payload::SessionStart(_)),
+            after: After::of(&anchor.payload),
             downtime: None,
         }
     }
@@ -277,6 +295,8 @@ impl RunTime {
             event.payload,
             Payload::Mce(_)
                 | Payload::BootLeaveReason(_)
+                | Payload::JournalTorn(_)
+                | Payload::StateRebuilt(_)
                 | Payload::CommandReset(_)
                 | Payload::SessionArchived(_)
         ) {
@@ -288,10 +308,12 @@ impl RunTime {
             .max(SignedDuration::ZERO);
         let starts = match event.payload {
             Payload::SessionStart(_) => true,
-            Payload::ConfigLoaded(_) => !self.started,
+            Payload::ConfigLoaded(_) => !matches!(self.after, After::SessionStart),
             _ => event.boot != self.boot,
         };
-        if matches!(event.payload, Payload::SessionStart(_)) || self.stopped {
+        if matches!(event.payload, Payload::SessionStart(_))
+            || matches!(self.after, After::Shutdown)
+        {
             self.downtime = None;
         } else if starts {
             self.downtime = Some(gap);
@@ -305,7 +327,6 @@ impl RunTime {
         }
         self.last = event.time;
         self.boot.clone_from(&event.boot);
-        self.stopped = matches!(event.payload, Payload::Shutdown(_));
-        self.started = matches!(event.payload, Payload::SessionStart(_));
+        self.after = After::of(&event.payload);
     }
 }

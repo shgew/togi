@@ -175,7 +175,7 @@ impl Report {
         )?;
         writeln!(
             w,
-            "forecast: hours run from the anchor to conclusion, over concluded runs only; {}",
+            "forecast: hours of run time from the anchor to conclusion, over concluded runs only; {}",
             togi_tool_forecast::recovery_bias()
         )?;
         let metrics = togi_tool_forecast::metrics(&record.runs).map_err(io::Error::other)?;
