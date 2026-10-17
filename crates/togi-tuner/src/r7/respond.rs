@@ -171,9 +171,10 @@ impl Charge {
 impl Run {
     pub(crate) fn failed<'a>(&'a self, record: &'a OpenFailure) -> Failed<'a> {
         let trial = &record.r7;
-        let rerun_end = match self.zero.get(record.seq) {
-            Some(&Diagnostic::Passed { end }) => Some(end),
-            _ => None,
+        let rerun_end = if let Some(&Diagnostic::Passed { end }) = self.zero.get(record.seq) {
+            Some(end)
+        } else {
+            None
         };
         let confined = rerun_end.is_none();
         Failed {
