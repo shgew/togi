@@ -2090,6 +2090,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-facts",
  "togi-journal",
