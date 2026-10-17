@@ -3,6 +3,7 @@ use test_case::test_case;
 use super::{base, clean, join};
 
 #[test_case("", "."; "empty")]
+#[test_case("a/..", "."; "parent of the only element")]
 #[test_case("a/b/../c", "a/c"; "inner parent")]
 #[test_case("../x", "../x"; "leading parent kept")]
 #[test_case("a/../..", ".."; "parent past the start")]
