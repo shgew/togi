@@ -516,6 +516,8 @@ Before `exec` and `outcome` record anything, the dispatcher checks that the camp
 
 `exec` allows only its mode's evaluators. Model development runs `forward` (`--facts`, `--seal`, `--jobs`) and, to finalize a confirmed candidate, `fit` (`--facts`, `--out`, `--jobs`, `--seed`, `--bootstrap`) and the F5 `bench` on the committed suite with `--split all --baseline tools/bench/baseline.jsonl`. `--facts` must name a manifest input, never the default extract. A development run seals exactly the input's confirmation sessions, and a confirmation scores them unsealed. Observation and accounting run only `bench`, with the manifest's `--suite` and `--split`, and keep `--timeout` and `--max-boots`. Output flags must name paths inside the run directory, never its own record (`manifest.json`, `experiments.jsonl`, `lock`, `report.md`, `raw`), and `--jobs` defaults to the worker limit and may not exceed it. Each run waits for the host-shared lock, then makes its checks and gets the wall time left. When the time runs out, or the dispatcher is told to stop, it terminates the evaluator's process group and records the run as timed out or interrupted. A timed-out run also stops the campaign.
 
+An observation or accounting campaign analyses what its `bench` run kept with tools that simulate nothing, such as `just stats --backoffs` over the kept journals and `just pass-cost`. They are not evaluators and run outside `exec`: they read the run directory and the frozen fixtures, write only under the run directory, and the report names each command. [#490's brief](../tools/bench/research/490.md#procedure) is the worked example.
+
 The roles enforce the comparison's order:
 
 - A `reference` run needs the tree at the reference revision.
