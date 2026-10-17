@@ -8,12 +8,11 @@ use ratatui::text::{Line, Span};
 
 use super::super::colours::Paint;
 use super::super::fit::{
-    Clause, Form, cut_styled, cut_words, display_width, fit_clauses, line_width, plain, rule,
-    wrap_styled,
+    Clause, Form, cut_styled, display_width, fit_clauses, line_width, rule, wrap_line, wrap_styled,
 };
 use super::super::scene::Scene;
 use super::table::{cell, wall_date};
-use crate::history::{Entry, Key};
+use crate::history::{Entry, Failed, What};
 use crate::screen::View;
 use crate::words::{Tag, Tone, plural};
 
@@ -37,7 +36,7 @@ fn routine(entry: &Entry) -> Option<Routine> {
     match entry.tag {
         Tag::Pass => Some(Routine::Pass),
         Tag::Chain => Some(Routine::Chain),
-        Tag::Step if matches!(entry.key, Some(Key::Step { .. })) => Some(Routine::Step),
+        Tag::Step if matches!(entry.what, What::Step(_)) => Some(Routine::Step),
         Tag::Round if entry.tone == Tone::Good => Some(Routine::Round),
         Tag::Step
         | Tag::Round
@@ -71,7 +70,7 @@ fn is_failure(entry: &Entry) -> bool {
 
 /// An entry worth a second row when its sentence does not fit one.
 fn is_important(entry: &Entry) -> bool {
-    entry.verdict.is_some() || matches!(entry.tone, Tone::Bad | Tone::Warn)
+    matches!(entry.what, What::Failed(_)) || matches!(entry.tone, Tone::Bad | Tone::Warn)
 }
 
 /// Consecutive routine entries, folded.
@@ -98,28 +97,29 @@ impl Burst {
         self.at = Some(entry.at);
         match kind {
             Routine::Pass => {
-                let credited = if entry.of > 0 {
-                    entry.runs.min(entry.of)
-                } else {
-                    entry.runs
-                };
-                self.credited += credited;
-                if let Some(at) = &entry.step {
+                if let What::Passes(passes) = &entry.what {
+                    self.credited += if passes.of > 0 {
+                        passes.runs.min(passes.of)
+                    } else {
+                        passes.runs
+                    };
+                }
+                if let Some(at) = entry.step() {
                     self.place = Some((at.cycle, at.step));
-                    self.step.get_or_insert_with(|| at.label.clone());
+                    self.step.get_or_insert_with(|| at.label());
                 }
             }
             Routine::Chain => {
                 self.chains += 1;
-                self.chain = Some(entry.text.clone());
+                self.chain = Some(entry.text());
             }
             Routine::Step => {
-                if let Some(Key::Step { cycle, step }) = entry.key {
-                    self.place = Some((cycle, step));
+                if let Some(at) = entry.step() {
+                    self.place = Some((at.cycle, at.step));
                 }
-                self.step = Some(entry.text.clone());
+                self.step = Some(entry.text());
             }
-            Routine::Round => self.round = Some(entry.text.clone()),
+            Routine::Round => self.round = Some(entry.text()),
         }
     }
 
@@ -169,7 +169,7 @@ fn fold(entries: &[Entry]) -> Vec<Entry> {
                 out.extend(burst.take());
             }
             Some(Routine::Pass) => {
-                if burst.is_elsewhere(entry.step.as_ref().map(|at| (at.cycle, at.step))) {
+                if burst.is_elsewhere(entry.step().map(|at| (at.cycle, at.step))) {
                     out.extend(burst.take());
                 }
                 burst.add(Routine::Pass, entry);
@@ -195,14 +195,12 @@ fn prefix(scene: &Scene<'_>, entry: &Entry) -> Vec<Span<'static>> {
     ]
 }
 
-/// A sentence of the form `head: a, b, c, d` in `room` cells: as many whole items as fit, then `and N more`.
-/// `None` when the sentence is not a list or not even its first item fits.
-fn summarised(text: &str, room: usize) -> Option<String> {
-    if display_width(text) <= room {
-        return Some(text.to_owned());
-    }
-    let (head, list) = text.split_once(": ")?;
-    let items: Vec<&str> = list.split(", ").collect();
+/// A list `head: a, b, c, d` in `room` cells: as many whole items as fit, then `and N more`. `None` when the
+/// entry is no list or not even its first item fits.
+fn summarised(entry: &Entry, room: usize) -> Option<String> {
+    let What::List { head, items } = &entry.what else {
+        return None;
+    };
     (1..items.len()).rev().find_map(|kept| {
         let more = items.len() - kept;
         let short = format!("{head}: {} and {more} more", items[..kept].join(", "));
@@ -210,81 +208,80 @@ fn summarised(text: &str, room: usize) -> Option<String> {
     })
 }
 
+/// The sentence with its alarm words drawn as an alarm.
+fn emphasised(
+    scene: &Scene<'_>,
+    (before, alarm, after): (String, String, String),
+) -> Line<'static> {
+    Line::from(vec![
+        scene.paint(Paint::Text, before),
+        scene.paint(Paint::Bad, alarm),
+        scene.paint(Paint::Text, after),
+    ])
+}
+
 /// One row: the time, the tag and the sentence cut to its whole words.
 fn row(scene: &Scene<'_>, entry: &Entry, width: usize) -> Line<'static> {
     let room = width.saturating_sub(PREFIX);
     let mut spans = prefix(scene, entry);
-    let sentence = if entry.verdict.is_some() {
-        verdict_sentence(scene, entry, room)
+    let sentence = if let What::Failed(failed) = &entry.what {
+        verdict_sentence(scene, failed, room)
     } else {
-        let (before, alarm, after) = entry.sentence();
-        let text = format!("{before}{alarm}{after}");
-        match summarised(&text, room).filter(|_| alarm.is_empty()) {
+        let sentence = entry.sentence();
+        let short = if sentence.1.is_empty() {
+            let text = format!("{}{}", sentence.0, sentence.2);
+            if display_width(&text) <= room {
+                Some(text)
+            } else {
+                summarised(entry, room)
+            }
+        } else {
+            None
+        };
+        match short {
             Some(short) => Line::from(scene.paint(Paint::Text, short)),
-            None => cut_styled(
-                &Line::from(vec![
-                    scene.paint(Paint::Text, before),
-                    scene.paint(Paint::Bad, alarm),
-                    scene.paint(Paint::Text, after),
-                ]),
-                room,
-            ),
+            None => cut_styled(&emphasised(scene, sentence), room),
         }
     };
     spans.extend(sentence.spans);
     Line::from(spans)
 }
 
-/// A wrapped line of a sentence with its alarm words, when this line holds them, drawn as an alarm.
-fn emphasised(scene: &Scene<'_>, text: String, alarm: &str) -> Vec<Span<'static>> {
-    match text.split_once(alarm).filter(|_| !alarm.is_empty()) {
-        Some((before, after)) => vec![
-            scene.paint(Paint::Text, before.to_owned()),
-            scene.paint(Paint::Bad, alarm.to_owned()),
-            scene.paint(Paint::Text, after.to_owned()),
-        ],
-        None => vec![scene.paint(Paint::Text, text)],
-    }
-}
-
 /// The rows of `entry` in `width` cells: one when its sentence fits or `limit` is 1, else its sentence wrapped
 /// under its own text column in at most `limit` rows, the last cut to whole words.
 fn rows(scene: &Scene<'_>, entry: &Entry, width: usize, limit: usize) -> Vec<Line<'static>> {
     let room = width.saturating_sub(PREFIX);
-    let (before, alarm, after) = entry.sentence();
-    let text = format!("{before}{alarm}{after}");
-    if limit <= 1 || room == 0 || display_width(&text) <= room {
+    let sentence = emphasised(scene, entry.sentence());
+    if limit <= 1 || room == 0 || line_width(&sentence) <= room {
         return vec![row(scene, entry, width)];
     }
-    let mut wrapped: Vec<String> = wrap_styled(&text, room, scene.style(Paint::Text))
-        .iter()
-        .map(plain)
-        .collect();
+    let mut wrapped = wrap_line(&sentence, room);
     if wrapped.len() > limit {
-        let summary = summarised(&text, (room * limit).saturating_sub(limit - 1))
-            .map(|short| {
-                wrap_styled(&short, room, scene.style(Paint::Text))
-                    .iter()
-                    .map(plain)
-                    .collect::<Vec<_>>()
-            })
+        let summary = summarised(entry, (room * limit).saturating_sub(limit - 1))
+            .map(|short| wrap_styled(&short, room, scene.style(Paint::Text)))
             .filter(|lines| lines.len() <= limit);
         wrapped = summary.unwrap_or_else(|| {
-            let tail = wrapped.split_off(limit - 1).join(" ");
-            wrapped.push(cut_words(&tail, room));
+            let mut tail = Line::default();
+            for (i, line) in wrapped.split_off(limit - 1).into_iter().enumerate() {
+                if i > 0 {
+                    tail.spans.push(scene.paint(Paint::Text, " ".to_owned()));
+                }
+                tail.spans.extend(line.spans);
+            }
+            wrapped.push(cut_styled(&tail, room));
             wrapped
         });
     }
     wrapped
         .into_iter()
         .enumerate()
-        .map(|(i, text)| {
+        .map(|(i, line)| {
             let mut spans = if i == 0 {
                 prefix(scene, entry)
             } else {
                 vec![Span::raw(" ".repeat(PREFIX))]
             };
-            spans.extend(emphasised(scene, text, &alarm));
+            spans.extend(line.spans);
             Line::from(spans)
         })
         .collect()
@@ -293,27 +290,24 @@ fn rows(scene: &Scene<'_>, entry: &Entry, width: usize, limit: usize) -> Vec<Lin
 /// The sentence of a failed trial in `room` cells. What the failure was and whom it names are reserved first;
 /// the timing gives way before anything else, and the subject is cut to what is left, so a long subject never
 /// takes the attribution's cells.
-fn verdict_sentence(scene: &Scene<'_>, entry: &Entry, room: usize) -> Line<'static> {
-    let Some(verdict) = &entry.verdict else {
-        return Line::default();
-    };
+fn verdict_sentence(scene: &Scene<'_>, failed: &Failed, room: usize) -> Line<'static> {
+    let verdict = &failed.verdict;
     let sep = || Line::from(scene.paint(Paint::Text, " · ".to_owned()));
-    let signal_paint = if entry.alarm.is_some() {
+    let signal_paint = if verdict.alarm() {
         Paint::Bad
     } else {
         Paint::Text
     };
-    let signal = Line::from(scene.paint(signal_paint, verdict.signal.clone()));
+    let signal = Line::from(scene.paint(signal_paint, verdict.signal_words().to_owned()));
     let named = verdict
         .named
-        .as_ref()
-        .map(|named| Line::from(scene.paint(Paint::Text, named.clone())));
+        .map(|named| Line::from(scene.paint(Paint::Text, named.words())));
     let reserved: usize = line_width(&signal)
         + named
             .as_ref()
             .map_or(0, |named| line_width(named) + line_width(&sep()));
     let subject_room = room.saturating_sub(reserved + line_width(&sep()));
-    let subject_text = scene.paint(Paint::Text, entry.text.clone());
+    let subject_text = scene.paint(Paint::Text, failed.subject.clone());
     let subject_cut = cut_styled(&Line::from(subject_text.clone()), subject_room);
     let mut subject = vec![Form::new(Line::from(subject_text), 1)];
     subject.push(if line_width(&subject_cut) > 0 {

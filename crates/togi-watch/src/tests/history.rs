@@ -9,7 +9,10 @@ use togi_journal::{
 use togi_machine::{BankType, BootId, Condition, CpuId, Regime, Signal};
 
 use super::kit::*;
-use crate::history::{Entry, EntryKind, HISTORY_LIMIT, Key, fold_entry};
+use crate::history::{
+    Entry, Failed, Groups, HISTORY_LIMIT, KnownFailure, Named, PassedIn, Passes, Verdict, What,
+    fold_entry,
+};
 use crate::model::Count;
 use crate::words::{Tag, Tone};
 
@@ -47,7 +50,7 @@ fn reboot_history_during_smu_application() {
     );
     let (entries, _) = h.facts.history.recent();
     assert_eq!(h.facts.crashes, 1);
-    assert_eq!(entries[0].reboot, Some(at));
+    assert_eq!(entries[0].reboot(), Some(at));
     assert_eq!(entries[0].tone, Tone::Bad);
 }
 
@@ -150,7 +153,7 @@ fn reboot_history_during_trial() {
         );
         let (entries, _) = h.facts.history.recent();
         let reboot = &entries[usize::from(case.evidence.is_some())];
-        assert_eq!(reboot.reboot, Some(crash_seq), "{}", case.name);
+        assert_eq!(reboot.reboot(), Some(crash_seq), "{}", case.name);
         assert_eq!(
             reboot.at,
             Timestamp::from_second(1000 + i64::try_from(crash_seq.get()).unwrap()).unwrap(),
@@ -223,8 +226,8 @@ fn multiple_reboots_stay_distinct() {
     );
     let (entries, _) = h.facts.history.recent();
     assert_eq!(h.facts.crashes, 2);
-    assert_eq!(entries[1].reboot, Some(first));
-    assert_eq!(entries[0].reboot, Some(second));
+    assert_eq!(entries[1].reboot(), Some(first));
+    assert_eq!(entries[0].reboot(), Some(second));
 }
 
 #[test]
@@ -443,9 +446,15 @@ fn tally_never_counts_past_the_requirement() {
         (2, 5, 5, "5"),
         (1, 1, 1, "1"),
     ] {
-        let mut entry = Entry::line(Timestamp::UNIX_EPOCH, Tag::Pass, String::new(), Tone::Plain);
-        (entry.first, entry.runs, entry.of) = (first, runs, of);
-        assert_eq!(entry.tally(), want, "first {first}, runs {runs}, of {of}");
+        let passes = Passes {
+            subject: String::new(),
+            runs,
+            first,
+            of,
+            peak: None,
+            within: None,
+        };
+        assert_eq!(passes.tally(), want, "first {first}, runs {runs}, of {of}");
     }
 }
 
@@ -462,23 +471,22 @@ fn repeated_outcomes_fold_into_one_line() {
         clock.get()
     };
     let pass = |first, peak| {
-        let mut e = Entry::line(
-            next(),
-            Tag::Pass,
-            "R7 full CCD 0 on 00-07".to_owned(),
-            Tone::Good,
-        );
-        e.kind = EntryKind::Trials;
-        e.key = Some(Key::Pass("R7 full CCD 0 on 00-07".to_owned()));
-        (e.runs, e.first, e.of, e.peak) = (1, first, 4, Some(peak));
-        e
+        let passes = Passes {
+            subject: "R7 full CCD 0 on 00-07".to_owned(),
+            runs: 1,
+            first,
+            of: 4,
+            peak: Some(peak),
+            within: None,
+        };
+        Entry::new(next(), Tag::Pass, What::Passes(passes), Tone::Good)
     };
     let limit = |id: u8, offset| {
-        let mut e = Entry::line(next(), Tag::Limit, String::new(), Tone::Good);
-        e.kind = EntryKind::Limits;
-        e.key = Some(Key::Limit);
-        (e.cores, e.offset) = (vec![core(id)], Some(off(offset)));
-        e
+        let limits = What::Limits {
+            cores: std::iter::once(core(id)).collect(),
+            offset: off(offset),
+        };
+        Entry::new(next(), Tag::Limit, limits, Tone::Good)
     };
     let lines = vec![
         pass(1, 70),
@@ -690,8 +698,12 @@ fn probe_history_completes_after_retention() {
         play(h, &last[..3], 2);
     };
     let (pending, pending_dropped) = retained(head);
-    assert_eq!((pending[0].runs, pending[0].of), (1, 2));
-    assert_eq!(pending[1].last_group, 2, "an incomplete probe stays apart");
+    assert_eq!((passes(&pending[0]).runs, passes(&pending[0]).of), (1, 2));
+    assert_eq!(
+        hunt_groups(&pending[1]).last,
+        2,
+        "an incomplete probe stays apart"
+    );
     let (complete, complete_dropped) = retained(|h| {
         head(h);
         play(h, &last[3..], 2);
@@ -724,11 +736,11 @@ fn probe_history_complete_tail_remains_mutable() {
         play(h, &last[3..], 1);
     });
     assert_eq!(
-        (extra[0].first_group, extra[0].last_group, extra[0].runs),
-        (2, 2, 2),
+        (hunt_groups(&extra[0]), passes(&extra[0]).runs),
+        (Groups::one(1, 2), 2),
         "a later trial of the same group stays its own line"
     );
-    assert_eq!(extra[1].last_group, 1);
+    assert_eq!(hunt_groups(&extra[1]).last, 1);
 }
 
 #[test]
@@ -739,7 +751,7 @@ fn history_bounds_and_counts_what_it_leaves_out() {
     assert_eq!(entries.len(), HISTORY_LIMIT);
     assert_eq!(dropped + entries.len(), 2 * HISTORY_LIMIT + 6);
     assert_eq!(
-        entries[0].text,
+        entries[0].text(),
         warning(&(2 * HISTORY_LIMIT + 4).to_string()).message()
     );
 }
@@ -797,17 +809,35 @@ fn plain(text: &str) -> Entry {
 }
 
 #[test]
-fn an_alarm_the_text_lacks_is_left_out_of_the_sentence() {
-    let mut line = plain("abc");
-    line.alarm = Some("zzz".to_owned());
+fn a_failure_draws_its_own_signal_as_the_alarm() {
+    let failure = |signal| {
+        let failed = Failed {
+            subject: "wrong result rerun of R7 all-core".to_owned(),
+            verdict: Verdict {
+                signal: Some(signal),
+                when: None,
+                named: Some(Named::Nobody),
+            },
+            hunt: None,
+            reboot: None,
+        };
+        Entry::new(at(seq(1)), Tag::Fail, What::Failed(failed), Tone::Bad)
+    };
     assert_eq!(
-        line.sentence(),
-        ("abc".to_owned(), String::new(), String::new())
+        failure(Signal::ComputationError).sentence(),
+        (
+            "wrong result rerun of R7 all-core · ".to_owned(),
+            "wrong result".to_owned(),
+            " · no core named".to_owned()
+        )
     );
-    line.alarm = Some("b".to_owned());
     assert_eq!(
-        line.sentence(),
-        ("a".to_owned(), "b".to_owned(), "c".to_owned())
+        failure(Signal::Crash).sentence(),
+        (
+            "wrong result rerun of R7 all-core · rebooted · no core named".to_owned(),
+            String::new(),
+            String::new()
+        )
     );
 }
 
@@ -818,25 +848,57 @@ fn lines_merge_only_with_a_line_that_continues_them() {
     assert_eq!(history.len(), 1, "the first line has nothing to merge into");
 
     let group = |first: u32| {
-        let mut line = plain("");
-        line.kind = EntryKind::Groups;
-        line.key = Some(Key::Carried {
-            hunt: 1,
+        let answered = What::Answered {
+            groups: Groups::one(1, first),
+            cores: set(&[0]),
             inferred: Inference::Pass,
-        });
-        (line.first_group, line.last_group) = (first, first);
-        line
+        };
+        Entry::new(at(seq(1)), Tag::Group, answered, Tone::Hunt)
     };
     fold_entry(&mut history, group(1));
     fold_entry(&mut history, group(2));
     assert_eq!(history.len(), 2);
-    assert_eq!((history[1].first_group, history[1].last_group), (1, 2));
+    assert_eq!(
+        history[1].what,
+        What::Answered {
+            groups: Groups {
+                hunt: 1,
+                first: 1,
+                last: 2
+            },
+            cores: set(&[0]),
+            inferred: Inference::Pass,
+        }
+    );
     fold_entry(&mut history, group(4));
     assert_eq!(history.len(), 3, "group 4 does not continue group 2");
 
-    let mut known = plain("known");
-    known.key = Some(Key::KnownFailure);
+    let known = Entry::new(
+        at(seq(1)),
+        Tag::Skip,
+        What::KnownFailure(KnownFailure {
+            regime: None,
+            crashed: false,
+            carried: false,
+            hunt: None,
+        }),
+        Tone::Plain,
+    );
     fold_entry(&mut history, known.clone());
     fold_entry(&mut history, known);
     assert_eq!(history.len(), 5, "a plain line never merges");
+}
+
+fn passes(entry: &Entry) -> &Passes {
+    let What::Passes(passes) = &entry.what else {
+        panic!("not passes: {entry:?}");
+    };
+    passes
+}
+
+fn hunt_groups(entry: &Entry) -> Groups {
+    let Some(PassedIn::Hunt { groups, .. }) = passes(entry).within else {
+        panic!("not passes in a hunt: {entry:?}");
+    };
+    groups
 }

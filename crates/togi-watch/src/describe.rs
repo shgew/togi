@@ -12,10 +12,12 @@ use togi_journal::{
 use togi_machine::{Condition, CoreId, Regime, Signal};
 
 use crate::facts::{Facts, HuntStartFacts, trial_cores};
-use crate::history::{Entry, EntryKind, Key, StepAt, Verdict};
+use crate::history::{
+    self, Entry, FirstGroup, Groups, KnownFailure, Located, Named, PassedIn, Passes, StepAt,
+    Verdict, What,
+};
 use crate::words::{
-    History, Tag, Tone, age, core_ids, kind_words, lateness, on_cores, phase_line, plural,
-    signal_words, words, workload_display,
+    History, Tag, Tone, age, core_ids, kind_words, lateness, on_cores, phase_line, plural, words,
 };
 
 fn seconds_between(from: Timestamp, to: Timestamp) -> std::time::Duration {
@@ -42,20 +44,19 @@ impl Facts {
         match words(event.kind()).history {
             History::Silent => None,
             History::Line(line) => {
-                let line = line(&event.payload)?;
-                let mut line = entry(at, line.tag, line.text, line.tone);
-                self.finish_line(event, &mut line);
-                Some(line)
+                let mut line = line(&event.payload)?;
+                self.finish_line(event, &mut line.text);
+                Some(entry(at, line.tag, line.text, line.tone))
             }
             History::Contextual => self.contextual(event, journal),
         }
     }
 
-    fn finish_line(&self, event: &Event, line: &mut Entry) {
+    fn finish_line(&self, event: &Event, text: &mut String) {
         if let Payload::TunerDecision(decision) = &event.payload {
             if decision.decision == togi_journal::Decision::Backoff {
                 if let Some(id) = self.sources.get(&event.seq) {
-                    let _ = write!(line.text, " · clear of C{}", id.get());
+                    let _ = write!(text, " · clear of C{}", id.get());
                 }
             }
         }
@@ -64,12 +65,15 @@ impl Facts {
     fn contextual(&mut self, event: &Event, journal: &JournalState) -> Option<Entry> {
         let at = event.time;
         match &event.payload {
-            Payload::SessionStart(start) => {
-                let mut line = entry(at, Tag::Start, String::new(), Tone::Plain);
-                line.kind = EntryKind::Session;
-                line.of = u32::try_from(start.cores.len()).unwrap_or(u32::MAX);
-                Some(line)
-            }
+            Payload::SessionStart(start) => Some(Entry::new(
+                at,
+                Tag::Start,
+                What::Session {
+                    cores: u32::try_from(start.cores.len()).unwrap_or(u32::MAX),
+                    carried: 0,
+                },
+                Tone::Plain,
+            )),
             Payload::SessionCarried(_) => {
                 self.carrying = true;
                 None
@@ -96,52 +100,48 @@ impl Facts {
 
     fn failure(&self, at: Timestamp, d: &Failure) -> Option<Entry> {
         if let Some(known) = d.known_failure {
-            let verb = if d.signal == Signal::Crash {
-                "crashed"
-            } else {
-                "failed"
+            let known = KnownFailure {
+                regime: d.regime,
+                crashed: d.signal == Signal::Crash,
+                carried: self.carried.contains(&known),
+                hunt: None,
             };
-            let what = d.regime.map_or_else(
-                || "a trial".to_owned(),
-                |regime| format!("{regime} {}", kind_words(regime)),
-            );
-            let mut text = format!("{what} at these offsets already {verb}");
-            if self.carried.contains(&known) {
-                text.push_str(" in a carried trial");
-            }
-            let mut line = entry(at, Tag::Skip, text, Tone::Plain);
-            line.key = Some(Key::KnownFailure);
-            return Some(line);
+            return Some(Entry::new(
+                at,
+                Tag::Skip,
+                What::KnownFailure(known),
+                Tone::Plain,
+            ));
         }
         crate::words::failure_line(d).map(|line| entry(at, line.tag, line.text, line.tone))
     }
 
     fn crash(&mut self, event: &Event, d: &CrashDetected) -> Entry {
-        let (tag, text, tone) = if d.stray {
-            (
+        let line = if d.stray {
+            entry(
+                event.time,
                 Tag::Crash,
-                "before any offsets were applied, rebooted",
+                "before any offsets were applied, rebooted".to_owned(),
                 Tone::Warn,
             )
         } else if d.inconclusive {
-            (
+            entry(
+                event.time,
                 Tag::Reset,
-                "power loss or reset, which says nothing about the offsets",
+                "power loss or reset, which says nothing about the offsets".to_owned(),
                 Tone::Plain,
             )
-        } else if d.in_flight.is_none() {
-            (
+        } else {
+            Entry::new(
+                event.time,
                 Tag::Crash,
-                "idle with the offsets applied, rebooted",
+                What::Reboot {
+                    idle: d.in_flight.is_none(),
+                    reboot: event.seq,
+                },
                 Tone::Bad,
             )
-        } else {
-            (Tag::Crash, "with the offsets applied, rebooted", Tone::Bad)
         };
-        let mut line = entry(event.time, tag, text.to_owned(), tone);
-        if !d.stray && !d.inconclusive {
-            line.reboot = Some(event.seq);
-        }
         if self
             .history
             .entries
@@ -159,66 +159,65 @@ impl Facts {
             && d.to != CorePhase::Search
             && d.pass.is_some()
         {
-            if let Some(session) = self
+            if let Some(What::Session { carried, .. }) = self
                 .history
                 .entries
                 .iter_mut()
                 .rev()
-                .find(|entry| entry.kind == EntryKind::Session)
+                .map(|entry| &mut entry.what)
+                .find(|what| matches!(what, What::Session { .. }))
             {
-                session.count += 1;
+                *carried += 1;
             }
             return None;
         }
         let line = phase_line(d)?;
-        let mut line = entry(at, line.tag, line.text, line.tone);
-        if line.tag == Tag::Limit {
-            line.kind = EntryKind::Limits;
-            line.cores = vec![d.core];
-            line.offset = d.pass;
-            line.key = Some(Key::Limit);
-        }
-        Some(line)
+        let what = if let (Tag::Limit, Some(offset)) = (line.tag, d.pass) {
+            What::Limits {
+                cores: std::iter::once(d.core).collect(),
+                offset,
+            }
+        } else {
+            What::Said(line.text)
+        };
+        Some(Entry::new(at, line.tag, what, line.tone))
     }
 
-    /// `cycle 1 step 2: R2 heavy vector`: the step's place and, when the cycle's plan is known, its regime.
-    fn step_head(&self, cycle: u32, step: u32) -> String {
-        let mut text = format!("cycle {cycle} step {step}");
-        if let Some(regime) = self
-            .cycle_steps
-            .get(&cycle)
-            .and_then(|steps| steps.get(step as usize - 1))
-        {
-            let _ = write!(text, ": {regime} {}", kind_words(*regime));
+    /// The step at its place, with its regime when the cycle's plan is known.
+    fn step_at(&self, cycle: u32, step: u32) -> StepAt {
+        StepAt {
+            cycle,
+            step,
+            regime: self
+                .cycle_steps
+                .get(&cycle)
+                .and_then(|steps| steps.get(step as usize - 1))
+                .copied(),
+            workload: None,
         }
-        text
     }
 
     fn checking_step(&self, at: Timestamp, d: &CheckingStep) -> Entry {
-        let (cycle, step) = (d.cycle.get(), d.step.get());
-        let mut line = entry(at, Tag::Step, self.step_head(cycle, step), Tone::Plain);
-        line.key = Some(Key::Step { cycle, step });
-        line
+        let at_step = self.step_at(d.cycle.get(), d.step.get());
+        Entry::new(at, Tag::Step, What::Step(at_step), Tone::Plain)
     }
 
     fn step_workload(&mut self, intent: &TrialIntent) {
         let (Some(cycle), Some(step)) = (intent.cycle, intent.step) else {
             return;
         };
-        let key = Key::Step {
-            cycle: cycle.get(),
-            step: step.get(),
-        };
-        if let Some(line) = self
-            .history
-            .entries
-            .iter_mut()
-            .rev()
-            .find(|line| line.key.as_ref() == Some(&key))
-        {
-            if !line.text.contains(", ") {
-                let _ = write!(line.text, ", {}", workload_display(intent.workload));
+        let marker = self.history.entries.iter_mut().rev().find_map(|line| {
+            if let What::Step(at) = &mut line.what
+                && at.cycle == cycle.get()
+                && at.step == step.get()
+            {
+                Some(at)
+            } else {
+                None
             }
+        });
+        if let Some(at) = marker {
+            at.workload.get_or_insert(intent.workload);
         }
     }
 
@@ -228,35 +227,30 @@ impl Facts {
             hunt,
             HuntStartFacts {
                 at,
-                candidates: d.candidates,
                 named: false,
                 live: 0,
             },
         );
-        if let Some(last) = self
-            .history
-            .entries
-            .last_mut()
-            .filter(|last| last.key == Some(Key::KnownFailure) && last.hunt.is_none())
+        if let Some(What::KnownFailure(known)) =
+            self.history.entries.last_mut().map(|last| &mut last.what)
+            && known.hunt.is_none()
         {
-            last.hunt = Some(hunt);
-            last.text = last.text.replacen(
-                " at these",
-                &format!(" on {} at these", core_ids(d.cores)),
-                1,
-            );
-            let _ = write!(last.text, " → hunt {hunt}");
+            known.hunt = Some(Located {
+                hunt,
+                cores: d.cores,
+            });
             return None;
         }
-        let mut line = entry(
+        Some(Entry::new(
             at,
             Tag::Hunt,
-            format!("#{hunt} started · candidates {}", core_ids(d.candidates)),
+            What::HuntStart(history::HuntStart {
+                hunt,
+                candidates: d.candidates,
+                first: None,
+            }),
             Tone::Warn,
-        );
-        line.hunt = Some(hunt);
-        line.key = Some(Key::HuntStart);
-        Some(line)
+        ))
     }
 
     fn hunt_group(&mut self, at: Timestamp, d: &HuntGroup) -> Option<Entry> {
@@ -269,24 +263,21 @@ impl Facts {
                 && (!d.cores.is_empty() || d.stage == HuntStage::Locate)
             {
                 start.named = true;
-                if let Some(line) = self
-                    .history
-                    .entries
-                    .iter_mut()
-                    .rev()
-                    .find(|line| line.key == Some(Key::HuntStart) && line.hunt == Some(hunt))
-                {
-                    line.text = if d.stage == HuntStage::Locate {
-                        format!(
-                            "#{hunt} started · locate: {} at 0",
-                            core_ids(start.candidates)
-                        )
+                let opened = self.history.entries.iter_mut().rev().find_map(|line| {
+                    if let What::HuntStart(opened) = &mut line.what
+                        && opened.hunt == hunt
+                    {
+                        Some(opened)
                     } else {
-                        format!(
-                            "#{hunt} started · part 1: {}",
-                            part_layout(d.cores, start.candidates)
-                        )
-                    };
+                        None
+                    }
+                });
+                if let Some(opened) = opened {
+                    opened.first = Some(if d.stage == HuntStage::Locate {
+                        FirstGroup::Locate
+                    } else {
+                        FirstGroup::Part(d.cores)
+                    });
                 }
             }
             if d.inferred.is_none() && !d.skipped {
@@ -297,37 +288,47 @@ impl Facts {
         if d.inferred.is_none() && !d.skipped {
             return None;
         }
-        let mut line = entry(at, Tag::Skip, String::new(), Tone::Plain);
-        line.hunt = Some(hunt);
-        line.first_group = group;
-        line.last_group = group;
         if d.skipped {
-            line.text = format!(
+            let text = format!(
                 "hunt {hunt} group {group} skipped: {}",
                 d.reason.as_deref().unwrap_or_default()
             );
-        } else if let Some(probe) = d.probe {
-            let verb = if d.inferred == Some(Inference::Pass) {
+            return Some(Entry::new(
+                at,
+                Tag::Skip,
+                What::OfHunt { hunt, text },
+                Tone::Plain,
+            ));
+        }
+        let inferred = d.inferred?;
+        if let Some(probe) = d.probe {
+            let verb = if inferred == Inference::Pass {
                 "passed"
             } else {
                 "failed"
             };
-            line.tag = Tag::Probe;
-            line.tone = Tone::Hunt;
-            line.text = format!(
+            let text = format!(
                 "hunt {hunt} group {group} · core {:02} at {} · {verb} on existing evidence",
                 probe.core.get(),
                 probe.offset.get()
             );
-        } else if let Some(inferred) = d.inferred {
-            line.kind = EntryKind::Groups;
-            line.tag = Tag::Group;
-            line.tone = Tone::Hunt;
-            line.cores = d.cores.iter().collect();
-            line.inferred = Some(inferred);
-            line.key = Some(Key::Carried { hunt, inferred });
+            return Some(Entry::new(
+                at,
+                Tag::Probe,
+                What::OfHunt { hunt, text },
+                Tone::Hunt,
+            ));
         }
-        Some(line)
+        Some(Entry::new(
+            at,
+            Tag::Group,
+            What::Answered {
+                groups: Groups::one(hunt, group),
+                cores: d.cores,
+                inferred,
+            },
+            Tone::Hunt,
+        ))
     }
 
     fn hunt_end(&self, at: Timestamp, d: &HuntEnd) -> Entry {
@@ -386,10 +387,13 @@ impl Facts {
                     Some(format!("core {:02} {verb} to {}", core.get(), offset.get()))
                 })
                 .collect();
-            return entry(
+            return Entry::new(
                 at,
                 Tag::Round,
-                format!("#{round}: {}", moves.join(", ")),
+                What::List {
+                    head: format!("#{round}"),
+                    items: moves,
+                },
                 Tone::Plain,
             );
         }
@@ -421,103 +425,103 @@ impl Facts {
     ) -> Option<Entry> {
         let intent = self.intents.get(&d.trial).cloned();
         let count = self.counts.get(&d.trial).copied().unwrap_or_default();
-        let mut line = entry(at, Tag::Unclear, String::new(), Tone::Plain);
-        match &intent {
-            None => line.text = format!("trial {}", d.trial),
+        let subject = match &intent {
+            None => format!("trial {}", d.trial),
             Some(intent) => {
                 if intent.condition == Condition::Alone && d.outcome == Outcome::Pass {
                     return None;
                 }
-                line.text = self.trial_name(intent, journal);
+                self.trial_name(intent, journal)
             }
-        }
-        line.first = count.index;
-        line.of = count.of;
-        line.runs = 1;
-        if let Some((hunt, group)) = intent.as_ref().and_then(|i| i.hunt.zip(i.group)) {
-            line.hunt = Some(hunt.get());
-            line.first_group = group.get();
-            line.last_group = group.get();
-            line.probe = self
-                .groups
-                .get(&(hunt.get(), group.get()))
-                .is_some_and(|group| group.probe.is_some());
-        }
+        };
+        let groups = intent
+            .as_ref()
+            .and_then(|i| i.hunt.zip(i.group))
+            .map(|(hunt, group)| Groups::one(hunt.get(), group.get()));
         match d.outcome {
             Outcome::Pass => {
-                line.kind = EntryKind::Trials;
-                line.tag = Tag::Pass;
-                line.tone = Tone::Good;
-                line.peak = d.tctl_max_c;
-                line.key = Some(Key::Pass(line.text.clone()));
-                line.step = intent
-                    .as_ref()
-                    .filter(|intent| intent.hunt.is_none())
-                    .and_then(|intent| {
-                        let (cycle, step) = (intent.cycle?.get(), intent.step?.get());
-                        Some(StepAt {
-                            cycle,
-                            step,
-                            label: format!(
-                                "{}, {}",
-                                self.step_head(cycle, step),
-                                workload_display(intent.workload)
-                            ),
-                        })
-                    });
+                let within = match groups {
+                    Some(groups) => Some(PassedIn::Hunt {
+                        groups,
+                        probe: self
+                            .groups
+                            .get(&(groups.hunt, groups.first))
+                            .is_some_and(|group| group.probe.is_some()),
+                    }),
+                    None => intent
+                        .as_ref()
+                        .filter(|intent| intent.hunt.is_none())
+                        .and_then(|intent| {
+                            Some(PassedIn::Step(StepAt {
+                                workload: Some(intent.workload),
+                                ..self.step_at(intent.cycle?.get(), intent.step?.get())
+                            }))
+                        }),
+                };
+                let passes = Passes {
+                    subject,
+                    runs: 1,
+                    first: count.index,
+                    of: count.of,
+                    peak: d.tctl_max_c,
+                    within,
+                };
+                Some(Entry::new(at, Tag::Pass, What::Passes(passes), Tone::Good))
             }
             Outcome::Failure => {
                 let named = if let Some(core) = d.core {
-                    Some(format!("core {:02} named", core.get()))
+                    Some(Named::Core(core))
                 } else if intent
                     .as_ref()
                     .is_some_and(|i| i.hunt.is_none() && i.condition != Condition::Alone)
                 {
-                    Some("no core named".to_owned())
+                    Some(Named::Nobody)
                 } else {
                     None
                 };
-                let (signal, when) = if d.signal == Some(Signal::Crash) {
-                    line.tag = Tag::Crash;
-                    line.tone = Tone::Bad;
-                    (
-                        "rebooted".to_owned(),
-                        lateness_text(d, intent.as_ref(), count),
-                    )
+                let crashed = d.signal == Some(Signal::Crash);
+                let (tag, when) = if crashed {
+                    (Tag::Crash, lateness_text(d, intent.as_ref(), count))
                 } else {
-                    let words = d.signal.map_or("failed", signal_words);
-                    line.tag = Tag::Fail;
-                    line.tone = Tone::Bad;
-                    line.alarm = Some(words.to_owned());
-                    (words.to_owned(), None)
+                    (Tag::Fail, None)
                 };
-                line.verdict = Some(Verdict {
-                    signal,
-                    when,
-                    named,
-                });
-                if d.signal == Some(Signal::Crash) {
-                    if let Some(i) =
+                let mut failed = history::Failed {
+                    subject,
+                    verdict: Verdict {
+                        signal: d.signal,
+                        when,
+                        named,
+                    },
+                    hunt: groups.map(|groups| groups.hunt),
+                    reboot: None,
+                };
+                if crashed
+                    && let Some(i) =
                         self.history.entries.iter().rposition(|previous| {
-                            previous.reboot.is_some_and(|r| cause.contains(&r))
+                            previous.reboot().is_some_and(|r| cause.contains(&r))
                         })
-                    {
-                        let previous = &self.history.entries[i];
-                        line.reboot = previous.reboot;
-                        line.at = previous.at;
-                        self.history.entries[i] = line;
-                        return None;
-                    }
+                {
+                    let previous = &self.history.entries[i];
+                    failed.reboot = previous.reboot();
+                    self.history.entries[i] =
+                        Entry::new(previous.at, tag, What::Failed(failed), Tone::Bad);
+                    return None;
                 }
+                Some(Entry::new(at, tag, What::Failed(failed), Tone::Bad))
             }
             Outcome::Inconclusive => {
                 let reason = d.reason.as_deref().unwrap_or("it could not run");
-                line.tag = Tag::Unclear;
-                line.tone = Tone::Warn;
-                line.text = format!("{} · {reason}", line.text);
+                let text = format!("{subject} · {reason}");
+                let what = match groups {
+                    Some(groups) => What::OfHunt {
+                        hunt: groups.hunt,
+                        text,
+                    },
+                    None => What::Said(text),
+                };
+                Some(Entry::new(at, Tag::Unclear, what, Tone::Warn))
             }
         }
-        Some(line)
     }
 
     fn trial_name(&self, intent: &TrialIntent, journal: &JournalState) -> String {

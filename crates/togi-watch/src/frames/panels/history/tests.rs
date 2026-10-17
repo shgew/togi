@@ -5,7 +5,9 @@ use ratatui::text::Line;
 use super::super::super::fit::plain;
 use super::super::super::scene::Scene;
 use super::{history_page, main_history};
-use crate::history::{Entry, EntryKind, Key, StepAt, Verdict};
+use togi_machine::{CoreId, Regime, Signal, WorkloadId};
+
+use crate::history::{Entry, Failed, Named, PassedIn, Passes, StepAt, Verdict, What};
 use crate::model::Model;
 use crate::screen::Colours;
 use crate::words::{Tag, Tone};
@@ -43,33 +45,41 @@ fn main_rows(entries: &[Entry], width: usize, height: usize) -> Vec<String> {
 }
 
 fn pass(n: i64, trial: &str, runs: u32, of: u32) -> Entry {
-    let mut entry = Entry::line(minute(n), Tag::Pass, trial.to_owned(), Tone::Plain);
-    entry.kind = EntryKind::Trials;
-    entry.key = Some(Key::Pass(trial.to_owned()));
-    entry.runs = runs;
-    entry.first = 1;
-    entry.of = of;
-    entry
+    let passes = Passes {
+        subject: trial.to_owned(),
+        runs,
+        first: 1,
+        of,
+        peak: None,
+        within: None,
+    };
+    Entry::new(minute(n), Tag::Pass, What::Passes(passes), Tone::Plain)
+}
+
+/// A step whose cycle's plan was not known.
+const fn step_at(cycle: u32, step: u32) -> StepAt {
+    StepAt {
+        cycle,
+        step,
+        regime: None,
+        workload: None,
+    }
 }
 
 fn marker(n: i64, cycle: u32, step: u32) -> Entry {
-    let mut entry = Entry::line(
+    Entry::new(
         minute(n),
         Tag::Step,
-        format!("cycle {cycle} step {step} · R3 all-core"),
+        What::Step(step_at(cycle, step)),
         Tone::Plain,
-    );
-    entry.key = Some(Key::Step { cycle, step });
-    entry
+    )
 }
 
-/// `entry` as passed in `step` of `cycle`, the way a trial that ran in a checking step records it.
-fn in_step(mut entry: Entry, cycle: u32, step: u32, label: &str) -> Entry {
-    entry.step = Some(StepAt {
-        cycle,
-        step,
-        label: label.to_owned(),
-    });
+/// `entry` as passed in the step `at`, the way a trial that ran in a checking step records it.
+fn in_step(mut entry: Entry, at: StepAt) -> Entry {
+    if let What::Passes(passes) = &mut entry.what {
+        passes.within = Some(PassedIn::Step(at));
+    }
     entry
 }
 
@@ -78,14 +88,17 @@ fn plain_entry(n: i64, tag: Tag, text: &str, tone: Tone) -> Entry {
 }
 
 fn failure(n: i64, subject: &str) -> Entry {
-    let mut entry = plain_entry(n, Tag::Fail, subject, Tone::Bad);
-    entry.verdict = Some(Verdict {
-        signal: "wrong result".to_owned(),
-        when: Some("early in trial 2 of 5".to_owned()),
-        named: Some("core 04 named".to_owned()),
-    });
-    entry.alarm = Some("wrong result".to_owned());
-    entry
+    let failed = Failed {
+        subject: subject.to_owned(),
+        verdict: Verdict {
+            signal: Some(Signal::ComputationError),
+            when: Some("early in trial 2 of 5".to_owned()),
+            named: Some(Named::Core(CoreId::new(4).expect("a core id"))),
+        },
+        hunt: None,
+        reboot: None,
+    };
+    Entry::new(minute(n), Tag::Fail, What::Failed(failed), Tone::Bad)
 }
 
 /// Entries newest first: the last one built is the newest.
@@ -102,9 +115,7 @@ fn a_recent_failure_stays_visible_under_many_routine_passes() {
         story.push(marker(n, 3, step));
         story.push(in_step(
             pass(n, &format!("core {:02} R1 light", n % 16), 1, 1),
-            3,
-            step,
-            "unused: the marker names the step",
+            step_at(3, step),
         ));
     }
     let rows = main_rows(&newest_first(story), 100, 4);
@@ -148,8 +159,8 @@ fn the_newest_failure_replaces_the_oldest_row_when_newer_important_entries_fill_
 fn routine_passes_fold_into_credited_checks_and_surplus_passes_do_not_add_up() {
     let story = vec![
         marker(0, 2, 5),
-        in_step(pass(1, "R3 all-core part 1", 5, 3), 2, 5, "unused"),
-        in_step(pass(2, "R3 all-core part 2", 2, 2), 2, 5, "unused"),
+        in_step(pass(1, "R3 all-core part 1", 5, 3), step_at(2, 5)),
+        in_step(pass(2, "R3 all-core part 2", 2, 2), step_at(2, 5)),
     ];
     let rows = main_rows(&newest_first(story), 120, 4);
     assert_eq!(rows.len(), 1, "{rows:?}");
@@ -164,9 +175,9 @@ fn routine_passes_fold_into_credited_checks_and_surplus_passes_do_not_add_up() {
 fn consecutive_successful_steps_fold_into_separately_attributed_summaries() {
     let story = vec![
         marker(0, 2, 4),
-        in_step(pass(1, "R3 all-core part 1", 3, 3), 2, 4, "unused"),
+        in_step(pass(1, "R3 all-core part 1", 3, 3), step_at(2, 4)),
         marker(2, 2, 5),
-        in_step(pass(3, "R7 all-core part 1", 2, 2), 2, 5, "unused"),
+        in_step(pass(3, "R7 all-core part 1", 2, 2), step_at(2, 5)),
     ];
     let rows = main_rows(&newest_first(story), 120, 4);
     assert_eq!(rows.len(), 2, "{rows:?}");
@@ -184,12 +195,17 @@ fn consecutive_successful_steps_fold_into_separately_attributed_summaries() {
 
 #[test]
 fn passes_of_a_step_without_a_marker_fold_apart_under_their_own_step() {
-    let r2 = "cycle 1 step 4: R2 heavy vector, y-cruncher FFTv4";
+    let r2 = "cycle 1 step 4: R2 heavy vector, y-cruncher FFTv4 + N63 + VT3";
+    let step4 = StepAt {
+        regime: Some(Regime::R2),
+        workload: WorkloadId::by_id("ycruncher-fftv4-n63-vt3"),
+        ..step_at(1, 4)
+    };
     let story = vec![
         marker(0, 1, 3),
-        in_step(pass(1, "R7 all-core part 1", 4, 4), 1, 3, "unused"),
-        in_step(pass(2, "R2 heavy vector on core 15", 2, 2), 1, 4, r2),
-        in_step(pass(3, "R2 heavy vector on core 14", 3, 3), 1, 4, r2),
+        in_step(pass(1, "R7 all-core part 1", 4, 4), step_at(1, 3)),
+        in_step(pass(2, "R2 heavy vector on core 15", 2, 2), step4),
+        in_step(pass(3, "R2 heavy vector on core 14", 3, 3), step4),
         pass(4, "core 00 R1 light", 1, 1),
     ];
     let rows = main_rows(&newest_first(story), 140, 6);
@@ -428,16 +444,40 @@ fn the_history_page_counts_what_the_model_no_longer_keeps() {
 }
 
 #[test]
+fn a_sentence_that_is_no_list_is_cut_to_whole_words_not_counted() {
+    let start = plain_entry(
+        0,
+        Tag::Hunt,
+        "#4 started · part 1: 00 at failing offsets, 01 02 parked",
+        Tone::Warn,
+    );
+    let rows = main_rows(&[start], 71, 1);
+    assert_eq!(
+        rows[0].get(16..),
+        Some("#4 started · part 1: 00 at failing offsets, 01 02..."),
+        "{rows:?}"
+    );
+}
+
+#[test]
 fn a_round_that_lists_many_cores_keeps_whole_items_and_counts_the_rest() {
-    let mut round = Entry::line(
+    let round = Entry::new(
         minute(1),
         Tag::Round,
-        "round #1: core 00 goes deeper to -26, core 06 goes deeper to -45, core 08 goes deeper to -35, \
-         core 09 goes deeper to -45, core 11 goes deeper to -41"
-            .to_owned(),
+        What::List {
+            head: "round #1".to_owned(),
+            items: [
+                "core 00 goes deeper to -26",
+                "core 06 goes deeper to -45",
+                "core 08 goes deeper to -35",
+                "core 09 goes deeper to -45",
+                "core 11 goes deeper to -41",
+            ]
+            .map(str::to_owned)
+            .to_vec(),
+        },
         Tone::Plain,
     );
-    round.kind = EntryKind::Trials;
     for width in [80, 100, 120] {
         let rows = main_rows(std::slice::from_ref(&round), width, 3);
         let joined = rows.join(" ");

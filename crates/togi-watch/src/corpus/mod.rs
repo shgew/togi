@@ -134,7 +134,7 @@ pub(crate) fn region(producer: &str, form: &str, buf: &Buffer, rect: Rect) {
 
 /// Records the history entry an event made, under the event's kind.
 pub(crate) fn described(event: &Event, entry: &Entry) {
-    text("describe", event.kind().as_str(), &entry.text);
+    text("describe", event.kind().as_str(), &entry.text());
 }
 
 /// Records a journal message the log view lists, under its tag.
@@ -147,7 +147,7 @@ pub(crate) fn sentence(entry: &Entry, (before, alarm, after): &(String, String, 
     if collecting() {
         text(
             "history.sentence",
-            &format!("{:?}", entry.kind),
+            entry.form(),
             &format!("{before}{alarm}{after}"),
         );
     }
