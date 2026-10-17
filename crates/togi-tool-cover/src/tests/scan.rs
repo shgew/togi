@@ -47,6 +47,7 @@ mod m {
 #[test_case("enum E {\n    #[cfg(windows)]\n    A {\n        x: u8,\n    },\n    B,\n}\n", &[(2, 5)] ; "a struct variant ends at its braces")]
 #[test_case("fn f(x: u8) -> u8 {\n    match x {\n        #[cfg(windows)]\n        1 => 10,\n        _ => 0,\n    }\n}\n", &[(3, 4)] ; "a match arm ends at its comma")]
 #[test_case("fn f(x: u8) -> u8 {\n    match x {\n        #[cfg(windows)]\n        1 => {\n            10\n        }\n        _ => 0,\n    }\n}\n", &[(3, 6)] ; "a match arm with a block ends at the block")]
+#[test_case("fn f() {\n    #[cfg(windows)]\n    let v = g(S { a: 1 },\n        2);\n    live();\n}\n", &[(2, 4)] ; "a brace block inside parentheses does not end the item at the comma after it")]
 #[test_case("fn f() {\n    let v = [\n        #[cfg(windows)]\n        1\n    ];\n    v;\n}\n", &[(3, 4)] ; "an array element ends before the closing bracket")]
 #[test_case("fn f(\n    #[cfg(windows)]\n    a: u8\n) {}\n", &[(2, 3)] ; "a function argument ends before the closing parenthesis")]
 #[test_case("#[cfg(windows)]\n#[derive(Debug)]\n/// Docs, with a comma.\nstruct A { a: u8 }\nfn live() {}\n", &[(1, 4)] ; "attributes and doc comments before the item belong to it")]

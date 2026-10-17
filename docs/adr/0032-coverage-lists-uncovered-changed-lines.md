@@ -24,4 +24,4 @@ The mechanism after the Rust cutover; the decision and its reasons are unchanged
 
 ## Amendment (#633, #1038)
 
-The program is the `togi-tool-cover` crate, which keeps the LCOV route's flags, output, exit codes and refusals; the decision and its reasons are unchanged. The Go profile route is gone with the last Go code.
+The program is the `togi-tool-cover` crate, which keeps the LCOV route's flags, output and refusals and exits 1 on a refusal; it differs only in that `-h` exits 0 and a failed `git diff` names git's message. The decision and its reasons are unchanged. The Go profile route is gone with the last Go code.

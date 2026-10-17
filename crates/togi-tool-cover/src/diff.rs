@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::ops::Range;
 
 use crate::Error;
 
@@ -23,6 +24,13 @@ impl LineRange {
 
     pub fn overlaps(self, other: Self) -> bool {
         self.first.max(other.first) <= self.last.min(other.last)
+    }
+
+    /// The zero-based indices of the range's lines in a file split at newlines, saturating at
+    /// `usize::MAX` where `usize` is narrower than `u32`.
+    pub fn indices(self) -> Range<usize> {
+        let index = |line: u32| usize::try_from(line).unwrap_or(usize::MAX);
+        index(self.first - 1)..index(self.last)
     }
 }
 

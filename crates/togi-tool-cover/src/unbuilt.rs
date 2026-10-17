@@ -88,9 +88,7 @@ pub fn not_built(
             if measured.is_some_and(|lines| lines.keys().any(|&line| item.contains(line))) {
                 continue;
             }
-            let first = usize::try_from(item.first - 1).unwrap_or(usize::MAX);
-            let last = usize::try_from(item.last).unwrap_or(usize::MAX);
-            let text = String::from_utf8_lossy(&lines[first..last].join(&b'\n')).into_owned();
+            let text = String::from_utf8_lossy(&lines[item.indices()].join(&b'\n')).into_owned();
             if module_built(path, &text, built)? {
                 continue;
             }

@@ -14,8 +14,10 @@ use crate::diff::LineRange;
 pub fn cfg_out(src: &[u8], cfg: &HostCfg) -> Vec<LineRange> {
     let mut out = Vec::new();
     let line_of = |i: usize| {
-        let lines = src[..i].split(|&b| b == b'\n').count();
-        u32::try_from(lines).unwrap_or(u32::MAX)
+        src[..i]
+            .iter()
+            .filter(|&&b| b == b'\n')
+            .fold(1_u32, |line, _| line.saturating_add(1))
     };
     let mut blocks: Vec<usize> = Vec::new();
     // The index of the last byte outside whitespace and comments.
