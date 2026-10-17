@@ -189,13 +189,14 @@ struct PhaseEnds {
 impl PhaseEnds {
     fn of(events: &[togi_journal::Event]) -> Self {
         let end = |prefix: &str| {
-            events.iter().find_map(|event| match &event.payload {
-                Payload::CheckingCycle(c)
-                    if c.reason.as_deref().is_some_and(|r| r.starts_with(prefix)) =>
-                {
-                    Some(event.seq.get())
-                }
-                _ => None,
+            events.iter().find_map(|event| {
+                let Payload::CheckingCycle(c) = &event.payload else {
+                    return None;
+                };
+                c.reason
+                    .as_deref()
+                    .is_some_and(|r| r.starts_with(prefix))
+                    .then(|| event.seq.get())
             })
         };
         Self {
