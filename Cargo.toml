@@ -18,6 +18,7 @@ criterion = { version = "0.8", default-features = false, features = ["cargo_benc
 flate2 = "1"
 getrandom = { version = "0.4", features = ["std"] }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
+minreq = { version = "3", default-features = false, features = ["https-native-tls"] }
 nix = { version = "0.31", default-features = false, features = ["fs"] }
 proptest = "1"
 rand = { version = "=0.10.3", default-features = false, features = ["std_rng"] }
@@ -64,6 +65,7 @@ togi-watch = { path = "crates/togi-watch", version = "0.0.0" }
 togi-watchtest = { path = "crates/togi-watchtest", version = "0.0.0" }
 togi-ycruncher = { path = "crates/togi-ycruncher", version = "0.0.0" }
 tokio = { version = "1", default-features = false }
+toml_edit = { version = "0.25", default-features = false, features = ["parse"] }
 unicode-width = "0.2"
 
 [workspace.lints.rust]
