@@ -113,6 +113,13 @@ fn check(name: &str, body: &str) {
         .strip_prefix("---\n")
         .and_then(|snapshot| snapshot.split_once("\n---\n"))
         .expect("a committed snapshot has an insta metadata header");
+    if let Some(directory) = std::env::var_os("TOGI_UPDATE_FRAME_SNAPSHOTS") {
+        let directory = std::path::Path::new(&directory);
+        assert!(directory.is_absolute());
+        let (header, _) = snapshot.split_once("\n---\n").unwrap();
+        std::fs::write(directory.join(format!("{name}.snap")), format!("{header}\n---\n{body}")).unwrap();
+        return;
+    }
     // The row assertion shows the first changed row rather than an escaped whole-frame string.
     for (row, (actual, wanted)) in body.lines().zip(expected.lines()).enumerate() {
         assert_eq!(actual, wanted, "{name}, row {}", row + 1);

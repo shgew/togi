@@ -231,7 +231,7 @@ fn states(swept: &mut Swept) {
 }
 
 /// A finished journal's log view at the view sizes, at the top and at the end, and with a skipped-content report
-/// in the footer at the three widths its forms take.
+/// in the footer at every width its forms take, down to the one that leaves only the `!`.
 fn views(swept: &mut Swept, name: &str, events: &[Event]) {
     let mut model = project(events);
     let last = events.last().expect("a journal with events").time;
@@ -247,7 +247,17 @@ fn views(swept: &mut Swept, name: &str, events: &[Event]) {
         }
     }
     model.set_skipped(Some("2 lines skipped (unknown event kind)".to_owned()));
-    for size in [(120, 33), (60, 30), (40, 30), (28, 30), (20, 30)] {
+    for size in [
+        (120, 33),
+        (60, 30),
+        (50, 30),
+        (45, 30),
+        (40, 30),
+        (35, 30),
+        (32, 30),
+        (28, 30),
+        (20, 30),
+    ] {
         let id = format!("sweep/{name}/skipped/{}x{}", size.0, size.1);
         draw(
             swept,

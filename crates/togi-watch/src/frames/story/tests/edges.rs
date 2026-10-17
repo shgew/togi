@@ -3,6 +3,7 @@
 //! reach; each also asserts what the branch must say, so it stays a test.
 
 use super::*;
+use super::super::Story;
 
 fn dead_end(condition: DeadEndCondition, detail: &str) -> DeadEndView {
     DeadEndView {
@@ -147,8 +148,17 @@ fn every_premise_and_uncertainty_is_narrated_without_inventing_a_next_trial() {
                         one.top_requester = flags & 8 != 0;
                         fx.forecast.branches = vec![one];
                         let scene = fx.scene(ts(1010));
-                        for row in outcome_rows(&scene) {
+                        let rows = outcome_rows(&scene);
+                        assert!(!rows.is_empty(), "{premise:?} {uncertainty:?} says nothing");
+                        for row in &rows {
                             assert!(!row.label.is_empty(), "{premise:?} {uncertainty:?}");
+                            if next.is_none() {
+                                let said = fit_phrases(&row.phrases, 400);
+                                assert!(
+                                    !said.contains("next: "),
+                                    "{premise:?} {uncertainty:?} invents a next trial: {said}"
+                                );
+                            }
                         }
                         for (width, compact) in [
                             (100, false),
@@ -157,7 +167,11 @@ fn every_premise_and_uncertainty_is_narrated_without_inventing_a_next_trial() {
                             (100, true),
                             (40, true),
                         ] {
-                            drop(outcome_lines(&scene, width, compact));
+                            let lines = outcome_lines(&scene, width, compact);
+                            assert!(
+                                !lines.is_empty(),
+                                "{premise:?} {uncertainty:?} at {width} compact {compact}"
+                            );
                         }
                     }
                 }
@@ -199,34 +213,50 @@ fn a_forecast_between_trials_names_the_next_trial_the_ranking_or_nothing() {
     }
 }
 
-/// The cycle story says where the step sits whatever the journal gives it: no step number, no phase plan, phase
-/// 1 and phase 2.
+/// The cycle story says where the step sits whatever the journal gives it: no step number or a step number, and no
+/// phase plan, phase 1 or phase 2.
 #[test]
 fn a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold() {
     let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
-    let mut running = trial(Regime::R1, Condition::Together, &[0, 1]);
-    running.cycle = Some(CyclePlace {
-        cycle: 1,
-        step: None,
-        part: None,
-        parts: 1,
-    });
-    fx.trial = Some(running);
-    for phase in [None, Some(PhaseNo::One), Some(PhaseNo::Two)] {
-        fx.phases = phase.map(|phase| PhasePlan {
-            phase,
-            phase1_end: None,
-            concluded: None,
-            confirming: false,
-            rounds_left: 0,
-            round: None,
-            candidates: Vec::new(),
+    for (step, opening) in [(None, "This step is "), (Some(2), "Step 2 is ")] {
+        let mut running = trial(Regime::R1, Condition::Together, &[0, 1]);
+        running.cycle = Some(CyclePlace {
+            cycle: 1,
+            step,
+            part: None,
+            parts: 1,
         });
-        let told = story(&fx.scene(ts(1010)));
-        assert!(told.label.starts_with("CYCLE"), "{phase:?}");
-        assert_eq!(told.lines.len(), 2, "{phase:?}");
-        assert!(told.lines.iter().all(|line| !line.is_empty()), "{phase:?}");
-        assert!(!told.brief.is_empty(), "{phase:?}");
+        fx.trial = Some(running);
+        for (phase, place) in [
+            (
+                None,
+                "Every core runs at its profile offset. The cycle keeps testing until stopped.",
+            ),
+            (
+                Some(PhaseNo::One),
+                "Every core runs at its profile offset. Phase 1's cycle: its pass confirms the first BIOS profile.",
+            ),
+            (
+                Some(PhaseNo::Two),
+                "Every core runs at its profile offset. Phase 2's confirmation cycle: its pass concludes phase 2.",
+            ),
+        ] {
+            fx.phases = phase.map(|phase| PhasePlan {
+                phase,
+                phase1_end: None,
+                concluded: None,
+                confirming: false,
+                rounds_left: 0,
+                round: None,
+                candidates: Vec::new(),
+            });
+            let told = story(&fx.scene(ts(1010)));
+            assert_eq!(told.label, "CYCLE 1", "{step:?} {phase:?}");
+            assert_eq!(told.lines.len(), 2, "{step:?} {phase:?}");
+            assert!(told.lines[0].starts_with(opening), "{step:?} {phase:?}: {told:?}");
+            assert_eq!(told.lines[1], place, "{step:?} {phase:?}");
+            assert!(told.brief.starts_with(opening), "{step:?} {phase:?}: {told:?}");
+        }
     }
 }
 
@@ -245,34 +275,97 @@ fn hunting(cause: HuntCause) -> Fx {
     fx
 }
 
+fn told(cause: HuntCause) -> Story {
+    let fx = hunting(cause);
+    story(&fx.scene(ts(1010)))
+}
+
 /// Every cause a hunt can start from, with a core named and without, in the story and its compact line: an idle
 /// crash or failure, a trial that failed with no signal, a trial whose length is not whole minutes, and a
 /// failure already recorded with and without a regime or a carried trial.
 #[test]
 fn every_hunt_cause_is_narrated_with_and_without_a_named_core() {
-    let mut causes = Vec::new();
     for named in [None, Some(core(0))] {
-        for signal in [None, Some(Signal::Crash), Some(Signal::ComputationError)] {
+        let (opening, tail) = match named {
+            None => ("No core was named: ", "; no core named."),
+            Some(_) => ("Core 00 was named: ", "; core 00 named."),
+        };
+        let split = format!("{opening}I rerun that load with part of ");
+        let common = |told: &Story| {
+            assert_eq!(told.label, "HUNT 1");
+            assert_eq!(told.lines.len(), 2, "{told:?}");
+            assert!(told.lines[1].starts_with(&split), "{told:?}");
+            assert!(
+                told.lines[1].ends_with("at its offsets, the rest parked."),
+                "{told:?}"
+            );
+            assert!(told.brief.contains(" Rerunning it with "), "{told:?}");
+        };
+        for (signal, first, brief) in [
+            (
+                None,
+                "The machine crashed while idle, with no trial running, and rebooted.",
+                "Crashed while idle",
+            ),
+            (
+                Some(Signal::Crash),
+                "The machine crashed while idle, with no trial running, and rebooted.",
+                "Crashed while idle",
+            ),
+            (
+                Some(Signal::ComputationError),
+                "With no trial running and the offsets applied, the machine reported a wrong result.",
+                "Wrong result while idle",
+            ),
+        ] {
             let mut idle = cause();
             idle.core = named;
             idle.signal = signal;
-            causes.push(idle);
+            let told = told(idle);
+            common(&told);
+            assert_eq!(told.lines[0], first, "{signal:?}");
+            assert!(
+                told.brief.starts_with(&format!("{brief}{tail} Rerunning")),
+                "{signal:?}: {told:?}"
+            );
         }
-        for (carried, regime) in [
-            (false, None),
-            (true, None),
-            (false, Some(Regime::R7)),
-            (true, Some(Regime::R7)),
+        for (carried, regime, first) in [
+            (
+                false,
+                None,
+                "An idle failure is already recorded at these offsets.",
+            ),
+            (
+                true,
+                None,
+                "An idle failure is already recorded at these offsets, carried from an earlier session.",
+            ),
+            (
+                false,
+                Some(Regime::R7),
+                "R7 all-core already failed at these offsets.",
+            ),
+            (
+                true,
+                Some(Regime::R7),
+                "R7 all-core already failed at these offsets in a carried trial.",
+            ),
         ] {
             let mut known = cause();
             known.core = named;
             known.known = true;
             known.carried = carried;
             known.regime = regime;
-            causes.push(known);
+            let told = told(known);
+            common(&told);
+            assert_eq!(told.lines[0], first, "{carried} {regime:?}");
+            assert!(
+                told.brief.starts_with(&format!("{first} Rerunning")),
+                "{carried} {regime:?}: {told:?}"
+            );
         }
         for signal in [None, Some(Signal::Crash), Some(Signal::ComputationError)] {
-            for seconds in [45, 600] {
+            for (seconds, length) in [(45, "45-second"), (600, "10-minute")] {
                 for rerun_of in [false, true] {
                     let mut ran = cause();
                     ran.core = named;
@@ -281,23 +374,61 @@ fn every_hunt_cause_is_narrated_with_and_without_a_named_core() {
                     let mut failed = trial(Regime::R7, Condition::Together, &[0, 1]);
                     failed.duration = secs(seconds);
                     ran.trial = Some(failed);
-                    causes.push(ran);
+                    let told = told(ran);
+                    let what = if rerun_of {
+                        format!("the rerun of the {length} all-core trial on ")
+                    } else {
+                        format!("the {length} all-core trial on ")
+                    };
+                    let case = format!("{signal:?} {seconds}s rerun {rerun_of}");
+                    common(&told);
+                    match signal {
+                        None => {
+                            assert!(
+                                told.lines[0].starts_with(&capitalized(&what)),
+                                "{case}: {told:?}"
+                            );
+                            assert!(told.lines[0].ends_with(" failed."), "{case}: {told:?}");
+                            assert!(told.brief.starts_with("Failed in R7 all-core"), "{case}");
+                        }
+                        Some(Signal::Crash) => {
+                            assert!(
+                                told.lines[0].starts_with("The machine crashed during ")
+                                    && told.lines[0].contains(&what)
+                                    && told.lines[0].ends_with(" and rebooted."),
+                                "{case}: {told:?}"
+                            );
+                            assert!(told.brief.starts_with("Crashed in R7 all-core"), "{case}");
+                        }
+                        Some(_) => {
+                            assert!(
+                                told.lines[0].starts_with(&capitalized(&what))
+                                    && told.lines[0].ends_with(" ended with wrong result."),
+                                "{case}: {told:?}"
+                            );
+                            assert!(told.brief.starts_with("Wrong result in R7 all-core"), "{case}");
+                        }
+                    }
+                    assert!(
+                        told.brief.contains(&format!("{tail} Rerunning")),
+                        "{case}: {told:?}"
+                    );
                 }
             }
         }
     }
-    for cause in causes {
-        let fx = hunting(cause);
-        let told = story(&fx.scene(ts(1010)));
-        assert!(told.label.starts_with("HUNT"));
-        assert_eq!(told.lines.len(), 2);
-        assert!(told.lines.iter().all(|line| !line.is_empty()));
-        assert!(!told.brief.is_empty());
-    }
 }
 
-/// Draws `fx` as the dashboard shows it at the three main sizes.
-fn drawn(fx: &Fx) {
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
+}
+
+/// Draws `fx` as the dashboard shows it at the three main sizes; returns the rows of the widest.
+fn drawn(fx: &Fx) -> Vec<String> {
+    let mut widest = Vec::new();
     for (width, height) in [(240, 67), (160, 45), (120, 33)] {
         let snapshot = fx.snap();
         let journal = crate::screen::Journal::Ready {
@@ -305,8 +436,12 @@ fn drawn(fx: &Fx) {
             log: snapshot.log(),
         };
         let sc = screen(View::Main, width, height, Colours::None, false);
-        drop(crate::frames::testing::render_checked(&journal, &sc, ts(1010)));
+        let (buf, _) = crate::frames::testing::render_checked(&journal, &sc, ts(1010));
+        if widest.is_empty() {
+            widest = rows_of(&buf);
+        }
     }
+    widest
 }
 
 fn hunt_group(number: u32, cores: &[u8], outcome: GroupState, carried: bool) -> HuntGroup {
@@ -325,15 +460,24 @@ fn hunt_group(number: u32, cores: &[u8], outcome: GroupState, carried: bool) -> 
     }
 }
 
+fn shows(rows: &[String], text: &str) {
+    assert!(
+        rows.iter().any(|row| row.contains(text)),
+        "no row of the widest frame holds {text:?}:\n{}",
+        rows.join("\n")
+    );
+}
+
 /// The hunt panel: a group answered by existing evidence, a member probe running before its trial is counted,
-/// and the evidence of a crash that names no core.
+/// and the evidence of a crash that names no core. Each is read off the widest frame; the narrower two are drawn
+/// for the corpus and the bounds check.
 #[test]
 fn the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash() {
     let mut fx = hunting(cause());
     if let Some((plan, _)) = fx.hunt.as_mut() {
         plan.groups = vec![hunt_group(1, &[0], GroupState::Passed, true)];
     }
-    drawn(&fx);
+    shows(&drawn(&fx), "answered by existing evidence");
 
     let mut fx = hunting(cause());
     if let Some((plan, _)) = fx.hunt.as_mut() {
@@ -348,7 +492,13 @@ fn the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_cra
             done: false,
         }];
     }
-    drawn(&fx);
+    let rows = drawn(&fx);
+    shows(&rows, "► running");
+    assert!(
+        !rows.iter().any(|row| row.contains("► trial ")),
+        "a probe with no trial count says which trial it is:\n{}",
+        rows.join("\n")
+    );
 
     let mut crashed = cause();
     crashed.signal = Some(Signal::Crash);
@@ -357,7 +507,10 @@ fn the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_cra
     end.last_sample = Some(secs(125));
     end.stalled = Some(core(1));
     crashed.end = Some(end);
-    drawn(&hunting(crashed));
+    shows(
+        &drawn(&hunting(crashed)),
+        "core 01's worker had stalled by the last sample, 2:05 into the trial",
+    );
 }
 
 /// A cycle step that finished after two hunts.
@@ -379,7 +532,7 @@ fn a_cycle_step_that_finished_after_two_hunts_lists_them() {
         1,
         1,
     ));
-    drawn(&fx);
+    shows(&drawn(&fx), "done · hunts 1-2");
 }
 
 /// Outcome rows the forecast merges: a zero core on each CCD, a pass and a failure that say the same, and a core
@@ -394,10 +547,18 @@ fn outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure() {
         one
     });
     fx.forecast.branches = zero.to_vec();
-    assert!(!outcome_rows(&fx.scene(ts(1010))).is_empty());
+    let scene = fx.scene(ts(1010));
+    assert_eq!(zero_words(&scene, &zero[0]), "a CCD 0 core at 0");
+    assert_eq!(zero_words(&scene, &zero[1]), "a CCD 1 core at 0");
     zero[0].top_requester = true;
     fx.forecast.branches = zero.to_vec();
-    assert!(!outcome_rows(&fx.scene(ts(1010))).is_empty());
+    let scene = fx.scene(ts(1010));
+    assert_eq!(zero_words(&scene, &zero[0]), "a top requester at 0");
+    assert_eq!(
+        zero_words(&scene, &zero[1]),
+        "a core at 0",
+        "a top requester at 0 does not move another CCD's group"
+    );
 
     for decisions in [
         Vec::new(),
@@ -406,10 +567,18 @@ fn outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure() {
         let mut pass = branch(Premise::Pass);
         pass.decisions.clone_from(&decisions);
         let mut failed = branch(Premise::Named(core(0)));
-        failed.decisions = decisions;
+        failed.decisions.clone_from(&decisions);
         failed.at_zero = true;
         fx.forecast.branches = vec![pass, failed];
-        assert!(!outcome_rows(&fx.scene(ts(1010))).is_empty());
+        let rows = fx.row_set();
+        assert!(!rows.is_empty(), "{decisions:?}");
+        if decisions.is_empty() {
+            assert_eq!(
+                rows.iter().map(|row| row.label.as_str()).collect::<Vec<_>>(),
+                ["pass or fail"],
+                "a pass and a failure with nothing to add are one row"
+            );
+        }
     }
 
     let restart = Start {
@@ -423,6 +592,11 @@ fn outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure() {
         let mut one = branch(premise);
         one.decisions = vec![DecisionPayload::CorePhase(transition(1, restart))];
         fx.forecast.branches = vec![one];
-        assert!(!outcome_rows(&fx.scene(ts(1010))).is_empty());
+        let rows = fx.rows();
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("core 01 starts its search over")),
+            "{premise:?}: {rows:?}"
+        );
     }
 }

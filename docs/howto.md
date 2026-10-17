@@ -155,7 +155,7 @@ After search, checking's R7 steps run each CCD's full load, then partial loads t
 
 Multi-core R7 failures follow [voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff), not a hunt of the loaded cores; [R7 request order and attribution](spec/tuner.md#r7-request-order-and-attribution) says which core moves. An unattributed one whose idle cores are off CO 0 is [located](spec/tuner.md#escalation-to-a-located-hunt) by a [hunt](spec/tuner.md#hunt) of those cores only after its load has been backed off twice since its last pass, or when no loaded core can step back. R1–R6 and single-core failures keep their hunts.
 
-No failure at CO 0 stops togi on its own trial, unless every core was at 0 in it already: togi first reruns the failing trial with every core at CO 0 (`trial.intent` ending `rerun with every core at CO 0`). [Dead ends](spec/tuner.md#dead-ends) says what each result means, and [section 6](#6-dead-ends) covers the dead end.
+No failure at CO 0 stops togi on its own trial, unless every core was at 0 in it already: togi first reruns the failing trial with every core at CO 0 (`trial.intent` ending `rerun with every core at offset 0`). [Dead ends](spec/tuner.md#dead-ends) says what each result means, and [section 6](#6-dead-ends) covers the dead end.
 
 ## 5. In the morning
 

@@ -5,18 +5,20 @@
 //! unclipped; and every panel and frame region as fitted at its width. Nothing records unless a corpus run
 //! collects, so an ordinary test run pays one thread-local check per hook.
 //!
-//! [`narration_corpus`] is the exporter, ignored by default. Given `TOGI_NARRATION_CORPUS`, an absolute path, it
+//! [`narration_corpus`] is the exporter, ignored by default. Given `TOGI_NARRATION_CORPUS`, the absolute path of the
+//! document, and `TOGI_NARRATION_STATUS`, the absolute path of the `togi status` corpus the `togi` crate's own
+//! exporter wrote, it
 //!
 //! 1. reruns every other unit test of this crate in a child process of this test binary; each test records what it
 //!    renders under its own name, into a records file beside the document;
 //! 2. folds every prefix of every [`togi_watchtest::Base`] journal and of the cycle a rerun completes, and draws
 //!    each at the three main sizes and at its clocks ([`crate::frames::corpus::run`]);
 //! 3. draws the 18 [`togi_watchtest::Scenario`] cuts and the journal states at the three sizes;
-//! 4. writes one Markdown document ([`document`]): the phrases by producer, form and shape, the forwarded journal
-//!    messages, and the [`manifest`] of source literals with the cases that rendered each.
+//! 4. writes one Markdown document ([`document`]): the phrase templates by producer, the forwarded journal
+//!    messages, the [`manifest`] of source literals with the cases that rendered each, and the status corpus.
 //!
 //! It fails, after writing the document, when an enforced source literal was rendered by no case and is not listed
-//! as silent.
+//! as silent, or when a [`manifest::SILENT`] entry matches no literal.
 
 mod document;
 mod manifest;
@@ -40,11 +42,18 @@ use crate::history::Entry;
 /// The document the exporter writes: an absolute path the coordinator supplies.
 const DOC_VAR: &str = "TOGI_NARRATION_CORPUS";
 
+/// The `togi status` corpus the document ends with: an absolute path the coordinator supplies.
+const STATUS_VAR: &str = "TOGI_NARRATION_STATUS";
+
 /// Set by the exporter for its child run: the records file every test appends what it renders to.
 const RECORDS_VAR: &str = "TOGI_NARRATION_CORPUS_RECORDS";
 
 /// How many case names a phrase or a literal keeps, per kind of case; the rest are counted.
-const NAMES: usize = 3;
+const NAMES: usize = 2;
+
+/// What separates the clauses of a rendered phrase: the narration's middle dots, rules, table bars, arrows, and
+/// the runs of spaces between columns.
+const SEPARATORS: [&str; 5] = [" · ", " ─ ", " │ ", " → ", "  "];
 
 /// The producer of the journal's own messages, which the log view and status forward unchanged.
 pub(crate) const MESSAGES: &str = "journal.message";
@@ -276,12 +285,63 @@ pub(crate) fn shape(text: &str) -> String {
     }
 }
 
+/// The template of a clause: `text` with the words that are ids folded to a digit, its parameters folded by
+/// [`shape`], and the signs that only say a number is an offset dropped, so `at -9` and `at 12` are one template.
+pub(crate) fn template(text: &str) -> String {
+    let folded: Vec<&str> = text
+        .split(' ')
+        .map(|word| if is_hex_id(word) { "0" } else { word })
+        .collect();
+    let shaped = shape(&folded.join(" "));
+    let mut out = String::with_capacity(shaped.len());
+    let mut previous = None;
+    let mut chars = shaped.chars().peekable();
+    while let Some(c) = chars.next() {
+        let sign = matches!(c, '-' | '+' | '\u{2212}');
+        if sign
+            && chars.peek() == Some(&'#')
+            && previous.is_none_or(|before: char| !before.is_alphanumeric() && before != '#')
+        {
+            continue;
+        }
+        out.push(c);
+        previous = Some(c);
+    }
+    shape(&out)
+}
+
+/// Whether `word` is a hexadecimal id such as a trial or event hash: six or more hex digits, with a digit and a
+/// letter among them, so a plain number or an English word never is.
+fn is_hex_id(word: &str) -> bool {
+    word.len() >= 6
+        && word.chars().all(|c| c.is_ascii_hexdigit())
+        && word.chars().any(|c| c.is_ascii_digit())
+        && word.chars().any(|c| c.is_ascii_alphabetic())
+}
+
+/// The clauses of a rendered phrase: what is left of `text` cut at [`SEPARATORS`], each trimmed, those with no
+/// letter dropped.
+pub(crate) fn clauses(text: &str) -> Vec<&str> {
+    let mut parts = vec![text];
+    for separator in SEPARATORS {
+        parts = parts
+            .into_iter()
+            .flat_map(|part| part.split(separator))
+            .collect();
+    }
+    parts
+        .into_iter()
+        .map(str::trim)
+        .filter(|clause| clause.chars().any(char::is_alphabetic))
+        .collect()
+}
+
 /// Where a case comes from: the sweep of simulated journals and frames, or a unit test.
 fn is_sweep(case: &str) -> bool {
     case.starts_with("sweep/") || case.starts_with("scenario/") || case.starts_with("journal/")
 }
 
-/// What rendered something: how many renderings, and the [`NAMES`] first case names in order.
+/// What rendered something: how many renderings, and the [`NAMES`] least case names.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct Cases {
     pub(crate) names: BTreeSet<String>,
@@ -291,6 +351,11 @@ pub(crate) struct Cases {
 impl Cases {
     fn add(&mut self, case: &str) {
         self.renders += 1;
+        self.keep(case);
+    }
+
+    /// Keeps `case` among the names when it is one of the [`NAMES`] least.
+    fn keep(&mut self, case: &str) {
         if self.names.contains(case) {
             return;
         }
@@ -299,6 +364,14 @@ impl Cases {
         } else if self.names.last().is_some_and(|last| case < last.as_str()) {
             self.names.insert(case.to_owned());
             self.names.pop_last();
+        }
+    }
+
+    /// Adds what `other` rendered: its renderings, and its names among the [`NAMES`] least of both.
+    pub(crate) fn merge(&mut self, other: &Self) {
+        self.renders += other.renders;
+        for name in &other.names {
+            self.keep(name);
         }
     }
 }
@@ -319,29 +392,49 @@ impl Provenance {
         }
     }
 
+    /// Adds everything `other` records.
+    pub(crate) fn merge(&mut self, other: &Self) {
+        self.tests.merge(&other.tests);
+        self.sweep.merge(&other.sweep);
+    }
+
     /// Whether any case rendered it.
     pub(crate) fn any(&self) -> bool {
         self.tests.renders + self.sweep.renders > 0
     }
 }
 
-/// One phrase shape of one producer and form: its smallest rendered text, how many distinct texts share the
-/// shape, and the cases that rendered one.
+/// One template of one producer: its least rendered text, how many distinct texts it covers, the forms it was
+/// rendered in, and the cases that rendered it.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct Item {
     pub(crate) text: String,
     pub(crate) variants: usize,
+    pub(crate) forms: BTreeSet<String>,
     pub(crate) cases: Provenance,
     texts: HashSet<u64>,
 }
 
-/// The key of an [`Item`]: producer, form and shape.
-pub(crate) type Key = (String, String, String);
+impl Item {
+    /// Takes in everything `other` records: its texts, forms and cases.
+    pub(crate) fn merge(&mut self, other: &Self) {
+        if self.text.is_empty() || (!other.text.is_empty() && other.text < self.text) {
+            self.text.clone_from(&other.text);
+        }
+        self.texts.extend(&other.texts);
+        self.variants = self.texts.len();
+        self.forms.extend(other.forms.iter().cloned());
+        self.cases.merge(&other.cases);
+    }
+}
+
+/// The key of an [`Item`]: producer and template.
+pub(crate) type Key = (String, String);
 
 /// What a corpus run collected.
 #[derive(Debug)]
 pub(crate) struct Collector {
-    /// By producer, form and shape.
+    /// By producer and template.
     pub(crate) items: BTreeMap<Key, Item>,
     /// For each source literal of [`manifest::literals`], the cases that rendered it.
     pub(crate) literals: Vec<Provenance>,
@@ -361,13 +454,8 @@ impl Default for Collector {
 
 impl Collector {
     fn add(&mut self, case: &str, producer: &str, form: &str, text: &str) {
-        let cells = text
-            .split(" · ")
-            .flat_map(|clause| clause.split("  "))
-            .map(str::trim)
-            .filter(|clause| !clause.is_empty());
-        for clause in cells {
-            let key = (producer.to_owned(), form.to_owned(), shape(clause));
+        for clause in clauses(text) {
+            let key = (producer.to_owned(), template(clause));
             let item = self.items.entry(key).or_default();
             let hash = hash_of(&clause);
             if item.texts.insert(hash) {
@@ -375,6 +463,9 @@ impl Collector {
                 if item.text.is_empty() || clause < item.text.as_str() {
                     clause.clone_into(&mut item.text);
                 }
+            }
+            if !item.forms.contains(form) {
+                item.forms.insert(form.to_owned());
             }
             item.cases.add(case);
         }
@@ -469,6 +560,16 @@ fn narration_corpus() {
         "{DOC_VAR} must be absolute: {}",
         doc.display()
     );
+    let status_path = PathBuf::from(std::env::var_os(STATUS_VAR).unwrap_or_else(|| {
+        panic!("{STATUS_VAR} must name the absolute path of the `togi status` corpus to append")
+    }));
+    assert!(
+        status_path.is_absolute(),
+        "{STATUS_VAR} must be absolute: {}",
+        status_path.display()
+    );
+    let status = std::fs::read_to_string(&status_path)
+        .unwrap_or_else(|error| panic!("{}: {error}", status_path.display()));
     let records = records_path(&doc);
     File::create(&records).unwrap_or_else(|error| panic!("{}: {error}", records.display()));
 
@@ -483,9 +584,16 @@ fn narration_corpus() {
         .unwrap_or_else(|error| panic!("{}: {error}", records.display()));
 
     let run = TestRun { passed, recording };
-    let markdown = document::write(&collector, &run, &swept);
+    let markdown = document::write(&collector, &run, &swept, &status);
     std::fs::write(&doc, markdown).unwrap_or_else(|error| panic!("{}: {error}", doc.display()));
     println!("narration corpus: {}", doc.display());
+    let stale = manifest::stale();
+    assert!(
+        stale.is_empty(),
+        "{} silent entries match no source literal; fix or remove them in the manifest:\n{}",
+        stale.len(),
+        stale.join("\n")
+    );
     let uncovered = manifest::uncovered(&collector);
     assert!(
         uncovered.is_empty(),
@@ -495,4 +603,66 @@ fn narration_corpus() {
         doc.display(),
         uncovered.join("\n")
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_template_folds_numbers_signs_and_ids() {
+        assert_eq!(template("core 03 failed at -9"), "core # failed at #");
+        assert_eq!(template("core 12 failed at 7"), "core # failed at #");
+        assert_eq!(template("trial a3f9c2 ended"), template("trial 0604 ended"));
+        assert_eq!(template("-20 to -30"), "# to #");
+        assert_eq!(template("00-04 06-15 at failing offsets"), "# at failing offsets");
+        assert_eq!(template("R2-heavy"), "R#-heavy");
+        assert_eq!(template("a-b"), "a-b");
+    }
+
+    #[test]
+    fn a_word_that_is_only_letters_is_no_id() {
+        assert!(is_hex_id("a3f9c2"));
+        assert!(!is_hex_id("decade"));
+        assert!(!is_hex_id("123456"));
+        assert!(!is_hex_id("a3f9"));
+    }
+
+    #[test]
+    fn a_phrase_is_cut_into_clauses_without_letterless_ones() {
+        assert_eq!(
+            clauses("a · b ─ c │ d → e  f 12 · --"),
+            ["a", "b", "c", "d", "e", "f 12"]
+        );
+    }
+
+    #[test]
+    fn merged_cases_keep_the_least_names_and_every_render() {
+        let mut left = Cases::default();
+        left.add("m");
+        left.add("k");
+        let mut right = Cases::default();
+        right.add("a");
+        right.add("z");
+        right.add("z");
+        left.merge(&right);
+        assert_eq!(left.renders, 5);
+        assert_eq!(
+            left.names,
+            BTreeSet::from(["a".to_owned(), "k".to_owned()])
+        );
+    }
+
+    #[test]
+    fn merged_provenance_keeps_tests_and_sweep_apart() {
+        let mut left = Provenance::default();
+        left.add("a_test");
+        let mut right = Provenance::default();
+        right.add("sweep/base/0001");
+        right.add("a_test");
+        left.merge(&right);
+        assert_eq!(left.tests.renders, 2);
+        assert_eq!(left.sweep.renders, 1);
+        assert!(left.any());
+    }
 }

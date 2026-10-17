@@ -250,7 +250,7 @@ The hardcoded strategy for search, hunts, the two phases, checking and backoffs.
 A condition under which togi cannot make progress and stops itself.
 
 **All-zero rerun**:
-The failing trial run again with every core at CO 0 before a `failure_at_zero` dead end ([Dead ends](docs/spec/tuner.md#dead-ends)).
+The failing trial run again with every core at offset 0 before a `failure_at_zero` dead end ([Dead ends](docs/spec/tuner.md#dead-ends)). The dashboard labels it `RERUN AT OFFSET 0`.
 
 ### Runtime
 

@@ -63,6 +63,28 @@ fn narration_corpus() {
     let document = corpus.document(&scenarios, &edges, &synthetics, &diagnostics);
     std::fs::write(path, document)
         .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
+    let missing: Vec<_> = corpus
+        .branches
+        .iter()
+        .zip(&corpus.hits)
+        .filter(|(branch, hits)| {
+            branch.id != "parser.unclassified" && branch.unreachable.is_none() && hits.0.is_empty()
+        })
+        .map(|(branch, _)| branch.id)
+        .collect();
+    assert!(missing.is_empty(), "status branches not rendered: {missing:?}");
+    assert!(
+        corpus.entries.keys().all(|(rank, _)| FAMILIES.get(*rank).is_some_and(|(name, _)| *name != "unclassified")),
+        "the status catalogue contains unclassified output"
+    );
+    for diagnostic in diagnostics {
+        assert!(
+            diagnostic.stderr.contains(diagnostic.expect),
+            "{} did not render its diagnostic: {}",
+            diagnostic.fixture,
+            diagnostic.stderr
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1045,7 +1067,7 @@ fn diagnostics() -> Vec<Diagnostic> {
     let missing = tempfile::tempdir().expect("a temporary directory");
     add(
         "diag:missing-journal",
-        "read.rs:63-66",
+        "read.rs open, the NotFound arm",
         "an empty state directory",
         "no journal at",
         missing.path(),
@@ -1056,7 +1078,7 @@ fn diagnostics() -> Vec<Diagnostic> {
     std::fs::write(journal(empty.path()), "").expect("the journal writes");
     add(
         "diag:no-session",
-        "status.rs:67-70",
+        "status.rs run, Problem::NoSession arm",
         "an empty journal",
         "no session in",
         empty.path(),
@@ -1071,7 +1093,7 @@ fn diagnostics() -> Vec<Diagnostic> {
     });
     add(
         "diag:fold-rejects",
-        "status.rs:71-73, 165-171",
+        "status.rs run, Problem::Replay arm; render",
         "between with one core dropped from session.start",
         "does not have",
         rejected.path(),
@@ -1095,7 +1117,7 @@ fn diagnostics() -> Vec<Diagnostic> {
     write_lines(skipped.path(), &kept);
     add(
         "diag:skipped-unknown-kind-and-field",
-        "read.rs:74-79",
+        "read.rs report, the skipped notice",
         "search with an unknown kind before its last event and a session.warning with an unknown field",
         "skipped 1 event",
         skipped.path(),
@@ -1106,7 +1128,7 @@ fn diagnostics() -> Vec<Diagnostic> {
     rewrite_first_line(first.path(), |event| event["kind"] = "future.thing".into());
     add(
         "diag:unknown-first-kind",
-        "read.rs:42-45",
+        "read.rs open, unknown_kind",
         "search whose first line has an unknown kind",
         "togi status: ",
         first.path(),
@@ -1119,7 +1141,7 @@ fn diagnostics() -> Vec<Diagnostic> {
     });
     add(
         "diag:schema-newer",
-        "read.rs:47-51",
+        "read.rs:open, refusal_message",
         "search recorded by schema 99",
         "schema 99",
         newer.path(),
@@ -1132,7 +1154,7 @@ fn diagnostics() -> Vec<Diagnostic> {
     });
     add(
         "diag:schema-older",
-        "read.rs:47-51",
+        "read.rs:open, refusal_message",
         "search recorded by schema 0",
         "uses schema",
         older.path(),
@@ -1145,7 +1167,7 @@ fn diagnostics() -> Vec<Diagnostic> {
     });
     add(
         "diag:ruleset-differs",
-        "read.rs:52-58",
+        "read.rs open, the differing-ruleset notice",
         "search recorded by ruleset 7",
         "ruleset is 7",
         ruleset.path(),
@@ -1158,7 +1180,7 @@ fn diagnostics() -> Vec<Diagnostic> {
     std::fs::write(journal(torn.path()), text).expect("the journal writes");
     add(
         "diag:torn-tail",
-        "read.rs:80-86",
+        "read.rs report, the torn notice",
         "search with 7 torn bytes appended",
         "torn bytes",
         torn.path(),
@@ -1171,7 +1193,7 @@ fn diagnostics() -> Vec<Diagnostic> {
     std::fs::write(journal(one.path()), text).expect("the journal writes");
     add(
         "diag:torn-tail-one-byte",
-        "read.rs:80-87",
+        "read.rs report, the torn notice",
         "search with 1 torn byte appended",
         "1 torn byte;",
         one.path(),
@@ -1181,7 +1203,7 @@ fn diagnostics() -> Vec<Diagnostic> {
     let full = installed(Scenario::Search);
     add(
         "diag:write-fails",
-        "status.rs:75-81",
+        "status.rs run, the output-write failure",
         "search, with stdout failing every write as a full disk does",
         "write output: ",
         full.path(),
@@ -1260,34 +1282,34 @@ impl Table {
 
 /// The block families in the order the status writes them, with the source that writes each.
 const FAMILIES: &[(&str, &str)] = &[
-    ("header", "status.rs:291-351 header, phase_clause"),
-    ("session", "status.rs:240-245"),
-    ("bios.context", "status.rs:246-256"),
-    ("in-flight", "status.rs:257-263, the in-flight event's msg"),
-    ("dead-end", "status.rs:264-271"),
-    ("carried", "status.rs:272-275, the session.carried msg"),
-    ("cores.header", "status.rs:367-373"),
-    ("cores.row", "status.rs:374-408, notes: the last decision's msg"),
-    ("bios.note", "status.rs:412-437"),
-    ("combinations", "status.rs:439-467"),
-    ("r7.heading", "status.rs:469-479"),
-    ("r7.header", "status.rs:480-482"),
-    ("r7.row", "status.rs:483-502"),
-    ("between", "status.rs:281-284, the mce msg"),
-    ("hunt", "status.rs:506-543"),
-    ("groups.header", "status.rs:544-546"),
-    ("groups.row", "status.rs:547-581"),
-    ("phase2.round", "status.rs:588-591"),
-    ("candidates.header", "status.rs:594-596"),
-    ("candidates.row", "status.rs:597-612"),
-    ("phase2.remaining", "status.rs:616-624"),
-    ("checks.header", "status.rs:627"),
-    ("checks.row", "status.rs:628-638"),
-    ("defect", "status.rs:643-666"),
-    ("evidence.heading", "status.rs:332, 744"),
-    ("evidence.header", "status.rs:745-747"),
-    ("evidence.row", "status.rs:675-681"),
-    ("evidence.tctl", "status.rs:683-689"),
+    ("header", "status.rs Status::header, phase_clause"),
+    ("session", "status.rs Status::write, session line"),
+    ("bios.context", "status.rs Status::write, BIOS context line"),
+    ("in-flight", "status.rs Status::write, the in-flight event's msg"),
+    ("dead-end", "status.rs Status::write with dead_end_label"),
+    ("carried", "status.rs Status::write, the session.carried msg held by Scan::of"),
+    ("cores.header", "status.rs Status::cores, header row"),
+    ("cores.row", "status.rs Status::cores, bios_cell, notes: the last decision's msg"),
+    ("bios.note", "status.rs Status::bios_note, unconfirmed_note"),
+    ("combinations", "status.rs Status::combinations"),
+    ("r7.heading", "status.rs Status::r7, heading line"),
+    ("r7.header", "status.rs Status::r7, header row"),
+    ("r7.row", "status.rs Status::r7, self_sufficiency"),
+    ("between", "status.rs Status::write, the mce msg held by Scan::of"),
+    ("hunt", "status.rs Status::hunt, parked_source, hunt_failure"),
+    ("groups.header", "status.rs Status::hunt, header row"),
+    ("groups.row", "status.rs Status::hunt, group_cores"),
+    ("phase2.round", "status.rs Status::phase2, round line"),
+    ("candidates.header", "status.rs Status::phase2, candidate header row"),
+    ("candidates.row", "status.rs Status::phase2, candidate rows"),
+    ("phase2.remaining", "status.rs Status::phase2, remaining-rounds line"),
+    ("checks.header", "status.rs Status::phase2, check header row"),
+    ("checks.row", "status.rs Status::phase2, check rows"),
+    ("defect", "status.rs Status::defects"),
+    ("evidence.heading", "status.rs EVIDENCE_HEADING, Status::evidence"),
+    ("evidence.header", "status.rs Status::evidence, header row"),
+    ("evidence.row", "status.rs Status::evidence, exposure rows"),
+    ("evidence.tctl", "status.rs Status::evidence, Tctl peak line"),
     ("unclassified", "no family: a line the corpus parser does not place"),
 ];
 
@@ -1480,7 +1502,7 @@ impl Branch {
     }
 }
 
-const WHY_NO_PHASE_PLAN: &str = "`phase_plan()` is `None` only when the tuner state is poisoned or has no run (`togi-tuner/src/phase_plan.rs:159-165`). The run exists from `session.start` (`state.rs:290`), which `render` requires before it writes anything (`status.rs:173-175`), and a poisoned tuner fails `togi_tuner::replay`, which `render` turns into an error before any section (`status.rs:170-171`). So a rendered session always has a phase plan and the header's `?` never returns `None`.";
+const WHY_NO_PHASE_PLAN: &str = "`phase_plan()` is `None` only when the tuner state is poisoned or has no run (`togi-tuner/src/phase_plan.rs:159-165`). The run exists from `session.start` (`state.rs:290`), which `render` requires before it writes anything (its `journal.session.is_none()` check), and a poisoned tuner fails `togi_tuner::replay`, which `render` turns into an error before any section (its `Problem::Replay` returns). So a rendered session always has a phase plan and the header's `?` never returns `None`.";
 
 const WHY_BIOS_SILENT: &str = "The silent branch needs a phase 2 or concluded phase plan with no confirmed BIOS profile. Phase 1 ends only at `Phases::passed_full_cycle` (`phases.rs:203-220`), which errors without a checking profile, and `Later::full_cycle` confirms that same checking profile in the same fold, right after, with `settled` true (`checking/mod.rs:385-393`, `later/mod.rs:171-181, 474-480`). Both are cleared together when a core re-enters search (`cores.rs:180-184`, `later/mod.rs:66-68`, `phases.rs:58-60`). So outside phase 1 a confirmed profile always exists.";
 
@@ -1500,15 +1522,15 @@ fn branches() -> Vec<Branch> {
     let mut all = vec![
         branch("header.search", "status.rs:search_left", "search: N cores left", |b| header(b).starts_with("search: ") && header(b).contains(" cores left")),
         branch("header.search-one", "status.rs:search_left", "search: 1 core left", |b| header(b).starts_with("search: 1 core left")),
-        branch("header.hunt", "status.rs:301-303", "hunt N, group N", |b| {
+        branch("header.hunt", "status.rs:header, hunt_plan", "hunt N, group N", |b| {
             header(b).starts_with("hunt ")
         }),
-        branch("header.round", "status.rs:304-314", "phase 2 round N, checks N/N", |b| {
+        branch("header.round", "status.rs:header, deepening", "phase 2 round N, checks N/N", |b| {
             header(b).starts_with("phase 2 round ")
         }),
         branch(
             "header.round-check-done",
-            "status.rs:305-309",
+            "status.rs:header, deepening checks",
             "a round header counting a check with all its passes",
             |b| {
                 header(b)
@@ -1517,10 +1539,10 @@ fn branches() -> Vec<Branch> {
                     .is_some_and(|(done, _)| done > 0)
             },
         ),
-        branch("header.cycle", "status.rs:315-317", "checking cycle N, steps N/N", |b| {
+        branch("header.cycle", "status.rs:header, cycle_plan", "checking cycle N, steps N/N", |b| {
             header(b).starts_with("checking cycle ")
         }),
-        branch("header.cycle-not-full", "status.rs:319-323", "the cycle's missing coverage", |b| {
+        branch("header.cycle-not-full", "status.rs:header, missing_coverage", "the cycle's missing coverage", |b| {
             header(b).contains(", not full: ")
         }),
         branch(
@@ -1535,32 +1557,32 @@ fn branches() -> Vec<Branch> {
             "a regime several steps short: `N more steps`",
             |b| header(b).contains(" more steps"),
         ),
-        branch("header.not-started", "status.rs:326", "checking not started", |b| {
+        branch("header.not-started", "status.rs:header, final arm", "checking not started", |b| {
             header(b).starts_with("checking not started")
         }),
-        branch("phase.none", "status.rs:328-331", "no phase plan: no clause", |b| {
+        branch("phase.none", "status.rs:header, phase_clause None", "no phase plan: no clause", |b| {
             !header(b).contains(" | ")
         })
         .unreachable(WHY_NO_PHASE_PLAN),
-        branch("phase.one", "status.rs:337", "| phase 1", |b| header(b).ends_with(" | phase 1")),
-        branch("phase.concluded", "status.rs:338-344", "| phase 2 concluded: clean cycles N, latest clean cycle N", |b| {
+        branch("phase.one", "status.rs:phase_clause, PhaseNo::One", "| phase 1", |b| header(b).ends_with(" | phase 1")),
+        branch("phase.concluded", "status.rs:phase_clause, PhaseNo::Concluded", "| phase 2 concluded: clean cycles N, latest clean cycle N", |b| {
             header(b).contains("| phase 2 concluded: ")
         }),
-        branch("phase.confirming", "status.rs:345", "| phase 2: confirmation cycle", |b| {
+        branch("phase.confirming", "status.rs:phase_clause, plan.confirming", "| phase 2: confirmation cycle", |b| {
             header(b).ends_with("| phase 2: confirmation cycle")
         }),
-        branch("phase.rounds-one", "status.rs:346-349, 214-216", "| phase 2: at most 1 round left", |b| {
+        branch("phase.rounds-one", "status.rs:phase_clause, rounds", "| phase 2: at most 1 round left", |b| {
             header(b).contains("| phase 2: at most 1 round left")
         }),
-        branch("phase.rounds-many", "status.rs:346-349, 214-216", "| phase 2: at most N rounds left", |b| {
+        branch("phase.rounds-many", "status.rs:phase_clause, rounds", "| phase 2: at most N rounds left", |b| {
             header(b).contains("| phase 2: at most ") && !header(b).contains("at most 1 round left")
         }),
-        branch("session", "status.rs:240-245", "session ID started TIME", |b| any(b, "session", |_| true)),
-        branch("bios.context", "status.rs:246-256", "BIOS context", |b| any(b, "bios.context", |_| true)),
-        branch("in-flight.trial", "status.rs:258-260", "in flight: [#N] msg", |b| {
+        branch("session", "status.rs:write, session line", "session ID started TIME", |b| any(b, "session", |_| true)),
+        branch("bios.context", "status.rs:write, BIOS context line", "BIOS context", |b| any(b, "bios.context", |_| true)),
+        branch("in-flight.trial", "status.rs:write, in_flight Some", "in flight: [#N] msg", |b| {
             any(b, "in-flight", |block| block.flat.starts_with("in flight: [#"))
         }),
-        branch("in-flight.none", "status.rs:262", "in flight: none", |b| {
+        branch("in-flight.none", "status.rs:write, in_flight None", "in flight: none", |b| {
             any(b, "in-flight", |block| block.flat == "in flight: none")
         }),
     ];
@@ -1574,45 +1596,45 @@ fn branches() -> Vec<Branch> {
         ));
     }
     all.extend([
-        branch("carried.failure-points", "status.rs:272-275; message.rs:197-204", "carried: … and N failure point(s) from …", |b| {
+        branch("carried.failure-points", "status.rs:Scan::of; message.rs:session_carried", "carried: … and N failure point(s) from …", |b| {
             any(b, "carried", |block| {
                 block.flat.contains("failure points from") || block.flat.contains("failure point from")
             })
         }),
-        branch("carried.points-behind-reason", "status.rs:272-275; message.rs:199-203", "carried: …; failure points stay behind: REASON", |b| {
+        branch("carried.points-behind-reason", "status.rs:Scan::of; message.rs:session_carried", "carried: …; failure points stay behind: REASON", |b| {
             any(b, "carried", |block| {
                 block.flat.contains("failure points stay behind:")
                     && !block.flat.contains("no reason recorded")
             })
         }),
-        branch("carried.points-behind-no-reason", "status.rs:272-275; message.rs:200", "carried: …; failure points stay behind: no reason recorded", |b| {
+        branch("carried.points-behind-no-reason", "status.rs:Scan::of; message.rs:session_carried", "carried: …; failure points stay behind: no reason recorded", |b| {
             any(b, "carried", |block| block.flat.contains("stay behind: no reason recorded"))
         }),
-        cell_branch("cores.bios-none", "status.rs:354-359", "BIOS cell -", "cores.row", |block| block.cell(4) == "-"),
-        cell_branch("cores.bios-confirmed", "status.rs:363", "BIOS cell N", "cores.row", |block| {
+        cell_branch("cores.bios-none", "status.rs:bios_cell, no BIOS profile or offset", "BIOS cell -", "cores.row", |block| block.cell(4) == "-"),
+        cell_branch("cores.bios-confirmed", "status.rs:bios_cell, plain offset", "BIOS cell N", "cores.row", |block| {
             block.cell(4) != "-" && !block.cell(4).ends_with('*')
         }),
-        cell_branch("cores.bios-unconfirmed", "status.rs:360-361", "BIOS cell N*", "cores.row", |block| {
+        cell_branch("cores.bios-unconfirmed", "status.rs:bios_cell, starred offset", "BIOS cell N*", "cores.row", |block| {
             block.cell(4).ends_with('*')
         }),
-        cell_branch("cores.phase-search", "status.rs:383-384; words.rs:162", "PHASE SEARCH", "cores.row", |block| block.cell(5) == "SEARCH"),
-        cell_branch("cores.phase-has-room", "status.rs:383-384; words.rs:163", "PHASE HAS ROOM", "cores.row", |block| block.cell(5) == "HAS ROOM"),
-        cell_branch("cores.phase-at-limit", "status.rs:383-384; words.rs:164", "PHASE AT LIMIT", "cores.row", |block| block.cell(5) == "AT LIMIT"),
-        cell_branch("cores.phase-none", "status.rs:383-384", "PHASE -", "cores.row", |block| block.cell(5) == "-"),
-        cell_branch("cores.failure-none", "status.rs:385-386", "FAILURE -", "cores.row", |block| block.cell(6) == "-"),
-        cell_branch("cores.failure-point", "status.rs:385-386", "FAILURE N", "cores.row", |block| block.cell(6) != "-"),
-        cell_branch("cores.queued-none", "status.rs:387-389", "QUEUED -", "cores.row", |block| block.cell(7) == "-"),
-        cell_branch("cores.queued-reset", "status.rs:387-389", "QUEUED reset", "cores.row", |block| block.cell(7) == "reset"),
-        cell_branch("cores.note-combinations", "status.rs:391-400", "combinations CN, …", "cores.row", |block| block.note("combinations ")),
-        cell_branch("cores.note-last-decision", "status.rs:401-406", "last decision [#N] msg", "cores.row", |block| block.note("last decision ")),
-        branch("bios.silent", "status.rs:424", "no BIOS note: none confirmed outside phase 1", |b| {
+        cell_branch("cores.phase-search", "status.rs:cores; words.rs:phase_word", "PHASE SEARCH", "cores.row", |block| block.cell(5) == "SEARCH"),
+        cell_branch("cores.phase-has-room", "status.rs:cores; words.rs:phase_word", "PHASE HAS ROOM", "cores.row", |block| block.cell(5) == "HAS ROOM"),
+        cell_branch("cores.phase-at-limit", "status.rs:cores; words.rs:phase_word", "PHASE AT LIMIT", "cores.row", |block| block.cell(5) == "AT LIMIT"),
+        cell_branch("cores.phase-none", "status.rs:cores, absent phase", "PHASE -", "cores.row", |block| block.cell(5) == "-"),
+        cell_branch("cores.failure-none", "status.rs:cores, absent failure point", "FAILURE -", "cores.row", |block| block.cell(6) == "-"),
+        cell_branch("cores.failure-point", "status.rs:cores, failure point", "FAILURE N", "cores.row", |block| block.cell(6) != "-"),
+        cell_branch("cores.queued-none", "status.rs:cores, no queued reset", "QUEUED -", "cores.row", |block| block.cell(7) == "-"),
+        cell_branch("cores.queued-reset", "status.rs:cores, queued reset", "QUEUED reset", "cores.row", |block| block.cell(7) == "reset"),
+        cell_branch("cores.note-combinations", "status.rs:cores, combos note", "combinations CN, …", "cores.row", |block| block.note("combinations ")),
+        cell_branch("cores.note-last-decision", "status.rs:cores, last_decision note", "last decision [#N] msg", "cores.row", |block| block.note("last decision ")),
+        branch("bios.silent", "status.rs:bios_note, `None => return`", "no BIOS note: none confirmed outside phase 1", |b| {
             !any(b, "bios.note", |_| true)
         })
         .unreachable(WHY_BIOS_SILENT),
-        branch("bios.none-in-phase-one", "status.rs:421-423", "BIOS profile: none confirmed yet; …", |b| {
+        branch("bios.none-in-phase-one", "status.rs:bios_note, `None if phase_one`", "BIOS profile: none confirmed yet; …", |b| {
             any(b, "bios.note", |block| block.flat.starts_with("BIOS profile: none confirmed yet"))
         }),
-        branch("bios.confirmed", "status.rs:425-428", "BIOS profile confirmed by the passed full cycle [#N]", |b| {
+        branch("bios.confirmed", "status.rs:bios_note, no unconfirmed marks", "BIOS profile confirmed by the passed full cycle [#N]", |b| {
             any(b, "bios.note", |block| block.flat.starts_with("BIOS profile confirmed by"))
         }),
         branch("bios.unconfirmed", "status.rs:unconfirmed_note", "* unconfirmed since [#N]: cores … show stepped-back offsets; …", |b| {
@@ -1621,21 +1643,21 @@ fn branches() -> Vec<Branch> {
         branch("bios.unconfirmed-one", "status.rs:unconfirmed_note", "* unconfirmed since [#N]: core N shows a stepped-back offset; …", |b| {
             any(b, "bios.note", |block| block.flat.starts_with("* unconfirmed since") && block.flat.contains(" shows a stepped-back offset;"))
         }),
-        branch("combinations.observed", "status.rs:453", "CN core … , observed in hunt N [#N]", |b| {
+        branch("combinations.observed", "status.rs:combinations, observed source", "CN core … , observed in hunt N [#N]", |b| {
             any(b, "combinations", |block| block.flat.contains("observed in hunt"))
         }),
-        branch("combinations.fallback", "status.rs:450-451", "CN …, fallback over every candidate of hunt N [#N]", |b| {
+        branch("combinations.fallback", "status.rs:combinations, fallback source", "CN …, fallback over every candidate of hunt N [#N]", |b| {
             any(b, "combinations", |block| block.flat.contains("fallback over every candidate of hunt"))
         }),
-        branch("r7.heading", "status.rs:475-479", "R7 self-sufficiency (…; not a guarantee)", |b| any(b, "r7.heading", |_| true)),
+        branch("r7.heading", "status.rs:r7, heading line", "R7 self-sufficiency (…; not a guarantee)", |b| any(b, "r7.heading", |_| true)),
         cell_branch("r7.self-sufficient", "status.rs:self_sufficiency", "observed (N passing trials)", "r7.row", |block| block.cell(2).starts_with("observed (")),
         cell_branch("r7.self-sufficient-one", "status.rs:self_sufficiency", "observed (1 passing trial)", "r7.row", |block| block.cell(2) == "observed (1 passing trial)"),
-        cell_branch("r7.not-yet", "status.rs:487", "not yet demonstrated", "r7.row", |block| block.cell(2) == "not yet demonstrated"),
-        cell_branch("r7.top-yes", "status.rs:489", "TOP REQUESTER yes", "r7.row", |block| block.cell(3).starts_with("yes")),
-        cell_branch("r7.top-no", "status.rs:489", "TOP REQUESTER no", "r7.row", |block| block.cell(3).starts_with("no")),
-        cell_branch("r7.offset-fallback", "status.rs:490-492", "TOP REQUESTER … (offset fallback)", "r7.row", |block| block.cell(3).ends_with("(offset fallback)")),
-        branch("between", "status.rs:281-284", "between-trial evidence [#N]: msg", |b| any(b, "between", |_| true)),
-        branch("hunt.parked-zero", "status.rs:518", "…; parked offsets all-zero", |b| {
+        cell_branch("r7.not-yet", "status.rs:self_sufficiency", "not yet demonstrated", "r7.row", |block| block.cell(2) == "not yet demonstrated"),
+        cell_branch("r7.top-yes", "status.rs:r7, top_requester", "TOP REQUESTER yes", "r7.row", |block| block.cell(3).starts_with("yes")),
+        cell_branch("r7.top-no", "status.rs:r7, top_requester", "TOP REQUESTER no", "r7.row", |block| block.cell(3).starts_with("no")),
+        cell_branch("r7.offset-fallback", "status.rs:r7, offset_proxy", "TOP REQUESTER … (offset fallback)", "r7.row", |block| block.cell(3).ends_with("(offset fallback)")),
+        branch("between", "status.rs:Scan::of, write", "between-trial evidence [#N]: msg", |b| any(b, "between", |_| true)),
+        branch("hunt.parked-zero", "status.rs:parked_source, Parked::Zero", "…; parked offsets all-zero", |b| {
             any(b, "hunt", |block| block.flat.contains("parked offsets all-zero"))
         }),
         branch("hunt.parked-cycle-end", "status.rs:parked_source", "…; parked offsets from cycle end #N", |b| {
@@ -1644,10 +1666,10 @@ fn branches() -> Vec<Branch> {
         cell_branch("groups.locate", "status.rs:group_cores", "CORES locate, note locate reruns the failed load …", "groups.row", |block| {
             block.cell(1) == "locate" && block.note("locate ")
         }),
-        branch("hunt.parked-held", "status.rs:520-523", "…; loaded cores … held at their failing offsets, the rest parked at 0", |b| {
+        branch("hunt.parked-held", "status.rs:parked_source, Parked::Held", "…; loaded cores … held at their failing offsets, the rest parked at 0", |b| {
             any(b, "hunt", |block| block.flat.contains("held at their failing offsets"))
         }),
-        branch("hunt.signal-named", "status.rs:525-529", "unattributed SIGNAL in …", |b| {
+        branch("hunt.signal-named", "status.rs:hunt, signal; hunt_failure", "unattributed SIGNAL in …", |b| {
             any(b, "hunt", |block| {
                 !block.flat.contains("unattributed failure in") && !block.flat.contains("unattributed failure with")
             })
@@ -1661,68 +1683,68 @@ fn branches() -> Vec<Branch> {
         branch("hunt.trial", "status.rs:hunt_failure", "unattributed SIGNAL in RN trial ID;", |b| {
             any(b, "hunt", |block| block.flat.contains(" trial ") && !block.flat.contains("no trial in flight"))
         }),
-        branch("hunt.candidates", "status.rs:539-543", "candidates N…", |b| {
+        branch("hunt.candidates", "status.rs:hunt, candidates line", "candidates N…", |b| {
             any(b, "hunt", |block| block.flat.contains(" candidates "))
         }),
-        cell_branch("groups.probe", "status.rs:550-565", "CORES probe, note probe NN at N with …", "groups.row", |block| block.cell(1) == "probe"),
-        cell_branch("groups.many-cores", "status.rs:566-569", "CORES N cores, note cores …", "groups.row", |block| block.cell(1).ends_with(" cores")),
-        cell_branch("groups.running", "status.rs:573; words.rs:172", "OUTCOME running", "groups.row", |block| block.cell(2) == "running"),
-        cell_branch("groups.passed", "status.rs:573; words.rs:173", "OUTCOME passed", "groups.row", |block| block.cell(2) == "passed"),
-        cell_branch("groups.failed", "status.rs:573; words.rs:174", "OUTCOME failed", "groups.row", |block| block.cell(2) == "failed"),
-        cell_branch("groups.skipped", "status.rs:573; words.rs:175", "OUTCOME skipped", "groups.row", |block| block.cell(2) == "skipped"),
-        cell_branch("groups.excess-evidence", "status.rs:574-575", "PASS EVIDENCE above NEED, uncapped", "groups.row", |block| {
+        cell_branch("groups.probe", "status.rs:group_cores, probe", "CORES probe, note probe NN at N with …", "groups.row", |block| block.cell(1) == "probe"),
+        cell_branch("groups.many-cores", "status.rs:group_cores, GROUP_CORES_MAX", "CORES N cores, note cores …", "groups.row", |block| block.cell(1).ends_with(" cores")),
+        cell_branch("groups.running", "status.rs:hunt; words.rs:group_word", "OUTCOME running", "groups.row", |block| block.cell(2) == "running"),
+        cell_branch("groups.passed", "status.rs:hunt; words.rs:group_word", "OUTCOME passed", "groups.row", |block| block.cell(2) == "passed"),
+        cell_branch("groups.failed", "status.rs:hunt; words.rs:group_word", "OUTCOME failed", "groups.row", |block| block.cell(2) == "failed"),
+        cell_branch("groups.skipped", "status.rs:hunt; words.rs:group_word", "OUTCOME skipped", "groups.row", |block| block.cell(2) == "skipped"),
+        cell_branch("groups.excess-evidence", "status.rs:hunt, group.passed and group.needed", "PASS EVIDENCE above NEED, uncapped", "groups.row", |block| {
             matches!((number(block.cell(3)), number(block.cell(4))), (Some(passed), Some(needed)) if passed > needed)
         }),
-        branch("phase2.round", "status.rs:588-591", "phase 2 round N [#N]", |b| any(b, "phase2.round", |_| true)),
-        cell_branch("candidates.waits", "status.rs:598-599", "STATE waits", "candidates.row", |block| block.cell(4) == "waits"),
-        cell_branch("candidates.moving", "status.rs:601; words.rs:182", "STATE moving", "candidates.row", |block| block.cell(4) == "moving"),
-        cell_branch("candidates.in-place", "status.rs:601; words.rs:184", "STATE checked again in place", "candidates.row", |block| block.cell(4) == "checked again in place"),
-        cell_branch("candidates.solo-none", "status.rs:606-608", "SOLO -", "candidates.row", |block| block.cell(2) == "-")
+        branch("phase2.round", "status.rs:phase2, round line", "phase 2 round N [#N]", |b| any(b, "phase2.round", |_| true)),
+        cell_branch("candidates.waits", "status.rs:phase2, candidate state", "STATE waits", "candidates.row", |block| block.cell(4) == "waits"),
+        cell_branch("candidates.moving", "status.rs:phase2; words.rs:candidate_word", "STATE moving", "candidates.row", |block| block.cell(4) == "moving"),
+        cell_branch("candidates.in-place", "status.rs:phase2; words.rs:candidate_word", "STATE checked again in place", "candidates.row", |block| block.cell(4) == "checked again in place"),
+        cell_branch("candidates.solo-none", "status.rs:phase2, candidate solo_limit", "SOLO -", "candidates.row", |block| block.cell(2) == "-")
             .unreachable(WHY_SOLO_NONE),
-        cell_branch("candidates.solo-limit", "status.rs:606-608", "SOLO N", "candidates.row", |block| block.cell(2) != "-"),
-        branch("phase2.no-core-can-move", "status.rs:616-617", "no core can move: the confirmation cycle is all that is left", |b| {
+        cell_branch("candidates.solo-limit", "status.rs:phase2, candidate solo_limit", "SOLO N", "candidates.row", |block| block.cell(2) != "-"),
+        branch("phase2.no-core-can-move", "status.rs:phase2, plan.confirming without a round", "no core can move: the confirmation cycle is all that is left", |b| {
             any(b, "phase2.remaining", |block| block.flat.starts_with("no core can move"))
         }),
-        branch("phase2.worst-case-one", "status.rs:619-622, 214-216", "worst case if no round fails: 1 round left, …", |b| {
+        branch("phase2.worst-case-one", "status.rs:phase2, rounds", "worst case if no round fails: 1 round left, …", |b| {
             any(b, "phase2.remaining", |block| block.flat.contains("fails: 1 round left"))
         }),
-        branch("phase2.worst-case-many", "status.rs:619-622, 214-216", "worst case if no round fails: N rounds left, …", |b| {
+        branch("phase2.worst-case-many", "status.rs:phase2, rounds", "worst case if no round fails: N rounds left, …", |b| {
             any(b, "phase2.remaining", |block| {
                 block.flat.starts_with("worst case") && !block.flat.contains("fails: 1 round left")
             })
         }),
-        cell_branch("checks.complete", "status.rs:636", "PASSES N/N with every pass", "checks.row", |block| {
+        cell_branch("checks.complete", "status.rs:phase2, check passes", "PASSES N/N with every pass", "checks.row", |block| {
             fraction(block.cell(2)).is_some_and(|(passed, needed)| passed >= needed)
         }),
-        cell_branch("checks.pending", "status.rs:636", "PASSES N/N short of its passes", "checks.row", |block| {
+        cell_branch("checks.pending", "status.rs:phase2, check passes", "PASSES N/N short of its passes", "checks.row", |block| {
             fraction(block.cell(2)).is_some_and(|(passed, needed)| passed < needed)
         }),
-        branch("defect.listed", "status.rs:653-661", "defect N: TITLE (fixed by pull request #N); decisions … affected cores …", |b| {
+        branch("defect.listed", "status.rs:defects, defect line", "defect N: TITLE (fixed by pull request #N); decisions … affected cores …", |b| {
             any(b, "defect", |_| true)
         }),
-        branch("defect.reset-commands", "status.rs:662-664", "togi reset --core N", |b| {
+        branch("defect.reset-commands", "status.rs:defects, reset command lines", "togi reset --core N", |b| {
             any(b, "defect", |block| block.note("togi reset --core "))
         }),
-        silent("defect.cleared-core-by-core", "status.rs:150-156, 645-647", "nothing once every affected core is reset", "edge:defect-reset-each-core", |b| {
+        silent("defect.cleared-core-by-core", "status.rs:Scan::of CommandReset Core, defects empty-cores skip", "nothing once every affected core is reset", "edge:defect-reset-each-core", |b| {
             !any(b, "defect", |_| true)
         }),
-        silent("defect.cleared-by-reset-all", "status.rs:151", "nothing after a reset of every core", "edge:defect-reset-all", |b| {
+        silent("defect.cleared-by-reset-all", "status.rs:Scan::of CommandReset All", "nothing after a reset of every core", "edge:defect-reset-all", |b| {
             !any(b, "defect", |_| true)
         }),
-        silent("defect.too-aggressive-unlisted", "status.rs:141", "nothing for a too-aggressive defect", "edge:defect-too-aggressive", |b| {
+        silent("defect.too-aggressive-unlisted", "status.rs:Scan::of DefectFound TooCautious filter", "nothing for a too-aggressive defect", "edge:defect-too-aggressive", |b| {
             !any(b, "defect", |_| true)
         }),
-        branch("evidence.silent", "status.rs:670-672", "no evidence table before a checking profile", |b| {
+        branch("evidence.silent", "status.rs:evidence, no checking profile", "no evidence table before a checking profile", |b| {
             !any(b, "evidence.header", |_| true)
         }),
-        branch("evidence.table", "status.rs:673-682", "REGIME WORKLOAD VALID PASSES", |b| any(b, "evidence.header", |_| true)),
-        branch("evidence.heading", "status.rs:332, 744", "Valid passes supporting the checking profile (live and not alone, …; carried passes excluded)", |b| {
+        branch("evidence.table", "status.rs:evidence, exposure rows", "REGIME WORKLOAD VALID PASSES", |b| any(b, "evidence.header", |_| true)),
+        branch("evidence.heading", "status.rs:EVIDENCE_HEADING, evidence", "Valid passes supporting the checking profile (live and not alone, …; carried passes excluded)", |b| {
             any(b, "evidence.heading", |block| block.flat.contains("carried passes excluded"))
         }),
-        branch("evidence.tctl", "status.rs:683-689", "Tctl max since last profile change N°C [#N]", |b| {
+        branch("evidence.tctl", "status.rs:evidence, checking.peak", "Tctl max since last profile change N°C [#N]", |b| {
             any(b, "evidence.tctl", |_| true)
         }),
-        branch("evidence.no-tctl", "status.rs:683", "an evidence table with no Tctl peak", |b| {
+        branch("evidence.no-tctl", "status.rs:evidence, checking.peak None", "an evidence table with no Tctl peak", |b| {
             any(b, "evidence.header", |_| true) && !any(b, "evidence.tctl", |_| true)
         }),
         branch("parser.unclassified", "this exporter", "a block the parser does not place (should stay unreached)", |b| {
