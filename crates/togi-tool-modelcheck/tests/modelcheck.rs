@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use togi_facts::{Decisive, TrialClass};
-use togi_journal::{SCHEMA, Seq};
+use togi_journal::{FixStamp, SCHEMA, Seq};
 use togi_machine::{
     BiosContext, Condition, CoreId, CoreSet, PerCore, Regime, ResetKind, Signal, TargetOffset,
     WorkloadId,
@@ -75,7 +75,7 @@ fn fact(
             rev: "abc".into(),
             ruleset: 1,
             schema: SCHEMA,
-            fixes: 0,
+            fixes: FixStamp::none(),
             evidence: Some(1),
         },
         context: Some(context("fixture")),
@@ -387,6 +387,29 @@ fn an_undeclared_machine_checks_each_recorded_context_separately() {
     halves.extend(under("second", 6..=10));
     let checker = Checker::new(&two, &halves).unwrap();
     assert!(checker.groups(&two).unwrap().is_empty());
+}
+
+#[test]
+fn contexts_order_by_their_boost_limit_as_text() {
+    let two = model(&machine(0.0));
+    let boosted = |boost_limit_mhz: u32| BiosContext {
+        boost_limit_mhz,
+        ..context("board")
+    };
+    let mut records = Vec::new();
+    for (boost, seqs) in [(5700, 1..=10), (570, 11..=20), (10_000, 21..=30)] {
+        records.extend(seqs.map(|seq| {
+            let mut record = fact(seq, &[-10, 0], &[0], 90, Decisive::Pass);
+            record.context = Some(boosted(boost));
+            record
+        }));
+    }
+    let groups = Checker::new(&two, &records).unwrap().groups(&two).unwrap();
+    let boosts: Vec<_> = groups
+        .iter()
+        .map(|group| group.context.as_ref().unwrap().boost_limit_mhz)
+        .collect();
+    assert_eq!(boosts, [10_000, 570, 5700]);
 }
 
 #[test]

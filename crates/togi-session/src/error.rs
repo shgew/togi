@@ -1,7 +1,9 @@
 use std::io;
 use std::sync::Arc;
 
-use togi_journal::{AppendError, DeadEndCondition, DirError, EventKind, LookupError, Refusal, Seq};
+use togi_journal::{
+    AppendError, DeadEndCondition, DefectId, DirError, EventKind, LookupError, Refusal, Seq,
+};
 use togi_machine::{CoreId, CoreSet};
 
 use crate::boot::BootError;
@@ -126,7 +128,7 @@ pub enum SessionError {
     DeadEndUnrecorded(DeadEndCondition),
     #[error("ask whether to reset the cores of defect {defect}")]
     Prompt {
-        defect: u32,
+        defect: DefectId,
         #[source]
         source: io::Error,
     },

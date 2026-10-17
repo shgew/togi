@@ -1211,10 +1211,11 @@ fn a_round_intent_is_scheduled_only_for_the_open_rounds_own_checks() {
         plan.context,
         crate::TrialContext::Round { round: round.round }
     );
+    assert_eq!(plan.requirement.kind, crate::RequirementKind::Round);
     let (intent, trial) = j.intent(&plan);
     assert_eq!(
-        j.run().flight.open.as_ref().unwrap().requirement.kind,
-        crate::RequirementKind::Round
+        j.requirement().needed,
+        u32::from(plan.requirement.needed.get())
     );
     let other = std::num::NonZeroU32::new(round.round.get() + 1).unwrap();
     j.end(intent, &trial, Outcome::Pass);

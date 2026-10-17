@@ -51,6 +51,7 @@ togi-session = { path = "crates/togi-session", version = "0.0.0" }
 togi-sim = { path = "crates/togi-sim", version = "0.0.0" }
 togi-simrun = { path = "crates/togi-simrun", version = "0.0.0" }
 togi-smu = { path = "crates/togi-smu", version = "0.0.0" }
+togi-statecopy = { path = "crates/togi-statecopy", version = "0.0.0" }
 togi-tool-audit = { path = "crates/togi-tool-audit", version = "0.0.0" }
 togi-tool-forecast = { path = "crates/togi-tool-forecast", version = "0.0.0" }
 togi-tool-modelcheck = { path = "crates/togi-tool-modelcheck", version = "0.0.0" }

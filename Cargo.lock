@@ -1727,6 +1727,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-trialfiles",
 ]
@@ -1806,6 +1807,7 @@ dependencies = [
  "jiff",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-defect",
@@ -1826,6 +1828,17 @@ dependencies = [
  "test-case",
  "thiserror",
  "togi-hostlock",
+ "togi-machine",
+]
+
+[[package]]
+name = "togi-statecopy"
+version = "0.0.0"
+dependencies = [
+ "tempfile",
+ "test-case",
+ "thiserror",
+ "togi-journal",
  "togi-machine",
 ]
 
@@ -1870,12 +1883,22 @@ dependencies = [
  "togi-session",
  "togi-sim",
  "togi-simrun",
+ "togi-statecopy",
  "togi-tool-audit",
  "togi-tool-forecast",
  "togi-tool-modelcheck",
  "togi-tool-trialfacts",
  "togi-tuner",
  "togi-version",
+]
+
+[[package]]
+name = "togi-tool-copy-state"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "togi-machine",
+ "togi-statecopy",
 ]
 
 [[package]]
@@ -2113,6 +2136,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "test-case",
  "thiserror",
 ]
 
@@ -2130,6 +2154,7 @@ dependencies = [
  "rustix",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-journal",
@@ -2146,6 +2171,7 @@ name = "togi-watchtest"
 version = "0.0.0"
 dependencies = [
  "jiff",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-journal",

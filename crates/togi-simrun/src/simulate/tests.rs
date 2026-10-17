@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use jiff::tz::TimeZone;
+use test_case::test_case;
 use togi_config::Config;
-use togi_journal::{Build, EventKind, MemFs, SCHEMA};
+use togi_journal::{Build, EventKind, FixStamp, MemFs, SCHEMA};
 use togi_machine::{CancellationToken, Signal};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, Divergence, StopPolicy};
@@ -51,7 +52,7 @@ fn sim_input(
             rev: None,
             ruleset: 1,
             schema: SCHEMA,
-            fixes: 0,
+            fixes: FixStamp::none(),
             evidence: 1,
         },
         simulator,
@@ -119,32 +120,30 @@ fn checked_boots(replay: Replay, every: Option<NonZeroU32>) -> Vec<u32> {
     boots
 }
 
-#[test]
-fn a_capped_simulation_checks_the_boots_its_cadence_names_in_either_replay() {
-    for replay in [Replay::Warm, Replay::Cold] {
-        assert_eq!(checked_boots(replay, None), [3], "{replay:?}");
-        assert_eq!(checked_boots(replay, Some(nz(1))), [1, 2, 3], "{replay:?}");
-        assert_eq!(checked_boots(replay, Some(nz(2))), [2, 3], "{replay:?}");
-    }
+#[test_case(Replay::Warm; "warm")]
+#[test_case(Replay::Cold; "cold")]
+fn a_capped_simulation_checks_the_boots_its_cadence_names_in_either_replay(replay: Replay) {
+    assert_eq!(checked_boots(replay, None), [3], "{replay:?}");
+    assert_eq!(checked_boots(replay, Some(nz(1))), [1, 2, 3], "{replay:?}");
+    assert_eq!(checked_boots(replay, Some(nz(2))), [2, 3], "{replay:?}");
 }
 
-#[test]
-fn a_failed_check_of_the_last_boot_fails_the_simulation_instead_of_capping_it() {
-    for replay in [Replay::Warm, Replay::Cold] {
-        let mut boots = Vec::new();
-        let outcome = simulate_checked(
-            sim_input(crashing(), Persistence::Memory(MemFs::new()), replay, None),
-            &mut |_, _, _, boot| {
-                boots.push(boot);
-                Err(SimError::NoCapsule { boot })
-            },
-        );
-        assert!(
-            matches!(outcome, Err(SimError::NoCapsule { boot: 3 })),
-            "{replay:?}"
-        );
-        assert_eq!(boots, [3], "{replay:?}");
-    }
+#[test_case(Replay::Warm; "warm")]
+#[test_case(Replay::Cold; "cold")]
+fn a_failed_check_of_the_last_boot_fails_the_simulation_instead_of_capping_it(replay: Replay) {
+    let mut boots = Vec::new();
+    let outcome = simulate_checked(
+        sim_input(crashing(), Persistence::Memory(MemFs::new()), replay, None),
+        &mut |_, _, _, boot| {
+            boots.push(boot);
+            Err(SimError::NoCapsule { boot })
+        },
+    );
+    assert!(
+        matches!(outcome, Err(SimError::NoCapsule { boot: 3 })),
+        "{replay:?}"
+    );
+    assert_eq!(boots, [3], "{replay:?}");
 }
 
 #[test]

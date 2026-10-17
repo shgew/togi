@@ -78,7 +78,7 @@ impl PmSlot {
         let _ = self.0.set(reader);
     }
 
-    #[cfg(all(test, target_os = "linux"))]
+    #[cfg(test)]
     pub(crate) fn is_published(&self) -> bool {
         self.0.get().is_some()
     }
@@ -129,7 +129,7 @@ impl<R> RunnerHandle<R> {
         Self(Arc::new(Mutex::new(runner)))
     }
 
-    #[cfg(all(test, target_os = "linux"))]
+    #[cfg(test)]
     pub(crate) fn is_unlocked(&self) -> bool {
         self.0.try_lock().is_ok()
     }

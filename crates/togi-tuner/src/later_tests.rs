@@ -121,8 +121,36 @@ pub(crate) fn settle(j: &mut Journal) {
     panic!("the tuner kept deciding");
 }
 
+/// The failures whose holds still stand: the holds whose step-back the BIOS profile shows, in
+/// hold order.
+pub(crate) fn held(j: &Journal) -> Vec<Seq> {
+    let shown: Vec<Seq> = j
+        .state
+        .project()
+        .bios_profile
+        .into_iter()
+        .flat_map(|profile| profile.unconfirmed)
+        .map(|mark| mark.since)
+        .collect();
+    j.events
+        .iter()
+        .filter(|event| shown.contains(&event.seq))
+        .filter_map(|event| {
+            if let togi_journal::Payload::TunerDecision(decision) = &event.payload
+                && decision.decision == Decision::Hold
+            {
+                return event.cause.first().copied();
+            }
+            if let togi_journal::Payload::HuntSkipped(skip) = &event.payload {
+                return Some(skip.failure);
+            }
+            None
+        })
+        .collect()
+}
+
 pub(crate) fn strikes(j: &Journal) -> usize {
-    j.run().later.strikes().count()
+    held(j).len()
 }
 
 fn tokens(reason: &str, wanted: &[&str]) {
@@ -243,7 +271,6 @@ fn a_pair_owes_one_rerun_for_the_second_failure_and_consumes_the_hold_once() {
     let mut j = later_session(&[-10, -12]);
     start_cycle(&mut j);
     let first = fail_core(&mut j, 0);
-    let ledger = j.run().failures.pending(first).unwrap().ledger;
     let action = j.next_decision();
     j.decide(action);
     assert!(j.run().failures.pending(first).is_none());
@@ -264,7 +291,6 @@ fn a_pair_owes_one_rerun_for_the_second_failure_and_consumes_the_hold_once() {
         .collect();
     assert_eq!(owed, [(class, second)]);
     assert_eq!(strikes(&j), 0);
-    assert!(j.run().later.is_held(ledger));
     j.assert_resumes();
 
     settle(&mut j);
@@ -351,7 +377,7 @@ fn window_pairs_within_k_cycles_and_expires_at_k() {
         assert!(is_hold(&step), "{name}: {step:?}");
         let action = j.next_decision();
         j.decide(action);
-        let held: Vec<_> = j.run().later.strikes().map(|k| k.failure).collect();
+        let held = held(&j);
         assert_eq!(held.len(), 1, "{name}");
         assert_ne!(held[0], first, "{name}");
         j.assert_resumes();
@@ -441,7 +467,6 @@ fn stale_failure_at_a_deeper_offset_is_not_a_hold() {
     let action = j.next_decision();
     j.decide(action);
     assert_eq!(strikes(&j), 0);
-    assert!(j.run().later.strikes().next().is_none());
 }
 
 fn r7_later() -> Journal {
@@ -563,11 +588,11 @@ fn an_unattributed_first_failure_is_held_by_skipping_its_hunt() {
     tokens(&skip.reason, &["cores [00, 01]", "K = 5", "cycle 8"]);
     assert_eq!(action.cause, [first]);
     assert_eq!(strikes(&j), 0);
-    let held = j.decide(action);
+    let hold = j.decide(action);
     assert!(j.run().failures.queue_is_empty());
     assert_eq!(strikes(&j), 1);
-    assert!(j.run().later.is_held(first));
-    assert_eq!(j.run().bios_profile().since(), Some(held));
+    assert_eq!(held(&j), [first]);
+    assert_eq!(j.run().bios_profile().since(), Some(hold));
     j.assert_resumes();
 
     let second = idle_failure(&mut j);
@@ -584,7 +609,6 @@ fn an_unattributed_first_failure_is_held_by_skipping_its_hunt() {
     let started = j.decide(start);
     let paired = j.run().hunts.active.as_ref().unwrap().paired;
     assert_eq!(paired.map(|strike| strike.failure), Some(first));
-    assert_eq!(strikes(&j), 0);
     hunt_end(&mut j, started, HuntOutcome::Culprit, &[0]);
     let (backoff, _) = next(&j);
     assert_eq!(backoff.activity, Activity::Hunt);
@@ -723,10 +747,14 @@ fn an_unattributed_hold_shows_only_the_cores_its_hunt_would_search() {
         crate::DecisionPayload::HuntSkipped(_)
     ));
     j.decide(action);
-    let strike = *j.run().later.strikes().next().unwrap();
+    let shown = j.run().bios_profile();
     assert_eq!(
-        strike.display.iter().collect::<Vec<_>>(),
-        [(core(1), off(-11))],
+        shown
+            .unconfirmed
+            .iter()
+            .map(|mark| mark.core)
+            .collect::<Vec<_>>(),
+        [core(1)],
         "core 00 passed a full cycle at its offset, so the hunt would not search it"
     );
     assert_eq!(current_of(&j.run().bios_profile().shown), [-10, -11]);
@@ -768,21 +796,6 @@ fn the_unattributed_hold_ignores_a_failure_that_reaches_a_constraint() {
     );
     j.decide(action);
     assert_eq!(strikes(&j), 0);
-    assert!(!j.run().later.is_held(skip_failure(&j)));
-}
-
-fn skip_failure(j: &Journal) -> Seq {
-    j.events
-        .iter()
-        .rev()
-        .find_map(|event| {
-            if let togi_journal::Payload::HuntSkipped(skip) = &event.payload {
-                Some(skip.failure)
-            } else {
-                None
-            }
-        })
-        .unwrap()
 }
 
 #[test]
@@ -798,6 +811,8 @@ fn strikes_stay_bounded_by_cores_and_the_window() {
             end_cycle(&mut j);
             start_cycle(&mut j);
         }
+        // An invariant on stored state, not behavior: strikes kept in memory stay bounded,
+        // including ones the BIOS profile no longer shows.
         let by_core = j.run().later.strikes().count();
         j.assert_resumes();
         by_core

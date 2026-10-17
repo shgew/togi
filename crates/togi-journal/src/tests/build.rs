@@ -1,4 +1,4 @@
-use crate::{Build, Dimension, Operation, Refusal, Verdict};
+use crate::{Build, DefectId, Dimension, FixStamp, Operation, Refusal, Verdict};
 
 const BINARY: (u32, u32, u32) = (2, 5, 3);
 
@@ -8,7 +8,7 @@ fn stamp((schema, ruleset, evidence): (u32, u32, u32)) -> Build {
         rev: None,
         ruleset,
         schema,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence,
     }
 }
@@ -208,7 +208,7 @@ fn changing_only_version_rev_or_fixes_leaves_every_verdict_unchanged() {
         let mut upgraded = stamp(recorded);
         upgraded.version = "9.9.9".into();
         upgraded.rev = Some("def5678".into());
-        upgraded.fixes = 7;
+        upgraded.fixes = FixStamp::through(DefectId::new(7).unwrap());
         for operation in operations {
             assert_eq!(
                 stamp(BINARY).verdict(&upgraded, operation),
@@ -220,7 +220,7 @@ fn changing_only_version_rev_or_fixes_leaves_every_verdict_unchanged() {
     let mut upgraded_binary = stamp(BINARY);
     upgraded_binary.version = "9.9.9".into();
     upgraded_binary.rev = Some("def5678".into());
-    upgraded_binary.fixes = 7;
+    upgraded_binary.fixes = FixStamp::through(DefectId::new(7).unwrap());
     for operation in operations {
         assert_eq!(
             upgraded_binary.verdict(&stamp(SAME), operation),
@@ -245,13 +245,38 @@ fn build_names_the_program_as_togi() {
 fn build_wire_accepts_a_missing_fixes_field() {
     let build: Build =
         serde_json::from_str(r#"{"version":"1","ruleset":1,"schema":1,"evidence":1}"#).unwrap();
-    assert_eq!(build.fixes, 0);
+    assert_eq!(build.fixes, FixStamp::none());
     assert!(
         serde_json::from_str::<Build>(
             r#"{"version":"1","ruleset":1,"schema":1,"evidence":1,"x":1}"#
         )
         .is_err()
     );
+}
+
+#[test]
+fn defect_identities_keep_their_numeric_wire_form() {
+    let id = DefectId::new(3).unwrap();
+    assert_eq!(DefectId::new(0), None);
+    assert_eq!(id.get(), 3);
+    assert_eq!(serde_json::to_string(&id).unwrap(), "3");
+    assert_eq!(serde_json::from_str::<DefectId>("3").unwrap(), id);
+    assert!(serde_json::from_str::<DefectId>("0").is_err());
+
+    let stamp = FixStamp::through(id);
+    assert_eq!(serde_json::to_string(&stamp).unwrap(), "3");
+    assert_eq!(serde_json::from_str::<FixStamp>("3").unwrap(), stamp);
+    assert_eq!(serde_json::to_string(&FixStamp::none()).unwrap(), "0");
+}
+
+#[test]
+fn a_fixes_stamp_covers_every_defect_up_to_its_own() {
+    let stamp = FixStamp::through(DefectId::new(2).unwrap());
+    let fixed: Vec<bool> = (1..=3)
+        .map(|id| stamp.fixes(DefectId::new(id).unwrap()))
+        .collect();
+    assert_eq!(fixed, [true, true, false]);
+    assert!(!FixStamp::none().fixes(DefectId::new(1).unwrap()));
 }
 
 mod recorded {
