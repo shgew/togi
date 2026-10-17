@@ -1,0 +1,17 @@
+---
+source: crates/togi-tool-bench/src/pass_cost.rs
+expression: report
+---
+pass-cost: counterfactual study for #490 at a fixed profile; never tuner evidence.
+pass-cost: short_trial_s 120, checking_all_core_s 1200
+pass-cost: constant hazards on 2 CCDs; a partial's requirement is its CCD part's
+pass-cost: horizons 40 launches and 4.00 h
+hazard 2.00/h
+  part                                 passes         fail_p           first  launches    hours   done≤40 done≤4.00h  spent_n spent_h +launches  +hours
+  ccd                                  3x120s+1x300s  0.0645/0.1535   0.6930       4.6     0.21    1.0000     1.0000      4.6    0.21
+  ccd +2 short                         5x120s+1x300s  0.0645/0.1535   0.6065       7.3     0.30    1.0000     1.0000      7.3    0.30       2.7    0.09
+  all-core                             3x120s+1x600s  0.0645/0.2835   0.5866       4.8     0.35    1.0000     1.0000      4.8    0.35
+  all-core +2 short                    5x120s+1x600s  0.0645/0.2835   0.5134       7.5     0.44    1.0000     1.0000      7.5    0.44       2.7    0.09
+pass-cost: first: probability every required trial passes on its first launch, the chance the part qualifies at this profile.
+pass-cost: launches, hours, done and spent: COUNTERFACTUAL retries at the same profile until met, a failure resetting its own class's passes and charged its full duration; the tuner backs off instead. Censored share = 1 - done.
+pass-cost: +N short rows: COUNTERFACTUAL requirements with N more short passes; +launches and +hours are their expected extra cost over the current requirement.

@@ -19,6 +19,7 @@ sha2.workspace = true
 signal-hook.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+togi-config.workspace = true
 togi-facts.workspace = true
 togi-journal.workspace = true
 togi-machine.workspace = true
@@ -33,7 +34,7 @@ togi-version.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 test-case.workspace = true
-togi-config.workspace = true
+
 togi-render.workspace = true
 togi-session.workspace = true
 togi-simrun.workspace = true

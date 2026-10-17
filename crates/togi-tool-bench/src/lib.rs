@@ -21,6 +21,7 @@
 //! Three modes do not measure the suite. [`same`] proves two trees decide the same on every simulated session, or
 //! only the suite's smoke sessions, by comparing their journals. [`forecast`] resumes copies of a real run's
 //! state directory on the simulator with the suite's `target` scenario and summarizes what the runs did.
+//! [`pass_cost`] computes, without simulating, what the R7 part requirements cost at a fixed profile.
 //! [`research`] dispatches the steps of a bounded research campaign under its launch manifest.
 //!
 //! ```
@@ -46,6 +47,7 @@ pub mod forecast;
 pub mod gate;
 mod git;
 mod metrics;
+pub mod pass_cost;
 mod pool;
 mod process;
 mod record;

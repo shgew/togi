@@ -93,6 +93,7 @@ mod tests;
 #[cfg(test)]
 mod zero_tests;
 
+pub use checking::{R7PartRole, r7_part_passes};
 pub use class::{ClassKey, LoadKey, Secs};
 pub use constraints::{
     Combination, CombinationId, ConstraintError, Constraints, FailurePoint, Insertion, Limit,
