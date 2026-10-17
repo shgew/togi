@@ -53,7 +53,7 @@ The module also creates the unprivileged `togi-trial` system user and group and 
 
 To move to a newer release, change the tag in `url`, run `nix flake update togi` and rebuild. An update whose changelog line starts with **BREAKING** starts a seeded session on the next run ([section 7](#7-after-a-breaking-update)).
 
-The module installs `inputs.togi.packages.${pkgs.stdenv.hostPlatform.system}.default`, the `togi` built with crane; Go remains only for the retained development tools under `tools/`, whose tests run as the `go-tools` flake check. Moving a host from the earlier Go build of togi takes the steps in [Go to Rust cutover](#go-to-rust-cutover). From a checkout, `nix build .#default` builds the package, `just togi ARGS` runs the binary from the tree and `just check-one package` checks its version and completion scripts.
+The module installs `inputs.togi.packages.${pkgs.stdenv.hostPlatform.system}.default`, the `togi` built with crane. Moving a host from the earlier Go build of togi takes the steps in [Go to Rust cutover](#go-to-rust-cutover). From a checkout, `nix build .#default` builds the package, `just togi ARGS` runs the binary from the tree and `just check-one package` checks its version and completion scripts.
 
 mprime and y-cruncher come from the host's `nixpkgs`. Updating one of them, for example with `nix flake update nixpkgs`, can cost that backend's passes: [Evidence](spec/tuner.md#evidence) says when a pass still counts. Update the backends when the extra trials are worth it, not as routine.
 

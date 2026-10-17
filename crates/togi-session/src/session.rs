@@ -22,6 +22,7 @@ use togi_machine::{
     Partial, Smu, SmuValidated, Stopped, Trials,
 };
 use togi_render::Renderer;
+use togi_tuner::Topology;
 use togi_tuningboot::Bootloader;
 
 use crate::appender::{AppendHook, Appender, Unresumed};
@@ -306,7 +307,7 @@ pub(crate) struct Session<'machine> {
     pub(crate) carry: Option<PendingCarry>,
     pub(crate) cancel: CancellationToken,
     pub(crate) report: Box<dyn Write>,
-    /// Sorted by core id.
+    /// Sorted by core id, as [`Session::open`] read it.
     pub(crate) topology: Vec<CoreInfo>,
     pub(crate) hardware: Hardware,
     pub(crate) lifecycle: Lifecycle,
@@ -323,8 +324,9 @@ pub(crate) struct Session<'machine> {
 }
 
 impl<'machine> Session<'machine> {
-    /// Takes over the journal: refuses one this build may not append to, reads the pending tuning-boot reason, folds
-    /// the journal and reads the topology. Nothing is appended.
+    /// Takes over the journal: refuses one this build may not append to, reads the topology and, for a journal with
+    /// no session yet, refuses one the tuner cannot work on; then reads the pending tuning-boot reason and folds the
+    /// journal. Nothing is appended.
     pub(crate) fn open(input: RunInput<'machine>) -> Result<Self, Box<Ended>> {
         let RunInput {
             config,
@@ -347,10 +349,10 @@ impl<'machine> Session<'machine> {
             cancel,
             report,
         } = input;
-        let refused = |journal, error: SessionError| {
+        let refused = |journal, errors: Vec<SessionError>| {
             Box::new(Ended {
                 stop: None,
-                errors: vec![error],
+                errors,
                 emergency: None,
                 journal,
                 capsule: None,
@@ -358,38 +360,45 @@ impl<'machine> Session<'machine> {
             })
         };
         if let Some(refusal) = refusal(&build, &journal) {
-            let mut errors = vec![SessionError::Compatibility(refusal)];
-            if let Some(bootloader) = bootloader.as_deref_mut() {
-                let left = boot::leave(bootloader, "journal incompatible");
-                errors.extend(left.reason_error.map(SessionError::from));
-                errors.extend(left.entry.err().map(SessionError::ClearSavedEntry));
-            }
-            return Err(Box::new(Ended {
-                stop: None,
-                errors,
-                emergency: None,
-                journal,
-                capsule: None,
-                panic: None,
-            }));
+            let errors = leaving(
+                SessionError::Compatibility(refusal),
+                &mut bootloader,
+                "journal incompatible",
+            );
+            return Err(refused(journal, errors));
         }
-        let handoff = match bootloader.map(BootHandoff::read).transpose() {
-            Ok(handoff) => handoff,
-            Err(error) => return Err(refused(journal, error.into())),
-        };
         let Machine {
             clock,
             smu,
-            host,
+            mut host,
             trials,
             kernel,
         } = machine;
+        let mut topology = match host.topology() {
+            Ok(topology) => topology,
+            Err(error) => return Err(refused(journal, vec![error.into()])),
+        };
+        topology.sort_by_key(|info| info.core);
+        if journal.events().is_empty()
+            && let Err(error) = Topology::new(&topology)
+        {
+            let errors = leaving(
+                SessionError::UnsupportedTopology(error),
+                &mut bootloader,
+                &format!("unsupported topology: {error}"),
+            );
+            return Err(refused(journal, errors));
+        }
+        let handoff = match bootloader.map(BootHandoff::read).transpose() {
+            Ok(handoff) => handoff,
+            Err(error) => return Err(refused(journal, vec![error.into()])),
+        };
         let mut appender =
             match Appender::resume_with(journal, clock, renderer, zone, defects, resume) {
                 Ok(appender) => appender,
                 Err(unresumed) => {
                     let Unresumed { journal, error } = *unresumed;
-                    return Err(refused(journal, error.into()));
+                    return Err(refused(journal, vec![error.into()]));
                 }
             };
         if let Some(log) = log {
@@ -424,7 +433,7 @@ impl<'machine> Session<'machine> {
             carry,
             cancel,
             report,
-            topology: Vec::new(),
+            topology,
             hardware: Hardware::new(CoreSet::default()),
             lifecycle: Lifecycle::Unswept,
             validated: None,
@@ -454,13 +463,11 @@ impl<'machine> Session<'machine> {
         matches!(self.visit, Visit::Same { reconciled: false })
     }
 
-    /// Reads the topology and refuses changed session cores before finishing an earlier boot's dead end; then
-    /// refuses configured cores it lacks and, unless a dead end stays pending until reconciliation, records the
-    /// startup kernel boundary and the configuration.
+    /// Refuses changed session cores before finishing an earlier boot's dead end; then refuses configured cores the
+    /// machine lacks and, unless a dead end stays pending until reconciliation, records the startup kernel boundary
+    /// and the configuration.
     pub(crate) fn start(&mut self) -> Outcome {
-        let mut topology = self.host.topology()?;
-        topology.sort_by_key(|info| info.core);
-        let cores: CoreSet = topology.iter().map(|info| info.core).collect();
+        let cores: CoreSet = self.topology.iter().map(|info| info.core).collect();
         let recorded = self.appender.recovery();
         if recorded.started() {
             let known: CoreSet = recorded.topology().keys().copied().collect();
@@ -483,7 +490,6 @@ impl<'machine> Session<'machine> {
         {
             return Err(SessionError::NoSuchCore { core });
         }
-        self.topology = topology;
         self.hardware = Hardware::new(cores);
         if self.appender.recovery().pending_dead_end().is_some() {
             return Ok(Control::Continue);
@@ -840,6 +846,22 @@ pub(crate) fn refusal(build: &Build, journal: &Journal) -> Option<togi_journal::
         Verdict::Use => None,
         Verdict::Archive => unreachable!("an append is refused or used, never archived"),
     }
+}
+
+/// The errors of a run refused before its first append: `refusal`, then those of leaving the tuning boot for `reason`
+/// when the run was started from it.
+fn leaving(
+    refusal: SessionError,
+    bootloader: &mut Option<Box<dyn Bootloader>>,
+    reason: &str,
+) -> Vec<SessionError> {
+    let mut errors = vec![refusal];
+    if let Some(bootloader) = bootloader.as_deref_mut() {
+        let left = boot::leave(bootloader, reason);
+        errors.extend(left.reason_error.map(SessionError::from));
+        errors.extend(left.entry.err().map(SessionError::ClearSavedEntry));
+    }
+    errors
 }
 
 #[cfg(test)]

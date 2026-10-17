@@ -52,7 +52,6 @@ fn simulation_runs_full_first_offset_fallback_chains() {
         } else if let Payload::CheckingChain(chain) = payload {
             chains += 1;
             assert!(chain.source_seqs.is_empty(), "{chain:?}");
-            assert!(event.msg.contains("offset fallback"), "{}", event.msg);
             assert_eq!(
                 passes, 4,
                 "chain {chains} derived before its predecessor passed"

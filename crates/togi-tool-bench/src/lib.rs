@@ -72,6 +72,6 @@ pub use record::{
     read_from as read_records_from, write as write_records,
     write_baseline as write_baseline_records,
 };
-pub use run::{Options, Report, execute, set_scenario_shares};
+pub use run::{Options, Report, RunFinding, execute, set_scenario_shares};
 pub use simulator::{Session, Simulator};
 pub use suite::{Machine, Plan, RunSpec, Selection, Suite, SuiteError, SuiteSource};

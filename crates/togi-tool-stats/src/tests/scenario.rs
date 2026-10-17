@@ -398,7 +398,7 @@ fn a_cutoff_between_runs_and_hunts_keeps_the_totals_of_the_run_it_overlaps() {
     let m = compute(&p, cutoff);
     assert_eq!(m.runs.len(), 1);
     assert!(m.hunts.is_empty(), "the hunt began before the cutoff");
-    assert!(m.r7.backoffs.len() == 1, "the backoff came after it");
+    assert_eq!(m.r7.backoffs.len(), 1, "the backoff came after it");
 }
 
 #[test]

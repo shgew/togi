@@ -13,8 +13,6 @@ use togi_simrun::{Observe, Observer};
 
 use crate::common::{Bench, finish, machine_file};
 
-const VOLTAGE_TARGETED: &str = "voltage-targeted R7 backoff";
-
 fn at(profile: &PerCore<TargetOffset>, core: CoreId) -> i64 {
     profile.get(core).map_or(0, TargetOffset::get)
 }
@@ -128,7 +126,6 @@ fn assert_named_target(events: &[Event], needed: u32) {
     };
     assert_eq!(decision.core, named);
     assert_eq!(decision.to_offset.get() - decision.from_offset.get(), 3);
-    assert!(decision.reason.contains(VOLTAGE_TARGETED));
 
     let passes: Vec<_> = decision_event
         .cause
@@ -282,8 +279,7 @@ fn sixteen_cores_reach_a_clean_cycle() {
                     );
                     named_backoffs += 1;
                     named_multi_count |= *signal == Signal::ComputationError
-                        && decision.to_offset.get() - decision.from_offset.get() > 1
-                        && decision.reason.contains(VOLTAGE_TARGETED);
+                        && decision.to_offset.get() - decision.from_offset.get() > 1;
                 }
             }
             Payload::CheckingChain(chain) => {

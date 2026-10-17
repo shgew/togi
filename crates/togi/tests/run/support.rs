@@ -703,3 +703,44 @@ impl togi_machine::Host for UnvalidatedHost {
         self.inner.watchdog()
     }
 }
+
+/// A host whose cores sit on four CCDs, a quarter of them each: one CCD more than the tuner supports.
+pub(crate) struct FourCcds(pub(crate) Box<dyn togi_machine::Host>);
+
+impl togi_machine::Host for FourCcds {
+    fn boot_id(&mut self) -> Result<BootId, MachineError> {
+        self.0.boot_id()
+    }
+
+    fn topology(&mut self) -> Result<Vec<togi_machine::CoreInfo>, MachineError> {
+        let mut cores = self.0.topology()?;
+        let quarter = cores.len().div_ceil(4);
+        for (index, info) in cores.iter_mut().enumerate() {
+            info.ccd = togi_machine::CcdId(u8::try_from(index / quarter).unwrap());
+        }
+        Ok(cores)
+    }
+
+    fn validate_smu(&mut self) -> Result<SmuValidated, MachineError> {
+        self.0.validate_smu()
+    }
+
+    fn bios_context(&mut self) -> Result<togi_machine::BiosContext, MachineError> {
+        self.0.bios_context()
+    }
+
+    fn ranking(
+        &mut self,
+    ) -> Result<Vec<togi_machine::CoreRank>, togi_machine::Partial<Vec<togi_machine::CoreRank>>>
+    {
+        self.0.ranking()
+    }
+
+    fn preflight(&mut self) -> Vec<togi_machine::Check> {
+        self.0.preflight()
+    }
+
+    fn watchdog(&mut self) -> togi_machine::Check {
+        self.0.watchdog()
+    }
+}

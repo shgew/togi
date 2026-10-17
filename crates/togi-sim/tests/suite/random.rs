@@ -64,7 +64,11 @@ fn drawn_limits_stay_within_their_documented_bounds() {
                 together += 1;
                 zero_together += usize::from(limit == floor);
             }
-            assert!(limits.idle.is_none() && limits.flat == 0.0 && limits.workload.is_empty());
+            assert!(
+                limits.idle.is_none() && limits.workload.is_empty(),
+                "seed {seed}"
+            );
+            assert_eq!(limits.flat, 0.0, "seed {seed}");
         }
     }
     assert!(
