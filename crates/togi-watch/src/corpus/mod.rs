@@ -12,7 +12,8 @@
 //! 1. reruns every other unit test of this crate in a child process of this test binary; each test records what it
 //!    renders under its own name, into a records file beside the document;
 //! 2. folds every prefix of every [`togi_watchtest::Base`] journal and of the cycle a rerun completes, and draws
-//!    each at the three main sizes and at its clocks ([`crate::frames::corpus::run`]);
+//!    each at a sample of the three main sizes and clocks, not their cross product
+//!    ([`crate::frames::corpus::run`] lists them);
 //! 3. draws the 18 [`togi_watchtest::Scenario`] cuts and the journal states at the three sizes;
 //! 4. writes one Markdown document ([`document`]): the phrase templates by producer, the forwarded journal
 //!    messages, the [`manifest`] of source literals with the cases that rendered each, and the status corpus.

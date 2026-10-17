@@ -4,14 +4,14 @@ Every phrase below is text a renderer produced in this run; none is typed in. Wo
 
 ## How it was collected
 
-- **Unit tests.** 628 unit tests ran in the same binary; 331 of them rendered at least one phrase. Each phrase is credited to the test (`tests`) that rendered it.
-- **Sweep.** 10 journals were folded one event at a time, and every prefix was drawn at 240x67, 160x45 and 120x33 at the event's own time and 40 s later, and at the planned end and 90 s past it when a trial runs that nothing holds. A started idle (R6) trial freezes its frame, so those are drawn at the first two clocks only, and the sweep asserts the frame reports itself held. 18 scenario cuts were drawn at the three sizes too, with the journal states, help and the journal view (405742 frames in all). Credited as `sweep`.
+- **Unit tests.** 629 unit tests ran in the same binary; 331 of them rendered at least one phrase. Each phrase is credited to the test (`tests`) that rendered it.
+- **Sweep.** 10 journals were folded one event at a time, each fold credited to its prefix's case, and every prefix was drawn at 240x67 at the event's own time, 40 s later, and, when a trial runs that nothing holds, at the trial's planned end and 90 s past it; at 160x45 and 120x33 only 40 s later and 90 s past the planned end. A started idle (R6) trial freezes its frame, so no planned-end clocks are sampled for it: it is drawn at 240x67 at the event's own time and 40 s later, and at the other two sizes 40 s later only, and the sweep asserts the frame reports itself held. 18 scenario cuts, each projected under its own case, were drawn at the three sizes too, with the journal states, help and the journal view (405742 frames in all). Credited as `sweep`.
 - **Clauses and templates.** A rendered phrase is cut into clauses at ` · `, ` ─ `, ` │ `, ` → ` and runs of two spaces, and a clause with no letter is dropped. A clause becomes a template by folding its digits, lists and ranges of numbers to `#`, the signs before offsets, hexadecimal ids, gauge and rule glyphs and runs of spaces. The numbers, core lists and error strings a phrase can carry are unbounded, so only the finite templates, forms and branches are claimed as covered.
 - **Cuts.** A template that is only a cut of a longer one of the same producer, a truncation ending in `...`, a wrapped row or a column cut, is folded into the longer one; its forms, cases and texts stay on it. A truncation no other template holds whole stays and is marked.
 - **Alternatives.** Templates of one producer that differ in one run of up to 3 tokens and agree on every token around it are one line, `before {a | b} after`. Each alternative was rendered in exactly that context, and two positions never vary at once.
 - **Provenance.** Each line names its forms, the two least case names that rendered it, and how many renderings there were. A manifest literal is `file:line`.
 
-2996 templates from 46 producers, reduced from 4770 shapes and 122558 distinct texts: 1071 cuts folded in, 1127 templates merged into alternatives, 194 truncations with no full form.
+2996 templates from 46 producers, reduced from 4770 shapes and 122560 distinct texts: 1071 cuts folded in, 1127 templates merged into alternatives, 194 truncations with no full form.
 
 ## Regenerating
 
@@ -287,7 +287,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (37 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (2240 renders)
 - ` screen paused ` ×1
   - forms ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (20 renders); sweep scenario/idle/160x45, scenario/idle/240x67 (1678 renders)
-- ` session #m ` ×4671
+- ` session #m ` ×4672
   - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (267 renders); sweep scenario/between/120x33, scenario/between/160x45 (405649 renders)
 - ` togi ` ×1
   - forms ` compact `, ` full `; tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (278 renders); sweep scenario/between/120x33, scenario/between/160x45 (405709 renders)
@@ -471,61 +471,61 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 ### `describe`
 
 - ` # at failing offsets ` ×23
-  - forms ` trial.end `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (879 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (229 renders); sweep scenario/combination, scenario/concluded (650 renders)
 - ` # cancelled ` ×1
   - forms ` hunt.end `; tests tests::describe::a_hunt_says_how_it_ended (1 renders)
 - ` # done ` ×5
-  - forms ` hunt.end `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (137 renders)
+  - forms ` hunt.end `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (82 renders); sweep scenario/combination, scenario/concluded (55 renders)
 - ` # group in #s ` ×1
-  - forms ` hunt.end `; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (6 renders)
+  - forms ` hunt.end `; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (3 renders); sweep scenario/unconfirmed, sweep/unconfirmed/4943-hunt.end (3 renders)
 - ` # group, all answered by existing evidence ` ×1
   - forms ` hunt.end `; tests tests::describe::a_hunt_says_how_it_ended (1 renders)
 - ` # groups in {#m | #s} ` ×8
-  - forms ` hunt.end `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (123 renders)
+  - forms ` hunt.end `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (71 renders); sweep scenario/combination, scenario/concluded (52 renders)
 - ` # kept together ` ×1
   - forms ` hunt.end `; tests tests::describe::a_hunt_says_how_it_ended, tests::history::fallback_history (2 renders)
 - ` # kept together, probed ` ×4
-  - forms ` hunt.end `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (16 renders)
+  - forms ` hunt.end `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (8 renders); sweep scenario/combination, scenario/round (8 renders)
 - ` # passed, the proposed offsets held ` ×2
-  - forms ` deepening.round `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (9 renders)
+  - forms ` deepening.round `; tests frames::frame_tests::bounds::combination, frames::snapshots::combination (4 renders); sweep scenario/combination, sweep/combination/4920-deepening.round (5 renders)
 - ` # started ` ×7
-  - forms ` hunt.start `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (163 renders)
+  - forms ` hunt.start `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (105 renders); sweep scenario/combination, scenario/concluded (58 renders)
 - ` # step ` ×1
   - forms ` checking.cycle `; tests tests::history::cycle_history (3 renders)
 - ` # steps ` ×2
-  - forms ` checking.cycle `; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (173 renders)
+  - forms ` checking.cycle `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (103 renders); sweep scenario/between, scenario/checking (70 renders)
 - ` # stopped: a failure ` ×1
   - forms ` deepening.round `; tests tests::describe::deepening_rounds_say_their_moves_and_their_verdict (1 renders)
 - ` # stopped: failure #: blame goes to the deepened cores ` ×2
-  - forms ` deepening.round `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (32 renders)
+  - forms ` deepening.round `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (19 renders); sweep scenario/concluded, scenario/confirmation (13 renders)
 - ` # unresolved ` ×1
   - forms ` hunt.end `; tests tests::describe::a_hunt_says_how_it_ended, tests::history::fallback_history (2 renders)
 - ` # with core # at # ` ×9
-  - forms ` trial.end `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (1327 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (1227 renders); sweep scenario/combination, scenario/round (100 renders)
 - ` #: core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to #, core # goes deeper to # ` ×5
-  - forms ` deepening.round `; 4 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (47 renders)
+  - forms ` deepening.round `; 4 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (26 renders); sweep scenario/combination, scenario/concluded (21 renders)
 - ` #: core # goes deeper to #, core # yields to # ` ×1
   - forms ` deepening.round `; tests tests::history::deepening_history_separates_deeper_and_yielded_members (1 renders)
 - ` #; no later round moves it ` ×9
-  - forms ` tuner.decision `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (141 renders)
+  - forms ` tuner.decision `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (83 renders); sweep scenario/concluded, scenario/confirmation (58 renders)
 - ` C# over # ` ×1
   - forms ` combination `; tests tests::history::fallback_history (1 renders)
 - ` C#: # ` ×5
-  - forms ` combination `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (17 renders)
+  - forms ` combination `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (9 renders); sweep scenario/combination, scenario/round (8 renders)
 - ` CCD # partial # loads # ` ×62
-  - forms ` checking.chain `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (8970 renders)
+  - forms ` checking.chain `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (2402 renders); sweep scenario/combination, scenario/concluded (6568 renders)
 - ` CCD # partials end ` ×2
-  - forms ` checking.chain `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1865 renders)
+  - forms ` checking.chain `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (399 renders); sweep scenario/combination, scenario/concluded (1466 renders)
 - ` R# all-core at these offsets already failed in a carried trial ` ×1
   - forms ` failure `; tests tests::describe::a_known_failure_names_the_hunt_it_leads_to (1 renders)
 - ` R# full CCD #+# on # ` ×3
-  - forms ` trial.end `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (716 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (44 renders); sweep scenario/combination, scenario/concluded (672 renders)
 - ` R# heavy vector at # ` ×15
-  - forms ` trial.end `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (334 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (219 renders); sweep scenario/between, scenario/checking (115 renders)
 - ` R# light {at | on} # ` ×25
-  - forms ` trial.end `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1728 renders)
+  - forms ` trial.end `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1160 renders); sweep scenario/between, scenario/checking (568 renders)
 - ` R# {full | partial} CCD # on # ` ×53
-  - forms ` trial.end `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (8736 renders)
+  - forms ` trial.end `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (579 renders); sweep scenario/between, scenario/combination (8157 renders)
 - ` R# {full | partial} CCD # on core # at # ` ×2
   - forms ` trial.end `; 2 templates merged; tests tests::describe::an_r7_cycle_trial_names_the_part_it_loaded, tests::hunt::a_started_idle_trial_holds_every_frame_until_its_end_is_recorded (2 renders)
 - ` a trial at these offsets already {crashed | failed} ` ×2
@@ -535,43 +535,43 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` before any offsets were applied, rebooted ` ×1
   - forms ` crash.detected `; tests tests::model::crash_classification, tests::model::recovery_ends_only_when_a_trial_starts (2 renders)
 - ` candidates # ` ×7
-  - forms ` hunt.start `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (163 renders)
+  - forms ` hunt.start `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (105 renders); sweep scenario/combination, scenario/concluded (58 renders)
 - ` clear of C# ` ×1
-  - forms ` tuner.decision `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (15 renders)
+  - forms ` tuner.decision `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (7 renders); sweep scenario/combination, scenario/round (8 renders)
 - ` core # ` ×161
-  - forms ` trial.end `, ` tuner.decision `; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (4741 renders)
+  - forms ` trial.end `, ` tuner.decision `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (3025 renders); sweep scenario/between, scenario/checking (1716 renders)
 - ` core # confirming # as its solo limit ` ×52
-  - forms ` tuner.decision `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1236 renders)
+  - forms ` tuner.decision `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (825 renders); sweep scenario/between, scenario/checking (411 renders)
 - ` core # failure held; tuning stays at # ` ×1
-  - forms ` tuner.decision `; tests corpus::narration_corpus, frames::frame_tests::bounds::hunt_bios (6 renders)
+  - forms ` tuner.decision `; tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (3 renders); sweep scenario/hunt-bios, sweep/laterhunt/11077-tuner.decision (3 renders)
 - ` core # has room again at # ` ×10
-  - forms ` core.phase `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (140 renders)
+  - forms ` core.phase `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (82 renders); sweep scenario/concluded, scenario/confirmation (58 renders)
 - ` core # passed #; searches # on its next turn ` ×178
-  - forms ` tuner.decision `; tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (8245 renders)
+  - forms ` tuner.decision `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (5524 renders); sweep scenario/between, scenario/checking (2721 renders)
 - ` core # starts over from # ` ×1
   - forms ` core.phase `; tests tests::model::a_reset_core_drops_its_solo_limit (1 renders)
 - ` core # {at | yields} # ` ×12
-  - forms ` hunt.group `, ` tuner.decision `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (143 renders)
+  - forms ` hunt.group `, ` tuner.decision `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (85 renders); sweep scenario/concluded, scenario/confirmation (58 renders)
 - ` core # {corrected | uncorrected} error between trials (recorded only) ` ×2
   - forms ` mce `; 2 templates merged; tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden, tests::history::a_reset_and_an_mce_have_lines (2 renders)
 - ` core # {fails at | solo limit} # ` ×210
-  - forms ` core.phase `, ` failure `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (4843 renders)
+  - forms ` core.phase `, ` failure `; 2 templates merged; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3137 renders); sweep scenario/between, scenario/checking (1706 renders)
 - ` cycle # ended early: failure ` ×1
   - forms ` checking.cycle `; tests tests::history::cycle_history (1 renders)
 - ` cycle # passed but missing R#: # more steps, R#: # more steps, R#: # more steps, R#: # more steps, R#: # more steps, R#: # more steps ` ×2
-  - forms ` checking.cycle `; 1 cuts folded in; tests corpus::narration_corpus, frames::story::tests::the_story::a_rerun_that_completes_the_cycle_names_no_step_of_the_next (3 renders)
+  - forms ` checking.cycle `; 1 cuts folded in; tests frames::story::tests::the_story::a_rerun_that_completes_the_cycle_names_no_step_of_the_next, tests::history::cycle_history (2 renders); sweep sweep/rerun-completes-cycle/0036-checking.cycle (1 renders)
 - ` cycle # passed, a full cycle ` ×4
-  - forms ` checking.cycle `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (96 renders)
+  - forms ` checking.cycle `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (45 renders); sweep scenario/combination, scenario/concluded (51 renders)
 - ` cycle # started ` ×4
-  - forms ` checking.cycle `; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (176 renders)
+  - forms ` checking.cycle `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (106 renders); sweep scenario/between, scenario/checking (70 renders)
 - ` cycle # step # ` ×13
-  - forms ` checking.chain `, ` checking.step `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (10836 renders)
+  - forms ` checking.chain `, ` checking.step `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (2802 renders); sweep scenario/combination, scenario/concluded (8034 renders)
 - ` cycle # step #: R# all-core ` ×12
-  - forms ` checking.step `; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (407 renders)
+  - forms ` checking.step `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (233 renders); sweep scenario/between, scenario/checking (174 renders)
 - ` cycle # step #: R# heavy vector ` ×1
   - forms ` checking.step `; tests tests::describe::a_checking_step_names_its_regime_then_its_workload (1 renders)
 - ` dead end: backend mprime is missing: setup failed: backend binary missing ` ×2
-  - forms ` deadend `, ` trial.end `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bounds::deadend (18 renders)
+  - forms ` deadend `, ` trial.end `; 1 cuts folded in; tests frames::frame_tests::bounds::deadend, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (12 renders); sweep scenario/deadend, sweep/deadend/4142-trial.end (6 renders)
 - ` dead end: core # read back # instead of # ` ×1
   - forms ` deadend `; tests tests::model::smu_dead_end_keeps_the_readback, tests::model::write_after_restoration_is_not_saved (2 renders)
 - ` dead end: firmware reported a thermal trip ` ×1
@@ -587,23 +587,23 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` dead end: 日本語[#J]#;c;data  #m#;title ` ×1
   - forms ` deadend `; tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped (1 renders)
 - ` hunt # group # ` ×1223
-  - forms ` hunt.group `, ` trial.end `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2218 renders)
+  - forms ` hunt.group `, ` trial.end `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1465 renders); sweep scenario/combination, scenario/concluded (753 renders)
 - ` hunt # group # skipped: same set ` ×1
   - forms ` hunt.group `; tests tests::describe::hunt_groups_answered_without_a_trial (1 renders)
 - ` hunt # unresolved ` ×1
   - forms ` combination `; tests tests::history::fallback_history (1 renders)
 - ` idle with the offsets applied, rebooted ` ×2
-  - forms ` crash.detected `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (407 renders)
+  - forms ` crash.detected `; 1 cuts folded in; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (76 renders); sweep scenario/between, scenario/checking (331 renders)
 - ` it could not run ` ×1
   - forms ` trial.end `; tests tests::describe::a_trial_is_named_by_what_it_ran (1 renders)
 - ` locate, idle cores at # ` ×1
-  - forms ` trial.end `; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (8 renders)
+  - forms ` trial.end `; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (5 renders); sweep scenario/unconfirmed, sweep/unconfirmed/4941-trial.end (3 renders)
 - ` logical CPU # corrected error between trials (recorded only) ` ×1
   - forms ` mce `; tests tests::describe::the_kinds_with_a_line_of_their_own (1 renders)
 - ` no backend ` ×1
   - forms ` trial.end `; tests tests::describe::a_trial_is_named_by_what_it_ran (1 renders)
 - ` not hunted: held: first unattributed failure loading cores [#] since the profile passed cycle # (#); a second failure loading any of them by cycle # (K = #) is hunted ` ×1
-  - forms ` hunt.skipped `; tests corpus::narration_corpus, frames::frame_tests::bounds::hunt_bios (6 renders)
+  - forms ` hunt.skipped `; tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (3 renders); sweep scenario/hunt-bios, sweep/laterhunt/10992-hunt.skipped (3 renders)
 - ` power loss or reset, which says nothing about the offsets ` ×1
   - forms ` crash.detected `; tests tests::model::crash_classification (1 renders)
 - ` projection: a later boot wrote this; continuing the session ` ×1
@@ -615,21 +615,21 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` requested from the command line ` ×1
   - forms ` command.reset `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, tests::history::a_reset_and_an_mce_have_lines (4 renders)
 - ` rerun of R# all-core on # with every core at # ` ×24
-  - forms ` trial.end `; 2 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (710 renders)
+  - forms ` trial.end `; 2 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (127 renders); sweep scenario/between, scenario/combination (583 renders)
 - ` rerun of R# idle + bursts on # ` ×4
-  - forms ` trial.end `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (412 renders)
+  - forms ` trial.end `; 1 cuts folded in; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (54 renders); sweep scenario/combination, scenario/concluded (358 renders)
 - ` rerun of R# light on core # at # ` ×91
-  - forms ` trial.end `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (3007 renders)
+  - forms ` trial.end `; 1 cuts folded in; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (517 renders); sweep scenario/combination, scenario/concluded (2490 renders)
 - ` rerun of R# {both threads | heavy vector | load steps | partial load} on core # at # ` ×402
-  - forms ` trial.end `; 4 cuts folded in; 4 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (11829 renders)
+  - forms ` trial.end `; 4 cuts folded in; 4 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (2714 renders); sweep scenario/combination, scenario/concluded (9115 renders)
 - ` session resumed ` ×1
-  - forms ` config.loaded `; tests corpus::narration_corpus, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (398 renders)
+  - forms ` config.loaded `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (66 renders); sweep scenario/between, scenario/checking (332 renders)
 - ` stays with loaded # ` ×2
-  - forms ` hunt.end `; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (7 renders)
+  - forms ` hunt.end `; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (4 renders); sweep scenario/unconfirmed, sweep/unconfirmed/4943-hunt.end (3 renders)
 - ` stopped ` ×1
-  - forms ` shutdown `; tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (42 renders)
+  - forms ` shutdown `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_resting_band_of_one_line_leaves_the_ccd_table_its_rows (21 renders); sweep scenario/combination, scenario/first-result (21 renders)
 - ` trial ended before its full duration; stopped by signal ` ×1
-  - forms ` trial.end `; tests corpus::narration_corpus (2 renders)
+  - forms ` trial.end `; sweep sweep/probe/3439-trial.end, sweep/probe/projected (2 renders)
 - ` trial {orphan]#;c;payload  	#Jtitle  ‮ | unrelated} ` ×2
   - forms ` trial.end `; 2 templates merged; tests tests::history::orphan_trial_id_stays_raw, tests::history::reboot_history_requires_matching_cause (2 renders)
 - ` write state projection: from an earlier run; continuing the session ` ×1
@@ -645,7 +645,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 - ` write state projection: {another arrival; | latest arrival; | old arrival; | ordinary arrival; | rewritten #; | this run; | warning #;} continuing the session ` ×747
   - forms ` session.warning `; 1 cuts folded in; 7 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::panels::a_history_too_short_for_its_entries_counts_every_one_it_leaves_out (1214 renders)
 - ` {core | cores} # named ` ×6
-  - forms ` hunt.end `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (110 renders)
+  - forms ` hunt.end `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (66 renders); sweep scenario/concluded, scenario/confirmation (44 renders)
 - ` {failed | passed} on existing evidence ` ×2
   - forms ` hunt.group `; 2 templates merged; tests tests::describe::hunt_groups_answered_without_a_trial (2 renders)
 
@@ -1291,7 +1291,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
   - forms ` Compact `; example ` q... `; tests frames::help::tests::help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size (2 renders)
 - ` screen paused ` ×1
   - forms ` Medium `, ` Wide `; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::idle (34 renders); sweep scenario/idle/160x45, scenario/idle/240x67 (1678 renders)
-- ` session #m ` ×4671
+- ` session #m ` ×4672
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (360 renders); sweep scenario/between/120x33, scenario/between/160x45 (405649 renders)
 - ` starting ` ×1
   - forms ` Compact `, ` Medium `, ` Wide `; tests frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (13 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (6 renders)
@@ -5711,7 +5711,7 @@ TOGI_NARRATION_STATUS=<status-export> TOGI_NARRATION_CORPUS=<repo>/docs/narratio
 The log view and `togi status` pass these through as the journal wrote them, so a wording problem in one belongs to the tuner that wrote it, not to a dashboard phrase.
 
 - ` BIOS SIM.# on togi simulator, Simulated Zen #-Core Processor, microcode #x#, boost limit # MHz ` ×1
-  - forms ` session context `; tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (111 renders)
+  - forms ` session context `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (75 renders); sweep scenario/between, scenario/checking (36 renders)
 - ` after ` ×1
   - forms ` session warning `; tests terminal::source::tests::an_event_of_an_unknown_kind_is_skipped_and_reported_in_the_snapshot (1 renders)
 - ` appended ` ×1
@@ -5721,7 +5721,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` backend mprime: retry # of # after # s: 日本語[#J]#;c;data  #m#;title ` ×1
   - forms ` backend retry `; tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped (1 renders)
 - ` baseline profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] ` ×1
-  - forms ` session baseline `; tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (111 renders)
+  - forms ` session baseline `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (75 renders); sweep scenario/between, scenario/checking (36 renders)
 - ` carried # candidate solo limits from ; failure points stay behind: no reason recorded ` ×1
   - forms ` session carried `; tests tests::describe::solo_limits_found_before_the_first_trial_are_counted_on_the_session_line (1 renders)
 - ` carried failure of trial - from session #T#Z (togi #): together R# mprime AVX#K-#K all-core on cores # failed (computation_error) after # s at [#: #: #: #] (intended # s, evidence epoch #) ` ×1
@@ -5737,175 +5737,175 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` checking cycle # R# step # CCD # mprime AVX#K-#K all-core: request groups [[#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×4
   - forms ` checking chain `; 1 cuts folded in; tests tests::model::a_running_rerun_names_the_step_checking_resumes_at (4 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×12
-  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (48 renders)
+  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (18 renders); sweep scenario/unconfirmed, sweep/crashedcycle/8381-checking.chain (30 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×25
-  - forms ` checking chain `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (110 renders)
+  - forms ` checking chain `; 2 templates merged; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (45 renders); sweep scenario/unconfirmed, sweep/crashedcycle/6029-checking.chain (65 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×38
-  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (328 renders)
+  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (172 renders); sweep scenario/concluded, scenario/confirmation (156 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×91
-  - forms ` checking chain `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (878 renders)
+  - forms ` checking chain `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (465 renders); sweep scenario/concluded, scenario/confirmation (413 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×48
-  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (494 renders)
+  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (270 renders); sweep scenario/concluded, scenario/confirmation (224 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×111
-  - forms ` checking chain `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1624 renders)
+  - forms ` checking chain `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (928 renders); sweep scenario/concluded, scenario/confirmation (696 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×52
-  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (560 renders)
+  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (306 renders); sweep scenario/concluded, scenario/confirmation (254 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×107
-  - forms ` checking chain `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1558 renders)
+  - forms ` checking chain `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (892 renders); sweep scenario/concluded, scenario/confirmation (666 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×62
-  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (930 renders)
+  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (538 renders); sweep scenario/concluded, scenario/confirmation (392 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×97
-  - forms ` checking chain `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1188 renders)
+  - forms ` checking chain `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (660 renders); sweep scenario/concluded, scenario/confirmation (528 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×62
-  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (762 renders)
+  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (420 renders); sweep scenario/concluded, scenario/confirmation (342 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×97
-  - forms ` checking chain `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1356 renders)
+  - forms ` checking chain `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (778 renders); sweep scenario/concluded, scenario/confirmation (578 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×8
-  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (44 renders)
+  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (18 renders); sweep scenario/combination, scenario/round (26 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×19
-  - forms ` checking chain `; 2 templates merged; tests corpus::narration_corpus (38 renders)
+  - forms ` checking chain `; 2 templates merged; sweep sweep/crashedcycle/4741-checking.chain, sweep/crashedcycle/5304-checking.chain (38 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#]] from offset fallback (no request telemetry); partial chain ends because idling the next top-requester group leaves fewer than two loaded cores; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×49
-  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (639 renders)
+  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (309 renders); sweep scenario/concluded, scenario/confirmation (330 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#], [#]] from offset fallback (no request telemetry); partial chain ends because idling the next top-requester group leaves fewer than two loaded cores; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×24
-  - forms ` checking chain `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (682 renders)
+  - forms ` checking chain `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (138 renders); sweep scenario/concluded, scenario/confirmation (544 renders)
 - ` checking cycle # R# step # CCD # mprime {AVX#K-#K | AVX-#K-#K} all-core: request groups [[#]] from offset fallback (no request telemetry); partial chain ends because idling the next top-requester group leaves fewer than two loaded cores; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×22
-  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (186 renders)
+  - forms ` checking chain `; 2 cuts folded in; 2 templates merged; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (76 renders); sweep scenario/combination, scenario/member-probe (110 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×6
-  - forms ` checking chain `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (24 renders)
+  - forms ` checking chain `; 1 cuts folded in; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (9 renders); sweep scenario/unconfirmed, sweep/crashedcycle/8745-checking.chain (15 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×12
-  - forms ` checking chain `; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (52 renders)
+  - forms ` checking chain `; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (21 renders); sweep scenario/unconfirmed, sweep/crashedcycle/6081-checking.chain (31 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×19
-  - forms ` checking chain `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (164 renders)
+  - forms ` checking chain `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (86 renders); sweep scenario/concluded, scenario/confirmation (78 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×45
-  - forms ` checking chain `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (436 renders)
+  - forms ` checking chain `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (231 renders); sweep scenario/concluded, scenario/confirmation (205 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×24
-  - forms ` checking chain `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (247 renders)
+  - forms ` checking chain `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (135 renders); sweep scenario/concluded, scenario/confirmation (112 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×54
-  - forms ` checking chain `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (785 renders)
+  - forms ` checking chain `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (447 renders); sweep scenario/concluded, scenario/confirmation (338 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×26
-  - forms ` checking chain `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (280 renders)
+  - forms ` checking chain `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (153 renders); sweep scenario/concluded, scenario/confirmation (127 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×52
-  - forms ` checking chain `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (752 renders)
+  - forms ` checking chain `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (429 renders); sweep scenario/concluded, scenario/confirmation (323 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×31
-  - forms ` checking chain `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (465 renders)
+  - forms ` checking chain `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (269 renders); sweep scenario/concluded, scenario/confirmation (196 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×47
-  - forms ` checking chain `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (567 renders)
+  - forms ` checking chain `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (313 renders); sweep scenario/concluded, scenario/confirmation (254 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×31
-  - forms ` checking chain `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (381 renders)
+  - forms ` checking chain `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (210 renders); sweep scenario/concluded, scenario/confirmation (171 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×47
-  - forms ` checking chain `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (651 renders)
+  - forms ` checking chain `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (372 renders); sweep scenario/concluded, scenario/confirmation (279 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×4
-  - forms ` checking chain `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (22 renders)
+  - forms ` checking chain `; 1 cuts folded in; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (9 renders); sweep scenario/combination, scenario/round (13 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#]] from offset fallback (no request telemetry); partial # loads cores # at profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×9
-  - forms ` checking chain `; tests corpus::narration_corpus (18 renders)
+  - forms ` checking chain `; sweep sweep/crashedcycle/5352-checking.chain, sweep/crashedcycle/5978-checking.chain (18 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#]] from offset fallback (no request telemetry); partial chain ends because idling the next top-requester group leaves fewer than two loaded cores; re-derived after a profile change, loaded set changed, so it needs passes of its own ` ×23
-  - forms ` checking chain `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (318 renders)
+  - forms ` checking chain `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (153 renders); sweep scenario/concluded, scenario/confirmation (165 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#], [#]] from offset fallback (no request telemetry); partial chain ends because idling the next top-requester group leaves fewer than two loaded cores; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×11
-  - forms ` checking chain `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (331 renders)
+  - forms ` checking chain `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (68 renders); sweep scenario/concluded, scenario/confirmation (263 renders)
 - ` checking cycle # R# step # CCD # y-cruncher FFTv# + N# + VT# all-core: request groups [[#]] from offset fallback (no request telemetry); partial chain ends because idling the next top-requester group leaves fewer than two loaded cores; re-derived after a profile change, loaded set unchanged, so its earlier passes still count ` ×11
-  - forms ` checking chain `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (92 renders)
+  - forms ` checking chain `; 1 cuts folded in; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (38 renders); sweep scenario/combination, scenario/member-probe (54 renders)
 - ` checking cycle # end passed; phase # ends: first confirmed profile; movable cores # ` ×8
-  - forms ` cycle `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (69 renders)
+  - forms ` cycle `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (33 renders); sweep scenario/combination, scenario/concluded (36 renders)
 - ` checking cycle # end passed; phase # ends: the confirmation cycle passed, so this is the confirmed profile ` ×1
-  - forms ` cycle `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (32 renders)
+  - forms ` cycle `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (16 renders); sweep scenario/combination, scenario/concluded (16 renders)
 - ` checking cycle # end, not passed: failure ` ×1
   - forms ` cycle `; tests tests::history::cycle_history (1 renders)
 - ` checking cycle # start: R# R# R# R# R# R# R# R# R# R# R# R# R# R# R# R# R# R#; phase # confirmation cycle ` ×9
-  - forms ` cycle `; 3 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (176 renders)
+  - forms ` cycle `; 3 cuts folded in; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (106 renders); sweep scenario/between, scenario/checking (70 renders)
 - ` checking cycle # step # starts at current profile [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] ` ×36
-  - forms ` step `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (401 renders)
+  - forms ` step `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (227 renders); sweep scenario/between, scenario/checking (174 renders)
 - ` checking cycle # step # starts at current profile [#: #: #: #: #: #: #: #: #] ` ×3
   - forms ` step `; tests tests::hunt::a_parked_group_judges_its_members_and_not_the_parked_cores, tests::model::a_running_rerun_names_the_step_checking_resumes_at (3 renders)
 - ` checking cycle # step # starts at current profile [#: #: #: #] ` ×5
   - forms ` step `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::live_panels::live_panels_keep_their_rectangles_from_a_running_trial_to_the_next (17 renders)
 - ` combination C#: core # + core # + core # + core #, observed in hunt # ` ×1
-  - forms ` combo `; tests corpus::narration_corpus (2 renders)
+  - forms ` combo `; sweep sweep/laterhunt/11555-combination, sweep/laterhunt/projected (2 renders)
 - ` combination C#: core # + core #, fallback over every candidate of hunt # ` ×1
   - forms ` combo `; tests tests::history::fallback_history (1 renders)
 - ` combination C#: core # + core #, observed in hunt # ` ×4
-  - forms ` combo `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (15 renders)
+  - forms ` combo `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (9 renders); sweep scenario/combination, scenario/round (6 renders)
 - ` command finished ` ×1
   - forms ` stop `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, tests::model::a_reset_in_a_later_boot_leaves_the_crashed_trial_unrecovered (2 renders)
 - ` core # at its limit -> has room at # (one count deeper reaches no failure point or combination) ` ×10
-  - forms ` room `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (140 renders)
+  - forms ` room `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (82 renders); sweep scenario/concluded, scenario/confirmation (58 renders)
 - ` core # at its limit -> search at # (test) ` ×1
   - forms ` step `; tests tests::model::a_reset_core_drops_its_solo_limit (1 renders)
 - ` core # backed off from # to # () ` ×1
   - forms ` backoff `; tests tests::describe::a_backoff_names_the_combination_it_clears (1 renders)
 - ` core # backed off from # to # (backed off: attributed {computation_error in parked | computation_error in together | corrected_mce in parked | corrected_mce in together | stall in together | uncorrected_mce in parked | uncorrected_mce in together | unexpected_exit in parked | unexpected_exit in together} R# trial #; failure point #) ` ×46
-  - forms ` backoff `; 9 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (701 renders)
+  - forms ` backoff `; 9 templates merged; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (396 renders); sweep scenario/concluded, scenario/confirmation (305 renders)
 - ` core # backed off from # to # (combination C#: backing off core # to #, where hunt # group # passed with the rest of the combination at its failing offsets) ` ×1
-  - forms ` backoff `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (12 renders)
+  - forms ` backoff `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (6 renders); sweep scenario/combination, scenario/round (6 renders)
 - ` core # backed off from # to # (combination C#: backing off core # to #, where hunt # group # passed with the rest of the combination at its failing offsets; after failures # and #) ` ×1
-  - forms ` backoff `; tests corpus::narration_corpus (2 renders)
+  - forms ` backoff `; sweep sweep/laterhunt/11556-tuner.decision, sweep/laterhunt/projected (2 renders)
 - ` core # backed off from # to # (failure # (R# trial #) charged to deepened core #; phase # confirmation, last confirmed offset #; failure point #) ` ×3
-  - forms ` backoff `; tests corpus::narration_corpus (6 renders)
+  - forms ` backoff `; sweep sweep/crashedcycle/9065-tuner.decision, sweep/crashedcycle/9076-tuner.decision (6 renders)
 - ` core # backed off from # to # (failure # (R# trial #) charged to deepened core #; round #, last passed offset #; failure point #) ` ×2
-  - forms ` backoff `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (32 renders)
+  - forms ` backoff `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (19 renders); sweep scenario/concluded, scenario/confirmation (13 renders)
 - ` core # backed off from # to # (voltage-targeted R# backoff after failure #: core # order came from offsets at CO #; no request telemetry, # count) ` ×24
-  - forms ` backoff `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (301 renders)
+  - forms ` backoff `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (195 renders); sweep scenario/between, scenario/concluded (106 renders)
 - ` core # backed off from # to # (voltage-targeted R# backoff after failure #: core # order came from offsets at CO #; no request telemetry, # count; hunt # ended loaded after failure # named loaded core #, which also answers failure #) ` ×1
-  - forms ` backoff `; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (6 renders)
+  - forms ` backoff `; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (3 renders); sweep scenario/unconfirmed, sweep/unconfirmed/4944-tuner.decision (3 renders)
 - ` core # backed off from # to # (voltage-targeted R# backoff after failure #: core # order came from offsets at CO #; no request telemetry, # count; the unloaded cores have not been checked by a located hunt yet; voltage-targeted backoff # for this load since its last passing trial; a later failure can trigger a located hunt after # backoffs) ` ×8
-  - forms ` backoff `; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (21 renders)
+  - forms ` backoff `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bounds::unconfirmed (13 renders); sweep scenario/unconfirmed, sweep/crashedcycle/4640-tuner.decision (8 renders)
 - ` core # checks candidate solo limit # (candidate solo limit #: failure point #; the full pass rule needs # trials each of R# {mprime-sse-#k-#k | ycruncher-bkt-sftv#} and R# mprime-avx#k-#k) ` ×12
-  - forms ` confirm `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (130 renders)
+  - forms ` confirm `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (78 renders); sweep scenario/between, scenario/checking (52 renders)
 - ` core # checks candidate solo limit # (from #; candidate solo limit #: failure point #; the full pass rule needs # trials each of R# mprime-sse-#k-#k and R# mprime-avx#k-#k) ` ×40
-  - forms ` confirm `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1106 renders)
+  - forms ` confirm `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (747 renders); sweep scenario/between, scenario/checking (359 renders)
 - ` core # deepened from # to # (round #: one count toward solo limit #) ` ×32
-  - forms ` room `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (363 renders)
+  - forms ` room `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (190 renders); sweep scenario/combination, scenario/concluded (173 renders)
 - ` core # failed at #; searches # on its next turn (coarse, no passed step) ` ×1
   - forms ` backoff `; tests tests::model::a_prior_recovery_does_not_mask_a_later_boot_crash (1 renders)
 - ` core # failed at #; searches # on its next turn (coarse, no passed step; passed step at # discarded, the failure contradicts it) ` ×4
-  - forms ` backoff `; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (20 renders)
+  - forms ` backoff `; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (9 renders); sweep scenario/unconfirmed, sweep/crashedcycle/2632-tuner.decision (11 renders)
 - ` core # failed at #; searches # on its next turn (fine, deepest pass #) ` ×40
-  - forms ` backoff `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1215 renders)
+  - forms ` backoff `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (815 renders); sweep scenario/between, scenario/checking (400 renders)
 - ` core # failure at CO #: computation_error with no trial recorded ` ×1
   - forms ` fail `; tests tests::model::failure_counters_separate_observed_and_skipped (1 renders)
 - ` core # failure at CO #: {computation_error in parked | computation_error in together | corrected_mce in parked | corrected_mce in together | stall in together | uncorrected_mce in parked | uncorrected_mce in together | unexpected_exit in parked | unexpected_exit in together} R# trial # ` ×75
-  - forms ` fail `; 9 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1024 renders)
+  - forms ` fail `; 9 templates merged; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (600 renders); sweep scenario/between, scenario/concluded (424 renders)
 - ` core # failure at CO #: {computation_error | corrected_mce | crash | stall | uncorrected_mce | unexpected_exit} in alone R# trial # (alone: attributed to the target) ` ×93
-  - forms ` fail `; 6 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2343 renders)
+  - forms ` fail `; 6 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1573 renders); sweep scenario/between, scenario/checking (770 renders)
 - ` core # failure held; tuning stays at # (holds at #: failure # (cycle #) is the first counting against core # since the profile passed cycle # (#); a second failure against it by cycle # (K = #) steps it back) ` ×1
-  - forms ` hold `; tests corpus::narration_corpus, frames::frame_tests::bounds::hunt_bios (6 renders)
+  - forms ` hold `; tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (3 renders); sweep scenario/hunt-bios, sweep/laterhunt/11077-tuner.decision (3 renders)
 - ` core # has room -> at its limit at # (combination C#) ` ×1
-  - forms ` limit `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (12 renders)
+  - forms ` limit `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (6 renders); sweep scenario/combination, scenario/round (6 renders)
 - ` core # has room -> at its limit at # (failure point # of core #) ` ×53
-  - forms ` limit `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (709 renders)
+  - forms ` limit `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (420 renders); sweep scenario/between, scenario/concluded (289 renders)
 - ` core # passed R#+R# at #; searches # on its next turn () ` ×1
   - forms ` step `; tests tests::model::the_session_does_what_its_last_intent_or_decision_did (1 renders)
 - ` core # passed R#+R# at #; searches # on its next turn (coarse, no failure point yet) ` ×105
-  - forms ` step `; tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (6466 renders)
+  - forms ` step `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (4358 renders); sweep scenario/between, scenario/checking (2108 renders)
 - ` core # passed R#+R# at #; searches # on its next turn (fine, failure point #) ` ×78
-  - forms ` step `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1790 renders)
+  - forms ` step `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1177 renders); sweep scenario/between, scenario/checking (613 renders)
 - ` core # search -> at its limit at # (test) ` ×5
   - forms ` limit `; tests tests::describe::solo_limits_found_before_the_first_trial_are_counted_on_the_session_line, tests::history::deepening_history_separates_deeper_and_yielded_members (5 renders)
 - ` core # search -> has room at # (solo limit # passed # trials each of R# {mprime-sse-#k-#k | ycruncher-bkt-sftv#} and R# mprime-avx#k-#k; checking starts at #, one count shallower than the solo limit # (margin); one count deeper reaches no failure point or combination) ` ×62
-  - forms ` limit `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1470 renders)
+  - forms ` limit `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (958 renders); sweep scenario/between, scenario/checking (512 renders)
 - ` core # search -> has room at # (test) ` ×7
   - forms ` limit `, ` room `; tests tests::derive::cores_the_search_has_not_reached_wait_and_found_ones_say_so, tests::describe::solo_limits_found_before_the_first_trial_are_counted_on_the_session_line (9 renders)
 - ` core # starts at its limit at # (test) ` ×11
-  - forms ` limit `; tests corpus::narration_corpus, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (85 renders)
+  - forms ` limit `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (69 renders); sweep scenario/rerun-0, scenario/rerun-1 (16 renders)
 - ` core # starts has room at # (test) ` ×11
   - forms ` room `; tests tests::derive::a_combination_names_its_members_and_the_core_it_holds, tests::derive::a_core_confirming_its_solo_limit_shows_the_count (14 renders)
 - ` core # starts search at # (configured candidate solo limit) ` ×16
-  - forms ` step `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (304 renders)
+  - forms ` step `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::confirm (176 renders); sweep scenario/combination, scenario/confirm (128 renders)
 - ` core # starts search at # {(baseline) | (test)} ` ×38
-  - forms ` step `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (1566 renders)
+  - forms ` step `; 2 templates merged; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1118 renders); sweep scenario/between, scenario/checking (448 renders)
 - ` core # yielded from # to # (round # failed on core #, so core # returns to its last passed offset #) ` ×10
-  - forms ` room `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (140 renders)
+  - forms ` room `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (82 renders); sweep scenario/concluded, scenario/confirmation (58 renders)
 - ` core # {deepened | yielded} from # to # () ` ×2
   - forms ` room `; 2 templates merged; tests tests::history::deepening_history_separates_deeper_and_yielded_members (2 renders)
 - ` corrected MCE on cpu # (core #), bank # load_store (core-local) between trials (recorded only) ` ×1
   - forms ` mce `; tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden (1 renders)
 - ` corrected MCE on cpu # (core #), bank # {data_fabric (shared) | decode_unit (core-local) | floating_point (core-local) | instruction_fetch (core-local) | l#_cache (core-local) | l#_cache (shared) | unified_memory_controller (shared)} ` ×21
-  - forms ` mce `; 7 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (535 renders)
+  - forms ` mce `; 7 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (345 renders); sweep scenario/between, scenario/checking (190 renders)
 - ` corrected MCE on cpu # (no core), bank # execution_unit (core-local) between trials (recorded only) ` ×1
   - forms ` mce `; tests tests::describe::the_kinds_with_a_line_of_their_own (1 renders)
 - ` crash: boot # ended without a clean shutdown; in flight: seq #; reset reason: x#/amd: Previous system reset reason [#x#]: hardware watchdog timer expired ` ×33
-  - forms ` crash `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (690 renders)
+  - forms ` crash `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (445 renders); sweep scenario/between, scenario/checking (245 renders)
 - ` crash: boot # ended without a clean shutdown; in flight: seq #; the current profile was applied; reset reason: x#/amd: Previous system reset reason [#x#]: hardware watchdog timer expired ` ×17
-  - forms ` crash `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (183 renders)
+  - forms ` crash `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (97 renders); sweep scenario/combination, scenario/concluded (86 renders)
 - ` crash: boot boot ended without a clean shutdown; nothing in flight; stray: the profile was never applied in that boot; the current profile was applied ` ×1
   - forms ` crash `; tests tests::model::crash_classification, tests::model::recovery_ends_only_when_a_trial_starts (2 renders)
 - ` crash: boot boot ended without a clean shutdown; nothing in flight; the current profile was applied; inconclusive: reset does not establish a tuning failure ` ×2
@@ -5917,7 +5917,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` dead end containment: 日本語[#J]#;c;data  #m#;title ` ×1
   - forms ` stop `; tests frames::frame_tests::escapes::a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped (1 renders)
 - ` dead end no_evidence: backend mprime is missing: setup failed: backend binary missing ` ×1
-  - forms ` stop `; tests corpus::narration_corpus, frames::frame_tests::bounds::deadend (9 renders)
+  - forms ` stop `; tests frames::frame_tests::bounds::deadend, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (6 renders); sweep scenario/deadend, sweep/deadend/4143-deadend (3 renders)
 - ` dead end no_evidence: five trials in a row proved nothing ` ×1
   - forms ` stop `; tests frames::frame_tests::bands::a_restored_dead_end_labels_its_rows_as_saved (1 renders)
 - ` dead end no_evidence: kernel log unreadable: permission denied ` ×1
@@ -5931,33 +5931,33 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` deepening round # end: a failure ` ×1
   - forms ` round `; tests tests::describe::deepening_rounds_say_their_moves_and_their_verdict (1 renders)
 - ` deepening round # end: failure #: blame goes to the deepened cores ` ×2
-  - forms ` round `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (32 renders)
+  - forms ` round `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (19 renders); sweep scenario/concluded, scenario/confirmation (13 renders)
 - ` deepening round # end: passed ` ×2
-  - forms ` round `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (9 renders)
+  - forms ` round `; tests frames::frame_tests::bounds::combination, frames::snapshots::combination (4 renders); sweep scenario/combination, sweep/combination/4920-deepening.round (5 renders)
 - ` deepening round # start: # cores toward [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #]; phase #: cores # move one count toward their solo limits ` ×4
-  - forms ` round `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (46 renders)
+  - forms ` round `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (25 renders); sweep scenario/combination, scenario/concluded (21 renders)
 - ` deepening round # start: # cores toward [#: #: #: #] ` ×1
   - forms ` round `; tests tests::history::deepening_history_separates_deeper_and_yielded_members (1 renders)
 - ` deepening round # start: # cores toward [] ` ×1
   - forms ` round `; tests tests::describe::deepening_rounds_say_their_moves_and_their_verdict (1 renders)
 - ` failure # is not hunted: held: first unattributed failure loading cores [#] since the profile passed cycle # (#); a second failure loading any of them by cycle # (K = #) is hunted ` ×1
-  - forms ` hunt `; tests corpus::narration_corpus, frames::frame_tests::bounds::hunt_bios (6 renders)
+  - forms ` hunt `; tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (3 renders); sweep scenario/hunt-bios, sweep/laterhunt/10992-hunt.skipped (3 renders)
 - ` from an earlier run ` ×1
   - forms ` session warning `; tests terminal::source::tests::a_run_in_progress_starts_with_the_run_not_the_journal_it_found (1 renders)
 - ` group profile applied: [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] ` ×120
-  - forms ` profile applied `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1744 renders)
+  - forms ` profile applied `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (992 renders); sweep scenario/between, scenario/checking (752 renders)
 - ` hunt # cancelled after # groups; no culprit established, cores # unresolved ` ×1
   - forms ` hunt `; tests tests::describe::a_hunt_says_how_it_ended (1 renders)
 - ` hunt # ended after # group: the failure stays with loaded cores # (failure # named loaded core #, so the failure stays with the loaded cores and core # is charged for it) ` ×1
-  - forms ` hunt `; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (6 renders)
+  - forms ` hunt `; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (3 renders); sweep scenario/unconfirmed, sweep/unconfirmed/4943-hunt.end (3 renders)
 - ` hunt # ended after # groups without isolating the failure: falling back to every candidate together, cores # ` ×2
   - forms ` hunt `; tests tests::describe::a_hunt_says_how_it_ended, tests::history::fallback_history (2 renders)
 - ` hunt # ended after # groups: core # was attributed directly (attributed failure #) ` ×5
-  - forms ` hunt `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (108 renders)
+  - forms ` hunt `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (64 renders); sweep scenario/concluded, scenario/confirmation (44 renders)
 - ` hunt # ended after # groups: failing offset combination core # + core # + core # + core #, with the hunt's other cores parked (parked trial outcomes identified the minimal failing set; member probes found it still failing at core # + core # + core # + core # and passing with any one member a count shallower) ` ×1
-  - forms ` hunt `; tests corpus::narration_corpus (2 renders)
+  - forms ` hunt `; sweep sweep/laterhunt/11554-hunt.end, sweep/laterhunt/projected (2 renders)
 - ` hunt # ended after # groups: failing offset combination core # + core #, with the hunt's other cores parked (parked trial outcomes identified the minimal failing set; member probes found it still failing at core # + core # and passing with any one member a count shallower) ` ×1
-  - forms ` hunt `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (12 renders)
+  - forms ` hunt `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (6 renders); sweep scenario/combination, scenario/round (6 renders)
 - ` hunt # ended after # groups: failing offset combination cores # at their failing offsets, with the hunt's other cores parked ` ×3
   - forms ` hunt `; tests tests::describe::a_hunt_says_how_it_ended, tests::describe::a_probed_combination_says_so (4 renders)
 - ` hunt # ended after # groups: the failure stays with loaded cores # ` ×1
@@ -5969,27 +5969,27 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` hunt # group #: core # at # with , the rest parked; trials of # s ` ×3
   - forms ` probe `, ` skip `; 1 cuts folded in; tests tests::describe::a_probed_combination_says_so, tests::describe::hunt_groups_answered_without_a_trial (3 renders)
 - ` hunt # group #: core # at # with core # + core # + core #, the rest parked; trials of # s; probing how shallow core # must be for the combination to pass ` ×4
-  - forms ` probe `; tests corpus::narration_corpus (8 renders)
+  - forms ` probe `; sweep sweep/laterhunt/11462-hunt.group, sweep/laterhunt/11485-hunt.group (8 renders)
 - ` hunt # group #: core # at # with core # + core #, the rest parked; trials of # s ` ×1
   - forms ` probe `; tests tests::describe::a_hunt_trial_is_named_by_its_group (1 renders)
 - ` hunt # group #: core # at # with core #, the rest parked; trials of # s; probing how shallow core # must be for the combination to pass ` ×1207
-  - forms ` probe `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (1242 renders)
+  - forms ` probe `; 1 cuts folded in; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (1229 renders); sweep scenario/combination, scenario/member-probe (13 renders)
 - ` hunt # group #: cores # at failing offsets, the rest parked; trials of # s; testing the part of the failing profile ` ×43
-  - forms ` group `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (536 renders)
+  - forms ` group `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (305 renders); sweep scenario/combination, scenario/concluded (231 renders)
 - ` hunt # group #: cores # failure inferred: ` ×2
   - forms ` skip `; 1 cuts folded in; tests tests::describe::hunt_groups_answered_without_a_trial, tests::history::inferred_group_answers_do_not_hide_outcome_changes (2 renders)
 - ` hunt # group #: cores # pass inferred: passing trials already establish the group ` ×44
-  - forms ` skip `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (643 renders)
+  - forms ` skip `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (365 renders); sweep scenario/combination, scenario/concluded (278 renders)
 - ` hunt # group #: cores # skipped: same set ` ×1
   - forms ` skip `; tests tests::describe::hunt_groups_answered_without_a_trial (1 renders)
 - ` hunt # group #: locate with every unloaded core at # and the loaded cores at their failing offsets; trials of # s; rerunning the failed load with every unloaded core at CO # to locate the failure ` ×3
-  - forms ` group `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (11 renders)
+  - forms ` group `; 1 cuts folded in; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (8 renders); sweep scenario/unconfirmed, sweep/unconfirmed/4894-hunt.group (3 renders)
 - ` hunt #: unattributed failure in idle; loaded cores # held at their failing offsets, the rest parked at #; candidates #; groups of # × # s ` ×12
   - forms ` hunt `; tests tests::describe::a_backoff_names_the_combination_it_clears, tests::describe::a_hunt_line_the_history_has_dropped_is_not_renamed (21 renders)
 - ` hunt #: unattributed failure in together R# trial #; loaded cores # held at their failing offsets, the rest parked at #; candidates #; groups of # × # s; no core is named, so the failure is located on the unloaded cores before it is charged to the loaded cores; this load has been backed off # times since its last passing trial (#) and still fails, so stepping back its loaded cores is not helping ` ×3
-  - forms ` hunt `; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (9 renders)
+  - forms ` hunt `; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (6 renders); sweep scenario/unconfirmed, sweep/unconfirmed/4893-hunt.start (3 renders)
 - ` hunt #: unattributed failure in together R# trial #; parked at #; candidates #; groups of # × # s; second failure within # cycles: # (cycle #, held) and # (cycle #) ` ×7
-  - forms ` hunt `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (134 renders)
+  - forms ` hunt `; 1 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (79 renders); sweep scenario/combination, scenario/concluded (55 renders)
 - ` hunt #: unattributed failure in together R# trial c#; loaded cores # held at their failing offsets, the rest parked at #; candidates #; groups of # × # s ` ×1
   - forms ` hunt `; tests tests::hunt::a_hunt_is_filed_under_the_cycle_step_that_started_it (1 renders)
 - ` known failure activated ` ×1
@@ -6003,45 +6003,45 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` modified ` ×1
   - forms ` session warning `; tests terminal::source::tests::reload_follows_a_replaced_grown_rewritten_removed_and_restored_journal (1 renders)
 - ` no config at /etc/togi/config.json; using defaults with togi # (schema #, ruleset #, fixes #) ` ×2
-  - forms ` config loaded `; tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (503 renders)
+  - forms ` config loaded `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (127 renders); sweep scenario/between, scenario/checking (376 renders)
 - ` offsets restored before stopping: [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] (each core's baseline, or its current offset where that is shallower) ` ×1
-  - forms ` profile restored `; tests corpus::narration_corpus, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (32 renders)
+  - forms ` profile restored `; tests frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage, frames::frame_tests::bounds::combination (13 renders); sweep scenario/combination, scenario/first-result (19 renders)
 - ` offsets restored before stopping: [#: #: #: #] (each core's baseline, or its current offset where that is shallower) ` ×1
   - forms ` profile restored `; tests frames::frame_tests::bands::a_restored_dead_end_labels_its_rows_as_saved, tests::model::stopped_shows_the_saved_profile_not_the_applied_offsets (3 renders)
 - ` offsets restored before stopping: [#: #: #] (each core's baseline, or its current offset where that is shallower) ` ×1
   - forms ` profile restored `; tests tests::model::sparse_core_ids (1 renders)
 - ` on cpu ` ×1
-  - forms ` trial start `; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (78 renders)
+  - forms ` trial start `; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::story::tests::the_story::a_rerun_that_completes_the_cycle_names_no_step_of_the_next (21 renders); sweep scenario/rerun-0, scenario/rerun-1 (57 renders)
 - ` original ` ×1
   - forms ` session warning `; tests terminal::source::tests::an_event_of_an_unknown_kind_is_skipped_and_reported_in_the_snapshot, terminal::source::tests::an_unchanged_journal_and_an_unchanged_absence_are_not_reloaded (4 renders)
 - ` pass inferred: ` ×1
   - forms ` skip `; tests tests::describe::hunt_groups_answered_without_a_trial (1 renders)
 - ` phase # is confirmed and the profile passed the requested # clean cycles; stopping ` ×2
-  - forms ` stop `; tests corpus::narration_corpus (6 renders)
+  - forms ` stop `; sweep sweep/concluded/10517-shutdown, sweep/concluded/projected (6 renders)
 - ` phase # is confirmed and the profile passed the requested clean cycle; stopping ` ×1
-  - forms ` stop `; tests corpus::narration_corpus, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (20 renders)
+  - forms ` stop `; tests frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage, frames::frame_tests::bounds::combination (12 renders); sweep scenario/combination, scenario/stopped (8 renders)
 - ` preferred cores # ` ×2
   - forms ` host ranking `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (19 renders)
 - ` preferred-core ranking unavailable (simulated preferred-core ranking unavailable); core-id order ` ×1
-  - forms ` host ranking `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (145 renders)
+  - forms ` host ranking `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (58 renders); sweep scenario/between, scenario/checking (87 renders)
 - ` profile applied for alone trials: every core at CO # ` ×1
-  - forms ` profile applied `; tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (305 renders)
+  - forms ` profile applied `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (75 renders); sweep scenario/between, scenario/checking (230 renders)
 - ` profile changed [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] -> [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] ` ×75
-  - forms ` profile change `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1101 renders)
+  - forms ` profile change `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (639 renders); sweep scenario/between, scenario/combination (462 renders)
 - ` profile changed [#: #: #: #: #: #: #: #: #] -> [#: #: #: #: #: #: #: #: #] ` ×10
   - forms ` profile change `; tests tests::hunt::a_parked_group_judges_its_members_and_not_the_parked_cores, tests::model::a_running_rerun_names_the_step_checking_resumes_at (10 renders)
 - ` profile changed [#: #: #: #] -> [#: #: #: #] ` ×3
   - forms ` profile change `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, tests::hunt::a_parked_hunt_trial_shows_its_roles (6 renders)
 - ` profile changed [#: #: #] -> [#: #: #] ` ×1
-  - forms ` profile change `; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (10 renders)
+  - forms ` profile change `; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::story::tests::the_story::a_rerun_that_completes_the_cycle_names_no_step_of_the_next (2 renders); sweep scenario/rerun-0, scenario/rerun-1 (8 renders)
 - ` profile for checking: [#: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #: #] ` ×4
-  - forms ` profile change `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (92 renders)
+  - forms ` profile change `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (60 renders); sweep scenario/between, scenario/checking (32 renders)
 - ` profile for checking: [#: #: #: #: #: #: #: #: #] ` ×2
   - forms ` profile change `; tests tests::hunt::a_parked_group_judges_its_members_and_not_the_parked_cores, tests::model::a_running_rerun_names_the_step_checking_resumes_at (2 renders)
 - ` profile for checking: [#: #: #: #] ` ×1
   - forms ` profile change `; tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (16 renders)
 - ` profile {applied: [#: #: | for checking: [#:} #: #] ` ×3
-  - forms ` profile applied `, ` profile change `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (13 renders)
+  - forms ` profile applied `, ` profile change `; 2 templates merged; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::story::tests::the_story::a_rerun_that_completes_the_cycle_names_no_step_of_the_next (5 renders); sweep scenario/rerun-0, scenario/rerun-1 (8 renders)
 - ` projection: a later boot wrote this; continuing the session ` ×1
   - forms ` session warning `; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, tests::hunt::a_started_idle_trial_holds_every_frame_until_its_end_is_recorded (3 renders)
 - ` projection: an earlier event; continuing the session ` ×1
@@ -6061,101 +6061,101 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` rewritten # ` ×40
   - forms ` session warning `; tests terminal::source::tests::a_journal_rewritten_in_place_to_a_longer_one_builds_a_fresh_model_and_drops_the_held_list (40 renders)
 - ` session #T#Z started by togi # (schema #, ruleset #, evidence epoch #, fixes # cores) ` ×7
-  - forms ` start `; tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (251 renders)
+  - forms ` start `; tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (207 renders); sweep scenario/between, scenario/checking (44 renders)
 - ` stopped at a dead end ` ×1
-  - forms ` stop `; tests corpus::narration_corpus, frames::frame_tests::bands::a_restored_dead_end_labels_its_rows_as_saved (5 renders)
+  - forms ` stop `; tests frames::frame_tests::bands::a_restored_dead_end_labels_its_rows_as_saved, tests::model::smu_dead_end_keeps_the_readback (3 renders); sweep sweep/deadend/4193-shutdown, sweep/deadend/projected (2 renders)
 - ` the BIOS profile is confirmed; stopping at the first result as requested ` ×1
-  - forms ` stop `; tests corpus::narration_corpus, frames::frame_tests::bounds::first_result (6 renders)
+  - forms ` stop `; tests frames::frame_tests::bounds::first_result, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (3 renders); sweep scenario/first-result, sweep/firstresult/7178-shutdown (3 renders)
 - ` this run ` ×1
   - forms ` session warning `; tests terminal::source::tests::a_run_in_progress_starts_with_the_run_not_the_journal_it_found (1 renders)
 - ` trial # FAIL crash, last evidence # s after start, last sample # s, core # worker CPU time stopped advancing at # ms after start (evidence only) ` ×28
-  - forms ` crash `; 2 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (529 renders)
+  - forms ` crash `; 2 cuts folded in; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (331 renders); sweep scenario/between, scenario/checking (198 renders)
 - ` trial # FAIL uncorrected_mce after # s, last sample # s, core # worker CPU time stopped advancing at # ms after start (evidence only) ` ×24
-  - forms ` fail `; 2 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (343 renders)
+  - forms ` fail `; 2 cuts folded in; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (211 renders); sweep scenario/between, scenario/checking (132 renders)
 - ` trial # FAIL {computation_error | corrected_mce | stall | unexpected_exit} after # s | Tctl max #°C ` ×89
-  - forms ` fail `; 1 cuts folded in; 4 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2056 renders)
+  - forms ` fail `; 1 cuts folded in; 4 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1364 renders); sweep scenario/between, scenario/checking (692 renders)
 - ` trial # FAIL {computation_error | stall | unexpected_exit} on core # after # s | Tctl max #°C ` ×56
-  - forms ` fail `; 1 cuts folded in; 3 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (758 renders)
+  - forms ` fail `; 1 cuts folded in; 3 templates merged; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (448 renders); sweep scenario/between, scenario/concluded (310 renders)
 - ` trial # FFT #K done ` ×1
   - forms ` trial progress `; tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end (1 renders)
 - ` trial # INCONCLUSIVE after # s: setup failed: backend binary missing ` ×1
-  - forms ` unclear `; tests corpus::narration_corpus, frames::frame_tests::bounds::deadend (9 renders)
+  - forms ` unclear `; tests frames::frame_tests::bounds::deadend, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (6 renders); sweep scenario/deadend, sweep/deadend/4142-trial.end (3 renders)
 - ` trial # INCONCLUSIVE after # s: trial ended before its full duration; stopped by signal ` ×2
-  - forms ` stop `, ` unclear `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_resting_band_of_one_line_leaves_the_ccd_table_its_rows (7 renders)
+  - forms ` stop `, ` unclear `; 1 cuts folded in; tests frames::frame_tests::bands::a_resting_band_of_one_line_leaves_the_ccd_table_its_rows, tests::describe::the_kinds_with_a_line_of_their_own (3 renders); sweep sweep/probe/3439-trial.end, sweep/probe/3440-shutdown (4 renders)
 - ` trial # bursts: # continues, # stops ` ×102
-  - forms ` trial progress `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1228 renders)
+  - forms ` trial progress `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (649 renders); sweep scenario/combination, scenario/concluded (579 renders)
 - ` trial # core # R# mprime SSE #K-#K {#% duty | SMT pair | load steps} # s parked hunt # group # ` ×45
-  - forms ` trial intent `; 3 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (728 renders)
+  - forms ` trial intent `; 3 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (396 renders); sweep scenario/concluded, scenario/confirmation (332 renders)
 - ` trial # core # computation error: simulated computation error on core # ` ×62
-  - forms ` trial progress `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1153 renders)
+  - forms ` trial progress `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (723 renders); sweep scenario/between, scenario/checking (430 renders)
 - ` trial # core # offset # R# mprime AVX#K-#K # s alone round # ` ×555
-  - forms ` trial intent `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (12145 renders)
+  - forms ` trial intent `; 1 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (7863 renders); sweep scenario/between, scenario/checking (4282 renders)
 - ` trial # core # offset # R# mprime AVX#K-#K # s together rerun ` ×37
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (802 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (514 renders); sweep scenario/concluded, scenario/confirmation (288 renders)
 - ` trial # core # offset # R# mprime AVX-#K-#K # s alone ` ×112
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (3044 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2010 renders); sweep scenario/between, scenario/checking (1034 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K # s alone round # ` ×583
-  - forms ` trial intent `; 1 cuts folded in; tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (12868 renders)
+  - forms ` trial intent `; 1 cuts folded in; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (8343 renders); sweep scenario/between, scenario/checking (4525 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K # s together rerun ` ×11
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (46 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (18 renders); sweep scenario/unconfirmed, sweep/crashedcycle/9320-trial.intent (28 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K {#% duty | SMT pair | load steps} # s together cycle # step # ` ×576
-  - forms ` trial intent `; 3 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4716 renders)
+  - forms ` trial intent `; 3 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (2265 renders); sweep scenario/combination, scenario/concluded (2451 renders)
 - ` trial # core # offset # R# mprime SSE #K-#K {#% duty | SMT pair | load steps} # s together rerun ` ×86
-  - forms ` trial intent `; 3 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1144 renders)
+  - forms ` trial intent `; 3 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (609 renders); sweep scenario/concluded, scenario/confirmation (535 renders)
 - ` trial # core # offset # R# mprime {AVX#K-#K all-core | AVX-#K-#K all-core | SSE #K-#K} # s together cycle # step # ` ×202
-  - forms ` trial intent `; 3 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1596 renders)
+  - forms ` trial intent `; 3 templates merged; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (764 renders); sweep scenario/combination, scenario/concluded (832 renders)
 - ` trial # core # offset # R# mprime {AVX#K-#K | AVX-#K-#K} # s together cycle # step # ` ×392
-  - forms ` trial intent `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3810 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (2064 renders); sweep scenario/combination, scenario/concluded (1746 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv# load steps # s together cycle # step # ` ×192
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1568 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (752 renders); sweep scenario/combination, scenario/concluded (816 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv# s alone ` ×131
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (3704 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2461 renders); sweep scenario/between, scenario/checking (1243 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv# s together cycle # step # ` ×192
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1568 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (752 renders); sweep scenario/combination, scenario/concluded (816 renders)
 - ` trial # core # offset # R# y-cruncher BKT + SFTv#% duty # s together cycle # step # ` ×192
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1568 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (752 renders); sweep scenario/combination, scenario/concluded (816 renders)
 - ` trial # core # offset # R# y-cruncher FFTv# + N# + VT# all-core # s together cycle # step # ` ×4
   - forms ` trial intent `; tests tests::hunt::a_started_idle_trial_holds_every_frame_until_its_end_is_recorded (4 renders)
 - ` trial # core # offset # R# y-cruncher FFTv# + N# + VT# s alone ` ×92
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2502 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1665 renders); sweep scenario/between, scenario/checking (837 renders)
 - ` trial # core # offset # R# y-cruncher FFTv# + N# + VT# s together cycle # step # ` ×195
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1875 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1011 renders); sweep scenario/combination, scenario/concluded (864 renders)
 - ` trial # core # offset # R# y-cruncher SNT + SVT # s alone ` ×111
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2980 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1983 renders); sweep scenario/between, scenario/checking (997 renders)
 - ` trial # core # offset # R# y-cruncher SNT + SVT # s together cycle # step # ` ×192
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1568 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (752 renders); sweep scenario/combination, scenario/concluded (816 renders)
 - ` trial # core # offset # R# y-cruncher SNT + SVT {#% duty | load steps} # s together cycle # step # ` ×384
-  - forms ` trial intent `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3136 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1504 renders); sweep scenario/combination, scenario/concluded (1632 renders)
 - ` trial # cores # R# mprime AVX#K-#K all-core # s parked hunt # group # ` ×8
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (14 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (11 renders); sweep scenario/unconfirmed, sweep/unconfirmed/4938-trial.intent (3 renders)
 - ` trial # cores # R# mprime AVX-#K-#K all-core # s together rerun ` ×1
   - forms ` trial intent `; tests tests::model::a_running_rerun_names_the_step_checking_resumes_at (1 renders)
 - ` trial # cores # R# mprime SSE #K-#K idle then bursts # s parked hunt # group # ` ×37
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (556 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (306 renders); sweep scenario/combination, scenario/member-probe (250 renders)
 - ` trial # cores # R# mprime SSE #K-#K idle then bursts # s together cycle # step # ` ×14
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (128 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (66 renders); sweep scenario/combination, scenario/concluded (62 renders)
 - ` trial # cores # R# mprime SSE #K-#K idle then bursts # s together rerun ` ×47
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (517 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (258 renders); sweep scenario/combination, scenario/concluded (259 renders)
 - ` trial # cores # R# mprime {AVX#K-#K | AVX-#K-#K} all-core # s together cycle # step # ` ×1264
-  - forms ` trial intent `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (13133 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7270 renders); sweep scenario/between, scenario/checking (5863 renders)
 - ` trial # cores # R# mprime {AVX#K-#K | AVX-#K-#K} all-core # s together round # ` ×72
-  - forms ` trial intent `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (252 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (79 renders); sweep scenario/combination, scenario/concluded (173 renders)
 - ` trial # cores # R# y-cruncher BKT + SFTv# idle then bursts # s together cycle # step # ` ×12
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (98 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (47 renders); sweep scenario/combination, scenario/concluded (51 renders)
 - ` trial # cores # R# y-cruncher FFTv# + N# + VT# all-core # s together cycle # step # ` ×628
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (6640 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (3672 renders); sweep scenario/combination, scenario/concluded (2968 renders)
 - ` trial # cores # R# y-cruncher FFTv# + N# + VT# all-core # s together round # ` ×35
-  - forms ` trial intent `; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (110 renders)
+  - forms ` trial intent `; tests frames::frame_tests::bounds::combination, frames::snapshots::combination (30 renders); sweep scenario/combination, sweep/combination/4890-trial.intent (80 renders)
 - ` trial # first half idle, then #ms bursts every #s, one core at a time ` ×83
-  - forms ` trial progress `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (942 renders)
+  - forms ` trial progress `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (490 renders); sweep scenario/combination, scenario/concluded (452 renders)
 - ` trial # load steps: # stops, # continues ` ×955
-  - forms ` trial signal `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (10061 renders)
+  - forms ` trial signal `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (4835 renders); sweep scenario/combination, scenario/concluded (5226 renders)
 - ` trial # load steps: #% duty, # ms period ` ×480
-  - forms ` trial signal `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4922 renders)
+  - forms ` trial signal `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (2347 renders); sweep scenario/combination, scenario/concluded (2575 renders)
 - ` trial # load steps: random on/off periods from # ms, # ms, # ms, # s, # s ` ×353
-  - forms ` trial signal `; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5126 renders)
+  - forms ` trial signal `; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (2460 renders); sweep scenario/combination, scenario/concluded (2666 renders)
 - ` trial # started pid # in scope togi-trial-# on {cpu | cpus} # ` ×6227
-  - forms ` trial start `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (84002 renders)
+  - forms ` trial start `; 2 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (48893 renders); sweep scenario/between, scenario/checking (35109 renders)
 - ` trial # still running ` ×1
   - forms ` trial progress `; tests tests::model::a_trial_reporting_progress_past_its_planned_end_is_still_running (1 renders)
 - ` trial p# {core | cores} # R# mprime AVX#K-#K all-core # s together ` ×2
@@ -6185,13 +6185,13 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` trial trial started pid # in scope ` ×1
   - forms ` trial start `; tests tests::history::multiple_reboots_stay_distinct, tests::history::reboot_history_during_trial (2 renders)
 - ` trial {# core | probe-# cores} # R# mprime AVX#K-#K # s parked hunt # group # ` ×1254
-  - forms ` trial intent `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1758 renders)
+  - forms ` trial intent `; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1532 renders); sweep scenario/concluded, scenario/confirmation (226 renders)
 - ` trial {# | other | p#} started pid # in scope scope on cpu ` ×51
-  - forms ` trial start `; 1 cuts folded in; 3 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (135 renders)
+  - forms ` trial start `; 1 cuts folded in; 3 templates merged; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (78 renders); sweep scenario/rerun-0, scenario/rerun-1 (57 renders)
 - ` trial {# | probe-#} PASS # s | Tctl max #°C ` ×7413
-  - forms ` pass `; 1 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (81706 renders)
+  - forms ` pass `; 1 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (47893 renders); sweep scenario/between, scenario/checking (33813 renders)
 - ` trial {# | t#} cores # R# mprime AVX#K-#K all-core # s together rerun ` ×107
-  - forms ` trial intent `; 1 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (978 renders)
+  - forms ` trial intent `; 1 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (634 renders); sweep scenario/between, scenario/concluded (344 renders)
 - ` trial {c# cores | r# cores | t# core | t# cores} # R# mprime AVX#K-#K all-core # s together cycle # ` ×8
   - forms ` trial intent `; 1 cuts folded in; 4 templates merged; tests frames::panels::history::tests::medium::a_partial_ccd_crash_keeps_its_part_and_no_core_named, frames::panels::history::tests::medium::the_medium_history_pane (8 renders)
 - ` trial {orphan]#;c;payload  	#Jtitle  ‮ FAIL computation_error | t# FAIL computation_error | t# FAIL stall | trial FAIL computation_error | trial FAIL corrected_mce | trial FAIL uncorrected_mce} after # s ` ×13
@@ -6203,13 +6203,13 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` unattributed {computation_error | corrected_mce | crash | uncorrected_mce} failure in R# trial trial: no evidence names a single core ` ×4
   - forms ` fail `; 4 templates merged; tests tests::history::reboot_history_during_trial (4 renders)
 - ` unattributed {computation_error | corrected_mce | crash | uncorrected_mce} failure in together R# trial #: no evidence names a single core ` ×18
-  - forms ` fail `; 4 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (198 renders)
+  - forms ` fail `; 4 templates merged; tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (117 renders); sweep scenario/combination, scenario/concluded (81 renders)
 - ` unattributed {crash | uncorrected_mce} failure in parked R# trial #: the group fails, no evidence names a single core ` ×11
-  - forms ` fail `; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bounds::combination (120 renders)
+  - forms ` fail `; 2 templates merged; tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (63 renders); sweep scenario/combination, scenario/member-probe (57 renders)
 - ` uncorrected MCE on cpu # (core #), bank # execution_unit (core-local) between trials (recorded only) ` ×1
   - forms ` mce `; tests tests::history::a_reset_and_an_mce_have_lines (1 renders)
 - ` uncorrected MCE on cpu # (core #), bank # {data_fabric (shared) | decode_unit (core-local) | execution_unit (core-local) | floating_point (core-local) | instruction_fetch (core-local) | l#_cache (core-local) | l#_cache (shared) | load_store (core-local) | unified_memory_controller (shared)} from boot # ` ×24
-  - forms ` mce `; 9 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (343 renders)
+  - forms ` mce `; 9 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (211 renders); sweep scenario/between, scenario/checking (132 renders)
 - ` w# ` ×450
   - forms ` session warning `; tests terminal::show::tests::a_live_journal_problem_stays_on_screen_and_recovers_when_the_journal_does, terminal::source::tests::a_journal_rewritten_in_place_to_a_longer_one_builds_a_fresh_model_and_drops_the_held_list (1116 renders)
 - ` w# padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding ` ×40
@@ -6219,7 +6219,7 @@ The log view and `togi status` pass these through as the journal wrote them, so 
 - ` {another | latest | old | ordinary} arrival ` ×4
   - forms ` session warning `; 4 templates merged; tests terminal::source::tests::a_scrolled_back_log_drops_its_list_when_the_journal_goes_away_or_breaks, terminal::source::tests::a_scrolled_back_log_drops_its_list_when_the_journal_is_replaced_or_truncated (5 renders)
 - ` {corrected | uncorrected} MCE on cpu # (core #), bank # load_store (core-local) from boot boot ` ×7
-  - forms ` mce `; 1 cuts folded in; 2 templates merged; tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (140 renders)
+  - forms ` mce `; 1 cuts folded in; 2 templates merged; tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (89 renders); sweep scenario/between, scenario/checking (51 renders)
 
 ## Source-phrase manifest
 
@@ -6227,62 +6227,62 @@ Every string literal of a renderer's production source that holds words (900 of 
 
 ### `describe.rs`: 56 of 56 covered
 
-- `describe.rs:58` `  · clear of C{} ` — tests corpus::narration_corpus, frames::frame_tests::bounds::combination (16 renders); sweep sweep/combination/2565-tuner.decision/120x33/plus40, sweep/combination/2565-tuner.decision/160x45/plus40 (4827 renders)
-- `describe.rs:78` ` session resumed ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (438 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (2409 renders)
+- `describe.rs:58` `  · clear of C{} ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (8 renders); sweep scenario/combination, scenario/round (4835 renders)
+- `describe.rs:78` ` session resumed ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (106 renders); sweep scenario/between, scenario/checking (2741 renders)
 - `describe.rs:100` ` crashed ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (202 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (15194 renders)
-- `describe.rs:102` ` failed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (1945 renders); sweep journal/help/160x45, journal/help/240x67 (121469 renders)
+- `describe.rs:102` ` failed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1461 renders); sweep journal/help/160x45, journal/help/240x67 (121953 renders)
 - `describe.rs:105` ` a trial ` — tests tests::describe::a_known_crash_without_a_regime, tests::model::failure_counters_separate_observed_and_skipped (3 renders)
 - `describe.rs:108` ` {what} at these offsets already {verb} ` — tests tests::describe::a_known_crash_without_a_regime, tests::describe::a_known_failure_names_the_hunt_it_leads_to (6 renders)
 - `describe.rs:110` `  in a carried trial ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, tests::describe::a_known_failure_names_the_hunt_it_leads_to (5 renders)
 - `describe.rs:123` ` before any offsets were applied, rebooted ` — tests tests::model::crash_classification, tests::model::recovery_ends_only_when_a_trial_starts (2 renders)
 - `describe.rs:129` ` power loss or reset, which says nothing about the offsets ` — tests tests::model::crash_classification (1 renders)
 - `describe.rs:135` ` idle with the offsets applied, rebooted ` — tests tests::describe::a_resumed_session_is_not_a_resumed_session_when_it_crashed, tests::history::reboot_history_requires_matching_cause (6 renders)
-- `describe.rs:139` ` with the offsets applied, rebooted ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (449 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (182904 renders)
-- `describe.rs:186` ` cycle {cycle} step {step} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (72500 renders); sweep journal/help/160x45, journal/help/240x67 (3408226 renders)
+- `describe.rs:139` ` with the offsets applied, rebooted ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (118 renders); sweep scenario/between, scenario/checking (183235 renders)
+- `describe.rs:186` ` cycle {cycle} step {step} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (36277 renders); sweep journal/help/160x45, journal/help/240x67 (3444449 renders)
 - `describe.rs:239` `  at these ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (23 renders)
 - `describe.rs:240` `  on {} at these ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, tests::describe::a_known_failure_names_the_hunt_it_leads_to (3 renders)
 - `describe.rs:243` `  → hunt {hunt} ` — tests frames::frame_tests::bounds::idle, frames::frame_tests::bounds::member_probe (78 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (370721 renders)
-- `describe.rs:249` ` #{hunt} started · candidates {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (171 renders); sweep sweep/combination/1832-hunt.start/120x33/plus40, sweep/combination/1832-hunt.start/160x45/plus40 (216 renders)
+- `describe.rs:249` ` #{hunt} started · candidates {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (113 renders); sweep scenario/combination, scenario/concluded (274 renders)
 - `describe.rs:276` ` #{hunt} started · locate: {} at 0 ` — tests tests::describe::a_locating_hunt_names_its_first_group (1 renders); sweep sweep/unconfirmed/4894-hunt.group/120x33/plus40, sweep/unconfirmed/4894-hunt.group/160x45/plus40 (2313 renders)
 - `describe.rs:281` ` #{hunt} started · part 1: {} ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (68 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (64725 renders)
 - `describe.rs:301` ` hunt {hunt} group {group} skipped: {} ` — tests tests::describe::hunt_groups_answered_without_a_trial (3 renders)
-- `describe.rs:306` ` passed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27457 renders); sweep journal/help/160x45, journal/help/240x67 (22320698 renders)
-- `describe.rs:308` ` failed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (1945 renders); sweep journal/help/160x45, journal/help/240x67 (121469 renders)
+- `describe.rs:306` ` passed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (21276 renders); sweep journal/help/160x45, journal/help/240x67 (22326879 renders)
+- `describe.rs:308` ` failed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1461 renders); sweep journal/help/160x45, journal/help/240x67 (121953 renders)
 - `describe.rs:313` ` hunt {hunt} group {group} · core {:02} at {} · {verb} on existing evidence ` — tests tests::describe::hunt_groups_answered_without_a_trial (4 renders)
-- `describe.rs:331` ` #{hunt} done ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1199 renders); sweep journal/help/160x45, journal/help/240x67 (1767651 renders)
-- `describe.rs:333` ` group ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27847 renders); sweep journal/help/160x45, journal/help/240x67 (920938 renders)
+- `describe.rs:331` ` #{hunt} done ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1144 renders); sweep journal/help/160x45, journal/help/240x67 (1767706 renders)
+- `describe.rs:333` ` group ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (17228 renders); sweep journal/help/160x45, journal/help/240x67 (931557 renders)
 - `describe.rs:336` ` , all answered by existing evidence ` — tests tests::describe::a_hunt_says_how_it_ended (2 renders)
-- `describe.rs:344` ` {text} · {} named ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1326 renders); sweep scenario/between/120x33, scenario/between/160x45 (2381885 renders)
-- `describe.rs:351` ` , probed ` — tests corpus::narration_corpus, frames::frame_tests::bounds::combination (29 renders); sweep scenario/combination/240x67, sweep/combination/2563-hunt.end/120x33/plus40 (24911 renders)
-- `describe.rs:356` ` {text} · {cores} kept together{probed} ` — tests corpus::narration_corpus, frames::frame_tests::bounds::combination (42 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (5891 renders)
+- `describe.rs:344` ` {text} · {} named ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1273 renders); sweep scenario/between/120x33, scenario/between/160x45 (2381938 renders)
+- `describe.rs:351` ` , probed ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::round (21 renders); sweep scenario/combination, scenario/combination/240x67 (24919 renders)
+- `describe.rs:356` ` {text} · {cores} kept together{probed} ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::bounds::member_probe (34 renders); sweep scenario/combination, scenario/member-probe/120x33 (5899 renders)
 - `describe.rs:360` ` {text} · {cores} unresolved ` — tests frames::panels::cycle::tests::a_combination_without_a_member_leaves_its_cell_blank_and_says_what_is_clear, tests::describe::a_hunt_says_how_it_ended (8 renders); sweep sweep/concluded/10287-trial.intent/120x33/plus40, sweep/concluded/10287-trial.intent/160x45/plus40 (7246 renders)
-- `describe.rs:361` ` {text} · stays with loaded {cores} ` — tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (8 renders); sweep sweep/unconfirmed/4943-hunt.end/120x33/plus40, sweep/unconfirmed/4943-hunt.end/160x45/plus40 (1828 renders)
+- `describe.rs:361` ` {text} · stays with loaded {cores} ` — tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (5 renders); sweep scenario/unconfirmed, sweep/unconfirmed/4943-hunt.end (1831 renders)
 - `describe.rs:362` ` #{hunt} cancelled ` — tests tests::describe::a_hunt_says_how_it_ended (3 renders)
-- `describe.rs:377` ` yields ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (266 renders); sweep scenario/confirmation/120x33, scenario/confirmation/160x45 (331187 renders)
-- `describe.rs:379` ` goes deeper ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (73 renders); sweep scenario/confirmation/240x67, scenario/round/240x67 (69873 renders)
-- `describe.rs:381` ` core {:02} {verb} to {} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (61568 renders); sweep journal/help/160x45, journal/help/240x67 (3560924 renders)
-- `describe.rs:395` ` #{round} passed, the proposed offsets held ` — tests corpus::narration_corpus, frames::frame_tests::bounds::combination (10 renders); sweep sweep/combination/4920-deepening.round/120x33/plus40, sweep/combination/4920-deepening.round/160x45/plus40 (3804 renders)
-- `describe.rs:403` ` #{round} stopped: {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (45 renders); sweep scenario/confirmation/160x45, scenario/confirmation/240x67 (7269 renders)
-- `describe.rs:421` ` trial {} ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (300444 renders); sweep journal/help/160x45, journal/help/240x67 (11153001 renders)
-- `describe.rs:451` ` core {:02} named ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1137 renders); sweep scenario/between/120x33, scenario/between/160x45 (1884167 renders)
+- `describe.rs:377` ` yields ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (208 renders); sweep scenario/concluded, scenario/confirmation (331245 renders)
+- `describe.rs:379` ` goes deeper ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (52 renders); sweep scenario/combination, scenario/concluded (69894 renders)
+- `describe.rs:381` ` core {:02} {verb} to {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (33513 renders); sweep journal/help/160x45, journal/help/240x67 (3588979 renders)
+- `describe.rs:395` ` #{round} passed, the proposed offsets held ` — tests frames::frame_tests::bounds::combination, frames::snapshots::combination (5 renders); sweep scenario/combination, sweep/combination/4920-deepening.round (3809 renders)
+- `describe.rs:403` ` #{round} stopped: {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (32 renders); sweep scenario/concluded, scenario/confirmation (7282 renders)
+- `describe.rs:421` ` trial {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (179613 renders); sweep journal/help/160x45, journal/help/240x67 (11273832 renders)
+- `describe.rs:451` ` core {:02} named ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1084 renders); sweep scenario/between/120x33, scenario/between/160x45 (1884220 renders)
 - `describe.rs:456` ` no core named ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bounds::confirmation (229 renders); sweep scenario/confirmation/160x45, scenario/confirmation/240x67 (154526 renders)
-- `describe.rs:464` ` rebooted ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (652 renders); sweep scenario/between/240x67, scenario/checking/240x67 (428018 renders)
-- `describe.rs:468` ` failed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (1945 renders); sweep journal/help/160x45, journal/help/240x67 (121469 renders)
-- `describe.rs:509` ` core {:02} · {what} at {} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (70262 renders); sweep journal/help/160x45, journal/help/240x67 (16363651 renders)
-- `describe.rs:513` ` hunt {} group {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (8906 renders); sweep journal/help/160x45, journal/help/240x67 (814803 renders)
-- `describe.rs:528` ` {text} · {} with core {:02} at {} ` — tests corpus::narration_corpus, frames::frame_tests::bounds::between (2636 renders); sweep journal/help/160x45, journal/help/80x24 (2382 renders)
-- `describe.rs:535` ` {text} · locate, idle cores at 0 ` — tests corpus::narration_corpus, frames::frame_tests::bounds::unconfirmed (9 renders); sweep sweep/unconfirmed/4941-trial.end/240x67/event, sweep/unconfirmed/4941-trial.end/240x67/plus40 (828 renders)
-- `describe.rs:537` ` {text} · {} at failing offsets ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1918 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (738152 renders)
+- `describe.rs:464` ` rebooted ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (321 renders); sweep scenario/between, scenario/between/240x67 (428349 renders)
+- `describe.rs:468` ` failed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1461 renders); sweep journal/help/160x45, journal/help/240x67 (121953 renders)
+- `describe.rs:509` ` core {:02} · {what} at {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (41365 renders); sweep journal/help/160x45, journal/help/240x67 (16392548 renders)
+- `describe.rs:513` ` hunt {} group {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (6688 renders); sweep journal/help/160x45, journal/help/240x67 (817021 renders)
+- `describe.rs:528` ` {text} · {} with core {:02} at {} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (2515 renders); sweep journal/help/160x45, journal/help/80x24 (2503 renders)
+- `describe.rs:535` ` {text} · locate, idle cores at 0 ` — tests frames::frame_tests::bounds::unconfirmed, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (6 renders); sweep scenario/unconfirmed, sweep/unconfirmed/4941-trial.end (831 renders)
+- `describe.rs:537` ` {text} · {} at failing offsets ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1037 renders); sweep scenario/combination, scenario/concluded (739033 renders)
 - `describe.rs:549` ` rerun of {text} with every core at 0 ` — tests frames::panels::history::tests::medium::a_long_subject_never_takes_the_attribution_cells, frames::panels::history::tests::medium::the_medium_history_pane (4 renders)
-- `describe.rs:550` ` rerun of {text} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (2013 renders); sweep scenario/between/120x33, scenario/between/160x45 (127903 renders)
-- `describe.rs:575` ` partial CCD {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7524 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (1426307 renders)
-- `describe.rs:577` ` full CCD {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (2366 renders); sweep scenario/between/120x33, scenario/between/160x45 (590089 renders)
-- `describe.rs:593` ` {when} trial {} of {} ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (75266 renders); sweep journal/help/160x45, journal/help/240x67 (5143254 renders)
+- `describe.rs:550` ` rerun of {text} ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (570 renders); sweep scenario/between, scenario/between/120x33 (129346 renders)
+- `describe.rs:575` ` partial CCD {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (636 renders); sweep scenario/combination, scenario/concluded (1433195 renders)
+- `describe.rs:577` ` full CCD {} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (425 renders); sweep scenario/between, scenario/between/120x33 (592030 renders)
+- `describe.rs:593` ` {when} trial {} of {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (46236 renders); sweep journal/help/160x45, journal/help/240x67 (5172284 renders)
 - `describe.rs:595` ` {when} the trial ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (10 renders); sweep scenario/hunt-bios/240x67, sweep/concluded/1327-trial.end/120x33/plus40 (55758 renders)
-- `describe.rs:604` ` {} at failing offsets ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1918 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (738152 renders)
-- `describe.rs:607` ` , {} parked ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (6381 renders); sweep journal/help/160x45, journal/help/240x67 (690383 renders)
-- `describe.rs:614` ` core {:02} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
-- `describe.rs:615` ` cores {} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (44109 renders); sweep journal/help/160x45, journal/help/240x67 (566946 renders)
+- `describe.rs:604` ` {} at failing offsets ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1037 renders); sweep scenario/combination, scenario/concluded (739033 renders)
+- `describe.rs:607` ` , {} parked ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5104 renders); sweep journal/help/160x45, journal/help/240x67 (691660 renders)
+- `describe.rs:614` ` core {:02} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
+- `describe.rs:615` ` cores {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (25364 renders); sweep journal/help/160x45, journal/help/240x67 (585691 renders)
 
 ### `frames/dash/ccd.rs`: 40 of 40 covered
 
@@ -6294,14 +6294,14 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/dash/ccd.rs:28` ` PROBE ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (110 renders); sweep journal/help/160x45, journal/help/80x24 (565 renders)
 - `frames/dash/ccd.rs:29` ` PARKED ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (286 renders); sweep journal/help/160x45, journal/help/80x24 (41678 renders)
 - `frames/dash/ccd.rs:150` ` reset queued ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (2 renders)
-- `frames/dash/ccd.rs:196` ` parked at 0 ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (548 renders); sweep journal/help/160x45, journal/help/80x24 (580342 renders)
-- `frames/dash/ccd.rs:196` ` parked ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (6381 renders); sweep journal/help/160x45, journal/help/240x67 (690383 renders)
+- `frames/dash/ccd.rs:196` ` parked at 0 ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (490 renders); sweep journal/help/160x45, journal/help/80x24 (580400 renders)
+- `frames/dash/ccd.rs:196` ` parked ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5104 renders); sweep journal/help/160x45, journal/help/240x67 (691660 renders)
 - `frames/dash/ccd.rs:201` ` {parked_words}, still under load ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes (1 renders); sweep sweep/combination/1878-trial.start/120x33/plus40, sweep/combination/1878-trial.start/160x45/plus40 (360 renders)
-- `frames/dash/ccd.rs:201` ` parked ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (6381 renders); sweep journal/help/160x45, journal/help/240x67 (690383 renders)
+- `frames/dash/ccd.rs:201` ` parked ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5104 renders); sweep journal/help/160x45, journal/help/240x67 (691660 renders)
 - `frames/dash/ccd.rs:204` ` {parked_words}, {loaded} under load ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::dash::tests::a_readback_is_never_clamped (404 renders); sweep journal/help/160x45, journal/help/240x67 (857841 renders)
-- `frames/dash/ccd.rs:204` ` parked ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (6381 renders); sweep journal/help/160x45, journal/help/240x67 (690383 renders)
-- `frames/dash/ccd.rs:206` ` {parked_words}, idle ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (63 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (149469 renders)
-- `frames/dash/ccd.rs:206` ` parked ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (6381 renders); sweep journal/help/160x45, journal/help/240x67 (690383 renders)
+- `frames/dash/ccd.rs:204` ` parked ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5104 renders); sweep journal/help/160x45, journal/help/240x67 (691660 renders)
+- `frames/dash/ccd.rs:206` ` {parked_words}, idle ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bounds::hunt (60 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (149472 renders)
+- `frames/dash/ccd.rs:206` ` parked ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5104 renders); sweep journal/help/160x45, journal/help/240x67 (691660 renders)
 - `frames/dash/ccd.rs:208` ` suspects at their failing offsets ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes (1 renders)
 - `frames/dash/ccd.rs:208` ` suspects ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes (2 renders)
 - `frames/dash/ccd.rs:211` ` members, one probed shallower than its failing offset ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes (1 renders)
@@ -6315,28 +6315,28 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/dash/ccd.rs:219` ` waiting at 0 ` — tests frames::dash::tests::a_ccd_table_names_its_columns_and_counts_what_it_leaves_out, frames::dash::tests::a_restored_session_shows_the_saved_profile_in_its_rows (172 renders); sweep journal/help/160x45, journal/help/240x67 (504641 renders)
 - `frames/dash/ccd.rs:219` ` waiting ` — tests frames::dash::tests::a_ccd_table_names_its_columns_and_counts_what_it_leaves_out, frames::dash::tests::a_restored_session_shows_the_saved_profile_in_its_rows (448 renders); sweep journal/help/160x45, journal/help/240x67 (902088 renders)
 - `frames/dash/ccd.rs:220` ` not under load ` — tests frames::dash::tests::a_readback_is_never_clamped, frames::dash::tests::a_restored_session_shows_the_saved_profile_in_its_rows (183 renders); sweep scenario/between/120x33, scenario/between/160x45 (530722 renders)
-- `frames/dash/ccd.rs:220` ` idle ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (4183 renders); sweep journal/help/160x45, journal/help/240x67 (1163982 renders)
+- `frames/dash/ccd.rs:220` ` idle ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::dash::tests::a_readback_is_never_clamped (2748 renders); sweep journal/help/160x45, journal/help/240x67 (1165417 renders)
 - `frames/dash/ccd.rs:221` ` one core under load at a time ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (39 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (276060 renders)
 - `frames/dash/ccd.rs:221` ` one loaded ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (62 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (276066 renders)
 - `frames/dash/ccd.rs:223` ` {loaded} under load · {judged} judged ` — tests frames::frame_tests::bounds::confirmation, frames::snapshots::confirmation (6 renders); sweep scenario/confirmation/120x33, scenario/confirmation/160x45 (29704 renders)
-- `frames/dash/ccd.rs:224` ` {loaded} loaded ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (14301 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (401909 renders)
-- `frames/dash/ccd.rs:235` ` CCD {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (40085 renders); sweep journal/help/160x45, journal/help/240x67 (7177813 renders)
+- `frames/dash/ccd.rs:224` ` {loaded} loaded ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (7624 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (408586 renders)
+- `frames/dash/ccd.rs:235` ` CCD {} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (15188 renders); sweep journal/help/160x45, journal/help/240x67 (7202710 renders)
 - `frames/dash/ccd.rs:270` ` 2 counts/cell ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (302 renders); sweep scenario/between/120x33, scenario/between/160x45 (405680 renders)
-- `frames/dash/ccd.rs:287` ` fail ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (28131 renders); sweep journal/help/160x45, journal/help/240x67 (7190922 renders)
-- `frames/dash/ccd.rs:290` ` back ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (19998 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (4254900 renders)
+- `frames/dash/ccd.rs:287` ` fail ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (19649 renders); sweep journal/help/160x45, journal/help/240x67 (7199404 renders)
+- `frames/dash/ccd.rs:290` ` back ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (11497 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (4263401 renders)
 - `frames/dash/ccd.rs:298` ` fail pt ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (331 renders); sweep scenario/between/160x45, scenario/between/240x67 (608380 renders)
-- `frames/dash/ccd.rs:319` ` +{} more ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (805 renders); sweep journal/help/160x45, journal/help/240x67 (1054517 renders)
+- `frames/dash/ccd.rs:319` ` +{} more ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (804 renders); sweep journal/help/160x45, journal/help/240x67 (1054518 renders)
 
 ### `frames/dash/header.rs`: 11 of 11 covered
 
-- `frames/dash/header.rs:15` ` togi ` — tests corpus::narration_corpus, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (87978 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (817708 renders)
+- `frames/dash/header.rs:15` ` togi ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (52413 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (853273 renders)
 - `frames/dash/header.rs:33` ` no session yet ` — tests frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell, frames::frame_tests::without_journal::a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_holds (21 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (12 renders)
 - `frames/dash/header.rs:51` ` paused · planned end {} ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (138 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (6720 renders)
-- `frames/dash/header.rs:68` ` session  ` — tests corpus::narration_corpus, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (14567 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (925629 renders)
-- `frames/dash/header.rs:80` ` failure ` — tests corpus::narration_corpus, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (19171 renders); sweep journal/help/160x45, journal/help/240x67 (2719203 renders)
-- `frames/dash/header.rs:82` ` crash ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (3261 renders); sweep journal/help/160x45, scenario/between/120x33 (1288529 renders)
+- `frames/dash/header.rs:68` ` session  ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (14191 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (926005 renders)
+- `frames/dash/header.rs:80` ` failure ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (13248 renders); sweep journal/help/160x45, journal/help/240x67 (2725126 renders)
+- `frames/dash/header.rs:82` ` crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (2534 renders); sweep journal/help/160x45, scenario/between (1289256 renders)
 - `frames/dash/header.rs:89` `  fail ·  ` — tests frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (8 renders); sweep sweep/combination/skipped/45x30, sweep/combination/skipped/50x30 (36 renders)
-- `frames/dash/header.rs:91` `  crash ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (3261 renders); sweep journal/help/160x45, scenario/between/120x33 (1288529 renders)
+- `frames/dash/header.rs:91` `  crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (2534 renders); sweep journal/help/160x45, scenario/between (1289256 renders)
 - `frames/dash/header.rs:99` ` last observed failure  ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (350 renders); sweep scenario/between/120x33, scenario/between/160x45 (710390 renders)
 - `frames/dash/header.rs:121` ` screen paused · planned end {minute} ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (108 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (5596 renders)
 - `frames/dash/header.rs:125` ` paused · planned end {minute} ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (138 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (6720 renders)
@@ -6344,16 +6344,16 @@ Every string literal of a renderer's production source that holds words (900 of 
 ### `frames/dash/now.rs`: 15 of 15 covered
 
 - `frames/dash/now.rs:90` ` {} passed · trial {} of {}   ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end (42 renders); sweep scenario/checking/240x67, scenario/concluded/240x67 (105089 renders)
-- `frames/dash/now.rs:147` ` idle + bursts ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1260 renders); sweep scenario/between/240x67, scenario/checking/240x67 (616561 renders)
+- `frames/dash/now.rs:147` ` idle + bursts ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (902 renders); sweep scenario/between/240x67, scenario/checking/240x67 (616919 renders)
 - `frames/dash/now.rs:157` ` short wake-ups, no workers in between ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::idle (34 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (2240 renders)
-- `frames/dash/now.rs:181` `  · {workers} worker{suffix} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (200 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (302051 renders)
+- `frames/dash/now.rs:181` `  · {workers} worker{suffix} ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (179 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (302072 renders)
 - `frames/dash/now.rs:208` ` NOW ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (118 renders); sweep scenario/checking/160x45, scenario/checking/240x67 (226252 renders)
-- `frames/dash/now.rs:209` ` trial {} ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (300444 renders); sweep journal/help/160x45, journal/help/240x67 (11153001 renders)
+- `frames/dash/now.rs:209` ` trial {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (179613 renders); sweep journal/help/160x45, journal/help/240x67 (11273832 renders)
 - `frames/dash/now.rs:234` ` preparing · workload has not started yet · planned {} ` — tests frames::frame_tests::holds::a_trial_intent_before_its_start_does_not_freeze, frames::frame_tests::live_panels::live_panels_keep_their_rectangles_from_a_running_trial_to_the_next (6 renders); sweep sweep/combination/0046-trial.intent/120x33/plus40, sweep/combination/0046-trial.intent/160x45/plus40 (89248 renders)
 - `frames/dash/now.rs:252` ` left ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (433 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (190382 renders)
 - `frames/dash/now.rs:254` ` past end ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (3 renders); sweep sweep/combination/0050-trial.start/240x67/overdue, sweep/combination/0051-smu.intent/240x67/overdue (38828 renders)
 - `frames/dash/now.rs:279` `   screen paused · planned end {digits}, so it cannot wake the idle cores   ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::idle (15 renders); sweep scenario/idle/240x67, scenario/member-probe/240x67 (1116 renders)
-- `frames/dash/now.rs:284` ` started  ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (87354 renders); sweep scenario/between/160x45, scenario/between/240x67 (346175 renders)
+- `frames/dash/now.rs:284` ` started  ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (52016 renders); sweep scenario/between, scenario/between/160x45 (381513 renders)
 - `frames/dash/now.rs:294` ` ends at ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::idle (15 renders); sweep scenario/idle/240x67, scenario/member-probe/240x67 (1116 renders)
 - `frames/dash/now.rs:323` `  left ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (433 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (190382 renders)
 - `frames/dash/now.rs:329` ` {} past its end ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end (12 renders); sweep sweep/combination/0050-trial.start/120x33/overdue, sweep/combination/0050-trial.start/160x45/overdue (77656 renders)
@@ -6365,29 +6365,29 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/dash/r7.rs:12` ` observed, not a guarantee ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::r7_lines_name_top_requesters_and_self_sufficiency (85 renders); sweep scenario/between/240x67, scenario/checking/240x67 (205944 renders)
 - `frames/dash/r7.rs:45` ` by offset ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::narrow_r7_rows_keep_offset_provenance_and_fit (867 renders); sweep scenario/between/120x33, scenario/between/160x45 (1355156 renders)
 - `frames/dash/r7.rs:57` ` top requesters ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::r7_lines_name_top_requesters_and_self_sufficiency (229 renders); sweep journal/help/160x45, journal/help/240x67 (304432 renders)
-- `frames/dash/r7.rs:57` ` top ` — tests corpus::narration_corpus, frames::dash::tests::cut_top_requesters_keep_their_offset_label (15339 renders); sweep journal/help/160x45, journal/help/240x67 (743807 renders)
+- `frames/dash/r7.rs:57` ` top ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::every_r7_workload_has_its_row (7969 renders); sweep journal/help/160x45, journal/help/240x67 (751177 renders)
 - `frames/dash/r7.rs:67` ` self-sufficient ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::every_r7_workload_has_its_row (281 renders); sweep scenario/between/120x33, scenario/between/160x45 (400685 renders)
-- `frames/dash/r7.rs:93` ` top ` — tests corpus::narration_corpus, frames::dash::tests::cut_top_requesters_keep_their_offset_label (15339 renders); sweep journal/help/160x45, journal/help/240x67 (743807 renders)
+- `frames/dash/r7.rs:93` ` top ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::every_r7_workload_has_its_row (7969 renders); sweep journal/help/160x45, journal/help/240x67 (751177 renders)
 - `frames/dash/r7.rs:99` ` self-sufficient ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::every_r7_workload_has_its_row (281 renders); sweep scenario/between/120x33, scenario/between/160x45 (400685 renders)
-- `frames/dash/r7.rs:163` ` all ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (45029 renders); sweep journal/help/160x45, journal/help/240x67 (2258768 renders)
+- `frames/dash/r7.rs:163` ` all ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::dash::tests::r7_lines_name_top_requesters_and_self_sufficiency (25810 renders); sweep journal/help/160x45, journal/help/240x67 (2277987 renders)
 - `frames/dash/r7.rs:165` ` none yet ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::every_r7_workload_has_its_row (369 renders); sweep scenario/between/120x33, scenario/between/160x45 (243997 renders)
-- `frames/dash/r7.rs:170` ` {} of {total} cores ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (18033 renders); sweep journal/help/160x45, journal/help/240x67 (58314 renders)
+- `frames/dash/r7.rs:170` ` {} of {total} cores ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (9716 renders); sweep journal/help/160x45, journal/help/240x67 (66631 renders)
 
 ### `frames/dash/stage.rs`: 29 of 29 covered
 
-- `frames/dash/stage.rs:41` `   {found} of {total} found ` — tests corpus::narration_corpus, frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at (278 renders); sweep scenario/combination/240x67, scenario/confirm/120x33 (396432 renders)
-- `frames/dash/stage.rs:48` ` confirming ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1425 renders); sweep scenario/between/240x67, scenario/checking/240x67 (1408818 renders)
+- `frames/dash/stage.rs:41` `   {found} of {total} found ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it (270 renders); sweep scenario/combination, scenario/combination/240x67 (396440 renders)
+- `frames/dash/stage.rs:48` ` confirming ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1014 renders); sweep scenario/between, scenario/between/240x67 (1409229 renders)
 - `frames/dash/stage.rs:50` ` searching ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (37 renders); sweep scenario/search/160x45, scenario/search/240x67 (128536 renders)
-- `frames/dash/stage.rs:54` `  · core {:02} {verb} {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (328 renders); sweep scenario/between/120x33, scenario/between/160x45 (373509 renders)
+- `frames/dash/stage.rs:54` `  · core {:02} {verb} {} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (284 renders); sweep scenario/between/120x33, scenario/between/160x45 (373553 renders)
 - `frames/dash/stage.rs:89` `   concluded ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (69 renders); sweep scenario/combination/160x45, scenario/combination/240x67 (63520 renders)
 - `frames/dash/stage.rs:104` `   round {round} · at most {left} left ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::bounds::round (18 renders); sweep scenario/round/160x45, scenario/round/240x67 (40928 renders)
-- `frames/dash/stage.rs:105` `   confirmation cycle ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (195 renders); sweep journal/help/160x45, journal/help/240x67 (69689 renders)
+- `frames/dash/stage.rs:105` `   confirmation cycle ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (162 renders); sweep journal/help/160x45, journal/help/240x67 (69722 renders)
 - `frames/dash/stage.rs:107` `   at most {} left ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::bounds::first_result (51 renders); sweep scenario/first-result/160x45, scenario/first-result/240x67 (96528 renders)
-- `frames/dash/stage.rs:108` ` round ` — tests corpus::narration_corpus, frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it (4330 renders); sweep journal/help/160x45, journal/help/240x67 (751453 renders)
+- `frames/dash/stage.rs:108` ` round ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2453 renders); sweep journal/help/160x45, journal/help/240x67 (753330 renders)
 - `frames/dash/stage.rs:138` `  paused at {at}/{steps} ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (150 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (76582 renders)
 - `frames/dash/stage.rs:141` `   paused at step {at} of {steps} ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (89 renders); sweep scenario/deadend/160x45, scenario/deadend/240x67 (52564 renders)
 - `frames/dash/stage.rs:145` ` , part {part} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bounds::between (163 renders); sweep journal/help/160x45, journal/help/240x67 (58373 renders)
-- `frames/dash/stage.rs:172` `   step {step} of {steps} ` — tests corpus::narration_corpus, frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at (45927 renders); sweep journal/help/160x45, journal/help/240x67 (729693 renders)
+- `frames/dash/stage.rs:172` `   step {step} of {steps} ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (24108 renders); sweep journal/help/160x45, journal/help/240x67 (751512 renders)
 - `frames/dash/stage.rs:177` `  · part {} of {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bounds::checking (293 renders); sweep scenario/checking/160x45, scenario/checking/240x67 (326729 renders)
 - `frames/dash/stage.rs:183` `  · trial {} of {} ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (122 renders); sweep scenario/checking/160x45, scenario/checking/240x67 (264375 renders)
 - `frames/dash/stage.rs:204` ` SOLO ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it (770 renders); sweep scenario/between/120x33, scenario/between/160x45 (1113827 renders)
@@ -6407,14 +6407,14 @@ Every string literal of a renderer's production source that holds words (900 of 
 
 ### `frames/draw.rs`: 1 of 1 covered
 
-- `frames/draw.rs:68` ` +{hidden} more ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (805 renders); sweep journal/help/160x45, journal/help/240x67 (1054517 renders)
+- `frames/draw.rs:68` ` +{hidden} more ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (804 renders); sweep journal/help/160x45, journal/help/240x67 (1054518 renders)
 
 ### `frames/footer.rs`: 9 of 9 covered
 
-- `frames/footer.rs:30` ` help ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (228 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (405661 renders)
+- `frames/footer.rs:30` ` help ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (225 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (405664 renders)
 - `frames/footer.rs:36` ` log ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (225 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (405661 renders)
 - `frames/footer.rs:41` ` esc ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (225 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (405724 renders)
-- `frames/footer.rs:42` ` back ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (19998 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (4254900 renders)
+- `frames/footer.rs:42` ` back ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (11497 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (4263401 renders)
 - `frames/footer.rs:48` ` close view ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (203 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (405661 renders)
 - `frames/footer.rs:71` ` close ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (281 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (405665 renders)
 - `frames/footer.rs:98` ` skipped journal content: togi events ` — sweep sweep/combination/skipped/60x30, sweep/concluded/skipped/60x30 (9 renders)
@@ -6436,7 +6436,7 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/help.rs:45` ` running now ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
 - `frames/help.rs:46` ` amber ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (131 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
 - `frames/help.rs:46` ` a hunt, and what it paused ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
-- `frames/help.rs:47` ` red ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (2651 renders); sweep journal/help/160x45, journal/help/240x67 (41204 renders)
+- `frames/help.rs:47` ` red ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1727 renders); sweep journal/help/160x45, journal/help/240x67 (42128 renders)
 - `frames/help.rs:47` ` failures, past and present ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
 - `frames/help.rs:48` ` green ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (43 renders); sweep journal/help/160x45 (1 renders)
 - `frames/help.rs:48` ` passed, done ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
@@ -6445,7 +6445,7 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/help.rs:50` ` grey ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (143 renders); sweep journal/help/160x45, journal/help/240x67 (6 renders)
 - `frames/help.rs:50` ` idle, parked, still to come ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
 - `frames/help.rs:55` ` THE TOP LINE ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (41 renders); sweep journal/help/160x45 (1 renders)
-- `frames/help.rs:58` ` failures ` — tests corpus::narration_corpus, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (714 renders); sweep journal/help/160x45, journal/help/240x67 (815881 renders)
+- `frames/help.rs:58` ` failures ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (712 renders); sweep journal/help/160x45, journal/help/240x67 (815883 renders)
 - `frames/help.rs:59` ` failure decisions, including trials skipped because they already failed ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (56 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
 - `frames/help.rs:61` ` crashes ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (613 renders); sweep journal/help/160x45, scenario/between/120x33 (775017 renders)
 - `frames/help.rs:61` ` boots that ended without a clean shutdown ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (56 renders); sweep journal/help/160x45, journal/help/240x67 (4 renders)
@@ -6483,23 +6483,23 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/help.rs:128` ` at 0, waiting for its first search turn ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:130` ` MEMBER ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (370 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (31409 renders)
 - `frames/help.rs:131` ` kept with its hunt group at its failing offset; another member may be probed ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:134` ` offset ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (85329 renders); sweep journal/help/160x45, journal/help/240x67 (3271268 renders)
+- `frames/help.rs:134` ` offset ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::dash::tests::cut_top_requesters_keep_their_offset_label (51285 renders); sweep journal/help/160x45, journal/help/240x67 (3305312 renders)
 - `frames/help.rs:135` ` Curve Optimizer counts, 0 to -50; deeper is more negative ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:137` ` trial ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (300444 renders); sweep journal/help/160x45, journal/help/240x67 (11153001 renders)
+- `frames/help.rs:137` ` trial ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (179613 renders); sweep journal/help/160x45, journal/help/240x67 (11273832 renders)
 - `frames/help.rs:137` ` one launch of one workload on its target ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:139` ` solo limit ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7590 renders); sweep journal/help/160x45, journal/help/240x67 (2003965 renders)
+- `frames/help.rs:139` ` solo limit ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (5422 renders); sweep journal/help/160x45, journal/help/240x67 (2006133 renders)
 - `frames/help.rs:140` ` the deepest offset a core confirmed under load alone ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:143` ` failure point ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (13345 renders); sweep journal/help/160x45, journal/help/240x67 (1664516 renders)
+- `frames/help.rs:143` ` failure point ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (9030 renders); sweep journal/help/160x45, journal/help/240x67 (1668831 renders)
 - `frames/help.rs:144` ` the shallowest ruled-out offset for a core ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:147` ` combination ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2100 renders); sweep journal/help/160x45, journal/help/240x67 (34775 renders)
+- `frames/help.rs:147` ` combination ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1479 renders); sweep journal/help/160x45, journal/help/240x67 (35396 renders)
 - `frames/help.rs:148` ` offsets at which a group of cores failed together ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:150` ` at its limit ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (1139 renders); sweep journal/help/160x45, journal/help/80x24 (5 renders)
+- `frames/help.rs:150` ` at its limit ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (770 renders); sweep journal/help/160x45, journal/help/80x24 (374 renders)
 - `frames/help.rs:150` ` a core that cannot go deeper ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:151` ` has room ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2773 renders); sweep journal/help/160x45, journal/help/80x24 (46338 renders)
+- `frames/help.rs:151` ` has room ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1850 renders); sweep journal/help/160x45, journal/help/80x24 (47261 renders)
 - `frames/help.rs:151` ` a core that can still go deeper ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:152` ` suspect ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bounds::between (66 renders)
 - `frames/help.rs:152` ` a core a hunt keeps at its failing offset ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (98 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:154` ` parked ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (6381 renders); sweep journal/help/160x45, journal/help/240x67 (690383 renders)
+- `frames/help.rs:154` ` parked ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5104 renders); sweep journal/help/160x45, journal/help/240x67 (691660 renders)
 - `frames/help.rs:155` ` a core a hunt holds no deeper than its failing offset, outside the selected group ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (97 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:157` ` partial part ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (46 renders)
 - `frames/help.rs:157` ` an R7 part with the top requesters idle ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (80 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
@@ -6507,22 +6507,22 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/help.rs:160` ` an R7 workload's highest-request group on each CCD, ties included; marked top on the CCD tables ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (78 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:163` ` self-sufficient ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::every_r7_workload_has_its_row (281 renders); sweep scenario/between/120x33, scenario/between/160x45 (400685 renders)
 - `frames/help.rs:164` ` observed passing as top requester for this R7 workload ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (80 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:166` ` cycle ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (73689 renders); sweep journal/help/160x45, journal/help/240x67 (4072560 renders)
+- `frames/help.rs:166` ` cycle ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (37270 renders); sweep journal/help/160x45, journal/help/240x67 (4108979 renders)
 - `frames/help.rs:166` ` one pass through the checking schedule ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (80 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:171` ` KINDS OF LOAD ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (85 renders)
-- `frames/help.rs:173` ` R1 light ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (5475 renders); sweep scenario/between/240x67, scenario/checking/240x67 (4253786 renders)
+- `frames/help.rs:173` ` R1 light ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2417 renders); sweep scenario/between, scenario/between/240x67 (4256844 renders)
 - `frames/help.rs:173` ` one light thread: compiling, browsing ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (101 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:175` ` R2 heavy vector ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (6698 renders); sweep scenario/between/240x67, scenario/checking/240x67 (3242024 renders)
+- `frames/help.rs:175` ` R2 heavy vector ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3691 renders); sweep scenario/between, scenario/between/240x67 (3245031 renders)
 - `frames/help.rs:176` ` one AVX2/AVX-512 thread: encoding, rendering ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (101 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:178` ` R3 load steps ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (3282 renders); sweep scenario/between/240x67, scenario/checking/240x67 (2790783 renders)
+- `frames/help.rs:178` ` R3 load steps ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (772 renders); sweep scenario/between/240x67, scenario/checking/240x67 (2793293 renders)
 - `frames/help.rs:178` ` load switching on and off: current steps ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (101 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:179` ` R4 partial load ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (5624 renders); sweep scenario/between/240x67, scenario/checking/240x67 (3356215 renders)
+- `frames/help.rs:179` ` R4 partial load ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3073 renders); sweep scenario/between/240x67, scenario/checking/240x67 (3358766 renders)
 - `frames/help.rs:179` ` light load at 25-75% duty: bursty work ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (102 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:180` ` R5 both threads ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (2092 renders); sweep scenario/between/240x67, scenario/checking/240x67 (712804 renders)
+- `frames/help.rs:180` ` R5 both threads ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (930 renders); sweep scenario/between/240x67, scenario/checking/240x67 (713966 renders)
 - `frames/help.rs:180` ` both threads of one core: SMT pressure ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (102 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:182` ` R6 idle + bursts ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1219 renders); sweep scenario/between/240x67, scenario/checking/240x67 (612777 renders)
+- `frames/help.rs:182` ` R6 idle + bursts ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (861 renders); sweep scenario/between/240x67, scenario/checking/240x67 (613135 renders)
 - `frames/help.rs:183` ` idle with short wake-ups: idle and boost ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (118 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/help.rs:186` ` R7 all-core ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (2219 renders); sweep scenario/between/120x33, scenario/between/160x45 (1315313 renders)
+- `frames/help.rs:186` ` R7 all-core ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1462 renders); sweep scenario/between, scenario/between/120x33 (1316070 renders)
 - `frames/help.rs:187` ` a CCD, part of one, or every core: power and heat ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (80 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
 - `frames/help.rs:321` ` AT LIMIT ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (900 renders); sweep journal/help/160x45, journal/help/80x24 (1867446 renders)
 - `frames/help.rs:322` ` at its limit: it cannot go deeper ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (84 renders); sweep journal/help/160x45, journal/help/80x24 (2 renders)
@@ -6537,18 +6537,18 @@ Every string literal of a renderer's production source that holds words (900 of 
 ### `frames/notes.rs`: 14 of 14 covered
 
 - `frames/notes.rs:96` ` group failed at {list} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::member_probe (28 renders); sweep scenario/member-probe/160x45, scenario/member-probe/240x67 (2424 renders)
-- `frames/notes.rs:107` ` returns to {back} ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (386 renders); sweep journal/help/160x45, journal/help/80x24 (93761 renders)
+- `frames/notes.rs:107` ` returns to {back} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (328 renders); sweep journal/help/160x45, journal/help/80x24 (93819 renders)
 - `frames/notes.rs:124` ` {offset}: light {light}/{needed}, heavy {heavy}/{needed} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::confirm (273 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (3251517 renders)
 - `frames/notes.rs:134` ` held by {label} ` — tests frames::dash::tests::medium_core_notes_retain_combination_and_solo_offsets, frames::frame_tests::bounds::combination (23 renders); sweep scenario/combination/240x67, scenario/round/240x67 (44886 renders)
 - `frames/notes.rs:143` ` backed off after {label} ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (70 renders); sweep journal/help/160x45, journal/help/80x24 (2 renders)
-- `frames/notes.rs:154` ` solo {solo} ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (7679 renders); sweep journal/help/160x45, journal/help/240x67 (2547368 renders)
-- `frames/notes.rs:163` ` passed {passed} ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27457 renders); sweep journal/help/160x45, journal/help/240x67 (22320698 renders)
-- `frames/notes.rs:173` ` next {next} ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (25937 renders); sweep scenario/between/120x33, scenario/between/160x45 (17472851 renders)
-- `frames/notes.rs:189` ` solo {solo} ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (7679 renders); sweep journal/help/160x45, journal/help/240x67 (2547368 renders)
+- `frames/notes.rs:154` ` solo {solo} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::medium_core_notes_retain_combination_and_solo_offsets (5511 renders); sweep journal/help/160x45, journal/help/240x67 (2549536 renders)
+- `frames/notes.rs:163` ` passed {passed} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (21276 renders); sweep journal/help/160x45, journal/help/240x67 (22326879 renders)
+- `frames/notes.rs:173` ` next {next} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (18618 renders); sweep scenario/between, scenario/between/120x33 (17480170 renders)
+- `frames/notes.rs:189` ` solo {solo} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::dash::tests::medium_core_notes_retain_combination_and_solo_offsets (5511 renders); sweep journal/help/160x45, journal/help/240x67 (2549536 renders)
 - `frames/notes.rs:205` ` top by offset ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (101 renders); sweep scenario/between/160x45, scenario/between/240x67 (153074 renders)
 - `frames/notes.rs:205` ` offset top ` — sweep sweep/combination/2567-profile.change/240x67/event, sweep/combination/2567-profile.change/240x67/plus40 (1108 renders)
 - `frames/notes.rs:207` ` top requester ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::r7_lines_name_top_requesters_and_self_sufficiency (386 renders); sweep journal/help/160x45, journal/help/240x67 (313071 renders)
-- `frames/notes.rs:207` ` top ` — tests corpus::narration_corpus, frames::dash::tests::cut_top_requesters_keep_their_offset_label (15339 renders); sweep journal/help/160x45, journal/help/240x67 (743807 renders)
+- `frames/notes.rs:207` ` top ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::every_r7_workload_has_its_row (7969 renders); sweep journal/help/160x45, journal/help/240x67 (751177 renders)
 - `frames/notes.rs:209` ` top requester ` — tests frames::dash::tests::cut_top_requesters_keep_their_offset_label, frames::dash::tests::r7_lines_name_top_requesters_and_self_sufficiency (386 renders); sweep journal/help/160x45, journal/help/240x67 (313071 renders)
 
 ### `frames/panels/cycle.rs`: 39 of 39 covered
@@ -6556,41 +6556,41 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/panels/cycle.rs:50` ` CYCLE {number} ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it (1083 renders); sweep scenario/between/120x33, scenario/between/160x45 (1537409 renders)
 - `frames/panels/cycle.rs:54` ` {} steps · {done} done ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (151 renders); sweep scenario/between/120x33, scenario/between/160x45 (319161 renders)
 - `frames/panels/cycle.rs:70` ` kind ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (79 renders); sweep scenario/between/160x45, scenario/between/240x67 (224384 renders)
-- `frames/panels/cycle.rs:71` ` where ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (176 renders); sweep scenario/between/160x45, scenario/between/240x67 (233137 renders)
+- `frames/panels/cycle.rs:71` ` where ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (149 renders); sweep scenario/between/160x45, scenario/between/240x67 (233164 renders)
 - `frames/panels/cycle.rs:72` ` workload ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (358 renders); sweep journal/help/160x45, journal/help/240x67 (589554 renders)
 - `frames/panels/cycle.rs:73` ` schedule ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (265 renders); sweep journal/help/160x45, journal/help/240x67 (249043 renders)
-- `frames/panels/cycle.rs:74` ` result ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (212 renders); sweep scenario/between/160x45, scenario/between/240x67 (623627 renders)
-- `frames/panels/cycle.rs:85` ` done ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1199 renders); sweep journal/help/160x45, journal/help/240x67 (1767651 renders)
+- `frames/panels/cycle.rs:74` ` result ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (209 renders); sweep scenario/between/160x45, scenario/between/240x67 (623630 renders)
+- `frames/panels/cycle.rs:85` ` done ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1144 renders); sweep journal/help/160x45, journal/help/240x67 (1767706 renders)
 - `frames/panels/cycle.rs:88` ` hunts  ` — tests frames::story::tests::edges::a_cycle_step_that_finished_after_two_hunts_lists_them (3 renders)
-- `frames/panels/cycle.rs:88` ` hunt  ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10193 renders); sweep journal/help/160x45, journal/help/240x67 (1556233 renders)
+- `frames/panels/cycle.rs:88` ` hunt  ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7950 renders); sweep journal/help/160x45, journal/help/240x67 (1558476 renders)
 - `frames/panels/cycle.rs:97` ` paused ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (372 renders); sweep journal/help/160x45, journal/help/240x67 (98110 renders)
 - `frames/panels/cycle.rs:99` ` paused at part {part} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bounds::deadend (17 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (4277 renders)
-- `frames/panels/cycle.rs:178` ` part {part} of {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (18780 renders); sweep journal/help/160x45, journal/help/240x67 (1324076 renders)
-- `frames/panels/cycle.rs:182` ` trial {} of {} ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (75266 renders); sweep journal/help/160x45, journal/help/240x67 (5143254 renders)
+- `frames/panels/cycle.rs:178` ` part {part} of {} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (10412 renders); sweep journal/help/160x45, journal/help/240x67 (1332444 renders)
+- `frames/panels/cycle.rs:182` ` trial {} of {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (46236 renders); sweep journal/help/160x45, journal/help/240x67 (5172284 renders)
 - `frames/panels/cycle.rs:230` ` more partials may follow ` — sweep sweep/combination/2642-checking.chain/240x67/event, sweep/combination/2642-checking.chain/240x67/plus40 (58724 renders)
 - `frames/panels/cycle.rs:232` ` partials may follow ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (49 renders); sweep scenario/between/160x45, scenario/between/240x67 (78878 renders)
-- `frames/panels/cycle.rs:256` ` trial {} of {} ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (75266 renders); sweep journal/help/160x45, journal/help/240x67 (5143254 renders)
-- `frames/panels/cycle.rs:265` ` {} failed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (1945 renders); sweep journal/help/160x45, journal/help/240x67 (121469 renders)
-- `frames/panels/cycle.rs:267` ` {passed}/{total} passed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27457 renders); sweep journal/help/160x45, journal/help/240x67 (22320698 renders)
-- `frames/panels/cycle.rs:269` ` {passed}/{total} passed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27457 renders); sweep journal/help/160x45, journal/help/240x67 (22320698 renders)
+- `frames/panels/cycle.rs:256` ` trial {} of {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (46236 renders); sweep journal/help/160x45, journal/help/240x67 (5172284 renders)
+- `frames/panels/cycle.rs:265` ` {} failed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1461 renders); sweep journal/help/160x45, journal/help/240x67 (121953 renders)
+- `frames/panels/cycle.rs:267` ` {passed}/{total} passed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (21276 renders); sweep journal/help/160x45, journal/help/240x67 (22326879 renders)
+- `frames/panels/cycle.rs:269` ` {passed}/{total} passed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (21276 renders); sweep journal/help/160x45, journal/help/240x67 (22326879 renders)
 - `frames/panels/cycle.rs:299` ` {ccds} CCDs · {parts} parts ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (233 renders); sweep scenario/between/160x45, scenario/between/240x67 (304591 renders)
 - `frames/panels/cycle.rs:300` ` {parts} parts ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (760 renders); sweep journal/help/160x45, journal/help/240x67 (533014 renders)
 - `frames/panels/cycle.rs:304` ` all cores idle ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (121 renders); sweep scenario/between/240x67, scenario/checking/240x67 (235511 renders)
-- `frames/panels/cycle.rs:306` ` one core at a time ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1715 renders); sweep scenario/between/240x67, scenario/checking/240x67 (1633511 renders)
+- `frames/panels/cycle.rs:306` ` one core at a time ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1263 renders); sweep scenario/between/240x67, scenario/checking/240x67 (1633963 renders)
 - `frames/panels/cycle.rs:326` ` offsets at which these cores failed together ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::panels::a_combination_wider_than_its_columns_names_the_omitted_cores_and_the_journal_bound (11 renders); sweep scenario/combination/240x67, sweep/combination/2565-tuner.decision/240x67/event (21016 renders)
 - `frames/panels/cycle.rs:328` ` failed together ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (98 renders); sweep journal/help/160x45, journal/help/240x67 (41775 renders)
 - `frames/panels/cycle.rs:333` ` COMBINATIONS ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::panels::a_combination_wider_than_its_columns_names_the_omitted_cores_and_the_journal_bound (19 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (41780 renders)
 - `frames/panels/cycle.rs:362` ` found by ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::panels::a_combination_wider_than_its_columns_names_the_omitted_cores_and_the_journal_bound (11 renders); sweep scenario/combination/240x67, sweep/combination/2565-tuner.decision/240x67/event (20758 renders)
-- `frames/panels/cycle.rs:363` ` hunt ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10193 renders); sweep journal/help/160x45, journal/help/240x67 (1556233 renders)
+- `frames/panels/cycle.rs:363` ` hunt ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7950 renders); sweep journal/help/160x45, journal/help/240x67 (1558476 renders)
 - `frames/panels/cycle.rs:365` ` found by ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::panels::a_combination_wider_than_its_columns_names_the_omitted_cores_and_the_journal_bound (11 renders); sweep scenario/combination/240x67, sweep/combination/2565-tuner.decision/240x67/event (20758 renders)
 - `frames/panels/cycle.rs:374` ` against the profile now ` — tests frames::frame_tests::bounds::combination, frames::frame_tests::panels::a_combination_wider_than_its_columns_names_the_omitted_cores_and_the_journal_bound (14 renders); sweep scenario/combination/160x45, scenario/combination/240x67 (31122 renders)
 - `frames/panels/cycle.rs:380` ` columns show {shown} of {} member cores; not shown: {} · l: last {LOG_LIMIT} events ` — tests frames::frame_tests::panels::a_combination_wider_than_its_columns_names_the_omitted_cores_and_the_journal_bound, frames::panels::cycle::tests::combination_overflow_names_the_omitted_cores_and_the_journal_bound (6 renders)
-- `frames/panels/cycle.rs:400` ` probed ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (108 renders); sweep journal/help/160x45, journal/help/240x67 (24914 renders)
+- `frames/panels/cycle.rs:400` ` probed ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bounds::between (100 renders); sweep journal/help/160x45, journal/help/240x67 (24922 renders)
 - `frames/panels/cycle.rs:400` ` unresolved ` — tests frames::panels::cycle::tests::a_combination_without_a_member_leaves_its_cell_blank_and_says_what_is_clear, tests::describe::a_hunt_says_how_it_ended (8 renders); sweep sweep/concluded/10287-trial.intent/120x33/plus40, sweep/concluded/10287-trial.intent/160x45/plus40 (7246 renders)
-- `frames/panels/cycle.rs:401` ` hunt {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10193 renders); sweep journal/help/160x45, journal/help/240x67 (1556233 renders)
+- `frames/panels/cycle.rs:401` ` hunt {} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7950 renders); sweep journal/help/160x45, journal/help/240x67 (1558476 renders)
 - `frames/panels/cycle.rs:410` ` holds core {:02} at {} ` — tests frames::frame_tests::bounds::combination, frames::panels::cycle::tests::a_combination_row_says_what_it_holds_and_the_profile_now (16 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (41510 renders)
 - `frames/panels/cycle.rs:416` ` clear:  ` — tests frames::panels::cycle::tests::a_combination_without_a_member_leaves_its_cell_blank_and_says_what_is_clear (1 renders)
-- `frames/panels/cycle.rs:419` ` {} shallower ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (1590 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (679 renders)
+- `frames/panels/cycle.rs:419` ` {} shallower ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_restored_dead_end_labels_its_rows_as_saved (1051 renders); sweep scenario/between, scenario/checking (1218 renders)
 - `frames/panels/cycle.rs:444` ` now ` — tests frames::frame_tests::bands::a_restored_dead_end_labels_its_rows_as_saved, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (552 renders); sweep journal/help/160x45, journal/help/240x67 (126203 renders)
 
 ### `frames/panels/history.rs`: 4 of 4 covered
@@ -6598,51 +6598,51 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/panels/history.rs:35` ` l: last {LOG_LIMIT} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (415 renders); sweep scenario/between/120x33, scenario/between/160x45 (811184 renders)
 - `frames/panels/history.rs:37` ` newest first · l: last {LOG_LIMIT} events ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (149 renders); sweep scenario/between/240x67, scenario/checking/240x67 (405558 renders)
 - `frames/panels/history.rs:41` ` WHAT HAPPENED ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (409 renders); sweep scenario/between/120x33, scenario/between/160x45 (811184 renders)
-- `frames/panels/history.rs:53` ` +{hidden} more ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (805 renders); sweep journal/help/160x45, journal/help/240x67 (1054517 renders)
+- `frames/panels/history.rs:53` ` +{hidden} more ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (804 renders); sweep journal/help/160x45, journal/help/240x67 (1054518 renders)
 
 ### `frames/panels/hunt.rs`: 85 of 85 covered
 
 - `frames/panels/hunt.rs:44` ` started {minute} · {since} so far ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (55 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (26712 renders)
 - `frames/panels/hunt.rs:52` ` HUNT {} ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::bounds::between (317 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (99310 renders)
-- `frames/panels/hunt.rs:60` ` cause ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2442 renders); sweep journal/help/160x45, journal/help/240x67 (45318 renders)
-- `frames/panels/hunt.rs:67` ` evidence ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (1401 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (131025 renders)
+- `frames/panels/hunt.rs:60` ` cause ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (976 renders); sweep journal/help/160x45, journal/help/240x67 (46784 renders)
+- `frames/panels/hunt.rs:67` ` evidence ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (1010 renders); sweep scenario/between, scenario/checking (131416 renders)
 - `frames/panels/hunt.rs:80` ` deeper at failure than at their parked offsets ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (46 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (26712 renders)
 - `frames/panels/hunt.rs:81` ` deeper at failure than parked ` — tests frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty (1 renders)
-- `frames/panels/hunt.rs:87` ` candidates ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (485 renders); sweep journal/help/160x45, journal/help/240x67 (26931 renders)
+- `frames/panels/hunt.rs:87` ` candidates ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (369 renders); sweep journal/help/160x45, journal/help/240x67 (27047 renders)
 - `frames/panels/hunt.rs:120` ` {} while idle, with no trial running ` — tests frames::panels::context::tests::the_compact_hunt_gives_up_its_blank_rows_under_the_bios_profile, frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row (12 renders)
-- `frames/panels/hunt.rs:121` ` crash ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (3261 renders); sweep journal/help/160x45, scenario/between/120x33 (1288529 renders)
-- `frames/panels/hunt.rs:125` ` failure ` — tests corpus::narration_corpus, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (19171 renders); sweep journal/help/160x45, journal/help/240x67 (2719203 renders)
+- `frames/panels/hunt.rs:121` ` crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (2534 renders); sweep journal/help/160x45, scenario/between (1289256 renders)
+- `frames/panels/hunt.rs:125` ` failure ` — tests frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start, frames::dash::tests::every_time_on_screen_is_local (13248 renders); sweep journal/help/160x45, journal/help/240x67 (2725126 renders)
 - `frames/panels/hunt.rs:126` ` the rerun of  ` — tests frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty, frames::panels::hunt::tests::a_named_wrong_result_keeps_its_core_at_medium (8 renders); sweep sweep/unconfirmed/4893-hunt.start/240x67/event, sweep/unconfirmed/4893-hunt.start/240x67/plus40 (208 renders)
 - `frames/panels/hunt.rs:141` ` {signal} in the rerun ` — tests frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty, frames::panels::hunt::tests::a_named_wrong_result_keeps_its_core_at_medium (8 renders); sweep sweep/unconfirmed/4893-hunt.start/120x33/plus40, sweep/unconfirmed/4893-hunt.start/160x45/plus40 (416 renders)
 - `frames/panels/hunt.rs:164` ` no core named ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bounds::confirmation (229 renders); sweep scenario/confirmation/160x45, scenario/confirmation/240x67 (154526 renders)
-- `frames/panels/hunt.rs:165` ` core {:02} named ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1137 renders); sweep scenario/between/120x33, scenario/between/160x45 (1884167 renders)
+- `frames/panels/hunt.rs:165` ` core {:02} named ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1084 renders); sweep scenario/between/120x33, scenario/between/160x45 (1884220 renders)
 - `frames/panels/hunt.rs:196` ` core {core:02} stalled by the last sample, {at} in ` — tests frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (2 renders)
 - `frames/panels/hunt.rs:198` ` core {core:02} stalled, {at} in ` — tests frames::panels::hunt::tests::a_stalled_worker_is_named_in_the_medium_evidence, frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (3 renders)
-- `frames/panels/hunt.rs:200` ` last sample {at} in ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (66 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (47014 renders)
+- `frames/panels/hunt.rs:200` ` last sample {at} in ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (45 renders); sweep scenario/concluded, scenario/confirmation (47035 renders)
 - `frames/panels/hunt.rs:207` ` not enough to attribute ` — tests frames::frame_tests::bounds::hunt_bios, frames::panels::hunt::tests::a_long_subject_gives_way_before_the_attribution_and_the_uncertainty (20 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (12106 renders)
-- `frames/panels/hunt.rs:222` ` parked at 0 ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (548 renders); sweep journal/help/160x45, journal/help/80x24 (580342 renders)
-- `frames/panels/hunt.rs:223` ` parked at 0 ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (548 renders); sweep journal/help/160x45, journal/help/80x24 (580342 renders)
-- `frames/panels/hunt.rs:225` ` parked ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (6381 renders); sweep journal/help/160x45, journal/help/240x67 (690383 renders)
-- `frames/panels/hunt.rs:227` ` at failing offsets ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1918 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (738152 renders)
-- `frames/panels/hunt.rs:228` ` failing ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (2379 renders); sweep journal/help/160x45, journal/help/240x67 (780481 renders)
-- `frames/panels/hunt.rs:230` ` at failing offsets ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1918 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (738152 renders)
+- `frames/panels/hunt.rs:222` ` parked at 0 ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (490 renders); sweep journal/help/160x45, journal/help/80x24 (580400 renders)
+- `frames/panels/hunt.rs:223` ` parked at 0 ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (490 renders); sweep journal/help/160x45, journal/help/80x24 (580400 renders)
+- `frames/panels/hunt.rs:225` ` parked ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5104 renders); sweep journal/help/160x45, journal/help/240x67 (691660 renders)
+- `frames/panels/hunt.rs:227` ` at failing offsets ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1037 renders); sweep scenario/combination, scenario/concluded (739033 renders)
+- `frames/panels/hunt.rs:228` ` failing ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1476 renders); sweep journal/help/160x45, journal/help/240x67 (781384 renders)
+- `frames/panels/hunt.rs:230` ` at failing offsets ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1037 renders); sweep scenario/combination, scenario/concluded (739033 renders)
 - `frames/panels/hunt.rs:234` ` parts ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (760 renders); sweep journal/help/160x45, journal/help/240x67 (533014 renders)
-- `frames/panels/hunt.rs:239` ` part ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (43872 renders); sweep journal/help/160x45, journal/help/240x67 (10775278 renders)
+- `frames/panels/hunt.rs:239` ` part ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (18134 renders); sweep journal/help/160x45, journal/help/240x67 (10801016 renders)
 - `frames/panels/hunt.rs:242` ` schedule ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (265 renders); sweep journal/help/160x45, journal/help/240x67 (249043 renders)
 - `frames/panels/hunt.rs:243` ` state ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (1297 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (26553 renders)
-- `frames/panels/hunt.rs:267` ` trial {index}/{of} ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (300444 renders); sweep journal/help/160x45, journal/help/240x67 (11153001 renders)
-- `frames/panels/hunt.rs:269` ` trial {index} of {of} ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (75266 renders); sweep journal/help/160x45, journal/help/240x67 (5143254 renders)
+- `frames/panels/hunt.rs:267` ` trial {index}/{of} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (179613 renders); sweep journal/help/160x45, journal/help/240x67 (11273832 renders)
+- `frames/panels/hunt.rs:269` ` trial {index} of {of} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (46236 renders); sweep journal/help/160x45, journal/help/240x67 (5172284 renders)
 - `frames/panels/hunt.rs:274` ` if part {i} passes ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (48 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (30905 renders)
-- `frames/panels/hunt.rs:276` ` next ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (25937 renders); sweep scenario/between/120x33, scenario/between/160x45 (17472851 renders)
-- `frames/panels/hunt.rs:285` ` part {}/{} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (43872 renders); sweep journal/help/160x45, journal/help/240x67 (10775278 renders)
-- `frames/panels/hunt.rs:286` `  at failing offsets ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1918 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (738152 renders)
+- `frames/panels/hunt.rs:276` ` next ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (18618 renders); sweep scenario/between, scenario/between/120x33 (17480170 renders)
+- `frames/panels/hunt.rs:285` ` part {}/{} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (18134 renders); sweep journal/help/160x45, journal/help/240x67 (10801016 renders)
+- `frames/panels/hunt.rs:286` `  at failing offsets ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1037 renders); sweep scenario/combination, scenario/concluded (739033 renders)
 - `frames/panels/hunt.rs:312` ` failed parts are split again; complements test what remains ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (31 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (24201 renders)
 - `frames/panels/hunt.rs:368` ` parts ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (760 renders); sweep journal/help/160x45, journal/help/240x67 (533014 renders)
-- `frames/panels/hunt.rs:369` ` group {} ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27847 renders); sweep journal/help/160x45, journal/help/240x67 (920938 renders)
-- `frames/panels/hunt.rs:370` ` {} at failing offsets ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1918 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (738152 renders)
-- `frames/panels/hunt.rs:377` ` {what}, {} parked ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (6381 renders); sweep journal/help/160x45, journal/help/240x67 (690383 renders)
+- `frames/panels/hunt.rs:369` ` group {} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (17228 renders); sweep journal/help/160x45, journal/help/240x67 (931557 renders)
+- `frames/panels/hunt.rs:370` ` {} at failing offsets ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1037 renders); sweep scenario/combination, scenario/concluded (739033 renders)
+- `frames/panels/hunt.rs:377` ` {what}, {} parked ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5104 renders); sweep journal/help/160x45, journal/help/240x67 (691660 renders)
 - `frames/panels/hunt.rs:383` ` locate: {} at 0 ` — tests frames::panels::hunt::tests::a_hunt_with_groups_and_no_parts_draws_its_locate_row, tests::describe::a_locating_hunt_names_its_first_group (2 renders); sweep sweep/unconfirmed/4894-hunt.group/120x33/plus40, sweep/unconfirmed/4894-hunt.group/160x45/plus40 (2721 renders)
-- `frames/panels/hunt.rs:387` ` groups {}-{} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (18127 renders); sweep journal/help/160x45, journal/help/240x67 (155059 renders)
+- `frames/panels/hunt.rs:387` ` groups {}-{} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (9931 renders); sweep journal/help/160x45, journal/help/240x67 (163255 renders)
 - `frames/panels/hunt.rs:388` ` parts of {} ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (278 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (81332 renders)
 - `frames/panels/hunt.rs:390` `  and their complements ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (32 renders); sweep scenario/member-probe/240x67, sweep/combination/2478-hunt.group/240x67/event (3252 renders)
 - `frames/panels/hunt.rs:398` ` all passed ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (254 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (73800 renders)
@@ -6650,15 +6650,15 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/panels/hunt.rs:411` `  · answered by existing evidence ` — tests frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (2 renders)
 - `frames/panels/hunt.rs:434` ` → {} kept together; probing members ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (20 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (1738 renders)
 - `frames/panels/hunt.rs:445` ` crashed ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (202 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (15194 renders)
-- `frames/panels/hunt.rs:461` ` probes ` — tests corpus::narration_corpus, frames::frame_tests::bounds::between (142 renders); sweep journal/help/160x45, journal/help/240x67 (8400 renders)
-- `frames/panels/hunt.rs:465` ` member ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (293 renders); sweep journal/help/160x45, journal/help/240x67 (14677 renders)
+- `frames/panels/hunt.rs:461` ` probes ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (134 renders); sweep journal/help/160x45, journal/help/240x67 (8408 renders)
+- `frames/panels/hunt.rs:465` ` member ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bounds::between (285 renders); sweep journal/help/160x45, journal/help/240x67 (14685 renders)
 - `frames/panels/hunt.rs:466` ` now ` — tests frames::frame_tests::bands::a_restored_dead_end_labels_its_rows_as_saved, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (552 renders); sweep journal/help/160x45, journal/help/240x67 (126203 renders)
 - `frames/panels/hunt.rs:467` ` group failed at ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bounds::member_probe (28 renders); sweep scenario/member-probe/160x45, scenario/member-probe/240x67 (2424 renders)
 - `frames/panels/hunt.rs:468` ` passed at ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (15 renders); sweep scenario/member-probe/160x45, scenario/member-probe/240x67 (1448 renders)
 - `frames/panels/hunt.rs:469` ` state ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (1297 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (26553 renders)
 - `frames/panels/hunt.rs:486` ` waiting ` — tests frames::dash::tests::a_ccd_table_names_its_columns_and_counts_what_it_leaves_out, frames::dash::tests::a_restored_session_shows_the_saved_profile_in_its_rows (448 renders); sweep journal/help/160x45, journal/help/240x67 (902088 renders)
-- `frames/panels/hunt.rs:501` ` next ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (25937 renders); sweep scenario/between/120x33, scenario/between/160x45 (17472851 renders)
-- `frames/panels/hunt.rs:503` ` done ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1199 renders); sweep journal/help/160x45, journal/help/240x67 (1767651 renders)
+- `frames/panels/hunt.rs:501` ` next ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (18618 renders); sweep scenario/between, scenario/between/120x33 (17480170 renders)
+- `frames/panels/hunt.rs:503` ` done ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1144 renders); sweep journal/help/160x45, journal/help/240x67 (1767706 renders)
 - `frames/panels/hunt.rs:512` ` ► trial {} of {} ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (14 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (832 renders)
 - `frames/panels/hunt.rs:515` ` ► running ` — tests frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (6 renders)
 - `frames/panels/hunt.rs:550` ` {} carried ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, tests::describe::a_known_failure_names_the_hunt_it_leads_to (13 renders)
@@ -6668,24 +6668,24 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/panels/hunt.rs:589` ` back off past it ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (50 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (31192 renders)
 - `frames/panels/hunt.rs:595` ` record the combination: {members} at the offsets that still fail ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (15 renders); sweep scenario/member-probe/160x45, scenario/member-probe/240x67 (1448 renders)
 - `frames/panels/hunt.rs:599` ` back off one member to a tested passing probe that keeps the profile clear ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (10 renders); sweep scenario/member-probe/240x67, sweep/combination/2478-hunt.group/240x67/event (1158 renders)
-- `frames/panels/hunt.rs:608` ` rerun {place}{length} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (6218 renders); sweep scenario/between/120x33, scenario/between/160x45 (1481592 renders)
+- `frames/panels/hunt.rs:608` ` rerun {place}{length} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (3318 renders); sweep scenario/between, scenario/between/120x33 (1484492 renders)
 - `frames/panels/hunt.rs:616` ` if the rerun passes, resume cycle {number} ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (31 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (23910 renders)
-- `frames/panels/hunt.rs:617` ` cycle {number} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (73689 renders); sweep journal/help/160x45, journal/help/240x67 (4072560 renders)
-- `frames/panels/hunt.rs:627` ` then ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (3989 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1928239 renders)
-- `frames/panels/hunt.rs:634` ` then ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (3989 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1928239 renders)
+- `frames/panels/hunt.rs:617` ` cycle {number} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (37270 renders); sweep journal/help/160x45, journal/help/240x67 (4108979 renders)
+- `frames/panels/hunt.rs:627` ` then ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2915 renders); sweep scenario/combination, scenario/concluded (1929313 renders)
+- `frames/panels/hunt.rs:634` ` then ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2915 renders); sweep scenario/combination, scenario/concluded (1929313 renders)
 - `frames/panels/hunt.rs:635` ` after the hunt: ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (42 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (26162 renders)
 - `frames/panels/hunt.rs:673` ` {length}, then {} x {} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (1455 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1638105 renders)
 - `frames/panels/hunt.rs:675` ` , original length ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (12 renders); sweep scenario/hunt-bios/160x45, scenario/hunt/160x45 (3741 renders)
-- `frames/panels/hunt.rs:686` ` trial ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (300444 renders); sweep journal/help/160x45, journal/help/240x67 (11153001 renders)
+- `frames/panels/hunt.rs:686` ` trial ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (179613 renders); sweep journal/help/160x45, journal/help/240x67 (11273832 renders)
 - `frames/panels/hunt.rs:690` ` {length}, then {} of {} ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (9 renders); sweep scenario/member-probe/240x67, sweep/combination/1832-hunt.start/240x67/event (5922 renders)
 - `frames/panels/hunt.rs:692` ` , its original length ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (17 renders); sweep scenario/hunt-bios/240x67, scenario/hunt/240x67 (11884 renders)
 - `frames/panels/hunt.rs:707` ` starting ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (31 renders); sweep journal/starting-once/120x33, journal/starting-once/160x45 (200958 renders)
-- `frames/panels/hunt.rs:710` ` locate ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (52 renders); sweep sweep/unconfirmed/4894-hunt.group/120x33/plus40, sweep/unconfirmed/4894-hunt.group/160x45/plus40 (4191 renders)
-- `frames/panels/hunt.rs:713` ` group {} ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27847 renders); sweep journal/help/160x45, journal/help/240x67 (920938 renders)
-- `frames/panels/hunt.rs:726` ` group {} ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27847 renders); sweep journal/help/160x45, journal/help/240x67 (920938 renders)
-- `frames/panels/hunt.rs:731` ` {recut}part {at} of {n} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (18780 renders); sweep journal/help/160x45, journal/help/240x67 (1324076 renders)
+- `frames/panels/hunt.rs:710` ` locate ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bounds::unconfirmed (35 renders); sweep scenario/unconfirmed, sweep/crashedcycle/4640-tuner.decision (4208 renders)
+- `frames/panels/hunt.rs:713` ` group {} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (17228 renders); sweep journal/help/160x45, journal/help/240x67 (931557 renders)
+- `frames/panels/hunt.rs:726` ` group {} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (17228 renders); sweep journal/help/160x45, journal/help/240x67 (931557 renders)
+- `frames/panels/hunt.rs:731` ` {recut}part {at} of {n} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (10412 renders); sweep journal/help/160x45, journal/help/240x67 (1332444 renders)
 - `frames/panels/hunt.rs:733` ` parts · {recut}part {at} of {n} ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (36 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (24560 renders)
-- `frames/panels/hunt.rs:744` ` member {at} of {} ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (158 renders); sweep journal/help/160x45, journal/help/240x67 (9521 renders)
+- `frames/panels/hunt.rs:744` ` member {at} of {} ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bounds::between (150 renders); sweep journal/help/160x45, journal/help/240x67 (9529 renders)
 - `frames/panels/hunt.rs:746` ` member probes · member {at} of {} ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (20 renders); sweep scenario/member-probe/160x45, scenario/member-probe/240x67 (1738 renders)
 
 ### `frames/panels/log.rs`: 10 of 10 covered
@@ -6693,7 +6693,7 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/panels/log.rs:34` ` No journal entries yet. ` — tests frames::frame_tests::escapes::a_problem_with_controls_in_its_text_draws_them_visibly_escaped_live_and_in_one_frame, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (7 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (3 renders)
 - `frames/panels/log.rs:49` ` event ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (381 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (411331 renders)
 - `frames/panels/log.rs:53` ` last {LOG_LIMIT} of {} · SMU and preflight left out ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bounds::between (81 renders); sweep sweep/combination/log-top/160x45, sweep/combination/log-top/240x67 (27 renders)
-- `frames/panels/log.rs:56` ` last {LOG_LIMIT} of {} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (309 renders); sweep sweep/combination/log-top/160x45, sweep/combination/log-top/240x67 (47715 renders)
+- `frames/panels/log.rs:56` ` last {LOG_LIMIT} of {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (221 renders); sweep scenario/concluded, scenario/confirmation (47803 renders)
 - `frames/panels/log.rs:60` ` {} · SMU and preflight left out ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (116 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (30 renders)
 - `frames/panels/log.rs:66` ` JOURNAL ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (146 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (42 renders)
 - `frames/panels/log.rs:67` ` JOURNAL ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (146 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (42 renders)
@@ -6705,7 +6705,7 @@ Every string literal of a renderer's production source that holds words (900 of 
 
 - `frames/panels/search.rs:31` ` TURNS ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (121 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (361352 renders)
 - `frames/panels/search.rs:32` ` one core per turn, in this order ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (121 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (361352 renders)
-- `frames/panels/search.rs:42` ` core ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
+- `frames/panels/search.rs:42` ` core ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
 - `frames/panels/search.rs:43` ` this turn ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (78 renders); sweep scenario/confirm/160x45, scenario/confirm/240x67 (271012 renders)
 - `frames/panels/search.rs:45` ` workload ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (358 renders); sweep journal/help/160x45, journal/help/240x67 (589554 renders)
 - `frames/panels/search.rs:46` ` so far ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (135 renders); sweep scenario/confirm/160x45, scenario/confirm/240x67 (309604 renders)
@@ -6728,14 +6728,14 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/panels/search.rs:169` ` UNCONFIRMED since #{since} · cores {} ` — tests frames::frame_tests::bounds::hunt_bios, frames::frame_tests::bounds::unconfirmed (23 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (18356 renders)
 - `frames/panels/search.rs:177` ` BIOS PROFILE ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (295 renders); sweep scenario/between/160x45, scenario/between/240x67 (449793 renders)
 - `frames/panels/search.rs:202` ` slot    ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (199 renders); sweep journal/help/160x45, journal/help/240x67 (232931 renders)
-- `frames/panels/search.rs:207` ` CCD {}   ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (40085 renders); sweep journal/help/160x45, journal/help/240x67 (7177813 renders)
+- `frames/panels/search.rs:207` ` CCD {}   ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (15188 renders); sweep journal/help/160x45, journal/help/240x67 (7202710 renders)
 - `frames/panels/search.rs:241` ` PHASE 2 · ROUND {round} ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_round_keeps_its_candidate_rows_at_every_height (55 renders); sweep scenario/round/120x33, scenario/round/160x45 (86571 renders)
 - `frames/panels/search.rs:251` ` at most {} left, then one full cycle ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_round_keeps_its_candidate_rows_at_every_height (21 renders); sweep scenario/round/120x33, scenario/round/160x45 (55060 renders)
-- `frames/panels/search.rs:252` ` round ` — tests corpus::narration_corpus, frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it (4330 renders); sweep journal/help/160x45, journal/help/240x67 (751453 renders)
+- `frames/panels/search.rs:252` ` round ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2453 renders); sweep journal/help/160x45, journal/help/240x67 (753330 renders)
 - `frames/panels/search.rs:279` ` {} {}  {} → solo {solo}  gap {gap} ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_round_keeps_its_candidate_rows_at_every_height (26 renders); sweep scenario/round/120x33, scenario/round/160x45 (197493 renders)
-- `frames/panels/search.rs:280` ` core ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
+- `frames/panels/search.rs:280` ` core ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
 - `frames/panels/search.rs:292` ` CHECKS ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_round_keeps_its_candidate_rows_at_every_height (16 renders); sweep scenario/round/120x33, scenario/round/160x45 (47662 renders)
-- `frames/panels/search.rs:299` ` {} on {}  {}/{} passed ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (25001 renders); sweep journal/help/160x45, journal/help/240x67 (14453748 renders)
+- `frames/panels/search.rs:299` ` {} on {}  {}/{} passed ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (18907 renders); sweep journal/help/160x45, journal/help/240x67 (14459842 renders)
 
 ### `frames/render.rs`: 2 of 2 covered
 
@@ -6747,8 +6747,8 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/scene.rs:129` ` a moment ago ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bounds::confirmation (103 renders); sweep scenario/confirmation/120x33, scenario/confirmation/160x45 (58212 renders)
 - `frames/scene.rs:131` ` {}m ago ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (194 renders); sweep scenario/between/120x33, scenario/between/160x45 (648852 renders)
 - `frames/scene.rs:133` ` {} ago ` — tests frames::dash::tests::every_time_on_screen_is_local, frames::dash::tests::the_header_drops_clauses_in_order_and_keeps_the_counts (297 renders); sweep scenario/between/120x33, scenario/between/160x45 (707064 renders)
-- `frames/scene.rs:157` `  vector ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (6873 renders); sweep journal/help/160x45, journal/help/240x67 (3338948 renders)
-- `frames/scene.rs:159` ` , then  ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (2574 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1878180 renders)
+- `frames/scene.rs:157` `  vector ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3866 renders); sweep journal/help/160x45, journal/help/240x67 (3341955 renders)
+- `frames/scene.rs:159` ` , then  ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2122 renders); sweep scenario/combination, scenario/concluded (1878632 renders)
 
 ### `frames/story/mod.rs`: 150 of 150 covered
 
@@ -6785,14 +6785,14 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/story/mod.rs:271` ` Round {round} checks again the offsets kept from the round that ended unpassed ` — tests frames::story::tests::the_story::deepening_checks_say_how_they_load (1 renders)
 - `frames/story/mod.rs:274` ` Round {round} moves {} one count toward their solo limits ` — tests frames::story::tests::the_story::a_round_names_the_cores_it_moves (1 renders); sweep sweep/combination/4831-trial.start/120x33/plus40, sweep/combination/4831-trial.start/160x45/plus40 (545 renders)
 - `frames/story/mod.rs:279` ` {what}; at most {} left, then one full cycle. ` — tests frames::story::tests::the_story::a_round_names_the_cores_it_moves, frames::story::tests::the_story::deepening_checks_say_how_they_load (2 renders); sweep sweep/combination/4831-trial.start/120x33/plus40, sweep/combination/4831-trial.start/160x45/plus40 (545 renders)
-- `frames/story/mod.rs:280` ` round ` — tests corpus::narration_corpus, frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it (4330 renders); sweep journal/help/160x45, journal/help/240x67 (751453 renders)
+- `frames/story/mod.rs:280` ` round ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2453 renders); sweep journal/help/160x45, journal/help/240x67 (753330 renders)
 - `frames/story/mod.rs:294` ` CYCLE {cycle} ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it (1083 renders); sweep scenario/between/120x33, scenario/between/160x45 (1537409 renders)
 - `frames/story/mod.rs:297` ` This step ` — tests frames::story::tests::edges::a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold (2 renders)
 - `frames/story/mod.rs:297` ` Step {step} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bounds::checking (87 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (144170 renders)
 - `frames/story/mod.rs:304` ` {step} leaves every core idle for {}, with short wake-ups, to test idle and boost states. ` — tests frames::frame_tests::bounds::idle, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (12 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (443 renders)
 - `frames/story/mod.rs:307` ` This screen holds still while the idle trial is in flight, clock included, so drawing it cannot wake… ` — tests frames::frame_tests::bounds::idle, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (12 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (443 renders)
 - `frames/story/mod.rs:309` ` Every core idle with short wake-ups; this screen holds still. ` — tests frames::frame_tests::bounds::idle, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (34 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (886 renders)
-- `frames/story/mod.rs:316` ` {step} is {kind} with {}. ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (455 renders); sweep journal/help/160x45, journal/help/240x67 (172671 renders)
+- `frames/story/mod.rs:316` ` {step} is {kind} with {}. ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (452 renders); sweep journal/help/160x45, journal/help/240x67 (172674 renders)
 - `frames/story/mod.rs:321` ` Every core runs at its profile offset. Phase 1's cycle: its pass confirms the first BIOS profile. ` — tests frames::story::tests::edges::a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold, frames::story::tests::the_story::a_checking_step_says_where_it_runs_and_what_counts (2 renders)
 - `frames/story/mod.rs:322` ` Every core runs at its profile offset. Phase 2's confirmation cycle: its pass concludes phase 2. ` — tests frames::story::tests::edges::a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold, frames::story::tests::the_story::phase_2s_confirmation_cycle_says_its_pass_concludes_phase_2 (2 renders)
 - `frames/story/mod.rs:323` ` Every core runs at its profile offset. The cycle keeps testing until stopped. ` — tests frames::story::tests::edges::a_cycle_step_that_finished_after_two_hunts_lists_them, frames::story::tests::edges::a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold (3 renders)
@@ -6828,8 +6828,8 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/story/mod.rs:449` ` An earlier build may have moved offsets deeper than proven. Answer the reset question at a terminal … ` — tests frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (1 renders)
 - `frames/story/mod.rs:452` ` The CPU shut down from heat. Check the cooling before tuning again. ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::story::tests::edges::every_dead_end_condition_is_narrated_with_and_without_a_saved_profile (4 renders)
 - `frames/story/mod.rs:455` ` DEAD END ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_restored_dead_end_labels_its_rows_as_saved (58 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (1025 renders)
-- `frames/story/mod.rs:459` ` parked at 0 ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (548 renders); sweep journal/help/160x45, journal/help/80x24 (580342 renders)
-- `frames/story/mod.rs:459` ` parked ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (6381 renders); sweep journal/help/160x45, journal/help/240x67 (690383 renders)
+- `frames/story/mod.rs:459` ` parked at 0 ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (490 renders); sweep journal/help/160x45, journal/help/80x24 (580400 renders)
+- `frames/story/mod.rs:459` ` parked ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5104 renders); sweep journal/help/160x45, journal/help/240x67 (691660 renders)
 - `frames/story/mod.rs:475` ` HUNT {} ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::bounds::between (317 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (99310 renders)
 - `frames/story/mod.rs:478` ` I look for the cause among {candidates}, the cores with an offset in the failing profile. ` — tests frames::story::tests::the_story::a_hunt_after_a_recovery_speaks_of_the_hunt_not_the_recovery (1 renders); sweep sweep/combination/1832-hunt.start/120x33/plus40, sweep/combination/1832-hunt.start/160x45/plus40 (4848 renders)
 - `frames/story/mod.rs:481` ` I rerun that load with part of them at their failing offsets and the rest {parked}. ` — tests frames::story::tests::the_story::a_hunt_after_a_recovery_speaks_of_the_hunt_not_the_recovery (1 renders); sweep sweep/combination/1832-hunt.start/120x33/plus40, sweep/combination/1832-hunt.start/160x45/plus40 (4848 renders)
@@ -6839,7 +6839,7 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/story/mod.rs:498` ` RECOVERED ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (79 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (101097 renders)
 - `frames/story/mod.rs:502` ` HUNT {} ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::bounds::between (317 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (99310 renders)
 - `frames/story/mod.rs:516` ` crashed ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (202 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (15194 renders)
-- `frames/story/mod.rs:518` ` failed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (1945 renders); sweep journal/help/160x45, journal/help/240x67 (121469 renders)
+- `frames/story/mod.rs:518` ` failed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1461 renders); sweep journal/help/160x45, journal/help/240x67 (121953 renders)
 - `frames/story/mod.rs:522` ` Core {id:02} first. ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (8 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (224 renders)
 - `frames/story/mod.rs:524` ` Now core {id:02}. ` — tests frames::story::tests::the_story::a_member_probe_names_the_group_and_the_member, frames::story::tests::the_story::a_probe_says_failed_unless_its_group_crashed (2 renders); sweep sweep/combination/2539-trial.start/120x33/plus40, sweep/combination/2539-trial.start/160x45/plus40 (300 renders)
 - `frames/story/mod.rs:531` ` {members} {verb} together at their offsets, and every smaller part of them that was tested passed. ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (11 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (524 renders)
@@ -6849,7 +6849,7 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/story/mod.rs:552` ` {brief} Rerunning it with {candidates} at 0. ` — tests frames::story::tests::the_story::a_locating_hunt_reruns_its_load_with_the_candidates_at_zero (1 renders); sweep sweep/unconfirmed/4939-trial.start/120x33/plus40, sweep/unconfirmed/4939-trial.start/160x45/plus40 (22 renders)
 - `frames/story/mod.rs:561` ` {named}I rerun that load with {}. ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (25 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (12678 renders)
 - `frames/story/mod.rs:566` ` {brief} Rerunning it with {} parked. ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (48 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (2550 renders)
-- `frames/story/mod.rs:580` ` {} at their failing offsets, {} {} ` — tests corpus::narration_corpus, frames::frame_tests::bounds::hunt (53 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (2972 renders)
+- `frames/story/mod.rs:580` ` {} at their failing offsets, {} {} ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (50 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (2975 renders)
 - `frames/story/mod.rs:587` ` part of {} at its offsets, the rest {} ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (4 renders)
 - `frames/story/mod.rs:598` ` No core was named:  ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (22 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (2982 renders)
 - `frames/story/mod.rs:599` ` ; no core named. ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (36 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (2650 renders)
@@ -6865,19 +6865,19 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/story/mod.rs:652` ` Crashed {word} ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (20 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (2126 renders)
 - `frames/story/mod.rs:653` ` Crashed ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (20 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (2126 renders)
 - `frames/story/mod.rs:656` ` The machine crashed {when} {what} and rebooted. ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (15 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (2284 renders)
-- `frames/story/mod.rs:662` ` {} ended with {}. ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1000 renders); sweep journal/help/160x45, journal/help/240x67 (702 renders)
+- `frames/story/mod.rs:662` ` {} ended with {}. ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (669 renders); sweep journal/help/160x45, journal/help/240x67 (1033 renders)
 - `frames/story/mod.rs:667` ` {} failed. ` — tests frames::frame_tests::bounds::deadend, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (12 renders); sweep scenario/deadend/160x45, sweep/deadend/4143-deadend/160x45/plus40 (104 renders)
 - `frames/story/mod.rs:669` ` Failed in {name}{name_brief} ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (2 renders)
 - `frames/story/mod.rs:685` ` {}-minute ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (26 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (2982 renders)
 - `frames/story/mod.rs:687` ` {secs}-second ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (6 renders)
 - `frames/story/mod.rs:695` ` minute ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bounds::checking (90 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (95972 renders)
-- `frames/story/mod.rs:697` ` second ` — tests corpus::narration_corpus, frames::frame_tests::bounds::hunt_bios (36 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (24947 renders)
+- `frames/story/mod.rs:697` ` second ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (24 renders); sweep scenario/hunt-bios, scenario/hunt-bios/120x33 (24959 renders)
 - `frames/story/mod.rs:770` ` on core {:02} alone at {} ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (46 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (175201 renders)
 - `frames/story/mod.rs:785` ` {place}, every CCD ` — sweep sweep/combination/1581-trial.intent/120x33/plus40, sweep/combination/1581-trial.intent/160x45/plus40 (2736 renders)
-- `frames/story/mod.rs:821` ` core {:02} at {} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (70262 renders); sweep journal/help/160x45, journal/help/240x67 (16363651 renders)
-- `frames/story/mod.rs:829` ` {} at failing offsets ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1918 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (738152 renders)
-- `frames/story/mod.rs:833` ` {} parked ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (6381 renders); sweep journal/help/160x45, journal/help/240x67 (690383 renders)
-- `frames/story/mod.rs:838` ` , idle ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (63 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (149469 renders)
+- `frames/story/mod.rs:821` ` core {:02} at {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (41365 renders); sweep journal/help/160x45, journal/help/240x67 (16392548 renders)
+- `frames/story/mod.rs:829` ` {} at failing offsets ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1037 renders); sweep scenario/combination, scenario/concluded (739033 renders)
+- `frames/story/mod.rs:833` ` {} parked ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (5104 renders); sweep journal/help/160x45, journal/help/240x67 (691660 renders)
+- `frames/story/mod.rs:838` ` , idle ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bounds::hunt (60 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (149472 renders)
 - `frames/story/mod.rs:852` ` HUNT {} ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::bounds::between (317 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (99310 renders)
 - `frames/story/mod.rs:856` `  · GROUP {} · CORE {:02} AT {} ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (11 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (555 renders)
 - `frames/story/mod.rs:864` `  · {}PART {part} OF {} ` — tests frames::frame_tests::bounds::confirmation, frames::frame_tests::bounds::hunt (32 renders); sweep scenario/confirmation/120x33, scenario/confirmation/160x45 (3933 renders)
@@ -6906,8 +6906,8 @@ Every string literal of a renderer's production source that holds words (900 of 
 ### `frames/story/outcome.rs`: 76 of 76 covered
 
 - `frames/story/outcome.rs:32` ` next trial:  ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1830 renders); sweep scenario/between/120x33, scenario/between/160x45 (4721066 renders)
-- `frames/story/outcome.rs:158` ` backoffs  ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (69 renders); sweep scenario/between/120x33, scenario/checking/120x33 (27704 renders)
-- `frames/story/outcome.rs:159` ` backoffs {basis} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (69 renders); sweep scenario/between/120x33, scenario/checking/120x33 (27704 renders)
+- `frames/story/outcome.rs:158` ` backoffs  ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (61 renders); sweep scenario/between/120x33, scenario/checking/120x33 (27712 renders)
+- `frames/story/outcome.rs:159` ` backoffs {basis} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown (61 renders); sweep scenario/between/120x33, scenario/checking/120x33 (27712 renders)
 - `frames/story/outcome.rs:363` ` another core ` — tests frames::story::tests::the_outcome_lines::every_r7_named_outcome_keeps_a_row (1 renders)
 - `frames/story/outcome.rs:365` ` a core ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (846 renders); sweep journal/help/160x45, journal/help/240x67 (950309 renders)
 - `frames/story/outcome.rs:379` ` if none or {who} is named ` — tests frames::story::tests::the_outcome_lines::every_r7_named_outcome_keeps_a_row (1 renders)
@@ -6917,16 +6917,16 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/story/outcome.rs:424` ` a core at 0 ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (29 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (11020 renders)
 - `frames/story/outcome.rs:440` ` pass or fail ` — tests frames::story::tests::edges::outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure (2 renders)
 - `frames/story/outcome.rs:441` ` pass or fail ` — tests frames::story::tests::edges::outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure (2 renders)
-- `frames/story/outcome.rs:452` ` if {passed} of {of} pass ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (360 renders); sweep scenario/between/160x45, scenario/between/240x67 (229623 renders)
-- `frames/story/outcome.rs:453` ` {passed}/{of} pass ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (46951 renders); sweep journal/help/160x45, journal/help/240x67 (24336937 renders)
+- `frames/story/outcome.rs:452` ` if {passed} of {of} pass ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (352 renders); sweep scenario/between/160x45, scenario/between/240x67 (229631 renders)
+- `frames/story/outcome.rs:453` ` {passed}/{of} pass ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (33479 renders); sweep journal/help/160x45, journal/help/240x67 (24350409 renders)
 - `frames/story/outcome.rs:458` ` if it passes ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end (253 renders); sweep scenario/between/120x33, scenario/between/160x45 (815716 renders)
-- `frames/story/outcome.rs:458` ` pass ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (46951 renders); sweep journal/help/160x45, journal/help/240x67 (24336937 renders)
+- `frames/story/outcome.rs:458` ` pass ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (33479 renders); sweep journal/help/160x45, journal/help/240x67 (24350409 renders)
 - `frames/story/outcome.rs:461` ` if it fails ` — tests frames::story::tests::the_outcome_lines::branches_merge_and_name_the_next_trial_of_the_same_part, frames::story::tests::the_story::an_all_zero_rerun_is_named_for_what_it_decides (2 renders); sweep sweep/crashedcycle/10000-smu.readback/120x33/plus40, sweep/crashedcycle/10000-smu.readback/160x45/plus40 (8490 renders)
-- `frames/story/outcome.rs:461` ` fail ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (28131 renders); sweep journal/help/160x45, journal/help/240x67 (7190922 renders)
+- `frames/story/outcome.rs:461` ` fail ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (19649 renders); sweep journal/help/160x45, journal/help/240x67 (7199404 renders)
 - `frames/story/outcome.rs:467` ` another ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (81 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
-- `frames/story/outcome.rs:467` ` other ` — tests corpus::narration_corpus, frames::frame_tests::bounds::between (102 renders); sweep journal/help/160x45, journal/help/240x67 (3 renders)
+- `frames/story/outcome.rs:467` ` other ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (94 renders); sweep journal/help/160x45, journal/help/240x67 (11 renders)
 - `frames/story/outcome.rs:469` ` if {who} is named ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (551 renders); sweep scenario/between/120x33, scenario/between/160x45 (1374948 renders)
-- `frames/story/outcome.rs:470` ` {name} named ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1326 renders); sweep scenario/between/120x33, scenario/between/160x45 (2381885 renders)
+- `frames/story/outcome.rs:470` ` {name} named ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1273 renders); sweep scenario/between/120x33, scenario/between/160x45 (2381938 renders)
 - `frames/story/outcome.rs:476` ` if none is named ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (246 renders); sweep scenario/between/120x33, scenario/between/160x45 (431545 renders)
 - `frames/story/outcome.rs:477` ` none named ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (153 renders); sweep scenario/between/120x33, scenario/between/160x45 (258939 renders)
 - `frames/story/outcome.rs:482` ` if inconclusive ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (135 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (508391 renders)
@@ -6941,44 +6941,44 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/story/outcome.rs:597` ` no next trial projected ` — tests frames::story::tests::edges::every_premise_and_uncertainty_is_narrated_without_inventing_a_next_trial, frames::story::tests::edges::outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure (73 renders)
 - `frames/story/outcome.rs:605` ` same trial again ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (115 renders); sweep scenario/between/120x33, scenario/between/160x45 (784776 renders)
 - `frames/story/outcome.rs:606` ` the same trial runs again ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (157 renders); sweep scenario/between/120x33, scenario/between/160x45 (1061155 renders)
-- `frames/story/outcome.rs:610` ` {NEXT_TRIAL}trial {} of {} ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (75266 renders); sweep journal/help/160x45, journal/help/240x67 (5143254 renders)
+- `frames/story/outcome.rs:610` ` {NEXT_TRIAL}trial {} of {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (46236 renders); sweep journal/help/160x45, journal/help/240x67 (5172284 renders)
 - `frames/story/outcome.rs:615` ` {NEXT_TRIAL}this load again ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::confirmation (82 renders); sweep scenario/confirmation/120x33, scenario/confirmation/160x45 (122425 renders)
-- `frames/story/outcome.rs:622` ` {NEXT_TRIAL}trial {index} of {} · {} ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (75266 renders); sweep journal/help/160x45, journal/help/240x67 (5143254 renders)
-- `frames/story/outcome.rs:732` `  alone ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (41200 renders); sweep journal/help/160x45, journal/help/240x67 (2531124 renders)
-- `frames/story/outcome.rs:736` ` {kind}, core {:02}{alone} at {offset} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (434 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (3023955 renders)
-- `frames/story/outcome.rs:753` ` part {part}: {shown} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (43872 renders); sweep journal/help/160x45, journal/help/240x67 (10775278 renders)
-- `frames/story/outcome.rs:756` ` hunt {hunt} group {group}: {what} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (8906 renders); sweep journal/help/160x45, journal/help/240x67 (814803 renders)
+- `frames/story/outcome.rs:622` ` {NEXT_TRIAL}trial {index} of {} · {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (46236 renders); sweep journal/help/160x45, journal/help/240x67 (5172284 renders)
+- `frames/story/outcome.rs:732` `  alone ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (27282 renders); sweep journal/help/160x45, journal/help/240x67 (2545042 renders)
+- `frames/story/outcome.rs:736` ` {kind}, core {:02}{alone} at {offset} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (413 renders); sweep scenario/concluded, scenario/confirm/120x33 (3023976 renders)
+- `frames/story/outcome.rs:753` ` part {part}: {shown} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (18134 renders); sweep journal/help/160x45, journal/help/240x67 (10801016 renders)
+- `frames/story/outcome.rs:756` ` hunt {hunt} group {group}: {what} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (6688 renders); sweep journal/help/160x45, journal/help/240x67 (817021 renders)
 - `frames/story/outcome.rs:765` ` rerun {what} with every core at 0 · {duration} ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (59 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (29368 renders)
-- `frames/story/outcome.rs:767` ` rerun {what} · {duration} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (6218 renders); sweep scenario/between/120x33, scenario/between/160x45 (1481592 renders)
-- `frames/story/outcome.rs:781` ` step {step}: {kind} ` — tests corpus::narration_corpus, frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at (100734 renders); sweep journal/help/160x45, journal/help/240x67 (10210095 renders)
-- `frames/story/outcome.rs:786` `  with {} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (6117 renders); sweep journal/help/160x45, journal/help/240x67 (635723 renders)
-- `frames/story/outcome.rs:791` ` deepening round {round}: {what} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (156 renders); sweep scenario/round/120x33, scenario/round/160x45 (341953 renders)
-- `frames/story/outcome.rs:829` ` part {index}: core {:02} at {offset}, {duration} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (546 renders); sweep sweep/combination/1671-trial.intent/120x33/plus40, sweep/combination/1671-trial.intent/160x45/plus40 (625380 renders)
-- `frames/story/outcome.rs:834` ` part {index}: {name} on {}, {duration} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (13537 renders); sweep journal/help/160x45, journal/help/240x67 (5454383 renders)
-- `frames/story/outcome.rs:857` ` hunt  ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10193 renders); sweep journal/help/160x45, journal/help/240x67 (1556233 renders)
-- `frames/story/outcome.rs:858` `  group  ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27847 renders); sweep journal/help/160x45, journal/help/240x67 (920938 renders)
-- `frames/story/outcome.rs:859` ` group {group} ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27847 renders); sweep journal/help/160x45, journal/help/240x67 (920938 renders)
-- `frames/story/outcome.rs:861` ` part  ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (43872 renders); sweep journal/help/160x45, journal/help/240x67 (10775278 renders)
-- `frames/story/outcome.rs:862` ` core  ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
-- `frames/story/outcome.rs:864` ` {name}: core {id} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (3136 renders); sweep scenario/confirmation/240x67, scenario/member-probe/120x33 (1118185 renders)
-- `frames/story/outcome.rs:866` ` , core  ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (509 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (3093828 renders)
-- `frames/story/outcome.rs:874` ` rerun  ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (6218 renders); sweep scenario/between/120x33, scenario/between/160x45 (1481592 renders)
+- `frames/story/outcome.rs:767` ` rerun {what} · {duration} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (3318 renders); sweep scenario/between, scenario/between/120x33 (1484492 renders)
+- `frames/story/outcome.rs:781` ` step {step}: {kind} ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (51302 renders); sweep journal/help/160x45, journal/help/240x67 (10259527 renders)
+- `frames/story/outcome.rs:786` `  with {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (4930 renders); sweep journal/help/160x45, journal/help/240x67 (636910 renders)
+- `frames/story/outcome.rs:791` ` deepening round {round}: {what} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (117 renders); sweep scenario/combination, scenario/concluded (341992 renders)
+- `frames/story/outcome.rs:829` ` part {index}: core {:02} at {offset}, {duration} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (315 renders); sweep scenario/combination, scenario/concluded (625611 renders)
+- `frames/story/outcome.rs:834` ` part {index}: {name} on {}, {duration} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (4098 renders); sweep journal/help/160x45, journal/help/240x67 (5463822 renders)
+- `frames/story/outcome.rs:857` ` hunt  ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7950 renders); sweep journal/help/160x45, journal/help/240x67 (1558476 renders)
+- `frames/story/outcome.rs:858` `  group  ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (17228 renders); sweep journal/help/160x45, journal/help/240x67 (931557 renders)
+- `frames/story/outcome.rs:859` ` group {group} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (17228 renders); sweep journal/help/160x45, journal/help/240x67 (931557 renders)
+- `frames/story/outcome.rs:861` ` part  ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (18134 renders); sweep journal/help/160x45, journal/help/240x67 (10801016 renders)
+- `frames/story/outcome.rs:862` ` core  ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
+- `frames/story/outcome.rs:864` ` {name}: core {id} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2395 renders); sweep scenario/between, scenario/combination (1118926 renders)
+- `frames/story/outcome.rs:866` ` , core  ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (467 renders); sweep scenario/combination, scenario/concluded (3093870 renders)
+- `frames/story/outcome.rs:874` ` rerun  ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (3318 renders); sweep scenario/between, scenario/between/120x33 (1484492 renders)
 - `frames/story/outcome.rs:875` `  with every core at 0 ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (62 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (29368 renders)
 - `frames/story/outcome.rs:876` ` rerun at offset 0 ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (69 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (32333 renders)
-- `frames/story/outcome.rs:878` ` rerun ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (6218 renders); sweep scenario/between/120x33, scenario/between/160x45 (1481592 renders)
-- `frames/story/outcome.rs:895` ` , core  ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (509 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (3093828 renders)
+- `frames/story/outcome.rs:878` ` rerun ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (3318 renders); sweep scenario/between, scenario/between/120x33 (1484492 renders)
+- `frames/story/outcome.rs:895` ` , core  ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (467 renders); sweep scenario/combination, scenario/concluded (3093870 renders)
 - `frames/story/outcome.rs:898` ` → R{digit} core {} ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (76 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (683438 renders)
-- `frames/story/outcome.rs:915` ` core  ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
-- `frames/story/outcome.rs:917` ` core  ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
+- `frames/story/outcome.rs:915` ` core  ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
+- `frames/story/outcome.rs:917` ` core  ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
 - `frames/story/outcome.rs:963` ` its failure point is recorded ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (448 renders); sweep scenario/between/120x33, scenario/between/160x45 (1631715 renders)
 - `frames/story/outcome.rs:974` ` group {} skipped ` — tests tests::describe::hunt_groups_answered_without_a_trial (3 renders)
 - `frames/story/outcome.rs:1007` ` it backs off ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (393 renders); sweep scenario/between/120x33, scenario/between/160x45 (1445119 renders)
-- `frames/story/outcome.rs:1017` ` core {:02} solo limit {limit} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7373 renders); sweep journal/help/160x45, journal/help/240x67 (1825363 renders)
+- `frames/story/outcome.rs:1017` ` core {:02} solo limit {limit} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (5205 renders); sweep journal/help/160x45, journal/help/240x67 (1827531 renders)
 - `frames/story/outcome.rs:1023` ` core {:02} starts its search over ` — tests frames::story::tests::edges::outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure (9 renders)
 - `frames/story/outcome.rs:1030` ` step {} is done ` — tests frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown, frames::frame_tests::bounds::between (321 renders); sweep scenario/between/120x33, scenario/between/160x45 (86625 renders)
-- `frames/story/outcome.rs:1067` ` idle ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (4183 renders); sweep journal/help/160x45, journal/help/240x67 (1163982 renders)
+- `frames/story/outcome.rs:1067` ` idle ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::dash::tests::a_readback_is_never_clamped (2748 renders); sweep journal/help/160x45, journal/help/240x67 (1165417 renders)
 - `frames/story/outcome.rs:1081` ` crashed ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (202 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (15194 renders)
-- `frames/story/outcome.rs:1083` ` failed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (1945 renders); sweep journal/help/160x45, journal/help/240x67 (121469 renders)
+- `frames/story/outcome.rs:1083` ` failed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1461 renders); sweep journal/help/160x45, journal/help/240x67 (121953 renders)
 - `frames/story/outcome.rs:1085` ` {what} at these offsets already {verb} ` — tests tests::describe::a_known_crash_without_a_regime, tests::describe::a_known_failure_names_the_hunt_it_leads_to (6 renders)
 - `frames/story/outcome.rs:1087` `  in a carried trial ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, tests::describe::a_known_failure_names_the_hunt_it_leads_to (5 renders)
 
@@ -7001,153 +7001,153 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `frames/story/resting.rs:112` ` detected {} ` — tests frames::frame_tests::bounds::recovering, frames::frame_tests::holds::every_other_frame_moves_with_the_clock (21 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (65265 renders)
 - `frames/story/resting.rs:116` `  after a {} reset ` — tests frames::frame_tests::bounds::recovering, frames::frame_tests::holds::every_other_frame_moves_with_the_clock (20 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (64686 renders)
 - `frames/story/resting.rs:122` ` crash with no trial in flight · {detected} ` — tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders)
-- `frames/story/resting.rs:126` ` crash in {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (356 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (93253 renders)
-- `frames/story/resting.rs:134` `  · core {core:02} named ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (216 renders); sweep scenario/between/120x33, scenario/between/160x45 (110585 renders)
+- `frames/story/resting.rs:126` ` crash in {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (267 renders); sweep scenario/between, scenario/checking (93342 renders)
+- `frames/story/resting.rs:134` `  · core {core:02} named ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (172 renders); sweep scenario/between/120x33, scenario/between/160x45 (110629 renders)
 - `frames/story/resting.rs:137` `  · no core named ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bounds::confirmation (169 renders); sweep scenario/confirmation/160x45, scenario/confirmation/240x67 (143074 renders)
 - `frames/story/resting.rs:147` ` {} the trial ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (10 renders); sweep scenario/hunt-bios/240x67, sweep/concluded/1327-trial.end/120x33/plus40 (55758 renders)
 - `frames/story/resting.rs:149` ` last sample {} of {} ` — tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders); sweep sweep/concluded/1327-trial.end/120x33/plus40, sweep/concluded/1327-trial.end/160x45/plus40 (47688 renders)
-- `frames/story/resting.rs:150` ` last sample {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (630 renders); sweep scenario/hunt-bios/160x45, scenario/hunt-bios/240x67 (59794 renders)
+- `frames/story/resting.rs:150` ` last sample {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (406 renders); sweep scenario/between, scenario/checking (60018 renders)
 - `frames/story/resting.rs:154` ` core {:02}'s worker had stalled by then ` — tests frames::story::tests::the_resting_band::a_recovery_says_what_the_crash_ended_how_late_and_what_runs_next (1 renders); sweep sweep/concluded/7693-trial.end/120x33/plus40, sweep/concluded/7693-trial.end/160x45/plus40 (6948 renders)
-- `frames/story/resting.rs:168` ` trial {} · {} ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (300444 renders); sweep journal/help/160x45, journal/help/240x67 (11153001 renders)
+- `frames/story/resting.rs:168` ` trial {} · {} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (179613 renders); sweep journal/help/160x45, journal/help/240x67 (11273832 renders)
 - `frames/story/resting.rs:174` `  · started {} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (37 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (3417 renders)
 - `frames/story/resting.rs:178` ` A later boot has written events, so the machine restarted before this trial recorded its end. ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (42 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (3417 renders)
 - `frames/story/resting.rs:179` ` togi run records the crash and picks up from the journal. ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (42 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (3417 renders)
 - `frames/story/resting.rs:186` ` CRASH ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (131 renders); sweep scenario/confirmation/160x45, scenario/confirmation/240x67 (91153 renders)
 - `frames/story/resting.rs:189` ` FAILURE ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::hunt (26 renders); sweep scenario/hunt/160x45, scenario/hunt/240x67 (58306 renders)
-- `frames/story/resting.rs:190` ` INCONCLUSIVE ` — tests corpus::narration_corpus, frames::frame_tests::bounds::deadend (34 renders); sweep scenario/deadend/160x45, scenario/deadend/240x67 (350 renders)
-- `frames/story/resting.rs:191` ` PASS ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (83777 renders); sweep scenario/between/120x33, scenario/between/160x45 (684610 renders)
-- `frames/story/resting.rs:210` ` core {:02} named ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1137 renders); sweep scenario/between/120x33, scenario/between/160x45 (1884167 renders)
-- `frames/story/resting.rs:213` ` Tctl max {tctl}°C ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (90438 renders); sweep scenario/between/120x33, scenario/between/160x45 (9201048 renders)
+- `frames/story/resting.rs:190` ` INCONCLUSIVE ` — tests frames::frame_tests::bounds::deadend, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (29 renders); sweep scenario/deadend, scenario/deadend/160x45 (355 renders)
+- `frames/story/resting.rs:191` ` PASS ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (49964 renders); sweep scenario/between, scenario/between/120x33 (718423 renders)
+- `frames/story/resting.rs:210` ` core {:02} named ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1084 renders); sweep scenario/between/120x33, scenario/between/160x45 (1884220 renders)
+- `frames/story/resting.rs:213` ` Tctl max {tctl}°C ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (55674 renders); sweep scenario/between, scenario/between/120x33 (9235812 renders)
 - `frames/story/resting.rs:216` ` {volts:.2} V median ` — tests frames::story::tests::the_resting_band::the_last_trial_reads_as_a_word_and_its_measurements (1 renders)
-- `frames/story/resting.rs:225` `  after {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (17695 renders); sweep journal/help/160x45, journal/help/240x67 (310170 renders)
+- `frames/story/resting.rs:225` `  after {} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (10022 renders); sweep journal/help/160x45, journal/help/240x67 (317843 renders)
 - `frames/story/resting.rs:243` ` last trial       ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (299 renders); sweep scenario/between/120x33, scenario/between/160x45 (763344 renders)
 
 ### `frames/terms.rs`: 12 of 12 covered
 
-- `frames/terms.rs:16` ` core {:02} · {} {} at {} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (70262 renders); sweep journal/help/160x45, journal/help/240x67 (16363651 renders)
-- `frames/terms.rs:36` ` cycle {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (73689 renders); sweep journal/help/160x45, journal/help/240x67 (4072560 renders)
-- `frames/terms.rs:38` `  step {step} ` — tests corpus::narration_corpus, frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at (100734 renders); sweep journal/help/160x45, journal/help/240x67 (10210095 renders)
+- `frames/terms.rs:16` ` core {:02} · {} {} at {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (41365 renders); sweep journal/help/160x45, journal/help/240x67 (16392548 renders)
+- `frames/terms.rs:36` ` cycle {} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (37270 renders); sweep journal/help/160x45, journal/help/240x67 (4108979 renders)
+- `frames/terms.rs:38` `  step {step} ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (51302 renders); sweep journal/help/160x45, journal/help/240x67 (10259527 renders)
 - `frames/terms.rs:41` ` , part {part} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bounds::between (163 renders); sweep journal/help/160x45, journal/help/240x67 (58373 renders)
 - `frames/terms.rs:44` ` , trial {} of {} ` — tests frames::frame_tests::bounds::hunt_bios, frames::frame_tests::bounds::member_probe (18 renders); sweep scenario/hunt-bios/240x67, scenario/member-probe/240x67 (30600 renders)
-- `frames/terms.rs:52` ` core {} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
-- `frames/terms.rs:54` ` full ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (3931 renders); sweep scenario/between/120x33, scenario/between/160x45 (984144 renders)
-- `frames/terms.rs:54` ` partial ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (42036 renders); sweep scenario/between/120x33, scenario/between/160x45 (8506205 renders)
-- `frames/terms.rs:56` ` {label} CCD {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (40085 renders); sweep journal/help/160x45, journal/help/240x67 (7177813 renders)
-- `frames/terms.rs:57` ` {label} CCD 0+1 ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (777 renders); sweep scenario/between/160x45, scenario/between/240x67 (198078 renders)
+- `frames/terms.rs:52` ` core {} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
+- `frames/terms.rs:54` ` full ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (1524 renders); sweep scenario/between, scenario/between/120x33 (986551 renders)
+- `frames/terms.rs:54` ` partial ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (16529 renders); sweep scenario/between/120x33, scenario/between/160x45 (8531712 renders)
+- `frames/terms.rs:56` ` {label} CCD {} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (15188 renders); sweep journal/help/160x45, journal/help/240x67 (7202710 renders)
+- `frames/terms.rs:57` ` {label} CCD 0+1 ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (105 renders); sweep scenario/between/160x45, scenario/between/240x67 (198750 renders)
 - `frames/terms.rs:74` ` RE-CUT {n} ·  ` — sweep sweep/combination/2081-trial.start/120x33/plus40, sweep/combination/2081-trial.start/160x45/plus40 (908 renders)
 - `frames/terms.rs:75` ` re-cut {n} ·  ` — sweep sweep/combination/2008-trial.end/120x33/plus40, sweep/combination/2008-trial.end/160x45/plus40 (12888 renders)
 
 ### `history.rs`: 19 of 19 covered
 
 - `history.rs:188` ` session started · {} carried from the last session ` — tests tests::describe::solo_limits_found_before_the_first_trial_are_counted_on_the_session_line (1 renders)
-- `history.rs:189` ` solo limit ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7590 renders); sweep journal/help/160x45, journal/help/240x67 (2003965 renders)
+- `history.rs:189` ` solo limit ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (5422 renders); sweep journal/help/160x45, journal/help/240x67 (2006133 renders)
 - `history.rs:192` ` session started on {} cores ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (137 renders); sweep scenario/confirm/120x33, scenario/confirm/160x45 (111906 renders)
-- `history.rs:201` ` core {:02} solo limit {offset} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7373 renders); sweep journal/help/160x45, journal/help/240x67 (1825363 renders)
-- `history.rs:203` ` cores {} solo limit {offset} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (306 renders); sweep journal/help/160x45, journal/help/240x67 (103595 renders)
+- `history.rs:201` ` core {:02} solo limit {offset} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (5205 renders); sweep journal/help/160x45, journal/help/240x67 (1827531 renders)
+- `history.rs:203` ` cores {} solo limit {offset} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (285 renders); sweep journal/help/160x45, journal/help/240x67 (103616 renders)
 - `history.rs:212` ` , the deepest offset ` — tests tests::history::repeated_outcomes_fold_into_one_line (1 renders)
-- `history.rs:219` ` groups {}-{} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (18127 renders); sweep journal/help/160x45, journal/help/240x67 (155059 renders)
-- `history.rs:221` ` group {} ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27847 renders); sweep journal/help/160x45, journal/help/240x67 (920938 renders)
+- `history.rs:219` ` groups {}-{} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (9931 renders); sweep journal/help/160x45, journal/help/240x67 (163255 renders)
+- `history.rs:221` ` group {} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (17228 renders); sweep journal/help/160x45, journal/help/240x67 (931557 renders)
 - `history.rs:225` ` failed on existing evidence ` — tests tests::describe::hunt_groups_answered_without_a_trial, tests::history::inferred_group_answers_do_not_hide_outcome_changes (3 renders)
 - `history.rs:228` ` parts of {cores} ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (278 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (81332 renders)
 - `history.rs:229` ` all passed on existing evidence ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (85 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (52212 renders)
 - `history.rs:232` ` passed on existing evidence ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (89 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (64911 renders)
-- `history.rs:236` ` hunt {} {groups} · {what} · {verdict} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10193 renders); sweep journal/help/160x45, journal/help/240x67 (1556233 renders)
+- `history.rs:236` ` hunt {} {groups} · {what} · {verdict} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7950 renders); sweep journal/help/160x45, journal/help/240x67 (1558476 renders)
 - `history.rs:247` ` hunt {} groups {}-{} · member probes · each {} passed ` — tests tests::history::probe_history_across_the_retention_boundary, tests::history::probe_history_before_retention (5 renders); sweep sweep/combination/2562-trial.end/120x33/plus40, sweep/combination/2562-trial.end/160x45/plus40 (4635 renders)
-- `history.rs:258` ` {} · {} passed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27457 renders); sweep journal/help/160x45, journal/help/240x67 (22320698 renders)
+- `history.rs:258` ` {} · {} passed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (21276 renders); sweep journal/help/160x45, journal/help/240x67 (22326879 renders)
 - `history.rs:260` ` {} · passed ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3828 renders); sweep scenario/between/120x33, scenario/between/160x45 (6993663 renders)
 - `history.rs:263` `  · Tctl max {peak}°C ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (4245 renders); sweep scenario/between/120x33, scenario/between/160x45 (9200652 renders)
-- `history.rs:291` ` trial {first} of {of} ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (75266 renders); sweep journal/help/160x45, journal/help/240x67 (5143254 renders)
-- `history.rs:293` ` trials {first}-{} of {of} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (4962 renders); sweep scenario/concluded/120x33, scenario/concluded/160x45 (98325 renders)
+- `history.rs:291` ` trial {first} of {of} ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (46236 renders); sweep journal/help/160x45, journal/help/240x67 (5172284 renders)
+- `history.rs:293` ` trials {first}-{} of {of} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (3554 renders); sweep scenario/between, scenario/checking (99733 renders)
 
 ### `words.rs`: 129 of 132 covered
 
-- `words.rs:81` ` start ` — tests corpus::narration_corpus, frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it (92743 renders); sweep journal/help/160x45, journal/help/240x67 (1321120 renders)
-- `words.rs:82` ` pass ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (46951 renders); sweep journal/help/160x45, journal/help/240x67 (24336937 renders)
-- `words.rs:83` ` fail ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (28131 renders); sweep journal/help/160x45, journal/help/240x67 (7190922 renders)
-- `words.rs:84` ` crash ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (3261 renders); sweep journal/help/160x45, scenario/between/120x33 (1288529 renders)
+- `words.rs:81` ` start ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (55830 renders); sweep journal/help/160x45, journal/help/240x67 (1358033 renders)
+- `words.rs:82` ` pass ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (33479 renders); sweep journal/help/160x45, journal/help/240x67 (24350409 renders)
+- `words.rs:83` ` fail ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (19649 renders); sweep journal/help/160x45, journal/help/240x67 (7199404 renders)
+- `words.rs:84` ` crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (2534 renders); sweep journal/help/160x45, scenario/between (1289256 renders)
 - `words.rs:85` ` unclear ` — tests frames::frame_tests::bounds::deadend, frames::frame_tests::holds::a_one_frame_print_with_no_colour_styles_no_cell (32 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (448 renders)
 - `words.rs:86` ` skip ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (181 renders); sweep journal/help/160x45, journal/help/240x67 (80 renders)
-- `words.rs:87` ` reset ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (930 renders); sweep scenario/recovering/120x33, scenario/recovering/160x45 (64686 renders)
-- `words.rs:88` ` step ` — tests corpus::narration_corpus, frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at (100734 renders); sweep journal/help/160x45, journal/help/240x67 (10210095 renders)
-- `words.rs:89` ` limit ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (8863 renders); sweep journal/help/160x45, journal/help/240x67 (2005014 renders)
-- `words.rs:90` ` room ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3136 renders); sweep journal/help/160x45, journal/help/80x24 (534176 renders)
-- `words.rs:91` ` backoff ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (482 renders); sweep scenario/between/120x33, scenario/between/160x45 (632871 renders)
-- `words.rs:92` ` cycle ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (73689 renders); sweep journal/help/160x45, journal/help/240x67 (4072560 renders)
-- `words.rs:93` ` hunt ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10193 renders); sweep journal/help/160x45, journal/help/240x67 (1556233 renders)
+- `words.rs:87` ` reset ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (599 renders); sweep scenario/between, scenario/checking (65017 renders)
+- `words.rs:88` ` step ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (51302 renders); sweep journal/help/160x45, journal/help/240x67 (10259527 renders)
+- `words.rs:89` ` limit ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (6290 renders); sweep journal/help/160x45, journal/help/240x67 (2007587 renders)
+- `words.rs:90` ` room ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (2213 renders); sweep journal/help/160x45, journal/help/80x24 (535099 renders)
+- `words.rs:91` ` backoff ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (365 renders); sweep scenario/between, scenario/between/120x33 (632988 renders)
+- `words.rs:92` ` cycle ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (37270 renders); sweep journal/help/160x45, journal/help/240x67 (4108979 renders)
+- `words.rs:93` ` hunt ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7950 renders); sweep journal/help/160x45, journal/help/240x67 (1558476 renders)
 - `words.rs:94` ` combo ` — sweep sweep/combination/2564-combination/120x33/plus40, sweep/combination/2564-combination/160x45/plus40 (3182 renders)
-- `words.rs:95` ` round ` — tests corpus::narration_corpus, frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it (4330 renders); sweep journal/help/160x45, journal/help/240x67 (751453 renders)
-- `words.rs:96` ` stop ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (12431 renders); sweep journal/help/160x45, journal/help/240x67 (168406 renders)
-- `words.rs:97` ` mce ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2280 renders)
+- `words.rs:95` ` round ` — tests frames::dash::tests::a_hunt_in_phase_two_holds_the_stage_without_running_it, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2453 renders); sweep journal/help/160x45, journal/help/240x67 (753330 renders)
+- `words.rs:96` ` stop ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (6527 renders); sweep journal/help/160x45, journal/help/240x67 (174310 renders)
+- `words.rs:97` ` mce ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1443 renders); sweep scenario/between, scenario/checking (837 renders)
 - `words.rs:98` ` note ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bounds::first_result (863 renders); sweep scenario/first-result/240x67, scenario/hunt-bios/160x45 (2086366 renders)
-- `words.rs:99` ` group ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27847 renders); sweep journal/help/160x45, journal/help/240x67 (920938 renders)
-- `words.rs:100` ` probe ` — tests corpus::narration_corpus, frames::dash::tests::a_ccd_role_counts_load_and_probes (2791 renders); sweep journal/help/160x45, journal/help/240x67 (35288 renders)
-- `words.rs:101` ` confirm ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (2576 renders); sweep journal/help/160x45, journal/help/240x67 (4153881 renders)
-- `words.rs:102` ` resume ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (469 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (26319 renders)
-- `words.rs:103` ` hold ` — tests corpus::narration_corpus, frames::frame_tests::bounds::between (281 renders); sweep journal/help/160x45, journal/help/240x67 (46689 renders)
+- `words.rs:99` ` group ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (17228 renders); sweep journal/help/160x45, journal/help/240x67 (931557 renders)
+- `words.rs:100` ` probe ` — tests frames::dash::tests::a_ccd_role_counts_load_and_probes, frames::frame_tests::bounds::between (2775 renders); sweep journal/help/160x45, journal/help/240x67 (35304 renders)
+- `words.rs:101` ` confirm ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (2085 renders); sweep journal/help/160x45, journal/help/240x67 (4154372 renders)
+- `words.rs:102` ` resume ` — tests frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (137 renders); sweep scenario/between, scenario/checking (26651 renders)
+- `words.rs:103` ` hold ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (278 renders); sweep journal/help/160x45, journal/help/240x67 (46692 renders)
 - `words.rs:162` ` SEARCH ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (880 renders); sweep scenario/crashed/120x33, scenario/crashed/160x45 (1445167 renders)
 - `words.rs:163` ` HAS ROOM ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (1449 renders); sweep journal/help/160x45, journal/help/80x24 (1429516 renders)
 - `words.rs:164` ` AT LIMIT ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (900 renders); sweep journal/help/160x45, journal/help/80x24 (1867446 renders)
-- `words.rs:172` ` running ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end (268 renders); sweep journal/help/160x45, journal/help/240x67 (297009 renders)
-- `words.rs:173` ` passed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27457 renders); sweep journal/help/160x45, journal/help/240x67 (22320698 renders)
-- `words.rs:174` ` failed ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (1945 renders); sweep journal/help/160x45, journal/help/240x67 (121469 renders)
+- `words.rs:172` ` running ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (265 renders); sweep journal/help/160x45, journal/help/240x67 (297012 renders)
+- `words.rs:173` ` passed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (21276 renders); sweep journal/help/160x45, journal/help/240x67 (22326879 renders)
+- `words.rs:174` ` failed ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (1461 renders); sweep journal/help/160x45, journal/help/240x67 (121953 renders)
 - `words.rs:175` ` skipped ` — tests frames::frame_tests::bounds::between, frames::frame_tests::bounds::checking (59 renders); sweep journal/help/160x45, journal/help/240x67 (76 renders)
 - `words.rs:182` ` moving ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_round_keeps_its_candidate_rows_at_every_height (17 renders); sweep scenario/round/120x33, scenario/round/160x45 (197491 renders)
 - `words.rs:184` ` checked again in place ` — tests frames::panels::context::tests::r7_keeps_its_rows_only_when_they_fit_under_the_candidates, frames::panels::context::tests::the_round_keeps_its_candidates_at_every_height (9 renders)
 - `words.rs:191` ` light load ` — tests frames::frame_tests::bands::a_trial_overdue_with_later_progress_reports_its_missing_end, frames::frame_tests::bands::a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash (147 renders); sweep journal/help/160x45, journal/help/240x67 (102812 renders)
 - `words.rs:192` ` heavy vector load ` — tests frames::frame_tests::bounds::hunt, frames::frame_tests::bounds::hunt_bios (25 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (96438 renders)
-- `words.rs:193` ` load steps ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (29695 renders); sweep scenario/between/240x67, scenario/checking/240x67 (2819948 renders)
-- `words.rs:194` ` partial load ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (5629 renders); sweep scenario/between/240x67, scenario/checking/240x67 (3407107 renders)
-- `words.rs:195` ` both threads ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (2134 renders); sweep journal/help/160x45, journal/help/240x67 (719214 renders)
+- `words.rs:193` ` load steps ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (14052 renders); sweep scenario/between/240x67, scenario/checking/240x67 (2835591 renders)
+- `words.rs:194` ` partial load ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3078 renders); sweep scenario/between/240x67, scenario/checking/240x67 (3409658 renders)
+- `words.rs:195` ` both threads ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (972 renders); sweep journal/help/160x45, journal/help/240x67 (720376 renders)
 - `words.rs:196` ` idle with short bursts ` — silent: `regime_words(R6)` has no production caller: `load_words` words R6 itself
 - `words.rs:197` ` all-core load ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bounds::checking (47 renders); sweep scenario/checking/120x33, scenario/checking/160x45 (39105 renders)
-- `words.rs:204` ` idle + bursts ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1260 renders); sweep scenario/between/240x67, scenario/checking/240x67 (616561 renders)
-- `words.rs:214` ` light ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (8682 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (10482629 renders)
-- `words.rs:215` ` heavy vector ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (6740 renders); sweep scenario/between/240x67, scenario/checking/240x67 (3338942 renders)
-- `words.rs:216` ` load steps ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (29695 renders); sweep scenario/between/240x67, scenario/checking/240x67 (2819948 renders)
-- `words.rs:217` ` partial load ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (5629 renders); sweep scenario/between/240x67, scenario/checking/240x67 (3407107 renders)
-- `words.rs:218` ` both threads ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (2134 renders); sweep journal/help/160x45, journal/help/240x67 (719214 renders)
-- `words.rs:219` ` idle + bursts ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (1260 renders); sweep scenario/between/240x67, scenario/checking/240x67 (616561 renders)
-- `words.rs:220` ` all-core ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (41227 renders); sweep scenario/between/120x33, scenario/between/160x45 (1625925 renders)
+- `words.rs:204` ` idle + bursts ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (902 renders); sweep scenario/between/240x67, scenario/checking/240x67 (616919 renders)
+- `words.rs:214` ` light ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (5293 renders); sweep journal/empty-log/160x45, journal/empty-log/240x67 (10486018 renders)
+- `words.rs:215` ` heavy vector ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3733 renders); sweep scenario/between, scenario/between/240x67 (3341949 renders)
+- `words.rs:216` ` load steps ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (14052 renders); sweep scenario/between/240x67, scenario/checking/240x67 (2835591 renders)
+- `words.rs:217` ` partial load ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3078 renders); sweep scenario/between/240x67, scenario/checking/240x67 (3409658 renders)
+- `words.rs:218` ` both threads ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (972 renders); sweep journal/help/160x45, journal/help/240x67 (720376 renders)
+- `words.rs:219` ` idle + bursts ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (902 renders); sweep scenario/between/240x67, scenario/checking/240x67 (616919 renders)
+- `words.rs:220` ` all-core ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (23005 renders); sweep scenario/between, scenario/between/120x33 (1644147 renders)
 - `words.rs:227` ` wrong result ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bounds::checking (93 renders); sweep scenario/checking/240x67, scenario/deadend/240x67 (399178 renders)
 - `words.rs:228` ` the backend quit ` — tests frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown, frames::frame_tests::bounds::between (32 renders); sweep scenario/between/160x45, scenario/between/240x67 (82050 renders)
 - `words.rs:229` ` the backend stalled ` — tests frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown, frames::frame_tests::bounds::between (63 renders); sweep scenario/between/120x33, scenario/between/160x45 (173692 renders)
 - `words.rs:230` ` corrected hardware error ` — tests frames::frame_tests::bounds::deadend, frames::frame_tests::bounds::hunt (108 renders); sweep scenario/deadend/240x67, scenario/hunt-bios/120x33 (394651 renders)
 - `words.rs:231` ` uncorrected hardware error ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (19 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (142236 renders)
-- `words.rs:232` ` crash ` — tests corpus::narration_corpus, frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time (3261 renders); sweep journal/help/160x45, scenario/between/120x33 (1288529 renders)
+- `words.rs:232` ` crash ` — tests frames::dash::tests::a_summary_stage_line_ends_in_the_trials_time, frames::dash::tests::an_idle_hold_pins_the_clock_to_the_trials_start (2534 renders); sweep journal/help/160x45, scenario/between (1289256 renders)
 - `words.rs:262` ` no cores ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core, frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash (23 renders); sweep sweep/combination/1976-trial.end/160x45/plus40, sweep/combination/1976-trial.end/240x67/event (448 renders)
-- `words.rs:278` ` core ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
-- `words.rs:278` ` cores ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (44109 renders); sweep journal/help/160x45, journal/help/240x67 (566946 renders)
-- `words.rs:286` ` cores  ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (44109 renders); sweep journal/help/160x45, journal/help/240x67 (566946 renders)
-- `words.rs:287` ` core  ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
-- `words.rs:295` ` core {:02} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
-- `words.rs:296` ` all {total} cores ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (38913 renders); sweep scenario/between/240x67, scenario/checking/240x67 (238300 renders)
-- `words.rs:304` ` on core {:02} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (21166 renders); sweep scenario/checking/160x45, scenario/checking/240x67 (8005075 renders)
+- `words.rs:278` ` core ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
+- `words.rs:278` ` cores ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (25364 renders); sweep journal/help/160x45, journal/help/240x67 (585691 renders)
+- `words.rs:286` ` cores  ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (25364 renders); sweep journal/help/160x45, journal/help/240x67 (585691 renders)
+- `words.rs:287` ` core  ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
+- `words.rs:295` ` core {:02} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
+- `words.rs:296` ` all {total} cores ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (21440 renders); sweep scenario/between, scenario/between/240x67 (255773 renders)
+- `words.rs:304` ` on core {:02} ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (8755 renders); sweep scenario/between, scenario/checking (8017486 renders)
 - `words.rs:325` ` during ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (4 renders); sweep sweep/combination/1878-trial.start/120x33/plus40, sweep/combination/1878-trial.start/160x45/plus40 (848 renders)
 - `words.rs:328` ` during ` — tests frames::story::tests::edges::every_hunt_cause_is_narrated_with_and_without_a_named_core (4 renders); sweep sweep/combination/1878-trial.start/120x33/plus40, sweep/combination/1878-trial.start/160x45/plus40 (848 renders)
 - `words.rs:332` ` early in ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (34 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (118998 renders)
 - `words.rs:334` ` midway through ` — tests frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown, frames::frame_tests::bounds::between (34 renders); sweep scenario/between/240x67, scenario/checking/240x67 (52220 renders)
 - `words.rs:336` ` late in ` — tests tests::describe::a_crash_says_how_late_it_came (1 renders); sweep sweep/crashedcycle/1897-trial.end/120x33/plus40, sweep/crashedcycle/1897-trial.end/160x45/plus40 (1848 renders)
-- `words.rs:353` ` core {core:02} passed {from}; searches {to} on its next turn ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (18359 renders); sweep scenario/between/240x67, scenario/checking/240x67 (4332376 renders)
-- `words.rs:358` ` core {core:02} confirming {to} as its solo limit ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1395 renders); sweep scenario/between/240x67, scenario/checking/240x67 (1255385 renders)
-- `words.rs:363` ` core {core:02} {from} → {to} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
-- `words.rs:368` ` core {core:02} yields {from} → {to}; no later round moves it ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (186 renders); sweep scenario/confirmation/120x33, scenario/confirmation/160x45 (35219 renders)
-- `words.rs:373` ` core {core:02} failure held; tuning stays at {from} ` — tests corpus::narration_corpus, frames::frame_tests::bounds::hunt_bios (31 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (5754 renders)
-- `words.rs:378` ` core {core:02} {from} → {to} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
+- `words.rs:353` ` core {core:02} passed {from}; searches {to} on its next turn ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (12906 renders); sweep scenario/between, scenario/between/240x67 (4337829 renders)
+- `words.rs:358` ` core {core:02} confirming {to} as its solo limit ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (984 renders); sweep scenario/between, scenario/between/240x67 (1255796 renders)
+- `words.rs:363` ` core {core:02} {from} → {to} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
+- `words.rs:368` ` core {core:02} yields {from} → {to}; no later round moves it ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (128 renders); sweep scenario/concluded, scenario/confirmation (35277 renders)
+- `words.rs:373` ` core {core:02} failure held; tuning stays at {from} ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (25 renders); sweep scenario/hunt-bios, scenario/hunt-bios/120x33 (5760 renders)
+- `words.rs:378` ` core {core:02} {from} → {to} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
 - `words.rs:390` ` core {core:02} starts over from {} ` — tests tests::model::a_reset_core_drops_its_solo_limit (1 renders)
-- `words.rs:396` ` core {core:02} solo limit {limit} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7373 renders); sweep journal/help/160x45, journal/help/240x67 (1825363 renders)
-- `words.rs:402` ` core {core:02} has room again at {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (192 renders); sweep scenario/confirmation/120x33, scenario/confirmation/160x45 (46323 renders)
-- `words.rs:417` ` core {:02} fails at {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (4043 renders); sweep scenario/between/120x33, scenario/between/160x45 (1755144 renders)
+- `words.rs:396` ` core {core:02} solo limit {limit} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (5205 renders); sweep journal/help/160x45, journal/help/240x67 (1827531 renders)
+- `words.rs:402` ` core {core:02} has room again at {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (134 renders); sweep scenario/concluded, scenario/confirmation (46381 renders)
+- `words.rs:417` ` core {:02} fails at {} ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2849 renders); sweep scenario/between, scenario/between/120x33 (1756338 renders)
 - `words.rs:425` ` idle with the offsets applied, {} ` — tests tests::describe::a_resumed_session_is_not_a_resumed_session_when_it_crashed, tests::history::reboot_history_requires_matching_cause (6 renders)
-- `words.rs:437` ` cycle {cycle} started · {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (275 renders); sweep scenario/between/160x45, scenario/between/240x67 (42717 renders)
-- `words.rs:437` ` step ` — tests corpus::narration_corpus, frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at (100734 renders); sweep journal/help/160x45, journal/help/240x67 (10210095 renders)
-- `words.rs:441` ` cycle {cycle} passed, a full cycle ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (186 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (97098 renders)
-- `words.rs:444` ` cycle {cycle} passed but missing {} ` — tests corpus::narration_corpus, frames::story::tests::the_story::a_rerun_that_completes_the_cycle_names_no_step_of_the_next (4 renders); sweep sweep/rerun-completes-cycle/0036-checking.cycle/120x33/plus40, sweep/rerun-completes-cycle/0036-checking.cycle/160x45/plus40 (12 renders)
+- `words.rs:437` ` cycle {cycle} started · {} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (205 renders); sweep scenario/between, scenario/between/160x45 (42787 renders)
+- `words.rs:437` ` step ` — tests frames::dash::tests::a_cycle_with_every_step_done_names_no_step_it_pauses_at, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (51302 renders); sweep journal/help/160x45, journal/help/240x67 (10259527 renders)
+- `words.rs:441` ` cycle {cycle} passed, a full cycle ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (135 renders); sweep scenario/combination, scenario/combination/120x33 (97149 renders)
+- `words.rs:444` ` cycle {cycle} passed but missing {} ` — tests frames::story::tests::the_story::a_rerun_that_completes_the_cycle_names_no_step_of_the_next, tests::history::cycle_history (3 renders); sweep sweep/rerun-completes-cycle/0036-checking.cycle, sweep/rerun-completes-cycle/0036-checking.cycle/120x33/plus40 (13 renders)
 - `words.rs:450` ` cycle {cycle} ended early: {} ` — tests tests::history::cycle_history (2 renders)
 - `words.rs:469` ` C{id} over {} · hunt {} unresolved ` — tests tests::history::fallback_history (2 renders)
-- `words.rs:500` ` corrected ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (3415 renders); sweep scenario/deadend/240x67, scenario/hunt-bios/120x33 (394651 renders)
-- `words.rs:502` ` uncorrected ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1144 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (142236 renders)
+- `words.rs:500` ` corrected ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (2205 renders); sweep scenario/between, scenario/checking (395861 renders)
+- `words.rs:502` ` uncorrected ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (715 renders); sweep scenario/between, scenario/checking (142665 renders)
 - `words.rs:505` ` logical CPU {} ` — tests tests::describe::the_kinds_with_a_line_of_their_own (2 renders)
-- `words.rs:506` ` core {:02} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
+- `words.rs:506` ` core {:02} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
 - `words.rs:510` ` {who} {kind} error between trials (recorded only) ` — tests frames::frame_tests::panels::a_between_trial_machine_check_is_not_hidden, tests::describe::the_kinds_with_a_line_of_their_own (8 renders)
 - `words.rs:521` ` the hunt ends ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (20 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (30801 renders)
 - `words.rs:523` ` hunt {hunt} ends: {cores} named ` — tests frames::story::tests::the_outcome_lines::a_combination_outcome_is_named_by_its_decisions (3 renders)
@@ -7155,42 +7155,42 @@ Every string literal of a renderer's production source that holds words (900 of 
 - `words.rs:526` ` hunt {hunt} keeps {cores} together ` — sweep sweep/combination/2538-trial.intent/120x33/plus40, sweep/combination/2538-trial.intent/160x45/plus40 (3726 renders)
 - `words.rs:527` ` hunt {hunt} cancelled ` — tests tests::describe::a_hunt_says_how_it_ended (1 renders)
 - `words.rs:529` ` hunt {hunt} keeps the failure on loaded {cores} ` — sweep sweep/unconfirmed/4939-trial.start/120x33/overdue, sweep/unconfirmed/4939-trial.start/120x33/plus40 (1258 renders)
-- `words.rs:543` ` core {core:02} fails at {}, {from} → {to} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (4043 renders); sweep scenario/between/120x33, scenario/between/160x45 (1755144 renders)
-- `words.rs:545` ` core {core:02} {from} → {to} ` — tests corpus::narration_corpus, frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them (185477 renders); sweep journal/help/160x45, journal/help/240x67 (31547494 renders)
-- `words.rs:547` ` core {core:02} searches {to} on its next turn ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (19578 renders); sweep scenario/between/240x67, scenario/checking/240x67 (4529260 renders)
+- `words.rs:543` ` core {core:02} fails at {}, {from} → {to} ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2849 renders); sweep scenario/between, scenario/between/120x33 (1756338 renders)
+- `words.rs:545` ` core {core:02} {from} → {to} ` — tests frames::frame_tests::arrivals::arrivals_never_move_a_row_of_a_held_log_and_the_footer_counts_them, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (113414 renders); sweep journal/help/160x45, journal/help/240x67 (31619557 renders)
+- `words.rs:547` ` core {core:02} searches {to} on its next turn ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (13725 renders); sweep scenario/between, scenario/between/240x67 (4535113 renders)
 - `words.rs:549` ` core {core:02} starts confirming {to} as its solo limit ` — sweep sweep/concluded/0997-trial.intent/120x33/plus40, sweep/concluded/0997-trial.intent/160x45/plus40 (131270 renders)
 - `words.rs:551` ` core {core:02} deepens {from} → {to} ` — sweep sweep/combination/3358-trial.intent/120x33/plus40, sweep/combination/3358-trial.intent/160x45/plus40 (25328 renders)
 - `words.rs:553` ` core {core:02} yields {from} → {to}, back to its round baseline ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_round_keeps_its_candidate_rows_at_every_height (70 renders); sweep scenario/round/120x33, scenario/round/160x45 (294338 renders)
 - `words.rs:555` ` core {core:02} failure held at {from}; no tuning move ` — tests frames::story::tests::edges::every_premise_and_uncertainty_is_narrated_without_inventing_a_next_trial (168 renders); sweep sweep/laterhunt/10470-trial.intent/120x33/plus40, sweep/laterhunt/10470-trial.intent/160x45/plus40 (72922 renders)
-- `words.rs:573` ` core {core:02} solo limit {limit} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7373 renders); sweep journal/help/160x45, journal/help/240x67 (1825363 renders)
+- `words.rs:573` ` core {core:02} solo limit {limit} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (5205 renders); sweep journal/help/160x45, journal/help/240x67 (1827531 renders)
 - `words.rs:575` ` core {core:02} starts its search over ` — silent: `decision_detail` is never given a core phase: `outcome.rs` words the core phases of a decision itself; substring evidence: tests frames::story::tests::edges::outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure (9 renders)
 - `words.rs:576` ` core {core:02} starts its search ` — silent: `decision_detail` is never given a core phase: `outcome.rs` words the core phases of a decision itself; substring evidence: tests frames::story::tests::edges::outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure (9 renders)
-- `words.rs:586` ` CCD {} partials end ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2007 renders); sweep scenario/first-result/240x67, scenario/hunt-bios/160x45 (701801 renders)
+- `words.rs:586` ` CCD {} partials end ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (541 renders); sweep scenario/combination, scenario/concluded (703267 renders)
 - `words.rs:588` ` CCD {} partial on {} ` — tests frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown, frames::frame_tests::bounds::between (104 renders); sweep scenario/between/120x33, scenario/between/160x45 (388030 renders)
-- `words.rs:597` ` cycle {cycle} step {step} · CCD {ccd} partials end ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (1985 renders); sweep scenario/first-result/240x67, scenario/hunt-bios/160x45 (587817 renders)
-- `words.rs:600` ` cycle {cycle} step {step} · CCD {ccd} partial {} loads {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (9474 renders); sweep scenario/first-result/240x67, scenario/hunt-bios/160x45 (2541732 renders)
-- `words.rs:610` ` cycle {cycle} starts ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (482 renders); sweep scenario/confirmation/120x33, scenario/confirmation/160x45 (25168 renders)
-- `words.rs:612` ` cycle {cycle} passed, a full cycle ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (186 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (97098 renders)
-- `words.rs:614` ` cycle {cycle} passed ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (511 renders); sweep scenario/between/160x45, scenario/between/240x67 (366998 renders)
-- `words.rs:616` ` cycle {cycle} ends ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (2394 renders); sweep sweep/combination/log-end/160x45, sweep/combination/log-end/240x67 (10 renders)
+- `words.rs:597` ` cycle {cycle} step {step} · CCD {ccd} partials end ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (519 renders); sweep scenario/combination, scenario/concluded (589283 renders)
+- `words.rs:600` ` cycle {cycle} step {step} · CCD {ccd} partial {} loads {} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (2906 renders); sweep scenario/combination, scenario/concluded (2548300 renders)
+- `words.rs:610` ` cycle {cycle} starts ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next (308 renders); sweep scenario/between, scenario/checking (25342 renders)
+- `words.rs:612` ` cycle {cycle} passed, a full cycle ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (135 renders); sweep scenario/combination, scenario/combination/120x33 (97149 renders)
+- `words.rs:614` ` cycle {cycle} passed ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_crashed_trial_that_a_later_boot_outlived_is_not_narrated_as_running (384 renders); sweep scenario/between/160x45, scenario/between/240x67 (367125 renders)
+- `words.rs:616` ` cycle {cycle} ends ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (888 renders); sweep scenario/combination, scenario/concluded (1516 renders)
 - `words.rs:623` ` deepening round {round} starts ` — sweep sweep/combination/3358-trial.intent/120x33/plus40, sweep/combination/3358-trial.intent/160x45/plus40 (7220 renders)
-- `words.rs:625` ` deepening round {round} passed ` — tests corpus::narration_corpus, frames::frame_tests::bounds::combination (9 renders); sweep sweep/combination/3358-trial.intent/120x33/plus40, sweep/combination/3358-trial.intent/160x45/plus40 (8500 renders)
+- `words.rs:625` ` deepening round {round} passed ` — tests frames::frame_tests::bounds::combination, frames::snapshots::combination (4 renders); sweep scenario/combination, sweep/combination/3358-trial.intent/120x33/plus40 (8505 renders)
 - `words.rs:627` ` deepening round {round} ends ` — tests frames::frame_tests::bounds::round, frames::frame_tests::panels::the_round_keeps_its_candidate_rows_at_every_height (12 renders); sweep scenario/round/120x33, scenario/round/160x45 (108087 renders)
 - `words.rs:632` ` tuning stops: {} ` — tests frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended, frames::story::tests::the_outcome_lines::every_r7_named_outcome_keeps_a_row (8 renders); sweep sweep/concluded/0046-trial.intent/120x33/plus40, sweep/concluded/0046-trial.intent/160x45/plus40 (54432 renders)
 - `words.rs:637` ` hunt {} starts over {} ` — tests frames::frame_tests::bounds::idle, frames::frame_tests::bounds::unconfirmed (68 renders); sweep scenario/idle/120x33, scenario/idle/160x45 (433617 renders)
 - `words.rs:644` ` backs off ` — tests frames::frame_tests::bands::a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (776 renders); sweep scenario/between/120x33, scenario/between/160x45 (2730461 renders)
-- `words.rs:648` ` hunt {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash (10193 renders); sweep journal/help/160x45, journal/help/240x67 (1556233 renders)
+- `words.rs:648` ` hunt {} ` — tests frames::frame_tests::bands::a_prior_recovery_does_not_mask_a_later_boot_crash, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (7950 renders); sweep journal/help/160x45, journal/help/240x67 (1558476 renders)
 - `words.rs:657` ` C{} over {} ` — tests frames::story::tests::the_outcome_lines::a_combination_outcome_is_named_by_its_decisions, tests::history::fallback_history (6 renders); sweep sweep/combination/2538-trial.intent/120x33/plus40, sweep/combination/2538-trial.intent/160x45/plus40 (10972 renders)
 - `words.rs:663` ` hunt ends ` — tests frames::frame_tests::bounds::member_probe, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (43 renders); sweep scenario/member-probe/120x33, scenario/member-probe/160x45 (59398 renders)
 - `words.rs:664` ` tuning stops ` — tests frames::frame_tests::bands::no_trial_yet_does_not_claim_one_ended, frames::story::tests::the_outcome_lines::every_r7_named_outcome_keeps_a_row (18 renders); sweep sweep/concluded/0046-trial.intent/120x33/plus40, sweep/concluded/0046-trial.intent/160x45/plus40 (96768 renders)
 - `words.rs:665` ` no hunt ` — sweep sweep/laterhunt/10976-trial.intent/120x33/plus40, sweep/laterhunt/10976-trial.intent/160x45/plus40 (40928 renders)
 - `words.rs:677` ` step {} is done ` — tests frames::frame_tests::bands::between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown, frames::frame_tests::bounds::between (321 renders); sweep scenario/between/120x33, scenario/between/160x45 (86625 renders)
-- `words.rs:961` ` not hunted ` — tests corpus::narration_corpus, frames::frame_tests::bounds::hunt_bios (36 renders); sweep scenario/hunt-bios/120x33, scenario/hunt-bios/160x45 (6135 renders)
+- `words.rs:961` ` not hunted ` — tests frames::frame_tests::bounds::hunt_bios, frames::snapshots::every_scenario_fits_the_frame_at_every_main_size (30 renders); sweep scenario/hunt-bios, scenario/hunt-bios/120x33 (6141 renders)
 - `words.rs:990` ` requested from the command line ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, tests::history::a_reset_and_an_mce_have_lines (10 renders)
-- `words.rs:999` ` dead end: {} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis (67 renders); sweep scenario/deadend/120x33, scenario/deadend/160x45 (624 renders)
-- `words.rs:1011` ` stopped ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash (328 renders); sweep scenario/combination/120x33, scenario/combination/160x45 (70819 renders)
-- `words.rs:1034` ` groups {first}-{last} ` — tests corpus::narration_corpus, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (18127 renders); sweep journal/help/160x45, journal/help/240x67 (155059 renders)
-- `words.rs:1036` ` group {first} ` — tests corpus::narration_corpus, frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers (27847 renders); sweep journal/help/160x45, journal/help/240x67 (920938 renders)
+- `words.rs:999` ` dead end: {} ` — tests frames::frame_tests::bands::a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis, frames::frame_tests::bands::a_restored_dead_end_labels_its_rows_as_saved (64 renders); sweep scenario/deadend, scenario/deadend/120x33 (627 renders)
+- `words.rs:1011` ` stopped ` — tests frames::frame_tests::bands::a_command_shutdown_does_not_mask_an_unrecovered_crash, frames::frame_tests::bands::a_resting_band_of_one_line_leaves_the_ccd_table_its_rows (265 renders); sweep scenario/combination, scenario/combination/120x33 (70882 renders)
+- `words.rs:1034` ` groups {first}-{last} ` — tests frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note, frames::frame_tests::bands::a_stopped_frame_labels_saved_offsets_as_not_applied_and_shows_no_running_stage (9931 renders); sweep journal/help/160x45, journal/help/240x67 (163255 renders)
+- `words.rs:1036` ` group {first} ` — tests frames::dash::tests::a_note_follows_the_core_in_the_order_the_dashboard_prefers, frames::frame_tests::bands::a_running_stage_line_keeps_its_marker_and_its_repeat_note (17228 renders); sweep journal/help/160x45, journal/help/240x67 (931557 renders)
 - `words.rs:1039` ` {groups} answered by existing evidence ` — tests frames::story::tests::edges::the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_crash, tests::describe::a_hunt_says_how_it_ended (4 renders); sweep sweep/combination/2003-trial.intent/120x33/plus40, sweep/combination/2003-trial.intent/160x45/plus40 (41046 renders)
 - `words.rs:1041` ` {groups} failed on existing evidence ` — tests tests::describe::hunt_groups_answered_without_a_trial, tests::history::inferred_group_answers_do_not_hide_outcome_changes (3 renders)
 
@@ -7223,10 +7223,10 @@ Generated by `TOGI_NARRATION_CORPUS=<absolute file> cargo test --locked -p togi 
   - `base:crashed-cycle`: 10015 events, 10015 prefixes rendered; 41 of them checked equal to `status::render`.
   - `base:dead-end`: 4194 events, 4194 prefixes rendered; 18 of them checked equal to `status::render`.
 - Scenario cuts: the 18 `Scenario::ALL` journals through `status::render`.
-- Edge fixtures: 36 recipes from `crates/togi/tests/read/status.rs` and the finite variants no simulated journal reaches (every dead-end condition, defect directions and resets, carried-session forms, telemetry-less R7, Tctl-less evidence, a carried failure with no signal, solo limits three counts deep, a skipped hunt group). Each is rendered through `status::render`; the roster states which ones the status rendered and which it refused, and a refused one contributes no phrase.
+- Edge fixtures: 37 recipes from `crates/togi/tests/read/status.rs` and the finite variants no simulated journal reaches (every dead-end condition, defect directions and resets, carried-session forms, R7 with and without request telemetry, Tctl-less evidence, a carried failure with no signal, solo limits three counts deep, a skipped hunt group). Each is rendered through `status::render`; the roster states which ones the status rendered and which it refused, and a refused one contributes no phrase.
 - Synthetic renderer cases: 6 cases that hand the private `Status::write` an altered projection or snapshot. They are NOT session states; they show a template branch whose rendering is otherwise unreachable, and the manifest names each such branch as synthetic only.
 - Diagnostics: 11 runs of the `status` command itself over state directories on disk; their stderr is listed separately and is not part of the phrase catalogue.
-- Renderings recorded: 74987; distinct block templates: 272.
+- Renderings recorded: 74988; distinct block templates: 274.
 
 **What is enumerated and what is not.** The unit is a template branch of the status writer, with the values the journals above produce. Unbounded parameters are represented, not enumerated: core IDs and lists, offsets, seqs, counts, durations, timestamps, session IDs, BIOS context strings and defect titles. Recorded journal messages are forwarded verbatim (`in flight`, `carried`, `last decision`, `between-trial evidence`) and so are external error strings in diagnostics; the corpus shows the messages these journals record, not every message `togi-journal`'s `payload/message.rs` can build. The catalogue keeps one actual rendering per template: a block's text with every number as `N` and every run of bare numbers as `N…`. Its cases list the first three fixtures (hand-built ones first) with the number of base-journal prefixes that produced the text and the first and last seq, then the number of further fixtures and renderings. A case ID is `status·<fixture>·80col`.
 
@@ -7245,21 +7245,21 @@ Each branch of `crates/togi/src/status.rs` (and the shared words it calls), deci
 | `header.hunt` | status.rs:header, hunt_plan | hunt N, group N | journal | 4122 | `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +16 more fixtures; 4122 renderings in all |
 | `header.round` | status.rs:header, deepening | phase 2 round N, checks N/N | journal | 4989 | `status·edge:round-check-completed·80col`; `status·scenario:round·80col`; `status·synthetic:candidate-without-solo-limit·80col`; +9 more fixtures; 4989 renderings in all |
 | `header.round-check-done` | status.rs:header, deepening checks | a round header counting a check with all its passes | journal | 4268 | `status·edge:round-check-completed·80col`; `status·base:combination·80col` ×1445 (#3476 … #4920); `status·base:concluded·80col` ×471 (#7235 … #7705); +4 more fixtures; 4268 renderings in all |
-| `header.cycle` | status.rs:header, cycle_plan | checking cycle N, steps N/N | journal | 33416 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +31 more fixtures; 33416 renderings in all |
+| `header.cycle` | status.rs:header, cycle_plan | checking cycle N, steps N/N | journal | 33417 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +32 more fixtures; 33417 renderings in all |
 | `header.cycle-not-full` | status.rs:header, missing_coverage | the cycle's missing coverage | journal | 1 | `status·edge:short-cycle·80col` |
 | `header.cycle-missing-one-step` | status.rs:missing_coverage | a regime one step short: `1 more step` | journal | 1 | `status·edge:short-cycle·80col` |
 | `header.cycle-missing-steps` | status.rs:missing_coverage | a regime several steps short: `N more steps` | journal | 1 | `status·edge:short-cycle·80col` |
 | `header.not-started` | status.rs:header, final arm | checking not started | journal | 280 | `status·edge:no-plan·80col`; `status·base:combination·80col` ×31 (#1 … #1503); `status·base:concluded·80col` ×31 (#1 … #4078); +7 more fixtures; 280 renderings in all |
 | `phase.none` | status.rs:header, phase_clause None | no phase plan: no clause | synthetic only; unreachable | 1 | `status·synthetic:no-phase-plan·80col` |
-| `phase.one` | status.rs:phase_clause, PhaseNo::One | \| phase 1 | journal | 53844 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +48 more fixtures; 53844 renderings in all |
+| `phase.one` | status.rs:phase_clause, PhaseNo::One | \| phase 1 | journal | 53845 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 53845 renderings in all |
 | `phase.concluded` | status.rs:phase_clause, PhaseNo::Concluded | \| phase 2 concluded: clean cycles N, latest clean cycle N | journal | 7733 | `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cycle-end·80col`; `status·edge:queued-reset·80col`; +10 more fixtures; 7733 renderings in all |
 | `phase.confirming` | status.rs:phase_clause, plan.confirming | \| phase 2: confirmation cycle | journal | 8330 | `status·scenario:confirmation·80col`; `status·scenario:unconfirmed·80col`; `status·base:combination·80col` ×984 (#4921 … #5904); +5 more fixtures; 8330 renderings in all |
 | `phase.rounds-one` | status.rs:phase_clause, rounds | \| phase 2: at most 1 round left | journal | 5077 | `status·edge:round-check-completed·80col`; `status·scenario:first-result·80col`; `status·scenario:round·80col`; +10 more fixtures; 5077 renderings in all |
 | `phase.rounds-many` | status.rs:phase_clause, rounds | \| phase 2: at most N rounds left | journal | 2 | `status·edge:solo-limits-three-counts-deep·80col`; `status·synthetic:rounds-left-three·80col` |
-| `session` | status.rs:write, session line | session ID started TIME | journal | 74987 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74987 renderings in all |
-| `bios.context` | status.rs:write, BIOS context line | BIOS context | journal | 74887 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +64 more fixtures; 74887 renderings in all |
+| `session` | status.rs:write, session line | session ID started TIME | journal | 74988 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all |
+| `bios.context` | status.rs:write, BIOS context line | BIOS context | journal | 74888 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74888 renderings in all |
 | `in-flight.trial` | status.rs:write, in_flight Some | in flight: [#N] msg | journal | 51376 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +41 more fixtures; 51376 renderings in all |
-| `in-flight.none` | status.rs:write, in_flight None | in flight: none | journal | 23611 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +30 more fixtures; 23611 renderings in all |
+| `in-flight.none` | status.rs:write, in_flight None | in flight: none | journal | 23612 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +31 more fixtures; 23612 renderings in all |
 | `dead-end.failure_at_zero` | status.rs:dead_end_label | dead end: failure at offset 0 [#N] | journal | 1 | `status·edge:dead-end-failure_at_zero·80col` |
 | `dead-end.smu` | status.rs:dead_end_label | dead end: SMU error [#N] | journal | 1 | `status·edge:dead-end-smu·80col` |
 | `dead-end.no_evidence` | status.rs:dead_end_label | dead end: no conclusive evidence [#N] | journal | 53 | `status·edge:dead-end-no_evidence·80col`; `status·scenario:deadend·80col`; `status·base:dead-end·80col` ×51 (#4144 … #4194) |
@@ -7271,33 +7271,34 @@ Each branch of `crates/togi/src/status.rs` (and the shared words it calls), deci
 | `carried.failure-points` | status.rs:Scan::of; message.rs:session_carried | carried: … and N failure point(s) from … | journal | 1 | `status·edge:session-carried-failure-points·80col` |
 | `carried.points-behind-reason` | status.rs:Scan::of; message.rs:session_carried | carried: …; failure points stay behind: REASON | journal | 1 | `status·edge:session-carried-points-behind-reason·80col` |
 | `carried.points-behind-no-reason` | status.rs:Scan::of; message.rs:session_carried | carried: …; failure points stay behind: no reason recorded | journal | 1 | `status·edge:session-carried-points-behind-no-reason·80col` |
-| `cores.bios-none` | status.rs:bios_cell, no BIOS profile or offset | BIOS cell - | journal | 53845 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 53845 renderings in all |
+| `cores.bios-none` | status.rs:bios_cell, no BIOS profile or offset | BIOS cell - | journal | 53846 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +50 more fixtures; 53846 renderings in all |
 | `cores.bios-confirmed` | status.rs:bios_cell, plain offset | BIOS cell N | journal | 20576 | `status·edge:combination-fallback·80col`; `status·edge:queued-reset·80col`; `status·edge:round-check-completed·80col`; +19 more fixtures; 20576 renderings in all |
 | `cores.bios-unconfirmed` | status.rs:bios_cell, starred offset | BIOS cell N* | journal | 2259 | `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·scenario:unconfirmed·80col`; +2 more fixtures; 2259 renderings in all |
 | `cores.phase-search` | status.rs:cores; words.rs:phase_word | PHASE SEARCH | journal | 32180 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +23 more fixtures; 32180 renderings in all |
-| `cores.phase-has-room` | status.rs:cores; words.rs:phase_word | PHASE HAS ROOM | journal | 41466 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +47 more fixtures; 41466 renderings in all |
-| `cores.phase-at-limit` | status.rs:cores; words.rs:phase_word | PHASE AT LIMIT | journal | 39995 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +42 more fixtures; 39995 renderings in all |
+| `cores.phase-has-room` | status.rs:cores; words.rs:phase_word | PHASE HAS ROOM | journal | 41467 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 41467 renderings in all |
+| `cores.phase-at-limit` | status.rs:cores; words.rs:phase_word | PHASE AT LIMIT | journal | 39996 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +43 more fixtures; 39996 renderings in all |
 | `cores.phase-none` | status.rs:cores, absent phase | PHASE - | journal | 397 | `status·edge:no-plan·80col`; `status·base:combination·80col` ×44 (#1 … #44); `status·base:concluded·80col` ×44 (#1 … #44); +7 more fixtures; 397 renderings in all |
 | `cores.failure-none` | status.rs:cores, absent failure point | FAILURE - | journal | 27265 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +34 more fixtures; 27265 renderings in all |
-| `cores.failure-point` | status.rs:cores, failure point | FAILURE N | journal | 60279 | `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +35 more fixtures; 60279 renderings in all |
-| `cores.queued-none` | status.rs:cores, no queued reset | QUEUED - | journal | 74987 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74987 renderings in all |
+| `cores.failure-point` | status.rs:cores, failure point | FAILURE N | journal | 60280 | `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +36 more fixtures; 60280 renderings in all |
+| `cores.queued-none` | status.rs:cores, no queued reset | QUEUED - | journal | 74988 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all |
 | `cores.queued-reset` | status.rs:cores, queued reset | QUEUED reset | journal | 3 | `status·edge:defect-reset-each-core·80col`; `status·edge:defect-reset-one-core·80col`; `status·edge:queued-reset·80col` |
 | `cores.note-combinations` | status.rs:cores, combos note | combinations CN, … | journal | 5240 | `status·edge:combination-fallback·80col`; `status·edge:round-check-completed·80col`; `status·scenario:combination·80col`; +7 more fixtures; 5240 renderings in all |
-| `cores.note-last-decision` | status.rs:cores, last_decision note | last decision [#N] msg | journal | 74725 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +64 more fixtures; 74725 renderings in all |
+| `cores.note-last-decision` | status.rs:cores, last_decision note | last decision [#N] msg | journal | 74726 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74726 renderings in all |
 | `bios.silent` | status.rs:bios_note, `None => return` | no BIOS note: none confirmed outside phase 1 | synthetic only; unreachable | 2 | `status·synthetic:no-confirmed-bios-profile-in-phase-2·80col`; `status·synthetic:no-phase-plan·80col` |
-| `bios.none-in-phase-one` | status.rs:bios_note, `None if phase_one` | BIOS profile: none confirmed yet; … | journal | 53844 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +48 more fixtures; 53844 renderings in all |
+| `bios.none-in-phase-one` | status.rs:bios_note, `None if phase_one` | BIOS profile: none confirmed yet; … | journal | 53845 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 53845 renderings in all |
 | `bios.confirmed` | status.rs:bios_note, no unconfirmed marks | BIOS profile confirmed by the passed full cycle [#N] | journal | 18882 | `status·edge:combination-fallback·80col`; `status·edge:queued-reset·80col`; `status·edge:round-check-completed·80col`; +17 more fixtures; 18882 renderings in all |
 | `bios.unconfirmed` | status.rs:unconfirmed_note | * unconfirmed since [#N]: cores … show stepped-back offsets; … | journal | 1479 | `status·edge:hunt-parked-cycle-end·80col`; `status·scenario:hunt-bios·80col`; `status·base:later-hunt·80col` ×1477 (#10993 … #12469) |
 | `bios.unconfirmed-one` | status.rs:unconfirmed_note | * unconfirmed since [#N]: core N shows a stepped-back offset; … | journal | 780 | `status·scenario:unconfirmed·80col`; `status·base:later-hunt·80col` ×51 (#12470 … #12520); `status·base:unconfirmed·80col` ×728 (#8397 … #9124) |
 | `combinations.observed` | status.rs:combinations, observed source | CN core … , observed in hunt N [#N] | journal | 5239 | `status·edge:round-check-completed·80col`; `status·scenario:combination·80col`; `status·scenario:round·80col`; +6 more fixtures; 5239 renderings in all |
 | `combinations.fallback` | status.rs:combinations, fallback source | CN …, fallback over every candidate of hunt N [#N] | journal | 1 | `status·edge:combination-fallback·80col` |
-| `r7.heading` | status.rs:r7, heading line | R7 self-sufficiency (…; not a guarantee) | journal | 74987 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74987 renderings in all |
-| `r7.self-sufficient` | status.rs:self_sufficiency | observed (N passing trials) | journal | 41531 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:evidence-without-tctl·80col`; +34 more fixtures; 41531 renderings in all |
-| `r7.self-sufficient-one` | status.rs:self_sufficiency | observed (1 passing trial) | journal | 819 | `status·base:combination·80col` ×36 (#1558 … #4910); `status·base:concluded·80col` ×99 (#4155 … #4650); `status·base:crashed-cycle·80col` ×252 (#4527 … #8356); +5 more fixtures; 819 renderings in all |
-| `r7.not-yet` | status.rs:self_sufficiency | not yet demonstrated | journal | 70498 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +60 more fixtures; 70498 renderings in all |
-| `r7.top-yes` | status.rs:r7, top_requester | TOP REQUESTER yes | journal | 74987 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74987 renderings in all |
-| `r7.top-no` | status.rs:r7, top_requester | TOP REQUESTER no | journal | 69163 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +46 more fixtures; 69163 renderings in all |
-| `r7.offset-fallback` | status.rs:r7, offset_proxy | TOP REQUESTER … (offset fallback) | journal | 74987 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74987 renderings in all |
+| `r7.heading` | status.rs:r7, heading line | R7 self-sufficiency (…; not a guarantee) | journal | 74988 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all |
+| `r7.self-sufficient` | status.rs:self_sufficiency | observed (N passing trials) | journal | 41532 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:evidence-without-tctl·80col`; +35 more fixtures; 41532 renderings in all |
+| `r7.self-sufficient-one` | status.rs:self_sufficiency | observed (1 passing trial) | journal | 820 | `status·edge:r7-with-request-telemetry·80col`; `status·base:combination·80col` ×36 (#1558 … #4910); `status·base:concluded·80col` ×99 (#4155 … #4650); +6 more fixtures; 820 renderings in all |
+| `r7.not-yet` | status.rs:self_sufficiency | not yet demonstrated | journal | 70499 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +61 more fixtures; 70499 renderings in all |
+| `r7.top-yes` | status.rs:r7, top_requester, measured lane | TOP REQUESTER yes | journal | 1 | `status·edge:r7-with-request-telemetry·80col` |
+| `r7.top-no` | status.rs:r7, top_requester, measured lane | TOP REQUESTER no | journal | 1 | `status·edge:r7-with-request-telemetry·80col` |
+| `r7.top-yes-offset-fallback` | status.rs:r7, top_requester and offset_proxy | TOP REQUESTER yes (offset fallback) | journal | 74988 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all |
+| `r7.top-no-offset-fallback` | status.rs:r7, top_requester and offset_proxy | TOP REQUESTER no (offset fallback) | journal | 69164 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +47 more fixtures; 69164 renderings in all |
 | `between` | status.rs:Scan::of, write | between-trial evidence [#N]: msg | journal | 2 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col` |
 | `hunt.parked-zero` | status.rs:parked_source, Parked::Zero | …; parked offsets all-zero | journal | 4070 | `status·edge:hunt-carried-idle·80col`; `status·edge:hunt-carried-trial·80col`; `status·edge:hunt-excess-pass-evidence·80col`; +13 more fixtures; 4070 renderings in all |
 | `hunt.parked-cycle-end` | status.rs:parked_source | …; parked offsets from cycle end #N | journal | 1 | `status·edge:hunt-parked-cycle-end·80col` |
@@ -7332,9 +7333,9 @@ Each branch of `crates/togi/src/status.rs` (and the shared words it calls), deci
 | `defect.cleared-by-reset-all` | status.rs:Scan::of CommandReset All | nothing after a reset of every core (silent; proven by `edge:defect-reset-all`) | journal | 1 | `status·edge:defect-reset-all·80col` |
 | `defect.too-aggressive-unlisted` | status.rs:Scan::of DefectFound TooCautious filter | nothing for a too-aggressive defect (silent; proven by `edge:defect-too-aggressive`) | journal | 1 | `status·edge:defect-too-aggressive·80col` |
 | `evidence.silent` | status.rs:evidence, no checking profile | no evidence table before a checking profile | journal | 32451 | `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +24 more fixtures; 32451 renderings in all |
-| `evidence.table` | status.rs:evidence, exposure rows | REGIME WORKLOAD VALID PASSES | journal | 42536 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +47 more fixtures; 42536 renderings in all |
-| `evidence.heading` | status.rs:EVIDENCE_HEADING, evidence | Valid passes supporting the checking profile (live and not alone, …; carried passes excluded) | journal | 42536 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +47 more fixtures; 42536 renderings in all |
-| `evidence.tctl` | status.rs:evidence, checking.peak | Tctl max since last profile change N°C [#N] | journal | 34206 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:hunt-carried-idle·80col`; +26 more fixtures; 34206 renderings in all |
+| `evidence.table` | status.rs:evidence, exposure rows | REGIME WORKLOAD VALID PASSES | journal | 42537 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 42537 renderings in all |
+| `evidence.heading` | status.rs:EVIDENCE_HEADING, evidence | Valid passes supporting the checking profile (live and not alone, …; carried passes excluded) | journal | 42537 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 42537 renderings in all |
+| `evidence.tctl` | status.rs:evidence, checking.peak | Tctl max since last profile change N°C [#N] | journal | 34207 | `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:hunt-carried-idle·80col`; +27 more fixtures; 34207 renderings in all |
 | `evidence.no-tctl` | status.rs:evidence, checking.peak None | an evidence table with no Tctl peak | journal | 8330 | `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; `status·edge:dead-end-defect·80col`; +26 more fixtures; 8330 renderings in all |
 | `parser.unclassified` | this exporter | a block the parser does not place (should stay unreached) | **not reached** | 0 |  |
 
@@ -7360,7 +7361,7 @@ Not mapped branch by branch here: the message builders of `togi-journal/src/payl
 checking cycle 1, steps 0/18 | phase 1
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +21 more fixtures; 17658 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +22 more fixtures; 17659 renderings in all
 
 **status.header.2** · template `checking cycle N, steps N/N | phase N concluded: clean cycles N, latest clean cycle N`
 
@@ -7481,7 +7482,7 @@ Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74987 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all
 
 #### `bios.context` — status.rs Status::write, BIOS context line
 
@@ -7501,7 +7502,7 @@ BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:carried-r7-evidence·80col`; +63 more fixtures; 74886 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:carried-r7-evidence·80col`; +64 more fixtures; 74887 renderings in all
 
 #### `in-flight` — status.rs Status::write, the in-flight event's msg
 
@@ -8249,7 +8250,7 @@ Cases: `status·base:combination·80col` ×16 (#1660 … #5077); `status·base:c
 in flight: none
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +30 more fixtures; 23611 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +31 more fixtures; 23612 renderings in all
 
 #### `dead-end` — status.rs Status::write with dead_end_label
 
@@ -8354,7 +8355,7 @@ Cases: `status·edge:session-carried-points-behind-reason·80col`
 CORE  CCD  SLOT  OFFSET  BIOS  PHASE  FAILURE  QUEUED
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74987 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all
 
 #### `cores.row` — status.rs Status::cores, bios_cell, notes: the last decision's msg
 
@@ -8518,7 +8519,7 @@ Cases: `status·edge:hunt-located-held·80col`; `status·base:unconfirmed·80col
                 -26 of core 00)
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +23 more fixtures; 16989 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +24 more fixtures; 16990 renderings in all
 
 **status.cores.row.16** · template `N… -N - HAS ROOM - - combinations CN last decision [#N] core N backed off from -N to -N (combination CN: backing off core N to -N, where hunt N group N passed with the rest of the combination at its failing offsets)`
 
@@ -8659,7 +8660,7 @@ Cases: `status·base:crashed-cycle·80col` at #4641; `status·base:unconfirmed·
                 combination)
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +26 more fixtures; 21539 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +27 more fixtures; 21540 renderings in all
 
 **status.cores.row.28** · template `N… -N - HAS ROOM -N - last decision [#N] core N search -> has room at -N (solo limit -N passed N trials each of RN ycruncher-bkt-sftvN and RN mprime-avxN-Nk-Nk; checking starts at -N, one count shallower than the solo limit -N (margin); one count deeper reaches no failure point or combination)`
 
@@ -9271,7 +9272,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:queued-reset·8
 BIOS profile: none confirmed yet; phase 1 has not passed a full cycle
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +48 more fixtures; 53844 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 53845 renderings in all
 
 #### `combinations` — status.rs Status::combinations
 
@@ -9312,7 +9313,7 @@ R7 self-sufficiency (passed as top requester at equal or deeper offsets; not a
   guarantee)
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74987 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all
 
 #### `r7.header` — status.rs Status::r7, header row
 
@@ -9322,7 +9323,7 @@ Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-
 CORE  CCD  SELF-SUFFICIENT       TOP REQUESTER
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +65 more fixtures; 74987 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +66 more fixtures; 74988 renderings in all
 
 #### `r7.row` — status.rs Status::r7, self_sufficiency
 
@@ -9333,7 +9334,7 @@ Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-
   workload mprime-avx2-36k-248k-allcore
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +44 more fixtures; 66481 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +45 more fixtures; 66482 renderings in all
 
 **status.r7.row.2** · template `N… not yet demonstrated no (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
@@ -9342,27 +9343,36 @@ Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_lo
   workload ycruncher-fftv4-n63-vt3-allcore
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +44 more fixtures; 66511 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:dead-end-boot_loop·80col`; `status·edge:dead-end-containment·80col`; +45 more fixtures; 66512 renderings in all
 
-**status.r7.row.3** · template `N… not yet demonstrated yes (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
+**status.r7.row.3** · template `N… not yet demonstrated no workload mprime-avxN-Nk-Nk-allcore`
+
+```text
+00    0    not yet demonstrated        no
+  workload mprime-avx2-36k-248k-allcore
+```
+
+Cases: `status·edge:r7-with-request-telemetry·80col`
+
+**status.r7.row.4** · template `N… not yet demonstrated yes (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
 
 ```text
 00    0    not yet demonstrated  yes (offset fallback)
   workload mprime-avx2-36k-248k-allcore
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +48 more fixtures; 39338 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 39339 renderings in all
 
-**status.r7.row.4** · template `N… not yet demonstrated yes (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
+**status.r7.row.5** · template `N… not yet demonstrated yes (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
 ```text
 00    0    not yet demonstrated  yes (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
 ```
 
-Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +48 more fixtures; 40496 renderings in all
+Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-trial-mce-uncorrected·80col`; `status·edge:bios-context·80col`; +49 more fixtures; 40497 renderings in all
 
-**status.r7.row.5** · template `N… observed (N passing trial) no (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
+**status.r7.row.6** · template `N… observed (N passing trial) no (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
 
 ```text
 01    0    observed (1 passing trial)   no (offset fallback)
@@ -9371,7 +9381,7 @@ Cases: `status·edge:between-trial-mce-corrected·80col`; `status·edge:between-
 
 Cases: `status·base:combination·80col` ×6 (#4848 … #4880); `status·base:concluded·80col` ×54 (#4174 … #4494); `status·base:crashed-cycle·80col` ×84 (#4546 … #8281); +4 more fixtures; 372 renderings in all
 
-**status.r7.row.6** · template `N… observed (N passing trial) no (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
+**status.r7.row.7** · template `N… observed (N passing trial) no (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
 ```text
 01    0    observed (1 passing trial)    no (offset fallback)
@@ -9380,7 +9390,7 @@ Cases: `status·base:combination·80col` ×6 (#4848 … #4880); `status·base:co
 
 Cases: `status·base:combination·80col` ×3 (#4908 … #4910); `status·base:concluded·80col` ×27 (#4531 … #4650); `status·base:crashed-cycle·80col` ×42 (#5010 … #8356); +4 more fixtures; 186 renderings in all
 
-**status.r7.row.7** · template `N… observed (N passing trial) yes (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
+**status.r7.row.8** · template `N… observed (N passing trial) yes (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
 
 ```text
 05    0    observed (1 passing trial)  yes (offset fallback)
@@ -9389,7 +9399,7 @@ Cases: `status·base:combination·80col` ×3 (#4908 … #4910); `status·base:co
 
 Cases: `status·base:combination·80col` ×18 (#1558 … #4865); `status·base:concluded·80col` ×12 (#4155 … #4429); `status·base:crashed-cycle·80col` ×117 (#4527 … #8221); +5 more fixtures; 207 renderings in all
 
-**status.r7.row.8** · template `N… observed (N passing trial) yes (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
+**status.r7.row.9** · template `N… observed (N passing trial) yes (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
 ```text
 05    0    observed (1 passing trial)    yes (offset fallback)
@@ -9398,7 +9408,16 @@ Cases: `status·base:combination·80col` ×18 (#1558 … #4865); `status·base:c
 
 Cases: `status·base:combination·80col` ×9 (#1636 … #4895); `status·base:concluded·80col` ×6 (#4518 … #4585); `status·base:crashed-cycle·80col` ×9 (#4997 … #8296); +5 more fixtures; 54 renderings in all
 
-**status.r7.row.9** · template `N… observed (N passing trials) no (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
+**status.r7.row.10** · template `N… observed (N passing trial) yes workload mprime-avxN-Nk-Nk-allcore`
+
+```text
+06    0    observed (1 passing trial)  yes
+  workload mprime-avx2-36k-248k-allcore
+```
+
+Cases: `status·edge:r7-with-request-telemetry·80col`
+
+**status.r7.row.11** · template `N… observed (N passing trials) no (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
 
 ```text
 01    0    observed (2 passing trials)  no (offset fallback)
@@ -9407,7 +9426,7 @@ Cases: `status·base:combination·80col` ×9 (#1636 … #4895); `status·base:co
 
 Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-parked-cycle-end·80col`; +20 more fixtures; 37838 renderings in all
 
-**status.r7.row.10** · template `N… observed (N passing trials) no (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
+**status.r7.row.12** · template `N… observed (N passing trials) no (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
 ```text
 01    0    observed (2 passing trials)   no (offset fallback)
@@ -9416,7 +9435,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pas
 
 Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pass-evidence·80col`; `status·edge:hunt-parked-cycle-end·80col`; +20 more fixtures; 35498 renderings in all
 
-**status.r7.row.11** · template `N… observed (N passing trials) yes (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
+**status.r7.row.13** · template `N… observed (N passing trials) yes (offset fallback) workload mprime-avxN-Nk-Nk-allcore`
 
 ```text
 05    0    observed (2 passing trials)  yes (offset fallback)
@@ -9425,7 +9444,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pas
 
 Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:evidence-without-tctl·80col`; +34 more fixtures; 41507 renderings in all
 
-**status.r7.row.12** · template `N… observed (N passing trials) yes (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
+**status.r7.row.14** · template `N… observed (N passing trials) yes (offset fallback) workload ycruncher-fftvN-nN-vtN-allcore`
 
 ```text
 05    0    observed (2 passing trials)   yes (offset fallback)
@@ -9833,7 +9852,7 @@ Valid passes supporting the checking profile (live and not alone, on the active
   backend, at equal or deeper offsets; carried passes excluded)
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +47 more fixtures; 42536 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 42537 renderings in all
 
 #### `evidence.header` — status.rs Status::evidence, header row
 
@@ -9843,7 +9862,7 @@ Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fall
 REGIME  WORKLOAD  VALID PASSES
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +47 more fixtures; 42536 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:dead-end-boot_loop·80col`; +48 more fixtures; 42537 renderings in all
 
 #### `evidence.row` — status.rs Status::evidence, exposure rows
 
@@ -9861,7 +9880,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-excess-pas
 R7      mprime-avx2-36k-248k-allcore  1
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:evidence-without-tctl·80col`; +29 more fixtures; 36902 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:evidence-without-tctl·80col`; +30 more fixtures; 36903 renderings in all
 
 **status.evidence.row.3** · template `RN mprime-sse-Nk-Nk N`
 
@@ -9983,7 +10002,7 @@ Cases: `status·edge:combination-fallback·80col`; `status·edge:hunt-parked-cyc
 Tctl max since last profile change 76°C [#4155]
 ```
 
-Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:hunt-carried-idle·80col`; +26 more fixtures; 34206 renderings in all
+Cases: `status·edge:carried-r7-evidence·80col`; `status·edge:combination-fallback·80col`; `status·edge:hunt-carried-idle·80col`; +27 more fixtures; 34207 renderings in all
 
 ### Fixture roster
 
@@ -10023,6 +10042,7 @@ Every fixture except the base-journal sweep (listed in the scope above). `Outcom
 | `status·edge:session-carried-points-behind-no-reason·80col` | edge | search + session.carried leaving failure points behind, no reason | rendered, 159 lines |
 | `status·edge:carried-r7-evidence·80col` | edge | between + a carried R7 pass and a carried idle crash: self-sufficiency without live exposure | rendered, 204 lines |
 | `status·edge:r7-without-request-telemetry·80col` | edge | between with every trial.end's per-core voltage requests removed | rendered, 204 lines |
+| `status·edge:r7-with-request-telemetry·80col` | edge | Base::Session cut at its first passing R7 trial.end that loads one whole CCD, that end carrying the request telemetry a measured trial records: the CCD's deepest-offset core requests the most | rendered, 204 lines |
 | `status·edge:evidence-without-tctl·80col` | edge | between with every trial.end's Tctl maximum removed | rendered, 203 lines |
 | `status·edge:queued-reset·80col` | edge | stopped + command.reset core 3 | rendered, 186 lines |
 | `status·edge:hunt-carried-trial·80col` | edge | between + a carried failed trial + the hunt it opens | rendered, 209 lines |

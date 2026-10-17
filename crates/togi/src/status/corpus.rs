@@ -90,6 +90,34 @@ fn narration_corpus() {
             diagnostic.stderr
         );
     }
+    measured_r7_rows(&edges);
+}
+
+/// The name of the edge journal whose R7 rows are ordered by recorded requests, not by offsets.
+const MEASURED_R7: &str = "edge:r7-with-request-telemetry";
+
+/// Checks that [`MEASURED_R7`] renders, and that its R7 table answers both yes and no from the recorded requests:
+/// without them every top requester cell would carry the offset fallback.
+fn measured_r7_rows(edges: &[Whole]) {
+    let whole = edges
+        .iter()
+        .find(|whole| whole.fixture == MEASURED_R7)
+        .unwrap_or_else(|| panic!("{MEASURED_R7} is not an edge journal"));
+    let text = whole
+        .shown
+        .as_ref()
+        .unwrap_or_else(|problem| panic!("the status refused {MEASURED_R7}: {problem}"));
+    let tops: BTreeSet<String> = blocks(text)
+        .iter()
+        .filter(|block| block.family == "r7.row")
+        .map(|block| block.cell(3).to_owned())
+        .collect();
+    for want in ["yes", "no"] {
+        assert!(
+            tops.contains(want),
+            "{MEASURED_R7} rendered no measured `{want}` top requester cell: {tops:?}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -519,6 +547,65 @@ fn hunt_parked_at_a_cycle_end() -> Vec<Event> {
     events
 }
 
+/// `Base::Session` cut at its first passing R7 `trial.end` that loaded one whole CCD, with that end carrying the
+/// request telemetry `journal.md` defines for a trial with enough decoded samples: a median request for every loaded
+/// core and no other, the CCD's top requester, its clock, and the median and minimum of each sample's highest loaded
+/// request. The loaded core at the deepest offset requests the most, the opposite of the offset fallback's order,
+/// which puts the shallowest first. The end is the journal's last event, so no later decision was taken without it;
+/// the tuner keeps it as the newest measurement of that CCD's full part, which the status's R7 rows are ordered by.
+fn r7_with_request_telemetry() -> Vec<Event> {
+    const TOP_V: f64 = 1.25;
+    const REST_V: f64 = 1.15;
+    let base = Base::Session.events().expect("the base simulates");
+    let mut parts: BTreeMap<_, CoreSet> = BTreeMap::new();
+    for info in &session_start(base).cores {
+        parts.entry(info.ccd).or_default().insert(info.core);
+    }
+    let mut open: Option<&TrialIntent> = None;
+    let (at, ccd, intent) = base
+        .iter()
+        .enumerate()
+        .find_map(|(at, event)| match &event.payload {
+            Payload::TrialIntent(intent) => {
+                open = Some(intent);
+                None
+            }
+            Payload::TrialEnd(end) if end.outcome == Outcome::Pass => {
+                let intent =
+                    open.filter(|intent| intent.trial == end.trial && intent.regime == Regime::R7)?;
+                let (&ccd, _) = parts.iter().find(|(_, part)| **part == intent.cores)?;
+                Some((at, ccd, intent))
+            }
+            _ => None,
+        })
+        .expect("a passing R7 trial that loads one whole CCD");
+    let top = intent
+        .cores
+        .iter()
+        .min_by_key(|&core| {
+            (
+                intent.profile.get(core).map_or(0, |offset| offset.get()),
+                core,
+            )
+        })
+        .expect("a loaded core");
+    rewritten(&base[..=at], |payload| match payload {
+        Payload::TrialEnd(end) if end.trial == intent.trial => {
+            end.voltage_requests_v = intent
+                .cores
+                .iter()
+                .map(|core| (core, if core == top { TOP_V } else { REST_V }))
+                .collect();
+            end.top_requesters = std::iter::once(top).collect();
+            end.ccd_mhz = BTreeMap::from([(ccd, 5000)]);
+            end.voltage_request_median_v = Some(TOP_V);
+            end.voltage_request_min_v = Some(TOP_V);
+            true
+        }
+        _ => false,
+    })
+}
+
 /// The edge journals: the recipes `tests/read/status.rs` pins, and the finite variants no simulated journal reaches.
 fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
     let search = Scenario::Search.events().expect("the scenario cuts");
@@ -644,6 +731,12 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
             }
             _ => false,
         }),
+    );
+    add(
+        "r7-with-request-telemetry",
+        "Base::Session cut at its first passing R7 trial.end that loads one whole CCD, that end carrying the \
+         request telemetry a measured trial records: the CCD's deepest-offset core requests the most",
+        r7_with_request_telemetry(),
     );
     add(
         "evidence-without-tctl",
@@ -1820,9 +1913,14 @@ fn branches() -> Vec<Branch> {
         cell_branch("r7.self-sufficient", "status.rs:self_sufficiency", "observed (N passing trials)", "r7.row", |block| block.cell(2).starts_with("observed (")),
         cell_branch("r7.self-sufficient-one", "status.rs:self_sufficiency", "observed (1 passing trial)", "r7.row", |block| block.cell(2) == "observed (1 passing trial)"),
         cell_branch("r7.not-yet", "status.rs:self_sufficiency", "not yet demonstrated", "r7.row", |block| block.cell(2) == "not yet demonstrated"),
-        cell_branch("r7.top-yes", "status.rs:r7, top_requester", "TOP REQUESTER yes", "r7.row", |block| block.cell(3).starts_with("yes")),
-        cell_branch("r7.top-no", "status.rs:r7, top_requester", "TOP REQUESTER no", "r7.row", |block| block.cell(3).starts_with("no")),
-        cell_branch("r7.offset-fallback", "status.rs:r7, offset_proxy", "TOP REQUESTER … (offset fallback)", "r7.row", |block| block.cell(3).ends_with("(offset fallback)")),
+        cell_branch("r7.top-yes", "status.rs:r7, top_requester, measured lane", "TOP REQUESTER yes", "r7.row", |block| block.cell(3) == "yes"),
+        cell_branch("r7.top-no", "status.rs:r7, top_requester, measured lane", "TOP REQUESTER no", "r7.row", |block| block.cell(3) == "no"),
+        cell_branch("r7.top-yes-offset-fallback", "status.rs:r7, top_requester and offset_proxy", "TOP REQUESTER yes (offset fallback)", "r7.row", |block| {
+            block.cell(3) == "yes (offset fallback)"
+        }),
+        cell_branch("r7.top-no-offset-fallback", "status.rs:r7, top_requester and offset_proxy", "TOP REQUESTER no (offset fallback)", "r7.row", |block| {
+            block.cell(3) == "no (offset fallback)"
+        }),
         branch("between", "status.rs:Scan::of, write", "between-trial evidence [#N]: msg", |b| any(b, "between", |_| true)),
         branch("hunt.parked-zero", "status.rs:parked_source, Parked::Zero", "…; parked offsets all-zero", |b| {
             any(b, "hunt", |block| block.flat.contains("parked offsets all-zero"))
@@ -2090,7 +2188,8 @@ impl Corpus {
             "- Scenario cuts: the {} `Scenario::ALL` journals through `status::render`.\n\
              - Edge fixtures: {} recipes from `crates/togi/tests/read/status.rs` and the finite variants no simulated \
              journal reaches (every dead-end condition, defect directions and resets, carried-session forms, \
-             telemetry-less R7, Tctl-less evidence, a carried failure with no signal, solo limits three counts deep, a \
+             R7 with and without request telemetry, Tctl-less evidence, a carried failure with no signal, solo limits \
+             three counts deep, a \
              skipped hunt group). Each is rendered through `status::render`; the roster states which ones the status \
              rendered and which it refused, and a refused one contributes no phrase.\n\
              - Synthetic renderer cases: {} cases that hand the private `Status::write` an altered projection or \

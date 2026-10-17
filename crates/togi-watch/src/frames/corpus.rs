@@ -1,11 +1,13 @@
 //! The frame side of the narration corpus (#904): what each region of a drawn frame shows, and the sweep that
 //! draws every journal state the simulated sessions pass through.
 //!
-//! The sweep folds every prefix of every [`Base`] journal and of the cycle a rerun completes, and draws each state at
-//! the three main sizes. A state with a trial in flight is also drawn at the trial's planned end and at 90 seconds
-//! past it, except an idle (R6) trial, which holds the frame frozen from its start: that one is drawn once and
-//! must report [`Hold::Frozen`]. The 18 [`Scenario`] cuts, the journal states and the help and journal views are
-//! drawn too.
+//! The sweep folds every prefix of every [`Base`] journal and of the cycle a rerun completes, each fold credited to
+//! the case of the prefix it makes. It draws each state at the widest main size at its last event and 40 seconds
+//! after, and at the other two sizes 40 seconds after. A state with a trial in flight that nothing holds is also
+//! drawn at the trial's planned end at the widest size only, and 90 seconds past it at all three sizes. An idle
+//! (R6) trial holds the frame frozen from its start, so it has no planned-end clocks and must report
+//! [`Hold::Frozen`]. The 18 [`Scenario`] cuts, each projected under its own case, the journal states and the help
+//! and journal views are drawn too.
 
 use std::io;
 
@@ -132,13 +134,13 @@ fn clocks(snapshot: &Snapshot<'_>, at: Timestamp) -> Vec<(&'static str, Timestam
     out
 }
 
-/// Folds `events` one at a time and draws every prefix.
-fn sweep_journal(swept: &mut Swept, name: &str, events: &[Event]) {
+/// Folds `events` one at a time and draws every prefix; each fold is credited to the case of the prefix it makes.
+pub(crate) fn sweep_journal(swept: &mut Swept, name: &str, events: &[Event]) {
     let before = swept.frames;
     let mut model = Model::new();
     for (i, event) in events.iter().enumerate() {
-        model
-            .fold(event)
+        let state = format!("sweep/{name}/{i:04}-{}", event.kind().as_str());
+        case(state.as_str(), || model.fold(event))
             .unwrap_or_else(|error| panic!("{name}: event {i} does not fold: {error}"));
         let journal = ready(&model);
         let Journal::Ready { snapshot, .. } = &journal else {
@@ -150,12 +152,7 @@ fn sweep_journal(swept: &mut Swept, name: &str, events: &[Event]) {
                 if n > 0 && clock != "plus40" && clock != "overdue" {
                     continue;
                 }
-                let id = format!(
-                    "sweep/{name}/{i:04}-{}/{}x{}/{clock}",
-                    event.kind().as_str(),
-                    size.0,
-                    size.1
-                );
+                let id = format!("{state}/{}x{}/{clock}", size.0, size.1);
                 let sc = screen_of(View::Main, size, false);
                 let (_, hold) = draw(swept, &id, &journal, &sc, now);
                 if held {
@@ -173,9 +170,9 @@ fn sweep_journal(swept: &mut Swept, name: &str, events: &[Event]) {
         .push((name.to_owned(), events.len(), swept.frames - before));
 }
 
-/// Draws a finished journal as the case `id` at every main size.
-fn whole(swept: &mut Swept, id: &str, events: &[Event]) {
-    let model = project(events);
+/// Draws a finished journal as the case `id` at every main size, projecting it under `id` too.
+pub(crate) fn whole(swept: &mut Swept, id: &str, events: &[Event]) {
+    let model = case(id, || project(events));
     let journal = ready(&model);
     let last = events.last().expect("a journal with events").time;
     let now = last + SignedDuration::from_secs(40);
@@ -240,9 +237,10 @@ fn states(swept: &mut Swept) {
 }
 
 /// A finished journal's log view at the view sizes, at the top and at the end, and with a skipped-content report
-/// in the footer at every width its forms take, down to the one that leaves only the `!`.
-fn views(swept: &mut Swept, name: &str, events: &[Event]) {
-    let mut model = project(events);
+/// in the footer at every width its forms take, down to the one that leaves only the `!`. The projection is
+/// credited to `sweep/{name}/projected`.
+pub(crate) fn views(swept: &mut Swept, name: &str, events: &[Event]) {
+    let mut model = case(format!("sweep/{name}/projected"), || project(events));
     let last = events.last().expect("a journal with events").time;
     let now = last + SignedDuration::from_secs(40);
     for size in VIEW_SIZES {

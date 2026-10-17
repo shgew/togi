@@ -350,11 +350,15 @@ fn intro(out: &mut String, catalogue: &Catalogue, run: &TestRun, swept: &Swept) 
          ## How it was collected\n\n\
          - **Unit tests.** {} unit tests ran in the same binary; {} of them rendered at least one phrase. Each \
          phrase is credited to the test (`tests`) that rendered it.\n\
-         - **Sweep.** {} journals were folded one event at a time, and every prefix was drawn at 240x67, 160x45 \
-         and 120x33 at the event's own time and 40 s later, and at the planned end and 90 s past it when a trial \
-         runs that nothing holds. A started idle (R6) trial freezes its frame, so those are drawn at the first two \
-         clocks only, and the sweep asserts the frame reports itself held. {} scenario cuts were drawn at the three \
-         sizes too, with the journal states, help and the journal view ({} frames in all). Credited as `sweep`.\n\
+         - **Sweep.** {} journals were folded one event at a time, each fold credited to its prefix's case, and \
+         every prefix was drawn at 240x67 at the event's own time, 40 s later, and, when a trial runs that nothing \
+         holds, at the trial's planned end and 90 s past it; at 160x45 and 120x33 only 40 s later and 90 s past \
+         the planned end. A started idle (R6) trial freezes its frame, so no planned-end clocks are sampled for \
+         it: it is drawn at \
+         240x67 at the event's own time and 40 s later, and at the other two sizes 40 s later only, and the sweep \
+         asserts the frame reports itself held. {} scenario cuts, each projected under its own case, were drawn at \
+         the three sizes too, with the journal states, help and the journal view ({} frames in all). Credited as \
+         `sweep`.\n\
          - **Clauses and templates.** A rendered phrase is cut into clauses at ` · `, ` ─ `, ` │ `, ` → ` and \
          runs of two spaces, and a clause with no letter is dropped. A clause becomes a template by folding its \
          digits, lists and ranges of numbers to `#`, the signs before offsets, hexadecimal ids, gauge and rule \
@@ -722,6 +726,41 @@ mod tests {
             let entries = catalogue(items);
             assert_eq!(entries.len(), 1);
             assert_eq!(entries[0].folded, 0);
+        }
+    }
+
+    /// What the sweep folds and projects is credited to its own cases: the history sentences and journal messages
+    /// the folds make never read as rendered by the exporter's own thread, which is a unit test as far as
+    /// `is_sweep` can tell.
+    #[test]
+    fn sweep_folds_and_projections_are_credited_to_sweep_cases() {
+        let rerun = togi_watchtest::cycle_completed_by_rerun().expect("the rerun journals");
+        crate::corpus::start();
+        let mut swept = Swept::default();
+        crate::frames::corpus::sweep_journal(&mut swept, "rerun", &rerun.ended);
+        crate::frames::corpus::whole(&mut swept, "scenario/rerun-0", &rerun.running[0]);
+        crate::frames::corpus::views(&mut swept, "rerun", &rerun.ended);
+        let collector = crate::corpus::finish();
+        let folded: Vec<_> = collector
+            .items
+            .iter()
+            .filter(|((producer, _), _)| {
+                producer == "describe" || producer == crate::corpus::MESSAGES
+            })
+            .collect();
+        assert!(
+            folded
+                .iter()
+                .any(|((producer, _), _)| producer == "describe"),
+            "the folds describe events"
+        );
+        for ((producer, template), item) in folded {
+            assert_eq!(
+                item.cases.tests.renders, 0,
+                "{producer} {template:?} is credited to a unit test: {:?}",
+                item.cases.tests.names
+            );
+            assert!(item.cases.sweep.renders > 0, "{producer} {template:?}");
         }
     }
 }
