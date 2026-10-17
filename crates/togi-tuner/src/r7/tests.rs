@@ -681,8 +681,9 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
 }
 
 #[test]
-fn latest_load_clocks_survive_empty_reports_but_not_backend_changes_or_reset() {
+fn latest_load_clocks_survive_empty_reports_and_backend_changes_but_not_reset() {
     let mut store = Measurements::default();
+    let other = load(0, &[2, 3]);
     let load = load(0, &[0, 1]);
     let mut evidence = Evidence::new(two_ccds().all());
     let backend = evidence.active_backend(togi_machine::Backend::Mprime);
@@ -703,9 +704,33 @@ fn latest_load_clocks_survive_empty_reports_but_not_backend_changes_or_reset() {
         Some(std::path::Path::new("/packages/new-mprime")),
     );
     let changed = evidence.active_backend(togi_machine::Backend::Mprime);
+    assert_ne!(changed, backend);
     assert_eq!(store.clocks(load, changed).count(), 0);
+    // Interleaved reports keep one newest clock per CCD under each backend, and a CCD the
+    // backend never reported stays missing.
+    store.record_clocks(load, changed, seq(4), &[(CcdId(1), 4800)].into());
+    store.record_clocks(load, backend, seq(5), &[(CcdId(1), 4900)].into());
+    store.record_clocks(load, changed, seq(6), &[(CcdId(0), 5200)].into());
+    assert_eq!(
+        store.clocks(load, changed).collect::<Vec<_>>(),
+        vec![(CcdId(0), seq(6), 5200), (CcdId(1), seq(4), 4800)]
+    );
+    evidence.set_backend(togi_machine::Backend::Mprime, None);
+    assert_eq!(
+        evidence.active_backend(togi_machine::Backend::Mprime),
+        backend
+    );
+    assert_eq!(
+        store.clocks(load, backend).collect::<Vec<_>>(),
+        vec![(CcdId(0), seq(3), 5100), (CcdId(1), seq(5), 4900)]
+    );
+    store.record_clocks(other, backend, seq(7), &[(CcdId(0), 5300)].into());
+    store.record_clocks(other, changed, seq(8), &[(CcdId(0), 5400)].into());
     store.reset_core(core(1));
     assert_eq!(store.clocks(load, backend).count(), 0);
+    assert_eq!(store.clocks(load, changed).count(), 0);
+    assert_eq!(store.clocks(other, backend).count(), 1);
+    assert_eq!(store.clocks(other, changed).count(), 1);
 }
 
 #[test]

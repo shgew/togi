@@ -37,16 +37,17 @@ impl Measurement {
     }
 }
 
-type LoadClocks = (BackendId, BTreeMap<CcdId, (Seq, i64)>);
+type CcdClocks = BTreeMap<CcdId, (Seq, i64)>;
 
 /// The newest request measurement of every load. A load answers with its newest measurement
 /// whatever the duration or outcome of the trial that took it, so older ones are dropped as
 /// newer ones arrive. The newest full part of a CCD is the measurement of the load that is the
-/// CCD's cores.
+/// CCD's cores. The newest clock of each CCD is kept per load and backend identity, so a
+/// restored backend finds the clocks it last measured.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Measurements {
     newest: HashMap<LoadKey, Measurement>,
-    clocks: HashMap<LoadKey, LoadClocks>,
+    clocks: HashMap<(LoadKey, BackendId), CcdClocks>,
 }
 
 impl Measurements {
@@ -60,20 +61,10 @@ impl Measurements {
         if clocks.is_empty() {
             return;
         }
-        let entry = self
-            .clocks
-            .entry(load)
-            .or_insert_with(|| (backend, BTreeMap::default()));
-        if entry.0 != backend {
-            *entry = (backend, BTreeMap::default());
-        }
+        let entry = self.clocks.entry((load, backend)).or_default();
         for (&ccd, &mhz) in clocks {
-            if entry
-                .1
-                .get(&ccd)
-                .is_none_or(|&(previous, _)| seq > previous)
-            {
-                entry.1.insert(ccd, (seq, i64::from(mhz)));
+            if entry.get(&ccd).is_none_or(|&(previous, _)| seq > previous) {
+                entry.insert(ccd, (seq, i64::from(mhz)));
             }
         }
     }
@@ -84,10 +75,9 @@ impl Measurements {
         backend: BackendId,
     ) -> impl Iterator<Item = (CcdId, Seq, i64)> + '_ {
         self.clocks
-            .get(&load)
-            .filter(move |entry| entry.0 == backend)
+            .get(&(load, backend))
             .into_iter()
-            .flat_map(|entry| entry.1.iter().map(|(&ccd, &(seq, mhz))| (ccd, seq, mhz)))
+            .flat_map(|entry| entry.iter().map(|(&ccd, &(seq, mhz))| (ccd, seq, mhz)))
     }
 
     /// Keeps `measurement` when it is the newest of its load. A measurement without a request
@@ -119,6 +109,7 @@ impl Measurements {
     /// stays, whichever core a failure of that load named.
     pub(crate) fn reset_core(&mut self, core: CoreId) {
         self.newest.retain(|load, _| !load.loaded.contains(core));
-        self.clocks.retain(|load, _| !load.loaded.contains(core));
+        self.clocks
+            .retain(|(load, _), _| !load.loaded.contains(core));
     }
 }

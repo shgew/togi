@@ -4,7 +4,7 @@ use togi_machine::{Regime, WorkloadId};
 use crate::r7::order::RequestOrder;
 use crate::r7::reason::{Basis, Note, R7Reason};
 use crate::r7::respond::R7Response;
-use crate::testkit::{Journal, R7Report, set};
+use crate::testkit::{Journal, MPRIME_NEW, MPRIME_OLD, R7Report, YCRUNCHER_OLD, backends, set};
 use crate::tests::core;
 use crate::{DecisionAction, DecisionPayload, LoadKey};
 
@@ -418,6 +418,63 @@ fn named_missing_clock_uses_latest_same_load_not_another_load_or_later_measureme
             Some(target) => assert_toward(&why, 1.1, target),
             None => assert_no_pass(&why, 1.1),
         }
+        j.assert_resumes();
+    }
+}
+
+#[test]
+fn named_missing_clock_uses_the_restored_backends_own_latest_load_clock() {
+    let wide = [0, 1, 2, 3];
+    let lanes = [(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.1)];
+    let (a, b) = (
+        backends(MPRIME_OLD, YCRUNCHER_OLD),
+        backends(MPRIME_NEW, YCRUNCHER_OLD),
+    );
+    for (a_clock, b_clock, expected) in [
+        (Some(5000), 5100, Some(1.136)),
+        (Some(5100), 5000, None),
+        (None, 5000, None),
+    ] {
+        let name = format!("A {a_clock:?}, B {b_clock}");
+        let mut j = Journal::r7_session();
+        j.load(&a);
+        for _ in 0..needed(&j) {
+            j.r7_trial(
+                &[0, 1],
+                &[-20, -30, -30, -30],
+                Outcome::Pass,
+                &report(&[(0, 1.136), (1, 1.08)], &[0]).clocks(&[(0, 5000)]),
+            );
+        }
+        let a_source = a_clock.map(|clock| {
+            j.r7_trial(
+                &wide,
+                &ALL_30,
+                Outcome::Pass,
+                &report(&lanes, &[0, 2]).clocks(&[(0, clock), (1, 4900)]),
+            )
+        });
+        j.load(&b);
+        let b_source = j.r7_trial(
+            &wide,
+            &ALL_30,
+            Outcome::Pass,
+            &report(&lanes, &[0, 2]).clocks(&[(0, b_clock), (1, 4900)]),
+        );
+        j.load(&a);
+        j.r7_failed(&wide, &ALL_30, &report(&lanes, &[0, 2]).named(0));
+        let (decision, why) = r7_backoff(&j);
+        match expected {
+            Some(target) => assert_toward(&why, 1.1, target),
+            None => assert_no_pass(&why, 1.1),
+        }
+        assert_eq!(
+            a_source.is_some_and(|source| decision.cause.contains(&source)),
+            a_clock.is_some(),
+            "{name}: A's frozen clock source is cited whenever A supplied one"
+        );
+        assert!(!decision.cause.contains(&b_source), "{name}: B's clock");
+        assert_eq!(j.next_decision(), decision, "{name}");
         j.assert_resumes();
     }
 }
