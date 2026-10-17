@@ -241,22 +241,41 @@ impl Error {
                     Seam::Other
                 }
             }
-            _ => Seam::Other,
+            Self::InsideRuntime { .. }
+            | Self::RuntimeThread(_)
+            | Self::RuntimeBuild(_)
+            | Self::RuntimeGone
+            | Self::Invalid(_)
+            | Self::Identity(_)
+            | Self::Backend(_)
+            | Self::Prepare(_)
+            | Self::Launch { .. }
+            | Self::PipeSetup { .. }
+            | Self::LogWriter(_)
+            | Self::Signal { .. }
+            | Self::Probe { .. }
+            | Self::Panicked { .. }
+            | Self::Storage(_)
+            | Self::Output(_)
+            | Self::Compress(_)
+            | Self::Unsupported { .. } => Seam::Other,
         }
     }
 }
 
 impl From<Error> for togi_machine::Error {
     fn from(error: Error) -> Self {
-        match error {
-            Error::Containment(containment) => Self::Containment(Box::new(containment)),
-            Error::Backend(backend) => backend.into(),
-            other => match other.seam() {
+        if let Error::Containment(containment) = error {
+            Self::Containment(Box::new(containment))
+        } else if let Error::Backend(backend) = error {
+            backend.into()
+        } else {
+            match error.seam() {
                 Seam::Cancelled => Self::Cancelled,
                 Seam::BackendMissing => Self::BackendMissing,
-                Seam::Containment => Self::Containment(Box::new(other)),
-                Seam::Other => Self::Other(Box::new(other)),
-            },
+                Seam::Containment => Self::Containment(Box::new(error)),
+                Seam::Other => Self::Other(Box::new(error)),
+            }
         }
     }
 }
@@ -286,18 +305,17 @@ impl std::error::Error for Shared {
 impl Shared {
     /// The seam error for a kept error, the same each time it is asked for.
     pub(crate) fn seam(error: &Arc<Error>) -> togi_machine::Error {
-        match &**error {
-            Error::Containment(containment) => {
-                togi_machine::Error::Containment(Box::new(Arc::clone(containment)))
-            }
-            other => match other.seam() {
+        if let Error::Containment(containment) = &**error {
+            togi_machine::Error::Containment(Box::new(Arc::clone(containment)))
+        } else {
+            match error.seam() {
                 Seam::Cancelled => togi_machine::Error::Cancelled,
                 Seam::BackendMissing => togi_machine::Error::BackendMissing,
                 Seam::Containment => {
                     togi_machine::Error::Containment(Box::new(Self(Arc::clone(error))))
                 }
                 Seam::Other => togi_machine::Error::Other(Box::new(Self(Arc::clone(error)))),
-            },
+            }
         }
     }
 }
