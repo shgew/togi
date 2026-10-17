@@ -8,7 +8,7 @@ use togi_tool_modelcheck::{Status, check_records};
 use togi_tool_trialfacts::{Class, Extracts, TrialFact};
 
 use super::output::MemoryOutput;
-use super::{context, fact};
+use super::{context, fact, refs};
 use crate::MachineOutput;
 use crate::anchor::anchor_with;
 use crate::error::{Error, EvidenceError};
@@ -45,7 +45,7 @@ fn idle_failure() -> TrialFact {
 }
 
 /// A shared-voltage machine whose multi-core R7 trials fail with probability exactly 1/2 at 120 s.
-fn anchor_config(records: &[TrialFact]) -> (MachineDefinition, f64) {
+fn anchor_config(records: &[&TrialFact]) -> (MachineDefinition, f64) {
     let mut cfg = initial_config(records);
     cfg.model.past_limit_rate = 0.0;
     cfg.model.near_limit_rate = 0.0;
@@ -109,7 +109,7 @@ fn fixture(facts: &[TrialFact]) -> Fixture {
 
 fn run(
     fixture: &Fixture,
-    fitter: impl FnOnce(&[TrialFact]) -> Result<(MachineDefinition, f64), Error>,
+    fitter: impl FnOnce(&[&TrialFact]) -> Result<(MachineDefinition, f64), Error>,
 ) -> (Result<(), Error>, String) {
     let mut report = Vec::new();
     let result = anchor_with(
@@ -136,7 +136,7 @@ fn an_anchor_is_checked_deterministic_and_replayable_from_its_own_provenance() {
             calls.set(calls.get() + 1);
             assert_eq!(
                 got,
-                records.as_slice(),
+                refs(&records),
                 "the fit did not receive every decisive fact"
             );
             Ok(anchor_config(got))
@@ -146,7 +146,7 @@ fn an_anchor_is_checked_deterministic_and_replayable_from_its_own_provenance() {
         let path = fixture.out.join("target-shared-voltage.json");
         let content = fixture.output.read_to_string(&path).unwrap();
         let cfg = fixture.output.load(&path).unwrap();
-        let (want, loss) = anchor_config(&records);
+        let (want, loss) = anchor_config(&refs(&records));
         assert_eq!(
             cfg.shared_voltage, want.shared_voltage,
             "shared parameters lost precision or order"

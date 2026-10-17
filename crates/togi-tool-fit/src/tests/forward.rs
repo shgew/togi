@@ -5,7 +5,7 @@ use togi_machine::{Regime, WorkloadId};
 use togi_sim::MachineDefinition;
 use togi_tool_trialfacts::{ProfileClassKey, TrialFact};
 
-use super::{blank_machine, crash, fact_at};
+use super::{blank_machine, crash, fact_at, refs};
 use crate::error::Error;
 use crate::forward::{
     ForwardCheck, ForwardCounts, ForwardRow, ForwardScore, R7Ccd, R7Rows, forward_check, log_loss,
@@ -142,7 +142,7 @@ fn the_log_loss_clamps_the_probability_and_the_constant_predictor_is_scored_alon
     }
     held_out[2].profile = super::profile(&[-2, 0]);
     let seen: HashSet<ProfileClassKey> = [ProfileClassKey::from(&held_out[0])].into();
-    let (score, breakdown) = score_forward(&cfg, &held_out, &seen, 0.25).unwrap();
+    let (score, breakdown) = score_forward(&cfg, &refs(&held_out), &seen, 0.25).unwrap();
     let regimes = breakdown.regimes;
     // Three one-second trials have p = 1 - exp(-ln 2) = 0.5, whatever their measured duration; the constant
     // assigns p = 1/4 to two failures and one pass.
@@ -261,7 +261,7 @@ fn r7_starts() -> Vec<TrialFact> {
 fn r7_starts_are_grouped_by_workload_and_by_loaded_ccd_with_singletons_counted_once_more() {
     let held_out = r7_starts();
     let (score, breakdown) =
-        score_forward(&blank_machine(16), &held_out, &HashSet::new(), 0.25).unwrap();
+        score_forward(&blank_machine(16), &refs(&held_out), &HashSet::new(), 0.25).unwrap();
     assert_eq!(shape(&score.counts), (6, 3));
     assert_eq!(shape(&breakdown.regimes[&Regime::R7]), (5, 2));
     let workloads: Vec<(WorkloadId, (usize, usize))> = breakdown
@@ -300,7 +300,7 @@ fn r7_starts_are_grouped_by_workload_and_by_loaded_ccd_with_singletons_counted_o
 fn the_r7_rows_follow_the_regime_rows_by_workload_then_ccd_then_singleton() {
     let held_out = r7_starts();
     let (score, breakdown) =
-        score_forward(&blank_machine(16), &held_out, &HashSet::new(), 0.25).unwrap();
+        score_forward(&blank_machine(16), &refs(&held_out), &HashSet::new(), 0.25).unwrap();
     let check = ForwardCheck {
         rows: vec![ForwardRow {
             session: S2.parse().unwrap(),

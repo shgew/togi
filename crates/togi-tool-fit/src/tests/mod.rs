@@ -137,6 +137,11 @@ pub(crate) fn repeated(template: &TrialFact, n: usize, failures: usize) -> Vec<T
         .collect()
 }
 
+/// The facts as the borrowed slice the fitter takes.
+pub(crate) fn refs(facts: &[TrialFact]) -> Vec<&TrialFact> {
+    facts.iter().collect()
+}
+
 /// A machine of `n` cores with every limit at the deepest offset and the model's defaults.
 pub(crate) fn blank_machine(n: usize) -> MachineDefinition {
     MachineDefinition {

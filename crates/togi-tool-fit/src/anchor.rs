@@ -35,7 +35,7 @@ pub(crate) fn anchor_with(
     facts: &Path,
     out_dir: &Path,
     report: &mut impl io::Write,
-    fitter: impl FnOnce(&[TrialFact]) -> Result<(MachineDefinition, f64), Error>,
+    fitter: impl FnOnce(&[&TrialFact]) -> Result<(MachineDefinition, f64), Error>,
     output: &mut impl MachineOutput,
 ) -> Result<(), Error> {
     let trials = decisive(records)?;

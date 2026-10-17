@@ -1,15 +1,6 @@
-#![expect(clippy::unwrap_used, reason = "helpers panic on a broken fixture")]
-
-#[expect(
-    dead_code,
-    unused_imports,
-    reason = "this binary uses records and snapshots, not memory trees"
-)]
-mod common;
-
 use std::path::Path;
 
-use common::record;
+use crate::common::{self, record};
 use togi_tool_bench::sanity::{BaselineRun, compare, read_baseline_from, report};
 use togi_tool_bench::{Record, Status};
 
@@ -373,7 +364,7 @@ fn the_table_marks_flagged_lines_and_counts_them() {
 
 #[test]
 fn the_committed_baseline_is_the_whole_suite_without_deleted_scenarios() {
-    let text = include_str!("../../../tools/bench/baseline.jsonl");
+    let text = include_str!("../../../../tools/bench/baseline.jsonl");
     let runs = read_baseline_from(text.as_bytes(), Path::new("baseline.jsonl")).unwrap();
     assert_eq!(runs.len(), 220);
     assert_eq!(

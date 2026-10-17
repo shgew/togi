@@ -7,6 +7,8 @@ use togi_sim::definition::{CoreDef, JointDef, ModelDef, Weights};
 use togi_simrun::{SimOutcome, simulate};
 use togi_tuner::{AllPass, Branch, DecisionPayload, Premise, State, TrialPlan, Uncertainty};
 
+use test_case::test_case;
+
 use crate::common::Bench;
 
 const CRASH_JOINT_SEED: u64 = 7;
@@ -337,7 +339,10 @@ fn selects(wanted: &Wanted, premise: Premise) -> bool {
     }
 }
 
-fn check(seed: u64, cores: i64, every: usize) {
+#[test_case(1, 2, 1; "seed 1 two cores")]
+#[test_case(CRASH_JOINT_SEED, 2, 1; "seed 7 two cores crash joint")]
+#[test_case(1, DEFAULT_CORES, 8; "seed 1 default cores every eighth")]
+fn forecasts_match_simulated_trials(seed: u64, cores: i64, every: usize) {
     let events = simulated(seed, cores);
     let mut tally = Tally::default();
     let mut state = State::new();
@@ -485,19 +490,4 @@ fn check(seed: u64, cores: i64, every: usize) {
         tally.all_pass,
         tally.unavailable
     );
-}
-
-#[test]
-fn seed_1_two_cores() {
-    check(1, 2, 1);
-}
-
-#[test]
-fn seed_7_two_cores_crash_joint() {
-    check(7, 2, 1);
-}
-
-#[test]
-fn seed_1_default_cores_every_eighth() {
-    check(1, DEFAULT_CORES, 8);
 }

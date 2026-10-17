@@ -1,21 +1,12 @@
 //! `same` over fake simulators: scripts that leave a recorded journal and exit as the test says.
-#![expect(
-    clippy::unwrap_used,
-    clippy::disallowed_methods,
-    reason = "the tests run the built command and panic on a broken fixture"
-)]
-
-#[expect(
-    dead_code,
-    reason = "process fixture setup uses session events, not simulator outcomes"
-)]
-mod session;
+#![expect(clippy::disallowed_methods, reason = "the tests run the built command")]
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::session;
 use togi_sim::MachineDefinition;
 
 struct Trees {

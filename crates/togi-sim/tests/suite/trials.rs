@@ -10,6 +10,8 @@ use togi_sim::model::{Onset, Script};
 use togi_sim::replay::{Replay, ReplayFact, ReplayOutcome};
 use togi_sim::{MachineDefinition, RunSettings, ScriptError};
 
+use test_case::test_case;
+
 use crate::common::{
     Rig, basic, core, cores, crashed, flat_cores, machine, model, offset, offsets, sharp, spec,
 };
@@ -31,14 +33,6 @@ enum Source {
     },
     Ccd,
 }
-
-type MixCase = (
-    &'static str,
-    Source,
-    Mixes,
-    &'static [i64],
-    Option<(Signal, i64)>,
-);
 
 type ScriptRow = (&'static str, Signal, f64, i64, Option<ResetKind>, bool);
 
@@ -141,24 +135,21 @@ fn failure_time(boost: f64, onset_s: f64, rate: f64, growth: f64, duration: Dura
     result.ran
 }
 
-#[test]
-fn an_onset_boost_moves_the_failure_along_the_same_cumulative_hazard() {
+#[test_case(2.0; "a small boost")]
+#[test_case(9.0; "a large boost")]
+#[test_case(1000.0; "a huge boost")]
+fn an_onset_boost_moves_the_failure_along_the_same_cumulative_hazard(boost: f64) {
     let rate = 0.1;
     let steady = failure_time(0.0, 10.0, rate, 4.0, MINUTE);
-    for boost in [2.0, 9.0, 1000.0] {
-        let boosted = failure_time(boost, 10.0, rate, 4.0, MINUTE);
-        assert!(boosted <= steady, "{boost}");
-        let onset = Onset {
-            window_s: 10.0,
-            boost,
-        };
-        let drawn = rate * steady.as_secs_f64();
-        let integrated = rate * onset.exposure(0.0, boosted.as_secs_f64());
-        assert!(
-            (drawn - integrated).abs() < 1e-6,
-            "{boost}: {drawn} vs {integrated}"
-        );
-    }
+    let boosted = failure_time(boost, 10.0, rate, 4.0, MINUTE);
+    assert!(boosted <= steady);
+    let onset = Onset {
+        window_s: 10.0,
+        boost,
+    };
+    let drawn = rate * steady.as_secs_f64();
+    let integrated = rate * onset.exposure(0.0, boosted.as_secs_f64());
+    assert!((drawn - integrated).abs() < 1e-6, "{drawn} vs {integrated}");
 }
 
 #[test]
@@ -236,33 +227,41 @@ fn a_joint_without_a_signal_crashes_whatever_the_model_signal() {
     assert!(crashed(&rig.run(basic(Regime::R1, &[0], SECOND)).0));
 }
 
-#[test]
-fn a_crash_of_an_unloaded_joint_or_idle_core_leaves_no_machine_check() {
-    let model_def = ModelDef {
+fn crash_mce_model() -> ModelDef {
+    ModelDef {
         crash_mce: 1.0,
         ..sharp(Signal::ComputationError)
-    };
-    let unloaded_joint = with(
-        4,
-        &[0, -20, -20, 0],
-        (-30, -30),
-        model_def.clone(),
-        vec![joint(&[(1, -20), (2, -20)], 1e6)],
-    );
-    let mut idle = with(2, &[0, -11], (-30, -30), model_def.clone(), vec![]);
-    idle.core[1].idle = Some(-10);
-    let mut flat = with(2, &[0, -1], (-30, -30), model_def, vec![]);
-    flat.core[1].flat = 1e6;
-    for (name, definition) in [("joint", unloaded_joint), ("idle", idle), ("flat", flat)] {
-        let mut rig = Rig::new(&definition, 1);
-        assert!(
-            crashed(&rig.run(basic(Regime::R1, &[0], SECOND)).0),
-            "{name}"
-        );
-        rig.sim.reboot();
-        let boot = rig.boot();
-        assert!(rig.mces(&boot).is_empty(), "{name}");
     }
+}
+
+#[test_case(
+    || with(4, &[0, -20, -20, 0], (-30, -30), crash_mce_model(), vec![joint(&[(1, -20), (2, -20)], 1e6)]);
+    "joint"
+)]
+#[test_case(
+    || {
+        let mut idle = with(2, &[0, -11], (-30, -30), crash_mce_model(), vec![]);
+        idle.core[1].idle = Some(-10);
+        idle
+    };
+    "idle"
+)]
+#[test_case(
+    || {
+        let mut flat = with(2, &[0, -1], (-30, -30), crash_mce_model(), vec![]);
+        flat.core[1].flat = 1e6;
+        flat
+    };
+    "flat"
+)]
+fn a_crash_of_an_unloaded_joint_or_idle_core_leaves_no_machine_check(
+    definition: fn() -> MachineDefinition,
+) {
+    let mut rig = Rig::new(&definition(), 1);
+    assert!(crashed(&rig.run(basic(Regime::R1, &[0], SECOND)).0));
+    rig.sim.reboot();
+    let boot = rig.boot();
+    assert!(rig.mces(&boot).is_empty());
 }
 
 #[test]
@@ -330,53 +329,56 @@ fn an_unloaded_core_draws_by_the_loaded_set_not_its_order() {
     );
 }
 
-#[test]
-fn a_joint_names_a_machine_check_core_only_when_it_is_told_to() {
-    let named: [(Option<i64>, bool); 3] = [(None, false), (Some(0), true), (Some(1), true)];
-    for (core_named, expects) in named {
-        let mut crashing = joint(&[(0, -20), (1, -20)], 1e6);
-        crashing.regimes = vec![Regime::R7];
-        crashing.crash_mce_core = core_named;
-        let definition = with(
-            2,
-            &[-20, -20],
-            (-30, -30),
-            ModelDef {
-                crash_mce: 1.0,
-                core_local_bank: 0.0,
-                ..ModelDef::default()
-            },
-            vec![crashing],
+#[test_case(None, false; "by default")]
+#[test_case(Some(0), true; "core 0")]
+#[test_case(Some(1), true; "core 1")]
+fn a_joint_names_a_machine_check_core_only_when_it_is_told_to(
+    core_named: Option<i64>,
+    expects: bool,
+) {
+    let mut crashing = joint(&[(0, -20), (1, -20)], 1e6);
+    crashing.regimes = vec![Regime::R7];
+    crashing.crash_mce_core = core_named;
+    let definition = with(
+        2,
+        &[-20, -20],
+        (-30, -30),
+        ModelDef {
+            crash_mce: 1.0,
+            core_local_bank: 0.0,
+            ..ModelDef::default()
+        },
+        vec![crashing],
+    );
+    let mut rig = Rig::new(&definition, 1);
+    assert!(crashed(&rig.run(basic(Regime::R7, &[1, 0], SECOND)).0));
+    rig.sim.reboot();
+    let boot = rig.boot();
+    let mces = rig.mces(&boot);
+    if !expects {
+        assert!(
+            mces.is_empty(),
+            "a default joint crash invented evidence: {mces:?}"
         );
-        let mut rig = Rig::new(&definition, 1);
-        assert!(crashed(&rig.run(basic(Regime::R7, &[1, 0], SECOND)).0));
-        rig.sim.reboot();
-        let boot = rig.boot();
-        let mces = rig.mces(&boot);
-        if !expects {
-            assert!(
-                mces.is_empty(),
-                "a default joint crash invented evidence: {mces:?}"
-            );
-            continue;
-        }
-        let target = core_named.map(core);
-        assert_eq!(mces.len(), 1, "{core_named:?}");
-        let mce = &mces[0];
-        assert_eq!(
-            (mce.core, mce.cpu.get()),
-            (
-                target,
-                u16::from(target.map_or(0, togi_machine::CoreId::get))
-            )
-        );
-        assert_eq!(mce.bank_type, togi_machine::BankType::LoadStore);
-        assert!(!mce.corrected);
+        return;
     }
+    let target = core_named.map(core);
+    assert_eq!(mces.len(), 1);
+    let mce = &mces[0];
+    assert_eq!(
+        (mce.core, mce.cpu.get()),
+        (
+            target,
+            u16::from(target.map_or(0, togi_machine::CoreId::get))
+        )
+    );
+    assert_eq!(mce.bank_type, togi_machine::BankType::LoadStore);
+    assert!(!mce.corrected);
 }
 
-#[test]
-fn a_misleading_machine_check_core_can_be_a_nonmember_that_is_not_loaded() {
+#[test_case(0; "the first core")]
+#[test_case(5; "the last core")]
+fn a_misleading_machine_check_core_can_be_a_nonmember_that_is_not_loaded(named: i64) {
     const CORES: i64 = 6;
     let members = [(2, -20), (3, -20)];
     let loaded = [2, 3];
@@ -395,47 +397,45 @@ fn a_misleading_machine_check_core_can_be_a_nonmember_that_is_not_loaded() {
             joints,
         )
     };
-    for named in [0, CORES - 1] {
-        let mut control = Rig::new(&config(vec![]), 1);
-        let result = control.pass(spec(
+    let mut control = Rig::new(&config(vec![]), 1);
+    let result = control.pass(spec(
+        "0001",
+        Regime::R1,
+        pick_workload(Regime::R1, 0),
+        &loaded,
+        MINUTE,
+    ));
+    assert!(result.failure.is_none());
+
+    let mut crashing = joint(&members, 1e6);
+    crashing.signal = Some(Signal::Crash);
+    crashing.crash_mce_core = Some(named);
+    let mut rig = Rig::new(&config(vec![crashing]), 1);
+    let crashed_boot = rig.boot();
+    let waited = rig
+        .run(spec(
             "0001",
             Regime::R1,
             pick_workload(Regime::R1, 0),
             &loaded,
             MINUTE,
-        ));
-        assert!(result.failure.is_none());
-
-        let mut crashing = joint(&members, 1e6);
-        crashing.signal = Some(Signal::Crash);
-        crashing.crash_mce_core = Some(named);
-        let mut rig = Rig::new(&config(vec![crashing]), 1);
-        let crashed_boot = rig.boot();
-        let waited = rig
-            .run(spec(
-                "0001",
-                Regime::R1,
-                pick_workload(Regime::R1, 0),
-                &loaded,
-                MINUTE,
-            ))
-            .0;
-        assert!(crashed(&waited));
-        assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
-        rig.sim.reboot();
-        let boot = rig.boot();
-        assert_ne!(boot, crashed_boot);
-        assert!(rig.mces(&crashed_boot).is_empty());
-        let mces = rig.mces(&boot);
-        assert_eq!(mces.len(), 1);
-        let want = core(named);
-        assert_eq!(
-            (mces[0].core, mces[0].cpu.get()),
-            (Some(want), u16::from(want.get()))
-        );
-        assert_eq!(mces[0].bank_type, togi_machine::BankType::LoadStore);
-        assert!(!mces[0].corrected);
-    }
+        ))
+        .0;
+    assert!(crashed(&waited));
+    assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
+    rig.sim.reboot();
+    let boot = rig.boot();
+    assert_ne!(boot, crashed_boot);
+    assert!(rig.mces(&crashed_boot).is_empty());
+    let mces = rig.mces(&boot);
+    assert_eq!(mces.len(), 1);
+    let want = core(named);
+    assert_eq!(
+        (mces[0].core, mces[0].cpu.get()),
+        (Some(want), u16::from(want.get()))
+    );
+    assert_eq!(mces[0].bank_type, togi_machine::BankType::LoadStore);
+    assert!(!mces[0].corrected);
 }
 
 fn scripted(definition: &mut MachineDefinition, scripts: &[ScriptRow]) {
@@ -535,87 +535,83 @@ fn scripts_drive_outcomes_and_the_wall_and_monotonic_clocks_apart() {
     assert_eq!(rig.sim.monotonic(), Duration::ZERO);
 }
 
-#[test]
-fn a_script_that_then_crashes_reports_only_backend_signals() {
-    for (signal, want) in [
-        (Signal::Crash, vec![]),
-        (
-            Signal::ComputationError,
-            vec![(core(0), Signal::ComputationError)],
-        ),
-    ] {
+#[test_case(Signal::Crash, &[]; "a crash")]
+#[test_case(Signal::ComputationError, &[(core(0), Signal::ComputationError)]; "a backend signal")]
+fn a_script_that_then_crashes_reports_only_backend_signals(
+    signal: Signal,
+    want: &[(togi_machine::CoreId, Signal)],
+) {
+    let mut definition = machine(2, vec![]);
+    scripted(&mut definition, &[("0001", signal, 0.0, 0, None, true)]);
+    let mut rig = Rig::new(&definition, 1);
+    let (waited, recorder) = rig.run(basic(Regime::R7, &[0], SECOND));
+    assert!(crashed(&waited));
+    assert_eq!(recorder.signals, want);
+    assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
+}
+
+#[test_case(Regime::R1; "r1")]
+#[test_case(Regime::R6; "r6")]
+fn a_script_that_crashes_after_a_signal_returns_the_exposure_it_ran(regime: Regime) {
+    let partial_of = |then_crash: bool| {
         let mut definition = machine(2, vec![]);
-        scripted(&mut definition, &[("0001", signal, 0.0, 0, None, true)]);
-        let mut rig = Rig::new(&definition, 1);
-        let (waited, recorder) = rig.run(basic(Regime::R7, &[0], SECOND));
-        assert!(crashed(&waited), "{signal}");
-        assert_eq!(recorder.signals, want, "{signal}");
-        assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
-    }
-}
-
-#[test]
-fn a_script_that_crashes_after_a_signal_returns_the_exposure_it_ran() {
-    for regime in [Regime::R1, Regime::R6] {
-        let partial_of = |then_crash: bool| {
-            let mut definition = machine(2, vec![]);
-            scripted(
-                &mut definition,
-                &[("0001", Signal::Crash, 40.0, 0, None, then_crash)],
-            );
-            let mut rig = Rig::new(&definition, 1);
-            let (waited, recorder) = rig.run(basic(regime, &[0], MINUTE));
-            let Err(partial) = waited else {
-                panic!("{regime:?}: a crash");
-            };
-            (partial.value, recorder.progress, rig.sim.monotonic())
-        };
-        let (ordinary, ordinary_progress, _) = partial_of(false);
-        let (chained, chained_progress, monotonic) = partial_of(true);
-        assert_eq!(chained.ran, Duration::from_secs(40), "{regime:?}");
-        assert_eq!(monotonic, Duration::from_secs(40), "{regime:?}");
-        assert_eq!(
-            (chained.stops, chained.conts),
-            (ordinary.stops, ordinary.conts),
-            "{regime:?}"
+        scripted(
+            &mut definition,
+            &[("0001", Signal::Crash, 40.0, 0, None, then_crash)],
         );
-        assert_eq!(chained_progress, ordinary_progress, "{regime:?}");
-        if regime == Regime::R6 {
-            assert!(chained.conts > 0, "the bursts before the crash are counted");
-        }
+        let mut rig = Rig::new(&definition, 1);
+        let (waited, recorder) = rig.run(basic(regime, &[0], MINUTE));
+        let Err(partial) = waited else {
+            panic!("a crash");
+        };
+        (partial.value, recorder.progress, rig.sim.monotonic())
+    };
+    let (ordinary, ordinary_progress, _) = partial_of(false);
+    let (chained, chained_progress, monotonic) = partial_of(true);
+    assert_eq!(chained.ran, Duration::from_secs(40));
+    assert_eq!(monotonic, Duration::from_secs(40));
+    assert_eq!(
+        (chained.stops, chained.conts),
+        (ordinary.stops, ordinary.conts)
+    );
+    assert_eq!(chained_progress, ordinary_progress);
+    if regime == Regime::R6 {
+        assert!(chained.conts > 0, "the bursts before the crash are counted");
     }
 }
 
-#[test]
-fn a_replayed_uncorrected_machine_check_names_a_bank_by_the_models_probability() {
-    for (local, want_local) in [(1.0, true), (0.0, false)] {
-        let mut definition = machine(2, flat_cores(2, -50, -50));
-        definition.bios = Some(vec![-20, -21]);
-        definition.model.core_local_bank = local;
-        let work = pick_workload(Regime::R7, 0);
-        let mut banks = std::collections::BTreeSet::new();
-        for seed in 0..60u64 {
-            let model = model(&definition);
-            let replay = replay_of(model.bios_context().clone(), Signal::UncorrectedMce);
-            let mut rig = Rig::with(
-                model,
-                RunSettings {
-                    seed,
-                    replay: Some(replay),
-                    ..RunSettings::default()
-                },
-            );
-            let (waited, _) = rig.run(spec("1", Regime::R7, work, &[0, 1], MINUTE));
-            assert!(crashed(&waited));
-            rig.sim.reboot();
-            let boot = rig.boot();
-            let mces = rig.mces(&boot);
-            assert_eq!(mces.len(), 1);
-            assert_eq!(mces[0].bank_type.core_local(), want_local, "{local}");
-            banks.insert(mces[0].bank);
-        }
-        assert!(banks.len() > 1, "{local}: the bank is drawn, not fixed");
+#[test_case(1.0, true; "core local")]
+#[test_case(0.0, false; "shared")]
+fn a_replayed_uncorrected_machine_check_names_a_bank_by_the_models_probability(
+    local: f64,
+    want_local: bool,
+) {
+    let mut definition = machine(2, flat_cores(2, -50, -50));
+    definition.bios = Some(vec![-20, -21]);
+    definition.model.core_local_bank = local;
+    let work = pick_workload(Regime::R7, 0);
+    let mut banks = std::collections::BTreeSet::new();
+    for seed in 0..60u64 {
+        let model = model(&definition);
+        let replay = replay_of(model.bios_context().clone(), Signal::UncorrectedMce);
+        let mut rig = Rig::with(
+            model,
+            RunSettings {
+                seed,
+                replay: Some(replay),
+                ..RunSettings::default()
+            },
+        );
+        let (waited, _) = rig.run(spec("1", Regime::R7, work, &[0, 1], MINUTE));
+        assert!(crashed(&waited), "seed {seed}: {waited:?}");
+        rig.sim.reboot();
+        let boot = rig.boot();
+        let mces = rig.mces(&boot);
+        assert_eq!(mces.len(), 1, "seed {seed}: {mces:?}");
+        assert_eq!(mces[0].bank_type.core_local(), want_local, "seed {seed}");
+        banks.insert(mces[0].bank);
     }
+    assert!(banks.len() > 1, "the bank is drawn, not fixed");
 }
 
 #[test]
@@ -793,32 +789,31 @@ fn replayed_by(
     (rig, waited, recorder)
 }
 
-#[test]
-fn a_replayed_crash_or_uncorrected_machine_check_happens_at_its_recorded_exposure() {
-    for signal in [Signal::Crash, Signal::UncorrectedMce] {
-        let (mut rig, waited, recorder) = replayed(signal);
-        assert!(crashed(&waited), "{signal}");
-        if signal == Signal::Crash {
-            assert_eq!(
-                recorder.progress,
-                ["simulated replayed crash at recorded exposure"]
-            );
-        } else {
-            assert_eq!(recorder.signals, [(core(0), Signal::UncorrectedMce)]);
-        }
-        assert_eq!(rig.sim.monotonic(), Duration::from_secs(7));
-        rig.sim.reboot();
-        let boot = rig.boot();
-        let want = usize::from(signal == Signal::UncorrectedMce);
-        assert_eq!(rig.mces(&boot).len(), want, "{signal}");
-        let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
-        let kind = if signal == Signal::Crash {
-            ResetKind::Watchdog
-        } else {
-            ResetKind::SyncFlood
-        };
-        assert_eq!(reason.kind, Some(kind));
+#[test_case(Signal::Crash; "crash")]
+#[test_case(Signal::UncorrectedMce; "uncorrected mce")]
+fn a_replayed_crash_or_uncorrected_machine_check_happens_at_its_recorded_exposure(signal: Signal) {
+    let (mut rig, waited, recorder) = replayed(signal);
+    assert!(crashed(&waited));
+    if signal == Signal::Crash {
+        assert_eq!(
+            recorder.progress,
+            ["simulated replayed crash at recorded exposure"]
+        );
+    } else {
+        assert_eq!(recorder.signals, [(core(0), Signal::UncorrectedMce)]);
     }
+    assert_eq!(rig.sim.monotonic(), Duration::from_secs(7));
+    rig.sim.reboot();
+    let boot = rig.boot();
+    let want = usize::from(signal == Signal::UncorrectedMce);
+    assert_eq!(rig.mces(&boot).len(), want);
+    let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
+    let kind = if signal == Signal::Crash {
+        ResetKind::Watchdog
+    } else {
+        ResetKind::SyncFlood
+    };
+    assert_eq!(reason.kind, Some(kind));
 }
 
 #[test]
@@ -932,129 +927,82 @@ fn a_regime_mix_replaces_the_pooled_mix_in_its_regime() {
     );
 }
 
-#[test]
-fn unattributed_r7_failures_draw_the_regime_mix_when_there_is_one() {
-    use Mixes::{None as NoMix, R2Computation, R7Computation};
-    let joint_on = |signal| Source::Joint {
-        signal,
-        members: [0, 1],
+#[test_case(
+    Source::Joint { signal: None, members: [0, 1] }, Mixes::R7Computation, &[1], Some((Signal::ComputationError, 1));
+    "joint draws the regime mix"
+)]
+#[test_case(
+    Source::Joint { signal: None, members: [0, 1] }, Mixes::None, &[1], None;
+    "joint without any regime mix crashes"
+)]
+#[test_case(
+    Source::Joint { signal: None, members: [0, 1] }, Mixes::R2Computation, &[1], Some((Signal::UnexpectedExit, 1));
+    "joint in an unlisted regime draws the pooled mix"
+)]
+#[test_case(
+    Source::Joint { signal: Some(Signal::Stall), members: [0, 1] }, Mixes::R7Computation, &[0, 1], Some((Signal::Stall, 0));
+    "joint with a signal keeps it"
+)]
+#[test_case(
+    Source::Joint { signal: None, members: [2, 3] }, Mixes::R7Computation, &[0], None;
+    "joint on unloaded cores crashes"
+)]
+#[test_case(
+    Source::Joint { signal: None, members: [2, 3] }, Mixes::R2Computation, &[0], None;
+    "joint on unloaded cores in an unlisted regime crashes"
+)]
+#[test_case(Source::Ccd, Mixes::R7Computation, &[1], Some((Signal::ComputationError, 1)); "ccd draws the regime mix")]
+#[test_case(Source::Ccd, Mixes::None, &[1], None; "ccd without a regime mix crashes")]
+#[test_case(Source::Ccd, Mixes::R2Computation, &[1], Some((Signal::UnexpectedExit, 1)); "ccd in an unlisted regime draws the pooled mix")]
+fn unattributed_r7_failures_draw_the_regime_mix_when_there_is_one(
+    source: Source,
+    mixes: Mixes,
+    loaded: &[i64],
+    want: Option<(Signal, i64)>,
+) {
+    let cores_count = if matches!(
+        source,
+        Source::Joint {
+            members: [2, 3],
+            ..
+        }
+    ) {
+        4
+    } else {
+        2
     };
-    let cases: [MixCase; 9] = [
-        (
-            "joint draws the regime mix",
-            joint_on(None),
-            R7Computation,
-            &[1],
-            Some((Signal::ComputationError, 1)),
-        ),
-        (
-            "joint without any regime mix crashes",
-            joint_on(None),
-            NoMix,
-            &[1],
-            None,
-        ),
-        (
-            "joint in an unlisted regime draws the pooled mix",
-            joint_on(None),
-            R2Computation,
-            &[1],
-            Some((Signal::UnexpectedExit, 1)),
-        ),
-        (
-            "joint with a signal keeps it",
-            joint_on(Some(Signal::Stall)),
-            R7Computation,
-            &[0, 1],
-            Some((Signal::Stall, 0)),
-        ),
-        (
-            "joint on unloaded cores crashes",
-            Source::Joint {
-                signal: None,
-                members: [2, 3],
-            },
-            R7Computation,
-            &[0],
-            None,
-        ),
-        (
-            "joint on unloaded cores in an unlisted regime crashes",
-            Source::Joint {
-                signal: None,
-                members: [2, 3],
-            },
-            R2Computation,
-            &[0],
-            None,
-        ),
-        (
-            "ccd draws the regime mix",
-            Source::Ccd,
-            R7Computation,
-            &[1],
-            Some((Signal::ComputationError, 1)),
-        ),
-        (
-            "ccd without a regime mix crashes",
-            Source::Ccd,
-            NoMix,
-            &[1],
-            None,
-        ),
-        (
-            "ccd in an unlisted regime draws the pooled mix",
-            Source::Ccd,
-            R2Computation,
-            &[1],
-            Some((Signal::UnexpectedExit, 1)),
-        ),
-    ];
-    for (name, source, mixes, loaded, want) in cases {
-        let cores_count = if matches!(
-            source,
-            Source::Joint {
-                members: [2, 3],
-                ..
-            }
-        ) {
-            4
-        } else {
-            2
-        };
-        let mut definition = machine(cores_count, flat_cores(cores_count, -50, -50));
-        definition.model.signals = Weights::from([(Signal::UnexpectedExit, 1.0)]);
-        match mixes {
-            NoMix => {}
-            R7Computation => {
-                definition.model.regime_signals =
-                    [(Regime::R7, Weights::from([(Signal::ComputationError, 1.0)]))].into();
-            }
-            R2Computation => {
-                definition.model.regime_signals =
-                    [(Regime::R2, Weights::from([(Signal::ComputationError, 1.0)]))].into();
-            }
+    let mut definition = machine(cores_count, flat_cores(cores_count, -50, -50));
+    definition.model.signals = Weights::from([(Signal::UnexpectedExit, 1.0)]);
+    match mixes {
+        Mixes::None => {}
+        Mixes::R7Computation => {
+            definition.model.regime_signals =
+                [(Regime::R7, Weights::from([(Signal::ComputationError, 1.0)]))].into();
         }
-        match source {
-            Source::Joint { signal, members } => {
-                let mut hot = joint(&[(members[0], -20), (members[1], -20)], 1e6);
-                hot.regimes = vec![Regime::R7];
-                hot.signal = signal;
-                definition.joint = vec![hot];
-            }
-            Source::Ccd => {
-                definition.ccd = Some(CcdDef {
-                    log_rate: 1e6f64.ln(),
-                    ..CcdDef::default()
-                });
-            }
+        Mixes::R2Computation => {
+            definition.model.regime_signals =
+                [(Regime::R2, Weights::from([(Signal::ComputationError, 1.0)]))].into();
         }
-        let mut rig = Rig::new(&definition, 1);
-        rig.set_all(-20).expect("set");
-        let waited = rig.run(basic(Regime::R7, loaded, MINUTE)).0;
-        match want {
-            None => assert!(crashed(&waited), "{name}: {waited:?}"),
-            Some(expected) => assert_eq!(failure_of(&waited), Some(expected), "{name}"),
+    }
+    match source {
+        Source::Joint { signal, members } => {
+            let mut hot = joint(&[(members[0], -20), (members[1], -20)], 1e6);
+            hot.regimes = vec![Regime::R7];
+            hot.signal = signal;
+            definition.joint = vec![hot];
         }
+        Source::Ccd => {
+            definition.ccd = Some(CcdDef {
+                log_rate: 1e6f64.ln(),
+                ..CcdDef::default()
+            });
+        }
+    }
+    let mut rig = Rig::new(&definition, 1);
+    rig.set_all(-20).expect("set");
+    let waited = rig.run(basic(Regime::R7, loaded, MINUTE)).0;
+    match want {
+        None => assert!(crashed(&waited), "{waited:?}"),
+        Some(expected) => assert_eq!(failure_of(&waited), Some(expected)),
     }
 }

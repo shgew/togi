@@ -5,6 +5,8 @@ use std::rc::Rc;
 use togi_machine::Error;
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 
+use test_case::test_case;
+
 use crate::common::{Rig, core, machine};
 
 fn rig() -> Rig {
@@ -20,46 +22,50 @@ fn registers(rig: &mut Rig) -> Vec<i64> {
         .collect()
 }
 
-#[test]
-fn a_hook_failing_before_an_access_stops_it_and_one_failing_after_cannot_undo_it() {
-    for op in [SmuOp::Set, SmuOp::SetAll, SmuOp::Read] {
-        for phase in [HookPhase::Before, HookPhase::After] {
-            let mut rig = rig();
-            if op == SmuOp::Read {
-                rig.sim.corrupt_readback(core(0));
-                rig.set(0, -5).expect("arm the corruption by writing");
-            }
-            let fired = Rc::new(RefCell::new(false));
-            let seen = fired.clone();
-            rig.sim.interrupt_smu(move |access: &SmuOperation| {
-                if access.op == op && access.phase == phase {
-                    *seen.borrow_mut() = true;
-                    return Err(Error::Other("interrupted".into()));
-                }
-                Ok(())
-            });
-            let result = match op {
-                SmuOp::Set => rig.set(0, -17),
-                SmuOp::SetAll => rig.set_all(-17),
-                SmuOp::Read => rig.read(0).map(drop),
-            };
-            assert!(*fired.borrow(), "{op:?} {phase:?}");
-            assert!(matches!(result, Err(Error::Other(_))), "{op:?} {phase:?}");
-            rig.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
-            let after = phase == HookPhase::After;
-            let want = match (op, after) {
-                (SmuOp::Set, true) => vec![-17, -6],
-                (SmuOp::SetAll, true) => vec![-17, -17],
-                _ => vec![-5, -6],
-            };
-            let corrupted = rig.read(0).expect("read").0;
-            if op == SmuOp::Read {
-                // The corrupted observation is consumed only when the access happened.
-                assert_eq!(corrupted, if after { -5 } else { -6 }, "{op:?} {phase:?}");
-            } else {
-                assert_eq!(registers(&mut rig), want, "{op:?} {phase:?}");
-            }
+#[test_case(SmuOp::Set, HookPhase::Before; "set before")]
+#[test_case(SmuOp::Set, HookPhase::After; "set after")]
+#[test_case(SmuOp::SetAll, HookPhase::Before; "set all before")]
+#[test_case(SmuOp::SetAll, HookPhase::After; "set all after")]
+#[test_case(SmuOp::Read, HookPhase::Before; "read before")]
+#[test_case(SmuOp::Read, HookPhase::After; "read after")]
+fn a_hook_failing_before_an_access_stops_it_and_one_failing_after_cannot_undo_it(
+    op: SmuOp,
+    phase: HookPhase,
+) {
+    let mut rig = rig();
+    if op == SmuOp::Read {
+        rig.sim.corrupt_readback(core(0));
+        rig.set(0, -5).expect("arm the corruption by writing");
+    }
+    let fired = Rc::new(RefCell::new(false));
+    let seen = fired.clone();
+    rig.sim.interrupt_smu(move |access: &SmuOperation| {
+        if access.op == op && access.phase == phase {
+            *seen.borrow_mut() = true;
+            return Err(Error::Other("interrupted".into()));
         }
+        Ok(())
+    });
+    let result = match op {
+        SmuOp::Set => rig.set(0, -17),
+        SmuOp::SetAll => rig.set_all(-17),
+        SmuOp::Read => rig.read(0).map(drop),
+    };
+    assert!(*fired.borrow());
+    assert!(matches!(result, Err(Error::Other(_))), "{result:?}");
+    rig.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+    let after = phase == HookPhase::After;
+    let want = match (op, after) {
+        (SmuOp::Set, true) => vec![-17, -6],
+        (SmuOp::SetAll, true) => vec![-17, -17],
+        _ => vec![-5, -6],
+    };
+    let corrupted = rig.read(0).expect("read").0;
+    if op == SmuOp::Read {
+        // The corrupted observation is consumed only when the access happened.
+        assert_eq!(corrupted, if after { -5 } else { -6 });
+    } else {
+        assert_eq!(registers(&mut rig), want);
     }
 }
 
@@ -156,51 +162,52 @@ fn the_emergency_zero_writes_every_core_through_the_hook_and_the_write_faults() 
     assert!(rig.machine.smu.emergency_zero(validated, &stopped).is_err());
 }
 
-#[test]
-fn a_hook_that_crashes_the_machine_before_an_access_leaves_the_access_unapplied() {
-    for op in [SmuOp::Set, SmuOp::SetAll, SmuOp::Read] {
-        let mut rig = rig();
-        let sim = rig.sim.clone();
-        rig.sim.interrupt_smu(move |access: &SmuOperation| {
-            if access.op == op && access.phase == HookPhase::Before {
-                sim.crash();
-            }
-            Ok(())
-        });
-        let result = match op {
-            SmuOp::Set => rig.set(0, -2),
-            SmuOp::SetAll => rig.set_all(-2),
-            SmuOp::Read => rig.read(0).map(|_| ()),
-        };
-        assert!(matches!(result, Err(Error::Crashed)), "{op:?}: {result:?}");
-        rig.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
-        assert!(matches!(rig.read(0), Err(Error::Crashed)), "{op:?}");
-        rig.sim.reboot();
-        assert_eq!(registers(&mut rig), [-5, -6], "{op:?}");
-    }
+#[test_case(SmuOp::Set; "set")]
+#[test_case(SmuOp::SetAll; "set all")]
+#[test_case(SmuOp::Read; "read")]
+fn a_hook_that_crashes_the_machine_before_an_access_leaves_the_access_unapplied(op: SmuOp) {
+    let mut rig = rig();
+    let sim = rig.sim.clone();
+    rig.sim.interrupt_smu(move |access: &SmuOperation| {
+        if access.op == op && access.phase == HookPhase::Before {
+            sim.crash();
+        }
+        Ok(())
+    });
+    let result = match op {
+        SmuOp::Set => rig.set(0, -2),
+        SmuOp::SetAll => rig.set_all(-2),
+        SmuOp::Read => rig.read(0).map(|_| ()),
+    };
+    assert!(matches!(result, Err(Error::Crashed)), "{result:?}");
+    rig.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+    let read = rig.read(0);
+    assert!(matches!(read, Err(Error::Crashed)), "{read:?}");
+    rig.sim.reboot();
+    assert_eq!(registers(&mut rig), [-5, -6]);
 }
 
-#[test]
-fn a_hook_that_reboots_the_machine_before_an_access_cannot_leak_it_into_the_new_boot() {
-    for op in [SmuOp::Set, SmuOp::SetAll, SmuOp::Read] {
-        let mut rig = rig();
-        let sim = rig.sim.clone();
-        rig.sim.interrupt_smu(move |access: &SmuOperation| {
-            if access.op == op && access.phase == HookPhase::Before {
-                sim.crash();
-                sim.reboot();
-            }
-            Ok(())
-        });
-        let result = match op {
-            SmuOp::Set => rig.set(0, -2),
-            SmuOp::SetAll => rig.set_all(-2),
-            SmuOp::Read => rig.read(0).map(|_| ()),
-        };
-        assert!(matches!(result, Err(Error::Crashed)), "{op:?}: {result:?}");
-        rig.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
-        assert_eq!(registers(&mut rig), [-5, -6], "{op:?}");
-    }
+#[test_case(SmuOp::Set; "set")]
+#[test_case(SmuOp::SetAll; "set all")]
+#[test_case(SmuOp::Read; "read")]
+fn a_hook_that_reboots_the_machine_before_an_access_cannot_leak_it_into_the_new_boot(op: SmuOp) {
+    let mut rig = rig();
+    let sim = rig.sim.clone();
+    rig.sim.interrupt_smu(move |access: &SmuOperation| {
+        if access.op == op && access.phase == HookPhase::Before {
+            sim.crash();
+            sim.reboot();
+        }
+        Ok(())
+    });
+    let result = match op {
+        SmuOp::Set => rig.set(0, -2),
+        SmuOp::SetAll => rig.set_all(-2),
+        SmuOp::Read => rig.read(0).map(|_| ()),
+    };
+    assert!(matches!(result, Err(Error::Crashed)), "{result:?}");
+    rig.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+    assert_eq!(registers(&mut rig), [-5, -6]);
 }
 
 #[test]

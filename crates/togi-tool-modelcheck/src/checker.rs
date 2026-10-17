@@ -136,7 +136,10 @@ impl Checker {
     /// trial are only counted. Groups under [`MIN_GROUP_TRIALS`] trials are dropped.
     ///
     /// Every trial must fit `model`: one offset per core, a loaded core that exists and a duration.
-    pub fn new(model: &Model, records: &[TrialFact]) -> Result<Self, Error> {
+    pub fn new<'a>(
+        model: &Model,
+        records: impl IntoIterator<Item = &'a TrialFact>,
+    ) -> Result<Self, Error> {
         for reset in [ResetKind::ThermalTrip, ResetKind::PowerLoss] {
             if model.reset_mix().weight(reset) > 0.0 {
                 return Err(Error::IndecisiveReset(reset));
