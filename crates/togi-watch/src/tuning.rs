@@ -20,7 +20,7 @@ use togi_machine::BootId;
 /// (a backend's third retry waits 1800 s). A reboot, the watchdog's 30 s and the resumed run's startup took 52 to
 /// 157 s in every recovery of the long target-machine session this was chosen from; a gap past the limit is an
 /// absence, not a recovery, and counting all of it would credit togi with the days a crashed machine sat idle.
-pub const RECOVERY_LIMIT: Duration = Duration::from_secs(30 * 60);
+pub const RECOVERY_LIMIT: Duration = Duration::from_mins(30);
 
 fn between(from: Timestamp, to: Timestamp) -> Duration {
     Duration::try_from(to.duration_since(from)).unwrap_or(Duration::ZERO)
