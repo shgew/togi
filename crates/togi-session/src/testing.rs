@@ -20,8 +20,8 @@ use togi_render::Renderer;
 use togi_sim::faults::{HookPhase, SmuOp, SmuOperation};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_tuner::{
-    Action, ClassKey, Load, Profile, Requirement, RequirementKind, Secs, TrialContext, TrialPlan,
-    Window, WorkloadChoice,
+    Action, ClassKey, Load, Profile, Requirement, Secs, TrialContext, TrialPlan, Window,
+    WorkloadChoice,
 };
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
 
@@ -485,18 +485,15 @@ pub(crate) fn search_plan(session: &Session, core: CoreId, regime: Regime) -> Tr
         activity: Activity::Search,
         profile: Profile::alone(topology, core, offset),
         duration,
-        context: TrialContext::Search {
-            core,
-            regime,
-            offset,
-        },
         requirement: Requirement {
-            kind: RequirementKind::Search,
+            context: TrialContext::Search {
+                core,
+                regime,
+                offset,
+            },
             class: ClassKey::new(workload.id(), std::iter::once(core).collect(), duration),
             window: Window::Live { since: None },
             needed: NonZeroU16::MIN,
-            step: None,
-            part: None,
         },
         retry: false,
         cause: Vec::new(),

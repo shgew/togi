@@ -21,7 +21,7 @@ fn duration_of(plan: &TrialPlan) -> Duration {
 }
 
 fn cycle_of(plan: &TrialPlan) -> Option<(u32, u32)> {
-    match plan.context {
+    match plan.requirement.context {
         TrialContext::Cycle { cycle, step, .. } => Some((cycle.get(), step.get().get())),
         TrialContext::Search { .. }
         | TrialContext::SoloLimit { .. }
@@ -33,7 +33,7 @@ fn cycle_of(plan: &TrialPlan) -> Option<(u32, u32)> {
 }
 
 fn hunt_of(plan: &TrialPlan) -> Option<(u32, u32)> {
-    match plan.context {
+    match plan.requirement.context {
         TrialContext::Hunt { hunt, group } => Some((hunt.get(), group.get())),
         TrialContext::Search { .. }
         | TrialContext::SoloLimit { .. }
@@ -45,7 +45,7 @@ fn hunt_of(plan: &TrialPlan) -> Option<(u32, u32)> {
 }
 
 fn round_of(plan: &TrialPlan) -> Option<u32> {
-    match plan.context {
+    match plan.requirement.context {
         TrialContext::Round { round } => Some(round.get()),
         TrialContext::Search { .. }
         | TrialContext::SoloLimit { .. }
@@ -58,7 +58,7 @@ fn round_of(plan: &TrialPlan) -> Option<u32> {
 
 fn is_rerun(plan: &TrialPlan) -> bool {
     matches!(
-        plan.context,
+        plan.requirement.context,
         TrialContext::Rerun { .. } | TrialContext::ZeroRerun { .. }
     )
 }

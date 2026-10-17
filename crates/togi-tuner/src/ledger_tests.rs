@@ -287,7 +287,10 @@ fn a_search_trial_needs_one_pass_and_a_check_needs_n() {
     let plan = search.next_trial();
     assert_eq!(plan.requirement.needed.get(), 1);
     assert_eq!(plan.requirement.window, Window::Live { since: None });
-    assert!(matches!(plan.context, TrialContext::Search { .. }));
+    assert!(matches!(
+        plan.requirement.context,
+        TrialContext::Search { .. }
+    ));
     let check = Journal::new(&[0], &[Start::search(-20).checking()]);
     let plan = check.next_trial();
     assert_eq!(plan.requirement.needed, needed(&check));
@@ -306,13 +309,13 @@ fn intents_that_match_no_open_context_are_unscheduled() {
             plan.activity = togi_journal::Activity::Checking;
         }),
         ("hunt", |plan| {
-            plan.context = TrialContext::Hunt {
+            plan.requirement.context = TrialContext::Hunt {
                 hunt: NonZeroU32::MIN,
                 group: NonZeroU32::MIN,
             };
         }),
         ("round", |plan| {
-            plan.context = TrialContext::Round {
+            plan.requirement.context = TrialContext::Round {
                 round: NonZeroU32::MIN,
             };
         }),
@@ -481,7 +484,10 @@ fn carried_evidence_answers_a_candidate_solo_limit_but_not_an_ordinary_step() {
     }
     let ordinary = j.next_trial();
     assert_eq!(ordinary.regime, Regime::R1);
-    assert!(matches!(ordinary.context, TrialContext::Search { .. }));
+    assert!(matches!(
+        ordinary.requirement.context,
+        TrialContext::Search { .. }
+    ));
     let boundary = check_decision(&mut j);
     let exit = j.next_decision();
     let DecisionPayload::CorePhase(phase) = &exit.payload else {

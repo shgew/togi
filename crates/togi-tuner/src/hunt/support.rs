@@ -497,7 +497,7 @@ pub(super) fn passed_cycle(journal: &mut Journal, checked: &[i64], back_to: &[i6
         cleared_combination: Vec::new(),
         reason: "test".to_owned(),
     };
-    let phase = core.phase.expect("the core has a phase");
+    let phase = core.phase.wire().expect("the core has a phase");
     journal.core_phase(leave(phase, CorePhase::Search));
     journal.profile_change(checked);
     journal.cycle_start(1, &[]);
