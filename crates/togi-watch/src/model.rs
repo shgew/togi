@@ -19,8 +19,8 @@ use togi_machine::{
     TargetOffset, WorkloadId,
 };
 use togi_tuner::{
-    BiosProfile, CombinationId, CyclePlan, DeepeningView, Forecast, HuntPlan, Limit, PhasePlan,
-    R7CoreStatus, SearchTurn, State as TunerState, StepNo,
+    BiosProfile, CombinationId, CyclePlan, DeepeningView, Forecast, HuntPlan, Limit, MemberProbe,
+    PhasePlan, R7CoreStatus, SearchTurn, State as TunerState, StepNo,
 };
 
 use crate::derive::Derived;
@@ -146,6 +146,18 @@ impl Parking {
     #[must_use]
     pub fn rest_at_zero(&self) -> bool {
         !self.zero.is_empty() && self.kept.is_empty() && self.shallow.is_empty()
+    }
+
+    /// The offset the hunt parks `core` at, when it parks it shallower than its failing offset.
+    #[must_use]
+    pub fn parked_at(&self, core: CoreId) -> Option<TargetOffset> {
+        if self.zero.contains(core) {
+            return Some(TargetOffset::ZERO);
+        }
+        self.shallow
+            .iter()
+            .find(|(shallow, _)| *shallow == core)
+            .map(|&(_, offset)| offset)
     }
 }
 
@@ -387,6 +399,64 @@ impl HuntView<'_> {
             .find(|(number, _)| *number == group)
             .map(|(_, signal)| *signal)
     }
+
+    /// The culprit of a singleton hunt and how its probing stands. The tuner lists every member of a
+    /// combination it probes, two or more, so a single probe is the culprit's own.
+    pub fn singleton(&self) -> Option<Singleton<'_>> {
+        let [probe] = self.plan.probes.as_slice() else {
+            return None;
+        };
+        let anchor = self
+            .facts
+            .parking
+            .as_ref()
+            .and_then(|parking| parking.parked_at(probe.member));
+        let stopped = self
+            .plan
+            .groups
+            .iter()
+            .filter_map(|group| Some((group.probe.filter(|at| at.core == probe.member)?, group)))
+            .any(|(at, group)| {
+                group.outcome == togi_tuner::GroupState::Skipped
+                    || (anchor == Some(at.offset)
+                        && group.outcome == togi_tuner::GroupState::Failed)
+            });
+        let stage = match (probe.done, stopped) {
+            (false, _) if anchor == Some(probe.offset) => SingletonStage::Anchor,
+            (false, _) => SingletonStage::Interior,
+            (true, false) => SingletonStage::Bracketed,
+            (true, true) => SingletonStage::Stopped,
+        };
+        Some(Singleton {
+            probe,
+            anchor,
+            stage,
+        })
+    }
+}
+
+/// The culprit of a singleton hunt: its probes and how they stand.
+#[derive(Debug, Clone, Copy)]
+pub struct Singleton<'a> {
+    /// The culprit's probes.
+    pub probe: &'a MemberProbe,
+    /// Its parked offset, the anchor its search needs to pass; none until the journal records the parking.
+    pub anchor: Option<TargetOffset>,
+    /// How its probing stands.
+    pub stage: SingletonStage,
+}
+
+/// How the probing of a singleton hunt's culprit stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SingletonStage {
+    /// Testing it at its parked offset: nothing has passed yet to bracket its failure point.
+    Anchor,
+    /// Probing between its reproduced failure and its passing anchor.
+    Interior,
+    /// Done: a passing anchor or probe sits one count shallower than its failure point.
+    Bracketed,
+    /// Done without a pass next to its failure point: the shallowest reproduced failure stands.
+    Stopped,
 }
 
 /// The checking cycle: the tuner's plan and the hunts each step started.
