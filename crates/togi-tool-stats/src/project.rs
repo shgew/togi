@@ -163,7 +163,7 @@ pub(crate) struct IdleFailure {
 /// A journal's trials, runs, hunts and boots, joined by the events' own references.
 pub(crate) struct Projection<'a> {
     pub(crate) events: &'a [Event],
-    pub(crate) topology: Topology,
+    pub(crate) topology: &'a Topology,
     pub(crate) trials: Vec<Trial<'a>>,
     pub(crate) by_id: HashMap<&'a TrialId, usize>,
     pub(crate) idle: Vec<IdleFailure>,
@@ -177,7 +177,7 @@ impl<'a> Projection<'a> {
     pub(crate) fn new(journal: &'a Journal) -> Self {
         let mut p = Self {
             events: journal.events(),
-            topology: journal.topology().clone(),
+            topology: journal.topology(),
             trials: Vec::new(),
             by_id: HashMap::new(),
             idle: Vec::new(),
@@ -259,7 +259,7 @@ impl<'a> Projection<'a> {
                         boot: &event.boot,
                         cause: &event.cause,
                         intent,
-                        profile: Profile::new(&self.topology, intent.profile).ok(),
+                        profile: Profile::new(self.topology, intent.profile).ok(),
                         class: Class::of(intent),
                         started: false,
                         last_evidence: event.time,
@@ -313,7 +313,7 @@ impl<'a> Projection<'a> {
                             seq: event.seq,
                             profile: failure
                                 .profile
-                                .and_then(|offsets| Profile::new(&self.topology, offsets).ok()),
+                                .and_then(|offsets| Profile::new(self.topology, offsets).ok()),
                         });
                     }
                 }
