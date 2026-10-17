@@ -8,6 +8,8 @@ use togi_sim::file::{self, LoadError};
 use togi_sim::model::Script;
 use togi_sim::{MachineDefinition, Model, RunSettings, WEIGHTED_SIGNALS};
 
+use test_case::test_case;
+
 use crate::common::{Rig, basic, core, machine, model};
 
 const FULL: &str = r#"{
@@ -102,127 +104,40 @@ fn unknown_workload_limit_ids_are_refused() {
     assert!(error.to_string().contains("unknown workload"), "{error}");
 }
 
-#[test]
-fn malformed_documents_are_refused_with_the_file_named() {
-    let core = r#"{"id":0,"alone":[-10,-10,-10,-10,-10],"together":[-10,-10,-10,-10,-10,-10,-10]}"#;
-    let cases = [
-        ("syntax", r#"{"cores":["#.to_owned(), "EOF"),
-        ("null root", "null".to_owned(), "expected"),
-        (
-            "null root with whitespace",
-            " \n\tnull\r\n".to_owned(),
-            "expected",
-        ),
-        ("array root", "[]".to_owned(), "expected"),
-        (
-            "unknown field",
-            r#"{"cores":2,"unknown":1}"#.to_owned(),
-            "unknown field",
-        ),
-        (
-            "unknown nested field",
-            r#"{"cores":2,"model":{"unknown":1}}"#.to_owned(),
-            "unknown field",
-        ),
-        ("trailing value", r#"{"cores":2} {}"#.to_owned(), "trailing"),
-        (
-            "duplicate key",
-            r#"{"cores":2,"cores":4}"#.to_owned(),
-            "duplicate",
-        ),
-        ("wrong case", r#"{"Cores":2}"#.to_owned(), "unknown field"),
-        (
-            "short fixed array",
-            r#"{"cores":2,"ccd":{"effect":[0]}}"#.to_owned(),
-            "length",
-        ),
-        (
-            "long fixed array",
-            r#"{"cores":2,"ccd":{"effect":[0,0,0]}}"#.to_owned(),
-            "trailing characters",
-        ),
-        (
-            "short limit array",
-            r#"{"cores":2,"core":[{"id":0,"alone":[-10]}]}"#.to_owned(),
-            "length",
-        ),
-        (
-            "duplicate joint member",
-            r#"{"cores":2,"joint":[{"members":{"0":-10,"0":-20}}]}"#.to_owned(),
-            "duplicate",
-        ),
-        (
-            "duplicate workload limit",
-            format!(
-                r#"{{"cores":2,"core":[{}]}}"#,
-                core.replace(
-                    '}',
-                    r#","workload":{"mprime-sse-4k-21k":-1,"mprime-sse-4k-21k":-2}}"#
-                )
-            ),
-            "duplicate",
-        ),
-        (
-            "duplicate signal",
-            r#"{"model":{"signals":{"crash":1,"crash":2}}}"#.to_owned(),
-            "duplicate",
-        ),
-        (
-            "duplicate regime",
-            r#"{"model":{"regime_signals":{"R7":{"crash":1},"R7":{"crash":1}}}}"#.to_owned(),
-            "duplicate",
-        ),
-        (
-            "duplicate signal within a regime",
-            r#"{"model":{"regime_signals":{"R7":{"crash":1,"crash":1}}}}"#.to_owned(),
-            "duplicate",
-        ),
-        (
-            "joint member that is no number",
-            r#"{"cores":2,"joint":[{"members":{"nope":-10}}]}"#.to_owned(),
-            "expected key to be a number",
-        ),
-        (
-            "unsupported regime",
-            r#"{"joint":[{"members":{"0":-5},"regimes":["R9"]}]}"#.to_owned(),
-            "unknown variant `R9`",
-        ),
-        (
-            "unsupported joint signal",
-            r#"{"joint":[{"members":{"0":-5},"signal":"crsh"}]}"#.to_owned(),
-            "unknown variant `crsh`",
-        ),
-        (
-            "unsupported regime in regime_signals",
-            r#"{"model":{"regime_signals":{"R9":{"crash":1}}}}"#.to_owned(),
-            "unknown variant `R9`",
-        ),
-        (
-            "unsupported script signal",
-            r#"{"script":[{"trial":"0001","signal":"crsh"}]}"#.to_owned(),
-            "unknown variant `crsh`",
-        ),
-        (
-            "unsupported script reset",
-            r#"{"script":[{"trial":"0001","reset":"brownout"}]}"#.to_owned(),
-            "unknown variant `brownout`",
-        ),
-        (
-            "unsupported reset",
-            r#"{"model":{"reset":{"brownout":1}}}"#.to_owned(),
-            "unknown variant `brownout`",
-        ),
-    ];
-    for (name, text, want) in cases {
-        let error = load_text(&text).expect_err(name);
-        let message = togi_machine::error_chain(&error);
-        assert!(
-            matches!(error, LoadError::Parse { .. }),
-            "{name}: {message}"
-        );
-        assert!(message.contains("machine.json"), "{name}: {message}");
-        assert!(message.contains(want), "{name}: {message} lacks {want:?}");
-    }
+#[test_case(r#"{"cores":["#, "EOF"; "syntax")]
+#[test_case("null", "expected"; "null root")]
+#[test_case(" \n\tnull\r\n", "expected"; "null root with whitespace")]
+#[test_case("[]", "expected"; "array root")]
+#[test_case(r#"{"cores":2,"unknown":1}"#, "unknown field"; "unknown field")]
+#[test_case(r#"{"cores":2,"model":{"unknown":1}}"#, "unknown field"; "unknown nested field")]
+#[test_case(r#"{"cores":2} {}"#, "trailing"; "trailing value")]
+#[test_case(r#"{"cores":2,"cores":4}"#, "duplicate"; "duplicate key")]
+#[test_case(r#"{"Cores":2}"#, "unknown field"; "wrong case")]
+#[test_case(r#"{"cores":2,"ccd":{"effect":[0]}}"#, "length"; "short fixed array")]
+#[test_case(r#"{"cores":2,"ccd":{"effect":[0,0,0]}}"#, "trailing characters"; "long fixed array")]
+#[test_case(r#"{"cores":2,"core":[{"id":0,"alone":[-10]}]}"#, "length"; "short limit array")]
+#[test_case(r#"{"cores":2,"joint":[{"members":{"0":-10,"0":-20}}]}"#, "duplicate"; "duplicate joint member")]
+#[test_case(
+    r#"{"cores":2,"core":[{"id":0,"alone":[-10,-10,-10,-10,-10],"together":[-10,-10,-10,-10,-10,-10,-10],"workload":{"mprime-sse-4k-21k":-1,"mprime-sse-4k-21k":-2}}]}"#,
+    "duplicate";
+    "duplicate workload limit"
+)]
+#[test_case(r#"{"model":{"signals":{"crash":1,"crash":2}}}"#, "duplicate"; "duplicate signal")]
+#[test_case(r#"{"model":{"regime_signals":{"R7":{"crash":1},"R7":{"crash":1}}}}"#, "duplicate"; "duplicate regime")]
+#[test_case(r#"{"model":{"regime_signals":{"R7":{"crash":1,"crash":1}}}}"#, "duplicate"; "duplicate signal within a regime")]
+#[test_case(r#"{"cores":2,"joint":[{"members":{"nope":-10}}]}"#, "expected key to be a number"; "joint member that is no number")]
+#[test_case(r#"{"joint":[{"members":{"0":-5},"regimes":["R9"]}]}"#, "unknown variant `R9`"; "unsupported regime")]
+#[test_case(r#"{"joint":[{"members":{"0":-5},"signal":"crsh"}]}"#, "unknown variant `crsh`"; "unsupported joint signal")]
+#[test_case(r#"{"model":{"regime_signals":{"R9":{"crash":1}}}}"#, "unknown variant `R9`"; "unsupported regime in regime_signals")]
+#[test_case(r#"{"script":[{"trial":"0001","signal":"crsh"}]}"#, "unknown variant `crsh`"; "unsupported script signal")]
+#[test_case(r#"{"script":[{"trial":"0001","reset":"brownout"}]}"#, "unknown variant `brownout`"; "unsupported script reset")]
+#[test_case(r#"{"model":{"reset":{"brownout":1}}}"#, "unknown variant `brownout`"; "unsupported reset")]
+fn malformed_documents_are_refused_with_the_file_named(text: &str, want: &str) {
+    let error = load_text(text).expect_err("a malformed document");
+    let message = togi_machine::error_chain(&error);
+    assert!(matches!(error, LoadError::Parse { .. }), "{message}");
+    assert!(message.contains("machine.json"), "{message}");
+    assert!(message.contains(want), "{message} lacks {want:?}");
 }
 
 #[test]

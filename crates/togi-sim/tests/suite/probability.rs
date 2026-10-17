@@ -4,100 +4,54 @@ use togi_machine::Regime;
 use togi_sim::definition::{CoreDef, JointDef};
 use togi_sim::model::Onset;
 
+use test_case::test_case;
+
 use crate::common::{core_def, load, machine, model, offsets};
 
-struct Row {
-    name: &'static str,
-    duration: f64,
-    after: f64,
-    onset: f64,
-    boost: f64,
-    loaded: f64,
-    idle: f64,
-    joint: f64,
-    hazard: f64,
-}
-
-fn row(
-    name: &'static str,
+#[test_case((10.0, 0.0, 0.0, 0.0), (0.1, 0.0, 0.0), 1.0; "steady")]
+#[test_case((10.0, 0.0, 4.0, 2.0), (0.1, 0.0, 0.0), 1.8; "onset")]
+#[test_case((2.0, 0.0, 4.0, 2.0), (0.1, 0.0, 0.0), 0.6; "within onset")]
+#[test_case((10.0, 0.0, 0.0, 0.0), (0.1, 0.2, 0.0), 3.0; "unloaded")]
+#[test_case((10.0, 3.0, 4.0, 2.0), (0.0, 0.0, 0.1), 0.9; "delayed joint")]
+#[test_case((10.0, 12.0, 4.0, 2.0), (0.0, 0.0, 0.1), 0.0; "joint after the end")]
+#[test_case((10.0, 6.0, 4.0, 2.0), (0.0, 0.0, 0.1), 0.4; "joint after the onset window")]
+#[test_case((10.0, 10.0, 4.0, 2.0), (0.0, 0.0, 0.1), 0.0; "joint starting at the end")]
+fn probability_integrates_loaded_idle_and_delayed_joint_exposure(
     (duration, after, onset, boost): (f64, f64, f64, f64),
     (loaded, idle, joint): (f64, f64, f64),
     hazard: f64,
-) -> Row {
-    Row {
-        name,
-        duration,
-        after,
-        onset,
-        boost,
-        loaded,
-        idle,
-        joint,
-        hazard,
-    }
-}
-
-#[test]
-fn probability_integrates_loaded_idle_and_delayed_joint_exposure() {
-    let rows = [
-        row("steady", (10.0, 0.0, 0.0, 0.0), (0.1, 0.0, 0.0), 1.0),
-        row("onset", (10.0, 0.0, 4.0, 2.0), (0.1, 0.0, 0.0), 1.8),
-        row("within onset", (2.0, 0.0, 4.0, 2.0), (0.1, 0.0, 0.0), 0.6),
-        row("unloaded", (10.0, 0.0, 0.0, 0.0), (0.1, 0.2, 0.0), 3.0),
-        row("delayed joint", (10.0, 3.0, 4.0, 2.0), (0.0, 0.0, 0.1), 0.9),
-        row(
-            "joint after the end",
-            (10.0, 12.0, 4.0, 2.0),
-            (0.0, 0.0, 0.1),
-            0.0,
-        ),
-        row(
-            "joint after the onset window",
-            (10.0, 6.0, 4.0, 2.0),
-            (0.0, 0.0, 0.1),
-            0.4,
-        ),
-        row(
-            "joint starting at the end",
-            (10.0, 10.0, 4.0, 2.0),
-            (0.0, 0.0, 0.1),
-            0.0,
-        ),
-    ];
-    for row in rows {
-        let limits = |flat| CoreDef {
-            flat,
-            ..core_def(0, 0, 0)
-        };
-        let mut definition = machine(
-            2,
-            vec![
-                limits(row.loaded),
-                CoreDef {
-                    id: 1,
-                    ..limits(row.idle)
-                },
-            ],
-        );
-        definition.model.past_limit_rate = 0.0;
-        definition.model.near_limit_rate = 0.0;
-        definition.model.onset_s = row.onset;
-        definition.model.onset_boost = row.boost;
-        definition.joint = vec![JointDef {
-            members: [(0, -10), (1, -10)].into(),
-            rate: Some(row.joint),
-            after_s: row.after,
-            ..JointDef::default()
-        }];
-        let model = model(&definition);
-        let regime = Regime::R1;
-        let load = load(regime, "", &[0], row.duration);
-        let got = model
-            .failure_probability(&offsets(&[-10, -10]), &load)
-            .expect("shape");
-        let want = -(-row.hazard).exp_m1();
-        assert!((got - want).abs() < 1e-14, "{}: {got} vs {want}", row.name);
-    }
+) {
+    let limits = |flat| CoreDef {
+        flat,
+        ..core_def(0, 0, 0)
+    };
+    let mut definition = machine(
+        2,
+        vec![
+            limits(loaded),
+            CoreDef {
+                id: 1,
+                ..limits(idle)
+            },
+        ],
+    );
+    definition.model.past_limit_rate = 0.0;
+    definition.model.near_limit_rate = 0.0;
+    definition.model.onset_s = onset;
+    definition.model.onset_boost = boost;
+    definition.joint = vec![JointDef {
+        members: [(0, -10), (1, -10)].into(),
+        rate: Some(joint),
+        after_s: after,
+        ..JointDef::default()
+    }];
+    let model = model(&definition);
+    let load = load(Regime::R1, "", &[0], duration);
+    let got = model
+        .failure_probability(&offsets(&[-10, -10]), &load)
+        .expect("shape");
+    let want = -(-hazard).exp_m1();
+    assert!((got - want).abs() < 1e-14, "{got} vs {want}");
 }
 
 #[test]
@@ -267,8 +221,11 @@ fn a_growth_power_that_underflows_cannot_silence_a_representable_rate() {
     assert!((got - (1.0 - (-2.0f64).exp())).abs() < 1e-9, "{got}");
 }
 
-#[test]
-fn rates_at_the_edge_of_f64_never_turn_a_probability_into_nan() {
+#[test_case(0.0, 0.0; "no time")]
+#[test_case(1.0, 1.0; "one second")]
+#[test_case(10.0, 1.0; "the whole onset window")]
+#[test_case(100.0, 1.0; "past the onset window")]
+fn rates_at_the_edge_of_f64_never_turn_a_probability_into_nan(seconds: f64, want: f64) {
     let flat = |id| CoreDef {
         flat: 1e308,
         ..core_def(id, -10, -10)
@@ -281,14 +238,8 @@ fn rates_at_the_edge_of_f64_never_turn_a_probability_into_nan() {
     definition.model.onset_boost = 1e308;
     let model = model(&definition);
     let profile = offsets(&[-5, -5]);
-    for (seconds, want) in [(0.0, 0.0), (1.0, 1.0), (10.0, 1.0), (100.0, 1.0)] {
-        let load = load(Regime::R1, "", &[0, 1], seconds);
-        let sources = model.sources(&profile, &load).expect("shape");
-        assert!(sources.iter().all(|source| source.rate.is_finite()));
-        assert_eq!(
-            model.failure_probability(&profile, &load),
-            Ok(want),
-            "{seconds} s"
-        );
-    }
+    let load = load(Regime::R1, "", &[0, 1], seconds);
+    let sources = model.sources(&profile, &load).expect("shape");
+    assert!(sources.iter().all(|source| source.rate.is_finite()));
+    assert_eq!(model.failure_probability(&profile, &load), Ok(want));
 }

@@ -7,6 +7,8 @@ use togi_sim::random::{Domain, stream};
 use togi_sim::replay::{FactProblem, InvalidFact, Replay, ReplayFact, ReplayOutcome};
 use togi_sim::{Load, RunSettings};
 
+use test_case::test_case;
+
 use crate::common::{
     Rig, cores, crashed, flat_cores, machine, model, offsets, r7_workload, sharp, spec,
 };
@@ -147,74 +149,31 @@ fn the_choice_does_not_depend_on_the_index_hash_order() {
 }
 
 #[test]
-fn any_difference_in_the_key_leaves_the_trial_to_the_fitted_model() {
+fn the_recorded_key_has_an_answer() {
     let replay = Replay::new([fact(ReplayOutcome::Pass)]).expect("valid");
-    let regime = Regime::R7;
-    let profile = offsets(&[-20, -21]);
-    let base = trial(regime, "work", cores(&[0, 1]), 60);
-    assert!(replay.has_answer(&context("A"), &base, &profile));
+    let base = trial(Regime::R7, "work", cores(&[0, 1]), 60);
+    assert!(replay.has_answer(&context("A"), &base, &offsets(&[-20, -21])));
+}
 
-    let r2 = Regime::R2;
-    let mismatches: Vec<(&str, Load<'_>, Vec<TargetOffset>, BiosContext)> = vec![
-        (
-            "regime",
-            trial(r2, "work", cores(&[0, 1]), 60),
-            profile.clone(),
-            context("A"),
-        ),
-        (
-            "workload",
-            trial(regime, "other", cores(&[0, 1]), 60),
-            profile.clone(),
-            context("A"),
-        ),
-        (
-            "cores",
-            trial(regime, "work", cores(&[1]), 60),
-            profile.clone(),
-            context("A"),
-        ),
-        (
-            "more cores",
-            trial(regime, "work", cores(&[0, 1, 2]), 60),
-            offsets(&[-20, -21, 0]),
-            context("A"),
-        ),
-        (
-            "idle",
-            trial(regime, "work", CoreSet::default(), 60),
-            profile.clone(),
-            context("A"),
-        ),
-        (
-            "duration",
-            trial(regime, "work", cores(&[0, 1]), 90),
-            profile.clone(),
-            context("A"),
-        ),
-        ("loaded offset", base, offsets(&[-21, -21]), context("A")),
-        (
-            "other loaded offset",
-            base,
-            offsets(&[-20, -22]),
-            context("A"),
-        ),
-        (
-            "profile length",
-            base,
-            offsets(&[-20, -21, 0]),
-            context("A"),
-        ),
-        ("context", base, profile.clone(), context("B")),
-    ];
-    for (name, load, profile, context) in mismatches {
-        assert!(!replay.has_answer(&context, &load, &profile), "{name}");
-        let mut rng = stream(1, Domain::Replay, &[]);
-        assert!(
-            replay.answer(&context, &load, &profile, &mut rng).is_none(),
-            "{name}"
-        );
-    }
+#[test_case(trial(Regime::R2, "work", cores(&[0, 1]), 60), &offsets(&[-20, -21]), &context("A"); "regime")]
+#[test_case(trial(Regime::R7, "other", cores(&[0, 1]), 60), &offsets(&[-20, -21]), &context("A"); "workload")]
+#[test_case(trial(Regime::R7, "work", cores(&[1]), 60), &offsets(&[-20, -21]), &context("A"); "cores")]
+#[test_case(trial(Regime::R7, "work", cores(&[0, 1, 2]), 60), &offsets(&[-20, -21, 0]), &context("A"); "more cores")]
+#[test_case(trial(Regime::R7, "work", CoreSet::default(), 60), &offsets(&[-20, -21]), &context("A"); "idle")]
+#[test_case(trial(Regime::R7, "work", cores(&[0, 1]), 90), &offsets(&[-20, -21]), &context("A"); "duration")]
+#[test_case(trial(Regime::R7, "work", cores(&[0, 1]), 60), &offsets(&[-21, -21]), &context("A"); "loaded offset")]
+#[test_case(trial(Regime::R7, "work", cores(&[0, 1]), 60), &offsets(&[-20, -22]), &context("A"); "other loaded offset")]
+#[test_case(trial(Regime::R7, "work", cores(&[0, 1]), 60), &offsets(&[-20, -21, 0]), &context("A"); "profile length")]
+#[test_case(trial(Regime::R7, "work", cores(&[0, 1]), 60), &offsets(&[-20, -21]), &context("B"); "context")]
+fn any_difference_in_the_key_leaves_the_trial_to_the_fitted_model(
+    load: Load<'_>,
+    profile: &[TargetOffset],
+    context: &BiosContext,
+) {
+    let replay = Replay::new([fact(ReplayOutcome::Pass)]).expect("valid");
+    assert!(!replay.has_answer(context, &load, profile));
+    let mut rng = stream(1, Domain::Replay, &[]);
+    assert!(replay.answer(context, &load, profile, &mut rng).is_none());
 }
 
 #[test]
@@ -274,6 +233,7 @@ fn run_against(replay: Option<Replay>, signal: Signal, key: &MissKey) -> (String
     (format!("{waited:?}"), rig.sim.monotonic(), crash)
 }
 
+#[derive(Clone, Copy)]
 struct MissKey {
     regime: Regime,
     workload: &'static str,
@@ -283,95 +243,64 @@ struct MissKey {
     change_context: bool,
 }
 
-#[test]
-fn a_replay_miss_runs_the_fitted_failure_model_exactly_as_if_there_were_no_replay() {
-    let probe = {
-        let mut definition = machine(2, flat_cores(2, -10, -10));
-        definition.bios = Some(vec![-20, -21]);
-        model(&definition).bios_context().clone()
-    };
-    let replay = || {
-        let mut recorded = fact(ReplayOutcome::Pass);
-        recorded.workload = r7_workload(0).to_owned();
-        recorded.context = probe.clone();
-        Replay::new([recorded]).expect("valid")
-    };
-    let base = MissKey {
+fn hit() -> MissKey {
+    MissKey {
         regime: Regime::R7,
         workload: r7_workload(0),
         cores: &[0, 1],
         seconds: 60,
         change_profile: false,
         change_context: false,
-    };
-    for signal in [Signal::ComputationError, Signal::Crash] {
-        // The control: the key matches, the fact answers a pass and the fitted model's failure never runs.
-        let hit = run_against(Some(replay()), signal, &base);
-        let model_only = run_against(None, signal, &base);
-        assert_ne!(hit, model_only, "{signal}: the recorded pass is used");
-        assert_eq!(
-            model_only.2,
-            signal == Signal::Crash,
-            "{signal}: the model fails the trial"
-        );
-        assert!(
-            model_only.1 < Duration::from_secs(60),
-            "{signal}: and does so early"
-        );
-        let misses = [
-            (
-                "regime",
-                MissKey {
-                    regime: Regime::R2,
-                    ..base
-                },
-            ),
-            (
-                "workload",
-                MissKey {
-                    workload: r7_workload(1),
-                    ..base
-                },
-            ),
-            (
-                "cores",
-                MissKey {
-                    cores: &[1],
-                    ..base
-                },
-            ),
-            (
-                "duration",
-                MissKey {
-                    seconds: 90,
-                    ..base
-                },
-            ),
-            (
-                "profile",
-                MissKey {
-                    change_profile: true,
-                    ..base
-                },
-            ),
-            (
-                "context",
-                MissKey {
-                    change_context: true,
-                    ..base
-                },
-            ),
-        ];
-        for (name, key) in misses {
-            let missed = run_against(Some(replay()), signal, &key);
-            let model_only = run_against(None, signal, &key);
-            assert_eq!(missed, model_only, "{signal}: {name}");
-            assert!(
-                missed.1 < Duration::from_secs(key.seconds),
-                "{signal}: {name} did not fail"
-            );
-        }
     }
+}
+
+/// A recorded pass for the key `hit` names on the machine `run_against` builds.
+fn recorded_pass() -> Replay {
+    let mut definition = machine(2, flat_cores(2, -10, -10));
+    definition.bios = Some(vec![-20, -21]);
+    let mut recorded = fact(ReplayOutcome::Pass);
+    r7_workload(0).clone_into(&mut recorded.workload);
+    recorded.context = model(&definition).bios_context().clone();
+    Replay::new([recorded]).expect("valid")
+}
+
+#[test_case(Signal::ComputationError; "computation error")]
+#[test_case(Signal::Crash; "crash")]
+fn a_replay_hit_answers_the_recorded_pass_and_the_fitted_failure_never_runs(signal: Signal) {
+    let hit_run = run_against(Some(recorded_pass()), signal, &hit());
+    let model_only = run_against(None, signal, &hit());
+    assert_ne!(hit_run, model_only, "the recorded pass is used");
+    assert_eq!(
+        model_only.2,
+        signal == Signal::Crash,
+        "the model fails the trial"
+    );
+    assert!(model_only.1 < Duration::from_secs(60), "and does so early");
+}
+
+#[test_case(Signal::ComputationError, MissKey { regime: Regime::R2, ..hit() }; "computation error regime")]
+#[test_case(Signal::ComputationError, MissKey { workload: r7_workload(1), ..hit() }; "computation error workload")]
+#[test_case(Signal::ComputationError, MissKey { cores: &[1], ..hit() }; "computation error cores")]
+#[test_case(Signal::ComputationError, MissKey { seconds: 90, ..hit() }; "computation error duration")]
+#[test_case(Signal::ComputationError, MissKey { change_profile: true, ..hit() }; "computation error profile")]
+#[test_case(Signal::ComputationError, MissKey { change_context: true, ..hit() }; "computation error context")]
+#[test_case(Signal::Crash, MissKey { regime: Regime::R2, ..hit() }; "crash regime")]
+#[test_case(Signal::Crash, MissKey { workload: r7_workload(1), ..hit() }; "crash workload")]
+#[test_case(Signal::Crash, MissKey { cores: &[1], ..hit() }; "crash cores")]
+#[test_case(Signal::Crash, MissKey { seconds: 90, ..hit() }; "crash duration")]
+#[test_case(Signal::Crash, MissKey { change_profile: true, ..hit() }; "crash profile")]
+#[test_case(Signal::Crash, MissKey { change_context: true, ..hit() }; "crash context")]
+fn a_replay_miss_runs_the_fitted_failure_model_exactly_as_if_there_were_no_replay(
+    signal: Signal,
+    key: MissKey,
+) {
+    let missed = run_against(Some(recorded_pass()), signal, &key);
+    let model_only = run_against(None, signal, &key);
+    assert_eq!(missed, model_only);
+    assert!(
+        missed.1 < Duration::from_secs(key.seconds),
+        "the trial did not fail"
+    );
 }
 
 #[test]
@@ -390,51 +319,33 @@ fn rejected(edit: Edit) -> InvalidFact {
     Replay::new([fact(ReplayOutcome::Pass), bad]).expect_err("an invalid fact")
 }
 
-#[test]
-fn facts_with_invalid_evidence_are_refused_with_their_index() {
-    let cases: [(&str, FactProblem, Edit); 5] = [
-        ("no context", FactProblem::NoContext, |f| {
-            f.context = BiosContext::default();
-        }),
-        ("no cores", FactProblem::NoCores, |f| {
-            f.cores = CoreSet::default();
-        }),
-        (
-            "a core outside the profile",
-            FactProblem::CoreOutsideProfile { core: 2, cores: 2 },
-            |f| f.cores = cores(&[0, 2]),
-        ),
-        ("no duration", FactProblem::NoDuration, |f| {
-            f.duration = Duration::ZERO;
-        }),
-        (
-            "an exposure beyond the duration",
-            FactProblem::ExposureTooLong,
-            |f| f.outcome = failure(Signal::Stall, 61),
-        ),
-    ];
-    for (name, problem, edit) in cases {
-        let error = rejected(edit);
-        assert_eq!((error.index, error.problem), (1, problem), "{name}");
-    }
+#[test_case(|f| f.context = BiosContext::default(), FactProblem::NoContext; "no context")]
+#[test_case(|f| f.cores = CoreSet::default(), FactProblem::NoCores; "no cores")]
+#[test_case(
+    |f| f.cores = cores(&[0, 2]),
+    FactProblem::CoreOutsideProfile { core: 2, cores: 2 };
+    "a core outside the profile"
+)]
+#[test_case(|f| f.duration = Duration::ZERO, FactProblem::NoDuration; "no duration")]
+#[test_case(|f| f.outcome = failure(Signal::Stall, 61), FactProblem::ExposureTooLong; "an exposure beyond the duration")]
+fn facts_with_invalid_evidence_are_refused_with_their_index(edit: Edit, problem: FactProblem) {
+    let error = rejected(edit);
+    assert_eq!((error.index, error.problem), (1, problem));
+}
+
+#[test_case(Signal::ComputationError; "computation error")]
+#[test_case(Signal::Stall; "stall")]
+#[test_case(Signal::UnexpectedExit; "unexpected exit")]
+#[test_case(Signal::CorrectedMce; "corrected mce")]
+#[test_case(Signal::UncorrectedMce; "uncorrected mce")]
+#[test_case(Signal::Crash; "crash")]
+fn every_failure_signal_the_extract_can_hold_is_accepted_with_a_zero_exposure(signal: Signal) {
+    assert!(Replay::new([fact(failure(signal, 0))]).is_ok());
 }
 
 #[test]
-fn every_failure_signal_the_extract_can_hold_is_accepted_and_a_zero_exposure_is_valid() {
-    for signal in [
-        Signal::ComputationError,
-        Signal::Stall,
-        Signal::UnexpectedExit,
-        Signal::CorrectedMce,
-        Signal::UncorrectedMce,
-        Signal::Crash,
-    ] {
-        assert!(Replay::new([fact(failure(signal, 0))]).is_ok(), "{signal}");
-    }
-    assert!(
-        Replay::new([fact(failure(Signal::Crash, 60))]).is_ok(),
-        "exposure equals duration"
-    );
+fn an_exposure_equal_to_the_duration_is_valid() {
+    assert!(Replay::new([fact(failure(Signal::Crash, 60))]).is_ok());
 }
 
 #[test]

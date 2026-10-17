@@ -395,6 +395,8 @@ fn relative(from: &Path, to: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use test_case::test_case;
+
     use super::*;
 
     #[test]
@@ -441,35 +443,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn rebase_climbs_past_the_shared_directories_and_keeps_the_rest_verbatim() {
-        let go = |from, to, facts| rebase(Path::new(from), Path::new(to), Path::new(facts));
-        for (from, to, facts, want) in [
-            (
-                "/d/overlays",
-                "/d/machines",
-                "../../facts/extract.gz",
-                "../../facts/extract.gz",
-            ),
-            ("/d/x/y", "/d/machines", "../facts/e", "../../facts/e"),
-            ("/d/overlays", "/d/machines", "./../facts/e", "../facts/e"),
-            ("/d", "/d/machines", "../facts/e", "facts/e"),
-            ("/a", "/a/b", "../../../x", "../../x"),
-            (
-                "/d/overlays",
-                "/d/machines",
-                "alias/../x",
-                "../machines/alias/../x",
-            ),
-        ] {
-            let got = go(from, to, facts).expect("a rebased path");
-            assert_eq!(got, Path::new(want), "{from} {to} {facts}");
-            // Without symlinks, both name the same file.
-            assert_eq!(
-                clean(&Path::new(from).join(&got)),
-                clean(&Path::new(to).join(facts)),
-                "{from} {to} {facts}"
-            );
-        }
+    #[test_case("/d/overlays", "/d/machines", "../../facts/extract.gz", "../../facts/extract.gz"; "sibling directories")]
+    #[test_case("/d/x/y", "/d/machines", "../facts/e", "../../facts/e"; "deeper source")]
+    #[test_case("/d/overlays", "/d/machines", "./../facts/e", "../facts/e"; "leading dot")]
+    #[test_case("/d", "/d/machines", "../facts/e", "facts/e"; "parent source")]
+    #[test_case("/a", "/a/b", "../../../x", "../../x"; "climbs past the root")]
+    #[test_case("/d/overlays", "/d/machines", "alias/../x", "../machines/alias/../x"; "keeps a dotted tail verbatim")]
+    fn rebase_climbs_past_the_shared_directories_and_keeps_the_rest_verbatim(
+        from: &str,
+        to: &str,
+        facts: &str,
+        want: &str,
+    ) {
+        let got = rebase(Path::new(from), Path::new(to), Path::new(facts)).expect("a rebased path");
+        assert_eq!(got, Path::new(want));
+        // Without symlinks, both name the same file.
+        assert_eq!(
+            clean(&Path::new(from).join(&got)),
+            clean(&Path::new(to).join(facts))
+        );
     }
 }

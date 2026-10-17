@@ -2,6 +2,7 @@
 
 use proptest::prelude::*;
 use std::collections::BTreeMap;
+use test_case::test_case;
 use togi_machine::{Regime, ResetKind, Signal};
 use togi_sim::definition::{
     BiosContextDef, CcdDef, CoreDef, JointDef, ModelDef, ScriptDef, Weights,
@@ -196,36 +197,26 @@ fn an_invalid_machine_is_refused_before_anything_is_written() {
         }
         other => panic!("{other:?}"),
     }
-    for (edit, path) in [
-        (
-            (|d: &mut MachineDefinition| d.core[0].flat = f64::INFINITY)
-                as fn(&mut MachineDefinition),
-            "core[0].flat",
-        ),
-        (
-            |d| d.joint[0].after_s = f64::NEG_INFINITY,
-            "joint[0].after_s",
-        ),
-        (
-            |d| d.ccd.as_mut().expect("ccd").effect[1] = f64::NAN,
-            "ccd.effect[1]",
-        ),
-        (|d| d.model.signals = Weights::default(), "model.signals"),
-        (|d| d.bios = Some(vec![0]), "bios"),
-    ] {
-        let mut definition = full();
-        edit(&mut definition);
-        let Err(EncodeError::Invalid(error)) = file::encode(&definition) else {
-            panic!("{path} was encoded");
-        };
-        assert_eq!(error.path, path);
-    }
     let mut voltage = committed_machine("shared-voltage.json");
     voltage.shared_voltage.as_mut().expect("a rail").margin_v = f64::NAN;
     assert!(matches!(
         file::encode(&voltage),
         Err(EncodeError::Invalid(_))
     ));
+}
+
+#[test_case(|d| d.core[0].flat = f64::INFINITY, "core[0].flat"; "infinite core flat")]
+#[test_case(|d| d.joint[0].after_s = f64::NEG_INFINITY, "joint[0].after_s"; "infinite joint delay")]
+#[test_case(|d| d.ccd.as_mut().expect("ccd").effect[1] = f64::NAN, "ccd.effect[1]"; "nan ccd effect")]
+#[test_case(|d| d.model.signals = Weights::default(), "model.signals"; "no signal weights")]
+#[test_case(|d| d.bios = Some(vec![0]), "bios"; "short bios")]
+fn an_invalid_field_is_refused_by_its_path(edit: fn(&mut MachineDefinition), path: &str) {
+    let mut definition = full();
+    edit(&mut definition);
+    let Err(EncodeError::Invalid(error)) = file::encode(&definition) else {
+        panic!("{path} was encoded");
+    };
+    assert_eq!(error.path, path);
 }
 
 #[test]

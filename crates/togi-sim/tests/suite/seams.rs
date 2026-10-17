@@ -9,6 +9,8 @@ use togi_machine::{
 use togi_sim::definition::ScriptDef;
 use togi_sim::{History, RunSettings};
 
+use test_case::test_case;
+
 use crate::common::{Rig, basic, core, flat_cores, machine, model, offset};
 
 const MINUTE: Duration = Duration::from_secs(60);
@@ -89,26 +91,22 @@ fn a_missing_backend_fails_every_start_of_its_workloads() {
     assert!(rig.start(other).is_ok(), "the other backend still starts");
 }
 
-#[test]
-fn an_old_kernel_reports_no_reset_reason_whatever_the_reset() {
+#[test_case(ResetKind::PowerLoss; "power loss")]
+#[test_case(ResetKind::PowerButton; "power button")]
+#[test_case(ResetKind::ThermalTrip; "thermal trip")]
+fn an_old_kernel_reports_no_reset_reason_whatever_the_reset(kind: ResetKind) {
     let mut definition = two_cores();
     definition.old_kernel = true;
     let mut rig = Rig::new(&definition, 1);
-    for kind in [
-        ResetKind::PowerLoss,
-        ResetKind::PowerButton,
-        ResetKind::ThermalTrip,
-    ] {
-        rig.sim.next_reset(kind);
-        rig.sim.crash();
-        rig.sim.reboot();
-        let boot = rig.boot();
-        let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
-        assert!(
-            reason.kind.is_none() && !reason.supported && reason.raw.is_empty(),
-            "{kind}"
-        );
-    }
+    rig.sim.next_reset(kind);
+    rig.sim.crash();
+    rig.sim.reboot();
+    let boot = rig.boot();
+    let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
+    assert!(
+        reason.kind.is_none() && !reason.supported && reason.raw.is_empty(),
+        "{reason:?}"
+    );
 }
 
 #[test]
@@ -177,47 +175,57 @@ fn a_cancelled_start_does_not_consume_a_setup_fault_or_move_the_clock() {
     assert_eq!(rig.sim.now(), start);
 }
 
-#[test]
-fn stopping_a_trial_matches_what_a_cancelled_wait_would_clean_up() {
-    for state in ["running", "crashed", "rebooted"] {
-        let mut rig = Rig::new(&two_cores(), 1);
-        let mut running = rig
-            .start(basic(Regime::R1, &[0], MINUTE))
-            .unwrap_or_else(|error| panic!("{error}"));
-        match state {
-            "crashed" => rig.sim.crash(),
-            "rebooted" => rig.sim.reboot(),
-            _ => {}
-        }
-        let before = rig.sim.now();
-        let cancel = CancellationToken::new();
-        cancel.cancel();
-        let waited = running.wait(&cancel, &mut crate::common::Recorder::default());
-        let expected = if state == "running" {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Machine {
+    Running,
+    Crashed,
+    Rebooted,
+}
+
+#[test_case(Machine::Running; "running")]
+#[test_case(Machine::Crashed; "crashed")]
+#[test_case(Machine::Rebooted; "rebooted")]
+fn stopping_a_trial_matches_what_a_cancelled_wait_would_clean_up(state: Machine) {
+    let mut rig = Rig::new(&two_cores(), 1);
+    let mut running = rig
+        .start(basic(Regime::R1, &[0], MINUTE))
+        .unwrap_or_else(|error| panic!("{error}"));
+    match state {
+        Machine::Running => {}
+        Machine::Crashed => rig.sim.crash(),
+        Machine::Rebooted => rig.sim.reboot(),
+    }
+    let before = rig.sim.now();
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let waited = running.wait(&cancel, &mut crate::common::Recorder::default());
+    let stopped = running.stop();
+    if state == Machine::Running {
+        assert!(
             matches!(
                 &waited,
                 Err(Partial {
                     error: Error::Cancelled,
                     ..
                 })
-            )
-        } else {
+            ),
+            "{waited:?}"
+        );
+        assert!(stopped.is_ok(), "{stopped:?}");
+    } else {
+        assert!(
             matches!(
                 &waited,
                 Err(Partial {
                     error: Error::Crashed,
                     ..
                 })
-            )
-        };
-        assert!(expected, "{state}: {waited:?}");
-        let stopped = running.stop();
-        assert_eq!(stopped.is_ok(), state == "running", "{state}");
-        if state != "running" {
-            assert!(matches!(stopped, Err(Error::Crashed)), "{state}");
-        }
-        assert_eq!(rig.sim.now(), before, "{state}");
+            ),
+            "{waited:?}"
+        );
+        assert!(matches!(stopped, Err(Error::Crashed)), "{stopped:?}");
     }
+    assert_eq!(rig.sim.now(), before);
 }
 
 #[test]
@@ -283,24 +291,24 @@ fn a_crashed_machine_rejects_its_operations_and_does_not_move_its_clock() {
     );
 }
 
-#[test]
-fn the_topology_splits_the_cores_into_two_ccds_with_their_sibling_threads() {
-    for cores in [2usize, 4, 16] {
-        let definition = machine(i64::try_from(cores).expect("count"), vec![]);
-        let mut rig = Rig::new(&definition, 1);
-        let want: Vec<CoreInfo> = (0..cores)
-            .map(|index| CoreInfo {
-                core: togi_machine::CoreId::try_from(index).expect("core"),
-                ccd: CcdId(u8::try_from(index / (cores / 2)).expect("ccd")),
-                cpus: vec![
-                    CpuId(u16::try_from(index).expect("cpu")),
-                    CpuId(u16::try_from(index + cores).expect("cpu")),
-                ],
-            })
-            .collect();
-        assert_eq!(rig.machine.host.topology().expect("topology"), want);
-        assert_eq!(rig.sim.monotonic(), Duration::ZERO);
-    }
+#[test_case(2; "two cores")]
+#[test_case(4; "four cores")]
+#[test_case(16; "sixteen cores")]
+fn the_topology_splits_the_cores_into_two_ccds_with_their_sibling_threads(cores: usize) {
+    let definition = machine(i64::try_from(cores).expect("count"), vec![]);
+    let mut rig = Rig::new(&definition, 1);
+    let want: Vec<CoreInfo> = (0..cores)
+        .map(|index| CoreInfo {
+            core: togi_machine::CoreId::try_from(index).expect("core"),
+            ccd: CcdId(u8::try_from(index / (cores / 2)).expect("ccd")),
+            cpus: vec![
+                CpuId(u16::try_from(index).expect("cpu")),
+                CpuId(u16::try_from(index + cores).expect("cpu")),
+            ],
+        })
+        .collect();
+    assert_eq!(rig.machine.host.topology().expect("topology"), want);
+    assert_eq!(rig.sim.monotonic(), Duration::ZERO);
 }
 
 #[test]
@@ -320,51 +328,53 @@ fn a_machine_starts_at_the_epoch_or_one_reboot_after_its_history() {
     assert_eq!(rig.sim.now(), last + SignedDuration::from_secs(90));
 }
 
-#[test]
-fn the_clock_seam_follows_sleeps_wall_jumps_and_reboots_from_a_fresh_or_resumed_start() {
+#[test_case(false; "fresh")]
+#[test_case(true; "resumed")]
+fn the_clock_seam_follows_sleeps_wall_jumps_and_reboots_from_a_fresh_or_resumed_start(
+    resumed: bool,
+) {
     let epoch = jiff::Timestamp::from_second(1_767_225_600).expect("a time");
     let last = epoch + SignedDuration::from_hours(7);
-    let resumed = RunSettings {
-        history: History {
-            last_time: Some(last),
-            ..History::default()
-        },
-        ..RunSettings::default()
+    let (settings, start) = if resumed {
+        let settings = RunSettings {
+            history: History {
+                last_time: Some(last),
+                ..History::default()
+            },
+            ..RunSettings::default()
+        };
+        (settings, last + SignedDuration::from_secs(90))
+    } else {
+        (RunSettings::default(), epoch)
     };
-    let fresh = Rig::with(model(&two_cores()), RunSettings::default());
-    let resumed = Rig::with(model(&two_cores()), resumed);
-    for (mut rig, start) in [
-        (fresh, epoch),
-        (resumed, last + SignedDuration::from_secs(90)),
-    ] {
-        let cancel = CancellationToken::new();
-        assert_eq!(rig.machine.clock.now(), start);
-        assert_eq!(rig.machine.clock.monotonic(), Duration::ZERO);
-        rig.machine
-            .clock
-            .sleep(&cancel, Duration::from_secs(5))
-            .expect("sleep");
-        assert_eq!(
-            rig.machine.clock.now(),
-            start + SignedDuration::from_secs(5)
-        );
-        assert_eq!(rig.machine.clock.monotonic(), Duration::from_secs(5));
-        rig.sim.jump_wall(SignedDuration::from_hours(1));
-        assert_eq!(
-            rig.machine.clock.now(),
-            start + SignedDuration::from_secs(5) + SignedDuration::from_hours(1)
-        );
-        assert_eq!(rig.machine.clock.monotonic(), Duration::from_secs(5));
-        let before = rig.machine.clock.now();
-        rig.sim.crash();
-        rig.sim.reboot();
-        assert_eq!(
-            rig.machine.clock.now(),
-            before + SignedDuration::from_secs(90)
-        );
-        assert_eq!(rig.machine.clock.monotonic(), Duration::ZERO);
-        assert_eq!(rig.machine.clock.now(), rig.sim.now());
-    }
+    let mut rig = Rig::with(model(&two_cores()), settings);
+    let cancel = CancellationToken::new();
+    assert_eq!(rig.machine.clock.now(), start);
+    assert_eq!(rig.machine.clock.monotonic(), Duration::ZERO);
+    rig.machine
+        .clock
+        .sleep(&cancel, Duration::from_secs(5))
+        .expect("sleep");
+    assert_eq!(
+        rig.machine.clock.now(),
+        start + SignedDuration::from_secs(5)
+    );
+    assert_eq!(rig.machine.clock.monotonic(), Duration::from_secs(5));
+    rig.sim.jump_wall(SignedDuration::from_hours(1));
+    assert_eq!(
+        rig.machine.clock.now(),
+        start + SignedDuration::from_secs(5) + SignedDuration::from_hours(1)
+    );
+    assert_eq!(rig.machine.clock.monotonic(), Duration::from_secs(5));
+    let before = rig.machine.clock.now();
+    rig.sim.crash();
+    rig.sim.reboot();
+    assert_eq!(
+        rig.machine.clock.now(),
+        before + SignedDuration::from_secs(90)
+    );
+    assert_eq!(rig.machine.clock.monotonic(), Duration::ZERO);
+    assert_eq!(rig.machine.clock.now(), rig.sim.now());
 }
 
 fn cursor_machine() -> Rig {
@@ -475,51 +485,34 @@ fn unknown_boots_and_cursors_are_named_errors() {
     assert_eq!(after.kind, Some(ResetKind::ThermalTrip));
 }
 
-#[test]
-fn each_reset_leaves_the_line_a_recent_kernel_logs() {
-    let cases = [
-        (ResetKind::Watchdog, Some("hardware watchdog timer expired")),
-        (
-            ResetKind::SyncFlood,
-            Some("an uncorrected error caused a data fabric sync flood event"),
+#[test_case(ResetKind::Watchdog, Some("hardware watchdog timer expired"); "watchdog")]
+#[test_case(ResetKind::SyncFlood, Some("an uncorrected error caused a data fabric sync flood event"); "sync flood")]
+#[test_case(ResetKind::CpuShutdown, Some("internal CPU shutdown event occurred"); "cpu shutdown")]
+#[test_case(ResetKind::PowerButton, Some("power button was pressed for 4 seconds"); "power button")]
+#[test_case(ResetKind::ThermalTrip, Some("thermal pin BP_THERMTRIP_L was tripped"); "thermal trip")]
+#[test_case(ResetKind::Unknown, Some("unrecognized reset reason"); "unknown")]
+#[test_case(ResetKind::PowerLoss, None; "power loss")]
+fn each_reset_leaves_the_line_a_recent_kernel_logs(kind: ResetKind, line: Option<&str>) {
+    let mut rig = Rig::new(&two_cores(), 1);
+    rig.sim.next_reset(kind);
+    rig.sim.crash();
+    rig.sim.reboot();
+    let boot = rig.boot();
+    let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
+    assert!(reason.supported);
+    let expected = if kind == ResetKind::PowerLoss {
+        None
+    } else {
+        Some(kind)
+    };
+    assert_eq!(reason.kind, expected);
+    match line {
+        Some(text) => assert!(
+            reason.raw.iter().any(|raw| raw.contains(text)),
+            "{:?}",
+            reason.raw
         ),
-        (
-            ResetKind::CpuShutdown,
-            Some("internal CPU shutdown event occurred"),
-        ),
-        (
-            ResetKind::PowerButton,
-            Some("power button was pressed for 4 seconds"),
-        ),
-        (
-            ResetKind::ThermalTrip,
-            Some("thermal pin BP_THERMTRIP_L was tripped"),
-        ),
-        (ResetKind::Unknown, Some("unrecognized reset reason")),
-        (ResetKind::PowerLoss, None),
-    ];
-    for (kind, line) in cases {
-        let mut rig = Rig::new(&two_cores(), 1);
-        rig.sim.next_reset(kind);
-        rig.sim.crash();
-        rig.sim.reboot();
-        let boot = rig.boot();
-        let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
-        assert!(reason.supported, "{kind}");
-        let expected = if kind == ResetKind::PowerLoss {
-            None
-        } else {
-            Some(kind)
-        };
-        assert_eq!(reason.kind, expected, "{kind}");
-        match line {
-            Some(text) => assert!(
-                reason.raw.iter().any(|raw| raw.contains(text)),
-                "{kind}: {:?}",
-                reason.raw
-            ),
-            None => assert!(reason.raw.is_empty(), "{kind}"),
-        }
+        None => assert!(reason.raw.is_empty(), "{:?}", reason.raw),
     }
 }
 

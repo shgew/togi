@@ -1795,6 +1795,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-machine",
  "togi-trialfiles",

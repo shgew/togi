@@ -5,6 +5,8 @@ use togi_machine::{CoreId, Regime};
 use togi_sim::definition::{CcdDef, JointDef};
 use togi_sim::{HazardSource, MachineDefinition, Model, ShapeError, SourceKind, saturating_count};
 
+use test_case::test_case;
+
 use crate::common::{committed_machine, flat_cores, load, machine, model, offsets, r7_workload};
 
 fn base() -> MachineDefinition {
@@ -39,7 +41,6 @@ fn joint(members: &[(i64, i64)], regimes: &[Regime], rate: Option<f64>, after_s:
 }
 
 struct Case {
-    name: &'static str,
     profile: [i64; 2],
     cores: &'static [i64],
     regime: Regime,
@@ -50,9 +51,8 @@ struct Case {
     want: f64,
 }
 
-fn case(name: &'static str, profile: [i64; 2], cores: &'static [i64], want: f64) -> Case {
+fn case(profile: [i64; 2], cores: &'static [i64], want: f64) -> Case {
     Case {
-        name,
         profile,
         cores,
         regime: Regime::R1,
@@ -64,104 +64,56 @@ fn case(name: &'static str, profile: [i64; 2], cores: &'static [i64], want: f64)
     }
 }
 
-#[test]
-fn steady_hazard_follows_the_limits_of_the_applied_registers() {
-    let cases = [
-        case("past the alone limit", [-12, 0], &[0], 8.0),
-        case("at the alone limit", [-10, 0], &[0], 0.25),
-        case(
-            "an outsider at a nonzero offset switches to the together limit",
-            [-12, -1],
-            &[0],
-            0.25,
-        ),
-        Case {
-            flat: 0.5,
-            ..case(
-                "flat rate on an unloaded core at a nonzero offset",
-                [-1, 0],
-                &[],
-                0.5,
-            )
-        },
-        Case {
-            flat: 0.5,
-            ..case(
-                "flat rate on an unloaded core at offset zero",
-                [0, 0],
-                &[],
-                0.0,
-            )
-        },
-        Case {
-            flat: 0.5,
-            ..case(
-                "flat rate does not count on a loaded core at offset zero",
-                [0, 0],
-                &[0],
-                0.25,
-            )
-        },
-        Case {
-            idle: Some(-8),
-            ..case("idle limit", [-9, 0], &[], 2.0)
-        },
-        Case {
-            workload: "mprime-sse-4k-21k",
-            ..case("workload limit", [-9, 0], &[0], 2.0)
-        },
-        Case {
-            regime: Regime::R7,
-            joint: Some(joint(&[(0, -5), (1, -5)], &[Regime::R7], Some(3.0), 240.0)),
-            ..case(
-                "an active joint counts at its steady rate, whatever its delay",
-                [-5, -5],
-                &[],
-                3.0,
-            )
-        },
-        Case {
-            regime: Regime::R7,
-            joint: Some(joint(&[(0, -5), (1, -5)], &[], Some(3.0), 0.0)),
-            ..case(
-                "a joint with one member short of its threshold is inactive",
-                [-5, -4],
-                &[],
-                0.0,
-            )
-        },
-        Case {
-            joint: Some(joint(&[(0, -5)], &[Regime::R7], Some(3.0), 0.0)),
-            ..case(
-                "a joint outside its regimes is inactive",
-                [-5, -5],
-                &[],
-                0.0,
-            )
-        },
-        Case {
-            regime: Regime::R7,
-            joint: Some(joint(&[(0, -5)], &[], None, 0.0)),
-            ..case(
-                "a joint without a rate takes the model rate",
-                [-5, -5],
-                &[],
-                2.0,
-            )
-        },
-    ];
-    for case in cases {
-        let mut definition = base();
-        definition.core[0].flat = case.flat;
-        definition.core[0].idle = case.idle;
-        definition.joint = case.joint.into_iter().collect();
-        let model = model(&definition);
-        let load = load(case.regime, case.workload, case.cores, 90.0);
-        let got = model
-            .hazard(&offsets(&case.profile), &load)
-            .expect("a matching profile");
-        assert_eq!(got, case.want, "{}", case.name);
-    }
+#[test_case(case([-12, 0], &[0], 8.0); "past the alone limit")]
+#[test_case(case([-10, 0], &[0], 0.25); "at the alone limit")]
+#[test_case(case([-12, -1], &[0], 0.25); "an outsider at a nonzero offset switches to the together limit")]
+#[test_case(Case { flat: 0.5, ..case([-1, 0], &[], 0.5) }; "flat rate on an unloaded core at a nonzero offset")]
+#[test_case(Case { flat: 0.5, ..case([0, 0], &[], 0.0) }; "flat rate on an unloaded core at offset zero")]
+#[test_case(Case { flat: 0.5, ..case([0, 0], &[0], 0.25) }; "flat rate does not count on a loaded core at offset zero")]
+#[test_case(Case { idle: Some(-8), ..case([-9, 0], &[], 2.0) }; "idle limit")]
+#[test_case(Case { workload: "mprime-sse-4k-21k", ..case([-9, 0], &[0], 2.0) }; "workload limit")]
+#[test_case(
+    Case {
+        regime: Regime::R7,
+        joint: Some(joint(&[(0, -5), (1, -5)], &[Regime::R7], Some(3.0), 240.0)),
+        ..case([-5, -5], &[], 3.0)
+    };
+    "an active joint counts at its steady rate whatever its delay"
+)]
+#[test_case(
+    Case {
+        regime: Regime::R7,
+        joint: Some(joint(&[(0, -5), (1, -5)], &[], Some(3.0), 0.0)),
+        ..case([-5, -4], &[], 0.0)
+    };
+    "a joint with one member short of its threshold is inactive"
+)]
+#[test_case(
+    Case {
+        joint: Some(joint(&[(0, -5)], &[Regime::R7], Some(3.0), 0.0)),
+        ..case([-5, -5], &[], 0.0)
+    };
+    "a joint outside its regimes is inactive"
+)]
+#[test_case(
+    Case {
+        regime: Regime::R7,
+        joint: Some(joint(&[(0, -5)], &[], None, 0.0)),
+        ..case([-5, -5], &[], 2.0)
+    };
+    "a joint without a rate takes the model rate"
+)]
+fn steady_hazard_follows_the_limits_of_the_applied_registers(case: Case) {
+    let mut definition = base();
+    definition.core[0].flat = case.flat;
+    definition.core[0].idle = case.idle;
+    definition.joint = case.joint.into_iter().collect();
+    let model = model(&definition);
+    let load = load(case.regime, case.workload, case.cores, 90.0);
+    let got = model
+        .hazard(&offsets(&case.profile), &load)
+        .expect("a matching profile");
+    assert_eq!(got, case.want);
 }
 
 #[test]
@@ -428,24 +380,22 @@ fn a_model_is_cheap_to_share_between_threads() {
     shareable::<Model>();
 }
 
-#[test]
-fn shared_voltage_changes_nothing_for_trials_that_do_not_load_two_cores_in_r7() {
+#[test_case(Regime::R7, &[0]; "r7 on one core")]
+#[test_case(Regime::R2, &[0, 1]; "r2 on two cores")]
+#[test_case(Regime::R1, &[0]; "r1 on one core")]
+fn shared_voltage_changes_nothing_for_trials_that_do_not_load_two_cores_in_r7(
+    regime: Regime,
+    cores: &[i64],
+) {
     let plain = committed_machine("shared-voltage.json");
     let mut legacy = plain.clone();
     legacy.shared_voltage = None;
     let with = Model::new(&plain, 3).expect("valid");
     let without = Model::new(&legacy, 3).expect("valid");
     let profile = offsets(&[-35; 16]);
-    let avx = r7_workload(0);
-    for (regime, cores) in [
-        (Regime::R7, &[0][..]),
-        (Regime::R2, &[0, 1]),
-        (Regime::R1, &[0]),
-    ] {
-        let load = load(regime, avx, cores, 120.0);
-        assert_eq!(
-            with.sources(&profile, &load).expect("shape"),
-            without.sources(&profile, &load).expect("shape")
-        );
-    }
+    let load = load(regime, r7_workload(0), cores, 120.0);
+    assert_eq!(
+        with.sources(&profile, &load).expect("shape"),
+        without.sources(&profile, &load).expect("shape")
+    );
 }
