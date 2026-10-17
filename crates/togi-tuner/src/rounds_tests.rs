@@ -407,9 +407,8 @@ fn yielded_movers_retry_without_repeating_their_valid_own_checks() {
     let retry_classes: Vec<_> = togi_machine::workloads(Regime::R7)
         .iter()
         .flat_map(|workload| {
-            [first_class.loaded(), partial].map(|loaded| {
-                crate::ClassKey::new(workload.id(), loaded, first_class.duration())
-            })
+            [first_class.loaded(), partial]
+                .map(|loaded| crate::ClassKey::new(workload.id(), loaded, first_class.duration()))
         })
         .filter(|&class| class != first_class)
         .collect();
