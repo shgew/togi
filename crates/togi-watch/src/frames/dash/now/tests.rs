@@ -1,12 +1,12 @@
 //! Main's NOW rows: the operation sentence and the trial bar, the frozen R6 row, and the status that replaces them.
 
-use togi_journal::ShutdownReason;
+use togi_journal::{DeadEndCondition, ShutdownReason};
 use togi_machine::Regime;
 
 use super::super::stage::tests::{Rig, at, failed_on, trial};
 use super::now_lines;
 use crate::frames::fit::plain;
-use crate::model::StopView;
+use crate::model::{DeadEndView, StopView};
 
 fn rows(rig: &Rig, width: usize) -> [String; 2] {
     now_lines(&rig.scene(), width).map(|line| plain(&line))
@@ -112,6 +112,26 @@ fn a_stop_with_no_trial_behind_it_has_no_second_row() {
         saved: false,
     });
     assert!(rows(&rig, 160)[1].is_empty());
+}
+
+#[test]
+fn a_dead_end_too_long_for_the_row_keeps_its_cause_and_cuts_the_rest() {
+    let mut rig = Rig::new(3, 3);
+    rig.dead_end = Some(DeadEndView {
+        at: rig.now,
+        condition: DeadEndCondition::Preflight,
+        detail: "failed checks: ryzen_smu, msr, watchdog, pstore, topology, mprime, ycruncher, kernel_log"
+            .to_owned(),
+    });
+    for width in [60, 80] {
+        let [sentence, _] = rows(&rig, width);
+        assert!(
+            sentence.starts_with("NOW  DEAD END · preflight: failed checks: ryzen_smu"),
+            "{sentence}"
+        );
+        assert!(sentence.ends_with("..."), "{sentence}");
+        assert!(sentence.chars().count() <= width, "{sentence}");
+    }
 }
 
 #[test]

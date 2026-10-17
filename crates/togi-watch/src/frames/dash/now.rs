@@ -261,12 +261,9 @@ fn resting(scene: &Scene<'_>, width: usize) -> [Line<'static>; 2] {
     let mut lines = band.lines.iter();
     let mut head = vec![Clause::whole("", text(scene, band.paint, band.title))];
     if let Some(first) = lines.next() {
-        head.push(Clause::new(
+        head.push(Clause::whole(
             " · ",
-            vec![
-                Form::new(text(scene, Paint::Text, first.clone()), 1),
-                Form::empty(),
-            ],
+            text(scene, Paint::Text, first.clone()),
         ));
     }
     let kept = band.lines.len().saturating_sub(1);
