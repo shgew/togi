@@ -116,6 +116,14 @@ impl DiskFs {
         options
     }
 
+    /// Opens the directory at `path`, refusing a symbolic link in its final component.
+    pub(crate) fn open_dir(path: &Path) -> io::Result<File> {
+        OpenOptions::new()
+            .read(true)
+            .custom_flags((OFlags::NOFOLLOW | OFlags::DIRECTORY).bits().cast_signed())
+            .open(path)
+    }
+
     fn open_write(self, options: &OpenOptions, path: &Path) -> io::Result<Box<dyn FsFile>> {
         Ok(Box::new(DiskFile {
             file: options.open(path)?,
@@ -213,11 +221,7 @@ impl Fs for DiskFs {
         if !self.synced {
             return Ok(());
         }
-        OpenOptions::new()
-            .read(true)
-            .custom_flags((OFlags::NOFOLLOW | OFlags::DIRECTORY).bits().cast_signed())
-            .open(path)?
-            .sync_all()
+        Self::open_dir(path)?.sync_all()
     }
 
     #[expect(
@@ -225,19 +229,13 @@ impl Fs for DiskFs {
         reason = "production state-directory permissions must survive power loss"
     )]
     fn set_dir_mode(&self, path: &Path, mode: u32) -> io::Result<()> {
-        let dir = OpenOptions::new()
-            .read(true)
-            .custom_flags((OFlags::NOFOLLOW | OFlags::DIRECTORY).bits().cast_signed())
-            .open(path)?;
+        let dir = Self::open_dir(path)?;
         dir.set_permissions(std::fs::Permissions::from_mode(mode))?;
         if self.synced { dir.sync_all() } else { Ok(()) }
     }
 
     fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
-        let dir = OpenOptions::new()
-            .read(true)
-            .custom_flags((OFlags::NOFOLLOW | OFlags::DIRECTORY).bits().cast_signed())
-            .open(path)?;
+        let dir = Self::open_dir(path)?;
         let mut entries = Vec::new();
         for entry in Dir::read_from(&dir)? {
             let entry = entry?;
