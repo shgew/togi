@@ -3,6 +3,7 @@
 
 use proptest::prelude::*;
 use serde_json::{Value, json};
+use test_case::test_case;
 
 use super::fixtures::{at, sample, samples};
 use super::wire::arbitrary_event;
@@ -36,43 +37,39 @@ fn join(path: &str, field: &str) -> String {
     }
 }
 
-/// Where an unknown field goes in `kind`'s line, as a JSON pointer to the object that gets it, and the path the
-/// field is reported under.
-const POSITIONS: [(EventKind, &str, &str); 6] = [
-    (EventKind::TrialEnd, "", ""),
-    (EventKind::TrialEnd, "/data", "data"),
-    (EventKind::SessionStart, "/data/cores/0", "data.cores[0]"),
-    (EventKind::SmuIntent, "/data", "data"),
-    (EventKind::TrialSignal, "/data/schedule", "data.schedule"),
-    (EventKind::CrashDetected, "/data/pstore", "data.pstore"),
-];
+#[test_case(EventKind::TrialEnd, "", ""; "the envelope")]
+#[test_case(EventKind::TrialEnd, "/data", "data"; "the data")]
+#[test_case(EventKind::SessionStart, "/data/cores/0", "data.cores[0]"; "a core of the session start")]
+#[test_case(EventKind::SmuIntent, "/data", "data"; "the data of an smu intent")]
+#[test_case(EventKind::TrialSignal, "/data/schedule", "data.schedule"; "a signal schedule")]
+#[test_case(EventKind::CrashDetected, "/data/pstore", "data.pstore"; "a pstore record")]
+fn an_unknown_field_is_refused_by_strict_and_ignored_by_lenient_wherever_it_sits(
+    kind: EventKind,
+    pointer: &str,
+    at_path: &str,
+) {
+    let payload = sample(kind);
+    let event = at(2, "boot-a", 0, &[1], payload.clone());
+    let mut line = line_of(payload);
+    let target = line.pointer_mut(pointer).unwrap();
+    assert!(target.is_object(), "{kind} {pointer}");
+    target["extra"] = json!(1);
+    let text = line.to_string();
+    let path = join(at_path, "extra");
 
-#[test]
-fn an_unknown_field_is_refused_by_strict_and_ignored_by_lenient_wherever_it_sits() {
-    for (kind, pointer, at_path) in POSITIONS {
-        let payload = sample(kind);
-        let event = at(2, "boot-a", 0, &[1], payload.clone());
-        let mut line = line_of(payload);
-        let target = line.pointer_mut(pointer).unwrap();
-        assert!(target.is_object(), "{kind} {pointer}");
-        target["extra"] = json!(1);
-        let text = line.to_string();
-        let path = join(at_path, "extra");
+    let error = Event::decode(&text).unwrap_err();
+    assert!(
+        matches!(&error, DecodeError::UnknownField { kind: named, field } if *named == kind && *field == path),
+        "{kind} {pointer}: {error}"
+    );
+    assert_eq!(
+        error.to_string(),
+        format!("{kind} event: unknown field {path:?}")
+    );
 
-        let error = Event::decode(&text).unwrap_err();
-        assert!(
-            matches!(&error, DecodeError::UnknownField { kind: named, field } if *named == kind && *field == path),
-            "{kind} {pointer}: {error}"
-        );
-        assert_eq!(
-            error.to_string(),
-            format!("{kind} event: unknown field {path:?}")
-        );
-
-        let (decoded, ignored) = lenient_event(&text);
-        assert_eq!(decoded, event, "{kind} {pointer}");
-        assert_eq!(ignored, [path], "{kind} {pointer}");
-    }
+    let (decoded, ignored) = lenient_event(&text);
+    assert_eq!(decoded, event, "{kind} {pointer}");
+    assert_eq!(ignored, [path], "{kind} {pointer}");
 }
 
 #[test]
@@ -175,64 +172,44 @@ fn an_unknown_kind_with_an_unknown_envelope_field_is_still_an_unknown_kind() {
     assert_eq!(ignored, ["extra"]);
 }
 
-#[test]
-fn lenient_keeps_every_other_refusal_of_strict() {
-    type Damage = Box<dyn Fn(&mut Value)>;
-    let damaged: Vec<(&str, Damage)> = vec![
-        ("seq zero", Box::new(|line| line["seq"] = json!(0))),
-        (
-            "no time",
-            Box::new(|line| drop(line.as_object_mut().unwrap().remove("time"))),
-        ),
-        (
-            "no kind",
-            Box::new(|line| drop(line.as_object_mut().unwrap().remove("kind"))),
-        ),
-        (
-            "no data",
-            Box::new(|line| drop(line.as_object_mut().unwrap().remove("data"))),
-        ),
-        ("kind not text", Box::new(|line| line["kind"] = json!(7))),
-        (
-            "missing field",
-            Box::new(|line| drop(line["data"].as_object_mut().unwrap().remove("trial"))),
-        ),
-        (
-            "wrong type",
-            Box::new(|line| line["data"]["trial"] = json!(7)),
-        ),
-        (
-            "outside the type",
-            Box::new(|line| line["data"]["duration_s"] = json!(-1)),
-        ),
-        (
-            "unknown word",
-            Box::new(|line| line["data"]["outcome"] = json!("sideways")),
-        ),
-        ("not an object", Box::new(|line| line["data"] = json!([1]))),
-    ];
-    for (why, damage) in damaged {
-        for extra in [false, true] {
-            let mut line = line_of(sample(EventKind::TrialEnd));
-            damage(&mut line);
-            if extra {
-                line["extra"] = json!(1);
-                if let Some(data) = line["data"].as_object_mut() {
-                    data.insert("also".into(), json!(1));
-                }
+#[test_case(|line| line["seq"] = json!(0); "seq zero")]
+#[test_case(|line| drop(line.as_object_mut().unwrap().remove("time")); "no time")]
+#[test_case(|line| drop(line.as_object_mut().unwrap().remove("kind")); "no kind")]
+#[test_case(|line| drop(line.as_object_mut().unwrap().remove("data")); "no data")]
+#[test_case(|line| line["kind"] = json!(7); "kind not text")]
+#[test_case(
+    |line| drop(line["data"].as_object_mut().unwrap().remove("trial"));
+    "missing field"
+)]
+#[test_case(|line| line["data"]["trial"] = json!(7); "wrong type")]
+#[test_case(|line| line["data"]["duration_s"] = json!(-1); "outside the type")]
+#[test_case(|line| line["data"]["outcome"] = json!("sideways"); "unknown word")]
+#[test_case(|line| line["data"] = json!([1]); "not an object")]
+fn lenient_keeps_every_other_refusal_of_strict(damage: fn(&mut Value)) {
+    for extra in [false, true] {
+        let mut line = line_of(sample(EventKind::TrialEnd));
+        damage(&mut line);
+        if extra {
+            line["extra"] = json!(1);
+            if let Some(data) = line["data"].as_object_mut() {
+                data.insert("also".into(), json!(1));
             }
-            let text = line.to_string();
-            assert!(
-                Event::decode(&text).is_err(),
-                "{why} (extra {extra}) strict"
-            );
-            assert!(lenient(&text).is_err(), "{why} (extra {extra}) lenient");
         }
+        let text = line.to_string();
+        assert!(Event::decode(&text).is_err(), "(extra {extra}) strict");
+        assert!(lenient(&text).is_err(), "(extra {extra}) lenient");
     }
-    for text in ["", "nope", "{", "[]", "null", r#"{"seq":1}"#] {
-        assert!(Event::decode(text).is_err(), "{text:?} strict");
-        assert!(lenient(text).is_err(), "{text:?} lenient");
-    }
+}
+
+#[test_case(""; "empty")]
+#[test_case("nope"; "text")]
+#[test_case("{"; "an open brace")]
+#[test_case("[]"; "an array")]
+#[test_case("null"; "null")]
+#[test_case(r#"{"seq":1}"#; "a bare seq")]
+fn lenient_keeps_the_refusal_of_text_that_is_not_an_event(text: &str) {
+    assert!(Event::decode(text).is_err(), "{text:?} strict");
+    assert!(lenient(text).is_err(), "{text:?} lenient");
 }
 
 #[test]

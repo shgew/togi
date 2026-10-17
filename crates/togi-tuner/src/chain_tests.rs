@@ -349,6 +349,27 @@ fn r7_chain_derives_from_completed_predecessor() {
 }
 
 #[test]
+fn chain_order_is_the_order_the_next_derivation_reads() {
+    let mut j = chain_journal();
+    let seq = pass_part(
+        &mut j,
+        &[0, 1, 2, 3],
+        &[(0, 1.1), (1, 1.11), (2, 1.2), (3, 1.09)],
+    );
+    let action = j.next();
+    let chain = chain_of(&action).clone();
+    let state = fresh(&j.events);
+    let load = crate::LoadKey::new(chain.workload, set(&[0, 1, 2, 3]));
+    let order = state.chain_order(load, CcdId(0)).unwrap();
+    assert_eq!(order.groups, chain.groups);
+    assert_eq!(order.sources, chain.source_seqs);
+    assert_eq!(order.sources, [seq]);
+    assert!(order.proxy.is_empty());
+    assert_eq!(order.values.get(core(2)), Some(1.2));
+    assert_eq!(state.chain_order(load, CcdId(1)), None);
+}
+
+#[test]
 fn r7_chain_requires_all_predecessor_passes() {
     let mut j = chain_journal();
     for _ in 0..3 {

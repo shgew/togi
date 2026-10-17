@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use jiff::Timestamp;
+use test_case::test_case;
 use togi_machine::CpuId;
 
 use super::fixtures::{at, core, end, intent, sample, set};
@@ -86,24 +87,28 @@ fn a_group_selector_matches_dotted_kinds_and_an_exact_selector_only_itself() {
 }
 
 #[test]
-fn selectors_validate_against_the_registry() {
+fn selector_names_are_sorted() {
     let names = KindSelector::names();
     let mut sorted = names.clone();
     sorted.sort_unstable();
     assert_eq!(names, sorted);
-    for name in [
-        "trial",
-        "trial.end",
-        "failure",
-        "failure.carried",
-        "deadend",
-        "mce",
-        "session",
-        "journal",
-    ] {
-        assert!(names.contains(&name), "{name}");
-        assert!(KindSelector::from_str(name).is_ok(), "{name}");
-    }
+}
+
+#[test_case("trial"; "trial")]
+#[test_case("trial.end"; "trial end")]
+#[test_case("failure"; "failure")]
+#[test_case("failure.carried"; "failure carried")]
+#[test_case("deadend"; "deadend")]
+#[test_case("mce"; "mce")]
+#[test_case("session"; "session")]
+#[test_case("journal"; "journal")]
+fn a_registered_name_is_a_valid_selector(name: &str) {
+    assert!(KindSelector::names().contains(&name), "{name}");
+    assert!(KindSelector::from_str(name).is_ok(), "{name}");
+}
+
+#[test]
+fn selectors_refuse_names_outside_the_registry() {
     let unknown = KindSelector::from_str("trial.nope").unwrap_err();
     assert!(unknown.to_string().contains("valid names:"), "{unknown}");
     assert!(unknown.to_string().contains("trial.end"), "{unknown}");
@@ -204,32 +209,27 @@ fn core_and_trial_filters_intersect() {
     assert_eq!(seqs(&both.select(&events)), [6]);
 }
 
-#[test]
-fn core_filters_see_typed_core_fields_of_every_shape() {
-    let cases = [
-        (EventKind::TunerDecision, 7),
-        (EventKind::CorePhase, 7),
-        (EventKind::SmuIntent, 3),
-        (EventKind::SmuReadback, 3),
-        (EventKind::Mce, 3),
-        (EventKind::CommandReset, 4),
-        (EventKind::HuntStart, 3),
-        (EventKind::HuntEnd, 1),
-        (EventKind::Combination, 3),
-        (EventKind::TrialCarried, 3),
-        (EventKind::FailureCarried, 3),
-        (EventKind::DeadEnd, 2),
-        (EventKind::DefectFound, 2),
-        (EventKind::SessionNotice, 1),
-    ];
-    for (kind, wanted) in cases {
-        let event = at(1, "boot-a", 0, &[], sample(kind));
-        assert!(
-            filter(&[wanted]).matches(&event),
-            "{kind} for core {wanted}"
-        );
-        assert!(!filter(&[15]).matches(&event), "{kind} for core 15");
-    }
+#[test_case(EventKind::TunerDecision, 7; "tuner decision")]
+#[test_case(EventKind::CorePhase, 7; "core phase")]
+#[test_case(EventKind::SmuIntent, 3; "smu intent")]
+#[test_case(EventKind::SmuReadback, 3; "smu readback")]
+#[test_case(EventKind::Mce, 3; "mce")]
+#[test_case(EventKind::CommandReset, 4; "command reset")]
+#[test_case(EventKind::HuntStart, 3; "hunt start")]
+#[test_case(EventKind::HuntEnd, 1; "hunt end")]
+#[test_case(EventKind::Combination, 3; "combination")]
+#[test_case(EventKind::TrialCarried, 3; "trial carried")]
+#[test_case(EventKind::FailureCarried, 3; "failure carried")]
+#[test_case(EventKind::DeadEnd, 2; "dead end")]
+#[test_case(EventKind::DefectFound, 2; "defect found")]
+#[test_case(EventKind::SessionNotice, 1; "session notice")]
+fn core_filters_see_typed_core_fields_of_every_shape(kind: EventKind, wanted: u8) {
+    let event = at(1, "boot-a", 0, &[], sample(kind));
+    assert!(
+        filter(&[wanted]).matches(&event),
+        "{kind} for core {wanted}"
+    );
+    assert!(!filter(&[15]).matches(&event), "{kind} for core 15");
 }
 
 #[test]

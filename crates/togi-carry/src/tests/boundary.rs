@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_journal::Attribution;
 use togi_machine::{Condition, Signal};
 
@@ -7,39 +8,38 @@ use super::{
 };
 use togi_journal::SessionCarried;
 
-#[test]
-fn fact_prefix_needs_commitment_to_stop_walk() {
-    for committed in [false, true] {
-        let mut a = Source::new(day(1), &[0, 1], 6, 1).with_context(&context());
-        let a_pass = a.pass(0, -30, Condition::Alone);
-        let a_failure = a
-            .fail(1, -30, Condition::Alone, Attribution::Attributed)
-            .end;
-        let (mut archive, chain) = chain_of(&[&a]);
-        let originals = resolve(&pending(&mut archive, &chain, None, &[]), 1);
+#[test_case(false; "an uncommitted prefix")]
+#[test_case(true; "a committed prefix")]
+fn fact_prefix_needs_commitment_to_stop_walk(committed: bool) {
+    let mut a = Source::new(day(1), &[0, 1], 6, 1).with_context(&context());
+    let a_pass = a.pass(0, -30, Condition::Alone);
+    let a_failure = a
+        .fail(1, -30, Condition::Alone, Attribution::Attributed)
+        .end;
+    let (mut archive, chain) = chain_of(&[&a]);
+    let originals = resolve(&pending(&mut archive, &chain, None, &[]), 1);
 
-        let mut b = Source::new(day(2), &[0, 1], 6, 1).with_context(&context());
-        b.add(originals.facts()[0].to_payload());
-        if committed {
-            b.add(SessionCarried {
-                sources: originals.sources().to_vec(),
-                failure_points: true,
-                detail: None,
-                carried: Vec::new(),
-            });
-        }
-        let own = b
-            .fail(0, -30, Condition::Alone, Attribution::Attributed)
-            .end;
-
-        let (mut archive, chain) = chain_of(&[&b, &a]);
-        let got = resolve(&pending(&mut archive, &chain, None, &[]), 1);
-        let mut want = vec![a.id_of(a_pass), b.id_of(own)];
-        if !committed {
-            want.insert(1, a.id_of(a_failure));
-        }
-        assert_eq!(ids(got.facts()), want, "committed {committed}");
+    let mut b = Source::new(day(2), &[0, 1], 6, 1).with_context(&context());
+    b.add(originals.facts()[0].to_payload());
+    if committed {
+        b.add(SessionCarried {
+            sources: originals.sources().to_vec(),
+            failure_points: true,
+            detail: None,
+            carried: Vec::new(),
+        });
     }
+    let own = b
+        .fail(0, -30, Condition::Alone, Attribution::Attributed)
+        .end;
+
+    let (mut archive, chain) = chain_of(&[&b, &a]);
+    let got = resolve(&pending(&mut archive, &chain, None, &[]), 1);
+    let mut want = vec![a.id_of(a_pass), b.id_of(own)];
+    if !committed {
+        want.insert(1, a.id_of(a_failure));
+    }
+    assert_eq!(ids(got.facts()), want, "committed {committed}");
 }
 
 #[test]
