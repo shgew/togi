@@ -18,7 +18,7 @@ use crate::error::{Flow, SessionError, Step};
 use crate::evidence::{self, RecordedMce, TrialEvidence};
 use crate::execute::{TunerValues, is_crash_flow};
 use crate::recover::append_trial_end;
-use crate::session::{Boundary, Control, Fault, Session, Stop, TrialWindow};
+use crate::session::{Boundary, Control, Fault, Lifecycle, Session, Stop, Swept, TrialWindow};
 use crate::trial::{self, Journaled};
 use crate::write::{self, ProfileFailure, ProfileRecord, ProfileRequest};
 
@@ -47,14 +47,46 @@ struct Waiting {
     reported: Option<crate::error::AppendFailure>,
 }
 
+/// What the end of a trial knows of the machine its workload ran on.
+enum Joined {
+    /// Every workload stopped and the machine stayed up.
+    Stopped,
+    /// The workload's containment is unconfirmed, for this reason, and the machine stayed up.
+    Uncontained(String),
+    /// The machine went down; the workload's containment may have been unconfirmed before it did.
+    Crashed { uncontained: Option<String> },
+}
+
+impl Joined {
+    fn of(crashed: bool, uncontained: Option<String>) -> Self {
+        match (crashed, uncontained) {
+            (true, uncontained) => Self::Crashed { uncontained },
+            (false, Some(reason)) => Self::Uncontained(reason),
+            (false, None) => Self::Stopped,
+        }
+    }
+
+    const fn crashed(&self) -> bool {
+        matches!(self, Self::Crashed { .. })
+    }
+
+    fn uncontained(&self) -> Option<&str> {
+        match self {
+            Self::Uncontained(reason)
+            | Self::Crashed {
+                uncontained: Some(reason),
+            } => Some(reason),
+            Self::Stopped | Self::Crashed { uncontained: None } => None,
+        }
+    }
+}
+
 /// How the workload and its wait went, as far as the trial's end is concerned.
 struct Waited {
     result: TrialResult,
     /// What ended the trial early, if anything.
     error: Option<Error>,
-    /// Why the workload's containment is unconfirmed, if it is.
-    containment: Option<String>,
-    crashed: bool,
+    joined: Joined,
 }
 
 impl Session<'_> {
@@ -110,18 +142,29 @@ impl Session<'_> {
             .applied(&self.boot)
             .map(|(_, condition)| condition);
         if applied == Some(plan.condition)
-            && self.confirmed.is_some()
+            && matches!(
+                &self.lifecycle,
+                Lifecycle::Swept(Swept {
+                    confirmed: Some(_),
+                    ..
+                })
+            )
             && self.hardware.profile().as_ref() == Some(&target)
         {
             return Ok(());
         }
-        let Some(stopped) = self.stopped.as_ref() else {
+        let Lifecycle::Swept(Swept {
+            stopped: Some(stopped),
+            confirmed,
+            ..
+        }) = &mut self.lifecycle
+        else {
             return Err(SessionError::Unproven.into());
         };
         let causes: Vec<Seq> = tuned.profile_seq.into_iter().collect();
         let mut check = write::checker(self.appender.tuner());
-        self.confirmed = None;
-        let verified = write::apply_profile(
+        *confirmed = None;
+        *confirmed = Some(write::apply_profile(
             &mut self.appender,
             &mut *self.smu,
             stopped,
@@ -132,24 +175,33 @@ impl Session<'_> {
                 record: ProfileRecord::Applied(plan.condition),
             },
             &mut check,
-        )?;
-        self.confirmed = Some(verified);
+        )?);
         Ok(())
     }
 
     /// Writes one core's offset and reads it back, as the trial alone does around its run.
     fn write_core(&mut self, core: CoreId, offset: TargetOffset, causes: &[Seq]) -> Step<()> {
-        let Some(stopped) = self.stopped.as_ref() else {
+        let Lifecycle::Swept(Swept {
+            stopped: Some(stopped),
+            confirmed,
+            ..
+        }) = &mut self.lifecycle
+        else {
             return Err(SessionError::Unproven.into());
         };
         let mut check = write::checker(self.appender.tuner());
-        self.confirmed = None;
+        *confirmed = None;
         let checked = self
             .hardware
             .check_set(core, offset, &mut check)
             .map_err(|refused| Flow::from(ProfileFailure::from(refused)))?;
-        let verified = write::apply(&mut self.appender, &mut *self.smu, stopped, checked, causes)?;
-        self.confirmed = Some(verified);
+        *confirmed = Some(write::apply(
+            &mut self.appender,
+            &mut *self.smu,
+            stopped,
+            checked,
+            causes,
+        )?);
         Ok(())
     }
 
@@ -222,7 +274,7 @@ impl Session<'_> {
     }
 
     fn trial(&mut self, plan: &TrialPlan, rotation: usize, workload: WorkloadId) -> Step<()> {
-        if self.stopped.is_none() {
+        if self.lifecycle.stopped().is_none() {
             return Err(SessionError::Unproven.into());
         }
         let (cores, cpus) = self.assign(plan, workload)?;
@@ -265,10 +317,15 @@ impl Session<'_> {
             seed: intent.get(),
             offsets: self.hardware.confirmed(),
         };
-        let Some(confirmed) = self.confirmed.as_ref() else {
+        let Lifecycle::Swept(Swept {
+            stopped,
+            confirmed: Some(confirmed),
+            ..
+        }) = &mut self.lifecycle
+        else {
             return Err(SessionError::Unproven.into());
         };
-        let Some(ready) = self.stopped.take() else {
+        let Some(ready) = stopped.take() else {
             return Err(SessionError::Unproven.into());
         };
         let token = self.cancel.child_token();
@@ -278,18 +335,20 @@ impl Session<'_> {
         let running = match trial::start(&mut *self.trials, &token, authorized, spec, ready) {
             Ok(running) => running,
             Err(Partial { value, error }) => {
-                self.stopped = value;
                 let crashed = matches!(error, Error::Crashed);
-                let containment =
-                    (self.stopped.is_none() && !crashed).then(|| togi_render::error_chain(&error));
-                if containment.is_some() {
-                    self.fault.get_or_insert(Fault::Containment);
+                let uncontained =
+                    (value.is_none() && !crashed).then(|| togi_render::error_chain(&error));
+                if let Some(stopped) = value {
+                    self.lifecycle.hold(stopped);
+                }
+                let joined = Joined::of(crashed, uncontained);
+                if let Joined::Uncontained(_) = joined {
+                    self.lifecycle.latch(Fault::Containment);
                 }
                 let waited = Waited {
                     result: TrialResult::default(),
                     error: Some(error),
-                    containment,
-                    crashed,
+                    joined,
                 };
                 return self.end_trial(&trial, &token, waited, "setup failed");
             }
@@ -390,26 +449,26 @@ impl Session<'_> {
             Err(Partial { value, error }) => (value, Some(error)),
         };
         let mut crashed = matches!(error, Some(Error::Crashed));
-        let mut containment = match &error {
+        let mut uncontained = match &error {
             Some(error @ Error::Containment(_)) => Some(togi_render::error_chain(error)),
             _ => None,
         };
         match stopping {
-            Ok(stopped) if containment.is_none() => self.stopped = Some(stopped),
+            Ok(stopped) if uncontained.is_none() => self.lifecycle.hold(stopped),
             Ok(stopped) => drop(stopped),
             Err(Error::Crashed) => {
                 crashed = true;
                 error.get_or_insert(Error::Crashed);
             }
             Err(unconfirmed) => {
-                containment.get_or_insert_with(|| togi_render::error_chain(&unconfirmed));
+                uncontained.get_or_insert_with(|| togi_render::error_chain(&unconfirmed));
             }
         }
-        if containment.is_some() {
-            self.fault.get_or_insert(Fault::Containment);
-        }
-        if crashed {
-            self.fault = Some(Fault::Crashed);
+        let joined = Joined::of(crashed, uncontained);
+        match joined {
+            Joined::Stopped => {}
+            Joined::Uncontained(_) => self.lifecycle.latch(Fault::Containment),
+            Joined::Crashed { .. } => self.lifecycle.crash(),
         }
         if let Some(failure) = reported {
             return Err(failure.into());
@@ -417,8 +476,7 @@ impl Session<'_> {
         Ok(Waited {
             result,
             error,
-            containment,
-            crashed,
+            joined,
         })
     }
 
@@ -427,14 +485,14 @@ impl Session<'_> {
     fn reap(&mut self, running: Box<dyn Running>) {
         self.appender.watch_trial(None);
         match running.stop() {
-            Ok(stopped) => self.stopped = Some(stopped),
+            Ok(stopped) => self.lifecycle.hold(stopped),
             Err(error) => {
                 let fault = if matches!(error, Error::Crashed) {
                     Fault::Crashed
                 } else {
                     Fault::Containment
                 };
-                self.fault.get_or_insert(fault);
+                self.lifecycle.latch(fault);
                 self.unconfirmed.push(error);
             }
         }
@@ -453,25 +511,26 @@ impl Session<'_> {
         let Waited {
             result,
             mut error,
-            containment,
-            mut crashed,
+            mut joined,
         } = waited;
         let evident = !result.escaped.is_empty() || result.failure.is_some();
-        if crashed && containment.is_none() && !evident {
+        if matches!(joined, Joined::Crashed { uncontained: None }) && !evident {
             return Err(SessionError::Machine(Error::Crashed).into());
         }
         let mut boundary = Boundary::default();
-        if !crashed && containment.is_none() {
+        if let Joined::Stopped = joined {
             match self.teardown(trial) {
                 Ok(read) => boundary = read,
                 Err(flow) if is_crash_flow(&flow) && evident => {
-                    self.fault = Some(Fault::Crashed);
-                    crashed = true;
+                    self.lifecycle.crash();
+                    joined = Joined::Crashed { uncontained: None };
                     error.get_or_insert(Error::Crashed);
                 }
                 Err(flow) => return Err(flow),
             }
         }
+        let crashed = joined.crashed();
+        let containment = joined.uncontained();
         let open = self
             .appender
             .recovery()
@@ -500,7 +559,7 @@ impl Session<'_> {
             reset: None,
             missing: missing.as_deref(),
             duration: Duration::from_secs(u64::from(trial.plan.duration.get())),
-            containment: containment.as_deref(),
+            containment,
         });
         let interrupted = token.is_cancelled();
         let reason = if interrupted {
@@ -509,35 +568,25 @@ impl Session<'_> {
             adjudication.reason
         };
         let end = TrialEnd {
-            trial: trial.id.clone(),
             kernel_cursor: boundary.cursor,
             kernel_error,
-            outcome: adjudication.outcome,
             signal: adjudication.signal,
             core: adjudication
                 .core
                 .filter(|_| trial.plan.condition != Condition::Alone),
-            duration_s: adjudication.duration_s,
             tctl_max_c: adjudication
                 .tctl_max_c
                 .and_then(|tctl| i32::try_from(tctl).ok()),
-            voltage_request_median_v: None,
-            voltage_request_min_v: None,
-            voltage_requests_v: PerCore::default(),
-            top_requesters: togi_machine::CoreSet::default(),
-            ccd_mhz: std::collections::BTreeMap::new(),
-            last_sample_s: None,
-            last_sample_tctl_c: None,
-            last_sample_min_mhz: None,
-            last_sample_max_mhz: None,
-            stalled_core: None,
-            worker_stalled_ms: None,
             reason,
             interrupted: interrupted || crashed,
-            last_evidence: false,
             escaped: adjudication.escaped,
             backend_missing: matches!(error, Some(Error::BackendMissing)),
             containment_error: adjudication.containment_error,
+            ..evidence::trial_end(
+                trial.id.clone(),
+                adjudication.outcome,
+                adjudication.duration_s,
+            )
         };
         let topology = self.appender.recovery().topology();
         let summary = evidence::summarize_samples(

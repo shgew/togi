@@ -15,7 +15,7 @@ use togi_machine::{
     ObservedOffset, PerCore, Regime, ResetKind, Signal, pick_workload,
 };
 
-use super::{IntentKind, RecoveryState};
+use super::{IntentKind, RecoveryState, TargetWrite};
 use crate::error::FoldError;
 use crate::testing::{build, core, target};
 
@@ -242,33 +242,7 @@ impl Log {
 }
 
 fn trial_end(id: &str, outcome: Outcome) -> TrialEnd {
-    TrialEnd {
-        trial: TrialId::from(id.to_owned()),
-        kernel_cursor: None,
-        kernel_error: None,
-        outcome,
-        signal: None,
-        core: None,
-        duration_s: 60,
-        tctl_max_c: None,
-        voltage_request_median_v: None,
-        voltage_request_min_v: None,
-        voltage_requests_v: PerCore::default(),
-        top_requesters: CoreSet::default(),
-        ccd_mhz: std::collections::BTreeMap::new(),
-        last_sample_s: None,
-        last_sample_tctl_c: None,
-        last_sample_min_mhz: None,
-        last_sample_max_mhz: None,
-        stalled_core: None,
-        worker_stalled_ms: None,
-        reason: None,
-        interrupted: false,
-        last_evidence: false,
-        escaped: Vec::new(),
-        backend_missing: false,
-        containment_error: None,
-    }
+    crate::evidence::trial_end(TrialId::from(id.to_owned()), outcome, 60)
 }
 
 fn crash(previous: &str) -> CrashDetected {
@@ -1773,4 +1747,57 @@ fn a_sparse_machine_is_keyed_by_core_id_not_by_position() {
         state.topology().keys().copied().collect::<Vec<_>>(),
         [core(3), core(12)]
     );
+}
+
+#[test]
+fn a_trial_alone_s_window_starts_at_the_readback_of_its_target_and_not_before_the_write() {
+    let window = |log: &Log| {
+        let state = log.state();
+        let open = state.open_trial().unwrap();
+        (open.target, open.window_start)
+    };
+    let mut log = Log::new();
+    log.at("b0", 1_000);
+    let trial = log.trial_intent("0001", Some(0), Regime::R7);
+    assert_eq!(window(&log), (None, Some(Duration::from_secs(1))));
+
+    log.mono(2_000);
+    let other = log.intent(8, -10, &[trial]);
+    log.written(8, -10, other);
+    assert_eq!(window(&log), (None, Some(Duration::from_secs(1))));
+
+    let intent = log.intent(0, -10, &[trial]);
+    assert_eq!(
+        window(&log),
+        (
+            Some(TargetWrite::Intended(intent)),
+            Some(Duration::from_secs(1))
+        )
+    );
+    let mut unwritten = Log {
+        events: log.events.clone(),
+        boot: log.boot.clone(),
+        mono_ms: log.mono_ms,
+        wall: log.wall,
+    };
+    unwritten.mono(3_000).readback(0, -10, -10, intent);
+    assert_eq!(
+        window(&unwritten).1,
+        Some(Duration::from_secs(1)),
+        "a readback without the write does not start the window"
+    );
+
+    log.mono(3_000);
+    let write = log.written(0, -10, intent);
+    assert_eq!(
+        window(&log),
+        (
+            Some(TargetWrite::Written(write)),
+            Some(Duration::from_secs(1))
+        )
+    );
+    log.mono(4_000).readback(0, -9, -10, write);
+    assert_eq!(window(&log).1, Some(Duration::from_secs(1)));
+    log.mono(5_000).readback(0, -10, -10, write);
+    assert_eq!(window(&log).1, Some(Duration::from_secs(5)));
 }

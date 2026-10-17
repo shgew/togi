@@ -683,31 +683,18 @@ fn close_open_trial(recovery: &mut Recovery<'_, '_>) -> Step<()> {
     let ruling = closure.ruling();
     let trial: TrialId = open.intent.trial.clone();
     let end = TrialEnd {
-        trial: trial.clone(),
         kernel_cursor: state.kernel_cursor(current).cloned(),
         kernel_error: open.kernel_error.clone(),
-        outcome: ruling.outcome,
         signal: ruling.signal,
         core: ruling.core,
-        duration_s: u32::try_from(open.ran().as_secs()).unwrap_or(u32::MAX),
-        tctl_max_c: None,
-        voltage_request_median_v: None,
-        voltage_request_min_v: None,
-        voltage_requests_v: PerCore::default(),
-        top_requesters: CoreSet::default(),
-        ccd_mhz: std::collections::BTreeMap::new(),
-        last_sample_s: None,
-        last_sample_tctl_c: None,
-        last_sample_min_mhz: None,
-        last_sample_max_mhz: None,
-        stalled_core: None,
-        worker_stalled_ms: None,
         reason: evidence::join_diagnostic(Some(ruling.reason), open.kernel_error.as_deref()),
         interrupted: ruling.interrupted,
         last_evidence: ruling.stopped && open.kernel_error.is_none(),
-        escaped: Vec::new(),
-        backend_missing: false,
-        containment_error: None,
+        ..evidence::trial_end(
+            trial.clone(),
+            ruling.outcome,
+            u32::try_from(open.ran().as_secs()).unwrap_or(u32::MAX),
+        )
     };
     let loaded: CoreSet = if open.intent.cores.is_empty() {
         open.intent.core.into_iter().collect()

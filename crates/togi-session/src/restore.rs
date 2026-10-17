@@ -4,7 +4,7 @@ use togi_machine::{CoreSet, ObservedOffset, PerCore, TargetOffset};
 use togi_tuner::{Constraints, FailurePoint};
 
 use crate::error::{Flow, Step};
-use crate::session::{Fault, Session};
+use crate::session::Session;
 use crate::write::{self, ProfileRecord, ProfileRequest};
 
 /// The offsets the baseline recorded, kept no deeper than `held`, the offsets the tuner is searching at, and shallower
@@ -82,7 +82,7 @@ impl Session<'_> {
         if self.hardware.profile().as_ref() == Some(&target) {
             return Ok(Restoration::Unchanged);
         }
-        let Some(stopped) = self.stopped.as_ref() else {
+        let Some(stopped) = self.lifecycle.stopped() else {
             return Ok(Restoration::Withheld);
         };
         let mut check = write::checker(self.appender.tuner());
@@ -113,7 +113,7 @@ impl Session<'_> {
         if let Flow::Fatal(error) = flow
             && error.is_crash()
         {
-            self.fault = Some(Fault::Crashed);
+            self.lifecycle.crash();
         }
     }
 }
