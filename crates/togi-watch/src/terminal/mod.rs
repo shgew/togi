@@ -1257,7 +1257,7 @@ mod tests {
             |journal, screen, now, buf| {
                 seen.push(match journal {
                     Journal::Ready { log, .. } => log.total,
-                    _ => 0,
+                    Journal::Missing | Journal::Starting | Journal::Problem(_) => 0,
                 });
                 plain(journal, screen, now, buf)
             },

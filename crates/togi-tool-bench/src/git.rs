@@ -1,7 +1,7 @@
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
-use crate::error::Error;
+use crate::error::{Error, GitError};
 
 /// The tree a bench ran from.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -23,7 +23,7 @@ pub fn inspect(outs: &[&Path]) -> Result<Tree, Error> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| Error::Git {
             command: "status".to_owned(),
-            message: format!("resolve the output path: {error}"),
+            source: GitError::Resolve(error),
         })?;
     let status = git(&["status", "--porcelain", "-z", "--untracked-files=all"])?;
     Ok(Tree {
@@ -58,18 +58,18 @@ fn clean(path: &Path) -> PathBuf {
     reason = "the bench reads its tree's revision and state from git at run time"
 )]
 fn git(args: &[&str]) -> Result<Vec<u8>, Error> {
-    let failed = |message: String| Error::Git {
+    let failed = |source| Error::Git {
         command: args.join(" "),
-        message,
+        source,
     };
     let output = Command::new("git")
         .args(args)
         .output()
-        .map_err(|error| failed(error.to_string()))?;
+        .map_err(|error| failed(GitError::Spawn(error)))?;
     if output.status.success() {
         Ok(output.stdout)
     } else {
-        Err(failed(text(&output.stderr)))
+        Err(failed(GitError::Failed(text(&output.stderr))))
     }
 }
 

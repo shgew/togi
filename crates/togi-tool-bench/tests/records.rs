@@ -198,14 +198,14 @@ fn a_record_is_refused_in_the_positional_array_form() {
     let object = object.as_object().unwrap();
     assert_eq!(object.len(), FIELDS.len());
     let array = serde_json::Value::Array(FIELDS.iter().map(|name| object[*name].clone()).collect());
-    let error = read_text(&array.to_string()).unwrap_err().to_string();
+    let error = togi_machine::error_chain(&read_text(&array.to_string()).unwrap_err());
     assert!(error.contains("an object"), "{error}");
 
     let mut nested = object.clone();
     nested.insert("model_check".to_owned(), serde_json::json!([1, 2, 3]));
-    let error = read_text(&serde_json::Value::Object(nested).to_string())
-        .unwrap_err()
-        .to_string();
+    let error = togi_machine::error_chain(
+        &read_text(&serde_json::Value::Object(nested).to_string()).unwrap_err(),
+    );
     assert!(error.contains("an object"), "{error}");
 }
 
@@ -218,7 +218,7 @@ fn the_first_passed_cycle_is_required_but_may_be_null() {
         .as_object_mut()
         .unwrap()
         .remove("first_passed_cycle_h");
-    let error = read_text(&value.to_string()).unwrap_err().to_string();
+    let error = togi_machine::error_chain(&read_text(&value.to_string()).unwrap_err());
     assert!(error.contains("first_passed_cycle_h"), "{error}");
 }
 

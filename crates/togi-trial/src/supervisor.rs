@@ -15,7 +15,7 @@ use std::time::Duration;
 use togi_backend::Backend;
 use togi_machine::{
     CancellationToken, CoreId, CoreInfo, CpuId, OnCancel, Partial, PerCore, PmTableReader, Sample,
-    Signal, Started, Stopped, Toggles, TrialConditions, TrialResult, TrialSpec,
+    Signal, Started, Stopped, Toggles, TrialConditions, TrialResult, TrialSpec, error_chain,
 };
 use tokio::sync::mpsc::{
     Receiver, Sender, UnboundedReceiver, UnboundedSender, channel as bounded, unbounded_channel,
@@ -35,6 +35,7 @@ use crate::logs::{LogWriter, LogsEnd, Wrap};
 use crate::os::{Child as _, GroupSignal, LaunchFailure, Os, SignalError};
 use crate::plan::{Load, TrialPlan};
 use crate::prepare::Preparer;
+use crate::procfs::ProcError;
 use crate::runner::Backends;
 use crate::samples::{Open, SamplesWriter};
 use crate::schedule::{Action, Step, timeline};
@@ -686,7 +687,7 @@ async fn await_scope<O: Os>(
     }
     let end = Instant::now() + env.timing.readiness();
     loop {
-        if env.os.in_scope(instance.pid, &instance.scope) == Ok(true) {
+        if matches!(env.os.in_scope(instance.pid, &instance.scope), Ok(true)) {
             return Readiness::Ready;
         }
         tokio::select! {
@@ -1020,7 +1021,7 @@ impl<O: Os> Supervisor<O> {
         let env = Rc::clone(&self.env);
         let instance = &mut self.live.instances[index];
         if !instance.observed.ready {
-            if env.os.in_scope(instance.pid, &instance.scope) != Ok(true) {
+            if !matches!(env.os.in_scope(instance.pid, &instance.scope), Ok(true)) {
                 return false;
             }
             instance.observed.ready = true;
@@ -1046,15 +1047,15 @@ impl<O: Os> Supervisor<O> {
                 for error in found.errors {
                     self.judge.observe(Observation::SamplingLoss {
                         instance: index,
-                        what: format!("thread sampling lost: {error}"),
+                        what: format!("thread sampling lost: {}", error_chain(&error)),
                     });
                 }
             }
-            Err(crate::procfs::ProcError::Gone) => {}
+            Err(ProcError::Gone) => {}
             Err(error) => {
                 self.judge.observe(Observation::SamplingLoss {
                     instance: index,
-                    what: format!("thread sampling lost: {error}"),
+                    what: format!("thread sampling lost: {}", error_chain(&error)),
                 });
             }
         }
@@ -1074,11 +1075,11 @@ impl<O: Os> Supervisor<O> {
                     });
                 }
             }
-            Err(crate::procfs::ProcError::Gone) => {}
+            Err(ProcError::Gone) => {}
             Err(error) => {
                 self.judge.observe(Observation::SamplingLoss {
                     instance: index,
-                    what: format!("usage sampling lost: {error}"),
+                    what: format!("usage sampling lost: {}", error_chain(&error)),
                 });
             }
         }
@@ -1277,7 +1278,7 @@ fn report_abandoned(
         Err(containment) => format!(
             "togi: trial {} was dropped while running; teardown unconfirmed: {}{panic}",
             plan.id,
-            togi_machine::error_chain(containment)
+            error_chain(containment)
         ),
     });
 }

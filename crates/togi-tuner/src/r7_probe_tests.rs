@@ -40,10 +40,11 @@ fn fail(j: &mut Journal, cores: &[u8], report: &R7Report) -> Seq {
 }
 
 fn probe(j: &Journal) -> TrialPlan {
-    match j.run().r7_probe_action() {
-        Some(Action::RunTrial(plan)) => plan,
-        other => panic!("expected a partial probe, got {other:?}"),
-    }
+    let action = j.run().r7_probe_action();
+    let Some(Action::RunTrial(plan)) = action else {
+        panic!("expected a partial probe, got {action:?}");
+    };
+    plan
 }
 
 fn settled(j: &mut Journal) -> Action {
@@ -58,7 +59,7 @@ fn settled(j: &mut Journal) -> Action {
             {
                 j.decide(decision.clone());
             }
-            _ => return next,
+            Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking => return next,
         }
     }
 }
@@ -219,9 +220,11 @@ fn tied_requesters_idle_together_and_no_singleton_or_empty_part_runs() {
             apply(&mut j);
         }
         assert_eq!(
-            j.run().r7_probe_action().map(|action| match action {
-                Action::RunTrial(plan) => plan.load.cores(),
-                other => panic!("not a trial: {other:?}"),
+            j.run().r7_probe_action().map(|action| {
+                let Action::RunTrial(plan) = action else {
+                    panic!("not a trial: {action:?}");
+                };
+                plan.load.cores()
             }),
             expected.as_deref().map(set),
         );

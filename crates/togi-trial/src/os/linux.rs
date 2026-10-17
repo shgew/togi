@@ -477,11 +477,14 @@ mod tests {
                 tokio::task::spawn_blocking(|| {}).await.unwrap();
                 let finished = scans.abandoned.load(Ordering::Acquire);
                 let resumed = scans.run(Instant::now() + secs(60), || Ok(7)).await;
-                assert_eq!(refused, Some(Err(ProcError::Stuck)), "abort: {abort}");
+                assert!(
+                    matches!(refused, Some(Err(ProcError::Stuck))),
+                    "abort: {abort}"
+                );
                 assert!(!ran.load(Ordering::SeqCst), "abort: {abort}");
                 assert_eq!(abandoned, 1, "abort: {abort}");
                 assert_eq!(finished, 0, "abort: {abort}");
-                assert_eq!(resumed, Ok(7), "abort: {abort}");
+                assert!(matches!(resumed, Ok(7)), "abort: {abort}");
             });
         }
     }
@@ -511,7 +514,10 @@ mod tests {
             assert_eq!(scans.abandoned.load(Ordering::Acquire), 0);
             drop(owner);
             assert_eq!(scans.abandoned.load(Ordering::Acquire), 0);
-            assert_eq!(scans.run(Instant::now() + secs(60), || Ok(7)).await, Ok(7));
+            assert!(matches!(
+                scans.run(Instant::now() + secs(60), || Ok(7)).await,
+                Ok(7)
+            ));
         });
     }
 
@@ -544,12 +550,12 @@ mod tests {
             tokio::task::spawn_blocking(|| {}).await.unwrap();
             let finished = scans.abandoned.load(Ordering::Acquire);
             let resumed = scans.run(Instant::now() + secs(60), || Ok(7)).await;
-            assert_eq!(timed_out, Err(ProcError::Deadline));
+            assert!(matches!(timed_out, Err(ProcError::Deadline)));
             assert_eq!(before_drop, 1);
             assert_eq!(after_drop, 1);
-            assert_eq!(refused, Err(ProcError::Stuck));
+            assert!(matches!(refused, Err(ProcError::Stuck)));
             assert_eq!(finished, 0);
-            assert_eq!(resumed, Ok(7));
+            assert!(matches!(resumed, Ok(7)));
         });
     }
 
@@ -579,7 +585,7 @@ mod tests {
         });
         drop(release);
         drop(runtime);
-        assert_eq!(outcome, Err(ProcError::Deadline));
+        assert!(matches!(outcome, Err(ProcError::Deadline)));
         assert!(
             ticks >= 5,
             "the runtime made progress during the scan: {ticks}"
@@ -616,7 +622,7 @@ mod tests {
             hog.await.unwrap();
             (elapsed, outcome)
         });
-        assert_eq!(outcome, Err(ProcError::Deadline));
+        assert!(matches!(outcome, Err(ProcError::Deadline)));
         assert!(elapsed >= Duration::from_millis(300), "{elapsed:?}");
         assert!(
             elapsed < secs(5),
@@ -640,7 +646,7 @@ mod tests {
                     Ok(())
                 })
                 .await;
-            assert_eq!(stuck, Err(ProcError::Deadline));
+            assert!(matches!(stuck, Err(ProcError::Deadline)));
             let begun = std::time::Instant::now();
             let ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let flag = Arc::clone(&ran);
@@ -650,13 +656,13 @@ mod tests {
                     Ok(())
                 })
                 .await;
-            assert_eq!(refused, Err(ProcError::Stuck));
+            assert!(matches!(refused, Err(ProcError::Stuck)));
             assert!(begun.elapsed() < secs(1), "the refusal was immediate");
             assert!(!ran.load(Ordering::SeqCst));
             release.send(()).unwrap();
             tokio::task::spawn_blocking(|| {}).await.unwrap();
             let again = scans.run(Instant::now() + secs(10), || Ok(7)).await;
-            assert_eq!(again, Ok(7));
+            assert!(matches!(again, Ok(7)));
         });
     }
 
@@ -673,7 +679,7 @@ mod tests {
             };
             tokio::join!(scan(Arc::clone(&meet)), scan(meet))
         });
-        assert_eq!(both, (Ok(()), Ok(())));
+        assert!(matches!(both, (Ok(()), Ok(()))));
     }
 
     #[test]
@@ -686,7 +692,7 @@ mod tests {
             let next = scans.run(Instant::now() + secs(10), || Ok(1)).await;
             (lost, next)
         });
-        assert_eq!(lost, Err(ProcError::ScanLost));
-        assert_eq!(next, Ok(1));
+        assert!(matches!(lost, Err(ProcError::ScanLost)));
+        assert!(matches!(next, Ok(1)));
     }
 }

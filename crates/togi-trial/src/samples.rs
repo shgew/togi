@@ -147,6 +147,7 @@ pub(crate) enum Offered {
 
 /// One std thread appends samples: queue of one, the newest sample is dropped when it is full.
 #[derive(Debug)]
+#[must_use = "finish the writer to flush the queue and learn the write errors"]
 pub(crate) struct SamplesWriter {
     queue: SyncSender<Vec<u8>>,
     done: oneshot::Receiver<()>,

@@ -88,10 +88,13 @@ fn real_process_an_unreadable_extract_exits_1_with_the_error_on_stderr() {
         args.extend_from_slice(extra);
         let ran = fit(&args);
         assert_eq!(ran.status.code(), Some(1), "{extra:?}");
-        assert!(
-            text(&ran.stderr).contains("open extract"),
-            "{extra:?}: {}",
-            text(&ran.stderr)
+        assert_eq!(
+            text(&ran.stderr),
+            format!(
+                "togi-tool-fit: open extract {}: No such file or directory (os error 2)\n",
+                missing.display()
+            ),
+            "{extra:?}"
         );
         assert!(ran.stdout.is_empty(), "{extra:?}");
     }

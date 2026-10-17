@@ -39,11 +39,11 @@ fn fixture(message: impl Into<String>) -> Error {
 }
 
 fn core(id: i64) -> Result<CoreId, Error> {
-    CoreId::new(id).map_err(|error| fixture(error.to_string()))
+    Ok(CoreId::new(id)?)
 }
 
 fn offset(value: i64) -> Result<TargetOffset, Error> {
-    TargetOffset::new(value).map_err(|error| fixture(error.to_string()))
+    Ok(TargetOffset::new(value)?)
 }
 
 struct Fixture {
@@ -76,9 +76,7 @@ impl Fixture {
         let begin = fixture.add(
             SessionStart {
                 build: build(),
-                session: "20231114T221320Z"
-                    .parse()
-                    .map_err(|error: togi_journal::InvalidSessionId| fixture_error(&error))?,
+                session: "20231114T221320Z".parse::<togi_journal::SessionId>()?,
                 cores: cores.clone(),
             }
             .into(),
@@ -121,8 +119,8 @@ impl Fixture {
     fn add(&mut self, payload: Payload, cause: &[Seq]) -> Result<Seq, Error> {
         let seq = Seq::new(self.events.len() as u64 + 1)
             .ok_or_else(|| fixture("the journal has no seq left"))?;
-        let at = i64::try_from(self.events.len()).map_err(|error| fixture(error.to_string()))?;
-        let time = Timestamp::from_second(1000 + at).map_err(|error| fixture(error.to_string()))?;
+        let at = i64::try_from(self.events.len())?;
+        let time = Timestamp::from_second(1000 + at)?;
         let event = Event::new(
             seq,
             Stamp { time, mono: None },
@@ -223,10 +221,7 @@ impl Fixture {
         let mut ended = None;
         let mut failed_r6 = false;
         for _ in 0..ATTEMPTS {
-            let action = self
-                .state
-                .next()
-                .map_err(|error| fixture(error.to_string()))?;
+            let action = self.state.next()?;
             match action {
                 Action::Decide(decision) => {
                     let ends_cycle_one = matches!(
@@ -239,8 +234,7 @@ impl Fixture {
                     );
                     let seq = self.add(decision.payload.into(), &decision.cause)?;
                     if ends_cycle_one {
-                        let upto = usize::try_from(seq.get())
-                            .map_err(|error| fixture(error.to_string()))?;
+                        let upto = usize::try_from(seq.get())?;
                         ended = Some(self.events[..upto].to_vec());
                     }
                 }
@@ -280,7 +274,12 @@ impl Fixture {
                             plan.context
                         )));
                     }
-                    _ => {
+                    TrialContext::Search { .. }
+                    | TrialContext::SoloLimit { .. }
+                    | TrialContext::Cycle { .. }
+                    | TrialContext::ZeroRerun { .. }
+                    | TrialContext::Round { .. }
+                    | TrialContext::Hunt { .. } => {
                         let trial = self.trial(&plan)?;
                         self.end(&plan, trial, Outcome::Pass, None)?;
                     }
@@ -289,8 +288,4 @@ impl Fixture {
         }
         Err(fixture("the session never reached cycle 2"))
     }
-}
-
-fn fixture_error(error: &dyn std::fmt::Display) -> Error {
-    fixture(error.to_string())
 }

@@ -416,9 +416,12 @@ fn ends(session: &Session) -> Vec<TrialEnd> {
         .journal()
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialEnd(end) => Some(end.clone()),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end.clone())
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -429,9 +432,12 @@ fn retries(session: &Session) -> Vec<(u8, u32)> {
         .journal()
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::BackendRetry(retry) => Some((retry.attempt, retry.wait_s)),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::BackendRetry(retry) = &event.payload {
+                Some((retry.attempt, retry.wait_s))
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -449,9 +455,10 @@ fn trial(rig: &mut Rigged3) -> crate::session::Outcome {
 }
 
 fn dead_end_condition(control: &Control) -> Option<DeadEndCondition> {
-    match control {
-        Control::Stop(Stop::DeadEnd { dead_end, .. }) => Some(dead_end.condition),
-        _ => None,
+    if let Control::Stop(Stop::DeadEnd { dead_end, .. }) = control {
+        Some(dead_end.condition)
+    } else {
+        None
     }
 }
 
@@ -524,9 +531,12 @@ fn trial_start(session: &Session) -> TrialStart {
         .journal()
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialStart(start) => Some(start.clone()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialStart(start) = &event.payload {
+                Some(start.clone())
+            } else {
+                None
+            }
         })
         .unwrap()
 }
@@ -753,11 +763,12 @@ fn between_trial_labels(session: &Session) -> Vec<(bool, Vec<String>)> {
         .journal()
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::Mce(mce) => {
+        .filter_map(|event| {
+            if let Payload::Mce(mce) = &event.payload {
                 Some((mce.between_trials && mce.trial.is_none(), mce.lines.clone()))
+            } else {
+                None
             }
-            _ => None,
         })
         .collect()
 }
@@ -1223,13 +1234,14 @@ fn unreadable_samples_warn_and_omit_all_sample_fields_without_changing_the_outco
             let events = rig.session.appender().journal().events();
             let warning = events
                 .iter()
-                .find_map(|event| match &event.payload {
-                    Payload::SessionWarning(warning)
-                        if warning.operation == "read conditions samples" =>
+                .find_map(|event| {
+                    if let Payload::SessionWarning(warning) = &event.payload
+                        && warning.operation == "read conditions samples"
                     {
                         Some((event, warning))
+                    } else {
+                        None
                     }
-                    _ => None,
                 })
                 .unwrap();
             assert_eq!(warning.1.trial.as_ref(), Some(&end.trial));
@@ -1287,9 +1299,12 @@ fn applied_conditions(session: &Session) -> Vec<Condition> {
         .journal()
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::ProfileApplied(applied) => Some(applied.condition),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::ProfileApplied(applied) = &event.payload {
+                Some(applied.condition)
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -1646,14 +1661,15 @@ impl Whole {
     }
 
     fn withheld(&self) -> Option<crate::Withheld> {
-        match self
+        if let Some(crate::Response::Withheld(withheld)) = self
             .ended
             .emergency
             .as_ref()
             .map(|emergency| &emergency.response)
         {
-            Some(crate::Response::Withheld(withheld)) => Some(*withheld),
-            _ => None,
+            Some(*withheld)
+        } else {
+            None
         }
     }
 
@@ -1768,9 +1784,12 @@ fn containment_dead_end(run: &Whole) -> TrialEnd {
         .journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialEnd(end) => Some(end.clone()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end.clone())
+            } else {
+                None
+            }
         })
         .unwrap();
     assert_eq!(end.outcome, Verdict::Inconclusive);
@@ -1970,9 +1989,12 @@ fn an_escaped_worker_ends_the_trial_inconclusive_with_its_cpus_and_dead_ends_on_
         .journal
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialEnd(end) => Some(end.clone()),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end.clone())
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(ends.len(), 1);

@@ -1,0 +1,34 @@
+---
+source: crates/togi-tool-stats/src/tests/chains.rs
+expression: "super::support::rendered(|table| chains::render(table, &derivations))"
+---
+R7 chain derivations
+seq  cycle  step  CCD  workload                      part  request groups   loaded cores  kind               moved              result   held  trials  trial s  sources
+3    1      1     0    mprime-avx2-36k-248k-allcore  1     00 > 01 > 02,03  01,02,03      first              -                  ran      no    2       1500     offset fallback
+10   1      1     0    mprime-avx2-36k-248k-allcore  2     01 > 02,03       02,03         first              -                  ran      yes   1       300      offset fallback
+14   1      1     0    mprime-avx2-36k-248k-allcore  3     02,03                          first              -                  end      no    0       0        offset fallback
+15   1      1     1    mprime-avx2-36k-248k-allcore  1     04 > 05,06,07    05,06,07      first              -                  ran      yes   1       300      offset fallback
+19   1      1     1    mprime-avx2-36k-248k-allcore  2     05,06,07                       first              -                  end      yes   0       0        offset fallback
+21   1      1     0    mprime-avx2-36k-248k-allcore  1     01 > 00 > 02,03  00,02,03      changed            01                 ran      no    1       15       offset fallback
+30   1      1     0    mprime-avx2-36k-248k-allcore  1     00,01 > 02,03    02,03         changed, repeated  00                 covered  yes   0       0        offset fallback
+31   1      1     0    mprime-avx2-36k-248k-allcore  2     02,03                          changed            00,01              end      yes   0       0        offset fallback
+32   1      1     1    mprime-avx2-36k-248k-allcore  1     04 > 05,06,07    05,06,07      unchanged          00,01 (other CCD)  covered  yes   0       0        offset fallback
+33   1      1     1    mprime-avx2-36k-248k-allcore  2     05,06,07                       unchanged          00,01 (other CCD)  end      yes   0       0        offset fallback
+
+R7 chain cost by derivation
+kind       result   derivations  trials  trial s  hours  failed s  recovery s  failures
+first      ran      3            4       2100     0.583  0         0           0
+first      end      2            0       0        0.000  0         0           0
+unchanged  covered  1            0       0        0.000  0         0           0
+unchanged  end      1            0       0        0.000  0         0           0
+changed    ran      1            1       15       0.004  15        60          1: 0005
+changed    covered  1            0       0        0.000  0         0           0
+changed    end      1            0       0        0.000  0         0           0
+
+R7 chain attribution
+field                                           derivations  trials  trial s  hours  failed s  recovery s  failures
+unchanged after a move on the other CCD         2            0       0        0.000  0         0           0
+changed back to a set the step required before  1            0       0        0.000  0         0           0
+changed to a set the step never required        1            1       15       0.004  15        60          1: 0005
+sets the step's chain no longer holds           2            3       1515     0.421  15        60          1: 0005
+reruns of derived sets, not in the cost above   1            1       1200     0.333  0         0           0

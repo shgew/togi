@@ -300,10 +300,12 @@ pub(crate) fn disk_inspect(
 ) {
     togi_tool_audit::audit_directory_with(path, simulated, |path| {
         if !path.is_dir() {
-            return Err("not a directory".into());
+            return Err(togi_tool_audit::OpenError::NotADirectory);
         }
-        togi_journal::StateDir::lock_with_fs(togi_journal::fs::unsynced_disk_fs(), path)
-            .map_err(|error| error.to_string())
+        Ok(togi_journal::StateDir::lock_with_fs(
+            togi_journal::fs::unsynced_disk_fs(),
+            path,
+        )?)
     })
 }
 

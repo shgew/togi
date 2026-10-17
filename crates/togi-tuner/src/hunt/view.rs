@@ -287,7 +287,7 @@ impl Run {
                     .filter(|&last| hunt.groups[last].payload.stage == HuntStage::Full);
                 vec![part(shape.set, group)]
             }
-            _ => Vec::new(),
+            Some(HuntStage::Locate | HuntStage::Probe) | None => Vec::new(),
         }
     }
 

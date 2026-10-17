@@ -140,7 +140,7 @@ fn another_build_is_flagged() {
                 100.0 * 2.5 / 3.0
             ),
             row("depth", -30.0, false, Placement::Above, 2.0, 100.0),
-            row("hours", 2.0, false, Placement::Inside, -1.0, 25.0),
+            row("hours", 1.0, false, Placement::Below, -2.0, 0.0),
             row(
                 "crashes",
                 0.0,

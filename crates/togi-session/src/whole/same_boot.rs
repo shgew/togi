@@ -178,9 +178,10 @@ fn last_position(events: &[Event], kind: EventKind) -> Option<usize> {
 }
 
 fn pending_dead_end(stop: Option<&Stop>) -> Option<&DeadEnd> {
-    match stop {
-        Some(Stop::DeadEnd { dead_end, .. }) => Some(dead_end),
-        _ => None,
+    if let Some(Stop::DeadEnd { dead_end, .. }) = stop {
+        Some(dead_end)
+    } else {
+        None
     }
 }
 
@@ -369,6 +370,7 @@ fn a_kill_after_every_durable_restoration_event_of_the_same_boot_converges() {
 /// reaches the hardware.
 fn kill_after_durable(fixture: &SameBoot, nth: usize) {
     let mem = fixture.bench.mem.clone();
+    mem.record_history();
     let synced = move || {
         mem.log()
             .iter()
@@ -688,9 +690,12 @@ fn a_dead_end_a_same_boot_preflight_finds_waits_for_the_reconciliation_to_act() 
     let events = fixture.since(&blocked);
     let recorded: Vec<&DeadEnd> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::DeadEnd(dead_end) => Some(dead_end),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::DeadEnd(dead_end) = &event.payload {
+                Some(dead_end)
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(recorded, [&deferred]);
@@ -827,7 +832,7 @@ fn between_trials_after_setup(before_readback: bool) -> Vec<bool> {
             (SmuOp::Read, HookPhase::Before) if written.get() && before_readback => {
                 return Err(Error::Crashed);
             }
-            _ => {}
+            (SmuOp::Read | SmuOp::Set | SmuOp::SetAll, HookPhase::Before | HookPhase::After) => {}
         }
         Ok(())
     });
@@ -851,9 +856,12 @@ fn between_trials_after_setup(before_readback: bool) -> Vec<bool> {
         .journal()
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::Mce(mce) => Some(mce.between_trials),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::Mce(mce) = &event.payload {
+                Some(mce.between_trials)
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -1106,9 +1114,12 @@ fn a_restoration_after_a_combination_hunt_never_reaches_the_combination() {
     let events = ended.journal.events();
     let combination = events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::Combination(combination) => Some(combination.clone()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::Combination(combination) = &event.payload {
+                Some(combination.clone())
+            } else {
+                None
+            }
         })
         .unwrap();
     assert_eq!(
@@ -1377,11 +1388,14 @@ fn a_hunt_groups_parked_condition_ends_with_the_hunt_so_the_next_together_applic
     let applied: Vec<(usize, Condition)> = events
         .iter()
         .enumerate()
-        .filter_map(|(at, event)| match &event.payload {
-            Payload::ProfileApplied(applied) if applied.condition != Condition::Alone => {
+        .filter_map(|(at, event)| {
+            if let Payload::ProfileApplied(applied) = &event.payload
+                && applied.condition != Condition::Alone
+            {
                 Some((at, applied.condition))
+            } else {
+                None
             }
-            _ => None,
         })
         .filter(|&(at, _)| at > group && at < next_hunt)
         .collect();
@@ -1397,9 +1411,12 @@ fn a_hunt_groups_parked_condition_ends_with_the_hunt_so_the_next_together_applic
     }
     let conditions: Vec<Option<Condition>> = events[group..next_hunt]
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CrashDetected(crash) => Some(crash.condition),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::CrashDetected(crash) = &event.payload {
+                Some(crash.condition)
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(

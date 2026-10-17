@@ -61,7 +61,7 @@ fn test_gate() -> Resolved {
 fn gate_error(edit: impl FnOnce(&mut Value)) -> String {
     let mut gate = gate_object();
     edit(&mut gate);
-    gate::load(&suite_of(&gate)).unwrap_err().to_string()
+    togi_machine::error_chain(&gate::load(&suite_of(&gate)).unwrap_err())
 }
 
 fn run(scenario: &str, seed: u64, hours: f64, hazard: Option<f64>, baseline: bool) -> Record {

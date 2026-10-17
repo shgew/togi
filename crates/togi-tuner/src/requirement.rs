@@ -122,7 +122,10 @@ impl Run {
             (Some(check), Regime::R2) => check.r2,
             (None, Regime::R1) => self.rotation_workload(id, Regime::R1),
             (None, Regime::R2) if self.r1_passed(id) => self.rotation_workload(id, Regime::R2),
-            _ => return None,
+            (None, Regime::R2)
+            | (Some(_) | None, Regime::R3 | Regime::R4 | Regime::R5 | Regime::R6 | Regime::R7) => {
+                return None;
+            }
         };
         (intent.workload == expected).then_some(Turn {
             core: id,

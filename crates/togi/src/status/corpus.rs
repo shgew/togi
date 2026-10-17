@@ -20,8 +20,8 @@ use std::path::Path;
 use togi_config::Config;
 use togi_journal::{
     Activity, Attribution, CycleEvent, DeadEndCondition, Event, EventKind, FactSource, Failure,
-    FailureCarried, HuntStart, Outcome, Payload, Seq, Stamp, State as JournalState, TrialCarried,
-    TrialClass, TrialId, TrialIntent,
+    FailureCarried, HuntStage, HuntStart, Outcome, Payload, Seq, Stamp, State as JournalState,
+    TrialCarried, TrialClass, TrialId, TrialIntent,
 };
 use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal};
 use togi_tuner::{Depth as _, GroupState};
@@ -522,40 +522,77 @@ fn short_cycle() -> Vec<Event> {
     .to_vec()
 }
 
+/// A default-machine seed whose session runs a located hunt within three clean cycles, found by scanning seeds 1
+/// to 120: 6, 68, 85, 89 and 101 do.
+const LOCATED_SEED: u64 = 6;
+
+/// The default machine on [`LOCATED_SEED`] to the first trial of its located hunt's locate group.
+fn located_hunt() -> Vec<Event> {
+    let config = Config::default();
+    let machine = togi_watchtest::default_machine(LOCATED_SEED).expect("the machine builds");
+    let mut locating = false;
+    let stop_at_the_first_locate_trial: togi_watchtest::Until =
+        Box::new(move |event| match &event.payload {
+            Payload::HuntGroup(group) => {
+                locating = group.stage == HuntStage::Locate;
+                false
+            }
+            Payload::TrialStart(_) => locating,
+            _ => false,
+        });
+    let events = togi_watchtest::simulate(
+        machine,
+        config,
+        Some(stop_at_the_first_locate_trial),
+        togi_watchtest::Stop::cycles(3),
+    )
+    .expect("the located hunt simulates");
+    let locate = events
+        .iter()
+        .position(|event| {
+            matches!(&event.payload, Payload::HuntGroup(group) if group.stage == HuntStage::Locate)
+        })
+        .unwrap_or_else(|| panic!("seed {LOCATED_SEED} runs no located hunt within three clean cycles"));
+    let start = events[locate..]
+        .iter()
+        .position(|event| event.kind() == EventKind::TrialStart)
+        .expect("the locate group starts a trial");
+    events[..=locate + start].to_vec()
+}
+
+/// `Base::LaterHunt` cut at the first hunt trial after a passed full cycle, that hunt parked from the last one.
 fn hunt_parked_at_a_cycle_end() -> Vec<Event> {
     let base = Base::LaterHunt.events().expect("the base simulates");
-    let mut events = cut_when(base, |state, event| {
-        event.kind() == EventKind::TrialStart
-            && state.hunt_plan().is_some_and(|plan| plan.number == 4)
-    })
-    .expect("hunt 4 starts a trial")
-    .to_vec();
-    let cycle_end = events
-        .iter()
-        .rev()
-        .find_map(|event| {
-            if let Payload::CheckingCycle(cycle) = &event.payload
-                && cycle.event == CycleEvent::End
-                && cycle.passed
-                && cycle.full
-            {
-                Some(event.seq)
-            } else {
-                None
-            }
-        })
-        .expect("a passed full cycle");
-    events = rewritten(&events, |payload| {
-        if let Payload::HuntStart(start) = payload
-            && start.hunt.get() == 4
+    let mut cycle_end = None;
+    let mut hunt_number = 0;
+    let events = cut_when(base, |state, event| {
+        if let Payload::CheckingCycle(cycle) = &event.payload
+            && cycle.event == CycleEvent::End
+            && cycle.passed
+            && cycle.full
         {
-            start.parked_seq = Some(cycle_end);
+            cycle_end = Some(event.seq);
+        }
+        if event.kind() == EventKind::TrialStart
+            && cycle_end.is_some()
+            && let Some(plan) = state.hunt_plan()
+        {
+            hunt_number = plan.number;
+            return true;
+        }
+        false
+    })
+    .expect("a hunt trial after a passed full cycle");
+    rewritten(events, |payload| {
+        if let Payload::HuntStart(start) = payload
+            && start.hunt.get() == hunt_number
+        {
+            start.parked_seq = cycle_end;
             true
         } else {
             false
         }
-    });
-    events
+    })
 }
 
 /// `Base::Session` cut at its first passing R7 `trial.end` that loaded one whole CCD, with that end carrying the
@@ -795,17 +832,12 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
     );
     add(
         "hunt-located-held",
-        "the first hunt trial of Base::Unconfirmed: loaded cores held at failing offsets",
-        cut_trial(
-            Base::Unconfirmed.events().expect("the base simulates"),
-            |intent| intent.activity == Some(Activity::Hunt),
-        )
-        .expect("a hunt trial")
-        .to_vec(),
+        "the default machine on seed 6 to its located hunt's first trial: loaded cores held at failing offsets",
+        located_hunt(),
     );
     add(
         "hunt-parked-cycle-end",
-        "Base::LaterHunt to hunt 4's first trial, hunt 4 parked from the last passed full cycle",
+        "Base::LaterHunt to the first hunt trial after a passed full cycle, that hunt parked from the last one",
         hunt_parked_at_a_cycle_end(),
     );
     add(

@@ -1,8 +1,9 @@
 use togi_journal::{CycleEvent, Dimension, Event, Payload, Refusal};
 
 use super::support::{
-    A, B, build, config_loaded, crash, cycle, dead_end, events, extend, hunt_end, hunt_start, id,
-    intent, observed, outcome, session, shutdown_cycles, start, start_with,
+    A, B, build, command_reset, config_loaded, crash, cycle, dead_end, events, extend, hunt_end,
+    hunt_start, id, intent, journal_torn, leave_reason, mce, observed, outcome, session,
+    shutdown_cycles, shutdown_signal, start, start_with, state_rebuilt, timed,
 };
 use crate::outcome::follow;
 use crate::{Anchor, Error, Outcome, Session, Status, after};
@@ -152,8 +153,144 @@ fn a_new_session_without_a_terminal_point_supplies_the_profile() {
     let sessions = [Session::from_events(before()).unwrap(), next];
     assert_eq!(
         counted(&sessions).unwrap(),
-        outcome(Status::Censored, 0.0, 1, 1, &[-12, -22])
+        outcome(Status::Censored, 3.0, 1, 1, &[-12, -22])
     );
+}
+
+/// The hours of `before()` followed by `after`, each at its hours after the epoch in its boot; `before()`
+/// runs in boot `boot`, an hour per event, and the anchor is its last event, at hour 4.
+fn hours_after(after: Vec<(f64, &str, Payload)>) -> f64 {
+    let mut all = before();
+    all.extend(timed(5, after));
+    counted(&[Session::from_events(all).unwrap()])
+        .unwrap()
+        .hours
+}
+
+#[test]
+fn a_new_session_started_days_after_the_anchor_counts_from_its_start() {
+    let next = Session::from_events(timed(
+        1,
+        [
+            (145.0, "b", start_with(B, build("abc1234"))),
+            (145.0, "b", super::support::baseline([-12, -22])),
+            (145.0, "b", config_loaded("abc1234")),
+            (150.0, "b", intent("0001", Some(7))),
+            (154.15, "b", intent("0002", Some(7))),
+        ],
+    ))
+    .unwrap();
+    let sessions = [Session::from_events(before()).unwrap(), next];
+    let got = counted(&sessions).unwrap();
+    assert_eq!(got.status, Status::Censored);
+    assert!((got.hours - 9.15).abs() < 1e-9, "{}", got.hours);
+}
+
+#[test]
+fn a_clean_stop_overnight_is_not_counted() {
+    let hours = hours_after(vec![
+        (5.0, "boot", shutdown_signal()),
+        (15.0, "b", config_loaded("abc1234")),
+        (16.0, "b", intent("0002", None)),
+        (17.0, "b", shutdown_cycles()),
+    ]);
+    assert_eq!(hours, 3.0);
+}
+
+#[test]
+fn a_restart_without_a_crash_does_not_count_the_gap_before_it() {
+    let hours = hours_after(vec![
+        (5.0, "boot", intent("0002", None)),
+        (8.0, "boot", config_loaded("abc1234")),
+        (9.0, "boot", shutdown_cycles()),
+    ]);
+    assert_eq!(hours, 2.0);
+}
+
+#[test]
+fn crash_recovery_counts_once_with_its_startup_events() {
+    let hours = hours_after(vec![
+        (5.0, "boot", intent("0002", None)),
+        (5.5, "b", leave_reason()),
+        (5.75, "b", config_loaded("abc1234")),
+        (6.0, "b", crash()),
+        (6.5, "b", crash()),
+        (7.0, "b", shutdown_cycles()),
+    ]);
+    assert_eq!(hours, 3.0);
+}
+
+#[test]
+fn a_crashed_run_left_for_days_counts_its_downtime() {
+    let hours = hours_after(vec![
+        (5.0, "boot", intent("0002", None)),
+        (53.0, "b", config_loaded("abc1234")),
+        (54.0, "b", crash()),
+    ]);
+    assert_eq!(hours, 50.0);
+}
+
+/// The hours of a run that crashed after its event at hour 5 and was recovered on boot `b`, whose restart
+/// records `startup` at hour 53, then `config.loaded` and `crash.detected`.
+fn crash_recovery_starting_with(startup: Payload) -> f64 {
+    hours_after(vec![
+        (5.0, "boot", intent("0002", None)),
+        (53.0, "b", startup),
+        (53.5, "b", config_loaded("abc1234")),
+        (54.0, "b", crash()),
+    ])
+}
+
+#[test]
+fn a_startup_mce_in_the_next_boot_keeps_the_crash_downtime() {
+    assert_eq!(crash_recovery_starting_with(mce()), 50.0);
+}
+
+#[test]
+fn a_state_rebuilt_in_the_next_boot_keeps_the_crash_downtime() {
+    assert_eq!(crash_recovery_starting_with(state_rebuilt()), 50.0);
+}
+
+#[test]
+fn a_journal_torn_in_the_next_boot_keeps_the_crash_downtime() {
+    assert_eq!(crash_recovery_starting_with(journal_torn()), 50.0);
+}
+
+/// The hours of a run whose event at hour 5 is followed by a restart in the same boot without a crash, which
+/// records `startup` at hour 8, then `config.loaded` at 8.5, and stops at 9.
+fn same_boot_restart_starting_with(startup: Payload) -> f64 {
+    hours_after(vec![
+        (5.0, "boot", intent("0002", None)),
+        (8.0, "boot", startup),
+        (8.5, "boot", config_loaded("abc1234")),
+        (9.0, "boot", shutdown_cycles()),
+    ])
+}
+
+#[test]
+fn a_startup_mce_in_the_same_boot_does_not_count_the_restart_gap() {
+    assert_eq!(same_boot_restart_starting_with(mce()), 1.5);
+}
+
+#[test]
+fn a_state_rebuilt_in_the_same_boot_does_not_count_the_restart_gap() {
+    assert_eq!(same_boot_restart_starting_with(state_rebuilt()), 1.5);
+}
+
+#[test]
+fn a_journal_torn_in_the_same_boot_does_not_count_the_restart_gap() {
+    assert_eq!(same_boot_restart_starting_with(journal_torn()), 1.5);
+}
+
+#[test]
+fn a_reset_during_crash_downtime_keeps_the_downtime() {
+    let hours = hours_after(vec![
+        (5.0, "boot", intent("0002", None)),
+        (30.0, "normal", command_reset()),
+        (53.0, "b", config_loaded("abc1234")),
+        (54.0, "b", crash()),
+    ]);
+    assert_eq!(hours, 50.0);
 }
 
 #[test]

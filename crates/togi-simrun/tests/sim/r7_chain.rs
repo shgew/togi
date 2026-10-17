@@ -19,67 +19,68 @@ fn simulation_runs_full_first_offset_fallback_chains() {
     let (_, events) = run(
         &bench,
         config(&candidates, Some(&[Regime::R7])),
-        Some(Box::new(|event| match &event.payload {
-            Payload::CheckingCycle(cycle) if cycle.event == CycleEvent::End && cycle.passed => {
+        Some(Box::new(|event| {
+            if let Payload::CheckingCycle(cycle) = &event.payload
+                && cycle.event == CycleEvent::End
+                && cycle.passed
+            {
                 Observe::Stop
+            } else {
+                Observe::Continue
             }
-            _ => Observe::Continue,
         })),
     );
     let mut got = Vec::new();
     let (mut chains, mut passes) = (0, 0);
     let (mut step, mut previous, mut last_end, mut last_pass) = (None, None, None, None);
     for event in &events {
-        match &event.payload {
-            Payload::TrialIntent(intent)
-                if intent.regime == Regime::R7 && intent.activity == Some(Activity::Checking) =>
-            {
-                got.push(intent.cores.iter().map(CoreId::get).collect::<Vec<_>>());
+        let payload = &event.payload;
+        if let Payload::TrialIntent(intent) = payload
+            && intent.regime == Regime::R7
+            && intent.activity == Some(Activity::Checking)
+        {
+            got.push(intent.cores.iter().map(CoreId::get).collect::<Vec<_>>());
+        } else if let Payload::TrialEnd(end) = payload {
+            last_end = Some(event.seq);
+            if end.outcome == Outcome::Pass {
+                passes += 1;
+                last_pass = Some(event.seq);
             }
-            Payload::TrialEnd(end) => {
-                last_end = Some(event.seq);
-                if end.outcome == Outcome::Pass {
-                    passes += 1;
-                    last_pass = Some(event.seq);
-                }
-            }
-            Payload::CheckingStep(_) => {
-                step = Some(event.seq);
-                passes = 0;
-            }
-            Payload::CheckingChain(chain) => {
-                chains += 1;
-                assert!(chain.source_seqs.is_empty(), "{chain:?}");
-                assert!(event.msg.contains("offset fallback"), "{}", event.msg);
-                assert_eq!(
-                    passes, 4,
-                    "chain {chains} derived before its predecessor passed"
-                );
-                passes = 0;
-                assert_eq!(
-                    last_end, last_pass,
-                    "chain {chains} followed a trial end that did not pass"
-                );
-                let step = step.expect("a checking step before its chains");
-                let cited = last_pass.expect("a passing predecessor");
-                assert_eq!(
-                    event.cause,
-                    [step, cited],
-                    "chain {chains} must cite its step and its predecessor's passing trial end"
-                );
-                // The cause names no earlier chain; the predecessor is linked through its passing trial end.
-                assert!(
-                    previous.is_none_or(|previous| cited > previous),
-                    "chain {chains} cites a trial end from before the chain it follows: {cited:?}, previous {previous:?}"
-                );
-                previous = Some(event.seq);
-                assert!(
-                    chain.cores.is_empty() || chain.cores.len() >= 2,
-                    "chain loaded fewer than two cores"
-                );
-            }
-            Payload::HuntStart(_) => panic!("passing fallback chains started a hunt"),
-            _ => {}
+        } else if let Payload::CheckingStep(_) = payload {
+            step = Some(event.seq);
+            passes = 0;
+        } else if let Payload::CheckingChain(chain) = payload {
+            chains += 1;
+            assert!(chain.source_seqs.is_empty(), "{chain:?}");
+            assert!(event.msg.contains("offset fallback"), "{}", event.msg);
+            assert_eq!(
+                passes, 4,
+                "chain {chains} derived before its predecessor passed"
+            );
+            passes = 0;
+            assert_eq!(
+                last_end, last_pass,
+                "chain {chains} followed a trial end that did not pass"
+            );
+            let step = step.expect("a checking step before its chains");
+            let cited = last_pass.expect("a passing predecessor");
+            assert_eq!(
+                event.cause,
+                [step, cited],
+                "chain {chains} must cite its step and its predecessor's passing trial end"
+            );
+            // The cause names no earlier chain; the predecessor is linked through its passing trial end.
+            assert!(
+                previous.is_none_or(|previous| cited > previous),
+                "chain {chains} cites a trial end from before the chain it follows: {cited:?}, previous {previous:?}"
+            );
+            previous = Some(event.seq);
+            assert!(
+                chain.cores.is_empty() || chain.cores.len() >= 2,
+                "chain loaded fewer than two cores"
+            );
+        } else if let Payload::HuntStart(_) = payload {
+            panic!("passing fallback chains started a hunt");
         }
     }
     let mut want = Vec::new();

@@ -36,7 +36,7 @@ impl TunerConfig {
         Self::from_config(&Config::default())
     }
 
-    fn from_config(config: &Config) -> Self {
+    pub(crate) fn from_config(config: &Config) -> Self {
         let secs = |value: u32| NonZeroU32::new(value).map_or(Secs::MIN, Secs::new);
         Self {
             search_trial: secs(config.search_trial().get()),

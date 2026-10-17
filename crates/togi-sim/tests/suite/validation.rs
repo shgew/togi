@@ -71,7 +71,7 @@ fn a_loaded_document_is_refused_for_its_topology_before_its_limits() {
         }
         let bare = format!(r#"{{"cores": {cores}, "core": [{{"id": 0}}]}}"#);
         let error = load_text(&bare).expect_err("a refused document");
-        let message = error.to_string();
+        let message = togi_machine::error_chain(&error);
         assert!(matches!(error, LoadError::Parse { .. }), "{message}");
         assert!(
             message.contains("machine.json") && message.contains("alone"),

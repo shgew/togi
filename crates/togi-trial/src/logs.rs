@@ -36,6 +36,7 @@ pub(crate) enum LogsEnd {
 
 /// One std thread writes every output log of a trial, so a blocked filesystem write never stalls
 /// the runtime thread; the queue is bounded and a full queue drops bytes instead of waiting.
+#[must_use = "finish the writer to flush the queue and learn the write errors"]
 pub(crate) struct LogWriter {
     queue: SyncSender<(Key, Vec<u8>)>,
     opens: Sender<(Key, Sink)>,

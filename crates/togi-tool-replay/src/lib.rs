@@ -27,8 +27,8 @@ pub enum Error {
     Read(#[source] FileError),
     #[error("{} holds no events", .0.display())]
     Empty(PathBuf),
-    #[error("{0}; replay needs a journal of this build's ruleset")]
-    Refused(Refusal),
+    #[error("replay needs a journal of this build's ruleset")]
+    Refused(#[source] Refusal),
     #[error("event {seq} cannot be shown")]
     Fold {
         seq: u64,

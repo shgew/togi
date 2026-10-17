@@ -30,9 +30,14 @@ pub(crate) fn states_at(events: &[Event], lengths: &[usize]) -> Vec<State> {
 pub(crate) fn intent_of<'a>(events: &'a [Event], trial: &togi_journal::TrialId) -> &'a TrialIntent {
     events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialIntent(intent) if &intent.trial == trial => Some(intent),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload
+                && &intent.trial == trial
+            {
+                Some(intent)
+            } else {
+                None
+            }
         })
         .expect("a trial.start follows its intent")
 }

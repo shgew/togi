@@ -86,7 +86,7 @@ impl Preparer {
             loop {
                 match commands.recv().await {
                     Some(TrialCommand::Cancel) => return,
-                    Some(_) => {}
+                    Some(TrialCommand::Stop | TrialCommand::Abandon) => {}
                     None => pending::<()>().await,
                 }
             }

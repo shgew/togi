@@ -46,7 +46,11 @@ fn run(
             }
         }
         Err(error) => {
-            let _ = writeln!(stderr, "togi-tool-facts: {error}");
+            let _ = writeln!(
+                stderr,
+                "togi-tool-facts: {}",
+                togi_machine::error_chain(&error)
+            );
             ExitCode::FAILURE
         }
     }

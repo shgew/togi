@@ -231,13 +231,11 @@ async fn real_process_hung_child_is_killed_at_the_deadline() {
         "{:?}",
         started.elapsed()
     );
-    match error {
-        Error::TimedOut { program, timeout } => {
-            assert_eq!(program, "sh");
-            assert!(timeout <= DEADLINE);
-        }
-        other => panic!("{other:?}"),
-    }
+    let Error::TimedOut { program, timeout } = error else {
+        panic!("{error:?}");
+    };
+    assert_eq!(program, "sh");
+    assert!(timeout <= DEADLINE);
     assert_stops(pid_in(&pid_file)).await;
 }
 
@@ -468,12 +466,10 @@ async fn real_process_missing_program_names_it() {
     )
     .await
     .unwrap_err();
-    match &error {
-        Error::Spawn { program, source } => {
-            assert_eq!(program, "togi-command-no-such-program");
-            assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
-        }
-        other => panic!("{other:?}"),
-    }
+    let Error::Spawn { program, source } = &error else {
+        panic!("{error:?}");
+    };
+    assert_eq!(program, "togi-command-no-such-program");
+    assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
     assert!(error.to_string().contains("togi-command-no-such-program"));
 }

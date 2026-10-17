@@ -77,6 +77,7 @@ pub(crate) fn lock_verdict(
 #[cfg(test)]
 mod tests {
     use rustix::fs::RawMode;
+    use test_case::test_case;
 
     use super::*;
 
@@ -87,142 +88,118 @@ mod tests {
         Mode::from_bits_truncate(bits)
     }
 
-    #[test]
-    fn directory_authorization_matrix() {
-        use DirectoryProblem::{ForeignOwner, WritableWithoutSticky};
-        use Place::{Ancestor, Containing, NamespaceRoot};
-        let cases = [
-            (
-                "mapped foreign namespace root",
-                0o750,
-                FOREIGN,
-                NamespaceRoot,
-                None,
-            ),
-            (
-                "foreign namespace root as containing directory",
-                0o750,
-                FOREIGN,
-                Containing,
-                Some(ForeignOwner),
-            ),
-            (
-                "foreign writable nonsticky namespace root",
-                0o777,
-                FOREIGN,
-                NamespaceRoot,
-                Some(WritableWithoutSticky),
-            ),
-            (
-                "foreign read-only ancestor",
-                0o555,
-                FOREIGN,
-                Ancestor,
-                Some(ForeignOwner),
-            ),
-            (
-                "foreign owner-writable ancestor",
-                0o755,
-                FOREIGN,
-                Ancestor,
-                Some(ForeignOwner),
-            ),
-            (
-                "foreign sticky ancestor",
-                0o1777,
-                FOREIGN,
-                Ancestor,
-                Some(ForeignOwner),
-            ),
-            ("caller sticky ancestor", 0o1777, CALLER, Ancestor, None),
-            ("root sticky ancestor", 0o1777, 0, Ancestor, None),
-            ("caller read-only ancestor", 0o555, CALLER, Ancestor, None),
-            ("root read-only ancestor", 0o555, 0, Ancestor, None),
-            (
-                "caller private containing directory",
-                0o700,
-                CALLER,
-                Containing,
-                None,
-            ),
-            (
-                "root controlled containing directory",
-                0o755,
-                0,
-                Containing,
-                None,
-            ),
-            (
-                "foreign read-only containing directory",
-                0o555,
-                FOREIGN,
-                Containing,
-                Some(ForeignOwner),
-            ),
-            (
-                "foreign private containing directory",
-                0o700,
-                FOREIGN,
-                Containing,
-                Some(ForeignOwner),
-            ),
-            (
-                "foreign sticky containing directory",
-                0o1777,
-                FOREIGN,
-                Containing,
-                Some(ForeignOwner),
-            ),
-            (
-                "foreign group-writable nonsticky ancestor",
-                0o575,
-                FOREIGN,
-                Ancestor,
-                Some(WritableWithoutSticky),
-            ),
-            (
-                "foreign other-writable nonsticky ancestor",
-                0o557,
-                FOREIGN,
-                Ancestor,
-                Some(WritableWithoutSticky),
-            ),
-            (
-                "caller writable nonsticky ancestor",
-                0o777,
-                CALLER,
-                Ancestor,
-                Some(WritableWithoutSticky),
-            ),
-            (
-                "root writable nonsticky ancestor",
-                0o777,
-                0,
-                Ancestor,
-                Some(WritableWithoutSticky),
-            ),
-            (
-                "caller writable nonsticky containing directory",
-                0o777,
-                CALLER,
-                Containing,
-                Some(WritableWithoutSticky),
-            ),
-            (
-                "root writable nonsticky containing directory",
-                0o777,
-                0,
-                Containing,
-                Some(WritableWithoutSticky),
-            ),
-        ];
-        for (name, bits, owner, place, want) in cases {
-            assert_eq!(
-                directory_problem(mode(bits), owner, CALLER, place),
-                want,
-                "{name}"
-            );
-        }
+    #[test_case(0o750, FOREIGN, Place::NamespaceRoot, None; "mapped foreign namespace root")]
+    #[test_case(
+        0o750,
+        FOREIGN,
+        Place::Containing,
+        Some(DirectoryProblem::ForeignOwner);
+        "foreign namespace root as containing directory"
+    )]
+    #[test_case(
+        0o777,
+        FOREIGN,
+        Place::NamespaceRoot,
+        Some(DirectoryProblem::WritableWithoutSticky);
+        "foreign writable nonsticky namespace root"
+    )]
+    #[test_case(
+        0o555,
+        FOREIGN,
+        Place::Ancestor,
+        Some(DirectoryProblem::ForeignOwner);
+        "foreign read-only ancestor"
+    )]
+    #[test_case(
+        0o755,
+        FOREIGN,
+        Place::Ancestor,
+        Some(DirectoryProblem::ForeignOwner);
+        "foreign owner-writable ancestor"
+    )]
+    #[test_case(
+        0o1777,
+        FOREIGN,
+        Place::Ancestor,
+        Some(DirectoryProblem::ForeignOwner);
+        "foreign sticky ancestor"
+    )]
+    #[test_case(0o1777, CALLER, Place::Ancestor, None; "caller sticky ancestor")]
+    #[test_case(0o1777, 0, Place::Ancestor, None; "root sticky ancestor")]
+    #[test_case(0o555, CALLER, Place::Ancestor, None; "caller read-only ancestor")]
+    #[test_case(0o555, 0, Place::Ancestor, None; "root read-only ancestor")]
+    #[test_case(0o700, CALLER, Place::Containing, None; "caller private containing directory")]
+    #[test_case(0o755, 0, Place::Containing, None; "root controlled containing directory")]
+    #[test_case(
+        0o555,
+        FOREIGN,
+        Place::Containing,
+        Some(DirectoryProblem::ForeignOwner);
+        "foreign read-only containing directory"
+    )]
+    #[test_case(
+        0o700,
+        FOREIGN,
+        Place::Containing,
+        Some(DirectoryProblem::ForeignOwner);
+        "foreign private containing directory"
+    )]
+    #[test_case(
+        0o1777,
+        FOREIGN,
+        Place::Containing,
+        Some(DirectoryProblem::ForeignOwner);
+        "foreign sticky containing directory"
+    )]
+    #[test_case(
+        0o575,
+        FOREIGN,
+        Place::Ancestor,
+        Some(DirectoryProblem::WritableWithoutSticky);
+        "foreign group-writable nonsticky ancestor"
+    )]
+    #[test_case(
+        0o557,
+        FOREIGN,
+        Place::Ancestor,
+        Some(DirectoryProblem::WritableWithoutSticky);
+        "foreign other-writable nonsticky ancestor"
+    )]
+    #[test_case(
+        0o777,
+        CALLER,
+        Place::Ancestor,
+        Some(DirectoryProblem::WritableWithoutSticky);
+        "caller writable nonsticky ancestor"
+    )]
+    #[test_case(
+        0o777,
+        0,
+        Place::Ancestor,
+        Some(DirectoryProblem::WritableWithoutSticky);
+        "root writable nonsticky ancestor"
+    )]
+    #[test_case(
+        0o777,
+        CALLER,
+        Place::Containing,
+        Some(DirectoryProblem::WritableWithoutSticky);
+        "caller writable nonsticky containing directory"
+    )]
+    #[test_case(
+        0o777,
+        0,
+        Place::Containing,
+        Some(DirectoryProblem::WritableWithoutSticky);
+        "root writable nonsticky containing directory"
+    )]
+    fn directory_authorization_matrix(
+        bits: RawMode,
+        owner: u32,
+        place: Place,
+        want: Option<DirectoryProblem>,
+    ) {
+        assert_eq!(directory_problem(mode(bits), owner, CALLER, place), want);
     }
 
     fn facts(owner: u32, bits: RawMode) -> LockFacts {
@@ -251,37 +228,38 @@ mod tests {
         );
     }
 
-    #[test]
-    fn only_the_owner_restricts_legacy_modes() {
+    #[test_case(0o644; "world readable")]
+    #[test_case(0o444; "read only")]
+    #[test_case(0o640; "group readable")]
+    #[test_case(0o666; "world writable")]
+    #[test_case(0o4600; "setuid")]
+    #[test_case(0o1600; "sticky")]
+    fn only_the_owner_restricts_legacy_modes(bits: RawMode) {
         let verdict =
             |owner, bits, access| lock_verdict(facts(owner, bits), CALLER, Policy::Private, access);
-        for bits in [0o644, 0o444, 0o640, 0o666, 0o4600, 0o1600] {
-            assert_eq!(
-                verdict(CALLER, bits, Access::ReadWrite),
-                Ok(Mend::Restrict),
-                "{bits:o}"
-            );
-            assert_eq!(
-                verdict(CALLER, bits, Access::ReadOnly),
-                Ok(Mend::Restrict),
-                "{bits:o}"
-            );
-            assert_eq!(
-                verdict(0, bits, Access::ReadWrite),
-                Err(LockProblem::LegacyModeNotOwner),
-                "{bits:o}"
-            );
-        }
+        assert_eq!(
+            verdict(CALLER, bits, Access::ReadWrite),
+            Ok(Mend::Restrict),
+            "{bits:o}"
+        );
+        assert_eq!(
+            verdict(CALLER, bits, Access::ReadOnly),
+            Ok(Mend::Restrict),
+            "{bits:o}"
+        );
+        assert_eq!(
+            verdict(0, bits, Access::ReadWrite),
+            Err(LockProblem::LegacyModeNotOwner),
+            "{bits:o}"
+        );
     }
 
-    #[test]
-    fn secure_modes_need_read_write_access() {
-        for bits in [0o600, 0o660] {
-            let verdict =
-                |access| lock_verdict(facts(CALLER, bits), CALLER, Policy::Private, access);
-            assert_eq!(verdict(Access::ReadWrite), Ok(Mend::Keep));
-            assert_eq!(verdict(Access::ReadOnly), Err(LockProblem::ReadOnly));
-        }
+    #[test_case(0o600; "owner read write")]
+    #[test_case(0o660; "owner and group read write")]
+    fn secure_modes_need_read_write_access(bits: RawMode) {
+        let verdict = |access| lock_verdict(facts(CALLER, bits), CALLER, Policy::Private, access);
+        assert_eq!(verdict(Access::ReadWrite), Ok(Mend::Keep));
+        assert_eq!(verdict(Access::ReadOnly), Err(LockProblem::ReadOnly));
     }
 
     #[test]

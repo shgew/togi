@@ -94,10 +94,11 @@ impl Journal {
     }
 
     fn at_r7_backoff(&self) -> (DecisionAction, R7Reason) {
-        match self.run().r7_decision() {
-            Some(R7Response::Backoff { decision, why }) => (decision, why),
-            other => panic!("expected an R7 backoff, got {other:?}"),
-        }
+        let response = self.run().r7_decision();
+        let Some(R7Response::Backoff { decision, why }) = response else {
+            panic!("expected an R7 backoff, got {response:?}");
+        };
+        (decision, why)
     }
 
     fn at_next_backoff(&self) -> (DecisionAction, (u8, i64)) {
@@ -110,12 +111,10 @@ impl Journal {
 
     fn at_next_dead_end(&self) -> DecisionAction {
         let action = self.next_decision();
-        match &action.payload {
-            DecisionPayload::DeadEnd(dead) => {
-                assert_eq!(dead.condition, DeadEndCondition::FailureAtZero);
-            }
-            other => panic!("expected a dead end, got {other:?}"),
-        }
+        let DecisionPayload::DeadEnd(dead) = &action.payload else {
+            panic!("expected a dead end, got {:?}", action.payload);
+        };
+        assert_eq!(dead.condition, DeadEndCondition::FailureAtZero);
         action
     }
 
@@ -795,7 +794,10 @@ fn r7_failure_needs_no_move_during_a_deepening_round_while_the_named_core_is_sha
             {
                 j.decide(step);
             }
-            other => break other,
+            other
+            @ (Some(Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking) | None) => {
+                break other;
+            }
         }
     };
     assert!(

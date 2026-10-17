@@ -835,7 +835,11 @@ fn pending_rerun(scene: &Scene<'_>) -> Option<Vec<Clause>> {
     let rerun = match next.context {
         TrialContext::Rerun { .. } => "a clean rerun is needed",
         TrialContext::ZeroRerun { .. } => "a clean rerun with every core at 0 is needed",
-        _ => return None,
+        TrialContext::Search { .. }
+        | TrialContext::SoloLimit { .. }
+        | TrialContext::Cycle { .. }
+        | TrialContext::Round { .. }
+        | TrialContext::Hunt { .. } => return None,
     };
     let failure = match s.last.and_then(|end| end.core) {
         Some(core) => format!("failure on core {:02}", core.get()),
@@ -924,10 +928,13 @@ pub(crate) fn phase_progress(scene: &Scene<'_>, width: usize) -> [Line<'static>;
     }
     let life = lifecycle(scene);
     let stage = current(scene);
-    [
+    let rows = [
         fit_clauses(width, &headline(scene, stage, life)),
         fit_clauses(width, &requirement(scene, stage, life)),
-    ]
+    ];
+    #[cfg(test)]
+    crate::corpus::lines("dash.progress", "", &rows);
+    rows
 }
 
 #[cfg(test)]

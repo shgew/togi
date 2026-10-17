@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use serde_json::json;
+use test_case::test_case;
 use togi_machine::{Kernel as _, KernelCursor, Partial};
 
 use super::support::{
@@ -122,103 +123,66 @@ fn an_exit_error_names_the_operation_status_and_stderr() {
     assert!(text.ends_with("permission denied"), "{text}");
 }
 
-#[test]
-fn a_boot_that_is_not_32_hex_digits_is_refused_before_any_command() {
+#[test_case("", None; "empty")]
+#[test_case("", Some("s=1;i=2"); "empty after a cursor")]
+#[test_case("boot", None; "word")]
+#[test_case("boot", Some("s=1;i=2"); "word after a cursor")]
+#[test_case("1234-abcd", None; "short")]
+#[test_case("1234-abcd", Some("s=1;i=2"); "short after a cursor")]
+#[test_case("zzzzzzzzbbbbccccddddeeeeeeeeeeee", None; "non-hex")]
+#[test_case("zzzzzzzzbbbbccccddddeeeeeeeeeeee", Some("s=1;i=2"); "non-hex after a cursor")]
+#[test_case("aaaaaaaabbbbccccddddeeeeeeeeeeee0", None; "33 digits")]
+#[test_case("aaaaaaaabbbbccccddddeeeeeeeeeeee0", Some("s=1;i=2"); "33 digits after a cursor")]
+fn a_boot_that_is_not_32_hex_digits_is_refused_before_any_command(id: &str, after: Option<&str>) {
     let (mut kernel, calls) = kernel(&[], |_| ok(""));
-    for id in [
-        "",
-        "boot",
-        "1234-abcd",
-        "zzzzzzzzbbbbccccddddeeeeeeeeeeee",
-        &format!("{OLD}0"),
-    ] {
-        let error = kernel.mces(&boot(id), Duration::ZERO).unwrap_err();
-        assert!(
-            togi_machine::error_chain(&error).contains("is not a boot id"),
-            "{id}: {error}"
-        );
-        let cursor = KernelCursor::from("s=1;i=2".to_owned());
-        for after in [None, Some(&cursor)] {
-            let partial = kernel.read_mces(&boot(id), after).unwrap_err();
-            assert!(partial.value.is_empty(), "{id} after {after:?}");
-            assert!(
-                !matches!(
-                    partial.error,
-                    togi_machine::Error::CursorMissing | togi_machine::Error::BootMissing
-                ),
-                "{id} after {after:?}: {:?}",
-                partial.error
-            );
-            let text = partial.error.to_string();
-            assert!(
-                text.contains(&format!("{id:?} is not a boot id")),
-                "{id} after {after:?}: {text}"
-            );
-        }
-    }
+    let error = kernel.mces(&boot(id), Duration::ZERO).unwrap_err();
+    assert!(
+        togi_machine::error_chain(&error).contains("is not a boot id"),
+        "{id}: {error}"
+    );
+    let after = after.map(|text| KernelCursor::from(text.to_owned()));
+    let partial = kernel.read_mces(&boot(id), after.as_ref()).unwrap_err();
+    assert!(partial.value.is_empty(), "{id} after {after:?}");
+    assert!(
+        !matches!(
+            partial.error,
+            togi_machine::Error::CursorMissing | togi_machine::Error::BootMissing
+        ),
+        "{id} after {after:?}: {:?}",
+        partial.error
+    );
+    let text = partial.error.to_string();
+    assert!(
+        text.contains(&format!("{id:?} is not a boot id")),
+        "{id} after {after:?}: {text}"
+    );
     assert!(locked(&calls).is_empty());
 }
 
-#[test]
-fn malformed_entries_are_errors_not_clean_intervals() {
-    let bad_message =
-        json!({"MESSAGE": {}, "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "1"});
-    let cases = [
-        ("object message", bad_message),
-        (
-            "no message",
-            json!({"__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "1"}),
-        ),
-        (
-            "byte over 255",
-            json!({"MESSAGE": [256], "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "1"}),
-        ),
-        (
-            "wall clock text",
-            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "invalid", "__MONOTONIC_TIMESTAMP": "1"}),
-        ),
-        (
-            "wall clock number",
-            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": 1, "__MONOTONIC_TIMESTAMP": "1"}),
-        ),
-        (
-            "wall clock missing",
-            json!({"MESSAGE": "x", "__MONOTONIC_TIMESTAMP": "1"}),
-        ),
-        (
-            "wall clock beyond jiff",
-            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "9223372036854775807", "__MONOTONIC_TIMESTAMP": "1"}),
-        ),
-        (
-            "wall clock overflow",
-            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "9223372036854775808", "__MONOTONIC_TIMESTAMP": "1"}),
-        ),
-        (
-            "monotonic text",
-            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "invalid"}),
-        ),
-        (
-            "monotonic negative",
-            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "-1"}),
-        ),
-        (
-            "monotonic missing",
-            json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "1"}),
-        ),
-    ];
-    for (name, entry) in cases {
-        let out = lines(&[entry]);
-        let (mut kernel, _) = kernel(&[], move |_| ok(&out));
-        let error = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
-        assert!(
-            caused_by::<DecodeError>(&error).is_some(),
-            "{name}: {error:?}"
-        );
-    }
-    for out in [&b"{broken"[..], b"   \n", b"[]"] {
-        let (mut kernel, _) = kernel(&[], move |_| ok(out));
-        assert!(kernel.mces(&boot(OLD), Duration::ZERO).is_err(), "{out:?}");
-    }
+#[test_case(json!({"MESSAGE": {}, "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "1"}); "object message")]
+#[test_case(json!({"__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "1"}); "no message")]
+#[test_case(json!({"MESSAGE": [256], "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "1"}); "byte over 255")]
+#[test_case(json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "invalid", "__MONOTONIC_TIMESTAMP": "1"}); "wall clock text")]
+#[test_case(json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": 1, "__MONOTONIC_TIMESTAMP": "1"}); "wall clock number")]
+#[test_case(json!({"MESSAGE": "x", "__MONOTONIC_TIMESTAMP": "1"}); "wall clock missing")]
+#[test_case(json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "9223372036854775807", "__MONOTONIC_TIMESTAMP": "1"}); "wall clock beyond jiff")]
+#[test_case(json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "9223372036854775808", "__MONOTONIC_TIMESTAMP": "1"}); "wall clock overflow")]
+#[test_case(json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "invalid"}); "monotonic text")]
+#[test_case(json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "1", "__MONOTONIC_TIMESTAMP": "-1"}); "monotonic negative")]
+#[test_case(json!({"MESSAGE": "x", "__REALTIME_TIMESTAMP": "1"}); "monotonic missing")]
+fn malformed_entries_are_errors_not_clean_intervals(entry: serde_json::Value) {
+    let out = lines(&[entry]);
+    let (mut kernel, _) = kernel(&[], move |_| ok(&out));
+    let error = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
+    assert!(caused_by::<DecodeError>(&error).is_some(), "{error:?}");
+}
+
+#[test_case(b"{broken"; "broken json")]
+#[test_case(b"   \n"; "blank line")]
+#[test_case(b"[]"; "empty array")]
+fn malformed_output_is_an_error_not_a_clean_interval(out: &'static [u8]) {
+    let (mut kernel, _) = kernel(&[], move |_| ok(out));
+    assert!(kernel.mces(&boot(OLD), Duration::ZERO).is_err());
 }
 
 #[test]
@@ -253,17 +217,17 @@ fn a_boot_id_is_the_32_hex_digits_of_a_hyphenated_uuid() {
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     );
     assert_eq!(crate::boot::checked(OLD).unwrap().as_str(), OLD);
-    for text in [
-        "",
-        "\n",
-        "not a boot id",
-        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeee",
-    ] {
-        assert!(
-            matches!(crate::boot::checked(text), Err(BootIdError::Invalid(_))),
-            "{text:?}"
-        );
-    }
+}
+
+#[test_case(""; "empty")]
+#[test_case("\n"; "newline")]
+#[test_case("not a boot id"; "words")]
+#[test_case("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeee"; "31 digits")]
+fn a_malformed_boot_id_is_invalid(text: &str) {
+    assert!(
+        matches!(crate::boot::checked(text), Err(BootIdError::Invalid(_))),
+        "{text:?}"
+    );
 }
 
 #[test]

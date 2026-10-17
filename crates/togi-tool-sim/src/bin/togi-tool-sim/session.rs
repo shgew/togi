@@ -80,7 +80,7 @@ pub(crate) fn run_with(
     match simulate(args, log, load, persistence, context, execute) {
         Ok(code) => code,
         Err(error) => {
-            let _ = writeln!(log, "sim: {error}");
+            let _ = writeln!(log, "sim: {}", togi_machine::error_chain(&error));
             match error {
                 Error::ScheduleNotFull => crate::USAGE,
                 Error::Machine(_)
@@ -98,15 +98,15 @@ pub(crate) fn run_with(
 pub(crate) enum Error {
     #[error(transparent)]
     Machine(#[from] machine::LoadError),
-    #[error("create the state directory: {0}")]
+    #[error("create the state directory")]
     TempDir(#[source] io::Error),
-    #[error("read the state directory's configuration: {}", togi_machine::error_chain(.0))]
+    #[error("read the state directory's configuration")]
     Config(#[from] togi_simrun::HistoryError),
-    #[error("resume the simulated machine: {}", togi_machine::error_chain(.0))]
+    #[error("resume the simulated machine")]
     Resume(#[from] ResumeError),
-    #[error("watch for signals: {0}")]
+    #[error("watch for signals")]
     Signals(#[source] io::Error),
-    #[error("{}", togi_machine::error_chain(.0))]
+    #[error(transparent)]
     Simulate(#[from] togi_simrun::SimError),
     #[error(
         "--cycles counts passed full cycles, and the checking cycle this state directory recorded is not full"

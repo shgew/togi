@@ -2,7 +2,7 @@
 
 `togi-tool-bench` (`just bench`) runs a fixed suite of simulated sessions and compares two versions of togi. Use it to show that a tuner change makes sessions conclude sooner, or no later, without giving up depth or leaving a profile that fails. Like `togi-tool-sim`, it is a development program and is not shipped.
 
-For the autonomous experiment loop, frozen evaluation environment, proof standard and owner-controlled merge and deployment workflow, follow the [research program](../tools/bench/program.md). [ADR 0029](adr/0029-bench-verdicts-rest-on-fitted-machines.md) records why target claims require checked fits and real-fact replay.
+Autonomous research follows [Research campaigns](#research-campaigns): its modes, limits, prohibitions, record and end state, then the mode's program and the issue's brief. [ADR 0029](adr/0029-bench-verdicts-rest-on-fitted-machines.md) records why target claims require checked fits and real-fact replay.
 
 ```sh
 just bench [--split dev|holdout|all] [--out FILE] [--baseline FILE] [--keep DIR] [--jobs N] [--max-boots 1000]
@@ -220,16 +220,19 @@ This gate is separate from `just bench`: it proves that every session concludes 
 
 ## What each check proves
 
-Cite a check as evidence only for the packages it exercises. `just gate` runs `fmt`, `lint`, `module` and `changes`, the retained Go tools' tests, and the workspace's nextest and doc tests, `cargo deny` and `cargo shear`; `just check` runs every flake check the host builds, including the Linux-only `trial-scope-tests`, `vm-recovery-tests`, `vm`, `vm-trial-scope`, `vm-restart-limit` and `vm-emergency-stop`.
+Cite a check as evidence only for the packages it exercises. `just gate` runs `fmt`, `lint`, `module` and `changes`, the retained Go tools' tests, and the workspace's nextest and doc tests, `cargo deny` and `cargo shear`; `just check` runs every flake check the host builds, including the Linux-only `trial-scope-tests`, `vm-recovery-tests`, `vm`, `vm-host-lock`, `vm-trial-scope`, `vm-restart-limit` and `vm-emergency-stop`.
 
 | Check | Runs | Exercises | Does not prove |
 |---|---|---|---|
 | `just test`, `just focus` | `cargo nextest run` on the workspace or the named crate | Every crate's ordinary tests: the tuner, session, carry and journal directly, and trial, detect, smu, hardware and the backends against fakes, fake file trees and fake package trees | That a stress program accepts its generated configuration; real systemd scopes, kernel logs or SMU access |
 | `go-tools` | `go test -shuffle=on -tags integration ./...` in `just gate` and the flake `go-tools` check | The retained Go tools' tests, among them `tools/cover` against temporary git repositories | Any Rust crate, real systemd scopes, stress programs, kernel logs or SMU access |
 | `board-test`, `just board-test` | Nushell assertions with fixed GitHub JSON and time, in `just gate` and the flake check | Coordination-board readiness, grouping, links, overlaps, interaction expiry, failures and golden text | Live GitHub API availability or authentication, any togi runtime code or hardware |
+| `sql-test`, `just sql-test` | DuckDB over fixed state directories, in `just gate` and the flake check | The `just sql` views: current and archived journals, plain and gzip samples with the plain file preferred, session-scoped trial joins, a torn tail that does not parse, a directory without archives or samples, reading the views again after a trial's samples were compressed, and refusing a trial directory the user cannot list | That a real or simulated journal's fields still match the views, any togi runtime code or hardware |
 | `module` | Evaluates `nix/module.nix` for x86_64-linux on any host (`nix/module-test.nix`), with the package built with the revision `dev` (`package`'s `package`), which the evaluation references without building it | The module's options and generated configuration: GRUB mirror constraints, the grubenv mount dependency, the tuning specialisation's 30 s watchdog and kernel parameters, the restart-limit and leave-tuning-boot scripts, the lock file rule and package overrides | Any code of togi, or that the configuration boots and behaves as evaluated |
+| `cargo-deps` | crane's `buildDepsOnly`: the locked dependencies of every workspace crate in the dev profile, the artifact `clippy`, `nextest`, `doc`, `changes`, `trial-scope-tests` and `vm-recovery-tests` start from | That the locked dependencies build; its own job pushes the artifact to Cachix, since no other check's output references it | Any workspace crate's code or tests |
 | `trial-scope-tests` | Linux only: builds `togi-trial`'s `hardware` and `cached_errors` test binaries with the `hardware` feature, as `togi-trial-tests` and `togi-trial-cached-errors` | That those tests compile | Anything at run time: `vm` and `vm-trial-scope` run the binaries |
-| `vm` | Linux only: a NixOS VM with the module, whose `togi` is the package built with the revision `dev`, and its tuning specialisation (`nix/vm-test.nix`) | `togi-trial-tests`'s `hardware::` tests, except the helper process and the R1 and R2 workload test, as root under real systemd and its pin test as a delegated user, with helper backends; the documented lock provisioning; the installed `togi`'s host-lock refusals, its dead end at preflight on the tuning boot and the saved entry it clears; the watch and console services; booting the GRUB tuning entry; the armed watchdog's reset when PID 1 freezes | Real stress programs, SMU access or offset writes, a passing preflight, or any tuning decision |
+| `vm` | Linux only: a NixOS VM with the module, whose `togi` is the package built with the revision `dev`, and its tuning specialisation (`nix/vm-test.nix`) | `togi-trial-tests`'s `hardware::` tests, except the helper process and the R1 and R2 workload test, as root under real systemd and its pin test as a delegated user, with helper backends; the installed `togi`'s dead end at preflight on the tuning boot and the saved entry it clears; a held host lock stopping `togi.service` with exit 3, no restart and the boot, saved entry and state unchanged; the watch and console services; booting the GRUB tuning entry; the armed watchdog's reset when PID 1 freezes | Real stress programs, SMU access or offset writes, a passing preflight, or any tuning decision |
+| `vm-host-lock` | Linux only: a NixOS VM with the module and a hardware-test group, booted normally, whose `togi` is the package built with the revision `dev` (`nix/vm-test.nix`) | `nix/provision-lock.py`, the manual-install provisioning of [the how-to](howto.md#host-lock-and-delegated-hardware-tests), on fresh, legacy, held and symlinked locks; the provisioned lock denying an unrelated user; the installed `togi`'s refusals of a foreign-owned lock, a read-only lock and a held lock, by exit status, inode, mode and content | The wording of any refusal, `togi-trial-tests`, or the tuning boot |
 | `vm-trial-scope` | Linux only: a NixOS VM with the module's tuning node, running `togi-trial-tests` and `togi-trial-cached-errors` as root and as a delegated user | The scope tests that need real systemd, as root and, for the delegated subset and `cached_errors`, through the user manager, with helper backends, leaving no `togi-*` scope behind | Real stress programs or SMU access, or the installed `togi` |
 | `vm-restart-limit` | Linux only: a NixOS VM whose `togi` is a stub that exits 2 for `run` and `restart-limit` | The module's units and scripts: three failed starts, the start limit, the fallback leave reason, the return to the normal generation, the cleared GRUB saved entry and the lock file's ownership | Any code of togi itself, including its own `restart-limit` command |
 | `vm-recovery-tests` | Linux only: builds `togi`'s `vm_recovery` integration-test executable as `togi-vm-recovery` | That the production CLI recovery path and its persistent-fake-machine fixture compile | Runtime recovery or real SMU access |
@@ -366,7 +369,7 @@ just forecast "$copy" --out tools/bench/forecasts/<session>-<seq>.json
 The anchor is the last complete event of the copied live journal: its session, sequence and time, with a SHA-256 of the session's journal lines through it. Only events after the anchor count, and the outcome ends at the run's first conclusion or dead end after the anchor: events after that point do not count. A simulated run stops there; a real run that kept checking past its conclusion, as a tuning boot does, is therefore scored by `just stats` as what a `togi run --cycles 1` run with the same history would have recorded. For each run, the forecast records:
 
 - `status`: `concluded` (the run reached the clean cycle `togi run --cycles 1` stops at), `deadend`, or `censored` (still running at the simulator's boot cap). A run that errors fails the whole forecast;
-- `hours`: from the anchor to the conclusion, or to the last event of a run that did not conclude;
+- `hours`: run time after the anchor through the conclusion, or through the last event of a run that did not conclude, counted as `just stats --forecast` counts a real run's ([Scoring a forecast](reviewing.md#scoring-a-forecast)): invocations and the downtime before one that detects a crash, not clean stops;
 - `crashes`: `crash.detected` events;
 - `hunts`: hunts that ran a trial; a hunt answered only by carried facts runs none;
 - `profile` and `depth`: the newest session's final profile and its sum, as in `just bench` (its checking profile, or its baseline before one exists).
@@ -379,9 +382,155 @@ The crate `togi-tool-forecast` defines the record, which `togi-tool-bench foreca
 
 `--split`, `--baseline` and `--same` are usage errors with `--forecast`. `--keep DIR` retains every run directory under a new directory in DIR. Without it, each successful run is deleted as it finishes; a forecast whose runs failed keeps the failed runs and prints where, and a forecast that fails after every run succeeded, such as on writing `--out`, removes its run directory and prints none.
 
+## Counterfactual pass and cost of the R7 requirements
+
+`just pass-cost` computes, without simulating, what the checking cycle's R7 part requirements cost at a fixed profile when every trial fails with a known probability ([#490](https://github.com/shgew/togi/issues/490)). It is readiness tooling for #490's observation-only study: it reads no journal, writes nothing, and no number it prints is tuner evidence or feeds a tuner rule. Running it is not running that study.
+
+```sh
+just pass-cost [--hazard PER_HOUR,…] [--ccds 2] [--config FILE] [--launches 40] [--hours 4] [--extra-short N,…]
+just pass-cost --machine FILE --profile OFFSETS [--seed 1] [--workload ID] [--cores CORES] [--config FILE] [--launches 40] [--hours 4] [--extra-short N,…]
+```
+
+Each part's requirement comes from the tuner (`togi_tuner::r7_part_passes`), under `--config` or the built-in defaults: three passes at `short_trial_s` and one long pass whose duration depends on the part and the CCD count ([Checking](spec/tuner.md#checking)), so the defaults on two CCDs ask 3×120 s + 1×300 s of a CCD or partial part and 3×120 s + 1×600 s of the all-core part. The failure probability of each trial comes from one of two sources:
+
+- **Constant hazards** (the default): `--hazard` lists failures per hour, by default #490's grid 0, 0.1, 0.5, 1, 2, 4, 8 and 16. A trial of `d` seconds fails with probability `1 - exp(-h·d/3600)`, with no onset boost. `--ccds` sets the long durations; a partial's requirement is its CCD part's.
+- **A simulator machine**: `--machine` and `--profile` (one offset per core) evaluate the machine's model at that fixed profile with `failure_probability`, every source counted, background, onset boost and delays included. For each R7 workload (or `--workload`), the step's parts are each CCD's full part, its request-ordered partials of at least two cores when the machine has a shared rail, and the all-core part on several CCDs, as `worst_r7_hazard_per_h` derives them ([What a run records](#what-a-run-records)); `--cores` evaluates only the part that loads those cores. `--seed` draws the hidden limits of a machine file that sets none. A step row chains its parts.
+
+For each part, the output prints the passes, each trial's failure probability and:
+
+- `first`: the probability that every required trial passes on its first launch, the exact product of `1 - p` over the trials. This is the chance that a part at this profile qualifies, including by luck at a high hazard.
+- `launches` and `hours`: the expected launches and time to meet the requirement when it is retried at the same profile until met. Each requirement waits for its passes in a row, `Σ_{i=1..n} (1-p)^-i` launches, since a failure invalidates the passes of its own class and leaves those of the part's other classes ([Evidence](spec/tuner.md#evidence)).
+- `done≤L` and `done≤H`: the probability of meeting the requirement within `--launches` launches and within `--hours` hours, by dynamic programming over the passes earned and the launches or seconds elapsed; the censored share is `1 - done`. `spent_n` and `spent_h` are the expected launches and hours spent before the requirement is met or the horizon ends.
+- With `--extra-short N`, a row per part with N more short passes, and `+launches` and `+hours`, its expected extra cost over the current requirement.
+
+Only `first` on a current-requirement row describes the current rules; on a `+N short` row it is the first-attempt probability of a requirement the tuner never asks for. Everything else is **counterfactual**, and the output says so: the tuner answers a multi-core R7 failure by backing off ([R7 voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff)), not by retrying at the same profile, and it never asks for extra short passes. Trials are independent at a fixed profile; a failed trial is charged its full intended duration, so hours are an upper bound; a step counts one R7 occurrence, not the counts a later occurrence of the same workload adds. The probability that a part passes on its first attempt is not the probability that a retried part eventually earns its passes, and the two columns stay apart.
+
+A trial of 120 s at 2 failures per hour fails with probability 0.0645 and one of 300 s with 0.1535, so a CCD part qualifies on its first attempt with probability 0.6930:
+
+```text
+hazard 2.00/h
+  part                                 passes         fail_p           first  launches    hours   done≤40 done≤4.00h  spent_n spent_h +launches  +hours
+  ccd                                  3x120s+1x300s  0.0645/0.1535   0.6930       4.6     0.21    1.0000     1.0000      4.6    0.21
+  ccd +2 short                         5x120s+1x300s  0.0645/0.1535   0.6065       7.3     0.30    1.0000     1.0000      7.3    0.30       2.7    0.09
+```
+
+## Research campaigns
+
+A research campaign is a finite run of experiments by an agent following one issue's brief. Only the owner starts one, naming the issue, the limits and the output directory; a brief, a readiness change or a scheduled issue is not authorization. This section owns the rules every campaign shares; a mode's program and an issue's brief add only their own.
+
+### Modes
+
+| Mode | Rules | May change | Ends in |
+|---|---|---|---|
+| Model development | [`tools/fit/program.md`](../tools/fit/program.md) | the failure model and the fitter | a report; a kept model becomes a model-only pull request |
+| Production policy experiment | [`tools/bench/program.md`](../tools/bench/program.md) | tuner decisions in `crates/togi-tuner` | a report; kept changes become sub-issues of the open `Ruleset N` |
+| Fixed-policy observation | the issue's brief | analysis tools and research-only fixtures; the tuner, configuration and simulator stay unchanged | a report |
+| Counterfactual accounting | the issue's brief | the same as observation; alternatives are computed offline, never executed | a report |
+
+Observation and accounting measure the unchanged tuner. Their conclusions about another policy are labelled counterfactual: removing events from an observed journal is not what a different tuner would have done. #490 and #896 start only in these two modes. A simulated gain never lifts their evidence freeze or the [evidence volume](../tools/bench/program.md#hard-rules) rule; a production change for either needs a validated #480 forward score and an owner-approved design under #979.
+
+| Issue | Mode | Brief |
+|---|---|---|
+| [#427](https://github.com/shgew/togi/issues/427) | model development | [`tools/fit/research/427.md`](../tools/fit/research/427.md) |
+| [#480](https://github.com/shgew/togi/issues/480) | model development, diagnostic only | [`tools/fit/research/480.md`](../tools/fit/research/480.md) |
+| [#490](https://github.com/shgew/togi/issues/490) | fixed-policy observation | [`tools/bench/research/490.md`](../tools/bench/research/490.md) |
+| [#896](https://github.com/shgew/togi/issues/896) | counterfactual accounting | [`tools/bench/research/896.md`](../tools/bench/research/896.md) |
+| [#503](https://github.com/shgew/togi/issues/503) | fixed-policy observation, feasibility only | [`tools/bench/research/503.md`](../tools/bench/research/503.md) |
+
+An issue without a brief has no campaign; #428's brief waits for #427's parameterization. Each brief names its mode, its finite candidate queue, permitted and forbidden data, writable paths, metrics, keep and stop rules, result format and prerequisites. A prerequisite that has not landed stops the campaign before its first candidate. Every campaign runs through the `just research` dispatcher, which validates its manifest and writes its record ([below](#the-dispatcher)).
+
+### Limits
+
+By default a campaign runs at most 8 hours of wall time and 12 substantive candidates, evaluates with 4 workers (`--jobs 4`), and holds the host-shared benchmark lock ([AGENTS.md](../AGENTS.md#commands)) for each benchmark it runs. It stops at the first exhausted limit. A substantive candidate is one entry of the brief's queue evaluated against the reference; reference runs and a confirmation belong to the candidate they serve. The owner may override any limit at launch. A monetary or API spending cap is a launch parameter of the agent runner, never chosen by a brief; without one, a paid agent does not continue unattended.
+
+The bench's per-simulator `--timeout` and `--max-boots` bound one simulated session. They are not campaign limits, and a campaign keeps them.
+
+### Prohibitions
+
+In every mode a campaign never:
+
+- runs `togi run`, `togi reset` or `just hardware`, or touches hardware, the SMU, the watchdog, the boot loader or a live state directory;
+- refreshes evidence (`just facts`), forecasts (`just forecast`), regenerates fitted machines, the anchor or overlays into `tools/bench/machines/`, or re-records a baseline (`just bench-baseline`);
+- acquires target evidence, deploys or merges;
+- writes outside its brief's writable paths and the campaign's output directory.
+
+Launch it unprivileged, in its own worktree, with no access to live state or hardware and no privileged credentials. The manifest and diff checks catch mistakes; they are not a security sandbox.
+
+### The record
+
+A campaign writes its record to the output directory the owner names, outside the checkout, so nothing it commits can include it:
+
+- `manifest.json`: a byte copy of the launch manifest: issue, mode and hypothesis queue; checkout and reference revisions; the approved session allowlist and canonical input hashes; the suite and split, which fix scenarios and seeds; frozen-file hashes, which always include the brief and the build environment (`Cargo.lock`, `flake.lock`, `rust-toolchain.toml`); writable paths; limits; output directory; and the confirmation allowance. A missing or changed manifest, or a frozen input whose hash changed, stops the campaign; nothing refreshes it silently.
+- `experiments.jsonl`: append-only, never edited. Each evaluation run has a start line, written before it runs, and an end line. A confirmation run has its own lines, which name the candidate they serve. A start line without an end line is an incomplete run. A start line holds the candidate, its role, the command, `HEAD`, the hash of the candidate's changes, the reference revision and every pinned hash. An outcome line holds the typed outcome, its reason, full-precision metrics and the runs it rests on. What killed or failed writes left, the bytes after the last newline and any cut-off lines before them, is never a record, even a complete record that lost only its newline: the next append ends it with a newline and keeps it, hex-encoded, in a `ledger_torn` line. A complete line that does not decode stays an error. A `confirmation_failed` outcome or a timed-out run stops the campaign even if a torn write lost the stop line written with it.
+- the raw stdout and stderr of every evaluation command;
+- `report.md`: the final report.
+
+Rules for the record:
+
+- Decide each outcome from the typed metrics and the brief's keep rule, never from exit status: the bench exits 0 on REJECT and NEUTRAL, and model flags change neither verdict nor exit ([Comparing two versions](#comparing-two-versions)).
+- Never select a winner from an incomplete or unpaired comparison. Record every candidate, rejected, negative and invalid ones included.
+- On rejection, restore only the experiment's own changes and keep unrelated work.
+- A confirmation is spent when it starts: its start line binds the candidate, reference and data hashes. An interrupted confirmation stays spent, and a resumed campaign never repeats it.
+- A resumed campaign appends to the same ledger; its interrupted experiments stay incomplete.
+
+The campaign stops with one reason: its queue is exhausted, a limit is exhausted (wall time or candidates), a confirmation failed, evidence or a frozen input changed, a forbidden diff appeared, a comparison was unpaired, a prerequisite is missing, or it was interrupted.
+
+### The dispatcher
+
+`just research ISSUE ACTION` runs one step of a campaign; it is `togi-tool-bench research`. It chooses no experiment and runs no agent: the researcher calls it for each step, and it refuses whatever the brief and manifest do not allow. Every action that writes holds the run directory's lock without waiting, so a second dispatcher on the same campaign is refused.
+
+| Action | What it does |
+|---|---|
+| `check --manifest FILE` | Validates the manifest against the tree and creates nothing. |
+| `start --manifest FILE` | Validates the manifest, requires `HEAD` at its checkout with no changes, a reference that differs from it only at writable paths and a new output directory outside the checkout, copies the manifest and writes the ledger's first line. |
+| `exec --run DIR --candidate ID --role ROLE -- RECIPE ARGS` | Runs one evaluator through `just`, as described below, keeping its stdout and stderr under `raw/`. |
+| `outcome --run DIR --candidate ID --outcome OUTCOME --reason TEXT --metrics FILE` | Records the researcher's outcome (`kept`, `rejected`, `invalid`, `confirmation-passed` or `confirmation-failed`) with the metrics it read, as a JSON object of numbers. |
+| `stop --run DIR --reason REASON` | Stops the campaign with one of the stop reasons above. |
+| `resume --run DIR` | Records the runs a killed dispatcher left unfinished as incomplete, then lets the campaign continue. |
+| `report --run DIR --notes FILE` | Writes `report.md` from the ledger and the researcher's notes on the remaining uncertainty. |
+
+A manifest is JSON. Hashes are SHA-256 in lowercase hex; a gzip input is pinned by its decompressed bytes. `inputs` is for model development and `suite` (`path`, `sha256`, `split`) for observation and accounting. `limits` defaults to the values above. The owner writes, for example:
+
+```json
+{
+  "issue": 427,
+  "mode": "model-development",
+  "hypotheses": [{"id": "shared-core", "statement": "a shared per-core term improves the forward score"}],
+  "checkout": "<40-hex commit>",
+  "reference": "<40-hex commit>",
+  "inputs": [{"path": "<approved artifact>", "sha256": "4b47590e…",
+              "development": ["20260924T204352Z", "…", "20261002T235548Z"], "confirmation": ["20261004T000701Z"]}],
+  "suite": null,
+  "frozen": [{"path": "Cargo.lock", "sha256": "…"}, {"path": "flake.lock", "sha256": "…"},
+             {"path": "rust-toolchain.toml", "sha256": "…"}, {"path": "tools/fit/research/427.md", "sha256": "…"}],
+  "writable": ["crates/togi-sim/src"],
+  "limits": {"wall_minutes": 480, "candidates": 12, "jobs": 4},
+  "output": "/absolute/path/outside/the/checkout/run-1",
+  "confirmations": 1
+}
+```
+
+The dispatcher refuses a manifest whose issue has no brief or names another mode, whose sessions are not that issue's approved ones, which leaves the environment or the brief unpinned, or whose writable paths overlap evidence, fitted machines, baselines, the tuner, the run loop, the hardware path, the dispatcher, the programs and briefs, the build environment or a pinned file. Observation and accounting may not write the simulator or the fitter either.
+
+Before `exec` and `outcome` record anything, the dispatcher checks that the campaign has not stopped, that no run is left unfinished, that wall time remains, that every pinned file still has its hash and that each facts input still holds exactly its named sessions. It also checks that `HEAD` descends from the checkout and that every changed path is a writable one. A failed check after the start stops the campaign with its reason. A refused command records nothing.
+
+`exec` allows only its mode's evaluators. Model development runs `forward` (`--facts`, `--seal`, `--jobs`) and, to finalize a confirmed candidate, `fit` (`--facts`, `--out`, `--jobs`, `--seed`, `--bootstrap`) and the F5 `bench` on the committed suite with `--split all --baseline tools/bench/baseline.jsonl`. `--facts` must name a manifest input, never the default extract. A development run seals exactly the input's confirmation sessions, and a confirmation scores them unsealed. Observation and accounting run only `bench`, with the manifest's `--suite` and `--split`, and keep `--timeout` and `--max-boots`. Output flags must name paths inside the run directory, never its own record (`manifest.json`, `experiments.jsonl`, `lock`, `report.md`, `raw`), and `--jobs` defaults to the worker limit and may not exceed it. Each run waits for the host-shared lock, then makes its checks and gets the wall time left. When the time runs out, or the dispatcher is told to stop, it terminates the evaluator's process group and records the run as timed out or interrupted. A timed-out run also stops the campaign.
+
+The roles enforce the comparison's order:
+
+- A `reference` run needs the tree at the reference revision.
+- A `candidate` run past the candidate limit stops the campaign.
+- In model development, `kept` needs a complete candidate run paired with a complete reference run of the same command and data; otherwise the campaign stops as unpaired. Observation and accounting need a complete candidate run.
+- A `confirmation` needs a kept candidate whose changes are unchanged since its run, and a confirmation the manifest allows. It is spent when its start line is written. Its `confirmation-reference` run follows it, and its outcome needs both to be complete.
+- `confirmation-failed` stops the campaign. A `finalization` run needs a passed confirmation at the same changes.
+
+### End state
+
+A campaign completes its approved experiments, records every outcome, writes the report, may open a reviewable result pull request when its brief allows one, and stops. The report reconciles the ledger, the exact comparisons, the limits used, the confirmation status and the remaining uncertainty; it names the run directory only as `$RUN` and lists any outcome that rests on an incomplete run. A negative, no-change or interrupted campaign is a complete deliverable, never a reason to relax a gate. Published summaries and artifacts follow [Writing](../AGENTS.md#writing): no private state paths, raw host journals or identifying data.
+
 ## The bench (`togi-tool-bench`)
 
-`just bench` runs `togi-tool-bench`: the runs, metrics, summary, comparison and cache of the bench ([#821](https://github.com/shgew/togi/issues/821)). `just same`, `just smoke` and `just forecast` run its `same` and `forecast` commands ([#823](https://github.com/shgew/togi/issues/823)), described [below](#the-same-command). The gate report is [below](#judging-the-gate) ([#822](https://github.com/shgew/togi/issues/822)).
+`just bench` runs `togi-tool-bench`: the runs, metrics, summary, comparison and cache of the bench ([#821](https://github.com/shgew/togi/issues/821)). `just same`, `just smoke` and `just forecast` run its `same` and `forecast` commands ([#823](https://github.com/shgew/togi/issues/823)), described [below](#the-same-command). `just pass-cost` runs its `pass-cost` command, [above](#counterfactual-pass-and-cost-of-the-r7-requirements). `just research` runs its `research` command, the [campaign dispatcher](#the-dispatcher). The gate report is [below](#judging-the-gate) ([#822](https://github.com/shgew/togi/issues/822)).
 
 ```sh
 just bench --split dev --baseline BEFORE.jsonl --out AFTER.jsonl
@@ -565,7 +714,7 @@ just forward            # the check alone: no ensemble, no machine files
 just forward --seal 1   # also leave the newest session unfitted and unscored
 ```
 
-`just forward` runs `togi-tool-fit --forward-only`: the same rows and `Pooled` line, without fitting the ensemble or writing machine files. `--seal N`, accepted only with `--forward-only`, drops the newest N sessions before the check: they are neither fitted nor scored, the remaining rows are unchanged, and `Pooled` covers only the remaining held-out sessions. At least one held-out session must remain. Model research ([program](../tools/fit/program.md)) iterates with the newest session sealed and scores it only to confirm a kept change.
+`just forward` runs `togi-tool-fit --forward-only`: the same rows and `Pooled` line, without fitting the ensemble or writing machine files. `--seal N`, accepted only with `--forward-only`, drops the newest N sessions before the check: they are neither fitted nor scored, the remaining rows are unchanged, and `Pooled` covers only the remaining held-out sessions. At least one held-out session must remain. A seal count is not a data permission: on the committed extract, `--seal 1` still scores #480's spent score session 20261004T211726Z. Model research ([program](../tools/fit/program.md)) uses only its brief's approved sessions.
 
 To score the current ensemble beside the forward candidate without refitting its members:
 

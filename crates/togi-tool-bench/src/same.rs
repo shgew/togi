@@ -61,7 +61,7 @@ pub struct Options {
 /// Why a comparison could not be made.
 #[derive(Debug, thiserror::Error)]
 pub enum SameError {
-    #[error("load the {side} suite in {}: {source}", tree.display())]
+    #[error("load the {side} suite in {}", tree.display())]
     Suite {
         side: &'static str,
         tree: PathBuf,
@@ -70,54 +70,54 @@ pub enum SameError {
     },
     #[error("suite has no smoke sessions")]
     NoSmoke,
-    #[error("build the {side} simulator in {}: {source}", tree.display())]
+    #[error("build the {side} simulator in {}", tree.display())]
     Build {
         side: &'static str,
         tree: PathBuf,
         #[source]
         source: Box<Error>,
     },
-    #[error("find the {side} simulator: {source}")]
+    #[error("find the {side} simulator")]
     Simulator {
         side: &'static str,
         #[source]
         source: Box<Error>,
     },
-    #[error("{what} {}: {source}", path.display())]
+    #[error("{what} {}", path.display())]
     Io {
         what: &'static str,
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("{side} {key}: {source}")]
+    #[error("{side} {key}")]
     Run {
         side: &'static str,
         key: String,
         #[source]
         source: RunError,
     },
-    #[error("{side} {key}: {source}")]
+    #[error("{side} {key}")]
     Digest {
         side: &'static str,
         key: String,
         #[source]
         source: JournalError,
     },
-    #[error("compare {key}: {source}")]
+    #[error("compare {key}")]
     Compare {
         key: String,
         #[source]
         source: JournalError,
     },
-    #[error("compare {key}: rerun {side}: {source}")]
+    #[error("compare {key}: rerun {side}")]
     Rerun {
         side: &'static str,
         key: String,
         #[source]
         source: RunError,
     },
-    #[error("remove matching {side} {key}: {source}")]
+    #[error("remove matching {side} {key}")]
     Remove {
         side: &'static str,
         key: String,
@@ -159,9 +159,10 @@ impl fmt::Display for Failed {
     }
 }
 
+/// The failure itself: `Failed` only carries where its runs were kept, so its chain is the error's chain.
 impl std::error::Error for Failed {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.error)
+        self.error.source()
     }
 }
 
@@ -679,9 +680,7 @@ mod build_tests {
         let fleet = Fleet::new();
         let build = |fleet: &Fleet, _: &Path, _: Option<&Path>| {
             fleet.cancel();
-            Err(Error::BuildSimulator {
-                message: "stopped".into(),
-            })
+            Err(Error::BuildSimulator(crate::error::BuildFailure::Exit(1)))
         };
         let error = build_for(Side::Base, Path::new("/base"), &fleet, &build, None).unwrap_err();
         assert!(matches!(error, SameError::Interrupted), "{error}");

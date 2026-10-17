@@ -173,7 +173,8 @@ fn real_process_a_simulator_that_outlives_the_limit_is_a_harness_error_not_an_ou
         matches!(&error, Error::Run { source, .. } if matches!(**source, RunError::TimedOut { seconds: 1 })),
         "{error}"
     );
-    assert!(error.to_string().contains("hang safety limit"), "{error}");
+    let chain = togi_machine::error_chain(&error);
+    assert!(chain.contains("hang safety limit"), "{chain}");
 }
 
 #[test]

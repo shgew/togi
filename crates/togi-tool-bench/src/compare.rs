@@ -4,9 +4,10 @@ use std::io;
 
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
+use togi_sim::saturating_count;
 
 use crate::record::{Record, Status};
-use crate::stats::{float, percentile, share};
+use crate::stats::{percentile, share};
 
 const RESAMPLES: usize = 10_000;
 const BOOTSTRAP_SEED: u64 = 1;
@@ -177,14 +178,14 @@ pub fn compare(pairs: &[Pair<'_>]) -> Comparison {
     c.baseline_real_answer_share = share(base_real, base_trials);
     c.v3 += depths
         .values()
-        .filter(|(sum, n)| sum / float(*n) > MEAN_DEPTH_RISE)
+        .filter(|(sum, n)| sum / saturating_count(*n) > MEAN_DEPTH_RISE)
         .count();
     if c.pairs > 0 {
-        c.crash_delta /= float(c.pairs);
-        c.depth_delta /= float(c.pairs);
+        c.crash_delta /= saturating_count(c.pairs);
+        c.depth_delta /= saturating_count(c.pairs);
     }
     let scenarios: Vec<&Vec<f64>> = logs.values().collect();
-    let mean = |values: &[f64]| values.iter().sum::<f64>() / float(values.len());
+    let mean = |values: &[f64]| values.iter().sum::<f64>() / saturating_count(values.len());
     let mut sum = 0.0;
     for (&name, values) in &logs {
         let mean = mean(values);
@@ -197,7 +198,7 @@ pub fn compare(pairs: &[Pair<'_>]) -> Comparison {
     if c.timed == 0 {
         return c;
     }
-    c.ratio = (sum / float(scenarios.len())).exp();
+    c.ratio = (sum / saturating_count(scenarios.len())).exp();
     let mut rng = StdRng::seed_from_u64(BOOTSTRAP_SEED);
     let mut boot: Vec<f64> = (0..RESAMPLES)
         .map(|_| {
@@ -207,10 +208,10 @@ pub fn compare(pairs: &[Pair<'_>]) -> Comparison {
                     let drawn: f64 = (0..values.len())
                         .map(|_| values[rng.random_range(0..values.len())])
                         .sum();
-                    drawn / float(values.len())
+                    drawn / saturating_count(values.len())
                 })
                 .sum();
-            (total / float(scenarios.len())).exp()
+            (total / saturating_count(scenarios.len())).exp()
         })
         .collect();
     boot.sort_by(f64::total_cmp);

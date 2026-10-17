@@ -77,7 +77,41 @@ fn decision(payload: &Payload) -> Option<DecisionPayload> {
         Payload::DeepeningRound(p) => p.clone().into(),
         Payload::TunerWarning(p) => p.clone().into(),
         Payload::DeadEnd(p) => p.clone().into(),
-        _ => return None,
+        Payload::SessionStart(_)
+        | Payload::SessionContext(_)
+        | Payload::SessionBaseline(_)
+        | Payload::SessionNotice(_)
+        | Payload::SessionWarning(_)
+        | Payload::SessionArchived(_)
+        | Payload::SessionCarried(_)
+        | Payload::ConfigLoaded(_)
+        | Payload::PreflightCheck(_)
+        | Payload::SmuIntent(_)
+        | Payload::SmuWrite(_)
+        | Payload::SmuReadback(_)
+        | Payload::SmuError(_)
+        | Payload::ProfileApplied(_)
+        | Payload::ProfileRestored(_)
+        | Payload::TrialIntent(_)
+        | Payload::TrialStart(_)
+        | Payload::TrialProgress(_)
+        | Payload::TrialSignal(_)
+        | Payload::TrialSample(_)
+        | Payload::TrialEnd(_)
+        | Payload::TrialCarried(_)
+        | Payload::FailureCarried(_)
+        | Payload::Mce(_)
+        | Payload::CrashDetected(_)
+        | Payload::HostRanking(_)
+        | Payload::BackendRetry(_)
+        | Payload::CommandReset(_)
+        | Payload::DefectFound(_)
+        | Payload::DefectAnswered(_)
+        | Payload::BootSavedEntry(_)
+        | Payload::BootLeaveReason(_)
+        | Payload::Shutdown(_)
+        | Payload::JournalTorn(_)
+        | Payload::StateRebuilt(_) => return None,
     })
 }
 
@@ -158,9 +192,14 @@ fn trial_end<'a>(
         .iter()
         .enumerate()
         .skip(after + 1)
-        .find_map(|(at, event)| match &event.payload {
-            Payload::TrialEnd(end) if end.trial == *trial => Some((at, end)),
-            _ => None,
+        .find_map(|(at, event)| {
+            if let Payload::TrialEnd(end) = &event.payload
+                && end.trial == *trial
+            {
+                Some((at, end))
+            } else {
+                None
+            }
         })
 }
 
@@ -179,26 +218,29 @@ fn all_pass_journal(
     let mut decisions = Vec::new();
     let mut at = end_at + 1;
     while at < events.len() {
-        match &events[at].payload {
-            Payload::TrialIntent(intent) => {
-                if ran == passes {
-                    return Some(Followed {
-                        decisions,
-                        next: intent.clone(),
-                    });
-                }
-                let (end_at, end) = trial_end(events, at, &intent.trial)?;
-                if end.outcome != Outcome::Pass {
-                    return None;
-                }
-                ran += 1;
-                at = end_at + 1;
-                continue;
+        let payload = &events[at].payload;
+        if let Payload::TrialIntent(intent) = payload {
+            if ran == passes {
+                return Some(Followed {
+                    decisions,
+                    next: intent.clone(),
+                });
             }
-            Payload::HostRanking(read) if read.ranking != ranking => return None,
-            Payload::Shutdown(_) => return None,
-            payload => decisions.extend(decision(payload)),
+            let (end_at, end) = trial_end(events, at, &intent.trial)?;
+            if end.outcome != Outcome::Pass {
+                return None;
+            }
+            ran += 1;
+            at = end_at + 1;
+            continue;
+        } else if let Payload::HostRanking(read) = payload
+            && read.ranking != ranking
+        {
+            return None;
+        } else if let Payload::Shutdown(_) = payload {
+            return None;
         }
+        decisions.extend(decision(payload));
         at += 1;
     }
     None
@@ -266,14 +308,14 @@ fn wanted(events: &[Event], intent: &TrialIntent, end_at: usize, end: &TrialEnd)
                 || (intent.core.is_some() && intent.condition == Condition::Alone);
             let mut core = end.core;
             for event in &events[end_at + 1..] {
-                match &event.payload {
-                    Payload::TrialIntent(_) => break,
-                    Payload::Failure(failure) if failure.trial.as_ref() == Some(&intent.trial) => {
-                        core = failure.core;
-                        named |= failure.attribution == Attribution::Attributed;
-                        break;
-                    }
-                    _ => {}
+                if let Payload::TrialIntent(_) = &event.payload {
+                    break;
+                } else if let Payload::Failure(failure) = &event.payload
+                    && failure.trial.as_ref() == Some(&intent.trial)
+                {
+                    core = failure.core;
+                    named |= failure.attribution == Attribution::Attributed;
+                    break;
                 }
             }
             if named {
@@ -373,14 +415,13 @@ fn check(seed: u64, cores: i64, every: usize) {
         let mut next: Option<(usize, &TrialIntent)> = None;
         let mut ranking_changed = false;
         for (at, later) in events.iter().enumerate().skip(end_at + 1) {
-            match &later.payload {
-                Payload::TrialIntent(found) => {
-                    next = Some((at, found));
-                    break;
-                }
-                Payload::HostRanking(read) => ranking_changed = read.ranking != ranking,
-                Payload::Shutdown(_) => break,
-                _ => {}
+            if let Payload::TrialIntent(found) = &later.payload {
+                next = Some((at, found));
+                break;
+            } else if let Payload::HostRanking(read) = &later.payload {
+                ranking_changed = read.ranking != ranking;
+            } else if let Payload::Shutdown(_) = &later.payload {
+                break;
             }
             decisions.extend(decision(&later.payload));
         }

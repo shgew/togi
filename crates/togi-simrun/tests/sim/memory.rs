@@ -50,14 +50,16 @@ fn a_crash_right_after_session_start_is_replayed_once() {
     let sim = bench.sim.clone();
     let fired = Rc::new(Cell::new(false));
     let seen = Rc::clone(&fired);
-    input.observer = Some(Box::new(move |event| match event.kind() {
-        EventKind::SessionStart if !seen.get() => {
+    input.observer = Some(Box::new(move |event| {
+        if event.kind() == EventKind::SessionStart && !seen.get() {
             seen.set(true);
             sim.crash();
             Observe::Continue
+        } else if event.kind() == EventKind::TrialEnd {
+            Observe::Stop
+        } else {
+            Observe::Continue
         }
-        EventKind::TrialEnd => Observe::Stop,
-        _ => Observe::Continue,
     }));
     let finished = finish(input);
     assert!(fired.get());
@@ -68,9 +70,12 @@ fn a_crash_right_after_session_start_is_replayed_once() {
     assert_eq!(count(&events, EventKind::TrialEnd), 1);
     let crashes: Vec<_> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CrashDetected(crash) => Some(crash),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::CrashDetected(crash) = &event.payload {
+                Some(crash)
+            } else {
+                None
+            }
         })
         .collect();
     let [crash] = crashes.as_slice() else {

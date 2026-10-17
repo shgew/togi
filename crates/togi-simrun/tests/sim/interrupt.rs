@@ -142,7 +142,46 @@ fn commitments(events: &[Event]) -> Commitments {
                     out.reruns.push(trial);
                 }
             }
-            _ => {}
+            Payload::SessionStart(_)
+            | Payload::SessionContext(_)
+            | Payload::SessionBaseline(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::SessionArchived(_)
+            | Payload::SessionCarried(_)
+            | Payload::ConfigLoaded(_)
+            | Payload::PreflightCheck(_)
+            | Payload::SmuIntent(_)
+            | Payload::SmuWrite(_)
+            | Payload::SmuReadback(_)
+            | Payload::SmuError(_)
+            | Payload::ProfileApplied(_)
+            | Payload::ProfileRestored(_)
+            | Payload::TrialStart(_)
+            | Payload::TrialProgress(_)
+            | Payload::TrialSignal(_)
+            | Payload::TrialSample(_)
+            | Payload::TrialEnd(_)
+            | Payload::TrialCarried(_)
+            | Payload::FailureCarried(_)
+            | Payload::Mce(_)
+            | Payload::CrashDetected(_)
+            | Payload::CheckingCycle(_)
+            | Payload::CheckingStep(_)
+            | Payload::CheckingChain(_)
+            | Payload::HostRanking(_)
+            | Payload::HuntSkipped(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::CommandReset(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::DeadEnd(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::Shutdown(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_) => {}
         }
     }
     out
@@ -153,47 +192,44 @@ fn assert_rerun_retries(events: &[Event]) {
     let mut pending: HashMap<Seq, &Event> = HashMap::new();
     let mut completed: HashSet<&TrialId> = HashSet::new();
     for event in events {
-        match &event.payload {
-            Payload::TrialIntent(p) if p.rerun => {
-                intents.insert(&p.trial, event);
+        if let Payload::TrialIntent(p) = &event.payload
+            && p.rerun
+        {
+            intents.insert(&p.trial, event);
+        } else if let Payload::TrialEnd(p) = &event.payload {
+            let Some(&intent_event) = intents.get(&p.trial) else {
+                continue;
+            };
+            let obligation = *intent_event
+                .cause
+                .first()
+                .unwrap_or_else(|| panic!("rerun {} has no obligation cause", p.trial));
+            if p.outcome == Outcome::Inconclusive {
+                pending.insert(obligation, intent_event);
+                continue;
             }
-            Payload::TrialEnd(p) => {
-                let Some(&intent_event) = intents.get(&p.trial) else {
-                    continue;
-                };
-                let obligation = *intent_event
-                    .cause
-                    .first()
-                    .unwrap_or_else(|| panic!("rerun {} has no obligation cause", p.trial));
-                if p.outcome == Outcome::Inconclusive {
-                    pending.insert(obligation, intent_event);
-                    continue;
-                }
-                assert!(
-                    completed.insert(&p.trial),
-                    "rerun {} completed twice",
-                    p.trial
-                );
-                let Payload::TrialIntent(intent) = &intent_event.payload else {
+            assert!(
+                completed.insert(&p.trial),
+                "rerun {} completed twice",
+                p.trial
+            );
+            let Payload::TrialIntent(intent) = &intent_event.payload else {
+                unreachable!("only rerun intents are tracked");
+            };
+            if intent.retry {
+                let previous = pending.get(&obligation).unwrap_or_else(|| {
+                    panic!("rerun retry {} has no interrupted obligation", p.trial)
+                });
+                let Payload::TrialIntent(before) = &previous.payload else {
                     unreachable!("only rerun intents are tracked");
                 };
-                if intent.retry {
-                    let previous = pending.get(&obligation).unwrap_or_else(|| {
-                        panic!("rerun retry {} has no interrupted obligation", p.trial)
-                    });
-                    let Payload::TrialIntent(before) = &previous.payload else {
-                        unreachable!("only rerun intents are tracked");
-                    };
-                    assert!(
-                        previous.cause == intent_event.cause
-                            && anonymous(before) == anonymous(intent),
-                        "rerun retry {} changed its interrupted obligation",
-                        p.trial
-                    );
-                }
-                pending.remove(&obligation);
+                assert!(
+                    previous.cause == intent_event.cause && anonymous(before) == anonymous(intent),
+                    "rerun retry {} changed its interrupted obligation",
+                    p.trial
+                );
             }
-            _ => {}
+            pending.remove(&obligation);
         }
     }
 }

@@ -108,13 +108,13 @@ pub fn prepare_kept(
         (Some(live), Some(boundary)) => live <= boundary,
         _ => false,
     };
-    let verdict = journal
-        .events()
-        .first()
-        .and_then(|event| match &event.payload {
-            Payload::SessionStart(start) => Some(build.verdict(&start.build, Operation::Resume)),
-            _ => None,
-        });
+    let verdict = journal.events().first().and_then(|event| {
+        if let Payload::SessionStart(start) = &event.payload {
+            Some(build.verdict(&start.build, Operation::Resume))
+        } else {
+            None
+        }
+    });
     if reset || !matches!(verdict, Some(Verdict::Use) | None) {
         return prepare(journal.close()?, build, boot, now, context, defects);
     }
@@ -192,9 +192,12 @@ fn context_changed(journal: &Journal, current: Option<&BiosContext>) -> bool {
     journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SessionContext(recorded) => Some(recorded.bios_context()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::SessionContext(recorded) = &event.payload {
+                Some(recorded.bios_context())
+            } else {
+                None
+            }
         })
         .is_some_and(|recorded| recorded != *current)
 }

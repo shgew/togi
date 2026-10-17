@@ -226,7 +226,10 @@ impl ProcCtx {
             if ends(delivery) {
                 self.exit(match delivery {
                     Delivery::Group(GroupSignal::Term) => ExitInfo::Signal(15),
-                    _ => ExitInfo::Signal(9),
+                    Delivery::Group(GroupSignal::Cont | GroupSignal::Kill | GroupSignal::Stop)
+                    | Delivery::Scope(KillSignal::Cont | KillSignal::Term | KillSignal::Kill) => {
+                        ExitInfo::Signal(9)
+                    }
                 });
                 return;
             }
@@ -618,7 +621,7 @@ impl Os for Fake {
             .iter()
             .find(|process| process.pid == pid)
             .map_or(Err(ProcError::Gone), |process| {
-                process.usage.borrow().clone()
+                process.usage.borrow().as_ref().copied().map_err(replay)
             })
     }
 
@@ -627,12 +630,16 @@ impl Os for Fake {
             hook(pid);
         }
         let processes = self.shared.processes.borrow();
-        processes
-            .iter()
-            .find(|process| process.pid == pid)
-            .map_or(Err(ProcError::Gone), |process| {
-                clone_threads(&process.threads.borrow())
-            })
+        processes.iter().find(|process| process.pid == pid).map_or(
+            Err(ProcError::Gone),
+            |process| match &*process.threads.borrow() {
+                Ok(found) => Ok(Threads {
+                    threads: found.threads.clone(),
+                    errors: found.errors.iter().map(replay).collect(),
+                }),
+                Err(error) => Err(replay(error)),
+            },
+        )
     }
 
     async fn systemd(
@@ -700,9 +707,7 @@ impl Os for Fake {
             hook();
         }
         match self.shared.scan_fault.get() {
-            Some(ScanFault::Fail) => {
-                return Err(ProcError::Observation("scan failed".to_owned()));
-            }
+            Some(ScanFault::Fail) => return Err(lost_read()),
             Some(ScanFault::Late) => {
                 sleep_until(deadline + Duration::from_millis(1)).await;
                 return Ok(Vec::new());
@@ -745,7 +750,7 @@ impl Os for Fake {
         deadline: Instant,
     ) -> Result<usize, ProcError> {
         if self.shared.fail_alive.get() {
-            return Err(ProcError::Observation("permission denied".to_owned()));
+            return Err(lost_read());
         }
         if self.shared.hang_scans.get() {
             sleep_until(deadline).await;
@@ -763,16 +768,40 @@ impl Os for Fake {
     }
 }
 
-fn clone_threads(threads: &Result<Threads, ProcError>) -> Result<Threads, ProcError> {
-    match threads {
-        Ok(found) => Ok(Threads {
-            threads: found.threads.clone(),
-            errors: found
-                .errors
-                .iter()
-                .map(|e| ProcError::Observation(e.to_string()))
-                .collect(),
-        }),
-        Err(error) => Err(error.clone()),
+/// A `/proc` read the kernel refused, as a fake process's usage or threads can be staged to fail.
+pub(crate) fn lost_read() -> ProcError {
+    ProcError::Read {
+        path: "/proc/fake/stat".into(),
+        source: io::Error::from_raw_os_error(13),
+    }
+}
+
+/// The same staged failure again, so every read of a fake reports it, cause included.
+fn replay(error: &ProcError) -> ProcError {
+    let io = |source: &io::Error| {
+        source.raw_os_error().map_or_else(
+            || io::Error::new(source.kind(), source.to_string()),
+            io::Error::from_raw_os_error,
+        )
+    };
+    match error {
+        ProcError::Gone => ProcError::Gone,
+        ProcError::Read { path, source } => ProcError::Read {
+            path: path.clone(),
+            source: io(source),
+        },
+        ProcError::List { path, source } => ProcError::List {
+            path: path.clone(),
+            source: io(source),
+        },
+        ProcError::Stat { path, source } => ProcError::Stat {
+            path: path.clone(),
+            source: source.clone(),
+        },
+        ProcError::NotThread { name } => ProcError::NotThread { name: name.clone() },
+        ProcError::CpuTimeOverflow { pid } => ProcError::CpuTimeOverflow { pid: *pid },
+        ProcError::Deadline => ProcError::Deadline,
+        ProcError::Stuck => ProcError::Stuck,
+        ProcError::ScanLost => ProcError::ScanLost,
     }
 }

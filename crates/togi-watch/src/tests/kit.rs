@@ -235,7 +235,9 @@ impl Script {
     pub(crate) fn plan(&self) -> TrialPlan {
         match self.shadow.next().expect("the tuner has a next action") {
             Action::RunTrial(plan) => plan,
-            other => panic!("expected a trial, the tuner asked for {other:?}"),
+            other @ (Action::Decide(_) | Action::ReadRanking) => {
+                panic!("expected a trial, the tuner asked for {other:?}")
+            }
         }
     }
 
@@ -244,7 +246,7 @@ impl Script {
         for _ in 0..50 {
             match self.shadow.next().expect("the tuner has a next action") {
                 Action::RunTrial(plan) => return plan,
-                _ => {
+                Action::Decide(_) | Action::ReadRanking => {
                     self.step(|_| Outcome::Pass);
                 }
             }

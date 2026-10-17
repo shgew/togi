@@ -1,0 +1,5 @@
+{"seq":1,"time":"2026-01-02T00:00:00Z","boot":"b","mono_ms":0,"kind":"session.start","msg":"session.start","data":{"session":"20260102T000000Z"}}
+{"seq":2,"time":"2026-01-02T00:01:00Z","boot":"b","mono_ms":60000,"cause":[1],"kind":"trial.intent","msg":"trial.intent","data":{"trial":"0001","profile":{"3":-10},"core":3,"offset":-10,"regime":"R1","workload":"w1","duration_s":90,"condition":"alone","activity":"search"}}
+{"seq":3,"time":"2026-01-02T00:02:00Z","boot":"b","mono_ms":120000,"cause":[2],"kind":"trial.end","msg":"trial.end","data":{"trial":"0001","outcome":"pass","duration_s":90,"tctl_max_c":70}}
+{"seq":4,"time":"2026-01-02T00:03:00Z","boot":"b","mono_ms":180000,"cause":[3],"kind":"trial.intent","msg":"trial.intent","data":{"trial":"0002","profile":{"0":-5,"1":-7},"cores":[0,1],"regime":"R7","workload":"w2","duration_s":120,"condition":"together","activity":"checking"}}
+{"seq":5,"ki

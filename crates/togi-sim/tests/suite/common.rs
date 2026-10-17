@@ -130,7 +130,9 @@ impl file::Source for MemoryFiles {
                     clean.pop();
                 }
                 std::path::Component::CurDir => {}
-                part => clean.push(part),
+                part @ (std::path::Component::Prefix(_)
+                | std::path::Component::RootDir
+                | std::path::Component::Normal(_)) => clean.push(part),
             }
         }
         Ok(if clean.is_absolute() {

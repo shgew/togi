@@ -129,7 +129,7 @@ fn an_invalid_suite_is_refused_with_the_reason() {
         ),
     ];
     for (name, suite, want) in cases {
-        let error = plan(suite, Selection::Dev).unwrap_err().to_string();
+        let error = togi_machine::error_chain(&plan(suite, Selection::Dev).unwrap_err());
         assert!(error.contains(want), "{name}: {error}");
     }
 }
@@ -159,7 +159,7 @@ fn every_scenario_is_checked_whatever_the_selection() {
         ),
     ];
     for (name, suite, want) in cases {
-        let error = plan(suite, Selection::Dev).unwrap_err().to_string();
+        let error = togi_machine::error_chain(&plan(suite, Selection::Dev).unwrap_err());
         assert!(error.contains(want), "{name}: {error}");
     }
     let parse = Suite::parse(

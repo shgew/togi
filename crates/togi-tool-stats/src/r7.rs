@@ -2,13 +2,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
 use jiff::Timestamp;
-use togi_journal::{CheckingChain, Decision, Event, Outcome, Payload, Seq, TrialId, TunerDecision};
+use togi_journal::{Decision, Event, Outcome, Payload, Seq, TrialId, TunerDecision};
 use togi_machine::{CoreSet, PerCore, Regime};
 use togi_render::escape_text;
 use togi_requests::top;
 
 use crate::evidence::event_at;
-use crate::project::{Class, Projection, core_list};
+use crate::project::{Class, Projection};
 use crate::report::selected;
 use crate::table::{Table, row};
 
@@ -20,15 +20,9 @@ pub(crate) struct Backoff<'a> {
     pub(crate) causes: &'a [Seq],
 }
 
-pub(crate) struct Chain<'a> {
-    pub(crate) seq: Seq,
-    pub(crate) chain: &'a CheckingChain,
-}
-
 #[derive(Default)]
 pub(crate) struct R7Decisions<'a> {
     pub(crate) backoffs: Vec<Backoff<'a>>,
-    pub(crate) chains: Vec<Chain<'a>>,
 }
 
 pub(crate) fn decisions(events: &[Event], since: Option<Timestamp>) -> R7Decisions<'_> {
@@ -45,134 +39,81 @@ pub(crate) fn decisions(events: &[Event], since: Option<Timestamp>) -> R7Decisio
     };
     let mut r = R7Decisions::default();
     for event in events.iter().filter(|e| selected(e.time, since)) {
-        match &event.payload {
-            Payload::TunerDecision(d) if d.decision == Decision::Backoff => {
-                let r7 = event
-                    .cause
-                    .iter()
-                    .filter_map(|&seq| event_at(events, seq))
-                    .any(|source| match &source.payload {
-                        Payload::Failure(f) => f.trial.as_ref().is_some_and(multi_core_r7),
-                        Payload::TrialCarried(c) => {
-                            c.class.regime == Regime::R7 && c.class.cores.len() > 1
-                        }
-                        Payload::TrialEnd(end) => multi_core_r7(&end.trial),
-                        Payload::SessionStart(_)
-                        | Payload::SessionContext(_)
-                        | Payload::SessionBaseline(_)
-                        | Payload::SessionNotice(_)
-                        | Payload::SessionWarning(_)
-                        | Payload::SessionArchived(_)
-                        | Payload::SessionCarried(_)
-                        | Payload::ConfigLoaded(_)
-                        | Payload::PreflightCheck(_)
-                        | Payload::SmuIntent(_)
-                        | Payload::SmuWrite(_)
-                        | Payload::SmuReadback(_)
-                        | Payload::SmuError(_)
-                        | Payload::ProfileApplied(_)
-                        | Payload::ProfileChange(_)
-                        | Payload::ProfileRestored(_)
-                        | Payload::TrialIntent(_)
-                        | Payload::TrialStart(_)
-                        | Payload::TrialProgress(_)
-                        | Payload::TrialSignal(_)
-                        | Payload::TrialSample(_)
-                        | Payload::FailureCarried(_)
-                        | Payload::Mce(_)
-                        | Payload::CrashDetected(_)
-                        | Payload::TunerDecision(_)
-                        | Payload::CorePhase(_)
-                        | Payload::CheckingCycle(_)
-                        | Payload::CheckingStep(_)
-                        | Payload::CheckingChain(_)
-                        | Payload::HostRanking(_)
-                        | Payload::HuntStart(_)
-                        | Payload::HuntGroup(_)
-                        | Payload::HuntEnd(_)
-                        | Payload::HuntSkipped(_)
-                        | Payload::Combination(_)
-                        | Payload::DeepeningRound(_)
-                        | Payload::TunerWarning(_)
-                        | Payload::BackendRetry(_)
-                        | Payload::CommandReset(_)
-                        | Payload::DefectFound(_)
-                        | Payload::DefectAnswered(_)
-                        | Payload::DeadEnd(_)
-                        | Payload::BootSavedEntry(_)
-                        | Payload::BootLeaveReason(_)
-                        | Payload::Shutdown(_)
-                        | Payload::JournalTorn(_)
-                        | Payload::StateRebuilt(_) => false,
-                    });
-                if r7 {
-                    r.backoffs.push(Backoff {
-                        seq: event.seq,
-                        decision: d,
-                        steps: d.to_offset.get() - d.from_offset.get(),
-                        causes: &event.cause,
-                    });
-                }
-            }
-            Payload::CheckingChain(chain) => r.chains.push(Chain {
+        let Payload::TunerDecision(d) = &event.payload else {
+            continue;
+        };
+        if d.decision != Decision::Backoff {
+            continue;
+        }
+        let r7 = event
+            .cause
+            .iter()
+            .filter_map(|&seq| event_at(events, seq))
+            .any(|source| match &source.payload {
+                Payload::Failure(f) => f.trial.as_ref().is_some_and(multi_core_r7),
+                Payload::TrialCarried(c) => c.class.regime == Regime::R7 && c.class.cores.len() > 1,
+                Payload::TrialEnd(end) => multi_core_r7(&end.trial),
+                Payload::SessionStart(_)
+                | Payload::SessionContext(_)
+                | Payload::SessionBaseline(_)
+                | Payload::SessionNotice(_)
+                | Payload::SessionWarning(_)
+                | Payload::SessionArchived(_)
+                | Payload::SessionCarried(_)
+                | Payload::ConfigLoaded(_)
+                | Payload::PreflightCheck(_)
+                | Payload::SmuIntent(_)
+                | Payload::SmuWrite(_)
+                | Payload::SmuReadback(_)
+                | Payload::SmuError(_)
+                | Payload::ProfileApplied(_)
+                | Payload::ProfileChange(_)
+                | Payload::ProfileRestored(_)
+                | Payload::TrialIntent(_)
+                | Payload::TrialStart(_)
+                | Payload::TrialProgress(_)
+                | Payload::TrialSignal(_)
+                | Payload::TrialSample(_)
+                | Payload::FailureCarried(_)
+                | Payload::Mce(_)
+                | Payload::CrashDetected(_)
+                | Payload::TunerDecision(_)
+                | Payload::CorePhase(_)
+                | Payload::CheckingCycle(_)
+                | Payload::CheckingStep(_)
+                | Payload::CheckingChain(_)
+                | Payload::HostRanking(_)
+                | Payload::HuntStart(_)
+                | Payload::HuntGroup(_)
+                | Payload::HuntEnd(_)
+                | Payload::HuntSkipped(_)
+                | Payload::Combination(_)
+                | Payload::DeepeningRound(_)
+                | Payload::TunerWarning(_)
+                | Payload::BackendRetry(_)
+                | Payload::CommandReset(_)
+                | Payload::DefectFound(_)
+                | Payload::DefectAnswered(_)
+                | Payload::DeadEnd(_)
+                | Payload::BootSavedEntry(_)
+                | Payload::BootLeaveReason(_)
+                | Payload::Shutdown(_)
+                | Payload::JournalTorn(_)
+                | Payload::StateRebuilt(_) => false,
+            });
+        if r7 {
+            r.backoffs.push(Backoff {
                 seq: event.seq,
-                chain,
-            }),
-            Payload::SessionStart(_)
-            | Payload::SessionContext(_)
-            | Payload::SessionBaseline(_)
-            | Payload::SessionNotice(_)
-            | Payload::SessionWarning(_)
-            | Payload::SessionArchived(_)
-            | Payload::SessionCarried(_)
-            | Payload::ConfigLoaded(_)
-            | Payload::PreflightCheck(_)
-            | Payload::SmuIntent(_)
-            | Payload::SmuWrite(_)
-            | Payload::SmuReadback(_)
-            | Payload::SmuError(_)
-            | Payload::ProfileApplied(_)
-            | Payload::ProfileChange(_)
-            | Payload::ProfileRestored(_)
-            | Payload::TrialIntent(_)
-            | Payload::TrialStart(_)
-            | Payload::TrialProgress(_)
-            | Payload::TrialSignal(_)
-            | Payload::TrialSample(_)
-            | Payload::TrialEnd(_)
-            | Payload::TrialCarried(_)
-            | Payload::Failure(_)
-            | Payload::FailureCarried(_)
-            | Payload::Mce(_)
-            | Payload::CrashDetected(_)
-            | Payload::TunerDecision(_)
-            | Payload::CorePhase(_)
-            | Payload::CheckingCycle(_)
-            | Payload::CheckingStep(_)
-            | Payload::HostRanking(_)
-            | Payload::HuntStart(_)
-            | Payload::HuntGroup(_)
-            | Payload::HuntEnd(_)
-            | Payload::HuntSkipped(_)
-            | Payload::Combination(_)
-            | Payload::DeepeningRound(_)
-            | Payload::TunerWarning(_)
-            | Payload::BackendRetry(_)
-            | Payload::CommandReset(_)
-            | Payload::DefectFound(_)
-            | Payload::DefectAnswered(_)
-            | Payload::DeadEnd(_)
-            | Payload::BootSavedEntry(_)
-            | Payload::BootLeaveReason(_)
-            | Payload::Shutdown(_)
-            | Payload::JournalTorn(_)
-            | Payload::StateRebuilt(_) => {}
+                decision: d,
+                steps: d.to_offset.get() - d.from_offset.get(),
+                causes: &event.cause,
+            });
         }
     }
     r
 }
 
-fn seq_list(seqs: &[Seq]) -> String {
+pub(crate) fn seq_list(seqs: &[Seq]) -> String {
     let mut list = String::new();
     for (i, seq) in seqs.iter().enumerate() {
         if i > 0 {
@@ -181,15 +122,6 @@ fn seq_list(seqs: &[Seq]) -> String {
         let _ = write!(list, "{seq}");
     }
     list
-}
-
-/// The cores of each request group, highest request first: `00 > 01,02`.
-fn group_list(groups: &[CoreSet]) -> String {
-    groups
-        .iter()
-        .map(|&group| core_list(group))
-        .collect::<Vec<_>>()
-        .join(" > ")
 }
 
 pub(crate) fn render_decisions(table: &mut Table, r: &R7Decisions<'_>) {
@@ -211,40 +143,6 @@ pub(crate) fn render_decisions(table: &mut Table, r: &R7Decisions<'_>) {
             b.steps,
             seq_list(b.causes),
             escape_text(&d.reason)
-        );
-    }
-    table.section(
-        "R7 chain derivations",
-        &[
-            "seq",
-            "cycle",
-            "step",
-            "CCD",
-            "workload",
-            "part",
-            "request groups",
-            "loaded cores",
-            "sources",
-        ],
-    );
-    for c in &r.chains {
-        let d = c.chain;
-        let sources = if d.source_seqs.is_empty() {
-            "offset fallback".to_owned()
-        } else {
-            seq_list(&d.source_seqs)
-        };
-        row!(
-            table,
-            c.seq,
-            d.cycle,
-            d.step,
-            d.ccd,
-            d.workload,
-            d.part,
-            group_list(&d.groups),
-            core_list(d.cores),
-            sources
         );
     }
 }

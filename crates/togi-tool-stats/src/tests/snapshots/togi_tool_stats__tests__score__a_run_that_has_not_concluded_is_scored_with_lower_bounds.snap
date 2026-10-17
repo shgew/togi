@@ -4,7 +4,7 @@ expression: "scored(&record, log.events)"
 ---
 Forecast: commit abc, ruleset 2, evidence epoch 1, 3 runs: 2 concluded, 1 dead ends, 0 censored
 Anchor: session 20260101T000000Z event 2 at 2026-01-01T00:00:01Z, unchanged
-Run: censored 2.00 h after the anchor; builds after the anchor: rev abc ruleset 2 epoch 1
+Run: censored after 2.00 h of run time since the anchor; builds after the anchor: rev abc ruleset 2 epoch 1
 Censored: the run has not concluded, so its hours, crashes and hunts are lower bounds, and offsets and depth are those it stopped at
 Note: forecast hours run to conclusion over concluded runs only; hours are simulated; a simulated crash reboot takes 90 s, while real recovery took a median of 141 s on 2026-10-03 (about 37 minutes over that session), so real runs take longer; not corrected
 

@@ -486,10 +486,11 @@ fn a_reader_that_fails_mid_line_yields_the_error_and_ends_without_a_torn_tail() 
 }
 
 fn started(recording: &Recording) -> crate::SessionId {
-    match &recording.events()[0].payload {
-        Payload::SessionStart(start) => start.session,
-        other => panic!("first event is {other:?}"),
-    }
+    let payload = &recording.events()[0].payload;
+    let Payload::SessionStart(start) = payload else {
+        panic!("first event is {payload:?}");
+    };
+    start.session
 }
 
 #[test]

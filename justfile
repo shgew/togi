@@ -20,6 +20,11 @@ test *args: _dev-shell
 board-test: _dev-shell
     nu --no-config-file tools/board/tests.nu
 
+# Check the DuckDB views of `just sql` against fixed state directories: plain and gzip samples, an archived session, and a journal without archives or samples
+[group('test')]
+sql-test: _dev-shell
+    tools/sql/test.sh
+
 # Run one crate's tests with optional nextest flags (`just focus togi-journal`)
 [group('test')]
 focus crate *args: _dev-shell
@@ -74,6 +79,7 @@ gate: _dev-shell
     just lint
     just check-one module changes
     just board-test
+    just sql-test
     vendored=$(nix build --no-link --print-out-paths '.#checks.{{ system }}.go-tools.goModules')
     fresh=$(mktemp -d)
     trap 'rm -rf "$fresh"' EXIT
@@ -85,12 +91,12 @@ gate: _dev-shell
     cargo deny --locked check bans licenses sources
     cargo shear
 
-# Run every flake check this host builds, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
+# Run every flake check this host builds, streaming their build logs: board-test, sql-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one lint`)
+# Build named flake checks, streaming their build logs: board-test, sql-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one lint`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -120,6 +126,11 @@ replay *args: _dev-shell
 stats *args: _dev-shell
     cargo run --release --locked -p togi-tool-stats -- "$@"
 
+# Query a state directory's current and archived events, trials and per-trial samples with DuckDB (default /var/lib/togi; read only); further arguments go to duckdb (`just sql runs/x -c 'from trials limit 5'`); docs/reviewing.md has the views and example queries
+[group('run')]
+sql dir="/var/lib/togi" *args: _dev-shell
+    tools/sql/sql.sh "$@"
+
 # Benchmark simulated session conclusions, building and running the simulator (`just bench --split dev --baseline tools/bench/baseline.jsonl`, or `just bench sanity --records records.jsonl` against the recorded baseline)
 [group('run')]
 bench *args: _dev-shell
@@ -146,6 +157,11 @@ smoke base="origin/main" *args: _dev-shell
 forecast state_dir *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- forecast "$1" "${@:2}"
 
+# Compute the counterfactual pass/cost of the R7 part requirements at a fixed profile, never tuner evidence (`just pass-cost` over the #490 hazard grid, `just pass-cost --machine FILE --profile OFFSETS`)
+[group('run')]
+pass-cost *args: _dev-shell
+    cargo run --release --locked -p togi-tool-bench -- pass-cost "$@"
+
 # Re-record the committed bench baseline over all seeds, without model checks or wall times (`just bench-baseline` writes tools/bench/baseline.jsonl, `just bench-baseline OUT` another file)
 [group('run')]
 bench-baseline out="tools/bench/baseline.jsonl": _dev-shell
@@ -170,6 +186,11 @@ fit-shared-voltage *args: _dev-shell
 [group('run')]
 forward *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- --forward-only "$@"
+
+# Dispatch one step of a research campaign under its launch manifest, never the campaign itself (`just research 427 start --manifest FILE`; see docs/benchmarking.md#research-campaigns)
+[group('run')]
+research issue *args: _dev-shell
+    cargo run --release --locked -p togi-tool-bench -- research "$@"
 
 # Start the release workflow on main and follow it: unless an issue, open or closed, is labeled needs-hardware, once check passes on main, it commits the release, builds the package, pushes to main and publishes
 [group('release')]
@@ -292,7 +313,7 @@ _touched-crates pushed:
         git cat-file -e "HEAD:${dir}Cargo.toml" 2>/dev/null && basename "$dir"
     done || true
 
-# Push a fix to a pull request under review: format, lint, test the changed Go packages, Rust crates and Nushell board, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
+# Push a fix to a pull request under review: format, lint, test the changed Go packages, Rust crates, Nushell board and SQL views, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -311,6 +332,9 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     fi
     if ! git diff --quiet "$pushed" HEAD -- tools/board; then
         just board-test
+    fi
+    if ! git diff --quiet "$pushed" HEAD -- tools/sql; then
+        just sql-test
     fi
     mapfile -t crates < <(just _touched-crates "$pushed")
     if ((${#crates[@]} == 0)); then
