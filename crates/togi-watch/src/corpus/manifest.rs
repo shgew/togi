@@ -100,8 +100,8 @@ const UNREAD_COLUMNS: &str = "read only through `Words::detailed`, `Words::compa
 /// Why `hunt_end_phrase` renders nothing.
 const UNREAD_HUNT_END: &str = "`hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself";
 
-/// Why the story never tells of a bracketed singleton.
-const UNREACHED_BRACKET: &str = "`hunt_story` words a singleton only while its probe trial runs, and the tuner marks a singleton's probe done only when its probing ends, which ends the hunt";
+/// Why the story never tells of a singleton whose probe is done, bracketed or stopped.
+const UNREACHED_DONE: &str = "`hunt_story` words a singleton only while its probe trial runs, and `HuntView::singleton` stages it bracketed or stopped only once its probe is done, which the tuner marks only when its probing ends, which ends the hunt";
 
 /// Literals no case can render, and why. The document lists these with their reason first, even when another
 /// phrase happens to carry their words, and the exporter does not fail on them. Each holds because of the code
@@ -151,12 +151,22 @@ pub(crate) const SILENT: &[(&str, &str, &str)] = &[
     (
         "frames/story/mod.rs",
         "A pass sits one count shallower",
-        UNREACHED_BRACKET,
+        UNREACHED_DONE,
     ),
     (
         "frames/story/mod.rs",
         "Core {id:02} is bracketed",
-        UNREACHED_BRACKET,
+        UNREACHED_DONE,
+    ),
+    (
+        "frames/story/mod.rs",
+        "Probing stopped without a safe bracket",
+        UNREACHED_DONE,
+    ),
+    (
+        "frames/story/mod.rs",
+        "Probing core {id:02} stopped",
+        UNREACHED_DONE,
     ),
 ];
 

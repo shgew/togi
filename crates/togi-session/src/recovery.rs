@@ -51,6 +51,15 @@ pub(crate) struct Started {
     pub last_mono: Option<Duration>,
 }
 
+/// How far the write of the target a trial alone sets before its start got.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TargetWrite {
+    /// The intent to write the target, citing the trial's intent.
+    Intended(Seq),
+    /// The write that intent asked for, whose readback starts the trial's window.
+    Written(Seq),
+}
+
 /// The trial that has an intent and no end.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct OpenTrial {
@@ -64,8 +73,7 @@ pub(crate) struct OpenTrial {
     /// The monotonic time from which machine checks count as the trial's: its intent, then the start the backend
     /// reported, then the readback of its target.
     pub window_start: Option<Duration>,
-    pub target_intent: Option<Seq>,
-    pub target_write: Option<Seq>,
+    pub target: Option<TargetWrite>,
     pub kernel_error: Option<String>,
 }
 
@@ -80,8 +88,7 @@ impl OpenTrial {
             mces: Vec::new(),
             corrected: false,
             window_start: event.mono,
-            target_intent: None,
-            target_write: None,
+            target: None,
             kernel_error: None,
         }
     }
@@ -370,11 +377,10 @@ impl RecoveryState {
                 self.drop_smu_intent();
                 if let Some(open) = &mut self.open
                     && open.boot == event.boot
-                    && open
-                        .target_intent
-                        .is_some_and(|target| event.cause.contains(&target))
+                    && let Some(TargetWrite::Intended(target)) = open.target
+                    && event.cause.contains(&target)
                 {
-                    open.target_write = Some(seq);
+                    open.target = Some(TargetWrite::Written(seq));
                 }
             }
             Payload::SmuError(error) => {
@@ -585,7 +591,7 @@ impl RecoveryState {
             && command.core() == open.intent.core
             && open.intent.offset == Some(command.offset())
         {
-            open.target_intent = Some(event.seq);
+            open.target = Some(TargetWrite::Intended(event.seq));
         }
         self.unmatched.push(OpenIntent {
             seq: event.seq,
@@ -650,9 +656,8 @@ impl RecoveryState {
         if let Some(open) = &mut self.open
             && open.boot == event.boot
             && open.started.is_none()
-            && open
-                .target_write
-                .is_some_and(|write| event.cause.contains(&write))
+            && let Some(TargetWrite::Written(write)) = open.target
+            && event.cause.contains(&write)
             && open.intent.core == Some(readback.core)
             && readback.expected.is_some()
             && readback.expected == open.intent.offset

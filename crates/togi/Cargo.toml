@@ -39,12 +39,14 @@ togi-watch.workspace = true
 unicode-width.workspace = true
 
 [dev-dependencies]
-rustix = { workspace = true, features = ["event", "pty", "process", "termios"] }
+rustix = { workspace = true, features = ["event", "process", "termios"] }
 tempfile.workspace = true
+test-case.workspace = true
 togi-backend.workspace = true
 togi-command.workspace = true
 togi-hostlock = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["rt"] }
+togi-render = { workspace = true, features = ["test-support"] }
 togi-sim.workspace = true
 togi-smu.workspace = true
 togi-trial.workspace = true

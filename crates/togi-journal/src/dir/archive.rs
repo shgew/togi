@@ -1,5 +1,6 @@
 //! Moving a session into `archive/`, the markers that make each step resumable, and the reset boundary.
 
+use std::ffi::OsString;
 use std::fmt;
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -8,7 +9,10 @@ use std::str::FromStr;
 use serde::Deserialize;
 use togi_machine::serde_object::{self, Object};
 
-use super::{DirError, EVENTS_FILE, STATE_FILE, STATE_TMP, StateDir, TRIALS_DIR, io_at, not_found};
+use super::{
+    ARCHIVE_DIR, DirError, EVENTS_FILE, STATE_FILE, STATE_TMP, StateDir, TRIALS_DIR, io_at,
+    not_found,
+};
 use crate::build::Build;
 use crate::fs::{DiskFs, FileKind, Fs};
 use crate::header;
@@ -96,12 +100,7 @@ impl StateDir {
     }
 
     fn archive_entries(&self) -> Result<Vec<crate::fs::DirEntry>, DirError> {
-        let dir = self.archive_dir();
-        match self.fs().read_dir(&dir) {
-            Ok(entries) => Ok(entries),
-            Err(error) if not_found(&error) => Ok(Vec::new()),
-            Err(error) => Err(io_at("list archive", &dir)(error)),
-        }
+        list_archive(self.fs(), &self.archive_dir())
     }
 
     /// The archived sessions: regular `<session>.jsonl` files, oldest first.
@@ -442,6 +441,44 @@ impl StateDir {
             }
         }
     }
+}
+
+fn list_archive(fs: &dyn Fs, dir: &Path) -> Result<Vec<crate::fs::DirEntry>, DirError> {
+    match fs.read_dir(dir) {
+        Ok(entries) => Ok(entries),
+        Err(error) if not_found(&error) => Ok(Vec::new()),
+        Err(error) => Err(io_at("list archive", dir)(error)),
+    }
+}
+
+/// The names of the entries in the state directory `dir`'s `archive/` that belong to a session, sorted: archived
+/// journals and markers, each named after a valid session id. Read without taking the lock or writing; an absent
+/// archive holds none. An entry so named that is not a regular file is an error naming it.
+pub fn session_entries_in(fs: &dyn Fs, dir: &Path) -> Result<Vec<OsString>, DirError> {
+    let archive = dir.join(ARCHIVE_DIR);
+    let mut names = Vec::new();
+    for entry in list_archive(fs, &archive)? {
+        let Some(name) = entry.name.to_str() else {
+            continue;
+        };
+        let names_session = Marker::ALL
+            .map(Marker::suffix)
+            .into_iter()
+            .chain([JOURNAL_SUFFIX])
+            .filter_map(|suffix| name.strip_suffix(suffix))
+            .any(|session| session.parse::<SessionId>().is_ok());
+        if !names_session {
+            continue;
+        }
+        if entry.kind != FileKind::File {
+            return Err(DirError::NotRegular {
+                path: archive.join(&entry.name),
+            });
+        }
+        names.push(entry.name);
+    }
+    names.sort();
+    Ok(names)
 }
 
 /// The first line of the journal at `path` without its newline, and whether the newline was there; `None` when the

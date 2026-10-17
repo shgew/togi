@@ -44,8 +44,12 @@ impl Check {
 
 /// Writes the model-check section of a report: one line per check and one per flagged group. Nothing is
 /// written for no checks.
-pub fn report(out: &mut impl io::Write, checks: &[Check]) -> io::Result<()> {
-    if checks.is_empty() {
+pub fn report<'a>(
+    out: &mut impl io::Write,
+    checks: impl IntoIterator<Item = &'a Check>,
+) -> io::Result<()> {
+    let mut checks = checks.into_iter().peekable();
+    if checks.peek().is_none() {
         return Ok(());
     }
     writeln!(out, "\nModel check (99% binomial intervals)")?;

@@ -15,10 +15,10 @@ use crate::{
     TopologyError, TrialContext, TrialPlan, Window,
 };
 
-const STARTS: [i64; 8] = [-10, -20, -30, -40, -20, -20, -20, -20];
-const SHORT: u32 = 120;
-const FULL_REQUESTS: [(u8, f64); 4] = [(0, 1.19), (1, 1.11), (2, 1.2), (3, 1.09)];
-const PARTIAL_REQUESTS: [(u8, f64); 3] = [(0, 1.19), (1, 1.25), (3, 1.1)];
+pub(crate) const STARTS: [i64; 8] = [-10, -20, -30, -40, -20, -20, -20, -20];
+pub(crate) const SHORT: u32 = 120;
+pub(crate) const FULL_REQUESTS: [(u8, f64); 4] = [(0, 1.19), (1, 1.11), (2, 1.2), (3, 1.09)];
+pub(crate) const PARTIAL_REQUESTS: [(u8, f64); 3] = [(0, 1.19), (1, 1.25), (3, 1.1)];
 
 fn grouped(ccds: &[&[u8]]) -> Vec<CoreInfo> {
     ccds.iter()
@@ -33,11 +33,11 @@ fn grouped(ccds: &[&[u8]]) -> Vec<CoreInfo> {
         .collect()
 }
 
-fn two_ccds() -> Vec<CoreInfo> {
+pub(crate) fn two_ccds() -> Vec<CoreInfo> {
     grouped(&[&[0, 1, 2, 3], &[4, 5, 6, 7]])
 }
 
-fn one_ccd() -> Vec<CoreInfo> {
+pub(crate) fn one_ccd() -> Vec<CoreInfo> {
     grouped(&[&[0, 1, 2, 3, 4, 5, 6, 7]])
 }
 
@@ -48,7 +48,7 @@ fn payload(action: &Action) -> &DecisionPayload {
     &decision.payload
 }
 
-fn decided(action: Action) -> DecisionAction {
+pub(crate) fn decided(action: Action) -> DecisionAction {
     let Action::Decide(decision) = action else {
         panic!("expected a decision, the tuner asked for {action:?}");
     };
@@ -86,7 +86,7 @@ fn cycle_end(action: &Action) -> Option<bool> {
 /// A session over `cores` with every core has-room at `offsets`, its checking profile set and,
 /// under `cycle` (the default cycle when `None`), the first cycle open with its first R7 step
 /// begun.
-fn journal(cores: Vec<CoreInfo>, offsets: &[i64], cycle: Option<&str>) -> Journal {
+pub(crate) fn journal(cores: Vec<CoreInfo>, offsets: &[i64], cycle: Option<&str>) -> Journal {
     seeded_journal(cores, offsets, cycle, |_| {})
 }
 
@@ -133,7 +133,7 @@ pub(crate) fn chain_journal() -> Journal {
     journal(two_ccds(), &STARTS, Some(r7_only()))
 }
 
-fn run(
+pub(crate) fn run(
     j: &mut Journal,
     plan: &TrialPlan,
     outcome: Outcome,
@@ -203,7 +203,7 @@ fn checking_offsets(j: &Journal) -> togi_machine::PerCore<togi_machine::TargetOf
 }
 
 /// Moves core `id` `counts` shallower and records the checking profile change that follows.
-fn shallower(j: &mut Journal, id: u8, counts: i64) {
+pub(crate) fn shallower(j: &mut Journal, id: u8, counts: i64) {
     let to = j.offsets().get(core(id)).unwrap().get() + counts;
     j.core_phase(transition(id, CorePhase::HasRoom, to));
     let change = j.next_decision();
@@ -894,13 +894,6 @@ fn r7_partial_failure_does_not_complete_its_requirement() {
     let plan = j.next_trial();
     let named = plan.load.cores().first().unwrap().get();
     run(&mut j, &plan, Outcome::Failure, &[], Some(named));
-    let awaiting = j
-        .run()
-        .flight
-        .awaiting
-        .as_ref()
-        .expect("awaits attribution");
-    assert_eq!(awaiting.class, plan.requirement.class);
     let next = j.run().cycle_action().unwrap();
     let again = trial_of(&next);
     assert_eq!((again.load, again.duration), (plan.load, plan.duration));

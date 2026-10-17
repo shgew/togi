@@ -62,10 +62,8 @@ impl<'a> Likelihood<'a> {
         usize::try_from(self.cfg.cores).unwrap_or(0)
     }
 
-    pub(crate) fn core_ids(&self) -> Vec<CoreId> {
-        (0..self.cores())
-            .filter_map(|core| CoreId::try_from(core).ok())
-            .collect()
+    pub(crate) fn core_ids(&self) -> impl Iterator<Item = CoreId> + use<> {
+        (0..self.cores()).filter_map(|core| CoreId::try_from(core).ok())
     }
 
     pub(crate) fn select(&self, include: impl Fn(&Observation) -> bool) -> Vec<usize> {

@@ -10,7 +10,7 @@ use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_journal::fs::FileKind;
 use togi_journal::{
-    Build, CycleEvent, Event, MemFs, Payload, SCHEMA, Seq, ShutdownReason, StateDir,
+    Build, CycleEvent, Event, FixStamp, MemFs, Payload, SCHEMA, Seq, ShutdownReason, StateDir,
 };
 use togi_machine::CancellationToken;
 use togi_render::Renderer;
@@ -42,7 +42,7 @@ fn build() -> Build {
         rev: None,
         ruleset: RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: EVIDENCE_EPOCH,
     }
 }

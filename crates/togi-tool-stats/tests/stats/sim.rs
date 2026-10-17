@@ -5,7 +5,7 @@ use std::path::Path;
 
 use jiff::tz::TimeZone;
 use togi_config::Config;
-use togi_journal::{Build, Event, MemFs, SCHEMA};
+use togi_journal::{Build, Event, FixStamp, MemFs, SCHEMA};
 use togi_machine::{CancellationToken, Regime, Signal};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
@@ -20,7 +20,7 @@ fn build() -> Build {
         rev: None,
         ruleset: RULESET,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: EVIDENCE_EPOCH,
     }
 }

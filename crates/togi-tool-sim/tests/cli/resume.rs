@@ -45,7 +45,20 @@ fn same_text(name: &str, whole: &str, split: &str) {
         );
     }
     assert_eq!(whole.lines().count(), split.lines().count(), "{name} lines");
-    assert!(whole == split, "{name} differs outside its lines' text");
+    let at = whole
+        .bytes()
+        .zip(split.bytes())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let near = |text: &str| {
+        let rest = &text.as_bytes()[at..];
+        rest[..rest.len().min(16)].escape_ascii().to_string()
+    };
+    assert_eq!(
+        near(whole),
+        near(split),
+        "{name} differs outside its lines' text at byte {at}"
+    );
 }
 
 #[test]

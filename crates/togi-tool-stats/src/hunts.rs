@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashSet};
+use std::num::NonZeroU32;
 
 use jiff::Timestamp;
 use togi_journal::{Activity, CycleEvent, Outcome, Payload, Seq};
@@ -118,11 +119,18 @@ pub(crate) fn render_hunts(table: &mut Table, hunts: &[HuntMetrics<'_>]) {
     }
 }
 
-/// A checking step: `cycle` is zero for reruns, which belong to no cycle.
+/// Where a checking trial belongs: a cycle (the journal records none for an intent that has none), or no cycle at
+/// all for a rerun. Cycles sort before reruns.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum StepCycle {
+    Cycle(Option<NonZeroU32>),
+    Rerun,
+}
+
+/// A checking step.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct StepKey {
-    pub(crate) rerun: bool,
-    pub(crate) cycle: u32,
+    pub(crate) cycle: StepCycle,
     pub(crate) regime: Regime,
     pub(crate) cores: String,
     pub(crate) outcome: Option<Outcome>,
@@ -164,13 +172,11 @@ pub(crate) fn compute_checking(p: &Projection<'_>, since: Option<Timestamp>) -> 
             && t.intent.activity == Some(Activity::Checking)
             && t.intent.condition == Condition::Together
     }) {
-        let rerun = t.intent.rerun;
         let key = StepKey {
-            rerun,
-            cycle: if rerun {
-                0
+            cycle: if t.intent.rerun {
+                StepCycle::Rerun
             } else {
-                t.intent.cycle.map_or(0, std::num::NonZeroU32::get)
+                StepCycle::Cycle(t.intent.cycle)
             },
             regime: t.intent.regime,
             cores: core_list(t.class.cores),
@@ -193,10 +199,9 @@ pub(crate) fn render_checking(table: &mut Table, m: &CheckingMetrics) {
         &["cycle", "regime", "loaded cores", "outcome", "trials"],
     );
     for (key, count) in &m.steps {
-        let cycle = if key.rerun {
-            "rerun".to_owned()
-        } else {
-            key.cycle.to_string()
+        let cycle = match key.cycle {
+            StepCycle::Rerun => "rerun".to_owned(),
+            StepCycle::Cycle(cycle) => cycle.map_or(0, NonZeroU32::get).to_string(),
         };
         row!(
             table,

@@ -1,7 +1,7 @@
 use std::time::Duration;
 use togi_config::DeadEndThreshold;
 
-use togi_journal::{Outcome, Seq, TrialEnd};
+use togi_journal::{Outcome, Seq};
 use togi_machine::{
     BootId, CcdId, CoreId, CoreSet, CpuId, PerCore, PmTable, Regime, Signal, TrialConditions,
     TrialFailure, TrialResult,
@@ -10,7 +10,7 @@ use togi_machine::{
 use super::{
     Adjudication, Placement, RecordedMce, ResetVerdict, TrialEvidence, Window, adjudicate,
     backend_exhausted, backend_retry, crash_owns, join_diagnostic, kernel_retry, mce_in_window,
-    mce_signal, place_kernel_mce, summarize_samples,
+    mce_signal, place_kernel_mce, summarize_samples, trial_end,
 };
 
 const MINUTE: Duration = Duration::from_secs(60);
@@ -674,33 +674,7 @@ fn a_summary_fills_an_end_with_the_stall_of_a_failure_and_the_last_sample_of_a_c
     )
     .unwrap();
     let end = |outcome, crashed| {
-        let mut end = TrialEnd {
-            trial: togi_journal::TrialId::from("0001".to_owned()),
-            kernel_cursor: None,
-            kernel_error: None,
-            outcome,
-            signal: None,
-            core: None,
-            duration_s: 3,
-            tctl_max_c: None,
-            voltage_request_median_v: None,
-            voltage_request_min_v: None,
-            voltage_requests_v: PerCore::default(),
-            top_requesters: CoreSet::default(),
-            ccd_mhz: std::collections::BTreeMap::new(),
-            last_sample_s: None,
-            last_sample_tctl_c: None,
-            last_sample_min_mhz: None,
-            last_sample_max_mhz: None,
-            stalled_core: None,
-            worker_stalled_ms: None,
-            reason: None,
-            interrupted: false,
-            last_evidence: false,
-            escaped: Vec::new(),
-            backend_missing: false,
-            containment_error: None,
-        };
+        let mut end = trial_end(togi_journal::TrialId::from("0001".to_owned()), outcome, 3);
         summary.fill(&mut end, crashed);
         end
     };

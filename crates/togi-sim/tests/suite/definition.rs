@@ -232,7 +232,8 @@ fn an_empty_object_is_the_default_machine() {
     let model = model(&definition);
     assert_eq!(model.cores(), 16);
     assert_eq!(model.limits().len(), 16, "limits are drawn from the seed");
-    assert!(model.bios().iter().all(|offset| offset.get() == 0));
+    let bios: Vec<_> = model.bios().iter().map(|offset| offset.get()).collect();
+    assert_eq!(bios, [0; 16]);
     assert_eq!(model.ranking(), None);
     assert!(!model.has_regime_signals());
     assert!(model.ccd().is_none() && model.voltage().is_none() && model.joints().is_empty());

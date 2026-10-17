@@ -268,6 +268,7 @@ mod tests {
 
     use rustix::fs::inotify::{ReadFlags, WatchFlags};
     use tempfile::TempDir;
+    use test_case::test_case;
     use tokio::time::timeout;
 
     use super::{DIRECTORY, FILE, Inotify, JOURNAL, open};
@@ -307,14 +308,16 @@ mod tests {
         }
     }
 
+    #[test_case(DIRECTORY; "the directory")]
+    #[test_case(FILE; "the file")]
+    fn notifications_never_ask_for_the_events_of_reading_the_journal(flags: WatchFlags) {
+        assert!(
+            !flags.intersects(WatchFlags::OPEN | WatchFlags::ACCESS | WatchFlags::CLOSE_NOWRITE)
+        );
+    }
+
     #[test]
-    fn notifications_never_ask_for_the_events_of_reading_the_journal() {
-        for flags in [DIRECTORY, FILE] {
-            assert!(
-                !flags
-                    .intersects(WatchFlags::OPEN | WatchFlags::ACCESS | WatchFlags::CLOSE_NOWRITE)
-            );
-        }
+    fn the_directory_notification_is_only_for_directories() {
         assert!(DIRECTORY.contains(WatchFlags::ONLYDIR));
     }
 

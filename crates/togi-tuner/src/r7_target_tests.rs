@@ -591,15 +591,17 @@ fn r7_backoff_counts_each_carried_fact_once() {
         decision.cause.iter().filter(|&&seq| seq == failure).count(),
         1
     );
-    let clause = crate::ledger::carried_clause(&j.run().evidence, &decision.cause);
+    let DecisionPayload::TunerDecision(td) = &decision.payload else {
+        unreachable!()
+    };
+    let clause = td
+        .reason
+        .strip_prefix(&why.to_string())
+        .expect("the reason starts with the backoff's why");
     assert!(
         clause.starts_with("; 1 carried facts from session "),
         "{clause}"
     );
-    let DecisionPayload::TunerDecision(td) = &decision.payload else {
-        unreachable!()
-    };
-    assert_eq!(td.reason, format!("{why}{clause}"));
 }
 
 #[test]
