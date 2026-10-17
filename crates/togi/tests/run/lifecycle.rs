@@ -1,6 +1,5 @@
 //! `togi run` in process, against a simulated machine: the order of its steps, what refuses it before
-//! hardware, and how each end of the session maps to a status. The Go tests these replace are listed in
-//! `docs/rust-migration.md`.
+//! hardware, and how each end of the session maps to a status.
 
 use togi_cli::Exit;
 use togi_hostlock::Policy;

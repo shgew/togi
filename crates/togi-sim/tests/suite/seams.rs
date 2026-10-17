@@ -1,6 +1,4 @@
 // The seams of a simulated machine: ranking, validation, crashes, topology and the kernel log.
-// Go: seams_test.go (all tests), TestFaultsAndRanking's fault half is in runtime.rs; TestResume* moved to
-// togi-simrun with the journal reader, and togi-sim takes its result as `History` (runtime.rs).
 
 use jiff::SignedDuration;
 use std::time::Duration;

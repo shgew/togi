@@ -489,7 +489,7 @@ fn a_panic_while_a_trial_runs_joins_its_teardown_and_restores_the_offsets_before
     assert!(restored(&ended));
 }
 
-/// Go `TestRunOwnerEveryExit`, panic mode: `Started` panics with the workload running.
+/// `Started` panics with the workload running.
 #[test]
 fn a_panic_after_the_workload_started_and_before_its_wait_still_joins_it_and_restores_the_offsets()
 {
@@ -517,9 +517,8 @@ fn a_panic_after_the_workload_started_and_before_its_wait_still_joins_it_and_res
     );
 }
 
-/// Go `TestRunOwnerEveryExit`, panic mode, twice: `Started` panics with the workload running, and the cleanup that
-/// follows panics again taking in the restoration's intent. The offsets are zeroed with readback, the first panic is
-/// handed back and the second is reported.
+/// `Started` panics with the workload running, and cleanup panics again taking in the restoration's
+/// intent. The offsets are zeroed with readback, the first panic is handed back and the second is reported.
 #[test]
 fn a_second_panic_taking_in_the_restoration_intent_after_a_started_panic_gets_the_emergency_and_reports_both()
  {

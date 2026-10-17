@@ -1,13 +1,4 @@
 // The shared-voltage rail: clocks, requests, hazards, failure share and validation.
-// Go: TestSharedVoltageTopRequester, TestSharedVoltageClockShape, TestSharedVoltageCore11NeedsSupport (the
-// support rule on the rail, and the failure signal of core 11 through a seeded simulator trial),
-// TestSharedVoltageDrawsAndScores (analytic
-// part), TestSharedVoltageValidation, TestSharedVoltageThresholdClock, TestSharedVoltageDefaultThresholdClock,
-// TestR7FailureShare (its allocation count: visiting sources allocates nothing by construction),
-// TestSharedVoltageThresholdClockValidation, TestSharedVoltageThresholdClockDecodeAndOwnership,
-// TestSharedVoltageBackgroundHazard, TestSharedVoltageBackgroundFailureShare,
-// TestSharedVoltageBackgroundValidation.
-// The sample, draw and replay-bypass tests wait for the runtime.
 
 use std::time::Duration;
 use togi_machine::{CoreId, Regime, Signal};

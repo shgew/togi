@@ -1,3 +1,6 @@
+//! Hardware access through `ryzen_smu`: [`Driver`] validates the CPU and driver, reads topology and
+//! BIOS context, and reads and writes offsets; [`PmReader`] supplies PM table telemetry.
+
 mod driver;
 mod error;
 mod files;

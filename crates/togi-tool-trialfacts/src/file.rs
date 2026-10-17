@@ -87,7 +87,7 @@ pub fn write(path: impl AsRef<Path>, facts: &[TrialFact]) -> Result<(), WriteErr
     write_file(path.as_ref(), facts, sync_file)
 }
 
-/// Like [`write`], including atomic replacement, but without syncing the temporary file.
+/// Like [`write()`], including atomic replacement, but without syncing the temporary file.
 ///
 /// Use for disposable extracts whose survival across a machine crash is not required.
 pub fn write_unsynced(path: impl AsRef<Path>, facts: &[TrialFact]) -> Result<(), WriteError> {

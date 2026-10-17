@@ -1,7 +1,4 @@
 // Integrated failure probability, the onset window and its inverse.
-// Go: TestFailureProbability (its negative-onset-boost row is now a validation error, see validation.rs),
-// the analytic half of TestModelHazards and TestFailureDrawAfterOnset (the exact draws are replaced by the
-// inverse-of-exposure property, which is what makes draws agree with scores).
 
 use togi_machine::Regime;
 use togi_sim::definition::{CoreDef, JointDef};

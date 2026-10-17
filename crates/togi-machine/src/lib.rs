@@ -1,3 +1,6 @@
+//! The machine vocabulary and interfaces: core identities, checked offsets, profiles' per-core
+//! storage and workloads, with [`Machine`], [`Smu`], [`Kernel`] and [`Trials`] as execution boundaries.
+
 mod cancellation;
 mod core_set;
 mod error;

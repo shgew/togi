@@ -1,3 +1,6 @@
+//! Journal event text: [`Renderer`] formats events and styled text using [`OutputFacts`], while
+//! [`escape_text`] and [`escape_bytes`] make untrusted text safe for terminal output.
+
 mod escape;
 mod output;
 mod render;

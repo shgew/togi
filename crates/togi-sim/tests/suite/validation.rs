@@ -1,8 +1,4 @@
 // What `Model::new` refuses, and the field path it names.
-// Go: TestNewRejects*, TestValidateCoresBound, TestLoadMachineInvalidDefinitions (core table),
-// TestNewRejectsInvalidScriptCore, the hazard and joint rejections of TestNewRejectsInvalidHazardsAndSignals,
-// TestNewRejectsInvalidModelTopology, TestNewRejectsInvalidModelWeights, TestCCDValidation,
-// TestNewPredictorRejects (negative joint rate, member core and offset out of range).
 
 use std::collections::BTreeMap;
 use togi_machine::{Regime, ResetKind, Signal};
@@ -57,10 +53,9 @@ fn load_text(text: &str) -> Result<MachineDefinition, LoadError> {
     file::load_from(&path, &dir).map(|(machine, _)| machine)
 }
 
-// Go loads `{"cores": -2, "core": [{"id": 0}]}` and the 18-core analogue and gets the topology error. The
-// native loader decodes strictly first, and `alone` and `together` are required fields of a core, so those
-// two documents are refused as a parse error that names the file and the missing limits. The same
-// documents with the limits written reach `Model::new`, which names the core count, not the core table.
+// The loader decodes strictly before validating topology. Core entries require `alone` and `together`,
+// so documents missing those limits fail to parse before their core count is checked. With the limits
+// present, `Model::new` reports the invalid core count rather than a core-table error.
 #[test]
 fn a_loaded_document_is_refused_for_its_topology_before_its_limits() {
     let limits =

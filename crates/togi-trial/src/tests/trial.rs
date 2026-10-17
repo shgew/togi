@@ -570,8 +570,8 @@ fn a_stall_that_follows_a_thread_read_loss_is_not_replaced_by_the_loss() {
                 run.finished.result.failure.map(|f| f.signal),
                 Some(Signal::Stall)
             );
-            // Like Go's, the stall stays the trial's signal; the loss that came before it stays
-            // recorded beside it rather than replacing it.
+            // The stall stays the trial's signal; the loss that came before it stays recorded
+            // beside it rather than replacing it.
             assert!(run.finished.teardown.is_ok());
         })
         .await;

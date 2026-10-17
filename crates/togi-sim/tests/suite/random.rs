@@ -1,5 +1,4 @@
-// Seeded hidden limits and the random streams. Go: the limit drawing of New; stream determinism and
-// independence are new (Go keyed streams by formatted strings), and are also pinned in the module's own tests.
+// Seeded hidden limits and the determinism and independence of random streams.
 
 use togi_sim::Model;
 use togi_sim::random::{Domain, stream};

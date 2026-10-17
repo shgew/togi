@@ -1,4 +1,4 @@
-// Machine overlays. Go: every test of overlay_test.go.
+// Machine overlays.
 
 use std::path::{Path, PathBuf};
 use togi_sim::file::{self, LoadError};

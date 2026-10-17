@@ -67,7 +67,7 @@ fn simulation_runs_full_first_offset_fallback_chains() {
                     [step, cited],
                     "chain {chains} must cite its step and its predecessor's passing trial end"
                 );
-                // Go's cause names no earlier chain; the predecessor is linked through its passing trial end.
+                // The cause names no earlier chain; the predecessor is linked through its passing trial end.
                 assert!(
                     previous.is_none_or(|previous| cited > previous),
                     "chain {chains} cites a trial end from before the chain it follows: {cited:?}, previous {previous:?}"

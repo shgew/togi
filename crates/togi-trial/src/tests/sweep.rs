@@ -1633,8 +1633,8 @@ mod killed_owner {
         }
     }
 
-    /// Go `TestProcessSweepAfterKilledOwner`: a real owner starts a detached descendant and is
-    /// killed; the descendant survives, and the sweep removes it.
+    /// A real owner starts a detached descendant and is killed; the descendant survives, and the
+    /// sweep removes it.
     #[test]
     fn real_process_a_sweep_after_a_killed_owner_removes_its_detached_descendant() {
         let dir = crate::testing::tempdir();

@@ -1,3 +1,6 @@
+//! Kernel evidence: [`Kernel`] reads boot history, machine-check errors and reset reasons through
+//! journalctl and pstore; [`parse`] decodes kernel messages and [`boot_id`] reads the current boot id.
+
 mod boot;
 mod error;
 mod journal;

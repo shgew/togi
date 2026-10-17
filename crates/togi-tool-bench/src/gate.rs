@@ -1,7 +1,7 @@
 //! A ruleset's bench gate: the `gate` object of the suite file, registered before the ruleset is scored, and the
 //! verdict it gives a run against a recorded baseline.
 //!
-//! The quantile criteria resample seed pairs with a [`StdRng`](rand::rngs::StdRng) seeded from the gate's
+//! The quantile criteria resample seed pairs with a [`StdRng`] seeded from the gate's
 //! `bootstrap_seed`, once per criterion and on one thread, so an interval is the same on every run and does not
 //! depend on the number of threads or cores. A gate of the Go bench, whose seed is a pair for Go's PCG, is
 //! refused with [`GateError::GoGate`]: its archived reports are kept as records and never re-scored.

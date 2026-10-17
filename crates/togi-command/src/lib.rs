@@ -1,5 +1,11 @@
 #![cfg(unix)]
 
+//! Bounded external commands: [`run`] executes an [`Invocation`] with a deadline and capped output;
+//! on timeout, failure or cancellation it kills the process group (outside Linux, unless the leader
+//! was already reaped) and reaps the leader or leaves it to a reaper thread, while on success it only
+//! reaps the leader, so descendants that outlive it are not killed. [`run_blocking`] serves
+//! synchronous callers.
+
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io;

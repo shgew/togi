@@ -1,8 +1,4 @@
-// Encoding the materialized machine. Go: TestEncodeMachineRoundTripsEveryField,
-// TestEncodeMachineLeavesDefaultModelFieldsOut, TestEncodeMachineRefusesRuntimeOnlyFields (a definition has no
-// runtime-only fields, so there is nothing to refuse), TestEncodeMachineRoundTripsControlCharacterStrings,
-// TestEncodeMachineRoundTripsLargeWholeFloats, TestEncodeMachineRejectsNonFiniteFloats. The Go tests pinned
-// bytes; these pin the properties: what is written loads back equal, and re-encoding is stable.
+// Encoding the materialized machine: what is written loads back equal, and re-encoding is stable.
 
 use proptest::prelude::*;
 use std::collections::BTreeMap;

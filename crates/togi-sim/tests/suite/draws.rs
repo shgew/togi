@@ -1,7 +1,4 @@
 // Draws against the model's own probabilities, and what draws must not depend on.
-// Go: TestCCDLoadedHazardAndDraws (empirical share), TestSharedVoltageDrawsAndScores (empirical share, no MCE),
-// TestSharedVoltageBackgroundDraws (the exact draw time is the inverse-of-exposure property in probability.rs),
-// TestSharedVoltageBackgroundReplayBypass, TestSharedVoltageSamplesAndDeterminism (same seed, same draw).
 // Each test runs a few thousand seeded trials and compares the failure share with `failure_probability`
 // within five binomial standard deviations.
 

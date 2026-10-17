@@ -28,8 +28,8 @@ macro_rules! test {
 
 pub(crate) use test;
 
-/// A backend with the classifier the Go tests used: `COMPUTE ERROR` anywhere is a computation
-/// error, `PIN FAILED` a setup error, `AFFINITY:<n>` an affinity error, `ok` a progress line.
+/// A backend that classifies `COMPUTE ERROR` anywhere as a computation error, `PIN FAILED` as
+/// a setup error, `AFFINITY:<n>` as an affinity error and `ok` as a progress line.
 #[derive(Clone, Debug)]
 pub(crate) struct TestBackend {
     pub(crate) kind: togi_machine::Backend,

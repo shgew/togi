@@ -1,7 +1,4 @@
 // Trial outcomes, determinism, faults and reboots through the seams.
-// Go: sim_test.go (TestR6ProgressRespectsTrialDuration, TestSameSeedSameObservations, TestEachSignal,
-// TestNearLimitRate, TestTogetherOnlyLimit, TestBankTypes, TestFaults, TestReboot, TestContextDone,
-// TestNewSignalWeights; TestNewRejects is validation.rs).
 
 use jiff::SignedDuration;
 use std::time::Duration;
