@@ -1938,12 +1938,15 @@ fn a_containment_shows_each_failure_with_its_causes_once_in_order() {
     containment.push(CleanupFailure::KillScope {
         scope: "togi-trial-t1".into(),
         signal: "SIGKILL",
-        source: Box::new(std::io::Error::other("timed out")),
+        source: crate::SystemdError::Command(togi_command::Error::TimedOut {
+            program: "systemctl".into(),
+            timeout: std::time::Duration::from_secs(5),
+        }),
     });
     assert_eq!(
         containment.to_string(),
         "the start failed: launch instance work in scope togi-trial-t1: no such file; \
-         signal scope togi-trial-t1 with SIGKILL: timed out"
+         signal scope togi-trial-t1 with SIGKILL: systemctl did not finish within 5s"
     );
 }
 

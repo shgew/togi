@@ -23,7 +23,7 @@ use crate::error::{Error, InvalidTrial, PrepareError};
 use crate::files::Chown;
 use crate::id::ScopeName;
 use crate::logs::{Sink, Wrap};
-use crate::os::fake::{Fake, Launch, ProcCtx, ProcShared, script};
+use crate::os::fake::{Fake, Launch, ProcCtx, ProcShared, lost_read, script};
 use crate::os::{ExitInfo, GroupSignal, LaunchFailure, Os, Systemd};
 use crate::procfs::{ProcError, ScopeProcess, Thread, Threads, Usage};
 use crate::runner::Backends;
@@ -306,7 +306,7 @@ fn a_lost_sample_sticks_through_the_whole_trial() {
             let rig = rig();
             let handle = rig.start(spec(Regime::R1, &[0], secs(5))).await.unwrap();
             let process = rig.fake.process(0);
-            *process.usage.borrow_mut() = Err(ProcError::Observation("boom".into()));
+            *process.usage.borrow_mut() = Err(lost_read());
             tokio::time::sleep(Duration::from_millis(1500)).await;
             *process.usage.borrow_mut() = Ok(crate::procfs::Usage {
                 cpu_time: secs(1),
@@ -316,7 +316,7 @@ fn a_lost_sample_sticks_through_the_whole_trial() {
             assert_eq!(run.finished.result.ran, secs(5));
             assert_eq!(
                 run.finished.result.inconclusive.as_deref(),
-                Some("core 00 usage sampling lost: boom")
+                Some("core 00 usage sampling lost: read /proc/fake/stat: Permission denied (os error 13)")
             );
         })
         .await;
@@ -348,7 +348,7 @@ fn a_partial_thread_listing_still_proves_an_escape_despite_other_failures() {
             let handle = rig.start(spec(Regime::R1, &[0], secs(30))).await.unwrap();
             *rig.fake.process(0).threads.borrow_mut() = Ok(Threads {
                 threads: vec![Thread { tid: 9, cpu: 6 }],
-                errors: vec![ProcError::Observation("permission denied".into())],
+                errors: vec![lost_read()],
             });
             let run = finish(&handle).await;
             assert_eq!(run.finished.result.escaped, [CpuId(6)]);
@@ -365,10 +365,9 @@ enum Read {
 }
 
 fn lose(read: Read, process: &ProcShared) {
-    let lost = || ProcError::Observation("boom".into());
     match read {
-        Read::Threads => *process.threads.borrow_mut() = Err(lost()),
-        Read::Usage => *process.usage.borrow_mut() = Err(lost()),
+        Read::Threads => *process.threads.borrow_mut() = Err(lost_read()),
+        Read::Usage => *process.usage.borrow_mut() = Err(lost_read()),
     }
 }
 
@@ -389,10 +388,10 @@ fn recover(read: Read, process: &ProcShared) {
     }
 }
 
-#[test_case(Read::Threads, false, "core 00 thread sampling lost: boom"; "threads persistent")]
-#[test_case(Read::Threads, true, "core 00 thread sampling lost: boom"; "threads transient")]
-#[test_case(Read::Usage, false, "core 00 usage sampling lost: boom"; "usage persistent")]
-#[test_case(Read::Usage, true, "core 00 usage sampling lost: boom"; "usage transient")]
+#[test_case(Read::Threads, false, "core 00 thread sampling lost: read /proc/fake/stat: Permission denied (os error 13)"; "threads persistent")]
+#[test_case(Read::Threads, true, "core 00 thread sampling lost: read /proc/fake/stat: Permission denied (os error 13)"; "threads transient")]
+#[test_case(Read::Usage, false, "core 00 usage sampling lost: read /proc/fake/stat: Permission denied (os error 13)"; "usage persistent")]
+#[test_case(Read::Usage, true, "core 00 usage sampling lost: read /proc/fake/stat: Permission denied (os error 13)"; "usage transient")]
 fn a_lost_sampling_read_makes_the_whole_trial_inconclusive_and_teardown_still_confirms(
     read: Read,
     transient: bool,
@@ -525,8 +524,7 @@ fn a_computation_error_that_follows_a_thread_read_loss_is_not_replaced_by_the_lo
             )
             .await
             .unwrap();
-            *rig.fake.process(0).threads.borrow_mut() =
-                Err(ProcError::Observation("EACCES".into()));
+            *rig.fake.process(0).threads.borrow_mut() = Err(lost_read());
             let run = finish(&handle).await;
             assert!(
                 lost_threads.get() >= 2,
@@ -558,8 +556,7 @@ fn a_stall_that_follows_a_thread_read_loss_is_not_replaced_by_the_loss() {
             )
             .await
             .unwrap();
-            *rig.fake.process(0).threads.borrow_mut() =
-                Err(ProcError::Observation("EACCES".into()));
+            *rig.fake.process(0).threads.borrow_mut() = Err(lost_read());
             let run = finish(&handle).await;
             assert!(
                 lost_threads.get() >= 30,

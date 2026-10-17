@@ -10,10 +10,11 @@ use togi_backend::{Backend, Line, Plan, Ready};
 use togi_machine::{CancellationToken, CpuId, Regime, Signal, Workload};
 
 use super::harness::{core, crate_error, finish, local, printing, rig, rig_edit, rig_with, spec};
-use crate::error::{CleanupFailure, Error};
+use crate::error::{CleanupFailure, Error, SystemdError};
 use crate::id::ScopeName;
 use crate::os::fake::{Launch, ProcCtx, Reply, ScanFault, script};
 use crate::os::{ExitInfo, GroupSignal, Systemd};
+use crate::procfs::ProcError;
 use crate::runner::Backends;
 use crate::testing::TestBackend;
 use crate::timing::Timing;
@@ -679,14 +680,22 @@ fn watching_rig() -> super::harness::Rig {
     rig
 }
 
-#[test_case(false, ScanFault::Fail, "scan failed"; "a failed scan")]
-#[test_case(true, ScanFault::Fail, "scan failed"; "a failed scan after a failed kill")]
-#[test_case(false, ScanFault::Late, "after the teardown deadline"; "an empty scan after the deadline")]
-#[test_case(true, ScanFault::Late, "after the teardown deadline"; "an empty scan after the deadline and a failed kill")]
+fn denied(error: &ProcError) -> bool {
+    matches!(error, ProcError::Read { source, .. } if source.kind() == std::io::ErrorKind::PermissionDenied)
+}
+
+fn late(error: &ProcError) -> bool {
+    matches!(error, ProcError::Deadline)
+}
+
+#[test_case(false, ScanFault::Fail, denied; "a failed scan")]
+#[test_case(true, ScanFault::Fail, denied; "a failed scan after a failed kill")]
+#[test_case(false, ScanFault::Late, late; "an empty scan after the deadline")]
+#[test_case(true, ScanFault::Late, late; "an empty scan after the deadline and a failed kill")]
 fn an_unverifiable_scope_scan_withholds_the_proof_and_the_watched_partial(
     kill_fails: bool,
     fault: ScanFault,
-    reason: &str,
+    cause: fn(&ProcError) -> bool,
 ) {
     crate::testing::runtime(true).block_on(async move {
         local(async {
@@ -716,7 +725,10 @@ fn an_unverifiable_scope_scan_withholds_the_proof_and_the_watched_partial(
                 let [CleanupFailure::KillScope { source, .. }, observed] = failures else {
                     panic!("{failures:?}");
                 };
-                assert!(source.to_string().contains("Access denied"), "{source}");
+                assert!(
+                    matches!(source, SystemdError::Exit { output, .. } if output == "Access denied"),
+                    "{source:?}"
+                );
                 observed
             } else {
                 let [observed] = failures else {
@@ -728,7 +740,10 @@ fn an_unverifiable_scope_scan_withholds_the_proof_and_the_watched_partial(
                 panic!("{observed:?}");
             };
             assert_eq!(*what, "the trial scope members");
-            assert!(source.to_string().contains(reason), "{source}");
+            assert!(
+                source.downcast_ref::<ProcError>().is_some_and(cause),
+                "{source:?}"
+            );
             assert_eq!(
                 run.finished.result.failure, None,
                 "a watched partial is not classified while the scope is unverified"
@@ -782,12 +797,7 @@ fn a_scope_kill_that_outlives_its_deadline_is_cut_off_at_the_shared_slot(count: 
                 let CleanupFailure::KillScope { source, .. } = failure else {
                     panic!("{failure:?}");
                 };
-                assert!(
-                    source
-                        .downcast_ref::<tokio::time::error::Elapsed>()
-                        .is_some(),
-                    "{source}"
-                );
+                assert!(matches!(source, SystemdError::Timeout(_)), "{source:?}");
             }
             assert!(
                 begun.elapsed() <= timing.stop_grace + timing.kill_slot + Duration::from_millis(50)

@@ -293,12 +293,15 @@ impl Scope {
         Self::answering(|| Ok("scope confined to cpu 0 created".to_owned()))
     }
 
-    pub(super) fn refusing(detail: &'static str) -> Self {
+    /// A probe whose `systemd-run` exited with status 1, writing `stderr`.
+    pub(super) fn refusing(stderr: &'static str) -> Self {
+        use std::os::unix::process::ExitStatusExt as _;
+
         Self::answering(move || {
-            Err(togi_trial::Error::Probe {
-                detail: detail.to_owned(),
-                source: None,
-            })
+            Err(togi_trial::Error::Probe(togi_trial::SystemdError::Exit {
+                status: std::process::ExitStatus::from_raw(1 << 8),
+                output: stderr.to_owned(),
+            }))
         })
     }
 

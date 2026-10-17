@@ -8,7 +8,7 @@ use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep, sleep_until, timeout_at};
 
-use crate::error::{CleanupFailure, Containment, Error};
+use crate::error::{CleanupFailure, Containment, Error, SystemdError};
 use crate::id::ScopeName;
 use crate::identity::IdentityError;
 use crate::os::{KillSignal, Os, Systemd};
@@ -30,10 +30,19 @@ fn says_missing(text: &str) -> bool {
     text.contains("not loaded") || text.contains("could not be found")
 }
 
-type Boxed = Box<dyn std::error::Error + Send + Sync>;
+fn exited(output: &togi_command::Output, text: &str) -> SystemdError {
+    SystemdError::Exit {
+        status: output.status,
+        output: text.trim().to_owned(),
+    }
+}
 
 /// Runs one systemd call to `end`; `Ok(())` for success or a scope that is already gone.
-async fn call<O: Os>(os: &O, operation: &Systemd, end: Instant) -> Result<(), Boxed> {
+pub(crate) async fn call<O: Os>(
+    os: &O,
+    operation: &Systemd,
+    end: Instant,
+) -> Result<(), SystemdError> {
     match timeout_at(end, os.systemd(operation, end)).await {
         Ok(Ok(output)) if output.status.success() => Ok(()),
         Ok(Ok(output)) => {
@@ -45,31 +54,29 @@ async fn call<O: Os>(os: &O, operation: &Systemd, end: Instant) -> Result<(), Bo
             if says_missing(&text) {
                 Ok(())
             } else {
-                Err(format!("exited with {}: {}", output.status, text.trim()).into())
+                Err(exited(&output, &text))
             }
         }
-        Ok(Err(error)) => Err(Box::new(error)),
-        Err(elapsed) => Err(Box::new(elapsed)),
+        Ok(Err(error)) => Err(SystemdError::Command(error)),
+        Err(elapsed) => Err(SystemdError::Timeout(elapsed)),
     }
 }
 
-async fn list<O: Os>(os: &O, end: Instant) -> Result<Vec<ScopeName>, Boxed> {
+async fn list<O: Os>(os: &O, end: Instant) -> Result<Vec<ScopeName>, SystemdError> {
     match timeout_at(end, os.systemd(&Systemd::ListScopes, end)).await {
         Ok(Ok(output)) if output.status.success() => {
             Ok(parse_listing(&String::from_utf8_lossy(&output.stdout)))
         }
-        Ok(Ok(output)) => Err(format!(
-            "list-units exited with {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        )
-        .into()),
-        Ok(Err(error)) => Err(Box::new(error)),
-        Err(elapsed) => Err(Box::new(elapsed)),
+        Ok(Ok(output)) => Err(exited(&output, &String::from_utf8_lossy(&output.stderr))),
+        Ok(Err(error)) => Err(SystemdError::Command(error)),
+        Err(elapsed) => Err(SystemdError::Timeout(elapsed)),
     }
 }
 
-fn observe(what: &'static str, source: impl Into<Boxed>) -> CleanupFailure {
+fn observe(
+    what: &'static str,
+    source: impl Into<Box<dyn std::error::Error + Send + Sync>>,
+) -> CleanupFailure {
     CleanupFailure::Observe {
         what,
         source: source.into(),
@@ -291,21 +298,11 @@ pub(crate) async fn probe<O: Os>(env: &Env<O>) -> Result<String, Error> {
         Ok(Ok(output)) if output.status.success() => {
             Ok("scope confined to cpu 0 created".to_owned())
         }
-        Ok(Ok(output)) => Err(Error::Probe {
-            detail: format!(
-                "systemd-run exited with {}: {}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
-            ),
-            source: None,
-        }),
-        Ok(Err(error)) => Err(Error::Probe {
-            detail: "systemd-run".to_owned(),
-            source: Some(Box::new(error)),
-        }),
-        Err(elapsed) => Err(Error::Probe {
-            detail: "systemd-run timed out".to_owned(),
-            source: Some(Box::new(elapsed)),
-        }),
+        Ok(Ok(output)) => Err(Error::Probe(exited(
+            &output,
+            &String::from_utf8_lossy(&output.stderr),
+        ))),
+        Ok(Err(error)) => Err(Error::Probe(SystemdError::Command(error))),
+        Err(elapsed) => Err(Error::Probe(SystemdError::Timeout(elapsed))),
     }
 }
