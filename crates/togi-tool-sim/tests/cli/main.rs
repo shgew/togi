@@ -135,9 +135,12 @@ fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples() {
         let events = togi_simrun::events(&persistence).unwrap();
         let trial = events
             .iter()
-            .find_map(|event| match &event.payload {
-                Payload::TrialEnd(end) => Some(end.trial.as_str()),
-                _ => None,
+            .find_map(|event| {
+                if let Payload::TrialEnd(end) = &event.payload {
+                    Some(end.trial.as_str())
+                } else {
+                    None
+                }
             })
             .unwrap();
         let trial = dir.path().join("trials").join(trial);

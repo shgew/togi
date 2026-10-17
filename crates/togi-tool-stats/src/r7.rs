@@ -538,9 +538,12 @@ fn measurements(p: &Projection<'_>, since: Option<Timestamp>) -> Vec<Measurement
             });
         }
     }
-    let own = p.events.iter().find_map(|event| match &event.payload {
-        Payload::SessionStart(start) => Some(start.session),
-        _ => None,
+    let own = p.events.iter().find_map(|event| {
+        if let Payload::SessionStart(start) = &event.payload {
+            Some(start.session)
+        } else {
+            None
+        }
     });
     let mut seen = HashSet::new();
     for event in p.events {

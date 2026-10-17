@@ -44,14 +44,14 @@ fn a_full_cycle_lacks_nothing() {
         Regime::R7,
         Regime::R7,
     ];
-    assert!(missing_coverage(&steps).is_empty());
+    assert!(missing_coverage(steps).is_empty());
 }
 
 #[test]
 fn a_short_cycle_names_each_regime_it_lacks() {
     let steps = [Regime::R1, Regime::R2, Regime::R2, Regime::R2, Regime::R3];
     assert_eq!(
-        missing_coverage(&steps),
+        missing_coverage(steps),
         [
             "R1: 2 more steps",
             "R4: 1 more step",
@@ -110,12 +110,12 @@ fn every_dead_end_condition_has_its_own_display_label_and_fits_eighty_columns() 
 #[test]
 fn the_unconfirmed_note_agrees_with_the_cores_and_scopes_the_confirmed_profile() {
     let confirmed = Seq::new(7).unwrap();
-    let one = unconfirmed_note(9, &[core(1)], confirmed);
+    let one = unconfirmed_note(9, [core(1)], confirmed);
     assert!(
         one.starts_with("* unconfirmed since [#9]: core 01 shows a stepped-back offset; other BIOS offsets come from the profile confirmed by the passed full cycle [#7]. "),
         "{one}"
     );
-    let many = unconfirmed_note(9, &[core(1), core(2)], confirmed);
+    let many = unconfirmed_note(9, [core(1), core(2)], confirmed);
     assert!(
         many.starts_with("* unconfirmed since [#9]: cores 01 02 show stepped-back offsets; other BIOS offsets come from"),
         "{many}"
