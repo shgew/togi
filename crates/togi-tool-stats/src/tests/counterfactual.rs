@@ -44,6 +44,7 @@ fn the_next_set_idles_the_orders_top_group(load: &[i64], next: &[i64]) {
 #[test_case(false, &[1, 2, 3], &[], Verdict::Unresolved(Unresolved::Diverged) ; "the tuner gives no order of the kept set")]
 #[test_case(true, &[1, 2, 3], &[7], Verdict::Unresolved(Unresolved::Source { source: seq(7) }) ; "the order cites a skipped trial")]
 #[test_case(true, &[0, 1, 2], &[8], Verdict::Unresolved(Unresolved::Diverged) ; "the order gives another set")]
+#[test_case(true, &[0, 1, 2], &[7], Verdict::Unresolved(Unresolved::Source { source: seq(7) }) ; "a skipped source outranks another set")]
 fn a_derivation_after_a_kept_set_is_kept_only_when_the_kept_sets_order_gives_it_from_trials_run(
     ordered: bool,
     cores: &[i64],

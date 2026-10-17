@@ -534,7 +534,9 @@ fn the_896_research_suite_runs_unreplayed_dev_seeds_from_201_on_committed_machin
     for run in &plan.runs {
         let machine = run.machine.as_ref().unwrap().name.clone();
         match got.last_mut() {
-            Some((scenario, _, seeds)) if *scenario == run.scenario => seeds.push(run.seed),
+            Some((scenario, seen, seeds)) if *scenario == run.scenario && *seen == machine => {
+                seeds.push(run.seed);
+            }
             _ => got.push((run.scenario.clone(), machine, vec![run.seed])),
         }
     }
