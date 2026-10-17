@@ -98,6 +98,7 @@ print_stderr = "warn"
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
 undocumented_unsafe_blocks = "deny"
+wildcard_enum_match_arm = "warn"
 
 [profile.dev]
 opt-level = 1
