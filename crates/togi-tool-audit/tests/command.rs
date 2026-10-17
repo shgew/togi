@@ -459,9 +459,10 @@ fn missing_run_records_fail_with_the_open_error() {
     ]);
     assert_eq!(output.status.code(), Some(1));
     assert!(text(&output.stdout).is_empty());
-    let stderr = text(&output.stderr);
-    assert!(stderr.contains("open run records"), "{stderr}");
-    assert!(stderr.contains("absent.jsonl"), "{stderr}");
+    assert_eq!(
+        text(&output.stderr),
+        "togi-tool-audit: open run records /fixture/absent.jsonl: entity not found\n"
+    );
 }
 
 #[test]

@@ -82,7 +82,11 @@ fn main() -> ExitCode {
             }
         }
         Err(error) => {
-            let _ = writeln!(std::io::stderr(), "togi-tool-fit: {error}");
+            let _ = writeln!(
+                std::io::stderr(),
+                "togi-tool-fit: {}",
+                togi_machine::error_chain(&error)
+            );
             ExitCode::FAILURE
         }
     }

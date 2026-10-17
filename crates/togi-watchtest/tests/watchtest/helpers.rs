@@ -116,9 +116,10 @@ fn a_scenario_that_cannot_be_cut_names_itself_in_the_error() {
     assert!(
         matches!(&error, Error::Scenario { scenario: Scenario::Search, source } if matches!(**source, Error::NoCut(_)))
     );
-    assert!(
-        error.to_string().starts_with("scenario search: "),
-        "{error}"
+    assert_eq!(error.to_string(), "scenario search");
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        "scenario search: no cut point in the simulated journal: no event the cut accepts"
     );
 }
 
@@ -142,6 +143,6 @@ fn a_crash_scripted_on_a_core_the_machine_lacks_is_an_error() {
     let machine = default_machine(1).expect("the machine builds");
     assert!(matches!(
         crash_trial(&machine, "0001", 7.0, 16),
-        Err(Error::Fixture(_))
+        Err(Error::Core(_))
     ));
 }

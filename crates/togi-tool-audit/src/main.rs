@@ -141,7 +141,7 @@ fn run(cli: Cli, io: &mut Io<'_>) -> ExitCode {
                     (records, root)
                 }
                 Err(_) if interrupt.signalled() => return interrupted(io.err),
-                Err(error) => return fail(&error, io.err),
+                Err(error) => return fail(&togi_machine::error_chain(&error), io.err),
             }
         }
         _ => return audit_only(&cli.dirs, io),
@@ -166,7 +166,7 @@ fn audit_records(
 ) -> ExitCode {
     let records = match (io.records)(records) {
         Ok(records) => records,
-        Err(error) => return fail(&error, io.err),
+        Err(error) => return fail(&togi_machine::error_chain(&error), io.err),
     };
     if dirs.is_empty() {
         dirs = records

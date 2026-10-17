@@ -10,15 +10,15 @@ use crate::record::{InvalidFact, TrialFact};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReadError {
-    #[error("open extract {}: {source}", path.display())]
+    #[error("open extract {}", path.display())]
     Open {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("read extract: {0}")]
+    #[error("read extract")]
     Io(#[from] io::Error),
-    #[error("extract line {line}: {source}")]
+    #[error("extract line {line}")]
     Line {
         line: u64,
         #[source]
@@ -34,11 +34,11 @@ pub enum WriteError {
     Empty,
     #[error("fact {index} records a voltage request that is not finite")]
     NotFinite { index: usize },
-    #[error("fact {index} contradicts itself: {source}")]
+    #[error("fact {index} contradicts itself")]
     Invalid { index: usize, source: InvalidFact },
-    #[error("write extract: {0}")]
+    #[error("write extract")]
     Io(#[from] io::Error),
-    #[error("replace {}: {source}", path.display())]
+    #[error("replace {}", path.display())]
     Replace {
         path: PathBuf,
         #[source]

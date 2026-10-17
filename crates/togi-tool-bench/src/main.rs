@@ -9,6 +9,7 @@ use std::time::Duration;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
+use togi_machine::error_chain;
 use togi_tool_bench::{Fleet, Options, Selection, execute, inspect, sanity};
 
 mod forecast_cli;
@@ -150,7 +151,7 @@ fn bench(args: RunArgs) -> ExitCode {
             .collect::<Vec<_>>(),
     ) {
         Ok(tree) => tree,
-        Err(error) => return fail(&error),
+        Err(error) => return fail(&error_chain(&error)),
     };
     let options = Options {
         suite: args.suite,
@@ -175,7 +176,7 @@ fn bench(args: RunArgs) -> ExitCode {
     };
     let report = match execute(&options, &fleet) {
         Ok(report) => report,
-        Err(error) => return fail(&error),
+        Err(error) => return fail(&error_chain(&error)),
     };
     let mut stderr = io::stderr();
     for warning in &report.warnings {
@@ -202,7 +203,7 @@ fn sanity_check(args: &SanityArgs) -> ExitCode {
         .and_then(|current| Ok((current, sanity::read_baseline(&args.baseline)?)));
     let (current, baseline) = match compared {
         Ok(pair) => pair,
-        Err(error) => return fail(&error),
+        Err(error) => return fail(&error_chain(&error)),
     };
     let lines = sanity::compare(&current, &baseline);
     if lines.is_empty() {

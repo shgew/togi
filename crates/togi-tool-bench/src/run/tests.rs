@@ -479,7 +479,8 @@ fn a_suite_with_no_selected_runs_is_refused_before_any_simulator_runs() {
     let mut options = bench.options(bench.simulator("sim", 0, "", ""));
     options.selection = Selection::Dev;
     let error = execute(&options, &Fleet::new()).unwrap_err();
-    assert!(error.to_string().contains("no selected runs"), "{error}");
+    let chain = togi_machine::error_chain(&error);
+    assert!(chain.contains("no selected runs"), "{chain}");
     assert_eq!(bench.calls.load(Ordering::SeqCst), 0);
 }
 
@@ -575,4 +576,28 @@ fn a_failed_cache_write_is_a_warning_and_the_records_are_kept() {
     );
     assert!(report.warnings[3].contains("default/holdout-101"));
     assert_eq!(run(&options).cached, 1);
+}
+
+#[test]
+fn a_model_check_whose_extract_cannot_be_read_names_the_machine_then_each_cause_once() {
+    let definition = togi_sim::file::decode(include_str!(
+        "../../../../tools/bench/machines/target-fit-0.json"
+    ))
+    .unwrap();
+    let machine = crate::suite::Machine {
+        name: "machines/target-fit-0.json".to_owned(),
+        path: PathBuf::from("/suite/machines/target-fit-0.json"),
+        definition,
+        inputs: Vec::new(),
+    };
+    let error = check_machine_with(&machine, &mut Extracts::new(), |_| {
+        Err(togi_tool_trialfacts::ReadError::Io(io::Error::other(
+            "disk gone",
+        )))
+    })
+    .unwrap_err();
+    assert_eq!(
+        togi_machine::error_chain(&error),
+        "check model machines/target-fit-0.json: load replay oracle: read extract: disk gone"
+    );
 }

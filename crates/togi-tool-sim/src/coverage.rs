@@ -76,7 +76,7 @@ object_only! {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("manifest line {line}: {source}")]
+#[error("manifest line {line}")]
 pub struct ManifestError {
     pub line: usize,
     #[source]
