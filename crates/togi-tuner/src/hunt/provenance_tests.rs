@@ -375,14 +375,25 @@ fn hunt_causes_omit_a_failure_after_the_group_passed() {
     j.assert_resumes();
 }
 
-#[test]
-fn hunt_causes_omit_a_failure_covered_before_the_group_passed() {
+fn assert_covered_failure_omitted(stricter: Option<&str>) {
     let mut covered: Option<Seq> = None;
     let mut passes: Vec<Seq> = Vec::new();
+    let mut changed = false;
     let (j, _) = joint_hunt(|j, _, payload| {
         let DecisionPayload::HuntGroup(group) = payload else {
             return;
         };
+        if group.group.get() == 2 && !changed {
+            if let Some(text) = stricter {
+                let carried = u16::try_from(passes.len()).unwrap();
+                j.load(&crate::testkit::config(text));
+                assert!(
+                    j.run().config.needed.get() > carried,
+                    "the stricter configuration must not be met by group 1's {carried} passes"
+                );
+            }
+            changed = true;
+        }
         if group.group.get() != 1 || covered.is_some() {
             return;
         }
@@ -409,6 +420,7 @@ fn hunt_causes_omit_a_failure_covered_before_the_group_passed() {
         );
     });
     let covered = covered.expect("the hunt never recorded group 1");
+    assert!(changed, "the hunt never recorded group 2");
     let second = j
         .events
         .iter()
@@ -425,7 +437,7 @@ fn hunt_causes_omit_a_failure_covered_before_the_group_passed() {
                 );
             }
             Payload::TunerDecision(td) if td.activity != Activity::Hunt => continue,
-            Payload::TunerDecision(_) => {}
+            Payload::TunerDecision(_) | Payload::Combination(_) => {}
             _ => continue,
         }
         assert!(
@@ -436,6 +448,18 @@ fn hunt_causes_omit_a_failure_covered_before_the_group_passed() {
         );
     }
     j.assert_resumes();
+}
+
+#[test]
+fn hunt_causes_omit_a_failure_covered_before_the_group_passed() {
+    assert_covered_failure_omitted(None);
+}
+
+#[test]
+fn hunt_causes_omit_a_covered_failure_after_stricter_evidence_settings() {
+    assert_covered_failure_omitted(Some(
+        r#"{"durations":{"checking_idle_s":120},"evidence":{"miss":0.001,"rate":0.5}}"#,
+    ));
 }
 
 #[test]
