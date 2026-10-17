@@ -504,7 +504,8 @@ fn resolve_joint(
         None => past_limit_rate,
     };
     let after_s = path.key("after_s").nonnegative(joint.after_s)?;
-    let signal = failure_signal(&path.key("signal"), joint.signal)?;
+    let signal =
+        failure_signal(joint.signal).map_err(|problem| path.key("signal").error(problem))?;
     let crash_mce_core = joint
         .crash_mce_core
         .map(|core| core_id(&path.key("crash_mce_core"), core, cores))
@@ -519,12 +520,9 @@ fn resolve_joint(
     })
 }
 
-fn failure_signal(
-    path: &Path<'_>,
-    signal: Option<Signal>,
-) -> Result<Option<Signal>, InvalidMachine> {
+pub(crate) fn failure_signal(signal: Option<Signal>) -> Result<Option<Signal>, Problem> {
     match signal {
-        Some(signal) if signal_slot(signal).is_none() => Err(path.error(Problem::Unsupported)),
+        Some(signal) if signal_slot(signal).is_none() => Err(Problem::Unsupported),
         other => Ok(other),
     }
 }
@@ -544,7 +542,8 @@ fn resolve_scripts(
             return Err(path.key("trial").error(Problem::Duplicate));
         }
         let script = Script {
-            signal: failure_signal(&path.key("signal"), def.signal)?,
+            signal: failure_signal(def.signal)
+                .map_err(|problem| path.key("signal").error(problem))?,
             at_s: path.key("at_s").nonnegative(def.at_s)?,
             core: core_id(&path.key("core"), def.core, cores)?,
             reset: def.reset,
