@@ -231,8 +231,9 @@ object_only! {
 }
 
 pub trait Kernel {
-    /// An earlier boot missing from the journal is `Error::BootMissing`.
-    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, Error>;
+    /// An earlier boot missing from the journal is `Error::BootMissing`. The partial value keeps
+    /// the MCEs decoded before a read failure.
+    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>>;
     /// Reads after an exact cursor, or the whole boot when `after` is `None`. An unresumable cursor
     /// is `Error::CursorMissing`, never a silently shortened interval. The partial value is the
     /// MCEs read before the failure.

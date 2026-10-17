@@ -74,7 +74,13 @@ fn the_host_journal_answers_for_its_boots() -> Result<(), Box<dyn Error>> {
     );
     let unknown = kernel.mces(&BootId::from(UNKNOWN_BOOT.to_owned()), Duration::ZERO);
     assert!(
-        matches!(unknown, Err(togi_machine::Error::BootMissing)),
+        matches!(
+            unknown,
+            Err(togi_machine::Partial {
+                error: togi_machine::Error::BootMissing,
+                ..
+            })
+        ),
         "{unknown:?}"
     );
 

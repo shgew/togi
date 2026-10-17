@@ -523,7 +523,11 @@ struct Scripted {
 }
 
 impl Kernel for Scripted {
-    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<togi_machine::Mce>, Error> {
+    fn mces(
+        &mut self,
+        boot: &BootId,
+        since: Duration,
+    ) -> Result<Vec<togi_machine::Mce>, Partial<Vec<togi_machine::Mce>>> {
         self.inner.mces(boot, since)
     }
 

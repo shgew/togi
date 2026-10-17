@@ -263,15 +263,21 @@ fn rows(out: &[u8]) -> impl Iterator<Item = &[u8]> {
         .filter(|row| !row.is_empty())
 }
 
-pub(crate) fn mce_messages(out: &[u8], since: Duration) -> Result<Vec<Message>, DecodeError> {
+pub(crate) fn mce_messages(out: &[u8], since: Duration) -> (Vec<Message>, Option<DecodeError>) {
     let mut messages = Vec::new();
     for row in rows(out) {
-        let message = object::<Entry>(row)?.message()?;
+        let message = match object::<Entry>(row)
+            .map_err(DecodeError::from)
+            .and_then(|entry| entry.message())
+        {
+            Ok(message) => message,
+            Err(error) => return (messages, Some(error)),
+        };
         if message.monotonic >= since {
             messages.push(message);
         }
     }
-    Ok(messages)
+    (messages, None)
 }
 
 pub(crate) fn reset_texts(out: &[u8]) -> Result<Vec<String>, DecodeError> {

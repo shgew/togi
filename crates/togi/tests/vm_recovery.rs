@@ -292,8 +292,11 @@ mod vm_recovery {
     struct VmKernel;
 
     impl Kernel for VmKernel {
-        fn mces(&mut self, _: &BootId, _: Duration) -> Result<Vec<Mce>, Error> {
-            Err(other("the VM has no kernel log reader"))
+        fn mces(&mut self, _: &BootId, _: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>> {
+            Err(Partial {
+                value: Vec::new(),
+                error: other("the VM has no kernel log reader"),
+            })
         }
 
         fn read_mces(

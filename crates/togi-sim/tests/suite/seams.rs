@@ -242,7 +242,14 @@ fn a_crashed_machine_rejects_its_operations_and_does_not_move_its_clock() {
         ("boot", machine.host.boot_id().map(drop)),
         ("topology", machine.host.topology().map(drop)),
         ("bios", machine.host.bios_context().map(drop)),
-        ("mces", machine.kernel.mces(&boot, Duration::ZERO).map(drop)),
+        (
+            "mces",
+            machine
+                .kernel
+                .mces(&boot, Duration::ZERO)
+                .map(drop)
+                .map_err(|partial| partial.error),
+        ),
         ("reset", machine.kernel.reset_reason(&boot).map(drop)),
         (
             "reset after",
@@ -429,7 +436,10 @@ fn unknown_boots_and_cursors_are_named_errors() {
     ));
     assert!(matches!(
         rig.machine.kernel.mces(&missing, Duration::ZERO),
-        Err(Error::BootMissing)
+        Err(Partial {
+            error: Error::BootMissing,
+            ..
+        })
     ));
     assert!(matches!(
         rig.machine.kernel.reset_reason(&missing),

@@ -139,8 +139,15 @@ fn a_cleanup_error_follows_the_error_that_ended_the_run() {
 struct Unreadable;
 
 impl Kernel for Unreadable {
-    fn mces(&mut self, _: &BootId, _: Duration) -> Result<Vec<togi_machine::Mce>, Error> {
-        Err(Error::Crashed)
+    fn mces(
+        &mut self,
+        _: &BootId,
+        _: Duration,
+    ) -> Result<Vec<togi_machine::Mce>, Partial<Vec<togi_machine::Mce>>> {
+        Err(Partial {
+            value: Vec::new(),
+            error: Error::Crashed,
+        })
     }
 
     fn read_mces(
@@ -507,7 +514,11 @@ struct Tail {
 }
 
 impl Kernel for Tail {
-    fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<togi_machine::Mce>, Error> {
+    fn mces(
+        &mut self,
+        boot: &BootId,
+        since: Duration,
+    ) -> Result<Vec<togi_machine::Mce>, Partial<Vec<togi_machine::Mce>>> {
         self.inner.mces(boot, since)
     }
 

@@ -163,35 +163,24 @@ impl Crashes<'_> {
     fn classify_boot(&mut self, crashed: &BootId, confirmed: bool) -> Result<bool, Halt> {
         let current = self.recovery.boot;
         let next = self.state().next_boot(crashed, current).clone();
-        let own = self
-            .read(crashed, true, |kernel| kernel.mces(crashed, Duration::ZERO))?
-            .unwrap_or_default();
-        let retained = self
-            .read(&next, next != *current, |kernel| {
-                kernel.mces(&next, Duration::ZERO)
-            })?
-            .unwrap_or_default();
+        let own_error = self.read_mces(crashed, false, true)?;
+        let retained_error = self.read_mces(&next, true, next != *current)?;
+        let evidence = self.has_evidence(crashed);
+        if !evidence && let Some(error) = own_error.or(retained_error) {
+            return Err(Halt::Unreadable(error));
+        }
         let reason = self
-            .read(crashed, true, |kernel| kernel.reset_reason_after(crashed))?
+            .read(crashed, true, evidence, |kernel| {
+                kernel.reset_reason_after(crashed)
+            })?
             .unwrap_or_else(unread_reason);
-        let confirmed = confirmed || reason.kind.is_some() || self.any_reason()?;
+        let confirmed = confirmed || reason.kind.is_some() || self.any_reason(evidence)?;
 
         let open = self
             .state()
             .open_trial()
             .filter(|open| open.boot == *crashed);
         let in_trial = open.is_some();
-        let signalled = open.is_some_and(|open| open.failure.is_some());
-        let window: Vec<bool> = own
-            .iter()
-            .map(|mce| open.is_some_and(|open| open.includes_mce(Some(mce.monotonic))))
-            .collect();
-        for (mce, inside) in own.iter().zip(window) {
-            self.record(mce, crashed, !inside)?;
-        }
-        for mce in retained.iter().filter(|mce| !mce.corrected) {
-            self.record(mce, &next, false)?;
-        }
 
         let state = self.state();
         let causes = state.recorded_for(crashed, current);
@@ -199,7 +188,7 @@ impl Crashes<'_> {
         let kind = classify_crash(&CrashFacts {
             in_trial,
             applied: applied.is_some(),
-            evidence: signalled || !causes.is_empty(),
+            evidence,
             reason: reason.clone(),
             confirmed,
         });
@@ -239,15 +228,60 @@ impl Crashes<'_> {
 
     /// Whether the kernel of any boot of the journal logged a reset reason: then it reports them, and a crash it
     /// gave no reason for is no reset the hardware would have named.
-    fn any_reason(&mut self) -> Result<bool, Halt> {
+    fn any_reason(&mut self, evidence: bool) -> Result<bool, Halt> {
         let boots = self.state().boots().to_vec();
         for boot in &boots {
-            let reason = self.read(boot, true, |kernel| kernel.reset_reason(boot))?;
+            let reason = self.read(boot, true, evidence, |kernel| kernel.reset_reason(boot))?;
             if reason.is_some_and(|reason| reason.kind.is_some()) {
                 return Ok(true);
             }
         }
         Ok(false)
+    }
+
+    fn has_evidence(&self, crashed: &BootId) -> bool {
+        self.state()
+            .open_trial()
+            .is_some_and(|open| open.boot == *crashed && open.failure.is_some())
+            || !self
+                .state()
+                .recorded_for(crashed, self.recovery.boot)
+                .is_empty()
+    }
+
+    fn read_mces(
+        &mut self,
+        from: &BootId,
+        retained: bool,
+        missing: bool,
+    ) -> Result<Option<KernelUnreadable>, Halt> {
+        self.wait_due()?;
+        loop {
+            let (mces, error) = match self.recovery.kernel.mces(from, Duration::ZERO) {
+                Ok(mces) => (mces, None),
+                Err(partial) => (partial.value, Some(partial.error)),
+            };
+            for mce in &mces {
+                if retained && mce.corrected {
+                    continue;
+                }
+                let between = !retained
+                    && self.state().open_trial().is_none_or(|open| {
+                        open.boot != *from || !open.includes_mce(Some(mce.monotonic))
+                    });
+                self.record(mce, from, between)?;
+            }
+            match error {
+                None => return Ok(None),
+                Some(Error::BootMissing) if missing => return Ok(None),
+                Some(Error::Crashed) => return Err(machine(Error::Crashed)),
+                Some(error) => match self.retry(from, &error) {
+                    Ok(()) => {}
+                    Err(Halt::Unreadable(error)) => return Ok(Some(error)),
+                    Err(halt) => return Err(halt),
+                },
+            }
+        }
     }
 
     /// Records a machine check of `from` unless the journal already has it.
@@ -284,8 +318,24 @@ impl Crashes<'_> {
         &mut self,
         boot: &BootId,
         missing: bool,
+        evidence: bool,
         mut read: impl FnMut(&mut dyn Kernel) -> Result<T, Error>,
     ) -> Result<Option<T>, Halt> {
+        self.wait_due()?;
+        loop {
+            match read(&mut *self.recovery.kernel) {
+                Ok(value) => return Ok(Some(value)),
+                Err(Error::BootMissing) if missing => return Ok(None),
+                Err(Error::Crashed) => return Err(machine(Error::Crashed)),
+                Err(error) => match self.retry(boot, &error) {
+                    Err(Halt::Unreadable(_)) if evidence => return Ok(None),
+                    result => result?,
+                },
+            }
+        }
+    }
+
+    fn wait_due(&mut self) -> Result<(), Halt> {
         if !self.waited
             && let Some(wait) = self
                 .state()
@@ -296,14 +346,7 @@ impl Crashes<'_> {
         {
             self.wait(*wait)?;
         }
-        loop {
-            match read(&mut *self.recovery.kernel) {
-                Ok(value) => return Ok(Some(value)),
-                Err(Error::BootMissing) if missing => return Ok(None),
-                Err(Error::Crashed) => return Err(machine(Error::Crashed)),
-                Err(error) => self.retry(boot, &error)?,
-            }
-        }
+        Ok(())
     }
 
     fn retry(&mut self, boot: &BootId, error: &Error) -> Result<(), Halt> {
