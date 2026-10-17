@@ -29,6 +29,51 @@ def test-golden [] {
     assert equal (board-output {|args| fixture-gh $args} $now) (open --raw ($fixtures | path join board.golden))
 }
 
+def test-hidden-blockers [] {
+    let response = ([{
+        data: {repository: {
+            nameWithOwner: shgew/togi
+            issues: {nodes: [{
+                number: 42, title: 'Ready after hidden blockers'
+                labels: {nodes: [{name: feature} {name: P2}]}
+                blockedBy: {nodes: [null {} {number: 1, state: CLOSED}]}
+            }]}
+        }}
+    }] | to json --raw)
+    let output = (board-output {|args|
+        if ($args | last | str contains 'issues(states: OPEN') { $response } else { fixture-gh $args }
+    } $now)
+    assert str contains $output '      #42 Ready after hidden blockers'
+}
+
+def test-ascii-issue-patterns [] {
+    let pulls = [
+        {number: 1, body: 'Closes #1é'}
+        {number: 2, body: 'éCloses #1'}
+        {number: 3, body: 'Closes #١'}
+        {number: 4, body: 'Refs #2 Refs #1'}
+        {number: 5, body: 'Closes #1_'}
+        {number: 6, body: 'xCloses #1'}
+        {number: 7, body: 'ſCloses #1'}
+        {number: 8, body: 'Closes #1K'}
+    ]
+    assert equal (pulls-for 1 $pulls | get number) [1 2 4 7 8]
+    let b = (build shgew/togi [
+        ($base | merge {number: 1, title: 'Ruleset 1'})
+        ($base | merge {number: 2, title: 'Ruleset ١'})
+    ] [] {limit: '', expires: null} $now)
+    assert equal ($b.rulesets | get number) [1]
+}
+
+def test-parent-number-grouping [] {
+    let groups = (group [
+        {number: 1, labels: [P1], parent: {number: 9, title: 'Block: old title'}}
+        {number: 2, labels: [P1], parent: {number: 9, title: 'Block: new title'}}
+    ])
+    assert equal ($groups | each {|g| $g.issues | get number}) [[1 2]]
+    assert equal $groups.0.parent.title 'Block: old title'
+}
+
 def test-fetch-failures [] {
     for case in [
         {failing: 'issues(states: OPEN', expected: 'fetch issues: HTTP 401'}
@@ -200,5 +245,8 @@ def main [] {
     test-work
     test-group
     test-hardware-exclusivity
-    print 'board: 12 tests passed'
+    test-hidden-blockers
+    test-ascii-issue-patterns
+    test-parent-number-grouping
+    print 'board: 15 tests passed'
 }

@@ -77,7 +77,7 @@ def issue [value: record]: nothing -> record {
         labels: (nodes $value.labels? | each {|l| string-field ($l.name? | default '')})
         assignees: (nodes $value.assignees? | each {|a| string-field ($a.login? | default '')})
         parent: (parent $value.parent?)
-        blockers: (nodes $value.blockedBy? | where state == OPEN | each {|b| int-field ($b.number? | default 0)})
+        blockers: (nodes $value.blockedBy? | where {|b| $b.state? == OPEN} | each {|b| int-field ($b.number? | default 0)})
         total: (int-field ($summary.total? | default 0))
         completed: (int-field ($summary.completed? | default 0))
     }
@@ -156,7 +156,7 @@ export def overlaps [a: string, b: string]: nothing -> bool {
 
 export def pulls-for [number: int, pulls: list<record>]: nothing -> list<record> {
     $pulls | where {|p|
-        $p.body | parse --regex '(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?)[ \t]*:?[ \t]+#(?<number>\d+)\b' | any {|m| $m.number == ($number | into string)}
+        $p.body | parse --regex '(?<![A-Za-z0-9_])(?i:close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs?)[ \t]*:?[ \t]+#(?<number>[0-9]+)(?![A-Za-z0-9_])' | any {|m| $m.number == ($number | into string)}
     } | sort-by number
 }
 
@@ -171,7 +171,7 @@ export def group [issues: list<record>]: nothing -> list<record> {
         $i | insert priority (priority $i) | insert parent_order ($i.parent?.number? | default 9223372036854775807)
     } | sort-by priority parent_order | reduce --fold [] {|i, groups|
         let last = (if ($groups | is-empty) { {} } else { $groups | last })
-        if $last.priority? == $i.priority and $last.parent? == $i.parent {
+        if $last.priority? == $i.priority and $last.parent?.number? == $i.parent?.number? {
             $groups | update (($groups | length) - 1) {|g| $g | update issues ($g.issues | append $i)}
         } else {
             $groups | append {priority: $i.priority, parent: $i.parent, issues: [$i]}
@@ -212,7 +212,7 @@ export def build [repo: string, issues: list<record>, pulls: list<record>, limit
                 if ($paths | is-not-empty) { {ready: $r.number, progress: $p.number, paths: $paths} }
             }
         } | flatten)
-        rulesets: ($sorted | where title =~ '^Ruleset (\d+)$')
+        rulesets: ($sorted | where title =~ '^Ruleset ([0-9]+)$')
     }
 }
 
