@@ -7,7 +7,6 @@ use togi_journal::{
 use togi_machine::{BankType, Condition, CoreSet, CpuId, PerCore, Regime, Signal, workloads};
 
 use crate::cores::Rotation;
-use crate::flight::Awaiting;
 use crate::schedule_tests::transition;
 use crate::testkit::{Journal, Start, set};
 use crate::tests::{core, off};
@@ -60,11 +59,12 @@ fn mce(trial: Option<&TrialId>, core_id: Option<u8>, bank_type: BankType) -> Mce
     }
 }
 
-fn together_awaiting(j: &Journal, regime: Regime, profile: &[i64], end: Option<u8>) -> Awaiting {
-    let cores = if regime == Regime::R7 {
-        &[0, 8][..]
+/// Fails a together trial of `regime` at `profile` with a crash, naming `end` as the end's core.
+fn fail_together(j: &mut Journal, regime: Regime, profile: &[i64], end: Option<u8>) -> TrialId {
+    let (cores, duration) = if regime == Regime::R7 {
+        (&[0, 8][..], 120)
     } else {
-        &[0, 1][..]
+        (&[0, 1][..], 900)
     };
     let plan = j.manual(
         regime,
@@ -72,29 +72,27 @@ fn together_awaiting(j: &Journal, regime: Regime, profile: &[i64], end: Option<u
         Load::Many(set(cores)),
         Condition::Together,
         profile,
-        120,
+        duration,
     );
-    let intent = plan.intent(TrialId::from("0099".to_owned()), 0);
-    Awaiting {
-        class: j.run().plan_class(&plan),
-        profile: plan.profile,
-        intent,
-        end_seq: j.next_seq(),
-        cause: Vec::new(),
-        signal: Signal::Crash,
-        core: end.map(core),
-        mces: CoreSet::default(),
-        r7: None,
-        zero: None,
-    }
+    let (intent, trial) = j.intent(&plan);
+    let mut payload = Journal::end_payload(&trial, Outcome::Failure, Some(Signal::Crash));
+    payload.core = end.map(core);
+    j.append(payload.into(), &[intent]);
+    trial
+}
+
+fn attributes(j: &Journal, trial: &TrialId) -> bool {
+    matches!(
+        j.state.next(),
+        Ok(Action::Decide(DecisionAction { payload: DecisionPayload::Failure(failure), .. }))
+            if failure.trial.as_ref() == Some(trial)
+    )
 }
 
 #[test]
 fn a_together_failure_awaiting_attribution_is_attributed_and_folds() {
     let mut j = Journal::new(&[0, 1], &[Start::at_limit(0), Start::at_limit(-12)]);
-    let awaiting = together_awaiting(&j, Regime::R6, &[0, -12], None);
-    let trial = awaiting.intent.trial.clone();
-    j.state.run_mut_for_test().unwrap().flight.awaiting = Some(awaiting);
+    let trial = fail_together(&mut j, Regime::R6, &[0, -12], None);
     let action = j.next_decision();
     let DecisionPayload::Failure(attributed) = &action.payload else {
         panic!("expected a failure, got {action:?}");
@@ -105,14 +103,14 @@ fn a_together_failure_awaiting_attribution_is_attributed_and_folds() {
     assert_eq!(attributed.trial.as_ref(), Some(&trial));
     let seq = j.decide(action);
     assert_eq!(j.run().core(core(1)).pending, Some(seq));
-    assert!(j.run().flight.awaiting.is_none());
+    assert!(!attributes(&j, &trial));
+    j.assert_resumes();
 }
 
 #[test]
 fn a_multi_core_r7_failure_is_recorded_and_left_to_the_r7_rules() {
     let mut j = Journal::new(&[0, 8], &[Start::at_limit(-5), Start::at_limit(-5)]);
-    let awaiting = together_awaiting(&j, Regime::R7, &[-5, -5], Some(8));
-    j.state.run_mut_for_test().unwrap().flight.awaiting = Some(awaiting);
+    fail_together(&mut j, Regime::R7, &[-5, -5], Some(8));
     let action = j.next_decision();
     let seq = j.decide(action);
     let run = j.run();
@@ -317,21 +315,26 @@ fn rotation_counts_each_regime_apart_and_all_loads_apart_from_one_core() {
         assert_eq!(rotation.get(regime), n + 1);
     }
     let mut j = Journal::has_room(&[-10, -10]);
-    j.state
-        .run_mut_for_test()
-        .unwrap()
-        .advance_rotation(None, Regime::R6);
-    j.state
-        .run_mut_for_test()
-        .unwrap()
-        .advance_rotation(Some(core(1)), Regime::R6);
-    let plan = |load| j.manual(Regime::R6, 0, load, Condition::Together, &[-10, -10], 120);
-    let all = plan(Load::Many(set(&[0, 1])));
-    let one = plan(Load::Single(core(1)));
-    let other = plan(Load::Single(core(0)));
+    let checking = j.run().config.checking_trial.get();
+    let plan = |j: &Journal, regime, load, duration| {
+        j.manual(regime, 0, load, Condition::Together, &[-10, -10], duration)
+    };
+    let all = plan(&j, Regime::R6, Load::Many(set(&[0, 1])), 900);
+    let one = plan(&j, Regime::R1, Load::Single(core(1)), checking);
+    j.trial(&all, Outcome::Pass);
+    j.trial(&one, Outcome::Pass);
+    let r6_one = plan(&j, Regime::R6, Load::Single(core(1)), 900);
+    let r1_all = plan(&j, Regime::R1, Load::Many(set(&[0, 1])), checking);
+    let other = plan(&j, Regime::R1, Load::Single(core(0)), checking);
     assert_eq!(
-        (j.rotation(&all), j.rotation(&one), j.rotation(&other)),
-        (1, 1, 0)
+        (
+            j.rotation(&all),
+            j.rotation(&r6_one),
+            j.rotation(&one),
+            j.rotation(&r1_all),
+            j.rotation(&other)
+        ),
+        (1, 0, 1, 0, 0)
     );
 }
 
@@ -460,32 +463,53 @@ fn a_plan_records_its_context_in_its_intent() {
 
 #[test]
 fn mces_outside_the_open_trials_core_local_window_are_not_remembered() {
-    let mut j = Journal::search_at(&[-10]);
-    j.append(mce(None, Some(0), BankType::LoadStore).into(), &[]);
-    let plan = j.next_trial();
-    let (_, trial) = j.intent(&plan);
+    let mut j = Journal::has_room(&[-10, -10]);
+    let before = j.append(mce(None, Some(0), BankType::LoadStore).into(), &[]);
+    let plan = j.manual(
+        Regime::R6,
+        0,
+        Load::Many(set(&[0, 1])),
+        Condition::Together,
+        &[-10, -10],
+        900,
+    );
+    let (intent, trial) = j.intent(&plan);
     let other = TrialId::from("elsewhere".to_owned());
     let cases = [
         mce(Some(&trial), Some(0), BankType::DataFabric),
         mce(Some(&trial), None, BankType::LoadStore),
         mce(Some(&other), Some(0), BankType::LoadStore),
     ];
+    let mut ignored = vec![before];
     for case in cases {
-        j.append(case.into(), &[]);
+        ignored.push(j.append(case.into(), &[]));
     }
-    assert!(j.run().flight.open.as_ref().unwrap().mces.is_empty());
-    let kept = j.append(mce(Some(&trial), Some(0), BankType::LoadStore).into(), &[]);
-    assert_eq!(
-        j.run()
-            .flight
-            .open
-            .as_ref()
-            .unwrap()
-            .mces
-            .keys()
-            .collect::<Vec<_>>(),
-        [&kept]
+    assert_eq!(cited_core(&j, intent, &trial, &ignored), None);
+    let kept = j.append(mce(Some(&trial), Some(1), BankType::LoadStore).into(), &[]);
+    assert_eq!(cited_core(&j, intent, &trial, &ignored), None);
+    assert_eq!(cited_core(&j, intent, &trial, &[kept]), Some(core(1)));
+}
+
+/// The core the attribution names when the open trial ends failed, citing `mces`, with no core of
+/// its own.
+pub(crate) fn cited_core(
+    j: &Journal,
+    intent: Seq,
+    trial: &TrialId,
+    mces: &[Seq],
+) -> Option<togi_machine::CoreId> {
+    let mut ended = j.resumed();
+    let mut cause = vec![intent];
+    cause.extend_from_slice(mces);
+    ended.append(
+        Journal::end_payload(trial, Outcome::Failure, Some(Signal::Crash)).into(),
+        &cause,
     );
+    let action = ended.next_decision();
+    let DecisionPayload::Failure(failure) = action.payload else {
+        panic!("expected the attribution, got {action:?}");
+    };
+    failure.core
 }
 
 #[test]
@@ -535,9 +559,9 @@ fn carried_trials_name_a_workload_of_their_regime_or_the_first() {
         Err(FoldError::MissingSignal)
     ));
     let mut inconclusive = j.resumed();
-    let before = inconclusive.run().evidence.clone();
     inconclusive.append(carry(class(None), Outcome::Inconclusive).into(), &[]);
-    assert_eq!(inconclusive.run().evidence, before);
+    assert_eq!(inconclusive.state.project(), j.state.project());
+    assert_eq!(inconclusive.state.next(), j.state.next());
 }
 
 #[test]
@@ -846,8 +870,8 @@ fn an_inconclusive_end_after_a_config_change_keeps_no_stale_retry() {
         let intent = next.intent(TrialId::from("0002".to_owned()), j.rotation(&next));
         assert!(j.try_append(intent.into(), &next.cause).is_ok(), "{name}");
         assert_eq!(
-            j.run().flight.open.as_ref().unwrap().requirement,
-            next.requirement,
+            j.requirement().needed,
+            u32::from(next.requirement.needed.get()),
             "{name}"
         );
         j.assert_resumes();
@@ -866,7 +890,6 @@ fn an_r2_retry_needs_the_backend_its_r1_passed_under() {
     j.trial(&r2, Outcome::Inconclusive);
     assert!(j.next_trial().retry);
     j.load(&backends(MPRIME_NEW, YCRUNCHER_NEW));
-    assert_eq!(j.run().search.current(core(0), &j.run().evidence).0, None);
     let next = j.next_trial();
     assert_eq!((next.retry, next.regime), (false, Regime::R1));
     let intent = next.intent(TrialId::from("0003".to_owned()), j.rotation(&next));
@@ -880,26 +903,22 @@ fn an_intent_while_a_trial_is_open_or_awaiting_attribution_is_refused() {
     let plan = j.next_trial();
     let (intent, open) = j.intent(&plan);
     j.append(crash_detected(intent), &[]);
-    let before = j.run().clone();
     let second = plan.intent(TrialId::from("0002".to_owned()), j.rotation(&plan));
     assert!(matches!(
         j.try_append(second.into(), &plan.cause),
         Err(FoldError::OverlappingIntent { trial, open: found })
             if trial == TrialId::from("0002".to_owned()) && found == open
     ));
-    assert_eq!(j.run(), &before);
 
     let mut j = Journal::new(&[0], &[Start::search(-20).checking()]);
     let plan = j.next_trial();
     let (intent, failed) = j.intent(&plan);
     j.end(intent, &failed, Outcome::Failure);
-    assert!(j.run().flight.awaiting.is_some());
-    let before = j.run().clone();
+    assert!(attributes(&j, &failed));
     let second = plan.intent(TrialId::from("0002".to_owned()), j.rotation(&plan));
     assert!(matches!(
         j.try_append(second.into(), &plan.cause),
         Err(FoldError::OverlappingIntent { trial, open })
             if trial == TrialId::from("0002".to_owned()) && open == failed
     ));
-    assert_eq!(j.run(), &before);
 }

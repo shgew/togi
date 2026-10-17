@@ -3,6 +3,7 @@ use std::error::Error as _;
 use std::io;
 
 use proptest::prelude::*;
+use test_case::test_case;
 
 use super::*;
 
@@ -167,59 +168,49 @@ fn two_retries_then_exhaustion_clears_saved_entry_and_stays_at_three() {
     assert!(!bootloader.values.contains_key("saved_entry"));
 }
 
-#[test]
-fn stored_counts_map_to_the_next_count() {
-    for (stored, want) in [
-        (None, 1),
-        (Some(""), 1),
-        (Some("0"), 1),
-        (Some("1"), 2),
-        (Some("2"), 3),
-        (Some("3"), 3),
-    ] {
-        let values: Vec<_> = stored.map(|v| (COUNT_VARIABLE, v)).into_iter().collect();
-        let mut bootloader = MemoryBootloader::new(&values);
-        restart_limit(&mut bootloader).unwrap();
-        assert_eq!(
-            bootloader.values[COUNT_VARIABLE],
-            want.to_string(),
-            "{stored:?}"
-        );
-    }
+#[test_case(None, 1; "unset")]
+#[test_case(Some(""), 1; "empty")]
+#[test_case(Some("0"), 1; "zero")]
+#[test_case(Some("1"), 2; "one")]
+#[test_case(Some("2"), 3; "two")]
+#[test_case(Some("3"), 3; "three saturates")]
+fn stored_counts_map_to_the_next_count(stored: Option<&str>, want: u8) {
+    let values: Vec<_> = stored.map(|v| (COUNT_VARIABLE, v)).into_iter().collect();
+    let mut bootloader = MemoryBootloader::new(&values);
+    restart_limit(&mut bootloader).unwrap();
+    assert_eq!(
+        bootloader.values[COUNT_VARIABLE],
+        want.to_string(),
+        "{stored:?}"
+    );
 }
 
-#[test]
-fn invalid_counts_grant_no_retry_and_write_nothing() {
-    let long = "9".repeat(301);
-    for value in [
-        "-1",
-        "4",
-        "01",
-        "+1",
-        "1\n",
-        " 1",
-        "1 ",
-        "x",
-        "garbage",
-        "0x1",
-        "１",
-        long.as_str(),
-    ] {
-        let mut bootloader =
-            MemoryBootloader::new(&[(COUNT_VARIABLE, value), ("saved_entry", "togi")]);
-        let error = restart_limit(&mut bootloader).unwrap_err();
-        assert!(
-            matches!(&error, Error::InvalidCount(seen) if seen == value),
-            "{value:?}: {error:?}"
-        );
-        assert_eq!(bootloader.sets, 0, "{value:?}");
-        assert_eq!(bootloader.cleared, 0, "{value:?}");
-        assert_eq!(bootloader.log, ["get togi_restart_count"]);
-        assert_eq!(
-            bootloader.snapshot(),
-            [("saved_entry", "togi"), (COUNT_VARIABLE, value)]
-        );
-    }
+#[test_case("-1"; "negative")]
+#[test_case("4"; "above the limit")]
+#[test_case("01"; "leading zero")]
+#[test_case("+1"; "plus sign")]
+#[test_case("1\n"; "trailing newline")]
+#[test_case(" 1"; "leading space")]
+#[test_case("1 "; "trailing space")]
+#[test_case("x"; "letter")]
+#[test_case("garbage"; "word")]
+#[test_case("0x1"; "hex")]
+#[test_case("１"; "full-width digit")]
+#[test_case(&"9".repeat(301); "overlong")]
+fn invalid_counts_grant_no_retry_and_write_nothing(value: &str) {
+    let mut bootloader = MemoryBootloader::new(&[(COUNT_VARIABLE, value), ("saved_entry", "togi")]);
+    let error = restart_limit(&mut bootloader).unwrap_err();
+    assert!(
+        matches!(&error, Error::InvalidCount(seen) if seen == value),
+        "{value:?}: {error:?}"
+    );
+    assert_eq!(bootloader.sets, 0, "{value:?}");
+    assert_eq!(bootloader.cleared, 0, "{value:?}");
+    assert_eq!(bootloader.log, ["get togi_restart_count"]);
+    assert_eq!(
+        bootloader.snapshot(),
+        [("saved_entry", "togi"), (COUNT_VARIABLE, value)]
+    );
 }
 
 #[test]
@@ -267,26 +258,26 @@ fn a_retry_never_clears_the_saved_entry() {
     assert_eq!(bootloader.cleared, 0);
 }
 
-#[test]
-fn a_random_failure_grants_no_retry_and_touches_nothing() {
+#[test_case("0")]
+#[test_case("1")]
+#[test_case("2")]
+fn a_random_failure_grants_no_retry_and_touches_nothing(stored: &str) {
     let broken = getrandom::Error::new_custom(1);
-    for stored in ["0", "1", "2"] {
-        let mut bootloader =
-            MemoryBootloader::new(&[(COUNT_VARIABLE, stored), ("saved_entry", "togi")]);
-        let error = restart_limit_with(&mut bootloader, |_| Err(broken)).unwrap_err();
-        assert!(
-            matches!(&error, Error::Random(source) if *source == broken),
-            "{stored}"
-        );
-        assert!(error.source().is_some());
-        assert_eq!(bootloader.log, ["get togi_restart_count"], "{stored}");
-        assert_eq!(bootloader.sets, 0, "{stored}");
-        assert_eq!(bootloader.cleared, 0, "{stored}");
-        assert_eq!(
-            bootloader.snapshot(),
-            [("saved_entry", "togi"), (COUNT_VARIABLE, stored)]
-        );
-    }
+    let mut bootloader =
+        MemoryBootloader::new(&[(COUNT_VARIABLE, stored), ("saved_entry", "togi")]);
+    let error = restart_limit_with(&mut bootloader, |_| Err(broken)).unwrap_err();
+    assert!(
+        matches!(&error, Error::Random(source) if *source == broken),
+        "{stored}"
+    );
+    assert!(error.source().is_some());
+    assert_eq!(bootloader.log, ["get togi_restart_count"], "{stored}");
+    assert_eq!(bootloader.sets, 0, "{stored}");
+    assert_eq!(bootloader.cleared, 0, "{stored}");
+    assert_eq!(
+        bootloader.snapshot(),
+        [("saved_entry", "togi"), (COUNT_VARIABLE, stored)]
+    );
 }
 
 #[test]
@@ -366,64 +357,47 @@ fn error_display_names_the_operation_without_the_source_text() {
     );
 }
 
-#[test]
-fn sanitize_replaces_cuts_and_trims() {
-    let long = "x".repeat(200);
-    let padded_cut = format!("{} b", "a".repeat(159));
-    for (input, want) in [
-        ("retry", Some("retry")),
-        ("  padded \n", Some("padded")),
-        (
-            "first\nsecond\rthird\ttab\0 ☃",
-            Some("first second third tab? ?"),
-        ),
-        ("\u{7f}\u{1b}[0m", Some("??[0m")),
-        (long.as_str(), Some(&long[..160])),
-        (padded_cut.as_str(), Some(&padded_cut[..159])),
-        ("", None),
-        (" \n\t\r ", None),
-    ] {
-        assert_eq!(
-            ReasonText::sanitize(input).as_ref().map(ReasonText::as_str),
-            want,
-            "{input:?}"
-        );
-    }
+#[test_case("retry", Some("retry"); "plain")]
+#[test_case("  padded \n", Some("padded"); "padded")]
+#[test_case("first\nsecond\rthird\ttab\0 ☃", Some("first second third tab? ?"); "control and non-ascii")]
+#[test_case("\u{7f}\u{1b}[0m", Some("??[0m"); "escape sequence")]
+#[test_case(&"x".repeat(200), Some(&"x".repeat(160)); "overlong is cut")]
+#[test_case(&format!("{} b", "a".repeat(159)), Some(&"a".repeat(159)); "cut then trimmed")]
+#[test_case("", None; "empty")]
+#[test_case(" \n\t\r ", None; "whitespace only")]
+fn sanitize_replaces_cuts_and_trims(input: &str, want: Option<&str>) {
+    assert_eq!(
+        ReasonText::sanitize(input).as_ref().map(ReasonText::as_str),
+        want,
+        "{input:?}"
+    );
 }
 
-#[test]
-fn encoded_records_fit_and_round_trip_for_hostile_reasons() {
+#[test_case(&"x".repeat(200); "overlong")]
+#[test_case(&"\"".repeat(200); "all escaped")]
+#[test_case(&"\\".repeat(200); "backslashes")]
+#[test_case(&"\"\\<&>".repeat(40); "mixed")]
+#[test_case("first\nsecond\rthird\ttab\0 ☃"; "multiline")]
+#[test_case("journal incompatible"; "ordinary")]
+fn encoded_records_fit_and_round_trip_for_hostile_reasons(text: &str) {
     let id = ReasonId::try_from("a".repeat(64)).unwrap();
-    let all_escaped = "\"".repeat(200);
-    let backslashes = "\\".repeat(200);
-    let mixed = "\"\\<&>".repeat(40);
-    let multiline = "first\nsecond\rthird\ttab\0 ☃".to_owned();
-    for text in [
-        "x".repeat(200),
-        all_escaped,
-        backslashes,
-        mixed,
-        multiline,
-        "journal incompatible".to_owned(),
-    ] {
-        let reason = ReasonText::sanitize(&text).unwrap();
-        let record = LeaveReason {
-            id: id.clone(),
-            count: count(3),
-            reason: reason.clone(),
-        };
-        let mut bootloader = MemoryBootloader::new(&[]);
-        write_reason(&mut bootloader, &record).unwrap();
-        let encoded = bootloader.values[REASON_VARIABLE].clone();
-        assert!(encoded.len() <= 300 && printable(&encoded), "{encoded}");
-        let got = read_reason(&mut bootloader).unwrap().unwrap();
-        assert_eq!(got.id, record.id);
-        assert_eq!(got.count, record.count);
-        assert!(reason.as_str().starts_with(got.reason.as_str()));
-        assert!(!got.reason.as_str().ends_with(' '));
-        if encoded.len() < 300 - 2 {
-            assert_eq!(got.reason, reason, "nothing needed cutting: {encoded}");
-        }
+    let reason = ReasonText::sanitize(text).unwrap();
+    let record = LeaveReason {
+        id: id.clone(),
+        count: count(3),
+        reason: reason.clone(),
+    };
+    let mut bootloader = MemoryBootloader::new(&[]);
+    write_reason(&mut bootloader, &record).unwrap();
+    let encoded = bootloader.values[REASON_VARIABLE].clone();
+    assert!(encoded.len() <= 300 && printable(&encoded), "{encoded}");
+    let got = read_reason(&mut bootloader).unwrap().unwrap();
+    assert_eq!(got.id, record.id);
+    assert_eq!(got.count, record.count);
+    assert!(reason.as_str().starts_with(got.reason.as_str()));
+    assert!(!got.reason.as_str().ends_with(' '));
+    if encoded.len() < 300 - 2 {
+        assert_eq!(got.reason, reason, "nothing needed cutting: {encoded}");
     }
 }
 
@@ -456,52 +430,48 @@ fn decoding_accepts_a_well_formed_record() {
     assert_eq!(record.count, count(0));
 }
 
-#[test]
-fn decoding_rejects_invalid_records() {
-    let long_id = "a".repeat(65);
-    let long_reason = "a".repeat(161);
-    let oversized = " ".repeat(301);
-    let cases = [
-        "not JSON".to_owned(),
-        "null".to_owned(),
-        r#"["test",0,"retry"]"#.to_owned(),
-        r#"["test", 0, "retry"]"#.to_owned(),
-        "[]".to_owned(),
-        "{}".to_owned(),
-        "{\n}".to_owned(),
-        String::new(),
-        r#"{"id":"test","reason":"retry"}"#.to_owned(),
-        r#"{"id":"test","count":0}"#.to_owned(),
-        r#"{"count":0,"reason":"retry"}"#.to_owned(),
-        r#"{"id":"","count":0,"reason":"retry"}"#.to_owned(),
-        r#"{"id":"bad id","count":0,"reason":"retry"}"#.to_owned(),
-        r#"{"id":"test","count":-1,"reason":"retry"}"#.to_owned(),
-        r#"{"id":"test","count":4,"reason":"retry"}"#.to_owned(),
-        r#"{"id":"test","count":1.5,"reason":"retry"}"#.to_owned(),
-        r#"{"id":"test","count":"1","reason":"retry"}"#.to_owned(),
-        r#"{"id":"test","count":0,"reason":""}"#.to_owned(),
-        r#"{"id":"test","count":0,"reason":" retry"}"#.to_owned(),
-        r#"{"id":"test","count":0,"reason":"retry\nline"}"#.to_owned(),
-        r#"{"id":"test","count":0,"reason":"\u2603"}"#.to_owned(),
-        r#"{"id":"test","count":0,"reason":"retry","extra":true}"#.to_owned(),
-        r#"{"id":"test","count":0,"reason":"retry"} {}"#.to_owned(),
-        r#"{"id":"test","count":0,"reason":"retry"}x"#.to_owned(),
-        r#"{"id":"test","id":"other","count":0,"reason":"retry"}"#.to_owned(),
-        r#"{"id":"test","count":0,"count":1,"reason":"retry"}"#.to_owned(),
-        r#"{"id":"test","count":0,"reason":"retry","reason":"other"}"#.to_owned(),
-        format!(r#"{{"id":"{long_id}","count":0,"reason":"retry"}}"#),
-        format!(r#"{{"id":"test","count":0,"reason":"{long_reason}"}}"#),
-        oversized,
-        "{\"id\":\"test\",\"count\":0,\"reason\":\"a\tb\"}".to_owned(),
-    ];
-    for case in &cases {
-        let error = LeaveReason::decode(case).unwrap_err();
-        assert!(matches!(error, Error::InvalidRecord(_)), "{case:?}");
-        let mut bootloader = MemoryBootloader::new(&[(REASON_VARIABLE, case.as_str())]);
-        if !case.is_empty() {
-            assert!(read_reason(&mut bootloader).is_err(), "{case:?}");
-        }
+#[test_case("not JSON"; "not json")]
+#[test_case("null"; "null")]
+#[test_case(r#"["test",0,"retry"]"#; "compact array")]
+#[test_case(r#"["test", 0, "retry"]"#; "spaced array")]
+#[test_case("[]"; "empty array")]
+#[test_case("{}"; "empty object")]
+#[test_case("{\n}"; "newline object")]
+#[test_case(""; "empty")]
+#[test_case(r#"{"id":"test","reason":"retry"}"#; "missing count")]
+#[test_case(r#"{"id":"test","count":0}"#; "missing reason")]
+#[test_case(r#"{"count":0,"reason":"retry"}"#; "missing id")]
+#[test_case(r#"{"id":"","count":0,"reason":"retry"}"#; "empty id")]
+#[test_case(r#"{"id":"bad id","count":0,"reason":"retry"}"#; "space in id")]
+#[test_case(r#"{"id":"test","count":-1,"reason":"retry"}"#; "negative count")]
+#[test_case(r#"{"id":"test","count":4,"reason":"retry"}"#; "count above limit")]
+#[test_case(r#"{"id":"test","count":1.5,"reason":"retry"}"#; "fractional count")]
+#[test_case(r#"{"id":"test","count":"1","reason":"retry"}"#; "string count")]
+#[test_case(r#"{"id":"test","count":0,"reason":""}"#; "empty reason")]
+#[test_case(r#"{"id":"test","count":0,"reason":" retry"}"#; "leading space reason")]
+#[test_case(r#"{"id":"test","count":0,"reason":"retry\nline"}"#; "newline reason")]
+#[test_case(r#"{"id":"test","count":0,"reason":"\u2603"}"#; "non-ascii reason")]
+#[test_case(r#"{"id":"test","count":0,"reason":"retry","extra":true}"#; "extra field")]
+#[test_case(r#"{"id":"test","count":0,"reason":"retry"} {}"#; "trailing object")]
+#[test_case(r#"{"id":"test","count":0,"reason":"retry"}x"#; "trailing text")]
+#[test_case(r#"{"id":"test","id":"other","count":0,"reason":"retry"}"#; "duplicate id")]
+#[test_case(r#"{"id":"test","count":0,"count":1,"reason":"retry"}"#; "duplicate count")]
+#[test_case(r#"{"id":"test","count":0,"reason":"retry","reason":"other"}"#; "duplicate reason")]
+#[test_case(&format!(r#"{{"id":"{}","count":0,"reason":"retry"}}"#, "a".repeat(65)); "overlong id")]
+#[test_case(&format!(r#"{{"id":"test","count":0,"reason":"{}"}}"#, "a".repeat(161)); "overlong reason")]
+#[test_case(&" ".repeat(301); "oversized record")]
+#[test_case("{\"id\":\"test\",\"count\":0,\"reason\":\"a\tb\"}"; "tab reason")]
+fn decoding_rejects_invalid_records(case: &str) {
+    let error = LeaveReason::decode(case).unwrap_err();
+    assert!(matches!(error, Error::InvalidRecord(_)), "{case:?}");
+    let mut bootloader = MemoryBootloader::new(&[(REASON_VARIABLE, case)]);
+    if !case.is_empty() {
+        assert!(read_reason(&mut bootloader).is_err(), "{case:?}");
     }
+}
+
+#[test]
+fn decoding_names_the_reason_a_record_is_invalid() {
     assert!(matches!(
         LeaveReason::decode(&" ".repeat(301)),
         Err(Error::InvalidRecord(RecordError::TooLong))
@@ -516,32 +486,45 @@ fn decoding_rejects_invalid_records() {
     ));
 }
 
+#[test_case(""; "empty")]
+#[test_case("bad\nID"; "newline")]
+#[test_case("bad id"; "space")]
+#[test_case("bad/id"; "slash")]
+#[test_case("ünï"; "non-ascii")]
+#[test_case(&"a".repeat(65); "overlong")]
+fn reason_ids_refuse_invalid_text(id: &str) {
+    assert!(id.parse::<ReasonId>().is_err(), "{id:?}");
+    assert!(ReasonId::try_from(id.to_owned()).is_err(), "{id:?}");
+}
+
+#[test_case("a"; "single letter")]
+#[test_case("A-z_0.9"; "all allowed punctuation")]
+#[test_case("fallback-0123456789abcdef0123456789abcdef"; "fallback id")]
+fn reason_ids_accept_valid_text(id: &str) {
+    assert_eq!(id.parse::<ReasonId>().unwrap().as_str(), id);
+}
+
+#[test_case(4)]
+#[test_case(5)]
+#[test_case(255)]
+fn restart_counts_refuse_values_above_three(value: u8) {
+    assert!(RestartCount::try_from(value).is_err());
+}
+
+#[test_case(""; "empty")]
+#[test_case(" "; "space")]
+#[test_case(" \n\t "; "whitespace")]
+#[test_case(" lead"; "leading space")]
+#[test_case("trail "; "trailing space")]
+#[test_case("line\nbreak"; "newline")]
+#[test_case("☃"; "non-ascii")]
+#[test_case(&"a".repeat(161); "overlong")]
+fn reason_text_refuses_invalid_text(text: &str) {
+    assert!(text.parse::<ReasonText>().is_err(), "{text:?}");
+}
+
 #[test]
-fn constructors_refuse_invalid_metadata() {
-    let long_id = "a".repeat(65);
-    for id in ["", "bad\nID", "bad id", "bad/id", "ünï", long_id.as_str()] {
-        assert!(id.parse::<ReasonId>().is_err(), "{id:?}");
-        assert!(ReasonId::try_from(id.to_owned()).is_err(), "{id:?}");
-    }
-    for id in ["a", "A-z_0.9", "fallback-0123456789abcdef0123456789abcdef"] {
-        assert_eq!(id.parse::<ReasonId>().unwrap().as_str(), id);
-    }
-    for value in [4, 5, 255] {
-        assert!(RestartCount::try_from(value).is_err());
-    }
-    let too_long = "a".repeat(161);
-    for text in [
-        "",
-        " ",
-        " \n\t ",
-        " lead",
-        "trail ",
-        "line\nbreak",
-        "☃",
-        too_long.as_str(),
-    ] {
-        assert!(text.parse::<ReasonText>().is_err(), "{text:?}");
-    }
+fn reason_text_accepts_the_longest_text_and_new_refuses_blank() {
     assert!("a".repeat(160).parse::<ReasonText>().is_ok());
     assert!(matches!(
         LeaveReason::new(" \n\t ", count(0)),

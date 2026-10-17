@@ -531,15 +531,14 @@ fn located_hunt() -> Vec<Event> {
     let config = Config::default();
     let machine = togi_watchtest::default_machine(LOCATED_SEED).expect("the machine builds");
     let mut locating = false;
-    let stop_at_the_first_locate_trial: togi_watchtest::Until =
-        Box::new(move |event| match &event.payload {
-            Payload::HuntGroup(group) => {
-                locating = group.stage == HuntStage::Locate;
-                false
-            }
-            Payload::TrialStart(_) => locating,
-            _ => false,
-        });
+    let stop_at_the_first_locate_trial: togi_watchtest::Until = Box::new(move |event| {
+        if let Payload::HuntGroup(group) = &event.payload {
+            locating = group.stage == HuntStage::Locate;
+            false
+        } else {
+            locating && matches!(event.payload, Payload::TrialStart(_))
+        }
+    });
     let events = togi_watchtest::simulate(
         machine,
         config,

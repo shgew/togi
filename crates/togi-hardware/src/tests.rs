@@ -1,10 +1,7 @@
-#[cfg(target_os = "linux")]
 mod adapters;
 mod clock;
-#[cfg(target_os = "linux")]
 mod diagnose;
 mod files;
-#[cfg(target_os = "linux")]
 mod host;
 mod ranking;
 mod support;

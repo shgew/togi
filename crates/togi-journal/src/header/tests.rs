@@ -12,7 +12,7 @@ fn a_header_gives_its_build_stamp() {
             build.version.as_str(),
             build.ruleset,
             build.schema,
-            build.fixes,
+            build.fixes.get(),
             build.evidence
         ),
         ("1", 3, 1, 0, 2)

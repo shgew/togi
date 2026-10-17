@@ -287,6 +287,66 @@ fn a_marker_that_is_not_a_regular_file_is_refused() {
 }
 
 #[test]
+fn session_entries_list_journals_and_markers_by_name_without_the_lock() {
+    let fs = MemFs::new();
+    for name in [
+        "20260102T000000Z-carry-pending",
+        "20260101T000000Z.jsonl",
+        "20260101T000000Z-reset-all",
+        "20260102T000000Z-compat-pending",
+        "notes.jsonl",
+        "stray-reset-all",
+        "20260101T000000Z-trials/0001/sample.csv",
+    ] {
+        fs.put(format!("/state/archive/{name}"), "");
+    }
+    fs.put("/state/events.jsonl", "");
+    assert_eq!(
+        session_entries_in(&fs, Path::new("/state")).unwrap(),
+        [
+            "20260101T000000Z-reset-all",
+            "20260101T000000Z.jsonl",
+            "20260102T000000Z-carry-pending",
+            "20260102T000000Z-compat-pending",
+        ]
+    );
+    assert_eq!(fs.kind(Path::new("/state/lock")).unwrap(), None);
+}
+
+#[test]
+fn session_entries_of_a_directory_without_an_archive_are_none() {
+    let fs = MemFs::new();
+    fs.put("/state/events.jsonl", "");
+    assert!(
+        session_entries_in(&fs, Path::new("/state"))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_symlinked_session_entry_is_refused_naming_it() {
+    let fs = MemFs::new();
+    fs.put("/elsewhere", "");
+    fs.put("/state/archive/notes", "");
+    fs.symlink("/elsewhere", "/state/archive/20260101T000000Z.jsonl");
+    assert!(matches!(
+        session_entries_in(&fs, Path::new("/state")),
+        Err(DirError::NotRegular { path }) if path == Path::new("/state/archive/20260101T000000Z.jsonl")
+    ));
+}
+
+#[test]
+fn a_session_entry_that_is_a_directory_is_refused_naming_it() {
+    let fs = MemFs::new();
+    fs.put("/state/archive/20260101T000000Z-carry-pending/inside", "");
+    assert!(matches!(
+        session_entries_in(&fs, Path::new("/state")),
+        Err(DirError::NotRegular { path }) if path == Path::new("/state/archive/20260101T000000Z-carry-pending")
+    ));
+}
+
+#[test]
 fn a_symlinked_reset_marker_is_never_followed() {
     let fs = MemFs::new();
     let mut dir = dir(&fs);

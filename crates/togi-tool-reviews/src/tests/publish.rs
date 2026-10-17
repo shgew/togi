@@ -10,14 +10,18 @@ use crate::fakes::{
     read_file,
 };
 use crate::manifest::{PatchStatus, PreviousRecord, read_manifest, write_manifest};
+use crate::parts::{Comment, ZERO_TIME, join_records};
+use crate::record::parse_record;
 use crate::render::tests::{
     deferred, dir_text, finding, first_manifest, fixed, included, reviewer, write_findings,
 };
-use crate::render::{FindingsInput, RECORD_FILE, RecordOutcome, run_render};
+use crate::render::{FindingsInput, RECORD_FILE, RecordFinding, RecordOutcome, run_render};
 use crate::text::quote;
 
 const RECORD_COMMENT_URL: &str = "https://github.com/shgew/togi/pull/700#issuecomment-5001";
 const CHECK_RUN_URL: &str = "https://github.com/shgew/togi/runs/77";
+/// The longest comment body GitHub accepts, in characters.
+const GITHUB_COMMENT_LIMIT: usize = 65_536;
 
 /// Answers publish's gh calls and keeps what was posted.
 #[derive(Default)]
@@ -28,9 +32,11 @@ struct FakeGitHub {
     comments: String,
     check_app: String,
     posted: Vec<&'static str>,
-    comment_body: String,
+    comment_bodies: Vec<String>,
     check_payload: String,
     views: usize,
+    /// The comment post, counted from 1, that fails; 0 for none.
+    fail_on_comment: usize,
 }
 
 impl FakeGitHub {
@@ -56,14 +62,25 @@ impl FakeGitHub {
             return Ok(comments.as_bytes().to_vec());
         }
         if arg(0) == "api" && arg(3).ends_with("/issues/700/comments") {
+            if self.comment_bodies.len() + 1 == self.fail_on_comment {
+                return Err(fail("gh: connection reset"));
+            }
             let Some(body) = arg(5).strip_prefix("body=@") else {
                 return Err(fail(&format!("unexpected comment args {args:?}")));
             };
-            self.comment_body = read_file(body);
+            let body = read_file(body);
+            if body.chars().count() > GITHUB_COMMENT_LIMIT {
+                return Err(fail(
+                    "gh: Validation Failed: body is too long (maximum is 65536 characters) (HTTP 422)",
+                ));
+            }
+            self.comment_bodies.push(body);
             self.posted.push("comment");
-            return Ok(json!({"html_url": RECORD_COMMENT_URL})
-                .to_string()
-                .into_bytes());
+            let url = format!(
+                "https://github.com/shgew/togi/pull/700#issuecomment-{}",
+                5000 + self.comment_bodies.len()
+            );
+            return Ok(json!({ "html_url": url }).to_string().into_bytes());
         }
         if arg(0) == "api" && arg(3).ends_with("/check-runs") {
             self.check_payload = read_file(arg(5));
@@ -106,6 +123,10 @@ fn github(heads: &[&'static str], comments: String) -> Rc<RefCell<FakeGitHub>> {
 
 /// A manifest and its rendered record for a docs-only pull request, with the given finding outcome.
 fn rendered_snapshot(outcome: RecordOutcome) -> tempfile::TempDir {
+    rendered_with(vec![finding("reviewer-1", "P1", "x", None, outcome)])
+}
+
+fn rendered_with(findings: Vec<RecordFinding>) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("temporary directory");
     write_manifest(
         &dir_text(dir.path()),
@@ -114,12 +135,48 @@ fn rendered_snapshot(outcome: RecordOutcome) -> tempfile::TempDir {
     .expect("write manifest");
     let input = FindingsInput {
         reviewers: vec![reviewer("reviewer-1", None, &["docs/howto.md"])],
-        findings: vec![finding("reviewer-1", "P1", "x", None, outcome)],
+        findings,
         ..FindingsInput::default()
     };
     let file = write_findings(dir.path(), &serde_json::to_string(&input).expect("encode"));
     run_render(&mut Vec::new(), &[dir_text(dir.path()), file]).expect("render");
     dir
+}
+
+/// `n` fixed findings of equal length, each with a location and a source URL.
+fn many_findings(n: usize) -> Vec<RecordFinding> {
+    (0..n)
+        .map(|i| RecordFinding {
+            url: Some(format!(
+                "https://github.com/shgew/togi/pull/700#discussion_r{i:06}"
+            )),
+            ..finding(
+                "reviewer-1",
+                "P2",
+                &format!("Finding {i:04}: {}", "the boundary is untested ".repeat(6)),
+                Some(&format!("docs/howto.md:{i:04}")),
+                fixed(),
+            )
+        })
+        .collect()
+}
+
+/// A record with as few findings as put it over GitHub's comment limit, so it is just over.
+fn oversized_snapshot() -> (tempfile::TempDir, usize) {
+    let chars = |n| {
+        record(rendered_with(many_findings(n)).path())
+            .chars()
+            .count()
+    };
+    let (one, two) = (chars(1), chars(2));
+    let n = (GITHUB_COMMENT_LIMIT - one) / (two - one) + 2;
+    let dir = rendered_with(many_findings(n));
+    let over = record(dir.path()).chars().count();
+    assert!(
+        over > GITHUB_COMMENT_LIMIT && over - GITHUB_COMMENT_LIMIT <= two - one,
+        "the record has {over} characters, not just over {GITHUB_COMMENT_LIMIT}"
+    );
+    (dir, n)
 }
 
 fn publish(h: &mut Harness, dir: &Path) -> Result<(), crate::Error> {
@@ -147,8 +204,8 @@ fn publish_posts_record_and_check_on_the_reviewed_head() {
     let f = gh.borrow();
     assert_eq!(vec!["comment", "check"], f.posted);
     assert_eq!(
-        record(dir.path()),
-        f.comment_body,
+        vec![record(dir.path())],
+        f.comment_bodies,
         "the comment is not the rendered record"
     );
     let want_check = format!(
@@ -169,6 +226,111 @@ fn publish_posts_record_and_check_on_the_reviewed_head() {
         2, views,
         "the head is checked before posting and again after"
     );
+}
+
+#[test]
+fn publish_splits_a_record_over_the_comment_limit() {
+    let (dir, n) = oversized_snapshot();
+    let gh = github(&[HEAD_SHA], String::new());
+    let mut h = harness(&gh);
+    publish(&mut h, dir.path()).expect("publish");
+    let f = gh.borrow();
+    assert_eq!(vec!["comment", "comment", "check"], f.posted);
+    assert!(
+        f.check_payload
+            .contains(&format!("Review record: {RECORD_COMMENT_URL}\"")),
+        "the check does not link the first part: {}",
+        f.check_payload
+    );
+    assert_eq!(
+        format!("record {RECORD_COMMENT_URL}\ncheck {CHECK_RUN_URL}\n"),
+        h.stdout()
+    );
+    let posted = f
+        .comment_bodies
+        .iter()
+        .enumerate()
+        .map(|(i, body)| Comment {
+            url: format!(
+                "https://github.com/shgew/togi/pull/700#issuecomment-{}",
+                5001 + i
+            ),
+            created: ZERO_TIME,
+            body: body.clone(),
+        })
+        .collect();
+    let records = join_records(posted).expect("join the posted parts");
+    assert_eq!(1, records.len());
+    assert_eq!(RECORD_COMMENT_URL, records[0].url);
+    assert_eq!(
+        record(dir.path()),
+        records[0].body,
+        "the posted parts do not join back into the rendered record"
+    );
+    let joined = parse_record(&records[0].body).expect("parse the joined record");
+    assert_eq!(n, joined.findings.len());
+    let last = &joined.findings[n - 1];
+    assert_eq!(
+        (format!("\"docs/howto.md:{:04}\"", n - 1), "fixed"),
+        (last.location().to_owned(), last.outcome.status.as_str()),
+        "the last finding lost fields"
+    );
+}
+
+#[test]
+fn publish_resumes_an_interrupted_split_record() {
+    const FIRST_URL: &str = "https://github.com/shgew/togi/pull/700#issuecomment-4999";
+    let (dir, _) = oversized_snapshot();
+    let gh = github(&[HEAD_SHA], String::new());
+    gh.borrow_mut().fail_on_comment = 2;
+    publish(&mut harness(&gh), dir.path()).expect_err("publish survived a failed post");
+    let first = {
+        let f = gh.borrow();
+        assert_eq!(
+            vec!["comment"],
+            f.posted,
+            "a check went out before every part"
+        );
+        f.comment_bodies[0].clone()
+    };
+    let gh = github(
+        &[HEAD_SHA],
+        comments(&[(FIRST_URL, &first, "robotogi[bot]")]),
+    );
+    let mut h = harness(&gh);
+    publish(&mut h, dir.path()).expect("publish");
+    let f = gh.borrow();
+    assert_eq!(vec!["comment", "check"], f.posted);
+    assert!(
+        f.comment_bodies[0].contains("part 2 of 2"),
+        "the rerun did not post the missing part"
+    );
+    assert!(
+        h.stdout().starts_with(&format!("record {FIRST_URL}\n")),
+        "output = {:?}",
+        h.stdout()
+    );
+}
+
+#[test]
+fn publish_refuses_a_split_record_whose_posted_part_differs() {
+    let (dir, _) = oversized_snapshot();
+    let gh = github(&[HEAD_SHA], String::new());
+    publish(&mut harness(&gh), dir.path()).expect("publish");
+    let second = gh.borrow().comment_bodies[1].replace("fixed", "fixes");
+    let gh = github(
+        &[HEAD_SHA],
+        comments(&[(RECORD_COMMENT_URL, &second, "robotogi[bot]")]),
+    );
+    let mut h = harness(&gh);
+    let error = publish(&mut h, dir.path()).expect_err("publish accepted");
+    assert!(
+        error
+            .render()
+            .contains(&format!("differs from {RECORD_FILE}")),
+        "error = {error}, want a mismatch refusal"
+    );
+    assert!(gh.borrow().posted.is_empty(), "a refused publish posted");
 }
 
 #[test]

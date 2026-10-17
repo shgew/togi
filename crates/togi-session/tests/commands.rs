@@ -6,7 +6,7 @@ use std::num::NonZeroU32;
 use jiff::tz::TimeZone;
 use togi_journal::fs::{Fault, Op};
 use togi_journal::{
-    Build, CorePhase, CycleEvent, Journal, MemFs, Payload, ResetTarget, SCHEMA, StateDir,
+    Build, CorePhase, CycleEvent, FixStamp, Journal, MemFs, Payload, ResetTarget, SCHEMA, StateDir,
 };
 use togi_machine::{CancellationToken, CoreId};
 use togi_render::Renderer;
@@ -23,7 +23,7 @@ fn build() -> Build {
         rev: None,
         ruleset: 1,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: 1,
     }
 }

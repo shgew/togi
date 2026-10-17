@@ -10,8 +10,8 @@ use std::convert::Infallible;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Attribution, Build, ConfigLoaded, Event, Failure, Outcome, Payload, SCHEMA, Seq, SessionId,
-    SessionStart, Stamp, TrialEnd, TrialId, TrialIntent,
+    Attribution, Build, ConfigLoaded, DefectId, Event, Failure, FixStamp, Outcome, Payload, SCHEMA,
+    Seq, SessionId, SessionStart, Stamp, TrialEnd, TrialId, TrialIntent,
 };
 use togi_machine::{
     BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, PerCore, Regime, Signal,
@@ -61,7 +61,7 @@ pub(super) fn build(evidence: u32) -> Build {
         rev: None,
         ruleset: 1,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence,
     }
 }
@@ -71,7 +71,7 @@ pub(super) fn refreshed(base: &Build, version: &str) -> Build {
     Build {
         version: version.into(),
         rev: Some("rev".into()),
-        fixes: base.fixes + 1,
+        fixes: FixStamp::through(DefectId::new(base.fixes.get() + 1).unwrap()),
         ..base.clone()
     }
 }

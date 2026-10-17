@@ -1,17 +1,13 @@
-use std::num::NonZeroU32;
-
 use jiff::Timestamp;
 use test_case::test_case;
 use togi_journal::{
     Activity, Attribution, Build, CommandReset, ConfigLoaded, Decision, DefectAnswer,
-    DefectAnswered, DefectDirection, DefectFound, Event, EventKind, Failure, Payload, ResetTarget,
-    SCHEMA, Seq, SessionStart, SessionWarning, Stamp, TunerDecision,
+    DefectAnswered, DefectDirection, DefectFound, DefectId, Event, EventKind, Failure, FixStamp,
+    Payload, ResetTarget, SCHEMA, Seq, SessionStart, SessionWarning, Stamp, TunerDecision,
 };
 use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CoreSet, CpuId, Signal, TargetOffset};
 
-use crate::{
-    Clause, DefectId, DefectState, Entry, FixStamp, KNOWN_DEFECTS, fixed_stamp, is_ordered,
-};
+use crate::{Clause, DefectState, Entry, KNOWN_DEFECTS, fixed_stamp, is_ordered};
 
 const BACKOFF_ON_FAILURE: Clause = Clause {
     decision_kind: EventKind::TunerDecision,
@@ -83,7 +79,7 @@ fn build(fixes: u32) -> Build {
         rev: None,
         ruleset: 1,
         schema: SCHEMA,
-        fixes,
+        fixes: DefectId::new(fixes).map_or(FixStamp::none(), FixStamp::through),
         evidence: 1,
     }
 }
@@ -190,7 +186,7 @@ impl Log {
         self.push(
             decisions,
             DefectFound {
-                id: NonZeroU32::new(id).unwrap(),
+                id: self::id(id),
                 title: "recorded".into(),
                 detail: "recorded detail".into(),
                 pr: 7,
@@ -205,7 +201,7 @@ impl Log {
         self.push(
             &[found],
             DefectAnswered {
-                id: NonZeroU32::new(id).unwrap(),
+                id: self::id(id),
                 cores: cores(at),
                 answer,
             },
@@ -573,9 +569,9 @@ fn known_finding_view_carries_its_entry() {
 
 #[test]
 fn empty_registry_fixed_stamp_zero() {
-    assert_eq!(fixed_stamp(&[]), FixStamp(0));
-    assert_eq!(fixed_stamp(KNOWN_DEFECTS), FixStamp(0));
-    assert_eq!(fixed_stamp(&PAIR), FixStamp(2));
+    assert_eq!(fixed_stamp(&[]), FixStamp::none());
+    assert_eq!(fixed_stamp(KNOWN_DEFECTS), FixStamp::none());
+    assert_eq!(fixed_stamp(&PAIR), FixStamp::through(id(2)));
 
     let mut log = Log::default();
     log.start(0);

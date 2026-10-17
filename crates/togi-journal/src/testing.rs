@@ -6,7 +6,8 @@ use togi_machine::{BootId, CcdId, CoreId, CoreInfo, CpuId};
 use crate::dir::{LockError, StateDir};
 use crate::fs::MemFs;
 use crate::{
-    Build, Event, Journal, Payload, SCHEMA, SessionId, SessionStart, SessionWarning, Stamp,
+    Build, Event, FixStamp, Journal, Payload, SCHEMA, SessionId, SessionStart, SessionWarning,
+    Stamp,
 };
 
 #[expect(
@@ -47,7 +48,7 @@ pub(crate) fn start(session: SessionId) -> Payload {
             rev: None,
             ruleset: 1,
             schema: SCHEMA,
-            fixes: 0,
+            fixes: FixStamp::none(),
             evidence: 1,
         },
         session,

@@ -167,6 +167,7 @@ pub(super) mod tests {
     use std::collections::VecDeque;
     use std::io;
     use std::time::Duration;
+    use test_case::test_case;
 
     use super::{ESCAPE_TIMEOUT, Ready, Source, read_keys};
     use crate::terminal::keys::Key;
@@ -255,43 +256,42 @@ pub(super) mod tests {
         );
     }
 
-    #[test]
-    fn fragmented_left_and_right_arrows_are_one_key_each_in_both_forms() {
-        for (lead, final_byte, want) in [
-            (&b"["[..], &b"C"[..], Key::Right),
-            (b"[", b"D", Key::Left),
-            (b"O", b"C", Key::Right),
-            (b"O", b"D", Key::Left),
-        ] {
-            let (keys, _) = keys([
-                Step::Data(b"\x1b"),
-                Step::Data(lead),
-                Step::Data(final_byte),
-                Step::Eof,
-            ]);
-            assert_eq!(keys, [want], "{lead:?}{final_byte:?}");
-        }
+    #[test_case(b"[", b"C", Key::Right; "csi right")]
+    #[test_case(b"[", b"D", Key::Left; "csi left")]
+    #[test_case(b"O", b"C", Key::Right; "ss3 right")]
+    #[test_case(b"O", b"D", Key::Left; "ss3 left")]
+    fn fragmented_left_and_right_arrows_are_one_key_each_in_both_forms(
+        lead: &'static [u8],
+        final_byte: &'static [u8],
+        want: Key,
+    ) {
+        let (keys, _) = keys([
+            Step::Data(b"\x1b"),
+            Step::Data(lead),
+            Step::Data(final_byte),
+            Step::Eof,
+        ]);
+        assert_eq!(keys, [want]);
     }
 
-    #[test]
-    fn a_quiet_escape_prefix_times_out_into_esc_or_nothing_and_keeps_the_next_key() {
-        for (prefix, want) in [
-            (&b"\x1b"[..], vec![Key::Esc]),
-            (b"\x1b[", vec![]),
-            (b"\x1bO", vec![]),
-        ] {
-            let (keys, timeouts) = keys([
-                Step::Data(prefix),
-                Step::Timeout,
-                Step::Data(b"j"),
-                Step::Eof,
-            ]);
-            let mut want = want;
-            want.push(Key::Char('j'));
-            assert_eq!(keys, want, "{prefix:?}");
-            assert_eq!(timeouts[1], Some(ESCAPE_TIMEOUT));
-            assert_eq!(timeouts[2], None, "the timeout released the prefix");
-        }
+    #[test_case(b"\x1b", &[Key::Esc]; "a lone escape becomes escape")]
+    #[test_case(b"\x1b[", &[]; "a csi prefix becomes nothing")]
+    #[test_case(b"\x1bO", &[]; "an ss3 prefix becomes nothing")]
+    fn a_quiet_escape_prefix_times_out_into_esc_or_nothing_and_keeps_the_next_key(
+        prefix: &'static [u8],
+        released: &[Key],
+    ) {
+        let (keys, timeouts) = keys([
+            Step::Data(prefix),
+            Step::Timeout,
+            Step::Data(b"j"),
+            Step::Eof,
+        ]);
+        let mut want = released.to_vec();
+        want.push(Key::Char('j'));
+        assert_eq!(keys, want);
+        assert_eq!(timeouts[1], Some(ESCAPE_TIMEOUT));
+        assert_eq!(timeouts[2], None, "the timeout released the prefix");
     }
 
     #[test]
@@ -300,12 +300,11 @@ pub(super) mod tests {
         assert_eq!(keys, [Key::Esc]);
     }
 
-    #[test]
-    fn a_stop_or_a_failed_wait_ends_without_flushing() {
-        for end in [Step::Stop, Step::Fail] {
-            let (keys, _) = keys([Step::Data(b"\x1b"), end]);
-            assert_eq!(keys, []);
-        }
+    #[test_case(Step::Stop; "a stop")]
+    #[test_case(Step::Fail; "a failed wait")]
+    fn a_stop_or_a_failed_wait_ends_without_flushing(end: Step) {
+        let (keys, _) = keys([Step::Data(b"\x1b"), end]);
+        assert_eq!(keys, []);
     }
 
     #[test]
@@ -346,16 +345,22 @@ pub(super) mod tests {
                 .unwrap_or_else(|_| panic!("the reader sent nothing within five seconds"))
         }
 
+        fn assert_closed_on_exec(end: &OwnedFd) {
+            assert!(
+                rustix::io::fcntl_getfd(end)
+                    .unwrap()
+                    .contains(rustix::io::FdFlags::CLOEXEC)
+            );
+        }
+
         #[test]
-        fn real_fs_both_ends_of_a_pipe_are_closed_on_exec() {
-            let (read, write) = pipe();
-            for end in [&read, &write] {
-                assert!(
-                    rustix::io::fcntl_getfd(end)
-                        .unwrap()
-                        .contains(rustix::io::FdFlags::CLOEXEC)
-                );
-            }
+        fn real_fs_the_read_end_of_a_pipe_is_closed_on_exec() {
+            assert_closed_on_exec(&pipe().0);
+        }
+
+        #[test]
+        fn real_fs_the_write_end_of_a_pipe_is_closed_on_exec() {
+            assert_closed_on_exec(&pipe().1);
         }
 
         #[test]
