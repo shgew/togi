@@ -7,9 +7,10 @@ use togi_tool_audit::{Completion, DirectoryAudit, Finding, audit_directory, audi
 
 const USAGE: u8 = 2;
 
-/// The command's journal reader and output streams; production supplies the durable disk reader.
+/// The command's journal reader and output streams; production supplies the durable disk reader, which the command
+/// tells how far to hold each directory to its end.
 pub(crate) struct Io<'a> {
-    pub(crate) inspect: &'a dyn Fn(&Path) -> DirectoryAudit,
+    pub(crate) inspect: &'a dyn Fn(&Path, Completion) -> DirectoryAudit,
     pub(crate) out: &'a mut dyn io::Write,
     pub(crate) err: &'a mut dyn io::Write,
 }
@@ -31,7 +32,7 @@ fn main() -> ExitCode {
     entry(
         std::env::args_os(),
         &mut Io {
-            inspect: &|dir| audit_directory(dir, Completion::InProgress),
+            inspect: &audit_directory,
             out: &mut io::stdout(),
             err: &mut io::stderr(),
         },
@@ -43,7 +44,13 @@ pub(crate) fn entry(
     io: &mut Io<'_>,
 ) -> ExitCode {
     match Cli::try_parse_from(args) {
-        Ok(cli) => report(&audit_with(&cli.dirs, io.inspect), io),
+        Ok(cli) => {
+            let inspect = io.inspect;
+            report(
+                &audit_with(&cli.dirs, |dir| inspect(dir, Completion::InProgress)),
+                io,
+            )
+        }
         Err(error) => {
             if error.use_stderr() {
                 let _ = write!(io.err, "{}", error.render());

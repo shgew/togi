@@ -57,14 +57,29 @@ fn brief(stdout: &str) -> Vec<String> {
 }
 
 #[test]
-fn help_goes_to_stdout_and_a_bad_flag_or_no_directory_exits_two() {
-    let memory = Memory::default();
-    let help = memory.run(["--help"]);
+fn help_goes_to_stdout() {
+    let help = Memory::default().run(["--help"]);
     assert!(help.status.success());
     assert!(text(&help.stdout).contains("STATE-DIR"));
-    for args in [&[][..], &["--seeds", "2"], &["--bogus"]] {
-        assert_eq!(memory.run(args).status.code(), Some(2), "{args:?}");
-    }
+}
+
+#[test]
+fn no_directory_exits_two() {
+    let none: [&str; 0] = [];
+    assert_eq!(Memory::default().run(none).status.code(), Some(2));
+}
+
+#[test]
+fn a_removed_sweep_flag_exits_two() {
+    assert_eq!(
+        Memory::default().run(["--seeds", "2"]).status.code(),
+        Some(2)
+    );
+}
+
+#[test]
+fn an_unknown_flag_exits_two() {
+    assert_eq!(Memory::default().run(["--bogus"]).status.code(), Some(2));
 }
 
 #[test]

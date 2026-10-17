@@ -589,24 +589,41 @@ fn a_simulator_that_leaves_no_journal_is_an_error_record() {
     );
 }
 
-#[test]
-fn concluded_dead_end_and_censored_runs_pass_the_audit() {
+#[test_case::test_case(0, "", Status::Concluded; "concluded")]
+#[test_case::test_case(1, "sim: dead end stock: unstable", Status::DeadEnd; "dead end")]
+#[test_case::test_case(3, "", Status::Censored; "censored")]
+#[test_case::test_case(2, "", Status::Error; "failed")]
+fn a_run_of_any_status_passes_the_audit_of_a_clean_journal(exit: i32, log: &str, status: Status) {
     let bench = Bench::new();
-    for (exit, log) in [(0, ""), (1, "sim: dead end stock: unstable"), (3, "")] {
-        let mut options = bench.options(bench.simulator(&format!("sim-{exit}"), exit, log, ""));
-        options.cache = None;
-        let report = run(&options);
-        assert_eq!(report.audited, 5, "{exit}");
-        assert!(
-            report.violations.is_empty(),
-            "{exit}: {:?}",
-            report.violations
-        );
-        assert!(
-            report_text(&report).contains("audit: audited=5 violations=0\n"),
-            "{exit}"
-        );
-    }
+    let mut options = bench.options(bench.simulator("sim", exit, log, ""));
+    options.cache = None;
+    let report = run(&options);
+    assert!(report.records.iter().all(|r| r.status == status));
+    assert_eq!(report.audited, 5);
+    assert_eq!(report.violations, Vec::new());
+    assert!(report_text(&report).contains("audit: audited=5 violations=0\n"));
+}
+
+#[test_case::test_case(0, "", Status::Concluded, true; "a concluded run must have stopped")]
+#[test_case::test_case(1, "sim: dead end stock: unstable", Status::DeadEnd, true; "a dead end must have stopped")]
+#[test_case::test_case(3, "", Status::Censored, false; "a censored run may be a prefix")]
+#[test_case::test_case(2, "", Status::Error, false; "a failed run may be a prefix")]
+fn an_unconcluded_journal_is_a_violation_only_when_its_run_finished(
+    exit: i32,
+    log: &str,
+    status: Status,
+    violates: bool,
+) {
+    let bench = Bench::new();
+    let mut options = bench.options(bench.simulator("sim", exit, log, "unconcluded"));
+    options.cache = None;
+    let report = run(&options);
+    assert!(report.records.iter().all(|r| r.status == status));
+    assert_eq!(report.audited, 5);
+    let mut runs: Vec<&str> = report.violations.iter().map(|v| v.run.as_str()).collect();
+    runs.dedup();
+    let want: &[&str] = if violates { &["default/dev-2"] } else { &[] };
+    assert_eq!(runs, want, "{:?}", report.violations);
 }
 
 #[test]
