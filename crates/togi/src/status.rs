@@ -454,7 +454,7 @@ impl Status<'_> {
             ),
             PhaseNo::Two if plan.confirming => "phase 2: confirmation cycle".to_owned(),
             PhaseNo::Two => format!(
-                "phase 2: at most {} left, then one full cycle",
+                "phase 2: {} left if none fails, then one full cycle",
                 rounds(plan.rounds_left)
             ),
         })
