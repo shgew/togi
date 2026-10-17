@@ -1,5 +1,6 @@
 use std::io;
 
+use test_case::test_case;
 use togi_journal::Seq;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
@@ -38,17 +39,14 @@ fn a_new_record_carries_this_builds_ruleset_and_the_summary_of_its_runs() {
     );
 }
 
-#[test]
-fn a_run_writes_its_split_by_name() {
+#[test_case(Split::Dev, "dev"; "dev")]
+#[test_case(Split::Holdout, "holdout"; "holdout")]
+fn a_run_writes_its_split_by_name(split: Split, name: &str) {
     let mut run = run(Status::Concluded, 2.0, 1, 0, &[-12, -20]);
-    let mut names = Vec::new();
-    for split in [Split::Dev, Split::Holdout] {
-        run.split = split;
-        names.push(serde_json::to_value(&run).unwrap()["split"].clone());
-    }
+    run.split = split;
     assert_eq!(
-        names,
-        [serde_json::json!("dev"), serde_json::json!("holdout")]
+        serde_json::to_value(&run).unwrap()["split"],
+        serde_json::json!(name)
     );
 }
 
@@ -186,81 +184,61 @@ fn at_index<'a>(json: &'a mut serde_json::Value, path: &[&str]) -> &'a mut serde
         })
 }
 
-#[test]
-fn a_correctly_sized_array_is_refused_for_every_object_of_a_record() {
-    let whole = serde_json::to_value(record()).unwrap();
-    let anchor = ["session", "seq", "time", "sha256"].as_slice();
-    let run = ["machine", "seed", "split", "outcome"].as_slice();
-    let outcome = ["status", "hours", "crashes", "hunts", "profile", "depth"].as_slice();
-    let range = ["min", "p10", "median", "p90", "max"].as_slice();
-    let summary = [
-        "runs",
-        "concluded",
-        "dead_ends",
-        "censored",
-        "hours",
-        "crashes",
-        "hunts",
-        "depth",
-        "cores",
-    ]
-    .as_slice();
-    let cases: [(&str, Vec<&str>, &[&str]); 7] = [
-        (
-            "record",
-            vec![],
-            &[
-                "anchor", "commit", "dirty", "ruleset", "evidence", "files", "runs", "summary",
-            ],
-        ),
-        ("anchor", vec!["anchor"], anchor),
-        ("file", vec!["files", "0"], &["path", "sha256"]),
-        ("run", vec!["runs", "0"], run),
-        ("outcome", vec!["runs", "0", "outcome"], outcome),
-        ("summary", vec!["summary"], summary),
-        ("range", vec!["summary", "crashes"], range),
-    ];
-    for (name, path, keys) in cases {
-        let mut json = whole.clone();
-        let object = at_index(&mut json, &path);
-        *object = positional(object, keys);
-        let error = read_value(&json);
-        assert!(
-            matches!(error, Error::DecodeRecord { .. }),
-            "{name}: {error}"
-        );
-        assert!(
-            togi_machine::error_chain(&error).contains("expected an object"),
-            "{name}: {error}"
-        );
-    }
+const RECORD: &[&str] = &[
+    "anchor", "commit", "dirty", "ruleset", "evidence", "files", "runs", "summary",
+];
+const ANCHOR: &[&str] = &["session", "seq", "time", "sha256"];
+const FILE: &[&str] = &["path", "sha256"];
+const RUN: &[&str] = &["machine", "seed", "split", "outcome"];
+const OUTCOME: &[&str] = &["status", "hours", "crashes", "hunts", "profile", "depth"];
+const SUMMARY: &[&str] = &[
+    "runs",
+    "concluded",
+    "dead_ends",
+    "censored",
+    "hours",
+    "crashes",
+    "hunts",
+    "depth",
+    "cores",
+];
+const RANGE: &[&str] = &["min", "p10", "median", "p90", "max"];
+
+#[test_case(&[], RECORD; "record")]
+#[test_case(&["anchor"], ANCHOR; "anchor")]
+#[test_case(&["files", "0"], FILE; "file")]
+#[test_case(&["runs", "0"], RUN; "run")]
+#[test_case(&["runs", "0", "outcome"], OUTCOME; "outcome")]
+#[test_case(&["summary"], SUMMARY; "summary")]
+#[test_case(&["summary", "crashes"], RANGE; "range")]
+fn a_correctly_sized_array_is_refused_for_every_object_of_a_record(path: &[&str], keys: &[&str]) {
+    let mut json = serde_json::to_value(record()).unwrap();
+    let object = at_index(&mut json, path);
+    *object = positional(object, keys);
+    let error = read_value(&json);
+    assert!(matches!(error, Error::DecodeRecord { .. }), "{error}");
+    assert!(
+        togi_machine::error_chain(&error).contains("expected an object"),
+        "{error}"
+    );
 }
 
-#[test]
-fn an_unknown_key_is_refused_in_every_object_of_a_record() {
-    let whole = serde_json::to_value(record()).unwrap();
-    let cases: [(&str, Vec<&str>); 7] = [
-        ("record", vec![]),
-        ("anchor", vec!["anchor"]),
-        ("file", vec!["files", "0"]),
-        ("run", vec!["runs", "0"]),
-        ("outcome", vec!["runs", "0", "outcome"]),
-        ("summary", vec!["summary"]),
-        ("range", vec!["summary", "crashes"]),
-    ];
-    for (name, path) in cases {
-        let mut json = whole.clone();
-        at_index(&mut json, &path)["hourz"] = serde_json::json!(1);
-        let error = read_value(&json);
-        assert!(
-            matches!(error, Error::DecodeRecord { .. }),
-            "{name}: {error}"
-        );
-        assert!(
-            togi_machine::error_chain(&error).contains("unknown field `hourz`"),
-            "{name}: {error}"
-        );
-    }
+#[test_case(&[]; "record")]
+#[test_case(&["anchor"]; "anchor")]
+#[test_case(&["files", "0"]; "file")]
+#[test_case(&["runs", "0"]; "run")]
+#[test_case(&["runs", "0", "outcome"]; "outcome")]
+#[test_case(&["summary"]; "summary")]
+#[test_case(&["summary", "crashes"]; "range")]
+fn an_unknown_key_is_refused_in_every_object_of_a_record(path: &[&str]) {
+    let mut json = serde_json::to_value(record()).unwrap();
+    at_index(&mut json, path)["hourz"] = serde_json::json!(1);
+    let error = read_value(&json);
+    assert!(matches!(error, Error::DecodeRecord { .. }), "{error}");
+    assert!(
+        togi_machine::error_chain(&error).contains("unknown field `hourz`"),
+        "{error}"
+    );
 }
 
 struct Full;

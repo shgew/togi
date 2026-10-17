@@ -118,6 +118,7 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
     use proptest::test_runner::RngSeed;
+    use test_case::test_case;
 
     fn binomial_interval(n: u32, p: f64) -> Interval {
         let mut weights = vec![0.0; n as usize + 1];
@@ -128,19 +129,15 @@ mod tests {
         Interval { low, high }
     }
 
-    #[test]
-    fn known_intervals_hold_at_the_boundaries_of_p() {
-        for (n, p, want) in [
-            (10, 0.0, interval(0, 0)),
-            (10, 1e-12, interval(0, 0)),
-            (10, 1.0, interval(10, 10)),
-            (10, 1.0 - 1e-12, interval(10, 10)),
-            (10, 0.5, interval(1, 9)),
-            (10, 0.1, interval(0, 4)),
-            (10_000, 0.5, interval(4871, 5129)),
-        ] {
-            assert_eq!(binomial_interval(n, p), want, "n={n} p={p}");
-        }
+    #[test_case(10, 0.0 => interval(0, 0); "never")]
+    #[test_case(10, 1e-12 => interval(0, 0); "almost never")]
+    #[test_case(10, 1.0 => interval(10, 10); "always")]
+    #[test_case(10, 1.0 - 1e-12 => interval(10, 10); "almost always")]
+    #[test_case(10, 0.5 => interval(1, 9); "even odds")]
+    #[test_case(10, 0.1 => interval(0, 4); "one in ten")]
+    #[test_case(10_000, 0.5 => interval(4871, 5129); "even odds over ten thousand")]
+    fn known_intervals_hold_at_the_boundaries_of_p(n: u32, p: f64) -> Interval {
+        binomial_interval(n, p)
     }
 
     #[test]
