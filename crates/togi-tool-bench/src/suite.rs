@@ -8,11 +8,10 @@ use sha2::{Digest, Sha256};
 use togi_machine::object_only;
 use togi_sim::replay::Replay;
 use togi_sim::{InvalidMachine, MachineDefinition, Model, file};
+use togi_tool_forecast::Split;
 use togi_tool_trialfacts::Extracts;
 
 use crate::error::Error;
-
-pub use togi_tool_forecast::Split;
 
 /// The suite's machine documents, canonical paths, and binary facts inputs.
 pub trait SuiteSource: file::Source {
