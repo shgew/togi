@@ -294,6 +294,24 @@ fn real_process_sealing_every_held_out_session_is_an_error() {
 }
 
 #[test]
+fn real_process_a_failed_check_leaves_no_records_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let extract = two_sessions(dir.path());
+    let records = dir.path().join("records.jsonl");
+    let ran = fit(&[
+        "--facts",
+        extract.to_str().unwrap(),
+        "--forward-only",
+        "--seal",
+        "1",
+        "--records",
+        records.to_str().unwrap(),
+    ]);
+    assert_eq!(ran.status.code(), Some(1), "{}", text(&ran.stderr));
+    assert!(!records.exists(), "a failed check left its records file");
+}
+
+#[test]
 fn real_process_an_unreadable_extract_exits_1_with_the_error_on_stderr() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("missing.gz");

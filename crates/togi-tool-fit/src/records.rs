@@ -136,10 +136,12 @@ pub fn encode(
 }
 
 /// A new records file, created before the forward-chained check runs so a path that cannot take it fails
-/// before the check spends its time.
+/// before the check spends its time. Dropped unwritten, because the check, its report or the write failed,
+/// it removes the file again, so a failed run leaves no records behind.
 pub struct RecordsFile<'a> {
     path: &'a Path,
     out: BufWriter<File>,
+    written: bool,
 }
 
 impl<'a> RecordsFile<'a> {
@@ -153,6 +155,7 @@ impl<'a> RecordsFile<'a> {
         Ok(Self {
             path,
             out: BufWriter::new(file),
+            written: false,
         })
     }
 
@@ -169,7 +172,19 @@ impl<'a> RecordsFile<'a> {
                 action: "write the forward records",
                 path: self.path.to_owned(),
                 source,
-            })
+            })?;
+        self.written = true;
+        Ok(())
+    }
+}
+
+impl Drop for RecordsFile<'_> {
+    fn drop(&mut self) {
+        if !self.written {
+            // The run is already failing with its own error, which this one must not replace; a file left
+            // behind is empty or cut short, and `compare` refuses it.
+            let _ = std::fs::remove_file(self.path);
+        }
     }
 }
 
