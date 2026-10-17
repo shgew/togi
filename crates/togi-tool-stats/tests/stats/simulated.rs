@@ -428,7 +428,12 @@ fn a_simulated_sessions_backoff_records_charge_each_backoff_once_to_its_failed_t
 fn a_simulated_hazard_sessions_backoffs_are_attributed_to_the_phase_they_were_decided_in() {
     assert_eq!(
         check_backoff_records(&hazard_session()),
-        ["concluded".to_owned(), "phase_1".to_owned(), "phase_2".to_owned()].into(),
+        [
+            "concluded".to_owned(),
+            "phase_1".to_owned(),
+            "phase_2".to_owned()
+        ]
+        .into(),
         "the session fails R7 in each phase"
     );
 }

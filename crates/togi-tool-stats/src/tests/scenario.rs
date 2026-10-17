@@ -538,10 +538,7 @@ fn a_paired_r7_backoff_is_charged_once_to_its_first_cause() {
     let r = crate::r7::decisions(p.events, None);
     assert_eq!(
         r.failures()
-            .map(|f| (
-                f.seq,
-                f.backoffs.iter().map(|b| b.seq).collect::<Vec<_>>()
-            ))
+            .map(|f| (f.seq, f.backoffs.iter().map(|b| b.seq).collect::<Vec<_>>()))
             .collect::<Vec<_>>(),
         [(held, Vec::new()), (later, vec![paired])],
         "the pair's backoff is the later failure's, and the held failure is charged nothing"

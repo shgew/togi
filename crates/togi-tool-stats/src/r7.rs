@@ -488,7 +488,8 @@ pub(crate) fn render_decisions(table: &mut Table, r: &R7Decisions<'_>) {
             b.counts,
             f.name(),
             core_list(f.cores),
-            f.requirement().map_or_else(|| "-".to_owned(), Required::label),
+            f.requirement()
+                .map_or_else(|| "-".to_owned(), Required::label),
             seq_list(b.causes),
             escape_text(&b.decision.reason)
         );
