@@ -14,6 +14,8 @@ use togi_sim::{MachineDefinition, regime_index};
 use togi_simrun::{Observe, Observer};
 use togi_tuner::{Profile, State, replay};
 
+use test_case::test_case;
+
 use crate::common::{Bench, finish, hunt_machine, nz, phase_two_concludes, stop_when};
 
 const HUNT_BUDGET: usize = 4;
@@ -478,7 +480,9 @@ fn a_joint_crash_with_a_misleading_core_local_mce_blames_that_core_only() {
     );
 }
 
-fn delayed_hunt_escalates(after_s: f64) {
+#[test_case(360.0; "after six idle minutes")]
+#[test_case(120.0; "at the short duration boundary")]
+fn a_hunt_of_a_joint_that_fails_late_escalates(after_s: f64) {
     let definition = hunt_machine(4);
     let mut delayed = joint(&[(1, -10)]);
     delayed.after_s = after_s;
@@ -516,16 +520,6 @@ fn delayed_hunt_escalates(after_s: f64) {
     assert_eq!(full_passes, 5);
     assert!(escalated, "no escalated 900 s group");
     assert!(resolved, "core 1 was not resolved");
-}
-
-#[test]
-fn a_hunt_of_a_joint_that_fails_after_six_idle_minutes_escalates() {
-    delayed_hunt_escalates(360.0);
-}
-
-#[test]
-fn a_hunt_of_a_joint_that_fails_at_the_short_duration_boundary_escalates() {
-    delayed_hunt_escalates(120.0);
 }
 
 fn scripted_session(definition: &MachineDefinition, config: Config) -> (Option<Stop>, Vec<Event>) {
@@ -569,7 +563,9 @@ fn a_scripted_idle_only_limit_outside_the_loaded_cores_is_found_by_r1() {
     );
 }
 
-fn idle_only_hazard(seed: u64) {
+#[test_case(1; "seed 1")]
+#[test_case(2; "seed 2")]
+fn an_idle_only_hazard_reaches_a_clean_cycle(seed: u64) {
     let mut definition = hunt_machine(4);
     definition.core[3].idle = Some(-5);
     let bench = Bench::new(&definition, seed);
@@ -584,14 +580,4 @@ fn idle_only_hazard(seed: u64) {
         !idle_failures(&events, core(3), -5).is_empty(),
         "the idle-only hazard never failed outside the loaded cores"
     );
-}
-
-#[test]
-fn an_idle_only_hazard_reaches_a_clean_cycle_at_seed_1() {
-    idle_only_hazard(1);
-}
-
-#[test]
-fn an_idle_only_hazard_reaches_a_clean_cycle_at_seed_2() {
-    idle_only_hazard(2);
 }
