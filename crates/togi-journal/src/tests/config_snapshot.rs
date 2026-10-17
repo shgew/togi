@@ -1,5 +1,6 @@
 use jiff::Timestamp;
 use serde_json::json;
+use test_case::test_case;
 use togi_machine::{KernelCursor, Regime};
 
 use super::fixtures::{bare_config, boot, build, core, seq, target};
@@ -116,24 +117,16 @@ fn the_snapshot_wire_keys_are_those_of_the_spec() {
     );
 }
 
-#[test]
-fn every_nested_snapshot_object_refuses_an_unknown_field() {
-    let base = serde_json::to_value(minimal().config).unwrap();
-    for pointer in [
-        "",
-        "/durations",
-        "/evidence",
-        "/checking",
-        "/dead_ends",
-        "/backends",
-    ] {
-        let mut value = base.clone();
-        value.pointer_mut(pointer).unwrap()["bogus"] = json!(1);
-        assert!(
-            serde_json::from_value::<ConfigSnapshot>(value).is_err(),
-            "{pointer:?}"
-        );
-    }
+#[test_case(""; "the snapshot")]
+#[test_case("/durations"; "durations")]
+#[test_case("/evidence"; "evidence")]
+#[test_case("/checking"; "checking")]
+#[test_case("/dead_ends"; "dead ends")]
+#[test_case("/backends"; "backends")]
+fn every_nested_snapshot_object_refuses_an_unknown_field(pointer: &str) {
+    let mut value = serde_json::to_value(minimal().config).unwrap();
+    value.pointer_mut(pointer).unwrap()["bogus"] = json!(1);
+    assert!(serde_json::from_value::<ConfigSnapshot>(value).is_err());
 }
 
 #[test]
@@ -145,19 +138,12 @@ fn a_snapshot_records_values_without_the_configuration_policy() {
     assert_eq!(snapshot.durations.search_trial_s, 0);
 }
 
-#[test]
-fn a_snapshot_still_refuses_what_its_own_types_refuse() {
-    for (pointer, bad) in [
-        ("/start_offsets", json!({"3": 10})),
-        ("/start_offsets", json!({"16": -1})),
-        ("/durations/search_trial_s", json!(-1)),
-        ("/checking/cycle", json!(["R9"])),
-    ] {
-        let mut value = serde_json::to_value(minimal().config).unwrap();
-        *value.pointer_mut(pointer).unwrap() = bad;
-        assert!(
-            serde_json::from_value::<ConfigSnapshot>(value).is_err(),
-            "{pointer}"
-        );
-    }
+#[test_case("/start_offsets", json!({"3": 10}); "a start offset on a core that does not exist")]
+#[test_case("/start_offsets", json!({"16": -1}); "a start offset on a core past the last")]
+#[test_case("/durations/search_trial_s", json!(-1); "a negative duration")]
+#[test_case("/checking/cycle", json!(["R9"]); "an unknown regime")]
+fn a_snapshot_still_refuses_what_its_own_types_refuse(pointer: &str, bad: serde_json::Value) {
+    let mut value = serde_json::to_value(minimal().config).unwrap();
+    *value.pointer_mut(pointer).unwrap() = bad;
+    assert!(serde_json::from_value::<ConfigSnapshot>(value).is_err());
 }

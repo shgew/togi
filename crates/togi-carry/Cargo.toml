@@ -17,6 +17,7 @@ togi-machine.workspace = true
 
 [dev-dependencies]
 jiff.workspace = true
+test-case.workspace = true
 
 [lints]
 workspace = true

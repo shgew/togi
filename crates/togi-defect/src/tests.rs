@@ -1,6 +1,7 @@
 use std::num::NonZeroU32;
 
 use jiff::Timestamp;
+use test_case::test_case;
 use togi_journal::{
     Activity, Attribution, Build, CommandReset, ConfigLoaded, Decision, DefectAnswer,
     DefectAnswered, DefectDirection, DefectFound, Event, EventKind, Failure, Payload, ResetTarget,
@@ -402,27 +403,26 @@ fn excluded_failures_follow_fixes_filtering() {
     assert!(log.state(&PAIR).excludes_failure(failure));
 }
 
-#[test]
-fn unanswered_matches_by_id() {
-    for answer in [DefectAnswer::Yes, DefectAnswer::No] {
-        let mut log = Log::default();
-        let first_decision = log.warning();
-        let second_decision = log.warning();
-        let first = log.found(1, DefectDirection::TooCautious, &[2], &[first_decision]);
-        log.answer(1, answer, &[2], first);
-        let second = log.found(2, DefectDirection::TooAggressive, &[3], &[second_decision]);
-        log.answer(99, answer, &[3], second);
-        let state = log.state(&PAIR);
-        assert_eq!(unanswered_ids(&state), [2], "{answer:?}");
-        assert_eq!(state.finding_seq(id(1)), Some(first));
-        assert_eq!(state.finding_seq(id(2)), Some(second));
-        let views: Vec<_> = state.unanswered().collect();
-        assert_eq!(views.len(), 1, "{answer:?}");
-        assert_eq!(views[0].seq, second, "{answer:?}");
-        assert_eq!(views[0].direction, DefectDirection::TooAggressive);
-        assert_eq!(views[0].cores, cores(&[3]), "{answer:?}");
-        assert_eq!(views[0].decisions, [second_decision], "{answer:?}");
-    }
+#[test_case(DefectAnswer::Yes; "a yes answer")]
+#[test_case(DefectAnswer::No; "a no answer")]
+fn unanswered_matches_by_id(answer: DefectAnswer) {
+    let mut log = Log::default();
+    let first_decision = log.warning();
+    let second_decision = log.warning();
+    let first = log.found(1, DefectDirection::TooCautious, &[2], &[first_decision]);
+    log.answer(1, answer, &[2], first);
+    let second = log.found(2, DefectDirection::TooAggressive, &[3], &[second_decision]);
+    log.answer(99, answer, &[3], second);
+    let state = log.state(&PAIR);
+    assert_eq!(unanswered_ids(&state), [2]);
+    assert_eq!(state.finding_seq(id(1)), Some(first));
+    assert_eq!(state.finding_seq(id(2)), Some(second));
+    let views: Vec<_> = state.unanswered().collect();
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0].seq, second);
+    assert_eq!(views[0].direction, DefectDirection::TooAggressive);
+    assert_eq!(views[0].cores, cores(&[3]));
+    assert_eq!(views[0].decisions, [second_decision]);
 }
 
 #[test]
@@ -453,25 +453,25 @@ fn scenario() -> Log {
     log
 }
 
-#[test]
-fn fold_prefix_equals_fresh_fold() {
-    for registry in [&PAIR[..], &CAUTIOUS[..], &ALTERNATIVES[..], &NONE[..]] {
-        let registry: &'static [Entry] = registry;
-        let log = scenario();
-        let mut incremental = DefectState::new(registry);
-        assert_eq!(incremental, log.prefix(registry, 0));
-        for (at, event) in log.events.iter().enumerate() {
-            incremental.fold(event);
-            let fresh = log.prefix(registry, at + 1);
-            assert_eq!(incremental, fresh, "prefix {}", at + 1);
-            assert_eq!(pending_ids(&incremental), pending_ids(&fresh));
-            assert_eq!(unanswered_ids(&incremental), unanswered_ids(&fresh));
-            assert_eq!(missing(&incremental), missing(&fresh));
-            assert_eq!(
-                incremental.excluded_failures().collect::<Vec<_>>(),
-                fresh.excluded_failures().collect::<Vec<_>>()
-            );
-        }
+#[test_case(&PAIR; "pair")]
+#[test_case(&CAUTIOUS; "cautious")]
+#[test_case(&ALTERNATIVES; "alternatives")]
+#[test_case(&NONE; "no registry")]
+fn fold_prefix_equals_fresh_fold(registry: &'static [Entry]) {
+    let log = scenario();
+    let mut incremental = DefectState::new(registry);
+    assert_eq!(incremental, log.prefix(registry, 0));
+    for (at, event) in log.events.iter().enumerate() {
+        incremental.fold(event);
+        let fresh = log.prefix(registry, at + 1);
+        assert_eq!(incremental, fresh, "prefix {}", at + 1);
+        assert_eq!(pending_ids(&incremental), pending_ids(&fresh));
+        assert_eq!(unanswered_ids(&incremental), unanswered_ids(&fresh));
+        assert_eq!(missing(&incremental), missing(&fresh));
+        assert_eq!(
+            incremental.excluded_failures().collect::<Vec<_>>(),
+            fresh.excluded_failures().collect::<Vec<_>>()
+        );
     }
 }
 

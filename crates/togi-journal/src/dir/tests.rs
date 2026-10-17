@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
+use test_case::test_case;
 
 use super::*;
 use crate::fs::{Fault, MemFs, Op};
@@ -473,17 +474,17 @@ fn suffixes_order_numerically_so_ten_follows_nine() {
     );
 }
 
-#[test]
-fn an_id_always_follows_the_reset_boundary_whatever_the_clock_says() {
+#[test_case(1_700_000_000; "the boundary second")]
+#[test_case(1_600_000_000; "an earlier clock")]
+#[test_case(0; "the epoch")]
+fn an_id_always_follows_the_reset_boundary_whatever_the_clock_says(earlier: i64) {
     let fs = MemFs::new();
     let dir = dir(&fs);
     let boundary = id_at(1_700_000_000);
     fs.put(format!("/state/archive/{boundary}-reset-all"), "");
-    for earlier in [1_700_000_000, 1_600_000_000, 0] {
-        let id = dir.session_id(at(earlier)).unwrap();
-        assert!(id > boundary, "{id} must follow {boundary}");
-        assert_eq!(id.timestamp(), boundary.timestamp());
-    }
+    let id = dir.session_id(at(earlier)).unwrap();
+    assert!(id > boundary, "{id} must follow {boundary}");
+    assert_eq!(id.timestamp(), boundary.timestamp());
     assert!(dir.session_id(at(1_700_000_001)).unwrap() > boundary);
 }
 
@@ -611,17 +612,16 @@ fn mode_of(path: &Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
-#[test]
-fn real_fs_locking_restores_the_state_mode_before_taking_the_lock() {
+#[test_case(0o777; "a world-writable state directory")]
+#[test_case(0o700; "a private state directory")]
+fn real_fs_locking_restores_the_state_mode_before_taking_the_lock(mode: u32) {
     let root = tempfile::tempdir().unwrap();
-    for mode in [0o777, 0o700] {
-        let path = root.path().join(format!("state-{mode:o}"));
-        std::fs::create_dir(&path).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
-        let held = disk_dir(&path).unwrap();
-        assert_eq!(mode_of(&path), 0o711);
-        drop(held);
-    }
+    let path = root.path().join(format!("state-{mode:o}"));
+    std::fs::create_dir(&path).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+    let held = disk_dir(&path).unwrap();
+    assert_eq!(mode_of(&path), 0o711);
+    drop(held);
 }
 
 #[test]
@@ -712,23 +712,22 @@ fn the_live_build_comes_from_the_first_line_alone() {
     assert!(dir.live_session().unwrap().is_some());
 }
 
-#[test]
-fn a_garbled_first_line_is_another_builds_journal() {
+#[test_case("{\"seq\":1,\"kind\":\"mce\",\"data\":{}}\n"; "another kind")]
+#[test_case(
+    "{\"seq\":1,\"kind\":\"session.start\",\"data\":{\"session\":\"20231114T221320Z\"}}\n";
+    "a session start without a build"
+)]
+#[test_case("not json\n"; "not json")]
+fn a_garbled_first_line_is_another_builds_journal(first: &str) {
     let fs = MemFs::new();
     let dir = dir(&fs);
-    for first in [
-        "{\"seq\":1,\"kind\":\"mce\",\"data\":{}}\n",
-        "{\"seq\":1,\"kind\":\"session.start\",\"data\":{\"session\":\"20231114T221320Z\"}}\n",
-        "not json\n",
-    ] {
-        fs.put("/state/events.jsonl", first);
-        let error = dir.live_build().unwrap_err();
-        assert!(matches!(error, DirError::ForeignJournal { .. }), "{first}");
-        assert!(
-            error
-                .to_string()
-                .contains("docs/howto.md#go-to-rust-cutover"),
-            "{error}"
-        );
-    }
+    fs.put("/state/events.jsonl", first);
+    let error = dir.live_build().unwrap_err();
+    assert!(matches!(error, DirError::ForeignJournal { .. }), "{first}");
+    assert!(
+        error
+            .to_string()
+            .contains("docs/howto.md#go-to-rust-cutover"),
+        "{error}"
+    );
 }
