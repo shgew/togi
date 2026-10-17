@@ -830,9 +830,10 @@ fn a_watched_poll_that_uses_the_rest_of_the_duration_still_drains_a_quiet_instan
 
 /// Every error of a joined start failure, in order.
 fn joined(error: &togi_machine::Error) -> Vec<&Error> {
-    match crate_error(error) {
-        Some(Error::Joined(joined)) => joined.errors().iter().collect(),
-        _ => Vec::new(),
+    if let Some(Error::Joined(joined)) = crate_error(error) {
+        joined.errors().iter().collect()
+    } else {
+        Vec::new()
     }
 }
 

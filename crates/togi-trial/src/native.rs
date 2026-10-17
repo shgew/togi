@@ -73,7 +73,12 @@ impl togi_trialfiles::Storage for MemoryCompression<'_> {
             Some(togi_journal::fs::FileKind::File) => {
                 self.0.open_read(path).map(Some).map_err(error)
             }
-            _ => Ok(None),
+            Some(
+                togi_journal::fs::FileKind::Dir
+                | togi_journal::fs::FileKind::Symlink
+                | togi_journal::fs::FileKind::Other,
+            )
+            | None => Ok(None),
         }
     }
 

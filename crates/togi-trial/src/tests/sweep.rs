@@ -69,14 +69,10 @@ fn calls(rig: &super::harness::Rig) -> Vec<(String, &'static str)> {
     rig.fake
         .systemd_calls()
         .iter()
-        .filter_map(|(call, _)| {
-            if let Systemd::Kill { scope, signal } = call {
-                Some((scope.to_string(), signal.name()))
-            } else if let Systemd::Stop { scope } = call {
-                Some((scope.to_string(), "stop"))
-            } else {
-                None
-            }
+        .filter_map(|(call, _)| match call {
+            Systemd::Kill { scope, signal } => Some((scope.to_string(), signal.name())),
+            Systemd::Stop { scope } => Some((scope.to_string(), "stop")),
+            Systemd::ListScopes | Systemd::Probe { .. } => None,
         })
         .collect()
 }
