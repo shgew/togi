@@ -1400,6 +1400,29 @@ fn an_unconfirmed_containment_withholds_the_proof_and_ends_the_trial_as_such() {
 }
 
 #[test]
+fn a_crash_beside_an_unconfirmed_containment_ends_the_trial_with_both_and_latches_the_crash() {
+    let mut rig = rigged(Bench::new(2));
+    {
+        let mut rigs = rig.rigs.borrow_mut();
+        rigs.wait_error = Some(|| Error::Containment("workload still running".into()));
+        rigs.stop_error = Some(|| Error::Crashed);
+    }
+    let error = trial(&mut rig).unwrap_err();
+    assert!(error.is_crash(), "{error:?}");
+    assert_eq!(rig.session.lifecycle.fault(), Some(Fault::Crashed));
+    let ends = ends(&rig.session);
+    let [end] = ends.as_slice() else {
+        panic!("{ends:?}");
+    };
+    assert_eq!(end.outcome, Verdict::Inconclusive);
+    assert!(end.interrupted);
+    assert_eq!(
+        end.containment_error.as_deref(),
+        Some("trial cleanup could not be confirmed: workload still running")
+    );
+}
+
+#[test]
 fn a_machine_that_crashes_mid_trial_leaves_the_trial_open_for_the_recovery() {
     let mut rig = rigged(Bench::new(2));
     {

@@ -65,7 +65,8 @@ impl Session<'_> {
 
     /// Records the decisions a signalled stop owes, restores the machine and records the shutdown. A panic out of
     /// the drain is kept as an error and the restoration still runs, with no shutdown after it; a panic out of the
-    /// restoration interrupts the journal. Either is the cleanup's panic for the caller to resume.
+    /// restoration or the shutdown interrupts the journal, and a dead end the restoration recorded before it is
+    /// kept. Either is the cleanup's panic for the caller to resume.
     fn clean_up(&mut self, stop: Option<Stop>) -> Cleanup {
         let mut cleanup = Cleanup {
             stop,
@@ -93,52 +94,51 @@ impl Session<'_> {
             return cleanup;
         }
         let stop = cleanup.stop.as_ref();
-        let settled = catch_unwind(AssertUnwindSafe(|| {
-            self.restore_and_shut_down(stop, drain_failed)
+        let reached = catch_unwind(AssertUnwindSafe(|| {
+            if smu_dead_end(stop) {
+                Reached::Settled
+            } else {
+                let held = self.held();
+                self.restore_and_settle(stop, &held)
+            }
         }));
-        match settled {
-            Ok((dead_end, errors)) => {
-                if dead_end.is_some() {
-                    cleanup.stop = dead_end;
-                }
-                cleanup.errors.extend(errors);
+        match reached {
+            Ok(Reached::Settled) => {}
+            Ok(Reached::DeadEnd(dead_end)) => cleanup.stop = Some(dead_end),
+            Ok(Reached::Unsettled(error)) => {
+                cleanup.errors.extend(error);
+                return cleanup;
             }
             Err(payload) => {
-                let message = message_of(&*payload).to_owned();
-                self.appender.interrupt(&message);
-                cleanup.errors.push(SessionError::Panicked(message));
-                cleanup.panic.get_or_insert_with(|| Panic::new(payload));
+                self.interrupted(&mut cleanup, payload);
+                return cleanup;
             }
+        }
+        if drain_failed {
+            return cleanup;
+        }
+        let shutdown = catch_unwind(AssertUnwindSafe(|| {
+            if self.unreconciled() {
+                Ok(())
+            } else {
+                self.append_shutdown()
+            }
+        }));
+        match shutdown {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => cleanup.errors.push(self.keep(error)),
+            Err(payload) => self.interrupted(&mut cleanup, payload),
         }
         cleanup
     }
 
-    /// Restores the machine unless the run stopped at an SMU dead end, then records the shutdown when the machine
-    /// is settled, the drain recorded what was owed and the boot is reconciled. Returns the dead end the restoration
-    /// recorded, if any, and the errors on the way.
-    fn restore_and_shut_down(
-        &mut self,
-        stop: Option<&Stop>,
-        drain_failed: bool,
-    ) -> (Option<Stop>, Vec<SessionError>) {
-        let reached = if smu_dead_end(stop) {
-            Reached::Settled
-        } else {
-            let held = self.held();
-            self.restore_and_settle(stop, &held)
-        };
-        let (dead_end, mut errors) = match reached {
-            Reached::Settled => (None, Vec::new()),
-            Reached::DeadEnd(dead_end) => (Some(dead_end), Vec::new()),
-            Reached::Unsettled(error) => return (None, error.into_iter().collect()),
-        };
-        if !drain_failed
-            && !self.unreconciled()
-            && let Err(error) = self.append_shutdown()
-        {
-            errors.push(self.keep(error));
-        }
-        (dead_end, errors)
+    /// Interrupts the journal for a panic out of the restoration or the shutdown and keeps it as an error of the
+    /// cleanup, and as its panic unless the drain already panicked.
+    fn interrupted(&mut self, cleanup: &mut Cleanup, payload: Box<dyn std::any::Any + Send>) {
+        let message = message_of(&*payload).to_owned();
+        self.appender.interrupt(&message);
+        cleanup.errors.push(SessionError::Panicked(message));
+        cleanup.panic.get_or_insert_with(|| Panic::new(payload));
     }
 
     /// Keeps an error of the run; one that says the machine went down latches the crash, so nothing after it

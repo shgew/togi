@@ -247,6 +247,48 @@ fn a_restoration_that_fails_at_the_smu_turns_a_clean_stop_into_an_smu_dead_end()
     assert_eq!(smu_offsets(&bench), [-5, -5]);
 }
 
+/// The dead end the restoration recorded is the run's stop even when a panic strikes the shutdown after it.
+#[test]
+fn a_panic_taking_in_the_shutdown_keeps_the_dead_end_the_restoration_recorded() {
+    let bench = Bench::new(2);
+    let armed = std::rc::Rc::new(std::cell::Cell::new(false));
+    let flag = armed.clone();
+    let mut input = bench.input();
+    input.on_append = Some(Box::new(move |event| {
+        assert!(
+            !(flag.get() && event.kind() == togi_journal::EventKind::Shutdown),
+            "a bug taking in the shutdown"
+        );
+    }));
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    assert_eq!(session.start().unwrap(), crate::session::Control::Continue);
+    assert_eq!(session.sweep().unwrap(), crate::session::Control::Continue);
+    recorded_baseline(&mut session, &[0, 0]);
+    put(&mut session, &[-5, -5]);
+    session.validated = Some(session.host.validate_smu().unwrap());
+    let run = Ok(signalled(&mut session));
+    bench.sim.fail_write(1);
+    armed.set(true);
+    let mut ended = session.close(run);
+    let panic = ended.panic.take().expect("the panic is handed back");
+    assert_eq!(panic.message(), "a bug taking in the shutdown");
+    let Some(Stop::DeadEnd { dead_end, .. }) = &ended.stop else {
+        panic!("{:?}", ended.stop);
+    };
+    assert_eq!(dead_end.condition, DeadEndCondition::Smu);
+    assert!(matches!(
+        ended.errors.as_slice(),
+        [SessionError::Panicked(message)] if message == "a bug taking in the shutdown"
+    ));
+    let kinds = kinds(ended.journal.events());
+    assert!(
+        kinds.ends_with(&["smu.error", "deadend", "shutdown"]),
+        "{kinds:?}"
+    );
+}
+
 #[test]
 fn a_restoration_that_fails_at_the_smu_keeps_a_dead_end_the_run_already_reached() {
     let bench = Bench::new(2);
