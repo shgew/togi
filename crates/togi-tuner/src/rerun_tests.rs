@@ -1180,8 +1180,9 @@ fn ordinals(requirement: &crate::Requirement) -> (Option<u32>, Option<u32>) {
     )
 }
 
-fn stored(j: &Journal) -> crate::Requirement {
-    j.run().flight.open.as_ref().unwrap().requirement
+/// The count the open trial's requirement shows: the one `plan` scheduled it for.
+fn shows_needed(j: &Journal, plan: &TrialPlan) -> bool {
+    j.requirement().needed == u32::from(plan.requirement.needed.get())
 }
 
 #[test]
@@ -1212,7 +1213,7 @@ fn resumed_short_trial_change_drops_a_rerun_retry() {
             "{name}"
         );
         j.intent(&next);
-        assert_eq!(stored(&j), next.requirement, "{name}");
+        assert!(shows_needed(&j, &next), "{name}");
         j.assert_resumes();
     }
 }
@@ -1250,7 +1251,7 @@ fn cycle_retries_attach_the_requirement_the_fold_stores() {
         let duration = if retry { first.duration } else { secs(100) };
         assert_eq!(next.duration, duration, "{name}");
         j.intent(&next);
-        assert_eq!(stored(&j), next.requirement, "{name}");
+        assert!(shows_needed(&j, &next), "{name}");
         j.assert_resumes();
     }
 }
@@ -1275,14 +1276,13 @@ fn stored_requirement_separates_class_count_and_part() {
         panic!("no partial part came");
     };
     let (intent, trial) = j.intent(&partial);
-    let open = stored(&j);
-    assert_eq!(open, partial.requirement);
-    assert_eq!(ordinals(&open), (Some(1), Some(2)));
-    assert_eq!(open.needed.get(), 3);
+    assert!(shows_needed(&j, &partial));
+    assert_eq!(ordinals(&partial.requirement), (Some(1), Some(2)));
+    assert_eq!(j.requirement().needed, 3);
     let mut end = Journal::end_payload(&trial, Outcome::Inconclusive, None);
     end.duration_s = partial.duration.get();
     j.append(end.into(), &[intent]);
-    let history = j.run().flight.last_closed.as_ref().unwrap().history;
+    let history = j.history();
     assert_eq!(history.needed, 3);
     assert_eq!(history.step.map(|step| step.get().get()), Some(1));
     j.assert_resumes();

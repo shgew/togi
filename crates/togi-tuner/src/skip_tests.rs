@@ -331,7 +331,13 @@ fn a_known_together_failure_infers_the_sole_nonzero_core() {
     assert_eq!(j.run().core(core(1)).pending, Some(fact));
     assert!(j.run().failures.pending(fact).is_some());
     let _ = seq;
-    assert!(j.run().flight.awaiting.is_none());
+    assert!(!matches!(
+        j.state.next(),
+        Ok(Action::Decide(crate::DecisionAction {
+            payload: DecisionPayload::Failure(_),
+            ..
+        }))
+    ));
     j.assert_resumes();
 }
 
@@ -381,10 +387,10 @@ fn a_skipped_failure_adds_no_evidence() {
         &[-19],
         Outcome::Failure,
     );
-    let before = j.run().evidence.clone();
+    let before = j.state.project();
     let action = j.next_decision();
     j.decide(action);
-    assert_eq!(j.run().evidence, before);
+    assert_eq!(j.state.project(), before);
     assert!(matches!(
         j.next_decision().payload,
         DecisionPayload::TunerDecision(_)

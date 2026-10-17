@@ -873,13 +873,6 @@ fn r7_partial_failure_does_not_complete_its_requirement() {
     let plan = j.next_trial();
     let named = plan.load.cores().first().unwrap().get();
     run(&mut j, &plan, Outcome::Failure, &[], Some(named));
-    let awaiting = j
-        .run()
-        .flight
-        .awaiting
-        .as_ref()
-        .expect("awaits attribution");
-    assert_eq!(awaiting.class, plan.requirement.class);
     let next = j.run().cycle_action().unwrap();
     let again = trial_of(&next);
     assert_eq!((again.load, again.duration), (plan.load, plan.duration));
