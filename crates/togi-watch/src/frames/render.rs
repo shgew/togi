@@ -111,7 +111,13 @@ fn folded(scene: &Scene<'_>, log: &Log<'_>, screen: &Screen, buf: &mut Buffer) -
             let lines = match screen.view {
                 View::Cores => cores_page(scene, inner),
                 View::History => history_page(scene, inner),
-                view => page_lines(scene, view, inner, layout.class),
+                view @ (View::Main
+                | View::Cycle
+                | View::R7
+                | View::Hunts
+                | View::Bios
+                | View::Log
+                | View::Help) => page_lines(scene, view, inner, layout.class),
             };
             let (body, extent) = scroll_body_with_bar(
                 &lines,

@@ -960,7 +960,7 @@ fn next_cycle_step(script: &Script) -> Option<u32> {
                 let (intent, trial) = ahead.intent(&plan);
                 ahead.append(ended(&trial, &plan, Outcome::Pass), &[intent]);
             }
-            _ => {
+            togi_tuner::Action::Decide(_) | togi_tuner::Action::ReadRanking => {
                 ahead.step(|_| Outcome::Pass);
             }
         }
@@ -1010,7 +1010,11 @@ fn a_running_rerun_names_the_step_checking_resumes_at() {
                     );
                 }
             }
-            _ => {}
+            togi_tuner::TrialContext::Search { .. }
+            | togi_tuner::TrialContext::SoloLimit { .. }
+            | togi_tuner::TrialContext::ZeroRerun { .. }
+            | togi_tuner::TrialContext::Round { .. }
+            | togi_tuner::TrialContext::Hunt { .. } => {}
         }
         script.append(ended(&trial, &plan, outcome), &[intent]);
         if skipped > 0 {

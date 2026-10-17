@@ -835,7 +835,11 @@ fn pending_rerun(scene: &Scene<'_>) -> Option<Vec<Clause>> {
     let rerun = match next.context {
         TrialContext::Rerun { .. } => "a clean rerun is needed",
         TrialContext::ZeroRerun { .. } => "a clean rerun with every core at 0 is needed",
-        _ => return None,
+        TrialContext::Search { .. }
+        | TrialContext::SoloLimit { .. }
+        | TrialContext::Cycle { .. }
+        | TrialContext::Round { .. }
+        | TrialContext::Hunt { .. } => return None,
     };
     let failure = match s.last.and_then(|end| end.core) {
         Some(core) => format!("failure on core {:02}", core.get()),
