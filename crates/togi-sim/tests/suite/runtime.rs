@@ -128,9 +128,10 @@ fn each_signal_has_its_result_shape() {
             Signal::CorrectedMce => {
                 let result = waited.expect("a pass-shaped result");
                 let mces = rig.mces(&boot);
-                assert!(result.failure.is_none() && result.ran == NINETY);
+                assert!(result.failure.is_none());
+                assert_eq!(result.ran, NINETY);
                 assert_eq!(mces.len(), 1);
-                assert!(mces[0].corrected && mces[0].core == Some(core(0)));
+                assert_eq!((mces[0].corrected, mces[0].core), (true, Some(core(0))));
             }
             Signal::Crash => {
                 assert!(crashed(&waited));
@@ -139,7 +140,7 @@ fn each_signal_has_its_result_shape() {
                 let next = rig.boot();
                 let mces = rig.mces(&next);
                 assert_eq!(mces.len(), 1);
-                assert!(!mces[0].corrected && mces[0].core == Some(core(0)));
+                assert_eq!((mces[0].corrected, mces[0].core), (false, Some(core(0))));
                 assert_eq!(mces[0].time, rig.sim.now());
                 assert_eq!(mces[0].monotonic, Duration::ZERO);
             }

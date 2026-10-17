@@ -114,8 +114,9 @@ fn real_process_since_keeps_what_starts_at_or_after_the_cutoff() {
     assert!(out.contains("since     2100-01-01T00:00:00Z\n"), "{out}");
     assert!(out.contains("Hunts\nhunt  start"), "{out}");
     let hunts = out.split("\nHunts\n").nth(1).unwrap();
-    assert!(
-        hunts.split("\n\n").next().unwrap().lines().count() == 1,
+    assert_eq!(
+        hunts.split("\n\n").next().unwrap().lines().count(),
+        1,
         "{out}"
     );
 }
