@@ -53,8 +53,8 @@ pub(crate) fn start(session: SessionId) -> Payload {
         session,
         cores: vec![CoreInfo {
             core: CoreId::new(0).unwrap(),
-            ccd: CcdId(0),
-            cpus: vec![CpuId(0)],
+            ccd: CcdId::new(0).unwrap(),
+            cpus: vec![CpuId::from(0)],
         }],
     })
 }

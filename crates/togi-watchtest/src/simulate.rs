@@ -125,13 +125,13 @@ pub fn simulate(
 }
 
 /// Pins trial `trial`'s outcome to a crash `at_s` seconds in.
-pub fn crash_trial(machine: &Simulator, trial: &str, at_s: f64, core: u8) -> Result<(), Error> {
+pub fn crash_trial(machine: &Simulator, trial: &str, at_s: f64, core: CoreId) -> Result<(), Error> {
     machine.script_trial(
         trial,
         Script {
             signal: Some(Signal::Crash),
             at_s,
-            core: CoreId::new(i64::from(core))?,
+            core,
             reset: None,
             then_crash: false,
         },

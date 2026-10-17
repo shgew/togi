@@ -790,7 +790,7 @@ fn tick(sim: &Simulator, by: Duration) -> Duration {
 
 fn machine_check(sim: &Simulator, monotonic: Duration) -> togi_machine::Mce {
     togi_machine::Mce {
-        cpu: CpuId(0),
+        cpu: CpuId::from(0),
         core: Some(core(0)),
         bank: 1,
         bank_type: BankType::LoadStore,

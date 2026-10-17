@@ -226,7 +226,7 @@ impl Driver {
                 Ok(CoreInfo {
                     core: CoreId::new(core.core_id).map_err(|_| Error::CoreOutOfRange {
                         core_id: core.core_id,
-                        ccd: core.ccd.0,
+                        ccd: core.ccd.get(),
                     })?,
                     ccd: core.ccd,
                     cpus: core.cpus,

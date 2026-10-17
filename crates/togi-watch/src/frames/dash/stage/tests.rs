@@ -148,7 +148,7 @@ const WIDE: usize = 240;
 fn core_view(id: u8, found: bool) -> CoreView {
     CoreView {
         id: core(id),
-        ccd: CcdId(0),
+        ccd: CcdId::new(0).unwrap(),
         state: CoreState::Search,
         queued: None,
         applied: Some(ObservedOffset(0)),
@@ -201,7 +201,7 @@ pub(in crate::frames::dash) fn trial(
 fn part(short: u32, long: u32, passed: u32, running: bool) -> CyclePart {
     CyclePart {
         cores: set(&[0]),
-        ccd: Some(CcdId(0)),
+        ccd: Some(CcdId::new(0).unwrap()),
         full: true,
         partial: false,
         short,

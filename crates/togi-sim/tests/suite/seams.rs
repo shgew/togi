@@ -291,10 +291,10 @@ fn the_topology_splits_the_cores_into_two_ccds_with_their_sibling_threads() {
         let want: Vec<CoreInfo> = (0..cores)
             .map(|index| CoreInfo {
                 core: togi_machine::CoreId::try_from(index).expect("core"),
-                ccd: CcdId(u8::try_from(index / (cores / 2)).expect("ccd")),
+                ccd: CcdId::try_from(index / (cores / 2)).expect("ccd"),
                 cpus: vec![
-                    CpuId(u16::try_from(index).expect("cpu")),
-                    CpuId(u16::try_from(index + cores).expect("cpu")),
+                    CpuId::from(u16::try_from(index).expect("cpu")),
+                    CpuId::from(u16::try_from(index + cores).expect("cpu")),
                 ],
             })
             .collect();

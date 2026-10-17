@@ -141,7 +141,7 @@ pub struct Instance {
     pub scope: String,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Sample {
     pub warning: String,
     pub pid: u32,

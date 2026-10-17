@@ -518,7 +518,7 @@ fn mce_line(d: &Mce) -> Option<Line> {
         "uncorrected"
     };
     let who = d.core.map_or_else(
-        || format!("logical CPU {}", d.cpu.0),
+        || format!("logical CPU {}", d.cpu.get()),
         |core| format!("core {:02}", core.get()),
     );
     Some(Line {
@@ -599,16 +599,16 @@ fn core_phase_phrase(d: &CoreTransition) -> Option<String> {
 
 fn chain_phrase(d: &CheckingChain) -> String {
     if d.cores.is_empty() {
-        format!("CCD {} partials end", d.ccd.0)
+        format!("CCD {} partials end", d.ccd.get())
     } else {
-        format!("CCD {} partial on {}", d.ccd.0, core_ids(d.cores))
+        format!("CCD {} partial on {}", d.ccd.get(), core_ids(d.cores))
     }
 }
 
 /// The history line of a chain note: the cycle and step, the CCD, and the cores the next partial loads, or that
 /// the chain ends. The request groups, their provenance and the profile stay in the journal message.
 fn chain_summary(d: &CheckingChain) -> String {
-    let (cycle, step, ccd) = (d.cycle.get(), d.step.get(), d.ccd.0);
+    let (cycle, step, ccd) = (d.cycle.get(), d.step.get(), d.ccd.get());
     if d.cores.is_empty() {
         format!("cycle {cycle} step {step} · CCD {ccd} partials end")
     } else {

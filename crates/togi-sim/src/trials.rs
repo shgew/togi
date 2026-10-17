@@ -359,8 +359,9 @@ impl Runtime {
             let mut rng = stream(self.seed, Domain::Tctl, self.key(spec, first).words());
             result.tctl_max_c = Some(62 + rng.random_range(0..15));
             if escape {
-                let cores = u16::try_from(self.model.cores()).unwrap_or(0);
-                result.escaped = vec![CpuId(u16::from(first.get()) + 2 * cores)];
+                result.escaped = CpuId::try_from(first.index() + 2 * self.model.cores())
+                    .into_iter()
+                    .collect();
             }
         }
         let mut events = Vec::new();
@@ -644,7 +645,7 @@ impl Runtime {
                     .iter()
                     .find(|&core| self.model.ccd_of(core) == usize::from(ccd))
                     .or_else(lowest)
-                    .unwrap_or_default();
+                    .unwrap_or(CoreId::FIRST);
                 (
                     core,
                     Failure {
@@ -678,7 +679,7 @@ impl Runtime {
                 )
             }
             SourceKind::Background => {
-                let core = lowest().unwrap_or_default();
+                let core = lowest().unwrap_or(CoreId::FIRST);
                 (
                     core,
                     Failure {

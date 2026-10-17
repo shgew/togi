@@ -143,7 +143,7 @@ impl Fx {
 fn core_view(id: u8, ccd: u8) -> CoreView {
     CoreView {
         id: core(id),
-        ccd: CcdId(ccd),
+        ccd: CcdId::try_from(ccd).unwrap(),
         state: CoreState::AtLimit,
         queued: None,
         applied: Some(ObservedOffset(0)),
@@ -209,7 +209,7 @@ fn alone(regime: Regime, id: u8, offset: i64) -> TrialView {
 fn part(cores: &[u8], ccd: Option<u8>, full: bool, running: bool) -> CyclePart {
     CyclePart {
         cores: set(cores),
-        ccd: ccd.map(CcdId),
+        ccd: ccd.map(|ccd| CcdId::try_from(ccd).unwrap()),
         full,
         partial: !full,
         short: 1,

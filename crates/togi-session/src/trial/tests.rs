@@ -31,7 +31,7 @@ fn a_sample_is_journaled_whole_citing_the_trial_start() {
         warning: "slow sample".to_owned(),
         pid: 4101,
         tid: 4107,
-        cpu: CpuId(13),
+        cpu: CpuId::from(13),
     });
     assert_eq!(
         payloads(&rig, before),
@@ -40,7 +40,7 @@ fn a_sample_is_journaled_whole_citing_the_trial_start() {
             warning: "slow sample".to_owned(),
             pid: 4101,
             tid: 4107,
-            cpu: CpuId(13),
+            cpu: CpuId::from(13),
         })]
     );
     assert_eq!(rig.events().last().unwrap().cause, [start]);
@@ -60,7 +60,7 @@ fn the_first_append_failure_is_kept_cancels_the_trial_and_silences_later_reports
         warning: String::new(),
         pid: 1,
         tid: 2,
-        cpu: CpuId(3),
+        cpu: CpuId::from(3),
     });
     assert!(cancel.is_cancelled());
     reporter.progress("after the failure");

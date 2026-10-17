@@ -47,7 +47,7 @@ fn known(core_id: u8, offset: i64, seq: Seq) -> Failure {
 
 fn mce(trial: Option<&TrialId>, core_id: Option<u8>, bank_type: BankType) -> Mce {
     Mce {
-        cpu: CpuId(0),
+        cpu: CpuId::from(0),
         core: core_id.map(core),
         bank: 0,
         bank_type,

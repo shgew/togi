@@ -688,7 +688,7 @@ mod tests {
         InstancePlan {
             name: InstanceName::Work,
             core: CoreId::new(0).unwrap(),
-            cpus: vec![CpuId(0)],
+            cpus: vec![CpuId::from(0)],
         }
     }
 

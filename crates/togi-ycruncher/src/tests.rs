@@ -33,7 +33,7 @@ fn fake_package(zen5: bool) -> TempDir {
 }
 
 fn cpus(ids: &[u16]) -> Vec<CpuId> {
-    ids.iter().map(|&id| CpuId(id)).collect()
+    ids.iter().map(|&id| CpuId::from(id)).collect()
 }
 
 fn workload(base: &str) -> &'static Workload {
@@ -670,7 +670,7 @@ fn affinity_cpu_is_parsed_after_stripping_colour() {
     ] {
         assert_eq!(
             classify(line),
-            Line::AffinityError(want.map(CpuId)),
+            Line::AffinityError(want.map(CpuId::from)),
             "{line:?}"
         );
     }
@@ -760,7 +760,7 @@ fn ordinary_lines_are_other() {
 fn precedence_is_affinity_computation_setup_progress() {
     assert_eq!(
         classify("Failed to set core affinity to core: 3 Error(s) encountered"),
-        Line::AffinityError(Some(CpuId(3)))
+        Line::AffinityError(Some(CpuId::from(3)))
     );
     assert_eq!(
         classify("Running BKT: Passed Checksum mismatch InvalidParametersException"),
@@ -824,7 +824,7 @@ fn setup_fixture_reports_setup_error() {
 #[test]
 fn affinity_fixture_reports_the_cpu() {
     let lines = fixture(include_str!("../testdata/affinity-warning.txt"));
-    assert!(lines.contains(&Line::AffinityError(Some(CpuId(3)))));
+    assert!(lines.contains(&Line::AffinityError(Some(CpuId::from(3)))));
     assert!(lines.contains(&progress("FFTv4")));
 }
 

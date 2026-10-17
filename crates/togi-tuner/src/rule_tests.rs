@@ -54,7 +54,7 @@ fn mce_on(trial: &togi_journal::TrialId, core_id: u8) -> Mce {
 
 fn mce(trial: &togi_journal::TrialId, core_id: u8) -> Mce {
     Mce {
-        cpu: CpuId(u16::from(core_id)),
+        cpu: CpuId::from(u16::from(core_id)),
         core: Some(core(core_id)),
         bank: 0,
         bank_type: BankType::LoadStore,

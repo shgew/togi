@@ -45,7 +45,7 @@ pub(crate) enum Observation {
     Stall {
         instance: usize,
         pid: u32,
-        cpu: u32,
+        cpu: CpuId,
         detail: String,
     },
     LineTooLong {
@@ -228,7 +228,7 @@ impl Selector {
                         warning: format!("stalled: {detail}"),
                         pid,
                         tid: pid,
-                        cpu: CpuId(u16::try_from(cpu).unwrap_or(u16::MAX)),
+                        cpu,
                     }));
                 }
                 decision
@@ -393,7 +393,7 @@ mod tests {
     }
 
     fn selector() -> Selector {
-        Selector::new(Backend::Mprime, &[(core(3), CpuId(3))])
+        Selector::new(Backend::Mprime, &[(core(3), CpuId::from(3))])
     }
 
     fn line(stream: Stream, line: Line, text: &str) -> Observation {
@@ -417,7 +417,7 @@ mod tests {
     fn affinity() -> Observation {
         line(
             Stream::Stderr,
-            Line::AffinityError(Some(CpuId(9))),
+            Line::AffinityError(Some(CpuId::from(9))),
             "AFFINITY:9",
         )
     }
@@ -455,7 +455,10 @@ mod tests {
 
     #[test]
     fn progress_names_the_core_with_several_instances() {
-        let mut s = Selector::new(Backend::Mprime, &[(core(1), CpuId(1)), (core(7), CpuId(7))]);
+        let mut s = Selector::new(
+            Backend::Mprime,
+            &[(core(1), CpuId::from(1)), (core(7), CpuId::from(7))],
+        );
         let decision = s.observe(Observation::Line {
             instance: 1,
             pid: 1,
@@ -490,7 +493,7 @@ mod tests {
                 s.observe(observation);
             }
             let verdict = conclude(s);
-            assert_eq!(verdict.escaped, [CpuId(9)]);
+            assert_eq!(verdict.escaped, [CpuId::from(9)]);
             assert_eq!(verdict.failure, None);
             assert_eq!(verdict.inconclusive, None);
         }
@@ -498,7 +501,10 @@ mod tests {
 
     #[test]
     fn first_computation_core_stays_selected_and_is_reported_once() {
-        let mut s = Selector::new(Backend::Mprime, &[(core(1), CpuId(1)), (core(2), CpuId(2))]);
+        let mut s = Selector::new(
+            Backend::Mprime,
+            &[(core(1), CpuId::from(1)), (core(2), CpuId::from(2))],
+        );
         let first = s.observe(compute());
         assert_eq!(first.reports.len(), 1);
         let second = s.observe(Observation::Line {
@@ -518,7 +524,7 @@ mod tests {
         s.observe(Observation::Stall {
             instance: 0,
             pid: 4,
-            cpu: 1,
+            cpu: CpuId::from(1),
             detail: "1.0s cpu in 10.0s running".into(),
         });
         s.observe(compute());
@@ -534,7 +540,7 @@ mod tests {
         let decision = s.observe(Observation::Stall {
             instance: 0,
             pid: 4,
-            cpu: 2,
+            cpu: CpuId::from(2),
             detail: "1.0s cpu in 10.0s running".into(),
         });
         assert!(decision.stop);
@@ -542,7 +548,7 @@ mod tests {
         assert!(matches!(
             &decision.reports[1],
             Report::Warning(sample) if sample.warning == "stalled: 1.0s cpu in 10.0s running"
-                && sample.pid == 4 && sample.cpu == CpuId(2)
+                && sample.pid == 4 && sample.cpu == CpuId::from(2)
         ));
     }
 
@@ -555,7 +561,7 @@ mod tests {
             what: "thread sampling lost".into(),
         });
         let decision = s.observe(Observation::Escape {
-            cpu: CpuId(5),
+            cpu: CpuId::from(5),
             pid: 10,
             tid: 11,
         });
@@ -566,7 +572,7 @@ mod tests {
         ));
         s.observe(compute());
         let verdict = conclude(s);
-        assert_eq!(verdict.escaped, [CpuId(5)]);
+        assert_eq!(verdict.escaped, [CpuId::from(5)]);
         assert_eq!((verdict.failure, verdict.inconclusive), (None, None));
     }
 
@@ -607,7 +613,7 @@ mod tests {
             Line::AffinityError(None),
             "AFFINITY:x",
         ));
-        assert_eq!(conclude(s).escaped, [CpuId(3)]);
+        assert_eq!(conclude(s).escaped, [CpuId::from(3)]);
     }
 
     #[test]
@@ -630,7 +636,7 @@ mod tests {
                 s.observe(observation);
             }
             let verdict = conclude(s);
-            assert_eq!(verdict.escaped, [CpuId(9)]);
+            assert_eq!(verdict.escaped, [CpuId::from(9)]);
             assert_eq!(verdict.inconclusive, None);
         }
     }
@@ -685,7 +691,10 @@ mod tests {
 
     #[test]
     fn another_instances_setup_error_does_not_explain_an_unexplained_exit() {
-        let mut s = Selector::new(Backend::Mprime, &[(core(3), CpuId(3)), (core(4), CpuId(4))]);
+        let mut s = Selector::new(
+            Backend::Mprime,
+            &[(core(3), CpuId::from(3)), (core(4), CpuId::from(4))],
+        );
         s.observe(Observation::UnexpectedExit {
             instance: 0,
             detail: "exit status 0".into(),
@@ -708,7 +717,10 @@ mod tests {
         assert_eq!(verdict.inconclusive, None);
         assert_eq!(reports.len(), 1);
 
-        let mut s = Selector::new(Backend::Mprime, &[(core(3), CpuId(3)), (core(4), CpuId(4))]);
+        let mut s = Selector::new(
+            Backend::Mprime,
+            &[(core(3), CpuId::from(3)), (core(4), CpuId::from(4))],
+        );
         for instance in [0, 1] {
             s.observe(Observation::UnexpectedExit {
                 instance,
@@ -726,9 +738,9 @@ mod tests {
         Selector::new(
             Backend::Mprime,
             &[
-                (core(3), CpuId(6)),
-                (core(5), CpuId(10)),
-                (core(9), CpuId(18)),
+                (core(3), CpuId::from(6)),
+                (core(5), CpuId::from(10)),
+                (core(9), CpuId::from(18)),
             ],
         )
     }
@@ -790,7 +802,11 @@ mod tests {
 
     #[test]
     fn an_unreadable_affinity_cpu_is_the_first_cpu_of_the_instance_that_reported_it() {
-        for (instance, cpu) in [(0, CpuId(6)), (1, CpuId(10)), (2, CpuId(18))] {
+        for (instance, cpu) in [
+            (0, CpuId::from(6)),
+            (1, CpuId::from(10)),
+            (2, CpuId::from(18)),
+        ] {
             let mut s = three();
             s.observe(on(
                 instance,

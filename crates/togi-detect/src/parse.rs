@@ -22,7 +22,7 @@ pub struct Message {
 }
 
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]
-#[error("cpu {} is listed under core {first} and under core {second}", cpu.0)]
+#[error("cpu {} is listed under core {first} and under core {second}", cpu.get())]
 pub struct DuplicateCpu {
     pub cpu: CpuId,
     pub first: CoreId,
@@ -278,8 +278,8 @@ impl Status {
         let Some(found) = Self::decoded(text).or_else(|| Self::raw(text)) else {
             return Ok(None);
         };
-        let cpu = number(found.cpu)
-            .map(CpuId)
+        let cpu = number::<u16>(found.cpu)
+            .map(CpuId::from)
             .ok_or_else(|| StatusError::Cpu(found.cpu.to_owned()))?;
         let bank = number(found.bank).ok_or_else(|| StatusError::Bank(found.bank.to_owned()))?;
         Ok(Some(Self {

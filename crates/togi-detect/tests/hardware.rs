@@ -57,8 +57,8 @@ fn the_host_journal_answers_for_its_boots() -> Result<(), Box<dyn Error>> {
 
     let topology = [CoreInfo {
         core: CoreId::new(0)?,
-        ccd: CcdId(0),
-        cpus: vec![CpuId(0)],
+        ccd: CcdId::new(0).unwrap(),
+        cpus: vec![CpuId::from(0)],
     }];
     let mut kernel = Kernel::new(&topology)?;
 

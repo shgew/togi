@@ -215,7 +215,7 @@ pub(super) fn bios_page(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> {
         ]));
     }
     for (ccd, cells) in cells {
-        let mut spans = vec![scene.paint(Paint::Grey, format!("CCD {}  ", ccd.0))];
+        let mut spans = vec![scene.paint(Paint::Grey, format!("CCD {}  ", ccd.get()))];
         spans.extend(cells);
         out.push(Line::from(spans));
     }

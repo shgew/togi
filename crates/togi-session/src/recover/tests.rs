@@ -581,7 +581,7 @@ fn idle_log(applied: impl FnOnce(&mut Log)) -> Log {
 
 fn kernel_mce(mono_s: u64, corrected: bool) -> togi_machine::Mce {
     togi_machine::Mce {
-        cpu: CpuId(0),
+        cpu: CpuId::from(0),
         core: Some(core(0)),
         bank: 1,
         bank_type: BankType::LoadStore,
@@ -594,7 +594,7 @@ fn kernel_mce(mono_s: u64, corrected: bool) -> togi_machine::Mce {
 
 fn recorded_mce(mono_s: u64, between: bool) -> Payload {
     Payload::Mce(Mce {
-        cpu: CpuId(0),
+        cpu: CpuId::from(0),
         core: Some(core(0)),
         bank: 1,
         bank_type: BankType::LoadStore,
@@ -1653,7 +1653,7 @@ fn an_interrupted_trial_ran_until_its_last_own_sample_and_another_trials_sample_
                 warning: "sample".into(),
                 pid: 1,
                 tid: 1,
-                cpu: CpuId(0),
+                cpu: CpuId::from(0),
             }),
             &[],
         );

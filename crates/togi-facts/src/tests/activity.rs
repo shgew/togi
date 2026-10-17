@@ -37,7 +37,7 @@ fn evidence(kind: &str, id: &str, script: &mut Script) -> Seq {
             warning: String::new(),
             pid: 1,
             tid: 1,
-            cpu: CpuId(0),
+            cpu: CpuId::from(0),
         }),
     }
 }

@@ -23,7 +23,7 @@ fn workload() -> WorkloadId {
 fn status(core_id: u8, top: bool, proxy: bool) -> R7CoreStatus {
     R7CoreStatus {
         core: core(core_id),
-        ccd: CcdId(core_id / 8),
+        ccd: CcdId::try_from(core_id / 8).unwrap(),
         workload: workload(),
         top_requester: top,
         offset_proxy: proxy,

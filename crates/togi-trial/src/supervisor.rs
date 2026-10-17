@@ -14,8 +14,8 @@ use std::time::Duration;
 
 use togi_backend::Backend;
 use togi_machine::{
-    CancellationToken, CoreId, CoreInfo, CpuId, OnCancel, Partial, PerCore, PmTableReader, Sample,
-    Signal, Started, Stopped, Toggles, TrialConditions, TrialResult, TrialSpec, error_chain,
+    CancellationToken, CoreId, CoreInfo, OnCancel, Partial, PerCore, PmTableReader, Sample, Signal,
+    Started, Stopped, Toggles, TrialConditions, TrialResult, TrialSpec, error_chain,
 };
 use tokio::sync::mpsc::{
     Receiver, Sender, UnboundedReceiver, UnboundedSender, channel as bounded, unbounded_channel,
@@ -1030,16 +1030,13 @@ impl<O: Os> Supervisor<O> {
         let mut stop = false;
         match env.os.threads(pid) {
             Ok(found) => {
-                let outside = found.threads.iter().find(|thread| {
-                    !instance
-                        .plan
-                        .cpus
-                        .iter()
-                        .any(|cpu| u32::from(cpu.0) == thread.cpu)
-                });
+                let outside = found
+                    .threads
+                    .iter()
+                    .find(|thread| !instance.plan.cpus.contains(&thread.cpu));
                 if let Some(thread) = outside {
                     stop |= self.judge.observe(Observation::Escape {
-                        cpu: CpuId(u16::try_from(thread.cpu).unwrap_or(u16::MAX)),
+                        cpu: thread.cpu,
                         pid,
                         tid: thread.tid,
                     });

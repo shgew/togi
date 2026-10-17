@@ -557,7 +557,7 @@ impl Kernel for Scripted {
 
 fn machine_check(monotonic: Duration, bank: u16, label: &str) -> togi_machine::Mce {
     togi_machine::Mce {
-        cpu: togi_machine::CpuId(0),
+        cpu: togi_machine::CpuId::from(0),
         core: Some(crate::testing::core(0)),
         bank,
         bank_type: togi_machine::BankType::LoadStore,

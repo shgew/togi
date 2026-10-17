@@ -53,7 +53,7 @@ pub(crate) fn select(
         .iter()
         .flat_map(|info| info.cpus.iter().copied())
         .collect();
-    selected.sort_unstable_by_key(|cpu| cpu.0);
+    selected.sort_unstable_by_key(|cpu| cpu.get());
     selected.dedup();
     (!selected.is_empty()).then_some(selected)
 }
@@ -366,7 +366,7 @@ fn sweep<T: Tasks>(tasks: &T, decide: impl Fn(u32, &CpuSet) -> Verdict) -> Moved
 fn cpu_set(cpus: &[CpuId]) -> CpuSet {
     let mut set = CpuSet::new();
     for cpu in cpus {
-        let index = usize::from(cpu.0);
+        let index = usize::from(cpu.get());
         if index < CpuSet::MAX_CPU {
             set.set(index);
         }
@@ -405,8 +405,8 @@ mod tests {
         (0..4_u8)
             .map(|n| CoreInfo {
                 core: core(n),
-                ccd: CcdId(0),
-                cpus: vec![CpuId(u16::from(n)), CpuId(u16::from(n) + 4)],
+                ccd: CcdId::new(0).unwrap(),
+                cpus: vec![CpuId::from(u16::from(n)), CpuId::from(u16::from(n) + 4)],
             })
             .collect()
     }
@@ -424,7 +424,7 @@ mod tests {
     }
 
     fn cpus(list: &[u16]) -> Vec<CpuId> {
-        list.iter().map(|&cpu| CpuId(cpu)).collect()
+        list.iter().map(|&cpu| CpuId::from(cpu)).collect()
     }
 
     fn pick(loaded: &[u8], with: &[u16], offsets: &[Option<i64>]) -> Option<Vec<CpuId>> {
@@ -452,12 +452,12 @@ mod tests {
     fn the_whole_loaded_physical_core_is_excluded_not_just_the_workload_cpu() {
         let chosen = pick(&[], &[0], &all([0, -3, -3, -3])).unwrap();
         assert!(
-            !chosen.contains(&CpuId(0)) && !chosen.contains(&CpuId(4)),
+            !chosen.contains(&CpuId::from(0)) && !chosen.contains(&CpuId::from(4)),
             "{chosen:?}"
         );
         let chosen = pick(&[], &[4], &all([0, -3, -3, -3])).unwrap();
         assert!(
-            !chosen.contains(&CpuId(0)) && !chosen.contains(&CpuId(4)),
+            !chosen.contains(&CpuId::from(0)) && !chosen.contains(&CpuId::from(4)),
             "{chosen:?}"
         );
     }

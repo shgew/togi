@@ -25,8 +25,8 @@ pub use samples::{
     PmTable, PmTableReader, ReadSamples, SampleError, TrialConditions, read_samples,
 };
 pub use scalars::{
-    CcdId, CoreId, CpuId, InvalidCore, InvalidTarget, MAX_OFFSET, MIN_OFFSET, ObservedOffset,
-    PER_CORE_MAX, TargetOffset,
+    CcdId, CoreId, CpuId, InvalidCcd, InvalidCore, InvalidCpu, InvalidTarget, MAX_OFFSET,
+    MIN_OFFSET, ObservedOffset, PER_CORE_MAX, TargetOffset,
 };
 pub use seams::{
     Check, Clock, CoreRank, Host, Instance, Kernel, KernelRead, Machine, Mce, PstoreRecord,

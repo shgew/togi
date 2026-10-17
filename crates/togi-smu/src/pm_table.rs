@@ -127,10 +127,9 @@ pub(crate) fn layout(cores: &[CoreInfo]) -> Result<(), Unavailable> {
     if cores.len() != PER_CORE_MAX {
         return Err(Unavailable::CoreCount(cores.len()));
     }
-    let in_order = cores
-        .iter()
-        .enumerate()
-        .all(|(index, core)| core.core.index() == index && usize::from(core.ccd.0) == index / 8);
+    let in_order = cores.iter().enumerate().all(|(index, core)| {
+        core.core.index() == index && usize::from(core.ccd.get()) == index / 8
+    });
     if in_order {
         Ok(())
     } else {

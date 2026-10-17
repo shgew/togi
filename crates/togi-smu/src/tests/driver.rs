@@ -18,8 +18,8 @@ fn topology_groups_online_cpus_and_encodes_offsets() {
 
     let cores = driver.topology().unwrap();
     assert_eq!(cores.len(), 16);
-    assert_eq!(cores[9].ccd, CcdId(1));
-    assert_eq!(cores[9].cpus, [CpuId(9), CpuId(25)]);
+    assert_eq!(cores[9].ccd, CcdId::new(1).unwrap());
+    assert_eq!(cores[9].cpus, [CpuId::from(9), CpuId::from(25)]);
 
     write_all(&mut driver, TargetOffset::clamped(-60)).unwrap();
     assert_eq!(
@@ -533,7 +533,7 @@ fn the_logical_cpu_number_bound_is_65535() {
     let driver = open(&tree, &fake);
     assert_eq!(
         driver.topology().unwrap()[0].cpus,
-        [CpuId(0), CpuId(16), CpuId(65535)]
+        [CpuId::from(0), CpuId::from(16), CpuId::from(65535)]
     );
 }
 

@@ -56,7 +56,7 @@ pub enum FoldError {
     NoProfile,
     #[error("a checking cycle passed before any profile.change")]
     NoCheckingProfile,
-    #[error("CCD {} is outside the topology", .0.0)]
+    #[error("CCD {} is outside the topology", .0.get())]
     UnknownCcd(togi_machine::CcdId),
     #[error("hunt {0} has no candidate to narrow")]
     NoCandidates(std::num::NonZeroU32),

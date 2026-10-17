@@ -55,7 +55,7 @@ pub(crate) fn infos(cores: &[(u8, u8)]) -> Vec<CoreInfo> {
         .iter()
         .map(|&(id, ccd)| CoreInfo {
             core: core(id),
-            ccd: CcdId(ccd),
+            ccd: CcdId::try_from(ccd).unwrap(),
             cpus: Vec::new(),
         })
         .collect()

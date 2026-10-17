@@ -197,7 +197,7 @@ fn partial_r7_facts_keep_their_class_and_measurements() {
     failure.stalled_core = Some(core(0));
     failure.voltage_requests_v = [(core(0), 1.125)].into_iter().collect();
     failure.top_requesters = set(&[0]);
-    failure.ccd_mhz = BTreeMap::from([(CcdId(0), 4800)]);
+    failure.ccd_mhz = BTreeMap::from([(CcdId::new(0).unwrap(), 4800)]);
     w.trial(r7("failure", &[0]), failure);
     w.trial(r7("full", &[0, 1]), end("full", Outcome::Pass, 120));
 
@@ -231,7 +231,7 @@ fn partial_r7_facts_keep_their_class_and_measurements() {
     );
     crashed.voltage_requests_v = [(core(0), 1.125)].into_iter().collect();
     crashed.top_requesters = set(&[0]);
-    crashed.ccd_mhz = BTreeMap::from([(CcdId(0), 4800)]);
+    crashed.ccd_mhz = BTreeMap::from([(CcdId::new(0).unwrap(), 4800)]);
     assert_eq!(
         facts,
         [

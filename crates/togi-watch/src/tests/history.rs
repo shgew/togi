@@ -165,7 +165,7 @@ fn reboot_history_during_trial() {
 
 fn mce(corrected: bool) -> Payload {
     Mce {
-        cpu: CpuId(0),
+        cpu: CpuId::from(0),
         core: Some(core(0)),
         bank: 0,
         bank_type: BankType::LoadStore,
@@ -801,7 +801,7 @@ fn a_reset_and_an_mce_have_lines() {
     let mut h = Hist::three();
     h.push(
         togi_journal::Mce {
-            cpu: togi_machine::CpuId(3),
+            cpu: togi_machine::CpuId::from(3),
             core: Some(core(1)),
             bank: 1,
             bank_type: togi_machine::BankType::ExecutionUnit,

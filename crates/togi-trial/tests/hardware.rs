@@ -571,7 +571,7 @@ mod hardware {
         (0..2)
             .map(|n| CoreInfo {
                 core: CoreId::new(n).unwrap(),
-                ccd: CcdId(0),
+                ccd: CcdId::new(0).unwrap(),
                 cpus: vec![CpuId(u16::try_from(n).unwrap() + 2)],
             })
             .collect()
@@ -1442,8 +1442,8 @@ mod hardware {
                 backends: Backends::new().with(Arc::clone(&backend)),
                 topology: vec![CoreInfo {
                     core: CoreId::new(2).unwrap(),
-                    ccd: CcdId(0),
-                    cpus: vec![CpuId(2)],
+                    ccd: CcdId::new(0).unwrap(),
+                    cpus: vec![CpuId::from(2)],
                 }],
                 identity: Some(account()),
                 pm_table: None,
@@ -1460,7 +1460,7 @@ mod hardware {
                         workload: workload.id(),
                         condition: Condition::Alone,
                         cores: vec![CoreId::new(2).unwrap()],
-                        cpus: vec![CpuId(2)],
+                        cpus: vec![CpuId::from(2)],
                         duration: Duration::from_secs(20),
                         index,
                         seed: 0,

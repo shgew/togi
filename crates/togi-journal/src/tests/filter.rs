@@ -253,7 +253,7 @@ fn a_trial_start_matches_every_core_it_launched_an_instance_for() {
     };
     start.instances.push(TrialInstance {
         core: core(9),
-        cpus: vec![CpuId(9)],
+        cpus: vec![CpuId::from(9)],
         pid: 48212,
         scope: "togi-trial-0413-c09".into(),
     });

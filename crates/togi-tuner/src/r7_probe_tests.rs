@@ -513,7 +513,7 @@ fn recorded_core03_ratchet_probes_after_two_charges_despite_five_interleaved_pas
             .map(|(id, request)| (core(id), request))
             .collect();
         end.top_requesters = set(&[3]);
-        end.ccd_mhz.insert(CcdId(0), sample.mhz);
+        end.ccd_mhz.insert(CcdId::new(0).unwrap(), sample.mhz);
         j.append(end.into(), &[intent]);
         if sample.outcome == Outcome::Failure {
             j.decide(j.next_decision());

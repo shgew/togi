@@ -48,7 +48,7 @@ pub(crate) fn infos(ids: &[u8]) -> Vec<CoreInfo> {
     ids.iter()
         .map(|&id| CoreInfo {
             core: core(id),
-            ccd: CcdId(id / 8),
+            ccd: CcdId::try_from(id / 8).unwrap(),
             cpus: Vec::new(),
         })
         .collect()
@@ -872,7 +872,7 @@ pub(crate) fn pairs(ids: &[u8]) -> Vec<CoreInfo> {
     ids.iter()
         .map(|&id| CoreInfo {
             core: core(id),
-            ccd: CcdId(id / 2),
+            ccd: CcdId::try_from(id / 2).unwrap(),
             cpus: Vec::new(),
         })
         .collect()
@@ -882,7 +882,7 @@ pub(crate) fn quads(ids: &[u8]) -> Vec<CoreInfo> {
     ids.iter()
         .map(|&id| CoreInfo {
             core: core(id),
-            ccd: CcdId(id / 4),
+            ccd: CcdId::try_from(id / 4).unwrap(),
             cpus: Vec::new(),
         })
         .collect()
@@ -993,7 +993,7 @@ impl Journal {
         end.ccd_mhz = report
             .clocks
             .iter()
-            .map(|&(ccd, mhz)| (CcdId(ccd), mhz))
+            .map(|&(ccd, mhz)| (CcdId::try_from(ccd).unwrap(), mhz))
             .collect();
         self.append(end.into(), &[intent])
     }
@@ -1069,7 +1069,7 @@ impl Journal {
             ccd_mhz: report
                 .clocks
                 .iter()
-                .map(|&(ccd, mhz)| (CcdId(ccd), mhz))
+                .map(|&(ccd, mhz)| (CcdId::try_from(ccd).unwrap(), mhz))
                 .collect(),
         };
         self.append(payload.into(), &[])

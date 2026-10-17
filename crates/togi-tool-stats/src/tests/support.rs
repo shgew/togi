@@ -96,7 +96,7 @@ impl Log {
                 .iter()
                 .map(|&(n, ccd)| CoreInfo {
                     core: core(n),
-                    ccd: CcdId(ccd),
+                    ccd: CcdId::try_from(ccd).unwrap(),
                     cpus: Vec::new(),
                 })
                 .collect(),

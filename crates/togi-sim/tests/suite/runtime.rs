@@ -264,7 +264,7 @@ fn a_worker_escapes_its_cpus_in_one_trial() {
     rig.sim.escape();
     assert_eq!(
         rig.pass(basic(Regime::R1, &[1], NINETY)).escaped,
-        [CpuId(5)]
+        [CpuId::from(5)]
     );
     assert!(rig.pass(basic(Regime::R1, &[1], NINETY)).escaped.is_empty());
 }

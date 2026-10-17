@@ -448,7 +448,9 @@ impl Run {
     }
 
     fn failed_at_zero_head(&self, view: &Failed<'_>, id: CoreId, charge: &Charge) -> String {
-        let ccd = self.ccd_of(id).map_or(0, |ccd| ccd.0);
+        let ccd = self
+            .ccd_of(id)
+            .map_or_else(|| "?".to_owned(), |ccd| ccd.to_string());
         if charge.named {
             let basis = if !view.trial.recorded_top.is_empty() {
                 "its trial's recorded top requesters".to_owned()
@@ -468,7 +470,8 @@ impl Run {
                 Some(named) if view.named.is_some() => format!(
                     "R7 failure naming core {:02} at CO 0 on CCD {}, which had no loaded core,",
                     named.get(),
-                    self.ccd_of(named).map_or(0, |ccd| ccd.0)
+                    self.ccd_of(named)
+                        .map_or_else(|| "?".to_owned(), |ccd| ccd.to_string())
                 ),
                 _ => "unattributed R7 failure".to_owned(),
             };

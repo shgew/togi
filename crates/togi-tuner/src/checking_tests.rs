@@ -69,7 +69,7 @@ fn backoff(action: &DecisionAction) -> &TunerDecision {
 
 fn mce_of(trial: &TrialId, id: u8) -> Mce {
     Mce {
-        cpu: CpuId(u16::from(id)),
+        cpu: CpuId::from(u16::from(id)),
         core: Some(core(id)),
         bank: 0,
         bank_type: BankType::LoadStore,
@@ -750,7 +750,7 @@ fn a_checking_chain_rejects_an_unknown_ccd_without_changing_state() {
     let step = j.next_decision();
     j.decide(step);
     let before = j.state.clone();
-    let ccd = togi_machine::CcdId(99);
+    let ccd = togi_machine::CcdId::new(99).unwrap();
     let result = j.try_append(
         togi_journal::CheckingChain {
             cycle: std::num::NonZeroU32::MIN,
