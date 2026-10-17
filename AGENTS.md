@@ -73,15 +73,18 @@ Lints live in the workspace `Cargo.toml` and `clippy.toml`; CI denies warnings. 
 
 Idiom, which a pull request follows and `/review-pr` checks it against:
 
-- **Enums:** one `enum` per domain, matched exhaustively with no `_` arm over a domain enum; an `Unknown` variant only where the spec must carry an unknown value. The event type is one enum, `togi_journal::Payload`, whose variants carry the payloads and the wire name.
-- **Newtypes:** `CoreId`, `Seq`, `CcdId`, `CpuId` and the like, with checked constructors, never a bare integer. `TargetOffset` and `ObservedOffset` are different types ([offset types](docs/spec/runtime.md#offset-types-and-the-write-transaction)).
+- **Enums:** one `enum` per domain, matched exhaustively with no `_` arm over a domain enum; an `Unknown` variant only where the spec must carry an unknown value. The event type is one enum, `togi_journal::Payload`, whose variants carry the payloads and the wire name. A question several consumers ask of every variant is answered once on the type, so a new variant does not compile until it answers; a one-variant probe is `if let`.
+- **States:** alternatives are variants that carry their own data. No `Option` or `bool` fields that are valid only together or only in some phase, and no sentinel (`0`, an empty set, `MAX`) standing for "absent" or "done": absence is `Option`.
+- **Newtypes:** `CoreId`, `Seq`, `CcdId`, `CpuId` and the like, with private fields, checked constructors and no `Default`, never a bare integer. `TargetOffset` and `ObservedOffset` are different types ([offset types](docs/spec/runtime.md#offset-types-and-the-write-transaction)).
 - **Per-core data:** a dense `PerCore<T>` iterated in index order (cores 0–15), not a map sorted at every use. It serializes as an object keyed by core id.
 - **Config:** `RawConfig` is parsed once into the validated `Config`; the rest of the code takes only `Config`.
-- **Errors:** an error enum names the operation and keeps the cause (`thiserror`); where a failure must keep the progress made, `Result<T, Partial<T>>`. An error discarded on purpose is handled explicitly and the pull request says why, never `unwrap()` or `expect()`.
+- **Errors:** an error enum names the operation and keeps the cause (`thiserror`); where a failure must keep the progress made, `Result<T, Partial<T>>`. The message names the operation only and never repeats the cause, which is the `#[source]`; one renderer prints the chain. `Result<_, String>` only where clap asks for it (value parsers). An error discarded on purpose is handled explicitly and the pull request says why, never `unwrap()` or `expect()`.
 - **Serde:** derive with `serde_json` defaults; no custom text rules.
 - **Randomness:** `StdRng` from `rand`, pinned to an exact version. A recorded seed reproduces its stream only with the build that recorded it; a `rand` bump changes the stream.
-- **Cancellation:** a `CancellationToken` passed explicitly to code that waits; synchronous crates (tuner, journal, simulator, session loop) take none; tokio stays in the crates that wait on the outside world.
-- **Ownership:** borrow for reads; `Clone` explicitly where a copy is meant (`forecast` copies the folded state).
+- **Cancellation:** a `CancellationToken` passed explicitly to code that waits. The tuner and journal take none; the session loop and the simulator only pass the run's token to the machine seams that wait (`Clock::sleep`, `Trials`, `Running::wait`). tokio stays in the crates that wait on the outside world.
+- **Ownership:** borrow for reads; `Clone` explicitly where a copy is meant (`forecast` copies the folded state). A capability that depends on another borrows it for its whole life, not only at construction (hardware access borrows the host lock). A guard, ticket or outcome whose drop releases a lock or loses a result is `#[must_use = "…"]`.
+- **Text at the edge:** data stays typed until it is rendered. Code never parses text it formatted, and a test's name or label never selects its input.
+- **One owner per rule:** a rule the tuner owns is queried from the tuner, never re-implemented in the dashboard or a tool.
 - **Safety semantics:** the specs own them, with fault tests: [offset types, the intent-write-readback receipt chain and what typestate proves](docs/spec/runtime.md#offset-types-and-the-write-transaction), [journal-failure emergency zeroing](docs/spec/runtime.md#exit-codes), [explicit teardown order](docs/spec/workloads.md#containment) and [journal durability](docs/spec/journal.md#rules).
 
 ## Layout
@@ -97,14 +100,15 @@ A crate owns one responsibility, and its public API is the seam. Split a crate w
 
 - **Traceable:** every action and decision is a journal event with a `msg` a stranger can follow (`journal.md`). Verbose is the goal: someone reading only the journal can reconstruct what togi did and why.
 - **Safe writes:** offsets reach hardware only as [runtime.md](docs/spec/runtime.md#offset-types-and-the-write-transaction) specifies: a `TargetOffset` in [-50, 0] with an intent event before and a readback after for normal writes, and the separate constrained zero-only emergency.
-- Comments only where names cannot carry the reason.
+- Comments only where names cannot carry the reason. They describe the Rust code; the deleted Go implementation appears only in history (ADRs, the changelog, the migration log).
 - Error variants name the operation that failed and keep the cause.
 
 ## Testing
 
 - **Fast and deterministic:** ordinary tests exercise logic in memory, with readers, writers, `MemFs` and fakes. They do no filesystem or network I/O, start no processes and leave no process-wide state behind; time comes from the injected `Clock` seam or tokio's paused clock. No test calls `fsync`, directly or through production code: inject sync failures or record durability ordering instead. Kernel-dependent checks use the named categories below.
 - **Simulator first:** behavior is proven on `togi-sim` with fixed seeds, never by waiting for hardware.
-- Tests pin spec behavior: rules, boundaries, invariants, crash-resume. Table tests (`test-case`) for rules, seeded `proptest` with failure persistence disabled for invariants, compile-time snapshot fixtures for rendered output, a fuzz target for the journal reader (`just fuzz`). Compare values with `assert_eq!`.
+- Tests pin spec behavior: rules, boundaries, invariants, crash-resume. Parametric cases are `#[test_case]` attributes or separate named tests, never a hand-written case list looped inside one test; a loop stays only for a generated or exhaustive sweep, and its assert names the failing input. Seeded `proptest` with failure persistence disabled for invariants, compile-time snapshot fixtures for rendered output, a fuzz target for the journal reader (`just fuzz`). Compare values with `assert_eq!`.
+- Tests reach the tuner and the session through their public API, never through private fields or test-only mutators.
 - Concurrent code is tested on real threads.
 - Tests that need the real world are named: `real_fs_<name>` checks kernel filesystem behavior (locks, modes, symlinks, publication, inotify), never content parsing; `real_process_<name>` starts real processes (a helper program the test builds, never mprime or y-cruncher). Both run in `just test`, `just gate` and CI at nextest's default concurrency, with files confined to each test's temporary directory and sync disabled. Only shared-hardware checks are serialized ([ADR 0063](docs/adr/0063-only-shared-hardware-tests-are-serialized.md)). `just hardware` runs tests behind the `hardware` Cargo feature on the target machine, restoring every offset they change; VM tests exercise the shipped binary's real durability.
 - **Coverage is evidence, not a target** (ADRs 0030, 0032): no threshold, ratchet or tracked percentage. `just cover BASE` shows reviewers changed lines no test reaches. A test exists to pin behavior, never only to reach a line.
