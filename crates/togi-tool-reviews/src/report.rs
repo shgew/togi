@@ -1,6 +1,7 @@
 //! The track record of merged pull requests: robotogi's review check on each head, findings by priority and
 //! outcome from the review records, and the time from opening to the first record.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::Write;
 
@@ -64,6 +65,16 @@ impl Counts {
     }
 }
 
+/// Where a finding is: the package or directory its file is in, or unknown when its location names no
+/// file.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Place {
+    /// The file's first two directories, such as `crates/togi-tuner`, `docs/spec` or `docs`; `.` for a
+    /// file at the repository root.
+    Directory(String),
+    Unknown,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Row {
     pub number: i64,
@@ -73,6 +84,8 @@ pub struct Row {
     /// Nanoseconds from opening to the first review record; meaningful only when `records > 0`.
     pub first_record: i64,
     pub findings: Counts,
+    /// The findings counted in `findings`, by place.
+    pub places: BTreeMap<Place, i64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -84,6 +97,7 @@ pub struct Totals {
     pub findings: Counts,
     /// Each recorded pull request's time to its first record, ascending.
     pub first_records: Vec<i64>,
+    pub places: BTreeMap<Place, i64>,
 }
 
 pub fn run(programs: &mut dyn Programs, w: &mut dyn Write) -> Result<(), Error> {
@@ -303,6 +317,7 @@ pub fn summarize(pulls: &[Pull]) -> Result<Vec<Row>, Error> {
             }
         }
         for finding in &found {
+            *row.places.entry(place(finding)).or_default() += 1;
             if let Some(i) = PRIORITIES.iter().position(|p| *p == finding.priority) {
                 row.findings.priority[i] += 1;
             }
@@ -331,6 +346,48 @@ fn earlier_match(earlier: &[Finding], updated: &[bool], f: &Finding) -> Option<u
     })
 }
 
+/// A finding's location as it was recorded: a string from version 2, an object with a `path` in version 1.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Location {
+    Text(String),
+    Object { path: String },
+}
+
+/// The place of a finding's file: a location string starts with the path, ended by `:`, a space, `,` or
+/// `;`. Text that does not start with a path, such as `pull request body`, names no file.
+pub fn place(f: &Finding) -> Place {
+    let path = match f
+        .location
+        .as_deref()
+        .map(|raw| serde_json::from_str::<Location>(raw.get()))
+    {
+        Some(Ok(Location::Text(text))) => {
+            let end = text
+                .find(|c: char| c == ':' || c == ',' || c == ';' || c.is_whitespace())
+                .unwrap_or(text.len());
+            let path = &text[..end];
+            let is_path = path.contains(['/', '.']) || text[end..].starts_with(':');
+            if path.is_empty() || !is_path {
+                return Place::Unknown;
+            }
+            path.to_owned()
+        }
+        Some(Ok(Location::Object { path })) if !path.is_empty() => path,
+        Some(Ok(Location::Object { .. }) | Err(_)) | None => return Place::Unknown,
+    };
+    let mut dirs: Vec<&str> = path
+        .split('/')
+        .filter(|d| !d.is_empty() && *d != ".")
+        .collect();
+    dirs.pop();
+    if dirs.is_empty() {
+        return Place::Directory(".".to_owned());
+    }
+    dirs.truncate(2);
+    Place::Directory(dirs.join("/"))
+}
+
 pub fn total(rows: &[Row]) -> Totals {
     let mut totals = Totals {
         pulls: crate::count(rows.len()),
@@ -348,6 +405,9 @@ pub fn total(rows: &[Row]) -> Totals {
             totals.first_records.push(row.first_record);
         }
         totals.findings.add(&row.findings);
+        for (place, n) in &row.places {
+            *totals.places.entry(place.clone()).or_default() += n;
+        }
     }
     totals.first_records.sort_unstable();
     totals
@@ -416,7 +476,26 @@ pub fn render(w: &mut dyn Write, rows: &[Row], totals: &Totals) -> Result<(), Er
         w.write_all(sentence.as_bytes())
             .map_err(|error| Error::wrap("write totals", error))?;
     }
-    Ok(())
+    if totals.places.is_empty() {
+        return Ok(());
+    }
+    let mut places: Vec<(&Place, &i64)> = totals.places.iter().collect();
+    places.sort_by(|(a, m), (b, n)| {
+        (**a == Place::Unknown)
+            .cmp(&(**b == Place::Unknown))
+            .then(n.cmp(m))
+            .then(a.cmp(b))
+    });
+    let mut table = String::from("\nFindings by directory, each counted once:\n");
+    for (place, n) in places {
+        let name = match place {
+            Place::Directory(dir) => dir.as_str(),
+            Place::Unknown => "unknown",
+        };
+        let _ = writeln!(table, "{name}\t{n}");
+    }
+    w.write_all(tabwrite(&table, 2).as_bytes())
+        .map_err(|error| Error::wrap("write directories", error))
 }
 
 fn count_cells(c: &Counts) -> String {
