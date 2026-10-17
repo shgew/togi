@@ -16,8 +16,12 @@ fn core(value: i64) -> CoreId {
 fn clamp_offset_safety() {
     for value in -100..=100 {
         let offset = TargetOffset::clamped(value);
-        assert_eq!(offset.get(), value.clamp(-50, 0));
-        assert_eq!(TargetOffset::new(value).is_ok(), (-50..=0).contains(&value));
+        assert_eq!(offset.get(), value.clamp(-50, 0), "{value}");
+        assert_eq!(
+            TargetOffset::new(value).is_ok(),
+            (-50..=0).contains(&value),
+            "{value}"
+        );
     }
 }
 
