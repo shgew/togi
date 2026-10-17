@@ -1354,3 +1354,93 @@ fn an_idle_hold_pins_the_clock_to_the_trials_start() {
     assert!(!text.contains("paused until"), "{text}");
     assert!(!text.contains("ago"), "{text}");
 }
+
+#[test]
+fn an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_events() {
+    use crate::tests::kit::{Script, warning};
+    use togi_journal::Outcome;
+    use togi_tuner::Action;
+
+    fn append_at(script: &mut Script, payload: togi_journal::Payload, time: Timestamp) {
+        let mut event = script.event(payload, &[]);
+        event.time = time;
+        script.shadow.fold(&event).unwrap();
+        script.events.push(event);
+    }
+    fn shown(script: &Script, now: Timestamp) -> String {
+        let model = script.model();
+        let zone = TimeZone::UTC;
+        let scene = scene(&model.snapshot(), now, &zone, Colours::None);
+        assert!(scene.hold.is_some(), "the idle trial holds the frame");
+        plain(&header(&scene, 160, false))
+    }
+
+    let mut script = Script::at_limit();
+    let mut idle = None;
+    for _ in 0..200 {
+        if let Ok(Action::RunTrial(plan)) = script.shadow.next() {
+            if plan.regime == Regime::R6 {
+                idle = Some(plan);
+                break;
+            }
+        }
+        script.step(|_| Outcome::Pass);
+    }
+    let plan = idle.expect("the cycle reaches its idle step");
+    let config = script
+        .events
+        .iter()
+        .find(|event| event.kind() == togi_journal::EventKind::ConfigLoaded)
+        .expect("the run's configuration")
+        .time;
+    let (intent, trial) = script.intent(&plan);
+    let hours = |n: i64| jiff::SignedDuration::from_secs(n * 3600);
+    let started = config.checked_add(hours(2)).unwrap();
+    script.start(&trial);
+    script.events.last_mut().unwrap().time = started;
+
+    let first = shown(&script, started);
+    assert!(
+        first.contains("tuning 2h00m") && first.contains("session 2h00m"),
+        "{first}"
+    );
+    let progress = togi_journal::TrialProgress {
+        trial: trial.clone(),
+        detail: "still running".to_owned(),
+        signal: None,
+        core: None,
+    };
+    append_at(
+        &mut script,
+        progress.into(),
+        started.checked_add(hours(1)).unwrap(),
+    );
+    append_at(
+        &mut script,
+        warning("a session event during the hold"),
+        started.checked_add(hours(3)).unwrap(),
+    );
+    assert!(script.model().snapshot().idle_hold().is_some());
+    for now in [started, started.checked_add(hours(5)).unwrap()] {
+        let held = shown(&script, now);
+        assert!(
+            held.contains("tuning 2h00m") && held.contains("session 2h00m"),
+            "both durations stay at the trial's start: {held}"
+        );
+    }
+
+    let ended = started.checked_add(hours(4)).unwrap();
+    let end = script.end(intent, &trial, Outcome::Pass);
+    script.events[usize::try_from(end.get()).unwrap() - 1].time = ended;
+    let model = script.model();
+    let snap = model.snapshot();
+    assert!(
+        snap.idle_hold().is_none(),
+        "the recorded end releases the hold"
+    );
+    assert_eq!(
+        snap.tuning.at(ended),
+        std::time::Duration::from_secs(6 * 3600),
+        "the accumulator advanced behind the hold and counts through the trial's end"
+    );
+}

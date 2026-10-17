@@ -62,7 +62,10 @@ pub(crate) fn header(scene: &Scene<'_>, width: usize, compact: bool) -> Line<'st
         paused = None;
     }
     let age = hm(between(session.start, end));
-    let tuning = hm(scene.s.tuning.at(end));
+    let tuning = hm(scene.hold.map_or_else(
+        || scene.s.tuning.at(end),
+        |hold| scene.s.tuning.at_latest_trial_start(hold.started),
+    ));
     let text = |value: String| paint(Paint::Text, value);
     let grey = |value: String| paint(Paint::Grey, value);
     let failures = scene.s.failures;
