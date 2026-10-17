@@ -10,6 +10,7 @@ macro_rules! assert_snapshot {
     }};
 }
 
+mod chains;
 mod evidence;
 mod hunts;
 mod recovery;

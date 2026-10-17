@@ -2007,6 +2007,8 @@ dependencies = [
  "clap",
  "jiff",
  "proptest",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "togi-config",

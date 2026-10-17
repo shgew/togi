@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use jiff::Timestamp;
-use togi_tool_stats::{Error, Journal, report, score};
+use togi_tool_stats::{Error, Journal, chain_records, report, score};
 
 /// Summarize a current or archived journal for review, read-only: the journal and its unfinished final line
 /// are left as they are.
@@ -24,6 +24,9 @@ struct Cli {
     /// reporting. Refuses a state directory whose journal through the forecast's anchor changed.
     #[arg(long)]
     forecast: Option<PathBuf>,
+    /// Also write each R7 chain derivation's attribution to FILE, one JSON object a line.
+    #[arg(long, value_name = "FILE", conflicts_with = "forecast")]
+    chains: Option<PathBuf>,
 }
 
 fn parse_since(text: &str) -> Result<Timestamp, String> {
@@ -51,6 +54,16 @@ fn run(cli: &Cli) -> Result<(String, Vec<String>), Error> {
         .map(ToString::to_string)
         .into_iter()
         .collect();
+    if let Some(path) = &cli.chains {
+        let records = chain_records(&journal, cli.since).map_err(|source| Error::Chains {
+            path: path.display().to_string(),
+            source: source.into(),
+        })?;
+        std::fs::write(path, records).map_err(|source| Error::Chains {
+            path: path.display().to_string(),
+            source,
+        })?;
+    }
     Ok((report(&journal, cli.since), skipped))
 }
 
