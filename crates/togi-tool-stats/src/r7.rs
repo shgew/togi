@@ -15,7 +15,7 @@ use togi_journal::{
 use togi_machine::{CoreId, CoreSet, PerCore, Regime, TargetOffset, WorkloadId};
 use togi_render::escape_text;
 use togi_requests::top;
-use togi_tuner::{PartNo, PhaseNo, Requirement, RequirementKind, State, StepNo};
+use togi_tuner::{PhaseNo, Requirement, State, TrialContext};
 
 use crate::evidence::event_at;
 use crate::project::{Class, Projection, core_list};
@@ -57,7 +57,7 @@ impl Phase {
 /// The requirement a failed trial was scheduled for, as the tuner held it once the trial's intent folded.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct Required {
-    pub(crate) kind: RequirementKind,
+    pub(crate) kind: &'static str,
     /// Passes of the trial's class the requirement needed.
     pub(crate) needed: u16,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -68,37 +68,28 @@ pub(crate) struct Required {
 
 impl Required {
     fn of(requirement: Requirement) -> Self {
+        let (kind, step, part) = match requirement.context {
+            TrialContext::Search { .. } => ("search", None, None),
+            TrialContext::SoloLimit { .. } => ("solo_limit", None, None),
+            TrialContext::Cycle { step, part, .. } => ("cycle", Some(step.get()), Some(part.get())),
+            TrialContext::Rerun { .. } => ("rerun", None, None),
+            TrialContext::ZeroRerun { .. } => ("zero_rerun", None, None),
+            TrialContext::Round { .. } => ("round", None, None),
+            TrialContext::Hunt { .. } => ("hunt", None, None),
+        };
         Self {
-            kind: requirement.kind,
+            kind,
             needed: requirement.needed.get(),
-            step: requirement.step.map(StepNo::get),
-            part: requirement.part.map(PartNo::get),
+            step,
+            part,
         }
     }
 
     /// `cycle 2.3 x3`: the kind, the step and part when it has them, and the passes needed.
     fn label(self) -> String {
-        let mut label = match self.kind {
-            RequirementKind::Search => "search",
-            RequirementKind::SoloLimit => "solo_limit",
-            RequirementKind::Cycle => "cycle",
-            RequirementKind::Rerun => "rerun",
-            RequirementKind::ZeroRerun => "zero_rerun",
-            RequirementKind::Round => "round",
-            RequirementKind::Hunt => "hunt",
-        }
-        .to_owned();
-        match (self.step, self.part) {
-            (Some(step), Some(part)) => {
-                let _ = write!(label, " {step}.{part}");
-            }
-            (Some(step), None) => {
-                let _ = write!(label, " {step}");
-            }
-            (None, Some(part)) => {
-                let _ = write!(label, " part {part}");
-            }
-            (None, None) => {}
+        let mut label = self.kind.to_owned();
+        if let (Some(step), Some(part)) = (self.step, self.part) {
+            let _ = write!(label, " {step}.{part}");
         }
         let _ = write!(label, " x{}", self.needed);
         label

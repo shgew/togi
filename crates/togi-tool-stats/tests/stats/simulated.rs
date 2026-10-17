@@ -1,5 +1,6 @@
 use togi_journal::Payload;
 use togi_tool_stats::{Journal, report};
+use togi_tuner::TrialContext;
 
 use crate::sim::{chain_session, hazard_session, hunting_session};
 
@@ -235,14 +236,21 @@ fn check_backoff_records(events: &[togi_journal::Event]) -> std::collections::BT
             if intent.regime == togi_machine::Regime::R7 && intent.cores.len() > 1 {
                 r7.insert(intent.trial.clone());
                 let requirement = state.open_requirement().unwrap();
+                let kind = match requirement.context {
+                    TrialContext::Search { .. } => "search",
+                    TrialContext::SoloLimit { .. } => "solo_limit",
+                    TrialContext::Cycle { .. } => "cycle",
+                    TrialContext::Rerun { .. } => "rerun",
+                    TrialContext::ZeroRerun { .. } => "zero_rerun",
+                    TrialContext::Round { .. } => "round",
+                    TrialContext::Hunt { .. } => "hunt",
+                };
                 let mut value = serde_json::json!({
-                    "kind": requirement.kind,
+                    "kind": kind,
                     "needed": requirement.needed.get(),
                 });
-                if let Some(step) = requirement.step {
+                if let TrialContext::Cycle { step, part, .. } = requirement.context {
                     value["step"] = serde_json::to_value(step).unwrap();
-                }
-                if let Some(part) = requirement.part {
                     value["part"] = serde_json::to_value(part).unwrap();
                 }
                 held.insert(intent.trial.clone(), value);
