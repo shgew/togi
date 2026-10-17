@@ -793,6 +793,82 @@ fn a_repeated_wait_reports_the_failure_the_first_one_did() {
 }
 
 #[test]
+fn shared_errors_render_each_cause_once() {
+    let launch = || Error::Launch {
+        instance: "c01".into(),
+        scope: "togi-trial-t1-c01".into(),
+        source: std::io::Error::other("systemd-run missing"),
+    };
+    let containment = crate::Containment::new(CleanupFailure::Reap {
+        instance: "c00".into(),
+        source: std::io::Error::other("the leader did not exit"),
+    })
+    .caused_by(launch());
+    let joined = Error::join_after(
+        Error::Containment(std::sync::Arc::new(containment)),
+        vec![Error::Cancelled],
+    );
+    for (error, expected) in [
+        (
+            launch(),
+            "launch instance c01 in scope togi-trial-t1-c01: systemd-run missing",
+        ),
+        (
+            joined,
+            "trial cleanup could not be confirmed: trial cleanup could not be confirmed: \
+             the start failed: launch instance c01 in scope togi-trial-t1-c01: systemd-run missing; \
+             reap instance c00: the leader did not exit; cancelled",
+        ),
+    ] {
+        let error = crate::error::Shared::seam(&std::sync::Arc::new(error));
+        assert_eq!(crate::error::with_causes(&error), expected);
+    }
+}
+
+#[test]
+fn a_kept_joined_error_is_reachable_through_the_public_source_chain() {
+    let other = Error::join_after(
+        Error::Launch {
+            instance: "c01".into(),
+            scope: "togi-trial-t1-c01".into(),
+            source: std::io::Error::other("systemd-run missing"),
+        },
+        vec![Error::Cancelled],
+    );
+    let containment = Error::join_after(
+        Error::Stuck {
+            operation: "stop",
+            bound: Duration::from_secs(1),
+        },
+        vec![Error::Cancelled],
+    );
+    for (error, is_other) in [(other, true), (containment, false)] {
+        let seam = crate::error::Shared::seam(&Arc::new(error));
+        let (togi_machine::Error::Other(inner) | togi_machine::Error::Containment(inner)) = &seam
+        else {
+            panic!("{seam:?}");
+        };
+        assert_eq!(matches!(seam, togi_machine::Error::Other(_)), is_other);
+        let kept = std::iter::successors(
+            Some(&**inner as &(dyn std::error::Error + 'static)),
+            |error| error.source(),
+        )
+        .find_map(|error| error.downcast_ref::<Error>());
+        assert!(matches!(kept, Some(Error::Joined(_))), "{seam:?}");
+    }
+    let stuck = Error::Stuck {
+        operation: "stop",
+        bound: Duration::from_secs(1),
+    };
+    let text = stuck.to_string();
+    let seam = crate::error::Shared::seam(&Arc::new(stuck));
+    assert_eq!(
+        crate::error::with_causes(&seam),
+        format!("trial cleanup could not be confirmed: {text}")
+    );
+}
+
+#[test]
 fn a_cancelled_trial_keeps_the_output_failure_that_followed_its_cancellation() {
     let (mut runner, _dir) = runner(
         |fake| {
