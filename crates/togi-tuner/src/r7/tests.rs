@@ -582,17 +582,19 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
         (1.047187328338623, 1.0287102460861206, 5029),
         (1.046082615852356, 1.0274772644042969, 5026),
     ] {
-        sources.push(journal.r7_fact(
-            true,
-            &ccd1,
-            &[
-                -22, -25, -26, -34, -27, -36, -45, -42, -48, -39, -37, -42, -49, -41, -50, -50,
-            ],
-            &crate::testkit::R7Report::default()
-                .requests(&[(10, top), (11, own)])
-                .top(&[10])
-                .clocks(&[(1, mhz)]),
-        ));
+        sources.push(
+            journal.r7_fact(
+                true,
+                &ccd1,
+                &[
+                    -22, -25, -26, -34, -27, -36, -45, -42, -48, -39, -37, -42, -49, -41, -50, -50,
+                ],
+                &crate::testkit::R7Report::default()
+                    .requests(&[(10, top), (11, own)])
+                    .top(&[10])
+                    .clocks(&[(1, mhz)]),
+            ),
+        );
     }
     // Install the recorded first CCD1 partial in the cycle before folding its live failure.
     // The default cycle contains the full CCD, not an arbitrary loaded subset.
