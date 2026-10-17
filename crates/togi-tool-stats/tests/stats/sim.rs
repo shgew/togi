@@ -98,6 +98,8 @@ pub(crate) const TARGET_FIT_1: &str =
     include_str!("../../../../tools/bench/machines/target-fit-1.json");
 pub(crate) const TARGET_FIT_2: &str =
     include_str!("../../../../tools/bench/machines/target-fit-2.json");
+pub(crate) const TARGET_SHARED_VOLTAGE: &str =
+    include_str!("../../../../tools/bench/machines/target-shared-voltage.json");
 
 /// The events of a simulated session of the bench machine definition `machine` drawn from `seed`, through
 /// its first clean cycle.
