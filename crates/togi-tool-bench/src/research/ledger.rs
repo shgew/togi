@@ -242,27 +242,46 @@ fn decode(line: &[u8]) -> Result<Record, serde_json::Error> {
     serde_json::from_slice::<Object<Record>>(line).map(|Object(record)| record)
 }
 
-/// The bytes after the ledger's last newline: a fragment a killed or failed append left, if any.
-fn torn_tail(bytes: &[u8]) -> Option<&[u8]> {
-    let start = bytes
+/// The bytes after the ledger's last line that decodes: what killed or failed appends left, if anything. A
+/// failed append can tear the line that ends an earlier fragment too, so the region may span several lines.
+fn torn_tail(bytes: &[u8]) -> &[u8] {
+    let mut cut = bytes
         .iter()
         .rposition(|&byte| byte == b'\n')
         .map_or(0, |end| end + 1);
-    Some(&bytes[start..]).filter(|tail| !tail.is_empty())
+    while cut > 0 {
+        let line_end = cut - 1;
+        let line_start = bytes[..line_end]
+            .iter()
+            .rposition(|&byte| byte == b'\n')
+            .map_or(0, |end| end + 1);
+        let line = &bytes[line_start..line_end];
+        if line.is_empty() || decode(line).is_ok() {
+            break;
+        }
+        cut = line_start;
+    }
+    &bytes[cut..]
 }
 
-/// What an append writes before its records when the ledger ends in a torn fragment: a newline that ends the
-/// fragment, then a `ledger_torn` record holding its bytes. Nothing for a ledger that ends cleanly.
+/// What an append writes before its records when the ledger ends in a torn region: a newline that ends it,
+/// unless it ends in one, then a `ledger_torn` record holding its bytes without that newline. Nothing for a
+/// ledger that ends cleanly.
 pub(super) fn end_torn_tail(ledger: &[u8], now: Timestamp) -> Result<Vec<u8>, serde_json::Error> {
-    let Some(tail) = torn_tail(ledger) else {
+    let tail = torn_tail(ledger);
+    if tail.is_empty() {
         return Ok(Vec::new());
-    };
-    let mut bytes = vec![b'\n'];
+    }
+    let discarded = tail.strip_suffix(b"\n").unwrap_or(tail);
+    let mut bytes = Vec::new();
+    if discarded.len() == tail.len() {
+        bytes.push(b'\n');
+    }
     serde_json::to_writer(
         &mut bytes,
         &Record::LedgerTorn {
             at: now,
-            discarded: hex(tail),
+            discarded: hex(discarded),
         },
     )?;
     bytes.push(b'\n');
@@ -270,32 +289,54 @@ pub(super) fn end_torn_tail(ledger: &[u8], now: Timestamp) -> Result<Vec<u8>, se
 }
 
 impl Ledger {
-    /// Reads the ledger's complete lines. Bytes after the last newline are a torn tail, never a record, and a
-    /// fragment directly followed by the `ledger_torn` record holding its bytes is skipped the same way.
+    /// Reads the ledger's lines. Bytes after the last line that decodes are a torn region, never a record, and
+    /// lines that do not decode directly followed by the `ledger_torn` record holding their bytes are skipped
+    /// the same way.
     pub fn parse(bytes: &[u8]) -> Result<Self, LedgerError> {
-        let complete = &bytes[..bytes.len() - torn_tail(bytes).map_or(0, <[u8]>::len)];
+        let complete = &bytes[..bytes.len() - torn_tail(bytes).len()];
+        let mut lines = Vec::new();
+        let mut offset = 0;
+        for line in complete.split(|&byte| byte == b'\n') {
+            lines.push((offset, line));
+            offset += line.len() + 1;
+        }
         let mut records = Vec::new();
-        let mut lines = complete.split(|&byte| byte == b'\n').enumerate().peekable();
-        while let Some((index, line)) = lines.next() {
+        let mut index = 0;
+        while index < lines.len() {
+            let (start, line) = lines[index];
+            index += 1;
             if line.is_empty() {
                 continue;
             }
-            let repair = lines
-                .peek()
-                .and_then(|(_, next)| decode(next).ok())
-                .filter(|next| {
-                    matches!(next, Record::LedgerTorn { discarded, .. } if *discarded == hex(line))
-                });
-            if let Some(repair) = repair {
-                records.push(repair);
-                lines.next();
-                continue;
+            let source = match decode(line) {
+                Ok(record) => {
+                    records.push(record);
+                    continue;
+                }
+                Err(source) => source,
+            };
+            let mut end = index;
+            while lines
+                .get(end)
+                .is_some_and(|(_, next)| !next.is_empty() && decode(next).is_err())
+            {
+                end += 1;
             }
-            let record = decode(line).map_err(|source| LedgerError::Decode {
-                line: index + 1,
-                source,
-            })?;
-            records.push(record);
+            let (last_start, last) = lines[end - 1];
+            let region = hex(&complete[start..last_start + last.len()]);
+            match lines.get(end).map(|(_, next)| decode(next)) {
+                Some(Ok(repair)) if matches!(&repair, Record::LedgerTorn { discarded, .. } if *discarded == region) =>
+                {
+                    records.push(repair);
+                    index = end + 1;
+                }
+                _ => {
+                    return Err(LedgerError::Decode {
+                        line: index,
+                        source,
+                    });
+                }
+            }
         }
         match records.first() {
             Some(Record::CampaignStarted { .. }) => Ok(Self { records }),
@@ -319,11 +360,28 @@ impl Ledger {
         })
     }
 
+    /// The campaign's stop. A `confirmation_failed` outcome or a timed-out run is one even when a torn append
+    /// lost the stop line written with it.
     pub fn stopped(&self) -> Option<(StopReason, &str)> {
-        self.records.iter().find_map(|record| match record {
-            Record::CampaignStopped { reason, detail, .. } => Some((*reason, detail.as_str())),
-            _ => None,
-        })
+        self.records
+            .iter()
+            .find_map(|record| match record {
+                Record::CampaignStopped { reason, detail, .. } => Some((*reason, detail.as_str())),
+                _ => None,
+            })
+            .or_else(|| {
+                self.records.iter().find_map(|record| match record {
+                    Record::Outcome(decision)
+                        if decision.outcome == Outcome::ConfirmationFailed =>
+                    {
+                        Some((StopReason::ConfirmationFailed, decision.reason.as_str()))
+                    }
+                    Record::ExperimentEnded(ended) if ended.end == End::TimedOut => {
+                        Some((StopReason::WallLimit, "a run stopped at the limit"))
+                    }
+                    _ => None,
+                })
+            })
     }
 
     pub fn starts(&self) -> impl Iterator<Item = &Started> {

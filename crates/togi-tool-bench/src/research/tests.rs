@@ -707,6 +707,11 @@ fn run_stopped_at_the_wall_limit_stops_the_campaign() {
     live.run(&fake, "h1", Role::Reference, FORWARD, End::TimedOut)
         .unwrap();
     assert_eq!(live.stopped(), Some(StopReason::WallLimit));
+    let torn = without_last_record(&live);
+    assert_eq!(
+        torn.stopped().map(|(reason, _)| reason),
+        Some(StopReason::WallLimit)
+    );
 }
 
 #[test]
@@ -1148,6 +1153,23 @@ fn failed_confirmation_stops_the_campaign() {
     live.decide(&fake, "h1", Outcome::ConfirmationFailed)
         .unwrap();
     assert_eq!(live.stopped(), Some(StopReason::ConfirmationFailed));
+    let torn = without_last_record(&live);
+    assert_eq!(
+        torn.stopped().map(|(reason, _)| reason),
+        Some(StopReason::ConfirmationFailed)
+    );
+}
+
+/// The ledger as a torn append that lost its last line leaves it.
+fn without_last_record(live: &Live) -> Ledger {
+    let records = &live.campaign.ledger.records;
+    assert!(matches!(
+        records.last(),
+        Some(Record::CampaignStopped { .. })
+    ));
+    Ledger {
+        records: records[..records.len() - 1].to_vec(),
+    }
 }
 
 #[test]
@@ -1348,6 +1370,39 @@ fn torn_tail_is_no_record_and_the_next_append_keeps_it() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[test_case(1 ; "torn after the newline that ends the fragment")]
+#[test_case(12 ; "torn inside the ledger_torn line")]
+fn torn_repair_is_kept_with_the_fragment_it_ended(written: usize) {
+    let start = Record::CampaignStarted {
+        at: at(0),
+        manifest_sha256: sha256(b"manifest"),
+        head: CHECKOUT.to_owned(),
+    };
+    let mut bytes = lines(std::slice::from_ref(&start));
+    let clean = bytes.len();
+    bytes.extend_from_slice(br#"{"event":"campaign_res"#);
+    let repair = super::ledger::end_torn_tail(&bytes, at(1)).unwrap();
+    bytes.extend_from_slice(&repair[..written]);
+    assert_eq!(
+        Ledger::parse(&bytes).unwrap().records,
+        std::slice::from_ref(&start)
+    );
+    let region = bytes[clean..]
+        .strip_suffix(b"\n")
+        .unwrap_or(&bytes[clean..]);
+    let torn = Record::LedgerTorn {
+        at: at(2),
+        discarded: crate::suite::hex(region),
+    };
+    let later = Record::CampaignResumed {
+        at: at(2),
+        head: CHECKOUT.to_owned(),
+    };
+    bytes.extend(super::ledger::end_torn_tail(&bytes, at(2)).unwrap());
+    bytes.extend(lines(std::slice::from_ref(&later)));
+    assert_eq!(Ledger::parse(&bytes).unwrap().records, [start, torn, later]);
 }
 
 #[test_case(r#"{"event":"campaign_resumed","at":"2027-01-15T08:00:00Z"}"# ; "missing field")]
