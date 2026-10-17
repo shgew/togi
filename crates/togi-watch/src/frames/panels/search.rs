@@ -410,7 +410,7 @@ mod tests {
         assert!(text.contains("light 2/5, heavy 0/5"), "{text}");
     }
 
-    /// The 160x45 turns panel is 75 cells wide; its `this turn` column is the one the descriptions must fit.
+    /// The 160x45 turns panel is 75 cells wide.
     #[test]
     fn the_medium_search_turns_are_not_cut() {
         let t = Tables::new(SizeClass::Medium, 75);
@@ -447,6 +447,7 @@ mod tests {
         assert!(!pair.contains("...") && !deeper.contains("..."), "{rows:?}");
     }
 
+    /// The `this turn` column of the 75-cell turns panel is the one the descriptions must fit.
     #[test_case("search: light, then heavy"; "a search pair")]
     #[test_case("search: 1 count deeper"; "a deeper search")]
     #[test_case("confirm: light trial 5 of 5"; "the last light confirmation")]

@@ -214,59 +214,61 @@ fn main_at_80_by_30_has_the_numeric_designs_rows() {
     assert_ne!(rows[28].trim(), "", "the footer");
 }
 
-#[test]
-fn under_80_by_30_main_scrolls_and_every_core_is_reachable() {
+#[test_case((79, 29); "79 by 29")]
+#[test_case((80, 29); "80 by 29")]
+#[test_case((79, 30); "79 by 30")]
+#[test_case((60, 20); "60 by 20")]
+#[test_case((40, 12); "40 by 12")]
+fn under_80_by_30_main_scrolls_and_every_core_is_reachable(size: (u16, u16)) {
     let fx = Fixture::scenario(Scenario::Checking);
-    for size in [(79, 29), (80, 29), (79, 30), (60, 20), (40, 12)] {
-        let top = frame_rows(&fx, View::Main, size, 0);
-        let mut sc = screen(View::Main, size.0, size.1, Colours::None, true);
-        let drawn = fx.draw(&sc, fx.now).1;
-        assert!(
-            drawn.scroll > 0,
-            "{size:?}: the numeric body does not fit and must scroll"
+    let top = frame_rows(&fx, View::Main, size, 0);
+    let mut sc = screen(View::Main, size.0, size.1, Colours::None, true);
+    let drawn = fx.draw(&sc, fx.now).1;
+    assert!(
+        drawn.scroll > 0,
+        "{size:?}: the numeric body does not fit and must scroll"
+    );
+    assert!(
+        top.join("\n").contains("compact · scroll for all cores"),
+        "{size:?} does not say that it scrolls:\n{}",
+        top.join("\n")
+    );
+    let zone = TimeZone::UTC;
+    let scene = Scene::new(fx.model.snapshot(), fx.now, &zone, Colours::None);
+    let inner = usize::from(size.0.saturating_sub(1)).saturating_sub(2 + 2);
+    let table: Vec<String> = core_table(&scene, inner)
+        .iter()
+        .map(|line| plain(line).trim().to_owned())
+        .filter(|line| !line.is_empty())
+        .collect();
+    assert!(table.len() > 16, "{size:?}: a heading and sixteen cores");
+    let mut seen = vec![false; table.len()];
+    for scroll in 0..=drawn.scroll {
+        sc.scroll = scroll;
+        let (buf, again) = fx.draw(&sc, fx.now);
+        assert_eq!(
+            again.scroll, drawn.scroll,
+            "{size:?}: the extent does not move"
         );
+        let rows = rows_of(&buf);
         assert!(
-            top.join("\n").contains("compact · scroll for all cores"),
-            "{size:?} does not say that it scrolls:\n{}",
-            top.join("\n")
+            rows[2].trim().starts_with("MAIN"),
+            "{size:?}: the title is sticky"
         );
-        let zone = TimeZone::UTC;
-        let scene = Scene::new(fx.model.snapshot(), fx.now, &zone, Colours::None);
-        let inner = usize::from(size.0.saturating_sub(1)).saturating_sub(2 + 2);
-        let table: Vec<String> = core_table(&scene, inner)
-            .iter()
-            .map(|line| plain(line).trim().to_owned())
-            .filter(|line| !line.is_empty())
-            .collect();
-        assert!(table.len() > 16, "{size:?}: a heading and sixteen cores");
-        let mut seen = vec![false; table.len()];
-        for scroll in 0..=drawn.scroll {
-            sc.scroll = scroll;
-            let (buf, again) = fx.draw(&sc, fx.now);
-            assert_eq!(
-                again.scroll, drawn.scroll,
-                "{size:?}: the extent does not move"
-            );
-            let rows = rows_of(&buf);
-            assert!(
-                rows[2].trim().starts_with("MAIN"),
-                "{size:?}: the title is sticky"
-            );
-            for (n, line) in table.iter().enumerate() {
-                seen[n] |= rows.iter().any(|row| row.contains(line.as_str()));
-            }
+        for (n, line) in table.iter().enumerate() {
+            seen[n] |= rows.iter().any(|row| row.contains(line.as_str()));
         }
-        assert!(
-            seen.iter().all(|&shown| shown),
-            "{size:?}: unreachable rows {:?}",
-            table
-                .iter()
-                .zip(&seen)
-                .filter(|(_, shown)| !**shown)
-                .map(|(line, _)| line)
-                .collect::<Vec<_>>()
-        );
     }
+    assert!(
+        seen.iter().all(|&shown| shown),
+        "{size:?}: unreachable rows {:?}",
+        table
+            .iter()
+            .zip(&seen)
+            .filter(|(_, shown)| !**shown)
+            .map(|(line, _)| line)
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]

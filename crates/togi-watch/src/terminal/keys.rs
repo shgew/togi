@@ -352,49 +352,86 @@ mod tests {
         }
     }
 
-    #[test]
-    fn every_scroll_key_scrolls_every_page_and_never_changes_it() {
-        let extent = 400;
+    const EXTENT: usize = 400;
+
+    /// Presses `key` on every page at three sizes, checking that it stays on the page, and passes `check` the scroll
+    /// `key` reaches from a given scroll, the page step, the page's end and a label naming the case.
+    fn on_every_page(key: Key, check: impl Fn(&dyn Fn(usize) -> usize, usize, usize, &str)) {
         for view in View::ALL {
             for (width, height) in [(80, 24), (160, 45), (240, 67)] {
                 let base = Screen {
                     width,
                     ..screen(view, 0, height)
                 };
-                let page = page(&base);
-                let at = |scroll| Screen { scroll, ..base };
-                let after = |from: Screen, key| {
-                    let (got, quit) = press(from, key, extent);
+                let after = |scroll| {
+                    let (got, quit) = press(Screen { scroll, ..base }, key, EXTENT);
                     assert!(!quit);
                     assert_eq!(got.view, view, "{key:?} changed the page");
                     got.scroll
                 };
-                let last = if view == View::Log { FOLLOW } else { extent };
-                for key in [Key::Down, Key::Char('j')] {
-                    assert_eq!(after(at(10), key), 11, "{view:?} {key:?}");
-                    assert_eq!(after(at(extent - 1), key), last, "{view:?} {key:?} end");
-                }
-                for key in [Key::Up, Key::Char('k')] {
-                    assert_eq!(after(at(10), key), 9, "{view:?} {key:?}");
-                    assert_eq!(after(at(0), key), 0, "{view:?} {key:?} top");
-                }
-                for key in [Key::PageDown, Key::Char(' '), Key::Char('f')] {
-                    assert_eq!(after(at(10), key), 10 + page, "{view:?} {key:?} {height}");
-                    assert_eq!(after(at(extent - 1), key), last, "{view:?} {key:?} end");
-                }
-                for key in [Key::PageUp, Key::Char('b')] {
-                    assert_eq!(after(at(100), key), 100 - page, "{view:?} {key:?} {height}");
-                    assert_eq!(after(at(1), key), 0, "{view:?} {key:?} top");
-                }
-                for key in [Key::Home, Key::Char('g')] {
-                    assert_eq!(after(at(77), key), 0, "{view:?} {key:?}");
-                    assert_eq!(after(at(FOLLOW), key), 0, "{view:?} {key:?} from the end");
-                }
-                for key in [Key::End, Key::Char('G')] {
-                    assert_eq!(after(at(3), key), last, "{view:?} {key:?}");
-                }
+                let last = if view == View::Log { FOLLOW } else { EXTENT };
+                check(
+                    &after,
+                    page(&base),
+                    last,
+                    &format!("{view:?} {key:?} {height}"),
+                );
             }
         }
+    }
+
+    #[test_case(Key::Down; "down")]
+    #[test_case(Key::Char('j'); "j")]
+    fn a_line_down_key_scrolls_one_line_to_the_end(key: Key) {
+        on_every_page(key, |after, _, last, case| {
+            assert_eq!(after(10), 11, "{case}");
+            assert_eq!(after(EXTENT - 1), last, "{case} end");
+        });
+    }
+
+    #[test_case(Key::Up; "up")]
+    #[test_case(Key::Char('k'); "k")]
+    fn a_line_up_key_scrolls_one_line_to_the_top(key: Key) {
+        on_every_page(key, |after, _, _, case| {
+            assert_eq!(after(10), 9, "{case}");
+            assert_eq!(after(0), 0, "{case} top");
+        });
+    }
+
+    #[test_case(Key::PageDown; "page down")]
+    #[test_case(Key::Char(' '); "space")]
+    #[test_case(Key::Char('f'); "f")]
+    fn a_page_down_key_scrolls_one_page_to_the_end(key: Key) {
+        on_every_page(key, |after, page, last, case| {
+            assert_eq!(after(10), 10 + page, "{case}");
+            assert_eq!(after(EXTENT - 1), last, "{case} end");
+        });
+    }
+
+    #[test_case(Key::PageUp; "page up")]
+    #[test_case(Key::Char('b'); "b")]
+    fn a_page_up_key_scrolls_one_page_to_the_top(key: Key) {
+        on_every_page(key, |after, page, _, case| {
+            assert_eq!(after(100), 100 - page, "{case}");
+            assert_eq!(after(1), 0, "{case} top");
+        });
+    }
+
+    #[test_case(Key::Home; "home")]
+    #[test_case(Key::Char('g'); "g")]
+    fn a_home_key_goes_to_the_top(key: Key) {
+        on_every_page(key, |after, _, _, case| {
+            assert_eq!(after(77), 0, "{case}");
+            assert_eq!(after(FOLLOW), 0, "{case} from the end");
+        });
+    }
+
+    #[test_case(Key::End; "end")]
+    #[test_case(Key::Char('G'); "capital g")]
+    fn an_end_key_goes_to_the_end(key: Key) {
+        on_every_page(key, |after, _, last, case| {
+            assert_eq!(after(3), last, "{case}");
+        });
     }
 
     #[test]

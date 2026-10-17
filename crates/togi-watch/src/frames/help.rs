@@ -456,7 +456,7 @@ pub fn help_body(
 
 #[cfg(test)]
 mod tests {
-    use super::{LOAD, Section, THREE_COLUMNS, TUNING, help_body, section_lines, title_rule};
+    use super::{LOAD, Section, TUNING, help_body, section_lines, title_rule};
     use crate::frames::body_rows;
     use crate::frames::fit::{line_width, plain};
     use crate::frames::layout::Layout;
@@ -745,36 +745,40 @@ mod tests {
 
     #[test_case(115; "115 columns")]
     #[test_case(235; "235 columns")]
-    fn help_keeps_the_state_explanations_whole(width: usize) {
+    fn the_full_help_renders_unscrolled_and_ends_on_text(width: usize) {
         let (body, scroll) = help_body(width, 1000, 0, C, Quit::Keys);
         assert!(
             scroll == 0 && !body.is_empty(),
             "{width} columns: full help was not rendered"
         );
+        assert!(
+            !plain(&body[body.len() - 1]).trim().is_empty(),
+            "{width} columns: full help ends on a blank content row"
+        );
+    }
+
+    #[test]
+    fn help_under_three_columns_keeps_the_state_explanations_whole() {
+        let width = 115;
+        let (body, _) = help_body(width, 1000, 0, C, Quit::Keys);
         let words = plain_rows(&body)
             .iter()
             .map(|row| row.chars().skip(2).collect::<String>())
             .collect::<Vec<_>>()
             .join("\n");
         let one: String = words.split_whitespace().collect::<Vec<_>>().join(" ");
-        if width < THREE_COLUMNS {
-            for explanation in [
-                "SEARCH finding its solo limit with light and heavy-vector trials alone",
-                "CONFIRM checking its candidate solo limit with repeated light and heavy-vector trials alone",
-                "FOUND solo limit checked; waiting at 0 WAITING",
-                "WAITING at 0, waiting for its first search turn",
-                "MEMBER kept with its hunt group at its failing offset; another member may be probed",
-            ] {
-                assert!(
-                    one.contains(explanation),
-                    "{width} columns: help lost state explanation {explanation:?}"
-                );
-            }
+        for explanation in [
+            "SEARCH finding its solo limit with light and heavy-vector trials alone",
+            "CONFIRM checking its candidate solo limit with repeated light and heavy-vector trials alone",
+            "FOUND solo limit checked; waiting at 0 WAITING",
+            "WAITING at 0, waiting for its first search turn",
+            "MEMBER kept with its hunt group at its failing offset; another member may be probed",
+        ] {
+            assert!(
+                one.contains(explanation),
+                "{width} columns: help lost state explanation {explanation:?}"
+            );
         }
-        assert!(
-            !plain(&body[body.len() - 1]).trim().is_empty(),
-            "{width} columns: full help ends on a blank content row"
-        );
     }
 
     #[test]

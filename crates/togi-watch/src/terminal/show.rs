@@ -751,25 +751,26 @@ mod tests {
         });
     }
 
-    #[test]
-    fn the_quit_keys_exit_the_dashboard_from_every_page() {
+    #[test_case('q'; "q")]
+    #[test_case('Q'; "capital q")]
+    #[test_case('\x03'; "ctrl c")]
+    #[test_case('\x04'; "ctrl d")]
+    fn a_quit_key_exits_the_dashboard_from_every_page(quit: char) {
         crate::terminal::testing::paused(async {
             local(async {
                 for (at, page) in View::ALL.into_iter().enumerate() {
-                    for quit in ['q', 'Q', '\x03', '\x04'] {
-                        let recorder = Recorder::new(80, 24);
-                        let h = Harness::start(&recorder, &Setup::default());
-                        settle().await;
-                        for _ in 0..at {
-                            h.key(Key::Right).await;
-                        }
-                        assert_eq!(h.last().view, page);
-                        let frames = h.frames();
-                        h.key(Key::Char(quit)).await;
-                        assert_eq!(h.frames(), frames, "{page:?} {quit:?}: quitting redrew");
-                        h.finish().await.unwrap();
-                        assert!(recorder.restored(), "{page:?} {quit:?}");
+                    let recorder = Recorder::new(80, 24);
+                    let h = Harness::start(&recorder, &Setup::default());
+                    settle().await;
+                    for _ in 0..at {
+                        h.key(Key::Right).await;
                     }
+                    assert_eq!(h.last().view, page);
+                    let frames = h.frames();
+                    h.key(Key::Char(quit)).await;
+                    assert_eq!(h.frames(), frames, "{page:?} {quit:?}: quitting redrew");
+                    h.finish().await.unwrap();
+                    assert!(recorder.restored(), "{page:?} {quit:?}");
                 }
             })
             .await;
@@ -799,36 +800,36 @@ mod tests {
         });
     }
 
-    #[test]
-    fn the_screen_tells_the_frame_its_size_keys_and_colours() {
+    #[test_case(Colours::Full; "full colours")]
+    #[test_case(Colours::Console; "console colours")]
+    #[test_case(Colours::None; "no colours")]
+    fn the_screen_tells_the_frame_its_size_keys_and_colours(colours: Colours) {
         crate::terminal::testing::paused(async {
             local(async {
-                for colours in [Colours::Full, Colours::Console, Colours::None] {
-                    let recorder = Recorder::new(90, 30);
-                    let h = Harness::start(
-                        &recorder,
-                        &Setup {
-                            palette: false,
-                            keys: false,
-                            colours,
-                            quit: Quit::Keys,
-                        },
-                    );
-                    settle().await;
-                    let screen = h.last();
-                    assert_eq!(
-                        (
-                            screen.width,
-                            screen.height,
-                            screen.keys,
-                            screen.one_frame,
-                            screen.colours
-                        ),
-                        (90, 30, false, false, colours)
-                    );
-                    h.send(Event::Cancel).await;
-                    h.finish().await.unwrap();
-                }
+                let recorder = Recorder::new(90, 30);
+                let h = Harness::start(
+                    &recorder,
+                    &Setup {
+                        palette: false,
+                        keys: false,
+                        colours,
+                        quit: Quit::Keys,
+                    },
+                );
+                settle().await;
+                let screen = h.last();
+                assert_eq!(
+                    (
+                        screen.width,
+                        screen.height,
+                        screen.keys,
+                        screen.one_frame,
+                        screen.colours
+                    ),
+                    (90, 30, false, false, colours)
+                );
+                h.send(Event::Cancel).await;
+                h.finish().await.unwrap();
             })
             .await;
         });

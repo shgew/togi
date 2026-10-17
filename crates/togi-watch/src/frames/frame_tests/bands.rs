@@ -544,41 +544,40 @@ fn header_clocks(row: &str) -> Option<((bool, u64), (bool, u64))> {
     Some((clock("tuning", "tune")?, clock("session", "age")?))
 }
 
-#[test]
-fn the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame() {
-    for scenario in [
-        Scenario::Search,
-        Scenario::Idle,
-        Scenario::Stopped,
-        Scenario::Deadend,
-    ] {
-        let fx = Fixture::scenario(scenario);
-        for (width, height) in ALL_SIZES {
-            let screen = main_screen(width, height);
-            let (buf, _) = fx.draw(&screen, fx.now);
-            let head = header_row(&buf, &screen);
-            let ((tuning_long, tuned), (age_long, aged)) = header_clocks(&head).unwrap_or_else(|| {
-                panic!("{scenario} {width}x{height} lacks a whole tuning time or session age: {head:?}")
-            });
-            assert!(
-                width < 160 || (tuning_long && age_long),
-                "{scenario} {width}x{height} abbreviates a clock it has room for: {head:?}"
-            );
-            assert!(tuned <= aged, "{scenario} {width}x{height}: {head:?}");
-            if matches!(scenario, Scenario::Search) {
-                continue;
-            }
-            // The wall clock and the failure's age move with the time; the two durations hold still while the
-            // frame does. Their labels may differ when a failure's longer age takes room, so only the minutes
-            // are compared.
-            let (after, _) = fx.draw(&screen, later(fx.now, 7 * 3600));
-            let after = header_row(&after, &screen);
-            let held = header_clocks(&after).map(|((_, tuned), (_, aged))| (tuned, aged));
-            assert_eq!(
-                held,
-                Some((tuned, aged)),
-                "{scenario} {width}x{height}: a frozen frame's clocks moved: {after:?}"
-            );
+#[test_case(Scenario::Search, false; "search, whose clocks run")]
+#[test_case(Scenario::Idle, true; "idle")]
+#[test_case(Scenario::Stopped, true; "stopped")]
+#[test_case(Scenario::Deadend, true; "dead end")]
+fn the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the_frame(
+    scenario: Scenario,
+    frozen: bool,
+) {
+    let fx = Fixture::scenario(scenario);
+    for (width, height) in ALL_SIZES {
+        let screen = main_screen(width, height);
+        let (buf, _) = fx.draw(&screen, fx.now);
+        let head = header_row(&buf, &screen);
+        let ((tuning_long, tuned), (age_long, aged)) = header_clocks(&head).unwrap_or_else(|| {
+            panic!("{scenario} {width}x{height} lacks a whole tuning time or session age: {head:?}")
+        });
+        assert!(
+            width < 160 || (tuning_long && age_long),
+            "{scenario} {width}x{height} abbreviates a clock it has room for: {head:?}"
+        );
+        assert!(tuned <= aged, "{scenario} {width}x{height}: {head:?}");
+        if !frozen {
+            continue;
         }
+        // The wall clock and the failure's age move with the time; the two durations hold still while the
+        // frame does. Their labels may differ when a failure's longer age takes room, so only the minutes
+        // are compared.
+        let (after, _) = fx.draw(&screen, later(fx.now, 7 * 3600));
+        let after = header_row(&after, &screen);
+        let held = header_clocks(&after).map(|((_, tuned), (_, aged))| (tuned, aged));
+        assert_eq!(
+            held,
+            Some((tuned, aged)),
+            "{scenario} {width}x{height}: a frozen frame's clocks moved: {after:?}"
+        );
     }
 }
