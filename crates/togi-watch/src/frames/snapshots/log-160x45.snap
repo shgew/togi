@@ -2,47 +2,47 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   23:32:41   tuning 47h32m   session 47h32m   57 failures · 12 crashes   last observed failure 08:32, 15h00m ago
+│  togi   01:27:54   tuning 49h27m   session 49h27m   59 failures · 13 crashes   last observed failure 20:13, 5h14m ago
 │
 │  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ■ PHASE 2  concluded  ───  CLEAN CYCLES 1  ───  ■ CYCLE 2
 │
-│  │ 23:05:01  trial intent          trial 1358 core 05 offset -8 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
-│  │ 23:05:01  trial start           trial 1358 started pid 2358 in scope togi-trial-1358 on cpu 5
-│  │ 23:05:01  trial signal          trial 1358 load steps: 75% duty, 100 ms period
-│  │ 23:07:01  trial signal          trial 1358 load steps: 1200 stops, 1199 continues
-│  │ 23:07:01  pass                  trial 1358 PASS 120 s | Tctl max 72°C
-│  │ 23:07:01  trial intent          trial 1359 core 13 offset -35 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
-│  │ 23:07:01  trial start           trial 1359 started pid 2359 in scope togi-trial-1359 on cpu 13
-│  │ 23:07:01  trial signal          trial 1359 load steps: 75% duty, 100 ms period
-│  │ 23:09:01  trial signal          trial 1359 load steps: 1200 stops, 1199 continues
-│  │ 23:09:01  pass                  trial 1359 PASS 120 s | Tctl max 63°C
-│  │ 23:09:01  trial intent          trial 1360 core 06 offset -37 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
-│  │ 23:09:01  trial start           trial 1360 started pid 2360 in scope togi-trial-1360 on cpu 6
-│  │ 23:09:01  trial signal          trial 1360 load steps: 75% duty, 100 ms period
-│  │ 23:11:01  trial signal          trial 1360 load steps: 1200 stops, 1199 continues
-│  │ 23:11:01  pass                  trial 1360 PASS 120 s | Tctl max 74°C
-│  │ 23:11:01  trial intent          trial 1361 core 14 offset -12 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
-│  │ 23:11:01  trial start           trial 1361 started pid 2361 in scope togi-trial-1361 on cpu 14
-│  │ 23:11:01  trial signal          trial 1361 load steps: 75% duty, 100 ms period
-│  │ 23:13:01  trial signal          trial 1361 load steps: 1200 stops, 1199 continues
-│  │ 23:13:01  pass                  trial 1361 PASS 120 s | Tctl max 68°C
-│  │ 23:13:01  trial intent          trial 1362 core 07 offset -29 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
-│  │ 23:13:01  trial start           trial 1362 started pid 2362 in scope togi-trial-1362 on cpu 7
-│  │ 23:13:01  trial signal          trial 1362 load steps: 75% duty, 100 ms period
-│  │ 23:15:01  trial signal          trial 1362 load steps: 1200 stops, 1199 continues
-│  │ 23:15:01  pass                  trial 1362 PASS 120 s | Tctl max 64°C
-│  │ 23:15:01  trial intent          trial 1363 core 15 offset -13 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
-│  │ 23:15:01  trial start           trial 1363 started pid 2363 in scope togi-trial-1363 on cpu 15
-│  │ 23:15:01  trial signal          trial 1363 load steps: 75% duty, 100 ms period
-│  │ 23:17:01  trial signal          trial 1363 load steps: 1200 stops, 1199 continues
-│  │ 23:17:01  pass                  trial 1363 PASS 120 s | Tctl max 67°C
-│  │ 23:17:01  trial intent          trial 1364 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15 R6 y-cruncher BKT + SFTv4 idle then...
-│  │ 23:17:01  trial start           trial 1364 started pid 2364 in scope togi-trial-1364 on cpus 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
-│  │ 23:32:01  trial progress        trial 1364 first half idle, then 100ms bursts every 2s, one core at a time
-│  │ 23:32:01  trial progress        trial 1364 bursts: 225 continues, 241 stops
-│  │ 23:32:01  pass                  trial 1364 PASS 900 s | Tctl max 76°C
-│  █ 23:32:01  cycle                 checking cycle 2 end passed; phase 2 ends: the confirmation cycle passed, so this is the confirmed profile
-│  █ 23:32:01  profile restored      offsets restored before stopping: [00: 0, 01: 0, 02: 0, 03: 0, 04: 0, 05: 0, 06: 0, 07: 0, 08: 0, 09: 0, 10: 0, 11: 0...
-│  █ 23:32:01  stop                  phase 2 is confirmed and the profile passed the requested clean cycle; stopping
+│  │ 01:00:14  trial intent          trial 1411 core 05 offset -8 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
+│  │ 01:00:14  trial start           trial 1411 started pid 2411 in scope togi-trial-1411 on cpu 5
+│  │ 01:00:14  trial signal          trial 1411 load steps: 75% duty, 100 ms period
+│  │ 01:02:14  trial signal          trial 1411 load steps: 1200 stops, 1199 continues
+│  │ 01:02:14  pass                  trial 1411 PASS 120 s | Tctl max 72°C
+│  │ 01:02:14  trial intent          trial 1412 core 13 offset -35 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
+│  │ 01:02:14  trial start           trial 1412 started pid 2412 in scope togi-trial-1412 on cpu 13
+│  │ 01:02:14  trial signal          trial 1412 load steps: 75% duty, 100 ms period
+│  │ 01:04:14  trial signal          trial 1412 load steps: 1200 stops, 1199 continues
+│  │ 01:04:14  pass                  trial 1412 PASS 120 s | Tctl max 63°C
+│  │ 01:04:14  trial intent          trial 1413 core 06 offset -38 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
+│  │ 01:04:14  trial start           trial 1413 started pid 2413 in scope togi-trial-1413 on cpu 6
+│  │ 01:04:14  trial signal          trial 1413 load steps: 75% duty, 100 ms period
+│  │ 01:06:14  trial signal          trial 1413 load steps: 1200 stops, 1199 continues
+│  │ 01:06:14  pass                  trial 1413 PASS 120 s | Tctl max 75°C
+│  │ 01:06:14  trial intent          trial 1414 core 14 offset -12 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
+│  │ 01:06:14  trial start           trial 1414 started pid 2414 in scope togi-trial-1414 on cpu 14
+│  │ 01:06:14  trial signal          trial 1414 load steps: 75% duty, 100 ms period
+│  │ 01:08:14  trial signal          trial 1414 load steps: 1200 stops, 1199 continues
+│  │ 01:08:14  pass                  trial 1414 PASS 120 s | Tctl max 68°C
+│  │ 01:08:14  trial intent          trial 1415 core 07 offset -29 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
+│  │ 01:08:14  trial start           trial 1415 started pid 2415 in scope togi-trial-1415 on cpu 7
+│  │ 01:08:14  trial signal          trial 1415 load steps: 75% duty, 100 ms period
+│  │ 01:10:14  trial signal          trial 1415 load steps: 1200 stops, 1199 continues
+│  │ 01:10:14  pass                  trial 1415 PASS 120 s | Tctl max 64°C
+│  │ 01:10:14  trial intent          trial 1416 core 15 offset -13 R4 y-cruncher SNT + SVT 75% duty 120 s together cycle 2 step 17
+│  │ 01:10:14  trial start           trial 1416 started pid 2416 in scope togi-trial-1416 on cpu 15
+│  │ 01:10:14  trial signal          trial 1416 load steps: 75% duty, 100 ms period
+│  │ 01:12:14  trial signal          trial 1416 load steps: 1200 stops, 1199 continues
+│  │ 01:12:14  pass                  trial 1416 PASS 120 s | Tctl max 67°C
+│  │ 01:12:14  trial intent          trial 1417 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15 R6 y-cruncher BKT + SFTv4 idle then...
+│  │ 01:12:14  trial start           trial 1417 started pid 2417 in scope togi-trial-1417 on cpus 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+│  │ 01:27:14  trial progress        trial 1417 first half idle, then 100ms bursts every 2s, one core at a time
+│  │ 01:27:14  trial progress        trial 1417 bursts: 225 continues, 241 stops
+│  │ 01:27:14  pass                  trial 1417 PASS 900 s | Tctl max 76°C
+│  █ 01:27:14  cycle                 checking cycle 2 end passed; phase 2 ends: the confirmation cycle passed, so this is the confirmed profile
+│  █ 01:27:14  profile restored      offsets restored before stopping: [00: 0, 01: 0, 02: 0, 03: 0, 04: 0, 05: 0, 06: 0, 07: 0, 08: 0, 09: 0, 10: 0, 11: 0...
+│  █ 01:27:14  stop                  phase 2 is confirmed and the profile passed the requested clean cycle; stopping
 │
 │   ?  help    l  log    esc  back    q  exit dashboard

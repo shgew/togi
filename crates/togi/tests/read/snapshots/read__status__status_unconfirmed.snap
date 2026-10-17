@@ -6,16 +6,16 @@ checking cycle 2, steps 4/18 | phase 2: confirmation cycle
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#8428] trial 1202 core 01 offset -15 R5 mprime SSE 4K-21K SMT pair
+in flight: [#8639] trial 1241 core 01 offset -15 R5 mprime SSE 4K-21K SMT pair
   120 s together rerun
 
 CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
-00    0    0     -33     -33   HAS ROOM  -35      -
-  last decision [#7671] core 00 at its limit -> has room at -33 (one count
-                deeper reaches no failure point or combination)
+00    0    0     -34     -33   AT LIMIT  -35      -
+  last decision [#7822] core 00 has room -> at its limit at -34 (failure point
+                -35 of core 00)
 01    0    1     -15     -15*  AT LIMIT  -16      -
-  last decision [#8422] core 01 backed off from -16 to -15 (backed off:
-                attributed computation_error in together R5 trial 1201; failure
+  last decision [#8633] core 01 backed off from -16 to -15 (backed off:
+                attributed computation_error in together R5 trial 1240; failure
                 point -16)
 02    0    2     -30     -30   AT LIMIT  -31      -
   last decision [#4981] core 02 backed off from -31 to -30 (voltage-targeted R7
@@ -42,16 +42,16 @@ CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
   last decision [#6191] core 06 backed off from -26 to -25 (backed off:
                 attributed computation_error in together R1 trial 0763; failure
                 point -26)
-07    0    7     -20     -20   HAS ROOM  -22      -
-  last decision [#7676] core 07 at its limit -> has room at -20 (one count
-                deeper reaches no failure point or combination)
+07    0    7     -21     -20   AT LIMIT  -22      -
+  last decision [#7826] core 07 has room -> at its limit at -21 (failure point
+                -22 of core 07)
 08    1    0     -16     -16   AT LIMIT  -17      -
   last decision [#5658] core 08 backed off from -17 to -16 (backed off:
                 attributed computation_error in together R2 trial 0654; failure
                 point -17)
-09    1    1     -10     -10   HAS ROOM  -12      -
-  last decision [#7672] core 09 at its limit -> has room at -10 (one count
-                deeper reaches no failure point or combination)
+09    1    1     -11     -10   AT LIMIT  -12      -
+  last decision [#7823] core 09 has room -> at its limit at -11 (failure point
+                -12 of core 09)
 10    1    2     -7      -7    AT LIMIT  -8       -
   last decision [#6628] core 10 backed off from -8 to -7 (backed off: attributed
                 corrected_mce in together R4 trial 0857; failure point -8)
@@ -59,20 +59,21 @@ CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
   last decision [#6051] core 11 backed off from -13 to -12 (backed off:
                 attributed corrected_mce in together R5 trial 0736; failure
                 point -13)
-12    1    4     -33     -33   HAS ROOM  -35      -
-  last decision [#7673] core 12 at its limit -> has room at -33 (one count
-                deeper reaches no failure point or combination)
-13    1    5     -24     -24   HAS ROOM  -26      -
-  last decision [#7674] core 13 at its limit -> has room at -24 (one count
-                deeper reaches no failure point or combination)
-14    1    6     -11     -11   HAS ROOM  -13      -
-  last decision [#7675] core 14 at its limit -> has room at -11 (one count
-                deeper reaches no failure point or combination)
+12    1    4     -34     -33   AT LIMIT  -35      -
+  last decision [#7824] core 12 has room -> at its limit at -34 (failure point
+                -35 of core 12)
+13    1    5     -25     -24   AT LIMIT  -26      -
+  last decision [#7825] core 13 has room -> at its limit at -25 (failure point
+                -26 of core 13)
+14    1    6     -11     -11   AT LIMIT  -12      -
+  last decision [#7774] core 14 backed off from -12 to -11 (failure #7767 (R7
+                trial 0987) charged to deepened core 14; round 2, last passed
+                offset -11; failure point -12)
 15    1    7     -18     -18   AT LIMIT  -19      -
   last decision [#5899] core 15 backed off from -19 to -18 (backed off:
                 attributed computation_error in together R6 trial 0709; failure
                 point -19)
-* unconfirmed since [#8422]: core 01 shows a stepped-back offset; other BIOS
+* unconfirmed since [#8633]: core 01 shows a stepped-back offset; other BIOS
   offsets come from the profile confirmed by the passed full cycle [#6913]. A
   passed full cycle confirms the changes, except a held failure's stepped-back
   offset, which stays marked until the hold ends
@@ -94,11 +95,11 @@ CORE  CCD  SELF-SUFFICIENT               TOP REQUESTER
   workload mprime-avx2-36k-248k-allcore
 06    0    observed (8 passing trials)   no (offset fallback)
   workload mprime-avx2-36k-248k-allcore
-07    0    observed (15 passing trials)  no (offset fallback)
+07    0    observed (9 passing trials)   no (offset fallback)
   workload mprime-avx2-36k-248k-allcore
 08    1    observed (8 passing trials)   no (offset fallback)
   workload mprime-avx2-36k-248k-allcore
-09    1    observed (18 passing trials)  no (offset fallback)
+09    1    observed (9 passing trials)   no (offset fallback)
   workload mprime-avx2-36k-248k-allcore
 10    1    observed (18 passing trials)  yes (offset fallback)
   workload mprime-avx2-36k-248k-allcore
@@ -106,9 +107,9 @@ CORE  CCD  SELF-SUFFICIENT               TOP REQUESTER
   workload mprime-avx2-36k-248k-allcore
 12    1    not yet demonstrated          no (offset fallback)
   workload mprime-avx2-36k-248k-allcore
-13    1    observed (8 passing trials)   no (offset fallback)
+13    1    observed (9 passing trials)   no (offset fallback)
   workload mprime-avx2-36k-248k-allcore
-14    1    observed (8 passing trials)   no (offset fallback)
+14    1    observed (13 passing trials)  no (offset fallback)
   workload mprime-avx2-36k-248k-allcore
 15    1    observed (8 passing trials)   no (offset fallback)
   workload mprime-avx2-36k-248k-allcore
@@ -126,11 +127,11 @@ CORE  CCD  SELF-SUFFICIENT               TOP REQUESTER
   workload mprime-avx512-36k-248k-allcore
 06    0    observed (8 passing trials)   no (offset fallback)
   workload mprime-avx512-36k-248k-allcore
-07    0    observed (8 passing trials)   no (offset fallback)
+07    0    observed (9 passing trials)   no (offset fallback)
   workload mprime-avx512-36k-248k-allcore
 08    1    observed (8 passing trials)   no (offset fallback)
   workload mprime-avx512-36k-248k-allcore
-09    1    observed (16 passing trials)  no (offset fallback)
+09    1    observed (9 passing trials)   no (offset fallback)
   workload mprime-avx512-36k-248k-allcore
 10    1    observed (16 passing trials)  yes (offset fallback)
   workload mprime-avx512-36k-248k-allcore
@@ -138,9 +139,9 @@ CORE  CCD  SELF-SUFFICIENT               TOP REQUESTER
   workload mprime-avx512-36k-248k-allcore
 12    1    not yet demonstrated          no (offset fallback)
   workload mprime-avx512-36k-248k-allcore
-13    1    observed (8 passing trials)   no (offset fallback)
+13    1    observed (9 passing trials)   no (offset fallback)
   workload mprime-avx512-36k-248k-allcore
-14    1    observed (8 passing trials)   no (offset fallback)
+14    1    observed (13 passing trials)  no (offset fallback)
   workload mprime-avx512-36k-248k-allcore
 15    1    observed (8 passing trials)   no (offset fallback)
   workload mprime-avx512-36k-248k-allcore
@@ -158,11 +159,11 @@ CORE  CCD  SELF-SUFFICIENT               TOP REQUESTER
   workload ycruncher-fftv4-n63-vt3-allcore
 06    0    observed (8 passing trials)   no (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
-07    0    observed (8 passing trials)   no (offset fallback)
+07    0    observed (9 passing trials)   no (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
 08    1    observed (8 passing trials)   no (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
-09    1    observed (16 passing trials)  no (offset fallback)
+09    1    observed (9 passing trials)   no (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
 10    1    observed (16 passing trials)  yes (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
@@ -170,9 +171,9 @@ CORE  CCD  SELF-SUFFICIENT               TOP REQUESTER
   workload ycruncher-fftv4-n63-vt3-allcore
 12    1    not yet demonstrated          no (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
-13    1    observed (8 passing trials)   no (offset fallback)
+13    1    observed (9 passing trials)   no (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
-14    1    observed (8 passing trials)   no (offset fallback)
+14    1    observed (13 passing trials)  no (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
 15    1    observed (8 passing trials)   no (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
@@ -182,21 +183,11 @@ no core can move: the confirmation cycle is all that is left
 Valid passes supporting the checking profile (live and not alone, on the active
   backend, at equal or deeper offsets; carried passes excluded)
 REGIME  WORKLOAD                         VALID PASSES
-R1      mprime-sse-4k-21k                20
-R1      ycruncher-bkt-sftv4              16
-R1      ycruncher-snt-svt                16
-R2      mprime-avx2-36k-248k             36
-R2      mprime-avx512-36k-248k           32
-R2      ycruncher-fftv4-n63-vt3          32
-R3      mprime-sse-4k-21k-steps          16
-R3      ycruncher-bkt-sftv4-steps        16
-R3      ycruncher-snt-svt-steps          16
-R4      mprime-sse-4k-21k-duty25         20
-R4      ycruncher-bkt-sftv4-duty50       16
-R4      ycruncher-snt-svt-duty75         16
-R5      mprime-sse-4k-21k-smt            22
-R6      mprime-sse-4k-21k-idle           7
-R6      ycruncher-bkt-sftv4-idle         1
-R7      mprime-avx2-36k-248k-allcore     129
-R7      mprime-avx512-36k-248k-allcore   116
-R7      ycruncher-fftv4-n63-vt3-allcore  116
+R2      mprime-avx2-36k-248k             16
+R2      mprime-avx512-36k-248k           16
+R2      ycruncher-fftv4-n63-vt3          16
+R5      mprime-sse-4k-21k-smt            2
+R6      mprime-sse-4k-21k-idle           1
+R7      mprime-avx2-36k-248k-allcore     67
+R7      mprime-avx512-36k-248k-allcore   67
+R7      ycruncher-fftv4-n63-vt3-allcore  67
