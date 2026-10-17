@@ -220,51 +220,46 @@ fn same_changes_ignores_context() {
     );
 }
 
-#[test]
-fn reviewer_count_by_size() {
-    let cases = [
-        (0, 0, 0),
-        (5000, 0, 0),
-        (99, 30, 1),
-        (100, 1, 1),
-        (100, 2, 1),
-        (100, 3, 2),
-        (499, 30, 2),
-        (499, 3, 2),
-        (500, 3, 2),
-        (499, 9, 2),
-        (500, 1, 1),
-        (500, 2, 1),
-        (500, 9, 3),
-        (500, 30, 4),
-        (1999, 30, 4),
-        (1999, 4, 2),
-        (2000, 4, 2),
-        (1999, 7, 3),
-        (2000, 7, 3),
-        (2000, 13, 4),
-        (2000, 30, 4),
-        (2000, 5, 2),
-        (4999, 40, 4),
-        (4999, 9, 3),
-        (4999, 3, 2),
-        (5000, 3, 2),
-        (4999, 4, 2),
-        (5000, 4, 2),
-        (4999, 7, 3),
-        (5000, 7, 4),
-        (5000, 40, 8),
-        (5000, 6, 3),
-        (5000, 30, 8),
-        (5000, 10, 5),
-        (9000, 3, 2),
-        (5000, 16, 8),
-        (5000, 17, 8),
-        (9000, 100, 8),
-    ];
-    for (l, f, want) in cases {
-        assert_eq!(want, reviewer_count(l, f), "reviewer_count(L={l}, F={f})");
-    }
+#[test_case(0, 0 => 0)]
+#[test_case(5000, 0 => 0)]
+#[test_case(99, 30 => 1)]
+#[test_case(100, 1 => 1)]
+#[test_case(100, 2 => 1)]
+#[test_case(100, 3 => 2)]
+#[test_case(499, 30 => 2)]
+#[test_case(499, 3 => 2)]
+#[test_case(500, 3 => 2)]
+#[test_case(499, 9 => 2)]
+#[test_case(500, 1 => 1)]
+#[test_case(500, 2 => 1)]
+#[test_case(500, 9 => 3)]
+#[test_case(500, 30 => 4)]
+#[test_case(1999, 30 => 4)]
+#[test_case(1999, 4 => 2)]
+#[test_case(2000, 4 => 2)]
+#[test_case(1999, 7 => 3)]
+#[test_case(2000, 7 => 3)]
+#[test_case(2000, 13 => 4)]
+#[test_case(2000, 30 => 4)]
+#[test_case(2000, 5 => 2)]
+#[test_case(4999, 40 => 4)]
+#[test_case(4999, 9 => 3)]
+#[test_case(4999, 3 => 2)]
+#[test_case(5000, 3 => 2)]
+#[test_case(4999, 4 => 2)]
+#[test_case(5000, 4 => 2)]
+#[test_case(4999, 7 => 3)]
+#[test_case(5000, 7 => 4)]
+#[test_case(5000, 40 => 8)]
+#[test_case(5000, 6 => 3)]
+#[test_case(5000, 30 => 8)]
+#[test_case(5000, 10 => 5)]
+#[test_case(9000, 3 => 2)]
+#[test_case(5000, 16 => 8)]
+#[test_case(5000, 17 => 8)]
+#[test_case(9000, 100 => 8)]
+fn reviewer_count_by_size(lines: i64, files: i64) -> i64 {
+    reviewer_count(lines, files)
 }
 
 /// More changed lines never mean fewer reviewers for a fixed file count: every line count 0..=6000 for F

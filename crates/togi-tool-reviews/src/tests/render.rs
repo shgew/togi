@@ -621,19 +621,19 @@ fn markdown_text(input: &str, want: &str) {
 }
 
 #[test]
-fn markdown_cell_and_code() {
+fn markdown_cell() {
     assert_eq!(
         r"a <code>&lt;nil&gt;</code> \|",
         super::cell("a\n`<nil>`\t|")
     );
-    for (input, want) in [
-        ("internal/a.go:4", "`internal/a.go:4`"),
-        ("a`b", "<code>a&#96;b</code>"),
-        ("<nil>.go", "<code>&lt;nil&gt;&#46;go</code>"),
-        (" a", "<code> a</code>"),
-    ] {
-        assert_eq!(want, code(input), "code({input:?})");
-    }
+}
+
+#[test_case("internal/a.go:4" => "`internal/a.go:4`"; "plain path")]
+#[test_case("a`b" => "<code>a&#96;b</code>"; "backtick")]
+#[test_case("<nil>.go" => "<code>&lt;nil&gt;&#46;go</code>"; "html")]
+#[test_case(" a" => "<code> a</code>"; "leading space")]
+fn markdown_code(input: &str) -> String {
+    code(input)
 }
 
 const ONE: &str = r#"{"reviewers":[{"name":"r","files":["docs/x.md"]}],"findings":[]}"#;
