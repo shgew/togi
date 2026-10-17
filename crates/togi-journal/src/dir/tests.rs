@@ -60,6 +60,87 @@ fn real_fs_locking_creates_every_missing_directory() {
     assert!(disk_dir(&path).is_ok());
 }
 
+/// The disk without durability, recording each directory sync after opening it as the production adapter does.
+#[derive(Debug, Default)]
+struct SyncRecordingDisk {
+    synced: std::sync::Mutex<Vec<PathBuf>>,
+}
+
+impl Fs for SyncRecordingDisk {
+    fn create_dir(&self, path: &Path) -> io::Result<()> {
+        DiskFs::unsynced().create_dir(path)
+    }
+    fn open_append(&self, path: &Path) -> io::Result<Box<dyn crate::fs::FsFile>> {
+        DiskFs::unsynced().open_append(path)
+    }
+    fn create_new(&self, path: &Path) -> io::Result<Box<dyn crate::fs::FsFile>> {
+        DiskFs::unsynced().create_new(path)
+    }
+    fn create_truncate(&self, path: &Path) -> io::Result<Box<dyn crate::fs::FsFile>> {
+        DiskFs::unsynced().create_truncate(path)
+    }
+    fn open_read(&self, path: &Path) -> io::Result<Box<dyn io::Read + Send>> {
+        DiskFs::unsynced().open_read(path)
+    }
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        DiskFs::unsynced().rename(from, to)
+    }
+    fn rename_noreplace(&self, from: &Path, to: &Path) -> io::Result<()> {
+        DiskFs::unsynced().rename_noreplace(from, to)
+    }
+    fn remove_file(&self, path: &Path) -> io::Result<()> {
+        DiskFs::unsynced().remove_file(path)
+    }
+    fn remove_dir(&self, path: &Path) -> io::Result<()> {
+        DiskFs::unsynced().remove_dir(path)
+    }
+    fn sync_dir(&self, path: &Path) -> io::Result<()> {
+        DiskFs::open_dir(path)?;
+        self.synced.lock().unwrap().push(path.to_path_buf());
+        Ok(())
+    }
+    fn set_dir_mode(&self, path: &Path, mode: u32) -> io::Result<()> {
+        DiskFs::unsynced().set_dir_mode(path, mode)
+    }
+    fn read_dir(&self, path: &Path) -> io::Result<Vec<crate::fs::DirEntry>> {
+        DiskFs::unsynced().read_dir(path)
+    }
+    fn kind(&self, path: &Path) -> io::Result<Option<FileKind>> {
+        DiskFs::unsynced().kind(path)
+    }
+    fn try_lock(&self, path: &Path) -> io::Result<Option<FsLock>> {
+        DiskFs::unsynced().try_lock(path)
+    }
+}
+
+#[test]
+fn real_fs_locking_under_a_symlinked_ancestor_syncs_the_linked_directories() {
+    let root = tempfile::tempdir().unwrap();
+    let real = root.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+    let link = root.path().join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let fs = Arc::new(SyncRecordingDisk::default());
+    let held = StateDir::lock_in(fs.clone(), &link.join("a/state"), false).unwrap();
+    assert!(real.join("a/state/lock").is_file());
+    drop(held);
+    let synced: Vec<PathBuf> = fs
+        .synced
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|path| std::fs::canonicalize(path).unwrap())
+        .collect();
+    let real = std::fs::canonicalize(&real).unwrap();
+    for expected in [real.join("a"), real] {
+        assert!(
+            synced.contains(&expected),
+            "{} not synced in {synced:?}",
+            expected.display()
+        );
+    }
+}
+
 #[test]
 #[expect(
     clippy::disallowed_methods,
