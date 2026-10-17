@@ -743,6 +743,33 @@ fn idle_voltage_must_stay_finite_at_recording_precision() {
 }
 
 #[test]
+fn a_loaded_request_must_stay_finite_at_recording_precision() {
+    let edits: [(&str, RailEdit); 2] = [
+        ("a base that overflows f32", |rail| {
+            for workload in rail.workload.values_mut() {
+                workload.core[0].base_v = 1e100;
+            }
+        }),
+        (
+            "a count slope that sends the deepest request below f32",
+            |rail| {
+                for workload in rail.workload.values_mut() {
+                    workload.core[0].count_v = 1e38;
+                }
+            },
+        ),
+    ];
+    for (name, edit) in edits {
+        let error = invalid(&edit_rail(edit));
+        assert_eq!(error.problem, Problem::Overflow, "{name}: {error}");
+        assert!(
+            error.path.starts_with("shared_voltage.workload.") && error.path.ends_with(".core[0]"),
+            "{name}: {error}"
+        );
+    }
+}
+
+#[test]
 fn the_rail_needs_sixteen_cores_the_three_r7_workloads_and_sixteen_core_entries() {
     let mut eight = committed_machine("shared-voltage.json");
     eight.core.clear();
