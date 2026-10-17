@@ -1731,10 +1731,8 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
- "tempfile",
  "test-case",
  "thiserror",
- "togi-trialfiles",
 ]
 
 [[package]]
@@ -1802,6 +1800,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-machine",
  "togi-trialfiles",
@@ -1823,6 +1822,7 @@ dependencies = [
  "togi-render",
  "togi-session",
  "togi-sim",
+ "togi-trialfiles",
  "togi-tuner",
 ]
 

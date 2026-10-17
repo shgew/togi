@@ -20,6 +20,7 @@ togi-trialfiles.workspace = true
 flate2.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
+test-case.workspace = true
 
 [lints]
 workspace = true

@@ -264,40 +264,6 @@ fn read_samples_complete_decode_error_is_not_a_missing_sample() {
     assert!(samples.next().is_none());
 }
 
-const SAMPLE_LINE: &str = "{\"elapsed_ms\":1000}\n";
-
-// These exercise path selection in the file adapter, not sample decoding.
-#[test_case(Some(SAMPLE_LINE), None; "plain only")]
-#[test_case(None, Some(gzip(SAMPLE_LINE).as_slice()); "gzip only")]
-#[test_case(Some(SAMPLE_LINE), Some(b"torn".as_slice()); "plain preferred over torn gzip")]
-#[test_case(None, None; "neither")]
-fn real_fs_read_samples_opens_plain_or_gzip_and_prefers_plain(
-    plain: Option<&str>,
-    compressed: Option<&[u8]>,
-) {
-    let dir = tempfile::tempdir().unwrap();
-    if let Some(content) = plain {
-        std::fs::write(dir.path().join(togi_trialfiles::SAMPLES), content).unwrap();
-    }
-    if let Some(bytes) = compressed {
-        std::fs::write(
-            dir.path().join(format!("{}.gz", togi_trialfiles::SAMPLES)),
-            bytes,
-        )
-        .unwrap();
-    }
-    let samples: Vec<_> = read_samples(dir.path()).collect::<Result<_, _>>().unwrap();
-    let expected = if plain.is_some() || compressed.is_some() {
-        vec![TrialConditions {
-            elapsed_ms: 1000,
-            ..TrialConditions::default()
-        }]
-    } else {
-        Vec::new()
-    };
-    assert_eq!(samples, expected);
-}
-
 #[test]
 fn read_samples_stops_early() {
     let samples: Vec<_> = ReadSamples::from_reader(MultiGzDecoder::new(Cursor::new(gzip(
