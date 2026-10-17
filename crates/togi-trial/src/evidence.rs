@@ -101,6 +101,17 @@ struct PendingExit {
     detail: String,
 }
 
+/// What the selector knows of one instance of the trial plan.
+#[derive(Debug)]
+struct Instance {
+    core: CoreId,
+    /// The first CPU it was told to use, which names the CPU of an affinity error whose own number
+    /// cannot be read.
+    first_cpu: CpuId,
+    /// Whether it reported a setup error, which explains only its own exit.
+    setup_error: bool,
+}
+
 /// The one selector, for live and teardown observations alike. Precedence: escape, then
 /// computation error, stall or unexpected exit (first selected core), then setup error, then
 /// sampling or observation loss. Oversized-line errors are kept apart from that reason and surface
@@ -108,30 +119,33 @@ struct PendingExit {
 #[derive(Debug)]
 pub(crate) struct Selector {
     backend: Backend,
-    cores: Vec<CoreId>,
-    first_cpus: Vec<CpuId>,
+    /// Indexed like the trial plan.
+    instances: Vec<Instance>,
     failure: Option<TrialFailure>,
     escaped: Vec<CpuId>,
     inconclusive: Option<String>,
-    /// Per instance: whether it reported a setup error, which explains only its own exit.
-    setup_error: Vec<bool>,
+    /// Oversized-line errors of every instance, in the order seen.
     line_caps: Vec<String>,
     pending_exits: Vec<PendingExit>,
     diagnostics: Vec<String>,
 }
 
 impl Selector {
-    /// `instances` pairs each instance's core with the first CPU it was told to use, which names
-    /// the CPU of an affinity error whose own number cannot be read.
+    /// `instances` pairs each instance's core with the first CPU it was told to use.
     pub(crate) fn new(backend: Backend, instances: &[(CoreId, CpuId)]) -> Self {
         Self {
             backend,
-            cores: instances.iter().map(|(core, _)| *core).collect(),
-            first_cpus: instances.iter().map(|(_, cpu)| *cpu).collect(),
+            instances: instances
+                .iter()
+                .map(|&(core, first_cpu)| Instance {
+                    core,
+                    first_cpu,
+                    setup_error: false,
+                })
+                .collect(),
             failure: None,
             escaped: Vec::new(),
             inconclusive: None,
-            setup_error: vec![false; instances.len()],
             line_caps: Vec::new(),
             pending_exits: Vec::new(),
             diagnostics: Vec::new(),
@@ -139,7 +153,7 @@ impl Selector {
     }
 
     fn core(&self, instance: usize) -> CoreId {
-        self.cores[instance]
+        self.instances[instance].core
     }
 
     fn escaped(&self) -> bool {
@@ -281,7 +295,7 @@ impl Selector {
             Line::Progress(detail) => Decision {
                 stop: false,
                 reports: if stream == Stream::Stdout {
-                    let detail = if self.cores.len() > 1 {
+                    let detail = if self.instances.len() > 1 {
                         format!("core {core:02} {detail}")
                     } else {
                         detail
@@ -314,7 +328,7 @@ impl Selector {
                 decision
             }
             Line::SetupError => {
-                self.setup_error[instance] = true;
+                self.instances[instance].setup_error = true;
                 let backend = self.backend;
                 self.weak_reason(|| format!("{backend} setup error: {text}"));
                 Decision {
@@ -323,7 +337,7 @@ impl Selector {
                 }
             }
             Line::AffinityError(cpu) => {
-                let cpu = cpu.unwrap_or(self.first_cpus[instance]);
+                let cpu = cpu.unwrap_or(self.instances[instance].first_cpu);
                 self.escape(cpu, "backend could not set affinity", pid, pid)
             }
         }
@@ -337,7 +351,7 @@ impl Selector {
         let mut reports = Vec::new();
         let exit = std::mem::take(&mut self.pending_exits)
             .into_iter()
-            .find(|exit| !self.setup_error[exit.instance]);
+            .find(|exit| !self.instances[exit.instance].setup_error);
         if let Some(exit) = exit
             && self.line_caps.is_empty()
             && !self.escaped()
@@ -704,6 +718,124 @@ mod tests {
         s.observe(setup());
         let verdict = s.conclude().0;
         assert_eq!(verdict.failure.map(|f| f.core), Some(core(4)));
+    }
+
+    /// Three instances whose cores and first CPUs all differ, so a record mixed up with another
+    /// instance's, or a core taken for a CPU, names the wrong one.
+    fn three() -> Selector {
+        Selector::new(
+            Backend::Mprime,
+            &[
+                (core(3), CpuId(6)),
+                (core(5), CpuId(10)),
+                (core(9), CpuId(18)),
+            ],
+        )
+    }
+
+    fn on(instance: usize, stream: Stream, line: Line, text: &str) -> Observation {
+        Observation::Line {
+            instance,
+            pid: 40 + u32::try_from(instance).unwrap(),
+            stream,
+            line,
+            text: text.to_owned(),
+        }
+    }
+
+    fn exit(instance: usize, detail: &str) -> Observation {
+        Observation::UnexpectedExit {
+            instance,
+            detail: detail.to_owned(),
+        }
+    }
+
+    #[test]
+    fn each_instances_setup_error_explains_only_its_own_exit_among_several() {
+        let mut s = three();
+        s.observe(on(1, Stream::Stdout, Line::SetupError, "PIN FAILED"));
+        s.observe(exit(1, "exit status 1"));
+        s.observe(exit(2, "exit status 0"));
+        s.observe(exit(0, "exit status 2"));
+        let (verdict, reports) = s.conclude();
+        assert_eq!(
+            verdict.failure,
+            Some(TrialFailure {
+                signal: Signal::UnexpectedExit,
+                core: core(9)
+            })
+        );
+        assert_eq!(
+            reports,
+            [Report::Signal {
+                core: core(9),
+                signal: Signal::UnexpectedExit,
+                detail: "exit status 0".into()
+            }]
+        );
+
+        let mut s = three();
+        for instance in [0, 2] {
+            s.observe(on(instance, Stream::Stdout, Line::SetupError, "PIN FAILED"));
+        }
+        s.observe(exit(0, "exit status 1"));
+        s.observe(exit(2, "exit status 1"));
+        let verdict = conclude(s);
+        assert_eq!(verdict.failure, None, "every exit has its own setup error");
+        assert_eq!(
+            verdict.inconclusive.as_deref(),
+            Some("mprime setup error: PIN FAILED")
+        );
+    }
+
+    #[test]
+    fn an_unreadable_affinity_cpu_is_the_first_cpu_of_the_instance_that_reported_it() {
+        for (instance, cpu) in [(0, CpuId(6)), (1, CpuId(10)), (2, CpuId(18))] {
+            let mut s = three();
+            s.observe(on(
+                instance,
+                Stream::Stderr,
+                Line::AffinityError(None),
+                "AFFINITY:x",
+            ));
+            assert_eq!(conclude(s).escaped, [cpu], "instance {instance}");
+        }
+    }
+
+    #[test]
+    fn line_caps_of_several_instances_keep_their_order_and_block_any_instances_exit() {
+        let first = "core 09 read stderr.log: backend output line exceeds 64 KiB";
+        let second = "core 03 read stdout.log: backend output line exceeds 64 KiB";
+        let mut s = three();
+        s.observe(exit(1, "exit status 0"));
+        s.observe(Observation::LineTooLong {
+            instance: 2,
+            stream: Stream::Stderr,
+        });
+        s.observe(Observation::LineTooLong {
+            instance: 0,
+            stream: Stream::Stdout,
+        });
+        let (verdict, reports) = s.conclude();
+        assert_eq!(verdict.failure, None);
+        assert!(reports.is_empty(), "{reports:?}");
+        assert_eq!(verdict.inconclusive.as_deref(), Some(first));
+        assert_eq!(verdict.diagnostics, [first, second]);
+
+        let mut s = three();
+        s.observe(Observation::LineTooLong {
+            instance: 1,
+            stream: Stream::Stdout,
+        });
+        s.observe(on(
+            2,
+            Stream::Stdout,
+            Line::ComputationError,
+            "COMPUTE ERROR",
+        ));
+        let verdict = conclude(s);
+        assert_eq!(verdict.failure.map(|f| f.core), Some(core(9)));
+        assert!(verdict.diagnostics.is_empty());
     }
 
     #[test]

@@ -99,7 +99,7 @@ pub(crate) fn run(args: SameArgs) -> ExitCode {
                     kept.display()
                 );
             }
-            return fail(&failed);
+            return fail(&togi_machine::error_chain(&failed));
         }
     };
     for warning in &report.warnings {

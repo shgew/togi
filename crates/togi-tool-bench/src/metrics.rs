@@ -11,7 +11,7 @@ use togi_requests::TIE_V;
 use togi_sim::replay::Replay;
 use togi_sim::{Load, Model};
 
-use crate::error::RunError;
+use crate::error::{MeasureError, RunError};
 use crate::stats::share;
 
 const CORES_PER_CCD: usize = 8;
@@ -90,7 +90,7 @@ pub fn measure(
 }
 
 fn shape(error: togi_sim::ShapeError) -> RunError {
-    RunError::Measure(error.to_string())
+    RunError::Measure(MeasureError::Shape(error))
 }
 
 fn core(index: usize) -> Option<CoreId> {
@@ -133,7 +133,7 @@ fn final_profile(events: &[Event], cores: usize) -> Result<PerCore<ObservedOffse
     let baseline = match checking {
         Some(_) => None,
         None => togi_journal::State::replay(events)
-            .map_err(|error| RunError::Measure(format!("replay the journal: {error}")))?
+            .map_err(|error| RunError::Measure(MeasureError::Replay(error)))?
             .session
             .map(|session| session.baseline),
     };
@@ -170,7 +170,7 @@ fn real_answers(events: &[Event], model: &Model, replay: Option<&Replay>) -> Res
         return Ok(0);
     };
     let facts = togi_facts::extract(session, events.iter().cloned().map(Ok::<_, Infallible>))
-        .map_err(|error| RunError::Measure(format!("extract the trial facts: {error}")))?;
+        .map_err(|error| RunError::Measure(MeasureError::Facts(error)))?;
     let started: HashSet<&TrialId> = events
         .iter()
         .filter_map(|event| match &event.payload {

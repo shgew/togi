@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Parser;
-use togi_tool_facts::generate_recordings;
+use togi_tool_facts::{GenerateError, generate_recordings};
 use togi_tool_trialfacts::decode;
 
 use crate::fixture::{SESSION, recordings, unknown_recording};
@@ -74,6 +74,29 @@ fn a_failed_extraction_exits_one_names_the_tool_on_stderr_and_keeps_the_output()
             .starts_with("togi-tool-facts: ")
     );
     assert_eq!(output, b"committed extract");
+}
+
+#[test]
+fn an_unreadable_state_directory_prints_the_operation_and_its_io_cause_on_one_line() {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let status = run(
+        &cli(),
+        |_, _| {
+            Err(GenerateError::StateDir {
+                path: "state".into(),
+                source: std::io::ErrorKind::NotFound.into(),
+            })
+        },
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(status, ExitCode::FAILURE);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).unwrap(),
+        "togi-tool-facts: read the state directory state: entity not found\n"
+    );
 }
 
 #[test]

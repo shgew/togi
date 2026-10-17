@@ -12,7 +12,7 @@ use togi_tool_trialfacts::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum GenerateError {
-    #[error("read the state directory {}: {source}", path.display())]
+    #[error("read the state directory {}", path.display())]
     StateDir { path: PathBuf, source: io::Error },
     #[error(transparent)]
     Extract(#[from] ExtractError),

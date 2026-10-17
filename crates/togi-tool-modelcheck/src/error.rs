@@ -7,11 +7,11 @@ use togi_tool_trialfacts::{ExtractsError, ReadError};
 /// [`Check`](crate::Check) with status [`Flagged`](crate::Status::Flagged), not an error.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("invalid machine: {0}")]
+    #[error("invalid machine")]
     Machine(#[from] InvalidMachine),
     #[error(transparent)]
     Extract(ExtractsError),
-    #[error("read the machine's facts extract: {0}")]
+    #[error("read the machine's facts extract")]
     ReadExtract(#[source] ReadError),
     /// A `thermal_trip` or `power_loss` reset can turn a simulated crash into an inconclusive trial, which
     /// the extract does not hold, so the machine's failure probability would be compared with the wrong
@@ -25,7 +25,7 @@ pub enum Error {
         problem: FactProblem,
     },
     /// A predictor whose machine differs in shape from the one the checker was built for.
-    #[error("predict a checked trial: {0}")]
+    #[error("predict a checked trial")]
     Shape(#[from] ShapeError),
 }
 

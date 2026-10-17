@@ -59,7 +59,10 @@ impl Sink {
         if let Err(error) = &result
             && self.failed.is_none()
         {
-            self.failed = Some(io::Error::new(error.kind(), error.to_string()));
+            self.failed = Some(io::Error::new(
+                error.kind(),
+                togi_machine::error_chain(error),
+            ));
         }
         result
     }

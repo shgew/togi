@@ -41,7 +41,21 @@ impl StopPolicy {
             DecisionPayload::DeepeningRound(round) if round.event == RoundEvent::Start => {
                 first.then_some(Stop::FirstResult)
             }
-            _ => None,
+            DecisionPayload::CheckingCycle(_)
+            | DecisionPayload::DeepeningRound(_)
+            | DecisionPayload::Failure(_)
+            | DecisionPayload::TunerWarning(_)
+            | DecisionPayload::DeadEnd(_)
+            | DecisionPayload::CorePhase(_)
+            | DecisionPayload::TunerDecision(_)
+            | DecisionPayload::ProfileChange(_)
+            | DecisionPayload::CheckingStep(_)
+            | DecisionPayload::CheckingChain(_)
+            | DecisionPayload::HuntStart(_)
+            | DecisionPayload::HuntGroup(_)
+            | DecisionPayload::HuntEnd(_)
+            | DecisionPayload::HuntSkipped(_)
+            | DecisionPayload::Combination(_) => None,
         }
     }
 }

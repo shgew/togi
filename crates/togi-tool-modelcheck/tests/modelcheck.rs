@@ -412,7 +412,7 @@ fn a_failed_extract_read_is_reported_with_its_path() {
         unreachable!();
     };
     assert_eq!(source.kind(), io::ErrorKind::NotFound);
-    let message = error.to_string();
+    let message = togi_machine::error_chain(&error);
     assert!(
         message.starts_with("read the machine's facts extract: "),
         "{message}"
@@ -445,10 +445,8 @@ fn an_invalid_machine_is_refused_before_its_extract_is_read() {
     let Err(error @ Error::Machine(_)) = result else {
         panic!("{result:?}");
     };
-    assert!(
-        error.to_string().contains("must be even, from 2 to 16"),
-        "{error}"
-    );
+    let message = togi_machine::error_chain(&error);
+    assert!(message.contains("must be even, from 2 to 16"), "{message}");
 }
 
 #[test]

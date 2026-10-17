@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
-use jiff::Timestamp;
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use togi_journal::{Build, CycleEvent, Event, Payload, SessionId, ShutdownReason, State};
-use togi_machine::{ObservedOffset, PerCore, object_only};
+use togi_machine::{BootId, ObservedOffset, PerCore, object_only};
 use togi_sim::REBOOT_TIME;
 
 use crate::error::Error;
@@ -29,7 +29,10 @@ object_only! {
     #[serde(deny_unknown_fields)]
     pub struct Outcome {
         pub status: Status,
-        /// Hours from the anchor to the terminal point, or to the last event of a run that has none.
+        /// Hours the run spent running after the anchor, through the terminal point or the last event of a run
+        /// that has none: each invocation from its first event to its last, and the downtime before an
+        /// invocation that records `crash.detected`. The time after a `shutdown`, before a restart that detects
+        /// no crash and before a new session's `session.start` is not run time.
         pub hours: f64,
         /// `crash.detected` events.
         pub crashes: u32,
@@ -98,7 +101,7 @@ pub(crate) struct Followed {
 
 pub(crate) fn follow<R: Replay>(sessions: &[Session], anchor: &Anchor) -> Result<Followed, Error> {
     let (first, at) = anchor.find(sessions)?;
-    let mut scan = Scan::new(anchor.time);
+    let mut scan = Scan::new(&sessions[first].events()[at]);
     let mut held = (&sessions[first], R::default(), State::default());
     'walk: for (i, session) in sessions[first..].iter().enumerate() {
         let start = if i == 0 { at + 1 } else { 0 };
@@ -142,7 +145,7 @@ pub(crate) fn follow<R: Replay>(sessions: &[Session], anchor: &Anchor) -> Result
     Ok(Followed {
         outcome: Outcome {
             status: scan.status,
-            hours: scan.last.duration_since(anchor.time).as_secs_f64() / 3600.0,
+            hours: scan.time.total.as_secs_f64() / 3600.0,
             crashes: scan.crashes,
             hunts: u32::try_from(scan.hunts.len()).unwrap_or(u32::MAX),
             profile,
@@ -178,17 +181,17 @@ pub(crate) fn stamp_of(event: &Event) -> Option<&Build> {
 /// A run's outcome and builds accumulated event by event after the anchor.
 struct Scan {
     status: Status,
-    last: Timestamp,
+    time: RunTime,
     crashes: u32,
     hunts: BTreeSet<(SessionId, NonZeroU32)>,
     builds: Vec<Build>,
 }
 
 impl Scan {
-    fn new(anchor: Timestamp) -> Self {
+    fn new(anchor: &Event) -> Self {
         Self {
             status: Status::Censored,
-            last: anchor,
+            time: RunTime::new(anchor),
             crashes: 0,
             hunts: BTreeSet::new(),
             builds: Vec::new(),
@@ -208,6 +211,7 @@ impl Scan {
     /// Counts `event` of `session`, whose tuner `tuner` has folded the events before it, and reports whether it
     /// is the terminal point and whether it is folded.
     fn event(&mut self, session: &Session, event: &Event, tuner: &impl Replay) -> (bool, bool) {
+        self.time.event(event);
         let mut end = false;
         match &event.payload {
             Payload::CheckingCycle(cycle)
@@ -216,7 +220,6 @@ impl Scan {
                     && tuner.clean_cycles() >= 1 =>
             {
                 self.status = Status::Concluded;
-                self.last = event.time;
                 return (true, false);
             }
             Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Cycles => {
@@ -235,7 +238,95 @@ impl Scan {
             }
             _ => {}
         }
-        self.last = event.time;
         (end, true)
+    }
+}
+
+/// The time a run spent running, folded event by event from the anchor.
+///
+/// An invocation starts at its `session.start`, or at its `config.loaded` when no `session.start` precedes it,
+/// or at its first event in another boot. The gap before an invocation counts only once the invocation records
+/// `crash.detected`, and never after a `shutdown` or before a `session.start`. `mce`, `boot.leave_reason`,
+/// `journal.torn` and `state.rebuilt` may be what a starting invocation records ahead of its `config.loaded`,
+/// and `command.reset` and `session.archived` are recorded outside any run, so none of them moves where a gap
+/// starts or ends.
+struct RunTime {
+    total: SignedDuration,
+    /// The latest event that settles where a gap starts.
+    last: Timestamp,
+    boot: BootId,
+    after: After,
+    /// The gap before the current invocation, run time once it records `crash.detected`.
+    downtime: Option<SignedDuration>,
+}
+
+/// What the latest event that settles where a gap starts was.
+enum After {
+    Shutdown,
+    SessionStart,
+    Other,
+}
+
+impl After {
+    fn of(payload: &Payload) -> Self {
+        if matches!(payload, Payload::Shutdown(_)) {
+            Self::Shutdown
+        } else if matches!(payload, Payload::SessionStart(_)) {
+            Self::SessionStart
+        } else {
+            Self::Other
+        }
+    }
+}
+
+impl RunTime {
+    fn new(anchor: &Event) -> Self {
+        Self {
+            total: SignedDuration::ZERO,
+            last: anchor.time,
+            boot: anchor.boot.clone(),
+            after: After::of(&anchor.payload),
+            downtime: None,
+        }
+    }
+
+    fn event(&mut self, event: &Event) {
+        if matches!(
+            event.payload,
+            Payload::Mce(_)
+                | Payload::BootLeaveReason(_)
+                | Payload::JournalTorn(_)
+                | Payload::StateRebuilt(_)
+                | Payload::CommandReset(_)
+                | Payload::SessionArchived(_)
+        ) {
+            return;
+        }
+        let gap = event
+            .time
+            .duration_since(self.last)
+            .max(SignedDuration::ZERO);
+        let starts = match event.payload {
+            Payload::SessionStart(_) => true,
+            Payload::ConfigLoaded(_) => !matches!(self.after, After::SessionStart),
+            _ => event.boot != self.boot,
+        };
+        if matches!(event.payload, Payload::SessionStart(_))
+            || matches!(self.after, After::Shutdown)
+        {
+            self.downtime = None;
+        } else if starts {
+            self.downtime = Some(gap);
+        } else {
+            self.total += gap;
+        }
+        if matches!(event.payload, Payload::CrashDetected(_))
+            && let Some(downtime) = self.downtime.take()
+        {
+            self.total += downtime;
+        }
+        self.last = event.time;
+        self.boot.clone_from(&event.boot);
+        self.after = After::of(&event.payload);
     }
 }

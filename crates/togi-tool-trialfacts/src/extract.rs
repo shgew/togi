@@ -12,23 +12,23 @@ use crate::record::{BuildStamp, Class, InvalidProfile, Phase, Profile, TrialFact
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExtractError {
-    #[error("{}", togi_machine::error_chain(.0))]
+    #[error(transparent)]
     Journals(#[from] LookupError),
-    #[error("lock the state directory: {}", togi_machine::error_chain(.0))]
+    #[error("lock the state directory")]
     Lock(#[from] togi_journal::LockError),
-    #[error("session {session}: {source}")]
+    #[error("session {session}")]
     Facts {
         session: SessionId,
         #[source]
         source: FactsError<Infallible>,
     },
-    #[error("session {session}: {source}")]
+    #[error("session {session}")]
     Incompatible {
         session: SessionId,
         #[source]
         source: Refusal,
     },
-    #[error("session {session} event {seq}: {source}")]
+    #[error("session {session} event {seq}")]
     Profile {
         session: SessionId,
         seq: Seq,

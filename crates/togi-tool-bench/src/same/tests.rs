@@ -678,8 +678,25 @@ fn sessions_without_journals_or_events_never_compare_equal() {
             fail: false,
         });
         let error = compare::run(&same_sessions(&[1]), &config(&fleet), &fake).unwrap_err();
-        assert!(error.to_string().contains(message), "{error}");
+        let chain = togi_machine::error_chain(&error);
+        assert!(chain.contains(message), "{chain}");
     }
+}
+
+#[test]
+fn a_failed_comparison_renders_its_cause_once() {
+    let failed = super::Failed {
+        error: Box::new(SameError::Remove {
+            side: "base",
+            key: "x/dev-1".to_owned(),
+            source: std::io::Error::other("disk gone"),
+        }),
+        kept: None,
+    };
+    assert_eq!(
+        togi_machine::error_chain(&failed),
+        "remove matching base x/dev-1: disk gone"
+    );
 }
 
 struct Cached {
@@ -1442,10 +1459,8 @@ fn a_simulator_that_leaves_no_journal_fails_the_comparison_and_keeps_the_runs() 
     let mut config = config(&fleet);
     config.jobs = 1;
     let failed = compare::run(&full_pairs(), &config, &fake).unwrap_err();
-    assert!(
-        failed.to_string().contains("journals contain no events"),
-        "{failed}"
-    );
+    let chain = togi_machine::error_chain(&failed);
+    assert!(chain.contains("journals contain no events"), "{chain}");
     let kept = files_under(&root);
     assert!(
         kept.contains(&"head/default/dev-1/sim.log".to_owned()),

@@ -90,7 +90,7 @@ gate: _dev-shell
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one lint`)
+# Build named flake checks, streaming their build logs: board-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one lint`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -253,20 +253,13 @@ _push-ready recipe stack_hint: _dev-shell
         exit 1
     fi
 
-# Format, run `just gate` under a lock shared by every worktree of this clone and release it, then push the current branch to the branch of the same name on origin, replacing it after a rebase unless the remote branch has commits this one never contained; stack layers use `gh stack push`
+# Format, run `just gate`, then push the current branch to the branch of the same name on origin, replacing it after a rebase unless the remote branch has commits this one never contained; stack layers use `gh stack push`
 [group('github')]
 ship: (_push-ready "ship" "gate it with just gate and push the stack with gh stack push")
     #!/usr/bin/env bash
     set -euo pipefail
     branch=$(git branch --show-current)
-    lock="$(git rev-parse --path-format=absolute --git-common-dir)/togi-gate.lock"
-    exec 9>"$lock"
-    if ! flock -n 9; then
-        echo "ship: another just ship holds $lock; waiting for it to exit" >&2
-        flock 9
-    fi
-    just gate 9>&-
-    exec 9>&-
+    just gate
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
 # Print the Go packages changed between a pushed head and HEAD, one per line: `./...` when go.mod or go.sum changed, nothing when no Go file did; a package whose Go files were deleted or moved away counts while it still has Go files at HEAD

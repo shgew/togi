@@ -289,8 +289,8 @@ impl Hardware {
             .iter()
             .map(|core| match self.slots.get(core) {
                 Some(Slot::Known(offset)) => Some((core, offset)),
-                _ if core == unknown => Some((core, TargetOffset::ZERO)),
-                _ => None,
+                Some(Slot::Unknown) | None if core == unknown => Some((core, TargetOffset::ZERO)),
+                Some(Slot::Unknown) | None => None,
             })
             .collect()
     }

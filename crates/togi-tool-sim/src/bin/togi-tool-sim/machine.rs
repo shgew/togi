@@ -6,9 +6,9 @@ use togi_tool_trialfacts::{Extracts, ExtractsError};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum LoadError {
-    #[error("load machine: {0}")]
+    #[error("load machine")]
     File(#[from] file::LoadError),
-    #[error("load machine: {0}")]
+    #[error("load machine")]
     Invalid(#[from] InvalidMachine),
     #[error(
         "replaying facts needs a machine file naming a facts extract; the default machine has none"

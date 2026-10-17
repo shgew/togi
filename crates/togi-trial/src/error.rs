@@ -1,5 +1,6 @@
 use std::io;
 use std::path::PathBuf;
+use std::process::ExitStatus;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -50,12 +51,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("the preflight scope probe failed: {detail}")]
-    Probe {
-        detail: String,
-        #[source]
-        source: Option<Box<dyn std::error::Error + Send + Sync>>,
-    },
+    #[error("the preflight scope probe failed")]
+    Probe(#[source] SystemdError),
     #[error("trial cleanup could not be confirmed")]
     Containment(#[source] Arc<Containment>),
     #[error("cancelled")]
@@ -150,13 +147,13 @@ pub enum CleanupFailure {
         scope: String,
         signal: &'static str,
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: SystemdError,
     },
     #[error("stop scope {scope}")]
     StopScope {
         scope: String,
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: SystemdError,
     },
     #[error("reap instance {instance}")]
     Reap {
@@ -185,6 +182,25 @@ pub enum CleanupFailure {
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },
+}
+
+/// A systemd call that did not do what it was asked.
+#[derive(Debug, thiserror::Error)]
+pub enum SystemdError {
+    #[error(transparent)]
+    Command(togi_command::Error),
+    #[error(transparent)]
+    Timeout(tokio::time::error::Elapsed),
+    #[error("exited with {status}{}", output_suffix(output))]
+    Exit { status: ExitStatus, output: String },
+}
+
+fn output_suffix(output: &str) -> String {
+    if output.is_empty() {
+        String::new()
+    } else {
+        format!(": {output}")
+    }
 }
 
 impl Containment {

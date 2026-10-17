@@ -13,7 +13,7 @@ use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use crate::cache::{self, Costs, RunCache};
 use crate::compare;
-use crate::error::{Error, RunError};
+use crate::error::{Error, ModelCheckError, RunError};
 use crate::gate::{self, Judgment};
 use crate::git::Tree;
 use crate::metrics::{self, Measured};
@@ -309,7 +309,7 @@ fn record_of(
                 session.exit,
                 !session.events.is_empty(),
                 session.journal_dead_end(),
-                session.log_dead_end(),
+                session.log_dead_end,
             )
         },
         model_check: spec
@@ -389,21 +389,21 @@ pub(crate) fn check_machine_with(
     else {
         return Ok(None);
     };
-    let failed = |message: String| Error::ModelCheck {
+    let failed = |source| Error::ModelCheck {
         machine: machine.name.clone(),
-        message,
+        source,
     };
     let model = machine
         .model(0)
-        .map_err(|error| failed(error.to_string()))?;
+        .map_err(|error| failed(ModelCheckError::Model(error)))?;
     let (_, records) = extracts
         .load_with(&machine.path, &machine.definition, reader)
-        .map_err(|error| failed(error.to_string()))?;
+        .map_err(|error| failed(ModelCheckError::Extract(error)))?;
     let label = Path::new(&machine.name);
     let extract = label.parent().unwrap_or_else(|| Path::new("")).join(facts);
     togi_tool_modelcheck::check_records(label, &extract, &model, &records)
         .map(Some)
-        .map_err(|error| failed(error.to_string()))
+        .map_err(|error| failed(ModelCheckError::Check(error)))
 }
 
 fn open_cache(
