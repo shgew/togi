@@ -86,7 +86,7 @@ impl fmt::Display for Note {
             }
             Self::Ordinal { n, after } => write!(
                 f,
-                "not located on the unloaded cores yet: this is voltage-targeted backoff {n} of this load since its last passing trial, and its failures are located only after {after}"
+                "the unloaded cores have not been checked by a located hunt yet; voltage-targeted backoff {n} for this load since its last passing trial; a later failure can trigger a located hunt after {after} backoffs"
             ),
             Self::Located(clause) => f.write_str(clause),
             Self::RerunPassed { failure, end } => write!(

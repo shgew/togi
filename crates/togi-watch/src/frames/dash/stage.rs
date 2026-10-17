@@ -247,7 +247,7 @@ pub(crate) fn stage_line(scene: &Scene<'_>, class: SizeClass, summary: bool) -> 
             (
                 Paint::Grey,
                 format!(
-                    "screen paused until {}",
+                    "screen paused · planned end {}",
                     scene.wall_minute(hold.planned_end)
                 ),
             )
@@ -281,5 +281,12 @@ pub(crate) fn stage_line(scene: &Scene<'_>, class: SizeClass, summary: bool) -> 
         }
         out.extend(part);
     }
-    Line::from(out)
+    let line = Line::from(out);
+    #[cfg(test)]
+    crate::corpus::line(
+        "dash.stage",
+        &format!("{class:?}{}", if summary { " summary" } else { "" }),
+        &line,
+    );
+    line
 }

@@ -2,13 +2,13 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   20:21:32   paused until 20:36   session 20h21m   41 failures · 8 crashes
+│ togi   20:21:32   paused · planned end 20:36   session 20h21m   41 failures · 8 crashes
 │ ■ SOLO ─ ► P1 ─ ○ P2 ─ CLEAN 0 ─ ► CYCLE 1
 │
 │ ▌  Every core idle with short wake-ups; this screen holds still.
 │
 │  R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                         CYCLE 1 · STEP 7
-│ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · ends at 20:36
+│ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · planned end 20:36
 │
 │ pass → step 8   core named → backs off   none named → hunt 2
 │

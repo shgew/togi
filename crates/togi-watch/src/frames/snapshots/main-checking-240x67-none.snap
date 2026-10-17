@@ -18,9 +18,9 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
 │  0:40 of 2:00                                                                                                                                                                        0 passed · trial 1 of 4  ► · · ·                   left
 │
-│  if 3 of 4 pass       next: trial 4 of 4 · 5m
-│  if a core is named   its failure point is recorded → it backs off per offset order → next: rerun R7 all-core on 00-07 · 2m
-│  if none is named     core 05 -9 → -8 per offset order → next: rerun R7 all-core on 00-07 · 2m
+│  if 3 of 4 pass:      next trial: trial 4 of 4 · 5m
+│  if a core is named:  its failure point is recorded → it backs off per offset order; next trial: rerun R7 all-core on 00-07 · 2m
+│  if none is named:    core 05 -9 → -8 per offset order; next trial: rerun R7 all-core on 00-07 · 2m
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
 │  ► 00  -26  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                          -28                                            08   -5  HAS ROOM  ▄▄▄▄▄·▬                                                -7   top by offset
@@ -51,16 +51,16 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │  ○  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m                                   08:28  limit    core 08 solo limit -6
 │  ○  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m                               07:34  confirm  core 06 confirming -38 as its solo limit
 │  ○  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m                               07:34  fail     core 06 fails at -39
-│  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:34  fail     core 06 · R2 heavy vector at -39 · the stress program stalled
+│  ○ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:34  fail     core 06 · R2 heavy vector at -39 · the backend stalled
 │  ○ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:32  confirm  core 13 confirming -38 as its solo limit
 │  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               07:32  fail     core 13 fails at -39
 │  ○ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:32  crash    core 13 · R2 heavy vector at -39 · rebooted · midway through trial 1 of 1
-│  ○ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:07  step     core 06 passed -38, next -39
-│  ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               07:04  step     core 13 passed -38, next -39
-│  ○ 16  R4 partial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               06:40  step     core 06 passed -37, next -38
-│  ○ 17  R4 partial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               06:37  step     core 13 passed -37, next -38
-│  ○ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   06:13  step     core 06 passed -36, next -37
-│                                                                                                                          06:10  step     core 13 passed -36, next -37
+│  ○ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:07  step     core 06 passed -38; searches -39 on its next turn
+│  ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               07:04  step     core 13 passed -38; searches -39 on its next turn
+│  ○ 16  R4 partial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               06:40  step     core 06 passed -37; searches -38 on its next turn
+│  ○ 17  R4 partial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               06:37  step     core 13 passed -37; searches -38 on its next turn
+│  ○ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   06:13  step     core 06 passed -36; searches -37 on its next turn
+│                                                                                                                          06:10  step     core 13 passed -36; searches -37 on its next turn
 │  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     05:57  confirm  core 09 confirming -35 as its solo limit
 │  mprime AVX2 36K-248K           05 08 by offset          none yet                                                        05:57  fail     core 09 fails at -36
 │  mprime AVX-512 36K-248K        05 08 by offset          none yet                                                        05:57  fail     core 09 · R1 light at -36 · wrong result

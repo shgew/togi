@@ -5,6 +5,8 @@
 //! [`screen`] is the seam between the frames, which draw one snapshot, and the terminal loop, which decides when
 //! to draw. [`frames`] draws a frame: the main view, help and the journal view.
 
+#[cfg(test)]
+mod corpus;
 mod derive;
 mod describe;
 mod facts;

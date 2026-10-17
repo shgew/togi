@@ -1,6 +1,8 @@
 //! The narration: why the screen looks the way it does, what the last trial did, what each outcome of the trial
 //! in flight leads to, and the resting band when no trial runs.
 
+#[cfg(test)]
+mod corpus;
 mod outcome;
 mod resting;
 #[cfg(test)]
@@ -76,6 +78,13 @@ const PARTIAL_NOTE: &str = "This partial idles the top-requester groups found so
 
 /// The story of a folded journal, with or without a session.
 pub(crate) fn story(scene: &Scene<'_>) -> Story {
+    let said = spoken(scene);
+    #[cfg(test)]
+    corpus::said(&said);
+    said
+}
+
+fn spoken(scene: &Scene<'_>) -> Story {
     let s = &scene.s;
     if s.session.is_none() {
         return Story::one(
@@ -136,12 +145,12 @@ fn trial_story(scene: &Scene<'_>, trial: &TrialView) -> Story {
     }
     if trial.zero_rerun() {
         return Story::new(
-            "RERUN AT CO 0",
+            "RERUN AT OFFSET 0",
             vec![
-                "A failure at CO 0 would stop tuning. Before it does, the failed load runs again with every core at CO 0.".to_owned(),
-                "If it fails too, the instability is not caused by Curve Optimizer and tuning stops; if it passes, the failure goes to the cores off CO 0.".to_owned(),
+                "A failure at offset 0 would stop tuning. Before it does, the failed load runs again with every core at offset 0.".to_owned(),
+                "If it fails too, the instability is not caused by Curve Optimizer and tuning stops; if it passes, the failure goes to the cores off offset 0.".to_owned(),
             ],
-            "The failed load runs again with every core at CO 0 before tuning stops.",
+            "The failed load runs again with every core at offset 0; tuning stops if it fails.",
             Paint::Running,
         );
     }
@@ -287,7 +296,7 @@ fn cycle_story(scene: &Scene<'_>, trial: &TrialView) -> Story {
         .and_then(|place| place.step)
         .map_or_else(|| "This step".to_owned(), |step| format!("Step {step}"));
     if trial.regime == Regime::R6 {
-        if let Some(hold) = scene.hold {
+        if scene.hold.is_some() {
             return Story::new(
                 name,
                 vec![
@@ -295,10 +304,7 @@ fn cycle_story(scene: &Scene<'_>, trial: &TrialView) -> Story {
                         "{step} leaves every core idle for {}, with short wake-ups, to test idle and boost states.",
                         minutes(trial.duration)
                     ),
-                    format!(
-                        "This screen holds still until {}, clock included, so drawing it cannot wake the cores.",
-                        scene.wall_minute(hold.planned_end)
-                    ),
+                    "This screen holds still while the idle trial is in flight, clock included, so drawing it cannot wake the cores.".to_owned(),
                 ],
                 "Every core idle with short wake-ups; this screen holds still.",
                 Paint::Running,
@@ -372,11 +378,14 @@ fn stage_label(scene: &Scene<'_>) -> String {
 
 /// The story of a journal a session is about to append to, before it records anything.
 pub(crate) fn starting_story() -> Story {
-    Story::one(
+    let said = Story::one(
         "STARTING",
         "Checking the machine and the journal before the first trial; this screen follows the run as soon as it records something.".to_owned(),
         Paint::Running,
-    )
+    );
+    #[cfg(test)]
+    corpus::said(&said);
+    said
 }
 
 /// The story of a journal that cannot be read; `one_frame` drops the promise to retry, which only live watch
@@ -389,7 +398,10 @@ pub(crate) fn problem_story(error: &dyn std::error::Error, one_frame: bool) -> S
                 .to_owned(),
         );
     }
-    Story::new("JOURNAL UNREADABLE", lines, "", Paint::Bad)
+    let said = Story::new("JOURNAL UNREADABLE", lines, "", Paint::Bad);
+    #[cfg(test)]
+    corpus::said(&said);
+    said
 }
 
 fn stopped_story(reason: ShutdownReason, saved: bool) -> Story {
@@ -398,13 +410,13 @@ fn stopped_story(reason: ShutdownReason, saved: bool) -> Story {
             "The BIOS profile is confirmed, so I stopped at the first result as asked. togi status shows it; togi run continues with phase 2."
         }
         ShutdownReason::Cycles if saved => {
-            "The requested clean cycles are complete, so I restored safer offsets and stopped. togi run picks up where I left off."
+            "The requested clean cycles are complete, so I restored baseline or shallower offsets and stopped. togi run picks up where I left off."
         }
         ShutdownReason::Cycles => {
             "The requested clean cycles are complete, so I've stopped. Everything I learned is in the journal; togi run picks up where I left off."
         }
         _ if saved => {
-            "I restored safer offsets before stopping. togi run picks up where I left off."
+            "I restored baseline or shallower offsets before stopping. togi run picks up where I left off."
         }
         _ => {
             "I've stopped. Everything I learned is in the journal; togi run picks up where I left off."
@@ -422,7 +434,7 @@ fn dead_end_story(condition: DeadEndCondition) -> Story {
             "The CPU didn't take an offset the way I wrote it, so I can't trust what is applied. Nothing else will be written."
         }
         DeadEndCondition::NoEvidence => {
-            "I couldn't obtain usable failure evidence, so I can't continue testing safely. Check the recorded details before tuning again."
+            "I couldn't obtain conclusive trial evidence, so I can't continue testing safely. Check the recorded details before tuning again."
         }
         DeadEndCondition::BootLoop => {
             "The machine crashed three times in a row before I applied any offsets: something else is crashing it. Check the system before tuning again."
@@ -519,7 +531,7 @@ fn hunt_story(scene: &Scene<'_>, hunt: HuntView<'_>, trial: &TrialView) -> Story
                     "{members} {verb} together at their offsets, and every smaller part of them that was tested passed."
                 ),
                 format!(
-                    "So I probe each member: how shallow must it go for the rest to pass? {which}"
+                    "So I probe each member: how shallow must it go for the combination to pass? {which}"
                 ),
             ],
             format!("Probing members of {members}: core {id:02} at {offset}."),
@@ -873,7 +885,7 @@ pub(crate) fn operation(scene: &Scene<'_>, trial: &TrialView) -> Line<'static> {
             Paint::Running,
         )
     } else if trial.zero_rerun() {
-        ("RERUN AT CO 0".to_owned(), Paint::Running)
+        ("RERUN AT OFFSET 0".to_owned(), Paint::Running)
     } else if trial.rerun {
         ("RERUN AFTER BACKOFF".to_owned(), Paint::Running)
     } else if let Some(round) = trial.round {

@@ -89,7 +89,7 @@ fn live_panels_keep_their_rectangles_from_a_running_trial_to_the_next() {
                 "{width}x{height}: {name} invents a countdown:\n{band}"
             );
             assert!(
-                band.contains("next:"),
+                band.contains("next trial:"),
                 "{width}x{height}: {name} hides the next trial:\n{band}"
             );
             assert_eq!(

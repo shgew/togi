@@ -44,6 +44,8 @@ use crate::model::{
 use crate::screen::{Colours, View};
 use crate::tests::kit::{core, infos, nz, off, seq, set};
 
+mod edges;
+
 static UTC: LazyLock<TimeZone> = LazyLock::new(|| TimeZone::UTC);
 
 fn ts(secs: i64) -> Timestamp {
@@ -588,10 +590,7 @@ mod the_story {
         assert_eq!(first.label, "CYCLE 1");
         assert!(first.lines[0].starts_with("Step 2 leaves every core idle for 15 minutes"));
         assert!(
-            first.lines[1].contains(&format!(
-                "holds still until {}",
-                fx.scene(ts(1)).wall_minute(ts(1900))
-            )),
+            first.lines[1].contains("holds still while the idle trial is in flight"),
             "{:?}",
             first.lines
         );
@@ -628,11 +627,9 @@ mod the_story {
         });
         let said = story(&fx.scene(ts(200)));
         assert_eq!(said.label, "STOPPED");
-        assert!(
-            said.lines[0].starts_with(
-                "The requested clean cycles are complete, so I restored safer offsets"
-            )
-        );
+        assert!(said.lines[0].starts_with(
+            "The requested clean cycles are complete, so I restored baseline or shallower offsets"
+        ));
         let band = resting_band(&fx.scene(ts(200)));
         assert_eq!(band.title, "STOPPED");
         assert_eq!(
@@ -659,7 +656,7 @@ mod the_story {
             (
                 ShutdownReason::Signal,
                 true,
-                "I restored safer offsets before stopping",
+                "I restored baseline or shallower offsets before stopping",
             ),
             (
                 ShutdownReason::Signal,
@@ -1000,12 +997,12 @@ mod the_story {
         fx.trial = Some(rerun.clone());
         let scene = fx.scene(ts(1010));
         let said = story(&scene);
-        assert_eq!(said.label, "RERUN AT CO 0");
-        assert_eq!(plain(&operation(&scene, &rerun)), "RERUN AT CO 0");
-        assert!(said.lines[0].starts_with("A failure at CO 0 would stop tuning."));
+        assert_eq!(said.label, "RERUN AT OFFSET 0");
+        assert_eq!(plain(&operation(&scene, &rerun)), "RERUN AT OFFSET 0");
+        assert!(said.lines[0].starts_with("A failure at offset 0 would stop tuning."));
         assert_eq!(
             said.brief,
-            "The failed load runs again with every core at CO 0 before tuning stops."
+            "The failed load runs again with every core at offset 0; tuning stops if it fails."
         );
     }
 
@@ -1793,7 +1790,7 @@ mod the_resting_band {
         assert_eq!(band.title, "BETWEEN TRIALS");
         assert_eq!(band.paint, Paint::Grey);
         assert_eq!(band.lines[0], "last: PASS after 10:00 · R1 light on 00 01");
-        assert_eq!(band.lines[1], "next: deciding");
+        assert_eq!(band.lines[1], "next trial: deciding");
         assert!(band.lines.iter().all(|line| !line.contains("left")));
         fx.forecast.between = Some(Between {
             next: Some(plan(
@@ -1809,7 +1806,7 @@ mod the_resting_band {
         assert_eq!(
             band.lines[1],
             format!(
-                "next: step 2: R7 all-core with {}",
+                "next trial: step 2: R7 all-core with {}",
                 crate::words::workload_display(workloads(Regime::R7)[0].id())
             )
         );
@@ -1819,7 +1816,7 @@ mod the_resting_band {
         });
         assert_eq!(
             resting_band(&fx.scene(ts(2000))).lines[1],
-            "next: read the core ranking before deciding"
+            "next trial: read the core ranking before deciding"
         );
         fx.last = None;
         assert_eq!(resting_band(&fx.scene(ts(2000))).lines.len(), 1);
@@ -1858,7 +1855,7 @@ mod the_resting_band {
                 crate::frames::scene::wall_second(&UTC, ts(3600))
             )
         );
-        assert_eq!(band.lines[2], "next: deciding");
+        assert_eq!(band.lines[2], "next trial: deciding");
         fx.recover
             .as_mut()
             .expect("recovery")
@@ -1967,8 +1964,8 @@ mod the_outcome_lines {
         assert_eq!(
             fx.rows(),
             [
-                "if 3 of 4 pass | next: trial 4 of 4 · 5m",
-                "if it fails | next: this load again",
+                "if 3 of 4 pass | next trial: trial 4 of 4 · 5m",
+                "if it fails | next trial: this load again",
             ]
         );
     }
@@ -2005,7 +2002,7 @@ mod the_outcome_lines {
         fx.forecast.branches = vec![pass.clone()];
         assert_eq!(
             fx.rows(),
-            ["if it passes | part 1 is done → next: part 2: core 03 at -16, 2m"]
+            ["if it passes | part 1 is done; next trial: part 2: core 03 at -16, 2m"]
         );
         assert_eq!(fx.row_set()[0].compact, "→ part 2: core 03");
         fx.trial = Some(per_core(3, 2));
@@ -2021,7 +2018,7 @@ mod the_outcome_lines {
         assert_eq!(
             fx.rows(),
             [format!(
-                "if it passes | step 1 is done → next: step 2: R6 idle + bursts with {idle}"
+                "if it passes | step 1 is done; next trial: step 2: R6 idle + bursts with {idle}"
             )]
         );
         assert_eq!(fx.row_set()[0].compact, "→ step 2");
@@ -2059,8 +2056,9 @@ mod the_outcome_lines {
             "{rows:?}"
         );
         assert!(
-            rows.iter().any(|row| row
-                .ends_with("next: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m")),
+            rows.iter().any(|row| row.ends_with(
+                "next trial: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m"
+            )),
             "{rows:?}"
         );
     }
@@ -2256,9 +2254,9 @@ mod the_outcome_lines {
         assert_eq!(
             fx.rows(),
             [
-                "if it passes | next: trial 2 of 4",
-                "if another core is named | its failure point is recorded → it backs off per earlier requests → next: rerun R7 all-core on 00-03 · 2m · a top requester at 0: tuning stops",
-                "if none or a core at 0 is named | core 01 -30 → -16 per earlier requests → next: rerun R7 all-core on 00-03 · 2m",
+                "if it passes | next trial: trial 2 of 4",
+                "if another core is named | its failure point is recorded → it backs off per earlier requests; next trial: rerun R7 all-core on 00-03 · 2m · a top requester at 0: tuning stops",
+                "if none or a core at 0 is named | core 01 -30 → -16 per earlier requests; next trial: rerun R7 all-core on 00-03 · 2m",
             ]
         );
         let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
@@ -2335,7 +2333,7 @@ mod the_outcome_lines {
                 "{line}"
             );
             assert!(
-                line.contains("next: step 1: R7 all-core on 00-02 with"),
+                line.contains("next trial: step 1: R7 all-core on 00-02 with"),
                 "{line}"
             );
         }
@@ -2422,31 +2420,31 @@ mod the_outcome_lines {
 
     #[test]
     fn tight_next_keeps_trial_targets() {
-        for (load, condition, full, short) in [
+        for (load, condition, full, tight) in [
             (
                 Load::Single(core(3)),
                 Condition::Alone,
-                "on core 03 alone at -16",
-                "on core 03",
+                ", core 03 alone at -16",
+                "core 03",
             ),
             (
                 Load::Single(core(3)),
                 Condition::Together,
-                "on core 03 at -16",
-                "on core 03",
+                ", core 03 at -16",
+                "core 03",
             ),
-            (many(&[3]), Condition::Together, "on 03", "on 03"),
+            (many(&[3]), Condition::Together, " on 03", "on 03"),
             (
                 many(&[0, 1, 2, 8, 9, 10, 15]),
                 Condition::Together,
-                "on 00-02 08-10 15",
+                " on 00-02 08-10 15",
                 "on 00-02 08-10 15",
             ),
         ] {
             let (words, compact) = next_words(load, condition);
-            assert_eq!(words, format!("R1 light {full}"));
-            assert_eq!(compact, format!("→ R1 light {full}"));
-            assert_eq!(tight_next(&compact), format!("→ R1 {short}"));
+            assert_eq!(words, format!("R1 light{full}"));
+            assert_eq!(compact, format!("→ R1 light{full}"));
+            assert_eq!(tight_next(&compact), format!("→ R1 {tight}"));
         }
         for regime in [
             Regime::R2,
@@ -2457,15 +2455,70 @@ mod the_outcome_lines {
             Regime::R7,
         ] {
             let text = format!(
-                "→ {regime} {} on core 03 alone at -16",
+                "→ {regime} {}, core 03 alone at -16",
                 crate::words::kind_words(regime)
             );
-            assert_eq!(
-                tight_next(&text),
-                format!("→ {regime} on core 03"),
-                "{text}"
-            );
+            assert_eq!(tight_next(&text), format!("→ {regime} core 03"), "{text}");
         }
+    }
+
+    #[test]
+    fn compact_next_reads_the_next_trial_prefix() {
+        assert_eq!(compact_next("next trial: step 3: R7 all-core"), "step 3");
+        assert_eq!(
+            compact_next("next trial: part 2: 08-15 on 08-15, 2m"),
+            "part 2"
+        );
+        assert_eq!(
+            compact_next("next trial: hunt 2 group 4: R1 light, core 01 alone at 0"),
+            "group 4"
+        );
+        assert_eq!(
+            compact_next("next trial: part 1: R1 light, core 01 alone at 0"),
+            "part 1"
+        );
+        assert_eq!(
+            compact_next("next trial: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m"),
+            "rerun at offset 0"
+        );
+        assert_eq!(
+            compact_next("next trial: R1 light, core 01 alone at 0"),
+            "R1 light, core 01 alone at 0"
+        );
+    }
+
+    /// The owner's forecast: the core's own next search turn and the session's next trial are told apart, at
+    /// every width the line is fitted to, and the next trial keeps its target.
+    #[test]
+    fn the_owner_forecast_separates_a_cores_next_turn_from_the_next_trial() {
+        let mut fx = Fx::new();
+        fx.trial = Some(trial(Regime::R2, Condition::Together, &[0, 1]));
+        let mut step = backoff(8, 0, -5, None);
+        step.decision = Decision::StepDeeper;
+        let next = plan(
+            Regime::R1,
+            Load::Single(core(1)),
+            Condition::Alone,
+            TrialContext::Search {
+                core: core(1),
+                regime: Regime::R1,
+                offset: off(0),
+            },
+            120,
+        );
+        let mut pass = branch(Premise::Pass);
+        pass.decisions = vec![DecisionPayload::TunerDecision(step)];
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        let owner =
+            "core 08 searches -5 on its next turn; next trial: R1 light, core 01 alone at 0";
+        assert_eq!(fx.rows(), [format!("if it passes | {owner}")]);
+        let full = text(&outcome_lines(&fx.scene(ts(1)), 110, false));
+        assert_eq!(full, [format!("{:<21}{owner}", "if it passes:")]);
+        let medium = text(&outcome_lines(&fx.scene(ts(1)), 60, true));
+        assert_eq!(medium, ["pass → R1 light, core 01 alone at 0"]);
+        let compact = text(&outcome_lines(&fx.scene(ts(1)), 20, true));
+        assert_eq!(compact, ["pass → R1 core 01"]);
     }
 
     #[test]
@@ -2501,15 +2554,18 @@ mod the_outcome_lines {
     #[test]
     fn what_comes_next_shortens_to_its_position() {
         for (next, want) in [
-            ("next: part 2: full CCD 0 on 00-07, 5m", "part 2"),
-            ("next: part 4: core 09 at -26, 2m", "part 4: core 09"),
-            ("next: part 3: 00-02, 1m", "part 3: 00-02,"),
-            ("next: hunt 2 group 8: R7 all-core on 00-03", "group 8"),
-            ("next: step 3: R7 all-core with mprime", "step 3"),
-            ("next: rerun R7 all-core on 00-03 · 2m", "rerun"),
+            ("next trial: part 2: full CCD 0 on 00-07, 5m", "part 2"),
+            ("next trial: part 4: core 09 at -26, 2m", "part 4: core 09"),
+            ("next trial: part 3: 00-02, 1m", "part 3: 00-02,"),
             (
-                "next: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m",
-                "rerun at CO 0",
+                "next trial: hunt 2 group 8: R7 all-core on 00-03",
+                "group 8",
+            ),
+            ("next trial: step 3: R7 all-core with mprime", "step 3"),
+            ("next trial: rerun R7 all-core on 00-03 · 2m", "rerun"),
+            (
+                "next trial: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m",
+                "rerun at offset 0",
             ),
             ("the same trial runs again", "the same trial runs again"),
         ] {
@@ -2600,7 +2656,10 @@ mod the_outcome_lines {
             &[DecisionPayload::TunerDecision(hold.clone())],
             false,
         );
-        assert_eq!(fit_phrases(&phrases, 100), "core 04 holds at -20");
+        assert_eq!(
+            fit_phrases(&phrases, 100),
+            "core 04 failure held at -20; no tuning move"
+        );
         let phrases = decision_phrases(
             &fx.scene(ts(1)),
             &[
@@ -2610,7 +2669,7 @@ mod the_outcome_lines {
             true,
         );
         assert!(
-            fit_phrases(&phrases, 200).ends_with("core 04 holds at -20"),
+            fit_phrases(&phrases, 200).ends_with("core 04 failure held at -20; no tuning move"),
             "a hold is no backoff: {phrases:?}"
         );
     }
@@ -2831,7 +2890,7 @@ mod the_outcome_lines {
         fx.forecast.branches = vec![pass];
         assert_eq!(
             fx.rows(),
-            ["if it passes | part 1 is done → next: part 2: full CCD 1 on 02 03, 5m"]
+            ["if it passes | part 1 is done; next trial: part 2: full CCD 1 on 02 03, 5m"]
         );
         assert_eq!(fx.row_set()[0].compact, "→ part 2");
     }
@@ -2856,13 +2915,16 @@ mod the_outcome_lines {
         next.workload = WorkloadChoice::Rotate;
         unnamed.next = Some(next.clone());
         fx.forecast.branches = vec![unnamed.clone()];
-        assert_eq!(fx.rows(), ["if none is named | next: this load again"]);
+        assert_eq!(
+            fx.rows(),
+            ["if none is named | next trial: this load again"]
+        );
         next.workload = WorkloadChoice::Frozen(workloads(Regime::R2)[0].id());
         unnamed.next = Some(next);
         fx.forecast.branches = vec![unnamed];
         let rows = fx.rows();
         assert!(
-            rows[0].starts_with("if none is named | next: ")
+            rows[0].starts_with("if none is named | next trial: ")
                 && !rows[0].contains("this load again"),
             "{rows:?}"
         );
@@ -2944,7 +3006,7 @@ mod the_outcome_lines {
         let wide = text(&outcome_lines(&fx.scene(ts(1)), 100, false));
         assert_eq!(wide.len(), 1);
         assert!(
-            wide[0].starts_with("if it passes         next: trial 2 of 4"),
+            wide[0].starts_with("if it passes:        next trial: trial 2 of 4"),
             "{wide:?}"
         );
         let full = Scene::new(fx.snap(), ts(1), &UTC, Colours::Full);
@@ -3003,7 +3065,12 @@ mod the_simulated_sessions {
         let band = resting_band(&scene);
         assert_eq!(band.title, "RECOVERED FROM A CRASH");
         assert!(band.lines[0].starts_with("crash in "), "{:?}", band.lines);
-        assert!(band.lines.last().expect("a line").starts_with("next:"));
+        assert!(
+            band.lines
+                .last()
+                .expect("a line")
+                .starts_with("next trial:")
+        );
     }
 
     #[test]
@@ -3018,7 +3085,7 @@ mod the_simulated_sessions {
             band.lines
         );
         assert!(
-            band.lines[1].starts_with("next: ") || band.lines[1] == "next: deciding",
+            band.lines[1].starts_with("next trial: "),
             "{:?}",
             band.lines
         );
@@ -3102,13 +3169,13 @@ mod the_simulated_sessions {
     }
 
     #[test]
-    fn an_idle_session_holds_still_and_says_when_it_ends() {
+    fn an_idle_session_holds_still_while_its_trial_is_in_flight() {
         let (model, at) = model_of(Scenario::Idle);
         let first = scene_of(&model, at + jiff::SignedDuration::from_secs(1));
         assert!(first.hold.is_some());
         let said = story(&first);
         assert!(
-            said.lines[1].starts_with("This screen holds still until "),
+            said.lines[1].starts_with("This screen holds still while the idle trial is in flight,"),
             "{:?}",
             said.lines
         );

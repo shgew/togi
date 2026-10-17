@@ -29,6 +29,15 @@ fn entry(at: Timestamp, tag: Tag, text: String, tone: Tone) -> Entry {
 impl Facts {
     /// Turns one event into a line of what happened, or changes an earlier line and returns nothing.
     pub(crate) fn describe(&mut self, event: &Event, journal: &JournalState) -> Option<Entry> {
+        let line = self.describe_event(event, journal);
+        #[cfg(test)]
+        if let Some(line) = &line {
+            crate::corpus::described(event, line);
+        }
+        line
+    }
+
+    fn describe_event(&mut self, event: &Event, journal: &JournalState) -> Option<Entry> {
         let at = event.time;
         match words(event.kind()).history {
             History::Silent => None,

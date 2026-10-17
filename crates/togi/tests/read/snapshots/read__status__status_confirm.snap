@@ -6,7 +6,7 @@ search: 16 cores left | phase 1
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#47] trial 0001 core 00 CO -11 R1 mprime SSE 4K-21K 90 s alone
+in flight: [#47] trial 0001 core 00 offset -11 R1 mprime SSE 4K-21K 90 s alone
 
 CORE  CCD  SLOT  OFFSET  BIOS  PHASE   FAILURE  QUEUED
 00    0    0     -11     -     SEARCH  -        -
@@ -158,3 +158,4 @@ CORE  CCD  SELF-SUFFICIENT       TOP REQUESTER
   workload ycruncher-fftv4-n63-vt3-allcore
 15    1    not yet demonstrated  yes (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
+

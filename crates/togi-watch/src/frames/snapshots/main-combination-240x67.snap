@@ -6,8 +6,8 @@ expression: body
 │
 │  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ■ PHASE 2  concluded  ───  CLEAN CYCLES 1  ───  ■ CYCLE 2
 │
-│  ▌  STOPPED   The requested clean cycles are complete, so I restored safer offsets and stopped. togi run picks up        last trial      PASS  15:00 on 00-15 · Tctl max 67°C
-│  ▌            where I left off.
+│  ▌  STOPPED   The requested clean cycles are complete, so I restored baseline or shallower offsets and stopped. togi     last trial      PASS  15:00 on 00-15 · Tctl max 67°C
+│  ▌            run picks up where I left off.
 │
 │  STOPPED ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │  07:08:00 · requested clean cycles completed
@@ -26,7 +26,7 @@ expression: body
 │  BIOS PROFILE ────────────────────────────────────────────────────────────────── confirmed by the cycle ending #5905     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
 │  slot      0    1    2    3    4    5    6    7
 │  CCD 0   -11  -11  -11  -11  -11  -11  -11  -11                                                                          07:08  stop     stopped
-│  CCD 1   -11  -11  -11   -9  -11  -11  -11  -11                                                                          07:08  cycle    cycle 2 passed, a full cycle of every kind of test
+│  CCD 1   -11  -11  -11   -9  -11  -11  -11  -11                                                                          07:08  cycle    cycle 2 passed, a full cycle
 │                                                                                                                          07:08  pass     R6 idle + bursts on 00-15 · passed · Tctl max 67°C
 │  CYCLE 2 ──────────────────────────────────────────────────────────────────────────────────────── 18 steps · 18 done     06:53  pass     R4 partial load on core 15 at -11 · passed · Tctl max 67°C
 │                                                                                                                          06:51  pass     R4 partial load on core 07 at -11 · passed · Tctl max 64°C

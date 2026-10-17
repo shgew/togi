@@ -121,7 +121,8 @@ fn header_counts_agree_in_number() {
         let running = trial(Regime::R6, Some(at("2026-10-12T10:00:30Z")), 60);
         s.trial = Some(&running);
         let text = header_text(&s, now, 120, true);
-        assert!(text.contains("paused until"), "{text}");
+        assert!(text.contains("paused · planned end"), "{text}");
+        assert!(!text.contains("paused until"), "{text}");
         assert!(text.contains(want), "{text}");
     }
 }
@@ -192,9 +193,14 @@ fn every_time_on_screen_is_local() {
     assert_eq!(held.now, start);
     let head = plain(&header(&held, 240, true));
     assert!(head.starts_with("togi   19:00:00"), "{head}");
-    assert!(head.contains("paused until 19:10"), "{head}");
+    assert!(head.contains("paused · planned end 19:10"), "{head}");
+    assert!(!head.contains("paused until"), "{head}");
     let stage = plain(&stage_line(&held, SizeClass::Wide, true));
-    assert!(stage.contains("screen paused until 19:10"), "{stage}");
+    assert!(
+        stage.contains("screen paused · planned end 19:10"),
+        "{stage}"
+    );
+    assert!(!stage.contains("paused until"), "{stage}");
 }
 
 #[test]
@@ -813,7 +819,11 @@ fn core_rows_mark_the_running_workloads_top_requesters() {
     let running = trial(Regime::R7, None, 120);
     let mut running = running;
     running.workload = second;
-    for (width, want) in [(75, "top by offset"), (57, "top")] {
+    for (width, brief, want) in [
+        (75, false, "top by offset"),
+        (60, true, "offset top"),
+        (57, true, ""),
+    ] {
         let model = Model::new();
         let zone = TimeZone::UTC;
         let view = session(Timestamp::UNIX_EPOCH);
@@ -825,7 +835,7 @@ fn core_rows_mark_the_running_workloads_top_requesters() {
         let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
         let rect = Rect::new(0, 0, width, 4);
         let mut buf = Buffer::empty(rect);
-        let columns = if width < 60 {
+        let columns = if brief {
             CoreColumns {
                 id: 2,
                 offset: 5,
@@ -859,7 +869,11 @@ fn core_rows_mark_the_running_workloads_top_requesters() {
         );
         let rows = rows_of(&buf);
         assert!(!rows[1].contains("top"), "{:?}", rows[1]);
-        assert!(rows[2].trim_end().ends_with(want), "{width}: {:?}", rows[2]);
+        if want.is_empty() {
+            assert!(!rows[2].contains("top"), "{width}: {:?}", rows[2]);
+        } else {
+            assert!(rows[2].trim_end().ends_with(want), "{width}: {:?}", rows[2]);
+        }
     }
 }
 
@@ -1198,6 +1212,7 @@ fn an_idle_hold_pins_the_clock_to_the_trials_start() {
     );
     let text = plain(&header(&scene, 240, false));
     assert!(text.starts_with("togi   10:00:00"), "{text}");
-    assert!(text.contains("screen paused until 10:10"), "{text}");
+    assert!(text.contains("screen paused · planned end 10:10"), "{text}");
+    assert!(!text.contains("paused until"), "{text}");
     assert!(!text.contains("ago"), "{text}");
 }

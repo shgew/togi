@@ -39,7 +39,7 @@ const SCREEN: Section = Section {
         ("░░░", "depth a combination blocks now"),
         (
             "▬",
-            "its failure point: this core failed there on its own account",
+            "its failure point: the shallowest offset ruled out for this core",
         ),
         ("▀", "a group trial failed with this core at that offset"),
         ("cyan", "running now"),
@@ -76,7 +76,7 @@ const TUNING: Section = Section {
         ),
         (
             "PHASE 1",
-            "The first full cycle, run on the profile the solo limits give.",
+            "Checking toward the first confirmed profile. The stage shows whether phase 1 is open or finished.",
         ),
         (
             "HUNT",
@@ -141,7 +141,7 @@ const WORDS: Section = Section {
         ),
         (
             "failure point",
-            "the shallowest offset where a core failed on its own account",
+            "the shallowest ruled-out offset for a core",
         ),
         (
             "combination",
@@ -152,12 +152,12 @@ const WORDS: Section = Section {
         ("suspect", "a core a hunt keeps at its failing offset"),
         (
             "parked",
-            "a core a hunt holds shallower than its failing offset",
+            "a core a hunt holds no deeper than its failing offset, outside the selected group",
         ),
         ("partial part", "an R7 part with the top requesters idle"),
         (
             "top requester",
-            "the loaded core with the highest voltage request, setting the shared core voltage; marked top on the CCD tables",
+            "an R7 workload's highest-request group on each CCD, ties included; marked top on the CCD tables",
         ),
         (
             "self-sufficient",
@@ -227,6 +227,8 @@ fn section_lines(
         .unwrap_or(0);
     let label_width = (widest + 2).min((width / 3).max(1));
     for (i, &(label, text)) in section.items.iter().enumerate() {
+        #[cfg(test)]
+        crate::corpus::text("help.item", section.title, text);
         let wrapped = wrap_styled(
             text,
             width.saturating_sub(label_width).max(1),
@@ -603,6 +605,33 @@ mod tests {
             words.contains("changed what togi does; skips do not count"),
             "help lost the top-line note: {words}"
         );
+    }
+
+    #[test]
+    fn help_words_claim_no_more_than_the_journal_shows() {
+        let (help, _) = help_body(115, 1000, 0, C);
+        let words = plain_rows(&help)
+            .join("\n")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        for said in [
+            "Checking toward the first confirmed profile.",
+            "its failure point: the shallowest offset ruled out for this core",
+            "the shallowest ruled-out offset for a core",
+            "a core a hunt holds no deeper than its failing offset, outside the selected group",
+            "highest-request group on each CCD, ties included",
+        ] {
+            assert!(words.contains(said), "help lost {said:?}: {words}");
+        }
+        for gone in [
+            "The first full cycle",
+            "on its own account",
+            "shallower than its failing offset",
+            "setting the shared core voltage",
+        ] {
+            assert!(!words.contains(gone), "help still says {gone:?}: {words}");
+        }
     }
 
     #[test]

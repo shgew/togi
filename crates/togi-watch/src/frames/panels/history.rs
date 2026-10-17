@@ -52,6 +52,8 @@ pub(super) fn history(scene: &Scene<'_>, width: usize, height: usize) -> Vec<Lin
     if hidden > 0 {
         out.push(cell(scene, Paint::Grey, format!("+{hidden} more")));
     }
+    #[cfg(test)]
+    crate::corpus::lines("panel.history", "", &out);
     out
 }
 

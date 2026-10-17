@@ -2,24 +2,24 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│  togi   20:21:32   session 20h21m   41 failures · 8 crashes   last observed failure 18:57   screen paused until 20:36
+│  togi   20:21:32   session 20h21m   41 failures · 8 crashes   last observed failure 18:57   screen paused · planned end 20:36
 │
 │  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 7 of 18
 │
-│  ▌  CYCLE 1   Step 7 leaves every core idle for 15 minutes, with short wake-ups, to test idle and boost states.          last trial      PASS  2:00 on core 15 · Tctl max 74°C
-│  ▌            This screen holds still until 20:36, clock included, so drawing it cannot wake the cores.
+│  ▌  CYCLE 1   Every core idle with short wake-ups; this screen holds still.                                              last trial      PASS  2:00 on core 15 · Tctl max 74°C
+│
 │
 │  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0657
 │   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                                                                                                                                               CYCLE 1 · STEP 7
 │
 │  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      ▀▀█ █▀█   ▀▀█ █▀▀
-│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused until 20:36 so it cannot wake the idle cores  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █▀▀ █ █ ▀  ▀█ █▀█
+│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · planned end 20:36, so it cannot wake the idle cores  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █▀▀ █ █ ▀  ▀█ █▀█
 │  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ▀▀▀ ▀▀▀ ▀ ▀▀▀ ▀▀▀
 │  started 20:21 · 15:00                                                                                                                                                                                                               ends at
 │
-│  if it passes         step 7 is done → next: step 8: R5 both threads with mprime SSE 4K-21K
-│  if a core is named   its failure point is recorded → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m
-│  if none is named     hunt 2 starts over 00-15 → next: hunt 2 group 1: R6 idle + bursts on 00-15 · 00-07 at failing offsets, 08-15 parked at 0
+│  if it passes:        step 7 is done; next trial: step 8: R5 both threads with mprime SSE 4K-21K
+│  if a core is named:  its failure point is recorded → it backs off; next trial: rerun R6 idle + bursts on 00-15 · 2m
+│  if none is named:    hunt 2 starts over 00-15; next trial: hunt 2 group 1: R6 idle + bursts on 00-15 · 00-07 at failing offsets, 08-15 parked at 0
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  all under load
 │  ► 00  -25  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                           -26                                          ► 08   -5  HAS ROOM  ▄▄▄▄▄·▬                                                -7

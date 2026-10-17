@@ -194,12 +194,16 @@ fn session_carried(p: &SessionCarried) -> String {
         .iter()
         .filter(|carried| carried.failure_point.is_some())
         .count();
+    let limit_noun = if limits == 1 { "limit" } else { "limits" };
     if p.failure_points {
-        format!("carried {limits} candidate solo limits and {points} failure points from {from}")
+        let point_noun = if points == 1 { "point" } else { "points" };
+        format!(
+            "carried {limits} candidate solo {limit_noun} and {points} failure {point_noun} from {from}"
+        )
     } else {
         let detail = p.detail.as_deref().unwrap_or("no reason recorded");
         format!(
-            "carried {limits} candidate solo limits from {from}; failure points stay behind: {detail}"
+            "carried {limits} candidate solo {limit_noun} from {from}; failure points stay behind: {detail}"
         )
     }
 }
@@ -231,9 +235,9 @@ fn preflight_check(p: &PreflightCheck) -> String {
 fn command_text(command: SmuCommand) -> String {
     match command {
         SmuCommand::Set { core: id, offset } => {
-            format!("set core {} to CO {}", core(id), offset.get())
+            format!("set core {} to offset {}", core(id), offset.get())
         }
-        SmuCommand::SetAll { offset } => format!("set all cores to CO {}", offset.get()),
+        SmuCommand::SetAll { offset } => format!("set all cores to offset {}", offset.get()),
     }
 }
 
@@ -265,9 +269,9 @@ fn smu_readback(p: &SmuReadback) -> String {
 fn smu_error(p: &SmuError) -> String {
     let what = match (p.op, p.core, p.offset) {
         (SmuOp::Set, Some(id), Some(offset)) => {
-            format!("set core {} to CO {}", core(id), offset.get())
+            format!("set core {} to offset {}", core(id), offset.get())
         }
-        (SmuOp::SetAll, _, Some(offset)) => format!("set all cores to CO {}", offset.get()),
+        (SmuOp::SetAll, _, Some(offset)) => format!("set all cores to offset {}", offset.get()),
         (SmuOp::Read, Some(id), _) => format!("read core {}", core(id)),
         (op, _, _) => op.to_string(),
     };
@@ -306,11 +310,13 @@ fn trial_intent(p: &TrialIntent) -> String {
     let mut text = format!("trial {}", p.trial);
     if let Some(id) = p.core {
         let _ = write!(text, " core {}", core(id));
+    } else if p.cores.len() == 1 {
+        let _ = write!(text, " core {}", cores(p.cores));
     } else if !p.cores.is_empty() {
         let _ = write!(text, " cores {}", cores(p.cores));
     }
     if let Some(offset) = p.offset {
-        let _ = write!(text, " CO {}", offset.get());
+        let _ = write!(text, " offset {}", offset.get());
     }
     let _ = write!(
         text,
@@ -340,7 +346,7 @@ fn trial_intent(p: &TrialIntent) -> String {
     }
     if p.rerun {
         if p.condition == togi_machine::Condition::Parked && p.hunt.is_none() {
-            text.push_str(" rerun with every core at CO 0");
+            text.push_str(" rerun with every core at offset 0");
         } else {
             text.push_str(" rerun");
         }
@@ -654,22 +660,28 @@ fn crash_detected(p: &CrashDetected) -> String {
 }
 
 fn tuner_decision(p: &TunerDecision) -> String {
-    let verb = match p.decision {
-        Decision::StepDeeper => "passed R1+R2",
-        Decision::CheckSoloLimit => "checks its solo limit",
-        Decision::Deepen => "deepened",
-        Decision::Yield => "yielded",
-        Decision::Hold => "holds",
-        Decision::Backoff if p.activity == Activity::Search => "failed",
-        Decision::Backoff => "backed off",
-    };
-    format!(
-        "core {} {verb} at {}; next {} ({})",
-        core(p.core),
-        p.from_offset.get(),
-        p.to_offset.get(),
-        p.reason
-    )
+    let id = core(p.core);
+    let from = p.from_offset.get();
+    let to = p.to_offset.get();
+    let reason = &p.reason;
+    match p.decision {
+        Decision::StepDeeper => {
+            format!("core {id} passed R1+R2 at {from}; searches {to} on its next turn ({reason})")
+        }
+        Decision::Backoff if p.activity == Activity::Search => {
+            format!("core {id} failed at {from}; searches {to} on its next turn ({reason})")
+        }
+        Decision::CheckSoloLimit if from == to => {
+            format!("core {id} checks candidate solo limit {to} ({reason})")
+        }
+        Decision::CheckSoloLimit => {
+            format!("core {id} checks candidate solo limit {to} (from {from}; {reason})")
+        }
+        Decision::Deepen => format!("core {id} deepened from {from} to {to} ({reason})"),
+        Decision::Yield => format!("core {id} yielded from {from} to {to} ({reason})"),
+        Decision::Backoff => format!("core {id} backed off from {from} to {to} ({reason})"),
+        Decision::Hold => format!("core {id} failure held; tuning stays at {from} ({reason})"),
+    }
 }
 
 fn phase_text(phase: CorePhase) -> &'static str {
@@ -723,7 +735,7 @@ fn checking_cycle(p: &CheckingCycle) -> String {
 
 fn checking_step(p: &CheckingStep) -> String {
     format!(
-        "checking cycle {} R7 step {} starts at current profile {}",
+        "checking cycle {} step {} starts at current profile {}",
         p.cycle,
         p.step,
         profile(&p.profile)

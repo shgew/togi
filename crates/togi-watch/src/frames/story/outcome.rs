@@ -27,6 +27,10 @@ use crate::words::{
 /// How many outcome lines the trial band holds.
 pub(super) const ROW_LIMIT: usize = 3;
 
+/// Opens the words that name the trial the tuner runs next, so a core's own next search turn is never taken for
+/// it. The decision chain joins it with a semicolon instead of an arrow.
+pub(super) const NEXT_TRIAL: &str = "next trial: ";
+
 /// One step of an outcome line; a minor one is left out first when the line does not fit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Phrase {
@@ -88,20 +92,30 @@ pub(crate) fn outcome_lines(scene: &Scene<'_>, width: usize, compact: bool) -> V
         return Vec::new();
     }
     let rows = outcome_rows(scene);
-    if compact {
-        return compact_line(scene, &rows, width)
+    let lines: Vec<Line<'static>> = if compact {
+        compact_line(scene, &rows, width)
             .map(|line| cut_styled(&line, width))
             .into_iter()
-            .collect();
-    }
-    rows.iter()
-        .map(|row| {
-            let label = scene.paint(row.paint, format!("{:<21}", row.label));
-            let room = width.saturating_sub(21);
-            let text = cut_words(&fit_phrases(&row.phrases, room), room);
-            Line::from(vec![label, scene.paint(Paint::Text, text)])
-        })
-        .collect()
+            .collect()
+    } else {
+        rows.iter()
+            .map(|row| {
+                let label = format!("{}:", row.label);
+                let gap = if display_width(&label) < 21 {
+                    21 - display_width(&label)
+                } else {
+                    1
+                };
+                let room = width.saturating_sub(display_width(&label) + gap);
+                let text = cut_words(&fit_phrases(&row.phrases, room), room);
+                let label = scene.paint(row.paint, format!("{label}{}", " ".repeat(gap)));
+                Line::from(vec![label, scene.paint(Paint::Text, text)])
+            })
+            .collect()
+    };
+    #[cfg(test)]
+    super::corpus::fitted(&lines, compact);
+    lines
 }
 
 fn compact_line(scene: &Scene<'_>, rows: &[OutcomeRow], width: usize) -> Option<Line<'static>> {
@@ -152,15 +166,22 @@ fn compact_line(scene: &Scene<'_>, rows: &[OutcomeRow], width: usize) -> Option<
     Some(line)
 }
 
-/// An outcome line's phrases joined with arrows, leaving out minor ones, then any but the first and the last,
-/// until it fits.
+/// An outcome line's phrases joined with arrows, the next trial with a semicolon, leaving out minor ones, then
+/// any but the first and the last, until it fits.
 pub(super) fn fit_phrases(phrases: &[Phrase], width: usize) -> String {
     let join = |phrases: &[Phrase]| {
-        phrases
-            .iter()
-            .map(|phrase| console_text(&phrase.text))
-            .collect::<Vec<_>>()
-            .join(" → ")
+        let mut text = String::new();
+        for (i, phrase) in phrases.iter().enumerate() {
+            if i > 0 {
+                text.push_str(if phrase.text.starts_with(NEXT_TRIAL) {
+                    "; "
+                } else {
+                    " → "
+                });
+            }
+            text.push_str(&console_text(&phrase.text));
+        }
+        text
     };
     let mut text = join(phrases);
     if display_width(&text) <= width {
@@ -235,6 +256,8 @@ pub(super) fn outcome_rows(scene: &Scene<'_>) -> Vec<OutcomeRow> {
     for branch in &scene.s.forecast.branches {
         let (phrases, compact, basis) = outcome_words(scene, branch);
         let text = fit_phrases(&phrases, usize::MAX >> 1);
+        #[cfg(test)]
+        super::corpus::branch(branch, &phrases, &compact, basis);
         let at = groups
             .iter()
             .position(|group| group.text == text)
@@ -374,6 +397,8 @@ pub(super) fn outcome_rows(scene: &Scene<'_>) -> Vec<OutcomeRow> {
             break;
         }
     }
+    #[cfg(test)]
+    super::corpus::rows(&rows);
     rows
 }
 
@@ -582,25 +607,28 @@ fn next_words(
         }
         if branch.premise == Premise::Pass && trial.count.index < trial.count.of {
             return format!(
-                "next: trial {} of {}",
+                "{NEXT_TRIAL}trial {} of {}",
                 trial.count.index + 1,
                 trial.count.of
             );
         }
-        return "next: this load again".to_owned();
+        return format!("{NEXT_TRIAL}this load again");
     }
     if let Some(trial) = trial.filter(|trial| same_part(next, trial)) {
         let passing = matches!(branch.premise, Premise::Pass | Premise::AllPass);
         let index = trial.count.index + branch.passes.max(1);
         if passing && index <= trial.count.of {
             return format!(
-                "next: trial {index} of {} · {}",
+                "{NEXT_TRIAL}trial {index} of {} · {}",
                 trial.count.of,
                 short_duration(duration_of(next))
             );
         }
     }
-    format!("next: {}", next_trial_words(scene, next, trial, shape))
+    format!(
+        "{NEXT_TRIAL}{}",
+        next_trial_words(scene, next, trial, shape)
+    )
 }
 
 fn duration_of(plan: &TrialPlan) -> Duration {
@@ -705,7 +733,7 @@ pub(super) fn next_trial_words(
             } else {
                 ""
             };
-            format!("{kind} on core {:02}{alone} at {offset}", core.get())
+            format!("{kind}, core {:02}{alone} at {offset}", core.get())
         }
         None => format!("{kind} on {}", core_ids(next.load.cores())),
     };
@@ -721,7 +749,8 @@ pub(super) fn next_trial_words(
             .is_some_and(|active| active.plan.number == hunt)
         {
             if let Some(part) = shape.and_then(|shape| plan_part(scene, next, shape)) {
-                return format!("part {part}: {layout}");
+                let shown = if layout.is_empty() { &what } else { &layout };
+                return format!("part {part}: {shown}");
             }
         }
         let mut text = format!("hunt {hunt} group {group}: {what}");
@@ -823,7 +852,7 @@ fn matching_part(scene: &Scene<'_>, next: &TrialPlan) -> Option<(usize, String)>
 
 /// Shortens what comes next to its position: `part 2: 08-15`, `part 4: core 09`, `group 8`, `step 3`.
 pub(super) fn compact_next(next: &str) -> String {
-    let text = next.strip_prefix("next: ").unwrap_or(next);
+    let text = next.strip_prefix(NEXT_TRIAL).unwrap_or(next);
     if let Some((name, rest)) = text.split_once(": ") {
         if name.starts_with("hunt ") {
             let group = name.split_once(" group ").map_or("", |(_, group)| group);
@@ -834,7 +863,7 @@ pub(super) fn compact_next(next: &str) -> String {
                 let id = core.split(' ').next().unwrap_or_default();
                 return format!("{name}: core {id}");
             }
-            if rest.contains(" on ") {
+            if rest.contains(" on ") || rest.contains(", core ") {
                 return name.to_owned();
             }
             let cores = rest.split(' ').next().unwrap_or_default();
@@ -844,7 +873,7 @@ pub(super) fn compact_next(next: &str) -> String {
     }
     if text.starts_with("rerun ") {
         if text.contains(" with every core at 0") {
-            return "rerun at CO 0".to_owned();
+            return "rerun at offset 0".to_owned();
         }
         return "rerun".to_owned();
     }
@@ -863,6 +892,12 @@ pub(super) fn tight_next(text: &str) -> Cow<'_, str> {
     let Some(words) = rest[1..].strip_prefix(' ') else {
         return Cow::Borrowed(text);
     };
+    if let Some((_, core)) = words.split_once(", core ") {
+        let digits = core.chars().take_while(char::is_ascii_digit).count();
+        if digits > 0 {
+            return Cow::Owned(format!("→ R{digit} core {}", &core[..digits]));
+        }
+    }
     let mut best = None;
     let mut at = 0;
     while let Some(found) = words[at..].find("on ") {

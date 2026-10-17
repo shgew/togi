@@ -13,100 +13,100 @@ in flight: [#2506] trial 0273 cores 00, 01, 02, 03, 04, 05, 06, 07, 08, 09, 10,
 CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
 00    0    0     -10     -     HAS ROOM  -        -
   last decision [#1487] core 00 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 01    0    1     -10     -     HAS ROOM  -        -
   last decision [#1489] core 01 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 02    0    2     -10     -     HAS ROOM  -        -
   last decision [#1491] core 02 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 03    0    3     -10     -     HAS ROOM  -        -
   last decision [#1493] core 03 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 04    0    4     -10     -     HAS ROOM  -        -
   last decision [#1495] core 04 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 05    0    5     -10     -     HAS ROOM  -        -
   last decision [#1497] core 05 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 06    0    6     -10     -     HAS ROOM  -        -
   last decision [#1499] core 06 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 07    0    7     -10     -     HAS ROOM  -        -
   last decision [#1501] core 07 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 08    1    0     -10     -     HAS ROOM  -        -
   last decision [#1488] core 08 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 09    1    1     -10     -     HAS ROOM  -        -
   last decision [#1490] core 09 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 10    1    2     -10     -     HAS ROOM  -        -
   last decision [#1492] core 10 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 11    1    3     -10     -     HAS ROOM  -        -
   last decision [#1494] core 11 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 12    1    4     -10     -     HAS ROOM  -        -
   last decision [#1496] core 12 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 13    1    5     -10     -     HAS ROOM  -        -
   last decision [#1498] core 13 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 14    1    6     -10     -     HAS ROOM  -        -
   last decision [#1500] core 14 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 15    1    7     -10     -     HAS ROOM  -        -
   last decision [#1502] core 15 search -> has room at -10 (solo limit -11 passed
-                5 trials of R1 mprime-sse-4k-21k and R2 mprime-avx2-36k-248k;
-                checking starts at -10, one count shallower than the solo limit
-                -11 (margin); one count deeper reaches no failure point or
-                combination)
+                5 trials each of R1 mprime-sse-4k-21k and R2
+                mprime-avx2-36k-248k; checking starts at -10, one count
+                shallower than the solo limit -11 (margin); one count deeper
+                reaches no failure point or combination)
 BIOS profile: none confirmed yet; phase 1 has not passed a full cycle
 
 R7 self-sufficiency (passed as top requester at equal or deeper offsets; not a
@@ -257,7 +257,9 @@ G41    11                                   passed   10             5
 G42    probe                                running  0              5
   probe 03 at -9 with 11 at -10
 
-REGIME  WORKLOAD                         TRIALS
+Valid passes supporting the checking profile (live and not alone, on the active
+  backend, at equal or deeper offsets; carried passes excluded)
+REGIME  WORKLOAD                         VALID PASSES
 R2      mprime-avx2-36k-248k             16
 R2      mprime-avx512-36k-248k           16
 R2      ycruncher-fftv4-n63-vt3          16
@@ -265,3 +267,4 @@ R7      mprime-avx2-36k-248k-allcore     12
 R7      mprime-avx512-36k-248k-allcore   12
 R7      ycruncher-fftv4-n63-vt3-allcore  12
 Tctl max since last profile change 76°C [#1674]
+

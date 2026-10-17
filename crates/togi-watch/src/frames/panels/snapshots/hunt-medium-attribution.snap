@@ -6,14 +6,14 @@ HUNT 1 ────────────────────────�
 
 cause       crash in the rerun of R7 all-core on 00 01 · no core named
 evidence    last sample 0:01 in · not enough to attribute
-candidates  00-02, every core with an offset in the failing profile
+candidates  00-02, deeper at failure than at their parked offsets
 
 parts       part    failing      parked       schedule state
           ► 1 of 2  00 01        02           5 x 10m  running
             2 of 2  02           00 01        5 x 10m  if part 1 passes
-            then finer parts and complements until one fails or none does
+            failed parts are split again; complements test what remains
 
-then        if the hunt resolves and the rerun passes:
+then        after the hunt:
             1  record one core's failure point or a combination
             2  back off past it
             3  rerun R7 all-core on 00-02: 5 x 10m, original length

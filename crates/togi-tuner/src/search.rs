@@ -348,9 +348,10 @@ impl Run {
             ),
         };
         let solo = core.offset.get();
+        let needed = self.config.needed;
+        let noun = if needed.get() == 1 { "trial" } else { "trials" };
         let reason = format!(
-            "solo limit {solo} passed {} trials of R1 {} and R2 {}{}; checking starts at {}, one count shallower than the solo limit {solo} (margin); {reason}",
-            self.config.needed,
+            "solo limit {solo} passed {needed} {noun} each of R1 {} and R2 {}{}; checking starts at {}, one count shallower than the solo limit {solo} (margin); {reason}",
             check.r1,
             check.r2,
             carried_clause(&self.evidence, &cause),

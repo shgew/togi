@@ -545,7 +545,7 @@ fn the_kinds_with_a_line_of_their_own() {
     );
     assert_eq!(
         last(&h),
-        "mce: cpu 3 corrected error between trials (recorded only)"
+        "mce: logical CPU 3 corrected error between trials (recorded only)"
     );
     h.push(
         DeadEnd {

@@ -113,8 +113,13 @@ pub(super) fn turn_lines(
             width,
         ));
     }
+    #[cfg(test)]
+    crate::corpus::lines("panel.turns", &format!("{class:?}"), &out);
     out
 }
+
+const BIOS_NOTE: &str = "unconfirmed: a passed full cycle confirms it, unless a failure is held";
+const BIOS_NOTE_SHORT: &str = "a passed full cycle confirms, unless a failure is held";
 
 /// The profile to enter in BIOS, one row per CCD in slot order, with a star on every unconfirmed offset. The
 /// compact layout has no rows to spare for saying that phase 1 has confirmed nothing: its phase 1 stage says so.
@@ -204,17 +209,22 @@ pub(super) fn bios_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> V
         out.push(Line::from(spans));
     }
     if !bios.unconfirmed.is_empty() {
+        // The star and the heading already say unconfirmed, so a panel too narrow for the whole note drops that word.
+        let note = if width >= 2 + BIOS_NOTE.len() {
+            BIOS_NOTE
+        } else {
+            BIOS_NOTE_SHORT
+        };
         out.push(cut_styled(
             &Line::from(vec![
                 scene.paint(Paint::Hunt, "* "),
-                scene.paint(
-                    Paint::Grey,
-                    "not confirmed: a passed cycle confirms it, unless held",
-                ),
+                scene.paint(Paint::Grey, note),
             ]),
             width,
         ));
     }
+    #[cfg(test)]
+    crate::corpus::lines("panel.bios", &format!("{class:?}"), &out);
     out
 }
 
@@ -299,6 +309,8 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> (Vec<Line<'static
             width,
         ));
     }
+    #[cfg(test)]
+    crate::corpus::lines("panel.phase2", "", &out);
     (out, head)
 }
 
@@ -522,8 +534,9 @@ mod tests {
         assert_eq!(rows[3].trim_end(), "CCD 1   -10");
         assert_eq!(
             rows[4],
-            "* not confirmed: a passed cycle confirms it, unless held"
+            "* unconfirmed: a passed full cycle confirms it, unless a failure is held"
         );
+        assert!(!rows[4].contains("not confirmed"), "{}", rows[4]);
         let rows = bios_rows(Some(&held), Some(&plan), SizeClass::Compact);
         assert!(rows[0].ends_with("UNCONFIRMED since #15"), "{}", rows[0]);
         let confirmed = bios(false);

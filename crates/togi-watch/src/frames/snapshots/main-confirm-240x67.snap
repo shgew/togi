@@ -17,9 +17,9 @@ expression: body
 │  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
 │  0:40 of 1:30                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 │
-│  if it passes         next: R1 light on core 08 alone at -11
-│  if a core is named   its failure point is recorded → it backs off → next: R1 light on core 08 alone at -11
-│  if inconclusive      the same trial runs again
+│  if it passes:        next trial: R1 light, core 08 alone at -11
+│  if a core is named:  its failure point is recorded → it backs off; next trial: R1 light, core 08 alone at -11
+│  if inconclusive:     the same trial runs again
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  one core under load at a time          CCD 1               0       -10       -20       -30       -40       -50 fail pt  waiting at 0
 │  ► 00  -11  CONFIRM   ▄▄▄▄▄▄▄▄▄▄▄                                                 -11: light 0/5, heavy 0/5                08    0  CONFIRM                                                               -11: light 0/5, heavy 0/5

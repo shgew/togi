@@ -7,11 +7,12 @@ use std::sync::LazyLock;
 use clap::Args as ClapArgs;
 use togi_config::FULL_CYCLE;
 use togi_journal::{
-    CorePhase, DefectDirection, Event, Payload, ResetTarget, Seq, State as JournalState,
+    CorePhase, DeadEndCondition, DefectDirection, Event, HuntStage, Payload, ResetTarget, Seq,
+    State as JournalState, TrialId,
 };
 use togi_machine::{CoreId, CoreSet, Regime};
 use togi_render::escape_text;
-use togi_tuner::{PhaseNo, Projection};
+use togi_tuner::{HuntGroup, PhaseNo, Projection};
 use togi_watch::model::Snapshot;
 use togi_watch::words::{candidate_word, group_word, noun, phase_word};
 
@@ -42,7 +43,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// work and last decision, and its combinations. In phase 2 it lists the candidates with their
 /// remaining gaps and the most rounds left if none fails, then one full cycle. An open hunt shows
 /// groups and trials; an open phase 2 round shows checks and passes. Evidence lists the workloads'
-/// valid trials and the Tctl peak since the last profile change, and between-trial MCEs without
+/// valid passes and the Tctl peak since the last profile change, and between-trial MCEs without
 /// treating them as failures. It shows each core's observed self-sufficiency for each R7 workload
 /// and the CCD's current top requesters, with offsets standing in only when request telemetry is
 /// absent, and lists reset commands for too-cautious defects until each affected core is reset.
@@ -221,10 +222,119 @@ fn missing_coverage(steps: &[Regime]) -> Vec<String> {
         .iter()
         .filter_map(|&(regime, least)| {
             let got = steps.iter().filter(|&&step| step == regime).count();
-            (got < least).then(|| format!("{regime}: {} more steps", least - got))
+            (got < least).then(|| {
+                let more = least - got;
+                format!("{regime}: {more} more {}", noun(more, "step"))
+            })
         })
         .collect()
 }
+
+/// The header's search activity: the cores still searching, with the noun in agreement.
+fn search_left(searching: usize) -> String {
+    format!("search: {searching} {} left", noun(searching, "core"))
+}
+
+/// A dead end's condition in the words the status shows; the journal records its wire name.
+const fn dead_end_label(condition: DeadEndCondition) -> &'static str {
+    match condition {
+        DeadEndCondition::FailureAtZero => "failure at offset 0",
+        DeadEndCondition::Smu => "SMU error",
+        DeadEndCondition::NoEvidence => "no conclusive evidence",
+        DeadEndCondition::BootLoop => "boot loop",
+        DeadEndCondition::Containment => "workload containment failed",
+        DeadEndCondition::Preflight => "preflight failed",
+        DeadEndCondition::Defect => "recorded decisions affected by a defect",
+        DeadEndCondition::ThermalTrip => "thermal trip",
+    }
+}
+
+/// The BIOS note while stepped-back offsets of `cores` since `since` wait for a passed full cycle;
+/// every other BIOS offset comes from the profile `confirmed` confirmed.
+fn unconfirmed_note(since: u64, cores: &[CoreId], confirmed: Seq) -> String {
+    let listed = cores_of(cores.iter().copied());
+    let shown = if cores.len() == 1 {
+        format!("core {listed} shows a stepped-back offset")
+    } else {
+        format!("cores {listed} show stepped-back offsets")
+    };
+    format!(
+        "* unconfirmed since [#{since}]: {shown}; other BIOS offsets come from the profile confirmed by the passed full cycle [#{confirmed}]. A passed full cycle confirms the changes, except a held failure's stepped-back offset, which stays marked until the hold ends"
+    )
+}
+
+/// The R7 table's self-sufficiency cell for a core with `passes` passing trials as top requester.
+fn self_sufficiency(passes: u32) -> String {
+    if passes > 0 {
+        format!(
+            "observed ({passes} passing {})",
+            noun(passes as usize, "trial")
+        )
+    } else {
+        "not yet demonstrated".to_owned()
+    }
+}
+
+/// Where a hunt's parked offsets came from.
+fn parked_source(parked: &Parked) -> String {
+    match parked {
+        Parked::Zero => "parked offsets all-zero".to_owned(),
+        Parked::CycleEnd(seq) => format!("parked offsets from cycle end #{seq}"),
+        Parked::Held(loaded) => format!(
+            "loaded cores {} held at their failing offsets, the rest parked at 0",
+            cores_of(*loaded)
+        ),
+    }
+}
+
+/// The failure a hunt runs down: in the regime's trial that failed, or with no trial in flight for
+/// an idle failure.
+fn hunt_failure(signal: &str, regime: Regime, trial: Option<&TrialId>) -> String {
+    match trial {
+        Some(trial) => format!(
+            "unattributed {} in {} trial {}",
+            esc(signal),
+            esc(regime.as_str()),
+            esc(trial.as_str())
+        ),
+        None => format!("unattributed {} with no trial in flight", esc(signal)),
+    }
+}
+
+/// A hunt group's CORES cell, with the note that says what the cell stands for when the cores do
+/// not fit or the group is not a plain set of loaded cores.
+fn group_cores(group: &HuntGroup) -> (String, Option<(&'static str, String)>) {
+    if group.stage == HuntStage::Locate {
+        let note = "reruns the failed load with its loaded cores at their failing offsets and every unloaded core at 0";
+        return ("locate".to_owned(), Some(("locate", note.to_owned())));
+    }
+    if let Some(probe) = group.probe {
+        let held: Vec<String> = group
+            .held
+            .iter()
+            .map(|member| format!("{:02} at {}", member.core.get(), member.offset.get()))
+            .collect();
+        let note = format!(
+            "{:02} at {} with {}",
+            probe.core.get(),
+            probe.offset.get(),
+            held.join(", ")
+        );
+        return ("probe".to_owned(), Some(("probe", note)));
+    }
+    let cores = cores_of(group.cores);
+    if cores.len() > GROUP_CORES_MAX {
+        (
+            format!("{} cores", group.cores.len()),
+            Some(("cores", cores)),
+        )
+    } else {
+        (cores, None)
+    }
+}
+
+/// What the evidence table counts.
+const EVIDENCE_HEADING: &str = "Valid passes supporting the checking profile (live and not alone, on the active backend, at equal or deeper offsets; carried passes excluded)";
 
 impl Status<'_> {
     fn line(&mut self, first: &str, rest: &str, text: &str) {
@@ -264,7 +374,7 @@ impl Status<'_> {
         if let Some(dead_end) = self.journal.dead_end {
             let text = format!(
                 "dead end: {} [#{}]",
-                esc(dead_end.condition.as_str()),
+                dead_end_label(dead_end.condition),
                 dead_end.seq
             );
             self.line("", "  ", &text);
@@ -297,7 +407,7 @@ impl Status<'_> {
             .count();
         let plan = &self.projection.cycle_plan;
         let activity = if searching > 0 {
-            format!("search: {searching} cores left")
+            search_left(searching)
         } else if let Some(hunt) = &self.projection.hunt_plan {
             let group = hunt.groups.last().map_or(0, |group| group.number);
             format!("hunt {}, group {group}", hunt.number)
@@ -426,12 +536,10 @@ impl Status<'_> {
                 "BIOS profile confirmed by the passed full cycle [#{}]",
                 confirmed.seq
             ),
-            Some((bios, confirmed)) => format!(
-                "* unconfirmed since [#{}]: cores {} show a stepped-back offset, the profile confirmed by the passed full cycle [#{}] otherwise; a passed full cycle confirms it, except a held failure's stepped-back offset, which stays marked until the hold ends",
-                bios.since().map_or(0, Seq::get),
-                cores_of(bios.unconfirmed.iter().map(|mark| mark.core)),
-                confirmed.seq
-            ),
+            Some((bios, confirmed)) => {
+                let cores: Vec<CoreId> = bios.unconfirmed.iter().map(|mark| mark.core).collect();
+                unconfirmed_note(bios.since().map_or(0, Seq::get), &cores, confirmed.seq)
+            }
         };
         self.line("", "  ", &text);
     }
@@ -481,11 +589,7 @@ impl Status<'_> {
             ["CORE", "CCD", "SELF-SUFFICIENT", "TOP REQUESTER"].map(String::from),
         )];
         for entry in status {
-            let own = if entry.self_sufficient {
-                format!("observed ({} passing trials)", entry.passes)
-            } else {
-                "not yet demonstrated".to_owned()
-            };
+            let own = self_sufficiency(entry.passes);
             let mut top = if entry.top_requester { "yes" } else { "no" }.to_owned();
             if entry.offset_proxy {
                 top.push_str(" (offset fallback)");
@@ -514,26 +618,16 @@ impl Status<'_> {
             .get(&plan.number)
             .cloned()
             .unwrap_or((plan.failure, Parked::Zero));
-        let parked = match parked {
-            Parked::Zero => "parked offsets all-zero".to_owned(),
-            Parked::CycleEnd(seq) => format!("parked offsets cycle end #{seq}"),
-            Parked::Held(loaded) => format!(
-                "loaded cores {} held at their failing offsets, the rest parked at 0",
-                cores_of(loaded)
-            ),
-        };
+        let parked = parked_source(&parked);
         let signal = hunt
             .facts
             .cause
             .signal
             .map_or("failure", |signal| signal.as_str());
-        let trial = plan.trial.as_ref().map_or("-", |trial| trial.as_str());
         let text = format!(
-            "hunt {} [#{start_seq}]: unattributed {} in {} trial {}; {parked}",
+            "hunt {} [#{start_seq}]: {}; {parked}",
             plan.number,
-            esc(signal),
-            esc(plan.regime.as_str()),
-            esc(trial),
+            hunt_failure(signal, plan.regime, plan.trial.as_ref()),
         );
         self.line("\n", "  ", &text);
         self.line(
@@ -545,28 +639,7 @@ impl Status<'_> {
             ["GROUP", "CORES", "OUTCOME", "PASS EVIDENCE", "NEED"].map(String::from),
         )];
         for group in &plan.groups {
-            let mut cores = cores_of(group.cores);
-            let mut note = None;
-            if let Some(probe) = group.probe {
-                let held: Vec<String> = group
-                    .held
-                    .iter()
-                    .map(|member| format!("{:02} at {}", member.core.get(), member.offset.get()))
-                    .collect();
-                "probe".clone_into(&mut cores);
-                note = Some((
-                    "probe",
-                    format!(
-                        "{:02} at {} with {}",
-                        probe.core.get(),
-                        probe.offset.get(),
-                        held.join(", ")
-                    ),
-                ));
-            } else if cores.len() > GROUP_CORES_MAX {
-                let listed = std::mem::replace(&mut cores, format!("{} cores", group.cores.len()));
-                note = Some(("cores", listed));
-            }
+            let (cores, note) = group_cores(group);
             let mut row = Row::new([
                 format!("G{}", group.number),
                 cores,
@@ -670,8 +743,10 @@ impl Status<'_> {
         if checking.profile.is_none() {
             return;
         }
-        self.out.push('\n');
-        let mut rows = vec![Row::new(["REGIME", "WORKLOAD", "TRIALS"].map(String::from))];
+        self.line("\n", "  ", EVIDENCE_HEADING);
+        let mut rows = vec![Row::new(
+            ["REGIME", "WORKLOAD", "VALID PASSES"].map(String::from),
+        )];
         for (workload, trials) in &checking.exposure {
             rows.push(Row::new([
                 esc(workload.regime().as_str()),
@@ -692,3 +767,6 @@ impl Status<'_> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod corpus;

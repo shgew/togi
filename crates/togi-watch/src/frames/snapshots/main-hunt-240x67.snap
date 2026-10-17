@@ -17,9 +17,9 @@ expression: body
 │  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
 │  0:40 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 │
-│  if 5 of 5 pass       next: part 2: 00-04 06-15 parked at 0, idle
-│  if none is named     next: hunt 1 group 2: R2 heavy vector on 05 · 09-15 at failing offsets, 00-08 parked at 0
-│  if a core is named   its failure point is recorded → next: rerun R2 heavy vector on 05 with every core at 0 · 2m
+│  if 5 of 5 pass:      next trial: part 2: 00-04 06-15 parked at 0, idle
+│  if none is named:    next trial: hunt 1 group 2: R2 heavy vector on 05 · 09-15 at failing offsets, 00-08 parked at 0
+│  if a core is named:  its failure point is recorded; next trial: rerun R2 heavy vector on 05 with every core at 0 · 2m
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  one core under load at a time          CCD 1               0       -10       -20       -30       -40       -50 fail pt  all idle, all judged
 │    00  -25  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                           -26                                            08   -5  MEMBER    ▄▄▄▄▄·▬                                                -7
@@ -37,18 +37,18 @@ expression: body
 │  HUNT 1 ───────────────────────────────────────────────────────────────────────────────── started 18:35 · 40s so far     18:35  fail     R2 heavy vector on core 05 at -9 · corrected hardware error · no core named
 │                                                                                                                          18:33  note     cycle 1 step 3 · CCD 1 partials end
 │  cause       corrected hardware error in R2 heavy vector on 05 · cycle 1 step 4, part 11 · no core named                 18:33  note     cycle 1 step 3 · CCD 1 partial 5 loads 09 13
-│  candidates  00-15, every core with an offset in the failing profile                                                     18:33  pass     R7 partial CCD 1 on 09 10 13 14 · 4 passed · Tctl max 74°C
+│  candidates  00-15, deeper at failure than at their parked offsets                                                       18:33  pass     R7 partial CCD 1 on 09 10 13 14 · 4 passed · Tctl max 74°C
 │                                                                                                                          18:22  note     cycle 1 step 3 · CCD 1 partial 4 loads 09 10 13 14
 │  parts       part        at failing offsets   parked at 0   schedule   state                                             18:22  note     cycle 1 step 3 · CCD 1 partial 3 loads 09 10 12-14
 │            ► 1 of 2      00-04 06-15          05            5 x 2m     trial 1 of 5                                      18:22  note     cycle 1 step 3 · CCD 1 partial 2 loads 09 10 12-15
 │              2 of 2      05                   00-04 06-15   5 x 2m     if part 1 passes                                  18:22  note     cycle 1 step 3 · CCD 1 partial 1 loads 09-15
-│              then finer parts and complements until one fails or none does                                               18:22  note     cycle 1 step 3 · CCD 0 partials end
+│              failed parts are split again; complements test what remains                                                 18:22  note     cycle 1 step 3 · CCD 0 partials end
 │                                                                                                                          18:22  note     cycle 1 step 3 · CCD 0 partial 4 loads 06 07
-│  then        if the hunt resolves and the rerun passes:                                                                  18:22  note     cycle 1 step 3 · CCD 0 partial 3 loads 00 02 06 07
+│  then        after the hunt:                                                                                             18:22  note     cycle 1 step 3 · CCD 0 partial 3 loads 00 02 06 07
 │              1  record one core's failure point or a combination                                                         18:22  note     cycle 1 step 3 · CCD 0 partial 2 loads 00 02 03 06 07
 │              2  back off past it                                                                                         18:22  note     cycle 1 step 3 · CCD 0 partial 1 loads 00-04 06 07
 │              3  rerun R2 heavy vector on 05: 5 trials of 2m, its original length                                         18:22  note     cycle 1 step 2 · CCD 1 partials end
-│              4  resume cycle 1                                                                                           18:22  note     cycle 1 step 2 · CCD 1 partial 5 loads 09 13
+│              4  if the rerun passes, resume cycle 1                                                                      18:22  note     cycle 1 step 2 · CCD 1 partial 5 loads 09 13
 │                                                                                                                          18:22  pass     R7 partial CCD 1 on 09 10 13 14 · 4 passed · Tctl max 76°C
 │                                                                                                                          18:11  note     cycle 1 step 2 · CCD 1 partial 4 loads 09 10 13 14
 │                                                                                                                          18:11  note     cycle 1 step 2 · CCD 1 partial 3 loads 09 10 12-14

@@ -133,15 +133,15 @@ fn each_decision_has_its_tag_tone_and_phrases() {
             Decision::StepDeeper,
             Tag::Step,
             Tone::Plain,
-            "core 03 passed -10, next -15",
-            "core 03 next -15",
+            "core 03 passed -10; searches -15 on its next turn",
+            "core 03 searches -15 on its next turn",
         ),
         (
             Decision::CheckSoloLimit,
             Tag::Confirm,
             Tone::Plain,
             "core 03 confirming -15 as its solo limit",
-            "core 03 confirms -15",
+            "core 03 starts confirming -15 as its solo limit",
         ),
         (
             Decision::Deepen,
@@ -154,15 +154,15 @@ fn each_decision_has_its_tag_tone_and_phrases() {
             Decision::Yield,
             Tag::Room,
             Tone::Plain,
-            "core 03 -10 → -15 so others go deeper",
-            "core 03 yields -10 → -15",
+            "core 03 yields -10 → -15; no later round moves it",
+            "core 03 yields -10 → -15, back to its round baseline",
         ),
         (
             Decision::Hold,
             Tag::Hold,
             Tone::Warn,
-            "core 03 holds at -10",
-            "core 03 holds at -10",
+            "core 03 failure held; tuning stays at -10",
+            "core 03 failure held at -10; no tuning move",
         ),
         (
             Decision::Backoff,
@@ -315,8 +315,8 @@ fn the_regime_and_signal_words() {
     }
     for (signal, words) in [
         (Signal::ComputationError, "wrong result"),
-        (Signal::UnexpectedExit, "the stress program quit"),
-        (Signal::Stall, "the stress program stalled"),
+        (Signal::UnexpectedExit, "the backend quit"),
+        (Signal::Stall, "the backend stalled"),
         (Signal::CorrectedMce, "corrected hardware error"),
         (Signal::UncorrectedMce, "uncorrected hardware error"),
         (Signal::Crash, "crash"),
@@ -509,10 +509,7 @@ fn chains_cycles_and_rounds_have_phrases() {
     );
     let line = |payload: &Payload| history_line(payload).unwrap().text;
     assert_eq!(line(&start), "cycle 2 started · 0 steps");
-    assert_eq!(
-        line(&ended(true, true)),
-        "cycle 2 passed, a full cycle of every kind of test"
-    );
+    assert_eq!(line(&ended(true, true)), "cycle 2 passed, a full cycle");
     assert_eq!(
         line(&ended(true, false)),
         "cycle 2 passed but missing R2, R5"
@@ -574,13 +571,22 @@ fn steps_hunts_and_stops_have_phrases() {
         reason: String::new(),
     }
     .into();
+    assert_eq!(phrase(&skipped).as_deref(), Some("no hunt"));
+    assert_eq!(compact(&skipped).as_deref(), Some("no hunt"));
+    assert_eq!(history_line(&skipped).unwrap().text, "not hunted");
+    let held: Payload = HuntSkipped {
+        failure: seq(1),
+        reason: "held: first unattributed failure".into(),
+    }
+    .into();
     assert_eq!(
-        phrase(&skipped).as_deref(),
-        Some("no hunt: these offsets reach a known failure")
+        phrase(&held).as_deref(),
+        Some("no hunt: held: first unattributed failure")
     );
+    assert_eq!(compact(&held).as_deref(), Some("no hunt"));
     assert_eq!(
-        history_line(&skipped).unwrap().text,
-        "not needed, these offsets already reach a known failure"
+        history_line(&held).unwrap().text,
+        "not hunted: held: first unattributed failure"
     );
 
     let combo: Payload = combination(3, 1, &[(0, -30), (2, -28)], false).into();
@@ -756,7 +762,7 @@ fn an_idle_failure_is_worded_but_a_crash_is_not() {
     let idle = failure(Signal::Stall, None);
     assert_eq!(
         failure_line(&idle).unwrap().text,
-        "idle with the offsets applied, the stress program stalled"
+        "idle with the offsets applied, the backend stalled"
     );
     assert!(failure_line(&failure(Signal::Crash, None)).is_none());
     assert!(failure_line(&failure(Signal::Stall, Some("t1"))).is_none());

@@ -13,7 +13,7 @@ use std::time::Duration;
 use togi_journal::{
     Activity, Attribution, CheckingChain, CheckingCycle, CheckingStep, Combination, CorePhase,
     CoreTransition, CycleEvent, DeadEnd, Decision, DeepeningRound, EventKind, Failure, HuntEnd,
-    HuntGroup, HuntOutcome, HuntStart, Inference, Mce, Payload, RoundEvent, TrialEnd,
+    HuntGroup, HuntOutcome, HuntSkipped, HuntStart, Inference, Mce, Payload, RoundEvent, TrialEnd,
     TunerDecision,
 };
 use togi_machine::{CoreId, Regime, Signal, TargetOffset, WorkloadId};
@@ -225,8 +225,8 @@ pub const fn kind_words(regime: Regime) -> &'static str {
 pub const fn signal_words(signal: Signal) -> &'static str {
     match signal {
         Signal::ComputationError => "wrong result",
-        Signal::UnexpectedExit => "the stress program quit",
-        Signal::Stall => "the stress program stalled",
+        Signal::UnexpectedExit => "the backend quit",
+        Signal::Stall => "the backend stalled",
         Signal::CorrectedMce => "corrected hardware error",
         Signal::UncorrectedMce => "uncorrected hardware error",
         Signal::Crash => "crash",
@@ -350,7 +350,7 @@ pub fn decision_line(d: &TunerDecision) -> Line {
     match d.decision {
         Decision::StepDeeper => Line {
             tag: Tag::Step,
-            text: format!("core {core:02} passed {from}, next {to}"),
+            text: format!("core {core:02} passed {from}; searches {to} on its next turn"),
             tone: Tone::Plain,
         },
         Decision::CheckSoloLimit => Line {
@@ -365,12 +365,12 @@ pub fn decision_line(d: &TunerDecision) -> Line {
         },
         Decision::Yield => Line {
             tag: Tag::Room,
-            text: format!("core {core:02} {from} → {to} so others go deeper"),
+            text: format!("core {core:02} yields {from} → {to}; no later round moves it"),
             tone: Tone::Plain,
         },
         Decision::Hold => Line {
             tag: Tag::Hold,
-            text: format!("core {core:02} holds at {from}"),
+            text: format!("core {core:02} failure held; tuning stays at {from}"),
             tone: Tone::Warn,
         },
         Decision::Backoff => Line {
@@ -438,10 +438,7 @@ pub fn cycle_line(d: &CheckingCycle) -> Line {
             Tone::Plain,
         )
     } else if d.passed && d.full {
-        (
-            format!("cycle {cycle} passed, a full cycle of every kind of test"),
-            Tone::Good,
-        )
+        (format!("cycle {cycle} passed, a full cycle"), Tone::Good)
     } else if d.passed {
         (
             format!("cycle {cycle} passed but missing {}", d.missing.join(", ")),
@@ -505,7 +502,7 @@ fn mce_line(d: &Mce) -> Option<Line> {
         "uncorrected"
     };
     let who = d.core.map_or_else(
-        || format!("cpu {}", d.cpu.0),
+        || format!("logical CPU {}", d.cpu.0),
         |core| format!("core {:02}", core.get()),
     );
     Some(Line {
@@ -547,11 +544,15 @@ pub fn decision_phrase(d: &TunerDecision, failed: Option<CoreId>) -> String {
             }
             _ => format!("core {core:02} {from} → {to}"),
         },
-        Decision::StepDeeper => format!("core {core:02} next {to}"),
-        Decision::CheckSoloLimit => format!("core {core:02} confirms {to}"),
+        Decision::StepDeeper => format!("core {core:02} searches {to} on its next turn"),
+        Decision::CheckSoloLimit => {
+            format!("core {core:02} starts confirming {to} as its solo limit")
+        }
         Decision::Deepen => format!("core {core:02} deepens {from} → {to}"),
-        Decision::Yield => format!("core {core:02} yields {from} → {to}"),
-        Decision::Hold => format!("core {core:02} holds at {from}"),
+        Decision::Yield => {
+            format!("core {core:02} yields {from} → {to}, back to its round baseline")
+        }
+        Decision::Hold => format!("core {core:02} failure held at {from}; no tuning move"),
     }
 }
 
@@ -661,7 +662,16 @@ fn combination_phrase(d: &Combination) -> String {
 
 const HUNT_ENDS: &str = "hunt ends";
 const TUNING_STOPS: &str = "tuning stops";
-const NO_HUNT: &str = "no hunt: these offsets reach a known failure";
+const NO_HUNT: &str = "no hunt";
+
+/// A skipped hunt with the reason the tuner recorded, which may be a known failure, a held failure or nothing.
+fn skip_text(d: &HuntSkipped, lead: &str) -> String {
+    if d.reason.is_empty() {
+        lead.to_owned()
+    } else {
+        format!("{lead}: {}", d.reason)
+    }
+}
 
 fn step_phrase(d: &CheckingStep) -> Option<String> {
     (d.step.get() > 1).then(|| format!("step {} is done", d.step.get() - 1))
@@ -676,6 +686,7 @@ pub fn decision_brief(decision: &DecisionPayload) -> Option<String> {
         DecisionPayload::HuntEnd(_) => Some(HUNT_ENDS.to_owned()),
         DecisionPayload::Combination(d) => Some(combination_brief(d)),
         DecisionPayload::DeadEnd(_) => Some(TUNING_STOPS.to_owned()),
+        DecisionPayload::HuntSkipped(_) => Some(NO_HUNT.to_owned()),
         DecisionPayload::Failure(_)
         | DecisionPayload::TunerWarning(_)
         | DecisionPayload::CorePhase(_)
@@ -684,7 +695,6 @@ pub fn decision_brief(decision: &DecisionPayload) -> Option<String> {
         | DecisionPayload::CheckingStep(_)
         | DecisionPayload::CheckingChain(_)
         | DecisionPayload::HuntGroup(_)
-        | DecisionPayload::HuntSkipped(_)
         | DecisionPayload::DeepeningRound(_) => None,
     }
 }
@@ -700,7 +710,7 @@ pub fn decision_detail(decision: &DecisionPayload) -> Option<String> {
         DecisionPayload::CheckingCycle(d) => Some(cycle_phrase(d)),
         DecisionPayload::CheckingChain(d) => Some(chain_phrase(d)),
         DecisionPayload::HuntStart(d) => Some(hunt_start_phrase(d)),
-        DecisionPayload::HuntSkipped(_) => Some(NO_HUNT.to_owned()),
+        DecisionPayload::HuntSkipped(d) => Some(skip_text(d, NO_HUNT)),
         DecisionPayload::Combination(d) => Some(combination_phrase(d)),
         DecisionPayload::DeepeningRound(d) => Some(round_phrase(d)),
         DecisionPayload::DeadEnd(d) => Some(dead_end_phrase(d)),
@@ -946,15 +956,14 @@ pub fn words(kind: EventKind) -> Words {
             ..Words::SILENT
         },
         EventKind::HuntSkipped => Words {
-            history: History::Line(|_| {
-                Some(Line {
-                    tag: Tag::Hunt,
-                    text: "not needed, these offsets already reach a known failure".to_owned(),
-                    tone: Tone::Plain,
-                })
-            }),
+            history: History::Line(of!(HuntSkipped, |d| Some(Line {
+                tag: Tag::Hunt,
+                text: skip_text(d, "not hunted"),
+                tone: Tone::Plain,
+            }))),
             tag: Tagging::Fixed(Tag::Hunt),
-            detailed: Phrase::Of(|_| Some(NO_HUNT.to_owned())),
+            compact: Brief::Of(|_| Some(NO_HUNT.to_owned())),
+            detailed: Phrase::Of(of!(HuntSkipped, |d| Some(skip_text(d, NO_HUNT)))),
             ..Words::SILENT
         },
         EventKind::Combination => Words {

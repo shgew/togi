@@ -55,7 +55,7 @@ fn between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown() {
         );
         let lower = shown.to_lowercase();
         assert!(
-            lower.contains("next:") || lower.contains("deciding"),
+            lower.contains("next trial:") || lower.contains("deciding"),
             "{width}x{height} hides the tuner's next action:\n{shown}"
         );
         assert_eq!(drawn.hold, Hold::Never);

@@ -78,10 +78,11 @@ pub fn report(ctx: &mut Context<'_>, command: &str, recording: &Recording) {
         notice(ctx, Style::Yellow, &format!("togi {command}: {skipped}"));
     }
     if let Some(torn) = recording.torn() {
+        let bytes = torn.bytes.len();
         let _ = writeln!(
             ctx.err,
-            "togi {command}: journal ends with {} torn bytes; the next run records journal.torn",
-            torn.bytes.len()
+            "togi {command}: journal ends with {bytes} torn {}; the next run records journal.torn",
+            if bytes == 1 { "byte" } else { "bytes" }
         );
     }
 }

@@ -11,7 +11,7 @@ use super::super::colours::Paint;
 use super::super::scene::{Scene, clock};
 use super::super::terms::{cycle_place, trial_name};
 use super::RestingBand;
-use super::outcome::next_trial_words;
+use super::outcome::{NEXT_TRIAL, next_trial_words};
 use crate::model::{RecoveryView, TrialEndView};
 use crate::words::{kind_words, lateness, on_cores, signal_words};
 
@@ -19,6 +19,13 @@ const SAVED_ROWS: &str = "Rows show the saved profile, not applied now.";
 
 /// The resting band: no trial in flight, a stop, a dead end, a crashed trial or a recovery.
 pub(crate) fn resting_band(scene: &Scene<'_>) -> RestingBand {
+    let band = band(scene);
+    #[cfg(test)]
+    super::corpus::band(&band);
+    band
+}
+
+fn band(scene: &Scene<'_>) -> RestingBand {
     let s = &scene.s;
     if let Some(dead_end) = s.dead_end {
         let mut lines = vec![format!(
@@ -90,13 +97,13 @@ fn stop_words(reason: ShutdownReason) -> &'static str {
 fn next_line(scene: &Scene<'_>) -> String {
     let between = scene.s.forecast.between.as_ref();
     match between.and_then(|between| between.next.as_ref()) {
-        Some(next) => format!("next: {}", next_trial_words(scene, next, None, None)),
+        Some(next) => format!("{NEXT_TRIAL}{}", next_trial_words(scene, next, None, None)),
         None if between.and_then(|between| between.uncertainty)
             == Some(Uncertainty::NeedsRanking) =>
         {
-            "next: read the core ranking before deciding".to_owned()
+            format!("{NEXT_TRIAL}read the core ranking before deciding")
         }
-        None => "next: deciding".to_owned(),
+        None => format!("{NEXT_TRIAL}deciding"),
     }
 }
 
@@ -232,9 +239,12 @@ pub(crate) fn last_lines(scene: &Scene<'_>) -> Vec<Line<'static>> {
         return Vec::new();
     };
     let (word, paint) = end_word(last);
-    vec![Line::from(vec![
+    let lines = vec![Line::from(vec![
         scene.paint(Paint::Grey, "last trial      "),
         scene.paint(paint, word),
         scene.paint(Paint::Grey, format!("  {}", end_facts(last).join(" · "))),
-    ])]
+    ])];
+    #[cfg(test)]
+    crate::corpus::lines("story.last", word, &lines);
+    lines
 }

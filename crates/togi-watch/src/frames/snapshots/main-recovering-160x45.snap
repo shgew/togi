@@ -12,7 +12,7 @@ expression: body
 │  RECOVERED FROM A CRASH ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │  crash in core 08 · R1 light at -10
 │  detected 01:40:30 after a watchdog reset
-│  next: R1 light on core 01 alone at -10
+│  next trial: R1 light, core 01 alone at -10
 │
 │  CCD 0               0  2 counts/cell       -50 fail pt  waiting at 0            CCD 1               0  2 counts/cell       -50 fail pt  not under load
 │    00    0  SEARCH    ·····                              p -10 · next -15          08  -10  SEARCH    ▄▄▄▄▄                              p -5 · next -10
@@ -27,22 +27,22 @@ expression: body
 │  BIOS PROFILE ──────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  none confirmed yet: phase 1 has not passed a full cycle
 │                                                                                  01:40  crash    with the offsets applied, rebooted
-│  TURNS ──────────────────────────────────── one core per turn, in this order     01:39  step     core 00 passed -10, next -15
-│                                                                                  01:36  step     core 15 passed -5, next -10
-│        this turn                   at   so far                                   01:33  step     core 07 passed -5, next -10
-│    01  search: light, then heavy   -10  passed -5 · next -10                     01:30  step     core 14 passed -5, next -10
-│    09  search: light, then heavy   -10  passed -5 · next -10                     01:27  step     core 06 passed -5, next -10
-│    02  search: light, then heavy   -10  passed -5 · next -10                     01:24  step     core 13 passed -5, next -10
-│    10  search: light, then heavy   -10  passed -5 · next -10                     01:21  step     core 05 passed -5, next -10
-│    03  search: light, then heavy   -10  passed -5 · next -10                     01:18  step     core 12 passed -5, next -10
-│    11  search: light, then heavy   -10  passed -5 · next -10                     01:15  step     core 04 passed -5, next -10
-│    04  search: light, then heavy   -10  passed -5 · next -10                     01:12  step     core 11 passed -5, next -10
-│    12  search: light, then heavy   -10  passed -5 · next -10                     01:09  step     core 03 passed -5, next -10
-│    05  search: light, then heavy   -10  passed -5 · next -10                     01:06  step     core 10 passed -5, next -10
-│    13  search: light, then heavy   -10  passed -5 · next -10                     01:03  step     core 02 passed -5, next -10
-│    06  search: light, then heavy   -10  passed -5 · next -10                     01:00  step     core 09 passed -5, next -10
-│    14  search: light, then heavy   -10  passed -5 · next -10                     00:57  step     core 01 passed -5, next -10
-│    07  search: light, then heavy   -10  passed -5 · next -10                     00:54  step     core 08 passed -5, next -10
+│  TURNS ──────────────────────────────────── one core per turn, in this order     01:39  step     core 00 passed -10; searches -15 on its next turn
+│                                                                                  01:36  step     core 15 passed -5; searches -10 on its next turn
+│        this turn                   at   so far                                   01:33  step     core 07 passed -5; searches -10 on its next turn
+│    01  search: light, then heavy   -10  passed -5 · next -10                     01:30  step     core 14 passed -5; searches -10 on its next turn
+│    09  search: light, then heavy   -10  passed -5 · next -10                     01:27  step     core 06 passed -5; searches -10 on its next turn
+│    02  search: light, then heavy   -10  passed -5 · next -10                     01:24  step     core 13 passed -5; searches -10 on its next turn
+│    10  search: light, then heavy   -10  passed -5 · next -10                     01:21  step     core 05 passed -5; searches -10 on its next turn
+│    03  search: light, then heavy   -10  passed -5 · next -10                     01:18  step     core 12 passed -5; searches -10 on its next turn
+│    11  search: light, then heavy   -10  passed -5 · next -10                     01:15  step     core 04 passed -5; searches -10 on its next turn
+│    04  search: light, then heavy   -10  passed -5 · next -10                     01:12  step     core 11 passed -5; searches -10 on its next turn
+│    12  search: light, then heavy   -10  passed -5 · next -10                     01:09  step     core 03 passed -5; searches -10 on its next turn
+│    05  search: light, then heavy   -10  passed -5 · next -10                     01:06  step     core 10 passed -5; searches -10 on its next turn
+│    13  search: light, then heavy   -10  passed -5 · next -10                     01:03  step     core 02 passed -5; searches -10 on its next turn
+│    06  search: light, then heavy   -10  passed -5 · next -10                     01:00  step     core 09 passed -5; searches -10 on its next turn
+│    14  search: light, then heavy   -10  passed -5 · next -10                     00:57  step     core 01 passed -5; searches -10 on its next turn
+│    07  search: light, then heavy   -10  passed -5 · next -10                     00:54  step     core 08 passed -5; searches -10 on its next turn
 │  +3 more                                                                         +18 more
 │
 │   ?  help    l  log    esc  back    q  close view

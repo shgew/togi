@@ -77,8 +77,8 @@ pub(super) fn hunt_lines(
                 Clause::new(
                     ", ",
                     vec![
-                        explain("every core with an offset in the failing profile"),
-                        explain("every core at a failing offset"),
+                        explain("deeper at failure than at their parked offsets"),
+                        explain("deeper at failure than parked"),
                         Form::empty(),
                     ],
                 ),
@@ -102,6 +102,8 @@ pub(super) fn hunt_lines(
     }
     out.push(Line::default());
     out.extend(then_lines(scene, hunt, t, width, class));
+    #[cfg(test)]
+    crate::corpus::lines("panel.hunt", &format!("{class:?}"), &out);
     out
 }
 
@@ -307,7 +309,7 @@ fn part_lines(
             cell(
                 scene,
                 Paint::Grey,
-                "then finer parts and complements until one fails or none does",
+                "failed parts are split again; complements test what remains",
             ),
             width,
         ));
@@ -611,7 +613,7 @@ fn then_lines(
     {
         let number = cycle.plan.number.map_or(0, std::num::NonZeroU32::get);
         steps.push((
-            format!("resume cycle {number}"),
+            format!("if the rerun passes, resume cycle {number}"),
             Some(format!("cycle {number}")),
         ));
     }
@@ -630,11 +632,7 @@ fn then_lines(
             scene,
             t,
             "then",
-            cell(
-                scene,
-                Paint::Grey,
-                "if the hunt resolves and the rerun passes:",
-            ),
+            cell(scene, Paint::Grey, "after the hunt:"),
             width,
         ));
         out.push(table_row(
@@ -1024,7 +1022,8 @@ mod tests {
                 && wide[1].contains("trial 2 of 5")
         );
         assert!(wide[2].contains("2 of 2") && wide[2].contains("if part 1 passes"));
-        assert!(wide[3].contains("then finer parts and complements"));
+        assert!(wide[3].contains("failed parts are split again; complements test what remains"));
+        assert!(!wide[3].contains("until one fails"));
         let compact = texts(&part_lines(
             &scene,
             &hunt,
@@ -1441,7 +1440,7 @@ mod tests {
         }
         let all = rows.join("\n");
         for kept in [
-            "then finer parts and complements until one fails or none does",
+            "failed parts are split again; complements test what remains",
             "record one core's failure point or a combination",
             "original length",
         ] {
@@ -1527,13 +1526,14 @@ mod tests {
         assert_eq!(rows.len(), 5, "{rows:?}");
         assert!(
             rows[0].starts_with("then")
-                && rows[0].contains("if the hunt resolves and the rerun passes:")
+                && rows[0].contains("after the hunt:")
+                && !rows[0].contains("if the hunt resolves")
         );
         assert!(rows[1].contains('1') && rows[1].contains("record one core's failure point"));
         assert!(
             rows[3].contains("rerun R7 all-core on 00-02: 5 trials of 10m, its original length")
         );
-        assert!(rows[4].contains("resume cycle 2"));
+        assert!(rows[4].contains("if the rerun passes, resume cycle 2"));
         let compact = texts(&then_lines(
             &scene,
             &hunt,

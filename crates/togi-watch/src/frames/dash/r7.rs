@@ -184,6 +184,8 @@ pub(super) fn r7_rows(scene: &Scene<'_>, class: SizeClass, width: usize) -> Vec<
         );
         out.push(tint(line, scene.style(paint)));
     }
+    #[cfg(test)]
+    crate::corpus::lines("dash.r7", &format!("{class:?}"), &out);
     out
 }
 

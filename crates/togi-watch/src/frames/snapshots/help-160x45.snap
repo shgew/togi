@@ -25,7 +25,7 @@ expression: body
 │  │ grey ▄▄▄  the same depth, grey when the core is not judged
 │  │ ···       depth it reached but does not use now: given back, parked, waiting
 │  │ ░░░       depth a combination blocks now
-│  │ ▬         its failure point: this core failed there on its own account
+│  │ ▬         its failure point: the shallowest offset ruled out for this core
 │  │ ▀         a group trial failed with this core at that offset
 │  │ cyan      running now
 │  │ amber     a hunt, and what it paused

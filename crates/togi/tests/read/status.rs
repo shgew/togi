@@ -398,7 +398,7 @@ fn the_regime_table_keeps_its_regime_column() {
     let rows: Vec<&str> = shown.lines().skip(at).collect();
     assert_eq!(
         rows[0].split_whitespace().collect::<Vec<_>>(),
-        ["REGIME", "WORKLOAD", "TRIALS"]
+        ["REGIME", "WORKLOAD", "VALID", "PASSES"]
     );
     assert_eq!(
         rows[1].split_whitespace().collect::<Vec<_>>(),
@@ -585,7 +585,11 @@ fn a_hunt_opened_by_a_carried_trial_names_the_carried_signal() {
 #[test]
 fn a_hunt_opened_by_a_carried_idle_failure_names_the_carried_signal() {
     let hunt = hunt_from_a_carried_fact(&Carried::Idle);
-    assert!(hunt.contains("unattributed crash in R6 trial -;"), "{hunt}");
+    assert!(
+        hunt.contains("unattributed crash with no trial in flight;"),
+        "{hunt}"
+    );
+    assert!(!hunt.contains("trial -"), "{hunt}");
 }
 
 #[test]
@@ -634,7 +638,7 @@ fn a_hunt_after_a_passed_full_cycle_names_the_cycle_end_it_parks_from() {
     }
     let hunt = hunt_line(&status_of(&installed(&events)), 4);
     assert!(
-        hunt.contains(&format!("parked offsets cycle end #{cycle_end}")),
+        hunt.contains(&format!("parked offsets from cycle end #{cycle_end}")),
         "{hunt}"
     );
 }

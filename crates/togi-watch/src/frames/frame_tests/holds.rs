@@ -67,8 +67,12 @@ fn an_idle_trial_freezes_every_view_until_its_end_is_recorded() {
                         "an idle trial is never past its end:\n{shown}"
                     );
                     assert!(
-                        shown.contains(&format!("paused until {planned_end}")),
+                        shown.contains(&format!("planned end {planned_end}")),
                         "the planned end is {planned_end}:\n{shown}"
+                    );
+                    assert!(
+                        !shown.contains("paused until"),
+                        "a planned end is not a release time:\n{shown}"
                     );
                 }
             }
@@ -95,7 +99,7 @@ fn an_idle_trial_shows_its_clock_at_the_trials_start_and_an_unfilled_bar() {
                 "{width}x{height} header clock is the trial's start:\n{shown}"
             );
             assert!(
-                shown.contains(&format!("paused until {planned_end}")),
+                shown.contains(&format!("planned end {planned_end}")),
                 "{width}x{height}:\n{shown}"
             );
             let bar = bar(&buf).expect("the trial bar");
@@ -168,7 +172,7 @@ fn a_later_boot_releases_an_idle_trial_and_the_clock_moves_again() {
                 "left",
                 "past its",
                 "RECOVERED FROM A CRASH",
-                &format!("paused until {planned_end}"),
+                &format!("planned end {planned_end}"),
             ] {
                 assert!(!said.contains(bad), "{width}x{height} says {bad:?}: {said}");
             }

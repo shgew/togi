@@ -135,6 +135,8 @@ fn folded(scene: &Scene<'_>, log: &Log<'_>, screen: &Screen, buf: &mut Buffer) -
         after.push(skipped_clause(skipped, screen.colours));
     }
     footer(screen, &after, buf);
+    #[cfg(test)]
+    super::corpus::frame(&m, scene, buf, screen);
     Drawn {
         scroll,
         hold: if scene.hold.is_some() {
@@ -185,6 +187,8 @@ fn unfolded(
         View::Main => narrate(said, layout.body, false, screen, buf),
     }
     footer(screen, &[], buf);
+    #[cfg(test)]
+    super::corpus::unfolded(&layout, buf, screen);
     Drawn {
         scroll,
         hold: Hold::Never,
