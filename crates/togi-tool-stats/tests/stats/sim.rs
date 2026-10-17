@@ -9,7 +9,7 @@ use togi_journal::{Build, Event, FixStamp, MemFs, SCHEMA};
 use togi_machine::{CancellationToken, Regime, Signal};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
-use togi_sim::definition::{CoreDef, JointDef, ModelDef, Weights};
+use togi_sim::definition::{CcdDef, CoreDef, JointDef, ModelDef, Weights};
 use togi_sim::{MachineDefinition, Model, RunSettings, Simulator};
 use togi_simrun::{Persistence, Replay, SimInput, SimOutcome, events, simulate};
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
@@ -82,20 +82,35 @@ fn chain_machine() -> MachineDefinition {
 
 /// The events of a simulated session through its first clean cycle, over every reboot its crashes cause.
 pub(crate) fn hunting_session() -> Vec<Event> {
-    session(&hunting_machine())
+    session(&hunting_machine(), 1, 1)
 }
 
 /// The events of a simulated eight-core session through its first clean cycle, whose R7 chains load
 /// partials and are re-derived after a backoff.
 pub(crate) fn chain_session() -> Vec<Event> {
-    session(&chain_machine())
+    session(&chain_machine(), 1, 1)
 }
 
-fn session(definition: &MachineDefinition) -> Vec<Event> {
+/// The events of a simulated session of the seeded default machine with a profile-dependent R7 hazard on
+/// each loaded CCD, 2 failures per hour at a mean CCD depth of 25 doubling every 5 counts deeper, through
+/// two clean cycles: it fails and backs off R7 in phase 1, in phase 2 and after the conclusion.
+pub(crate) fn hazard_session() -> Vec<Event> {
+    let definition = MachineDefinition {
+        ccd: Some(CcdDef {
+            log_rate: (2.0_f64 / 3600.0).ln(),
+            slope: 2.0_f64.ln() / 5.0,
+            ..CcdDef::default()
+        }),
+        ..MachineDefinition::default()
+    };
+    session(&definition, 3, 2)
+}
+
+fn session(definition: &MachineDefinition, seed: u64, cycles: u32) -> Vec<Event> {
     let simulator = Simulator::new(
-        Model::new(definition, 1).unwrap(),
+        Model::new(definition, seed).unwrap(),
         RunSettings {
-            seed: 1,
+            seed,
             ..RunSettings::default()
         },
     );
@@ -110,7 +125,7 @@ fn session(definition: &MachineDefinition) -> Vec<Event> {
         verify_every: None,
         max_boots: NonZeroU32::new(1000).unwrap(),
         policy: StopPolicy {
-            cycles: NonZeroU32::new(1),
+            cycles: NonZeroU32::new(cycles),
             first_result: false,
         },
         write_samples: false,

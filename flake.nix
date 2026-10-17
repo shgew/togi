@@ -58,6 +58,8 @@
             ./tools/bench/suite.json
             ./tools/bench/baseline.jsonl
             ./tools/bench/gates
+            ./tools/bench/research/490/machines
+            ./tools/bench/research/490/suite.json
           ];
           cliSource = cargoSources.source { code = cargoSources.closure [ "togi" ]; };
           simSource = cargoSources.source { code = cargoSources.closure [ "togi-tool-sim" ]; };

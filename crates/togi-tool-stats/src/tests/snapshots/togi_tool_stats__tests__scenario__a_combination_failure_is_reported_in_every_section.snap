@@ -86,8 +86,18 @@ hunt  stage  ran groups  established groups  passed again  failed again  redunda
 1     part   1           0                   0             0             0                 0.000
 
 R7 voltage-targeted backoffs
-seq  decision  core  from  to   counts  causes  reason
-22   backoff   03    -22   -19  3       21,13   request 1.090 V\nto 1.100 V
+seq  phase    decision  core  from  to   counts  failure  loaded cores  requirement  causes  reason
+22   unknown  backoff   03    -22   -19  3       0002     00,01,02,03   -            21,13   request 1.090 V\nto 1.100 V
+
+R7 failures and backoffs by phase
+phase    failures  carried  charged  backoffs  counts
+unknown  2         0        1        1         3
+all      2         0        1        1         3
+
+R7 failures by counts charged
+counts  failures
+0       1
+3       1
 
 R7 chain derivations
 seq  cycle  step  CCD  workload                      part  request groups  loaded cores  kind   moved  result   held  trials  trial s  sources
