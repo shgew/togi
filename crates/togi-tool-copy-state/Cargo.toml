@@ -1,0 +1,16 @@
+[package]
+name = "togi-tool-copy-state"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The copy-state command: copies a state directory's journals, state.json and session markers for forecast, facts and replay"
+
+[dependencies]
+clap.workspace = true
+togi-machine.workspace = true
+togi-statecopy.workspace = true
+
+[lints]
+workspace = true

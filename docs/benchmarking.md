@@ -353,18 +353,19 @@ Before a hardware run, record what the simulator expects it to do, so that [`jus
 just forecast COPY-OF-STATE-DIR --out tools/bench/forecasts/<session>-<seq>.json
 ```
 
-The ensemble is the suite's `target` scenario with all its dev and holdout seeds, each run on its fitted member with real-fact replay, so new members join the forecast unchanged. For each run, the tool copies the given directory's `events.jsonl`, `state.json` and every archive entry the journal reads sessions from (archived `archive/*.jsonl` journals, the `archive/*-carry-pending` and `archive/*-compat-pending` markers of an interrupted transition, and `archive/*-reset-all` markers) into the run's own directory and resumes that copy with `togi-tool-sim` until it concludes, as `togi run --cycles 1` would: under the configuration the copy's latest `config.loaded` recorded, with its backend store paths, durations, evidence and checking cycle, so the passes on record keep counting. A live journal of an older schema contributes only its backend store paths, on top of the default configuration ([simulating](simulating.md)). That recorded snapshot stands in for the configuration file the real machine would load, so a forecast matches the next real run only while that file is unchanged since the recorded `config.loaded`; the given directory is only read. An archive entry of those names that is not a regular file, such as a symlink, fails the forecast with an error naming it.
+The ensemble is the suite's `target` scenario with all its dev and holdout seeds, each run on its fitted member with real-fact replay, so new members join the forecast unchanged. For each run, the tool copies the given directory into the run's own directory as `just copy-state` does (below): `events.jsonl`, `state.json` and every archive entry the journal reads sessions from (archived `archive/<session>.jsonl` journals, the `archive/<session>-carry-pending` and `archive/<session>-compat-pending` markers of an interrupted transition, and `archive/<session>-reset-all` markers). It resumes that copy with `togi-tool-sim` until it concludes, as `togi run --cycles 1` would: under the configuration the copy's latest `config.loaded` recorded, with its backend store paths, durations, evidence and checking cycle, so the passes on record keep counting. A live journal of an older schema contributes only its backend store paths, on top of the default configuration ([simulating](simulating.md)). That recorded snapshot stands in for the configuration file the real machine would load, so a forecast matches the next real run only while that file is unchanged since the recorded `config.loaded`; the given directory is only read. An archive entry of those names that is not a regular file, such as a symlink, fails the forecast with an error naming it.
 
-From a checkout on the target machine, copy those files and forecast from the copy (the sources are read-only). Take the copy while togi is not running a trial: a journal that ends inside a trial resumes, in every run, as a crash of that trial.
+From a checkout on the target machine, copy those files with `just copy-state` and forecast from the copy (the sources are read-only). The state directory is root's, so the copy runs as root, building under root's home, and the copy is then handed back to you. Take the copy while togi is not running a trial: a journal that ends inside a trial resumes, in every run, as a crash of that trial.
 
 ```sh
 copy=$(mktemp -d)
 trap 'rm -rf "$copy"' EXIT
-mkdir "$copy/archive"
-sudo sh -c 'cp /var/lib/togi/events.jsonl "$1/events.jsonl"; [ ! -f /var/lib/togi/state.json ] || cp /var/lib/togi/state.json "$1/state.json"; for entry in /var/lib/togi/archive/*.jsonl /var/lib/togi/archive/*-reset-all /var/lib/togi/archive/*-carry-pending /var/lib/togi/archive/*-compat-pending; do [ ! -e "$entry" ] || cp -P "$entry" "$1/archive/"; done' sh "$copy"
+sudo nix develop --command just copy-state /var/lib/togi "$copy"
 sudo chown -R "$(id -u):$(id -g)" "$copy"
 just forecast "$copy" --out tools/bench/forecasts/<session>-<seq>.json
 ```
+
+`just copy-state SRC DST` copies `events.jsonl`, `state.json` when present and every archive entry named after a session (archived journals and the carry, compatibility and `reset --all` markers) into `DST`, creating it; it leaves out `trials/` and everything else. An archive entry so named that is not a regular file, such as a symbolic link, fails the copy naming it before anything is written.
 
 The anchor is the last complete event of the copied live journal: its session, sequence and time, with a SHA-256 of the session's journal lines through it. Only events after the anchor count, and the outcome ends at the run's first conclusion or dead end after the anchor: events after that point do not count. A simulated run stops there; a real run that kept checking past its conclusion, as a tuning boot does, is therefore scored by `just stats` as what a `togi run --cycles 1` run with the same history would have recorded. For each run, the forecast records:
 
@@ -573,10 +574,14 @@ The record is `togi-tool-forecast`'s `Record` with the commit and the dirty flag
 
 A machine file may declare `"facts": "../facts/target.jsonl.gz"`, resolved relative to the machine JSON file. Every `target-fit-*.json` declares the committed target-machine extract. Files without `facts` are not checked.
 
-Regenerate the extract from a temporary copy of the state directory, never the live state:
+Regenerate the extract from a temporary copy of the state directory, never the live state: `togi-tool-facts` takes the directory's writer lock. Copy it as for [a forecast](#forecasting-a-real-run), while togi is not running a trial:
 
 ```sh
-just facts COPY-OF-STATE-DIR
+copy=$(mktemp -d)
+trap 'rm -rf "$copy"' EXIT
+sudo nix develop --command just copy-state /var/lib/togi "$copy"
+sudo chown -R "$(id -u):$(id -g)" "$copy"
+just facts "$copy"
 ```
 
 `togi-tool-facts` reads every archived and live session through `togi-tool-trialfacts` and the `togi-facts` extraction, including sessions before `reset --all` and older builds. Its gzip JSON Lines output is byte-stable for fixed inputs. Generation rejects sources with no facts and writes to a temporary file beside the destination; the committed extract is replaced only after extraction and file close succeed, so an unreadable or empty source leaves it unchanged. Records retain session, build, ruleset, BIOS context, sequence, trial ID, kind, class, condition, phase, record-only status, full profile, outcome, signal, measured duration and, when present, `voltage_requests_v`, `top_requesters`, `ccd_mhz` and `stalled_core`. These are machine measurements, not personal data. For older trial ends without request fields, the generator summarizes surviving trial samples using the source session's recorded topology and loaded cores, with the same warmup and minimum-sample rules as live telemetry. They omit journal timestamps, paths, hostnames and boot IDs. `togi-tool-trialfacts` is the shared reader for evaluation tools.
