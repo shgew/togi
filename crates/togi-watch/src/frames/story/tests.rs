@@ -1574,25 +1574,6 @@ mod the_story {
     }
 
     #[test]
-    fn a_bracketed_singleton_says_its_failure_point_stands() {
-        let said = probing_story(
-            &[2],
-            vec![probe_of(2, -30, &[-30], &[-29], true)],
-            Some(GroupState::Passed),
-            -30,
-            0,
-        );
-        assert_eq!(
-            said.lines[1],
-            "A pass sits one count shallower than its failure point, so core 02 is bracketed."
-        );
-        assert_eq!(
-            said.brief,
-            "Core 02 is bracketed; its failure point stands."
-        );
-    }
-
-    #[test]
     fn a_locating_hunt_reruns_its_load_with_the_candidates_at_zero() {
         let mut fx = hunting(false, Vec::new());
         fx.hunt.as_mut().expect("a hunt").0.groups.push(HuntGroup {

@@ -423,11 +423,9 @@ fn a_held_failure_says_tuning_stays_where_it_is() {
         }
         .into(),
     );
-    let sentences = h.sentences();
-    let held = sentences.last().expect("a sentence");
-    assert!(
-        held.ends_with(": core 02 failure held; tuning stays at -10"),
-        "{sentences:?}"
+    assert_eq!(
+        h.sentences().last().map(String::as_str),
+        Some("hold: core 02 failure held; tuning stays at -10")
     );
 }
 

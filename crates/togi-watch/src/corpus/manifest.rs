@@ -100,6 +100,9 @@ const UNREAD_COLUMNS: &str = "read only through `Words::detailed`, `Words::compa
 /// Why `hunt_end_phrase` renders nothing.
 const UNREAD_HUNT_END: &str = "`hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself";
 
+/// Why the story never tells of a bracketed singleton.
+const UNREACHED_BRACKET: &str = "`hunt_story` words a singleton only while its probe trial runs, and the tuner marks a singleton's probe done only when its probing ends, which ends the hunt";
+
 /// Literals no case can render, and why. The document lists these with their reason first, even when another
 /// phrase happens to carry their words, and the exporter does not fail on them. Each holds because of the code
 /// the reason names; an entry matching no literal fails the exporter ([`stale`]).
@@ -144,6 +147,16 @@ pub(crate) const SILENT: &[(&str, &str, &str)] = &[
         "frames/panels/hunt.rs",
         "→ core {id:02} failed alone; testing its parked offset",
         "`HuntView::singleton` stages a probe `Anchor` only when its parked offset is the probe's offset, so an anchor without a parked offset never reaches `group_lines`",
+    ),
+    (
+        "frames/story/mod.rs",
+        "A pass sits one count shallower",
+        UNREACHED_BRACKET,
+    ),
+    (
+        "frames/story/mod.rs",
+        "Core {id:02} is bracketed",
+        UNREACHED_BRACKET,
     ),
 ];
 

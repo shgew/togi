@@ -1855,43 +1855,45 @@ mod tests {
         assert_eq!(stage(probe(3, -30, false, true), true), "probes done");
     }
 
-    #[test]
-    fn the_stage_line_names_a_singleton_hunt_s_probe_stage() {
+    fn singleton_stage_line(probe: togi_tuner::MemberProbe) -> String {
         let session = SessionView {
             start: at(0),
             activity: None,
         };
-        let line = |probe: togi_tuner::MemberProbe| {
-            let plan = singleton_plan(probe, None, 0);
-            let mut facts = hunt_facts();
-            facts.parking = Some(core03_parked_at(0));
-            let model = Model::new();
-            let mut s = model.snapshot();
-            s.session = Some(&session);
-            s.hunt = Some(HuntView {
-                plan: &plan,
-                facts: &facts,
-            });
-            let zone = TimeZone::UTC;
-            plain(&crate::frames::dash::stage_line(
-                &scene(&s, &zone),
-                240,
-                false,
-            ))
-        };
-        for (probe, stage) in [
-            (
-                probe(3, 0, true, false),
-                " · HUNT 1 · culprit probes · testing anchor ",
-            ),
-            (
-                probe(3, -30, false, true),
-                " · HUNT 1 · culprit probes · probes done ",
-            ),
-        ] {
-            let shown = line(probe);
-            assert!(shown.contains(stage), "{shown}");
-        }
+        let plan = singleton_plan(probe, None, 0);
+        let mut facts = hunt_facts();
+        facts.parking = Some(core03_parked_at(0));
+        let model = Model::new();
+        let mut s = model.snapshot();
+        s.session = Some(&session);
+        s.hunt = Some(HuntView {
+            plan: &plan,
+            facts: &facts,
+        });
+        let zone = TimeZone::UTC;
+        plain(&crate::frames::dash::stage_line(
+            &scene(&s, &zone),
+            240,
+            false,
+        ))
+    }
+
+    #[test]
+    fn the_stage_line_names_a_singleton_hunt_testing_its_anchor() {
+        let shown = singleton_stage_line(probe(3, 0, true, false));
+        assert!(
+            shown.contains(" · HUNT 1 · culprit probes · testing anchor "),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn the_stage_line_names_a_singleton_hunt_whose_probes_are_done() {
+        let shown = singleton_stage_line(probe(3, -30, false, true));
+        assert!(
+            shown.contains(" · HUNT 1 · culprit probes · probes done "),
+            "{shown}"
+        );
     }
 
     #[test]
