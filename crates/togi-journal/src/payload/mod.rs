@@ -10,6 +10,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Serialize, Serializer};
+use togi_machine::CoreId;
 
 pub use config::{
     ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
@@ -153,6 +154,124 @@ payloads! {
     Shutdown(Shutdown) = "shutdown",
     JournalTorn(JournalTorn) = "journal.torn",
     StateRebuilt(StateRebuilt) = "state.rebuilt",
+}
+
+impl Payload {
+    /// The trial this event belongs to, if any.
+    pub(crate) fn trial(&self) -> Option<&TrialId> {
+        match self {
+            Self::TrialIntent(p) => Some(&p.trial),
+            Self::TrialStart(p) => Some(&p.trial),
+            Self::TrialProgress(p) => Some(&p.trial),
+            Self::TrialSignal(p) => Some(&p.trial),
+            Self::TrialSample(p) => Some(&p.trial),
+            Self::TrialEnd(p) => Some(&p.trial),
+            Self::Failure(p) => p.trial.as_ref(),
+            Self::Mce(p) => p.trial.as_ref(),
+            Self::HuntStart(p) => p.trial.as_ref(),
+            Self::TunerWarning(p) => p.trial.as_ref(),
+            Self::SessionWarning(p) => p.trial.as_ref(),
+            Self::TrialCarried(p) => p.source.trial.as_ref(),
+            Self::FailureCarried(p) => p.source.trial.as_ref(),
+            Self::SessionStart(_)
+            | Self::SessionContext(_)
+            | Self::SessionBaseline(_)
+            | Self::SessionNotice(_)
+            | Self::SessionArchived(_)
+            | Self::SessionCarried(_)
+            | Self::ConfigLoaded(_)
+            | Self::PreflightCheck(_)
+            | Self::SmuIntent(_)
+            | Self::SmuWrite(_)
+            | Self::SmuReadback(_)
+            | Self::SmuError(_)
+            | Self::ProfileApplied(_)
+            | Self::ProfileChange(_)
+            | Self::ProfileRestored(_)
+            | Self::CrashDetected(_)
+            | Self::TunerDecision(_)
+            | Self::CorePhase(_)
+            | Self::CheckingCycle(_)
+            | Self::CheckingStep(_)
+            | Self::CheckingChain(_)
+            | Self::HostRanking(_)
+            | Self::HuntGroup(_)
+            | Self::HuntEnd(_)
+            | Self::HuntSkipped(_)
+            | Self::Combination(_)
+            | Self::DeepeningRound(_)
+            | Self::BackendRetry(_)
+            | Self::CommandReset(_)
+            | Self::DefectFound(_)
+            | Self::DefectAnswered(_)
+            | Self::DeadEnd(_)
+            | Self::BootSavedEntry(_)
+            | Self::BootLeaveReason(_)
+            | Self::Shutdown(_)
+            | Self::JournalTorn(_)
+            | Self::StateRebuilt(_) => None,
+        }
+    }
+
+    /// Whether this event names `core` in its own fields.
+    pub(crate) fn names_core(&self, core: CoreId) -> bool {
+        match self {
+            Self::SessionNotice(p) => p.cores.contains(core),
+            Self::SmuIntent(p) => p.command().core() == Some(core),
+            Self::SmuWrite(p) => p.command().core() == Some(core),
+            Self::SmuReadback(p) => p.core == core,
+            Self::SmuError(p) => p.core == Some(core),
+            Self::TrialIntent(p) => p.core == Some(core) || p.cores.contains(core),
+            Self::TrialStart(p) => p.instances.iter().any(|instance| instance.core == core),
+            Self::TrialProgress(p) => p.core == Some(core),
+            Self::TrialEnd(p) => p.core == Some(core),
+            Self::TrialCarried(p) => p.core == Some(core) || p.class.cores.contains(core),
+            Self::Failure(p) => p.core == Some(core),
+            Self::FailureCarried(p) => p.failure.core == Some(core) || p.class.cores.contains(core),
+            Self::Mce(p) => p.core == Some(core),
+            Self::TunerDecision(p) => p.core == core,
+            Self::CorePhase(p) => p.core == core,
+            Self::CheckingChain(p) => p.cores.contains(core),
+            Self::HuntStart(p) => p.cores.contains(core) || p.candidates.contains(core),
+            Self::HuntGroup(p) => {
+                p.cores.contains(core) || p.probe.is_some_and(|probe| probe.core == core)
+            }
+            Self::HuntEnd(p) => {
+                p.cores.contains(core) || p.members.iter().any(|member| member.core == core)
+            }
+            Self::Combination(p) => p.members.iter().any(|member| member.core == core),
+            Self::DeepeningRound(p) => p.cores.contains(core),
+            Self::CommandReset(p) => p.target == ResetTarget::Core(core),
+            Self::DefectFound(p) => p.cores.contains(core),
+            Self::DefectAnswered(p) => p.cores.contains(core),
+            Self::DeadEnd(p) => p.core == Some(core),
+            Self::SessionStart(_)
+            | Self::SessionContext(_)
+            | Self::SessionBaseline(_)
+            | Self::SessionWarning(_)
+            | Self::SessionArchived(_)
+            | Self::SessionCarried(_)
+            | Self::ConfigLoaded(_)
+            | Self::PreflightCheck(_)
+            | Self::ProfileApplied(_)
+            | Self::ProfileChange(_)
+            | Self::ProfileRestored(_)
+            | Self::TrialSignal(_)
+            | Self::TrialSample(_)
+            | Self::CrashDetected(_)
+            | Self::CheckingCycle(_)
+            | Self::CheckingStep(_)
+            | Self::HostRanking(_)
+            | Self::HuntSkipped(_)
+            | Self::TunerWarning(_)
+            | Self::BackendRetry(_)
+            | Self::BootSavedEntry(_)
+            | Self::BootLeaveReason(_)
+            | Self::Shutdown(_)
+            | Self::JournalTorn(_)
+            | Self::StateRebuilt(_) => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
