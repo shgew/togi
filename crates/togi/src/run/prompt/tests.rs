@@ -7,8 +7,8 @@ use std::rc::Rc;
 use rustix::io::{Errno, write};
 use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use test_case::test_case;
-use togi_defect::{DefectId, FindingView};
-use togi_journal::{DefectDirection, Seq};
+use togi_defect::FindingView;
+use togi_journal::{DefectDirection, DefectId, Seq};
 use togi_machine::{CancellationToken, CoreId, CoreSet};
 use togi_session::PromptError;
 

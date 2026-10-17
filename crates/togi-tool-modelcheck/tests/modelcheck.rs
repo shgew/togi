@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use togi_facts::{Decisive, TrialClass};
-use togi_journal::{SCHEMA, Seq};
+use togi_journal::{FixStamp, SCHEMA, Seq};
 use togi_machine::{
     BiosContext, Condition, CoreId, CoreSet, PerCore, Regime, ResetKind, Signal, TargetOffset,
     WorkloadId,
@@ -75,7 +75,7 @@ fn fact(
             rev: "abc".into(),
             ruleset: 1,
             schema: SCHEMA,
-            fixes: 0,
+            fixes: FixStamp::none(),
             evidence: Some(1),
         },
         context: Some(context("fixture")),

@@ -4,6 +4,8 @@ use std::fmt;
 use serde::Serialize;
 use togi_machine::object_only;
 
+use crate::FixStamp;
+
 pub const SCHEMA: u32 = 1;
 
 object_only! {
@@ -15,8 +17,8 @@ object_only! {
         pub rev: Option<String>,
         pub ruleset: u32,
         pub schema: u32,
-        #[serde(default)]
-        pub fixes: u32,
+        #[serde(default = "FixStamp::none")]
+        pub fixes: FixStamp,
         pub evidence: u32,
     }
 }

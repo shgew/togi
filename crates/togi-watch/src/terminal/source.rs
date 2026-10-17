@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use togi_journal::{
-    Build, DirError, Event, FileError, Operation, Payload, ReadError, Recording, Refusal, SCHEMA,
-    Verdict,
+    Build, DirError, Event, FileError, FixStamp, Operation, Payload, ReadError, Recording, Refusal,
+    SCHEMA, Verdict,
 };
 
 use crate::history::LogEntry;
@@ -100,7 +100,7 @@ fn shown_build() -> Build {
         rev: None,
         ruleset: 0,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: 0,
     }
 }

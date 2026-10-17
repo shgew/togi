@@ -26,4 +26,4 @@ mod provenance_tests;
 #[cfg(test)]
 mod smoke_tests;
 #[cfg(test)]
-mod support;
+pub(crate) mod support;

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use jiff::tz::TimeZone;
 use togi_config::Config;
 use togi_journal::fs::FileKind;
-use togi_journal::{Build, Event, EventKind, MemFs, SCHEMA, StateDir};
+use togi_journal::{Build, Event, EventKind, FixStamp, MemFs, SCHEMA, StateDir};
 use togi_machine::{CancellationToken, Signal};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, StopPolicy};
@@ -23,7 +23,7 @@ pub(crate) fn build() -> Build {
         rev: None,
         ruleset: 1,
         schema: SCHEMA,
-        fixes: 0,
+        fixes: FixStamp::none(),
         evidence: 1,
     }
 }

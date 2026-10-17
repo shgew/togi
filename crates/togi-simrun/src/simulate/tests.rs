@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 use jiff::tz::TimeZone;
 use test_case::test_case;
 use togi_config::Config;
-use togi_journal::{Build, EventKind, MemFs, SCHEMA};
+use togi_journal::{Build, EventKind, FixStamp, MemFs, SCHEMA};
 use togi_machine::{CancellationToken, Signal};
 use togi_render::Renderer;
 use togi_session::{ConfigSource, Divergence, StopPolicy};
@@ -52,7 +52,7 @@ fn sim_input(
             rev: None,
             ruleset: 1,
             schema: SCHEMA,
-            fixes: 0,
+            fixes: FixStamp::none(),
             evidence: 1,
         },
         simulator,
