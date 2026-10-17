@@ -18,6 +18,8 @@ The parked offset is a candidate anchor, not assumed stability. Reuse the ordina
 
 Once the anchor passes, gallop by 1, 2, 4, … counts from the reproduced failure and then bisect the remaining bracket. Keep the shallowest reproduced failing offset in `hunt.end.members`, and commit the failure point there, retaining any shallower existing point. Back off one count past that point, never deeper than the current offset. A passing experimental profile is not a passing full tuning profile: the original failure still queues the ordinary reruns.
 
+A ruleset or evidence transition on the same BIOS carries that same shallowest reproduced failure, read from the `hunt.end` member alone and never from the later backoff decision, so an interrupted transition and a completed one agree. A `hunt.end` naming no member for its culprit (older or unprobed) falls back to the offset the failing profile recorded in `hunt.start`.
+
 The journal says which probe establishes the anchor and which probes narrow the bracket; their exact profiles, trial classes and outcomes remain ordinary hunt facts. The end cites those groups and failures. No per-core singleton counter, cross-hunt cache, new event type or history query is introduced. Reset cancels the active hunt; replay reconstructs the same next probe and emits its missing commitment once.
 
 ## Alternatives

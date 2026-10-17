@@ -611,12 +611,20 @@ fn transition_carrying_core_one(
     carried_core(&events, core(1))
 }
 
-fn hunt_of_core_one(events: &[Event], result: HuntOutcome) -> (togi_journal::Seq, i64) {
-    let (seq, hunt) = events
+/// The ended hunt on core 1: the end's sequence, the offset core 1 failed at when the hunt began,
+/// and the offset the end itself names for core 1, if it names one.
+struct HuntOfCoreOne {
+    end: togi_journal::Seq,
+    started: i64,
+    named: Option<i64>,
+}
+
+fn hunt_of_core_one(events: &[Event], result: HuntOutcome) -> HuntOfCoreOne {
+    let (seq, end) = events
         .iter()
         .find_map(|event| match &event.payload {
             Payload::HuntEnd(end) if is_hunt_end_on_core_one(event, result) => {
-                Some((event.seq, end.hunt))
+                Some((event.seq, end))
             }
             _ => None,
         })
@@ -624,16 +632,22 @@ fn hunt_of_core_one(events: &[Event], result: HuntOutcome) -> (togi_journal::Seq
     let start = events
         .iter()
         .find_map(|event| match &event.payload {
-            Payload::HuntStart(start) if start.hunt == hunt => Some(start.clone()),
+            Payload::HuntStart(start) if start.hunt == end.hunt => Some(start),
             _ => None,
         })
-        .unwrap_or_else(|| panic!("no hunt start for {hunt}"));
-    (seq, start.failing.get(core(1)).unwrap().get())
+        .unwrap_or_else(|| panic!("no hunt start for {}", end.hunt));
+    HuntOfCoreOne {
+        end: seq,
+        started: start.failing.get(core(1)).unwrap().get(),
+        named: end
+            .members
+            .iter()
+            .find(|member| member.core == core(1))
+            .map(|member| member.offset.get()),
+    }
 }
 
-#[test]
-fn a_ruleset_transition_carries_a_culprit_hunt_failure_point() {
-    let config = candidate_config(-10, 4);
+fn culprit_source(definition_after: &MachineDefinition, config: &Config) -> Bench {
     let source = Bench::new(&culprit_machine(false), 1);
     let mut input = source.input();
     input.config = config.clone();
@@ -641,8 +655,7 @@ fn a_ruleset_transition_carries_a_culprit_hunt_failure_point() {
     input.observer = Some(stop_when(is_phase_two_confirmed));
     finish(input);
 
-    let joint = culprit_machine(true);
-    let source = source.resumed(&joint, 1);
+    let source = source.resumed(definition_after, 1);
     let mut input = source.input();
     input.config = config.clone();
     input.policy.cycles = None;
@@ -650,13 +663,124 @@ fn a_ruleset_transition_carries_a_culprit_hunt_failure_point() {
         is_hunt_end_on_core_one(event, HuntOutcome::Culprit)
     }));
     finish(input);
+    source
+}
 
-    let (end_seq, want) = hunt_of_core_one(&source.events(), HuntOutcome::Culprit);
+#[test]
+fn a_ruleset_transition_carries_a_culprit_hunt_failure_point() {
+    let config = candidate_config(-10, 4);
+    let joint = culprit_machine(true);
+    let source = culprit_source(&joint, &config);
+
+    // This fixture's hunt locates the culprit without a live failed singleton, so its end may
+    // name no member and the carry falls back to the `hunt.start` offset; a probed end's member
+    // wins (pinned in togi-carry's seeds tests with a -30 start and a -23 member).
+    let hunt = hunt_of_core_one(&source.events(), HuntOutcome::Culprit);
+    let want = hunt.named.unwrap_or(hunt.started);
     let seed = transition_carrying_core_one(&source, &joint, config);
     let point = seed.failure_point.expect("a carried failure point");
     assert_eq!(point.offset.get(), want);
-    assert_eq!(point.from.seq, end_seq);
+    assert_eq!(point.from.seq, hunt.end);
     assert_eq!(point.signal, Signal::Crash);
+}
+
+/// Transitions `source` under a candidate solo limit of -50 for every core and checks that core 1
+/// carries `point` from the hunt end `end` and starts one count shallower than it.
+fn assert_deep_limit_clamps_past(
+    source: &Bench,
+    definition: &MachineDefinition,
+    point: i64,
+    end: togi_journal::Seq,
+) {
+    let next = source.resumed(definition, 1);
+    let mut input = next_input(&next);
+    input.config = candidate_config(-50, 4);
+    input.observer = Some(after_initial_phases(4));
+    finish(input);
+    let events = next.events();
+    let carried = carried_core(&events, core(1))
+        .failure_point
+        .unwrap_or_else(|| panic!("core 1 carries a failure point"));
+    assert_eq!(carried.offset.get(), point);
+    assert_eq!(carried.from.seq, end);
+    let phase = &first_phases(&events)[&core(1)];
+    assert_eq!(phase.to, CorePhase::Search);
+    assert_eq!(phase.offset.get(), point + 1);
+    assert!(
+        phase.reason.starts_with(&format!(
+            "configured candidate solo limit; clamped to {}",
+            point + 1
+        )),
+        "{}",
+        phase.reason
+    );
+}
+
+#[test]
+fn a_transition_clamps_a_deep_candidate_limit_past_the_carried_culprit_point() {
+    let joint = culprit_machine(true);
+    let source = culprit_source(&joint, &candidate_config(-10, 4));
+    let hunt = hunt_of_core_one(&source.events(), HuntOutcome::Culprit);
+    let point = hunt.named.unwrap_or(hunt.started);
+    assert_deep_limit_clamps_past(&source, &joint, point, hunt.end);
+}
+
+/// The simulated culprit hunt never reproduces a live singleton, so its end names no member. Take
+/// that real journal, which stops at the culprit `hunt.end` before any backoff, and record the
+/// end a probed singleton produces: core 1 failed at -30 when the hunt began and its shallowest
+/// reproduced failure is -23 (the tuner's locate tests pin the producer). The transition must
+/// carry -23 from the end and start a -50 candidate limit at -22, not at the -29 the start gives.
+#[test]
+fn a_transition_starts_past_the_refined_member_of_a_recorded_singleton_end() {
+    let joint = culprit_machine(true);
+    let source = culprit_source(&joint, &candidate_config(-10, 4));
+    let mut events = source.events();
+    let ended = hunt_of_core_one(&events, HuntOutcome::Culprit);
+    // The run stops after the end plus the events it appended around it; cut the journal back
+    // to the end itself, as if the machine went down before the culprit backoff was decided.
+    events.retain(|event| event.seq <= ended.end);
+    assert_eq!(
+        events.last().map(|event| event.seq),
+        Some(ended.end),
+        "the journal stops at the hunt end, before the backoff"
+    );
+    assert!(
+        !events.iter().any(|event| event.seq > ended.end
+            || event.kind() == EventKind::TunerDecision && event.cause.contains(&ended.end)),
+        "no decision answers the hunt end"
+    );
+    for event in &mut events {
+        match &mut event.payload {
+            Payload::HuntStart(start) if event.seq < ended.end => {
+                if start.failing.get(core(1)).is_some() {
+                    start.failing = start
+                        .failing
+                        .iter()
+                        .map(|(id, at)| (id, if id == core(1) { offset(-30) } else { at }))
+                        .collect();
+                }
+            }
+            Payload::HuntEnd(end) if event.seq == ended.end => {
+                end.members = vec![togi_journal::Member {
+                    core: core(1),
+                    offset: offset(-23),
+                }];
+            }
+            _ => {}
+        }
+    }
+    let mut text = String::new();
+    for event in &events {
+        text.push_str(&event.encode().unwrap());
+        text.push('\n');
+    }
+    source
+        .fs
+        .put(format!("{STATE}/events.jsonl"), text.into_bytes());
+    let rewritten = hunt_of_core_one(&source.events(), HuntOutcome::Culprit);
+    assert_eq!((rewritten.started, rewritten.named), (-30, Some(-23)));
+
+    assert_deep_limit_clamps_past(&source, &joint, -23, ended.end);
 }
 
 #[test]
@@ -673,7 +797,7 @@ fn a_ruleset_transition_carries_a_direct_hunt_failure_point() {
     finish(input);
 
     let events = source.events();
-    let (_, want) = hunt_of_core_one(&events, HuntOutcome::Direct);
+    let want = hunt_of_core_one(&events, HuntOutcome::Direct).started;
     let (failure_seq, signal) = events
         .iter()
         .find_map(|event| match &event.payload {
