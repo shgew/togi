@@ -6,7 +6,10 @@ use togi_config::Config;
 use togi_journal::{CycleEvent, Event, EventKind, Outcome, Payload};
 use togi_tool_stats::{Journal, chain_records, counterfactual};
 
-use crate::sim::{TARGET_FIT_0, TARGET_FIT_1, TARGET_FIT_2, machine_session, machine_session_with};
+use crate::sim::{
+    TARGET_FIT_0, TARGET_FIT_1, TARGET_FIT_2, TARGET_SHARED_VOLTAGE, machine_session,
+    machine_session_with,
+};
 
 /// A trial's end as the checks need it: its intent's class and its outcome.
 struct Ended {
@@ -420,6 +423,33 @@ fn a_tie_re_derivation_whose_recorded_order_the_tuner_does_not_give_is_unresolve
         (&derivation["verdict"], &derivation["reason"]),
         (&Value::from("unresolved"), &Value::from("order")),
         "{derivation}"
+    );
+}
+
+#[test]
+fn a_tie_position_the_tuner_re_derives_to_the_set_tie_skipped_but_no_longer_ties_is_unresolved() {
+    let session = accounted(&machine_session(TARGET_SHARED_VOLTAGE, 5));
+    let tie = of(&session, "derivation", "tie");
+    let at = |d: &Value| (n(&d["cycle"]), n(&d["step"]), n(&d["ccd"]), n(&d["part"]));
+    let diverged = tie.iter().find(|d| n(&d["seq"]) == 24806).unwrap();
+    assert_eq!(
+        (at(diverged), &diverged["verdict"], &diverged["reason"]),
+        (
+            (2, 1, 1, 1),
+            &Value::from("unresolved"),
+            &Value::from("diverged")
+        ),
+        "{diverged}"
+    );
+    let before = tie
+        .iter()
+        .rev()
+        .find(|d| n(&d["seq"]) < 24806 && at(d) == at(diverged))
+        .unwrap();
+    assert_eq!(
+        (&before["verdict"], &before["cores"]),
+        (&Value::from("skipped"), &diverged["cores"]),
+        "{before}"
     );
 }
 

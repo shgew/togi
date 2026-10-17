@@ -85,7 +85,7 @@ pub(crate) fn part_name(regime: Regime, part: &CyclePart) -> String {
     }
     let label = if part.full { "full" } else { "partial" };
     match part.ccd {
-        Some(ccd) => format!("{label} CCD {}", ccd.0),
+        Some(ccd) => format!("{label} CCD {}", ccd.get()),
         None => format!("{label} CCD 0+1"),
     }
 }
@@ -123,7 +123,7 @@ mod tests {
                 .iter()
                 .map(|&id| CoreId::new(i64::from(id)).expect("a core id"))
                 .collect::<CoreSet>(),
-            ccd: ccd.map(CcdId),
+            ccd: ccd.map(|ccd| CcdId::try_from(ccd).unwrap()),
             full,
             partial: !full,
             lengths: Some(Lengths {

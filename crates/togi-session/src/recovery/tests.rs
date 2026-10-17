@@ -56,8 +56,8 @@ impl Log {
                     .iter()
                     .map(|&(id, ccd)| CoreInfo {
                         core: core(id),
-                        ccd: CcdId(ccd),
-                        cpus: vec![CpuId(u16::try_from(id).unwrap())],
+                        ccd: CcdId::try_from(ccd).unwrap(),
+                        cpus: vec![CpuId::from(u16::try_from(id).unwrap())],
                     })
                     .collect(),
             }),
@@ -215,7 +215,7 @@ impl Log {
                 window_start_ns,
                 scope: "scope".into(),
                 pid: 1,
-                cpus: vec![CpuId(0), CpuId(8)],
+                cpus: vec![CpuId::from(0), CpuId::from(8)],
                 argv: Vec::new(),
                 files: Vec::new(),
                 instances: Vec::new(),
@@ -260,7 +260,7 @@ fn crash(previous: &str) -> CrashDetected {
 
 fn mce(corrected: bool) -> Mce {
     Mce {
-        cpu: CpuId(0),
+        cpu: CpuId::from(0),
         core: Some(core(0)),
         bank: 1,
         bank_type: BankType::LoadStore,
@@ -629,7 +629,7 @@ fn a_sample_of_the_open_trial_is_its_last_activity_and_another_trials_sample_is_
             warning: "sample".into(),
             pid: 1,
             tid: 1,
-            cpu: togi_machine::CpuId(0),
+            cpu: togi_machine::CpuId::from(0),
         })
     };
     log.mono(40_000).add(sample("0001"), &[start]);
@@ -921,7 +921,7 @@ fn a_machine_check_is_the_same_by_boot_time_cpu_and_bank_not_by_its_text() {
     });
     let state = log.state();
     let seen = togi_machine::Mce {
-        cpu: CpuId(0),
+        cpu: CpuId::from(0),
         core: Some(core(0)),
         bank: 1,
         bank_type: BankType::LoadStore,
@@ -938,7 +938,7 @@ fn a_machine_check_is_the_same_by_boot_time_cpu_and_bank_not_by_its_text() {
             ..seen.clone()
         },
         togi_machine::Mce {
-            cpu: CpuId(1),
+            cpu: CpuId::from(1),
             ..seen.clone()
         },
         togi_machine::Mce {
@@ -1203,7 +1203,7 @@ fn containment_evidence_names_the_escaped_cpus_or_carries_the_error_until_its_de
     let intent = log.trial_intent("0001", None, Regime::R7);
     log.started("0001", None, intent);
     let mut end = trial_end("0001", Outcome::Inconclusive);
-    end.escaped = vec![CpuId(99), CpuId(98)];
+    end.escaped = vec![CpuId::from(99), CpuId::from(98)];
     log.add(Payload::TrialEnd(end), &[]);
     assert_eq!(
         log.state().containment_evidence().unwrap().detail,
@@ -1506,7 +1506,10 @@ fn baseline_phases_notices_and_carry_are_kept_for_startup() {
         Some((carried, 1))
     );
     assert_eq!(state.topology().len(), 2);
-    assert_eq!(state.topology().get(&core(8)), Some(&CcdId(1)));
+    assert_eq!(
+        state.topology().get(&core(8)),
+        Some(&CcdId::new(1).unwrap())
+    );
     assert!(!state.noticed());
 }
 
@@ -1654,7 +1657,11 @@ fn play(log: &mut Log, step: Step) {
             ][usize::from(n)];
             let mut end = trial_end(&id, outcome);
             end.interrupted = n == 3;
-            end.escaped = if n == 2 { vec![CpuId(1)] } else { Vec::new() };
+            end.escaped = if n == 2 {
+                vec![CpuId::from(1)]
+            } else {
+                Vec::new()
+            };
             (Payload::TrialEnd(end), Vec::new())
         }
         Step::Mce(corrected, recovered) => (

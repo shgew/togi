@@ -425,6 +425,118 @@ fn every_machine_of_the_committed_suite_is_valid_and_lists_its_files() {
     assert_eq!(files[1], "machines/target-shared-voltage.json");
 }
 
+/// The #490 research suite in a memory tree: never part of the committed bench suite.
+fn research_490() -> (Tree, Suite) {
+    let dir = Tree::at("/research/490");
+    macro_rules! machine {
+        ($($name:literal),+ $(,)?) => {
+            $(dir.write(
+                dir.path().join(concat!("machines/", $name, ".json")),
+                include_bytes!(concat!("../../../../tools/bench/research/490/machines/", $name, ".json")),
+            );)+
+        };
+    }
+    machine!(
+        "zero",
+        "background-0.1",
+        "background-0.5",
+        "background-1",
+        "background-2",
+        "background-4",
+        "background-8",
+        "background-16",
+        "depth-0.1",
+        "depth-0.5",
+        "depth-1",
+        "depth-2",
+        "depth-4",
+        "depth-8",
+        "depth-16",
+    );
+    let suite = Suite::parse(
+        include_bytes!("../../../../tools/bench/research/490/suite.json"),
+        dir.path().to_path_buf(),
+    )
+    .unwrap();
+    (dir, suite)
+}
+
+#[test]
+fn the_490_research_suite_runs_24_dev_seeds_of_each_hazard_level_and_form() {
+    let (dir, suite) = research_490();
+    let plan = suite.plan_from(Selection::All, &dir).unwrap();
+    assert_eq!(plan.machines.len(), 15);
+    assert_eq!(plan.runs.len(), 15 * 24);
+    assert!(plan.runs.iter().all(|run| run.split == Split::Dev));
+    let seeds: Vec<u64> = plan
+        .runs
+        .iter()
+        .filter(|run| run.scenario == "zero")
+        .map(|run| run.seed)
+        .collect();
+    assert_eq!(seeds, (1..=24).collect::<Vec<_>>());
+}
+
+#[test]
+fn the_490_research_hazard_is_its_level_per_loaded_ccd_in_its_form() {
+    use std::time::Duration;
+    use togi_machine::{CoreId, CoreSet, Regime, TargetOffset};
+    use togi_sim::{Load, SourceKind};
+
+    let (dir, suite) = research_490();
+    let plan = suite.plan_from(Selection::Dev, &dir).unwrap();
+    let cores = |range: std::ops::Range<i64>| -> CoreSet {
+        range.map(|core| CoreId::new(core).unwrap()).collect()
+    };
+    let load = |cores: CoreSet| Load {
+        regime: Regime::R7,
+        workload: "SSE",
+        cores,
+        duration: Duration::from_secs(600),
+    };
+    let ccd_rate = |run: &togi_tool_bench::RunSpec, depth: i64, load: &Load<'_>| -> f64 {
+        let profile = vec![TargetOffset::new(-depth).unwrap(); 16];
+        run.model()
+            .unwrap()
+            .sources(&profile, load)
+            .unwrap()
+            .iter()
+            .filter(|source| matches!(source.kind, SourceKind::Ccd(_)))
+            .map(|source| source.rate * 3600.0)
+            .sum()
+    };
+    let close = |got: f64, want: f64, what: &str| {
+        assert!(
+            (got - want).abs() <= want.max(1.0) * 1e-9,
+            "{what}: {got} per hour, want {want}"
+        );
+    };
+    let pair = load(cores(0..2));
+    let all = load(cores(0..16));
+    for run in plan.runs.iter().filter(|run| run.seed == 1) {
+        let name = run.scenario.as_str();
+        if name == "zero" {
+            close(ccd_rate(run, 25, &all), 0.0, name);
+            continue;
+        }
+        let (form, level) = name.split_once('-').unwrap();
+        let h: f64 = level.parse().unwrap();
+        close(ccd_rate(run, 25, &pair), h, name);
+        close(ccd_rate(run, 25, &all), 2.0 * h, name);
+        match form {
+            "background" => {
+                close(ccd_rate(run, 0, &pair), h, name);
+                close(ccd_rate(run, 40, &pair), h, name);
+            }
+            "depth" => {
+                close(ccd_rate(run, 30, &pair), 2.0 * h, name);
+                close(ccd_rate(run, 20, &pair), h / 2.0, name);
+            }
+            _ => panic!("{name}: not a hazard form"),
+        }
+    }
+}
+
 fn leaves(prefix: &str, value: &serde_json::Value, out: &mut BTreeMap<String, serde_json::Value>) {
     match value {
         serde_json::Value::Object(map) => {
@@ -505,6 +617,64 @@ fn the_anchor_overlays_differ_from_the_anchor_only_by_their_mechanism() {
                 .map(|(p, v)| (p.clone(), v.clone()))
                 .collect(),
             "{name}"
+        );
+    }
+}
+
+#[test]
+fn the_896_research_suite_runs_unreplayed_dev_seeds_from_201_on_committed_machines() {
+    let dir = Tree::committed();
+    let suite = Suite::parse(
+        include_bytes!("../../../../tools/bench/research/896/suite.json"),
+        dir.path().join("research/896"),
+    )
+    .unwrap();
+    let plan = suite.plan_from(Selection::All, &dir).unwrap();
+    assert!(
+        plan.runs
+            .iter()
+            .all(|run| run.split == Split::Dev && run.replay.is_none())
+    );
+    let mut got: Vec<(String, String, Vec<u64>)> = Vec::new();
+    for run in &plan.runs {
+        let machine = run.machine.as_ref().unwrap().name.clone();
+        match got.last_mut() {
+            Some((scenario, seen, seeds)) if *scenario == run.scenario && *seen == machine => {
+                seeds.push(run.seed);
+            }
+            _ => got.push((run.scenario.clone(), machine, vec![run.seed])),
+        }
+    }
+    let mut want: Vec<(String, String, Vec<u64>)> = (0..9)
+        .map(|i| {
+            let name = format!("target-fit-{i}");
+            let machine = format!("../../machines/{name}.json");
+            (name, machine, vec![201, 202])
+        })
+        .collect();
+    for name in [
+        "target-shared-voltage",
+        "target-r7-request-gap",
+        "target-r7-vf-boost",
+        "shared-voltage",
+    ] {
+        let machine = format!("../../machines/{name}.json");
+        want.push((name.to_owned(), machine, (201..=208).collect()));
+    }
+    assert_eq!(got, want);
+    assert_eq!(plan.runs.len(), 50);
+
+    let committed = dir.suite().plan_from(Selection::All, &dir).unwrap();
+    assert!(
+        committed.runs.iter().all(|run| run.seed < 201),
+        "the committed suite reaches the research seeds"
+    );
+    for machine in &plan.machines {
+        assert!(machine.model(201).is_ok(), "{}", machine.name);
+        assert!(
+            machine.inputs.iter().all(|(_, sum)| sum.is_some()),
+            "{}",
+            machine.name
         );
     }
 }

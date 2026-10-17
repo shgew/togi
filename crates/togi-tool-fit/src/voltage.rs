@@ -116,9 +116,9 @@ fn fit_requests(v: &mut SharedVoltageDef, records: &[&TrialFact], id: &str) {
             };
             let (Some(voltage), Some(&mhz), Some(offset)) = (
                 fact.voltage_requests_v.get(core_id),
-                u8::try_from(core / 8)
+                CcdId::try_from(core / 8)
                     .ok()
-                    .and_then(|ccd| fact.ccd_mhz.get(&CcdId(ccd))),
+                    .and_then(|ccd| fact.ccd_mhz.get(&ccd)),
                 fact.profile.as_slice().get(core),
             ) else {
                 continue;
@@ -227,7 +227,7 @@ fn fit_clocks(v: &mut SharedVoltageDef, records: &[&TrialFact], id: &str) {
         // Parked zero-offset cores are power-limited and must not lower the unconstrained full-CCD
         // intercept. All-core pressure is fitted below.
         for (ccd, &clock) in &fact.ccd_mhz {
-            let ccd = usize::from(ccd.0);
+            let ccd = usize::from(ccd.get());
             if ccd > 1 || zero[ccd] || counts[1 - ccd] > 0 {
                 continue;
             }
@@ -255,8 +255,12 @@ fn fit_clocks(v: &mut SharedVoltageDef, records: &[&TrialFact], id: &str) {
     let mut package = Vec::new();
     let mut balance = Vec::new();
     for (fact, class) in &r7 {
-        let (Some(&c0), Some(&c1)) = (fact.ccd_mhz.get(&CcdId(0)), fact.ccd_mhz.get(&CcdId(1)))
-        else {
+        let clock = |id| {
+            CcdId::new(id)
+                .ok()
+                .and_then(|ccd| fact.ccd_mhz.get(&ccd).copied())
+        };
+        let (Some(c0), Some(c1)) = (clock(0), clock(1)) else {
             continue;
         };
         if class.loaded.len() != CORES || fact.ccd_mhz.len() != 2 {

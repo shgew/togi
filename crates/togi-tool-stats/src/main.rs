@@ -4,7 +4,9 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use jiff::Timestamp;
-use togi_tool_stats::{Error, Journal, chain_records, counterfactual, report, score};
+use togi_tool_stats::{
+    Error, Journal, backoff_records, chain_records, counterfactual, report, score,
+};
 
 /// Summarize a current or archived journal for review, read-only: the journal and its unfinished final line
 /// are left as they are.
@@ -27,10 +29,13 @@ struct Cli {
     /// Also write each R7 chain derivation's attribution to FILE, one JSON object a line.
     #[arg(long, value_name = "FILE", conflicts_with = "forecast")]
     chains: Option<PathBuf>,
+    /// Also write each multi-core R7 failure with the backoffs charged to it to FILE, one JSON object a line.
+    #[arg(long, value_name = "FILE", conflicts_with = "forecast")]
+    backoffs: Option<PathBuf>,
     /// Print the counterfactual accounting of the journal's R7 chain re-derivations instead of the report:
     /// for each candidate rule of #896, an upper bound on the seconds it saves while the final chains stay
     /// covered. Not what another tuner would have done.
-    #[arg(long, conflicts_with_all = ["forecast", "since", "chains"])]
+    #[arg(long, conflicts_with_all = ["forecast", "since", "chains", "backoffs"])]
     counterfactual: bool,
     /// With --counterfactual, also write its records to FILE, one JSON object a line: each derivation a
     /// candidate does not keep, each failure it skips, each cycle's coverage witnesses and the summaries.
@@ -78,6 +83,16 @@ fn run(cli: &Cli) -> Result<(String, Vec<String>), Error> {
             source: source.into(),
         })?;
         std::fs::write(path, records).map_err(|source| Error::Chains {
+            path: path.display().to_string(),
+            source,
+        })?;
+    }
+    if let Some(path) = &cli.backoffs {
+        let records = backoff_records(&journal, cli.since).map_err(|source| Error::Backoffs {
+            path: path.display().to_string(),
+            source: source.into(),
+        })?;
+        std::fs::write(path, records).map_err(|source| Error::Backoffs {
             path: path.display().to_string(),
             source,
         })?;

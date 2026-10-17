@@ -482,8 +482,8 @@ fn journal_lines(warnings: u64) -> Vec<u8> {
             session: "20231114T221320Z".parse().unwrap(),
             cores: vec![CoreInfo {
                 core: CoreId::new(0).unwrap(),
-                ccd: CcdId(0),
-                cpus: vec![CpuId(0)],
+                ccd: CcdId::new(0).unwrap(),
+                cpus: vec![CpuId::from(0)],
             }],
         }),
     )];

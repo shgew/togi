@@ -203,7 +203,7 @@ fn cores() -> Vec<CoreInfo> {
     (0..16)
         .map(|index| CoreInfo {
             core: core(index),
-            ccd: CcdId(u8::try_from(index / 8).unwrap()),
+            ccd: CcdId::try_from(index / 8).unwrap(),
             cpus: Vec::new(),
         })
         .collect()
@@ -350,7 +350,7 @@ fn layout_refuses_a_topology_that_is_not_cores_0_to_15_on_ccd_index_over_8(topol
 fn reversed_topology() -> Vec<CoreInfo> {
     let mut reversed = cores();
     for info in &mut reversed {
-        info.ccd = CcdId(1 - info.ccd.0);
+        info.ccd = CcdId::new(1 - i64::from(info.ccd.get())).unwrap();
     }
     reversed
 }

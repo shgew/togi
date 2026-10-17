@@ -358,7 +358,7 @@ pub(crate) fn spec(
         cores: cores.iter().map(|&id| core(id)).collect(),
         cpus: cores
             .iter()
-            .map(|&id| CpuId(u16::try_from(id).expect("a CPU")))
+            .map(|&id| CpuId::from(u16::try_from(id).expect("a CPU")))
             .collect(),
         duration,
         index: 0,

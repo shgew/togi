@@ -31,7 +31,7 @@ fn optimum_with_accumulated_combinations() {
     let infos: Vec<CoreInfo> = (0..u8::try_from(fixture.hi.len()).unwrap())
         .map(|id| CoreInfo {
             core: core(id),
-            ccd: CcdId(id / 8),
+            ccd: CcdId::try_from(id / 8).unwrap(),
             cpus: Vec::new(),
         })
         .collect();

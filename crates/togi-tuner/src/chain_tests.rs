@@ -26,7 +26,7 @@ fn grouped(ccds: &[&[u8]]) -> Vec<CoreInfo> {
         .flat_map(|(ids, ccd)| {
             ids.iter().map(move |&id| CoreInfo {
                 core: core(id),
-                ccd: CcdId(ccd),
+                ccd: CcdId::try_from(ccd).unwrap(),
                 cpus: Vec::new(),
             })
         })
@@ -275,7 +275,7 @@ fn chain_record(j: &Journal, step: u32, part: u32, cores: &[u8]) -> Payload {
     CheckingChain {
         cycle: j.run().checking.open().unwrap().number,
         step: NonZeroU32::new(step).unwrap(),
-        ccd: CcdId(0),
+        ccd: CcdId::new(0).unwrap(),
         workload: togi_machine::pick_workload(Regime::R7, 0).id(),
         groups: Vec::new(),
         cores: set(cores),
@@ -311,7 +311,7 @@ fn r7_chain_derives_from_completed_predecessor() {
     assert_eq!(chain.groups[0], set(&[2]));
     assert_eq!(
         (chain.ccd, chain.part.get(), chain.rederived),
-        (CcdId(0), 1, None)
+        (CcdId::new(0).unwrap(), 1, None)
     );
     j.decide(decided(action));
     assert_eq!(j.run().checking.open().unwrap().steps_done(), 0);
@@ -334,7 +334,7 @@ fn r7_chain_derives_from_completed_predecessor() {
     pass_part(&mut j, &[4, 5, 6, 7], &[]);
     let action = j.next();
     let end = chain_of(&action).clone();
-    assert_eq!(end.ccd, CcdId(1));
+    assert_eq!(end.ccd, CcdId::new(1).unwrap());
     assert!(
         end.cores.is_empty(),
         "a tied offset fallback must end the chain"
@@ -360,13 +360,13 @@ fn chain_order_is_the_order_the_next_derivation_reads() {
     let chain = chain_of(&action).clone();
     let state = fresh(&j.events);
     let load = crate::LoadKey::new(chain.workload, set(&[0, 1, 2, 3]));
-    let order = state.chain_order(load, CcdId(0)).unwrap();
+    let order = state.chain_order(load, CcdId::new(0).unwrap()).unwrap();
     assert_eq!(order.groups, chain.groups);
     assert_eq!(order.sources, chain.source_seqs);
     assert_eq!(order.sources, [seq]);
     assert!(order.proxy.is_empty());
     assert_eq!(order.values.get(core(2)), Some(1.2));
-    assert_eq!(state.chain_order(load, CcdId(1)), None);
+    assert_eq!(state.chain_order(load, CcdId::new(1).unwrap()), None);
 }
 
 #[test]
@@ -711,7 +711,7 @@ fn r7_chain_retests_reordered_part_after_backoff() {
     for (at, event) in later.iter().enumerate() {
         if let Payload::CheckingChain(chain) = &event.payload {
             assert_eq!(chain.profile, profile, "a chain record at a stale profile");
-            derived.entry(chain.ccd.0).or_default().push((
+            derived.entry(chain.ccd.get()).or_default().push((
                 chain.part.get(),
                 chain.cores,
                 chain.rederived,
@@ -1102,12 +1102,12 @@ fn a_chain_node_replaced_with_empty_truncates_its_descendants() {
     pass_part(&mut j, &[4, 5, 6, 7], &[]);
     let next = j.next();
     let chain = chain_of(&next);
-    assert_eq!((chain.ccd, chain.part.get()), (CcdId(1), 1));
+    assert_eq!((chain.ccd, chain.part.get()), (CcdId::new(1).unwrap(), 1));
 
     j.append(chain_record(&j, 1, 1, &[]), &[]);
     assert!(!required(&j, &[1, 2, 3]));
     let next = j.next();
-    assert_eq!(chain_of(&next).ccd, CcdId(1));
+    assert_eq!(chain_of(&next).ccd, CcdId::new(1).unwrap());
     j.assert_resumes();
 }
 

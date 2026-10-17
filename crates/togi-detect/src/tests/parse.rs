@@ -1,5 +1,5 @@
 use test_case::test_case;
-use togi_machine::{BankType, CoreInfo, CpuId};
+use togi_machine::{BankType, CcdId, CoreInfo, CpuId};
 
 use super::support::{core, cores, fixture, message, stamped, topology};
 use crate::parse::{StatusError, bank_name};
@@ -37,7 +37,7 @@ fn captured_blocks_keep_every_line_and_the_status_time(name: &str, cpus: &[u16],
         .map(|(index, _)| index)
         .collect();
     for ((mce, cpu), status) in got.iter().zip(cpus).zip(statuses) {
-        assert_eq!(mce.cpu, CpuId(*cpu), "{name}");
+        assert_eq!(mce.cpu, CpuId::from(*cpu), "{name}");
         assert_eq!(mce.core, Some(core(i64::from(*cpu))), "{name}");
         assert_eq!(mce.bank_type, bank, "{name}");
         assert!(mce.corrected && mce.bank_type.core_local(), "{name}");
@@ -430,37 +430,28 @@ fn a_bank_line_names_everything_before_its_last_error_code() {
 
 #[test]
 fn a_cpu_listed_twice_is_a_topology_error() {
-    let duplicate = [
-        CoreInfo {
-            core: core(1),
-            ..CoreInfo::default()
-        },
-        CoreInfo {
-            core: core(2),
-            ..CoreInfo::default()
-        },
-    ]
-    .map(|info| CoreInfo {
-        cpus: vec![CpuId(4)],
-        ..info
-    });
+    let info = |id| CoreInfo {
+        core: core(id),
+        ccd: CcdId::new(0).unwrap(),
+        cpus: vec![CpuId::from(4)],
+    };
+    let duplicate = [info(1), info(2)];
     assert_eq!(
         CpuCoreMap::new(&duplicate),
         Err(DuplicateCpu {
-            cpu: CpuId(4),
+            cpu: CpuId::from(4),
             first: core(1),
             second: core(2)
         })
     );
     let same_core = [CoreInfo {
-        core: core(1),
-        cpus: vec![CpuId(4), CpuId(4)],
-        ..CoreInfo::default()
+        cpus: vec![CpuId::from(4), CpuId::from(4)],
+        ..info(1)
     }];
     assert!(CpuCoreMap::new(&same_core).is_err());
     let map = cores(&[(1, &[2, 18])]);
     assert_eq!(
-        (map.core(CpuId(18)), map.core(CpuId(3))),
+        (map.core(CpuId::from(18)), map.core(CpuId::from(3))),
         (Some(core(1)), None)
     );
 }

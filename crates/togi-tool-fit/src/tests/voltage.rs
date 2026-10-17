@@ -41,7 +41,7 @@ fn voltage_records() -> Vec<TrialFact> {
                     .set(CoreId::try_from(core).unwrap(), request);
             }
             record.profile = super::profile(&offsets);
-            record.ccd_mhz.insert(CcdId(0), mhz);
+            record.ccd_mhz.insert(CcdId::new(0).unwrap(), mhz);
             record
         })
         .collect()
@@ -274,7 +274,7 @@ fn shared_machine(records: &[&TrialFact], threshold: f64) -> togi_sim::MachineDe
 fn telemetry(loaded: &[i64], offsets: &[i64; 16], mhz: &[(u8, u32)]) -> TrialFact {
     let mut record = fact(offsets, Regime::R7, loaded, 120, Decisive::Pass);
     for &(ccd, clock) in mhz {
-        record.ccd_mhz.insert(CcdId(ccd), clock);
+        record.ccd_mhz.insert(CcdId::try_from(ccd).unwrap(), clock);
     }
     record
 }

@@ -209,7 +209,7 @@ fn computation_and_affinity_errors_win_over_the_cap_in_either_order(
             let result = &run.finished.result;
             assert_eq!(result.inconclusive, None);
             if affinity {
-                assert_eq!(result.escaped, [CpuId(3)]);
+                assert_eq!(result.escaped, [CpuId::from(3)]);
                 assert_eq!(result.failure, None);
             } else {
                 assert_eq!(
@@ -398,11 +398,14 @@ fn a_flooded_instance_does_not_skip_the_required_samples_of_its_neighbour() {
                 .await
                 .unwrap();
             *rig.fake.process(1).threads.borrow_mut() = Ok(Threads {
-                threads: vec![Thread { tid: 5, cpu: 7 }],
+                threads: vec![Thread {
+                    tid: 5,
+                    cpu: CpuId::from(7),
+                }],
                 errors: Vec::new(),
             });
             let run = finish(&handle).await;
-            assert_eq!(run.finished.result.escaped, [CpuId(7)]);
+            assert_eq!(run.finished.result.escaped, [CpuId::from(7)]);
             assert!(run.finished.result.ran <= secs(2));
         })
         .await;
@@ -919,7 +922,7 @@ fn a_blocked_log_write_never_stalls_supervision_and_is_reported() {
 }
 
 #[test_case("PIN FAILED", None; "setup")]
-#[test_case("AFFINITY:3", Some(CpuId(3)); "affinity")]
+#[test_case("AFFINITY:3", Some(CpuId::from(3)); "affinity")]
 fn an_exit_queued_ahead_of_watched_setup_or_affinity_text_beyond_the_first_batch_does_not_win(
     line: &'static str,
     escaped: Option<CpuId>,

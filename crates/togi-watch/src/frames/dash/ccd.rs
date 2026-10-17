@@ -174,7 +174,7 @@ pub(crate) fn draw_core_overview(buf: &mut Buffer, rect: Rect, scene: &Scene<'_>
         rect,
         at(GAUGE_X + 1),
         0,
-        &text_line(scene, Paint::White, format!("CCD {}", ccd.0)),
+        &text_line(scene, Paint::White, format!("CCD {}", ccd.get())),
     );
     put(
         buf,
@@ -331,7 +331,7 @@ fn draw_record(buf: &mut Buffer, rect: Rect, scene: &Scene<'_>, core: &CoreView,
 /// The cores in CCD order, then core order.
 fn in_ccd_order<'a>(scene: &Scene<'a>) -> Vec<&'a CoreView> {
     let mut cores: Vec<&CoreView> = scene.s.cores.iter().collect();
-    cores.sort_by_key(|core| (core.ccd.0, core.id));
+    cores.sort_by_key(|core| (core.ccd.get(), core.id));
     cores
 }
 
@@ -393,7 +393,7 @@ pub(crate) fn core_table(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> 
     for core in in_ccd_order(scene) {
         let numbers = |until: usize| {
             table_row(&[
-                core.ccd.0.to_string(),
+                core.ccd.get().to_string(),
                 format!("{:02}", core.id.get()),
                 core.profile.get().to_string(),
                 now_text(core),
@@ -544,7 +544,7 @@ pub(crate) fn cores_page(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> 
         let heading = format!(
             "Core {:02} · CCD {} · {}",
             core.id.get(),
-            core.ccd.0,
+            core.ccd.get(),
             state_word(core.state)
         );
         lines.extend(wrap_styled(&heading, width, scene.style(Paint::White)));

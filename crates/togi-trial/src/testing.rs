@@ -106,7 +106,7 @@ impl Backend for TestBackend {
         } else if line.starts_with("PIN FAILED") {
             Line::SetupError
         } else if let Some(cpu) = line.strip_prefix("AFFINITY:") {
-            Line::AffinityError(cpu.parse().ok().map(CpuId))
+            Line::AffinityError(cpu.parse::<u16>().ok().map(CpuId::from))
         } else if line.starts_with("ok") {
             Line::Progress(line.to_owned())
         } else {

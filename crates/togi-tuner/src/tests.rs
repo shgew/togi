@@ -26,7 +26,7 @@ fn cid(id: u32) -> CombinationId {
 fn info(id: u8, ccd: u8) -> CoreInfo {
     CoreInfo {
         core: core(id),
-        ccd: CcdId(ccd),
+        ccd: CcdId::try_from(ccd).unwrap(),
         cpus: Vec::new(),
     }
 }
@@ -136,12 +136,12 @@ fn topology_alternates_ccds_and_accepts_unequal_sizes() {
         Topology::new(&[info(9, 1), info(0, 0), info(2, 0), info(8, 1), info(1, 0)]).unwrap();
     let order: Vec<u8> = topology.order().iter().map(|core| core.get()).collect();
     assert_eq!(order, [0, 8, 1, 9, 2]);
-    assert_eq!(topology.ccd_of(core(9)), Some(CcdId(1)));
+    assert_eq!(topology.ccd_of(core(9)), Some(CcdId::new(1).unwrap()));
     assert_eq!(topology.ccd_of(core(3)), None);
     let ccds: Vec<(u8, Vec<u8>)> = topology
         .ccds()
         .iter()
-        .map(|(ccd, set)| (ccd.0, set.iter().map(CoreId::get).collect()))
+        .map(|(ccd, set)| (ccd.get(), set.iter().map(CoreId::get).collect()))
         .collect();
     assert_eq!(ccds, [(0, vec![0, 1, 2]), (1, vec![8, 9])]);
     assert_eq!(topology.all().len(), 5);

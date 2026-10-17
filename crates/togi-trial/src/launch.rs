@@ -32,7 +32,7 @@ pub(crate) struct LaunchCommand {
 
 pub(crate) fn cpus_list(cpus: &[CpuId]) -> String {
     cpus.iter()
-        .map(|cpu| cpu.0.to_string())
+        .map(|cpu| cpu.get().to_string())
         .collect::<Vec<_>>()
         .join(",")
 }
@@ -130,7 +130,7 @@ pub(crate) fn spawn(command: &LaunchCommand) -> std::io::Result<std::process::Ch
     let parent = getpid();
     let mut pinned = rustix::thread::CpuSet::new();
     for cpu in &command.pin {
-        pinned.set(usize::from(cpu.0));
+        pinned.set(usize::from(cpu.get()));
     }
     let pin = !command.pin.is_empty();
     let mut launcher = Command::new(program);
@@ -188,7 +188,7 @@ mod tests {
             identity,
             false,
             std::path::Path::new("/trials/t1/c00"),
-            &[CpuId(2), CpuId(18)],
+            &[CpuId::from(2), CpuId::from(18)],
             &["/bin/mprime".into(), "-t".into()],
         );
         assert_eq!(
@@ -225,7 +225,7 @@ mod tests {
             identity,
             true,
             std::path::Path::new("/"),
-            &[CpuId(0)],
+            &[CpuId::from(0)],
             &["x".into()],
         );
         assert_eq!(strings(&argv)[..2], ["systemd-run", "--user"]);
@@ -246,24 +246,24 @@ mod tests {
             },
             &scope(),
             std::path::Path::new("/tmp"),
-            &[CpuId(0)],
+            &[CpuId::from(0)],
             &plan,
         );
         assert_eq!(
             scoped.pin,
-            [CpuId(0)],
+            [CpuId::from(0)],
             "a scoped launcher is pinned to the workload's CPUs, not the controller's"
         );
         let command = command_for(
             Confinement::Unscoped,
             &scope(),
             std::path::Path::new("/tmp"),
-            &[CpuId(0)],
+            &[CpuId::from(0)],
             &plan,
         );
         assert_eq!(strings(&command.argv), ["/bin/true", "a"]);
         assert_eq!(command.cwd, std::path::Path::new("/tmp"));
-        assert_eq!(command.pin, [CpuId(0)]);
+        assert_eq!(command.pin, [CpuId::from(0)]);
     }
 
     #[cfg(target_os = "linux")]

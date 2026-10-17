@@ -517,6 +517,23 @@ fn publish_carries_forward() {
     );
 }
 
+#[test]
+fn publish_carry_forward_counts_merges_apart_from_range_diff_patches() {
+    let merge = PatchStatus {
+        merge: true,
+        ..unchanged(false)
+    };
+    let dir = carry_snapshot("success", vec![unchanged(false), merge.clone(), merge]);
+    let gh = github(&[HEAD_SHA], String::new());
+    let mut h = harness(&gh);
+    publish(&mut h, dir.path()).expect("publish");
+    let p: CheckPayload = serde_json::from_str(&gh.borrow().check_payload).expect("decode payload");
+    let want = format!(
+        "Review record: {PREVIOUS_URL} carried forward. git range-diff {OLD_BASE_SHA}..{OLD_HEAD_SHA} {BASE_SHA}..{HEAD_SHA} pairs all 1 patches unchanged, 0 of them with only context lines changed. Each of the 2 merge commits the previous head lacks has an empty remerge diff."
+    );
+    assert_eq!(want, p.output.summary);
+}
+
 #[test_case("blocked"; "blocked")]
 #[test_case(""; "no verdict")]
 fn publish_refuses_carry_forward_of_a_prior_that_is_not_a_success(verdict: &str) {

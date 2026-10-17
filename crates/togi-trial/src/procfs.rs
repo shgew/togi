@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use togi_journal::fs::Fs;
+use togi_machine::CpuId;
 
 use crate::id::ScopeName;
 
@@ -18,7 +19,7 @@ pub(crate) struct Stat {
     pub(crate) utime: u64,
     pub(crate) stime: u64,
     pub(crate) starttime: u64,
-    pub(crate) processor: u32,
+    pub(crate) processor: CpuId,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -74,7 +75,10 @@ pub(crate) fn parse_stat(text: &str) -> Result<Stat, StatError> {
         utime: field(&fields, 14, text)?,
         stime: field(&fields, 15, text)?,
         starttime: field(&fields, 22, text)?,
-        processor: u32::try_from(processor).map_err(|_| StatError::new("processor", text))?,
+        processor: i64::try_from(processor)
+            .ok()
+            .and_then(|processor| CpuId::new(processor).ok())
+            .ok_or_else(|| StatError::new("processor out of range", text))?,
     })
 }
 
@@ -111,13 +115,13 @@ pub(crate) fn scope_of(cgroup: &str) -> Option<ScopeName> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Usage {
     pub(crate) cpu_time: Duration,
-    pub(crate) cpu: u32,
+    pub(crate) cpu: CpuId,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Thread {
     pub(crate) tid: u32,
-    pub(crate) cpu: u32,
+    pub(crate) cpu: CpuId,
 }
 
 /// A `/proc` observation that did not happen. Only `Gone` is normal; every other variant is a lost
@@ -445,7 +449,10 @@ mod tests {
             &[(14, "125"), (15, "25"), (39, "7")],
         );
         let stat = parse_stat(&text).unwrap();
-        assert_eq!((stat.utime, stat.stime, stat.processor), (125, 25, 7));
+        assert_eq!(
+            (stat.utime, stat.stime, stat.processor),
+            (125, 25, CpuId::from(7))
+        );
         assert_eq!(cpu_time(&stat, 100), Some(Duration::from_millis(1500)));
         assert_eq!(cpu_time(&stat, 250), Some(Duration::from_millis(600)));
     }
@@ -458,7 +465,7 @@ mod tests {
             utime: u64::MAX,
             stime: 1,
             starttime: 0,
-            processor: 0,
+            processor: CpuId::from(0),
         };
         assert_eq!(cpu_time(&stat, 100), None);
         let large = Stat {
@@ -493,6 +500,13 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("negative")
+        );
+        let wide = stat_line("x", 'R', &[(39, "65536")]);
+        assert!(
+            parse_stat(&wide)
+                .unwrap_err()
+                .to_string()
+                .contains("(processor out of range)")
         );
         let bad = stat_line("x", 'R', &[(39, "cpu")]);
         assert!(
@@ -633,7 +647,7 @@ mod tests {
         bytes[5] = 0xff;
         let path = Fixture::path().join("10/stat");
         dir.fs.put(&path, bytes);
-        assert_eq!(proc.usage(10).unwrap().cpu, 3);
+        assert_eq!(proc.usage(10).unwrap().cpu, CpuId::from(3));
         assert_eq!(
             proc.inputs.read_to_string(&path).unwrap_err().kind(),
             io::ErrorKind::InvalidData
@@ -657,7 +671,7 @@ mod tests {
             proc.usage(10).unwrap(),
             Usage {
                 cpu_time: Duration::from_millis(1500),
-                cpu: 7
+                cpu: CpuId::from(7)
             }
         );
         write(&dir, "11/stat", "11 (x) S");
@@ -692,7 +706,13 @@ mod tests {
         write(&dir, "10/task/abc/stat", "x");
         write(&dir, "10/task/0/stat", "x");
         let found = proc.threads(10).unwrap();
-        assert_eq!(found.threads, [Thread { tid: 123, cpu: 3 }]);
+        assert_eq!(
+            found.threads,
+            [Thread {
+                tid: 123,
+                cpu: CpuId::from(3)
+            }]
+        );
         assert_eq!(found.errors.len(), 3);
         let not_threads: Vec<&str> = found
             .errors
@@ -875,7 +895,13 @@ mod tests {
         write(&dir, "51/task/1/stat", &stat_line("w", 'R', &[(39, "2")]));
         dir.mkdir("51/task/2/stat");
         let found = proc.threads(51).unwrap();
-        assert_eq!(found.threads, [Thread { tid: 1, cpu: 2 }]);
+        assert_eq!(
+            found.threads,
+            [Thread {
+                tid: 1,
+                cpu: CpuId::from(2)
+            }]
+        );
         let [error] = found.errors.as_slice() else {
             panic!("{:?}", found.errors);
         };
@@ -1013,7 +1039,13 @@ mod tests {
         }
         write(&dir, "10/task/123/stat", &stat_line("w", 'R', &[(39, "7")]));
         let found = proc.threads(10).unwrap();
-        assert_eq!(found.threads, [Thread { tid: 123, cpu: 7 }]);
+        assert_eq!(
+            found.threads,
+            [Thread {
+                tid: 123,
+                cpu: CpuId::from(7)
+            }]
+        );
         let mut names: Vec<&str> = found
             .errors
             .iter()

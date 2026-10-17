@@ -822,7 +822,7 @@ fn r7_status_uses_sorted_profile_and_only_ccd_parts() {
         .into_iter()
         .map(|(id, ccd)| CoreInfo {
             core: core(id),
-            ccd: CcdId(ccd),
+            ccd: CcdId::new(ccd).unwrap(),
             cpus: Vec::new(),
         })
         .collect();

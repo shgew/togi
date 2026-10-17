@@ -3,9 +3,9 @@
 use jiff::Timestamp;
 use std::time::Duration;
 use togi_machine::{
-    BiosContext, BootId, CancellationToken, Check, Clock, CoreId, CoreInfo, CoreRank, CpuId, Error,
-    Host, Kernel, KernelCursor, KernelRead, MIN_OFFSET, Mce, ObservedOffset, Partial, PstoreRecord,
-    ResetReason, Smu, SmuValidated, Stopped, TargetOffset,
+    BiosContext, BootId, CancellationToken, CcdId, Check, Clock, CoreId, CoreInfo, CoreRank, CpuId,
+    Error, Host, Kernel, KernelCursor, KernelRead, MIN_OFFSET, Mce, ObservedOffset, Partial,
+    PstoreRecord, ResetReason, Smu, SmuValidated, Stopped, TargetOffset,
 };
 
 use crate::cores::ids;
@@ -233,19 +233,20 @@ impl Host for SimHost {
         let runtime = self.0.borrow();
         runtime.alive()?;
         let cores = runtime.model.cores();
-        Ok(ids(cores)
+        let topology =
+            |error: &dyn std::fmt::Display| other(format!("simulated topology: {error}"));
+        ids(cores)
             .map(|core| {
                 let index = core.index();
-                let cpu = |index: usize| CpuId(u16::try_from(index).unwrap_or(u16::MAX));
-                CoreInfo {
+                let cpu = |index: usize| CpuId::try_from(index).map_err(|error| topology(&error));
+                Ok(CoreInfo {
                     core,
-                    ccd: togi_machine::CcdId(
-                        u8::try_from(runtime.model.ccd_of(core)).unwrap_or(u8::MAX),
-                    ),
-                    cpus: vec![cpu(index), cpu(index + cores)],
-                }
+                    ccd: CcdId::try_from(runtime.model.ccd_of(core))
+                        .map_err(|error| topology(&error))?,
+                    cpus: vec![cpu(index)?, cpu(index + cores)?],
+                })
             })
-            .collect())
+            .collect()
     }
 
     fn validate_smu(&mut self) -> Result<SmuValidated, Error> {

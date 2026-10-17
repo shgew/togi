@@ -366,7 +366,7 @@ fn a_joint_names_a_machine_check_core_only_when_it_is_told_to(
     assert_eq!(mces.len(), 1);
     let mce = &mces[0];
     assert_eq!(
-        (mce.core, mce.cpu.0),
+        (mce.core, mce.cpu.get()),
         (
             target,
             u16::from(target.map_or(0, togi_machine::CoreId::get))
@@ -431,7 +431,7 @@ fn a_misleading_machine_check_core_can_be_a_nonmember_that_is_not_loaded(named: 
     assert_eq!(mces.len(), 1);
     let want = core(named);
     assert_eq!(
-        (mces[0].core, mces[0].cpu.0),
+        (mces[0].core, mces[0].cpu.get()),
         (Some(want), u16::from(want.get()))
     );
     assert_eq!(mces[0].bank_type, togi_machine::BankType::LoadStore);

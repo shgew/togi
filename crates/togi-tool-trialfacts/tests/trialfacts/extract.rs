@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use flate2::read::GzDecoder;
+use test_case::test_case;
 use togi_facts::{Decisive, TrialClass};
 use togi_journal::{Activity, Dimension, Failure, MemFs, Outcome, Payload, SCHEMA};
 use togi_machine::{CcdId, Condition, PerCore, Regime, Signal};
@@ -197,7 +198,7 @@ fn partial_r7_facts_keep_their_class_and_measurements() {
     failure.stalled_core = Some(core(0));
     failure.voltage_requests_v = [(core(0), 1.125)].into_iter().collect();
     failure.top_requesters = set(&[0]);
-    failure.ccd_mhz = BTreeMap::from([(CcdId(0), 4800)]);
+    failure.ccd_mhz = BTreeMap::from([(CcdId::new(0).unwrap(), 4800)]);
     w.trial(r7("failure", &[0]), failure);
     w.trial(r7("full", &[0, 1]), end("full", Outcome::Pass, 120));
 
@@ -231,7 +232,7 @@ fn partial_r7_facts_keep_their_class_and_measurements() {
     );
     crashed.voltage_requests_v = [(core(0), 1.125)].into_iter().collect();
     crashed.top_requesters = set(&[0]);
-    crashed.ccd_mhz = BTreeMap::from([(CcdId(0), 4800)]);
+    crashed.ccd_mhz = BTreeMap::from([(CcdId::new(0).unwrap(), 4800)]);
     assert_eq!(
         facts,
         [
@@ -340,31 +341,30 @@ fn a_lock_error_keeps_the_path_and_original_source() {
     );
 }
 
-#[test]
-fn a_session_whose_schema_is_not_readable_history_is_refused_by_name() {
-    for schema in [0, SCHEMA + 1] {
-        let fs = MemFs::new();
-        let mut w = Writer::open(&fs);
-        passing_session(&mut w, OLD, 1);
-        let mut w = w.archive();
-        w.begin_with(NEW, &[0, 1], |build| build.schema = schema);
-        w.trial(alone("1", 0, -10, &[-10, 0]), end("1", Outcome::Pass, 90));
-        let error = extract(&w.close()).unwrap_err();
-        match &error {
-            ExtractError::Incompatible { session, source } => {
-                assert_eq!(session.to_string(), NEW);
-                assert_eq!(source.dimension, Dimension::Schema);
-                assert_eq!(source.recorded, schema);
-                assert_eq!(source.current, SCHEMA);
-            }
-            other @ (ExtractError::Journals(_)
-            | ExtractError::Lock(_)
-            | ExtractError::Facts { .. }
-            | ExtractError::Profile { .. }
-            | ExtractError::NoFacts) => panic!("schema {schema}: {other}"),
+#[test_case(0; "older")]
+#[test_case(SCHEMA + 1; "newer")]
+fn a_session_whose_schema_is_not_readable_history_is_refused_by_name(schema: u32) {
+    let fs = MemFs::new();
+    let mut w = Writer::open(&fs);
+    passing_session(&mut w, OLD, 1);
+    let mut w = w.archive();
+    w.begin_with(NEW, &[0, 1], |build| build.schema = schema);
+    w.trial(alone("1", 0, -10, &[-10, 0]), end("1", Outcome::Pass, 90));
+    let error = extract(&w.close()).unwrap_err();
+    match &error {
+        ExtractError::Incompatible { session, source } => {
+            assert_eq!(session.to_string(), NEW);
+            assert_eq!(source.dimension, Dimension::Schema);
+            assert_eq!(source.recorded, schema);
+            assert_eq!(source.current, SCHEMA);
         }
-        assert!(error.to_string().contains(NEW), "{error}");
+        other @ (ExtractError::Journals(_)
+        | ExtractError::Lock(_)
+        | ExtractError::Facts { .. }
+        | ExtractError::Profile { .. }
+        | ExtractError::NoFacts) => panic!("{other}"),
     }
+    assert!(error.to_string().contains(NEW), "{error}");
 }
 
 #[test]
@@ -381,42 +381,49 @@ fn a_different_ruleset_or_evidence_epoch_is_still_history() {
     assert_eq!(extract(&w.close()).unwrap().facts, [expected]);
 }
 
-#[test]
-fn hunt_and_deepening_activities_extract_as_their_phases() {
-    for (activity, phase, name) in [
-        (Activity::Hunt, Phase::Hunt, "hunt"),
-        (Activity::Deepening, Phase::Deepening, "deepening"),
-    ] {
-        let fs = MemFs::new();
-        let mut w = Writer::open(&fs);
-        w.begin(OLD, 1, &[0, 1]);
-        let mut intent = alone("1", 0, -10, &[-10, 0]);
-        intent.activity = Some(activity);
-        w.trial(intent, end("1", Outcome::Pass, 90));
-        let facts = extract(&w.close()).unwrap().facts;
-        assert_eq!(facts.len(), 1, "{name}");
-        assert_eq!(facts[0].phase, Some(phase), "{name}");
-        let plain = gunzip(&encoded(&facts));
-        let record: serde_json::Value = serde_json::from_str(plain.trim()).unwrap();
-        assert_eq!(record["phase"], name);
-    }
+#[test_case(Activity::Hunt, Phase::Hunt, "hunt"; "hunt")]
+#[test_case(Activity::Deepening, Phase::Deepening, "deepening"; "deepening")]
+fn hunt_and_deepening_activities_extract_as_their_phases(
+    activity: Activity,
+    phase: Phase,
+    name: &str,
+) {
+    let fs = MemFs::new();
+    let mut w = Writer::open(&fs);
+    w.begin(OLD, 1, &[0, 1]);
+    let mut intent = alone("1", 0, -10, &[-10, 0]);
+    intent.activity = Some(activity);
+    w.trial(intent, end("1", Outcome::Pass, 90));
+    let facts = extract(&w.close()).unwrap().facts;
+    assert_eq!(facts.len(), 1);
+    assert_eq!(facts[0].phase, Some(phase));
+    let plain = gunzip(&encoded(&facts));
+    let record: serde_json::Value = serde_json::from_str(plain.trim()).unwrap();
+    assert_eq!(record["phase"], name);
 }
 
-#[test]
-fn no_evidence_is_refused() {
-    let none = MemFs::new();
+fn no_journals() -> MemFs {
+    MemFs::new()
+}
+
+fn an_empty_journal() -> MemFs {
     let empty = MemFs::new();
     empty.put("/state/events.jsonl", "");
+    empty
+}
+
+fn a_session_without_facts() -> MemFs {
     let started = MemFs::new();
     let mut w = Writer::open(&started);
     w.begin(OLD, 1, &[0, 1]);
     w.close();
-    for (name, fs) in [
-        ("no journals", none),
-        ("empty journal", empty),
-        ("no facts", started),
-    ] {
-        let error = extract(&lock(&fs)).unwrap_err();
-        assert!(matches!(error, ExtractError::NoFacts), "{name}: {error}");
-    }
+    started
+}
+
+#[test_case(no_journals; "no journals")]
+#[test_case(an_empty_journal; "empty journal")]
+#[test_case(a_session_without_facts; "no facts")]
+fn no_evidence_is_refused(state: fn() -> MemFs) {
+    let error = extract(&lock(&state())).unwrap_err();
+    assert!(matches!(error, ExtractError::NoFacts), "{error}");
 }

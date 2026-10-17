@@ -356,7 +356,7 @@ fn trial_intent(p: &TrialIntent) -> String {
 
 fn cpus(cpus: &[togi_machine::CpuId]) -> String {
     cpus.iter()
-        .map(|cpu| cpu.0.to_string())
+        .map(|cpu| cpu.get().to_string())
         .collect::<Vec<_>>()
         .join(",")
 }
@@ -398,7 +398,10 @@ fn trial_signal(p: &TrialSignal) -> String {
 fn trial_sample(p: &TrialSample) -> String {
     format!(
         "trial {} thread {} {} on cpu {}",
-        p.trial, p.tid, p.warning, p.cpu.0
+        p.trial,
+        p.tid,
+        p.warning,
+        p.cpu.get()
     )
 }
 
@@ -617,7 +620,9 @@ fn mce(p: &Mce) -> String {
         .map_or_else(|| "no core".to_owned(), |id| format!("core {}", core(id)));
     let mut text = format!(
         "{kind} MCE on cpu {} ({owner}), bank {} {} ({scope})",
-        p.cpu.0, p.bank, p.bank_type
+        p.cpu.get(),
+        p.bank,
+        p.bank_type
     );
     if let Some(boot) = &p.from_boot {
         let _ = write!(text, " from boot {}", short_boot(boot.as_str()));
@@ -761,7 +766,7 @@ fn checking_chain(p: &CheckingChain) -> String {
         "checking cycle {} R7 step {} CCD {} {}: request groups {} from {source}; ",
         p.cycle,
         p.step,
-        p.ccd.0,
+        p.ccd.get(),
         workload_label(p.workload),
         groups(&p.groups)
     );

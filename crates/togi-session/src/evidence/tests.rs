@@ -72,7 +72,7 @@ fn rows() -> Vec<Row> {
     vec![
         Row {
             name: "escape",
-            apply: |case| case.result.escaped = vec![CpuId(99)],
+            apply: |case| case.result.escaped = vec![CpuId::from(99)],
             outcome: Outcome::Inconclusive,
             signal: None,
         },
@@ -221,10 +221,10 @@ fn any_corrected_machine_check_makes_the_signal_corrected() {
 #[test]
 fn an_escape_names_the_cpus_and_keeps_the_diagnostic() {
     let mut case = Case::new();
-    case.result.escaped = vec![CpuId(99)];
+    case.result.escaped = vec![CpuId::from(99)];
     case.missing = Some("sampling unavailable".into());
     let end = case.adjudicate();
-    assert_eq!(end.escaped, [CpuId(99)]);
+    assert_eq!(end.escaped, [CpuId::from(99)]);
     assert_eq!(
         end.reason.as_deref(),
         Some("backend thread outside allowed cpus; sampling unavailable")
@@ -623,7 +623,7 @@ fn telemetry_samples(count: usize) -> Vec<TrialConditions> {
 
 #[test]
 fn request_telemetry_needs_twenty_samples_after_the_warmup_and_every_loaded_core_on_a_known_ccd() {
-    let ccd = |core: CoreId| Some(CcdId(core.get() / 4));
+    let ccd = |core: CoreId| CcdId::try_from(core.get() / 4).ok();
     for regime in [Regime::R1, Regime::R3, Regime::R6, Regime::R7] {
         let enough = summarize_samples(
             telemetry_samples(20).into_iter().map(Ok),
@@ -648,7 +648,7 @@ fn request_telemetry_needs_twenty_samples_after_the_warmup_and_every_loaded_core
         telemetry_samples(20).into_iter().map(Ok),
         set(&[2, 7]),
         Regime::R7,
-        |core: CoreId| (core.get() != 7).then_some(CcdId(0)),
+        |core: CoreId| (core.get() != 7).then_some(CcdId::new(0).unwrap()),
     )
     .unwrap();
     assert!(unknown.telemetry.is_none());

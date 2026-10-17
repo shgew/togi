@@ -178,7 +178,7 @@ impl Linux {
                     *identity,
                     self.user_manager,
                     std::path::Path::new("/"),
-                    &[CpuId(0)],
+                    &[CpuId::from(0)],
                     &["/bin/sh".into(), "-c".into(), "exit 0".into()],
                 );
             }

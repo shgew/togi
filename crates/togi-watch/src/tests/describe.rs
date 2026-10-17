@@ -569,7 +569,7 @@ fn the_kinds_with_a_line_of_their_own() {
     let mut h = Hist::three();
     h.push(
         Mce {
-            cpu: CpuId(3),
+            cpu: CpuId::from(3),
             core: None,
             bank: 1,
             bank_type: BankType::ExecutionUnit,
@@ -639,7 +639,7 @@ fn a_checking_chain_note_is_summarised_in_the_history_and_whole_in_the_log() {
         CheckingChain {
             cycle: nz(1),
             step: nz(1),
-            ccd: CcdId(0),
+            ccd: CcdId::new(0).unwrap(),
             workload: togi_machine::workloads(Regime::R7)[0].id(),
             groups: vec![set(&[0]), set(&[1]), set(&[2])],
             cores: set(cores),

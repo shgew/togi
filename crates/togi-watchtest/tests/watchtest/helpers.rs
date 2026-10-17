@@ -1,10 +1,11 @@
 use togi_journal::{Activity, Outcome};
 use togi_journal::{EventKind, Payload};
+use togi_machine::CoreId;
 use togi_sim::MachineDefinition;
 use togi_tuner::State;
 use togi_watchtest::{
     Base, Error, Scenario, Stop, before_crash_detected, crash_trial, cut_at,
-    cut_passed_checking_trial, cut_trial, cut_when, default_machine,
+    cut_passed_checking_trial, cut_trial, cut_when,
 };
 
 use crate::support::intent_of;
@@ -136,13 +137,9 @@ fn a_crash_scripted_on_a_core_the_machine_lacks_is_an_error() {
         ..MachineDefinition::default()
     };
     let machine = togi_watchtest::machine(&two, 1).expect("the machine builds");
+    let three = CoreId::new(3).expect("core 03 exists");
     assert!(matches!(
-        crash_trial(&machine, "0001", 7.0, 3),
+        crash_trial(&machine, "0001", 7.0, three),
         Err(Error::Script(_))
-    ));
-    let machine = default_machine(1).expect("the machine builds");
-    assert!(matches!(
-        crash_trial(&machine, "0001", 7.0, 16),
-        Err(Error::Core(_))
     ));
 }

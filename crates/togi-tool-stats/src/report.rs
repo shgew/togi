@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use jiff::Timestamp;
 use togi_journal::{Activity, Attribution, Event, Outcome, Payload};
-use togi_machine::{Condition, Regime, ResetKind, Signal, WorkloadId};
+use togi_machine::{CcdId, Condition, Regime, ResetKind, Signal, WorkloadId};
 use togi_render::escape_text;
 
 use crate::chains::{self, Derivation};
@@ -422,7 +422,7 @@ fn loaded_ccds(p: &Projection<'_>, trial: Option<&Trial<'_>>) -> String {
         .into_iter()
         .flat_map(|t| t.class.cores.iter())
         .filter_map(|core| p.ccd_of(core))
-        .map(|ccd| ccd.0)
+        .map(CcdId::get)
         .collect();
     if ccds.is_empty() {
         "idle/unknown".to_owned()
@@ -603,4 +603,17 @@ pub fn chain_records(
 ) -> Result<String, serde_json::Error> {
     let projection = Projection::new(journal);
     chains::records(&chains::attribute(&projection, since))
+}
+
+/// The multi-core R7 failures of `journal` first observed at or after `since` with the backoffs charged to
+/// each, one JSON object a failure and a line, in journal order.
+///
+/// # Errors
+///
+/// When a record cannot be encoded.
+pub fn backoff_records(
+    journal: &Journal,
+    since: Option<Timestamp>,
+) -> Result<String, serde_json::Error> {
+    r7::records(&r7::decisions(journal.events(), since))
 }

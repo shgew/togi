@@ -610,7 +610,7 @@ pub(crate) fn part_name(intent: &TrialIntent, journal: &JournalState) -> String 
     let loaded = trial_cores(intent);
     let mut ccds: Vec<String> = Vec::new();
     for core in &journal.cores {
-        let ccd = core.ccd.0.to_string();
+        let ccd = core.ccd.get().to_string();
         if loaded.contains(core.core) && !ccds.contains(&ccd) {
             ccds.push(ccd);
         }
