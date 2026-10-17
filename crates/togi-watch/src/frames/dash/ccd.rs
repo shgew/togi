@@ -589,5 +589,7 @@ pub(crate) fn cores_page(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> 
             }
         }
     }
+    #[cfg(test)]
+    crate::corpus::lines("page.cores", "", &lines);
     lines
 }

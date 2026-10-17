@@ -10,6 +10,7 @@ use togi_watchtest::{Scenario, cut_at};
 
 use super::{ALL_SIZES, Fixture, SIZES, append, later, main_screen, one_frame, text, words};
 use crate::frames::layout::Layout;
+use crate::frames::terms::dead_end_words;
 use crate::frames::testing::rows_of;
 use crate::screen::{Hold, Screen, View};
 use crate::tests::kit::{Script, crash, end_payload, warning};
@@ -132,6 +133,29 @@ fn a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis() {
         assert!(
             shown.contains("DEAD END") && shown.contains(detail) && !shown.contains(wrong),
             "a dead end loses its recorded cause or invents one:\n{shown}"
+        );
+    }
+}
+
+#[test]
+fn a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition() {
+    for &condition in DeadEndCondition::ALL {
+        let mut script = Script::at_limit();
+        script.append(
+            DeadEnd {
+                condition,
+                core: None,
+                detail: "the recorded detail".to_owned(),
+                action: None,
+            }
+            .into(),
+            &[],
+        );
+        let (buf, _) = Fixture::of(&script.events).main(240, 67);
+        let shown = text(&buf);
+        assert!(
+            shown.contains(dead_end_words(condition)),
+            "a {condition:?} dead end hides why tuning cannot continue:\n{shown}"
         );
     }
 }
