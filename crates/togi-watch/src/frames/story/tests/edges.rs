@@ -303,7 +303,7 @@ fn hunting(cause: HuntCause) -> Fx {
         HuntFacts {
             started: Some(ts(990)),
             cause,
-            parked_zero: false,
+            parking: None,
             group_signals: Vec::new(),
         },
     ));
