@@ -456,9 +456,12 @@ impl Session {
             .events()
             .unwrap()
             .iter()
-            .find_map(|event| match &event.payload {
-                Payload::SessionContext(context) => Some(context.bios_context()),
-                _ => None,
+            .find_map(|event| {
+                if let Payload::SessionContext(context) = &event.payload {
+                    Some(context.bios_context())
+                } else {
+                    None
+                }
             })
             .expect("the scenario records a BIOS context");
         Self { dir, fs, context }
