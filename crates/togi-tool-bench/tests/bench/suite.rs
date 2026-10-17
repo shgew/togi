@@ -513,7 +513,7 @@ fn the_anchor_overlays_differ_from_the_anchor_only_by_their_mechanism() {
 fn the_896_research_suite_runs_unreplayed_dev_seeds_from_201_on_committed_machines() {
     let dir = Tree::committed();
     let suite = Suite::parse(
-        include_bytes!("../../../tools/bench/research/896/suite.json"),
+        include_bytes!("../../../../tools/bench/research/896/suite.json"),
         dir.path().join("research/896"),
     )
     .unwrap();
