@@ -94,6 +94,7 @@ pub(crate) struct Verified;
 const VERIFY_POLL: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// The teardown typestate: each step consumes the last, so the proof can only come from the end.
+#[must_use = "run every teardown step to its end: only the last yields the proof"]
 pub(crate) struct Teardown<'a, O: Os, S> {
     os: &'a Rc<O>,
     inbound: &'a mut Receiver<Inbound>,
@@ -106,6 +107,7 @@ pub(crate) struct Teardown<'a, O: Os, S> {
 }
 
 /// What a finished teardown leaves: the proof, or every failure that withholds it.
+#[must_use = "inspect the proof: it is the stop, or every failure that withholds it"]
 pub(crate) struct Ended {
     pub(crate) proof: Result<Stopped, Containment>,
 }

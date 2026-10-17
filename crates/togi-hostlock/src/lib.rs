@@ -36,6 +36,7 @@ pub enum Policy {
 }
 
 #[derive(Debug)]
+#[must_use = "dropping the guard releases the host lock; hold it until the run and its journal have closed"]
 pub struct HostLock {
     _file: Option<File>,
     #[cfg(any(test, feature = "test-support"))]
