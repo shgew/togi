@@ -104,11 +104,11 @@ impl Build {
             Operation::Append => first_different.map_or(Verdict::Use, |d| refusal(*d)),
             Operation::ResetAll => match order(&schema) {
                 Ordering::Equal => Verdict::Use,
-                _ => Verdict::Archive,
+                Ordering::Less | Ordering::Greater => Verdict::Archive,
             },
             Operation::Inspect => match order(&schema) {
                 Ordering::Equal => Verdict::Use,
-                _ => refusal(schema),
+                Ordering::Less | Ordering::Greater => refusal(schema),
             },
             Operation::Replay => {
                 if order(&schema) == Ordering::Greater {

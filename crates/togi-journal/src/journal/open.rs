@@ -36,9 +36,12 @@ fn recorded_archive(events: &[Event]) -> Result<Option<SessionId>, OpenError> {
     let Some(live) = started_session(events) else {
         return Ok(None);
     };
-    let archived = events.iter().find_map(|event| match &event.payload {
-        Payload::SessionArchived(archived) => Some(archived.session),
-        _ => None,
+    let archived = events.iter().find_map(|event| {
+        if let Payload::SessionArchived(archived) = &event.payload {
+            Some(archived.session)
+        } else {
+            None
+        }
     });
     match archived {
         Some(recorded) if recorded == live => Ok(Some(live)),
