@@ -9,15 +9,16 @@ use togi_machine::WorkloadId;
 
 use crate::{BackendId, ClassKey, Depth, Evidence, LoadKey, Profile, Topology};
 
+const NAMED_CLOCK_TOLERANCE_MHZ: i64 = 25;
+
 /// Which passes may set the target, and what a candidate's request must beat.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Basis {
     /// An unattributed failure: only passes whose top request is strictly higher than the
     /// failing one, `failing_top`, or the original rail when the move steps down.
     Unattributed { failing_top: f64 },
-    /// A named core: passes whose clock reaches the failing trial's, `failing_mhz`, with no
-    /// clock filter when the failing trial has none. The target may equal or undercut the
-    /// failing request.
+    /// A named core: its CCD clock must be within the candidate tolerance of the failure's
+    /// current or last same-load measured clock. No clock means no qualifying target.
     Named { failing_mhz: Option<i64> },
 }
 
@@ -26,7 +27,9 @@ impl Basis {
         match self {
             Self::Unattributed { failing_top } => request > failing_top,
             Self::Named { failing_mhz } => {
-                failing_mhz.is_none_or(|failing| mhz.unwrap_or(0) >= failing)
+                failing_mhz.zip(mhz).is_some_and(|(failing, passing)| {
+                    passing >= failing.saturating_sub(NAMED_CLOCK_TOLERANCE_MHZ)
+                })
             }
         }
     }
@@ -114,10 +117,8 @@ type Key = (CcdId, u64, Option<i64>);
 
 type GroupId = u32;
 
-/// The passes of one class, backend and profile, reduced to what a query reads: the highest
-/// request on each CCD for an unattributed target, the highest request of the whole load with
-/// the clock of each loaded CCD for a named one. Passes that differ in nothing else share an
-/// entry.
+/// The passes of one class, backend and profile, reduced to each CCD's highest request,
+/// without clocks for unattributed targets and with clocks for named targets.
 #[derive(Clone, Debug, PartialEq)]
 struct Group {
     class: ClassKey,
@@ -306,8 +307,8 @@ impl R7Targets {
         for ccd in loaded {
             let key = (
                 ccd,
-                load_top.to_bits(),
-                Some(pass.ccd_mhz.get(&ccd).copied().unwrap_or(0)),
+                ccd_tops.get(&ccd).copied().unwrap_or(load_top).to_bits(),
+                pass.ccd_mhz.get(&ccd).copied(),
             );
             group.load_top.entry(key).or_default().add(pass.seq, floor);
         }
@@ -390,12 +391,20 @@ impl R7Targets {
     ) -> Option<Target> {
         let needed = u64::from(ask.n.get());
         let n = usize::from(ask.n.get());
-        let mut index: HashMap<Profile, usize> = HashMap::new();
+        let mut index: HashMap<(LoadKey, Profile), usize> = HashMap::new();
         let mut candidates: Vec<Candidate> = Vec::new();
         for group in ids
             .iter()
             .filter_map(|id| self.groups.get(id))
             .filter(|group| group.backend == ask.backend)
+            .filter(|group| {
+                !matches!(basis, Basis::Named { .. })
+                    || group
+                        .class
+                        .loaded()
+                        .iter()
+                        .all(|core| ask.topology.ccd_of(core) == Some(ccd))
+            })
         {
             self.visit();
             let failure = failure_floor(ask.evidence, group.class, &group.profile);
@@ -413,10 +422,11 @@ impl R7Targets {
                 let Some((count, first)) = entry.valid(failure, n) else {
                     continue;
                 };
-                if let Some(&at) = index.get(&group.profile) {
+                let shape = (group.class.load(), group.profile);
+                if let Some(&at) = index.get(&shape) {
                     candidates[at].add(request, count, &first, n);
                 } else {
-                    index.insert(group.profile, candidates.len());
+                    index.insert(shape, candidates.len());
                     candidates.push(Candidate {
                         volts: request,
                         lowest: first[0],
@@ -460,8 +470,8 @@ impl R7Targets {
         )
     }
 
-    /// The target for a failure naming `core`: its passes under any load of `workload` that
-    /// includes it, each at the highest request of its whole load.
+    /// The target for a failure naming `core`: only loads containing it and wholly on its
+    /// CCD qualify. Durations can combine, but different loads and profiles cannot.
     pub(crate) fn named(
         &self,
         ask: Ask<'_>,

@@ -101,6 +101,8 @@ This is the common path, not a second definition of edge cases. Carried failures
 
 Short crashes do not use a passing voltage target: their request summary may cover only an early, lower-request part of the launch. [ADR 0066](adr/0066-short-crashes-take-no-voltage-target.md) chooses a 60-second last-evidence floor, for named and unattributed crashes, with a one-count move unless existing step-down or failure-point safety requires more. This is a heuristic, not a measured settling time; non-crash failures keep their ordinary target rule. [The spec](spec/tuner.md#r7-voltage-targeted-backoff) owns the duration boundary and fallback rules.
 
+Named R7 failures borrow a voltage target only from a load wholly on the named core's CCD, never by pooling different loads to reach the pass count. Missing failure clocks use that load's latest measured clock; without either, togi takes the one-count fallback. [The target rule](spec/tuner.md#r7-voltage-targeted-backoff) owns the exact eligibility, invalidation and clock comparison; [ADR 0067](adr/0067-named-targets-stay-on-their-ccd.md) records the 25 MHz bench-candidate tolerance and its limits.
+
 ### Phases: take the margin back, then confirm
 
 A **failure point** forbids that core's failing offset and deeper values. A **combination** forbids reaching all its members' recorded offsets together. These constraints apply to the tuning profile; a hunt deliberately tests a failed group profile.

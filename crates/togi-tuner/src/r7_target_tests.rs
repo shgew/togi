@@ -144,9 +144,9 @@ fn short_crash_duration_floor_applies_to_named_and_unattributed_failures() {
                     n,
                     &[0, 1],
                     &[-20, -30, -30, -30],
-                    &report(&[(0, 1.136), (1, 1.08)], &[0]),
+                    &report(&[(0, 1.136), (1, 1.08)], &[0]).clocks(&[(0, 5000)]),
                 );
-                let mut failing = report(&[(0, 1.1), (1, 1.08)], &[0]);
+                let mut failing = report(&[(0, 1.1), (1, 1.08)], &[0]).clocks(&[(0, 5000)]);
                 failing.named = named.then_some(0);
                 failing.duration_s = Some(duration);
                 failing.signal = Some(signal);
@@ -351,24 +351,75 @@ fn r7_tied_top_target_must_beat_the_ccd_maximum() {
 }
 
 #[test]
-fn r7_named_target_transfers_across_loads_without_fail_clock() {
+fn r7_named_target_transfers_within_ccd_using_latest_load_clock() {
     let mut j = Journal::r7_session();
     let n = needed(&j);
     passes(
         &mut j,
         n,
-        &[0, 1, 2, 3],
+        &[0, 1],
         &[-30, -20, -30, -30],
-        &report(&[(0, 1.09), (1, 1.118), (2, 1.1), (3, 1.09)], &[1, 2]),
+        &report(&[(0, 1.09), (1, 1.118)], &[1]).clocks(&[(0, 5000)]),
+    );
+    let measured = j.r7_fact(
+        true,
+        &[0, 1, 2, 3],
+        &ALL_30,
+        &report(&[(0, 1.1), (1, 1.09), (2, 1.3), (3, 1.2)], &[0, 2])
+            .clocks(&[(0, 5000), (1, 4900)]),
     );
     j.r7_failed(
-        &[0, 1],
+        &[0, 1, 2, 3],
         &ALL_30,
-        &report(&[(0, 1.1), (1, 1.09)], &[0]).named(0),
+        &report(&[(0, 1.1), (1, 1.09), (2, 1.3), (3, 1.2)], &[0, 2]).named(0),
     );
     let (decision, why) = r7_backoff(&j);
     assert_eq!(moved(&decision), (0, -25));
     assert_toward(&why, 1.1, 1.118);
+    assert!(decision.cause.contains(&measured));
+    j.assert_resumes();
+}
+
+#[test]
+fn named_missing_clock_uses_latest_same_load_not_another_load_or_later_measurement() {
+    for (last_clock, expected) in [(None, None), (Some(5000), Some(1.136)), (Some(5100), None)] {
+        let mut j = Journal::r7_session();
+        let n = needed(&j);
+        passes(
+            &mut j,
+            n,
+            &[0, 1],
+            &[-20, -30, -30, -30],
+            &report(&[(0, 1.136), (1, 1.08)], &[0]).clocks(&[(0, 5000)]),
+        );
+        // The failing load differs from the target load. Its newest reading is independent.
+        if let Some(clock) = last_clock {
+            j.r7_fact(
+                true,
+                &[0, 1, 2, 3],
+                &ALL_30,
+                &report(&[(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.1)], &[0, 2])
+                    .clocks(&[(0, clock), (1, 4900)]),
+            );
+        }
+        j.r7_failed(
+            &[0, 1, 2, 3],
+            &ALL_30,
+            &report(&[(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.1)], &[0, 2]).named(0),
+        );
+        j.r7_fact(
+            true,
+            &[0, 1, 2, 3],
+            &ALL_30,
+            &report(&[(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.1)], &[0, 2]).clocks(&[(0, 5000)]),
+        );
+        let (_, why) = r7_backoff(&j);
+        match expected {
+            Some(target) => assert_toward(&why, 1.1, target),
+            None => assert_no_pass(&why, 1.1),
+        }
+        j.assert_resumes();
+    }
 }
 
 #[test]

@@ -87,8 +87,20 @@ impl Run {
             }
             Outcome::Inconclusive | Outcome::Failure => {}
         }
-        let failed = (outcome == Outcome::Failure && class.multi_r7())
-            .then(|| FailedTrial::freeze(&self.r7.measurements, &self.topo, ended, order));
+        let failed = (outcome == Outcome::Failure && class.multi_r7()).then(|| {
+            let mut failed = FailedTrial::freeze(&self.r7.measurements, &self.topo, ended, order);
+            for (ccd, source, mhz) in self.r7.measurements.clocks(class.load(), backend) {
+                if let std::collections::btree_map::Entry::Vacant(entry) = failed.clocks.entry(ccd)
+                {
+                    entry.insert(mhz);
+                    failed.clock_sources.insert(ccd, source);
+                }
+            }
+            failed
+        });
+        self.r7
+            .measurements
+            .record_clocks(class.load(), backend, seq, telemetry.clocks);
         if !telemetry.requests.is_empty() {
             self.r7.measurements.record(
                 class.load(),

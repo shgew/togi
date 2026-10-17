@@ -592,6 +592,12 @@ impl Run {
                     n,
                 };
                 target = if charge.named {
+                    if let Some(source) = self
+                        .ccd_of(id)
+                        .and_then(|ccd| view.trial.clock_sources.get(&ccd))
+                    {
+                        cause.push(*source);
+                    }
                     let mhz = self
                         .ccd_of(id)
                         .and_then(|ccd| view.trial.clocks.get(&ccd).copied());

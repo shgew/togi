@@ -66,6 +66,7 @@ pub(crate) struct FailedTrial {
     pub(crate) stalled: Option<CoreId>,
     pub(crate) recorded_top: CoreSet,
     pub(crate) clocks: BTreeMap<CcdId, i64>,
+    pub(crate) clock_sources: BTreeMap<CcdId, Seq>,
     pub(crate) order: RequestOrder,
     named_lane: Option<(CoreId, RequestOrder)>,
     pub(crate) backoffs: Backoffs,
@@ -122,6 +123,7 @@ impl FailedTrial {
                 .iter()
                 .map(|(&ccd, &mhz)| (ccd, i64::from(mhz)))
                 .collect(),
+            clock_sources: BTreeMap::new(),
             order,
             named_lane,
             backoffs: Backoffs::default(),
