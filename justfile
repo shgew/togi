@@ -55,23 +55,22 @@ cover base: _dev-shell
     trap 'rm -f "$trace"' EXIT
     cargo llvm-cov nextest --locked --lcov --output-path "$trace" >&2
     target=${CARGO_LLVM_COV_TARGET_DIR:-${CARGO_TARGET_DIR:-target}/llvm-cov-target}
-    go run ./tools/cover --lcov "$trace" --build-dir "$target/debug" --base "$1"
+    cargo run --quiet --locked -p togi-tool-cover -- --lcov "$trace" --build-dir "$target/debug" --base "$1"
 
-# Lint the retained Go tool for Linux and macOS, check the Nushell board's syntax, and run workspace clippy for the host with default and all features and, with all features, for whichever of x86_64 Linux and aarch64 macOS is not the host, with optional Go lint flags
+# Check the Nushell board's syntax and run workspace clippy for the host with default and all features and, with all features, for whichever of x86_64 Linux and aarch64 macOS is not the host
 [group('quality')]
-lint *args: _dev-shell
-    for target in linux/amd64 darwin/arm64; do env GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 golangci-lint run ./... "$@"; done
+lint: _dev-shell
     nu --no-config-file -c 'nu-check --debug ("tools/board/main.nu" | path expand); nu-check --debug --as-module ("tools/board/mod.nu" | path expand)'
     cargo clippy --locked --all-targets -- --deny warnings
     cargo clippy --locked --all-targets --all-features -- --deny warnings
     host=$(rustc -vV | sed -n 's/^host: //p'); for target in x86_64-unknown-linux-gnu aarch64-apple-darwin; do [[ "$target" == "$host" ]] || cargo clippy --locked --all-targets --all-features --target "$target" -- --deny warnings; done
 
-# Format Go, Nix and this justfile in place
+# Format Nix, Rust and this justfile in place
 [group('quality')]
 fmt:
     nix fmt
 
-# Run every non-VM flake check but the sim-suite-* shards, which CI and `just check` on Linux run (`just sim-suite` or `just check-one sim-suite-<i>` reproduces them), and cargo-deny's advisory audit, which only the deny flake check runs, cheapest first, using warm dev-shell Go and cargo caches
+# Run every non-VM flake check but the sim-suite-* shards, which CI and `just check` on Linux run (`just sim-suite` or `just check-one sim-suite-<i>` reproduces them), and cargo-deny's advisory audit, which only the deny flake check runs, cheapest first, using a warm dev-shell cargo cache
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -81,23 +80,17 @@ gate: _dev-shell
     just check-one module changes
     just board-test
     just sql-test
-    vendored=$(nix build --no-link --print-out-paths '.#checks.{{ system }}.go-tools.goModules')
-    fresh=$(mktemp -d)
-    trap 'rm -rf "$fresh"' EXIT
-    go mod vendor -o "$fresh/vendor"
-    diff -rq "$fresh/vendor" "$vendored" >&2 || { echo 'gate: the Go modules vendored for vendorHash in flake.nix differ from go.mod and go.sum; update vendorHash' >&2; exit 1; }
-    go test -shuffle=on -tags integration ./...
     cargo nextest run --locked --profile ci
     cargo test --locked --doc
     cargo deny --locked check bans licenses sources
     cargo shear
 
-# Run every flake check this host builds, streaming their build logs: board-test, sql-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
+# Run every flake check this host builds, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: board-test, sql-test, go-tools, lint, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one lint`)
+# Build named flake checks, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one module`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -289,23 +282,6 @@ ship: (_push-ready "ship" "gate it with just gate and push the stack with gh sta
     just gate
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Print the Go packages changed between a pushed head and HEAD, one per line: `./...` when go.mod or go.sum changed, nothing when no Go file did; a package whose Go files were deleted or moved away counts while it still has Go files at HEAD
-_touched-packages pushed:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    files=$(git diff --name-only --no-renames "$1" HEAD)
-    if grep -qxE 'go\.(mod|sum)' <<<"$files"; then
-        echo './...'
-        exit
-    fi
-    { grep -E '\.go$' <<<"$files" || true; } | while IFS= read -r file; do
-        dir=$(dirname "$file")
-        [[ "$dir" == . ]] && tree=HEAD: || tree="HEAD:$dir"
-        names=$(git ls-tree --name-only "$tree" 2>/dev/null) || continue
-        grep -qE '\.go$' <<<"$names" || continue
-        [[ "$dir" == . ]] && echo . || echo "./$dir"
-    done | sort -u
-
 # Print the crates changed between a pushed head and HEAD, one per line: `--workspace` when Cargo.toml, Cargo.lock, rust-toolchain.toml, clippy.toml, .config/nextest.toml or .cargo/config.toml changed, files every crate's build or tests read, else each crate with a changed file under crates/ that still has its Cargo.toml at HEAD
 _touched-crates pushed:
     #!/usr/bin/env bash
@@ -319,7 +295,7 @@ _touched-crates pushed:
         git cat-file -e "HEAD:${dir}Cargo.toml" 2>/dev/null && basename "$dir"
     done || true
 
-# Push a fix to a pull request under review: format, lint, test the changed Go packages, Rust crates, Nushell board and SQL views, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
+# Push a fix to a pull request under review: format, lint, test the changed Rust crates, Nushell board and SQL views, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -329,13 +305,7 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
         echo "push-fix: origin has no $branch; push its first head with just ship" >&2
         exit 1
     }
-    mapfile -t packages < <(just _touched-packages "$pushed")
     just lint
-    if ((${#packages[@]} == 0)); then
-        echo "push-fix: no Go package changed since $pushed; nothing to test" >&2
-    else
-        go test "${packages[@]}"
-    fi
     if ! git diff --quiet "$pushed" HEAD -- tools/board; then
         just board-test
     fi
