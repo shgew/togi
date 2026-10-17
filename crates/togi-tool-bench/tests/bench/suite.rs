@@ -432,7 +432,7 @@ fn research_490() -> (Tree, Suite) {
         ($($name:literal),+ $(,)?) => {
             $(dir.write(
                 dir.path().join(concat!("machines/", $name, ".json")),
-                include_bytes!(concat!("../../../tools/bench/research/490/machines/", $name, ".json")),
+                include_bytes!(concat!("../../../../tools/bench/research/490/machines/", $name, ".json")),
             );)+
         };
     }
@@ -454,7 +454,7 @@ fn research_490() -> (Tree, Suite) {
         "depth-16",
     );
     let suite = Suite::parse(
-        include_bytes!("../../../tools/bench/research/490/suite.json"),
+        include_bytes!("../../../../tools/bench/research/490/suite.json"),
         dir.path().to_path_buf(),
     )
     .unwrap();
