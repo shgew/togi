@@ -63,7 +63,8 @@ fn full() -> MachineDefinition {
     });
     definition.core[0].flat = 0.1;
     definition.core[0].idle = Some(-45);
-    definition.core[0].workload = BTreeMap::from([("special".to_owned(), -27)]);
+    definition.core[0].workload =
+        BTreeMap::from([(togi_machine::pick_workload(Regime::R1, 0).id(), -27)]);
     definition.joint = vec![JointDef {
         members: [(0, -20), (1, -20)].into(),
         regimes: vec![Regime::R6, Regime::R7],
@@ -165,7 +166,6 @@ fn awkward_strings_round_trip() {
         ..ScriptDef::default()
     }];
     definition.core = flat_cores(2, -10, -10);
-    definition.core[0].workload = BTreeMap::from([("w\"\n\u{1f}".to_owned(), -9)]);
     round_trip(&definition);
 }
 
@@ -271,7 +271,17 @@ fn core_defs(cores: i64) -> impl Strategy<Value = Vec<CoreDef>> {
             proptest::array::uniform7(-50..=1i64),
             0.0..1.0f64,
             proptest::option::of(-50..=1i64),
-            proptest::collection::btree_map("[a-z0-9-]{1,8}", -50..=1i64, 0..3),
+            proptest::collection::btree_map(
+                proptest::sample::select(
+                    togi_machine::REGIMES
+                        .into_iter()
+                        .flat_map(togi_machine::workloads)
+                        .map(togi_machine::Workload::id)
+                        .collect::<Vec<_>>(),
+                ),
+                -50..=1i64,
+                0..3,
+            ),
         ),
         usize::try_from(cores).expect("cores")..=usize::try_from(cores).expect("cores"),
     )

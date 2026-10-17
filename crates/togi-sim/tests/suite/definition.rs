@@ -32,7 +32,7 @@ const FULL: &str = r#"{
       "alone": [-30, -30, -30, -30, -30],
       "together": [-29, -29, -29, -29, -29, -29, -29],
       "idle": -45,
-      "workload": {"special": -27},
+      "workload": {"mprime-sse-4k-21k": -27},
       "flat": 0.1
     },
     {
@@ -69,7 +69,10 @@ fn a_full_machine_decodes_with_its_metadata() {
             Weights::from([(Signal::Crash, 79.0), (Signal::ComputationError, 5.0)])
         )])
     );
-    assert_eq!(definition.core[0].workload["special"], -27);
+    assert_eq!(
+        definition.core[0].workload[&"mprime-sse-4k-21k".parse().unwrap()],
+        -27
+    );
     assert_eq!(definition.joint[0].after_s, 30.0);
     assert!(definition.script[0].then_crash);
 
@@ -91,6 +94,14 @@ fn load_text(text: &str) -> Result<MachineDefinition, LoadError> {
     let dir = crate::common::MemoryFiles::default();
     let path = dir.write(&dir.path().join("machine.json"), text);
     file::load_from(&path, &dir).map(|(machine, _)| machine)
+}
+
+#[test]
+fn unknown_workload_limit_ids_are_refused() {
+    let text = FULL.replace("mprime-sse-4k-21k", "mprime-sse-4k-21k-typo");
+    let error =
+        file::decode(&text).expect_err("unknown workload limit must not silently fall back");
+    assert!(error.to_string().contains("unknown workload"), "{error}");
 }
 
 #[test]
@@ -146,7 +157,10 @@ fn malformed_documents_are_refused_with_the_file_named() {
             "duplicate workload limit",
             format!(
                 r#"{{"cores":2,"core":[{}]}}"#,
-                core.replace('}', r#","workload":{"a":-1,"a":-2}}"#)
+                core.replace(
+                    '}',
+                    r#","workload":{"mprime-sse-4k-21k":-1,"mprime-sse-4k-21k":-2}}"#
+                )
             ),
             "duplicate",
         ),

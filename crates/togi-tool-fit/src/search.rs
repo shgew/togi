@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use togi_machine::{REGIMES, Regime};
+use togi_machine::{REGIMES, Regime, WorkloadId};
 use togi_sim::{MachineDefinition, Model};
 use togi_tool_modelcheck::Checker;
 use togi_tool_trialfacts::TrialFact;
@@ -207,29 +207,29 @@ impl Likelihood<'_> {
     pub(crate) fn fit_workloads(&mut self) {
         let rail = self.cfg.shared_voltage.is_some();
         for (core, id) in self.core_ids().into_iter().enumerate() {
-            let workloads: BTreeSet<&'static str> = self
+            let workloads: BTreeSet<(&'static str, WorkloadId)> = self
                 .obs
                 .iter()
                 .filter(|o| limit_driven(rail, o) && o.k > 0 && o.loads(id))
-                .map(|o| o.class.workload.as_str())
+                .map(|o| (o.class.workload.as_str(), o.class.workload))
                 .collect();
-            for workload in workloads {
+            for (_, workload) in workloads {
                 let indices = self.select(|o| {
-                    limit_driven(rail, o) && o.class.workload.as_str() == workload && o.loads(id)
+                    limit_driven(rail, o) && o.class.workload == workload && o.loads(id)
                 });
                 let trials: u32 = indices.iter().map(|&i| self.obs[i].n).sum();
                 if trials < MIN_WORKLOAD_TRIALS {
                     continue;
                 }
                 let baseline = self.score(&indices);
-                let existing = self.cfg.core[core].workload.get(workload).copied();
+                let existing = self.cfg.core[core].workload.get(&workload).copied();
                 let mut best = existing.unwrap_or(DEEPEST);
                 let mut score = f64::INFINITY;
                 let values: Vec<i64> = (LIMIT_RANGE.0..=LIMIT_RANGE.1).collect();
                 let candidates = self.scan(
                     &values,
                     |d, &value| {
-                        d.core[core].workload.insert(workload.to_owned(), value);
+                        d.core[core].workload.insert(workload, value);
                     },
                     &indices,
                 );
@@ -240,11 +240,9 @@ impl Likelihood<'_> {
                     }
                 }
                 if existing.is_none() && baseline - score < 0.5 {
-                    self.cfg.core[core].workload.remove(workload);
+                    self.cfg.core[core].workload.remove(&workload);
                 } else {
-                    self.cfg.core[core]
-                        .workload
-                        .insert(workload.to_owned(), best);
+                    self.cfg.core[core].workload.insert(workload, best);
                 }
                 self.rebuild();
             }
@@ -298,7 +296,7 @@ enum Slot {
     Alone(usize, usize),
     Together(usize, usize),
     Idle(usize),
-    Workload(usize, String),
+    Workload(usize, WorkloadId),
 }
 
 impl Slot {
@@ -308,7 +306,7 @@ impl Slot {
             Self::Together(core, r) => def.core[*core].together[*r] = value,
             Self::Idle(core) => def.core[*core].idle = Some(value),
             Self::Workload(core, key) => {
-                def.core[*core].workload.insert(key.clone(), value);
+                def.core[*core].workload.insert(*key, value);
             }
         }
     }
@@ -333,7 +331,7 @@ fn limit_slots(cfg: &MachineDefinition) -> Vec<(Slot, i64)> {
         }
         for (key, &value) in &limits.workload {
             if value > DEEPEST {
-                slots.push((Slot::Workload(core, key.clone()), value));
+                slots.push((Slot::Workload(core, *key), value));
             }
         }
     }

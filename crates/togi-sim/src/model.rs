@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use togi_machine::{BiosContext, CoreId, Regime, ResetKind, Signal, TargetOffset};
+use togi_machine::{BiosContext, CoreId, Regime, ResetKind, Signal, TargetOffset, WorkloadId};
 
 use crate::definition::{
     BiosContextDef, CcdDef, CoreDef, DEFAULT_BIOS_VERSION, DEFAULT_BOARD, DEFAULT_BOOST_LIMIT_MHZ,
@@ -28,8 +28,8 @@ pub struct Limits {
     /// The limit of the core while unloaded.
     pub idle: Option<i64>,
     pub flat: f64,
-    /// Limit per workload ID, sorted by ID.
-    pub workload: Vec<(String, i64)>,
+    /// Limit per workload ID, sorted in catalog order.
+    pub workload: Vec<(WorkloadId, i64)>,
 }
 
 /// The initial window in which every failure rate is multiplied by `1 + boost`.
@@ -459,14 +459,14 @@ fn resolve_limits(
         }
         let workload = path.key("workload");
         for (id, &limit) in &def.workload {
-            workload.key(id).within(limit, -50, 1)?;
+            workload.key(id.as_str()).within(limit, -50, 1)?;
         }
         slots[id] = Some(Limits {
             alone: def.alone,
             together: def.together,
             idle: def.idle,
             flat,
-            workload: def.workload.iter().map(|(k, &v)| (k.clone(), v)).collect(),
+            workload: def.workload.iter().map(|(&k, &v)| (k, v)).collect(),
         });
     }
     slots

@@ -133,7 +133,7 @@ fn limits_idle_and_workload_limits_stay_within_minus_fifty_and_one() {
     definition.core[1].alone[3] = 1;
     definition.core[1].together[6] = -50;
     definition.core[1].idle = Some(1);
-    definition.core[1].workload = BTreeMap::from([("w".to_owned(), -50)]);
+    definition.core[1].workload = BTreeMap::from([("mprime-sse-4k-21k".parse().unwrap(), -50)]);
     assert!(Model::new(&definition, 1).is_ok());
 
     definition.core[1].alone[3] = 2;
@@ -149,10 +149,10 @@ fn limits_idle_and_workload_limits_stay_within_minus_fifty_and_one() {
     definition.core[1].idle = Some(2);
     refused(&definition, "core[1].idle", &out(2));
     definition.core[1].idle = None;
-    definition.core[1].workload = BTreeMap::from([("custom".to_owned(), -51)]);
-    refused(&definition, "core[1].workload.custom", &out(-51));
-    definition.core[1].workload = BTreeMap::from([("custom".to_owned(), 2)]);
-    refused(&definition, "core[1].workload.custom", &out(2));
+    definition.core[1].workload = BTreeMap::from([("mprime-sse-4k-21k".parse().unwrap(), -51)]);
+    refused(&definition, "core[1].workload.mprime-sse-4k-21k", &out(-51));
+    definition.core[1].workload = BTreeMap::from([("mprime-sse-4k-21k".parse().unwrap(), 2)]);
+    refused(&definition, "core[1].workload.mprime-sse-4k-21k", &out(2));
 }
 
 #[test]
@@ -582,14 +582,14 @@ fn nested_fields_are_checked_in_document_order() {
     definition.core[1].together[2] = 9;
     definition.core[1].flat = -1.0;
     definition.core[1].idle = Some(-51);
-    definition.core[1].workload = BTreeMap::from([("w".to_owned(), 2)]);
+    definition.core[1].workload = BTreeMap::from([("mprime-sse-4k-21k".parse().unwrap(), 2)]);
     refused(&definition, "core[1].together[2]", &out(9));
     definition.core[1].together[2] = -10;
     refused(&definition, "core[1].flat", &Problem::Negative);
     definition.core[1].flat = 0.0;
     refused(&definition, "core[1].idle", &out(-51));
     definition.core[1].idle = None;
-    refused(&definition, "core[1].workload.w", &out(2));
+    refused(&definition, "core[1].workload.mprime-sse-4k-21k", &out(2));
 
     let mut bad = joint(&[(0, -5)]);
     bad.after_s = -1.0;
