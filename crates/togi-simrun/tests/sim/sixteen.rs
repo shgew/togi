@@ -85,21 +85,20 @@ fn assert_named_target(events: &[Event], needed: u32) {
         })
         .collect();
     let named = CoreId::new(2).unwrap();
-    let (failure_seq, intent) = events
-        .iter()
-        .find_map(|event| {
-            let Payload::Failure(failure) = &event.payload else {
-                return None;
-            };
-            let intent = *intents.get(failure.trial.as_ref()?)?;
-            (failure.core == Some(named)
-                && failure.attribution == Attribution::Attributed
-                && failure.signal == Signal::ComputationError
-                && target_load(intent)
-                && intent.duration_s == 300)
-                .then_some((event.seq, intent))
-        })
-        .expect("no scripted named full-CCD computation error");
+    let Some((failure_seq, intent)) = events.iter().find_map(|event| {
+        let Payload::Failure(failure) = &event.payload else {
+            return None;
+        };
+        let intent = *intents.get(failure.trial.as_ref()?)?;
+        (failure.core == Some(named)
+            && failure.attribution == Attribution::Attributed
+            && failure.signal == Signal::ComputationError
+            && target_load(intent)
+            && intent.duration_s == 300)
+            .then_some((event.seq, intent))
+    }) else {
+        panic!("no scripted named full-CCD computation error");
+    };
     let failed = ends
         .values()
         .find(|(_, end)| end.trial == intent.trial)
@@ -109,18 +108,17 @@ fn assert_named_target(events: &[Event], needed: u32) {
     assert_eq!(failed.core, Some(named));
     let failing_mhz = failed.ccd_mhz[&CcdId(0)];
     let request = failed.voltage_requests_v.get(named).unwrap();
-    let (decision_event, decision) = events
-        .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TunerDecision(decision)
-                if event.cause.first() == Some(&failure_seq)
-                    && decision.decision == Decision::Backoff =>
-            {
-                Some((event, decision))
-            }
-            _ => None,
-        })
-        .expect("no decision answering the scripted named failure");
+    let Some((decision_event, decision)) = events.iter().find_map(|event| match &event.payload {
+        Payload::TunerDecision(decision)
+            if event.cause.first() == Some(&failure_seq)
+                && decision.decision == Decision::Backoff =>
+        {
+            Some((event, decision))
+        }
+        _ => None,
+    }) else {
+        panic!("no decision answering the scripted named failure");
+    };
     assert_eq!(decision.core, named);
     assert_eq!(decision.to_offset.get() - decision.from_offset.get(), 3);
     assert!(decision.reason.contains(VOLTAGE_TARGETED));
