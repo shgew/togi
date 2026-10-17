@@ -342,6 +342,7 @@ fn the_later_hunt_crashes_six_consecutive_trials_from_the_first_eligible_checkin
             })
             .expect("each burst trial ended");
         assert_eq!(end.signal, Some(Signal::Crash), "trial {trial}");
+        assert_eq!(end.core, None, "trial {trial} names no core");
     }
 }
 

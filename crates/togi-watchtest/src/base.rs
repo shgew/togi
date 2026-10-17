@@ -5,10 +5,14 @@ use std::sync::OnceLock;
 use togi_config::Config;
 use togi_journal::{Activity, Event, Payload};
 use togi_machine::{Backend, Regime};
+use togi_sim::MachineDefinition;
+use togi_sim::definition::ModelDef;
 use togi_tuner::State;
 
 use crate::Error;
-use crate::simulate::{Stop, Until, crash_trial, default_machine, probe_machine, simulate};
+use crate::simulate::{
+    Stop, Until, crash_trial, default_machine, machine, probe_machine, simulate,
+};
 
 /// The seed whose default machine, run through three clean cycles, leaves a core's BIOS offset unconfirmed after a
 /// failure. [INFERENCE: other seeds steer clear of it; found by scanning seeds 1 to 60. The Go simulator's seed 30
@@ -29,9 +33,9 @@ pub enum Base {
     Concluded,
     /// The default machine on seed 43 through three clean cycles.
     Unconfirmed,
-    /// The default machine through three clean cycles, with six consecutive crashes naming no core starting at the
-    /// first non-R7 checking trial of cycle 4 on after a BIOS profile is confirmed: after a held first failure, a
-    /// second makes a hunt while the confirmed profile shows a held, unconfirmed core.
+    /// The default machine without crash MCEs through three clean cycles, with six consecutive crashes naming no
+    /// core starting at the first non-R7 checking trial of cycle 4 on after a BIOS profile is confirmed: after a held
+    /// first failure, a second makes a hunt while the confirmed profile shows a held, unconfirmed core.
     LaterHunt,
     /// The default machine stopped at its first confirmed BIOS profile.
     FirstResult,
@@ -132,7 +136,15 @@ impl Base {
 }
 
 fn later_hunt() -> Result<Vec<Event>, Error> {
-    let machine = default_machine(1)?;
+    // Scripted per-core crashes otherwise draw MCE evidence, turning the intended unnamed burst into named failures.
+    let definition = MachineDefinition {
+        model: ModelDef {
+            crash_mce: 0.0,
+            ..ModelDef::default()
+        },
+        ..MachineDefinition::default()
+    };
+    let machine = machine(&definition, 1)?;
     let fault = machine.clone();
     let armed = Rc::new(RefCell::new(Ok(0)));
     let result = Rc::clone(&armed);
