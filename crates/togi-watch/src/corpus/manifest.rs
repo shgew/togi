@@ -94,6 +94,15 @@ const NOT_PHRASES: &[&str] = &[
     "include_str",
 ];
 
+/// Why the outcome-phrase columns render nothing: since the dashboard redesign no production code reads them.
+const UNREAD_COLUMNS: &str = "read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves";
+
+/// Why `hunt_end_phrase` renders nothing.
+const UNREAD_HUNT_END: &str = "`hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself";
+
+/// Why the story never tells of a bracketed singleton.
+const UNREACHED_BRACKET: &str = "`hunt_story` words a singleton only while its probe trial runs, and the tuner marks a singleton's probe done only when its probing ends, which ends the hunt";
+
 /// Literals no case can render, and why. The document lists these with their reason first, even when another
 /// phrase happens to carry their words, and the exporter does not fail on them. Each holds because of the code
 /// the reason names; an entry matching no literal fails the exporter ([`stale`]).
@@ -106,7 +115,48 @@ pub(crate) const SILENT: &[(&str, &str, &str)] = &[
     (
         "words.rs",
         "core {core:02} starts its search",
-        "`decision_detail` is never given a core phase: `outcome.rs` words the core phases of a decision itself",
+        UNREAD_COLUMNS,
+    ),
+    ("words.rs", "the hunt ends", UNREAD_HUNT_END),
+    ("words.rs", "hunt {hunt} ends: ", UNREAD_HUNT_END),
+    (
+        "words.rs",
+        "hunt {hunt} keeps {cores} together",
+        UNREAD_HUNT_END,
+    ),
+    (
+        "words.rs",
+        "hunt {hunt} keeps the failure on loaded",
+        UNREAD_HUNT_END,
+    ),
+    (
+        "words.rs",
+        "core {core:02} starts confirming",
+        UNREAD_COLUMNS,
+    ),
+    ("words.rs", "core {core:02} deepens", UNREAD_COLUMNS),
+    ("words.rs", "core {core:02} failure held at", UNREAD_COLUMNS),
+    ("words.rs", "CCD {} partial on", UNREAD_COLUMNS),
+    ("words.rs", "deepening round {round} starts", UNREAD_COLUMNS),
+    ("words.rs", "deepening round {round} ends", UNREAD_COLUMNS),
+    ("words.rs", "tuning stops: ", UNREAD_COLUMNS),
+    ("words.rs", "hunt {} starts over", UNREAD_COLUMNS),
+    ("words.rs", "hunt ends", UNREAD_COLUMNS),
+    ("words.rs", "no hunt", UNREAD_COLUMNS),
+    (
+        "frames/panels/hunt.rs",
+        "→ core {id:02} failed alone; testing its parked offset",
+        "`HuntView::singleton` stages a probe `Anchor` only when its parked offset is the probe's offset, so an anchor without a parked offset never reaches `group_lines`",
+    ),
+    (
+        "frames/story/mod.rs",
+        "A pass sits one count shallower",
+        UNREACHED_BRACKET,
+    ),
+    (
+        "frames/story/mod.rs",
+        "Core {id:02} is bracketed",
+        UNREACHED_BRACKET,
     ),
 ];
 

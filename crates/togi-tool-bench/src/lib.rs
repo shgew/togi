@@ -18,9 +18,11 @@
 //! plain text reports, and one JSON file per cached run. The gate of a ruleset is the `gate` object of the suite
 //! file, typed and judged by [`gate`].
 //!
-//! Two modes do not measure the suite. [`same`] proves two trees decide the same on every simulated session, or
+//! Three modes do not measure the suite. [`same`] proves two trees decide the same on every simulated session, or
 //! only the suite's smoke sessions, by comparing their journals. [`forecast`] resumes copies of a real run's
 //! state directory on the simulator with the suite's `target` scenario and summarizes what the runs did.
+//! [`pass_cost`] computes, without simulating, what the R7 part requirements cost at a fixed profile.
+//! [`research`] dispatches the steps of a bounded research campaign under its launch manifest.
 //!
 //! ```
 //! use togi_tool_bench::{Selection, Suite};
@@ -45,9 +47,11 @@ pub mod forecast;
 pub mod gate;
 mod git;
 mod metrics;
+pub mod pass_cost;
 mod pool;
 mod process;
 mod record;
+pub mod research;
 mod run;
 pub mod same;
 pub mod sanity;
@@ -56,7 +60,9 @@ mod stats;
 mod suite;
 pub mod summary;
 
-pub use error::{Error, RunError, Unrunnable};
+pub use error::{
+    BuildFailure, Error, GitError, MeasureError, ModelCheckError, RunError, Unrunnable,
+};
 pub use git::{Tree, inspect};
 pub use metrics::{Measured, measure};
 pub use process::Fleet;

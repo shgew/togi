@@ -65,6 +65,15 @@ fn page(
     running: Option<&TrialView>,
     stopped: Option<&StopView>,
 ) -> Vec<String> {
+    page_in(WIDTH, statuses, running, stopped)
+}
+
+fn page_in(
+    width: usize,
+    statuses: &[R7CoreStatus],
+    running: Option<&TrialView>,
+    stopped: Option<&StopView>,
+) -> Vec<String> {
     let model = Model::new();
     let zone = TimeZone::UTC;
     let plan = CyclePlan {
@@ -95,7 +104,7 @@ fn page(
     s.trial = running;
     s.stopped = stopped;
     let scene = Scene::new(s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-    r7_lines(&scene, WIDTH, SizeClass::Wide)
+    r7_lines(&scene, width, SizeClass::Wide)
         .iter()
         .map(plain)
         .collect()
@@ -131,6 +140,18 @@ fn the_rail_is_global_and_the_top_groups_are_per_ccd() {
         assert!(said.contains(want), "lacks {want:?}: {said}");
     }
     assert!(!said.contains("cores of a CCD share"), "{said}");
+}
+
+#[test]
+fn the_rail_note_is_one_line_where_the_page_is_wide_enough() {
+    let rows = page_in(RAIL.chars().count(), &[status(3, true, false)], None, None);
+    assert!(rows.iter().any(|row| row == RAIL), "{rows:#?}");
+}
+
+#[test]
+fn a_ccd_with_no_top_requester_says_none_is_recorded_yet() {
+    let rows = page(&[status(3, false, false)], None, None);
+    assert_eq!(ccd_row(&rows), "CCD 0  no top requester recorded yet");
 }
 
 #[test]

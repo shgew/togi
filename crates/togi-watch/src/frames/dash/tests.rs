@@ -884,7 +884,13 @@ fn the_cores_page_explains_each_value_and_where_the_failure_came_from() {
         id: core(3),
         ..recorded(-50, Some(-45), None)
     };
-    let cores = [gapped, zero, none, deeper];
+    let suspect = CoreView {
+        id: core(4),
+        state: CoreState::Suspect,
+        applied: Some(ObservedOffset(-73)),
+        ..recorded(-20, Some(-25), Some(-21))
+    };
+    let cores = [gapped, zero, none, deeper, suspect];
     let mut s = model.snapshot();
     s.session = Some(&view);
     s.cores = &cores;
@@ -907,9 +913,15 @@ fn the_cores_page_explains_each_value_and_where_the_failure_came_from() {
         "  solo -3 · gap 0: at the solo limit",
         "  solo -45 · gap -5: 5 counts deeper than solo",
         "  no failure recorded",
+        "Core 04 · CCD 0 · SUSPECT",
+        "  hunt: a candidate at its failing offset",
     ] {
         assert!(page.iter().any(|line| line == want), "{want:?} in\n{text}");
     }
+    assert!(
+        page.iter().any(|line| line.ends_with(" (outside -50..0)")),
+        "a readback outside the offset range is flagged in\n{text}"
+    );
     let narrow = cores_page(&scene, 30);
     assert!(narrow.iter().all(|line| line_width(line) <= 30));
     let none: [CoreView; 0] = [];
@@ -922,7 +934,7 @@ fn the_cores_page_explains_each_value_and_where_the_failure_came_from() {
     );
 }
 
-fn ids(values: &[u8]) -> Vec<togi_machine::CoreId> {
+fn ids(values: &[u8]) -> togi_machine::CoreSet {
     values.iter().map(|&id| core(id)).collect()
 }
 
@@ -1022,10 +1034,10 @@ fn cut_top_requesters_keep_their_offset_label() {
         );
     }
     assert_eq!(
-        top_cell(&ids(&[0]), &ids(&[8, 9, 10, 11, 12, 13, 14, 15]), 17),
+        top_cell(ids(&[0]), ids(&[8, 9, 10, 11, 12, 13, 14, 15]), 17),
         "08-15 by offset"
     );
-    assert_eq!(top_cell(&[], &[], 17), "-");
+    assert_eq!(top_cell(ids(&[]), ids(&[]), 17), "-");
 }
 
 #[test]

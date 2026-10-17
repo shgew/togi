@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use test_case::test_case;
 use togi_machine::{Kernel as _, KernelCursor, Partial};
 
 use super::support::{OLD, Reply, argv, boot, caused_by, core, exit, kernel, lines, locked, ok};
@@ -67,45 +68,20 @@ fn cursor_reads_keep_empty_intervals_resumable() {
     assert_eq!(argv(&calls[2]), [&base[..], &["--cursor=last"]].concat());
 }
 
-#[test]
-fn a_cursor_that_is_not_the_first_row_or_in_another_boot_is_unresumable() {
-    let cases = [
-        (
-            "vacuumed cursor",
-            lines(&[entry("nearest", OLD, "ordinary", 1)]),
-            Some("gone"),
-        ),
-        (
-            "wrong boot",
-            lines(&[entry("saved", OTHER, "ordinary", 1)]),
-            Some("saved"),
-        ),
-        ("past tail", Vec::new(), Some("saved")),
-        (
-            "missing metadata",
-            lines(&[entry("", OLD, "ordinary", 1)]),
-            None,
-        ),
-        (
-            "no cursor field",
-            lines(&[json!({"_BOOT_ID": OLD, "MESSAGE": "x"})]),
-            None,
-        ),
-        (
-            "no boot field",
-            lines(&[json!({"__CURSOR": "c", "MESSAGE": "x"})]),
-            None,
-        ),
-        ("empty boot", Vec::new(), None),
-    ];
-    for (name, out, after) in cases {
-        let partial = unresumable(out, after);
-        assert!(
-            matches!(partial.error, togi_machine::Error::CursorMissing),
-            "{name}"
-        );
-        assert!(partial.value.is_empty(), "{name}");
-    }
+#[test_case(lines(&[entry("nearest", OLD, "ordinary", 1)]), Some("gone"); "vacuumed cursor")]
+#[test_case(lines(&[entry("saved", OTHER, "ordinary", 1)]), Some("saved"); "wrong boot")]
+#[test_case(Vec::new(), Some("saved"); "past tail")]
+#[test_case(lines(&[entry("", OLD, "ordinary", 1)]), None; "missing metadata")]
+#[test_case(lines(&[json!({"_BOOT_ID": OLD, "MESSAGE": "x"})]), None; "no cursor field")]
+#[test_case(lines(&[json!({"__CURSOR": "c", "MESSAGE": "x"})]), None; "no boot field")]
+#[test_case(Vec::new(), None; "empty boot")]
+fn a_cursor_that_is_not_the_first_row_or_in_another_boot_is_unresumable(
+    out: Vec<u8>,
+    after: Option<&str>,
+) {
+    let partial = unresumable(out, after);
+    assert!(matches!(partial.error, togi_machine::Error::CursorMissing));
+    assert!(partial.value.is_empty());
 }
 
 #[test]
@@ -145,115 +121,117 @@ fn an_earlier_check_on_an_unknown_cpu_keeps_no_core_before_a_malformed_entry() {
     assert!(caused_by::<DecodeError>(&partial).is_some());
 }
 
-#[test]
-fn a_status_line_with_a_non_numeric_cpu_or_bank_stops_the_read_without_a_cursor() {
-    for (name, text, error) in [
-        (
-            "cpu",
-            "[Hardware Error]: CPU:abc (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
-            StatusError::Cpu("abc".to_owned()),
-        ),
-        (
-            "bank",
-            "[Hardware Error]: CPU:2 (1a:44:0) MCabc_STATUS[Over|CE|-]: 0xbc00000000010135",
-            StatusError::Bank("abc".to_owned()),
-        ),
-        (
-            "raw cpu",
-            "[Hardware Error]: CPU abc: Machine Check: 0 Bank 1: bc00000000010135",
-            StatusError::Cpu("abc".to_owned()),
-        ),
-        (
-            "raw bank",
-            "[Hardware Error]: CPU 2: Machine Check: 0 Bank abc: bc00000000010135",
-            StatusError::Bank("abc".to_owned()),
-        ),
-    ] {
-        let out = lines(&[
-            entry("a", OLD, STATUS, 1_000_000),
-            entry("b", OLD, text, 2_000_000),
-            entry("c", OLD, "ordinary kernel message", 3_000_000),
-        ]);
-        let partial = unresumable(out, None);
-        assert_eq!(partial.value.len(), 1, "{name}");
-        assert_eq!(partial.value[0].core, Some(core(1)), "{name}");
-        assert_eq!(
-            caused_by::<StatusError>(&partial),
-            Some(&error),
-            "{name}: {}",
-            partial.error
-        );
-    }
+#[test_case(
+    "[Hardware Error]: CPU:abc (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
+    &StatusError::Cpu("abc".to_owned());
+    "cpu"
+)]
+#[test_case(
+    "[Hardware Error]: CPU:2 (1a:44:0) MCabc_STATUS[Over|CE|-]: 0xbc00000000010135",
+    &StatusError::Bank("abc".to_owned());
+    "bank"
+)]
+#[test_case(
+    "[Hardware Error]: CPU abc: Machine Check: 0 Bank 1: bc00000000010135",
+    &StatusError::Cpu("abc".to_owned());
+    "raw cpu"
+)]
+#[test_case(
+    "[Hardware Error]: CPU 2: Machine Check: 0 Bank abc: bc00000000010135",
+    &StatusError::Bank("abc".to_owned());
+    "raw bank"
+)]
+fn a_status_line_with_a_non_numeric_cpu_or_bank_stops_the_read_without_a_cursor(
+    text: &str,
+    error: &StatusError,
+) {
+    let out = lines(&[
+        entry("a", OLD, STATUS, 1_000_000),
+        entry("b", OLD, text, 2_000_000),
+        entry("c", OLD, "ordinary kernel message", 3_000_000),
+    ]);
+    let partial = unresumable(out, None);
+    assert_eq!(partial.value.len(), 1);
+    assert_eq!(partial.value[0].core, Some(core(1)));
+    assert_eq!(
+        caused_by::<StatusError>(&partial),
+        Some(error),
+        "{}",
+        partial.error
+    );
+}
+
+#[test_case("", OLD; "no cursor")]
+#[test_case("wrong-boot", OTHER; "other boot")]
+fn lost_metadata_keeps_only_the_checks_read_before_the_bad_row(cursor: &str, boot: &str) {
+    let mut out = lines(&[entry("valid", OLD, STATUS, 1_000_000)]);
+    out.extend(lines(&[entry(cursor, boot, STATUS, 2_000_000)]));
+    let (mut kernel, _) = kernel(&[(1, &[2])], move |_| ok(&out));
+    let partial = kernel
+        .read_mces(&super::support::boot(OLD), None)
+        .unwrap_err();
+    assert!(matches!(partial.error, togi_machine::Error::CursorMissing));
+    assert_eq!(partial.value.len(), 1);
+    assert_eq!(partial.value[0].monotonic, Duration::from_secs(1));
+    assert_eq!(partial.value[0].core, Some(core(1)));
+}
+
+#[test_case(
+    Box::new(|| {
+        Err(crate::runner::RunError::Command(
+            togi_command::Error::Spawn {
+                program: "journalctl".into(),
+                source: std::io::ErrorKind::NotFound.into(),
+            },
+        ))
+    }),
+    None,
+    "cannot read the kernel log";
+    "transport"
+)]
+#[test_case(
+    Box::new(|| exit(1, b"", "No journal boot entry found")),
+    None,
+    "boot missing";
+    "missing boot"
+)]
+#[test_case(
+    Box::new(|| exit(1, b"", "Failed to seek to cursor")),
+    Some("saved"),
+    "cannot be resumed";
+    "vacuumed cursor"
+)]
+#[test_case(
+    Box::new(|| exit(2, b"", "permission denied")),
+    None,
+    "permission denied";
+    "other exit"
+)]
+fn observation_failures_never_become_clean_intervals(
+    reply: Reply,
+    after: Option<&str>,
+    text: &str,
+) {
+    let (mut kernel, _) = kernel(&[], move |_| reply());
+    let after = after.map(cursor);
+    let partial = kernel.read_mces(&boot(OLD), after.as_ref()).unwrap_err();
+    assert!(partial.value.is_empty());
+    assert!(
+        partial.error.to_string().contains(text),
+        "{}",
+        partial.error
+    );
 }
 
 #[test]
-fn lost_metadata_keeps_only_the_checks_read_before_the_bad_row() {
-    for (name, cursor, boot) in [("no cursor", "", OLD), ("other boot", "wrong-boot", OTHER)] {
-        let mut out = lines(&[entry("valid", OLD, STATUS, 1_000_000)]);
-        out.extend(lines(&[entry(cursor, boot, STATUS, 2_000_000)]));
-        let (mut kernel, _) = kernel(&[(1, &[2])], move |_| ok(&out));
-        let partial = kernel
-            .read_mces(&super::support::boot(OLD), None)
-            .unwrap_err();
-        assert!(
-            matches!(partial.error, togi_machine::Error::CursorMissing),
-            "{name}"
-        );
-        assert_eq!(partial.value.len(), 1, "{name}");
-        assert_eq!(partial.value[0].monotonic, Duration::from_secs(1), "{name}");
-        assert_eq!(partial.value[0].core, Some(core(1)), "{name}");
-    }
-}
-
-#[test]
-fn observation_failures_never_become_clean_intervals() {
-    let cases: [(&str, Reply, Option<&str>, &str); 4] = [
-        (
-            "transport",
-            Box::new(|| {
-                Err(crate::runner::RunError::Command(
-                    togi_command::Error::Spawn {
-                        program: "journalctl".into(),
-                        source: std::io::ErrorKind::NotFound.into(),
-                    },
-                ))
-            }),
-            None,
-            "cannot read the kernel log",
-        ),
-        (
-            "missing boot",
-            Box::new(|| exit(1, b"", "No journal boot entry found")),
-            None,
-            "boot missing",
-        ),
-        (
-            "vacuumed cursor",
-            Box::new(|| exit(1, b"", "Failed to seek to cursor")),
-            Some("saved"),
-            "cannot be resumed",
-        ),
-        (
-            "other exit",
-            Box::new(|| exit(2, b"", "permission denied")),
-            None,
-            "permission denied",
-        ),
-    ];
-    for (name, reply, after, text) in cases {
-        let (mut kernel, _) = kernel(&[], move |_| reply());
-        let after = after.map(cursor);
-        let partial = kernel.read_mces(&boot(OLD), after.as_ref()).unwrap_err();
-        assert!(partial.value.is_empty(), "{name}");
-        assert!(
-            partial.error.to_string().contains(text),
-            "{name}: {}",
-            partial.error
-        );
-    }
+fn a_seek_failure_without_a_cursor_is_not_a_missing_cursor() {
     let (mut seek, _) = kernel(&[], |_| exit(1, b"", "Failed to seek to cursor"));
     let partial = seek.read_mces(&boot(OLD), None).unwrap_err();
     assert!(!matches!(partial.error, togi_machine::Error::CursorMissing));
+}
+
+#[test]
+fn a_silent_failure_is_neither_a_missing_boot_nor_a_missing_cursor() {
     let (mut silent, _) = kernel(&[], |_| exit(1, b"", ""));
     let partial = silent.read_mces(&boot(OLD), None).unwrap_err();
     assert!(!matches!(
@@ -262,44 +240,29 @@ fn observation_failures_never_become_clean_intervals() {
     ));
 }
 
-#[test]
-fn malformed_messages_keep_only_earlier_evidence() {
-    let cases = [
-        ("invalid message", json!({}), "2000000", "1000000"),
-        (
-            "invalid wall clock",
-            json!("ordinary"),
-            "invalid",
-            "1000000",
-        ),
-        (
-            "invalid monotonic clock",
-            json!("ordinary"),
-            "2000000",
-            "invalid",
-        ),
-    ];
-    for (name, message, wall, monotonic) in cases {
-        let mut out = lines(&[entry("valid", OLD, STATUS, 1_000_000)]);
-        out.extend(lines(&[json!({
-            "MESSAGE": message,
-            "__REALTIME_TIMESTAMP": wall,
-            "__MONOTONIC_TIMESTAMP": monotonic,
-            "__CURSOR": "bad",
-            "_BOOT_ID": OLD,
-        })]));
-        let (mut kernel, _) = kernel(&[(1, &[2])], move |_| ok(&out));
-        let partial = kernel.read_mces(&boot(OLD), None).unwrap_err();
-        assert!(caused_by::<DecodeError>(&partial).is_some(), "{name}");
-        assert_eq!(partial.value.len(), 1, "{name}");
-        assert!(partial.value[0].corrected, "{name}");
-        assert_eq!(partial.value[0].core, Some(core(1)), "{name}");
-        let partial = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
-        assert!(caused_by::<DecodeError>(&partial).is_some(), "{name}");
-        assert_eq!(partial.value.len(), 1, "{name}");
-        assert!(partial.value[0].corrected, "{name}");
-        assert_eq!(partial.value[0].core, Some(core(1)), "{name}");
-    }
+#[test_case(&json!({}), "2000000", "1000000"; "invalid message")]
+#[test_case(&json!("ordinary"), "invalid", "1000000"; "invalid wall clock")]
+#[test_case(&json!("ordinary"), "2000000", "invalid"; "invalid monotonic clock")]
+fn malformed_messages_keep_only_earlier_evidence(message: &Value, wall: &str, monotonic: &str) {
+    let mut out = lines(&[entry("valid", OLD, STATUS, 1_000_000)]);
+    out.extend(lines(&[json!({
+        "MESSAGE": message,
+        "__REALTIME_TIMESTAMP": wall,
+        "__MONOTONIC_TIMESTAMP": monotonic,
+        "__CURSOR": "bad",
+        "_BOOT_ID": OLD,
+    })]));
+    let (mut kernel, _) = kernel(&[(1, &[2])], move |_| ok(&out));
+    let partial = kernel.read_mces(&boot(OLD), None).unwrap_err();
+    assert!(caused_by::<DecodeError>(&partial).is_some());
+    assert_eq!(partial.value.len(), 1);
+    assert!(partial.value[0].corrected);
+    assert_eq!(partial.value[0].core, Some(core(1)));
+    let partial = kernel.mces(&boot(OLD), Duration::ZERO).unwrap_err();
+    assert!(caused_by::<DecodeError>(&partial).is_some());
+    assert_eq!(partial.value.len(), 1);
+    assert!(partial.value[0].corrected);
+    assert_eq!(partial.value[0].core, Some(core(1)));
 }
 
 #[test]

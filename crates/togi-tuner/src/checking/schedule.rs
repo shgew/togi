@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use togi_config::Config;
 use togi_machine::{CcdId, CoreSet, Regime, WorkloadId, pick_workload};
 
 use super::chains::R7Step;
@@ -8,11 +9,35 @@ use crate::{ClassKey, Secs, Topology};
 
 const SHORT_TRIALS: u32 = 3;
 
+/// Which part of an R7 checking step a loaded set is: a CCD's full part, a partial of its chain, or the all-core
+/// part.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PartRole {
+pub enum R7PartRole {
     Ccd,
     Partial,
     AllCore,
+}
+
+/// The passing trials a checking cycle requires of one R7 part of `role` on a machine of `ccds` CCDs under
+/// `config`, by intended duration in the order the cycle runs them: three at `short_trial_s`, then one long
+/// trial, one requirement of four when the two durations coincide (`docs/spec/tuner.md`, Checking).
+pub fn r7_part_passes(config: &Config, ccds: usize, role: R7PartRole) -> Vec<(Secs, u32)> {
+    let [(short, shorts), (long, longs)] =
+        part_passes(&TunerConfig::from_config(config), ccds, role);
+    if short == long {
+        vec![(short, shorts + longs)]
+    } else {
+        vec![(short, shorts), (long, longs)]
+    }
+}
+
+/// The passes of one R7 part by intended duration, short then long, as the cycle runs them; the two durations
+/// may coincide, and then the step's plan adds the counts of their one class.
+fn part_passes(config: &TunerConfig, ccds: usize, role: R7PartRole) -> [(Secs, u32); 2] {
+    [
+        (config.short_trial, SHORT_TRIALS),
+        (long_duration(config, ccds, role), 1),
+    ]
 }
 
 /// The passes one trial class must have earned by this requirement; a class repeated in a step
@@ -45,13 +70,13 @@ impl StepPlan {
     }
 }
 
-fn long_duration(config: &TunerConfig, ccds: usize, role: PartRole) -> Secs {
+fn long_duration(config: &TunerConfig, ccds: usize, role: R7PartRole) -> Secs {
     let whole = config.checking_all_core.get();
     let quarter = whole / 4;
     let secs = match (ccds, role) {
         (0 | 1, _) => whole,
-        (_, PartRole::Ccd | PartRole::Partial) => quarter,
-        (_, PartRole::AllCore) => whole.saturating_sub(
+        (_, R7PartRole::Ccd | R7PartRole::Partial) => quarter,
+        (_, R7PartRole::AllCore) => whole.saturating_sub(
             u32::try_from(ccds)
                 .unwrap_or(u32::MAX)
                 .saturating_mul(quarter),
@@ -66,22 +91,18 @@ fn r7_part(
     workload: WorkloadId,
     cores: CoreSet,
     ccd: Option<CcdId>,
-    role: PartRole,
+    role: R7PartRole,
 ) -> PartPlan {
-    let long = long_duration(config, topo.ccds().len(), role);
     PartPlan {
         cores,
         ccd,
-        quotas: vec![
-            Quota {
-                class: ClassKey::new(workload, cores, config.short_trial),
-                count: SHORT_TRIALS,
-            },
-            Quota {
-                class: ClassKey::new(workload, cores, long),
-                count: 1,
-            },
-        ],
+        quotas: part_passes(config, topo.ccds().len(), role)
+            .into_iter()
+            .map(|(secs, count)| Quota {
+                class: ClassKey::new(workload, cores, secs),
+                count,
+            })
+            .collect(),
     }
 }
 
@@ -99,7 +120,7 @@ fn r7_parts(
             workload,
             cores,
             Some(ccd),
-            PartRole::Ccd,
+            R7PartRole::Ccd,
         ));
         for node in started.into_iter().flat_map(|step| step.current(ccd)) {
             if node.cores.len() >= 2 {
@@ -109,7 +130,7 @@ fn r7_parts(
                     workload,
                     node.cores,
                     Some(ccd),
-                    PartRole::Partial,
+                    R7PartRole::Partial,
                 ));
             }
         }
@@ -121,7 +142,7 @@ fn r7_parts(
             workload,
             topo.all(),
             None,
-            PartRole::AllCore,
+            R7PartRole::AllCore,
         ));
     }
     parts
@@ -321,5 +342,40 @@ mod tests {
         assert!(reached.contains(&late));
         rebuild(config, topo, &steps, &r7, &mut plans, &reached);
         assert_eq!(plans, build(config, topo, &steps, &r7));
+    }
+
+    fn passes(config: &Config, ccds: usize, role: R7PartRole) -> Vec<(u32, u32)> {
+        r7_part_passes(config, ccds, role)
+            .into_iter()
+            .map(|(secs, count)| (secs.get(), count))
+            .collect()
+    }
+
+    #[test]
+    fn a_part_on_two_ccds_needs_three_short_passes_and_one_quarter_or_remainder_long_pass() {
+        let config = Config::default();
+        assert_eq!(passes(&config, 2, R7PartRole::Ccd), [(120, 3), (300, 1)]);
+        assert_eq!(
+            passes(&config, 2, R7PartRole::Partial),
+            [(120, 3), (300, 1)]
+        );
+        assert_eq!(
+            passes(&config, 2, R7PartRole::AllCore),
+            [(120, 3), (600, 1)]
+        );
+    }
+
+    #[test]
+    fn a_part_on_one_ccd_runs_the_whole_all_core_budget_long() {
+        assert_eq!(
+            passes(&Config::default(), 1, R7PartRole::Ccd),
+            [(120, 3), (1200, 1)]
+        );
+    }
+
+    #[test]
+    fn a_long_trial_as_short_as_the_short_ones_adds_to_their_count() {
+        let config = Config::parse(r#"{"durations":{"short_trial_s":300}}"#).unwrap();
+        assert_eq!(passes(&config, 2, R7PartRole::Partial), [(300, 4)]);
     }
 }

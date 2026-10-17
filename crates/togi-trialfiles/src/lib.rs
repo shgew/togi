@@ -24,27 +24,27 @@ const INSTANCE_LOGS: [&str; 2] = ["stdout.log", "stderr.log"];
 /// One failed step of compressing a trial's files, naming the file it concerns.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("list trial files in {}: {source}", dir.display())]
+    #[error("list trial files in {}", dir.display())]
     List { dir: PathBuf, source: io::Error },
-    #[error("open {}: {source}", path.display())]
+    #[error("open {}", path.display())]
     Open { path: PathBuf, source: io::Error },
-    #[error("stat {}: {source}", path.display())]
+    #[error("stat {}", path.display())]
     Stat { path: PathBuf, source: io::Error },
-    #[error("remove stale {}: {source}", path.display())]
+    #[error("remove stale {}", path.display())]
     RemoveStale { path: PathBuf, source: io::Error },
-    #[error("create {}: {source}", path.display())]
+    #[error("create {}", path.display())]
     Create { path: PathBuf, source: io::Error },
-    #[error("compress {}: {source}", path.display())]
+    #[error("compress {}", path.display())]
     Compress { path: PathBuf, source: io::Error },
-    #[error("sync compressed {}: {source}", path.display())]
+    #[error("sync compressed {}", path.display())]
     SyncCompressed { path: PathBuf, source: io::Error },
-    #[error("remove plain {}: {source}", path.display())]
+    #[error("remove plain {}", path.display())]
     RemovePlain { path: PathBuf, source: io::Error },
-    #[error("sync removal of {}: {source}", path.display())]
+    #[error("sync removal of {}", path.display())]
     SyncRemoval { path: PathBuf, source: io::Error },
 }
 
-/// Every error [`compress`] met, in the order it met them; the text joins them one per line.
+/// Every error [`compress`] met, in the order it met them; the text joins them one per line, each with its cause.
 #[derive(Debug)]
 pub struct Errors(Vec<Error>);
 
@@ -62,6 +62,9 @@ impl fmt::Display for Errors {
                 f.write_str("\n")?;
             }
             write!(f, "{error}")?;
+            if let Some(source) = std::error::Error::source(error) {
+                write!(f, ": {source}")?;
+            }
         }
         Ok(())
     }

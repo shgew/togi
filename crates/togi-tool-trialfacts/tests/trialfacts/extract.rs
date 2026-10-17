@@ -311,7 +311,7 @@ fn a_bad_source_is_an_error_and_no_facts() {
     let error = extract(&lock(&fs)).unwrap_err();
     assert!(matches!(error, ExtractError::Journals(_)), "{error}");
     assert_eq!(
-        error.to_string(),
+        togi_machine::error_chain(&error),
         "/state/events.jsonl: first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover"
     );
 
@@ -335,7 +335,7 @@ fn a_lock_error_keeps_the_path_and_original_source() {
     )]
     let source = togi_journal::StateDir::simulated(fs).unwrap_err();
     assert_eq!(
-        ExtractError::Lock(source).to_string(),
+        togi_machine::error_chain(&ExtractError::Lock(source)),
         "lock the state directory: lock /state/lock: injected Open fault"
     );
 }

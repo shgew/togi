@@ -80,13 +80,12 @@ fn real_fs_executable_regular_file_passes() {
 fn real_fs_file_without_execute_bit_is_refused() {
     let dir = TempDir::new().unwrap();
     let path = file_with_mode(&dir, "bin", 0o644);
-    match check_executable("mprime", &path).unwrap_err() {
-        Error::NotExecutable { name, path: named } => {
-            assert_eq!(name, "mprime");
-            assert_eq!(named, path);
-        }
-        other => panic!("{other:?}"),
-    }
+    let error = check_executable("mprime", &path).unwrap_err();
+    let Error::NotExecutable { name, path: named } = error else {
+        panic!("{error:?}");
+    };
+    assert_eq!(name, "mprime");
+    assert_eq!(named, path);
 }
 
 #[test]

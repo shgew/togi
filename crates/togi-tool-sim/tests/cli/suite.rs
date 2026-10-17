@@ -115,6 +115,18 @@ fn a_stray_file_among_the_manifests_fails_the_check() {
 }
 
 #[test]
+fn a_malformed_manifest_line_fails_the_check_naming_the_line_and_its_cause() {
+    let mut host = host();
+    host.put("/manifests/shard-0.jsonl", "\n{");
+    let ran = check(&mut host);
+    assert_eq!(ran.code, Some(1));
+    assert_eq!(
+        ran.stderr,
+        "sim: /manifests/shard-0.jsonl: manifest line 2: EOF while parsing an object at line 1 column 1\n"
+    );
+}
+
+#[test]
 fn a_session_that_does_not_end_clean_fails_its_shard_and_is_recorded() {
     let mut host = host();
     let ran = run_shard(&mut host, "0", &["--max-boots", "1"]);

@@ -409,6 +409,24 @@ fn real_process_outside_a_git_repository_the_bench_fails_naming_it() {
     assert!(stderr.contains("not a git repository"), "{stderr}");
 }
 
+#[test]
+fn real_process_outside_a_git_repository_the_forecast_fails_naming_it() {
+    let bench = Bench::new();
+    let outside = bench.path("outside");
+    fs::create_dir(&outside).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"));
+    isolate_git(&mut command, &bench.path("githome"));
+    let output = run(command
+        .arg("forecast")
+        .arg(bench.path("state"))
+        .current_dir(&outside)
+        .env("GIT_CEILING_DIRECTORIES", bench.dir.path()));
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = text(&output.stderr);
+    assert!(stderr.starts_with("togi-tool-bench: git "), "{stderr}");
+    assert!(stderr.contains("not a git repository"), "{stderr}");
+}
+
 fn wait_for(what: &str, mut ready: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while !ready() {

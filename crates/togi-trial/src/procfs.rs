@@ -21,7 +21,7 @@ pub(crate) struct Stat {
     pub(crate) processor: u32,
 }
 
-#[derive(Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("malformed /proc stat ({reason}): {excerpt}")]
 pub(crate) struct StatError {
     reason: &'static str,
@@ -120,13 +120,35 @@ pub(crate) struct Thread {
     pub(crate) cpu: u32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+/// A `/proc` observation that did not happen. Only `Gone` is normal; every other variant is a lost
+/// observation and keeps what caused it.
+#[derive(Debug, thiserror::Error)]
 pub(crate) enum ProcError {
     /// The process or thread vanished while being read: normal, never a lost observation.
     #[error("process disappeared")]
     Gone,
-    #[error("{0}")]
-    Observation(String),
+    #[error("read {}", path.display())]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("list {}", path.display())]
+    List {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("parse {}", path.display())]
+    Stat {
+        path: PathBuf,
+        #[source]
+        source: StatError,
+    },
+    #[error("task id {name:?} is not a thread")]
+    NotThread { name: String },
+    #[error("cpu time of {pid} overflows")]
+    CpuTimeOverflow { pid: u32 },
     #[error("the /proc scan did not finish before its deadline")]
     Deadline,
     #[error("an earlier /proc scan is still blocked")]
@@ -136,7 +158,7 @@ pub(crate) enum ProcError {
 }
 
 /// What a thread listing found: readable threads stay evidence even when others failed.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default)]
 pub(crate) struct Threads {
     pub(crate) threads: Vec<Thread>,
     pub(crate) errors: Vec<ProcError>,
@@ -264,28 +286,30 @@ impl Proc {
         }
     }
 
-    fn read(&self, relative: &str) -> Result<String, ProcError> {
-        let path = self.root.join(relative);
+    fn read(&self, path: &Path) -> Result<String, ProcError> {
         self.inputs
-            .read(&path)
+            .read(path)
             .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-            .map_err(|error| {
-                if disappeared(&error) {
+            .map_err(|source| {
+                if disappeared(&source) {
                     ProcError::Gone
                 } else {
-                    ProcError::Observation(format!("read {}: {error}", path.display()))
+                    ProcError::Read {
+                        path: path.to_owned(),
+                        source,
+                    }
                 }
             })
     }
 
     fn stat(&self, relative: &str) -> Result<Stat, ProcError> {
-        parse_stat(&self.read(relative)?).map_err(|error| ProcError::Observation(error.to_string()))
+        let path = self.root.join(relative);
+        parse_stat(&self.read(&path)?).map_err(|source| ProcError::Stat { path, source })
     }
 
     pub(crate) fn usage(&self, pid: u32) -> Result<Usage, ProcError> {
         let stat = self.stat(&format!("{pid}/stat"))?;
-        let cpu_time = cpu_time(&stat, self.ticks)
-            .ok_or_else(|| ProcError::Observation(format!("cpu time of {pid} overflows")))?;
+        let cpu_time = cpu_time(&stat, self.ticks).ok_or(ProcError::CpuTimeOverflow { pid })?;
         Ok(Usage {
             cpu_time,
             cpu: stat.processor,
@@ -294,31 +318,32 @@ impl Proc {
 
     pub(crate) fn threads(&self, pid: u32) -> Result<Threads, ProcError> {
         let directory = self.root.join(format!("{pid}/task"));
-        let entries = self.inputs.read_dir(&directory).map_err(|error| {
-            if disappeared(&error) {
+        let entries = self.inputs.read_dir(&directory).map_err(|source| {
+            if disappeared(&source) {
                 ProcError::Gone
             } else {
-                ProcError::Observation(format!("list {}: {error}", directory.display()))
+                ProcError::List {
+                    path: directory.clone(),
+                    source,
+                }
             }
         })?;
         let mut found = Threads::default();
         for entry in entries {
             let entry = match entry {
                 Ok(entry) => entry,
-                Err(error) if disappeared(&error) => continue,
-                Err(error) => {
-                    found.errors.push(ProcError::Observation(format!(
-                        "list {}: {error}",
-                        directory.display()
-                    )));
+                Err(source) if disappeared(&source) => continue,
+                Err(source) => {
+                    found.errors.push(ProcError::List {
+                        path: directory.clone(),
+                        source,
+                    });
                     continue;
                 }
             };
             let name = entry.file_name().to_string_lossy().into_owned();
             let Some(tid) = name.parse::<u32>().ok().filter(|tid| *tid > 0) else {
-                found.errors.push(ProcError::Observation(format!(
-                    "task id {name:?} is not a thread"
-                )));
+                found.errors.push(ProcError::NotThread { name });
                 continue;
             };
             match self.stat(&format!("{pid}/task/{tid}/stat")) {
@@ -335,25 +360,26 @@ impl Proc {
     }
 
     pub(crate) fn in_scope(&self, pid: u32, scope: &ScopeName) -> Result<bool, ProcError> {
-        Ok(in_scope(&self.read(&format!("{pid}/cgroup"))?, scope))
+        let cgroup = self.read(&self.root.join(format!("{pid}/cgroup")))?;
+        Ok(in_scope(&cgroup, scope))
     }
 
     /// Every live process whose cgroup path names a trial scope; a read failure other than a
     /// disappearance fails the whole scan, never an empty success.
     pub(crate) fn scope_processes(&self) -> Result<Vec<ScopeProcess>, ProcError> {
-        let entries = self.inputs.read_dir(&self.root).map_err(|error| {
-            ProcError::Observation(format!("list {}: {error}", self.root.display()))
-        })?;
+        let listed = |source| ProcError::List {
+            path: self.root.clone(),
+            source,
+        };
+        let entries = self.inputs.read_dir(&self.root).map_err(listed)?;
         let mut found = Vec::new();
         for entry in entries {
-            let entry = entry.map_err(|error| {
-                ProcError::Observation(format!("list {}: {error}", self.root.display()))
-            })?;
+            let entry = entry.map_err(listed)?;
             let name = entry.file_name().to_string_lossy().into_owned();
             let Some(pid) = name.parse::<u32>().ok().filter(|pid| *pid > 0) else {
                 continue;
             };
-            let cgroup = match self.read(&format!("{pid}/cgroup")) {
+            let cgroup = match self.read(&self.root.join(format!("{pid}/cgroup"))) {
                 Ok(text) => text,
                 Err(ProcError::Gone) => continue,
                 Err(error) => return Err(error),
@@ -554,22 +580,48 @@ mod tests {
         fs::write(path, text).unwrap();
     }
 
+    fn injected(source: &io::Error) -> bool {
+        source.kind() == io::ErrorKind::Other && source.to_string() == "injected Read fault"
+    }
+
+    fn stat_reason(error: &ProcError) -> Option<&'static str> {
+        match error {
+            ProcError::Stat { source, .. } => Some(source.reason),
+            _ => None,
+        }
+    }
+
     #[test]
-    fn injected_read_and_listing_errors_are_lost_observations() {
+    fn injected_read_and_listing_errors_are_lost_observations_that_keep_their_cause() {
         use togi_journal::fs::{Fault, Op};
 
         let (dir, proc) = fixture();
         write(&dir, "10/stat", &stat_line("w", 'R', &[]));
         dir.fs.inject(Fault::before(Op::Read, 1));
-        assert!(matches!(proc.usage(10), Err(ProcError::Observation(_))));
+        let error = proc.usage(10).unwrap_err();
+        assert!(
+            matches!(&error, ProcError::Read { path, source }
+                if path.ends_with("10/stat") && injected(source)),
+            "{error:?}"
+        );
+        assert_eq!(
+            togi_machine::error_chain(&error),
+            "read /proc-fixture/10/stat: injected Read fault"
+        );
+        let cause = std::error::Error::source(&error).unwrap();
+        assert!(cause.downcast_ref::<io::Error>().is_some_and(injected));
         dir.fs.clear_faults();
         dir.fs.inject(Fault::before(Op::Read, 1));
-        assert!(matches!(proc.threads(10), Err(ProcError::Observation(_))));
+        assert!(matches!(
+            proc.threads(10),
+            Err(ProcError::List { path, source }) if path.ends_with("10/task") && injected(&source)
+        ));
         dir.fs.clear_faults();
         dir.fs.inject(Fault::before(Op::Read, 1));
         assert!(matches!(
             proc.scope_processes(),
-            Err(ProcError::Observation(_))
+            Err(ProcError::List { path, source })
+                if path == Fixture::path() && injected(&source)
         ));
     }
 
@@ -590,7 +642,7 @@ mod tests {
     #[test]
     fn usage_distinguishes_missing_from_malformed() {
         let (dir, proc) = fixture();
-        assert_eq!(proc.usage(10), Err(ProcError::Gone));
+        assert!(matches!(proc.usage(10), Err(ProcError::Gone)));
         write(
             &dir,
             "10/stat",
@@ -601,16 +653,33 @@ mod tests {
             ),
         );
         assert_eq!(
-            proc.usage(10),
-            Ok(Usage {
+            proc.usage(10).unwrap(),
+            Usage {
                 cpu_time: Duration::from_millis(1500),
                 cpu: 7
-            })
+            }
         );
         write(&dir, "11/stat", "11 (x) S");
-        assert!(matches!(proc.usage(11), Err(ProcError::Observation(_))));
+        let malformed = proc.usage(11).unwrap_err();
+        assert!(
+            matches!(&malformed, ProcError::Stat { path, source }
+                if path.ends_with("11/stat") && source.reason == "too few fields"),
+            "{malformed:?}"
+        );
+        let cause = std::error::Error::source(&malformed).unwrap();
+        assert_eq!(
+            cause.downcast_ref::<StatError>().map(|stat| stat.reason),
+            Some("too few fields")
+        );
+        assert_eq!(
+            togi_machine::error_chain(&malformed),
+            r#"parse /proc-fixture/11/stat: malformed /proc stat (too few fields): "11 (x) S""#
+        );
         write(&dir, "12/stat", &stat_line("x", 'R', &[(15, "-4")]));
-        assert!(matches!(proc.usage(12), Err(ProcError::Observation(_))));
+        assert_eq!(
+            stat_reason(&proc.usage(12).unwrap_err()),
+            Some("negative field")
+        );
     }
 
     #[test]
@@ -624,12 +693,26 @@ mod tests {
         let found = proc.threads(10).unwrap();
         assert_eq!(found.threads, [Thread { tid: 123, cpu: 3 }]);
         assert_eq!(found.errors.len(), 3);
+        let not_threads: Vec<&str> = found
+            .errors
+            .iter()
+            .filter_map(|error| match error {
+                ProcError::NotThread { name } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(not_threads.len(), 2);
+        assert!(not_threads.contains(&"abc") && not_threads.contains(&"0"));
+        assert!(found.errors.iter().any(|error| matches!(
+            error,
+            ProcError::Stat { path, .. } if path.ends_with("10/task/125/stat")
+        )));
     }
 
     #[test]
     fn a_missing_task_directory_is_a_disappearance() {
         let (_dir, proc) = fixture();
-        assert_eq!(proc.threads(99), Err(ProcError::Gone));
+        assert!(matches!(proc.threads(99), Err(ProcError::Gone)));
     }
 
     #[test]
@@ -637,8 +720,9 @@ mod tests {
         let (dir, proc) = disk_fixture();
         disk_write(&dir, "99/task", "");
         match proc.threads(99) {
-            Err(ProcError::Observation(message)) => {
-                assert!(message.contains("99/task"), "{message}");
+            Err(ProcError::List { path, source }) => {
+                assert!(path.ends_with("99/task"), "{}", path.display());
+                assert_eq!(source.kind(), io::ErrorKind::NotADirectory, "{source}");
             }
             other => panic!("unexpected {other:?}"),
         }
@@ -663,12 +747,12 @@ mod tests {
                 starttime: 777
             }]
         );
-        assert_eq!(proc.alive(&found[0]), Ok(true));
+        assert!(proc.alive(&found[0]).unwrap());
         let reused = ScopeProcess {
             starttime: 778,
             ..found[0].clone()
         };
-        assert_eq!(proc.alive(&reused), Ok(false));
+        assert!(!proc.alive(&reused).unwrap());
     }
 
     #[test]
@@ -676,14 +760,14 @@ mod tests {
         let (dir, proc) = fixture();
         write(&dir, "20/cgroup", "0::/a/togi-trial-x.scope\n");
         write(&dir, "20/stat", "broken");
-        assert!(matches!(
-            proc.scope_processes(),
-            Err(ProcError::Observation(_))
-        ));
+        assert_eq!(
+            stat_reason(&proc.scope_processes().unwrap_err()),
+            Some("no closing parenthesis")
+        );
         let missing = Proc::with_inputs(Fixture::path().join("nowhere"), 100, proc.inputs.clone());
         assert!(matches!(
             missing.scope_processes(),
-            Err(ProcError::Observation(_))
+            Err(ProcError::List { source, .. }) if source.kind() == io::ErrorKind::NotFound
         ));
     }
 
@@ -712,10 +796,11 @@ mod tests {
                 write(&dir, "30/cgroup", "0::/a/togi-trial-y.scope\n");
             }
             dir.mkdir(&format!("30/{broken}"));
-            let Err(ProcError::Observation(text)) = proc.scope_processes() else {
+            let Err(ProcError::Read { path, source }) = proc.scope_processes() else {
                 panic!("a {broken} that is a directory must fail the scan");
             };
-            assert!(text.contains(broken), "{text}");
+            assert!(path.ends_with(format!("30/{broken}")), "{}", path.display());
+            assert_eq!(source.kind(), io::ErrorKind::IsADirectory);
         }
     }
 
@@ -735,12 +820,13 @@ mod tests {
                 // Running as root: permissions do not apply, so denial cannot be staged.
                 return;
             }
-            let Err(ProcError::Observation(text)) = proc.scope_processes() else {
+            let Err(ProcError::Read { path, source }) = proc.scope_processes() else {
                 panic!("an unreadable {denied} must fail the scan");
             };
-            assert!(text.contains(denied), "{text}");
+            assert!(path.ends_with(format!("30/{denied}")), "{}", path.display());
+            assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
             fs::remove_file(&path).unwrap();
-            assert_eq!(proc.scope_processes().map(|found| found.len()), Ok(1));
+            assert_eq!(proc.scope_processes().unwrap().len(), 1);
         }
     }
 
@@ -760,29 +846,36 @@ mod tests {
     fn per_process_reads_fail_on_a_non_file_stat_and_threads_keep_readable_ones() {
         let (dir, proc) = fixture();
         dir.mkdir("50/stat");
-        assert!(matches!(proc.usage(50), Err(ProcError::Observation(_))));
+        let directory = |error: &ProcError| match error {
+            ProcError::Read { path, source } if source.kind() == io::ErrorKind::IsADirectory => {
+                Some(path.clone())
+            }
+            _ => None,
+        };
+        let stat = Fixture::path().join("50/stat");
+        assert_eq!(directory(&proc.usage(50).unwrap_err()), Some(stat.clone()));
         let process = ScopeProcess {
             scope: scope("togi-trial-x"),
             pid: 50,
             starttime: 1,
         };
-        assert!(matches!(
-            proc.alive(&process),
-            Err(ProcError::Observation(_))
-        ));
+        assert_eq!(directory(&proc.alive(&process).unwrap_err()), Some(stat));
         dir.mkdir("50/cgroup");
-        assert!(matches!(
-            proc.in_scope(50, &process.scope),
-            Err(ProcError::Observation(_))
-        ));
+        assert_eq!(
+            directory(&proc.in_scope(50, &process.scope).unwrap_err()),
+            Some(Fixture::path().join("50/cgroup"))
+        );
         write(&dir, "51/task/1/stat", &stat_line("w", 'R', &[(39, "2")]));
         dir.mkdir("51/task/2/stat");
         let found = proc.threads(51).unwrap();
         assert_eq!(found.threads, [Thread { tid: 1, cpu: 2 }]);
-        assert!(matches!(
-            found.errors.as_slice(),
-            [ProcError::Observation(_)]
-        ));
+        let [error] = found.errors.as_slice() else {
+            panic!("{:?}", found.errors);
+        };
+        assert_eq!(
+            directory(error),
+            Some(Fixture::path().join("51/task/2/stat"))
+        );
     }
 
     #[test]
@@ -794,20 +887,19 @@ mod tests {
             pid: 30,
             starttime: 9,
         };
-        assert_eq!(proc.alive(&process), Ok(false));
+        assert!(!proc.alive(&process).unwrap());
         write(
             &dir,
             "30/stat",
             &stat_line("w", 'X', &[(5, "-1"), (6, "-1"), (22, "9")]),
         );
-        assert_eq!(
-            proc.alive(&process),
-            Ok(false),
+        assert!(
+            !proc.alive(&process).unwrap(),
             "a task being torn down prints -1 for its group and session"
         );
         write(&dir, "30/stat", "broken");
-        assert!(proc.alive(&process).is_err());
-        assert_eq!(proc.alive(&ScopeProcess { pid: 31, ..process }), Ok(false));
+        assert!(matches!(proc.alive(&process), Err(ProcError::Stat { .. })));
+        assert!(!proc.alive(&ScopeProcess { pid: 31, ..process }).unwrap());
     }
 
     #[test]
@@ -870,9 +962,8 @@ mod tests {
         );
         write(&dir, "20/cgroup", "0::/elsewhere\n");
         assert!(proc.scope_processes().unwrap().is_empty());
-        assert_eq!(
-            proc.alive(&found[0]),
-            Ok(true),
+        assert!(
+            proc.alive(&found[0]).unwrap(),
             "leaving the scope does not end the captured process"
         );
         write(
@@ -880,9 +971,8 @@ mod tests {
             "20/stat",
             &stat_line("name with spaces", 'S', &[(22, "101")]),
         );
-        assert_eq!(
-            proc.alive(&found[0]),
-            Ok(false),
+        assert!(
+            !proc.alive(&found[0]).unwrap(),
             "a reused pid is not the captured process"
         );
     }
@@ -896,8 +986,9 @@ mod tests {
                 &format!("{pid}/stat"),
                 &stat_line("w", 'R', &[(field, "bad")]),
             );
-            assert!(
-                matches!(proc.usage(pid), Err(ProcError::Observation(_))),
+            assert_eq!(
+                stat_reason(&proc.usage(pid).unwrap_err()),
+                Some("non-numeric field"),
                 "field {field}"
             );
         }
@@ -916,23 +1007,27 @@ mod tests {
         write(&dir, "10/task/123/stat", &stat_line("w", 'R', &[(39, "7")]));
         let found = proc.threads(10).unwrap();
         assert_eq!(found.threads, [Thread { tid: 123, cpu: 7 }]);
-        assert_eq!(found.errors.len(), 3);
-        assert!(
-            found
-                .errors
-                .iter()
-                .all(|error| matches!(error, ProcError::Observation(_)))
-        );
+        let mut names: Vec<&str> = found
+            .errors
+            .iter()
+            .map(|error| match error {
+                ProcError::NotThread { name } => name.as_str(),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        names.sort_unstable();
+        assert_eq!(names, ["-1", "0", "bad"]);
     }
 
     #[test]
     fn a_scope_process_with_an_invalid_start_time_fails_the_scan() {
         let (dir, proc) = fixture();
         write(&dir, "42/cgroup", "0::/togi-trial-1.scope\n");
-        for start in ["-1", "bad"] {
+        for (start, reason) in [("-1", "negative field"), ("bad", "non-numeric field")] {
             write(&dir, "42/stat", &stat_line("w", 'S', &[(22, start)]));
-            assert!(
-                matches!(proc.scope_processes(), Err(ProcError::Observation(_))),
+            assert_eq!(
+                stat_reason(&proc.scope_processes().unwrap_err()),
+                Some(reason),
                 "{start}"
             );
         }
@@ -941,9 +1036,9 @@ mod tests {
             pid: 42,
             starttime: 100,
         };
-        assert!(matches!(
-            proc.alive(&process),
-            Err(ProcError::Observation(_))
-        ));
+        assert_eq!(
+            stat_reason(&proc.alive(&process).unwrap_err()),
+            Some("non-numeric field")
+        );
     }
 }

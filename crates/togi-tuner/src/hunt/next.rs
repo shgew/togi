@@ -234,10 +234,12 @@ impl Run {
             GroupStage::Locate => {
                 "rerunning the failed load with every unloaded core at CO 0 to locate the failure"
             }
-            _ if located_full => {
+            GroupStage::Full if located_full => {
                 "rerunning the full failing profile at the failed duration before the failure stays with the loaded cores"
             }
-            _ => "testing the part of the failing profile",
+            GroupStage::Part | GroupStage::Complement | GroupStage::Full | GroupStage::Repeated => {
+                "testing the part of the failing profile"
+            }
         };
         let payload = Self::group_payload(hunt, group, reason);
         let first_narrowing = hunt.groups.len() == usize::from(hunt.located);

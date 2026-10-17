@@ -297,9 +297,10 @@ impl Journal {
         if let Some(&cause) = cause.iter().find(|cause| cause.get() >= seq.get()) {
             return Err(AppendError::Cause { seq, cause });
         }
-        let session = match &payload {
-            Payload::SessionStart(start) => Some(start.session),
-            _ => None,
+        let session = if let Payload::SessionStart(start) = &payload {
+            Some(start.session)
+        } else {
+            None
         };
         let event = Event::new(seq, stamp, self.boot.clone(), cause.to_vec(), payload);
         let line = encode(&event).map_err(AppendError::Encode)?;

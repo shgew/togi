@@ -1649,6 +1649,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-command",
  "togi-hostlock",
@@ -1694,6 +1695,7 @@ dependencies = [
  "nix",
  "rustix",
  "tempfile",
+ "test-case",
  "thiserror",
 ]
 
@@ -1745,6 +1747,7 @@ dependencies = [
  "rustix",
  "serde_json",
  "tempfile",
+ "test-case",
  "togi-journal",
  "togi-machine",
 ]
@@ -1818,6 +1821,7 @@ version = "0.0.0"
 dependencies = [
  "rustix",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-hostlock",
  "togi-machine",
@@ -1846,6 +1850,7 @@ name = "togi-tool-bench"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "flate2",
  "jiff",
  "proptest",
  "rand",
@@ -1855,6 +1860,7 @@ dependencies = [
  "sha2",
  "signal-hook 0.4.5",
  "tempfile",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-facts",
@@ -2017,6 +2023,8 @@ dependencies = [
  "clap",
  "jiff",
  "proptest",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "togi-config",

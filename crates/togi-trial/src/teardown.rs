@@ -5,13 +5,15 @@ use togi_machine::Stopped;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinSet;
 
-use tokio::time::{Instant, sleep, sleep_until, timeout_at};
+use tokio::time::{Instant, sleep, sleep_until};
 
 use crate::error::{CleanupFailure, Containment};
 use crate::id::ScopeName;
 use crate::instance::{Flow, Inbound, LiveInstance, dispatch, finish_watched, poll_watched};
 use crate::judge::Judge;
 use crate::os::{Child as _, GroupSignal, KillSignal, Os, SignalError, Systemd};
+use crate::procfs::ProcError;
+use crate::sweep;
 use crate::timing::Timing;
 use crate::watch::{Watched, WritersStopped};
 
@@ -92,6 +94,7 @@ pub(crate) struct Verified;
 const VERIFY_POLL: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// The teardown typestate: each step consumes the last, so the proof can only come from the end.
+#[must_use = "run every teardown step to its end: only the last yields the proof"]
 pub(crate) struct Teardown<'a, O: Os, S> {
     os: &'a Rc<O>,
     inbound: &'a mut Receiver<Inbound>,
@@ -104,12 +107,9 @@ pub(crate) struct Teardown<'a, O: Os, S> {
 }
 
 /// What a finished teardown leaves: the proof, or every failure that withholds it.
+#[must_use = "inspect the proof: it is the stop, or every failure that withholds it"]
 pub(crate) struct Ended {
     pub(crate) proof: Result<Stopped, Containment>,
-}
-
-fn text_says_missing(text: &str) -> bool {
-    text.contains("not loaded") || text.contains("could not be found")
 }
 
 impl<'a, O: Os, S> Teardown<'a, O, S> {
@@ -205,7 +205,7 @@ impl<'a, O: Os> Teardown<'a, O, Running> {
                     scope: scope.clone(),
                     signal: KillSignal::Kill,
                 };
-                let outcome = timeout_at(end, os.systemd(&operation, end)).await;
+                let outcome = sweep::call(os.as_ref(), &operation, end).await;
                 (scope, outcome)
             });
         }
@@ -214,28 +214,9 @@ impl<'a, O: Os> Teardown<'a, O, Running> {
             let Ok((scope, outcome)) = joined else {
                 continue;
             };
-            let failure = match outcome {
-                Ok(Ok(output)) if output.status.success() => None,
-                Ok(Ok(output)) => {
-                    let text = format!(
-                        "{}{}",
-                        String::from_utf8_lossy(&output.stdout),
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                    (!text_says_missing(&text)).then(|| {
-                        Box::<dyn std::error::Error + Send + Sync>::from(format!(
-                            "systemctl kill exited with {}: {}",
-                            output.status,
-                            text.trim()
-                        ))
-                    })
-                }
-                Ok(Err(error)) => Some(Box::new(error) as Box<dyn std::error::Error + Send + Sync>),
-                Err(elapsed) => Some(Box::new(elapsed) as Box<dyn std::error::Error + Send + Sync>),
-            };
-            match failure {
-                None => confirmed.push(scope),
-                Some(source) => self.failures.record(CleanupFailure::KillScope {
+            match outcome {
+                Ok(()) => confirmed.push(scope),
+                Err(source) => self.failures.record(CleanupFailure::KillScope {
                     scope: scope.to_string(),
                     signal: KillSignal::Kill.name(),
                     source,
@@ -391,7 +372,7 @@ impl<'a, O: Os> Teardown<'a, O, ReadersDone> {
             if late && left.is_empty() {
                 self.failures.record(CleanupFailure::Observe {
                     what: "the trial scope members",
-                    source: "the scan finished after the teardown deadline".into(),
+                    source: Box::new(ProcError::Deadline),
                 });
                 break None;
             }

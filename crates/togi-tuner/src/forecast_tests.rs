@@ -54,9 +54,14 @@ fn named(forecast: &Forecast) -> Vec<&Branch> {
 }
 
 fn backoff(branch: &Branch) -> Option<&TunerDecision> {
-    branch.decisions.iter().find_map(|decision| match decision {
-        DecisionPayload::TunerDecision(td) if td.decision == Decision::Backoff => Some(td),
-        _ => None,
+    branch.decisions.iter().find_map(|decision| {
+        if let DecisionPayload::TunerDecision(td) = decision
+            && td.decision == Decision::Backoff
+        {
+            Some(td)
+        } else {
+            None
+        }
     })
 }
 
@@ -398,7 +403,7 @@ fn forecast_r7_premises_fold_distinct_outcomes_without_invented_telemetry() {
             match branch.premise {
                 Premise::Pass | Premise::AllPass => Outcome::Pass,
                 Premise::Inconclusive => Outcome::Inconclusive,
-                _ => Outcome::Failure,
+                Premise::Named(_) | Premise::Unnamed => Outcome::Failure,
             },
             matches!(branch.premise, Premise::Named(_) | Premise::Unnamed)
                 .then_some(togi_machine::Signal::ComputationError),

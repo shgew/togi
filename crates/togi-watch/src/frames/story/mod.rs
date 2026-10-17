@@ -320,7 +320,7 @@ fn cycle_story(scene: &Scene<'_>, trial: &TrialView) -> Story {
     let mut place_words = match s.phases.map(|phases| phases.phase) {
         Some(PhaseNo::One) => "Every core runs at its profile offset. Phase 1's cycle: its pass confirms the first BIOS profile.".to_owned(),
         Some(PhaseNo::Two) => "Every core runs at its profile offset. Phase 2's confirmation cycle: its pass concludes phase 2.".to_owned(),
-        _ => "Every core runs at its profile offset. The cycle keeps testing until stopped.".to_owned(),
+        Some(PhaseNo::Concluded) | None => "Every core runs at its profile offset. The cycle keeps testing until stopped.".to_owned(),
     };
     if let Some(place) = place.filter(|place| place.parts > 1) {
         let part = place.part.unwrap_or_default();
@@ -418,10 +418,10 @@ fn stopped_story(reason: ShutdownReason, saved: bool) -> Story {
         ShutdownReason::Cycles => {
             "The requested clean cycles are complete, so I've stopped. Everything I learned is in the journal; togi run picks up where I left off."
         }
-        _ if saved => {
+        ShutdownReason::Signal | ShutdownReason::DeadEnd | ShutdownReason::Command if saved => {
             "I restored baseline or shallower offsets before stopping. togi run picks up where I left off."
         }
-        _ => {
+        ShutdownReason::Signal | ShutdownReason::DeadEnd | ShutdownReason::Command => {
             "I've stopped. Everything I learned is in the journal; togi run picks up where I left off."
         }
     };
@@ -765,7 +765,7 @@ pub(crate) fn narrator_lines(
         let mut spans = vec![bar(), Span::raw("  ")];
         spans.extend(
             cut_styled(
-                &Line::from(Span::styled(inert(text).into_owned(), text_style)),
+                &Line::from(Span::styled(inert(text), text_style)),
                 width.saturating_sub(3),
             )
             .spans,
@@ -784,12 +784,7 @@ pub(crate) fn narrator_lines(
             story
                 .lines
                 .iter()
-                .map(|line| {
-                    cut_styled(
-                        &Line::from(Span::styled(inert(line).into_owned(), text_style)),
-                        room,
-                    )
-                })
+                .map(|line| cut_styled(&Line::from(Span::styled(inert(line), text_style)), room))
                 .collect()
         };
     }

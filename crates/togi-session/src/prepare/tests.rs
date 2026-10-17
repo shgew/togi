@@ -35,19 +35,23 @@ fn ended(bench: &Bench, carry: Option<PendingCarry>) -> Ended {
 }
 
 fn session_of(journal: &Journal) -> SessionId {
-    match &journal.events()[0].payload {
-        Payload::SessionStart(start) => start.session,
-        other => panic!("{other:?}"),
-    }
+    let payload = &journal.events()[0].payload;
+    let Payload::SessionStart(start) = payload else {
+        panic!("{payload:?}");
+    };
+    start.session
 }
 
 fn recorded_context(journal: &Journal) -> BiosContext {
     journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SessionContext(context) => Some(context.bios_context()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::SessionContext(context) = &event.payload {
+                Some(context.bios_context())
+            } else {
+                None
+            }
         })
         .unwrap()
 }
@@ -581,7 +585,7 @@ fn a_kept_journal_is_prepared_as_the_reopened_directory_is() {
 
         let mut journal = simulated(&kept).open_at(boot("crashed"), now).unwrap();
         journal.reboot(rebooted.clone()).unwrap();
-        let reads = kept.reads().len();
+        kept.record_history();
         let actual = prepare_kept(
             journal,
             &build,
@@ -598,7 +602,7 @@ fn a_kept_journal_is_prepared_as_the_reopened_directory_is() {
         );
         if matches!(name, "empty" | "plain resume" | "carry unsettled") {
             assert!(
-                kept.reads()[reads..]
+                kept.reads()
                     .iter()
                     .all(|path| !path.ends_with("events.jsonl")),
                 "{name}: the kept journal was read from its file"

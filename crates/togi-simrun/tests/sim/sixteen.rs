@@ -72,16 +72,22 @@ fn named_target_observer(bench: &Bench, definition: MachineDefinition) -> Observ
 fn assert_named_target(events: &[Event], needed: u32) {
     let intents: BTreeMap<_, _> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialIntent(intent) => Some((&intent.trial, intent)),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
+                Some((&intent.trial, intent))
+            } else {
+                None
+            }
         })
         .collect();
     let ends: BTreeMap<_, _> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TrialEnd(end) => Some((event.seq, (intents[&end.trial], end))),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some((event.seq, (intents[&end.trial], end)))
+            } else {
+                None
+            }
         })
         .collect();
     let named = CoreId::new(2).unwrap();
@@ -108,14 +114,15 @@ fn assert_named_target(events: &[Event], needed: u32) {
     assert_eq!(failed.core, Some(named));
     let failing_mhz = failed.ccd_mhz[&CcdId(0)];
     let request = failed.voltage_requests_v.get(named).unwrap();
-    let Some((decision_event, decision)) = events.iter().find_map(|event| match &event.payload {
-        Payload::TunerDecision(decision)
-            if event.cause.first() == Some(&failure_seq)
-                && decision.decision == Decision::Backoff =>
+    let Some((decision_event, decision)) = events.iter().find_map(|event| {
+        if let Payload::TunerDecision(decision) = &event.payload
+            && event.cause.first() == Some(&failure_seq)
+            && decision.decision == Decision::Backoff
         {
             Some((event, decision))
+        } else {
+            None
         }
-        _ => None,
     }) else {
         panic!("no decision answering the scripted named failure");
     };
@@ -171,11 +178,14 @@ fn sixteen_cores_reach_a_clean_cycle() {
 
     let backed_off: BTreeSet<CoreId> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::TunerDecision(decision) if decision.decision == Decision::Backoff => {
+        .filter_map(|event| {
+            if let Payload::TunerDecision(decision) = &event.payload
+                && decision.decision == Decision::Backoff
+            {
                 Some(decision.core)
+            } else {
+                None
             }
-            _ => None,
         })
         .collect();
     for core in &projection.cores {
@@ -298,7 +308,49 @@ fn sixteen_cores_reach_a_clean_cycle() {
                 );
             }
             Payload::Combination(combination) => combinations.push(combination),
-            _ => {}
+            Payload::SessionStart(_)
+            | Payload::SessionContext(_)
+            | Payload::SessionBaseline(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::SessionArchived(_)
+            | Payload::SessionCarried(_)
+            | Payload::ConfigLoaded(_)
+            | Payload::PreflightCheck(_)
+            | Payload::SmuIntent(_)
+            | Payload::SmuWrite(_)
+            | Payload::SmuReadback(_)
+            | Payload::SmuError(_)
+            | Payload::ProfileApplied(_)
+            | Payload::ProfileChange(_)
+            | Payload::ProfileRestored(_)
+            | Payload::TrialStart(_)
+            | Payload::TrialProgress(_)
+            | Payload::TrialSignal(_)
+            | Payload::TrialSample(_)
+            | Payload::TrialEnd(_)
+            | Payload::TrialCarried(_)
+            | Payload::FailureCarried(_)
+            | Payload::Mce(_)
+            | Payload::CrashDetected(_)
+            | Payload::CorePhase(_)
+            | Payload::CheckingStep(_)
+            | Payload::HostRanking(_)
+            | Payload::HuntGroup(_)
+            | Payload::HuntEnd(_)
+            | Payload::HuntSkipped(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::CommandReset(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::DeadEnd(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::Shutdown(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_)
+            | Payload::DeepeningRound(_) => {}
         }
     }
     assert!(

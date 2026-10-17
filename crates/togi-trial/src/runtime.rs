@@ -94,7 +94,9 @@ impl Runtime {
                     while let Some(command) = inbox.recv().await {
                         match command {
                             Command::Shutdown => break,
-                            command => {
+                            command @ (Command::Start { .. }
+                            | Command::Sweep { .. }
+                            | Command::Probe { .. }) => {
                                 tasks.retain(|task| !task.handle.is_finished());
                                 tasks.push(Task::spawn(&env, command));
                             }

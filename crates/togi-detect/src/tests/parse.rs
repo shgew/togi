@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_machine::{BankType, CoreInfo, CpuId};
 
 use super::support::{core, cores, fixture, message, stamped, topology};
@@ -21,86 +22,70 @@ fn banks_of(messages: &[Message], map: &CpuCoreMap) -> Vec<BankType> {
         .collect()
 }
 
-#[test]
-fn captured_blocks_keep_every_line_and_the_status_time() {
+#[test_case("zen4-decode-unit.jsonl", &[0, 8, 13], BankType::DecodeUnit; "zen4 decode unit")]
+#[test_case("zen5-load-store.jsonl", &[9], BankType::LoadStore; "zen5 load store")]
+fn captured_blocks_keep_every_line_and_the_status_time(name: &str, cpus: &[u16], bank: BankType) {
     let topology = topology(&[(0, &[0, 16]), (8, &[8, 24]), (9, &[9, 25]), (13, &[13, 29])]);
     let map = CpuCoreMap::new(&topology).unwrap();
-    for (name, cpus, bank) in [
-        (
-            "zen4-decode-unit.jsonl",
-            vec![0_u16, 8, 13],
-            BankType::DecodeUnit,
-        ),
-        ("zen5-load-store.jsonl", vec![9], BankType::LoadStore),
-    ] {
-        let messages = fixture(name);
-        let got = parse(&messages, &map).unwrap();
-        assert_eq!(got.len(), cpus.len(), "{name}");
-        let statuses: Vec<usize> = messages
-            .iter()
-            .enumerate()
-            .filter(|(_, message)| message.text.contains("_STATUS["))
-            .map(|(index, _)| index)
-            .collect();
-        for ((mce, cpu), status) in got.iter().zip(&cpus).zip(statuses) {
-            assert_eq!(mce.cpu, CpuId(*cpu), "{name}");
-            assert_eq!(mce.core, Some(core(i64::from(*cpu))), "{name}");
-            assert_eq!(mce.bank_type, bank, "{name}");
-            assert!(mce.corrected && mce.bank_type.core_local(), "{name}");
-            assert_eq!(mce.time, messages[status].time, "{name}");
-            assert_eq!(mce.lines.len(), messages.len() / cpus.len() - 1, "{name}");
-            assert_eq!(mce.lines[0], stamped(&messages[status - 1]), "{name}");
-        }
+    let messages = fixture(name);
+    let got = parse(&messages, &map).unwrap();
+    assert_eq!(got.len(), cpus.len(), "{name}");
+    let statuses: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| message.text.contains("_STATUS["))
+        .map(|(index, _)| index)
+        .collect();
+    for ((mce, cpu), status) in got.iter().zip(cpus).zip(statuses) {
+        assert_eq!(mce.cpu, CpuId(*cpu), "{name}");
+        assert_eq!(mce.core, Some(core(i64::from(*cpu))), "{name}");
+        assert_eq!(mce.bank_type, bank, "{name}");
+        assert!(mce.corrected && mce.bank_type.core_local(), "{name}");
+        assert_eq!(mce.time, messages[status].time, "{name}");
+        assert_eq!(mce.lines.len(), messages.len() / cpus.len() - 1, "{name}");
+        assert_eq!(mce.lines[0], stamped(&messages[status - 1]), "{name}");
     }
 }
 
-#[test]
-fn every_smca_long_name_is_a_named_bank_or_other() {
-    use BankType::{
-        DataFabric, DecodeUnit, ExecutionUnit, FloatingPoint, InstructionFetch, L2Cache, L3Cache,
-        LoadStore, MemoryController, Other,
-    };
-    let names = [
-        ("Coherent Station", DataFabric),
-        ("DACC Back-end Unit", Other),
-        ("DACC Front-end Unit", Other),
-        ("Decode Unit", DecodeUnit),
-        ("eDDR5 CMN Unit", Other),
-        ("Execution Unit", ExecutionUnit),
-        ("Floating Point Unit", FloatingPoint),
-        ("Global Memory Interconnect PCS Unit", Other),
-        ("Global Memory Interconnect PHY Unit", Other),
-        ("Instruction Fetch Unit", InstructionFetch),
-        ("L2 Cache", L2Cache),
-        ("L3 Cache", L3Cache),
-        ("Load Store Unit", LoadStore),
-        ("Microprocessor 5 Unit", Other),
-        ("MPART Unit", Other),
-        ("MPASP Unit", Other),
-        ("MPDACC Unit", Other),
-        ("MPDMA Unit", Other),
-        ("MPM Unit", Other),
-        ("MPRAS Unit", Other),
-        ("NBIF Unit", Other),
-        ("Northbridge IO Unit", Other),
-        ("Parameter Block", Other),
-        ("PCI Express Unit", Other),
-        ("PCIe Link Unit", Other),
-        ("Power, Interrupts, etc.", DataFabric),
-        ("Platform Security Processor", Other),
-        ("Reserved", Other),
-        ("SATA Unit", Other),
-        ("System Hub Unit", Other),
-        ("System Management Unit", Other),
-        ("Die to Die Interconnect Unit", Other),
-        ("Unified Memory Controller", MemoryController),
-        ("Unified Memory Controller v2", MemoryController),
-        ("USB Unit", Other),
-        ("WAFL PHY Unit", Other),
-        ("Ext Global Memory Interconnect PCS Unit", Other),
-        ("Ext Global Memory Interconnect PHY Unit", Other),
-    ];
-    assert_eq!(names.len(), 38);
+#[test_case("Coherent Station", BankType::DataFabric; "Coherent Station")]
+#[test_case("DACC Back-end Unit", BankType::Other; "DACC Back-end Unit")]
+#[test_case("DACC Front-end Unit", BankType::Other; "DACC Front-end Unit")]
+#[test_case("Decode Unit", BankType::DecodeUnit; "Decode Unit")]
+#[test_case("eDDR5 CMN Unit", BankType::Other; "eDDR5 CMN Unit")]
+#[test_case("Execution Unit", BankType::ExecutionUnit; "Execution Unit")]
+#[test_case("Floating Point Unit", BankType::FloatingPoint; "Floating Point Unit")]
+#[test_case("Global Memory Interconnect PCS Unit", BankType::Other; "Global Memory Interconnect PCS Unit")]
+#[test_case("Global Memory Interconnect PHY Unit", BankType::Other; "Global Memory Interconnect PHY Unit")]
+#[test_case("Instruction Fetch Unit", BankType::InstructionFetch; "Instruction Fetch Unit")]
+#[test_case("L2 Cache", BankType::L2Cache; "L2 Cache")]
+#[test_case("L3 Cache", BankType::L3Cache; "L3 Cache")]
+#[test_case("Load Store Unit", BankType::LoadStore; "Load Store Unit")]
+#[test_case("Microprocessor 5 Unit", BankType::Other; "Microprocessor 5 Unit")]
+#[test_case("MPART Unit", BankType::Other; "MPART Unit")]
+#[test_case("MPASP Unit", BankType::Other; "MPASP Unit")]
+#[test_case("MPDACC Unit", BankType::Other; "MPDACC Unit")]
+#[test_case("MPDMA Unit", BankType::Other; "MPDMA Unit")]
+#[test_case("MPM Unit", BankType::Other; "MPM Unit")]
+#[test_case("MPRAS Unit", BankType::Other; "MPRAS Unit")]
+#[test_case("NBIF Unit", BankType::Other; "NBIF Unit")]
+#[test_case("Northbridge IO Unit", BankType::Other; "Northbridge IO Unit")]
+#[test_case("Parameter Block", BankType::Other; "Parameter Block")]
+#[test_case("PCI Express Unit", BankType::Other; "PCI Express Unit")]
+#[test_case("PCIe Link Unit", BankType::Other; "PCIe Link Unit")]
+#[test_case("Power, Interrupts, etc.", BankType::DataFabric; "Power, Interrupts, etc.")]
+#[test_case("Platform Security Processor", BankType::Other; "Platform Security Processor")]
+#[test_case("Reserved", BankType::Other; "Reserved")]
+#[test_case("SATA Unit", BankType::Other; "SATA Unit")]
+#[test_case("System Hub Unit", BankType::Other; "System Hub Unit")]
+#[test_case("System Management Unit", BankType::Other; "System Management Unit")]
+#[test_case("Die to Die Interconnect Unit", BankType::Other; "Die to Die Interconnect Unit")]
+#[test_case("Unified Memory Controller", BankType::MemoryController; "Unified Memory Controller")]
+#[test_case("Unified Memory Controller v2", BankType::MemoryController; "Unified Memory Controller v2")]
+#[test_case("USB Unit", BankType::Other; "USB Unit")]
+#[test_case("WAFL PHY Unit", BankType::Other; "WAFL PHY Unit")]
+#[test_case("Ext Global Memory Interconnect PCS Unit", BankType::Other; "Ext Global Memory Interconnect PCS Unit")]
+#[test_case("Ext Global Memory Interconnect PHY Unit", BankType::Other; "Ext Global Memory Interconnect PHY Unit")]
+fn every_smca_long_name_is_a_named_bank_or_other(name: &str, bank: BankType) {
     let core_local = [
         "Load Store Unit",
         "Instruction Fetch Unit",
@@ -110,75 +95,64 @@ fn every_smca_long_name_is_a_named_bank_or_other() {
         "Floating Point Unit",
     ];
     let map = cores(&[(0, &[0])]);
-    let block = fixture("zen4-decode-unit.jsonl");
-    for (name, bank) in names {
-        let mut messages = block[..6].to_vec();
-        messages[4].text = format!("[Hardware Error]: {name} Ext. Error Code: 1");
-        let got = parse(&messages, &map).unwrap();
-        assert_eq!(got.len(), 1, "{name}");
-        assert_eq!(got[0].bank_type, bank, "{name}");
-        assert_eq!(
-            got[0].bank_type.core_local(),
-            core_local.contains(&name),
-            "{name}"
-        );
-    }
+    let mut messages = fixture("zen4-decode-unit.jsonl")[..6].to_vec();
+    messages[4].text = format!("[Hardware Error]: {name} Ext. Error Code: 1");
+    let got = parse(&messages, &map).unwrap();
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].bank_type, bank);
+    assert_eq!(got[0].bank_type.core_local(), core_local.contains(&name));
 }
 
-#[test]
-fn statuses_decode_corrected_deferred_and_raw_bits() {
+#[test_case(
+    "[Hardware Error]: CPU:12 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
+    true,
+    BankType::LoadStore;
+    "decoded corrected"
+)]
+#[test_case(
+    "[Hardware Error]: CPU:12 (1a:44:0) MC1_STATUS[Over|UE|-]: 0xbc00000000010135",
+    false,
+    BankType::LoadStore;
+    "decoded uncorrected"
+)]
+#[test_case(
+    "[Hardware Error]: CPU:12 (1a:44:0) MC1_STATUS[Over|-|-]: 0xbc00000000010135",
+    false,
+    BankType::LoadStore;
+    "decoded deferred"
+)]
+#[test_case(
+    "[Hardware Error]: CPU 12: Machine Check: 0 Bank 1: 0000000000000000",
+    true,
+    BankType::Unknown;
+    "raw corrected"
+)]
+#[test_case(
+    "[Hardware Error]: CPU 12: Machine Check Exception: 0 Bank 1: 2000000000000000",
+    false,
+    BankType::Unknown;
+    "raw uncorrected"
+)]
+#[test_case(
+    "[Hardware Error]: CPU 12: Machine Check: 0 Bank 1: 0000100000000000",
+    false,
+    BankType::Unknown;
+    "raw deferred"
+)]
+fn statuses_decode_corrected_deferred_and_raw_bits(status: &str, corrected: bool, bank: BankType) {
     let map = cores(&[(6, &[12])]);
-    let cases = [
-        (
-            "decoded corrected",
-            "[Hardware Error]: CPU:12 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
-            true,
-        ),
-        (
-            "decoded uncorrected",
-            "[Hardware Error]: CPU:12 (1a:44:0) MC1_STATUS[Over|UE|-]: 0xbc00000000010135",
-            false,
-        ),
-        (
-            "decoded deferred",
-            "[Hardware Error]: CPU:12 (1a:44:0) MC1_STATUS[Over|-|-]: 0xbc00000000010135",
-            false,
-        ),
-        (
-            "raw corrected",
-            "[Hardware Error]: CPU 12: Machine Check: 0 Bank 1: 0000000000000000",
-            true,
-        ),
-        (
-            "raw uncorrected",
-            "[Hardware Error]: CPU 12: Machine Check Exception: 0 Bank 1: 2000000000000000",
-            false,
-        ),
-        (
-            "raw deferred",
-            "[Hardware Error]: CPU 12: Machine Check: 0 Bank 1: 0000100000000000",
-            false,
-        ),
+    let messages = [
+        message(100_000_013, DESCRIPTION),
+        message(100_000_014, status),
+        message(100_000_015, LOAD_STORE_BANK),
     ];
-    for (name, status, corrected) in cases {
-        let messages = [
-            message(100_000_013, DESCRIPTION),
-            message(100_000_014, status),
-            message(100_000_015, LOAD_STORE_BANK),
-        ];
-        let got = parse(&messages, &map).unwrap();
-        let bank = if name.starts_with("raw") {
-            BankType::Unknown
-        } else {
-            BankType::LoadStore
-        };
-        assert_eq!(got.len(), 1, "{name}");
-        assert_eq!(got[0].corrected, corrected, "{name}");
-        assert_eq!(got[0].bank_type, bank, "{name}");
-        assert_eq!((got[0].core, got[0].bank), (Some(core(6)), 1), "{name}");
-        let want: Vec<String> = messages.iter().map(stamped).collect();
-        assert_eq!(got[0].lines, want, "{name}");
-    }
+    let got = parse(&messages, &map).unwrap();
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].corrected, corrected);
+    assert_eq!(got[0].bank_type, bank);
+    assert_eq!((got[0].core, got[0].bank), (Some(core(6)), 1));
+    let want: Vec<String> = messages.iter().map(stamped).collect();
+    assert_eq!(got[0].lines, want);
 }
 
 #[test]
@@ -219,40 +193,42 @@ fn unknown_cpu_and_unrelated_lines_close_the_record() {
     assert_eq!(banks_of(&reserved, &map), [BankType::Other]);
 }
 
-#[test]
-fn truncated_and_interleaved_records_attribute_conservatively() {
-    use BankType::{DecodeUnit, ExecutionUnit, LoadStore, Unknown};
+#[test_case("truncated-record.jsonl", None, &[BankType::Unknown, BankType::LoadStore]; "truncated record")]
+#[test_case(
+    "truncated-interleaved-records.jsonl",
+    None,
+    &[BankType::Unknown, BankType::Unknown, BankType::ExecutionUnit];
+    "truncated interleaved records"
+)]
+#[test_case(
+    "interleaved-records.jsonl",
+    None,
+    &[BankType::Unknown, BankType::Unknown, BankType::DecodeUnit];
+    "interleaved records"
+)]
+#[test_case(
+    "interleaved-separated-records.jsonl",
+    Some(5),
+    &[BankType::Unknown, BankType::DecodeUnit];
+    "interleaved separated records cut at five lines"
+)]
+#[test_case(
+    "interleaved-separated-records.jsonl",
+    None,
+    &[BankType::Unknown, BankType::Unknown, BankType::Unknown, BankType::LoadStore];
+    "interleaved separated records"
+)]
+fn truncated_and_interleaved_records_attribute_conservatively(
+    name: &str,
+    prefix: Option<usize>,
+    want: &[BankType],
+) {
     let map = cores(&[(0, &[0]), (3, &[3]), (9, &[9])]);
-    let cases: [(&str, Option<usize>, &[BankType]); 5] = [
-        ("truncated-record.jsonl", None, &[Unknown, LoadStore]),
-        (
-            "truncated-interleaved-records.jsonl",
-            None,
-            &[Unknown, Unknown, ExecutionUnit],
-        ),
-        (
-            "interleaved-records.jsonl",
-            None,
-            &[Unknown, Unknown, DecodeUnit],
-        ),
-        (
-            "interleaved-separated-records.jsonl",
-            Some(5),
-            &[Unknown, DecodeUnit],
-        ),
-        (
-            "interleaved-separated-records.jsonl",
-            None,
-            &[Unknown, Unknown, Unknown, LoadStore],
-        ),
-    ];
-    for (name, prefix, want) in cases {
-        let mut messages = fixture(name);
-        if let Some(prefix) = prefix {
-            messages.truncate(prefix);
-        }
-        assert_eq!(banks_of(&messages, &map), want, "{name} {prefix:?}");
+    let mut messages = fixture(name);
+    if let Some(prefix) = prefix {
+        messages.truncate(prefix);
     }
+    assert_eq!(banks_of(&messages, &map), want);
 }
 
 #[test]
@@ -278,86 +254,83 @@ fn a_truncated_record_keeps_its_own_lines_and_no_bank() {
     assert_eq!(counts, [3, 3]);
 }
 
-type Interleaving = (
-    &'static str,
-    &'static [u16],
-    Option<&'static [u16]>,
-    bool,
-    &'static [BankType],
-);
-
-#[test]
-fn interleaved_orders_are_unknown_and_sequential_records_are_attributed() {
-    use BankType::{DecodeUnit, LoadStore, Unknown};
-    let map = cores(&[(0, &[0]), (3, &[3]), (9, &[9])]);
-    let status = |cpu: u16| match cpu {
+fn interleaving_status(cpu: u16) -> &'static str {
+    match cpu {
         0 => DECODE_UNIT_STATUS,
         9 => LOAD_STORE_STATUS,
         _ => RAW_STATUS,
-    };
-    let bank = |cpu: u16| match cpu {
+    }
+}
+
+fn interleaving_bank(cpu: u16) -> Option<&'static str> {
+    match cpu {
         0 => Some(DECODE_UNIT_BANK),
         9 => Some(LOAD_STORE_BANK),
         _ => None,
-    };
-    let cases: [Interleaving; 4] = [
-        (
-            "CPU 0 then CPU 9",
-            &[0, 9],
-            Some(&[0, 9]),
-            false,
-            &[Unknown, Unknown],
-        ),
-        (
-            "CPU 9 then CPU 0 with banner",
-            &[9, 0],
-            Some(&[9, 0]),
-            true,
-            &[Unknown, Unknown],
-        ),
-        (
-            "sequential records",
-            &[0, 9],
-            None,
-            false,
-            &[DecodeUnit, LoadStore],
-        ),
-        (
-            "raw record then decoded",
-            &[3, 0],
-            None,
-            false,
-            &[Unknown, DecodeUnit],
-        ),
-    ];
-    for (name, order, owners, banner, want) in cases {
-        let mut messages: Vec<Message> = Vec::new();
-        let mut add = |text: &str| {
-            let micros = i64::try_from(messages.len()).unwrap();
-            messages.push(message(micros, text));
-        };
-        for (index, &cpu) in order.iter().enumerate() {
-            add(DESCRIPTION);
-            add(status(cpu));
-            if banner && index == 0 {
-                add("mce: [Hardware Error]: Machine check events logged");
-            }
-            match owners {
-                None => {
-                    if let Some(line) = bank(cpu) {
-                        add(line);
-                    }
-                }
-                Some(owners) if index == order.len() - 1 => {
-                    for &owner in owners {
-                        add(bank(owner).unwrap());
-                    }
-                }
-                Some(_) => {}
-            }
-        }
-        assert_eq!(banks_of(&messages, &map), want, "{name}");
     }
+}
+
+#[test_case(
+    &[0, 9],
+    Some(&[0, 9]),
+    false,
+    &[BankType::Unknown, BankType::Unknown];
+    "CPU 0 then CPU 9"
+)]
+#[test_case(
+    &[9, 0],
+    Some(&[9, 0]),
+    true,
+    &[BankType::Unknown, BankType::Unknown];
+    "CPU 9 then CPU 0 with banner"
+)]
+#[test_case(
+    &[0, 9],
+    None,
+    false,
+    &[BankType::DecodeUnit, BankType::LoadStore];
+    "sequential records"
+)]
+#[test_case(
+    &[3, 0],
+    None,
+    false,
+    &[BankType::Unknown, BankType::DecodeUnit];
+    "raw record then decoded"
+)]
+fn interleaved_orders_are_unknown_and_sequential_records_are_attributed(
+    order: &[u16],
+    owners: Option<&[u16]>,
+    banner: bool,
+    want: &[BankType],
+) {
+    let map = cores(&[(0, &[0]), (3, &[3]), (9, &[9])]);
+    let mut messages: Vec<Message> = Vec::new();
+    let mut add = |text: &str| {
+        let micros = i64::try_from(messages.len()).unwrap();
+        messages.push(message(micros, text));
+    };
+    for (index, &cpu) in order.iter().enumerate() {
+        add(DESCRIPTION);
+        add(interleaving_status(cpu));
+        if banner && index == 0 {
+            add("mce: [Hardware Error]: Machine check events logged");
+        }
+        match owners {
+            None => {
+                if let Some(line) = interleaving_bank(cpu) {
+                    add(line);
+                }
+            }
+            Some(owners) if index == order.len() - 1 => {
+                for &owner in owners {
+                    add(interleaving_bank(owner).unwrap());
+                }
+            }
+            Some(_) => {}
+        }
+    }
+    assert_eq!(banks_of(&messages, &map), want);
 }
 
 #[test]
@@ -384,63 +357,60 @@ fn a_cpu_number_beyond_the_machine_stops_the_parse_and_keeps_earlier_checks() {
     assert_eq!(failure.mces.len(), 1);
 }
 
-#[test]
-fn a_status_line_with_a_non_numeric_cpu_or_bank_stops_the_parse_and_keeps_earlier_checks() {
+#[test_case(
+    "[Hardware Error]: CPU:abc (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
+    &StatusError::Cpu("abc".to_owned());
+    "decoded alphabetic cpu"
+)]
+#[test_case(
+    "[Hardware Error]: CPU:+0 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
+    &StatusError::Cpu("+0".to_owned());
+    "decoded signed cpu"
+)]
+#[test_case(
+    "[Hardware Error]: CPU:0 (1a:44:0) MCabc_STATUS[Over|CE|-]: 0xbc00000000010135",
+    &StatusError::Bank("abc".to_owned());
+    "decoded alphabetic bank"
+)]
+#[test_case(
+    "[Hardware Error]: CPU abc: Machine Check: 0 Bank 1: bc00000000010135",
+    &StatusError::Cpu("abc".to_owned());
+    "raw alphabetic cpu"
+)]
+#[test_case(
+    "[Hardware Error]: CPU +0: Machine Check: 0 Bank 1: 0000000000000000",
+    &StatusError::Cpu("+0".to_owned());
+    "raw signed cpu"
+)]
+#[test_case(
+    "[Hardware Error]: CPU 0: Machine Check Exception: 0 Bank x1: bc00000000010135",
+    &StatusError::Bank("x1".to_owned());
+    "raw alphanumeric bank"
+)]
+fn a_status_line_with_a_non_numeric_cpu_or_bank_stops_the_parse_and_keeps_earlier_checks(
+    text: &str,
+    error: &StatusError,
+) {
     let map = cores(&[(0, &[0])]);
-    let cases = [
-        (
-            "[Hardware Error]: CPU:abc (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
-            StatusError::Cpu("abc".to_owned()),
-        ),
-        (
-            "[Hardware Error]: CPU:+0 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
-            StatusError::Cpu("+0".to_owned()),
-        ),
-        (
-            "[Hardware Error]: CPU:0 (1a:44:0) MCabc_STATUS[Over|CE|-]: 0xbc00000000010135",
-            StatusError::Bank("abc".to_owned()),
-        ),
-        (
-            "[Hardware Error]: CPU abc: Machine Check: 0 Bank 1: bc00000000010135",
-            StatusError::Cpu("abc".to_owned()),
-        ),
-        (
-            "[Hardware Error]: CPU +0: Machine Check: 0 Bank 1: 0000000000000000",
-            StatusError::Cpu("+0".to_owned()),
-        ),
-        (
-            "[Hardware Error]: CPU 0: Machine Check Exception: 0 Bank x1: bc00000000010135",
-            StatusError::Bank("x1".to_owned()),
-        ),
-    ];
-    for (text, error) in cases {
-        let messages = [message(1, DECODE_UNIT_STATUS), message(2, text)];
-        let failure = parse(&messages, &map).unwrap_err();
-        assert_eq!(failure.error, error, "{text}");
-        assert_eq!(failure.mces.len(), 1, "{text}");
-        assert_eq!(failure.mces[0].core, Some(core(0)), "{text}");
-    }
+    let messages = [message(1, DECODE_UNIT_STATUS), message(2, text)];
+    let failure = parse(&messages, &map).unwrap_err();
+    assert_eq!(&failure.error, error);
+    assert_eq!(failure.mces.len(), 1);
+    assert_eq!(failure.mces[0].core, Some(core(0)));
 }
 
-#[test]
-fn status_lines_are_matched_exactly() {
+#[test_case("[Hardware Error]: CPU:0 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xBC00000000010135"; "uppercase hex")]
+#[test_case("[Hardware Error]: CPU:0 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc0000000001013"; "short status")]
+#[test_case("[Hardware Error]: CPU:0 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135 "; "trailing space")]
+#[test_case("[Hardware Error]: CPU:0 (1a:44) MC1_STATUS[Over|CE|-]: 0xbc00000000010135"; "short model")]
+#[test_case("[Hardware Error]: CPU 0: Machine Check: 0 Bank 1: 000000000000000"; "short raw status")]
+#[test_case("[Hardware Error]: CPU:abc (1a:44) MC1_STATUS[Over|CE|-]: 0xbc00000000010135"; "non-numeric cpu with short model")]
+#[test_case("[Hardware Error]: CPU:abc is offline"; "offline cpu")]
+#[test_case("[Hardware Error]: CPU abc: Machine Check: 0 Bank x1: 000000000000000"; "non-numeric raw cpu and bank with short status")]
+#[test_case("[Hardware Error]: CPU abc: Machine Check pending"; "pending raw cpu")]
+fn status_lines_are_matched_exactly(text: &str) {
     let map = cores(&[(0, &[0])]);
-    for text in [
-        "[Hardware Error]: CPU:0 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xBC00000000010135",
-        "[Hardware Error]: CPU:0 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc0000000001013",
-        "[Hardware Error]: CPU:0 (1a:44:0) MC1_STATUS[Over|CE|-]: 0xbc00000000010135 ",
-        "[Hardware Error]: CPU:0 (1a:44) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
-        "[Hardware Error]: CPU 0: Machine Check: 0 Bank 1: 000000000000000",
-        "[Hardware Error]: CPU:abc (1a:44) MC1_STATUS[Over|CE|-]: 0xbc00000000010135",
-        "[Hardware Error]: CPU:abc is offline",
-        "[Hardware Error]: CPU abc: Machine Check: 0 Bank x1: 000000000000000",
-        "[Hardware Error]: CPU abc: Machine Check pending",
-    ] {
-        assert!(
-            parse(&[message(1, text)], &map).unwrap().is_empty(),
-            "{text}"
-        );
-    }
+    assert!(parse(&[message(1, text)], &map).unwrap().is_empty());
 }
 
 #[test]

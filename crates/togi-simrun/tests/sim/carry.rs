@@ -91,18 +91,19 @@ fn after_alone_passes(cores: usize) -> Observer {
     let mut trials = BTreeMap::new();
     let mut passed = BTreeSet::new();
     stop_when(move |event| {
-        match &event.payload {
-            Payload::TrialIntent(intent) if intent.condition == Condition::Alone => {
-                if let Some(core) = intent.core {
-                    trials.insert(intent.trial.clone(), core);
-                }
+        let payload = &event.payload;
+        if let Payload::TrialIntent(intent) = payload
+            && intent.condition == Condition::Alone
+        {
+            if let Some(core) = intent.core {
+                trials.insert(intent.trial.clone(), core);
             }
-            Payload::TrialEnd(end) if end.outcome == Outcome::Pass => {
-                if let Some(core) = trials.get(&end.trial) {
-                    passed.insert(*core);
-                }
+        } else if let Payload::TrialEnd(end) = payload
+            && end.outcome == Outcome::Pass
+        {
+            if let Some(core) = trials.get(&end.trial) {
+                passed.insert(*core);
             }
-            _ => {}
         }
         passed.len() == cores
     })
@@ -128,14 +129,14 @@ fn is_phase_two_confirmed(event: &Event) -> bool {
 }
 
 fn session_of(events: &[Event]) -> SessionId {
-    match &events
+    let payload = &events
         .first()
         .unwrap_or_else(|| panic!("a journal"))
-        .payload
-    {
-        Payload::SessionStart(start) => start.session,
-        other => panic!("first event is {other:?}"),
-    }
+        .payload;
+    let Payload::SessionStart(start) = payload else {
+        panic!("first event is {payload:?}");
+    };
+    start.session
 }
 
 fn archived(bench: &Bench, session: SessionId) -> Option<Vec<u8>> {
@@ -147,9 +148,12 @@ fn archived(bench: &Bench, session: SessionId) -> Option<Vec<u8>> {
 fn carried(events: &[Event]) -> SessionCarried {
     let all: Vec<_> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::SessionCarried(carried) => Some(carried.clone()),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::SessionCarried(carried) = &event.payload {
+                Some(carried.clone())
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(all.len(), 1, "session.carried events");
@@ -304,25 +308,29 @@ fn a_previous_ruleset_session_transitions_to_a_seeded_session() {
     let mut carried_at = None;
     let (mut facts, mut live_trials) = (0, 0);
     for event in &events {
-        match &event.payload {
-            Payload::SessionCarried(_) => carried_at = Some(event.seq),
-            Payload::TrialCarried(_) | Payload::FailureCarried(_) => {
-                facts += 1;
-                assert_eq!(
-                    carried_at, None,
-                    "seq {} follows session.carried",
-                    event.seq
-                );
-            }
-            Payload::TrialEnd(_) => live_trials += 1,
-            Payload::CheckingCycle(cycle) if cycle.passed => {
-                assert!(
-                    live_trials > 0,
-                    "seq {} passes before any live trial",
-                    event.seq
-                );
-            }
-            _ => {}
+        let payload = &event.payload;
+        if let Payload::SessionCarried(_) = payload {
+            carried_at = Some(event.seq);
+        } else if matches!(
+            payload,
+            Payload::TrialCarried(_) | Payload::FailureCarried(_)
+        ) {
+            facts += 1;
+            assert_eq!(
+                carried_at, None,
+                "seq {} follows session.carried",
+                event.seq
+            );
+        } else if let Payload::TrialEnd(_) = payload {
+            live_trials += 1;
+        } else if let Payload::CheckingCycle(cycle) = payload
+            && cycle.passed
+        {
+            assert!(
+                live_trials > 0,
+                "seq {} passes before any live trial",
+                event.seq
+            );
         }
     }
     assert!(facts > 0, "no carried trial or failure facts");
@@ -622,18 +630,26 @@ struct HuntOfCoreOne {
 fn hunt_of_core_one(events: &[Event], result: HuntOutcome) -> HuntOfCoreOne {
     let (seq, end) = events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::HuntEnd(end) if is_hunt_end_on_core_one(event, result) => {
+        .find_map(|event| {
+            if let Payload::HuntEnd(end) = &event.payload
+                && is_hunt_end_on_core_one(event, result)
+            {
                 Some((event.seq, end))
+            } else {
+                None
             }
-            _ => None,
         })
         .unwrap_or_else(|| panic!("no {result} hunt on core 1"));
     let start = events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::HuntStart(start) if start.hunt == end.hunt => Some(start),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::HuntStart(start) = &event.payload
+                && start.hunt == end.hunt
+            {
+                Some(start)
+            } else {
+                None
+            }
         })
         .unwrap_or_else(|| panic!("no hunt start for {}", end.hunt));
     HuntOfCoreOne {
@@ -750,23 +766,23 @@ fn a_transition_starts_past_the_refined_member_of_a_recorded_singleton_end() {
         "no decision answers the hunt end"
     );
     for event in &mut events {
-        match &mut event.payload {
-            Payload::HuntStart(start) if event.seq < ended.end => {
-                if start.failing.get(core(1)).is_some() {
-                    start.failing = start
-                        .failing
-                        .iter()
-                        .map(|(id, at)| (id, if id == core(1) { offset(-30) } else { at }))
-                        .collect();
-                }
+        if let Payload::HuntStart(start) = &mut event.payload
+            && event.seq < ended.end
+        {
+            if start.failing.get(core(1)).is_some() {
+                start.failing = start
+                    .failing
+                    .iter()
+                    .map(|(id, at)| (id, if id == core(1) { offset(-30) } else { at }))
+                    .collect();
             }
-            Payload::HuntEnd(end) if event.seq == ended.end => {
-                end.members = vec![togi_journal::Member {
-                    core: core(1),
-                    offset: offset(-23),
-                }];
-            }
-            _ => {}
+        } else if let Payload::HuntEnd(end) = &mut event.payload
+            && event.seq == ended.end
+        {
+            end.members = vec![togi_journal::Member {
+                core: core(1),
+                offset: offset(-23),
+            }];
         }
     }
     let mut text = String::new();
@@ -800,16 +816,17 @@ fn a_ruleset_transition_carries_a_direct_hunt_failure_point() {
     let want = hunt_of_core_one(&events, HuntOutcome::Direct).started;
     let (failure_seq, signal) = events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::Failure(failure)
-                if failure.core == Some(core(1))
-                    && failure.offset.map(TargetOffset::get) == Some(want)
-                    && failure.attribution == Attribution::Attributed
-                    && failure.known_failure.is_none() =>
+        .find_map(|event| {
+            if let Payload::Failure(failure) = &event.payload
+                && failure.core == Some(core(1))
+                && failure.offset.map(TargetOffset::get) == Some(want)
+                && failure.attribution == Attribution::Attributed
+                && failure.known_failure.is_none()
             {
                 Some((event.seq, failure.signal))
+            } else {
+                None
             }
-            _ => None,
         })
         .expect("a failure at the hunt's offset");
     let seed = transition_carrying_core_one(&source, &definition, config);
@@ -837,25 +854,26 @@ fn first_cycle_live_passes(events: &[Event]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     let mut open = false;
     for event in events {
-        match &event.payload {
-            Payload::CheckingCycle(cycle) if cycle.event == CycleEvent::Start => {
-                assert!(!open, "first cycle restarted before passing in full");
-                open = true;
-            }
-            Payload::CheckingCycle(cycle) if open => {
-                assert!(cycle.passed && cycle.full, "{cycle:?}");
-                return counts;
-            }
-            Payload::TrialIntent(intent) if open => {
-                intents.insert(intent.trial.clone(), intent);
-            }
-            Payload::TrialEnd(end) => {
-                if let Some(intent) = intents.get(&end.trial) {
-                    assert_eq!(end.outcome, Outcome::Pass, "{end:?}");
-                    *counts.entry(class_key(intent)).or_default() += 1;
-                }
-            }
-            _ => {}
+        let payload = &event.payload;
+        if let Payload::CheckingCycle(cycle) = payload
+            && cycle.event == CycleEvent::Start
+        {
+            assert!(!open, "first cycle restarted before passing in full");
+            open = true;
+        } else if let Payload::CheckingCycle(cycle) = payload
+            && open
+        {
+            assert!(cycle.passed && cycle.full, "{cycle:?}");
+            return counts;
+        } else if let Payload::TrialIntent(intent) = payload
+            && open
+        {
+            intents.insert(intent.trial.clone(), intent);
+        } else if let Payload::TrialEnd(end) = payload
+            && let Some(intent) = intents.get(&end.trial)
+        {
+            assert_eq!(end.outcome, Outcome::Pass, "{end:?}");
+            *counts.entry(class_key(intent)).or_default() += 1;
         }
     }
     panic!("no first passed full cycle");
@@ -893,58 +911,55 @@ fn a_transition_checks_carried_solo_limits_but_completes_full_cycles_with_live_p
     let mut together_passes: BTreeMap<String, usize> = BTreeMap::new();
     let mut completed = BTreeSet::new();
     for event in &events {
-        match &event.payload {
-            Payload::TrialCarried(fact) => {
-                if fact.source.session == id
-                    && fact.condition == Condition::Together
-                    && fact.outcome == Outcome::Pass
-                {
-                    let cores: Vec<u8> = fact.class.cores.iter().map(CoreId::get).collect();
-                    let key = format!(
-                        "{:?}/{:?}/{cores:?}/{}",
-                        fact.class.regime, fact.class.workload, fact.class.duration_s
-                    );
-                    *together_passes.entry(key).or_default() += 1;
-                }
-                facts.insert(event.seq, fact);
-            }
-            Payload::TrialIntent(intent) => {
-                assert_ne!(
-                    intent.activity,
-                    Some(Activity::Search),
-                    "live solo limit trial at seq {}",
-                    event.seq
-                );
-            }
-            Payload::CorePhase(phase)
-                if phase.from == Some(CorePhase::Search) && phase.to != CorePhase::Search =>
+        let payload = &event.payload;
+        if let Payload::TrialCarried(fact) = payload {
+            if fact.source.session == id
+                && fact.condition == Condition::Together
+                && fact.outcome == Outcome::Pass
             {
-                assert!(
-                    phase.reason.contains("carried") && phase.reason.contains(&id.to_string()),
-                    "{phase:?}"
+                let cores: Vec<u8> = fact.class.cores.iter().map(CoreId::get).collect();
+                let key = format!(
+                    "{:?}/{:?}/{cores:?}/{}",
+                    fact.class.regime, fact.class.workload, fact.class.duration_s
                 );
-                let mut counts: HashMap<Regime, u32> = HashMap::new();
-                for cause in &event.cause {
-                    if let Some(fact) = facts.get(cause)
-                        && fact.source.session == id
-                        && fact.outcome == Outcome::Pass
-                        && fact.class.cores.len() == 1
-                        && fact.class.cores.first() == Some(phase.core)
-                    {
-                        *counts.entry(fact.class.regime).or_default() += 1;
-                    }
-                }
-                for regime in [Regime::R1, Regime::R2] {
-                    assert_eq!(
-                        counts.get(&regime).copied().unwrap_or(0),
-                        trials,
-                        "{:?} {regime:?}",
-                        phase.core
-                    );
-                }
-                completed.insert(phase.core);
+                *together_passes.entry(key).or_default() += 1;
             }
-            _ => {}
+            facts.insert(event.seq, fact);
+        } else if let Payload::TrialIntent(intent) = payload {
+            assert_ne!(
+                intent.activity,
+                Some(Activity::Search),
+                "live solo limit trial at seq {}",
+                event.seq
+            );
+        } else if let Payload::CorePhase(phase) = payload
+            && phase.from == Some(CorePhase::Search)
+            && phase.to != CorePhase::Search
+        {
+            assert!(
+                phase.reason.contains("carried") && phase.reason.contains(&id.to_string()),
+                "{phase:?}"
+            );
+            let mut counts: HashMap<Regime, u32> = HashMap::new();
+            for cause in &event.cause {
+                if let Some(fact) = facts.get(cause)
+                    && fact.source.session == id
+                    && fact.outcome == Outcome::Pass
+                    && fact.class.cores.len() == 1
+                    && fact.class.cores.first() == Some(phase.core)
+                {
+                    *counts.entry(fact.class.regime).or_default() += 1;
+                }
+            }
+            for regime in [Regime::R1, Regime::R2] {
+                assert_eq!(
+                    counts.get(&regime).copied().unwrap_or(0),
+                    trials,
+                    "{:?} {regime:?}",
+                    phase.core
+                );
+            }
+            completed.insert(phase.core);
         }
     }
     assert_eq!(completed, BTreeSet::from([core(0), core(1)]));
@@ -982,17 +997,25 @@ fn a_transition_starts_a_hunt_from_a_carried_together_failure() {
     let failure = source_events
         .iter()
         .rev()
-        .find_map(|event| match &event.payload {
-            Payload::Failure(failure) => Some(failure.clone()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::Failure(failure) = &event.payload {
+                Some(failure.clone())
+            } else {
+                None
+            }
         })
         .expect("a checking failure together");
     let trial = failure.trial.clone().expect("a failing trial");
     let intent = source_events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialIntent(intent) if intent.trial == trial => Some(intent.clone()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload
+                && intent.trial == trial
+            {
+                Some(intent.clone())
+            } else {
+                None
+            }
         })
         .expect("the failing trial's intent");
     assert_eq!(intent.activity, Some(Activity::Checking));
@@ -1016,37 +1039,34 @@ fn a_transition_starts_a_hunt_from_a_carried_together_failure() {
     let mut current_profile = None;
     let mut hunts = 0;
     for event in &events {
-        match &event.payload {
-            Payload::ProfileChange(change) => current_profile = Some(change.to),
-            Payload::TrialCarried(fact)
-                if fact.source.session == id
-                    && fact.source.trial.as_ref() == Some(&trial)
-                    && fact.outcome == Outcome::Failure =>
-            {
-                carried_at = Some(event.seq);
-            }
-            Payload::TrialIntent(rerun)
-                if rerun.condition == Condition::Together
-                    && rerun.regime == intent.regime
-                    && rerun.workload == intent.workload
-                    && rerun.duration_s == intent.duration_s
-                    && rerun.cores == intent.cores
-                    && rerun.profile == intent.profile =>
-            {
-                panic!("the carried failure was rerun: {rerun:?}");
-            }
-            Payload::HuntStart(hunt) => {
-                hunts += 1;
-                assert_eq!(current_profile, Some(uniform(-10, 4)));
-                assert_eq!(Some(hunt.failure), carried_at);
-                assert_eq!(hunt.trial.as_ref(), Some(&trial));
-                assert_eq!(hunt.failing, intent.profile);
-                assert_eq!(hunt.regime, intent.regime);
-                assert_eq!(hunt.workload, intent.workload);
-                assert_eq!(hunt.duration_s, intent.duration_s);
-                assert_eq!(hunt.cores, intent.cores);
-            }
-            _ => {}
+        let payload = &event.payload;
+        if let Payload::ProfileChange(change) = payload {
+            current_profile = Some(change.to);
+        } else if let Payload::TrialCarried(fact) = payload
+            && fact.source.session == id
+            && fact.source.trial.as_ref() == Some(&trial)
+            && fact.outcome == Outcome::Failure
+        {
+            carried_at = Some(event.seq);
+        } else if let Payload::TrialIntent(rerun) = payload
+            && rerun.condition == Condition::Together
+            && rerun.regime == intent.regime
+            && rerun.workload == intent.workload
+            && rerun.duration_s == intent.duration_s
+            && rerun.cores == intent.cores
+            && rerun.profile == intent.profile
+        {
+            panic!("the carried failure was rerun: {rerun:?}");
+        } else if let Payload::HuntStart(hunt) = payload {
+            hunts += 1;
+            assert_eq!(current_profile, Some(uniform(-10, 4)));
+            assert_eq!(Some(hunt.failure), carried_at);
+            assert_eq!(hunt.trial.as_ref(), Some(&trial));
+            assert_eq!(hunt.failing, intent.profile);
+            assert_eq!(hunt.regime, intent.regime);
+            assert_eq!(hunt.workload, intent.workload);
+            assert_eq!(hunt.duration_s, intent.duration_s);
+            assert_eq!(hunt.cores, intent.cores);
         }
     }
     assert_eq!(hunts, 1);
@@ -1118,9 +1138,12 @@ fn an_older_journal_with_an_unknown_kind_is_archived_and_carries_nothing() {
     assert_ne!(session, id);
     let carried: Vec<_> = first
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::SessionCarried(carried) => Some(carried),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::SessionCarried(carried) = &event.payload {
+                Some(carried)
+            } else {
+                None
+            }
         })
         .collect();
     assert!(

@@ -275,7 +275,20 @@ fn shapes_without_colour(scenario: Scenario, buf: &Buffer) {
                 }
             }
         }
-        _ => {}
+        Scenario::Search
+        | Scenario::Confirm
+        | Scenario::Hunt
+        | Scenario::Round
+        | Scenario::Confirmation
+        | Scenario::Concluded
+        | Scenario::Unconfirmed
+        | Scenario::HuntBios
+        | Scenario::Crashed
+        | Scenario::Recovering
+        | Scenario::Combination
+        | Scenario::Deadend
+        | Scenario::FirstResult
+        | Scenario::Stopped => {}
     }
 }
 

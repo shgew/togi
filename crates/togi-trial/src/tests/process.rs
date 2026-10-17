@@ -528,7 +528,7 @@ fn spec(regime: Regime, cores: &[u8], duration: Duration) -> togi_machine::Trial
                 })
             })
             .collect(),
-        _ => vec![CpuId(cpus[0])],
+        Regime::R1 | Regime::R2 | Regime::R3 | Regime::R4 | Regime::R5 => vec![CpuId(cpus[0])],
     };
     spec
 }
@@ -615,9 +615,12 @@ fn crate_errors(error: &togi_machine::Error) -> Vec<&crate::Error> {
 fn cap_diagnostics(error: &togi_machine::Error) -> Vec<&str> {
     crate_errors(error)
         .into_iter()
-        .filter_map(|error| match error {
-            crate::Error::Output(output) => Some(output.diagnostics()),
-            _ => None,
+        .filter_map(|error| {
+            if let crate::Error::Output(output) = error {
+                Some(output.diagnostics())
+            } else {
+                None
+            }
         })
         .flatten()
         .map(String::as_str)
@@ -1141,23 +1144,22 @@ impl Os for Rollback {
 }
 
 fn failures(error: &togi_machine::Error) -> Option<&[crate::error::CleanupFailure]> {
-    match error {
-        togi_machine::Error::Containment(source) => {
-            if let Some(containment) = source.downcast_ref::<Arc<crate::Containment>>() {
-                return Some(containment.failures());
-            }
-            match source.downcast_ref::<crate::Error>() {
-                Some(crate::Error::Joined(joined)) => {
-                    joined.errors().iter().find_map(|error| match error {
-                        crate::Error::Containment(containment) => Some(containment.failures()),
-                        _ => None,
-                    })
-                }
-                _ => None,
-            }
-        }
-        _ => None,
+    let togi_machine::Error::Containment(source) = error else {
+        return None;
+    };
+    if let Some(containment) = source.downcast_ref::<Arc<crate::Containment>>() {
+        return Some(containment.failures());
     }
+    let Some(crate::Error::Joined(joined)) = source.downcast_ref::<crate::Error>() else {
+        return None;
+    };
+    joined.errors().iter().find_map(|error| {
+        if let crate::Error::Containment(containment) = error {
+            Some(containment.failures())
+        } else {
+            None
+        }
+    })
 }
 
 /// The first real helper has created a detached holder of its pipes when the second launch fails.
@@ -1219,11 +1221,14 @@ fn real_process_a_failed_second_launch_keeps_its_cause_first_targets_both_scopes
     );
     let mut killed: Vec<String> = locked(&state.systemd)
         .iter()
-        .filter_map(|call| match call {
-            Systemd::Kill { scope, signal } if *signal == crate::os::KillSignal::Kill => {
+        .filter_map(|call| {
+            if let Systemd::Kill { scope, signal } = call
+                && *signal == crate::os::KillSignal::Kill
+            {
                 Some(scope.to_string())
+            } else {
+                None
             }
-            _ => None,
         })
         .collect();
     killed.sort();

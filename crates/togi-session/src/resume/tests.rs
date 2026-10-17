@@ -333,9 +333,12 @@ fn the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_
         .journal
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::StateRebuilt(rebuilt) => Some(rebuilt.fields.clone()),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::StateRebuilt(rebuilt) = &event.payload {
+                Some(rebuilt.fields.clone())
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(rebuilt, [vec!["state.json".to_string()]]);
@@ -372,6 +375,7 @@ fn state_publications(bench: &Bench) -> usize {
 #[test]
 fn a_run_that_adopts_a_capsule_neither_reads_nor_rebuilds_the_state_a_crash_left_pending() {
     let bench = bench();
+    bench.mem.record_history();
     let capsule = crashed(&bench).capsule.unwrap();
     assert_eq!(state_publications(&bench), 0);
     bench.sim.reboot();
@@ -391,6 +395,7 @@ fn a_run_that_adopts_a_capsule_neither_reads_nor_rebuilds_the_state_a_crash_left
 #[test]
 fn a_run_that_cannot_adopt_a_capsule_reads_the_state_and_rebuilds_what_a_crash_left_pending() {
     let bench = bench();
+    bench.mem.record_history();
     let capsule = crashed(&bench).capsule.unwrap();
     bench.sim.reboot();
     let resumed = one_cycle(&bench, None);

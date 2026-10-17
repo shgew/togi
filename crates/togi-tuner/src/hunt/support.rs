@@ -50,13 +50,14 @@ impl Journal {
     }
 
     pub(super) fn hunt_start_payload(&self) -> (HuntStart, Vec<Seq>) {
-        match self.next() {
-            Action::Decide(decision) => match decision.payload {
-                DecisionPayload::HuntStart(start) => (start, decision.cause),
-                other => panic!("expected a hunt start, got {other:?}"),
-            },
-            other => panic!("expected a hunt start, got {other:?}"),
-        }
+        let action = self.next();
+        let Action::Decide(decision) = action else {
+            panic!("expected a hunt start, got {action:?}");
+        };
+        let DecisionPayload::HuntStart(start) = decision.payload else {
+            panic!("expected a hunt start, got {:?}", decision.payload);
+        };
+        (start, decision.cause)
     }
 
     pub(super) fn start_hunt(&mut self) -> (Seq, HuntStart) {
@@ -66,13 +67,14 @@ impl Journal {
     }
 
     pub(super) fn group_plan(&self) -> (HuntGroup, Vec<Seq>) {
-        match self.next() {
-            Action::Decide(decision) => match decision.payload {
-                DecisionPayload::HuntGroup(group) => (group, decision.cause),
-                other => panic!("expected a hunt group, got {other:?}"),
-            },
-            other => panic!("expected a hunt group, got {other:?}"),
-        }
+        let action = self.next();
+        let Action::Decide(decision) = action else {
+            panic!("expected a hunt group, got {action:?}");
+        };
+        let DecisionPayload::HuntGroup(group) = decision.payload else {
+            panic!("expected a hunt group, got {:?}", decision.payload);
+        };
+        (group, decision.cause)
     }
 
     pub(super) fn run_hunt(

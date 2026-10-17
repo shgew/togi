@@ -1,12 +1,13 @@
 // The shared-voltage rail: clocks, requests, hazards, failure share and validation.
 
 use std::time::Duration;
-use togi_machine::{CoreId, Regime, Signal};
+use togi_machine::{CoreId, Regime, Signal, TargetOffset};
 use togi_sim::definition::{
     CcdDef, DEFAULT_COUNT_V, JointDef, SharedVoltageDef, VoltageCoreDef, VoltageWorkloadDef,
     Weights,
 };
 use togi_sim::file;
+use togi_sim::voltage::core_watts;
 use togi_sim::{MachineDefinition, Model, Problem, SourceKind};
 
 use crate::common::{
@@ -41,6 +42,15 @@ fn core(id: i64) -> CoreId {
 
 fn close(got: f64, want: f64, tolerance: f64) {
     assert!((got - want).abs() <= tolerance, "{got} vs {want}");
+}
+
+#[test]
+fn a_core_draws_its_base_watts_at_minus_35_more_when_shallower_and_never_negative() {
+    let at = |offset| TargetOffset::new(offset).expect("an offset");
+    close(core_watts(13.0, 0.12, at(-35)), 13.0, 0.0);
+    close(core_watts(13.0, 0.12, at(0)), 13.0 + 0.12 * 35.0, 0.0);
+    close(core_watts(13.0, 0.12, at(-50)), 13.0 - 0.12 * 15.0, 0.0);
+    close(core_watts(1.0, 0.5, at(-50)), 0.0, 0.0);
 }
 
 #[test]

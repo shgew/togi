@@ -218,7 +218,7 @@ impl Run {
         let shape = match (plan.load, shape_core) {
             (crate::Load::Single(core), Some(found)) => core == found,
             (crate::Load::Many(cores), None) => cores == intent.cores,
-            _ => false,
+            (crate::Load::Single(_), None) | (crate::Load::Many(_), Some(_)) => false,
         };
         let matches = intent.rerun
             && intent.condition == Condition::Parked

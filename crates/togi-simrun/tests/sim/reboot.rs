@@ -23,6 +23,7 @@ fn named(path: &Path, name: &str) -> bool {
 
 fn simulated(definition: &MachineDefinition, seed: u64, replay: Replay, boots: u32) -> Simulated {
     let fs = MemFs::new();
+    fs.record_history();
     let persistence = Persistence::Memory(fs.clone());
     let mut sim = input(simulator(definition, seed), persistence.clone());
     sim.replay = replay;
@@ -98,4 +99,20 @@ fn a_cold_simulation_publishes_state_json_at_every_crash_and_at_its_stop() {
     let capped = simulated(&machine_file("flat-hazard"), 102, Replay::Cold, 24);
     assert!(capped.capped);
     assert_eq!(capped.state_publications, capped.boots);
+}
+
+#[test]
+fn an_ordinary_simulation_counts_operations_but_keeps_no_history() {
+    let fs = MemFs::new();
+    let mut sim = input(
+        simulator(&hunt_machine(2), 1),
+        Persistence::Memory(fs.clone()),
+    );
+    sim.max_boots = nz(3);
+    simulate(sim).unwrap();
+    assert!(fs.mutations() > 0);
+    assert!(
+        std::panic::catch_unwind(|| fs.log()).is_err(),
+        "the simulation recorded a history"
+    );
 }

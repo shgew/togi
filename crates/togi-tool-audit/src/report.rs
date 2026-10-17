@@ -6,7 +6,7 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use togi_journal::{Seq, Skipped, StateDir};
+use togi_journal::{LockError, Seq, Skipped, StateDir};
 use togi_machine::object_only;
 
 use crate::{Check, Completion, Source, audit_recordings};
@@ -133,13 +133,13 @@ pub fn read_records_from(path: &Path, mut reader: impl Read) -> Result<Vec<Recor
 /// The records of a sweep or bench run do not describe runs this tool can find.
 #[derive(Debug, thiserror::Error)]
 pub enum RecordError {
-    #[error("open run records {}: {source}", path.display())]
+    #[error("open run records {}", path.display())]
     Read {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
-    #[error("decode run records {} line {line}: {source}", path.display())]
+    #[error("decode run records {} line {line}", path.display())]
     Decode {
         path: PathBuf,
         line: usize,
@@ -150,6 +150,15 @@ pub enum RecordError {
     Empty,
     #[error("invalid run record for scenario {scenario:?} seed {seed}")]
     Invalid { scenario: String, seed: u64 },
+}
+
+/// Why a state directory could not be opened for an audit.
+#[derive(Debug, thiserror::Error)]
+pub enum OpenError {
+    #[error("not a directory")]
+    NotADirectory,
+    #[error(transparent)]
+    Lock(#[from] LockError),
 }
 
 /// The directory the bench kept a run's state in, below its run root.
@@ -258,9 +267,9 @@ pub struct JournalSkip {
 pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize, Vec<JournalSkip>) {
     audit_directory_with(dir, simulated, |dir| {
         if !dir.is_dir() {
-            return Err("not a directory".into());
+            return Err(OpenError::NotADirectory);
         }
-        StateDir::lock(dir).map_err(|error| togi_machine::error_chain(&error))
+        Ok(StateDir::lock(dir)?)
     })
 }
 
@@ -268,7 +277,7 @@ pub fn audit_directory(dir: &Path, simulated: bool) -> (Vec<Finding>, usize, Vec
 pub fn audit_directory_with(
     dir: &Path,
     simulated: bool,
-    open: impl FnOnce(&Path) -> Result<StateDir, String>,
+    open: impl FnOnce(&Path) -> Result<StateDir, OpenError>,
 ) -> (Vec<Finding>, usize, Vec<JournalSkip>) {
     let unreadable = |reason: String| Finding {
         directory: dir.to_path_buf(),
@@ -284,9 +293,12 @@ pub fn audit_directory_with(
     } else {
         Completion::InProgress
     };
-    let audits = open(dir).and_then(|state| {
-        audit_recordings(&state, completion).map_err(|error| togi_machine::error_chain(&error))
-    });
+    let audits = match open(dir) {
+        Ok(state) => {
+            audit_recordings(&state, completion).map_err(|error| togi_machine::error_chain(&error))
+        }
+        Err(error) => Err(togi_machine::error_chain(&error)),
+    };
     let audits = match audits {
         Ok(audits) => audits,
         Err(reason) => return (vec![unreadable(reason)], 0, Vec::new()),

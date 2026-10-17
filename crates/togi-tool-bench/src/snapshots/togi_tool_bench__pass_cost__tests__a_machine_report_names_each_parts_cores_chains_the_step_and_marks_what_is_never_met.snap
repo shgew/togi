@@ -1,0 +1,20 @@
+---
+source: crates/togi-tool-bench/src/pass_cost.rs
+expression: report
+---
+pass-cost: counterfactual study for #490 at a fixed profile; never tuner evidence.
+pass-cost: machine fixture
+pass-cost: horizons 40 launches and 4.00 h
+workload mprime-avx2-36k-248k-allcore
+  part                                 passes         fail_p           first  launches    hours   done≤40 done≤4.00h  spent_n spent_h +launches  +hours
+  ccd 0,1,2,3,4,5,6,7                  3x120s+1x300s  0.0000/0.0000   1.0000       4.0     0.18    1.0000     1.0000      4.0    0.18
+  ccd 0,1,2,3,4,5,6,7 +2 short         5x120s+1x300s  0.0000/0.0000   1.0000       6.0     0.25    1.0000     1.0000      6.0    0.25       2.0    0.07
+  partial 6,7                          3x120s+1x300s  0.1000/0.2000   0.5832       5.0     0.23    1.0000     1.0000      5.0    0.23
+  partial 6,7 +2 short                 5x120s+1x300s  0.1000/0.2000   0.4724       8.2     0.34    1.0000     1.0000      8.2    0.34       3.2    0.11
+  all-core                             3x120s+1x600s  0.0000/1.0000   0.0000     never    never    0.0000     0.0000     40.0    4.00
+  all-core +2 short                    5x120s+1x600s  0.0000/1.0000   0.0000     never    never    0.0000     0.0000     40.0    4.00       n/a     n/a
+  step                                 3 parts                        0.0000     never    never    0.0000     0.0000     40.0    4.00
+  step +2 short                        3 parts                        0.0000     never    never    0.0000     0.0000     40.0    4.00       n/a     n/a
+pass-cost: first: probability every required trial passes on its first launch, the chance the part qualifies at this profile.
+pass-cost: launches, hours, done and spent: COUNTERFACTUAL retries at the same profile until met, a failure resetting its own class's passes and charged its full duration; the tuner backs off instead. Censored share = 1 - done.
+pass-cost: +N short rows: COUNTERFACTUAL requirements with N more short passes; +launches and +hours are their expected extra cost over the current requirement.

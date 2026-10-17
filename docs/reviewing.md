@@ -7,6 +7,7 @@ just stats                                                # target machine: /var
 just stats --state-dir <copied-state-dir>                  # another machine, no hardware or root needed
 just stats --journal <state-dir>/archive/<session>.jsonl   # one archived session
 just stats --since 2026-09-30T00:00:00Z
+just stats --chains chains.jsonl                           # also write the R7 chain attribution as JSON Lines
 ```
 
 `--since` filters trials and hunts by their start time, and warnings, failures and cycle events by event time. Runs overlapping the cutoff retain their full totals. Session metadata and earlier evidence remain available, so a cutoff does not erase the passes used to evaluate a hunt. Output is plain text, sorted and deterministic for a fixed journal.
@@ -17,7 +18,13 @@ just stats --since 2026-09-30T00:00:00Z
 - **Hunts** shows parked offsets (`all-zero`, the passed full-cycle end `#<seq>`, or `loaded-held` when a located hunt holds its loaded cores at their failing offsets), groups, trials, crashes, elapsed hours, result and commitment backoff. A backoff belongs to a hunt only when its recorded cause cites that hunt's end or combination; an unrelated later backoff is not a commitment. Open hunts are reported through the journal's last event.
 - **Checking** counts cycles started, cycles ended and full cycles, and reruns that failed on their first trial. **Checking steps and together outcomes** groups reached steps by cycle, regime, loaded cores and outcome; rerun trials belong to no cycle and are grouped under `rerun` instead. Reruns are grouped by their recorded obligation cause: the short trials and final original-duration trial belong to one rerun.
 - **R7 voltage-targeted backoffs** lists decision sequences, decision kind, core, offsets from/to, causes and reason. Each decision explains its voltage target and supporting measurements and passes ([R7 voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff)). Historical R7 hunts and hunts of other regimes remain in the hunt report.
-- **R7 chain derivations** lists sequence, cycle, step, CCD, workload, part, request groups, next loaded cores and source sequences. Read these in order to see each CCD's full load followed by partials that idle its top requesters; an offset fallback is stated when no measurement orders the load.
+- **R7 chain derivations** lists sequence, cycle, step, CCD, workload, part, request groups, next loaded cores and source sequences. Read these in order to see each CCD's full load followed by partials that idle its top requesters; an offset fallback is stated when no measurement orders the load. Each row also attributes what the derivation cost ([#896](https://github.com/shgew/togi/issues/896)), from the journal's own fields:
+  - `kind`: `first` at its position in the cycle's step, or the tuner's `unchanged`/`changed` re-derivation after a profile change ([ADR 0055](adr/0055-rederive-r7-chains-after-a-backoff.md)); `changed, repeated` is a changed set an earlier derivation of the same step and CCD already required.
+  - `moved`: the cores whose offsets differ from the position's previous derivation, marked `(other CCD)` when none is on this CCD.
+  - `result`: `ran` when trials of the set ran before the position was derived again; `covered` when none ran before the chain moved to its next part or the cycle ended passed, so evidence already met the set's requirements; `superseded` when it was re-derived before running anything; `abandoned` when its cycle ended unpassed, after a core reset, before any ran; `open` when the journal ends first; `end` for the empty set that ends the chain.
+  - `held`: whether the step's chain after its last derivation still holds the set, at any position, since evidence counts by set; an `end`, at its own position. `trials` and `trial s` are the set's non-rerun R7 trials of the same cycle, step and workload in that window. The set's reruns, which belong to no cycle, count in that window up to the cycle's end or until a later step derives the same set of the same workload, so each rerun counts once.
+
+  **R7 chain cost by derivation** totals derivations, trials, trial seconds, failed trial seconds, crash recovery (last evidence to the next boot's start) and the failed trials by kind and result. **R7 chain attribution** picks out unchanged derivations after a move on the other CCD, sets changed back to one the step required before, sets the step never required before (a failure there is a load the old order never ran, as trial 0278 of #896 was), sets the chain no longer holds, and reruns of derived sets, which are rerun obligations and not counted in the cost table. The figures are observed cost, not savings: whether skipping any of it would still cover the final chain is a separate question.
 - **Evidence quality** counts warnings and checks every executed hunt group against evidence from before its hunt, under the pass and failure rules of [Evidence](spec/tuner.md#evidence). The tables show prior passes, whether they meet the hunt's required count, repeated outcomes and trial exposure cost, with a hunt/stage summary. This is a counterfactual evidence-reuse check, not a claim that skipping those groups would reproduce the same hunt.
   The `decisions resting on a single carried failure` line counts inferred-failure `hunt.group` events and `tuner.decision` backoffs whose cause chains reach exactly one distinct failure observation, a failed `trial.carried` or idle `failure.carried`. It follows causes transitively through `hunt.start`, `hunt.end`, `combination` and other context events. Observations (`trial.carried`, `failure.carried`, `trial.end` and `failure`) end a branch: passing or inconclusive observations contribute no failure and their causes are not followed. Context events are not themselves failure evidence. Passing inferences, non-backoff decisions, chains without failures, and chains containing multiple failures or any live failure do not count. Repeated paths to the same failure sequence count once. The cutoff selects decision event time while retaining earlier evidence and context. This reports dependence on a lone historical failure, not the number of carried failures or a confidence estimate.
 - **Failure rate by depth** groups trials and failures for multi-core classes that failed, using the shallowest loaded-core offset from the applied profile. Any loaded core at zero makes the group `0`. Older journals without `trial.intent.profile` use the recorded applied profile. A class's trials count every started trial, inconclusive ones included, so the rate is failures per started trial; rates are not probabilities for a different machine or workload.
@@ -38,9 +45,11 @@ just stats --state-dir COPY-AFTER-THE-RUN --forecast tools/bench/forecasts/<sess
 
 The run ends at its first terminal point after the anchor: a `checking.cycle` start once the replayed tuner has seen a clean cycle, which is where `togi run --cycles 1` shuts down instead (that start itself is not counted); a `shutdown` with reason `cycles`; or a `deadend`. A real tuning boot runs without `--cycles` and keeps checking after its conclusion, so it scores the same as a `--cycles 1` run with the same history. Nothing after the terminal point counts: no crashes, hunts, dead ends, profile changes or builds. Crashes, hunts that ran a trial, hours, the profile and the depth are those at the terminal point, with the profile the tuner projects for the session holding it, which may be a new session started after the anchor, after a transition. A run with no terminal point is censored and measured through its newest session's last event.
 
+Hours are run time, not wall time from the anchor ([#686](https://github.com/shgew/togi/issues/686)): a simulated run resumes right after the anchor and never pauses, while a real one may start days later or stop overnight. Each invocation counts from its first event to its last, the anchor's own invocation from the anchor. The gap before an invocation counts only when that invocation records `crash.detected`, once however many it records, so real crash recovery stays in. The time after a `shutdown`, before a restart that detects no crash and before a new session's `session.start` does not count. An invocation starts at `session.start`, at a `config.loaded` that no `session.start` precedes, or at the first event in another boot; the `mce`, `boot.leave_reason`, `journal.torn` and `state.rebuilt` events a starting invocation records before its `config.loaded`, and `command.reset` and `session.archived`, which are recorded outside a run, do not move a gap's ends.
+
 The session holding the terminal point, or the newest session of a censored run, must be replayable: its journal must decode with its configuration and record this build's ruleset, so the tuner can project its profile. A current-schema journal of another ruleset is refused; so is a journal of a newer schema, and its message names which of the two differs.
 
-- The header names the forecast's commit, ruleset and runs by status; the anchor; the run's status and hours after the anchor; and every build that ran from the anchor through the terminal point: the build in effect at the anchor when its invocation wrote events after the anchor before any new `session.start` or `config.loaded`, then each build those events stamp. `Flag:` lines mark what makes the forecast less comparable: a build revision other than the forecast's commit (short revisions match as prefixes; a `-dirty` build never matches), another ruleset or evidence epoch, or a forecast made from a dirty tree. Flags do not stop the score.
+- The header names the forecast's commit, ruleset and runs by status; the anchor; the run's status and its run time since the anchor; and every build that ran from the anchor through the terminal point: the build in effect at the anchor when its invocation wrote events after the anchor before any new `session.start` or `config.loaded`, then each build those events stamp. `Flag:` lines mark what makes the forecast less comparable: a build revision other than the forecast's commit (short revisions match as prefixes; a `-dirty` build never matches), another ruleset or evidence epoch, or a forecast made from a dirty tree. Flags do not stop the score.
 - Each core's offset, the depth, hours, crashes and hunts show the actual value; `inside`: `yes` within the forecast's 10th to 90th percentile, else `below` or `above`; the error, actual minus the forecast median; the percentile, the share of forecast runs below the value plus half of those equal to it; and the forecast's median and ranges. Forecast hours cover only its concluded runs; with none, the hours row shows `-` in every forecast column.
 - A censored run is scored with its hours, crashes and hunts as lower bounds, printed with `>=`; each is `above` once past the 90th percentile and `open` otherwise, and its percentile counts only forecast runs below it. Offsets and depth are scored where the run stopped.
 - Real hours include real crash recovery, which the simulated hours do not model (`just forecast` states the bias); the score reports both as they are.
@@ -51,7 +60,7 @@ The snapshots for a concluded, a censored and an unconcluded forecast score a si
 
 ## The stats tool (`togi-tool-stats`)
 
-`just stats` runs `togi-tool-stats` ([#820](https://github.com/shgew/togi/issues/820)). It takes the flags `--state-dir`, `--journal`, `--since` and `--forecast`, with `--forecast` refusing `--journal` and `--since`, and prints the sections above. It reports as follows:
+`just stats` runs `togi-tool-stats` ([#820](https://github.com/shgew/togi/issues/820)). It takes the flags `--state-dir`, `--journal`, `--since`, `--forecast` and `--chains FILE`, with `--forecast` refusing `--journal`, `--since` and `--chains`, and prints the sections above. `--chains FILE` also writes one JSON object per `checking.chain` event selected by `--since`, in journal order: `seq`, `cycle`, `step`, `ccd`, `workload`, `part`, `groups`, `cores` and `sources` (the event's `source_seqs`) as recorded, without its `profile`; `kind` (`first`, `unchanged` or `changed`, the recorded `rederived`), with `repeated` for a changed set; when the position had a previous derivation, `previous`, and when the profile moved since, `moved` cores and `change` (`same_ccd` or `other_ccd`); `resolution`, `held`, and its `trials` and `reruns`, each with seq, trial, `duration_s`, outcome, crash and, for a crash, `recovery_s`. It reports as follows:
 
 - It reads only `events.jsonl`, never trial samples. A `trial.end` already holds the request telemetry the session summarized from the trial's samples, also for a trial a crash cut short, so a trial whose end lacks the fields has none to recover. The R7 request report counts a trial's end fields and the carried `trial.carried` facts of other sessions.
 - A journal that does not follow itself (a gap in the sequence, a cause that does not precede its event) is an error naming the file, with exit status 1; a usage error exits 2.
@@ -64,11 +73,11 @@ The snapshots for a concluded, a censored and an unconcluded forecast score a si
 - `--journal` and `--state-dir` refuse a journal file that is a symlink, because the report reads through the journal crate's no-follow open.
 - **Scoring a forecast** prints the evidence epoch in the `Forecast:` line and in each build (`rev abc ruleset 1 epoch 1`, `rev none` for a build without a revision).
 
-The tests compare rendered output with compile-time golden fixtures in `crates/togi-tool-stats/src/tests/snapshots/`, from journals they build in memory (a combination failure on two CCDs, the review-boundary scenario, R7 requests and decisions, scored forecasts). Run `cargo nextest run -p togi-tool-stats` to check them; an intentional rendering change updates the fixture and reviews its diff against this document. Tests over a simulated session check the report against the journal's own events and not against bytes, so a tuner change leaves the snapshots alone.
+The tests compare rendered output with compile-time golden fixtures in `crates/togi-tool-stats/src/tests/snapshots/`, from journals they build in memory (a combination failure on two CCDs, the review-boundary scenario, R7 requests and decisions, R7 chains re-derived after two backoffs, scored forecasts). Run `cargo nextest run -p togi-tool-stats` to check them; an intentional rendering change updates the fixture and reviews its diff against this document. Tests over a simulated session check the report against the journal's own events and not against bytes, so a tuner change leaves the snapshots alone.
 
 ## Retros
 
-After an unattended run on the target machine, write a retro as a new comment on the pinned [Target-machine runs](https://github.com/shgew/togi/issues/260) issue. Build it from `just stats` and `togi events`, not from memory. In omp, `/retro` runs the whole workflow ([`.omp/commands/retro.md`](../.omp/commands/retro.md)).
+After an unattended run on the target machine, write a retro as a new comment on the pinned [Target-machine runs](https://github.com/shgew/togi/issues/260) issue. Build it from `just stats` and `togi events`, not from memory. A question they do not answer, such as how clocks and voltage requests moved with offset, can be asked of the journals and samples with [`just sql`](#querying-journals-and-samples-just-sql); the retro still reports from `just stats` and `togi events`. In omp, `/retro` runs the whole workflow ([`.omp/commands/retro.md`](../.omp/commands/retro.md)).
 
 A full retro has these sections:
 
@@ -82,6 +91,47 @@ A full retro has these sections:
 A run with nothing new gets the short form instead: no failure pattern that earlier retros have not recorded, no decision that contradicts the spec, no device trouble and no forecast to score. Its retro is the **Session** paragraph, the numbers that changed since the previous retro, the **Dashboard on the target** line when the operator saw something, and **Actions:** none.
 
 A finding that holds beyond one run moves to where the next change reads it: how the machine fails goes into its bench machine files under `tools/bench/machines/`, and what simulated runs should show goes into `docs/simulating.md`. The retro links to the pull request that moved it.
+
+## Querying journals and samples (`just sql`)
+
+`just sql [DIR]` opens [DuckDB](https://duckdb.org) on a state directory, `/var/lib/togi` by default, with views over its current and archived journals and every trial's samples, plain or gzip-compressed ([Files](spec/journal.md#files)). It answers aggregate questions across trials and sessions in one query, where `jq` would read every file. DuckDB comes with the development shell only; togi never ships or imports it. The database lives in memory and the views only read, so a live state directory is safe to query; for another machine, copy its whole state directory, `trials/` and `archive/` included. The views list the files when they are read, as DuckDB starts: trials written since are missing, and a query fails with "No files found" once a listed file moves, as a trial's samples do when they are compressed at its end and a session's files do when it is archived. `.read tools/sql/views.sql` lists them again, or restart `just sql`. Where togi has run trials, only root can list `trials/` and the trial directories ([Backends](spec/workloads.md#backends)), so `just sql` refuses such a state directory for any other user rather than show no samples: run it as root, or query a copy you own. The views skip a line that does not parse, such as most torn tails, without saying so, and read a torn tail that happens to parse, which togi drops ([Rules](spec/journal.md#rules)); this is one reason `just stats` and `togi events` stay what a review reports from. Further arguments go to `duckdb`, so `-c` runs a query and exits:
+
+```sh
+sudo nix develop --command just sql                       # target machine, interactive, as root
+sudo cp -R /var/lib/togi <copy> && sudo chown -R "$(id -u):$(id -g)" <copy>
+just sql <copy> -c 'from trials limit 5'                  # a copy you own
+just sim --samples --machine tools/bench/machines/target-shared-voltage.json --state-dir <dir>
+just sql <dir>                                            # a simulated session with PM-table lanes
+```
+
+| View | One row per | Columns |
+|---|---|---|
+| `events` | event of the current or an archived journal | `session` and `archived`, then the event's `seq`, `time`, `boot`, `mono_ms`, `cause`, `kind`, `msg` and `data` (JSON) |
+| `trials` | trial, from its `trial.intent` and `trial.end` | `session`, `archived`, `trial`, `started`, `ended`, `regime`, `workload`, `condition`, `activity`, `cores` (the loaded cores the intent names), `profile` (core → offset), `outcome`, `duration_s`, `tctl_max_c`, and the whole payloads as `intent_data` and `end_data` |
+| `samples` | conditions sample | `session`, `archived`, `trial`, then the sample's fields: `core_mhz` and `worker_cpu_ms` keyed by core ID, `tccd_c` by CCD label, and `pm_table` as a struct of 16-element lists |
+| `core_samples` | sample and loaded core (one with a clock or a worker in it) | `session`, `archived`, `trial`, `regime`, `workload`, `core`, its `offset` from the trial's profile, `elapsed_ms`, `mhz`, `worker_cpu_ms`, its own PM-table lanes (`voltage_request_v`, `power_w`, `temperature_c`, `c0_pct`, `cc1_pct`, `cc6_pct`), `tctl_c` and `package_power_w` |
+
+Trial IDs restart in every session, so join on `session` and `trial`, never on `trial` alone. `offset` is an SQL keyword: quote it as `"offset"`. DuckDB lists start at 1, so core `c` of a PM-table lane is `pm_table.voltage_request_v[c + 1]`; `core_samples` has done that already. The views are in `tools/sql/views.sql`; `just sql-test` checks them against fixtures.
+
+Trials and outcomes by regime and workload, across every session of the directory:
+
+```sql
+select regime, workload, outcome, count(*) as trials, round(avg(tctl_max_c), 1) as avg_tctl_max_c
+from trials
+where outcome is not null
+group by all
+order by all;
+```
+
+How each core's voltage request and clock moved with its offset in R7 trials, from the fifth second on as the request summaries of `trial.end` count them ([Event format](spec/journal.md#event-format)):
+
+```sql
+select core, "offset", count(*) as samples, round(median(voltage_request_v), 3) as median_v, median(mhz) as median_mhz
+from core_samples
+where regime = 'R7' and elapsed_ms >= 5000 and voltage_request_v is not null
+group by all
+order by core, "offset" desc;
+```
 
 ## Inspecting a transition on recorded state
 

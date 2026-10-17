@@ -10,10 +10,11 @@ use togi_backend::{Backend, Line, Plan, Ready};
 use togi_machine::{CancellationToken, CpuId, Regime, Signal, Workload};
 
 use super::harness::{core, crate_error, finish, local, printing, rig, rig_edit, rig_with, spec};
-use crate::error::{CleanupFailure, Error};
+use crate::error::{CleanupFailure, Error, SystemdError};
 use crate::id::ScopeName;
 use crate::os::fake::{Launch, ProcCtx, Reply, ScanFault, script};
 use crate::os::{ExitInfo, GroupSignal, Systemd};
+use crate::procfs::ProcError;
 use crate::runner::Backends;
 use crate::testing::TestBackend;
 use crate::timing::Timing;
@@ -25,11 +26,14 @@ fn secs(n: u64) -> Duration {
 fn kills(calls: &[(Systemd, tokio::time::Instant)]) -> Vec<String> {
     let mut scopes: Vec<String> = calls
         .iter()
-        .filter_map(|(call, _)| match call {
-            Systemd::Kill { scope, signal } if *signal == crate::os::KillSignal::Kill => {
+        .filter_map(|(call, _)| {
+            if let Systemd::Kill { scope, signal } = call
+                && *signal == crate::os::KillSignal::Kill
+            {
                 Some(scope.to_string())
+            } else {
+                None
             }
-            _ => None,
         })
         .collect();
     scopes.sort();
@@ -69,9 +73,12 @@ fn teardown_shares_one_fifteen_second_budget_across_instances(count: u8) {
         local(async {
             let rig = rig();
             rig.fake.on_launch(immortal);
-            rig.fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Hang),
-                _ => None,
+            rig.fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Hang)
+                } else {
+                    None
+                }
             });
             let cores: Vec<u8> = (0..count).collect();
             let cancel = CancellationToken::new();
@@ -118,9 +125,12 @@ fn a_timed_out_scope_kill_is_never_read_as_a_missing_scope() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
-            rig.fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Hang),
-                _ => None,
+            rig.fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Hang)
+                } else {
+                    None
+                }
             });
             let cancel = CancellationToken::new();
             let handle = rig
@@ -140,12 +150,15 @@ fn a_completed_not_loaded_answer_counts_as_a_missing_scope() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
-            rig.fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Output {
-                    success: false,
-                    text: "Failed to kill unit: Unit togi-trial-t1.scope not loaded.".into(),
-                }),
-                _ => None,
+            rig.fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Output {
+                        success: false,
+                        text: "Failed to kill unit: Unit togi-trial-t1.scope not loaded.".into(),
+                    })
+                } else {
+                    None
+                }
             });
             let cancel = CancellationToken::new();
             let handle = rig
@@ -165,12 +178,15 @@ fn another_failure_text_is_a_failed_kill() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
-            rig.fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Output {
-                    success: false,
-                    text: "Access denied".into(),
-                }),
-                _ => None,
+            rig.fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Output {
+                        success: false,
+                        text: "Access denied".into(),
+                    })
+                } else {
+                    None
+                }
             });
             let cancel = CancellationToken::new();
             let handle = rig
@@ -384,9 +400,12 @@ fn final_unterminated_pipe_output_survives_confirmed_and_unconfirmed_cleanup() {
                     }))
                 });
                 if hang_scope {
-                    rig.fake.on_systemd(|call| match call {
-                        Systemd::Kill { .. } => Some(Reply::Hang),
-                        _ => None,
+                    rig.fake.on_systemd(|call| {
+                        if let Systemd::Kill { .. } = call {
+                            Some(Reply::Hang)
+                        } else {
+                            None
+                        }
                     });
                 }
                 let cancel = CancellationToken::new();
@@ -496,9 +515,12 @@ fn a_detached_pipe_holder_beyond_a_failed_scope_kill_leaves_the_drain_unconfirme
         local(async {
             let rig = rig();
             rig.fake.on_launch(leaves_a_pipe_holder);
-            rig.fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Hang),
-                _ => None,
+            rig.fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Hang)
+                } else {
+                    None
+                }
             });
             let cancel = CancellationToken::new();
             let handle = rig
@@ -599,12 +621,15 @@ fn an_acknowledged_scope_kill_with_a_surviving_member_is_containment() {
                 pid: 9000,
                 starttime: 1,
             });
-            rig.fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Output {
-                    success: true,
-                    text: String::new(),
-                }),
-                _ => None,
+            rig.fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Output {
+                        success: true,
+                        text: String::new(),
+                    })
+                } else {
+                    None
+                }
             });
             let cancel = CancellationToken::new();
             let handle = rig
@@ -640,12 +665,15 @@ fn a_member_that_exits_after_the_kill_is_waited_for_and_then_confirmed() {
                 pid: 9001,
                 starttime: 1,
             });
-            rig.fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Output {
-                    success: true,
-                    text: String::new(),
-                }),
-                _ => None,
+            rig.fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Output {
+                        success: true,
+                        text: String::new(),
+                    })
+                } else {
+                    None
+                }
             });
             let alive = survivor.alive.clone();
             tokio::task::spawn_local(async move {
@@ -679,26 +707,37 @@ fn watching_rig() -> super::harness::Rig {
     rig
 }
 
-#[test_case(false, ScanFault::Fail, "scan failed"; "a failed scan")]
-#[test_case(true, ScanFault::Fail, "scan failed"; "a failed scan after a failed kill")]
-#[test_case(false, ScanFault::Late, "after the teardown deadline"; "an empty scan after the deadline")]
-#[test_case(true, ScanFault::Late, "after the teardown deadline"; "an empty scan after the deadline and a failed kill")]
+fn denied(error: &ProcError) -> bool {
+    matches!(error, ProcError::Read { source, .. } if source.kind() == std::io::ErrorKind::PermissionDenied)
+}
+
+fn late(error: &ProcError) -> bool {
+    matches!(error, ProcError::Deadline)
+}
+
+#[test_case(false, ScanFault::Fail, denied; "a failed scan")]
+#[test_case(true, ScanFault::Fail, denied; "a failed scan after a failed kill")]
+#[test_case(false, ScanFault::Late, late; "an empty scan after the deadline")]
+#[test_case(true, ScanFault::Late, late; "an empty scan after the deadline and a failed kill")]
 fn an_unverifiable_scope_scan_withholds_the_proof_and_the_watched_partial(
     kill_fails: bool,
     fault: ScanFault,
-    reason: &str,
+    cause: fn(&ProcError) -> bool,
 ) {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = watching_rig();
             rig.fake.fault_scans(fault);
             if kill_fails {
-                rig.fake.on_systemd(|call| match call {
-                    Systemd::Kill { .. } => Some(Reply::Output {
-                        success: false,
-                        text: "Access denied".into(),
-                    }),
-                    _ => None,
+                rig.fake.on_systemd(|call| {
+                    if let Systemd::Kill { .. } = call {
+                        Some(Reply::Output {
+                            success: false,
+                            text: "Access denied".into(),
+                        })
+                    } else {
+                        None
+                    }
                 });
             }
             let cancel = CancellationToken::new();
@@ -716,7 +755,10 @@ fn an_unverifiable_scope_scan_withholds_the_proof_and_the_watched_partial(
                 let [CleanupFailure::KillScope { source, .. }, observed] = failures else {
                     panic!("{failures:?}");
                 };
-                assert!(source.to_string().contains("Access denied"), "{source}");
+                assert!(
+                    matches!(source, SystemdError::Exit { output, .. } if output == "Access denied"),
+                    "{source:?}"
+                );
                 observed
             } else {
                 let [observed] = failures else {
@@ -728,7 +770,10 @@ fn an_unverifiable_scope_scan_withholds_the_proof_and_the_watched_partial(
                 panic!("{observed:?}");
             };
             assert_eq!(*what, "the trial scope members");
-            assert!(source.to_string().contains(reason), "{source}");
+            assert!(
+                source.downcast_ref::<ProcError>().is_some_and(cause),
+                "{source:?}"
+            );
             assert_eq!(
                 run.finished.result.failure, None,
                 "a watched partial is not classified while the scope is unverified"
@@ -749,9 +794,12 @@ fn a_scope_kill_that_outlives_its_deadline_is_cut_off_at_the_shared_slot(count: 
                     ctx.until_killed_ignoring_term().await;
                 }))
             });
-            rig.fake.on_systemd(|call| match call {
-                Systemd::Kill { .. } => Some(Reply::Stall),
-                _ => None,
+            rig.fake.on_systemd(|call| {
+                if let Systemd::Kill { .. } = call {
+                    Some(Reply::Stall)
+                } else {
+                    None
+                }
             });
             let cores: Vec<u8> = (0..count).collect();
             let regime = if count == 1 { Regime::R1 } else { Regime::R7 };
@@ -782,12 +830,7 @@ fn a_scope_kill_that_outlives_its_deadline_is_cut_off_at_the_shared_slot(count: 
                 let CleanupFailure::KillScope { source, .. } = failure else {
                     panic!("{failure:?}");
                 };
-                assert!(
-                    source
-                        .downcast_ref::<tokio::time::error::Elapsed>()
-                        .is_some(),
-                    "{source}"
-                );
+                assert!(matches!(source, SystemdError::Timeout(_)), "{source:?}");
             }
             assert!(
                 begun.elapsed() <= timing.stop_grace + timing.kill_slot + Duration::from_millis(50)

@@ -106,7 +106,14 @@
             dummySrc = craneLib.mkDummySrc { inherit (depsSource) src; };
           };
           cargoDeps = craneLib.buildDepsOnly depsArgs;
-          cargoCheck = source: args: cargoWith source args // { cargoArtifacts = cargoDeps; };
+          # Checks keep no Cargo target archive: nothing builds on their outputs, and Cachix would store it.
+          cargoCheck =
+            source: args:
+            cargoWith source args
+            // {
+              cargoArtifacts = cargoDeps;
+              doInstallCargoArtifacts = false;
+            };
           cargoNoDeps =
             source: args:
             cargoWith source args
@@ -232,7 +239,6 @@
           devShells.default = pkgs.mkShell (
             {
               packages = [
-                pkgs.flock
                 pkgs.go_1_27
                 pkgs.gh
                 pkgs.gh-token
@@ -242,6 +248,7 @@
                 pkgs.nixfmt
                 pkgs.bashInteractive
                 pkgs.nushell
+                pkgs.duckdb
                 rustToolchain
                 pkgs.cargo-deny
                 pkgs.cargo-fuzz
@@ -270,6 +277,19 @@
                   HOME=$TMPDIR nu --no-config-file tests.nu
                   touch "$out"
                 '';
+            sql-test =
+              pkgs.runCommand "togi-sql-test"
+                {
+                  nativeBuildInputs = [ pkgs.duckdb ];
+                  src = ./tools/sql;
+                }
+                ''
+                  cp -R "$src" sql
+                  chmod -R u+w sql
+                  patchShebangs sql
+                  HOME=$TMPDIR sql/test.sh
+                  touch "$out"
+                '';
             clippy = craneLib.mkCargoDerivation (
               cargoCheck testSource {
                 pnameSuffix = "-clippy";
@@ -292,6 +312,8 @@
               }
             );
             doc = craneLib.cargoDocTest (cargoCheck cratesSource { });
+            # No other check's output references the shared dependency artifact; as a check, CI pushes it to Cachix.
+            cargo-deps = cargoDeps;
             cargo-fmt = craneLib.cargoFmt (cargoWith codeSource { });
             deny = craneLib.mkCargoDerivation (
               cargoNoDeps manifestSource {
@@ -373,7 +395,6 @@
                 })
                 {
                   pnameSuffix = "-changes";
-                  doInstallCargoArtifacts = false;
                   buildPhaseCargoCommand = "cargoWithProfile run --locked -p togi-tool-release -- -check changes";
                   installPhaseCommand = "touch $out";
                 }
@@ -397,7 +418,6 @@
               trial-scope-tests = craneLib.mkCargoDerivation (
                 cargoCheck trialSource {
                   pnameSuffix = "-trial-scope-tests";
-                  doInstallCargoArtifacts = false;
                   nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
                   buildPhaseCargoCommand = ''
                     cargoWithProfile test --locked -p togi-trial --features hardware --test hardware --test cached_errors \
@@ -420,7 +440,6 @@
               vm-recovery-tests = craneLib.mkCargoDerivation (
                 cargoCheck recoverySource {
                   pnameSuffix = "-vm-recovery-tests";
-                  doInstallCargoArtifacts = false;
                   nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
                   buildPhaseCargoCommand = ''
                     cargoWithProfile test --locked -p togi --test vm_recovery --no-run \
@@ -436,6 +455,7 @@
                 }
               );
               vm = vm.tuning-boot;
+              vm-host-lock = vm.host-lock;
               vm-restart-limit = vm.restart-limit;
               vm-trial-scope = vm.trial-scope;
               vm-emergency-stop = vm.emergency-stop;

@@ -48,7 +48,6 @@ fn description(scene: &Scene<'_>, trial: &TrialView) -> Vec<Clause> {
     };
     let paint = |p: Paint, text: String| Line::from(scene.paint(p, text));
     if scene.hold.is_some() {
-        let cores: Vec<_> = trial.cores.iter().collect();
         return vec![
             Clause::whole("  ", paint(Paint::Chip, " R6 ".into())),
             leave("  ", paint(Paint::White, "idle + bursts".into()), 2),
@@ -56,7 +55,7 @@ fn description(scene: &Scene<'_>, trial: &TrialView) -> Vec<Clause> {
                 "  ",
                 paint(
                     Paint::Text,
-                    format!("on {}", cores_text(&cores, scene.s.cores.len())),
+                    format!("on {}", cores_text(trial.cores, scene.s.cores.len())),
                 ),
             ),
             leave(
@@ -258,15 +257,12 @@ fn trial_row(scene: &Scene<'_>, trial: &TrialView, width: usize) -> Line<'static
 fn resting(scene: &Scene<'_>, width: usize) -> [Line<'static>; 2] {
     let band = resting_band(scene);
     let room = width.saturating_sub(LABEL_CELLS);
-    let mut lines = band.lines.iter();
+    let kept = band.lines.len().saturating_sub(1);
+    let mut lines = band.lines.into_iter();
     let mut head = vec![Clause::whole("", text(scene, band.paint, band.title))];
     if let Some(first) = lines.next() {
-        head.push(Clause::whole(
-            " · ",
-            text(scene, Paint::Text, first.clone()),
-        ));
+        head.push(Clause::whole(" · ", text(scene, Paint::Text, first)));
     }
-    let kept = band.lines.len().saturating_sub(1);
     let rest: Vec<Clause> = lines
         .enumerate()
         .map(|(i, line)| {
@@ -274,7 +270,7 @@ fn resting(scene: &Scene<'_>, width: usize) -> [Line<'static>; 2] {
             Clause::new(
                 " · ",
                 vec![
-                    Form::new(text(scene, Paint::Grey, line.clone()), rank),
+                    Form::new(text(scene, Paint::Grey, line), rank),
                     Form::empty(),
                 ],
             )

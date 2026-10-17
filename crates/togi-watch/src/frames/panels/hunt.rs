@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use ratatui::text::Line;
 use togi_journal::HuntStage;
-use togi_machine::{CoreId, CoreSet, Signal};
+use togi_machine::{CoreSet, Signal};
 use togi_tuner::{GroupState, HuntGroup, MemberProbe, RerunPlan};
 
 use super::super::colours::Paint;
@@ -14,7 +14,7 @@ use super::super::measure::Tables;
 use super::super::notes::offset_list;
 use super::super::scene::{Scene, between, clock, short_duration};
 use super::super::story::{crash_evidence, known_words};
-use super::super::terms::{cycle_place, recut_words, trial_name};
+use super::super::terms::{cycle_place, recut_words, step_part, trial_name};
 use super::table::{cell, field_row, overlay, stage_marker, table_row};
 use crate::model::{HuntView, SingletonStage};
 use crate::words::{age, core_ids, group_word, kind_words, plural, signal_words};
@@ -148,15 +148,13 @@ fn cause_line(scene: &Scene<'_>, hunt: &HuntView<'_>, compact: bool, room: usize
     );
     let mut place = vec![];
     if !compact {
-        let full = cycle_place(trial);
-        if !full.is_empty() {
-            let mut bare = trial.clone();
-            bare.count.of = 0;
-            let bare = cycle_place(&bare);
-            place.push(Form::new(say(full.clone()), 5));
+        if let Some(at) = &trial.cycle {
+            let full = cycle_place(trial);
+            let bare = step_part(at);
             if bare != full {
-                place.push(Form::new(say(bare), 5));
+                place.push(Form::new(say(full), 5));
             }
+            place.push(Form::new(say(bare), 5));
             place.push(Form::empty());
         }
     }
@@ -381,7 +379,7 @@ fn holding_row(
 struct Run<'a> {
     first: &'a HuntGroup,
     last: &'a HuntGroup,
-    cores: Vec<CoreId>,
+    cores: CoreSet,
     stages: Vec<HuntStage>,
 }
 
@@ -396,11 +394,7 @@ fn runs<'a>(groups: &'a [HuntGroup]) -> Vec<Run<'a>> {
             && !matches!(group.outcome, GroupState::Running | GroupState::Failed)
         {
             run.last = group;
-            for core in group.cores {
-                if !run.cores.contains(&core) {
-                    run.cores.push(core);
-                }
-            }
+            run.cores.extend(group.cores);
             if !run.stages.contains(&group.stage) {
                 run.stages.push(group.stage);
             }
@@ -409,7 +403,7 @@ fn runs<'a>(groups: &'a [HuntGroup]) -> Vec<Run<'a>> {
         runs.push(Run {
             first: group,
             last: group,
-            cores: group.cores.iter().collect(),
+            cores: group.cores,
             stages: vec![group.stage],
         });
     }
@@ -428,13 +422,13 @@ fn group_lines(
         let label = if i == 0 { "parts" } else { "" };
         let mut which = format!("group {}", run.first.number);
         let mut what = format!("{} at failing offsets", core_ids(run.first.cores.iter()));
-        let rest: Vec<CoreId> = plan
+        let rest: CoreSet = plan
             .candidates
             .iter()
             .filter(|core| !run.first.cores.contains(*core))
             .collect();
         if !rest.is_empty() {
-            let with_rest = format!("{what}, {} parked", core_ids(rest.iter().copied()));
+            let with_rest = format!("{what}, {} parked", core_ids(rest));
             if display_width(&with_rest) <= t.groups[1].w {
                 what = with_rest;
             }
@@ -445,7 +439,7 @@ fn group_lines(
         let many = run.first.number != run.last.number;
         if many {
             which = format!("groups {}-{}", run.first.number, run.last.number);
-            what = format!("parts of {}", core_ids(run.cores.iter().copied()));
+            what = format!("parts of {}", core_ids(run.cores));
             if run.stages.contains(&HuntStage::Complement) {
                 what.push_str(" and their complements");
             }
@@ -557,27 +551,27 @@ fn probe_lines(
     }
     let trial = scene.s.trial.filter(|trial| trial.count.of > 0);
     let mut next = true;
-    let mut waiting: Vec<CoreId> = Vec::new();
-    let flush = |waiting: &mut Vec<CoreId>, out: &mut Vec<Line<'static>>| {
+    let mut waiting = CoreSet::default();
+    let flush = |waiting: &mut CoreSet, out: &mut Vec<Line<'static>>| {
         if !waiting.is_empty() {
             out.push(table_row(
                 &t.probes,
                 &[
-                    cell(scene, Paint::Text, core_ids(waiting.iter().copied())),
+                    cell(scene, Paint::Text, core_ids(*waiting)),
                     Line::default(),
                     Line::default(),
                     Line::default(),
                     cell(scene, Paint::Grey, "waiting"),
                 ],
             ));
-            waiting.clear();
+            *waiting = CoreSet::default();
         }
     };
     for probe in &hunt.plan.probes {
         let probed =
             probe.running || probe.done || !probe.passed_at.is_empty() || probe.failed_at.len() > 1;
         if !probed && !next {
-            waiting.push(probe.member);
+            waiting.insert(probe.member);
             continue;
         }
         flush(&mut waiting, &mut out);
@@ -1861,6 +1855,47 @@ mod tests {
         assert_eq!(stage(probe(3, -30, false, true), true), "probes done");
     }
 
+    fn singleton_stage_line(probe: togi_tuner::MemberProbe) -> String {
+        let session = SessionView {
+            start: at(0),
+            activity: None,
+        };
+        let plan = singleton_plan(probe, None, 0);
+        let mut facts = hunt_facts();
+        facts.parking = Some(core03_parked_at(0));
+        let model = Model::new();
+        let mut s = model.snapshot();
+        s.session = Some(&session);
+        s.hunt = Some(HuntView {
+            plan: &plan,
+            facts: &facts,
+        });
+        let zone = TimeZone::UTC;
+        plain(&crate::frames::dash::stage_line(
+            &scene(&s, &zone),
+            240,
+            false,
+        ))
+    }
+
+    #[test]
+    fn the_stage_line_names_a_singleton_hunt_testing_its_anchor() {
+        let shown = singleton_stage_line(probe(3, 0, true, false));
+        assert!(
+            shown.contains(" · HUNT 1 · culprit probes · testing anchor "),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn the_stage_line_names_a_singleton_hunt_whose_probes_are_done() {
+        let shown = singleton_stage_line(probe(3, -30, false, true));
+        assert!(
+            shown.contains(" · HUNT 1 · culprit probes · probes done "),
+            "{shown}"
+        );
+    }
+
     #[test]
     fn a_singleton_parked_at_a_nonzero_offset_stages_as_testing_its_anchor() {
         let mut running = probe(3, -10, true, false);
@@ -1882,8 +1917,8 @@ mod tests {
         assert_eq!(stage(false), "culprit probes · testing anchor");
     }
 
-    fn parts_of_a_located_hunt(parking: crate::model::Parking) -> Vec<String> {
-        let plan = hunt_plan(
+    fn located_parts_plan() -> togi_tuner::HuntPlan {
+        hunt_plan(
             Vec::new(),
             vec![
                 part(
@@ -1895,10 +1930,13 @@ mod tests {
                 ),
                 part(&[4, 5], &[0, 1, 2, 3], None, None, false),
             ],
-        );
+        )
+    }
+
+    fn parts_of_a_located_hunt(parking: crate::model::Parking) -> Vec<String> {
         let mut facts = hunt_facts();
         facts.parking = Some(parking);
-        with_hunt(&plan, &facts, |scene, hunt| {
+        with_hunt(&located_parts_plan(), &facts, |scene, hunt| {
             texts(&part_lines(
                 scene,
                 hunt,
@@ -1930,19 +1968,31 @@ mod tests {
 
     #[test]
     fn a_hunt_never_calls_kept_or_nonzero_parked_cores_zero() {
-        let rows = parts_of_a_located_hunt(crate::model::Parking {
+        let parking = crate::model::Parking {
             held: set(&[0, 1, 2]),
             kept: set(&[3]),
             zero: set(&[5]),
             shallow: vec![(crate::tests::kit::core(4), off(-10))],
-        });
+        };
+        let rows = parts_of_a_located_hunt(parking.clone());
         assert!(!rows[0].contains("at 0"), "{rows:?}");
-        assert!(
-            rows.iter()
-                .any(|row| row.contains("00-02 held at failing offsets")
-                    && row.contains("03 kept at failing offsets")
-                    && row.contains("04 parked at -10")),
-            "{rows:?}"
-        );
+        let held_kept_and_parked = |row: &String| {
+            row.contains("00-02 held at failing offsets")
+                && row.contains("03 kept at failing offsets")
+                && row.contains("04 parked at -10")
+        };
+        assert!(rows.iter().any(held_kept_and_parked), "{rows:?}");
+        let mut facts = hunt_facts();
+        facts.parking = Some(parking);
+        let panel = with_hunt(&located_parts_plan(), &facts, |scene, hunt| {
+            texts(&hunt_lines(
+                scene,
+                hunt,
+                &Tables::new(SizeClass::Wide, 100),
+                100,
+                SizeClass::Wide,
+            ))
+        });
+        assert!(panel.iter().any(held_kept_and_parked), "{panel:?}");
     }
 }

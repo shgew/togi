@@ -98,13 +98,13 @@ impl Selection {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SuiteError {
-    #[error("read suite {}: {source}", path.display())]
+    #[error("read suite {}", path.display())]
     Read {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
-    #[error("decode suite: {0}")]
+    #[error("decode suite")]
     Decode(#[from] serde_json::Error),
     #[error(
         "invalid scenario name {0:?}: it must be one non-empty path component of letters, digits, '-', '_' and '.'"

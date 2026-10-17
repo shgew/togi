@@ -74,7 +74,7 @@ fn entry_rows(
         if today != date {
             out.push(rule(
                 width,
-                &Line::from(Paint::Grey.span(colours, today.clone())),
+                &Line::from(Span::styled(today.as_str(), Paint::Grey.style(colours))),
                 &Line::default(),
                 Paint::Track.style(colours),
             ));

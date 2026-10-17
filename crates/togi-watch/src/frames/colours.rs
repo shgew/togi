@@ -184,7 +184,9 @@ mod tests {
             Color::LightMagenta => 13,
             Color::LightCyan => 14,
             Color::White => 15,
-            other => panic!("tone leaves the 16 slots: {other:?}"),
+            other @ (Color::Reset | Color::Rgb(..) | Color::Indexed(_)) => {
+                panic!("tone leaves the 16 slots: {other:?}")
+            }
         })
     }
 

@@ -13,9 +13,10 @@ use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use serde::{Deserialize, Serialize};
 use togi_machine::object_only;
+use togi_sim::saturating_count;
 
 use crate::record::{Record, Status};
-use crate::stats::{float, percentile};
+use crate::stats::percentile;
 use crate::suite::Suite;
 
 /// The most resamples a gate may ask for; the bootstrap holds one value per resample.
@@ -23,7 +24,7 @@ pub const MAX_RESAMPLES: usize = 10_000_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GateError {
-    #[error("decode gate: {0}")]
+    #[error("decode gate")]
     Decode(#[from] serde_json::Error),
     #[error(
         "gate: bootstrap_seed is a pair, the seed of the Go bench's PCG; archived Go gates are kept as records and are not re-scored"
@@ -422,7 +423,7 @@ fn time(name: &str, pairs: &[Pair<'_>], max_ratio: f64) -> Criterion {
             timed += 1;
         }
     }
-    let ratio = (timed > 0).then(|| (logs / float(timed)).exp());
+    let ratio = (timed > 0).then(|| (logs / saturating_count(timed)).exp());
     Criterion {
         scenario: name.to_owned(),
         pass: ratio.is_some_and(|ratio| ratio <= max_ratio),

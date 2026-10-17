@@ -1,13 +1,11 @@
-pub(crate) fn float(n: usize) -> f64 {
-    f64::from(u32::try_from(n).unwrap_or(u32::MAX))
-}
+use togi_sim::saturating_count;
 
 /// The `p`-quantile of an ascending slice by linear interpolation between neighbouring ranks; 0 for no values.
 pub(crate) fn percentile(sorted: &[f64], p: f64) -> f64 {
     let Some(last) = sorted.len().checked_sub(1) else {
         return 0.0;
     };
-    let at = p * float(last);
+    let at = p * saturating_count(last);
     let low = at.floor();
     #[expect(
         clippy::cast_possible_truncation,

@@ -244,9 +244,12 @@ impl Run {
     pub(super) fn progress(&self) -> Vec<&str> {
         self.events
             .iter()
-            .filter_map(|event| match event {
-                Event::Progress(detail) => Some(detail.as_str()),
-                _ => None,
+            .filter_map(|event| {
+                if let Event::Progress(detail) = event {
+                    Some(detail.as_str())
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -254,9 +257,12 @@ impl Run {
     pub(super) fn signals(&self) -> Vec<(CoreId, togi_machine::Signal)> {
         self.events
             .iter()
-            .filter_map(|event| match event {
-                Event::Signal { core, signal, .. } => Some((*core, *signal)),
-                _ => None,
+            .filter_map(|event| {
+                if let Event::Signal { core, signal, .. } = event {
+                    Some((*core, *signal))
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -264,9 +270,12 @@ impl Run {
     pub(super) fn warnings(&self) -> Vec<&str> {
         self.events
             .iter()
-            .filter_map(|event| match event {
-                Event::Sample(sample) => Some(sample.warning.as_str()),
-                _ => None,
+            .filter_map(|event| {
+                if let Event::Sample(sample) = event {
+                    Some(sample.warning.as_str())
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -751,12 +760,11 @@ mod tests {
             let recorded = Rc::clone(&seen);
             fake.on_threads(move |pid| {
                 recorded.set(Some(pid));
-                *process.threads.borrow_mut() =
-                    Err(crate::procfs::ProcError::Observation("lost".to_owned()));
+                *process.threads.borrow_mut() = Err(crate::os::fake::lost_read());
             });
             assert!(matches!(
                 fake.threads(pid),
-                Err(crate::procfs::ProcError::Observation(_))
+                Err(crate::procfs::ProcError::Read { .. })
             ));
             assert_eq!(seen.get(), Some(pid));
         })
@@ -767,8 +775,9 @@ mod tests {
 
 /// The crate's own error inside a seam error, when it carries one.
 pub(super) fn crate_error(error: &togi_machine::Error) -> Option<&crate::Error> {
-    match error {
-        togi_machine::Error::Other(inner) => inner.downcast_ref::<crate::Error>(),
-        _ => None,
+    if let togi_machine::Error::Other(inner) = error {
+        inner.downcast_ref::<crate::Error>()
+    } else {
+        None
     }
 }

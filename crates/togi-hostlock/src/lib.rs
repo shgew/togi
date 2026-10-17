@@ -36,6 +36,7 @@ pub enum Policy {
 }
 
 #[derive(Debug)]
+#[must_use = "dropping the guard releases the host lock; hold it until hardware access has ended and any journal has closed"]
 pub struct HostLock {
     _file: Option<File>,
     #[cfg(any(test, feature = "test-support"))]
@@ -104,9 +105,12 @@ fn open_containing_directory(resolved: &Path, lock: &Path, caller: u32) -> Resul
         .map_err(|errno| io_error(lock, Operation::OpenDirectory, errno))?;
     let mut names = resolved
         .components()
-        .filter_map(|component| match component {
-            Component::Normal(name) => Some(name),
-            _ => None,
+        .filter_map(|component| {
+            if let Component::Normal(name) = component {
+                Some(name)
+            } else {
+                None
+            }
         })
         .peekable();
     let mut descended = false;

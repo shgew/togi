@@ -16,7 +16,7 @@ use togi_journal::{
     HuntGroup, HuntOutcome, HuntSkipped, HuntStart, Inference, Mce, Payload, RoundEvent, TrialEnd,
     TunerDecision,
 };
-use togi_machine::{CoreId, Regime, Signal, TargetOffset, WorkloadId};
+use togi_machine::{CoreId, CoreSet, Regime, Signal, TargetOffset, WorkloadId};
 use togi_tuner::{DecisionPayload, GroupState};
 
 /// The tag of a line of what happened: one short word per kind of event, in a column of its own, so the eye finds
@@ -292,20 +292,33 @@ pub fn core_ids(cores: impl IntoIterator<Item = CoreId>) -> String {
     text.replace(", ", " ")
 }
 
+/// The one core of `cores`, if it holds exactly one.
+fn only(cores: CoreSet) -> Option<CoreId> {
+    cores.first().filter(|_| cores.len() == 1)
+}
+
 /// Cores named as a trial's load: "core 03", "all 8 cores" when they are every core, else the list.
-pub fn cores_text(cores: &[CoreId], total: usize) -> String {
-    match cores {
-        [core] => format!("core {:02}", core.get()),
-        _ if cores.len() == total && total > 1 => format!("all {total} cores"),
-        _ => core_list(cores.iter().copied()),
+pub fn cores_text(cores: CoreSet, total: usize) -> String {
+    match only(cores) {
+        Some(core) => format!("core {:02}", core.get()),
+        None if cores.len() == total && total > 1 => format!("all {total} cores"),
+        None => core_list(cores),
     }
 }
 
 /// Where a load runs: "on core 03", "on 00-07".
-pub fn on_cores(cores: &[CoreId]) -> String {
-    match cores {
-        [core] => format!("on core {:02}", core.get()),
-        _ => format!("on {}", core_ids(cores.iter().copied())),
+pub fn on_cores(cores: CoreSet) -> String {
+    match only(cores) {
+        Some(core) => format!("on core {:02}", core.get()),
+        None => format!("on {}", core_ids(cores)),
+    }
+}
+
+/// Cores named with the word: "core 03", "cores 00-02 05".
+pub fn cores_named(cores: CoreSet) -> String {
+    match only(cores) {
+        Some(core) => format!("core {:02}", core.get()),
+        None => format!("cores {}", core_ids(cores)),
     }
 }
 
@@ -813,9 +826,12 @@ impl Words {
 
 macro_rules! of {
     ($variant:ident, |$d:ident| $body:expr) => {
-        |payload: &Payload| match payload {
-            Payload::$variant($d) => $body,
-            _ => None,
+        |payload: &Payload| {
+            if let Payload::$variant($d) = payload {
+                $body
+            } else {
+                None
+            }
         }
     };
 }
@@ -869,17 +885,25 @@ pub fn words(kind: EventKind) -> Words {
         },
         EventKind::TrialEnd => Words {
             history: History::Contextual,
-            tag: Tagging::By(|payload| match payload {
-                Payload::TrialEnd(d) => trial_end_tag(d),
-                _ => Tag::Unclear,
+            tag: Tagging::By(|payload| {
+                if let Payload::TrialEnd(d) = payload {
+                    trial_end_tag(d)
+                } else {
+                    Tag::Unclear
+                }
             }),
             ..Words::SILENT
         },
         EventKind::Failure => Words {
             history: History::Contextual,
-            tag: Tagging::By(|payload| match payload {
-                Payload::Failure(d) if d.known_failure.is_some() => Tag::Skip,
-                _ => Tag::Fail,
+            tag: Tagging::By(|payload| {
+                if let Payload::Failure(d) = payload
+                    && d.known_failure.is_some()
+                {
+                    Tag::Skip
+                } else {
+                    Tag::Fail
+                }
             }),
             detailed: Phrase::Contextual,
             ..Words::SILENT
@@ -895,9 +919,12 @@ pub fn words(kind: EventKind) -> Words {
         },
         EventKind::TunerDecision => Words {
             history: History::Line(of!(TunerDecision, |d| Some(decision_line(d)))),
-            tag: Tagging::By(|payload| match payload {
-                Payload::TunerDecision(d) => decision_line(d).tag,
-                _ => Tag::Backoff,
+            tag: Tagging::By(|payload| {
+                if let Payload::TunerDecision(d) = payload {
+                    decision_line(d).tag
+                } else {
+                    Tag::Backoff
+                }
             }),
             compact: Brief::Of(of!(TunerDecision, |d| backs_off(d))),
             detailed: Phrase::Of(of!(TunerDecision, |d| Some(decision_phrase(d, None)))),
@@ -905,11 +932,12 @@ pub fn words(kind: EventKind) -> Words {
         },
         EventKind::CorePhase => Words {
             history: History::Contextual,
-            tag: Tagging::By(|payload| match payload {
-                Payload::CorePhase(d) => {
+            tag: Tagging::By(|payload| {
+                if let Payload::CorePhase(d) = payload {
                     phase_line(d).map_or_else(|| phase_tag(d.to), |line| line.tag)
+                } else {
+                    Tag::Limit
                 }
-                _ => Tag::Limit,
             }),
             detailed: Phrase::Of(of!(CorePhase, |d| core_phase_phrase(d))),
             ..Words::SILENT
@@ -944,9 +972,12 @@ pub fn words(kind: EventKind) -> Words {
         },
         EventKind::HuntGroup => Words {
             history: History::Contextual,
-            tag: Tagging::By(|payload| match payload {
-                Payload::HuntGroup(d) => group_tag(d),
-                _ => Tag::Group,
+            tag: Tagging::By(|payload| {
+                if let Payload::HuntGroup(d) = payload {
+                    group_tag(d)
+                } else {
+                    Tag::Group
+                }
             }),
             detailed: Phrase::Contextual,
             ..Words::SILENT

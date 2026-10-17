@@ -169,7 +169,7 @@ pub fn truncate_styled(line: &Line<'_>, width: usize) -> Line<'static> {
 /// fits.
 #[must_use]
 pub fn cut_styled(line: &Line<'_>, width: usize) -> Line<'static> {
-    let cells = cells_of(line);
+    let mut cells = cells_of(line);
     if width == 0 {
         return Line::default();
     }
@@ -193,9 +193,9 @@ pub fn cut_styled(line: &Line<'_>, width: usize) -> Line<'static> {
         return Line::default();
     }
     let style = cells[keep - 1].1;
-    let mut cut = cells[..keep].to_vec();
-    cut.extend(CUT_MARKER.chars().map(|c| (c, style)));
-    line_of(&cut)
+    cells.truncate(keep);
+    cells.extend(CUT_MARKER.chars().map(|c| (c, style)));
+    line_of(&cells)
 }
 
 /// `text` fitted to `width` display cells; see [`cut_styled`].
@@ -362,7 +362,8 @@ pub(crate) fn wrap_line(line: &Line<'_>, width: usize) -> Vec<Line<'static>> {
                 row.extend_from_slice(word);
             } else {
                 push(&mut out, &row);
-                row = word.to_vec();
+                row.clear();
+                row.extend_from_slice(word);
             }
         }
         if !row.is_empty() || paragraph.is_empty() {

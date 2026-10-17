@@ -2,9 +2,10 @@
 //! 160 by 45, its numeric form under that and its scrolled body under 80 by 30.
 
 use jiff::tz::TimeZone;
+use togi_journal::TrialProgress;
 use togi_watchtest::Scenario;
 
-use super::Fixture;
+use super::{Fixture, append};
 use crate::frames::dash::core_table;
 use crate::frames::fit::plain;
 use crate::frames::layout::SizeClass;
@@ -282,4 +283,37 @@ fn the_unread_journal_warning_takes_mains_own_row_and_the_footer_elsewhere() {
     assert!(!main[43].contains("skipped"), "{:?}", main[43]);
     let cores = frame_rows(&fx, View::Cores, (160, 45), 0);
     assert!(cores[43].contains("skipped"), "{:?}", cores[43]);
+}
+
+#[test]
+fn the_log_page_folds_a_trials_passed_self_tests_into_one_row() {
+    let mut events = Scenario::Search.events().expect("the scenario's journal");
+    let trial = Fixture::of(&events)
+        .model
+        .snapshot()
+        .trial
+        .expect("a started trial")
+        .id
+        .clone();
+    let boot = events.last().expect("an event").boot.to_string();
+    for size in ["4K", "8K"] {
+        append(
+            &mut events,
+            TrialProgress {
+                trial: trial.clone(),
+                detail: format!("self-test {size} passed"),
+                signal: None,
+                core: None,
+            }
+            .into(),
+            1,
+            &boot,
+        );
+    }
+    let rows = frame_rows(&Fixture::of(&events), View::Log, (240, 67), usize::MAX);
+    let folded = format!("trial {trial}: 2 self-test checks passed");
+    assert!(
+        rows.iter().any(|row| row.trim_end().ends_with(&folded)),
+        "{rows:#?}"
+    );
 }

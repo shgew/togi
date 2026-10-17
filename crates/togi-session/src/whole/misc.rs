@@ -80,20 +80,25 @@ fn configured_candidate_limits_start_checking_with_frozen_r1_r2_workloads() {
     let frozen = [workloads(Regime::R1)[0].id, workloads(Regime::R2)[0].id];
     let initial: Vec<_> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CorePhase(phase) if phase.from.is_none() => Some((
-                phase.core,
-                phase.to,
-                phase.offset,
-                phase.check_solo_limit,
-                phase.reason.as_str(),
-                phase
-                    .workloads
-                    .iter()
-                    .map(|workload| workload.as_str())
-                    .collect::<Vec<_>>(),
-            )),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::CorePhase(phase) = &event.payload
+                && phase.from.is_none()
+            {
+                Some((
+                    phase.core,
+                    phase.to,
+                    phase.offset,
+                    phase.check_solo_limit,
+                    phase.reason.as_str(),
+                    phase
+                        .workloads
+                        .iter()
+                        .map(|workload| workload.as_str())
+                        .collect::<Vec<_>>(),
+                ))
+            } else {
+                None
+            }
         })
         .collect();
     let expected = |n: i64, offset: i64| {
@@ -111,13 +116,15 @@ fn configured_candidate_limits_start_checking_with_frozen_r1_r2_workloads() {
         for (regime, workload) in [Regime::R1, Regime::R2].into_iter().zip(frozen) {
             let first = events
                 .iter()
-                .find_map(|event| match &event.payload {
-                    Payload::TrialIntent(intent)
-                        if intent.core == Some(checked) && intent.regime == regime =>
+                .find_map(|event| {
+                    if let Payload::TrialIntent(intent) = &event.payload
+                        && intent.core == Some(checked)
+                        && intent.regime == regime
                     {
                         Some(intent)
+                    } else {
+                        None
                     }
-                    _ => None,
                 })
                 .unwrap_or_else(|| panic!("no {regime:?} trial of core {checked:?}"));
             assert_eq!(first.workload.as_str(), workload);
@@ -136,9 +143,12 @@ fn boots_of(events: &[Event]) -> BTreeSet<BootId> {
 fn last_cycle(events: &[Event]) -> Option<NonZeroU32> {
     events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CheckingCycle(cycle) => Some(cycle.cycle),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::CheckingCycle(cycle) = &event.payload {
+                Some(cycle.cycle)
+            } else {
+                None
+            }
         })
         .max()
 }
@@ -421,9 +431,12 @@ fn a_signal_during_the_kernel_log_retry_wait_stops_the_run_and_leaves_the_crashe
     let events = resumed.journal.events();
     let detected: Vec<_> = events
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::CrashDetected(detected) => Some(detected),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::CrashDetected(detected) = &event.payload {
+                Some(detected)
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(detected.len(), 1, "{detected:?}");
@@ -559,12 +572,13 @@ fn assert_preflight_then_sweep(events: &[Event], expected_checks: &BTreeSet<Stri
         .unwrap();
     let before: BTreeSet<String> = events[..sweep]
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::PreflightCheck(check) => {
+        .filter_map(|event| {
+            if let Payload::PreflightCheck(check) = &event.payload {
                 assert!(check.ok, "{check:?}");
                 Some(check.check.clone())
+            } else {
+                None
             }
-            _ => None,
         })
         .collect();
     assert!(

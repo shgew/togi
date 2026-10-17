@@ -181,9 +181,8 @@ fn end_word(end: &TrialEndView) -> (&'static str, Paint) {
 /// The measurements of a trial that ended: its length, unless a crash cut it short, its cores, its peak Tctl and
 /// its median voltage request.
 fn end_facts(end: &TrialEndView) -> Vec<String> {
-    let cores: Vec<CoreId> = end.cores.iter().collect();
     let crashed = end.signal == Some(Signal::Crash);
-    let mut where_ = on_cores(&cores);
+    let mut where_ = on_cores(end.cores);
     if !crashed {
         where_ = format!("{} {where_}", clock(end.duration));
     }
@@ -210,10 +209,9 @@ fn last_description(end: &TrialEndView) -> String {
         let _ = write!(text, " after {}", clock(end.duration));
     }
     let mut facts = end_facts(end);
-    let cores: Vec<CoreId> = end.cores.iter().collect();
     facts[0] = match end.regime {
-        Some(regime) => format!("{regime} {} {}", kind_words(regime), on_cores(&cores)),
-        None => on_cores(&cores),
+        Some(regime) => format!("{regime} {} {}", kind_words(regime), on_cores(end.cores)),
+        None => on_cores(end.cores),
     };
     format!("{text} · {}", facts.join(" · "))
 }

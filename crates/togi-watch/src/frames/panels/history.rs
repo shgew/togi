@@ -307,9 +307,9 @@ fn verdict_sentence(scene: &Scene<'_>, failed: &Failed, room: usize) -> Line<'st
             .as_ref()
             .map_or(0, |named| line_width(named) + line_width(&sep()));
     let subject_room = room.saturating_sub(reserved + line_width(&sep()));
-    let subject_text = scene.paint(Paint::Text, failed.subject.clone());
-    let subject_cut = cut_styled(&Line::from(subject_text.clone()), subject_room);
-    let mut subject = vec![Form::new(Line::from(subject_text), 1)];
+    let subject_text = Line::from(scene.paint(Paint::Text, failed.subject.clone()));
+    let subject_cut = cut_styled(&subject_text, subject_room);
+    let mut subject = vec![Form::new(subject_text, 1)];
     subject.push(if line_width(&subject_cut) > 0 {
         Form::new(subject_cut, 0)
     } else {
@@ -404,7 +404,7 @@ pub(crate) fn history_page(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>
         if date.as_ref() != Some(&day) {
             out.push(rule(
                 width,
-                &cell(scene, Paint::Grey, day.clone()),
+                &Line::from(Span::styled(day.as_str(), scene.style(Paint::Grey))),
                 &Line::default(),
                 scene.style(Paint::Track),
             ));

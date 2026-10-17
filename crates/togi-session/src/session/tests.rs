@@ -656,9 +656,12 @@ fn the_machine_checks_of_both_partial_reads_survive_a_failed_reanchor() {
         .journal()
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::Mce(mce) => Some((mce.lines.clone(), mce.trial.clone(), mce.between_trials)),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::Mce(mce) = &event.payload {
+                Some((mce.lines.clone(), mce.trial.clone(), mce.between_trials))
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(
@@ -708,9 +711,12 @@ fn a_reopened_session_resumes_its_own_boots_cursor_and_files_the_tail_between_tr
         let events = session.appender().journal().events();
         let found: Vec<_> = events
             .iter()
-            .filter_map(|event| match &event.payload {
-                Payload::Mce(mce) => Some(mce),
-                _ => None,
+            .filter_map(|event| {
+                if let Payload::Mce(mce) = &event.payload {
+                    Some(mce)
+                } else {
+                    None
+                }
             })
             .collect();
         let [mce] = found.as_slice() else {
@@ -723,9 +729,12 @@ fn a_reopened_session_resumes_its_own_boots_cursor_and_files_the_tail_between_tr
         let loaded = events
             .iter()
             .rev()
-            .find_map(|event| match &event.payload {
-                Payload::ConfigLoaded(loaded) => Some(loaded),
-                _ => None,
+            .find_map(|event| {
+                if let Payload::ConfigLoaded(loaded) = &event.payload {
+                    Some(loaded)
+                } else {
+                    None
+                }
             })
             .unwrap();
         assert_eq!(loaded.kernel_cursor, Some(resumed), "reboot={reboot}");

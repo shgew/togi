@@ -259,7 +259,9 @@ impl Source {
                 self.held = None;
                 (Box::new(Model::new()), 0)
             }
-            _ => (Box::new(Model::new()), 0),
+            Content::Missing | Content::Starting | Content::Problem(_) | Content::Ready(..) => {
+                (Box::new(Model::new()), 0)
+            }
         };
         let batch = &events[folded..];
         let checked = model
@@ -345,10 +347,10 @@ impl Source {
             Content::Problem(SourceError::Foreign(_)) => {
                 match std::mem::replace(&mut self.content, Content::Missing) {
                     Content::Problem(error) => Some(error),
-                    _ => None,
+                    Content::Missing | Content::Starting | Content::Ready(..) => None,
                 }
             }
-            _ => None,
+            Content::Missing | Content::Starting | Content::Problem(_) | Content::Ready(..) => None,
         }
     }
 }
@@ -379,7 +381,7 @@ impl Source {
     fn model_address(&self) -> Option<usize> {
         match &self.content {
             Content::Ready(model, ..) => Some(std::ptr::from_ref::<Model>(model) as usize),
-            _ => None,
+            Content::Missing | Content::Starting | Content::Problem(_) => None,
         }
     }
 }
@@ -531,7 +533,9 @@ mod tests {
                 total,
                 arrived,
             } => (messages, *total, *arrived),
-            other => panic!("not a journal: {other:?}"),
+            other @ (Shown::Missing | Shown::Starting | Shown::Problem(_)) => {
+                panic!("not a journal: {other:?}")
+            }
         }
     }
 

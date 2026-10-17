@@ -1,5 +1,6 @@
 use ratatui::text::{Line, Span};
-use togi_machine::{CoreId, Regime, WorkloadId, workloads};
+use togi_machine::{CoreSet, Regime, WorkloadId, workloads};
+use togi_tuner::R7CoreStatus;
 
 use crate::frames::colours::Paint;
 use crate::frames::fit::{
@@ -12,17 +13,47 @@ use crate::words::{core_ids, workload_display};
 const BY_OFFSET: &str = " by offset";
 const NOTE: &str = "observed, not a guarantee";
 
-fn ids(cores: &[CoreId]) -> String {
+/// The R7 evidence of some cores: their top requesters by measurement and by offset, the self-sufficient ones and
+/// how many there are.
+struct Evidence {
+    measured: CoreSet,
+    by_offset: CoreSet,
+    own: CoreSet,
+    total: usize,
+}
+
+fn evidence<'a>(statuses: impl Iterator<Item = &'a R7CoreStatus>) -> Evidence {
+    let mut evidence = Evidence {
+        measured: CoreSet::default(),
+        by_offset: CoreSet::default(),
+        own: CoreSet::default(),
+        total: 0,
+    };
+    for status in statuses {
+        evidence.total += 1;
+        if status.top_requester && status.offset_proxy {
+            evidence.by_offset.insert(status.core);
+        } else if status.top_requester {
+            evidence.measured.insert(status.core);
+        }
+        if status.self_sufficient {
+            evidence.own.insert(status.core);
+        }
+    }
+    evidence
+}
+
+fn ids(cores: CoreSet) -> String {
     if cores.is_empty() {
         String::new()
     } else {
-        core_ids(cores.iter().copied())
+        core_ids(cores)
     }
 }
 
 /// A workload's top requesters fitted to `width`. Offset proxies keep their label when either list is cut, and
 /// the measured list is cut first, so it never takes the offset label.
-pub(super) fn top_cell(measured: &[CoreId], by_offset: &[CoreId], width: usize) -> String {
+pub(super) fn top_cell(measured: CoreSet, by_offset: CoreSet, width: usize) -> String {
     let (m, o) = (ids(measured), ids(by_offset));
     if by_offset.is_empty() {
         return cut_words(if m.is_empty() { "-" } else { &m }, width);
@@ -124,7 +155,7 @@ pub(super) fn r7_rows(scene: &Scene<'_>, class: SizeClass, width: usize) -> Vec<
     match class {
         SizeClass::Wide if width >= 100 => (name, top) = (30, 24),
         SizeClass::Medium if width >= 70 => (name, top) = (24, 20),
-        _ => {}
+        SizeClass::Compact | SizeClass::Medium | SizeClass::Wide => {}
     }
     if width < name + top + 1 {
         name = name.min(width.saturating_sub(1 + BY_OFFSET.len() - 1));
@@ -136,19 +167,12 @@ pub(super) fn r7_rows(scene: &Scene<'_>, class: SizeClass, width: usize) -> Vec<
         let Some(id) = WorkloadId::new(Regime::R7, index) else {
             continue;
         };
-        let (mut measured, mut by_offset, mut own) = (Vec::new(), Vec::new(), Vec::new());
-        let mut total = 0;
-        for status in scene.s.r7.iter().filter(|status| status.workload == id) {
-            total += 1;
-            if status.top_requester && status.offset_proxy {
-                by_offset.push(status.core);
-            } else if status.top_requester {
-                measured.push(status.core);
-            }
-            if status.self_sufficient {
-                own.push(status.core);
-            }
-        }
+        let Evidence {
+            measured,
+            by_offset,
+            own,
+            total,
+        } = evidence(scene.s.r7.iter().filter(|status| status.workload == id));
         if total == 0 {
             continue;
         }
@@ -165,7 +189,7 @@ pub(super) fn r7_rows(scene: &Scene<'_>, class: SizeClass, width: usize) -> Vec<
         } else if own.is_empty() {
             "none yet".to_owned()
         } else {
-            ids(&own)
+            ids(own)
         };
         if display_width(&sufficient) > width.saturating_sub(name + top + 2) {
             sufficient = format!("{} of {total} cores", own.len());
@@ -179,7 +203,7 @@ pub(super) fn r7_rows(scene: &Scene<'_>, class: SizeClass, width: usize) -> Vec<
             width,
             &[
                 Clause::whole("", ascii_cell(&label, name)),
-                Clause::whole(" ", ascii_cell(&top_cell(&measured, &by_offset, top), top)),
+                Clause::whole(" ", ascii_cell(&top_cell(measured, by_offset, top), top)),
                 Clause::new(" ", vec![Form::new(sufficient, 1), Form::empty()]),
             ],
         );
@@ -254,46 +278,33 @@ pub(crate) fn r7_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> Vec
         let mut ccds: Vec<_> = rows.iter().map(|status| status.ccd).collect();
         ccds.dedup();
         for ccd in ccds {
-            let cores: Vec<_> = rows.iter().filter(|status| status.ccd == ccd).collect();
-            let measured: Vec<CoreId> = cores
-                .iter()
-                .filter(|status| status.top_requester && !status.offset_proxy)
-                .map(|status| status.core)
-                .collect();
-            let by_offset: Vec<CoreId> = cores
-                .iter()
-                .filter(|status| status.top_requester && status.offset_proxy)
-                .map(|status| status.core)
-                .collect();
-            let own: Vec<CoreId> = cores
-                .iter()
-                .filter(|status| status.self_sufficient)
-                .map(|status| status.core)
-                .collect();
+            let Evidence {
+                measured,
+                by_offset,
+                own,
+                total,
+            } = evidence(rows.iter().copied().filter(|status| status.ccd == ccd));
             let tied = if measured.len() > 1 { " · tied" } else { "" };
             let top = if !by_offset.is_empty() {
                 format!(
                     "top requesters {} · per offset order",
-                    ids(&[measured.clone(), by_offset.clone()].concat())
+                    ids(measured.iter().chain(by_offset).collect())
                 )
             } else if measured.is_empty() {
                 "no top requester recorded yet".to_owned()
             } else {
-                format!(
-                    "top requesters {}{tied} · per request order",
-                    ids(&measured)
-                )
+                format!("top requesters {}{tied} · per request order", ids(measured))
             };
-            let sufficient = if own.len() == cores.len() {
-                format!("self-sufficient: all {} cores", cores.len())
+            let sufficient = if own.len() == total {
+                format!("self-sufficient: all {total} cores")
             } else if own.is_empty() {
                 "self-sufficient: none yet".to_owned()
             } else {
                 format!(
                     "self-sufficient: {} ({} of {} cores)",
-                    ids(&own),
+                    ids(own),
                     own.len(),
-                    cores.len()
+                    total
                 )
             };
             let head = format!("CCD {}  ", ccd.0);

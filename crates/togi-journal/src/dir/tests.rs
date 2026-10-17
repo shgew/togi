@@ -60,6 +60,87 @@ fn real_fs_locking_creates_every_missing_directory() {
     assert!(disk_dir(&path).is_ok());
 }
 
+/// The disk without durability, recording each directory sync after opening it as the production adapter does.
+#[derive(Debug, Default)]
+struct SyncRecordingDisk {
+    synced: std::sync::Mutex<Vec<PathBuf>>,
+}
+
+impl Fs for SyncRecordingDisk {
+    fn create_dir(&self, path: &Path) -> io::Result<()> {
+        DiskFs::unsynced().create_dir(path)
+    }
+    fn open_append(&self, path: &Path) -> io::Result<Box<dyn crate::fs::FsFile>> {
+        DiskFs::unsynced().open_append(path)
+    }
+    fn create_new(&self, path: &Path) -> io::Result<Box<dyn crate::fs::FsFile>> {
+        DiskFs::unsynced().create_new(path)
+    }
+    fn create_truncate(&self, path: &Path) -> io::Result<Box<dyn crate::fs::FsFile>> {
+        DiskFs::unsynced().create_truncate(path)
+    }
+    fn open_read(&self, path: &Path) -> io::Result<Box<dyn io::Read + Send>> {
+        DiskFs::unsynced().open_read(path)
+    }
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        DiskFs::unsynced().rename(from, to)
+    }
+    fn rename_noreplace(&self, from: &Path, to: &Path) -> io::Result<()> {
+        DiskFs::unsynced().rename_noreplace(from, to)
+    }
+    fn remove_file(&self, path: &Path) -> io::Result<()> {
+        DiskFs::unsynced().remove_file(path)
+    }
+    fn remove_dir(&self, path: &Path) -> io::Result<()> {
+        DiskFs::unsynced().remove_dir(path)
+    }
+    fn sync_dir(&self, path: &Path) -> io::Result<()> {
+        DiskFs::open_dir(path)?;
+        self.synced.lock().unwrap().push(path.to_path_buf());
+        Ok(())
+    }
+    fn set_dir_mode(&self, path: &Path, mode: u32) -> io::Result<()> {
+        DiskFs::unsynced().set_dir_mode(path, mode)
+    }
+    fn read_dir(&self, path: &Path) -> io::Result<Vec<crate::fs::DirEntry>> {
+        DiskFs::unsynced().read_dir(path)
+    }
+    fn kind(&self, path: &Path) -> io::Result<Option<FileKind>> {
+        DiskFs::unsynced().kind(path)
+    }
+    fn try_lock(&self, path: &Path) -> io::Result<Option<FsLock>> {
+        DiskFs::unsynced().try_lock(path)
+    }
+}
+
+#[test]
+fn real_fs_locking_under_a_symlinked_ancestor_syncs_the_linked_directories() {
+    let root = tempfile::tempdir().unwrap();
+    let real = root.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+    let link = root.path().join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let fs = Arc::new(SyncRecordingDisk::default());
+    let held = StateDir::lock_in(fs.clone(), &link.join("a/state"), false).unwrap();
+    assert!(real.join("a/state/lock").is_file());
+    drop(held);
+    let synced: Vec<PathBuf> = fs
+        .synced
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|path| std::fs::canonicalize(path).unwrap())
+        .collect();
+    let real = std::fs::canonicalize(&real).unwrap();
+    for expected in [real.join("a"), real] {
+        assert!(
+            synced.contains(&expected),
+            "{} not synced in {synced:?}",
+            expected.display()
+        );
+    }
+}
+
 #[test]
 #[expect(
     clippy::disallowed_methods,
@@ -131,6 +212,7 @@ fn a_failed_publication_never_replaces_the_state_with_a_partial_write() {
 #[test]
 fn the_directory_is_synced_after_the_state_rename() {
     let fs = MemFs::new();
+    fs.record_history();
     let mut dir = dir(&fs);
     dir.write_state(&Doc { n: 1 }).unwrap();
     let log = fs.log();
@@ -267,6 +349,7 @@ fn carry_pending_dir(fs: &MemFs) -> StateDir {
 #[test]
 fn the_reset_boundary_is_synced_before_a_carry_marker_is_removed() {
     let fs = MemFs::new();
+    fs.record_history();
     let mut dir = carry_pending_dir(&fs);
     dir.drop_pending_carry().unwrap();
     let log = fs.log();
@@ -471,10 +554,10 @@ fn every_lock_syncs_the_whole_created_chain_again_after_a_failed_sync() {
     fs.inject(Fault::before(Op::SyncDir, 1));
     assert!(StateDir::lock_in(Arc::new(fs.clone()), path, false).is_err());
     fs.clear_faults();
-    let mark = fs.log().len();
+    fs.record_history();
     let held = StateDir::lock_in(Arc::new(fs.clone()), path, false).unwrap();
     let log = fs.log();
-    let synced: Vec<&Path> = log[mark..]
+    let synced: Vec<&Path> = log
         .iter()
         .filter(|(op, _)| *op == Op::SyncDir)
         .map(|(_, path)| path.as_path())
@@ -510,6 +593,7 @@ fn a_failed_mode_change_takes_no_lock() {
 #[test]
 fn the_directory_mode_is_set_before_the_lock_file_is_opened() {
     let fs = MemFs::new();
+    fs.record_history();
     let _held = dir(&fs);
     let log = fs.log();
     let mode = log

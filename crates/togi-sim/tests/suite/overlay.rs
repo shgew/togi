@@ -255,7 +255,9 @@ fn normalized(path: &Path) -> PathBuf {
                 parts.pop();
             }
             std::path::Component::CurDir => {}
-            other => parts.push(other),
+            other @ (std::path::Component::Prefix(_)
+            | std::path::Component::RootDir
+            | std::path::Component::Normal(_)) => parts.push(other),
         }
     }
     parts.into_iter().collect()
@@ -342,7 +344,8 @@ fn a_cycle_is_an_error_however_it_is_spelled() {
     cycles.push(("overlay of a cycle", at("c.json", "a.json")));
     for (name, path) in cycles {
         let error = file::load_from(&path, &dir).expect_err(name);
-        assert!(error.to_string().contains("cycle"), "{name}: {error}");
+        let message = togi_machine::error_chain(&error);
+        assert!(message.contains("cycle"), "{name}: {message}");
     }
 }
 
@@ -364,7 +367,8 @@ fn real_fs_cycles_through_symlinked_directories_are_refused() {
     );
     for path in [loop_dir.join("leaf.json"), deep] {
         let error = file::load_with_files(path).expect_err("symlink cycle");
-        assert!(error.to_string().contains("cycle"), "{error}");
+        let message = togi_machine::error_chain(&error);
+        assert!(message.contains("cycle"), "{message}");
     }
 }
 
@@ -568,7 +572,7 @@ fn malformed_overlays_are_refused_with_the_file_named() {
     let leaf = dir.path().join("leaf.json");
     for (name, content, want) in cases {
         dir.write(&leaf, &content);
-        let error = file::load_from(&leaf, &dir).expect_err(name).to_string();
+        let error = togi_machine::error_chain(&file::load_from(&leaf, &dir).expect_err(name));
         assert!(
             error.contains(leaf.to_str().expect("utf-8")),
             "{name}: {error}"

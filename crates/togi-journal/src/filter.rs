@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::str::FromStr;
 
 use jiff::Timestamp;
-use togi_machine::{CoreId, CoreSet};
+use togi_machine::CoreSet;
 
 use crate::payload::{EventKind, Payload, TrialId};
 use crate::{Event, Seq};
@@ -116,10 +116,7 @@ impl Filter {
             return false;
         }
         let core_ok = self.cores.is_empty() || {
-            let named = self
-                .cores
-                .iter()
-                .any(|core| names_core(&event.payload, core));
+            let named = self.cores.iter().any(|core| event.payload.names_core(core));
             let of_trial = widening
                 .as_deref()
                 .is_some_and(|widening| widening_covers(&event.payload, widening));
@@ -134,7 +131,7 @@ impl Filter {
             && self
                 .trial
                 .as_ref()
-                .is_none_or(|wanted| trial_of(&event.payload) == Some(wanted))
+                .is_none_or(|wanted| event.payload.trial() == Some(wanted))
     }
 }
 
@@ -151,60 +148,53 @@ fn widening_covers(payload: &Payload, widening: &Widening) -> bool {
             }
         },
         Payload::TrialEnd(end) => widening.loading.contains(&end.trial),
-        _ => false,
-    }
-}
-
-fn trial_of(payload: &Payload) -> Option<&TrialId> {
-    match payload {
-        Payload::TrialIntent(p) => Some(&p.trial),
-        Payload::TrialStart(p) => Some(&p.trial),
-        Payload::TrialProgress(p) => Some(&p.trial),
-        Payload::TrialSignal(p) => Some(&p.trial),
-        Payload::TrialSample(p) => Some(&p.trial),
-        Payload::TrialEnd(p) => Some(&p.trial),
-        Payload::Failure(p) => p.trial.as_ref(),
-        Payload::Mce(p) => p.trial.as_ref(),
-        Payload::HuntStart(p) => p.trial.as_ref(),
-        Payload::TunerWarning(p) => p.trial.as_ref(),
-        Payload::SessionWarning(p) => p.trial.as_ref(),
-        Payload::TrialCarried(p) => p.source.trial.as_ref(),
-        Payload::FailureCarried(p) => p.source.trial.as_ref(),
-        _ => None,
-    }
-}
-
-fn names_core(payload: &Payload, core: CoreId) -> bool {
-    match payload {
-        Payload::SessionNotice(p) => p.cores.contains(core),
-        Payload::SmuIntent(p) => p.command().core() == Some(core),
-        Payload::SmuWrite(p) => p.command().core() == Some(core),
-        Payload::SmuReadback(p) => p.core == core,
-        Payload::SmuError(p) => p.core == Some(core),
-        Payload::TrialIntent(p) => p.core == Some(core) || p.cores.contains(core),
-        Payload::TrialStart(p) => p.instances.iter().any(|instance| instance.core == core),
-        Payload::TrialProgress(p) => p.core == Some(core),
-        Payload::TrialEnd(p) => p.core == Some(core),
-        Payload::TrialCarried(p) => p.core == Some(core) || p.class.cores.contains(core),
-        Payload::Failure(p) => p.core == Some(core),
-        Payload::FailureCarried(p) => p.failure.core == Some(core) || p.class.cores.contains(core),
-        Payload::Mce(p) => p.core == Some(core),
-        Payload::TunerDecision(p) => p.core == core,
-        Payload::CorePhase(p) => p.core == core,
-        Payload::CheckingChain(p) => p.cores.contains(core),
-        Payload::HuntStart(p) => p.cores.contains(core) || p.candidates.contains(core),
-        Payload::HuntGroup(p) => {
-            p.cores.contains(core) || p.probe.is_some_and(|probe| probe.core == core)
-        }
-        Payload::HuntEnd(p) => {
-            p.cores.contains(core) || p.members.iter().any(|member| member.core == core)
-        }
-        Payload::Combination(p) => p.members.iter().any(|member| member.core == core),
-        Payload::DeepeningRound(p) => p.cores.contains(core),
-        Payload::CommandReset(p) => p.target == crate::ResetTarget::Core(core),
-        Payload::DefectFound(p) => p.cores.contains(core),
-        Payload::DefectAnswered(p) => p.cores.contains(core),
-        Payload::DeadEnd(p) => p.core == Some(core),
-        _ => false,
+        Payload::SessionStart(_)
+        | Payload::SessionContext(_)
+        | Payload::SessionBaseline(_)
+        | Payload::SessionNotice(_)
+        | Payload::SessionWarning(_)
+        | Payload::SessionArchived(_)
+        | Payload::SessionCarried(_)
+        | Payload::ConfigLoaded(_)
+        | Payload::PreflightCheck(_)
+        | Payload::SmuIntent(_)
+        | Payload::SmuWrite(_)
+        | Payload::SmuReadback(_)
+        | Payload::SmuError(_)
+        | Payload::ProfileApplied(_)
+        | Payload::ProfileChange(_)
+        | Payload::ProfileRestored(_)
+        | Payload::TrialIntent(_)
+        | Payload::TrialStart(_)
+        | Payload::TrialProgress(_)
+        | Payload::TrialSignal(_)
+        | Payload::TrialSample(_)
+        | Payload::TrialCarried(_)
+        | Payload::FailureCarried(_)
+        | Payload::Mce(_)
+        | Payload::CrashDetected(_)
+        | Payload::TunerDecision(_)
+        | Payload::CorePhase(_)
+        | Payload::CheckingCycle(_)
+        | Payload::CheckingStep(_)
+        | Payload::CheckingChain(_)
+        | Payload::HostRanking(_)
+        | Payload::HuntStart(_)
+        | Payload::HuntGroup(_)
+        | Payload::HuntEnd(_)
+        | Payload::HuntSkipped(_)
+        | Payload::Combination(_)
+        | Payload::DeepeningRound(_)
+        | Payload::TunerWarning(_)
+        | Payload::BackendRetry(_)
+        | Payload::CommandReset(_)
+        | Payload::DefectFound(_)
+        | Payload::DefectAnswered(_)
+        | Payload::DeadEnd(_)
+        | Payload::BootSavedEntry(_)
+        | Payload::BootLeaveReason(_)
+        | Payload::Shutdown(_)
+        | Payload::JournalTorn(_)
+        | Payload::StateRebuilt(_) => false,
     }
 }

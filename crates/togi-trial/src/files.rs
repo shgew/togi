@@ -1087,17 +1087,16 @@ mod tests {
                 Some(memory_identity()),
             )
             .unwrap_err();
-        match error {
-            PrepareError::Chown {
-                ref instance,
-                ref name,
-                ref source,
-            } => {
-                assert_eq!((instance.as_str(), name.as_str()), ("work", "prime.txt"));
-                assert_eq!(source.raw_os_error(), Some(Errno::PERM.raw_os_error()));
-            }
-            other => panic!("not an ownership failure: {other}"),
-        }
+        let PrepareError::Chown {
+            ref instance,
+            ref name,
+            ref source,
+        } = error
+        else {
+            panic!("not an ownership failure: {error}");
+        };
+        assert_eq!((instance.as_str(), name.as_str()), ("work", "prime.txt"));
+        assert_eq!(source.raw_os_error(), Some(Errno::PERM.raw_os_error()));
         assert_eq!(*calls.lock().unwrap(), ["prime.txt"]);
     }
 

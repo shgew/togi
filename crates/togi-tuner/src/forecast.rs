@@ -141,9 +141,10 @@ impl Sim {
                     return settled;
                 }
                 Ok(Action::RunTrial(plan)) => {
-                    settled.next_step = match plan.context {
-                        TrialContext::Cycle { step, .. } => Some(step),
-                        _ => None,
+                    settled.next_step = if let TrialContext::Cycle { step, .. } = plan.context {
+                        Some(step)
+                    } else {
+                        None
                     };
                     settled.next = self.resolved(plan);
                     return settled;
@@ -301,7 +302,11 @@ impl Sim {
                     }
                     settled = self.settle();
                 }
-                _ => return None,
+                TrialContext::Search { .. }
+                | TrialContext::SoloLimit { .. }
+                | TrialContext::ZeroRerun { .. }
+                | TrialContext::Round { .. }
+                | TrialContext::Hunt { .. } => return None,
             }
         }
         None
@@ -495,9 +500,10 @@ impl State {
                 }
                 all_pass = Some(result);
             }
-            let named = match premise {
-                Premise::Named(core) => Some(core),
-                _ => None,
+            let named = if let Premise::Named(core) = premise {
+                Some(core)
+            } else {
+                None
             };
             let failed = named.is_some() || premise == Premise::Unnamed;
             let without_telemetry = multi && premise != Premise::Inconclusive;

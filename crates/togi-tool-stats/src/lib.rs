@@ -12,6 +12,7 @@
 //! assert!(empty.is_err());
 //! ```
 
+mod chains;
 mod error;
 mod evidence;
 mod forecast;
@@ -28,4 +29,4 @@ mod tests;
 pub use error::Error;
 pub use forecast::{Scored, score};
 pub use journal::Journal;
-pub use report::report;
+pub use report::{chain_records, report};

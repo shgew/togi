@@ -179,7 +179,11 @@ impl Run {
             trial,
             needed: match requirement.kind {
                 RequirementKind::Search | RequirementKind::ZeroRerun => 1,
-                _ => needed,
+                RequirementKind::SoloLimit
+                | RequirementKind::Cycle
+                | RequirementKind::Rerun
+                | RequirementKind::Round
+                | RequirementKind::Hunt => needed,
             },
             step: requirement.step,
         }

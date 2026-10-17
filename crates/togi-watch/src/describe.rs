@@ -9,7 +9,7 @@ use togi_journal::{
     HuntEnd, HuntGroup, HuntOutcome, HuntStage, HuntStart, Inference, Outcome, Payload,
     State as JournalState, TrialEnd, TrialIntent,
 };
-use togi_machine::{Condition, CoreId, Regime, Signal};
+use togi_machine::{Condition, CoreSet, Regime, Signal};
 
 use crate::facts::{Facts, HuntStartFacts, trial_cores};
 use crate::history::{
@@ -17,7 +17,8 @@ use crate::history::{
     Verdict, What,
 };
 use crate::words::{
-    History, Tag, Tone, age, core_ids, kind_words, lateness, on_cores, phase_line, plural, words,
+    History, Tag, Tone, age, core_ids, cores_named, kind_words, lateness, on_cores, phase_line,
+    plural, words,
 };
 
 fn seconds_between(from: Timestamp, to: Timestamp) -> std::time::Duration {
@@ -94,7 +95,43 @@ impl Facts {
             Payload::HuntGroup(group) => self.hunt_group(at, group),
             Payload::HuntEnd(end) => Some(self.hunt_end(at, end)),
             Payload::DeepeningRound(round) => Some(self.round(at, round)),
-            _ => None,
+            Payload::SessionContext(_)
+            | Payload::SessionBaseline(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::SessionArchived(_)
+            | Payload::PreflightCheck(_)
+            | Payload::SmuIntent(_)
+            | Payload::SmuWrite(_)
+            | Payload::SmuReadback(_)
+            | Payload::SmuError(_)
+            | Payload::ProfileApplied(_)
+            | Payload::ProfileChange(_)
+            | Payload::ProfileRestored(_)
+            | Payload::TrialStart(_)
+            | Payload::TrialProgress(_)
+            | Payload::TrialSignal(_)
+            | Payload::TrialSample(_)
+            | Payload::TrialCarried(_)
+            | Payload::FailureCarried(_)
+            | Payload::Mce(_)
+            | Payload::TunerDecision(_)
+            | Payload::CheckingCycle(_)
+            | Payload::CheckingChain(_)
+            | Payload::HostRanking(_)
+            | Payload::HuntSkipped(_)
+            | Payload::Combination(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::CommandReset(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::DeadEnd(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::Shutdown(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_) => None,
         }
     }
 
@@ -346,10 +383,7 @@ impl Facts {
         let cores = core_ids(d.cores);
         let (text, tone) = match d.result {
             HuntOutcome::Culprit | HuntOutcome::Direct => (
-                format!(
-                    "{text} · {} named",
-                    only_core(&d.cores.iter().collect::<Vec<_>>())
-                ),
+                format!("{text} · {} named", cores_named(d.cores)),
                 Tone::Good,
             ),
             HuntOutcome::Combination => {
@@ -525,7 +559,7 @@ impl Facts {
     }
 
     fn trial_name(&self, intent: &TrialIntent, journal: &JournalState) -> String {
-        let cores: Vec<CoreId> = trial_cores(intent).iter().collect();
+        let cores = trial_cores(intent);
         let regime = intent.regime;
         let mut what = format!("{regime} {}", kind_words(regime));
         if intent.condition == Condition::Alone {
@@ -539,15 +573,9 @@ impl Facts {
                 return text;
             };
             if let Some(probe) = g.probe {
-                let mut members: Vec<CoreId> = g.cores.iter().collect();
-                for held in &g.held {
-                    if !members.contains(&held.core) {
-                        members.push(held.core);
-                    }
-                }
-                if !members.contains(&probe.core) {
-                    members.push(probe.core);
-                }
+                let mut members = g.cores;
+                members.extend(g.held.iter().map(|held| held.core));
+                members.insert(probe.core);
                 return format!(
                     "{text} · {} with core {:02} at {}",
                     core_ids(members),
@@ -563,11 +591,11 @@ impl Facts {
         if regime == Regime::R7 && intent.cycle.is_some() {
             what = format!("{regime} {}", part_name(intent, journal));
         }
-        let mut text = format!("{what} {}", on_cores(&cores));
-        if let [core] = cores.as_slice() {
-            if let Some(offset) = intent.profile.get(*core) {
-                let _ = write!(text, " at {}", offset.get());
-            }
+        let mut text = format!("{what} {}", on_cores(cores));
+        if cores.len() == 1
+            && let Some(offset) = cores.first().and_then(|core| intent.profile.get(core))
+        {
+            let _ = write!(text, " at {}", offset.get());
         }
         match (intent.rerun, intent.condition) {
             (true, Condition::Parked) => format!("rerun of {text} with every core at 0"),
@@ -621,21 +649,11 @@ fn lateness_text(
 }
 
 /// Says which candidates a hunt group runs at their failing offsets and which it parks.
-pub(crate) fn part_layout(
-    cores: togi_machine::CoreSet,
-    candidates: togi_machine::CoreSet,
-) -> String {
+pub(crate) fn part_layout(cores: CoreSet, candidates: CoreSet) -> String {
     let mut text = format!("{} at failing offsets", core_ids(cores));
-    let rest: Vec<CoreId> = candidates.iter().filter(|c| !cores.contains(*c)).collect();
+    let rest: CoreSet = candidates.iter().filter(|c| !cores.contains(*c)).collect();
     if !rest.is_empty() {
         let _ = write!(text, ", {} parked", core_ids(rest));
     }
     text
-}
-
-fn only_core(cores: &[CoreId]) -> String {
-    match cores {
-        [core] => format!("core {:02}", core.get()),
-        _ => format!("cores {}", core_ids(cores.iter().copied())),
-    }
 }

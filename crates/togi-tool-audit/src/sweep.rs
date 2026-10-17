@@ -14,7 +14,7 @@ use crate::interrupt::Interrupt;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SweepError {
-    #[error("decode suite: {0}")]
+    #[error("decode suite")]
     Decode(#[from] serde_json::Error),
     #[error("suite has no scenarios")]
     NoScenarios,
@@ -96,15 +96,21 @@ pub struct Evidence {
 pub enum RunError {
     #[error(transparent)]
     Suite(#[from] SweepError),
-    #[error("{what} {}: {source}", path.display())]
+    #[error("{what} {}", path.display())]
     Io {
         what: &'static str,
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
-    #[error("locate the bench: {0}")]
-    Locate(String),
+    #[error("locate the bench: find this executable")]
+    Exe(#[source] std::io::Error),
+    #[error(
+        "locate the bench: {} is not beside {}; build it with cargo build -p {BENCH} or pass --bench",
+        path.display(),
+        exe.display()
+    )]
+    NoBench { path: PathBuf, exe: PathBuf },
     #[error("bench sweep ({}): {status}", evidence(.dir.as_deref()))]
     Bench {
         dir: Option<PathBuf>,
@@ -224,16 +230,12 @@ impl Sweep<'_> {
 }
 
 fn sibling() -> Result<PathBuf, RunError> {
-    let exe = std::env::current_exe().map_err(|error| RunError::Locate(error.to_string()))?;
+    let exe = std::env::current_exe().map_err(RunError::Exe)?;
     let path = exe.with_file_name(BENCH);
     if path.is_file() {
         Ok(path)
     } else {
-        Err(RunError::Locate(format!(
-            "{} is not beside {}; build it with cargo build -p {BENCH} or pass --bench",
-            path.display(),
-            exe.display()
-        )))
+        Err(RunError::NoBench { path, exe })
     }
 }
 

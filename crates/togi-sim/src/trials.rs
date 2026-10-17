@@ -213,7 +213,7 @@ impl Running for SimRunning {
             .shared
             .borrow_mut()
             .run(&self.spec, self.escape)
-            .map_err(|error| fail(other(error.to_string())))?;
+            .map_err(|error| fail(Error::Other(Box::new(error))))?;
         for event in outcome.events {
             match event {
                 Event::Progress(detail) => report.progress(&detail),

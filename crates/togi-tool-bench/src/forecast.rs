@@ -59,7 +59,7 @@ pub struct Options {
 /// Why a forecast could not be made.
 #[derive(Debug, thiserror::Error)]
 pub enum ForecastError {
-    #[error("read anchor: {}", togi_machine::error_chain(.0.as_ref()))]
+    #[error("read anchor")]
     Anchor(#[source] Box<togi_tool_forecast::Error>),
     #[error(transparent)]
     Bench(Box<Error>),
@@ -67,7 +67,7 @@ pub enum ForecastError {
     NoEnsemble { suite: PathBuf },
     #[error("ensemble file {} is absent or outside the suite's directory", path.display())]
     EnsembleFile { path: PathBuf },
-    #[error("{what} {}: {source}", path.display())]
+    #[error("{what} {}", path.display())]
     Io {
         what: &'static str,
         path: PathBuf,
@@ -76,9 +76,9 @@ pub enum ForecastError {
     },
     #[error("archive entry {} is not a regular file", path.display())]
     IrregularArchiveEntry { path: PathBuf },
-    #[error("start the simulator: {0}")]
+    #[error("run the simulator")]
     Launch(#[source] RunError),
-    #[error("read the run: {}", togi_machine::error_chain(.0.as_ref()))]
+    #[error("read the run")]
     Read(#[source] Box<togi_tool_forecast::Error>),
     #[error("simulator exit {exit} means {means}, but the journal after the anchor is {journal}")]
     StatusMismatch {
@@ -90,9 +90,9 @@ pub enum ForecastError {
     SimulatorFailed { exit: i32 },
     #[error("{0}")]
     Runs(RunFailures),
-    #[error("summarize the forecast: {}", togi_machine::error_chain(.0.as_ref()))]
+    #[error("summarize the forecast")]
     Summary(#[source] Box<togi_tool_forecast::Error>),
-    #[error("write forecast {}: {}", path.display(), togi_machine::error_chain(.source.as_ref()))]
+    #[error("write forecast {}", path.display())]
     Write {
         path: PathBuf,
         #[source]
@@ -118,7 +118,7 @@ impl fmt::Display for RunFailures {
             if n > 0 {
                 writeln!(f)?;
             }
-            write!(f, "forecast {run}: {error}")?;
+            write!(f, "forecast {run}: {}", togi_machine::error_chain(error))?;
         }
         Ok(())
     }
@@ -137,9 +137,10 @@ impl fmt::Display for Failed {
     }
 }
 
+/// The failure itself: `Failed` only carries where its runs were kept, so its chain is the error's chain.
 impl std::error::Error for Failed {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.error)
+        self.error.source()
     }
 }
 
@@ -175,7 +176,7 @@ impl Report {
         )?;
         writeln!(
             w,
-            "forecast: hours run from the anchor to conclusion, over concluded runs only; {}",
+            "forecast: hours of run time from the anchor to conclusion, over concluded runs only; {}",
             togi_tool_forecast::recovery_bias()
         )?;
         let metrics = togi_tool_forecast::metrics(&record.runs).map_err(io::Error::other)?;
@@ -486,7 +487,7 @@ fn forecast_run(
         })?;
     let sessions = read_dir(&dir, Some(anchor.session))
         .map_err(|error| ForecastError::Read(Box::new(error)))?;
-    let outcome = outcome(&sessions, anchor, launched.exit, launched.log_dead_end())?;
+    let outcome = outcome(&sessions, anchor, launched.exit, launched.log_dead_end)?;
     if options.keep.is_none() {
         fs::remove_dir_all(&dir).map_err(|source| ForecastError::Io {
             what: "remove the run",

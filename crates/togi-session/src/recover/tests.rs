@@ -386,44 +386,64 @@ impl Harness {
     }
 
     fn crashes(&self) -> Vec<(&Event, &CrashDetected)> {
-        self.pick(|payload| match payload {
-            Payload::CrashDetected(crash) => Some(crash),
-            _ => None,
+        self.pick(|payload| {
+            if let Payload::CrashDetected(crash) = payload {
+                Some(crash)
+            } else {
+                None
+            }
         })
     }
 
     fn ends(&self) -> Vec<(&Event, &TrialEnd)> {
-        self.pick(|payload| match payload {
-            Payload::TrialEnd(end) => Some(end),
-            _ => None,
+        self.pick(|payload| {
+            if let Payload::TrialEnd(end) = payload {
+                Some(end)
+            } else {
+                None
+            }
         })
     }
 
     fn failures(&self) -> Vec<(&Event, &Failure)> {
-        self.pick(|payload| match payload {
-            Payload::Failure(failure) => Some(failure),
-            _ => None,
+        self.pick(|payload| {
+            if let Payload::Failure(failure) = payload {
+                Some(failure)
+            } else {
+                None
+            }
         })
     }
 
     fn mces(&self) -> Vec<(&Event, &Mce)> {
-        self.pick(|payload| match payload {
-            Payload::Mce(mce) => Some(mce),
-            _ => None,
+        self.pick(|payload| {
+            if let Payload::Mce(mce) = payload {
+                Some(mce)
+            } else {
+                None
+            }
         })
     }
 
     fn retries(&self) -> Vec<(&Event, &BackendRetry)> {
-        self.pick(|payload| match payload {
-            Payload::BackendRetry(retry) if retry.backend == RetryTarget::KernelLog => Some(retry),
-            _ => None,
+        self.pick(|payload| {
+            if let Payload::BackendRetry(retry) = payload
+                && retry.backend == RetryTarget::KernelLog
+            {
+                Some(retry)
+            } else {
+                None
+            }
         })
     }
 
     fn warnings(&self) -> Vec<(&Event, &togi_journal::SessionWarning)> {
-        self.pick(|payload| match payload {
-            Payload::SessionWarning(warning) => Some(warning),
-            _ => None,
+        self.pick(|payload| {
+            if let Payload::SessionWarning(warning) = payload {
+                Some(warning)
+            } else {
+                None
+            }
         })
     }
 
