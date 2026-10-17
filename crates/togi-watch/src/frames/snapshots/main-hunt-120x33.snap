@@ -33,4 +33,4 @@ expression: body
 │            3  rerun R2 heavy vector: 5 x 2m                 18:22  note     cycle 1 step 3 · CCD 1 partial 3 loads...
 │                                                             +394 more
 │
-│  ?  help    l  log    esc  back    q  close view
+│  ?  help    l  log    esc  back    q  exit dashboard

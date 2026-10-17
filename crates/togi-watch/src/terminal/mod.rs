@@ -48,7 +48,7 @@ use tokio::sync::{Notify, mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::frames;
-use crate::screen::{Colours, Drawn, Journal, Screen, View};
+use crate::screen::{Colours, Drawn, Journal, Quit, Screen, View};
 use console::Tty;
 use input::Reader;
 use notify::{Handshake, Watch as _};
@@ -141,6 +141,8 @@ pub struct Config<'a> {
     pub stop: Option<&'a Stop>,
     /// Whether SIGINT, SIGTERM and SIGHUP end the dashboard.
     pub terminating: bool,
+    /// What `q`, `Q`, Ctrl-C and Ctrl-D do.
+    pub quit: Quit,
 }
 
 /// The journal a dashboard shows, which the caller owns.
@@ -198,9 +200,10 @@ impl Drop for RawMode<'_> {
 
 /// Shows the dashboard of the journal in `state_dir` on `out` until the viewer quits or SIGINT, SIGTERM or
 /// SIGHUP arrives. When `keys` is a terminal, keys switch views and scroll: `?` explains the screen, `l` shows the
-/// event log, the arrow and page keys scroll, `q` quits. Frames are drawn by [`frames::render`] in the system's
-/// time zone, in the colour profile [`frames::colours_for`] chooses for `out`, `NO_COLOR`, `JOURNAL_STREAM` and
-/// `TERM`.
+/// event log, the arrow and page keys scroll, and `q`, `Q`, Ctrl-C and Ctrl-D quit unless `quit` is
+/// [`Quit::Ignored`], where they do nothing on any page and the hints leave them out. Frames are drawn by
+/// [`frames::render`] in the system's time zone, in the colour profile [`frames::colours_for`] chooses for `out`,
+/// `NO_COLOR`, `JOURNAL_STREAM` and `TERM`.
 ///
 /// It listens for SIGINT, SIGTERM, SIGHUP and SIGWINCH (which redraws) through tokio, whose listeners stay
 /// registered for the rest of the process: once it has run, these signals no longer take their default action, so
@@ -209,8 +212,9 @@ pub fn run(
     state_dir: &Path,
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
+    quit: Quit,
 ) -> Result<(), Error> {
-    run_rendered(state_dir, out, keys, dashboard())
+    run_rendered(state_dir, out, keys, quit, dashboard())
 }
 
 /// [`run`] on a journal and a clock the caller owns, which stays the only loop there is: the frames draw `feed`'s
@@ -233,6 +237,7 @@ fn run_rendered(
     state_dir: &Path,
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
+    quit: Quit,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
 ) -> Result<(), Error> {
     let mut source = Source::new(state_dir, None);
@@ -244,6 +249,7 @@ fn run_rendered(
             tick: None,
             stop: None,
             terminating: true,
+            quit,
         },
         out,
         keys,
@@ -293,6 +299,7 @@ fn run_after_rendered(
             tick: None,
             stop: Some(stop),
             terminating: false,
+            quit: Quit::Keys,
         },
         out,
         keys,
@@ -435,6 +442,7 @@ fn drive_with<B: console::Console>(
                 show::Options {
                     palette: uses_palette(colours),
                     keys: reader.is_some(),
+                    quit: live.quit,
                     colours,
                     now,
                     tick: live.tick,
@@ -557,6 +565,7 @@ fn one_frame_loaded(
         height,
         one_frame: true,
         colours: Colours::None,
+        quit: Quit::Keys,
     };
     let mut buffer = Buffer::empty(Rect::new(
         0,
@@ -609,7 +618,7 @@ mod tests {
         Colours, Config, Drawn, Error, Event, Feed, ONE_FRAME_SIZE, Source, SourceError, Stop,
         View, drive_with, one_frame_source, uses_palette,
     };
-    use crate::screen::{Hold, Journal, Screen};
+    use crate::screen::{Hold, Journal, Quit, Screen};
 
     fn pipe() -> (OwnedFd, OwnedFd) {
         super::input::pipe().unwrap()
@@ -780,6 +789,7 @@ mod tests {
             tick: Some(std::time::Duration::from_millis(10)),
             stop: Some(&stop),
             terminating: false,
+            quit: Quit::Keys,
         };
         let reads = std::cell::Cell::new(0_i64);
         let clock = || {
@@ -840,6 +850,7 @@ mod tests {
                 tick: None,
                 stop: Some(&stop),
                 terminating: false,
+                quit: Quit::Keys,
             };
             let faults = match exit {
                 "clear error" => Faults {
@@ -917,6 +928,7 @@ mod tests {
                 tick: None,
                 stop: Some(&stop),
                 terminating: true,
+                quit: Quit::Keys,
             };
             let watchdog = Watchdog::start({
                 let stop = stop.clone();
@@ -1000,6 +1012,7 @@ mod tests {
             tick: None,
             stop: Some(&stop),
             terminating: true,
+            quit: Quit::Keys,
         };
         let watchdog = Watchdog::start({
             let stop = stop.clone();
@@ -1041,6 +1054,7 @@ mod tests {
             tick: None,
             stop: Some(&stop),
             terminating: false,
+            quit: Quit::Keys,
         };
         run_drive(
             &recorder,
@@ -1063,6 +1077,7 @@ mod tests {
             tick: None,
             stop: Some(&stop),
             terminating: true,
+            quit: Quit::Keys,
         };
         let watchdog = Watchdog::start({
             let stop = stop.clone();
@@ -1101,6 +1116,7 @@ mod tests {
                 tick: None,
                 stop: Some(&stop),
                 terminating: false,
+                quit: Quit::Keys,
             };
             run_drive(
                 &recorder,
@@ -1134,6 +1150,7 @@ mod tests {
             tick: None,
             stop: Some(&stop),
             terminating: false,
+            quit: Quit::Keys,
         };
         let mut seen = Vec::new();
         run_drive(
@@ -1343,6 +1360,7 @@ mod tests {
             tick: None,
             stop: Some(&stop),
             terminating: false,
+            quit: Quit::Keys,
         };
         let error = run_drive(
             &recorder,
@@ -1369,6 +1387,7 @@ mod tests {
             tick: None,
             stop: Some(&stop),
             terminating: false,
+            quit: Quit::Keys,
         };
         let watchdog = Watchdog::start({
             let stop = stop.clone();

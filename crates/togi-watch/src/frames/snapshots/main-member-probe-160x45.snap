@@ -45,4 +45,4 @@ expression: body
 │              group 22     02 03 08-11 at failing...     crashed                  08:03  pass     hunt 1 group 8 · 04-15 at failing offsets · 5 of 5...
 │  +18 more                                                                        +75 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

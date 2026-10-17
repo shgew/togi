@@ -136,7 +136,7 @@ mod tests {
     use super::super::fixtures::at;
     use super::{arrivals, body, rule_line};
     use crate::history::{LOG_LIMIT, LogEntry};
-    use crate::screen::{Colours, Log, View};
+    use crate::screen::{Colours, Log, Quit, View};
     use crate::tests::kit::seq;
 
     const START: &str = "session dashboard started by a togi build from before version stamps (schema 0, ruleset 0, fixes 0, 3 cores)";
@@ -456,7 +456,7 @@ mod tests {
                 format!("{arrived} new events")
             };
             let clause = arrivals(&held, Colours::Full);
-            let footer = |width| key_hints(View::Log, width, &clause, Colours::Full);
+            let footer = |width| key_hints(View::Log, width, &clause, Colours::Full, Quit::Keys);
             let wide = plain(&footer(120));
             assert!(wide.contains(&format!("{count} · End: latest")), "{wide}");
             let reference = footer(120);

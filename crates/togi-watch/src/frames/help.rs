@@ -13,11 +13,11 @@ use ratatui::text::{Line, Span};
 use super::colours::Paint;
 use super::fit::{cut_words, display_width, line_width, truncate_styled, wrap_styled};
 use super::scroll::scroll_body_with_bar;
-use crate::screen::Colours;
+use crate::screen::{Colours, Quit};
 
-struct Section {
+struct Section<'a> {
     title: &'static str,
-    items: &'static [(&'static str, &'static str)],
+    items: &'a [(&'static str, &'static str)],
 }
 
 const SCREEN: Section = Section {
@@ -63,9 +63,11 @@ const TOP: Section = Section {
             "last observed",
             "the last failure seen in this session that changed what togi does; skips do not count",
         ),
-        ("q", "closes this view only; tuning keeps running"),
     ],
 };
+
+/// The top-line row that names the quit key, left out where the keys are ignored.
+const EXIT: (&str, &str) = ("q", "exit dashboard; tuning itself keeps running");
 
 const TUNING: Section = Section {
     title: "WHAT TOGI DOES",
@@ -213,7 +215,7 @@ fn blank() -> Line<'static> {
 }
 
 fn section_lines(
-    section: &Section,
+    section: &Section<'_>,
     width: usize,
     spaced: bool,
     colours: Colours,
@@ -420,7 +422,18 @@ pub fn help_body(
     height: usize,
     scroll: usize,
     colours: Colours,
+    quit: Quit,
 ) -> (Vec<Line<'static>>, usize) {
+    let top_items: Vec<_> = TOP
+        .items
+        .iter()
+        .copied()
+        .chain((quit == Quit::Keys).then_some(EXIT))
+        .collect();
+    let top = Section {
+        title: TOP.title,
+        items: &top_items,
+    };
     let body_width = width.saturating_sub(2).max(1);
     let lines = if width >= THREE_COLUMNS {
         let usable = body_width - 8;
@@ -431,7 +444,7 @@ pub fn help_body(
             [
                 reading(left, colours),
                 vec![blank(), blank()],
-                section_lines(&TOP, left, false, colours),
+                section_lines(&top, left, false, colours),
             ]
             .concat(),
             section_lines(&TUNING, middle, true, colours),
@@ -466,7 +479,7 @@ pub fn help_body(
             .collect()
     } else {
         let mut lines = reading(body_width, colours);
-        for section in [&TOP, &TUNING, &WORDS, &LOAD] {
+        for section in [&top, &TUNING, &WORDS, &LOAD] {
             lines.extend([blank(), blank()]);
             lines.extend(section_lines(
                 section,
@@ -490,7 +503,7 @@ mod tests {
     use crate::frames::testing::{
         assert_frame_bounds, assert_glyphs_drawable, render_missing, rows_of, screen,
     };
-    use crate::screen::{Colours, Drawn, Hold, View};
+    use crate::screen::{Colours, Drawn, Hold, Quit, View};
 
     const C: Colours = Colours::Full;
 
@@ -508,7 +521,7 @@ mod tests {
 
     #[test]
     fn wide_help_uses_three_columns() {
-        let (body, scroll) = help_body(235, 61, 0, C);
+        let (body, scroll) = help_body(235, 61, 0, C, Quit::Keys);
         assert_eq!(scroll, 0, "wide help unexpectedly needs scrolling");
         let rows = plain_rows(&body);
         for title in ["READING THE SCREEN", "WHAT TOGI DOES", "WORDS"] {
@@ -538,9 +551,9 @@ mod tests {
             );
         }
         for width in [195, 235] {
-            let (top, scroll) = help_body(width, 19, 0, C);
-            let (end, end_scroll) = help_body(width, 19, usize::MAX, C);
-            let (clamped, _) = help_body(width, 19, scroll + 100, C);
+            let (top, scroll) = help_body(width, 19, 0, C, Quit::Keys);
+            let (end, end_scroll) = help_body(width, 19, usize::MAX, C, Quit::Keys);
+            let (clamped, _) = help_body(width, 19, scroll + 100, C, Quit::Keys);
             assert!(
                 scroll != 0 && end_scroll == scroll,
                 "short wide help must scroll: top={scroll} end={end_scroll}"
@@ -592,7 +605,7 @@ mod tests {
 
     #[test]
     fn help_glosses_no_record_only_trial() {
-        let (help, _) = help_body(115, 1000, 0, C);
+        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys);
         let words = plain_rows(&help)
             .join("\n")
             .split_whitespace()
@@ -636,7 +649,7 @@ mod tests {
 
     #[test]
     fn help_links_the_tuner_spec_and_states_no_rule() {
-        let (help, _) = help_body(115, 1000, 0, C);
+        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys);
         let words = plain_rows(&help)
             .join("\n")
             .split_whitespace()
@@ -683,7 +696,7 @@ mod tests {
             );
         }
         for width in [115, 235] {
-            let (body, scroll) = help_body(width, 1000, 0, C);
+            let (body, scroll) = help_body(width, 1000, 0, C, Quit::Keys);
             assert!(
                 scroll == 0 && !body.is_empty(),
                 "{width} columns: full help was not rendered"
@@ -734,9 +747,9 @@ mod tests {
 
     #[test]
     fn narrow_help_scrolls_one_column() {
-        let (top, scroll) = help_body(77, 19, 0, C);
-        let (end, end_scroll) = help_body(77, 19, usize::MAX, C);
-        let (clamped, _) = help_body(77, 19, scroll + 100, C);
+        let (top, scroll) = help_body(77, 19, 0, C, Quit::Keys);
+        let (end, end_scroll) = help_body(77, 19, usize::MAX, C, Quit::Keys);
+        let (clamped, _) = help_body(77, 19, scroll + 100, C, Quit::Keys);
         assert!(
             scroll != 0 && end_scroll == scroll,
             "narrow help must scroll: top={scroll} end={end_scroll}"
@@ -781,7 +794,7 @@ mod tests {
         for width in [0, 1, 2, 10, 77, 155, 194, 195, 196, 197, 235] {
             for height in [0, 1, 19, 61] {
                 for scroll in [0, 7, usize::MAX] {
-                    let (body, _) = help_body(width, height, scroll, C);
+                    let (body, _) = help_body(width, height, scroll, C, Quit::Keys);
                     assert!(
                         body.len() <= height,
                         "{width}x{height}: body has {} rows",
@@ -915,6 +928,7 @@ mod tests {
             usize::from(layout.body.height),
             0,
             C,
+            Quit::Keys,
         );
         assert_eq!(
             drawn,
@@ -926,7 +940,38 @@ mod tests {
         let rows = rows_of(&buf);
         assert!(rows[usize::from(layout.header.y)].contains("no session yet"));
         assert!(rows[usize::from(layout.body.y)].contains("READING THE SCREEN"));
-        assert!(rows[usize::from(layout.footer.y)].contains("close view"));
+        assert!(rows[usize::from(layout.footer.y)].contains("exit dashboard"));
+    }
+
+    #[test]
+    fn help_labels_the_quit_key_exit_dashboard_and_the_tuning_boot_drops_it() {
+        let words = |quit| {
+            plain_rows(&help_body(115, 1000, 0, C, quit).0)
+                .join("\n")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let standalone = words(Quit::Keys);
+        assert!(standalone.contains("q exit dashboard; tuning itself keeps running"));
+        assert!(!standalone.contains("closes this view"), "{standalone}");
+        let boot = words(Quit::Ignored);
+        for gone in ["exit dashboard", "closes this view", "itself keeps running"] {
+            assert!(
+                !boot.contains(gone),
+                "tuning-boot help says {gone:?}: {boot}"
+            );
+        }
+        assert!(
+            boot.contains("last observed"),
+            "the rest of the top line stays"
+        );
+        for width in [77, 115, 235] {
+            for height in [19, 1000] {
+                let (body, _) = help_body(width, height, usize::MAX, C, Quit::Ignored);
+                assert!(body.len() <= height);
+            }
+        }
     }
 
     #[test]

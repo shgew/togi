@@ -67,4 +67,4 @@ expression: body
 │                                                                                                                          05:50  fail     core 07 · R1 light at -31 · wrong result
 │                                                                                                                          +179 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

@@ -45,4 +45,4 @@ expression: body
 │  │ 20:53:01  trial signal          trial 1292 load steps: random on/off periods from 10 ms, 50 ms, 200 ms, 1 s, 5 s
 │  │ 20:55:01  trial signal          trial 1292 load steps: 42 stops, 42 continues
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

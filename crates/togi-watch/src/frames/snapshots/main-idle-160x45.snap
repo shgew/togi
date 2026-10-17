@@ -45,4 +45,4 @@ expression: body
 │  mprime AVX-512 36K-248K  05 08 by offset      00-05 07-12 14 15                 19:55  pass     R2 heavy vector on core 01 at -15 · passed · Tctl max 64°C
 │  y-cruncher FFTv4         05 08 by offset      00-05 07-12 14 15                 +466 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

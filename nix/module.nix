@@ -199,7 +199,7 @@ in
             unitConfig.ConditionPathExists = "/dev/tty1";
             environment.TERM = "linux";
             serviceConfig = {
-              ExecStart = "${lib.getExe cfg.package} watch";
+              ExecStart = "${lib.getExe cfg.package} watch --tuning-boot";
               StandardInput = "tty";
               StandardOutput = "tty";
               StandardError = "journal";

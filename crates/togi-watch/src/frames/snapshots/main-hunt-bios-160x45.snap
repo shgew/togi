@@ -45,4 +45,4 @@ expression: body
 │              failed parts are split again; complements test what remains         21:08  note     cycle 4 step 3 · CCD 1 partial 4 loads 09 12 13
 │  +6 more                                                                         +1609 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

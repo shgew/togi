@@ -33,4 +33,4 @@ expression: body
 │ ► part 1/2 01-15 at failing offsets  trial 4/5              21:47  hunt     not hunted: held: first unattributed...
 │ +4 more                                                     +1616 more
 │
-│  ?  help    l  log    esc  back    q  close view
+│  ?  help    l  log    esc  back    q  exit dashboard

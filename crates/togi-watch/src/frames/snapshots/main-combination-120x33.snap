@@ -33,4 +33,4 @@ expression: body
 │ mprime AVX-512    by offset         all                     06:43  pass     R4 partial load on core 05 at -11...
 │ y-cruncher FFTv4  by offset         all                     +519 more
 │
-│  ?  help    l  log    esc  back    q  close view
+│  ?  help    l  log    esc  back    q  exit dashboard

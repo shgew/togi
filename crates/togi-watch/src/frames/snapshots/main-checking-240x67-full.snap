@@ -125,5 +125,5 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │                                                                                                                          +183 more
 ~                                                                                                                          ggggggggg
 │
-│   ?  help    l  log    esc  back    q  close view
-~  hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggg
+│   ?  help    l  log    esc  back    q  exit dashboard
+~  hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg

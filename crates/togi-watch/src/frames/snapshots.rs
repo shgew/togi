@@ -521,7 +521,7 @@ fn one_frame_prints_the_live_text_without_the_key_footer() {
         );
         let said = rows_of(&buf).join("\n");
         assert!(
-            !said.contains("close view") && !said.contains("help"),
+            !said.contains("exit dashboard") && !said.contains("help"),
             "a one-frame print shows the key footer:\n{said}"
         );
         let live = Screen {

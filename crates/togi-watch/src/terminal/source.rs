@@ -475,7 +475,7 @@ mod tests {
 
     use super::{Content, MemoryJournal, Source, SourceError};
     use crate::history::LOG_LIMIT;
-    use crate::screen::{Colours, Journal, Screen, View};
+    use crate::screen::{Colours, Journal, Quit, Screen, View};
     use crate::terminal::testing::{
         go_journal, lines, real_fs_write_journal, session_start, session_with_warnings,
         undecodable_journal, warning,
@@ -503,6 +503,7 @@ mod tests {
             height: 33,
             one_frame: false,
             colours: Colours::None,
+            quit: Quit::Keys,
         }
     }
 

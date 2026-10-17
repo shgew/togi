@@ -45,4 +45,4 @@ expression: body
 │    07  search: light, then heavy   -10  passed -5 · next -10                     00:54  step     core 08 passed -5; searches -10 on its next turn
 │  +3 more                                                                         +18 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

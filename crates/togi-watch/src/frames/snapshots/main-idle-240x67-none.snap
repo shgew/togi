@@ -68,4 +68,4 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │                                                                                                                          19:19  pass     R2 heavy vector on core 00 at -25 · passed · Tctl max 76°C
 │                                                                                                                          +448 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

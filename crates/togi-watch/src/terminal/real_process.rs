@@ -30,7 +30,7 @@ use togi_watchtest::{Scenario, install};
 use tokio::signal::unix::{SignalKind, signal};
 
 use super::{Error, Stop, run, run_after, run_after_rendered, run_rendered};
-use crate::screen::{Drawn, Hold, Journal, Screen, View};
+use crate::screen::{Drawn, Hold, Journal, Quit, Screen, View};
 
 /// The full name of the helper test, which is how the test binary is told to run only it.
 const HELPER: &str = "terminal::real_process::real_process_helper";
@@ -186,6 +186,7 @@ fn real_process_helper() {
             &state_dir,
             stdout.as_fd(),
             Some(stdin.as_fd()),
+            Quit::Keys,
             frame(Arc::clone(&received), hold),
         )
     };
@@ -194,7 +195,7 @@ fn real_process_helper() {
         "frames" => {
             let stdin = std::io::stdin();
             let stdout = std::io::stdout();
-            run(&state_dir, stdout.as_fd(), Some(stdin.as_fd()))
+            run(&state_dir, stdout.as_fd(), Some(stdin.as_fd()), Quit::Keys)
         }
         "frames_after" => {
             let stdin = std::io::stdin();

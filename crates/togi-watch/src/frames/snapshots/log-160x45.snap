@@ -45,4 +45,4 @@ expression: body
 │  █ 23:32:01  profile restored      offsets restored before stopping: [00: 0, 01: 0, 02: 0, 03: 0, 04: 0, 05: 0, 06: 0, 07: 0, 08: 0, 09: 0, 10: 0, 11: 0...
 │  █ 23:32:01  stop                  phase 2 is confirmed and the profile passed the requested clean cycle; stopping
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

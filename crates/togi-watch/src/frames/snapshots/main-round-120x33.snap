@@ -33,4 +33,4 @@ expression: body
 │ cores 00-10 12-15  -10 → solo -11  gap 1  moving            15:15  room     core 12 -10 → -11
 │ +38 more                                                    +277 more
 │
-│  ?  help    l  log    esc  back    q  close view
+│  ?  help    l  log    esc  back    q  exit dashboard

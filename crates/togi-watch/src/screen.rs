@@ -33,6 +33,17 @@ pub enum Colours {
     None,
 }
 
+/// What the quit keys `q`, `Q`, Ctrl-C and Ctrl-D do. The caller decides it explicitly; it is never inferred from the
+/// terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Quit {
+    /// They exit the dashboard and its hints name `q`: `togi watch` started by hand.
+    Keys,
+    /// They do nothing on every page and no hint names them: the tuning boot's dashboard service, which only its
+    /// service stop or a signal ends.
+    Ignored,
+}
+
 /// Everything the frames need to know about the terminal and the reader.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Screen {
@@ -51,6 +62,8 @@ pub struct Screen {
     pub one_frame: bool,
     /// The colour profile.
     pub colours: Colours,
+    /// What the quit keys do, and so whether the hints name them.
+    pub quit: Quit,
 }
 
 /// How long a drawn frame stays true without a new journal event.

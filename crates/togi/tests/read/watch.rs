@@ -200,22 +200,49 @@ pub(crate) fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         .any(|window| window == needle)
 }
 
+#[derive(Clone, Copy, Debug)]
+enum Ending {
+    Signal(Signal),
+    /// Bytes typed on the terminal.
+    Keys(&'static [u8]),
+}
+
+/// The four quit keys, as raw mode delivers them: `q`, `Q`, Ctrl-C and Ctrl-D.
+const QUIT_KEYS: &[u8] = b"qQ\x03\x04";
+
 #[test]
 fn real_process_sigint_ends_a_live_watch_with_the_terminal_restored() {
-    a_signal_ends_a_live_watch_with_the_terminal_restored(Signal::INT);
+    a_live_watch_ends_with_the_terminal_restored(false, Ending::Signal(Signal::INT));
 }
 
 #[test]
 fn real_process_sigterm_ends_a_live_watch_with_the_terminal_restored() {
-    a_signal_ends_a_live_watch_with_the_terminal_restored(Signal::TERM);
+    a_live_watch_ends_with_the_terminal_restored(false, Ending::Signal(Signal::TERM));
 }
 
 #[test]
 fn real_process_sighup_ends_a_live_watch_with_the_terminal_restored() {
-    a_signal_ends_a_live_watch_with_the_terminal_restored(Signal::HUP);
+    a_live_watch_ends_with_the_terminal_restored(false, Ending::Signal(Signal::HUP));
 }
 
-fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
+#[test]
+fn real_process_q_ends_a_standalone_live_watch_with_the_terminal_restored() {
+    a_live_watch_ends_with_the_terminal_restored(false, Ending::Keys(b"q"));
+}
+
+#[test]
+fn real_process_every_quit_key_ends_a_standalone_live_watch() {
+    for key in [&b"Q"[..], b"\x03", b"\x04"] {
+        a_live_watch_ends_with_the_terminal_restored(false, Ending::Keys(key));
+    }
+}
+
+#[test]
+fn real_process_a_tuning_boot_watch_ignores_the_quit_keys_and_still_stops_on_sigterm() {
+    a_live_watch_ends_with_the_terminal_restored(true, Ending::Signal(Signal::TERM));
+}
+
+fn a_live_watch_ends_with_the_terminal_restored(tuning_boot: bool, ending: Ending) {
     let dir = tempfile::tempdir().unwrap();
     togi_watchtest::install(dir.path(), Scenario::Checking).unwrap();
     let master = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
@@ -251,6 +278,7 @@ fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
         .arg("--state-dir")
         .arg(dir.path())
         .arg("watch")
+        .args(tuning_boot.then_some("--tuning-boot"))
         .env_remove("NO_COLOR")
         .env_remove("JOURNAL_STREAM")
         .env("TERM", "xterm")
@@ -273,7 +301,24 @@ fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
     }
     let shown_at = seen.len();
 
-    kill_process(pid, signal).unwrap();
+    if tuning_boot {
+        rustix::io::write(&master, QUIT_KEYS).unwrap();
+        let quiet = Instant::now() + Duration::from_secs(1);
+        while Instant::now() < quiet {
+            read_more(&master, &mut seen, quiet);
+            assert!(
+                helper.0.try_wait().unwrap().is_none(),
+                "the tuning boot dashboard ended on a quit key; the terminal received {:?}",
+                String::from_utf8_lossy(&seen)
+            );
+        }
+    }
+    match ending {
+        Ending::Signal(signal) => kill_process(pid, signal).unwrap(),
+        Ending::Keys(keys) => {
+            rustix::io::write(&master, keys).unwrap();
+        }
+    }
     let deadline = Instant::now() + BOUND;
     let status = loop {
         if let Some(status) = helper.0.try_wait().unwrap() {
@@ -286,16 +331,16 @@ fn a_signal_ends_a_live_watch_with_the_terminal_restored(signal: Signal) {
         );
         assert!(
             Instant::now() < deadline,
-            "watch did not end within {BOUND:?} of {signal:?}"
+            "watch did not end within {BOUND:?} of {ending:?}"
         );
     };
     while !contains(&seen[shown_at..], SHOW_CURSOR) {
         assert!(
             read_more(&master, &mut seen, deadline),
-            "the cursor is not shown again after {signal:?}; the terminal received {:?}",
+            "the cursor is not shown again after {ending:?}; the terminal received {:?}",
             String::from_utf8_lossy(&seen)
         );
     }
-    assert_eq!(status.code(), Some(0), "{signal:?} is a normal end");
+    assert_eq!(status.code(), Some(0), "{ending:?} is a normal end");
     assert_eq!(tcgetattr(&slave).unwrap().local_modes, before);
 }

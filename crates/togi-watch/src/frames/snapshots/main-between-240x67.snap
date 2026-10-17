@@ -67,4 +67,4 @@ expression: body
 │                                                                                                                          06:40  step     core 06 passed -37; searches -38 on its next turn
 │                                                                                                                          +191 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard
