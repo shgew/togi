@@ -93,7 +93,8 @@ impl Resolution {
 }
 
 /// A trial of a derivation's loaded set before the position was derived again: of its cycle and step, or a
-/// rerun of its workload and set, which belongs to no cycle, before the cycle ended.
+/// rerun of its workload and set, which belongs to no cycle, before the cycle ended or a later step derived
+/// the same set.
 #[derive(Debug, PartialEq, Serialize)]
 pub(crate) struct ChainTrial<'a> {
     pub(crate) seq: Seq,
@@ -223,6 +224,28 @@ fn window<'t, 'a>(
     })
 }
 
+/// Where the reruns of the derivation at `at` stop counting: at its position's next derivation, the next
+/// derivation of the same workload and set in its cycle (another step's, whose own window takes them), or
+/// the cycle's end, whichever comes first. Reruns carry no step, so this gives each to one derivation.
+fn rerun_end(
+    chains: &[(Seq, Timestamp, &CheckingChain)],
+    at: Seq,
+    d: &CheckingChain,
+    until: Option<Seq>,
+    cycle_end: Option<Seq>,
+) -> Option<Seq> {
+    let same = chains
+        .iter()
+        .find(|(seq, _, next)| {
+            *seq > at
+                && next.cycle == d.cycle
+                && next.workload == d.workload
+                && next.cores == d.cores
+        })
+        .map(|&(seq, _, _)| seq);
+    [until, same, cycle_end].into_iter().flatten().min()
+}
+
 /// Every `checking.chain` event at or after `since`, attributed against the whole journal so a
 /// re-derivation after the cutoff still names what it re-derived.
 pub(crate) fn attribute<'a>(p: &Projection<'a>, since: Option<Timestamp>) -> Vec<Derivation<'a>> {
@@ -326,7 +349,7 @@ pub(crate) fn attribute<'a>(p: &Projection<'a>, since: Option<Timestamp>) -> Vec
                     window(
                         reruns.get(&(d.workload, d.cores)),
                         seq,
-                        until.or(cycle_end.map(|(end, _)| end)),
+                        rerun_end(&chains, seq, d, until, cycle_end.map(|(end, _)| end)),
                     ),
                 )
             };

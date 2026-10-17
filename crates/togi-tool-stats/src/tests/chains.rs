@@ -261,6 +261,31 @@ fn a_pending_set_whose_cycle_a_reset_ended_is_abandoned_and_a_rerun_after_it_is_
 }
 
 #[test]
+fn a_rerun_after_a_later_step_derives_the_same_set_is_that_steps_alone() {
+    let mut log = Log::new(&CORES);
+    log.add(cycle(1, CycleEvent::Start, false));
+    log.add(chain(0, 1, &[&[0], &[1, 2, 3]], &[1, 2, 3], &P0, None));
+    let mut later = chain(0, 1, &[&[0], &[1, 2, 3]], &[1, 2, 3], &P0, None);
+    later.step = nz(2);
+    log.add(later);
+    let mut rerun = intent("0001", Regime::R7, &[1, 2, 3], &P0);
+    rerun.rerun = true;
+    log.add(rerun);
+    log.add(trial_start("0001"));
+    log.add(end("0001", Outcome::Pass));
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    let derivations = chains::attribute(&p, None);
+    assert_eq!(
+        derivations
+            .iter()
+            .map(|d| (d.step.get(), d.reruns.len()))
+            .collect::<Vec<_>>(),
+        [(1, 0), (2, 1)]
+    );
+}
+
+#[test]
 fn a_cutoff_keeps_what_a_later_derivation_rederived() {
     let log = rederived_after_backoffs();
     let journal = log.journal();
