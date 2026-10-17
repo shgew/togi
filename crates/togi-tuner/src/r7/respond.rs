@@ -741,7 +741,9 @@ impl Run {
                     .find_map(|&core| self.core_response(&view, core, None))?;
                 return Some(match required {
                     R7Response::ReadRanking => R7Route::Respond(Box::new(R7Response::ReadRanking)),
-                    _ => R7Route::Locate {
+                    R7Response::Backoff { .. }
+                    | R7Response::DeadEnd(_)
+                    | R7Response::ZeroRerun(_) => R7Route::Locate {
                         failure: record.seq,
                         reason,
                     },
