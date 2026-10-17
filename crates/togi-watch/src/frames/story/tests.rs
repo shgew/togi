@@ -1437,9 +1437,16 @@ mod the_story {
         probes: Vec<togi_tuner::MemberProbe>,
         anchor_group: Option<GroupState>,
         at: i64,
+        parked: i64,
     ) -> super::super::Story {
         let mut fx = hunting(true, Vec::new());
         let (plan, facts) = fx.hunt.as_mut().expect("a hunt");
+        if parked != 0 {
+            facts.parking = Some(crate::model::Parking {
+                shallow: vec![(core(2), off(parked))],
+                ..crate::model::Parking::default()
+            });
+        }
         plan.groups.push(HuntGroup {
             number: 1,
             cores: set(failed),
@@ -1461,7 +1468,7 @@ mod the_story {
                 stage: togi_journal::HuntStage::Probe,
                 probe: Some(Member {
                     core: core(2),
-                    offset: off(0),
+                    offset: off(parked),
                 }),
                 held: Vec::new(),
                 outcome,
@@ -1496,6 +1503,7 @@ mod the_story {
             vec![probe_of(2, 0, &[-12], &[], false)],
             Some(GroupState::Running),
             0,
+            0,
         );
         assert_eq!(said.label, "HUNT 1");
         assert_eq!(
@@ -1519,12 +1527,50 @@ mod the_story {
     }
 
     #[test]
+    fn a_singleton_parked_at_a_nonzero_offset_tests_that_offset_as_its_safe_anchor() {
+        let said = probing_story(
+            &[2],
+            vec![probe_of(2, -10, &[-30], &[], false)],
+            Some(GroupState::Running),
+            -10,
+            -10,
+        );
+        assert_eq!(
+            said.lines[0],
+            "Core 02 crashed on its own at -30, so it is the culprit."
+        );
+        assert!(
+            said.lines[1].contains("No pass is known at its parked offset yet")
+                && said.lines[1].contains("so I test core 02 at -10 to find a safe anchor"),
+            "{}",
+            said.lines[1]
+        );
+        assert_eq!(
+            said.brief,
+            "Testing core 02 at -10, its parked offset, for a safe anchor."
+        );
+        for line in said.lines.iter().chain([&said.brief]) {
+            for wrong in [
+                "A passing anchor is known",
+                "between its failure",
+                "together",
+                "smaller part",
+                "combination",
+                "each member",
+            ] {
+                assert!(!line.contains(wrong), "{line}");
+            }
+        }
+    }
+
+    #[test]
     fn a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are() {
         let interior = probing_story(
             &[2],
             vec![probe_of(2, -6, &[-12], &[], false)],
             Some(GroupState::Running),
             -6,
+            0,
         );
         assert!(
             interior.lines[1].starts_with("A passing anchor is known"),
@@ -1539,6 +1585,7 @@ mod the_story {
             &[2],
             vec![probe_of(2, -12, &[-12, 0], &[], true)],
             Some(GroupState::Failed),
+            0,
             0,
         );
         assert!(
@@ -1567,6 +1614,7 @@ mod the_story {
             ],
             None,
             -12,
+            0,
         );
         assert_eq!(
             said.lines[0],

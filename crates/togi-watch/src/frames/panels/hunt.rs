@@ -890,7 +890,7 @@ mod tests {
         CyclePlace, CycleView, DeadEndView, HuntFacts, HuntView, Model, SessionView, StopView,
         TrialEndView,
     };
-    use crate::tests::kit::{off, set};
+    use crate::tests::kit::{core, off, set};
 
     fn stage_of(plan: &togi_tuner::HuntPlan, short: bool) -> String {
         let facts = hunt_facts();
@@ -1667,12 +1667,24 @@ mod tests {
         assert_eq!(compact.len(), 3, "{compact:?}");
     }
 
-    fn hunt_panel(plan: &togi_tuner::HuntPlan, parked_at_zero: bool) -> String {
+    /// How a hunt parks core 03 at `anchor`: in its zero set at 0, else as a shallow nonzero offset.
+    fn core03_parked_at(anchor: i64) -> crate::model::Parking {
+        if anchor == 0 {
+            crate::model::Parking {
+                zero: set(&[3]),
+                ..crate::model::Parking::default()
+            }
+        } else {
+            crate::model::Parking {
+                shallow: vec![(core(3), off(anchor))],
+                ..crate::model::Parking::default()
+            }
+        }
+    }
+
+    fn hunt_panel(plan: &togi_tuner::HuntPlan, anchor: i64) -> String {
         let mut facts = hunt_facts();
-        facts.parking = parked_at_zero.then(|| crate::model::Parking {
-            zero: set(&[3]),
-            ..crate::model::Parking::default()
-        });
+        facts.parking = Some(core03_parked_at(anchor));
         with_hunt(plan, &facts, |scene, hunt| {
             texts(&hunt_lines(
                 scene,
@@ -1688,13 +1700,14 @@ mod tests {
     fn singleton_plan(
         probe: togi_tuner::MemberProbe,
         probe_group: Option<GroupState>,
+        anchor: i64,
     ) -> togi_tuner::HuntPlan {
         let mut plan = hunt_plan(vec![group(1, &[3], GroupState::Failed)], Vec::new());
         if let Some(outcome) = probe_group {
-            let mut anchor = group(2, &[3], outcome);
-            anchor.stage = HuntStage::Probe;
-            anchor.probe = Some(member(3, 0));
-            plan.groups.push(anchor);
+            let mut anchor_group = group(2, &[3], outcome);
+            anchor_group.stage = HuntStage::Probe;
+            anchor_group.probe = Some(member(3, anchor));
+            plan.groups.push(anchor_group);
         }
         plan.probes = vec![probe];
         plan
@@ -1704,7 +1717,7 @@ mod tests {
     fn a_singleton_hunt_without_a_passing_anchor_names_no_pass_and_no_combination() {
         let mut running = probe(3, 0, true, false);
         running.failed_at = vec![off(-30)];
-        let all = hunt_panel(&singleton_plan(running, Some(GroupState::Running)), true);
+        let all = hunt_panel(&singleton_plan(running, Some(GroupState::Running), 0), 0);
         for said in [
             "core 03 failed alone; testing it at its parked offset 0 for a safe anchor",
             "record core 03's shallowest reproduced failure; test its parked offset before narrowing the bracket",
@@ -1718,10 +1731,38 @@ mod tests {
     }
 
     #[test]
+    fn a_singleton_parked_at_a_nonzero_offset_tests_that_offset_as_its_anchor() {
+        let mut running = probe(3, -10, true, false);
+        running.failed_at = vec![off(-30)];
+        let all = hunt_panel(
+            &singleton_plan(running, Some(GroupState::Running), -10),
+            -10,
+        );
+        for said in [
+            "→ core 03 failed alone; testing it at its parked offset -10 for a safe anchor",
+            "record core 03's shallowest reproduced failure; test its parked offset before narrowing the bracket",
+            "back off past it",
+        ] {
+            assert!(all.contains(said), "{said}:\n{all}");
+        }
+        for wrong in [
+            "parked offset 0",
+            "testing its parked offset for",
+            "passing anchor",
+            "probing between",
+            "combination",
+            "kept together",
+            "tested passing probe",
+        ] {
+            assert!(!all.contains(wrong), "{wrong}:\n{all}");
+        }
+    }
+
+    #[test]
     fn a_singleton_interior_probe_runs_between_its_failure_and_its_passing_anchor() {
         let mut interior = probe(3, -15, true, false);
         interior.failed_at = vec![off(-30)];
-        let all = hunt_panel(&singleton_plan(interior, Some(GroupState::Running)), true);
+        let all = hunt_panel(&singleton_plan(interior, Some(GroupState::Running), 0), 0);
         for said in [
             "probing between its failure and its passing anchor",
             "record core 03's failure point, probing between it and its passing anchor",
@@ -1738,7 +1779,7 @@ mod tests {
     fn a_stopped_singleton_keeps_its_shallowest_failure_without_claiming_a_pass() {
         let mut stopped = probe(3, -30, false, true);
         stopped.failed_at = vec![off(-30), off(0)];
-        let all = hunt_panel(&singleton_plan(stopped, Some(GroupState::Failed)), true);
+        let all = hunt_panel(&singleton_plan(stopped, Some(GroupState::Failed), 0), 0);
         for said in [
             "record core 03's shallowest reproduced failure at -30; probing stopped without a safe bracket",
             "its probing is done",
@@ -1751,7 +1792,7 @@ mod tests {
         let mut bracketed = probe(3, -30, false, true);
         bracketed.failed_at = vec![off(-30)];
         bracketed.passed_at = vec![off(-29)];
-        let all = hunt_panel(&singleton_plan(bracketed, Some(GroupState::Passed)), true);
+        let all = hunt_panel(&singleton_plan(bracketed, Some(GroupState::Passed), 0), 0);
         assert!(
             all.contains("record core 03's failure point at -30; a pass sits one count shallower"),
             "{all}"
@@ -1762,7 +1803,7 @@ mod tests {
     fn an_ordinary_combination_keeps_its_member_probing_and_backoff_wording() {
         let mut plan = hunt_plan(vec![group(1, &[3, 4], GroupState::Failed)], Vec::new());
         plan.probes = vec![probe(3, -9, true, false), probe(4, -10, false, false)];
-        let all = hunt_panel(&plan, true);
+        let all = hunt_panel(&plan, 0);
         for said in [
             "→ 03 04 kept together; probing members",
             "record the combination: 03 04 at the offsets that still fail",
@@ -1793,7 +1834,7 @@ mod tests {
     #[test]
     fn a_singleton_hunt_s_stage_names_its_anchor_or_probe_not_a_member_count() {
         let stage = |probe: togi_tuner::MemberProbe, short: bool| {
-            let plan = singleton_plan(probe, None);
+            let plan = singleton_plan(probe, None, 0);
             let mut facts = hunt_facts();
             facts.parking = Some(crate::model::Parking {
                 zero: set(&[3]),
@@ -1818,6 +1859,27 @@ mod tests {
             "culprit probes · probing"
         );
         assert_eq!(stage(probe(3, -30, false, true), true), "probes done");
+    }
+
+    #[test]
+    fn a_singleton_parked_at_a_nonzero_offset_stages_as_testing_its_anchor() {
+        let mut running = probe(3, -10, true, false);
+        running.failed_at = vec![off(-30)];
+        let plan = singleton_plan(running, Some(GroupState::Running), -10);
+        let mut facts = hunt_facts();
+        facts.parking = Some(core03_parked_at(-10));
+        let stage = |short| {
+            let model = Model::new();
+            let mut s = model.snapshot();
+            s.hunt = Some(HuntView {
+                plan: &plan,
+                facts: &facts,
+            });
+            let zone = TimeZone::UTC;
+            super::super::hunt_stage(&scene(&s, &zone), short)
+        };
+        assert_eq!(stage(true), "testing anchor");
+        assert_eq!(stage(false), "culprit probes · testing anchor");
     }
 
     fn parts_of_a_located_hunt(parking: crate::model::Parking) -> Vec<String> {
