@@ -12,7 +12,7 @@ use togi_smu::Driver;
 /// it fails the test with `Busy`.
 static HOST_LOCK: LazyLock<HostLock> = LazyLock::new(|| {
     HostLock::acquire(Path::new(DEFAULT_PATH), Policy::Host)
-        .unwrap_or_else(|error| panic!("take the host lock: {error}"))
+        .unwrap_or_else(|error| panic!("take the host lock: {}", togi_machine::error_chain(&error)))
 });
 
 fn offsets(driver: &mut Driver, cores: &[CoreId]) -> Vec<(CoreId, ObservedOffset)> {

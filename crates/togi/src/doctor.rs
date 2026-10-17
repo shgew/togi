@@ -52,7 +52,7 @@ const WARNINGS: [&str; 2] = ["watchdog", "bios_context"];
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let system = ctx.system;
     if let Err(error) = system.check_platform() {
-        return fail(ctx, COMMAND, error);
+        return fail(ctx, COMMAND, togi_render::error_chain(&error));
     }
     let renderer = Renderer::new(system.stderr_facts());
     let recorded = match recorded_context(ctx, renderer) {
@@ -81,7 +81,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
                 );
                 return exit_with(ctx, COMMAND, message, Exit::Locked);
             }
-            Err(error) => return fail(ctx, COMMAND, error),
+            Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
         }
     } else {
         None
@@ -91,11 +91,12 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     let (table, failed) = table(&diagnosis);
-    if let Err(exit) = ctx
-        .out
-        .write_all(table.as_bytes())
-        .map_err(|error| ctx.error(format!("write output: {error}")))
-    {
+    if let Err(exit) = ctx.out.write_all(table.as_bytes()).map_err(|error| {
+        ctx.error(format!(
+            "write output: {}",
+            togi_render::error_chain(&error)
+        ))
+    }) {
         return exit;
     }
     if let Some(error) = &diagnosis.bios_context_error {

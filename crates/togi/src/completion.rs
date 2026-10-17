@@ -135,7 +135,10 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let script = script(args.shell);
     match ctx.out.write_all(&script).and_then(|()| ctx.out.flush()) {
         Ok(()) => Exit::Ok,
-        Err(error) => ctx.error(format_args!("completion: write the script: {error}")),
+        Err(error) => ctx.error(format_args!(
+            "completion: write the script: {}",
+            togi_render::error_chain(&error)
+        )),
     }
 }
 

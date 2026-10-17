@@ -25,6 +25,7 @@ use togi_machine::{
 use togi_render::OutputFacts;
 use togi_sim::{Model, RunSettings, Simulator, file};
 use togi_tuningboot::{Bootloader, Environment, SavedEntry};
+use togi_watch::terminal;
 
 const CONFIG: &str = "config.json";
 
@@ -150,8 +151,8 @@ impl Bootloader for Grub {
 /// A dashboard that does what the test says.
 pub(crate) struct Scripted<F>(pub F);
 
-impl<F: Fn(&Stop) -> Result<(), String> + Send + Sync> Surface for Scripted<F> {
-    fn draw(&self, _: &Path, _: u64, stop: &Stop) -> Result<(), String> {
+impl<F: Fn(&Stop) -> Result<(), terminal::Error> + Send + Sync> Surface for Scripted<F> {
+    fn draw(&self, _: &Path, _: u64, stop: &Stop) -> Result<(), terminal::Error> {
         (self.0)(stop)
     }
 }
@@ -195,6 +196,10 @@ pub(crate) struct Fake {
     /// before its second, under both locks.
     pub(crate) at_host_lock: RefCell<Option<Box<dyn FnOnce()>>>,
     pub(crate) calls: RefCell<Vec<&'static str>>,
+    /// Why the next claim on the host lock fails, once.
+    pub(crate) lock_error: RefCell<Option<togi_hostlock::Error>>,
+    /// Why the signal listener does not start, once.
+    pub(crate) listen_error: RefCell<Option<togi_cli::signals::Error>>,
 }
 
 impl Fake {
@@ -264,6 +269,8 @@ impl Fake {
             free_at_reboot: Cell::new(None),
             at_host_lock: RefCell::default(),
             calls: RefCell::default(),
+            lock_error: RefCell::default(),
+            listen_error: RefCell::default(),
         }
     }
 
@@ -382,6 +389,9 @@ impl System for Fake {
 
     fn acquire_host_lock(&self) -> Result<HostLock, togi_hostlock::Error> {
         let (path, policy) = self.host_lock();
+        if let Some(error) = self.lock_error.borrow_mut().take() {
+            return Err(error);
+        }
         if self.real_host {
             HostLock::acquire(path, policy)
         } else if policy == Policy::Host {
@@ -393,8 +403,14 @@ impl System for Fake {
         }
     }
 
-    fn listen(&self, cancel: &CancellationToken) -> io::Result<Box<dyn std::any::Any>> {
+    fn listen(
+        &self,
+        cancel: &CancellationToken,
+    ) -> Result<Box<dyn std::any::Any>, togi_cli::signals::Error> {
         *self.cancel.borrow_mut() = Some(cancel.clone());
+        if let Some(error) = self.listen_error.borrow_mut().take() {
+            return Err(error);
+        }
         if self.real_host {
             togi_cli::system::listen_for_signals(cancel)
         } else {
@@ -469,11 +485,11 @@ impl System for Fake {
             togi_cli::dashboard::Dashboard::new(self.surface(), state, since)
         } else {
             let stderr = self.stderr.clone();
-            togi_cli::dashboard::Dashboard::isolated(self.surface(), state, since, move |message| {
+            togi_cli::dashboard::Dashboard::isolated(self.surface(), state, since, move |failure| {
                 let _ = writeln!(
                     stderr.clone(),
                     "togi run: dashboard: {}; printing events instead",
-                    togi_render::escape_text(message)
+                    togi_render::escape_text(&togi_render::error_chain(failure))
                 );
             })
         }

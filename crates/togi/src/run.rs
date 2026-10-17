@@ -111,7 +111,7 @@ fn positive(text: &str) -> Result<NonZeroU32, String> {
 /// Runs the command.
 pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     if let Err(error) = ctx.system.check_platform() {
-        return exit_with(ctx, COMMAND, error, Exit::Error);
+        return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
     }
     let renderer = Renderer::new(ctx.system.stderr_facts());
     let build = current_build();
@@ -154,12 +154,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let _listening = match ctx.system.listen(&cancel) {
         Ok(listening) => listening,
         Err(error) => {
-            return exit_with(
-                ctx,
-                COMMAND,
-                format!("listen for signals: {error}"),
-                Exit::Error,
-            );
+            return exit_with(ctx, COMMAND, togi_render::error_chain(&error), Exit::Error);
         }
     };
 
@@ -379,7 +374,12 @@ fn take_host_lock(ctx: &mut Context<'_>) -> Result<HostLock, Exit> {
         Err(error @ togi_hostlock::Error::Busy { .. }) => {
             Err(exit_with(ctx, COMMAND, error, Exit::Locked))
         }
-        Err(error) => Err(exit_with(ctx, COMMAND, error, Exit::Error)),
+        Err(error) => Err(exit_with(
+            ctx,
+            COMMAND,
+            togi_render::error_chain(&error),
+            Exit::Error,
+        )),
     }
 }
 

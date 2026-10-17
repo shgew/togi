@@ -78,7 +78,12 @@ impl std::io::Write for Sink {
 struct UntilStopped;
 
 impl super::Surface for UntilStopped {
-    fn draw(&self, _: &std::path::Path, _: u64, stop: &super::Stop) -> Result<(), String> {
+    fn draw(
+        &self,
+        _: &std::path::Path,
+        _: u64,
+        stop: &super::Stop,
+    ) -> Result<(), togi_watch::terminal::Error> {
         stop.wait();
         Ok(())
     }
@@ -163,7 +168,12 @@ fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
 struct PanicsWhileDrawing;
 
 impl super::Surface for PanicsWhileDrawing {
-    fn draw(&self, _: &std::path::Path, _: u64, stop: &super::Stop) -> Result<(), String> {
+    fn draw(
+        &self,
+        _: &std::path::Path,
+        _: u64,
+        stop: &super::Stop,
+    ) -> Result<(), togi_watch::terminal::Error> {
         let ended = togi_watch::terminal::Stop::new();
         super::draw_until(
             stop,
@@ -209,7 +219,13 @@ fn a_panic_while_drawing_falls_back_to_event_lines_at_once_not_when_the_dashboar
         std::sync::Arc::new(PanicsWhileDrawing),
         std::path::Path::new("."),
         0,
-        move |message| notices.push("notice", message),
+        move |failure: &super::Failure| {
+            assert!(
+                matches!(failure, super::Failure::Panicked(_)),
+                "{failure:?}"
+            );
+            notices.push("notice", &togi_render::error_chain(failure));
+        },
     );
     let mut lines = dashboard.gate(Box::new(said.clone()));
     dashboard.show();
@@ -229,7 +245,12 @@ fn a_panic_while_drawing_falls_back_to_event_lines_at_once_not_when_the_dashboar
 struct FailsWhileDrawing;
 
 impl super::Surface for FailsWhileDrawing {
-    fn draw(&self, _: &std::path::Path, _: u64, stop: &super::Stop) -> Result<(), String> {
+    fn draw(
+        &self,
+        _: &std::path::Path,
+        _: u64,
+        stop: &super::Stop,
+    ) -> Result<(), togi_watch::terminal::Error> {
         super::draw_until(stop, &togi_watch::terminal::Stop::new(), || {
             Err(togi_watch::terminal::Error::Output(std::io::Error::other(
                 "broken pipe",
@@ -246,7 +267,16 @@ fn a_terminal_failure_keeps_its_source_in_the_fallback_notice() {
         std::sync::Arc::new(FailsWhileDrawing),
         std::path::Path::new("."),
         0,
-        move |message| notices.push("notice", message),
+        move |failure: &super::Failure| {
+            assert!(
+                matches!(
+                    failure,
+                    super::Failure::Draw(togi_watch::terminal::Error::Output(_))
+                ),
+                "{failure:?}"
+            );
+            notices.push("notice", &togi_render::error_chain(failure));
+        },
     );
     dashboard.show();
     wait_until("the fallback notice", || !said.all().is_empty());

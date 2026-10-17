@@ -27,7 +27,7 @@ pub enum Error {
     },
     #[error("host lock {} {problem}", path.display())]
     UnsafeLock { path: PathBuf, problem: LockProblem },
-    #[error("{operation} host lock {}: {source}", path.display())]
+    #[error("{operation} host lock {}", path.display())]
     Io {
         path: PathBuf,
         operation: Operation,

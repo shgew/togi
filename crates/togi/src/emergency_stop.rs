@@ -10,7 +10,7 @@ use togi_hostlock::Error as LockError;
 use togi_machine::{
     CancellationToken, CoreInfo, CoreSet, Error as MachineError, Machine, ObservedOffset,
 };
-use togi_session::{Readback, Zeroed, zero_and_read_back};
+use togi_session::{Readback, zero_and_read_back};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
@@ -70,43 +70,29 @@ impl fmt::Display for Step {
 }
 
 /// Why a stop did not end with every core read back 0.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Failure {
     /// `step` failed, so no offset was written.
-    Withheld { step: Step, error: MachineError },
-    /// The write of 0 or a readback did not confirm every one of `cores` at 0.
-    NotZero { zeroed: Zeroed, cores: usize },
+    #[error("{step}")]
+    Withheld {
+        step: Step,
+        #[source]
+        error: MachineError,
+    },
+    /// The write of 0, when `zero` holds its failure, or a readback did not confirm `missing` of `cores` at 0.
+    #[error("{missing} of {cores} cores did not read back 0")]
+    NotZero {
+        missing: usize,
+        cores: usize,
+        #[source]
+        zero: Option<ZeroFailed>,
+    },
 }
 
-impl fmt::Display for Failure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Withheld { step, error } => {
-                write!(
-                    f,
-                    "{step}: {}; offsets unchanged",
-                    togi_render::error_chain(error)
-                )
-            }
-            Self::NotZero { zeroed, cores } => {
-                let confirmed = zeroed
-                    .readbacks
-                    .iter()
-                    .filter(|readback| at_zero(readback))
-                    .count();
-                let missing = cores - confirmed;
-                match &zeroed.zero {
-                    Ok(()) => write!(f, "{missing} of {cores} cores did not read back 0"),
-                    Err(error) => write!(
-                        f,
-                        "setting every core to 0 failed: {}; {missing} of {cores} cores did not read back 0",
-                        togi_render::error_chain(error)
-                    ),
-                }
-            }
-        }
-    }
-}
+/// The write of 0 to every core failed.
+#[derive(Debug, thiserror::Error)]
+#[error("set every core to 0")]
+pub struct ZeroFailed(#[source] pub MachineError);
 
 /// Stops what a dead togi left running, then sets every core to 0 and reads each back.
 ///
@@ -143,9 +129,15 @@ pub fn stop(machine: &mut Machine, report: &mut dyn Write) -> Result<Recovered, 
             cores: zeroed.readbacks.len(),
         })
     } else {
+        let confirmed = zeroed
+            .readbacks
+            .iter()
+            .filter(|readback| at_zero(readback))
+            .count();
         Err(Failure::NotZero {
-            zeroed,
+            missing: total - confirmed,
             cores: total,
+            zero: zeroed.zero.err().map(ZeroFailed),
         })
     }
 }
@@ -189,7 +181,7 @@ fn say(report: &mut dyn Write, line: impl fmt::Display) {
 pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
     let system = ctx.system;
     if let Err(error) = system.check_platform() {
-        return fail(ctx, COMMAND, error);
+        return fail(ctx, COMMAND, togi_render::error_chain(&error));
     }
     if !system.privileged() {
         return fail(
@@ -209,7 +201,11 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
             );
         }
         Err(error) => {
-            return fail(ctx, COMMAND, format!("{error}; offsets unchanged"));
+            return fail(
+                ctx,
+                COMMAND,
+                format!("{}; offsets unchanged", togi_render::error_chain(&error)),
+            );
         }
     };
     let mut machine = match system.open_machine(&Config::default(), ctx.state_dir, &lock) {
@@ -230,6 +226,11 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
             );
             Exit::Ok
         }
-        Err(failure) => fail(ctx, COMMAND, failure),
+        Err(failure @ Failure::Withheld { .. }) => fail(
+            ctx,
+            COMMAND,
+            format!("{}; offsets unchanged", togi_render::error_chain(&failure)),
+        ),
+        Err(failure) => fail(ctx, COMMAND, togi_render::error_chain(&failure)),
     }
 }

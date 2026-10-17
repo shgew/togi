@@ -21,6 +21,7 @@ clap_complete_nushell.workspace = true
 jiff = { workspace = true, features = ["tz-system", "tzdb-zoneinfo"] }
 rustix = { workspace = true, features = ["event", "stdio", "termios", "time"] }
 serde_json.workspace = true
+thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "signal"] }
 togi-config.workspace = true
 togi-defect.workspace = true

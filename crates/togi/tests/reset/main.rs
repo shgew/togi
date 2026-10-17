@@ -369,6 +369,29 @@ fn a_busy_host_lock_exits_3_naming_it_before_anything_changes() {
 }
 
 #[test]
+fn a_host_lock_that_cannot_be_taken_exits_1_with_its_cause_before_anything_changes() {
+    let host = Host::new();
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    let before = files(&host.fs, session.path());
+    *host.lock_error.borrow_mut() = Some(togi_hostlock::Error::Io {
+        path: host.lock.clone(),
+        operation: togi_hostlock::Operation::Lock,
+        source: std::io::Error::other("disk gone"),
+    });
+    let ran = reset(&host, session.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
+    assert_eq!(ran.out, "");
+    assert_eq!(
+        ran.err,
+        format!(
+            "togi reset: lock host lock {}: disk gone\n",
+            host.lock.display()
+        )
+    );
+    assert_eq!(files(&host.fs, session.path()), before);
+}
+
+#[test]
 fn a_held_state_directory_lock_exits_3_and_changes_nothing() {
     for args in [&["--core", "0"][..], &["--all"]] {
         let host = Host::new();

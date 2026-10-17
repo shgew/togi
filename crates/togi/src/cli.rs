@@ -231,8 +231,12 @@ fn report(error: &clap::Error, out: &mut dyn Write, err: &mut dyn Write) -> Exit
     if !error.use_stderr() {
         return match out.write_all(text.as_bytes()).and_then(|()| out.flush()) {
             Ok(()) => Exit::Ok,
-            Err(e) => {
-                let _ = writeln!(err, "togi: write output: {e}");
+            Err(error) => {
+                let _ = writeln!(
+                    err,
+                    "togi: write output: {}",
+                    togi_render::error_chain(&error)
+                );
                 Exit::Error
             }
         };

@@ -13,7 +13,7 @@ use togi_journal::{
 use togi_machine::{CoreId, CoreSet, Regime};
 use togi_render::escape_text;
 use togi_tuner::{HuntGroup, PhaseNo, Projection};
-use togi_watch::model::Snapshot;
+use togi_watch::model::{FoldError, Snapshot};
 use togi_watch::words::{candidate_word, group_word, noun, phase_word};
 
 use crate::cli::{Context, examples};
@@ -69,8 +69,8 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
             let message = format!("no session in {}", ctx.state_dir.display());
             return fail(ctx, "status", message);
         }
-        Err(Problem::Replay(message)) => {
-            return fail(ctx, "status", message);
+        Err(Problem::Replay(error)) => {
+            return fail(ctx, "status", togi_render::error_chain(&error));
         }
     };
     if let Err(error) = ctx
@@ -78,7 +78,11 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
         .write_all(text.as_bytes())
         .and_then(|()| ctx.out.flush())
     {
-        return fail(ctx, "status", format!("write output: {error}"));
+        return fail(
+            ctx,
+            "status",
+            format!("write output: {}", togi_render::error_chain(&error)),
+        );
     }
     read::report(ctx, "status", &recording);
     Exit::Ok
@@ -86,7 +90,7 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
 
 enum Problem {
     NoSession,
-    Replay(String),
+    Replay(FoldError),
 }
 
 /// Where a hunt's parked offsets came from, as the journal's own message tells them apart.
@@ -166,12 +170,12 @@ impl Scan {
 fn render(events: &[Event]) -> Result<String, Problem> {
     let model = togi_watch::model::project(events);
     if let Some(problem) = model.problem() {
-        return Err(Problem::Replay(togi_render::error_chain(problem)));
+        return Err(Problem::Replay(problem.clone()));
     }
-    let journal = JournalState::replay(events)
-        .map_err(|error| Problem::Replay(togi_render::error_chain(&error)))?;
-    let tuner = togi_tuner::replay(events)
-        .map_err(|error| Problem::Replay(togi_render::error_chain(&error)))?;
+    let journal =
+        JournalState::replay(events).map_err(|error| Problem::Replay(FoldError::Journal(error)))?;
+    let tuner =
+        togi_tuner::replay(events).map_err(|error| Problem::Replay(FoldError::Tuner(error)))?;
     let projection = tuner.project();
     if journal.session.is_none() {
         return Err(Problem::NoSession);

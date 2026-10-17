@@ -456,7 +456,13 @@ fn real_fs_a_host_lock_that_cannot_be_opened_exits_1() {
         .join("togi.lock");
     let ran = doctor(&host, &host.lock.with_file_name("state"), &[]);
     assert_eq!(ran.exit, Exit::Error, "{}", ran.err);
-    assert!(ran.err.contains("missing/togi.lock"), "{}", ran.err);
+    assert_eq!(
+        ran.err,
+        format!(
+            "togi doctor: resolve the parent directory of host lock {}: No such file or directory (os error 2)\n",
+            host.lock.display()
+        )
+    );
     assert_eq!(host.calls.get(), 0);
 }
 

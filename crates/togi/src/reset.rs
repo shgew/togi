@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::io::{ErrorKind, Read as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use clap::{Args as ClapArgs, ValueHint};
@@ -90,7 +90,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             );
             return exit_with(ctx, COMMAND, message, Exit::Locked);
         }
-        Err(error) => return fail(ctx, COMMAND, error),
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     let journal = ctx.state_dir.join(JOURNAL);
     if matches!(journal_nonempty(system, &journal), Err(error) if error.kind() == ErrorKind::NotFound)
@@ -341,22 +341,18 @@ fn finish_without_journal(
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
     if let Some(session) = interrupted {
-        let recovered = dir
-            .open_at(boot, system.now())
-            .map_err(|error| togi_render::error_chain(&error))
-            .and_then(|journal| {
-                journal
-                    .close()
-                    .map_err(|error| togi_render::error_chain(&error))
-            });
-        if let Err(error) = recovered {
-            return fail(ctx, COMMAND, error);
+        let journal = match dir.open_at(boot, system.now()) {
+            Ok(journal) => journal,
+            Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
+        };
+        if let Err(error) = journal.close() {
+            return fail(ctx, COMMAND, togi_render::error_chain(&error));
         }
         let journal = ctx.state_dir.join(JOURNAL);
         if journal_nonempty(system, &journal).is_ok_and(|nonempty| !nonempty)
             && let Err(error) = remove_durably(system.journal_fs().as_deref(), &journal)
         {
-            return fail(ctx, COMMAND, error);
+            return fail(ctx, COMMAND, togi_render::error_chain(&error));
         }
         return emit(
             ctx,
@@ -379,22 +375,45 @@ fn finish_without_journal(
     }
 }
 
-/// Removes `path` and syncs its directory, so the removal survives a crash; the error names the
-/// step that failed.
+/// Why a removal did not survive a crash: the step that failed.
+#[derive(Debug, thiserror::Error)]
+enum RemoveError {
+    #[error("remove {}", path.display())]
+    Remove {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("sync {}", path.display())]
+    Sync {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+/// Removes `path` and syncs its directory, so the removal survives a crash.
 fn remove_durably(
     filesystem: Option<&dyn togi_journal::fs::Fs>,
     path: &Path,
-) -> Result<(), String> {
+) -> Result<(), RemoveError> {
     let dir = path.parent().unwrap_or(Path::new("."));
-    if let Some(fs) = filesystem {
-        fs.remove_file(path)
-            .map_err(|error| format!("remove {}: {error}", path.display()))?;
-        fs.sync_dir(dir)
-            .map_err(|error| format!("sync {}: {error}", dir.display()))
-    } else {
-        fs::remove_file(path).map_err(|error| format!("remove {}: {error}", path.display()))?;
-        sync_directory(dir).map_err(|error| format!("sync {}: {error}", dir.display()))
-    }
+    let removed = match filesystem {
+        Some(fs) => fs.remove_file(path),
+        None => fs::remove_file(path),
+    };
+    removed.map_err(|source| RemoveError::Remove {
+        path: path.to_owned(),
+        source,
+    })?;
+    let synced = match filesystem {
+        Some(fs) => fs.sync_dir(dir),
+        None => sync_directory(dir),
+    };
+    synced.map_err(|source| RemoveError::Sync {
+        path: dir.to_owned(),
+        source,
+    })
 }
 
 #[expect(

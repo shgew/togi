@@ -19,6 +19,7 @@ use rustix::termios::{
     LocalModes, OptionalActions, QueueSelector, Termios, tcflush, tcgetattr, tcsetattr,
 };
 use togi_render::escape_text;
+use togi_watch::terminal;
 
 use crate::panics;
 
@@ -58,7 +59,19 @@ pub trait Surface: Send + Sync {
     /// # Errors
     ///
     /// Why it cannot show or stopped showing.
-    fn draw(&self, state_dir: &Path, since: u64, stop: &Stop) -> Result<(), String>;
+    fn draw(&self, state_dir: &Path, since: u64, stop: &Stop) -> Result<(), terminal::Error>;
+}
+
+/// Why the dashboard gave way to event lines.
+#[derive(Debug, thiserror::Error)]
+pub enum Failure {
+    #[error(transparent)]
+    Draw(terminal::Error),
+    /// The panic message of the drawing.
+    #[error("{0}")]
+    Panicked(String),
+    #[error("spawn the dashboard thread")]
+    Spawn(#[source] io::Error),
 }
 
 /// The `watch` dashboard of `togi-watch`, drawn on stderr. It takes no keys, and listens only for SIGWINCH:
@@ -67,7 +80,7 @@ pub trait Surface: Send + Sync {
 pub struct Watch;
 
 impl Surface for Watch {
-    fn draw(&self, state_dir: &Path, since: u64, stop: &Stop) -> Result<(), String> {
+    fn draw(&self, state_dir: &Path, since: u64, stop: &Stop) -> Result<(), terminal::Error> {
         let ended = togi_watch::terminal::Stop::new();
         draw_until(stop, &ended, || {
             togi_watch::terminal::run_after(state_dir, since, &ended, rustix::stdio::stderr(), None)
@@ -81,8 +94,8 @@ impl Surface for Watch {
 fn draw_until(
     stop: &Stop,
     ended: &togi_watch::terminal::Stop,
-    draw: impl FnOnce() -> Result<(), togi_watch::terminal::Error>,
-) -> Result<(), String> {
+    draw: impl FnOnce() -> Result<(), terminal::Error>,
+) -> Result<(), terminal::Error> {
     struct Release<'a>(&'a Stop);
     impl Drop for Release<'_> {
         fn drop(&mut self) {
@@ -95,7 +108,7 @@ fn draw_until(
             ended.stop();
         });
         let _release = Release(stop);
-        draw().map_err(|error| togi_render::error_chain(&error))
+        draw()
     })
 }
 
@@ -162,14 +175,14 @@ impl Effects {
     }
 }
 
-type Notice = Arc<dyn Fn(&str) + Send + Sync>;
+type Notice = Arc<dyn Fn(&Failure) + Send + Sync>;
 
 /// Says on stderr that the dashboard gave way to event lines.
-fn print_fallback(message: &str) {
+fn print_fallback(failure: &Failure) {
     let _ = writeln!(
         io::stderr(),
         "togi run: dashboard: {}; printing events instead",
-        escape_text(message)
+        escape_text(&togi_render::error_chain(failure))
     );
 }
 
@@ -205,7 +218,7 @@ impl Dashboard {
         surface: Arc<dyn Surface>,
         state_dir: &Path,
         since: u64,
-        notice: impl Fn(&str) + Send + Sync + 'static,
+        notice: impl Fn(&Failure) + Send + Sync + 'static,
     ) -> Self {
         Self::with_effects(
             surface,
@@ -276,11 +289,12 @@ impl Dashboard {
                 let drawn = panics::contained(|| surface.draw(&state_dir, since, &thread_stop));
                 let failed = match drawn {
                     Ok(Ok(())) => None,
-                    Ok(Err(message)) | Err(message) => Some(message),
+                    Ok(Err(error)) => Some(Failure::Draw(error)),
+                    Err(message) => Some(Failure::Panicked(message)),
                 };
-                if let Some(message) = failed {
+                if let Some(failure) = failed {
                     // The notice comes first: event lines flow again only once it is out.
-                    notice(&message);
+                    notice(&failure);
                     visible.store(false, Ordering::SeqCst);
                     effects.screen_owned(false);
                 }
@@ -296,7 +310,7 @@ impl Dashboard {
             Err(error) => {
                 self.visible.store(false, Ordering::SeqCst);
                 self.effects.screen_owned(false);
-                (self.notice)(&error.to_string());
+                (self.notice)(&Failure::Spawn(error));
             }
         }
     }
