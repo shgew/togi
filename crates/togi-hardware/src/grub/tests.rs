@@ -11,6 +11,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use tempfile::TempDir;
+use test_case::test_case;
 use togi_tuningboot::{
     COUNT_VARIABLE, Environment as _, LeaveReason, REASON_VARIABLE, RestartCount, clear_reason,
     read_reason, reset_count, restart_limit, write_reason,
@@ -244,29 +245,19 @@ fn the_bootloader_trait_reports_a_clear_failure_as_an_io_error_holding_the_typed
     assert_eq!(inner.before(), Some("togi"));
 }
 
-#[test]
-fn saved_entry_parsing_keeps_exactly_the_value() {
-    for (listing, want) in [
-        (
-            "next_entry=togi\nother_saved_entry=wrong\nsaved_entry_extra=wrong\n",
-            None,
-        ),
-        (
-            "next_entry=normal\nsaved_entry= togi-specialisation \t\n",
-            Some(" togi-specialisation \t"),
-        ),
-        ("saved_entry=menu=entry\n", Some("menu=entry")),
-        ("saved_entry=\n", Some("")),
-        ("next_entry=normal\nsaved_entry=togi", Some("togi")),
-        ("saved_entry=first\nsaved_entry=second\n", Some("first")),
-        ("saved_entry=value\r\n", Some("value\r")),
-    ] {
-        assert_eq!(
-            lookup(listing, "saved_entry").as_deref(),
-            want,
-            "{listing:?}"
-        );
-    }
+#[test_case("next_entry=togi\nother_saved_entry=wrong\nsaved_entry_extra=wrong\n", None; "similar names are not the variable")]
+#[test_case("next_entry=normal\nsaved_entry= togi-specialisation \t\n", Some(" togi-specialisation \t"); "surrounding whitespace is kept")]
+#[test_case("saved_entry=menu=entry\n", Some("menu=entry"); "only the first equals splits")]
+#[test_case("saved_entry=\n", Some(""); "empty value")]
+#[test_case("next_entry=normal\nsaved_entry=togi", Some("togi"); "no final newline")]
+#[test_case("saved_entry=first\nsaved_entry=second\n", Some("first"); "first of two wins")]
+#[test_case("saved_entry=value\r\n", Some("value\r"); "carriage return is kept")]
+fn saved_entry_parsing_keeps_exactly_the_value(listing: &str, want: Option<&str>) {
+    assert_eq!(
+        lookup(listing, "saved_entry").as_deref(),
+        want,
+        "{listing:?}"
+    );
 }
 
 #[test]
@@ -308,34 +299,28 @@ fn an_empty_set_or_unset_runs_nothing() {
     assert_eq!(fake.calls(), 0);
 }
 
-#[test]
-fn invalid_names_and_values_are_refused_before_any_command() {
-    let long_value = "a".repeat(301);
-    let long_name = "a".repeat(65);
-    for (name, value) in [
-        ("reason", "retry\nsaved_entry=togi"),
-        ("reason", "retry\0"),
-        ("reason", "retry ☃"),
-        ("reason", long_value.as_str()),
-        ("", "retry"),
-        ("reason=saved_entry", "retry"),
-        ("reason\n", "retry"),
-        (long_name.as_str(), "retry"),
-    ] {
-        let fake = Fake::default();
-        let mut grub = fake.grub();
-        let error = grub.set(&[(name, value)]).unwrap_err();
-        assert_eq!(
-            error.kind(),
-            io::ErrorKind::InvalidInput,
-            "{name:?} {value:?}"
-        );
-        assert_eq!(fake.calls(), 0, "set {name:?} {value:?}");
-        if name != "reason" {
-            assert!(grub.get(name).is_err());
-            assert!(grub.unset(&["saved_entry", name]).is_err());
-            assert_eq!(fake.calls(), 0, "get/unset {name:?}");
-        }
+#[test_case("reason", "retry\nsaved_entry=togi"; "value with a newline")]
+#[test_case("reason", "retry\0"; "value with a nul")]
+#[test_case("reason", "retry ☃"; "value that is not ascii")]
+#[test_case("reason", &"a".repeat(301); "value of 301 bytes")]
+#[test_case("", "retry"; "empty name")]
+#[test_case("reason=saved_entry", "retry"; "name with an equals sign")]
+#[test_case("reason\n", "retry"; "name with a newline")]
+#[test_case(&"a".repeat(65), "retry"; "name of 65 bytes")]
+fn invalid_names_and_values_are_refused_before_any_command(name: &str, value: &str) {
+    let fake = Fake::default();
+    let mut grub = fake.grub();
+    let error = grub.set(&[(name, value)]).unwrap_err();
+    assert_eq!(
+        error.kind(),
+        io::ErrorKind::InvalidInput,
+        "{name:?} {value:?}"
+    );
+    assert_eq!(fake.calls(), 0, "set {name:?} {value:?}");
+    if name != "reason" {
+        assert!(grub.get(name).is_err());
+        assert!(grub.unset(&["saved_entry", name]).is_err());
+        assert_eq!(fake.calls(), 0, "get/unset {name:?}");
     }
 }
 
@@ -347,22 +332,24 @@ fn a_value_of_exactly_300_printable_bytes_is_accepted() {
     assert_eq!(fake.value_of("reason").as_deref(), Some(value.as_str()));
 }
 
-#[test]
-fn whitespace_counts_are_read_exactly_and_grant_no_retry() {
-    for value in [" ", " 1", "1 ", "\t2", "3\r"] {
-        let fake = Fake::with("togi").value(COUNT_VARIABLE, value);
-        let mut grub = fake.grub();
-        assert_eq!(grub.get(COUNT_VARIABLE).unwrap().as_deref(), Some(value));
-        let error = restart_limit(&mut grub).unwrap_err();
-        assert!(
-            matches!(error, togi_tuningboot::Error::InvalidCount(_)),
-            "{error:?}"
-        );
-        assert_eq!(fake.saved(), "togi");
-        assert_eq!(fake.value_of(COUNT_VARIABLE).as_deref(), Some(value));
-        assert_eq!(fake.0.borrow().values.len(), 1);
-        assert_eq!(fake.operations(), [Edit::List, Edit::List], "{value:?}");
-    }
+#[test_case(" "; "a space")]
+#[test_case(" 1"; "leading space")]
+#[test_case("1 "; "trailing space")]
+#[test_case("\t2"; "leading tab")]
+#[test_case("3\r"; "trailing carriage return")]
+fn whitespace_counts_are_read_exactly_and_grant_no_retry(value: &str) {
+    let fake = Fake::with("togi").value(COUNT_VARIABLE, value);
+    let mut grub = fake.grub();
+    assert_eq!(grub.get(COUNT_VARIABLE).unwrap().as_deref(), Some(value));
+    let error = restart_limit(&mut grub).unwrap_err();
+    assert!(
+        matches!(error, togi_tuningboot::Error::InvalidCount(_)),
+        "{error:?}"
+    );
+    assert_eq!(fake.saved(), "togi");
+    assert_eq!(fake.value_of(COUNT_VARIABLE).as_deref(), Some(value));
+    assert_eq!(fake.0.borrow().values.len(), 1);
+    assert_eq!(fake.operations(), [Edit::List, Edit::List], "{value:?}");
 }
 
 #[test]

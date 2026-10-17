@@ -4,6 +4,7 @@ use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use tempfile::TempDir;
+use test_case::test_case;
 use togi_machine::{REGIMES, workload_by_id, workloads};
 
 const LOWEST: &str = "05-A64 ~ Kasumi";
@@ -146,19 +147,18 @@ fn identity_and_detail() {
     );
 }
 
-#[test]
-fn unrelated_entries_are_ignored() {
+#[test_case("00-README"; "readme")]
+#[test_case("24-ZN5"; "prefix without a name")]
+#[test_case("Digits"; "digits directory")]
+fn unrelated_entries_are_ignored(name: &str) {
     let ycruncher = Ycruncher::new("/pkg").unwrap();
-    for name in ["00-README", "24-ZN5", "Digits"] {
-        assert_eq!(
-            ycruncher
-                .check_with(|| discover_names(&ycruncher, &[LOWEST, ZEN5, name]))
-                .unwrap()
-                .detail,
-            detail(Path::new("/pkg")),
-            "{name}"
-        );
-    }
+    assert_eq!(
+        ycruncher
+            .check_with(|| discover_names(&ycruncher, &[LOWEST, ZEN5, name]))
+            .unwrap()
+            .detail,
+        detail(Path::new("/pkg"))
+    );
 }
 
 #[test]
@@ -178,74 +178,73 @@ fn discovery_order_does_not_decide_the_choice() {
     );
 }
 
-#[test]
-fn discovery_checks_lowest_then_zen5_and_stops_on_failure() {
+#[test_case(None; "both pass")]
+#[test_case(Some(LOWEST); "lowest fails")]
+#[test_case(Some(ZEN5); "zen5 fails")]
+fn discovery_checks_lowest_then_zen5_and_stops_on_failure(failed: Option<&str>) {
     let ycruncher = Ycruncher::new("/pkg").unwrap();
     let root = ycruncher.pkg.join(BINARIES);
-    for failed in [None, Some(LOWEST), Some(ZEN5)] {
-        let mut checked = Vec::new();
-        let result = ycruncher.discover_with(
-            |_| Ok(vec![OsString::from(ZEN5), OsString::from(LOWEST)]),
-            |name, path| {
-                assert_eq!(name, NAME);
-                checked.push(path.to_owned());
-                if failed.is_some_and(|failed| path == root.join(failed)) {
-                    Err(Error::NotExecutable {
-                        name,
-                        path: path.to_owned(),
-                    })
-                } else {
-                    Ok(())
-                }
-            },
-        );
-        let expected = if failed == Some(LOWEST) {
-            vec![root.join(LOWEST)]
-        } else {
-            vec![root.join(LOWEST), root.join(ZEN5)]
-        };
-        assert_eq!(checked, expected);
-        match failed {
-            Some(failed) => assert!(matches!(
-                result,
-                Err(Error::NotExecutable { path, .. }) if path == root.join(failed)
-            )),
-            None => assert!(result.is_ok()),
-        }
+    let mut checked = Vec::new();
+    let result = ycruncher.discover_with(
+        |_| Ok(vec![OsString::from(ZEN5), OsString::from(LOWEST)]),
+        |name, path| {
+            assert_eq!(name, NAME);
+            checked.push(path.to_owned());
+            if failed.is_some_and(|failed| path == root.join(failed)) {
+                Err(Error::NotExecutable {
+                    name,
+                    path: path.to_owned(),
+                })
+            } else {
+                Ok(())
+            }
+        },
+    );
+    let expected = if failed == Some(LOWEST) {
+        vec![root.join(LOWEST)]
+    } else {
+        vec![root.join(LOWEST), root.join(ZEN5)]
+    };
+    assert_eq!(checked, expected);
+    match failed {
+        Some(failed) => assert!(matches!(
+            result,
+            Err(Error::NotExecutable { path, .. }) if path == root.join(failed)
+        )),
+        None => assert!(result.is_ok()),
     }
 }
 
-#[test]
-fn directory_read_errors_precede_executable_checks() {
+#[test_case(io::ErrorKind::NotFound; "not found")]
+#[test_case(io::ErrorKind::PermissionDenied; "permission denied")]
+fn directory_read_errors_precede_executable_checks(kind: io::ErrorKind) {
     let ycruncher = Ycruncher::new("/pkg").unwrap();
-    for kind in [io::ErrorKind::NotFound, io::ErrorKind::PermissionDenied] {
-        let error = ycruncher
-            .discover_with(
-                |root| {
-                    assert_eq!(root, ycruncher.pkg.join(BINARIES));
-                    Err(kind.into())
-                },
-                |_, _| panic!("failed directory reads must precede executable checks"),
-            )
-            .unwrap_err();
-        match error {
-            Error::BinariesMissing { source, .. } => {
-                assert_eq!(kind, io::ErrorKind::NotFound);
-                assert_eq!(source.kind(), kind);
-            }
-            Error::ReadBinaries { source, .. } => {
-                assert_eq!(kind, io::ErrorKind::PermissionDenied);
-                assert_eq!(source.kind(), kind);
-            }
-            other @ (Error::Missing { .. }
-            | Error::Stat { .. }
-            | Error::NotExecutable { .. }
-            | Error::NoBinaries { .. }
-            | Error::NoZen5 { .. }
-            | Error::Unsupported { .. }
-            | Error::NoCpus { .. }
-            | Error::Pattern { .. }) => panic!("{other:?}"),
+    let error = ycruncher
+        .discover_with(
+            |root| {
+                assert_eq!(root, ycruncher.pkg.join(BINARIES));
+                Err(kind.into())
+            },
+            |_, _| panic!("failed directory reads must precede executable checks"),
+        )
+        .unwrap_err();
+    match error {
+        Error::BinariesMissing { source, .. } => {
+            assert_eq!(kind, io::ErrorKind::NotFound);
+            assert_eq!(source.kind(), kind);
         }
+        Error::ReadBinaries { source, .. } => {
+            assert_eq!(kind, io::ErrorKind::PermissionDenied);
+            assert_eq!(source.kind(), kind);
+        }
+        other @ (Error::Missing { .. }
+        | Error::Stat { .. }
+        | Error::NotExecutable { .. }
+        | Error::NoBinaries { .. }
+        | Error::NoZen5 { .. }
+        | Error::Unsupported { .. }
+        | Error::NoCpus { .. }
+        | Error::Pattern { .. }) => panic!("{other:?}"),
     }
 }
 
@@ -336,25 +335,26 @@ fn only_a_non_matching_non_utf8_name_is_no_binary() {
     assert!(matches!(error, Error::NoBinaries { .. }), "{error:?}");
 }
 
-#[test]
-fn real_fs_both_chosen_binaries_must_be_executable_regular_files() {
-    for (name, directory) in [(LOWEST, false), (ZEN5, false), (LOWEST, true), (ZEN5, true)] {
-        let pkg = fake_package(true);
-        let path = binaries_dir(&pkg).join(name);
-        if directory {
-            fs::remove_file(&path).unwrap();
-            fs::create_dir(&path).unwrap();
-        } else {
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-        }
-        let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
-        assert!(
-            matches!(&error, Error::NotExecutable { path: named, .. } if *named == path),
-            "{name} directory={directory}: {error:?}"
-        );
-        assert!(!error.is_missing());
-        assert!(error.to_string().contains(&path.display().to_string()));
+#[test_case(LOWEST, false; "lowest without execute bit")]
+#[test_case(ZEN5, false; "zen5 without execute bit")]
+#[test_case(LOWEST, true; "lowest is a directory")]
+#[test_case(ZEN5, true; "zen5 is a directory")]
+fn real_fs_both_chosen_binaries_must_be_executable_regular_files(name: &str, directory: bool) {
+    let pkg = fake_package(true);
+    let path = binaries_dir(&pkg).join(name);
+    if directory {
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+    } else {
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
     }
+    let error = Ycruncher::new(pkg.path()).unwrap().check().unwrap_err();
+    assert!(
+        matches!(&error, Error::NotExecutable { path: named, .. } if *named == path),
+        "{error:?}"
+    );
+    assert!(!error.is_missing());
+    assert!(error.to_string().contains(&path.display().to_string()));
 }
 
 #[test]
@@ -462,55 +462,37 @@ fn expected_config(cpus: &str, memory: u64, tests: &[&str]) -> String {
     )
 }
 
-#[test]
-fn plans_match_exactly() {
+#[test_case("ycruncher-bkt-sftv4", LOWEST, &["BKT", "SFTv4"], &[2], "2", 33_554_432; "bkt sftv4 on the lowest binary")]
+#[test_case("ycruncher-snt-svt", LOWEST, &["SNT", "SVT"], &[2, 18], "2 18", 67_108_864; "snt svt on two cpus")]
+#[test_case("ycruncher-fftv4-n63-vt3", ZEN5, &["FFTv4", "N63", "VT3"], &[2], "2", 33_554_432; "fftv4 n63 vt3 on the zen5 binary")]
+fn plans_match_exactly(
+    base: &str,
+    binary: &str,
+    tests: &[&str],
+    ids: &[u16],
+    text: &str,
+    memory: u64,
+) {
     let pkg = Path::new("/pkg");
-    let ycruncher = Ycruncher::new(pkg).unwrap();
     let dir = Path::new("/w");
-    for (base, binary, tests, ids, text, memory) in [
-        (
-            "ycruncher-bkt-sftv4",
-            LOWEST,
-            &["BKT", "SFTv4"][..],
-            vec![2],
-            "2",
-            33_554_432,
-        ),
-        (
-            "ycruncher-snt-svt",
-            LOWEST,
-            &["SNT", "SVT"],
-            vec![2, 18],
-            "2 18",
-            67_108_864,
-        ),
-        (
-            "ycruncher-fftv4-n63-vt3",
-            ZEN5,
-            &["FFTv4", "N63", "VT3"],
-            vec![2],
-            "2",
-            33_554_432,
-        ),
-    ] {
-        let got = ycruncher
-            .plan_with(workload(base), dir, &cpus(&ids), memory_binaries)
-            .unwrap();
-        let want = Plan {
-            program: pkg.join(BINARIES).join(binary),
-            args: ["skip-warnings", "pause:-2", "status:none", "config"]
-                .into_iter()
-                .map(OsString::from)
-                .chain([dir.join("stress.cfg").into_os_string()])
-                .collect(),
-            inputs: vec![Input {
-                name: "stress.cfg".parse().unwrap(),
-                contents: expected_config(text, memory, tests).into_bytes(),
-            }],
-            watched: Vec::new(),
-        };
-        assert_eq!(got, want, "{base}");
-    }
+    let got = Ycruncher::new(pkg)
+        .unwrap()
+        .plan_with(workload(base), dir, &cpus(ids), memory_binaries)
+        .unwrap();
+    let want = Plan {
+        program: pkg.join(BINARIES).join(binary),
+        args: ["skip-warnings", "pause:-2", "status:none", "config"]
+            .into_iter()
+            .map(OsString::from)
+            .chain([dir.join("stress.cfg").into_os_string()])
+            .collect(),
+        inputs: vec![Input {
+            name: "stress.cfg".parse().unwrap(),
+            contents: expected_config(text, memory, tests).into_bytes(),
+        }],
+        watched: Vec::new(),
+    };
+    assert_eq!(got, want);
 }
 
 #[test]
@@ -648,32 +630,19 @@ fn classify(line: &str) -> Line {
     Ycruncher::new("").unwrap().classify(line)
 }
 
-#[test]
-fn affinity_cpu_is_parsed_after_stripping_colour() {
-    for (line, want) in [
-        (
-            "\x1b[31mFailed to set core affinity to core:  3\x1b[0m",
-            Some(3),
-        ),
-        ("Failed to set core affinity to core: 3", Some(3)),
-        ("failed to set core affinity to core:3", Some(3)),
-        ("FAILED TO SET CORE AFFINITY TO CORE: 17", Some(17)),
-        (
-            "Failed to set core affinity to core: \x1b[1;31m65535",
-            Some(65535),
-        ),
-        ("Failed to set core affinity to core: 65536", None),
-        (
-            "Failed to set core affinity to core: 99999999999999999999999",
-            None,
-        ),
-    ] {
-        assert_eq!(
-            classify(line),
-            Line::AffinityError(want.map(CpuId)),
-            "{line:?}"
-        );
-    }
+#[test_case("\x1b[31mFailed to set core affinity to core:  3\x1b[0m", Some(3); "coloured line")]
+#[test_case("Failed to set core affinity to core: 3", Some(3); "plain line")]
+#[test_case("failed to set core affinity to core:3", Some(3); "lower case without space")]
+#[test_case("FAILED TO SET CORE AFFINITY TO CORE: 17", Some(17); "upper case")]
+#[test_case("Failed to set core affinity to core: \x1b[1;31m65535", Some(65535); "coloured largest cpu")]
+#[test_case("Failed to set core affinity to core: 65536", None; "cpu past u16")]
+#[test_case("Failed to set core affinity to core: 99999999999999999999999", None; "cpu past u64")]
+fn affinity_cpu_is_parsed_after_stripping_colour(line: &str, want: Option<u16>) {
+    assert_eq!(
+        classify(line),
+        Line::AffinityError(want.map(CpuId)),
+        "{line:?}"
+    );
 }
 
 #[test]
@@ -684,47 +653,32 @@ fn affinity_without_a_number_is_not_an_affinity_error() {
     );
 }
 
-#[test]
-fn every_computation_alternative_is_recognised() {
-    for line in [
-        "Error(s) encountered on logical core 3.",
-        "Coefficient is too large",
-        "Checksum mismatch",
-        "Running BKT: FAIL",
-        "Running  SFTv4:FAIL",
-        "Running\tN63:  Fail  Test Speed",
-        "running bkt: fail",
-        "\x1b[01;37mRunning BKT: \x1b[01;31mFAIL\x1b[01;37m",
-    ] {
-        assert_eq!(classify(line), Line::ComputationError, "{line:?}");
-    }
+#[test_case("Error(s) encountered on logical core 3."; "errors on a core")]
+#[test_case("Coefficient is too large"; "coefficient too large")]
+#[test_case("Checksum mismatch"; "checksum mismatch")]
+#[test_case("Running BKT: FAIL"; "test fail")]
+#[test_case("Running  SFTv4:FAIL"; "fail without space")]
+#[test_case("Running\tN63:  Fail  Test Speed"; "tab and speed")]
+#[test_case("running bkt: fail"; "lower case")]
+#[test_case("\x1b[01;37mRunning BKT: \x1b[01;31mFAIL\x1b[01;37m"; "coloured fail")]
+fn every_computation_alternative_is_recognised(line: &str) {
+    assert_eq!(classify(line), Line::ComputationError, "{line:?}");
 }
 
-#[test]
-fn every_setup_alternative_is_recognised() {
-    for line in [
-        "InvalidParametersException",
-        "Exception Encountered: InvalidParametersException",
-        "Invalid Parameter: NOPE",
-        "invalid parameter",
-    ] {
-        assert_eq!(classify(line), Line::SetupError, "{line:?}");
-    }
+#[test_case("InvalidParametersException"; "exception name")]
+#[test_case("Exception Encountered: InvalidParametersException"; "exception encountered")]
+#[test_case("Invalid Parameter: NOPE"; "invalid parameter named")]
+#[test_case("invalid parameter"; "lower case invalid parameter")]
+fn every_setup_alternative_is_recognised(line: &str) {
+    assert_eq!(classify(line), Line::SetupError, "{line:?}");
 }
 
-#[test]
-fn progress_names_the_test() {
-    for (line, want) in [
-        ("\x1b[32mRunning BKT: Passed\x1b[0m", "BKT passed"),
-        (
-            "Running FFTv4: Passed  Test Speed:  3.9 * 10^09  bits / sec",
-            "FFTv4 passed",
-        ),
-        ("running snt:passed", "snt passed"),
-        ("Running   VT3:   PASSED", "VT3 passed"),
-    ] {
-        assert_eq!(classify(line), Line::Progress(want.to_owned()), "{line:?}");
-    }
+#[test_case("\x1b[32mRunning BKT: Passed\x1b[0m", "BKT passed"; "coloured pass")]
+#[test_case("Running FFTv4: Passed  Test Speed:  3.9 * 10^09  bits / sec", "FFTv4 passed"; "pass with speed")]
+#[test_case("running snt:passed", "snt passed"; "lower case without space")]
+#[test_case("Running   VT3:   PASSED", "VT3 passed"; "upper case with spaces")]
+fn progress_names_the_test(line: &str, want: &str) {
+    assert_eq!(classify(line), Line::Progress(want.to_owned()), "{line:?}");
 }
 
 #[test]
@@ -742,18 +696,14 @@ fn carriage_return_separated_progress() {
     );
 }
 
-#[test]
-fn ordinary_lines_are_other() {
-    for line in [
-        "",
-        "Insufficient permissions to set thread priority. Please retry as root.",
-        "Running from console...",
-        "Running as unit: run-p419937-i368450.scope; invocation ID: c9c3fd24bde74cea91b442193412b008",
-        "Running BKT: Started",
-        "\x1b[39;49m\x1b[01;37m",
-    ] {
-        assert_eq!(classify(line), Line::Other, "{line:?}");
-    }
+#[test_case(""; "empty")]
+#[test_case("Insufficient permissions to set thread priority. Please retry as root."; "priority warning")]
+#[test_case("Running from console..."; "console banner")]
+#[test_case("Running as unit: run-p419937-i368450.scope; invocation ID: c9c3fd24bde74cea91b442193412b008"; "systemd-run banner")]
+#[test_case("Running BKT: Started"; "test started")]
+#[test_case("\x1b[39;49m\x1b[01;37m"; "only colour codes")]
+fn ordinary_lines_are_other(line: &str) {
+    assert_eq!(classify(line), Line::Other, "{line:?}");
 }
 
 #[test]
@@ -783,37 +733,20 @@ fn progress(test: &str) -> Line {
     Line::Progress(format!("{test} passed"))
 }
 
-#[test]
-fn passing_fixtures_report_progress() {
-    for (name, data, test) in [
-        (
-            "lowest-pass.txt",
-            include_str!("../testdata/lowest-pass.txt"),
-            "BKT",
-        ),
-        (
-            "snt-pass.txt",
-            include_str!("../testdata/snt-pass.txt"),
-            "SNT",
-        ),
-        (
-            "zen5-pass.txt",
-            include_str!("../testdata/zen5-pass.txt"),
-            "FFTv4",
-        ),
-    ] {
-        let lines = fixture(data);
-        assert!(lines.contains(&progress(test)), "{name}");
-        for failure in [Line::ComputationError, Line::SetupError] {
-            assert!(!lines.contains(&failure), "{name}");
-        }
-        assert!(
-            !lines
-                .iter()
-                .any(|line| matches!(line, Line::AffinityError(_))),
-            "{name}"
-        );
+#[test_case(include_str!("../testdata/lowest-pass.txt"), "BKT"; "lowest-pass.txt")]
+#[test_case(include_str!("../testdata/snt-pass.txt"), "SNT"; "snt-pass.txt")]
+#[test_case(include_str!("../testdata/zen5-pass.txt"), "FFTv4"; "zen5-pass.txt")]
+fn passing_fixtures_report_progress(data: &str, test: &str) {
+    let lines = fixture(data);
+    assert!(lines.contains(&progress(test)));
+    for failure in [Line::ComputationError, Line::SetupError] {
+        assert!(!lines.contains(&failure), "{failure:?}");
     }
+    assert!(
+        !lines
+            .iter()
+            .any(|line| matches!(line, Line::AffinityError(_)))
+    );
 }
 
 #[test]
