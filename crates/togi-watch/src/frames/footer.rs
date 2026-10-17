@@ -8,16 +8,23 @@ use super::colours::Paint;
 use super::draw::put;
 use super::fit::{Clause, Form, fit_clauses};
 use super::layout::Layout;
-use crate::screen::{Colours, Screen, View};
+use crate::screen::{Colours, Quit, Screen, View};
 
 /// The footer's keys in `view`, in `width` display cells, followed by `after` (the held journal's arrival
 /// count, then the skipped report).
 ///
 /// Labels shorten before a key is left out. All four keys stay down to 20 cells, with or without `after`; below
-/// that every key but the close key may go, and `q` is shown whole whenever one cell fits. Active and
-/// current-view styling stays the same in the shortened forms.
+/// that every key but the exit key may go, and `q` is shown whole whenever one cell fits. Active and
+/// current-view styling stays the same in the shortened forms. With [`Quit::Ignored`] the exit key is not a key
+/// at all: no hint names `q`, and the other three go first as the line narrows.
 #[must_use]
-pub fn key_hints(view: View, width: usize, after: &[Clause], colours: Colours) -> Line<'static> {
+pub fn key_hints(
+    view: View,
+    width: usize,
+    after: &[Clause],
+    colours: Colours,
+    quit: Quit,
+) -> Line<'static> {
     struct Hint {
         name: &'static str,
         label: &'static str,
@@ -45,13 +52,16 @@ pub fn key_hints(view: View, width: usize, after: &[Clause], colours: Colours) -
         },
         Hint {
             name: "q",
-            label: "close view",
+            label: "exit dashboard",
             active: true,
             current: false,
         },
     ];
     let mut clauses = Vec::with_capacity(keys.len() + after.len());
-    for key in keys {
+    for key in keys
+        .into_iter()
+        .take(if quit == Quit::Keys { 4 } else { 3 })
+    {
         let (chip, label) = if key.current {
             (Paint::Current, Paint::Grey)
         } else if key.active {
@@ -68,7 +78,7 @@ pub fn key_hints(view: View, width: usize, after: &[Clause], colours: Colours) -
         };
         let mut forms = vec![Form::new(pair(format!(" {} ", key.name), key.label), 10)];
         if key.name == "q" {
-            forms.push(Form::new(pair(" q ".to_owned(), "close"), 10));
+            forms.push(Form::new(pair(" q ".to_owned(), "exit"), 10));
         }
         forms.push(Form::new(chip.span(colours, key.name), 1));
         if key.name != "q" {
@@ -110,7 +120,7 @@ pub fn footer(screen: &Screen, after: &[Clause], buf: &mut Buffer) {
     let layout = Layout::new(screen);
     let width = usize::from(layout.footer.width);
     let line = if screen.keys {
-        key_hints(screen.view, width, after, screen.colours)
+        key_hints(screen.view, width, after, screen.colours, screen.quit)
     } else if after.is_empty() {
         return;
     } else {
@@ -130,7 +140,7 @@ mod tests {
     use crate::frames::fit::{Clause, Form, display_width, plain};
     use crate::frames::layout::Layout;
     use crate::frames::testing::{assert_frame_bounds, draw_checked, screen};
-    use crate::screen::{Colours, Drawn, Hold, View};
+    use crate::screen::{Colours, Drawn, Hold, Quit, Screen, View};
 
     const VIEWS: [View; 3] = [View::Main, View::Help, View::Log];
 
@@ -138,9 +148,21 @@ mod tests {
     fn the_skipped_report_follows_the_keys_whole_and_then_as_a_pointer_that_keeps_them() {
         let report = "skipped 1 event of a kind this build does not know (future.thing at line 3)";
         let after = [skipped_clause(report, Colours::None)];
-        let wide = plain(&key_hints(View::Main, 200, &after, Colours::None));
+        let wide = plain(&key_hints(
+            View::Main,
+            200,
+            &after,
+            Colours::None,
+            Quit::Keys,
+        ));
         assert!(wide.contains(report), "{wide}");
-        let narrow = plain(&key_hints(View::Main, 100, &after, Colours::None));
+        let narrow = plain(&key_hints(
+            View::Main,
+            100,
+            &after,
+            Colours::None,
+            Quit::Keys,
+        ));
         assert!(narrow.contains("togi events"), "{narrow}");
         let fields: Vec<&str> = narrow.split_whitespace().collect();
         for key in ["?", "l", "esc", "q"] {
@@ -156,7 +178,7 @@ mod tests {
         let after = [skipped_clause(REPORT, Colours::None)];
         for view in VIEWS {
             for width in 20..=120 {
-                let text = plain(&key_hints(view, width, &after, Colours::None));
+                let text = plain(&key_hints(view, width, &after, Colours::None, Quit::Keys));
                 assert!(display_width(&text) <= width, "{view:?} {width}: {text:?}");
                 let fields: Vec<&str> = text.split_whitespace().collect();
                 for key in ["?", "l", "esc", "q"] {
@@ -176,7 +198,15 @@ mod tests {
     #[test]
     fn the_skipped_warning_shortens_by_steps_at_normal_narrow_widths() {
         let after = [skipped_clause(REPORT, Colours::None)];
-        let text = |width| plain(&key_hints(View::Help, width, &after, Colours::None));
+        let text = |width| {
+            plain(&key_hints(
+                View::Help,
+                width,
+                &after,
+                Colours::None,
+                Quit::Keys,
+            ))
+        };
         assert!(text(20).ends_with("   !"), "{}", text(20));
         assert!(text(30).ends_with("   skipped"), "{}", text(30));
         assert!(
@@ -197,7 +227,7 @@ mod tests {
         let after = [skipped_clause(REPORT, Colours::None)];
         for view in VIEWS {
             for width in 1..20 {
-                let text = plain(&key_hints(view, width, &after, Colours::None));
+                let text = plain(&key_hints(view, width, &after, Colours::None, Quit::Keys));
                 assert!(display_width(&text) <= width, "{view:?} {width}: {text:?}");
                 assert!(
                     text.split_whitespace().any(|key| key == "q"),
@@ -207,7 +237,10 @@ mod tests {
                     assert!(text.contains('!'), "{view:?} {width}: {text:?}");
                 }
             }
-            assert_eq!(plain(&key_hints(view, 0, &after, Colours::None)), "");
+            assert_eq!(
+                plain(&key_hints(view, 0, &after, Colours::None, Quit::Keys)),
+                ""
+            );
         }
     }
 
@@ -215,9 +248,9 @@ mod tests {
     fn the_skipped_warning_keeps_its_amber_and_the_keys_their_style() {
         let after = [skipped_clause(REPORT, Colours::Full)];
         for view in VIEWS {
-            let reference = key_hints(view, 80, &[], Colours::Full);
+            let reference = key_hints(view, 80, &[], Colours::Full, Quit::Keys);
             for width in [20, 30, 40, 50] {
-                let line = key_hints(view, width, &after, Colours::Full);
+                let line = key_hints(view, width, &after, Colours::Full, Quit::Keys);
                 for key in ["?", "l", "esc", "q"] {
                     let style = |line: &ratatui::text::Line<'_>| {
                         line.spans
@@ -327,7 +360,7 @@ mod tests {
     fn q_is_the_last_key_left_out_and_shown_whole_when_one_cell_fits() {
         for view in VIEWS {
             for width in 1..20 {
-                let line = key_hints(view, width, &[], Colours::None);
+                let line = key_hints(view, width, &[], Colours::None, Quit::Keys);
                 let text = plain(&line);
                 assert!(display_width(&text) <= width, "{view:?} {width}: {text:?}");
                 assert!(
@@ -335,16 +368,19 @@ mod tests {
                     "{view:?} {width}: {text:?}"
                 );
             }
-            assert_eq!(plain(&key_hints(view, 0, &[], Colours::None)), "");
+            assert_eq!(
+                plain(&key_hints(view, 0, &[], Colours::None, Quit::Keys)),
+                ""
+            );
         }
     }
 
     #[test]
     fn the_full_footer_names_every_key_and_marks_the_view_on_screen() {
-        let line = key_hints(View::Help, 80, &[], Colours::Full);
+        let line = key_hints(View::Help, 80, &[], Colours::Full, Quit::Keys);
         assert_eq!(
             plain(&line),
-            " ?  help    l  log    esc  back    q  close view"
+            " ?  help    l  log    esc  back    q  exit dashboard"
         );
         let style_of = |text: &str| {
             line.spans
@@ -355,7 +391,7 @@ mod tests {
         assert_eq!(style_of(" ? "), Some(Paint::Current.style(Colours::Full)));
         assert_eq!(style_of(" l "), Some(Paint::Chip.style(Colours::Full)));
         assert_eq!(style_of(" q "), Some(Paint::Chip.style(Colours::Full)));
-        let main = key_hints(View::Main, 80, &[], Colours::Full);
+        let main = key_hints(View::Main, 80, &[], Colours::Full, Quit::Keys);
         let esc = main
             .spans
             .iter()
@@ -371,7 +407,7 @@ mod tests {
     #[test]
     fn without_colour_the_footer_carries_no_style() {
         for view in VIEWS {
-            let line = key_hints(view, 80, &[], Colours::None);
+            let line = key_hints(view, 80, &[], Colours::None, Quit::Keys);
             assert!(line.spans.iter().all(|span| span.style == Style::new()));
         }
     }
@@ -386,10 +422,18 @@ mod tests {
                 Form::empty(),
             ],
         )];
-        let text = |width| plain(&key_hints(View::Log, width, &arrival, Colours::None));
+        let text = |width| {
+            plain(&key_hints(
+                View::Log,
+                width,
+                &arrival,
+                Colours::None,
+                Quit::Keys,
+            ))
+        };
         assert_eq!(
             text(80),
-            " ?  help    l  log    esc  back    q  close view   3 new events · End: latest"
+            " ?  help    l  log    esc  back    q  exit   3 new events · End: latest"
         );
         for width in 20..=80 {
             let text = text(width);
@@ -441,6 +485,48 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn the_tuning_boot_footer_never_names_a_quit_key() {
+        let skipped = [skipped_clause(REPORT, Colours::None)];
+        for view in VIEWS {
+            for width in 0..=120 {
+                for after in [&[][..], &skipped[..]] {
+                    let text = plain(&key_hints(view, width, after, Colours::None, Quit::Ignored));
+                    assert!(display_width(&text) <= width, "{view:?} {width}: {text:?}");
+                    for word in text.split_whitespace() {
+                        assert!(
+                            !["q", "exit", "dashboard", "close"].contains(&word),
+                            "{view:?} {width}: the footer names a quit key: {text:?}"
+                        );
+                    }
+                }
+            }
+            assert_eq!(
+                plain(&key_hints(view, 80, &[], Colours::None, Quit::Ignored)),
+                " ?  help    l  log    esc  back"
+            );
+        }
+    }
+
+    #[test]
+    fn the_drawn_tuning_boot_footer_follows_the_screen_policy() {
+        for view in VIEWS {
+            let sc = Screen {
+                quit: Quit::Ignored,
+                ..screen(view, 80, 12, Colours::None, true)
+            };
+            let (buf, _) = draw_checked(&sc, |sc, buf| {
+                footer(sc, &[], buf);
+                Drawn {
+                    scroll: 0,
+                    hold: Hold::Never,
+                }
+            });
+            let text = footer_text(&buf, Layout::new(&sc).footer);
+            assert_eq!(text, " ?  help    l  log    esc  back", "{view:?}");
         }
     }
 }

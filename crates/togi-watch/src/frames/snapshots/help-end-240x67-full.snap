@@ -81,7 +81,7 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 ~    wwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                       wwwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttt
 │                   does; skips do not count                                                                                                                           R7 all-core       a CCD, part of one, or every core: power and heat
 ~                   tttttttttttttttttttttttt                                                                                                                           wwwwwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttt
-│    q              closes this view only; tuning keeps running
+│    q              exit dashboard; tuning itself keeps running
 ~    w              ttttttttttttttttttttttttttttttttttttttttttt
 │
 │
@@ -106,5 +106,5 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │
 │
 │
-│   ?  help    l  log    esc  back    q  close view
-~  uuu gggg   hhh ggg   hhhhh gggg   hhh gggggggggg
+│   ?  help    l  log    esc  back    q  exit dashboard
+~  uuu gggg   hhh ggg   hhhhh gggg   hhh gggggggggggggg

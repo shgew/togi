@@ -14,7 +14,7 @@ use super::fit::is_console_glyph;
 use super::layout::{check_frame_bounds, frame_area};
 use super::render::render;
 use crate::model::{Model, project};
-use crate::screen::{Colours, Drawn, Journal, Screen, View};
+use crate::screen::{Colours, Drawn, Journal, Quit, Screen, View};
 
 /// A moment for frames whose journal has no events to take a clock from.
 pub(crate) const FIXED_NOW: Timestamp = Timestamp::constant(1_700_000_000, 0);
@@ -65,6 +65,7 @@ pub(crate) fn screen(view: View, width: u16, height: u16, colours: Colours, keys
         height,
         one_frame: false,
         colours,
+        quit: Quit::Keys,
     }
 }
 

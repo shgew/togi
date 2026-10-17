@@ -67,4 +67,4 @@ expression: body
 │              4  if the rerun passes, resume cycle 1                                                                      07:08  pass     R2 heavy vector on core 02 at -10 · passed · Tctl max 64°C
 │                                                                                                                          +57 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

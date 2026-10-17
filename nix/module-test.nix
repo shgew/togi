@@ -143,7 +143,11 @@ assert lib.hasInfix
   overriddenTuning.systemd.services.togi-restart-limit.script;
 assert
   overriddenTuning.systemd.services.togi-watch.serviceConfig.ExecStart
-  == "${lib.getExe pkgs.hello} watch";
+  == "${lib.getExe pkgs.hello} watch --tuning-boot";
+assert
+  tuning.systemd.services.togi-watch.serviceConfig.ExecStart
+  == "${lib.getExe package} watch --tuning-boot";
+assert !(one.systemd.services ? togi-watch);
 assert togiService.serviceConfig.Restart == "on-failure";
 assert togiService.serviceConfig.RestartSec == 60;
 assert togiService.startLimitIntervalSec == 1800;

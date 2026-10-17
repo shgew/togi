@@ -201,6 +201,7 @@ fn help(layout: &Layout, screen: &Screen, buf: &mut Buffer) -> usize {
         usize::from(layout.body.height),
         screen.scroll,
         screen.colours,
+        screen.quit,
     );
     rows(buf, layout.body, body, screen.colours);
     extent

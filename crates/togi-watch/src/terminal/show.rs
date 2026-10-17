@@ -10,7 +10,7 @@ use super::Event;
 use super::clock::Clock;
 use super::console::{Console, Session, terminal_error};
 use super::keys::press;
-use crate::screen::{Colours, Drawn, Hold, Screen, View};
+use crate::screen::{Colours, Drawn, Hold, Quit, Screen, View};
 
 /// What the loop is told about its surroundings.
 pub(super) struct Options<N> {
@@ -18,6 +18,8 @@ pub(super) struct Options<N> {
     pub(super) palette: bool,
     /// Whether the reader can press keys.
     pub(super) keys: bool,
+    /// What the quit keys do.
+    pub(super) quit: Quit,
     pub(super) colours: Colours,
     /// The wall clock, from which holds are measured.
     pub(super) now: N,
@@ -103,6 +105,7 @@ where
         height: 0,
         one_frame: false,
         colours: options.colours,
+        quit: options.quit,
     };
     let mut repaint = false;
     loop {
@@ -170,7 +173,7 @@ mod tests {
     use tokio::time::{Instant, advance, timeout};
 
     use super::{Options, show};
-    use crate::screen::{Colours, Drawn, Hold, Screen, View};
+    use crate::screen::{Colours, Drawn, Hold, Quit, Screen, View};
     use crate::terminal::keys::Key;
     use crate::terminal::testing::{Faults, Op, Recorder};
     use crate::terminal::{Error, Event, WatchError};
@@ -203,6 +206,7 @@ mod tests {
         palette: bool,
         keys: bool,
         colours: Colours,
+        quit: Quit,
     }
 
     impl Default for Setup {
@@ -211,6 +215,7 @@ mod tests {
                 palette: false,
                 keys: true,
                 colours: Colours::None,
+                quit: Quit::Keys,
             }
         }
     }
@@ -252,6 +257,7 @@ mod tests {
             let options = Options {
                 palette: setup.palette,
                 keys: setup.keys,
+                quit: setup.quit,
                 colours: setup.colours,
                 now: move || EPOCH + SignedDuration::try_from(Instant::now() - start).unwrap(),
                 tick: None,
@@ -705,6 +711,39 @@ mod tests {
     }
 
     #[test]
+    fn the_tuning_boot_ignores_quit_keys_on_every_view_and_ends_only_by_cancel() {
+        crate::terminal::testing::paused(async {
+            local(async {
+                let recorder = Recorder::new(80, 24);
+                let h = Harness::start(
+                    &recorder,
+                    &Setup {
+                        quit: Quit::Ignored,
+                        ..Setup::default()
+                    },
+                );
+                settle().await;
+                for view in [None, Some('?'), Some('l')] {
+                    if let Some(key) = view {
+                        h.key(Key::Char(key)).await;
+                    }
+                    for quit in ['q', 'Q', '\x03', '\x04'] {
+                        h.key(Key::Char(quit)).await;
+                        assert!(
+                            !h.task.is_finished(),
+                            "{view:?} {quit:?} ended the dashboard"
+                        );
+                    }
+                }
+                h.send(Event::Cancel).await;
+                h.finish().await.unwrap();
+                assert!(recorder.restored());
+            })
+            .await;
+        });
+    }
+
+    #[test]
     fn the_screen_tells_the_frame_its_size_keys_and_colours() {
         crate::terminal::testing::paused(async {
             local(async {
@@ -716,6 +755,7 @@ mod tests {
                             palette: false,
                             keys: false,
                             colours,
+                            quit: Quit::Keys,
                         },
                     );
                     settle().await;
@@ -953,6 +993,7 @@ mod tests {
                     palette: true,
                     keys: false,
                     colours: Colours::Console,
+                    quit: Quit::Keys,
                     now: || EPOCH,
                     tick: None,
                     reloaded: None,
@@ -1022,6 +1063,7 @@ mod tests {
                     palette: false,
                     keys: false,
                     colours: Colours::None,
+                    quit: Quit::Keys,
                     now: || EPOCH,
                     tick: None,
                     reloaded: None,

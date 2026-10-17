@@ -33,4 +33,4 @@ expression: body
 │ groups 10-14 parts of 00-03 08-15... all passed             08:17  group    hunt 1 groups 23-26 · parts of 02 03...
 │ +18 more                                                    +82 more
 │
-│  ?  help    l  log    esc  back    q  close view
+│  ?  help    l  log    esc  back    q  exit dashboard

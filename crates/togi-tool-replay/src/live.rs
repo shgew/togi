@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use jiff::Timestamp;
 use togi_journal::{Event, Payload};
 use togi_watch::model::Model;
-use togi_watch::screen::{Journal, Screen};
+use togi_watch::screen::{Journal, Quit, Screen};
 use togi_watch::terminal::{Config, Feed, run_with};
 
 use crate::Error;
@@ -116,6 +116,7 @@ pub(crate) fn play(
             tick: Some(TICK),
             stop: None,
             terminating: true,
+            quit: Quit::Keys,
         },
         clock,
         stdout.as_fd(),
@@ -161,6 +162,7 @@ mod tests {
             height: 24,
             one_frame: false,
             colours: togi_watch::screen::Colours::None,
+            quit: Quit::Keys,
         }
     }
 

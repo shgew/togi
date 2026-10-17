@@ -67,4 +67,4 @@ expression: body
 │                                                                                                                          05:26  note     cycle 1 step 3 · CCD 1 partial 4 loads 09 12 13
 │                                                                                                                          +899 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

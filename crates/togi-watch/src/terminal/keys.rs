@@ -1,6 +1,6 @@
 //! Keys: decoding the raw bytes a terminal sends, and what a key does to the screen.
 
-use crate::screen::{Screen, View};
+use crate::screen::{Quit, Screen, View};
 
 /// One key press.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,8 +128,9 @@ fn view(screen: Screen, view: View) -> Screen {
 
 /// Applies a key to the screen: `?` and `h` toggle the help and `l` the event log, Esc returns to the main view,
 /// the arrow, page, Home and End keys (or `k`, `j`, `b`, space, `f`, `g` and `G`) scroll a view that can scroll up
-/// to `scrolled` lines, and `q`, Ctrl-C and Ctrl-D quit. The help opens at its top and the log at its end, where it
-/// keeps following new events (`usize::MAX`) until a scroll leaves the end. Reports whether to quit.
+/// to `scrolled` lines, and `q`, `Q`, Ctrl-C and Ctrl-D quit unless the screen's [`Quit`] is `Ignored`, which makes
+/// them do nothing on every view. The help opens at its top and the log at its end, where it keeps following new
+/// events (`usize::MAX`) until a scroll leaves the end. Reports whether to quit.
 pub(super) fn press(screen: Screen, key: Key, scrolled: usize) -> (Screen, bool) {
     let page = usize::from(screen.height.saturating_sub(8)).max(1);
     let at = screen.scroll.min(scrolled);
@@ -148,7 +149,7 @@ pub(super) fn press(screen: Screen, key: Key, scrolled: usize) -> (Screen, bool)
         }
     };
     match key {
-        Key::Char('q' | 'Q' | '\x03' | '\x04') => (screen, true),
+        Key::Char('q' | 'Q' | '\x03' | '\x04') => (screen, screen.quit == Quit::Keys),
         Key::Char('?' | 'h' | 'H') => (
             if screen.view == View::Help {
                 main_view(screen)
@@ -179,7 +180,7 @@ pub(super) fn press(screen: Screen, key: Key, scrolled: usize) -> (Screen, bool)
 #[cfg(test)]
 mod tests {
     use super::{Decoder, Key, decode, press};
-    use crate::screen::{Colours, Screen, View};
+    use crate::screen::{Colours, Quit, Screen, View};
 
     fn screen(view: View, scroll: usize, height: u16) -> Screen {
         Screen {
@@ -190,6 +191,7 @@ mod tests {
             height,
             one_frame: false,
             colours: Colours::None,
+            quit: Quit::Keys,
         }
     }
 
@@ -368,6 +370,26 @@ mod tests {
             let (got, quit) = press(from, Key::Char(key), 9);
             assert!(quit, "{key:?}");
             assert_eq!(got, from);
+        }
+    }
+
+    #[test]
+    fn the_tuning_boot_ignores_every_quit_key_on_every_page_and_scroll() {
+        for view in [View::Main, View::Help, View::Log] {
+            for scroll in [0, 3, usize::MAX] {
+                for key in ['q', 'Q', '\x03', '\x04'] {
+                    let from = Screen {
+                        quit: Quit::Ignored,
+                        ..screen(view, scroll, 20)
+                    };
+                    let (got, quit) = press(from, Key::Char(key), 9);
+                    assert!(!quit, "{view:?} scroll {scroll} {key:?} quit");
+                    assert_eq!(
+                        got, from,
+                        "{view:?} scroll {scroll} {key:?} changed the screen"
+                    );
+                }
+            }
         }
     }
 

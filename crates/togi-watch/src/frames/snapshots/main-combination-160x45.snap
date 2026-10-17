@@ -45,4 +45,4 @@ expression: body
 │  mprime AVX-512 36K-248K  00-07 11 by offset   all                               06:25  pass     R4 partial load on core 08 at -11 · passed · Tctl max 74°C
 │  y-cruncher FFTv4         00-07 11 by offset   all                               +510 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

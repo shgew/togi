@@ -68,4 +68,4 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │                                                                                                                          05:53  fail     core 00 fails at -28
 │                                                                                                                          +183 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

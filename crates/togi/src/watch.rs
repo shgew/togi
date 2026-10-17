@@ -6,6 +6,7 @@ use std::sync::LazyLock;
 
 use clap::{Args as ClapArgs, ValueHint};
 use togi_journal::DirError;
+use togi_watch::screen::Quit;
 use togi_watch::terminal::{self, ONE_FRAME_SIZE, SourceError};
 
 use crate::cli::{Context, examples};
@@ -34,7 +35,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// have come, and what each outcome would lead to. Each CCD's cores show their offsets and limits
 /// side by side; below them, the cycle, hunt or search beside what happened recently. On a
 /// terminal, keys switch views: `?` explains the screen, `l` shows the newest 400 journal events,
-/// the arrow and page keys scroll both, `q` quits. A journal scrolled back holds its list still
+/// the arrow and page keys scroll both, `q` exits the dashboard. A journal scrolled back holds its list still
 /// and counts new events until End. It is rendered from the journal, which it reloads only when
 /// it changes.
 ///
@@ -47,8 +48,10 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// journal changes. A journal another build wrote, whose first line is not a togi journal header,
 /// is refused before any frame: exit 1 with the cutover step on stderr, live or not. A missing
 /// journal (no session yet) is not an error. An event of a kind this build does not know is
-/// skipped and an unknown field is ignored; the footer says which. The tuning boot shows it on
-/// tty1. `NO_COLOR` turns colour off.
+/// skipped and an unknown field is ignored; the footer says which. The tuning boot shows it on tty1 with
+/// `--tuning-boot`, which keeps it open: `q`, `Q`, Ctrl-C and Ctrl-D do nothing on every page and the help and
+/// footer leave the quit key out, so only stopping the service, or a signal such as SIGTERM, ends it. A terminal
+/// alone never sets it. `NO_COLOR` turns colour off.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
@@ -71,6 +74,10 @@ pub struct Args {
         value_parser = clap::value_parser!(u16).range(1..=1000),
     )]
     height: u16,
+
+    /// Run as the unattended tuning-boot dashboard: ignore q, Q, Ctrl-C and Ctrl-D on every page and leave the quit key out of the help and footer
+    #[arg(long)]
+    tuning_boot: bool,
 }
 
 /// Runs `togi watch`.
@@ -82,7 +89,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let result = if ctx.system.stdout_facts().is_terminal {
         let out = stdout();
         let keys = stdin();
-        terminal::run(ctx.state_dir, out.as_fd(), Some(keys.as_fd()))
+        terminal::run(ctx.state_dir, out.as_fd(), Some(keys.as_fd()), args.quit())
     } else if let Some(fs) = ctx.system.journal_fs() {
         terminal::one_frame_in(
             fs.as_ref(),
@@ -103,5 +110,59 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             fail(ctx, "watch", message)
         }
         Err(error) => fail(ctx, "watch", error),
+    }
+}
+
+impl Args {
+    /// What the quit keys do: ignored only where the caller said so with `--tuning-boot`, never inferred from the
+    /// terminal.
+    fn quit(&self) -> Quit {
+        if self.tuning_boot {
+            Quit::Ignored
+        } else {
+            Quit::Keys
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+    use togi_watch::screen::Quit;
+
+    use super::Args;
+
+    #[derive(Parser)]
+    struct Cli {
+        #[command(flatten)]
+        watch: Args,
+    }
+
+    fn parse(args: &[&str]) -> Result<Args, clap::Error> {
+        Cli::try_parse_from(std::iter::once("watch").chain(args.iter().copied()))
+            .map(|cli| cli.watch)
+    }
+
+    #[test]
+    fn watch_keeps_the_quit_keys_unless_the_tuning_boot_is_named() {
+        assert_eq!(parse(&[]).unwrap().quit(), Quit::Keys);
+        assert_eq!(parse(&["--width", "80"]).unwrap().quit(), Quit::Keys);
+        assert_eq!(parse(&["--tuning-boot"]).unwrap().quit(), Quit::Ignored);
+        let both = parse(&["--tuning-boot", "--width", "80", "--height", "20"]).unwrap();
+        assert_eq!(
+            (both.quit(), both.width, both.height),
+            (Quit::Ignored, 80, 20)
+        );
+    }
+
+    #[test]
+    fn the_tuning_boot_flag_takes_no_value() {
+        for args in [
+            &["--tuning-boot=true"][..],
+            &["--tuning-boot", "1"],
+            &["--tuning_boot"],
+        ] {
+            assert!(parse(args).is_err(), "{args:?}");
+        }
     }
 }

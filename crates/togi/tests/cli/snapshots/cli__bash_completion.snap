@@ -552,7 +552,7 @@ _togi() {
             return 0
             ;;
         togi__subcmd__watch)
-            opts="-h --width --height --state-dir --help"
+            opts="-h --width --height --tuning-boot --state-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

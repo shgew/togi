@@ -40,9 +40,9 @@ expression: body
 │  │ failures       failure decisions, including trials skipped because they already failed
 │  │ crashes        boots that ended without a clean shutdown
 │  │ last observed  the last failure seen in this session that changed what togi does; skips do not count
-│  │ q              closes this view only; tuning keeps running
+│  │ q              exit dashboard; tuning itself keeps running
 │  │
 │  │
 │  │ WHAT TOGI DOES ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

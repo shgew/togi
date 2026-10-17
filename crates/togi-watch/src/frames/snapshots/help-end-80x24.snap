@@ -24,4 +24,4 @@ expression: body
 │ █ R6 idle + bursts  idle with short wake-ups: idle and boost
 │ █ R7 all-core       a CCD, part of one, or every core: power and heat
 │
-│  ?  help    l  log    esc  back    q  close view
+│  ?  help    l  log    esc  back    q  exit dashboard

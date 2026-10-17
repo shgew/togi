@@ -33,4 +33,4 @@ expression: body
 │   12  search: light, then heavy  -10  p -5 · next -10       01:21  step     core 05 passed -5; searches -10 on its...
 │ +8 more                                                     +27 more
 │
-│  ?  help    l  log    esc  back    q  close view
+│  ?  help    l  log    esc  back    q  exit dashboard

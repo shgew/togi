@@ -45,4 +45,4 @@ expression: body
 │  mprime AVX-512 36K-248K  05 08 by offset      none yet                          08:38  limit    cores 05, 11 solo limit -10
 │  y-cruncher FFTv4         05 08 by offset      none yet                          +201 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

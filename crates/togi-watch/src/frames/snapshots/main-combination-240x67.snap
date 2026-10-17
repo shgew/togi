@@ -67,4 +67,4 @@ expression: body
 │                                                                                                                          05:41  pass     R4 partial load on core 13 at -11 · passed · Tctl max 76°C
 │                                                                                                                          +488 more
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard

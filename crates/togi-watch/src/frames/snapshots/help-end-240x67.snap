@@ -43,7 +43,7 @@ expression: body
 │    crashes        boots that ended without a clean shutdown                                                                                                          R5 both threads   both threads of one core: SMT pressure
 │    last observed  the last failure seen in this session that changed what togi                                                                                       R6 idle + bursts  idle with short wake-ups: idle and boost
 │                   does; skips do not count                                                                                                                           R7 all-core       a CCD, part of one, or every core: power and heat
-│    q              closes this view only; tuning keeps running
+│    q              exit dashboard; tuning itself keeps running
 │
 │
 │
@@ -67,4 +67,4 @@ expression: body
 │
 │
 │
-│   ?  help    l  log    esc  back    q  close view
+│   ?  help    l  log    esc  back    q  exit dashboard
