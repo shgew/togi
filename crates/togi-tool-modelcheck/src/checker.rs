@@ -1,5 +1,7 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
+use std::io::Write as _;
 use std::time::Duration;
 
 use serde::{Serialize, Serializer};
@@ -229,7 +231,7 @@ impl Checker {
             .map(|(prepared, _)| prepared)
             .filter(|prepared| prepared.group.n >= MIN_GROUP_TRIALS)
             .collect();
-        groups.sort_by_cached_key(|prepared| order(&prepared.group));
+        groups.sort_by(|a, b| order(&a.group, &b.group));
         for prepared in &mut groups {
             prepared.choose = log_choose(prepared.group.n);
             prepared.bounds =
@@ -300,23 +302,32 @@ impl Checker {
     }
 }
 
-type Order = (Option<[String; 5]>, WorkloadId, Vec<u8>, u32, TargetOffset);
+/// Groups in order of BIOS context, workload, loaded cores, intended duration and depth. The context
+/// compares field by field as text, its boost limit included.
+fn order<'g>(a: &'g Group, b: &'g Group) -> Ordering {
+    let context = |group: &'g Group| {
+        group.context.as_ref().map(|context| {
+            (
+                context.bios_version.as_str(),
+                context.board.as_str(),
+                context.cpu_model.as_str(),
+                context.microcode.as_str(),
+                decimal(context.boost_limit_mhz),
+            )
+        })
+    };
+    let loaded = |group: &'g Group| group.class.loaded.iter().map(CoreId::get);
+    context(a)
+        .cmp(&context(b))
+        .then_with(|| a.class.workload.cmp(&b.class.workload))
+        .then_with(|| loaded(a).cmp(loaded(b)))
+        .then_with(|| a.class.duration_s.cmp(&b.class.duration_s))
+        .then_with(|| a.depth.cmp(&b.depth))
+}
 
-fn order(group: &Group) -> Order {
-    let context = group.context.as_ref().map(|context| {
-        [
-            context.bios_version.clone(),
-            context.board.clone(),
-            context.cpu_model.clone(),
-            context.microcode.clone(),
-            context.boost_limit_mhz.to_string(),
-        ]
-    });
-    (
-        context,
-        group.class.workload,
-        group.class.loaded.iter().map(CoreId::get).collect(),
-        group.class.duration_s,
-        group.depth,
-    )
+/// `n` in decimal, left-aligned and padded with zero bytes, so two of them compare as their text does.
+fn decimal(n: u32) -> [u8; 10] {
+    let mut text = [0; 10];
+    let _ = write!(&mut text[..], "{n}");
+    text
 }

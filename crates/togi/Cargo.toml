@@ -41,6 +41,7 @@ unicode-width.workspace = true
 [dev-dependencies]
 rustix = { workspace = true, features = ["event", "pty", "process", "termios"] }
 tempfile.workspace = true
+test-case.workspace = true
 togi-backend.workspace = true
 togi-command.workspace = true
 togi-hostlock = { workspace = true, features = ["test-support"] }

@@ -13,13 +13,13 @@
 //!
 //! ```
 //! use togi_machine::{CoreId, ObservedOffset, PerCore};
-//! use togi_tool_forecast::{MetricKind, Outcome, Run, Status, metrics, summarize};
+//! use togi_tool_forecast::{MetricKind, Outcome, Run, Split, Status, metrics, summarize};
 //!
 //! let core = CoreId::new(0)?;
 //! let run = |hours, offset| Run {
 //!     machine: "m.json".to_owned(),
 //!     seed: 1,
-//!     split: "dev".to_owned(),
+//!     split: Split::Dev,
 //!     outcome: Outcome {
 //!         status: Status::Concluded,
 //!         hours,
@@ -49,7 +49,7 @@ mod tests;
 
 pub use error::Error;
 pub use outcome::{Outcome, Status, after, recovery_bias};
-pub use record::{File, Record, Run};
+pub use record::{File, Record, Run, Split};
 pub use score::{Flag, Placement, Row, Score};
 pub use session::{Anchor, Session, read_dir, read_dir_fs, read_dir_lenient, read_dir_lenient_fs};
 pub use summary::{Metric, MetricKind, Range, Summary, metrics, summarize};

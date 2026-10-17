@@ -32,11 +32,6 @@ use crate::suite::{Machine, RunSpec, Selection, Suite};
 /// The suite scenario whose runs form the forecast's ensemble.
 pub const SCENARIO: &str = "target";
 
-const LIVE: &str = "events.jsonl";
-const STATE: &str = "state.json";
-const ARCHIVE: &str = "archive";
-const SESSION_BEARING: [&str; 4] = [".jsonl", "-carry-pending", "-compat-pending", "-reset-all"];
-
 /// What one forecast does.
 #[derive(Clone, Debug)]
 pub struct Options {
@@ -74,8 +69,8 @@ pub enum ForecastError {
         #[source]
         source: io::Error,
     },
-    #[error("archive entry {} is not a regular file", path.display())]
-    IrregularArchiveEntry { path: PathBuf },
+    #[error("copy the state")]
+    Copy(#[source] togi_statecopy::CopyError),
     #[error("run the simulator")]
     Launch(#[source] RunError),
     #[error("read the run")]
@@ -284,7 +279,7 @@ fn execute_with_durability(
         .map(|((spec, machine), outcome)| Run {
             machine: machine.unwrap_or_default(),
             seed: spec.seed,
-            split: spec.split.to_string(),
+            split: spec.split,
             outcome,
         })
         .collect();
@@ -476,7 +471,7 @@ fn forecast_run(
     let dir = root
         .join(&spec.scenario)
         .join(format!("{}-{}", spec.split, spec.seed));
-    copy_state(&options.state, &dir)?;
+    togi_statecopy::copy(&options.state, &dir).map_err(ForecastError::Copy)?;
     let launched = simulator
         .launch(fleet, root, spec, options.max_boots, options.timeout)
         .map_err(|error| {
@@ -564,64 +559,6 @@ fn events_after<'a>(sessions: &'a [Session], anchor: &Anchor) -> Vec<&'a Event> 
     after
 }
 
-/// Copies the files a resumed session reads from `src` into `dst`: the live journal, `state.json` and every
-/// session-bearing archive entry (archived journals, the pending carry and compatibility markers, and `reset
-/// --all` markers). `src` is only read.
-fn copy_state(src: &Path, dst: &Path) -> Result<(), ForecastError> {
-    let io = |what, path: &Path| {
-        let path = path.to_path_buf();
-        move |source| ForecastError::Io { what, path, source }
-    };
-    fs::create_dir_all(dst).map_err(io("create the run", dst))?;
-    let mut files = vec![PathBuf::from(LIVE)];
-    match fs::metadata(src.join(STATE)) {
-        Ok(_) => files.push(PathBuf::from(STATE)),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(source) => {
-            return Err(ForecastError::Io {
-                what: "read the state copy",
-                path: src.join(STATE),
-                source,
-            });
-        }
-    }
-    let archive = src.join(ARCHIVE);
-    let mut archived = Vec::new();
-    match fs::read_dir(&archive) {
-        Ok(entries) => {
-            for entry in entries {
-                let entry = entry.map_err(io("read the archive copy", &archive))?;
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if !SESSION_BEARING.iter().any(|suffix| name.ends_with(suffix)) {
-                    continue;
-                }
-                let regular = entry.file_type().is_ok_and(|kind| kind.is_file());
-                if !regular {
-                    return Err(ForecastError::IrregularArchiveEntry { path: entry.path() });
-                }
-                archived.push(Path::new(ARCHIVE).join(name));
-            }
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(source) => {
-            return Err(ForecastError::Io {
-                what: "read the archive copy",
-                path: archive,
-                source,
-            });
-        }
-    }
-    archived.sort();
-    if !archived.is_empty() {
-        fs::create_dir_all(dst.join(ARCHIVE)).map_err(io("create the run archive", dst))?;
-    }
-    for name in files.into_iter().chain(archived) {
-        fs::copy(src.join(&name), dst.join(&name))
-            .map_err(io("copy the state", &src.join(&name)))?;
-    }
-    Ok(())
-}
-
 fn write_record(path: &Path, record: &Record, durable: bool) -> Result<(), ForecastError> {
     let failed = |source: Box<dyn std::error::Error + Send + Sync>| ForecastError::Write {
         path: path.to_path_buf(),
@@ -664,6 +601,7 @@ mod tests {
     use sha2::Digest as _;
     use std::collections::BTreeMap;
     use std::io::Write;
+    use togi_tool_forecast::Split;
 
     struct RecordingWriter {
         bytes: Vec<u8>,
@@ -716,7 +654,7 @@ mod tests {
             vec![Run {
                 machine: String::new(),
                 seed: 1,
-                split: "dev".to_owned(),
+                split: Split::Dev,
                 outcome: Outcome {
                     status: Status::Concluded,
                     hours: 1.0,

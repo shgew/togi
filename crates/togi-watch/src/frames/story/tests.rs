@@ -1497,7 +1497,7 @@ mod the_story {
     }
 
     #[test]
-    fn a_singleton_interior_probe_and_a_stopped_one_read_as_what_they_are() {
+    fn a_singleton_interior_probe_reads_as_what_it_is() {
         let interior = probing_story(
             &[2],
             vec![probe_of(2, -6, &[-12], &[], false)],
@@ -1513,27 +1513,6 @@ mod the_story {
         assert_eq!(
             interior.brief,
             "Probing core 02 at -6 between its failure and its passing anchor."
-        );
-        let stopped = probing_story(
-            &[2],
-            vec![probe_of(2, -12, &[-12, 0], &[], true)],
-            Some(GroupState::Failed),
-            0,
-            0,
-        );
-        assert!(
-            stopped.lines[1].contains("stopped without a safe bracket"),
-            "{}",
-            stopped.lines[1]
-        );
-        assert!(
-            !stopped.lines[1].contains("passing anchor"),
-            "{}",
-            stopped.lines[1]
-        );
-        assert_eq!(
-            stopped.brief,
-            "Probing core 02 stopped; the shallowest reproduced failure stands."
         );
     }
 

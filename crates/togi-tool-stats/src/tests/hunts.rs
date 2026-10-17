@@ -7,7 +7,7 @@ use super::support::{
     Log, cycle, decision, end, hunt_end, hunt_group, hunt_start, intent, nz, profile, rendered,
     seq, set, trial, trial_start,
 };
-use crate::hunts::{StepKey, compute_hunts, parked_label, render_hunts};
+use crate::hunts::{StepCycle, StepKey, compute_hunts, parked_label, render_hunts};
 use crate::project::Projection;
 use crate::report::compute;
 
@@ -204,8 +204,7 @@ fn checking_steps_list_reruns_apart_from_the_cycles() {
     let journal = log.journal();
     let p = Projection::new(&journal);
     let m = compute(&p, None);
-    let key = |rerun, cycle, outcome| StepKey {
-        rerun,
+    let key = |cycle, outcome| StepKey {
         cycle,
         regime: Regime::R6,
         cores: "00,01".to_owned(),
@@ -214,9 +213,9 @@ fn checking_steps_list_reruns_apart_from_the_cycles() {
     assert_eq!(
         m.checking.steps.into_iter().collect::<Vec<_>>(),
         [
-            (key(false, 1, Outcome::Pass), 1),
-            (key(false, 1, Outcome::Failure), 1),
-            (key(true, 0, Outcome::Pass), 1),
+            (key(StepCycle::Cycle(Some(nz(1))), Outcome::Pass), 1),
+            (key(StepCycle::Cycle(Some(nz(1))), Outcome::Failure), 1),
+            (key(StepCycle::Rerun, Outcome::Pass), 1),
         ]
     );
     assert_eq!((m.checking.cycles_started, m.checking.cycles_ended), (1, 0));

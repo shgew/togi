@@ -1,8 +1,9 @@
+use std::fmt;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use togi_machine::object_only;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
@@ -23,6 +24,29 @@ object_only! {
     }
 }
 
+/// The half of a bench suite a seed belongs to: tuned against, or held out from tuning.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Split {
+    Dev,
+    Holdout,
+}
+
+impl Split {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Dev => "dev",
+            Self::Holdout => "holdout",
+        }
+    }
+}
+
+impl fmt::Display for Split {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 object_only! {
     /// One simulated run of the ensemble.
     #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -30,7 +54,7 @@ object_only! {
     pub struct Run {
         pub machine: String,
         pub seed: u64,
-        pub split: String,
+        pub split: Split,
         pub outcome: Outcome,
     }
 }

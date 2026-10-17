@@ -262,6 +262,7 @@ impl Main {
 #[cfg(test)]
 mod tests {
     use ratatui::layout::Rect;
+    use test_case::test_case;
 
     use super::{Main, MainForm};
     use crate::frames::layout::Layout;
@@ -302,55 +303,63 @@ mod tests {
         assert!(m.table.is_empty());
     }
 
-    #[test]
-    fn every_reference_rectangle_lies_inside_the_159_by_44_frame_area() {
-        for (width, height) in [(160, 45), (170, 50), (200, 60), (240, 67), (300, 90)] {
-            let sc = screen(View::Main, width, height, Colours::Full, true);
-            let area = Layout::new(&sc).area;
-            let m = Main::new(&sc);
-            for rect in [
-                m.progress,
-                m.now,
-                m.gauges[0],
-                m.gauges[1],
-                m.explain,
-                m.history_head,
-                m.history,
-                m.warning,
-            ] {
-                assert!(
-                    inside(rect, area),
-                    "{width}x{height}: {rect:?} outside {area:?}"
-                );
-            }
+    #[test_case(160, 45; "160 by 45")]
+    #[test_case(170, 50; "170 by 50")]
+    #[test_case(200, 60; "200 by 60")]
+    #[test_case(240, 67; "240 by 67")]
+    #[test_case(300, 90; "300 by 90")]
+    fn every_reference_rectangle_lies_inside_the_frame_area(width: u16, height: u16) {
+        let sc = screen(View::Main, width, height, Colours::Full, true);
+        let area = Layout::new(&sc).area;
+        let m = Main::new(&sc);
+        for rect in [
+            m.progress,
+            m.now,
+            m.gauges[0],
+            m.gauges[1],
+            m.explain,
+            m.history_head,
+            m.history,
+            m.warning,
+        ] {
+            assert!(
+                inside(rect, area),
+                "{width}x{height}: {rect:?} outside {area:?}"
+            );
         }
     }
 
-    #[test]
-    fn the_gauges_keep_their_geometry_and_the_extra_room_goes_to_what_happened() {
+    #[test_case(200, 60; "200 by 60")]
+    #[test_case(240, 67; "240 by 67")]
+    fn the_gauges_keep_their_geometry_and_the_extra_room_goes_to_what_happened(
+        width: u16,
+        height: u16,
+    ) {
         let reference = main_at(160, 45);
-        for (width, height) in [(200, 60), (240, 67)] {
-            let m = main_at(width, height);
-            assert_eq!(m.form, MainForm::Gauges, "{width}x{height}");
-            for gauge in m.gauges {
-                assert_eq!((gauge.width, gauge.height), (77, 26));
-            }
-            assert_eq!(m.gauges[1].x - m.gauges[0].x, 80);
-            assert_eq!(m.gauges[0].y, 9);
-            assert_eq!(
-                (
-                    m.progress.y,
-                    m.now.y,
-                    m.explain.y,
-                    m.history_head.y,
-                    m.history.y
-                ),
-                (3, 6, 35, 37, 38)
-            );
-            let layout = Layout::new(&screen(View::Main, width, height, Colours::Full, true));
-            assert_eq!(m.history.bottom() + 1, layout.footer.y);
-            assert!(m.history.height > reference.history.height);
+        let m = main_at(width, height);
+        assert_eq!(m.form, MainForm::Gauges, "{width}x{height}");
+        for gauge in m.gauges {
+            assert_eq!((gauge.width, gauge.height), (77, 26));
         }
+        assert_eq!(m.gauges[1].x - m.gauges[0].x, 80);
+        assert_eq!(m.gauges[0].y, 9);
+        assert_eq!(
+            (
+                m.progress.y,
+                m.now.y,
+                m.explain.y,
+                m.history_head.y,
+                m.history.y
+            ),
+            (3, 6, 35, 37, 38)
+        );
+        let layout = Layout::new(&screen(View::Main, width, height, Colours::Full, true));
+        assert_eq!(m.history.bottom() + 1, layout.footer.y);
+        assert!(m.history.height > reference.history.height);
+    }
+
+    #[test]
+    fn extra_room_centres_the_gauges() {
         let centred = main_at(240, 67);
         assert_eq!(centred.gauges[0].x, 1 + (237 - 157) / 2);
     }

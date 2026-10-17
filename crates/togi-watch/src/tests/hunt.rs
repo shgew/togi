@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use jiff::Timestamp;
+use test_case::test_case;
 use togi_journal::{HuntStage, Member, Outcome};
 use togi_machine::{
     CcdId, Condition, CoreSet, ObservedOffset, PerCore, Regime, Signal, TargetOffset, workloads,
@@ -130,163 +131,72 @@ fn member(id: u8, offset: i64) -> Member {
     }
 }
 
-#[test]
-fn member_probe_rows() {
-    struct Case {
-        name: &'static str,
-        loaded: &'static [u8],
-        profile: [i64; 3],
-        started: bool,
-        held_only: bool,
-        group_at_parked: bool,
+#[test_case(&[0, 1, 2], [-15, -30, -8], true, false, false; "all cores loaded")]
+#[test_case(&[0, 1, 2], [-15, -29, -8], true, false, false; "loaded noncandidate at nonparked offset")]
+#[test_case(&[0], [-15, -30, -8], true, false, false; "probe loaded alone")]
+#[test_case(&[2], [-15, -30, -8], true, false, false; "held member loaded alone")]
+#[test_case(&[1], [-15, -30, -8], true, false, false; "idle members judged while nonmember loaded")]
+#[test_case(&[0, 1, 2], [-15, -30, -8], true, true, false; "held member outside group cores")]
+#[test_case(&[0, 1, 2], [-15, -30, -10], true, false, true; "group member failing offset equals parked")]
+#[test_case(&[0, 1, 2], [-10, -30, -8], true, false, false; "probe at parked offset")]
+#[test_case(&[0, 1, 2], [-15, -30, -5], true, false, false; "held member at parked offset")]
+#[test_case(&[0, 1, 2], [-15, -30, -8], false, false, false; "preparing member probe")]
+fn member_probe_rows(
+    loaded_cores: &'static [u8],
+    profile: [i64; 3],
+    started: bool,
+    held_only: bool,
+    group_at_parked: bool,
+) {
+    let mut parked = [-10i64, -30, -5];
+    if group_at_parked {
+        parked[2] = -10;
     }
-    let case = |name, loaded, profile, started, held_only, group_at_parked| Case {
-        name,
-        loaded,
-        profile,
-        started,
-        held_only,
-        group_at_parked,
+    let group_cores: &[u8] = if held_only { &[] } else { &[2] };
+    let held = if group_at_parked {
+        Vec::new()
+    } else {
+        vec![member(2, profile[2])]
     };
-    let cases = [
-        case(
-            "all cores loaded",
-            &[0, 1, 2][..],
-            [-15, -30, -8],
-            true,
-            false,
-            false,
-        ),
-        case(
-            "loaded noncandidate at nonparked offset",
-            &[0, 1, 2],
-            [-15, -29, -8],
-            true,
-            false,
-            false,
-        ),
-        case(
-            "probe loaded alone",
-            &[0],
-            [-15, -30, -8],
-            true,
-            false,
-            false,
-        ),
-        case(
-            "held member loaded alone",
-            &[2],
-            [-15, -30, -8],
-            true,
-            false,
-            false,
-        ),
-        case(
-            "idle members judged while nonmember loaded",
-            &[1],
-            [-15, -30, -8],
-            true,
-            false,
-            false,
-        ),
-        case(
-            "held member outside group cores",
-            &[0, 1, 2],
-            [-15, -30, -8],
-            true,
-            true,
-            false,
-        ),
-        case(
-            "group member failing offset equals parked",
-            &[0, 1, 2],
-            [-15, -30, -10],
-            true,
-            false,
-            true,
-        ),
-        case(
-            "probe at parked offset",
-            &[0, 1, 2],
-            [-10, -30, -8],
-            true,
-            false,
-            false,
-        ),
-        case(
-            "held member at parked offset",
-            &[0, 1, 2],
-            [-15, -30, -5],
-            true,
-            false,
-            false,
-        ),
-        case(
-            "preparing member probe",
-            &[0, 1, 2],
-            [-15, -30, -8],
-            false,
-            false,
-            false,
-        ),
-    ];
-    for case in cases {
-        let mut parked = [-10i64, -30, -5];
-        if case.group_at_parked {
-            parked[2] = -10;
-        }
-        let group_cores: &[u8] = if case.held_only { &[] } else { &[2] };
-        let held = if case.group_at_parked {
-            Vec::new()
-        } else {
-            vec![member(2, case.profile[2])]
-        };
-        let hunt = plan(vec![
-            group(
-                1,
-                &[0, 2],
-                &[-20, -30, -10],
-                GroupState::Failed,
-                None,
-                Vec::new(),
-            ),
-            group(
-                2,
-                group_cores,
-                &case.profile,
-                GroupState::Running,
-                Some(member(0, case.profile[0])),
-                held,
-            ),
-        ]);
-        let mut facts = Facts::default();
-        facts.shapes.insert(
+    let hunt = plan(vec![
+        group(
             1,
-            HuntShape {
-                failing: offsets(&[-20, -30, -10]),
-                parked: offsets(&parked),
-            },
+            &[0, 2],
+            &[-20, -30, -10],
+            GroupState::Failed,
+            None,
+            Vec::new(),
+        ),
+        group(
+            2,
+            group_cores,
+            &profile,
+            GroupState::Running,
+            Some(member(0, profile[0])),
+            held,
+        ),
+    ]);
+    let mut facts = Facts::default();
+    facts.shapes.insert(
+        1,
+        HuntShape {
+            failing: offsets(&[-20, -30, -10]),
+            parked: offsets(&parked),
+        },
+    );
+    let mut trial = trial_view(loaded_cores, &profile, started, Condition::Parked);
+    for id in 0..3u8 {
+        let mut view = core_view(id);
+        trial_role(&mut view, &mut trial, Some(&hunt), &facts);
+        let loaded = loaded_cores.contains(&id);
+        let member = id == 0 || id == 2;
+        let nonparked = profile[usize::from(id)] != parked[usize::from(id)];
+        assert_eq!(view.loaded, started && loaded, "core {id} loaded");
+        assert_eq!(
+            view.judged,
+            started && (member || loaded && nonparked),
+            "core {id} judged"
         );
-        let mut trial = trial_view(case.loaded, &case.profile, case.started, Condition::Parked);
-        for id in 0..3u8 {
-            let mut view = core_view(id);
-            trial_role(&mut view, &mut trial, Some(&hunt), &facts);
-            let loaded = case.loaded.contains(&id);
-            let member = id == 0 || id == 2;
-            let nonparked = case.profile[usize::from(id)] != parked[usize::from(id)];
-            assert_eq!(
-                view.loaded,
-                case.started && loaded,
-                "{} core {id} loaded",
-                case.name
-            );
-            assert_eq!(
-                view.judged,
-                case.started && (member || loaded && nonparked),
-                "{} core {id} judged",
-                case.name
-            );
-        }
     }
 }
 

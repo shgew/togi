@@ -374,6 +374,7 @@ fn a_supported_cpu_with_no_driver_loaded_is_refused_and_skips_every_gated_check(
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn real_fs_identity_refusal_does_not_open_mailbox_or_pm_files() {
     use std::mem::MaybeUninit;
 

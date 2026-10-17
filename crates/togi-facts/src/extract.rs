@@ -287,7 +287,11 @@ impl Extractor {
                 Ok(())
             };
         };
-        let intent = &open.activity.intent;
+        let Open {
+            activity: TrialActivity { boot, intent, .. },
+            build,
+            backend,
+        } = open;
         let outcome = match end.outcome {
             Outcome::Inconclusive => return Ok(()),
             Outcome::Pass => Decisive::Pass,
@@ -301,7 +305,7 @@ impl Extractor {
             },
         };
         let backend = match outcome {
-            Decisive::Pass => open.backend.clone(),
+            Decisive::Pass => backend,
             Decisive::Failure { .. } => None,
         };
         let fact = Fact {
@@ -309,9 +313,9 @@ impl Extractor {
                 session: self.id,
                 seq: event.seq,
                 time: event.time,
-                build: open.build.clone(),
+                build,
                 epoch: self.start.evidence,
-                boot: open.activity.boot.clone(),
+                boot,
                 trial: Some(end.trial.clone()),
                 backend,
             },

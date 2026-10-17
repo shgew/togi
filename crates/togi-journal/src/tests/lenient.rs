@@ -87,6 +87,49 @@ fn lenient_reports_every_unknown_field_of_a_line_in_the_order_it_met_them() {
     assert_eq!(ignored, ["extra", "data.also", "data.cores[0].wild"]);
 }
 
+/// Lenient decoding cuts an unknown field out of the line's text, so every number keeps the token it was written
+/// with: the rest decodes exactly as strict decodes the line without the field, and a token strict refuses stays
+/// refused.
+#[test]
+fn cutting_an_unknown_field_keeps_every_number_as_written() {
+    let line = at(2, "boot-a", 0, &[1], sample(EventKind::TrialEnd))
+        .encode()
+        .unwrap();
+    let spelled = line
+        .replacen(
+            r#""voltage_request_median_v":1.1,"#,
+            r#""voltage_request_median_v":11.000000000000003e-1,"#,
+            1,
+        )
+        .replacen(
+            r#""worker_stalled_ms":30500,"#,
+            r#""worker_stalled_ms":18446744073709551615,"#,
+            1,
+        );
+    assert_ne!(spelled, line);
+    let with_extras = |text: &str| {
+        text.replacen(r#""data":{"#, r#""data":{"wide":1e400,"zero":-0.0,"#, 1)
+            .replacen('{', r#"{"big":123456789012345678901234567890,"#, 1)
+    };
+
+    let strict = Event::decode(&spelled).unwrap();
+    let Payload::TrialEnd(end) = &strict.payload else {
+        panic!("{strict:?}");
+    };
+    let written: f64 = "1.1000000000000003".parse().unwrap();
+    assert_ne!(written, 1.1);
+    assert_eq!(end.voltage_request_median_v, Some(written));
+    assert_eq!(end.worker_stalled_ms, Some(u64::MAX));
+    let (cut, ignored) = lenient_event(&with_extras(&spelled));
+    assert_eq!(cut, strict);
+    assert_eq!(ignored, ["big", "data.wide", "data.zero"]);
+
+    let fractional = spelled.replacen(r#""duration_s":41,"#, r#""duration_s":41.0,"#, 1);
+    assert_ne!(fractional, spelled);
+    assert!(Event::decode(&fractional).is_err());
+    assert!(lenient(&with_extras(&fractional)).is_err());
+}
+
 #[test]
 fn an_unknown_kind_is_refused_by_strict_and_skipped_by_lenient() {
     let mut line = line_of(sample(EventKind::TrialEnd));

@@ -5,10 +5,10 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use togi_config::Config;
-use togi_defect::{Clause, DefectId, Entry};
+use togi_defect::{Clause, Entry};
 use togi_journal::{
-    CorePhase, Decision, DefectDirection, Event, EventKind, Payload, RetryTarget, Seq,
-    ShutdownReason,
+    CorePhase, Decision, DefectDirection, DefectId, Event, EventKind, FixStamp, Payload,
+    RetryTarget, Seq, ShutdownReason,
 };
 use togi_machine::{
     BootId, CancellationToken, Clock, CoreId, Error, Kernel, KernelCursor, KernelRead,
@@ -257,7 +257,7 @@ fn a_defect_in_decisions_before_its_fix_is_found_once_however_often_the_session_
 
     bench.defects = &POWER_OFF;
     let fixed = |input: &mut RunInput<'static>| {
-        input.build.fixes = 1;
+        input.build.fixes = FixStamp::through(POWER_OFF[0].id);
     };
     for resume in 0..2 {
         let ended = one_cycle(&bench, fixed);
@@ -272,7 +272,7 @@ fn a_defect_in_decisions_before_its_fix_is_found_once_however_often_the_session_
         let Payload::DefectFound(finding) = &found[0].payload else {
             unreachable!()
         };
-        assert_eq!(finding.id, POWER_OFF[0].id.0);
+        assert_eq!(finding.id, POWER_OFF[0].id);
         assert_eq!(finding.cores.iter().collect::<Vec<_>>(), [core(0)]);
         assert_eq!(finding.decisions, decisions);
         assert_eq!(found[0].cause, finding.decisions);
