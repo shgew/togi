@@ -86,7 +86,7 @@ pub struct Layout {
     pub rows: Rows,
     /// The footer row, `area.height - 1`.
     pub hint: u16,
-    /// The header: clock, session age and counts.
+    /// The header: clock, tuning time, session age and counts.
     pub header: Rect,
     /// The stage line.
     pub stage: Rect,

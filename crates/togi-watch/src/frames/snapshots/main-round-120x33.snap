@@ -2,7 +2,7 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   15:15:40   session 15h15m   8 failures · 8 crashes   last observed failure 08:22, 6h53m ago
+│ togi   15:15:40   tuning 15h15m   session 15h15m   8 failures · 8 crashes   last observed failure 08:22, 6h53m ago
 │ ■ SOLO ─ ■ P1 ─ ► P2 r1 ─ CLEAN 0 ─ ■ CYCLE 1
 │
 │ ▌  Round check: core 00 alone at its proposed -11.

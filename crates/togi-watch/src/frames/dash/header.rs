@@ -18,12 +18,15 @@ fn head(colours: Colours, zone: &TimeZone, now: Timestamp) -> Line<'static> {
     ])
 }
 
-/// The top line of a folded journal in `width` cells: the clock, the session's length, the counts and the last
-/// observed failure; `compact` names an idle trial's pause beside the clock.
+/// The top line of a folded journal in `width` cells: the clock, the tuning time and the session's age, the
+/// counts and the last observed failure; `compact` names an idle trial's pause beside the clock. The tuning time
+/// is the time inside runs ([`crate::tuning`]); the age is the time since the session started. Both stop at a
+/// dead end or a stop, and an idle trial's hold shows both as of the trial's start.
 ///
-/// Drop order, first to last: how long ago the last failure was and then its time, `session` before the
-/// session's length, the words after the failure and crash counts, the pause notice. The clock, the session's
-/// length and the counts are never left out.
+/// Drop order, first to last: how long ago the last failure was and then its time, the pause notice (`compact`
+/// names it beside the clock, otherwise it shortens first), the long labels `session` and `tuning` (the later
+/// first) for `age` and `tune`, the words after the failure and crash counts. The clock, both durations and the
+/// counts are never left out.
 pub(crate) fn header(scene: &Scene<'_>, width: usize, compact: bool) -> Line<'static> {
     let colours = scene.colours;
     let paint = |p: Paint, text: String| scene.paint(p, text);
@@ -45,32 +48,40 @@ pub(crate) fn header(scene: &Scene<'_>, width: usize, compact: bool) -> Line<'st
     if let (true, Some(until)) = (paused_beside, planned_end) {
         clauses.push(Clause::new(
             GAP,
-            vec![Form::new(
-                paint(
-                    Paint::Hunt,
-                    format!("paused · planned end {}", scene.wall_minute(until)),
+            vec![
+                Form::new(
+                    paint(
+                        Paint::Hunt,
+                        format!("paused · planned end {}", scene.wall_minute(until)),
+                    ),
+                    3,
                 ),
-                0,
-            )],
+                Form::empty(),
+            ],
         ));
         paused = None;
     }
-    let hours = hm(between(session.start, end));
+    let age = hm(between(session.start, end));
+    let tuning = hm(scene.hold.map_or_else(
+        || scene.s.tuning.at(end),
+        |hold| scene.s.tuning.at_latest_trial_start(hold.started),
+    ));
     let text = |value: String| paint(Paint::Text, value);
     let grey = |value: String| paint(Paint::Grey, value);
     let failures = scene.s.failures;
     let crashes = scene.s.crashes;
     let count = |value: u32| text(value.to_string());
-    clauses.push(Clause::new(
-        GAP,
+    let clock = |long: &str, short: &str, value: String| {
         vec![
             Form::new(
-                Line::from(vec![grey("session ".into()), text(hours.clone())]),
+                Line::from(vec![grey(format!("{long} ")), text(value.clone())]),
                 2,
             ),
-            Form::new(Line::from(text(hours)), 0),
-        ],
-    ));
+            Form::new(Line::from(vec![grey(format!("{short} ")), text(value)]), 0),
+        ]
+    };
+    clauses.push(Clause::new(GAP, clock("tuning", "tune", tuning)));
+    clauses.push(Clause::new(GAP, clock("session", "age", age)));
     clauses.push(Clause::new(
         GAP,
         vec![

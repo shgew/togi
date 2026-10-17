@@ -2,7 +2,7 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   18:36:38   session 18h36m   40 failures · 7 crashes   last observed failure 18:35, a moment ago
+│ togi   18:36:38   tuning 18h36m   session 18h36m   40 failures · 7 crashes   last observed failure 18:35
 │ ■ SOLO ─ ►  HUNT 1   part 1 of 2 ─ ○ P1 ─ ○ P2 ─ CLEAN 0 ─ ○ CYCLE 1 paused at 4/18
 │
 │ ▌  Corrected hardware error in R2 heavy vector on 05; no core named. Rerunning it with 05 parked.

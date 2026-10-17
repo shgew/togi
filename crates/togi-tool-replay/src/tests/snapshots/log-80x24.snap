@@ -2,7 +2,7 @@
 source: crates/togi-tool-replay/src/tests/frames.rs
 expression: body
 ---
- togi   09:47:51   session 9h47m   31 failures · 7 crashes
+ togi   09:47:51   tuning 9h47m   session 9h47m   31 failures · 7 crashes
  ■ SOLO ─ ► P1 ─ ○ P2 ─ CLEAN 0 ─ ► CYCLE 1 ─ 2:00 left
 
  │ 09:43:21  trial intent          trial 0402 core 06 offset -38 R2 mprime...
@@ -23,5 +23,3 @@ expression: body
  │ 09:47:51  profile applied       profile applied: [00: -26, 01: -16, 02...
  │ 09:47:51  trial intent          trial 0405 cores 00, 01, 02, 03, 04, 05...
  █ 09:47:51  trial start           trial 0405 started pid 1405 in scope...
-
-
