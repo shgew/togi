@@ -333,11 +333,11 @@ fn constrained_voltage_candidates_stay_inside_the_original_groups_and_an_unconst
     );
 }
 
-fn set_background(def: &mut MachineDefinition, rate: &f64) {
-    def.shared_voltage.as_mut().unwrap().background_rate = *rate;
+fn set_background(def: &mut MachineDefinition, rate: f64) {
+    def.shared_voltage.as_mut().unwrap().background_rate = rate;
 }
 
-fn raise_core_threshold(def: &mut MachineDefinition, volts: &f64) {
+fn raise_core_threshold(def: &mut MachineDefinition, volts: f64) {
     let v = def.shared_voltage.as_mut().unwrap();
     v.workload.get_mut(avx2()).unwrap().core[0].threshold_v += volts;
     sync_ycruncher(v);
@@ -373,9 +373,9 @@ fn every_candidate_of_every_step_is_scored_on_the_augmented_objective() {
     let all = l.all();
 
     let backgrounds = [0.0, 5e-4];
-    let scanned = l.scan(&backgrounds, set_background, &all);
+    let scanned = l.scan(&backgrounds, |def, &rate| set_background(def, rate), &all);
     for (candidate, rate) in scanned.iter().zip(&backgrounds) {
-        let own = with(&|def| set_background(def, rate));
+        let own = with(&|def| set_background(def, *rate));
         assert_eq!(
             candidate.loss.to_bits(),
             own.score(&all).to_bits(),
@@ -383,17 +383,21 @@ fn every_candidate_of_every_step_is_scored_on_the_augmented_objective() {
         );
     }
     let objective_step = scanned[1].loss - scanned[0].loss;
-    let raw_step = with(&|def| set_background(def, &backgrounds[1])).raw_score(&all)
-        - with(&|def| set_background(def, &backgrounds[0])).raw_score(&all);
+    let raw_step = with(&|def| set_background(def, backgrounds[1])).raw_score(&all)
+        - with(&|def| set_background(def, backgrounds[0])).raw_score(&all);
     assert!(
         objective_step - raw_step > 1e-6,
         "the background rate, which no prior touches, did not move the named-core term: {objective_step} vs {raw_step}"
     );
 
     let shifts = [0.0, 0.01];
-    let scanned = l.scan(&shifts, raise_core_threshold, &all);
+    let scanned = l.scan(
+        &shifts,
+        |def, &shift| raise_core_threshold(def, shift),
+        &all,
+    );
     for (candidate, shift) in scanned.iter().zip(&shifts) {
-        let own = with(&|def| raise_core_threshold(def, shift));
+        let own = with(&|def| raise_core_threshold(def, *shift));
         assert_eq!(
             candidate.loss.to_bits(),
             own.score(&all).to_bits(),
@@ -401,8 +405,8 @@ fn every_candidate_of_every_step_is_scored_on_the_augmented_objective() {
         );
     }
     let objective_step = scanned[1].loss - scanned[0].loss;
-    let raw_step = with(&|def| raise_core_threshold(def, &shifts[1])).raw_score(&all)
-        - with(&|def| raise_core_threshold(def, &shifts[0])).raw_score(&all);
+    let raw_step = with(&|def| raise_core_threshold(def, shifts[1])).raw_score(&all)
+        - with(&|def| raise_core_threshold(def, shifts[0])).raw_score(&all);
     assert!(
         (objective_step - raw_step).abs() > 1e-6,
         "a loaded threshold did not move the prior and named-core terms: {objective_step} vs {raw_step}"

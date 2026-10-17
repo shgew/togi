@@ -301,7 +301,7 @@ fn score_trials(
         add(breakdown.regimes.entry(regime).or_default());
         if regime == Regime::R7 {
             add(breakdown.r7.workloads.entry(class.workload).or_default());
-            add(breakdown.r7.ccds.entry(r7_ccd(fact, &class)).or_default());
+            add(breakdown.r7.ccds.entry(r7_ccd(fact, class)).or_default());
             if class.loaded.len() == 1 {
                 add(&mut breakdown.r7.singleton);
             }
@@ -316,14 +316,14 @@ fn score_trials(
     Ok((score, breakdown))
 }
 
-fn r7_ccd(fact: &TrialFact, class: &togi_facts::TrialClass) -> R7Ccd {
+fn r7_ccd(fact: &TrialFact, class: togi_facts::TrialClass) -> R7Ccd {
     let half = (fact.profile.as_slice().len() / 2).max(1);
     let first = class.loaded.iter().any(|core| core.index() < half);
     let second = class.loaded.iter().any(|core| core.index() >= half);
     match (first, second) {
         (true, true) => R7Ccd::Both,
         (false, true) => R7Ccd::Ccd1,
-        (true, false) | (false, false) => R7Ccd::Ccd0,
+        (_, false) => R7Ccd::Ccd0,
     }
 }
 

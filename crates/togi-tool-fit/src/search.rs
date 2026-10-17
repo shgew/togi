@@ -51,15 +51,14 @@ pub(crate) fn fit_from(
             });
         }
     }
-    let mut cfg = match initial {
-        Some(initial) => initial.clone(),
-        None => {
-            let mut cfg = initial_config(records);
-            let mut shared = voltage_config(records);
-            sync_ycruncher(&mut shared);
-            cfg.shared_voltage = Some(shared);
-            cfg
-        }
+    let mut cfg = if let Some(initial) = initial {
+        initial.clone()
+    } else {
+        let mut cfg = initial_config(records);
+        let mut shared = voltage_config(records);
+        sync_ycruncher(&mut shared);
+        cfg.shared_voltage = Some(shared);
+        cfg
     };
     fit_signals(&mut cfg, records);
     let obs = aggregate(records);
