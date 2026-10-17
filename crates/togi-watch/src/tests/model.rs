@@ -114,6 +114,49 @@ fn project_folds_like_fold() {
 }
 
 #[test]
+fn a_batch_without_trial_ends_matches_incremental_folding() {
+    let script = searching();
+    let mut batch = Model::new();
+    batch.fold_batch(&script.events).unwrap();
+    let each = script.model();
+    assert_eq!(
+        format!("{:?}", batch.snapshot()),
+        format!("{:?}", each.snapshot())
+    );
+    assert_eq!(ended_of(&batch), None);
+}
+
+#[test]
+fn a_refused_batch_reports_the_first_event_and_keeps_the_problem() {
+    let script = searching();
+    let mut model = Model::new();
+    let error = model.fold_batch(&script.events[1..]).unwrap_err();
+    assert_eq!(error.index, 0);
+    assert_eq!(model.problem(), Some(&error.source));
+    assert!(matches!(
+        error.source,
+        FoldError::Journal(togi_journal::FoldError::Gap { .. })
+    ));
+    assert!(model.snapshot().session.is_none());
+    let later = model.fold_batch(&script.events).unwrap_err();
+    assert_eq!(later.index, 0);
+    assert_eq!(model.problem(), Some(&later.source));
+    model.fold_batch(&[]).unwrap();
+    assert_eq!(model.problem(), Some(&later.source));
+}
+
+#[test]
+fn a_batch_reports_the_failure_position_after_a_valid_prefix() {
+    let mut script = searching();
+    script.events[1] = script.events[0].clone();
+    let mut model = Model::new();
+    let error = model.fold_batch(&script.events).unwrap_err();
+    assert_eq!(error.index, 1);
+    assert_eq!(model.problem(), Some(&error.source));
+    assert!(model.snapshot().session.is_none());
+}
+
+#[test]
 fn trial_lifecycle() {
     let mut script = searching();
     let plan = script.plan();
@@ -598,7 +641,8 @@ fn only_the_last_end_of_a_batch_keeps_its_outcomes_and_a_batch_without_one_keeps
         for event in &events[..shown] {
             each.fold(event).unwrap();
         }
-        let batch = project(&events[..shown]);
+        let mut batch = Model::new();
+        batch.fold_batch(&events[..shown]).unwrap();
         assert_eq!(ended_of(&batch), ended_of(&each), "{shown} events");
         assert_eq!(
             batch.snapshot().last.map(|last| &last.id),
@@ -617,9 +661,7 @@ fn only_the_last_end_of_a_batch_keeps_its_outcomes_and_a_batch_without_one_keeps
     // A batch holding no end leaves what the last end kept: the events decided after it keep the same outcomes.
     let kept = ended_of(&project(&events[..ends[1]]));
     let mut rest = project(&events[..ends[1]]);
-    for event in &events[ends[1]..next_decided] {
-        rest.fold_ending(event, false).unwrap();
-    }
+    rest.fold_batch(&events[ends[1]..next_decided]).unwrap();
     assert!(
         ended_of(&rest).is_some(),
         "the end survives a batch without one"
@@ -627,8 +669,89 @@ fn only_the_last_end_of_a_batch_keeps_its_outcomes_and_a_batch_without_one_keeps
     assert_eq!(ended_of(&rest), kept);
 
     // The next intent ends the time between trials, so nothing is kept for it.
-    rest.fold_ending(&events[next_decided], false).unwrap();
+    rest.fold_batch(&events[next_decided..=next_decided])
+        .unwrap();
     assert_eq!(ended_of(&rest), None);
+}
+
+#[test]
+fn an_empty_batch_keeps_the_last_outcome_and_snapshot() {
+    let mut script = Script::at_limit();
+    let plan = script.next_trial();
+    let (intent, trial) = script.intent(&plan);
+    script.end(intent, &trial, Outcome::Pass);
+    let mut model = script.model();
+    let kept = ended_of(&model);
+    let before = format!("{:?}", model.snapshot());
+    model.fold_batch(&[]).unwrap();
+    assert!(kept.is_some());
+    assert_eq!(ended_of(&model), kept);
+    assert_eq!(format!("{:?}", model.snapshot()), before);
+}
+
+#[test]
+fn a_batch_ending_in_shutdown_hides_the_retained_outcome() {
+    let mut script = Script::at_limit();
+    let plan = script.next_trial();
+    let (intent, trial) = script.intent(&plan);
+    script.end(intent, &trial, Outcome::Pass);
+    let after_end = script.events.len();
+    script.append(shutdown(ShutdownReason::Signal), &[]);
+    let mut batch = project(&script.events[..after_end]);
+    assert!(ended_of(&batch).is_some());
+    batch.fold_batch(&script.events[after_end..]).unwrap();
+    let each = script.model();
+    assert_eq!(ended_of(&batch), None);
+    assert_eq!(
+        batch.snapshot().stopped.map(|stop| stop.reason),
+        Some(ShutdownReason::Signal)
+    );
+    assert_eq!(
+        format!("{:?}", batch.snapshot()),
+        format!("{:?}", each.snapshot())
+    );
+    assert_eq!(ended_of(&project(&script.events)), None);
+}
+
+#[test]
+fn a_reset_batch_retains_the_outcome_without_reopening_a_stop() {
+    let mut script = Script::at_limit();
+    let plan = script.next_trial();
+    let (intent, trial) = script.intent(&plan);
+    script.end(intent, &trial, Outcome::Pass);
+    let after_end = script.events.len();
+    let mut batch = project(&script.events);
+    let kept = ended_of(&batch);
+    let reset = script.append(
+        togi_journal::CommandReset {
+            target: togi_journal::ResetTarget::Core(core(1)),
+        }
+        .into(),
+        &[],
+    );
+    batch.fold_batch(&script.events[after_end..]).unwrap();
+    assert!(kept.is_some());
+    assert_eq!(ended_of(&batch), kept);
+    assert_eq!(batch.snapshot().cores[1].queued, Some(reset));
+    let before_stop = script.events.len();
+    script.append(shutdown(ShutdownReason::Signal), &[]);
+    let after_stop = script.events.len();
+    batch.fold_batch(&script.events[before_stop..]).unwrap();
+    script.append(
+        togi_journal::CommandReset {
+            target: togi_journal::ResetTarget::Core(core(0)),
+        }
+        .into(),
+        &[],
+    );
+    batch.fold_batch(&script.events[after_stop..]).unwrap();
+    assert_eq!(ended_of(&batch), None);
+    assert!(batch.snapshot().stopped.is_some());
+    let each = script.model();
+    assert_eq!(
+        format!("{:?}", batch.snapshot()),
+        format!("{:?}", each.snapshot())
+    );
 }
 
 #[test]

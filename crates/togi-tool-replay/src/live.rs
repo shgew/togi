@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
-use togi_journal::{Event, Payload};
+use togi_journal::Event;
 use togi_watch::model::Model;
 use togi_watch::screen::{Journal, Quit, Screen};
 use togi_watch::terminal::{Config, Feed, run_with};
@@ -66,16 +66,8 @@ impl<E: FnMut() -> Duration> Feed for Replaying<'_, E> {
         self.now.set(now);
         if played != self.shown {
             let batch = &self.events[self.shown..played];
-            let last_end = batch
-                .iter()
-                .rposition(|event| matches!(event.payload, Payload::TrialEnd(_)));
-            for (at, event) in batch.iter().enumerate() {
-                if self.model.problem().is_some()
-                    || self.model.fold_ending(event, last_end == Some(at)).is_err()
-                {
-                    break;
-                }
-            }
+            // A refused batch stays in the model's problem state for the frame below.
+            let _ = self.model.fold_batch(batch);
             self.shown = played;
         }
         if let Some(problem) = self.model.problem() {
