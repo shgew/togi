@@ -520,7 +520,7 @@ The roles enforce the comparison's order:
 
 - A `reference` run needs the tree at the reference revision.
 - A `candidate` run past the candidate limit stops the campaign.
-- In model development, `kept` needs a complete candidate run paired with a complete reference run of the same command and data; otherwise the campaign stops as unpaired. Observation and accounting need a complete candidate run.
+- In model development, `kept` needs a complete candidate run paired with a complete reference run of the same command and data, where each run's `--records` path may differ; otherwise the campaign stops as unpaired. Observation and accounting need a complete candidate run.
 - A `confirmation` needs a kept candidate whose changes are unchanged since its run, and a confirmation the manifest allows. It is spent when its start line is written. Its `confirmation-reference` run follows it, and its outcome needs both to be complete.
 - `confirmation-failed` stops the campaign. A `finalization` run needs a passed confirmation at the same changes.
 

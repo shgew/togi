@@ -105,10 +105,23 @@ fn real_process_records_pair_with_a_rerun_and_compare_equal() {
         stdout.ends_with("F3: candidate loss lower in 0 of 1 held-out sessions: fails\n"),
         "{stdout}"
     );
-    let metrics: std::collections::BTreeMap<String, f64> =
-        serde_json::from_str(&std::fs::read_to_string(&metrics).unwrap()).unwrap();
-    assert_eq!(metrics["pooled.all.loss_ratio"], 1.0);
-    assert_eq!(metrics["pooled.f3_sessions"], 1.0);
+    let written = std::fs::read_to_string(&metrics).unwrap();
+    let values: std::collections::BTreeMap<String, f64> = serde_json::from_str(&written).unwrap();
+    assert_eq!(values["pooled.all.loss_ratio"], 1.0);
+    assert_eq!(values["pooled.f3_sessions"], 1.0);
+    let again = fit(&[
+        "--compare",
+        candidate,
+        reference,
+        "--metrics",
+        metrics.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        again.status.code(),
+        Some(1),
+        "an existing metrics file was replaced"
+    );
+    assert_eq!(std::fs::read_to_string(&metrics).unwrap(), written);
 
     let again = fit(&["--facts", facts, "--forward-only", "--records", candidate]);
     assert_eq!(
@@ -116,6 +129,12 @@ fn real_process_records_pair_with_a_rerun_and_compare_equal() {
         Some(1),
         "an existing records file was replaced"
     );
+    assert!(
+        !text(&again.stdout).contains("Pooled:"),
+        "the check ran before the existing records file was refused: {}",
+        text(&again.stdout)
+    );
+    assert_eq!(std::fs::read_to_string(&runs[0]).unwrap(), lines);
 
     let other = tempfile::tempdir().unwrap();
     let mut offsets = [0; 16];
@@ -378,6 +397,17 @@ fn real_process_flags_that_do_not_go_together_are_usage_errors() {
         );
         assert!(ran.stdout.is_empty(), "{args:?}");
     }
+}
+
+#[test]
+fn real_process_a_repeated_compare_is_refused_as_repeated() {
+    let ran = fit(&["--compare", "a", "b", "--compare", "c", "d"]);
+    assert_eq!(ran.status.code(), Some(2));
+    assert!(
+        text(&ran.stderr).contains("cannot be used multiple times"),
+        "{}",
+        text(&ran.stderr)
+    );
 }
 
 #[test]

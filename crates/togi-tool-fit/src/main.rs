@@ -79,6 +79,7 @@ struct Cli {
     #[arg(
         long,
         num_args = 2,
+        action = clap::ArgAction::Set,
         value_names = ["CANDIDATE", "REFERENCE"],
         conflicts_with_all = [
             "facts",

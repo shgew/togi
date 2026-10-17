@@ -4,7 +4,7 @@ use togi_machine::{Regime, WorkloadId};
 
 use super::forward::three_sessions;
 use crate::artifact::Extract;
-use crate::compare::{Comparison, compare, metrics, report};
+use crate::compare::{Comparison, compare, interval, metrics, report};
 use crate::error::Error;
 use crate::forward::{ForwardCheck, forward_check};
 use crate::records::{Record, Sums, decode, encode};
@@ -182,6 +182,13 @@ fn the_bootstrap_resamples_trials_in_pairs_with_a_fixed_seed() {
 }
 
 #[test]
+fn the_interval_is_the_interpolated_2_5_and_97_5_percent_quantiles() {
+    let sorted: Vec<f64> = (0..=10).map(f64::from).collect();
+    assert_eq!(interval(&sorted), (0.25, 9.75));
+    assert_eq!(interval(&[2.0]), (2.0, 2.0));
+}
+
+#[test]
 fn the_subsets_split_single_core_non_r7_and_r7_trials() {
     let mut records = records(&check(), 0);
     let r7 = WorkloadId::new(Regime::R7, 0).unwrap();
@@ -271,4 +278,47 @@ fn a_line_that_is_not_a_record_names_its_file_and_line() {
         matches!(&error, Error::Records { line: 1, .. }),
         "{error:?}"
     );
+}
+
+fn refused(line: &str) {
+    let error = decode(Path::new("r.jsonl"), line.as_bytes()).unwrap_err();
+    assert!(
+        matches!(&error, Error::Records { line: 1, .. }),
+        "{line}: {error:?}"
+    );
+}
+
+const INPUT: &str = r#"{"record":"input","sha256":"ab","rows":10,"seal":0}"#;
+const SUMS: &str = r#""trials":1,"failures":1,"predicted":0.5,"fit_log_loss":0.7,"constant_log_loss":0.7,"surprises":0,"matches":0,"flagged":0,"eligible":0"#;
+
+#[test]
+fn an_input_and_pooled_object_decode() {
+    let decoded = decode(
+        Path::new("r.jsonl"),
+        format!("{INPUT}\n{{\"record\":\"pooled\",\"sums\":{{{SUMS}}}}}\n").as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(decoded.len(), 2);
+}
+
+#[test]
+fn a_correctly_sized_record_array_is_refused() {
+    refused(r#"["input","ab",10,0]"#);
+}
+
+#[test]
+fn a_correctly_sized_sums_array_is_refused() {
+    refused(r#"{"record":"pooled","sums":[1,1,0.5,0.7,0.7,0,0,0,0]}"#);
+}
+
+#[test]
+fn an_unknown_record_member_is_refused() {
+    refused(r#"{"record":"input","sha256":"ab","rows":10,"seal":0,"extra":1}"#);
+}
+
+#[test]
+fn an_unknown_sums_member_is_refused() {
+    refused(&format!(
+        "{{\"record\":\"pooled\",\"sums\":{{{SUMS},\"extra\":1}}}}"
+    ));
 }

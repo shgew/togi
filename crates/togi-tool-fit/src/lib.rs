@@ -132,12 +132,16 @@ pub fn run(options: &Options, report: &mut (impl io::Write + Send)) -> Result<El
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 let trials = evidence::decisive(&extract.facts)?;
+                let records = records
+                    .as_deref()
+                    .map(records::RecordsFile::create)
+                    .transpose()?;
                 let forward = Instant::now();
                 let check = forward_check(&trials, *seal)?;
                 let elapsed = forward.elapsed();
                 report_forward(report, &check, *seal)?;
-                if let Some(path) = records {
-                    records::write(path, &extract, *seal, &check)?;
+                if let Some(records) = records {
+                    records.write(&extract, *seal, &check)?;
                 }
                 if !members.is_empty() {
                     let reference = reference_check(&trials, *seal, &members)?;

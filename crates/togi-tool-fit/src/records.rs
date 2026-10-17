@@ -6,68 +6,71 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use togi_journal::{Seq, SessionId};
-use togi_machine::WorkloadId;
+use togi_machine::{WorkloadId, object_only};
 
 use crate::artifact::Extract;
 use crate::error::Error;
 use crate::forward::{ForwardCheck, ForwardScore};
 
-/// One line of a records file.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "record", rename_all = "snake_case")]
-pub enum Record {
-    /// The rows the check read and the sessions it sealed.
-    Input {
-        sha256: String,
-        rows: usize,
-        seal: usize,
-    },
-    /// One scored held-out trial, identified by `session` and `seq`.
-    Trial {
-        session: SessionId,
-        seq: Seq,
-        training_sessions: usize,
-        workload: WorkloadId,
-        loaded: usize,
-        failure: bool,
-        /// The predicted failure probability, before the log-loss clamp.
-        probability: f64,
-        constant: f64,
-        fit_log_loss: f64,
-        constant_log_loss: f64,
-        surprise: bool,
-        matched: bool,
-    },
-    /// A held-out session's sums, which its trial lines add up to in file order.
-    Session {
-        session: SessionId,
-        ruleset: u32,
-        training_sessions: usize,
-        constant: f64,
-        #[serde(flatten)]
-        sums: Sums,
-    },
-    /// The sums over every held-out session, in session order.
-    Pooled {
-        #[serde(flatten)]
-        sums: Sums,
-    },
+object_only! {
+    /// One line of a records file.
+    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(tag = "record", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum Record {
+        // The rows the check read and the sessions it sealed.
+        Input {
+            sha256: String,
+            rows: usize,
+            seal: usize,
+        },
+        // One scored held-out trial, identified by `session` and `seq`; `probability` is the predicted
+        // failure probability before the log-loss clamp.
+        Trial {
+            session: SessionId,
+            seq: Seq,
+            training_sessions: usize,
+            workload: WorkloadId,
+            loaded: usize,
+            failure: bool,
+            probability: f64,
+            constant: f64,
+            fit_log_loss: f64,
+            constant_log_loss: f64,
+            surprise: bool,
+            matched: bool,
+        },
+        // A held-out session's sums, which its trial lines add up to in file order.
+        Session {
+            session: SessionId,
+            ruleset: u32,
+            training_sessions: usize,
+            constant: f64,
+            sums: Sums,
+        },
+        // The sums over every held-out session, in session order.
+        Pooled {
+            sums: Sums,
+        },
+    }
 }
 
-/// A [`ForwardScore`] at full precision; the log losses are sums, not per-trial means.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Sums {
-    pub trials: usize,
-    pub failures: usize,
-    pub predicted: f64,
-    pub fit_log_loss: f64,
-    pub constant_log_loss: f64,
-    pub surprises: usize,
-    pub matches: usize,
-    pub flagged: usize,
-    pub eligible: usize,
+object_only! {
+    /// A [`ForwardScore`] at full precision; the log losses are sums, not per-trial means.
+    #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Sums {
+        pub trials: usize,
+        pub failures: usize,
+        pub predicted: f64,
+        pub fit_log_loss: f64,
+        pub constant_log_loss: f64,
+        pub surprises: usize,
+        pub matches: usize,
+        pub flagged: usize,
+        pub eligible: usize,
+    }
 }
 
 impl From<&ForwardScore> for Sums {
@@ -132,25 +135,37 @@ pub fn encode(
     })
 }
 
-/// Writes the records of `check` to the new file `path`; an existing file is never replaced.
-pub fn write(
-    path: &Path,
-    extract: &Extract,
-    seal: usize,
-    check: &ForwardCheck,
-) -> Result<(), Error> {
-    let io = |action: &'static str| {
-        move |source| Error::Io {
-            action,
+/// A new records file, created before the forward-chained check runs so a path that cannot take it fails
+/// before the check spends its time.
+pub struct RecordsFile<'a> {
+    path: &'a Path,
+    out: BufWriter<File>,
+}
+
+impl<'a> RecordsFile<'a> {
+    /// Creates the new file `path`; an existing file is never replaced.
+    pub fn create(path: &'a Path) -> Result<Self, Error> {
+        let file = File::create_new(path).map_err(|source| Error::Io {
+            action: "create the forward records",
             path: path.to_owned(),
             source,
-        }
-    };
-    let file = File::create_new(path).map_err(io("create the forward records"))?;
-    let mut out = BufWriter::new(file);
-    encode(&mut out, extract, seal, check)
-        .and_then(|()| out.flush())
-        .map_err(io("write the forward records"))
+        })?;
+        Ok(Self {
+            path,
+            out: BufWriter::new(file),
+        })
+    }
+
+    /// Writes the records of `check`, run on `extract` with the newest `seal` sessions sealed.
+    pub fn write(mut self, extract: &Extract, seal: usize, check: &ForwardCheck) -> Result<(), Error> {
+        encode(&mut self.out, extract, seal, check)
+            .and_then(|()| self.out.flush())
+            .map_err(|source| Error::Io {
+                action: "write the forward records",
+                path: self.path.to_owned(),
+                source,
+            })
+    }
 }
 
 /// Parses records written by [`encode`]; `path` names them in errors.

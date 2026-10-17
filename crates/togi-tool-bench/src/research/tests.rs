@@ -954,6 +954,63 @@ fn kept(fake: &mut Fake) -> Live {
 }
 
 #[test]
+fn runs_that_write_their_own_records_still_pair() {
+    let mut fake = fake(&sessions());
+    let mut live = Live::start(&model_manifest(&fake), 427, &fake);
+    let complete = End::Exited { code: 0 };
+    let reference = live
+        .run(
+            &fake,
+            "h1",
+            Role::Reference,
+            &format!("{FORWARD} --records {RUN}/reference.jsonl"),
+            complete,
+        )
+        .unwrap();
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    let candidate = live
+        .run(
+            &fake,
+            "h1",
+            Role::Candidate,
+            &format!("{FORWARD} --records={RUN}/candidate.jsonl"),
+            complete,
+        )
+        .unwrap();
+    live.decide(&fake, "h1", Outcome::Kept).unwrap();
+    assert_eq!(
+        live.campaign.ledger.outcome("h1").unwrap().runs,
+        [reference, candidate]
+    );
+    let confirmation = live
+        .run(
+            &fake,
+            "h1",
+            Role::Confirmation,
+            &format!("{CONFIRM} --records {RUN}/confirmation.jsonl"),
+            complete,
+        )
+        .unwrap();
+    fake.revert("crates/togi-sim/src/model.rs");
+    let confirmation_reference = live
+        .run(
+            &fake,
+            "h1",
+            Role::ConfirmationReference,
+            &format!("{CONFIRM} --records {RUN}/confirmation-reference.jsonl"),
+            complete,
+        )
+        .unwrap();
+    fake.edit("crates/togi-sim/src/model.rs", "candidate");
+    live.decide(&fake, "h1", Outcome::ConfirmationPassed)
+        .unwrap();
+    assert_eq!(
+        live.campaign.ledger.outcome("h1").unwrap().runs,
+        [confirmation_reference, confirmation]
+    );
+}
+
+#[test]
 fn confirmation_runs_once_then_finalizes() {
     let mut fake = fake(&sessions());
     let mut live = kept(&mut fake);

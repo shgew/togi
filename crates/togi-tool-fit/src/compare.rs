@@ -1,7 +1,7 @@
 //! Pairs a candidate's forward records with a reference's, trial by trial, and compares them exactly: the
 //! loss, surprises and calibration of every held-out session and of the pool, for all trials and the
 //! single-core, non-R7 and R7 subsets, the program's primary and F1–F3 checks, and a paired trial bootstrap
-//! of each loss ratio.
+//! of each session's and the pool's loss ratio over all its trials.
 //!
 //! Both runs must be [`crate::records`] of the forward-chained check on the same rows with the same seal:
 //! the reference is the unchanged fitter's prefix fits, never a fixed ensemble. Sums run per session in
@@ -142,9 +142,9 @@ struct Pair {
     reference: Side,
 }
 
-/// Pairs `candidate` with `reference` and compares them, each loss ratio's interval from `resamples`
-/// resamples of the scope's trials seeded `seed`. The two must hold the same input, seal and trials in the
-/// same order with the same outcomes and constants; anything else is unpaired.
+/// Pairs `candidate` with `reference` and compares them, the interval of each session's and the pool's
+/// all-trials loss ratio from `resamples` resamples of its trials seeded `seed`. The two must hold the same
+/// input, seal and trials in the same order with the same outcomes and constants; anything else is unpaired.
 pub fn compare(
     candidate: &[Record],
     reference: &[Record],
@@ -327,7 +327,12 @@ fn bootstrap(pairs: &[Pair], resamples: usize, seed: u64) -> (f64, f64) {
         })
         .collect();
     ratios.sort_by(f64::total_cmp);
-    (quantile(&ratios, 0.025), quantile(&ratios, 0.975))
+    interval(&ratios)
+}
+
+/// The 2.5% and 97.5% quantiles of the ascending `sorted`, linearly interpolated between neighbours.
+pub(crate) fn interval(sorted: &[f64]) -> (f64, f64) {
+    (quantile(sorted, 0.025), quantile(sorted, 0.975))
 }
 
 fn quantile(sorted: &[f64], q: f64) -> f64 {
