@@ -10,6 +10,7 @@ use togi_machine::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::clock::Clock;
 use crate::controller::Controller;
 use crate::error::InvalidTrial;
 use crate::error::{Error, Shared};
@@ -32,12 +33,14 @@ pub(crate) struct Settings {
     pub(crate) fs: Option<Arc<dyn togi_journal::fs::Fs>>,
     pub(crate) inputs: crate::procfs::Inputs,
     pub(crate) memory: Option<crate::watch::Memory>,
+    pub(crate) clock: Clock,
 }
 
 /// Runs trials on one dedicated runtime thread; every launch happens there.
 pub struct Runner {
     dir: PathBuf,
     timing: Timing,
+    clock: Clock,
     runtime: Runtime,
     durability: crate::samples::Durability,
     fs: Option<Arc<dyn togi_journal::fs::Fs>>,
@@ -144,6 +147,7 @@ impl Runner {
                 fs: None,
                 inputs: crate::procfs::Inputs::default(),
                 memory: None,
+                clock: Clock::System,
             };
             let proc = settings.roots.proc.clone();
             let inputs = settings.inputs.clone();
@@ -180,6 +184,7 @@ impl Runner {
             pm_table,
         } = options;
         let timing = settings.timing;
+        let clock = settings.clock.clone();
         let env_dir = dir.clone();
         let durability = settings.durability;
         let fs = settings.fs.clone();
@@ -207,13 +212,14 @@ impl Runner {
             durability,
         };
         let runtime = if timer_only {
-            Runtime::spawn_timer_only(make_env)?
+            Runtime::spawn_timer_only(make_env, clock.clone())?
         } else {
-            Runtime::spawn(make_env)?
+            Runtime::spawn(make_env, clock.clone())?
         };
         Ok(Self {
             dir,
             timing,
+            clock,
             runtime,
             durability,
             fs,
@@ -229,7 +235,7 @@ impl Runner {
         outside_runtime(operation)?;
         let (reply, answer) = sync_channel(1);
         self.runtime.send(command(reply))?;
-        match answer.recv_timeout(bound) {
+        match self.clock.recv_timeout(&answer, bound) {
             Ok(value) => Ok(value),
             Err(RecvTimeoutError::Timeout) => Err(Error::Stuck { operation, bound }),
             Err(RecvTimeoutError::Disconnected) => Err(Error::RuntimeGone),
@@ -300,8 +306,12 @@ impl Trials for Runner {
                 error: error.into(),
             });
         }
-        match answer.recv_timeout(bound) {
-            Ok(Ok(delivered)) => Ok(Box::new(Trial::new(delivered.claim(), &self.timing))),
+        match self.clock.recv_timeout(&answer, bound) {
+            Ok(Ok(delivered)) => Ok(Box::new(Trial::new(
+                delivered.claim(),
+                &self.timing,
+                self.clock.clone(),
+            ))),
             Ok(Err(partial)) => Err(partial),
             Err(_) => {
                 attempt.cancel();
@@ -394,12 +404,13 @@ pub struct Trial {
     failure: Option<Arc<Error>>,
     reported: bool,
     created: Instant,
+    clock: Clock,
     bound: Duration,
     stop_bound: Duration,
 }
 
 impl Trial {
-    pub(crate) fn new(handle: Handle, timing: &Timing) -> Self {
+    pub(crate) fn new(handle: Handle, timing: &Timing, clock: Clock) -> Self {
         let Handle {
             commands,
             events,
@@ -417,7 +428,8 @@ impl Trial {
             ended: None,
             failure: None,
             reported: false,
-            created: Instant::now(),
+            created: clock.now(),
+            clock,
             bound: timing.wait_bound(duration),
             stop_bound: timing.stop_bound(),
         }
@@ -425,21 +437,22 @@ impl Trial {
 
     #[cfg(test)]
     pub(crate) fn wait_budget(&self) -> Duration {
-        self.bound.saturating_sub(self.created.elapsed())
+        self.bound
+            .saturating_sub(self.clock.now().duration_since(self.created))
     }
 
     /// Waits up to `budget` for the supervisor's end, handing reports to `report`; with `block`
     /// false it takes only what is already queued. False when the end never came.
     fn await_end(&mut self, budget: Duration, block: bool, report: &mut dyn Reporter) -> bool {
-        let begun = Instant::now();
+        let begun = self.clock.now();
         while self.ended.is_none() {
-            let elapsed = begun.elapsed();
+            let elapsed = self.clock.now().duration_since(begun);
             if elapsed >= budget {
                 return false;
             }
             let event = if block {
-                self.events
-                    .recv_timeout(budget.saturating_sub(elapsed))
+                self.clock
+                    .recv_timeout(&self.events, budget.saturating_sub(elapsed))
                     .ok()
             } else {
                 self.events.try_recv().ok()
@@ -517,7 +530,9 @@ impl Running for Trial {
                 let _ = commands.send(TrialCommand::Cancel);
             })
         };
-        let remaining = self.bound.saturating_sub(self.created.elapsed());
+        let remaining = self
+            .bound
+            .saturating_sub(self.clock.now().duration_since(self.created));
         // A wait after the supervisor's bound has passed still collects what already finished:
         // it reads what is queued, bounded by the stop bound for reports, and never blocks.
         let (budget, block) = if remaining.is_zero() {
