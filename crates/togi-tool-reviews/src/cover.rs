@@ -1,0 +1,136 @@
+//! `just cover` output, kept where it meets the snapshot's hunks.
+
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
+use regex::Regex;
+
+use crate::diff::{Span, parse_diff};
+use crate::manifest::{CoverRange, Coverage, Manifest, NotBuilt, read_manifest, write_manifest};
+use crate::text::{join, quote};
+use crate::{Error, files};
+
+static COVER_RANGE_LINE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"^(.+):(\d+)(?:-(\d+))?$"));
+static COVER_NOT_BUILT_LINE: LazyLock<Result<Regex, regex::Error>> =
+    LazyLock::new(|| Regex::new(r"^(.+): not built for (.+)$"));
+
+fn compiled(
+    pattern: &'static LazyLock<Result<Regex, regex::Error>>,
+) -> Result<&'static Regex, Error> {
+    pattern
+        .as_ref()
+        .map_err(|error| Error::wrap("compile a pattern", error.clone()))
+}
+
+/// `just cover` output: `path:first-last` and `path:line` ranges, then `path: not built for <platform>`
+/// lines. Its summary sentences are ignored.
+pub fn parse_cover(text: &str) -> Result<(Vec<CoverRange>, Vec<NotBuilt>), Error> {
+    let range_line = compiled(&COVER_RANGE_LINE)?;
+    let not_built_line = compiled(&COVER_NOT_BUILT_LINE)?;
+    let (mut ranges, mut unbuilt) = (Vec::new(), Vec::new());
+    for line in text.split_inclusive('\n') {
+        let line = line.trim();
+        if let Some(m) = not_built_line.captures(line) {
+            unbuilt.push(NotBuilt {
+                path: m[1].to_owned(),
+                target: m[2].to_owned(),
+            });
+            continue;
+        }
+        let Some(m) = range_line.captures(line) else {
+            continue;
+        };
+        let first = m[2].parse().unwrap_or(i64::MAX);
+        let last = m
+            .get(3)
+            .map_or(first, |d| d.as_str().parse().unwrap_or(i64::MAX));
+        if last < first {
+            return Err(Error::new(format!(
+                "cover range {} ends before it starts",
+                quote(line)
+            )));
+        }
+        ranges.push(CoverRange {
+            path: m[1].to_owned(),
+            first,
+            last,
+        });
+    }
+    Ok((ranges, unbuilt))
+}
+
+/// The parts of the reported ranges that lie inside the hunks of their file, and the not-built files the
+/// review covers. A range outside every hunk belongs to a patch the record does not cover and is dropped. A
+/// delta's hunk file concatenates the patches of several commits, so their hunks can overlap; overlapping
+/// parts of a file are merged so one uncovered interval counts once. Adjacent parts stay separate.
+pub fn intersect_cover(
+    ranges: &[CoverRange],
+    unbuilt: &[NotBuilt],
+    hunks: &HashMap<String, Vec<Span>>,
+) -> Coverage {
+    let mut parts = Vec::new();
+    for r in ranges {
+        for h in hunks.get(&r.path).into_iter().flatten() {
+            let (first, last) = (r.first.max(h.first), r.last.min(h.last));
+            if first <= last {
+                parts.push(CoverRange {
+                    path: r.path.clone(),
+                    first,
+                    last,
+                });
+            }
+        }
+    }
+    parts.sort_by(|a, b| (&a.path, a.first, a.last).cmp(&(&b.path, b.first, b.last)));
+    let mut merged: Vec<CoverRange> = Vec::with_capacity(parts.len());
+    for r in parts {
+        if let Some(prev) = merged.last_mut()
+            && prev.path == r.path
+            && r.first <= prev.last
+        {
+            prev.last = prev.last.max(r.last);
+            continue;
+        }
+        merged.push(r);
+    }
+    Coverage {
+        reported: i64::try_from(ranges.len()).unwrap_or(i64::MAX),
+        ranges: merged,
+        not_built: unbuilt
+            .iter()
+            .filter(|u| hunks.contains_key(&u.path))
+            .cloned()
+            .collect(),
+    }
+}
+
+/// The changed new-side lines of every included file, from the snapshot's hunk files.
+pub fn hunk_spans(dir: &str, m: &Manifest) -> Result<HashMap<String, Vec<Span>>, Error> {
+    let mut hunks = HashMap::new();
+    for f in m.included() {
+        let bytes = files::read(&join(dir, &f.hunk_file))
+            .map_err(|error| Error::wrap(format!("read hunk file for {}", f.path), error))?;
+        let sections = parse_diff(&bytes)
+            .map_err(|error| Error::wrap(format!("parse hunk file for {}", f.path), error))?;
+        hunks.insert(
+            f.path.clone(),
+            sections.into_iter().flat_map(|s| s.changed).collect(),
+        );
+    }
+    Ok(hunks)
+}
+
+/// Records the uncovered ranges inside the snapshot's hunks in its manifest, replacing earlier coverage.
+pub fn add_cover(dir: &str, text: &str) -> Result<Manifest, Error> {
+    let mut m = read_manifest(dir)?;
+    let (ranges, unbuilt) = parse_cover(text)?;
+    let hunks = hunk_spans(dir, &m)?;
+    m.coverage = Some(intersect_cover(&ranges, &unbuilt, &hunks));
+    write_manifest(dir, &m)?;
+    Ok(m)
+}
+
+#[cfg(test)]
+#[path = "tests/cover.rs"]
+mod tests;
