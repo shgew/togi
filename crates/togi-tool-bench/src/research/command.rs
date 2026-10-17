@@ -113,7 +113,7 @@ pub(super) fn arguments(
         Recipe::Forward | Recipe::Fit => {
             let Some(Some(facts)) = value("--facts") else {
                 return Err(refuse(
-                    "--facts must name a manifest input; the default extract holds sessions no campaign may read"
+                    "--facts must name a manifest input; the committed extract holds sessions no campaign may read"
                         .to_owned(),
                 ));
             };

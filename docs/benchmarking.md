@@ -514,7 +514,7 @@ The dispatcher refuses a manifest whose issue has no brief or names another mode
 
 Before `exec` and `outcome` record anything, the dispatcher checks that the campaign has not stopped, that no run is left unfinished, that wall time remains, that every pinned file still has its hash and that each facts input still holds exactly its named sessions. It also checks that `HEAD` descends from the checkout and that every changed path is a writable one. A failed check after the start stops the campaign with its reason. A refused command records nothing.
 
-`exec` allows only its mode's evaluators. Model development runs `forward` (`--facts`, `--seal`, `--jobs`) and, to finalize a confirmed candidate, `fit` (`--facts`, `--out`, `--jobs`, `--seed`, `--bootstrap`) and the F5 `bench` on the committed suite with `--split all --baseline tools/bench/baseline.jsonl`. `--facts` must name a manifest input, never the default extract. A development run seals exactly the input's confirmation sessions, and a confirmation scores them unsealed. Observation and accounting run only `bench`, with the manifest's `--suite` and `--split`, and keep `--timeout` and `--max-boots`. Output flags must name paths inside the run directory, never its own record (`manifest.json`, `experiments.jsonl`, `lock`, `report.md`, `raw`), and `--jobs` defaults to the worker limit and may not exceed it. Each run waits for the host-shared lock, then makes its checks and gets the wall time left. When the time runs out, or the dispatcher is told to stop, it terminates the evaluator's process group and records the run as timed out or interrupted. A timed-out run also stops the campaign.
+`exec` allows only its mode's evaluators. Model development runs `forward` (`--facts`, `--seal`, `--jobs`) and, to finalize a confirmed candidate, `fit` (`--facts`, `--out`, `--jobs`, `--seed`, `--bootstrap`) and the F5 `bench` on the committed suite with `--split all --baseline tools/bench/baseline.jsonl`. `--facts` must name a manifest input, never the committed extract. A development run seals exactly the input's confirmation sessions, and a confirmation scores them unsealed. Observation and accounting run only `bench`, with the manifest's `--suite` and `--split`, and keep `--timeout` and `--max-boots`. Output flags must name paths inside the run directory, never its own record (`manifest.json`, `experiments.jsonl`, `lock`, `report.md`, `raw`), and `--jobs` defaults to the worker limit and may not exceed it. Each run waits for the host-shared lock, then makes its checks and gets the wall time left. When the time runs out, or the dispatcher is told to stop, it terminates the evaluator's process group and records the run as timed out or interrupted. A timed-out run also stops the campaign.
 
 The roles enforce the comparison's order:
 
@@ -599,11 +599,13 @@ For each group with at least 10 trials, the simulator computes each trial's exac
 ## Fitting the target machine
 
 ```sh
-just fit
-# Optional: --facts EXTRACT.jsonl.gz --out DIRECTORY --seed 263 --bootstrap 8 --jobs N
+just fit --current-extract --facts tools/bench/facts/target.jsonl.gz --out tools/bench/machines
+# Optional: --seed 263 --bootstrap 8 --jobs N
 ```
 
 `togi-tool-fit` reads the same privacy-safe extract as the model check and requires 16-core profiles. It writes `target-fit-0.json` from all decisive trials and `target-fit-1.json` through `target-fit-8.json` from whole-trial bootstrap samples drawn with replacement. The default seed is 263; refit `n` uses seed `263+n`. Every file declares its extract relative to the output directory and its BIOS context. Mixed-context extracts are refused: split them before fitting. The `target` scenario spreads separate dev and holdout seeds across all nine files, with the replay oracle above each.
+
+Every run names its extract with `--facts`, and every run that writes machine files names its directory with `--out`; neither has a default, so no run reads the committed extract or replaces the committed machines by omission. Without `--current-extract`, an extract holding a session recorded after 20261004T000701Z is refused before anything is fitted or created, and an extract holding any of the original research artifact's seven sessions must be that exact artifact ([model program](../tools/fit/program.md#the-data)). The committed extract therefore needs `--current-extract`, the owner-approved regeneration above; no research campaign passes it. Each report opens with `Facts: sha256 HASH, N rows, N sessions:` and whether the rows are the original research artifact, the hash being the dispatcher's pin of the decompressed rows.
 
 The independent fits, candidate scoring within each fit and the forward-chained check share one Rayon pool, bounded by `--jobs` (default: the available CPU count). Unconstrained fits finish before any flagged bootstrap members restart from a passing all-facts fit; those constrained refits also use that pool. `--jobs 1` uses one worker for fits, candidate scoring and the forward-chained check. Concurrent scores are summed in a fixed order, so machine bytes and report order do not depend on the worker count or the CPU count.
 
@@ -638,8 +640,7 @@ A model-check flag is not silently repaired or excluded: inspect the named class
 ### In-sample shared-voltage anchor
 
 ```sh
-just fit-shared-voltage
-# Optional: --facts EXTRACT.jsonl.gz --out DIRECTORY
+just fit-shared-voltage --current-extract --facts tools/bench/facts/target.jsonl.gz --out tools/bench/machines
 ```
 
 This retained output mode uses the same fit as `just fit` and `just forward`, on **all decisive trials**, including record-only facts, and writes only `target-shared-voltage.json`. It requires one nonempty BIOS context and 16-core profiles. The anchor mode rejects `--bootstrap`, `--seed`, `--forward-only` and `--seal`, even when their supplied values equal their defaults. Its command and output file are scheduled for removal only after #480 passes its forward score and regenerates the ensemble.
@@ -714,19 +715,20 @@ R7 rows additionally break out each workload (including y-cruncher) and loaded-C
 `Pooled` sums all held-out sessions' counts and predictions and divides summed log losses by their total trials. Its constant uses each session's own earlier prefix, not one failure rate fitted to the pooled outcomes; its group counts sum the separate held-out checks. `Forward-chained elapsed` reports the check's own wall time, which in `just fit` overlaps the ensemble's fits. This is evidence about extrapolation to later sessions, not a gate or a guarantee about unseen profiles or other machines.
 
 ```sh
-just forward            # the check alone: no ensemble, no machine files
-just forward --seal 1   # also leave the newest session unfitted and unscored
+just forward --facts ARTIFACT            # the check alone: no ensemble, no machine files
+just forward --facts ARTIFACT --seal 1   # also leave the newest session unfitted and unscored
+just forward --current-extract --facts tools/bench/facts/target.jsonl.gz   # every committed session
 ```
 
-`just forward` runs `togi-tool-fit --forward-only`: the same rows and `Pooled` line, without fitting the ensemble or writing machine files. `--seal N`, accepted only with `--forward-only`, drops the newest N sessions before the check: they are neither fitted nor scored, the remaining rows are unchanged, and `Pooled` covers only the remaining held-out sessions. At least one held-out session must remain. A seal count is not a data permission: on the committed extract, `--seal 1` still scores #480's spent score session 20261004T211726Z. Model research ([program](../tools/fit/program.md)) uses only its brief's approved sessions.
+`just forward` runs `togi-tool-fit --forward-only`: the same rows and `Pooled` line, without fitting the ensemble or writing machine files. `--seal N`, accepted only with `--forward-only`, drops the newest N sessions before the check: they are neither fitted nor scored, the remaining rows are unchanged, and `Pooled` covers only the remaining held-out sessions. At least one held-out session must remain. A seal count is not a data permission: on the committed extract, `--seal 1` still scores #480's spent score session 20261004T211726Z, which is why that extract needs `--current-extract` ([above](#fitting-the-target-machine)). Model research ([program](../tools/fit/program.md)) uses only its brief's approved sessions. On the original research artifact the report names the historical confirmation session after the `Facts:` line, as `sealed, neither fitted nor scored` or as `scored, a historical check that is not blind`.
 
 To score the current ensemble beside the forward candidate without refitting its members:
 
 ```sh
-just forward --reference-machine tools/bench/machines/target-fit-{0,1,2,3,4,5,6,7,8}.json
+just forward --current-extract --facts tools/bench/facts/target.jsonl.gz --reference-machine tools/bench/machines/target-fit-{0,1,2,3,4,5,6,7,8}.json
 ```
 
-`--reference-machine` accepts one or more files and requires `--forward-only`. Reference scoring uses the same sessions, seal, prefix constants and probability clamp. For each trial it averages the members' failure probabilities before computing log loss, predicted failures and surprises. Its model-check diagnostic is explicitly `flagged_by_any_member/eligible`, not a check of the mean predictor. It is reference evidence, never the candidate's gate.
+`--reference-machine` accepts one or more files and requires `--forward-only` and `--current-extract`: the committed members were fitted in-sample to all seven sessions of the original research artifact, the historical confirmation included, so scoring them is never research evidence. Reference scoring uses the same sessions, seal, prefix constants and probability clamp. For each trial it averages the members' failure probabilities before computing log loss, predicted failures and surprises. Its model-check diagnostic is explicitly `flagged_by_any_member/eligible`, not a check of the mean predictor. It is reference evidence, never the candidate's gate.
 
 #### The 2026-10-17 frozen score
 
@@ -783,8 +785,9 @@ In one development run, the four added prefix fits and held-out checks took abou
 
 ### The fit tool (`togi-tool-fit`)
 
-`just fit`, `just fit-shared-voltage` and `just forward` run `togi-tool-fit` with the flags (`--facts`, `--out`, `--seed`, `--bootstrap`, `--jobs`, `--forward-only`, `--seal`, `--reference-machine`, `--shared-voltage-in-sample`) and the objective, search and checks described above. In detail:
+`just fit`, `just fit-shared-voltage`, `just fit-artifact` and `just forward` run `togi-tool-fit` with the flags (`--facts`, `--current-extract`, `--out`, `--seed`, `--bootstrap`, `--jobs`, `--forward-only`, `--seal`, `--reference-machine`, `--shared-voltage-in-sample`, `--write-artifact`) and the objective, search and checks described above. In detail:
 
+- **The research artifact.** `just fit-artifact FILE` writes the original research artifact to the new file `FILE` (`--write-artifact`): the committed extract's rows of its seven sessions, byte for byte and in extract order, after checking that they hash to the program's SHA-256. It never replaces an existing file, and it fails without writing when the rows differ, for example after a refresh that rewrote those sessions; the extract committed at `455704be` then supplies them.
 - **Threads.** `--jobs N` is the number of threads the whole run uses, fits and candidate scoring alike, and defaults to every CPU. Every candidate of a search step is scored on its own thread into its own slot and the slots are folded in candidate order, so the machine files, the report and the forward-chained rows are byte for byte the same for any `--jobs` and any CPU count; tests run an ensemble with its forward-chained check, and the shared-voltage anchor, on pools of 1, 2 and all CPUs and compare the bytes. The forward-chained check still runs alongside the ensemble.
 - **Bootstrap.** Refit `n` resamples with the `rand` crate's `StdRng` seeded `SEED+n`, not Go's PCG. The resampled trials, and with them refits 1 to 8, differ from the committed Go-generated files. The default fit now uses shared voltage rather than the committed ensemble's legacy joint model; it is not expected to reproduce those machine parameters or losses.
 - **Files.** Machine files are the simulator crate's own encoding: fields equal to their defaults are left out, `notes` read `Generated by togi-tool-fit` and the group lines list loaded cores as `0,1`. A BIOS context with an empty field is kept as written rather than refilled with a default, so the anchor needs a context but not one with every field set.

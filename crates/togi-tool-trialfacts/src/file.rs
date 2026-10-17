@@ -48,16 +48,31 @@ pub enum WriteError {
 
 /// Reads a gzip extract of one JSON record per line. Any failure is an error and no records.
 pub fn read(path: impl AsRef<Path>) -> Result<Vec<TrialFact>, ReadError> {
+    parse(&read_rows(path)?)
+}
+
+/// The decompressed bytes of a gzip extract: its rows, which pin the extract by their hash.
+pub fn read_rows(path: impl AsRef<Path>) -> Result<Vec<u8>, ReadError> {
     let path = path.as_ref();
     let file = File::open(path).map_err(|source| ReadError::Open {
         path: path.to_path_buf(),
         source,
     })?;
-    decode(file)
+    let mut rows = Vec::new();
+    MultiGzDecoder::new(file).read_to_end(&mut rows)?;
+    Ok(rows)
+}
+
+/// Parses an extract's decompressed rows, one JSON record per line.
+pub fn parse(rows: &[u8]) -> Result<Vec<TrialFact>, ReadError> {
+    records(rows)
 }
 
 pub fn decode(reader: impl Read) -> Result<Vec<TrialFact>, ReadError> {
-    let mut lines = BufReader::new(MultiGzDecoder::new(reader));
+    records(BufReader::new(MultiGzDecoder::new(reader)))
+}
+
+fn records(mut lines: impl BufRead) -> Result<Vec<TrialFact>, ReadError> {
     let mut facts = Vec::new();
     let mut line = Vec::new();
     for number in 1_u64.. {
