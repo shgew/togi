@@ -97,3 +97,49 @@ fn a_report_is_the_same_for_the_same_journal() {
     let journal = Journal::new(events).unwrap();
     assert_eq!(report(&journal, None), report(&journal, None));
 }
+
+#[test]
+fn a_simulated_sessions_chain_records_attribute_each_trial_once_to_its_own_set() {
+    let events = hunting_session();
+    let text =
+        togi_tool_stats::chain_records(&Journal::new(events.clone()).unwrap(), None).unwrap();
+    let intents: std::collections::HashMap<u64, &togi_journal::TrialIntent> = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::TrialIntent(intent) => Some((event.seq.get(), intent)),
+            _ => None,
+        })
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut kinds = std::collections::BTreeMap::new();
+    for line in text.lines() {
+        let record: serde_json::Value = serde_json::from_str(line).unwrap();
+        *kinds
+            .entry(record["kind"].as_str().unwrap().to_owned())
+            .or_insert(0) += 1;
+        let cores = &record["cores"];
+        for (list, rerun) in [("trials", false), ("reruns", true)] {
+            for trial in record[list].as_array().unwrap() {
+                let seq = trial["seq"].as_u64().unwrap();
+                assert!(seen.insert(seq), "trial {seq} attributed twice: {text}");
+                let intent = intents[&seq];
+                assert!(seq > record["seq"].as_u64().unwrap());
+                assert_eq!(intent.regime, togi_machine::Regime::R7);
+                assert_eq!(
+                    intent.cycle.map(|c| u64::from(c.get())),
+                    record["cycle"].as_u64()
+                );
+                assert_eq!(
+                    intent.step.map(|s| u64::from(s.get())),
+                    record["step"].as_u64()
+                );
+                assert_eq!(&serde_json::to_value(intent.cores).unwrap(), cores);
+                assert_eq!(intent.rerun, rerun);
+            }
+        }
+    }
+    assert!(
+        kinds.contains_key("first") && kinds.contains_key("unchanged"),
+        "the hunt's backoff re-derives the session's chains: {kinds:?}"
+    );
+}

@@ -5,6 +5,7 @@ use togi_journal::{Activity, Attribution, Event, Outcome, Payload};
 use togi_machine::{Condition, Regime, ResetKind, Signal, WorkloadId};
 use togi_render::escape_text;
 
+use crate::chains::{self, Derivation};
 use crate::evidence::{self, EvidenceMetrics};
 use crate::hunts::{self, CheckingMetrics, HuntMetrics};
 use crate::journal::Journal;
@@ -46,6 +47,7 @@ pub(crate) struct Metrics<'a> {
     pub(crate) checking: CheckingMetrics,
     pub(crate) evidence: EvidenceMetrics,
     pub(crate) r7: R7Decisions<'a>,
+    pub(crate) chains: Vec<Derivation<'a>>,
     pub(crate) depth: Vec<evidence::DepthRate>,
     pub(crate) requests: RequestMetrics,
     pub(crate) inconclusive: Vec<&'a Trial<'a>>,
@@ -75,6 +77,7 @@ pub(crate) fn compute<'a>(p: &'a Projection<'a>, since: Option<Timestamp>) -> Me
         checking: hunts::compute_checking(p, since),
         evidence: evidence::compute(p, since),
         r7: r7::decisions(p.events, since),
+        chains: chains::attribute(p, since),
         depth: evidence::depth(p, since),
         requests: r7::requests(p, since),
         inconclusive: p
@@ -95,6 +98,7 @@ pub(crate) fn render(m: &Metrics<'_>) -> String {
     hunts::render_checking(&mut table, &m.checking);
     evidence::render(&mut table, &m.evidence);
     r7::render_decisions(&mut table, &m.r7);
+    chains::render(&mut table, &m.chains);
     evidence::render_depth(&mut table, &m.depth);
     r7::render_requests(&mut table, &m.requests);
     render_outcomes(&mut table, &m.inconclusive, &m.tctl);
@@ -489,4 +493,18 @@ fn render_outcomes(
 pub fn report(journal: &Journal, since: Option<Timestamp>) -> String {
     let projection = Projection::new(journal);
     render(&compute(&projection, since))
+}
+
+/// The R7 chain attribution of `journal`'s `checking.chain` events at or after `since`, one JSON object a
+/// derivation and a line, in journal order.
+///
+/// # Errors
+///
+/// When a record cannot be encoded.
+pub fn chain_records(
+    journal: &Journal,
+    since: Option<Timestamp>,
+) -> Result<String, serde_json::Error> {
+    let projection = Projection::new(journal);
+    chains::records(&chains::attribute(&projection, since))
 }

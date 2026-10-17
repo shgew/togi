@@ -380,7 +380,7 @@ fn a_combination_failure_is_reported_in_every_section() {
     assert_eq!(m.runs.len(), 1, "a crash and a reboot make one run");
     assert_eq!(m.hunts[0].hunt.commitment.as_deref(), Some("03 -22->-19"));
     assert_eq!(m.r7.backoffs.len(), 1);
-    assert_eq!(m.r7.chains.len(), 1);
+    assert_eq!(m.chains.len(), 1);
 }
 
 #[test]
@@ -480,14 +480,16 @@ fn r7_backoffs_and_chains_are_listed_with_their_causes_and_sources() {
         [(4, 3), (11, 4), (17, 5)],
         "only backoffs of multi-core R7 failures are voltage-targeted: live, carried or ended"
     );
+    let chains = crate::chains::attribute(&p, None);
     assert_eq!(
-        r.chains.iter().map(|c| c.seq.get()).collect::<Vec<_>>(),
+        chains.iter().map(|c| c.seq.get()).collect::<Vec<_>>(),
         [5, 9]
     );
     assert_snapshot!(
         "scenario__r7_backoffs_and_chains_are_listed_with_their_causes_and_sources",
         super::support::rendered(|table| {
             crate::r7::render_decisions(table, &r);
+            crate::chains::render(table, &chains);
         })
     );
 }
