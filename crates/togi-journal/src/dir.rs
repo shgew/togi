@@ -224,21 +224,23 @@ impl StateDir {
 
 fn create_dirs(fs: &dyn Fs, path: &Path) -> Result<(), DirError> {
     let mut chain = Vec::new();
+    let mut link = None;
     for ancestor in path
         .ancestors()
         .take_while(|ancestor| !ancestor.as_os_str().is_empty())
     {
         let kind = fs.kind(ancestor).map_err(io_at("stat", ancestor))?;
         match kind {
-            Some(FileKind::Dir | FileKind::Symlink) | None => chain.push((ancestor, kind)),
+            Some(FileKind::Symlink) => {
+                link = Some(ancestor);
+                break;
+            }
+            Some(FileKind::Dir) | None => chain.push((ancestor, kind)),
             Some(_) => {
                 return Err(DirError::NotADirectory {
                     path: ancestor.to_path_buf(),
                 });
             }
-        }
-        if kind == Some(FileKind::Symlink) {
-            break;
         }
     }
     for (dir, kind) in chain.iter().rev() {
@@ -252,8 +254,13 @@ fn create_dirs(fs: &dyn Fs, path: &Path) -> Result<(), DirError> {
     }
     for (dir, _) in &chain {
         let Some(parent) = dir.parent() else { continue };
+        let linked;
         let parent = if parent.as_os_str().is_empty() {
             Path::new(".")
+        } else if link == Some(parent) {
+            // `sync_dir` refuses a link as the final component; through `.` the link resolves to its directory.
+            linked = parent.join(".");
+            &linked
         } else {
             parent
         };
