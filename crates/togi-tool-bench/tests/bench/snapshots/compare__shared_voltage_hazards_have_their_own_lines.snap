@@ -1,5 +1,5 @@
 ---
-source: crates/togi-tool-bench/tests/compare.rs
+source: crates/togi-tool-bench/tests/bench/compare.rs
 expression: out
 ---
 summary: time, crashes and depth include all run statuses; hazard is steady-state failures/hour with all cores loaded.
