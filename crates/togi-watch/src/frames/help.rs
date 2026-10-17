@@ -622,7 +622,7 @@ mod tests {
 
     #[test]
     fn help_words_claim_no_more_than_the_journal_shows() {
-        let (help, _) = help_body(115, 1000, 0, C);
+        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys);
         let words = plain_rows(&help)
             .join("\n")
             .split_whitespace()
