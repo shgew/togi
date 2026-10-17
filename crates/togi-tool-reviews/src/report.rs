@@ -7,12 +7,10 @@ use std::io::Write;
 use jiff::Timestamp;
 use serde::Deserialize;
 
+use crate::parts::{Comment, ZERO_TIME, join_records};
 use crate::record::{Finding, OUTCOMES, PRIORITIES, RecordError, parse_record};
 use crate::text::nullable;
 use crate::{Error, Programs, ROBOTOGI_LOGIN};
-
-/// The time an absent `createdAt` reads as: midnight UTC on 1 January of year 1.
-const ZERO_TIME: Timestamp = Timestamp::constant(-62_135_596_800, 0);
 
 const NANOS_PER_MINUTE: i64 = 60_000_000_000;
 const NANOS_PER_HOUR: i64 = 60 * NANOS_PER_MINUTE;
@@ -47,13 +45,6 @@ pub struct Pull {
     /// The conclusion of robotogi's review check on the head commit, empty when the head has none.
     pub check: String,
     pub comments: Vec<Comment>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Comment {
-    pub url: String,
-    pub created: Timestamp,
-    pub body: String,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -285,7 +276,7 @@ pub fn summarize(pulls: &[Pull]) -> Result<Vec<Row>, Error> {
             check: pull.check.clone(),
             ..Row::default()
         };
-        let mut comments: Vec<&Comment> = pull.comments.iter().collect();
+        let mut comments = join_records(pull.comments.clone())?;
         comments.sort_by_key(|c| c.created);
         let mut found: Vec<Finding> = Vec::new();
         for comment in comments {

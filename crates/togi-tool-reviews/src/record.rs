@@ -79,6 +79,8 @@ pub enum RecordError {
     Priority { from: String, priority: String },
     #[error("finding from {from}: unknown outcome {}", quote(.status))]
     Outcome { from: String, status: String },
+    #[error("malformed record part: {0}")]
+    Part(String),
 }
 
 /// Reads the hidden block that ends a review record comment.
