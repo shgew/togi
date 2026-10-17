@@ -1193,14 +1193,26 @@ fn named_zero_top_requester_still_requires_an_all_zero_rerun() {
 #[test]
 fn single_core_r7_and_other_regimes_keep_ordinary_one_count_backoff() {
     for regime in [Regime::R7, Regime::R2] {
-        let mut j = Journal::r7_session();
-        named_cap_passes(&mut j, 1.136);
+        let mut j = Journal::has_room(&[-30]);
+        j.load(&crate::testkit::config(
+            r#"{"checking":{"cycle":["R7","R2"]},"durations":{"checking_trial_s":120}}"#,
+        ));
+        j.profile_change(&[-30]);
+        j.ranking(&[0]);
+        let n = needed(&j);
+        passes(
+            &mut j,
+            n,
+            &[0],
+            &[-20],
+            &report(&[(0, 1.136)], &[0]).clocks(&[(0, 5000)]),
+        );
         let plan = j.manual(
             regime,
             0,
             crate::Load::Single(core(0)),
             Condition::Together,
-            &ALL_30,
+            &[-30],
             120,
         );
         let (intent, trial) = j.intent(&plan);
