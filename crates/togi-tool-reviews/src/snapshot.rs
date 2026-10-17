@@ -499,7 +499,8 @@ fn previous_record_of(
     }
     let body = if parse_part(&c.body).is_some() {
         let records = join_records(robotogi_comments(t.programs, repo, pr)?)?;
-        let Some(record) = records.into_iter().find(|r| r.url == url) else {
+        let comment = format!("#issuecomment-{}", &found[3]);
+        let Some(record) = records.into_iter().find(|r| r.url.ends_with(&comment)) else {
             return Err(Error::new(format!(
                 "previous record {url} is not the first part of a record whose parts are all posted"
             )));

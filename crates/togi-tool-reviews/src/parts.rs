@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
+use togi_machine::object_only;
 
 use crate::record::{RECORD_CLOSE, RECORD_OPEN, RecordError};
 use crate::text::{json, nullable};
@@ -25,15 +26,17 @@ pub struct Comment {
     pub body: String,
 }
 
-/// The hidden block that ends each part: which part of whose record it is, and its slice of the record's
-/// JSON block.
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Header {
-    head_sha: String,
-    part: usize,
-    parts: usize,
-    data: String,
+object_only! {
+    /// The hidden block that ends each part: which part of whose record it is, and its slice of the
+    /// record's JSON block.
+    #[derive(Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct Header {
+        head_sha: String,
+        part: usize,
+        parts: usize,
+        data: String,
+    }
 }
 
 /// One part of a split record, read from its comment.
@@ -161,24 +164,25 @@ pub fn parse_part(body: &str) -> Option<Result<Part, RecordError>> {
     let start = body.rfind(PART_OPEN)?;
     let after = &body[start + PART_OPEN.len()..];
     let Some(end) = after.find(RECORD_CLOSE) else {
-        return Some(Err(RecordError::Unterminated));
+        return Some(Err(RecordError::PartUnterminated));
     };
     let header: Header = match serde_json::from_str(&after[..end]) {
         Ok(header) => header,
-        Err(error) => return Some(Err(RecordError::Decode(error))),
+        Err(error) => return Some(Err(RecordError::PartDecode(error))),
     };
     if header.head_sha.is_empty() || header.parts < 2 || !(1..=header.parts).contains(&header.part)
     {
-        return Some(Err(RecordError::Part(format!(
-            "part {} of {} on {:?}",
-            header.part, header.parts, header.head_sha
-        ))));
+        return Some(Err(RecordError::PartNumber {
+            head_sha: header.head_sha,
+            part: header.part,
+            parts: header.parts,
+        }));
     }
     let Some(rest) = body[..start].strip_suffix(&note(header.part, header.parts)) else {
-        return Some(Err(RecordError::Part(format!(
-            "part {} of {} lacks its note",
-            header.part, header.parts
-        ))));
+        return Some(Err(RecordError::PartNote {
+            part: header.part,
+            parts: header.parts,
+        }));
     };
     Some(Ok(Part {
         text: rest.strip_suffix('\n').unwrap_or(rest).to_owned(),

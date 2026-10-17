@@ -143,9 +143,10 @@ fn a_reposted_part_counts_once() {
 }
 
 #[test_case(&format!("x\n{PART_OPEN}{{\"head_sha\":\"a\",\"part\":1,\"parts\":2,\"data\":\"\"}} -->"), "lacks its note"; "no note")]
-#[test_case(&format!("<sub>Review record, part 3 of 2.</sub>\n{PART_OPEN}{{\"head_sha\":\"a\",\"part\":3,\"parts\":2,\"data\":\"\"}} -->"), "part 3 of 2"; "part out of range")]
-#[test_case(&format!("{PART_OPEN}{{\"head_sha\":\"a\"}}"), "unterminated"; "unterminated")]
-#[test_case(&format!("{PART_OPEN}{{\"head_sha\":\"a\",\"extra\":1}} -->"), "decode"; "unknown field")]
+#[test_case(&format!("<sub>Review record, part 3 of 2.</sub>\n{PART_OPEN}{{\"head_sha\":\"a\",\"part\":3,\"parts\":2,\"data\":\"\"}} -->"), "part 3 of 2 on head \"a\" is out of range"; "part out of range")]
+#[test_case(&format!("{PART_OPEN}{{\"head_sha\":\"a\"}}"), "unterminated togi-review-part block"; "unterminated")]
+#[test_case(&format!("{PART_OPEN}{{\"head_sha\":\"a\",\"extra\":1}} -->"), "decode togi-review-part block"; "unknown field")]
+#[test_case(&format!("<sub>Review record, part 1 of 2.</sub>\n{PART_OPEN}[\"a\",1,2,\"\"] -->"), "decode togi-review-part block: invalid type: sequence, expected an object"; "array header")]
 fn malformed_parts_are_refused(body: &str, want: &str) {
     let error = join_records(vec![comment(0, body)]).expect_err("join accepted");
     let text = error.render();

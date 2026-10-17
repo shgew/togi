@@ -1208,16 +1208,17 @@ fn split_previous(limit: usize, skip: Option<usize>) -> ReReview {
     }
 }
 
-#[test]
-fn snapshot_reads_a_split_previous_record() {
+#[test_case(PREVIOUS_URL; "pull request form")]
+#[test_case("https://github.com/shgew/togi/issues/700#issuecomment-4242"; "issue form")]
+fn snapshot_reads_a_split_previous_record(url: &str) {
     let mut h = split_previous(300, None).harness();
-    snapshot(&mut h, &["--previous", PREVIOUS_URL, "700"]).expect("snapshot");
+    snapshot(&mut h, &["--previous", url, "700"]).expect("snapshot");
     let m = manifest(&h);
     assert!(
         !m.fallback.is_empty()
             && m.previous
                 .as_ref()
-                .is_some_and(|p| p.url == PREVIOUS_URL && p.head_sha == OLD_HEAD_SHA),
+                .is_some_and(|p| p.url == url && p.head_sha == OLD_HEAD_SHA),
         "manifest = {m:?}, want the joined version 1 record as previous"
     );
 }
