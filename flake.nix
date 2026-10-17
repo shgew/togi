@@ -75,12 +75,17 @@
           rustLinker = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS = "-C link-arg=-fuse-ld=mold";
           };
-          # Linting aarch64-apple-darwin from Linux runs C build scripts (criterion's alloca) for that target,
-          # which needs a compiler that takes Apple's flags; the host gcc does not. The unwrapped clang and
+          # Clippy checks the other of the two supported targets from each host: aarch64-apple-darwin from
+          # Linux and x86_64-unknown-linux-gnu from macOS.
+          crossTarget =
+            if pkgs.stdenv.hostPlatform.isLinux then "aarch64-apple-darwin" else "x86_64-unknown-linux-gnu";
+          # Linting the cross target runs C build scripts (criterion's alloca) for it, which needs a compiler
+          # that takes that target's flags; the host's wrapped compiler does not. The unwrapped clang and
           # llvm-ar are cross compilers; alloca.c needs only the compiler's own stddef.h and stdint.h.
-          darwinCrossCc = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-            CC_aarch64_apple_darwin = lib.getExe' pkgs.llvmPackages.clang-unwrapped "clang";
-            AR_aarch64_apple_darwin = lib.getExe' pkgs.llvm "llvm-ar";
+          crossCc = {
+            "CC_${lib.replaceStrings [ "-" ] [ "_" ] crossTarget}" =
+              lib.getExe' pkgs.llvmPackages.clang-unwrapped "clang";
+            "AR_${lib.replaceStrings [ "-" ] [ "_" ] crossTarget}" = lib.getExe' pkgs.llvm "llvm-ar";
           };
           # Dependencies read only the manifests and the lock: the dummy source and the vendor directory ignore code.
           depsSource = cargoSources.source { code = allCrates; };
@@ -230,7 +235,7 @@
               TOGI_DEV_SHELL = "1";
             }
             // rustLinker
-            // darwinCrossCc
+            // crossCc
           );
 
           checks = {
@@ -264,10 +269,10 @@
                 buildPhaseCargoCommand = ''
                   cargoWithProfile clippy --locked --all-targets -- --deny warnings
                   cargoWithProfile clippy --locked --all-targets --all-features -- --deny warnings
-                  cargoWithProfile clippy --locked --all-targets --target aarch64-apple-darwin -- --deny warnings
+                  cargoWithProfile clippy --locked --all-targets --all-features --target ${crossTarget} -- --deny warnings
                 '';
               }
-              // darwinCrossCc
+              // crossCc
             );
             nextest = craneLib.cargoNextest (
               cargoCheck testSource {

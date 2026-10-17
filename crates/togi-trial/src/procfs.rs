@@ -585,9 +585,10 @@ mod tests {
     }
 
     fn stat_reason(error: &ProcError) -> Option<&'static str> {
-        match error {
-            ProcError::Stat { source, .. } => Some(source.reason),
-            _ => None,
+        if let ProcError::Stat { source, .. } = error {
+            Some(source.reason)
+        } else {
+            None
         }
     }
 
@@ -696,9 +697,12 @@ mod tests {
         let not_threads: Vec<&str> = found
             .errors
             .iter()
-            .filter_map(|error| match error {
-                ProcError::NotThread { name } => Some(name.as_str()),
-                _ => None,
+            .filter_map(|error| {
+                if let ProcError::NotThread { name } = error {
+                    Some(name.as_str())
+                } else {
+                    None
+                }
             })
             .collect();
         assert_eq!(not_threads.len(), 2);
@@ -846,11 +850,14 @@ mod tests {
     fn per_process_reads_fail_on_a_non_file_stat_and_threads_keep_readable_ones() {
         let (dir, proc) = fixture();
         dir.mkdir("50/stat");
-        let directory = |error: &ProcError| match error {
-            ProcError::Read { path, source } if source.kind() == io::ErrorKind::IsADirectory => {
+        let directory = |error: &ProcError| {
+            if let ProcError::Read { path, source } = error
+                && source.kind() == io::ErrorKind::IsADirectory
+            {
                 Some(path.clone())
+            } else {
+                None
             }
-            _ => None,
         };
         let stat = Fixture::path().join("50/stat");
         assert_eq!(directory(&proc.usage(50).unwrap_err()), Some(stat.clone()));
@@ -1010,9 +1017,11 @@ mod tests {
         let mut names: Vec<&str> = found
             .errors
             .iter()
-            .map(|error| match error {
-                ProcError::NotThread { name } => name.as_str(),
-                other => panic!("{other:?}"),
+            .map(|error| {
+                let ProcError::NotThread { name } = error else {
+                    panic!("{error:?}")
+                };
+                name.as_str()
             })
             .collect();
         names.sort_unstable();

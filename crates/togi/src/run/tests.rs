@@ -1,4 +1,5 @@
 use clap::Parser;
+use test_case::test_case;
 
 use super::Args;
 
@@ -26,15 +27,12 @@ fn the_cycle_limit_is_endless_by_default_and_takes_a_positive_count() {
     );
 }
 
-#[test]
-fn a_cycle_limit_that_is_not_a_positive_count_is_refused() {
-    for value in ["0", "-1", "many"] {
-        let error = parse(&["--cycles", value]).unwrap_err().to_string();
-        assert!(
-            error.contains("must be a positive integer"),
-            "{value}: {error}"
-        );
-    }
+#[test_case("0" ; "zero")]
+#[test_case("-1" ; "negative")]
+#[test_case("many" ; "not a number")]
+fn a_cycle_limit_that_is_not_a_positive_count_is_refused(value: &str) {
+    let error = parse(&["--cycles", value]).unwrap_err().to_string();
+    assert!(error.contains("must be a positive integer"), "{error}");
 }
 
 #[test]

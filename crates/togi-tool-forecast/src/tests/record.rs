@@ -4,7 +4,7 @@ use togi_journal::Seq;
 use togi_tuner::{EVIDENCE_EPOCH, RULESET};
 
 use super::support::{A, events, run, start};
-use crate::{Error, File, Record, Session, Status, recovery_bias};
+use crate::{Error, File, Record, Session, Split, Status, recovery_bias};
 
 fn record() -> Record {
     let anchor = Session::from_events(events(1, start(A, "abc1234")))
@@ -35,6 +35,20 @@ fn a_new_record_carries_this_builds_ruleset_and_the_summary_of_its_runs() {
             record.summary.censored
         ),
         (1, 1, 1)
+    );
+}
+
+#[test]
+fn a_run_writes_its_split_by_name() {
+    let mut run = run(Status::Concluded, 2.0, 1, 0, &[-12, -20]);
+    let mut names = Vec::new();
+    for split in [Split::Dev, Split::Holdout] {
+        run.split = split;
+        names.push(serde_json::to_value(&run).unwrap()["split"].clone());
+    }
+    assert_eq!(
+        names,
+        [serde_json::json!("dev"), serde_json::json!("holdout")]
     );
 }
 

@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use togi_journal::{Event, StateDir, StateError};
 use togi_machine::object_only;
@@ -53,7 +53,7 @@ pub(crate) fn audit(
         }
         Err(error) => return Err(AuditError::State(error)),
     };
-    let snapshot: Snapshot = match serde_json::from_value(document.clone()) {
+    let snapshot = match Snapshot::deserialize(&document) {
         Ok(snapshot) => snapshot,
         Err(error) => {
             return Ok(vec![violation(format!(

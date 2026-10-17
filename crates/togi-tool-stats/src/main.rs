@@ -44,11 +44,10 @@ fn run(cli: &Cli) -> Result<(String, Vec<String>), Error> {
             .collect();
         return Ok((scored.text, skipped));
     }
-    let path = cli
-        .journal
-        .clone()
-        .unwrap_or_else(|| cli.state_dir.join("events.jsonl"));
-    let journal = Journal::read(path)?;
+    let journal = match &cli.journal {
+        Some(path) => Journal::read(path)?,
+        None => Journal::read(cli.state_dir.join("events.jsonl"))?,
+    };
     let skipped = Some(journal.skipped())
         .filter(|skipped| !skipped.is_empty())
         .map(ToString::to_string)

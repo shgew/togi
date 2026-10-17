@@ -51,7 +51,7 @@ fn prior(case: &Case) -> usize {
     prior_passes(
         &p,
         &target,
-        Profile::new(&p.topology, target.profile).ok(),
+        Profile::new(p.topology, target.profile).ok(),
         before,
     )
 }
