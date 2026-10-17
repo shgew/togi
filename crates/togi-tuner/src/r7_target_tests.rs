@@ -1016,7 +1016,7 @@ fn named_non_crash_cap_keeps_exact_three_count_boundary_and_target_citations() {
         let DecisionPayload::TunerDecision(td) = &decision.payload else {
             unreachable!()
         };
-        assert_eq!(td.failure_point.map(|point| point.get()), Some(-30));
+        assert_eq!(td.failure_point.map(togi_machine::TargetOffset::get), Some(-30));
         assert_eq!(j.next_decision(), decision);
         j.decide(decision);
         j.assert_resumes();
