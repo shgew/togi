@@ -750,7 +750,7 @@ fn a_checking_chain_rejects_an_unknown_ccd_without_changing_state() {
     let step = j.next_decision();
     j.decide(step);
     let before = j.state.clone();
-    let ccd = togi_machine::CcdId::new(99).unwrap();
+    let ccd = togi_machine::CcdId::new(15).unwrap();
     let result = j.try_append(
         togi_journal::CheckingChain {
             cycle: std::num::NonZeroU32::MIN,
