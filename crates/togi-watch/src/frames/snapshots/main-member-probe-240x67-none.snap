@@ -3,24 +3,24 @@ source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
 legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
-│  togi   08:22:00   session 8h22m   8 failures · 8 crashes   last observed failure 08:22   screen paused until 08:24
+│  togi   08:22:00   session 8h22m   8 failures · 8 crashes   last observed failure 08:22   screen paused · planned end 08:24
 │
 │  ■ SOLO LIMITS  16/16  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE 1  paused at step 7 of 18
 │
 │  ▌  HUNT 1   03 11 crashed together at their offsets, and every smaller part of them that was tested passed.             last trial      CRASH  on 00-15
-│  ▌           So I probe each member: how shallow must it go for the rest to pass? Core 03 first.
+│  ▌           So I probe each member: how shallow must it go for the combination to pass? Core 03 first.
 │
 │  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0273
 │   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                                                                                                                              HUNT 1 · GROUP 42 · CORE 03 AT -9
 │
 │  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █▀█ █▀█   ▀▀█ █ █
-│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused until 08:24 so it cannot wake the idle cores  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █ █ █▀█ ▀ █▀▀ ▀▀█
+│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · planned end 08:24, so it cannot wake the idle cores  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █ █ █▀█ ▀ █▀▀ ▀▀█
 │  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ▀▀▀ ▀▀▀ ▀ ▀▀▀   ▀
 │  started 08:22 · 2:00                                                                                                                                                                                                                ends at
 │
-│  if 5 of 5 pass       next: hunt 1 group 43: R6 idle + bursts on 00-15 · 03 at failing offsets, core 11 at -9, 00-02 04-10 12-15 parked at 0
-│  if none is named     next: hunt 1 group 43: R6 idle + bursts on 00-15 · 11 at failing offsets, core 03 at -8, 00-02 04-10 12-15 parked at 0
-│  if a core is named   its failure point is recorded → the hunt ends → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun at CO 0
+│  if 5 of 5 pass:      next trial: hunt 1 group 43: R6 idle + bursts on 00-15 · 03 at failing offsets, core 11 at -9, 00-02 04-10 12-15 parked at 0
+│  if none is named:    next trial: hunt 1 group 43: R6 idle + bursts on 00-15 · 11 at failing offsets, core 03 at -8, 00-02 04-10 12-15 parked at 0
+│  if a core is named:  its failure point is recorded → the hunt ends → it backs off; next trial: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun at offset 0
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  all under load
 │  ► 00    0  PARKED    ·········▀·                                                 returns to -10                         ► 08    0  PARKED    ·········▀·                                                 returns to -10
@@ -38,7 +38,7 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │  HUNT 1 ────────────────────────────────────────────────────────────────────────────── started 07:31 · 50m30s so far     08:22  crash    hunt 1 group 39 · 03 11 at failing offsets · rebooted
 │                                                                                                                          08:20  group    hunt 1 groups 35-38 · parts of 03 10 11 · all passed on existing evidence
 │  cause       crash in R6 idle + bursts on 00-15 · cycle 1 step 7, trial 1 of 1 · no core named                           08:20  crash    hunt 1 group 34 · 03 10 11 at failing offsets · rebooted
-│  candidates  00-15, every core with an offset in the failing profile                                                     08:19  group    hunt 1 groups 28-33 · parts of 02 03 10 11 · all passed on existing evidence
+│  candidates  00-15, deeper at failure than at their parked offsets                                                       08:19  group    hunt 1 groups 28-33 · parts of 02 03 10 11 · all passed on existing evidence
 │                                                                                                                          08:19  crash    hunt 1 group 27 · 02 03 10 11 at failing offsets · rebooted
 │  parts       groups 1-2   parts of 00-15                               all passed                                        08:17  group    hunt 1 groups 23-26 · parts of 02 03 08-11 · all passed on existing evidence
 │              group 3      00-15 at failing offsets                     crashed                                           08:17  crash    hunt 1 group 22 · 02 03 08-11 at failing offsets · rebooted
@@ -61,11 +61,11 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │              03      -9                                               ► trial 1 of 5                                     07:22  pass     R2 heavy vector on core 13 at -10 · passed · Tctl max 75°C
 │              11                                                       waiting                                            07:20  pass     R2 heavy vector on core 05 at -10 · passed · Tctl max 64°C
 │                                                                                                                          07:18  pass     R2 heavy vector on core 12 at -10 · passed · Tctl max 69°C
-│  then        if the hunt resolves and the rerun passes:                                                                  07:16  pass     R2 heavy vector on core 04 at -10 · passed · Tctl max 73°C
+│  then        after the hunt:                                                                                             07:16  pass     R2 heavy vector on core 04 at -10 · passed · Tctl max 73°C
 │              1  record the combination: 03 11 at the offsets that still fail                                             07:14  pass     R2 heavy vector on core 11 at -10 · passed · Tctl max 64°C
 │              2  back off one member to a tested passing probe that keeps the profile clear                               07:12  pass     R2 heavy vector on core 03 at -10 · passed · Tctl max 74°C
 │              3  rerun R6 idle + bursts on 00-15: 5 trials of 2m, then 1 of 15m                                           07:10  pass     R2 heavy vector on core 10 at -10 · passed · Tctl max 68°C
-│              4  resume cycle 1                                                                                           07:08  pass     R2 heavy vector on core 02 at -10 · passed · Tctl max 64°C
+│              4  if the rerun passes, resume cycle 1                                                                      07:08  pass     R2 heavy vector on core 02 at -10 · passed · Tctl max 64°C
 │                                                                                                                          +57 more
 │
 │   ?  help    l  log    esc  back    q  close view

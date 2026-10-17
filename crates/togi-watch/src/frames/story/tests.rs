@@ -627,11 +627,9 @@ mod the_story {
         });
         let said = story(&fx.scene(ts(200)));
         assert_eq!(said.label, "STOPPED");
-        assert!(
-            said.lines[0].starts_with(
-                "The requested clean cycles are complete, so I restored baseline or shallower offsets"
-            )
-        );
+        assert!(said.lines[0].starts_with(
+            "The requested clean cycles are complete, so I restored baseline or shallower offsets"
+        ));
         let band = resting_band(&fx.scene(ts(200)));
         assert_eq!(band.title, "STOPPED");
         assert_eq!(
@@ -2058,8 +2056,9 @@ mod the_outcome_lines {
             "{rows:?}"
         );
         assert!(
-            rows.iter().any(|row| row
-                .ends_with("next trial: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m")),
+            rows.iter().any(|row| row.ends_with(
+                "next trial: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m"
+            )),
             "{rows:?}"
         );
     }
@@ -2459,11 +2458,7 @@ mod the_outcome_lines {
                 "→ {regime} {}, core 03 alone at -16",
                 crate::words::kind_words(regime)
             );
-            assert_eq!(
-                tight_next(&text),
-                format!("→ {regime} core 03"),
-                "{text}"
-            );
+            assert_eq!(tight_next(&text), format!("→ {regime} core 03"), "{text}");
         }
     }
 
@@ -2515,7 +2510,8 @@ mod the_outcome_lines {
         pass.decisions = vec![DecisionPayload::TunerDecision(step)];
         pass.next = Some(next);
         fx.forecast.branches = vec![pass];
-        let owner = "core 08 searches -5 on its next turn; next trial: R1 light, core 01 alone at 0";
+        let owner =
+            "core 08 searches -5 on its next turn; next trial: R1 light, core 01 alone at 0";
         assert_eq!(fx.rows(), [format!("if it passes | {owner}")]);
         let full = text(&outcome_lines(&fx.scene(ts(1)), 110, false));
         assert_eq!(full, [format!("{:<21}{owner}", "if it passes:")]);
@@ -2919,7 +2915,10 @@ mod the_outcome_lines {
         next.workload = WorkloadChoice::Rotate;
         unnamed.next = Some(next.clone());
         fx.forecast.branches = vec![unnamed.clone()];
-        assert_eq!(fx.rows(), ["if none is named | next trial: this load again"]);
+        assert_eq!(
+            fx.rows(),
+            ["if none is named | next trial: this load again"]
+        );
         next.workload = WorkloadChoice::Frozen(workloads(Regime::R2)[0].id());
         unnamed.next = Some(next);
         fx.forecast.branches = vec![unnamed];
@@ -3066,7 +3065,12 @@ mod the_simulated_sessions {
         let band = resting_band(&scene);
         assert_eq!(band.title, "RECOVERED FROM A CRASH");
         assert!(band.lines[0].starts_with("crash in "), "{:?}", band.lines);
-        assert!(band.lines.last().expect("a line").starts_with("next:"));
+        assert!(
+            band.lines
+                .last()
+                .expect("a line")
+                .starts_with("next trial:")
+        );
     }
 
     #[test]
@@ -3165,13 +3169,13 @@ mod the_simulated_sessions {
     }
 
     #[test]
-    fn an_idle_session_holds_still_and_says_when_it_ends() {
+    fn an_idle_session_holds_still_while_its_trial_is_in_flight() {
         let (model, at) = model_of(Scenario::Idle);
         let first = scene_of(&model, at + jiff::SignedDuration::from_secs(1));
         assert!(first.hold.is_some());
         let said = story(&first);
         assert!(
-            said.lines[1].starts_with("This screen holds still until "),
+            said.lines[1].starts_with("This screen holds still while the idle trial is in flight,"),
             "{:?}",
             said.lines
         );

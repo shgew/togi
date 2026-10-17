@@ -6,7 +6,7 @@ expression: body
 │
 │  ■ SOLO LIMITS  16/16  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE 1  paused at step 1 of 18, part 1
 │
-│  ▌  DEAD END   I couldn't obtain usable failure evidence, so I can't continue testing safely. Check the recorded         last trial      INCONCLUSIVE  0:00 on 00-07
+│  ▌  DEAD END   I couldn't obtain conclusive trial evidence, so I can't continue testing safely. Check the recorded       last trial      INCONCLUSIVE  0:00 on 00-07
 │  ▌             details before tuning again.
 │
 │  DEAD END ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ expression: body
 │  CYCLE 1 ───────────────────────────────────────────────────────────────────────────────────────── 18 steps · 0 done     09:48  unclear  rerun of R7 all-core on 00-07 · setup failed: backend binary missing
 │                                                                                                                          09:48  backoff  core 00 -26 → -25
 │    #   kind                  where                   workload                      schedule       result                 09:48  fail     core 00 fails at -26
-│  ○  1  R7 all-core           2 CCDs · 3+ parts       mprime AVX2 36K-248K          3+ parts       paused at part 1       09:48  fail     R7 full CCD 0 on 00-07 · the stress program quit · core 00 named
+│  ○  1  R7 all-core           2 CCDs · 3+ parts       mprime AVX2 36K-248K          3+ parts       paused at part 1       09:48  fail     R7 full CCD 0 on 00-07 · the backend quit · core 00 named
 │        ├ full CCD 0          00-07                                                 3 x 2m + 5m                           09:47  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
 │        ├ full CCD 1          08-15                                                 3 x 2m + 5m                           09:47  cycle    cycle 1 started · 18 steps
 │        ├ full CCD 0+1        00-15                                                 3 x 2m + 10m                          09:47  limit    cores 06, 13 solo limit -38
@@ -46,16 +46,16 @@ expression: body
 │  ○ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m                               08:28  limit    core 08 solo limit -6
 │  ○ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:34  confirm  core 06 confirming -38 as its solo limit
 │  ○ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:34  fail     core 06 fails at -39
-│  ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               07:34  fail     core 06 · R2 heavy vector at -39 · the stress program stalled
+│  ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               07:34  fail     core 06 · R2 heavy vector at -39 · the backend stalled
 │  ○ 16  R4 partial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:32  confirm  core 13 confirming -38 as its solo limit
 │  ○ 17  R4 partial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:32  fail     core 13 fails at -39
 │  ○ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   07:32  crash    core 13 · R2 heavy vector at -39 · rebooted · midway through trial 1 of 1
-│                                                                                                                          07:07  step     core 06 passed -38, next -39
-│  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     07:04  step     core 13 passed -38, next -39
-│  mprime AVX2 36K-248K           05 08 by offset          none yet                                                        06:40  step     core 06 passed -37, next -38
-│  mprime AVX-512 36K-248K        05 08 by offset          none yet                                                        06:37  step     core 13 passed -37, next -38
-│  y-cruncher FFTv4 + N63 + VT3   05 08 by offset          none yet                                                        06:13  step     core 06 passed -36, next -37
-│                                                                                                                          06:10  step     core 13 passed -36, next -37
+│                                                                                                                          07:07  step     core 06 passed -38; searches -39 on its next turn
+│  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     07:04  step     core 13 passed -38; searches -39 on its next turn
+│  mprime AVX2 36K-248K           05 08 by offset          none yet                                                        06:40  step     core 06 passed -37; searches -38 on its next turn
+│  mprime AVX-512 36K-248K        05 08 by offset          none yet                                                        06:37  step     core 13 passed -37; searches -38 on its next turn
+│  y-cruncher FFTv4 + N63 + VT3   05 08 by offset          none yet                                                        06:13  step     core 06 passed -36; searches -37 on its next turn
+│                                                                                                                          06:10  step     core 13 passed -36; searches -37 on its next turn
 │                                                                                                                          05:57  confirm  core 09 confirming -35 as its solo limit
 │                                                                                                                          05:57  fail     core 09 fails at -36
 │                                                                                                                          05:57  fail     core 09 · R1 light at -36 · wrong result

@@ -1,8 +1,8 @@
 # Narration changes
 
-Every production phrase [#904](https://github.com/shgew/togi/issues/904) changed, as it read on `main` before and as it reads now, grouped by the code that produces it. Wire names, event kinds, journal fields, `togi_journal::SCHEMA` and `togi_tuner::RULESET` are unchanged: only human text moved, and history already recorded keeps the message it was written with. Numbers, ids and offsets in the examples are placeholders. A phrase that exists in several fitted forms lists each form.
+Every production phrase [#904](https://github.com/shgew/togi/issues/904) changed, as it read before the audit and as it reads now, grouped by the code that produces it. The [rendered phrase catalogue](narration-phrases.md) accompanies this before/after list. Wire names, event kinds, journal fields, `togi_journal::SCHEMA` and `togi_tuner::RULESET` are unchanged: only human text moved, and history already recorded keeps the message it was written with. Numbers, ids and offsets in the examples are placeholders. A phrase that exists in several fitted forms lists each form.
 
-Where the dashboard fits one sentence to a width, a form is listed with the width it serves: full, then compact, then the shortest. Wording the history, TURNS and HUNT fitting work of [#912](https://github.com/shgew/togi/issues/912) owns is marked **#912**; the words it carries are the ones this issue decided, and its fitting is not changed here.
+Where the dashboard fits one sentence to a width, a form is listed with the width it serves: full, then compact, then the shortest. This change builds on [#958](https://github.com/shgew/togi/pull/958), the history, TURNS and HUNT fitting work for [#912](https://github.com/shgew/togi/issues/912). Shared HUNT prose is marked **#912** below; its attribution-preserving fitting stays intact.
 
 ## Principles
 
@@ -186,7 +186,8 @@ Rationale: only a passed full cycle confirms the BIOS projection, and the old `h
 | Producer | Before | After |
 |---|---|---|
 | Candidates | `00 01 02, every core with an offset in the failing profile` | `00 01 02, deeper at failure than at their parked offsets` |
-| Part schedule, after the first part | `then finer parts and their complements, until one fails or none does` | `failed parts are split again; complements test what remains` |
+| Candidates, shortened fitted form | `00 01 02, every core at a failing offset` (from #958) | `00 01 02, deeper at failure than parked` |
+| Part schedule, after the first part | `then finer parts and their complements, until one fails or none does` (`then finer parts and complements until one fails or none does` after #958) | `failed parts are split again; complements test what remains` |
 | Then block, heading | `if the hunt resolves and the rerun passes:` | `after the hunt:` |
 | Then block, resume step | `resume cycle 2` | `if the rerun passes, resume cycle 2` |
 

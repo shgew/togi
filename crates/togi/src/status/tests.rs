@@ -120,7 +120,10 @@ fn the_unconfirmed_note_agrees_with_the_cores_and_scopes_the_confirmed_profile()
         many.starts_with("* unconfirmed since [#9]: cores 01 02 show stepped-back offsets; other BIOS offsets come from"),
         "{many}"
     );
-    assert!(many.ends_with("which stays marked until the hold ends"), "{many}");
+    assert!(
+        many.ends_with("which stays marked until the hold ends"),
+        "{many}"
+    );
 }
 
 #[test]

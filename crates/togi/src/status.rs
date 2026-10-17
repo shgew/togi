@@ -266,7 +266,10 @@ fn unconfirmed_note(since: u64, cores: &[CoreId], confirmed: Seq) -> String {
 /// The R7 table's self-sufficiency cell for a core with `passes` passing trials as top requester.
 fn self_sufficiency(passes: u32) -> String {
     if passes > 0 {
-        format!("observed ({passes} passing {})", noun(passes as usize, "trial"))
+        format!(
+            "observed ({passes} passing {})",
+            noun(passes as usize, "trial")
+        )
     } else {
         "not yet demonstrated".to_owned()
     }
@@ -321,7 +324,10 @@ fn group_cores(group: &HuntGroup) -> (String, Option<(&'static str, String)>) {
     }
     let cores = cores_of(group.cores);
     if cores.len() > GROUP_CORES_MAX {
-        (format!("{} cores", group.cores.len()), Some(("cores", cores)))
+        (
+            format!("{} cores", group.cores.len()),
+            Some(("cores", cores)),
+        )
     } else {
         (cores, None)
     }

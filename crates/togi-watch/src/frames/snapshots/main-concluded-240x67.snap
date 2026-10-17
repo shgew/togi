@@ -17,9 +17,9 @@ expression: body
 │  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
 │  0:40 of 2:00                                                                                                                                                                        0 passed · trial 1 of 4  ► · · ·                   left
 │
-│  if 3 of 4 pass       next: trial 4 of 4 · 5m
-│  if a core is named   its failure point is recorded → it backs off per offset order → next: rerun R7 all-core on 00-07 · 2m
-│  if none is named     core 05 -8 → -7 per offset order → next: rerun R7 all-core on 00-07 · 2m
+│  if 3 of 4 pass:      next trial: trial 4 of 4 · 5m
+│  if a core is named:  its failure point is recorded → it backs off per offset order; next trial: rerun R7 all-core on 00-07 · 2m
+│  if none is named:    core 05 -8 → -7 per offset order; next trial: rerun R7 all-core on 00-07 · 2m
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
 │  ► 00  -23  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬···                           -24                                            08   -5  HAS ROOM  ▄▄▄▄▄·▬                                                -7   top by offset
@@ -35,7 +35,7 @@ expression: body
 │  slot      0    1    2    3    4    5    6    7
 │  CCD 0   -23  -15  -24  -24  -13   -8  -37  -29                                                                          23:32  step     cycle 3 step 1: R7 all-core, mprime AVX2 36K-248K
 │  CCD 1    -5  -33  -13   -7  -14  -35  -12  -13                                                                          23:32  cycle    cycle 3 started · 18 steps
-│                                                                                                                          23:32  cycle    cycle 2 passed, a full cycle of every kind of test
+│                                                                                                                          23:32  cycle    cycle 2 passed, a full cycle
 │  CYCLE 3 ───────────────────────────────────────────────────────────────────────────────────────── 18 steps · 0 done     23:32  pass     R6 idle + bursts on 00-15 · passed · Tctl max 76°C
 │                                                                                                                          23:17  pass     R4 partial load on core 15 at -13 · passed · Tctl max 67°C
 │    #   kind                  where                   workload                      schedule       result                 23:15  pass     R4 partial load on core 07 at -29 · passed · Tctl max 64°C

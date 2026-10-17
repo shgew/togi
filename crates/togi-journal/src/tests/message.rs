@@ -842,7 +842,10 @@ fn carry_without_failure_points_says_they_stay_behind_and_why() {
     carried.failure_points = false;
     carried.detail = Some("BIOS context changed".into());
     let text = Payload::from(carried.clone()).message();
-    assert!(text.contains("carried 1 candidate solo limit from"), "{text}");
+    assert!(
+        text.contains("carried 1 candidate solo limit from"),
+        "{text}"
+    );
     assert!(
         text.contains("failure points stay behind: BIOS context changed"),
         "{text}"

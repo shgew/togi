@@ -206,7 +206,11 @@ pub fn top_note(
     } else {
         ("top requester", "top")
     };
-    let word = if width >= "top requester".len() { long } else { short };
+    let word = if width >= "top requester".len() {
+        long
+    } else {
+        short
+    };
     if line_width(note) == 0 {
         // Alone, the word is cut when it does not fit; an offset fallback must not be cut to a bare `top`.
         if width < word.len() {
@@ -220,7 +224,10 @@ pub fn top_note(
     let mut forms = Vec::new();
     if by_offset {
         forms.push(Form::new(Line::styled(long, Paint::Text.style(colours)), 2));
-        forms.push(Form::new(Line::styled(short, Paint::Text.style(colours)), 1));
+        forms.push(Form::new(
+            Line::styled(short, Paint::Text.style(colours)),
+            1,
+        ));
     } else {
         forms.push(Form::new(Line::styled(word, Paint::Text.style(colours)), 1));
     }

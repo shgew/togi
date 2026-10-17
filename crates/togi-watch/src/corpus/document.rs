@@ -34,6 +34,16 @@ const MAX_WINDOW: usize = 3;
 /// The fewest letters the tokens around a merged group's alternatives hold.
 const MIN_CONTEXT_LETTERS: usize = 4;
 
+/// `1 truncation with no full form`, `2 truncations with no full form`.
+fn truncations(count: usize) -> String {
+    let noun = if count == 1 {
+        "truncation"
+    } else {
+        "truncations"
+    };
+    format!("{count} {noun} with no full form")
+}
+
 /// `text` as inline code, whatever backticks it holds.
 fn code(text: &str) -> String {
     let longest = text
@@ -188,12 +198,12 @@ fn context_letters(before: &str, after: &str) -> usize {
 /// The merges of templates that differ in one run of one to [`MAX_WINDOW`] tokens and agree on all the others:
 /// each merged template with the entries it replaces, the largest group first. A template joins one group only.
 fn merges(entries: &[Entry]) -> Vec<(String, Vec<usize>)> {
+    // Key: how many tokens, how many vary, where they start, the tokens before and after.
+    type Group = (usize, usize, usize, String, String);
     let tokens: Vec<Vec<&str>> = entries
         .iter()
         .map(|entry| entry.template.split(' ').collect())
         .collect();
-    // Key: how many tokens, how many vary, where they start, the tokens before and after.
-    type Group = (usize, usize, usize, String, String);
     let mut groups: BTreeMap<Group, Vec<usize>> = BTreeMap::new();
     for (i, entry) in entries.iter().enumerate() {
         if entry.cut || entry.template.contains(['{', '}']) {
@@ -331,7 +341,7 @@ fn intro(out: &mut String, catalogue: &Catalogue, run: &TestRun, swept: &Swept) 
     let templates = entries().count();
     let folded: usize = entries().map(|entry| entry.folded).sum();
     let merged: usize = entries().map(|entry| entry.merged).sum();
-    let cuts = entries().filter(|entry| entry.cut).count();
+    let cuts = truncations(entries().filter(|entry| entry.cut).count());
     let _ = write!(
         out,
         "# Narration corpus (#904)\n\n\
@@ -359,7 +369,7 @@ fn intro(out: &mut String, catalogue: &Catalogue, run: &TestRun, swept: &Swept) 
          - **Provenance.** Each line names its forms, the two least case names that rendered it, and how many \
          renderings there were. A manifest literal is `file:line`.\n\n\
          {} templates from {} producers, reduced from {} shapes and {} distinct texts: {folded} cuts folded in, \
-         {merged} templates merged into alternatives, {cuts} truncations with no full form.\n\n",
+         {merged} templates merged into alternatives, {cuts}.\n\n",
         run.passed,
         run.recording,
         swept.journals.len(),
@@ -387,7 +397,7 @@ fn intro(out: &mut String, catalogue: &Catalogue, run: &TestRun, swept: &Swept) 
     for (producer, entries) in &catalogue.producers {
         let cuts = entries.iter().filter(|entry| entry.cut).count();
         let note = if cuts > 0 {
-            format!(", {cuts} truncations with no full form")
+            format!(", {}", truncations(cuts))
         } else {
             String::new()
         };
@@ -599,7 +609,10 @@ mod tests {
             whole.item.forms,
             BTreeSet::from(["Main Compact".to_owned(), "Main Full".to_owned()])
         );
-        assert_eq!(whole.item.variants, 3, "the cut's two texts and the full one");
+        assert_eq!(
+            whole.item.variants, 3,
+            "the cut's two texts and the full one"
+        );
         assert_eq!(
             whole.item.cases.tests.names,
             BTreeSet::from(["cut".to_owned(), "full".to_owned()])
@@ -643,7 +656,10 @@ mod tests {
         let templates: Vec<&str> = entries.iter().map(|e| e.template.as_str()).collect();
         assert_eq!(
             templates,
-            ["needs a manual rese", "so a freeze needs a manual reset first"],
+            [
+                "needs a manual rese",
+                "so a freeze needs a manual reset first"
+            ],
             "{entries:?}"
         );
     }
@@ -656,7 +672,10 @@ mod tests {
             ("c", "p", "Main", "core 05 crashed at 7"),
         ]);
         assert_eq!(entries.len(), 1, "{entries:?}");
-        assert_eq!(entries[0].template, "core # {crashed | failed | passed} at #");
+        assert_eq!(
+            entries[0].template,
+            "core # {crashed | failed | passed} at #"
+        );
         assert_eq!(entries[0].merged, 3);
         assert_eq!(
             entries[0].item.forms,

@@ -97,10 +97,7 @@ fn stop_words(reason: ShutdownReason) -> &'static str {
 fn next_line(scene: &Scene<'_>) -> String {
     let between = scene.s.forecast.between.as_ref();
     match between.and_then(|between| between.next.as_ref()) {
-        Some(next) => format!(
-            "{NEXT_TRIAL}{}",
-            next_trial_words(scene, next, None, None)
-        ),
+        Some(next) => format!("{NEXT_TRIAL}{}", next_trial_words(scene, next, None, None)),
         None if between.and_then(|between| between.uncertainty)
             == Some(Uncertainty::NeedsRanking) =>
         {

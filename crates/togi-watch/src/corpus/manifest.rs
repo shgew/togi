@@ -260,7 +260,9 @@ fn extract(source: &str) -> Vec<(usize, String)> {
                 }
             }
             b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                let end = source[i + 2..].find("*/").map_or(bytes.len(), |at| i + 2 + at + 2);
+                let end = source[i + 2..]
+                    .find("*/")
+                    .map_or(bytes.len(), |at| i + 2 + at + 2);
                 line += source[i..end].matches('\n').count();
                 i = end;
             }

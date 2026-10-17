@@ -10,7 +10,7 @@ expression: body
 │  R2   heavy vector load  on 05 · 00-04 06-15 at failing offsets, 05 parked at 0                  HUNT 1 · PART 1 OF 2
 │ ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/5 ► · · · ·
 │
-│ 5/5 pass → part 2: 00-04   none named → group 2   core named → rerun at CO 0
+│ 5/5 pass → part 2: 00-04   none named → group 2   core named → rerun at offset 0
 │
 │ CCD 0 one loaded 0  2 counts/cell       -50 fail  back      CCD 1 judged     0  2 counts/cell       -50 fail
 │   00 -25 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▬·              -26             08  -5 MEMBER   ▄▄▄▬                         -7

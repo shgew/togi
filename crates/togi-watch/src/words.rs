@@ -13,8 +13,8 @@ use std::time::Duration;
 use togi_journal::{
     Activity, Attribution, CheckingChain, CheckingCycle, CheckingStep, Combination, CorePhase,
     CoreTransition, CycleEvent, DeadEnd, Decision, DeepeningRound, EventKind, Failure, HuntEnd,
-    HuntGroup, HuntOutcome, HuntSkipped, HuntStart, Inference, Mce, Payload, RoundEvent,
-    TrialEnd, TunerDecision,
+    HuntGroup, HuntOutcome, HuntSkipped, HuntStart, Inference, Mce, Payload, RoundEvent, TrialEnd,
+    TunerDecision,
 };
 use togi_machine::{CoreId, Regime, Signal, TargetOffset, WorkloadId};
 use togi_tuner::{DecisionPayload, GroupState};
@@ -438,10 +438,7 @@ pub fn cycle_line(d: &CheckingCycle) -> Line {
             Tone::Plain,
         )
     } else if d.passed && d.full {
-        (
-            format!("cycle {cycle} passed, a full cycle"),
-            Tone::Good,
-        )
+        (format!("cycle {cycle} passed, a full cycle"), Tone::Good)
     } else if d.passed {
         (
             format!("cycle {cycle} passed but missing {}", d.missing.join(", ")),
@@ -548,9 +545,13 @@ pub fn decision_phrase(d: &TunerDecision, failed: Option<CoreId>) -> String {
             _ => format!("core {core:02} {from} → {to}"),
         },
         Decision::StepDeeper => format!("core {core:02} searches {to} on its next turn"),
-        Decision::CheckSoloLimit => format!("core {core:02} starts confirming {to} as its solo limit"),
+        Decision::CheckSoloLimit => {
+            format!("core {core:02} starts confirming {to} as its solo limit")
+        }
         Decision::Deepen => format!("core {core:02} deepens {from} → {to}"),
-        Decision::Yield => format!("core {core:02} yields {from} → {to}, back to its round baseline"),
+        Decision::Yield => {
+            format!("core {core:02} yields {from} → {to}, back to its round baseline")
+        }
         Decision::Hold => format!("core {core:02} failure held at {from}; no tuning move"),
     }
 }

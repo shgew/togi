@@ -625,7 +625,10 @@ fn next_words(
             );
         }
     }
-    format!("{NEXT_TRIAL}{}", next_trial_words(scene, next, trial, shape))
+    format!(
+        "{NEXT_TRIAL}{}",
+        next_trial_words(scene, next, trial, shape)
+    )
 }
 
 fn duration_of(plan: &TrialPlan) -> Duration {

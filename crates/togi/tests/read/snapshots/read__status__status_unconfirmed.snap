@@ -6,58 +6,57 @@ checking cycle 2, steps 4/18 | phase 2: confirmation cycle
 session 20260101T000000Z started 2026-01-01T00:00:00Z
 BIOS SIM.1 on togi simulator, Simulated Zen 5 16-Core Processor, microcode 0x0,
   boost limit 5700 MHz
-in flight: [#8403] trial 1203 core 01 CO -15 R5 mprime SSE 4K-21K SMT pair 120 s
-  together rerun
+in flight: [#8403] trial 1203 core 01 offset -15 R5 mprime SSE 4K-21K SMT pair
+  120 s together rerun
 
 CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
 00    0    0     -33     -33   HAS ROOM  -35      -
   last decision [#7646] core 00 at its limit -> has room at -33 (one count
                 deeper reaches no failure point or combination)
 01    0    1     -15     -15*  AT LIMIT  -16      -
-  last decision [#8397] core 01 backed off at -16; next -15 (backed off:
+  last decision [#8397] core 01 backed off from -16 to -15 (backed off:
                 attributed computation_error in together R5 trial 1202; failure
                 point -16)
 02    0    2     -30     -30   AT LIMIT  -31      -
-  last decision [#4945] core 02 backed off at -31; next -30 (voltage-targeted R7
+  last decision [#4945] core 02 backed off from -31 to -30 (voltage-targeted R7
                 backoff after failure #4943: core 02 order came from offsets at
                 CO -31; no request telemetry, 1 count; hunt 1 ended loaded after
                 failure #4942 named loaded core 02, which also answers failure
                 #4893)
 03    0    3     -13     -13   AT LIMIT  -14      -
-  last decision [#4808] core 03 backed off at -14; next -13 (voltage-targeted R7
+  last decision [#4808] core 03 backed off from -14 to -13 (voltage-targeted R7
                 backoff after failure #4807: core 03 order came from offsets at
-                CO -14; no request telemetry, 1 count; not located on the
-                unloaded cores yet: this is voltage-targeted backoff 2 of this
-                load since its last passing trial, and its failures are located
-                only after 2)
+                CO -14; no request telemetry, 1 count; the unloaded cores have
+                not been checked by a located hunt yet; voltage-targeted backoff
+                2 for this load since its last passing trial; a later failure
+                can trigger a located hunt after 2 backoffs)
 04    0    4     -25     -25   AT LIMIT  -26      -
-  last decision [#4785] core 04 backed off at -26; next -25 (voltage-targeted R7
+  last decision [#4785] core 04 backed off from -26 to -25 (voltage-targeted R7
                 backoff after failure #4784: core 04 order came from offsets at
                 CO -26; no request telemetry, 1 count)
 05    0    5     -23     -23   AT LIMIT  -24      -
-  last decision [#7645] core 05 backed off at -24; next -23 (failure #7637 (R7
+  last decision [#7645] core 05 backed off from -24 to -23 (failure #7637 (R7
                 trial 0977) charged to deepened core 05; round 1, last passed
                 offset -23; failure point -24)
 06    0    6     -25     -25   AT LIMIT  -26      -
-  last decision [#6166] core 06 backed off at -26; next -25 (backed off:
+  last decision [#6166] core 06 backed off from -26 to -25 (backed off:
                 attributed computation_error in together R1 trial 0764; failure
                 point -26)
 07    0    7     -20     -20   HAS ROOM  -22      -
   last decision [#7651] core 07 at its limit -> has room at -20 (one count
                 deeper reaches no failure point or combination)
 08    1    0     -16     -16   AT LIMIT  -17      -
-  last decision [#5570] core 08 backed off at -17; next -16 (backed off:
+  last decision [#5570] core 08 backed off from -17 to -16 (backed off:
                 attributed computation_error in together R2 trial 0650; failure
                 point -17)
 09    1    1     -10     -10   HAS ROOM  -12      -
   last decision [#7647] core 09 at its limit -> has room at -10 (one count
                 deeper reaches no failure point or combination)
 10    1    2     -7      -7    AT LIMIT  -8       -
-  last decision [#6603] core 10 backed off at -8; next -7 (backed off:
-                attributed corrected_mce in together R4 trial 0858; failure
-                point -8)
+  last decision [#6603] core 10 backed off from -8 to -7 (backed off: attributed
+                corrected_mce in together R4 trial 0858; failure point -8)
 11    1    3     -12     -12   AT LIMIT  -13      -
-  last decision [#6026] core 11 backed off at -13; next -12 (backed off:
+  last decision [#6026] core 11 backed off from -13 to -12 (backed off:
                 attributed corrected_mce in together R5 trial 0737; failure
                 point -13)
 12    1    4     -33     -33   HAS ROOM  -35      -
@@ -70,13 +69,13 @@ CORE  CCD  SLOT  OFFSET  BIOS  PHASE     FAILURE  QUEUED
   last decision [#7650] core 14 at its limit -> has room at -11 (one count
                 deeper reaches no failure point or combination)
 15    1    7     -18     -18   AT LIMIT  -19      -
-  last decision [#5874] core 15 backed off at -19; next -18 (backed off:
+  last decision [#5874] core 15 backed off from -19 to -18 (backed off:
                 attributed computation_error in together R6 trial 0710; failure
                 point -19)
-* unconfirmed since [#8397]: cores 01 show a stepped-back offset, the profile
-  confirmed by the passed full cycle [#6888] otherwise; a passed full cycle
-  confirms it, except a held failure's stepped-back offset, which stays marked
-  until the hold ends
+* unconfirmed since [#8397]: core 01 shows a stepped-back offset; other BIOS
+  offsets come from the profile confirmed by the passed full cycle [#6888]. A
+  passed full cycle confirms the changes, except a held failure's stepped-back
+  offset, which stays marked until the hold ends
 
 R7 self-sufficiency (passed as top requester at equal or deeper offsets; not a
   guarantee)
@@ -180,7 +179,9 @@ CORE  CCD  SELF-SUFFICIENT               TOP REQUESTER
 
 no core can move: the confirmation cycle is all that is left
 
-REGIME  WORKLOAD                         TRIALS
+Valid passes supporting the checking profile (live and not alone, on the active
+  backend, at equal or deeper offsets; carried passes excluded)
+REGIME  WORKLOAD                         VALID PASSES
 R1      mprime-sse-4k-21k                20
 R1      ycruncher-bkt-sftv4              16
 R1      ycruncher-snt-svt                16
@@ -199,3 +200,4 @@ R6      ycruncher-bkt-sftv4-idle         1
 R7      mprime-avx2-36k-248k-allcore     125
 R7      mprime-avx512-36k-248k-allcore   116
 R7      ycruncher-fftv4-n63-vt3-allcore  116
+

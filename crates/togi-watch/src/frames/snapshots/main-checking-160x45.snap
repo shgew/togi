@@ -13,9 +13,9 @@ expression: body
 │   R7   all-core load  on 00-07   mprime AVX2 36K-248K · 8 workers                                                                  CYCLE 1 · STEP 1 · PART 1
 │  ███████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  1:20 left  0/4 ► · · ·
 │
-│  if 3 of 4 pass       next: trial 4 of 4 · 5m
-│  if a core is named   its failure point is recorded → it backs off per offset order → next: rerun R7 all-core on 00-07 · 2m
-│  if none is named     core 05 -9 → -8 per offset order → next: rerun R7 all-core on 00-07 · 2m
+│  if 3 of 4 pass:      next trial: trial 4 of 4 · 5m
+│  if a core is named:  its failure point is recorded → it backs off per offset order; next trial: rerun R7 all-core on 00-07 · 2m
+│  if none is named:    core 05 -9 → -8 per offset order; next trial: rerun R7 all-core on 00-07 · 2m
 │
 │  CCD 0               0  2 counts/cell       -50 fail pt  all under load          CCD 1               0  2 counts/cell       -50 fail pt  not under load
 │  ► 00  -26  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▬               -28                             08   -5  HAS ROOM  ▄▄▄▬                          -7   top by offset

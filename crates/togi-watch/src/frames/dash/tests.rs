@@ -1212,10 +1212,7 @@ fn an_idle_hold_pins_the_clock_to_the_trials_start() {
     );
     let text = plain(&header(&scene, 240, false));
     assert!(text.starts_with("togi   10:00:00"), "{text}");
-    assert!(
-        text.contains("screen paused · planned end 10:10"),
-        "{text}"
-    );
+    assert!(text.contains("screen paused · planned end 10:10"), "{text}");
     assert!(!text.contains("paused until"), "{text}");
     assert!(!text.contains("ago"), "{text}");
 }

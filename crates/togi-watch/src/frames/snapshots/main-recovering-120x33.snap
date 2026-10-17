@@ -9,7 +9,7 @@ expression: body
 │
 │ RECOVERED FROM A CRASH  crash in core 08 · R1 light at -10
 │ detected 01:40:30 after a watchdog reset
-│ next: R1 light on core 01 alone at -10
+│ next trial: R1 light, core 01 alone at -10
 │
 │ CCD 0 waiting    0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail
 │   00   0 SEARCH   ·····                           → -15       08 -10 SEARCH   ▄▄▄▄▄                           → -10
@@ -24,13 +24,13 @@ expression: body
 │ TURNS ────────────────── one core per turn, in this order   WHAT HAPPENED ─────────────────────────────── l: last 400
 │
 │   01  search: light, then heavy  -10  p -5 · next -10       01:40  crash    with the offsets applied, rebooted
-│   09  search: light, then heavy  -10  p -5 · next -10       01:39  step     core 00 passed -10, next -15
-│   02  search: light, then heavy  -10  p -5 · next -10       01:36  step     core 15 passed -5, next -10
-│   10  search: light, then heavy  -10  p -5 · next -10       01:33  step     core 07 passed -5, next -10
-│   03  search: light, then heavy  -10  p -5 · next -10       01:30  step     core 14 passed -5, next -10
-│   11  search: light, then heavy  -10  p -5 · next -10       01:27  step     core 06 passed -5, next -10
-│   04  search: light, then heavy  -10  p -5 · next -10       01:24  step     core 13 passed -5, next -10
-│   12  search: light, then heavy  -10  p -5 · next -10       01:21  step     core 05 passed -5, next -10
+│   09  search: light, then heavy  -10  p -5 · next -10       01:39  step     core 00 passed -10; searches -15 on...
+│   02  search: light, then heavy  -10  p -5 · next -10       01:36  step     core 15 passed -5; searches -10 on its...
+│   10  search: light, then heavy  -10  p -5 · next -10       01:33  step     core 07 passed -5; searches -10 on its...
+│   03  search: light, then heavy  -10  p -5 · next -10       01:30  step     core 14 passed -5; searches -10 on its...
+│   11  search: light, then heavy  -10  p -5 · next -10       01:27  step     core 06 passed -5; searches -10 on its...
+│   04  search: light, then heavy  -10  p -5 · next -10       01:24  step     core 13 passed -5; searches -10 on its...
+│   12  search: light, then heavy  -10  p -5 · next -10       01:21  step     core 05 passed -5; searches -10 on its...
 │ +8 more                                                     +27 more
 │
 │  ?  help    l  log    esc  back    q  close view

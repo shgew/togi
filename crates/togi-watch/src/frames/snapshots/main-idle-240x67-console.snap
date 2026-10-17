@@ -3,16 +3,15 @@ source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
 legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
-│  togi   20:21:32   session 20h21m   41 failures · 8 crashes   last observed failure 18:57   screen paused until 20:36
-~  gggg   wwwwwwww   ggggggggtttttt   ttggggggggggggtgggggggg   ggggggggggggggggggggggttttt   aaaaaaaaaaaaaaaaaaaaaaaaa
+│  togi   20:21:32   session 20h21m   41 failures · 8 crashes   last observed failure 18:57   screen paused · planned end 20:36
+~  gggg   wwwwwwww   ggggggggtttttt   ttggggggggggggtgggggggg   ggggggggggggggggggggggttttt   aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 │
 │  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 7 of 18
 ~  pptttttttttttgggggggttkkkttccwwwwwwwttkkkttgggggggggttkkkttggggggggggggggttkkkttccwwwwwwwtttttttttttttt
 │
-│  ▌  CYCLE 1   Step 7 leaves every core idle for 15 minutes, with short wake-ups, to test idle and boost states.          last trial      PASS  2:00 on core 15 · Tctl max 74°C
-~  c  ccccccccccttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt          ggggggggggggggggppppggggggggggggggggggggggggggggggggg
-│  ▌            This screen holds still until 20:36, clock included, so drawing it cannot wake the cores.
-~  c            ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  ▌  CYCLE 1   Every core idle with short wake-ups; this screen holds still.                                              last trial      PASS  2:00 on core 15 · Tctl max 74°C
+~  c  ccccccccccttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                              ggggggggggggggggppppggggggggggggggggggggggggggggggggg
+│
 │
 │  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0657
 ~  ggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk gggggggggg
@@ -21,19 +20,19 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │
 │  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      ▀▀█ █▀█   ▀▀█ █▀▀
 ~  kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk      ggggggggggggggggg
-│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused until 20:36 so it cannot wake the idle cores  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █▀▀ █ █ ▀  ▀█ █▀█
-~  kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk      ggggggggggggggggg
+│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · planned end 20:36, so it cannot wake the idle cores  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █▀▀ █ █ ▀  ▀█ █▀█
+~  kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkktttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk      ggggggggggggggggg
 │  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ▀▀▀ ▀▀▀ ▀ ▀▀▀ ▀▀▀
 ~  kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk      ggggggggggggggggg
 │  started 20:21 · 15:00                                                                                                                                                                                                               ends at
 ~  ggggggggtttttgggggggg                                                                                                                                                                                                               ggggggg
 │
-│  if it passes         step 7 is done → next: step 8: R5 both threads with mprime SSE 4K-21K
-~  pppppppppppppppppppppttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  if a core is named   its failure point is recorded → it backs off → next: rerun R6 idle + bursts on 00-15 · 2m
-~  fffffffffffffffffffffttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│  if none is named     hunt 2 starts over 00-15 → next: hunt 2 group 1: R6 idle + bursts on 00-15 · 00-07 at failing offsets, 08-15 parked at 0
-~  ffffffffffffffffffffftttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  if it passes:        step 7 is done; next trial: step 8: R5 both threads with mprime SSE 4K-21K
+~  ppppppppppppppppppppptttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  if a core is named:  its failure point is recorded → it backs off; next trial: rerun R6 idle + bursts on 00-15 · 2m
+~  ffffffffffffffffffffftttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  if none is named:    hunt 2 starts over 00-15; next trial: hunt 2 group 1: R6 idle + bursts on 00-15 · 00-07 at failing offsets, 08-15 parked at 0
+~  fffffffffffffffffffffttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  all under load
 ~  wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg                         wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg

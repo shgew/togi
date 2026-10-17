@@ -115,7 +115,10 @@ fn draw(
 /// The moments to draw a state at: its last event, 40 seconds after, and when a trial runs that nothing holds, its
 /// planned end and 90 seconds past it.
 fn clocks(snapshot: &Snapshot<'_>, at: Timestamp) -> Vec<(&'static str, Timestamp)> {
-    let mut out = vec![("event", at), ("plus40", at + SignedDuration::from_secs(40))];
+    let mut out = vec![
+        ("event", at),
+        ("plus40", at + SignedDuration::from_secs(40)),
+    ];
     if snapshot.idle_hold().is_none()
         && let Some(trial) = snapshot.trial
         && let Some(started) = trial.started
@@ -178,7 +181,13 @@ fn whole(swept: &mut Swept, id: &str, events: &[Event]) {
     let now = last + SignedDuration::from_secs(40);
     for size in SIZES {
         let name = format!("{id}/{}x{}", size.0, size.1);
-        draw(swept, &name, &journal, &screen_of(View::Main, size, false), now);
+        draw(
+            swept,
+            &name,
+            &journal,
+            &screen_of(View::Main, size, false),
+            now,
+        );
     }
 }
 
@@ -280,7 +289,8 @@ pub(crate) fn run() -> Swept {
         sweep_journal(&mut swept, &name, events);
         views(&mut swept, &name, events);
     }
-    let rerun = cycle_completed_by_rerun().unwrap_or_else(|error| panic!("rerun journals: {error}"));
+    let rerun =
+        cycle_completed_by_rerun().unwrap_or_else(|error| panic!("rerun journals: {error}"));
     sweep_journal(&mut swept, "rerun-completes-cycle", &rerun.ended);
     for (n, running) in rerun.running.iter().enumerate() {
         whole(&mut swept, &format!("scenario/rerun-{n}"), running);
@@ -290,7 +300,11 @@ pub(crate) fn run() -> Swept {
         let events = scenario
             .events()
             .unwrap_or_else(|error| panic!("{}: {error}", scenario.name()));
-        whole(&mut swept, &format!("scenario/{}", scenario.name()), &events);
+        whole(
+            &mut swept,
+            &format!("scenario/{}", scenario.name()),
+            &events,
+        );
         swept.scenarios += 1;
     }
     states(&mut swept);

@@ -92,9 +92,12 @@ pub(crate) fn text(producer: &str, form: &str, text: &str) {
         None => false,
     });
     if !collected && let Some(sink) = file_sink() {
-        sink.lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .write(&current_case(), producer, form, text);
+        sink.lock().unwrap_or_else(PoisonError::into_inner).write(
+            &current_case(),
+            producer,
+            form,
+            text,
+        );
     }
 }
 
@@ -507,7 +510,10 @@ pub(crate) struct TestRun {
 
 /// Runs every other unit test of this binary in a child process, recording to `records`. Several test threads
 /// keep every test on a thread named after it.
-#[expect(clippy::disallowed_methods, reason = "the exporter re-runs this test binary to collect the other tests' phrases")]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the exporter re-runs this test binary to collect the other tests' phrases"
+)]
 fn run_tests(records: &Path) -> usize {
     let exe = std::env::current_exe().expect("the test binary's path");
     let output = std::process::Command::new(&exe)
@@ -530,8 +536,12 @@ fn run_tests(records: &Path) -> usize {
 
 /// Adds the child run's records to `collector`; returns how many distinct cases recorded.
 fn load(records: &Path, collector: &mut Collector) -> usize {
-    let file = File::open(records)
-        .unwrap_or_else(|error| panic!("{}: {error}; the child run recorded nothing", records.display()));
+    let file = File::open(records).unwrap_or_else(|error| {
+        panic!(
+            "{}: {error}; the child run recorded nothing",
+            records.display()
+        )
+    });
     let mut cases = HashSet::new();
     for record in BufReader::new(file).lines() {
         let record = record.unwrap_or_else(|error| panic!("{}: {error}", records.display()));
@@ -579,9 +589,11 @@ fn narration_corpus() {
     let swept = crate::frames::corpus::run();
     let mut collector = finish();
     let recording = load(&records, &mut collector);
-    assert!(recording > 0, "the child test run recorded no rendered phrase");
-    std::fs::remove_file(&records)
-        .unwrap_or_else(|error| panic!("{}: {error}", records.display()));
+    assert!(
+        recording > 0,
+        "the child test run recorded no rendered phrase"
+    );
+    std::fs::remove_file(&records).unwrap_or_else(|error| panic!("{}: {error}", records.display()));
 
     let run = TestRun { passed, recording };
     let markdown = document::write(&collector, &run, &swept, &status);
@@ -615,7 +627,10 @@ mod tests {
         assert_eq!(template("core 12 failed at 7"), "core # failed at #");
         assert_eq!(template("trial a3f9c2 ended"), template("trial 0604 ended"));
         assert_eq!(template("-20 to -30"), "# to #");
-        assert_eq!(template("00-04 06-15 at failing offsets"), "# at failing offsets");
+        assert_eq!(
+            template("00-04 06-15 at failing offsets"),
+            "# at failing offsets"
+        );
         assert_eq!(template("R2-heavy"), "R#-heavy");
         assert_eq!(template("a-b"), "a-b");
     }
@@ -647,10 +662,7 @@ mod tests {
         right.add("z");
         left.merge(&right);
         assert_eq!(left.renders, 5);
-        assert_eq!(
-            left.names,
-            BTreeSet::from(["a".to_owned(), "k".to_owned()])
-        );
+        assert_eq!(left.names, BTreeSet::from(["a".to_owned(), "k".to_owned()]));
     }
 
     #[test]

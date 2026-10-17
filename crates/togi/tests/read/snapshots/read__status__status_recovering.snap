@@ -10,53 +10,53 @@ in flight: none
 
 CORE  CCD  SLOT  OFFSET  BIOS  PHASE   FAILURE  QUEUED
 00    0    0     -15     -     SEARCH  -        -
-  last decision [#673] core 00 passed R1+R2 at -10; next -15 (coarse, no failure
-                point yet)
+  last decision [#673] core 00 passed R1+R2 at -10; searches -15 on its next
+                turn (coarse, no failure point yet)
 01    0    1     -10     -     SEARCH  -        -
-  last decision [#407] core 01 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#407] core 01 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 02    0    2     -10     -     SEARCH  -        -
-  last decision [#445] core 02 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#445] core 02 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 03    0    3     -10     -     SEARCH  -        -
-  last decision [#483] core 03 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#483] core 03 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 04    0    4     -10     -     SEARCH  -        -
-  last decision [#521] core 04 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#521] core 04 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 05    0    5     -10     -     SEARCH  -        -
-  last decision [#559] core 05 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#559] core 05 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 06    0    6     -10     -     SEARCH  -        -
-  last decision [#597] core 06 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#597] core 06 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 07    0    7     -10     -     SEARCH  -        -
-  last decision [#635] core 07 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#635] core 07 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 08    1    0     -10     -     SEARCH  -        -
-  last decision [#388] core 08 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#388] core 08 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 09    1    1     -10     -     SEARCH  -        -
-  last decision [#426] core 09 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#426] core 09 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 10    1    2     -10     -     SEARCH  -        -
-  last decision [#464] core 10 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#464] core 10 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 11    1    3     -10     -     SEARCH  -        -
-  last decision [#502] core 11 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#502] core 11 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 12    1    4     -10     -     SEARCH  -        -
-  last decision [#540] core 12 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#540] core 12 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 13    1    5     -10     -     SEARCH  -        -
-  last decision [#578] core 13 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#578] core 13 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 14    1    6     -10     -     SEARCH  -        -
-  last decision [#616] core 14 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#616] core 14 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 15    1    7     -10     -     SEARCH  -        -
-  last decision [#654] core 15 passed R1+R2 at -5; next -10 (coarse, no failure
-                point yet)
+  last decision [#654] core 15 passed R1+R2 at -5; searches -10 on its next turn
+                (coarse, no failure point yet)
 BIOS profile: none confirmed yet; phase 1 has not passed a full cycle
 
 R7 self-sufficiency (passed as top requester at equal or deeper offsets; not a
@@ -158,3 +158,4 @@ CORE  CCD  SELF-SUFFICIENT       TOP REQUESTER
   workload ycruncher-fftv4-n63-vt3-allcore
 15    1    not yet demonstrated  yes (offset fallback)
   workload ycruncher-fftv4-n63-vt3-allcore
+

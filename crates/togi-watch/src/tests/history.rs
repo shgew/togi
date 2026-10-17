@@ -397,7 +397,7 @@ fn deepening_history_separates_deeper_and_yielded_members() {
             "limit: core 01 solo limit -30",
             "limit: core 02 solo limit -10",
             "round: #2: core 00 goes deeper to -21, core 01 yields to -29",
-            "room: core 01 -30 → -29; no later round moves it",
+            "room: core 01 yields -30 → -29; no later round moves it",
             "room: core 00 -20 → -21",
         ]
     );

@@ -275,8 +275,9 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
             put_cells(buf, r, at(x), 3 + at(y), &Line::from(paint(style, row)));
         }
         if let Some(hold) = quiet {
-            let msg =
-                format!("  screen paused · planned end {digits}, so it cannot wake the idle cores  ");
+            let msg = format!(
+                "  screen paused · planned end {digits}, so it cannot wake the idle cores  "
+            );
             let x = cells.saturating_sub(msg.chars().count()) / 2;
             put(buf, r, at(x), 4, &Line::from(paint(Paint::Text, msg)));
             let begun = Line::from(vec![

@@ -34,3 +34,4 @@ Options:
 Examples:
   togi watch                                 The session in the default state directory, full screen
   togi --state-dir <dir> watch > frame.txt   One 240x67 frame of the session in <dir>
+

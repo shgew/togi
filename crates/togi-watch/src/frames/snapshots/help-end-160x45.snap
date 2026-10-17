@@ -23,14 +23,14 @@ expression: body
 │  │ offset           Curve Optimizer counts, 0 to -50; deeper is more negative
 │  │ trial            one launch of one workload on its target
 │  │ solo limit       the deepest offset a core confirmed under load alone
-│  │ failure point    the shallowest offset where a core failed on its own account
+│  │ failure point    the shallowest ruled-out offset for a core
 │  │ combination      offsets at which a group of cores failed together
 │  │ at its limit     a core that cannot go deeper
 │  │ has room         a core that can still go deeper
 │  │ suspect          a core a hunt keeps at its failing offset
-│  │ parked           a core a hunt holds shallower than its failing offset
+│  │ parked           a core a hunt holds no deeper than its failing offset, outside the selected group
 │  █ partial part     an R7 part with the top requesters idle
-│  █ top requester    the loaded core with the highest voltage request, setting the shared core voltage; marked top on the CCD tables
+│  █ top requester    an R7 workload's highest-request group on each CCD, ties included; marked top on the CCD tables
 │  █ self-sufficient  observed passing as top requester for this R7 workload
 │  █ cycle            one pass through the checking schedule
 │  █

@@ -632,11 +632,7 @@ fn then_lines(
             scene,
             t,
             "then",
-            cell(
-                scene,
-                Paint::Grey,
-                "after the hunt:",
-            ),
+            cell(scene, Paint::Grey, "after the hunt:"),
             width,
         ));
         out.push(table_row(
@@ -1444,7 +1440,7 @@ mod tests {
         }
         let all = rows.join("\n");
         for kept in [
-            "then finer parts and complements until one fails or none does",
+            "failed parts are split again; complements test what remains",
             "record one core's failure point or a combination",
             "original length",
         ] {

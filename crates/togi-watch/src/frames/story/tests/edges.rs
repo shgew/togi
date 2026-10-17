@@ -2,8 +2,8 @@
 //! premise with every uncertainty. They give the narration corpus the branches the simulated journals never
 //! reach; each also asserts what the branch must say, so it stays a test.
 
-use super::*;
 use super::super::Story;
+use super::*;
 
 fn dead_end(condition: DeadEndCondition, detail: &str) -> DeadEndView {
     DeadEndView {
@@ -61,7 +61,11 @@ fn every_stop_reason_is_narrated_saved_or_not() {
             assert!(!said.lines.is_empty(), "{reason:?} {saved}");
             let band = resting_band(&scene);
             assert_eq!(band.title, "STOPPED", "{reason:?} {saved}");
-            assert_eq!(band.lines.len(), 1 + usize::from(saved), "{reason:?} {saved}");
+            assert_eq!(
+                band.lines.len(),
+                1 + usize::from(saved),
+                "{reason:?} {saved}"
+            );
         }
     }
 }
@@ -155,7 +159,7 @@ fn every_premise_and_uncertainty_is_narrated_without_inventing_a_next_trial() {
                             if next.is_none() {
                                 let said = fit_phrases(&row.phrases, 400);
                                 assert!(
-                                    !said.contains("next: "),
+                                    !said.contains("next trial: "),
                                     "{premise:?} {uncertainty:?} invents a next trial: {said}"
                                 );
                             }
@@ -185,9 +189,27 @@ fn every_premise_and_uncertainty_is_narrated_without_inventing_a_next_trial() {
 fn a_forecast_between_trials_names_the_next_trial_the_ranking_or_nothing() {
     let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1), (3, 1)]);
     for next in [
-        plan(Regime::R1, many(&[0, 1]), Condition::Together, cycle_ctx(1, 2), 120),
-        plan(Regime::R6, Load::Single(core(1)), Condition::Alone, cycle_ctx(1, 3), 600),
-        plan(Regime::R7, many(&[0, 1]), Condition::Parked, cycle_ctx(1, 1), 60),
+        plan(
+            Regime::R1,
+            many(&[0, 1]),
+            Condition::Together,
+            cycle_ctx(1, 2),
+            120,
+        ),
+        plan(
+            Regime::R6,
+            Load::Single(core(1)),
+            Condition::Alone,
+            cycle_ctx(1, 3),
+            600,
+        ),
+        plan(
+            Regime::R7,
+            many(&[0, 1]),
+            Condition::Parked,
+            cycle_ctx(1, 1),
+            60,
+        ),
     ] {
         fx.forecast.between = Some(Between {
             next: Some(next),
@@ -195,7 +217,11 @@ fn a_forecast_between_trials_names_the_next_trial_the_ranking_or_nothing() {
         });
         let band = resting_band(&fx.scene(ts(1)));
         assert_eq!(band.title, "BETWEEN TRIALS");
-        assert!(band.lines.iter().any(|line| line.starts_with("next trial: ")));
+        assert!(
+            band.lines
+                .iter()
+                .any(|line| line.starts_with("next trial: "))
+        );
     }
     for uncertainty in [
         None,
@@ -209,7 +235,11 @@ fn a_forecast_between_trials_names_the_next_trial_the_ranking_or_nothing() {
             ..Between::default()
         });
         let band = resting_band(&fx.scene(ts(1)));
-        assert!(band.lines.iter().any(|line| line.starts_with("next trial: ")));
+        assert!(
+            band.lines
+                .iter()
+                .any(|line| line.starts_with("next trial: "))
+        );
     }
 }
 
@@ -253,9 +283,15 @@ fn a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold() {
             let told = story(&fx.scene(ts(1010)));
             assert_eq!(told.label, "CYCLE 1", "{step:?} {phase:?}");
             assert_eq!(told.lines.len(), 2, "{step:?} {phase:?}");
-            assert!(told.lines[0].starts_with(opening), "{step:?} {phase:?}: {told:?}");
+            assert!(
+                told.lines[0].starts_with(opening),
+                "{step:?} {phase:?}: {told:?}"
+            );
             assert_eq!(told.lines[1], place, "{step:?} {phase:?}");
-            assert!(told.brief.starts_with(opening), "{step:?} {phase:?}: {told:?}");
+            assert!(
+                told.brief.starts_with(opening),
+                "{step:?} {phase:?}: {told:?}"
+            );
         }
     }
 }
@@ -406,7 +442,10 @@ fn every_hunt_cause_is_narrated_with_and_without_a_named_core() {
                                     && told.lines[0].ends_with(" ended with wrong result."),
                                 "{case}: {told:?}"
                             );
-                            assert!(told.brief.starts_with("Wrong result in R7 all-core"), "{case}");
+                            assert!(
+                                told.brief.starts_with("Wrong result in R7 all-core"),
+                                "{case}"
+                            );
                         }
                     }
                     assert!(
@@ -421,9 +460,9 @@ fn every_hunt_cause_is_narrated_with_and_without_a_named_core() {
 
 fn capitalized(text: &str) -> String {
     let mut chars = text.chars();
-    chars
-        .next()
-        .map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 /// Draws `fx` as the dashboard shows it at the three main sizes; returns the rows of the widest.
@@ -511,6 +550,13 @@ fn the_hunt_panel_says_carried_groups_uncounted_probes_and_the_evidence_of_a_cra
         &drawn(&hunting(crashed)),
         "core 01's worker had stalled by the last sample, 2:05 into the trial",
     );
+
+    let mut idle_known = cause();
+    idle_known.known = true;
+    shows(
+        &drawn(&hunting(idle_known)),
+        "an idle failure is already recorded at these offsets",
+    );
 }
 
 /// A cycle step that finished after two hunts.
@@ -560,6 +606,24 @@ fn outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure() {
         "a top requester at 0 does not move another CCD's group"
     );
 
+    // Two named failures at 0 on different CCDs that say different things are two rows, each naming its CCD.
+    let mut apart = [0, 3].map(|id| {
+        let mut one = branch(Premise::Named(core(id)));
+        one.at_zero = true;
+        one
+    });
+    apart[0].decisions = vec![DecisionPayload::TunerDecision(backoff(1, -31, -30, None))];
+    fx.forecast.branches = apart.to_vec();
+    let labels: Vec<String> = fx.row_set().into_iter().map(|row| row.label).collect();
+    assert_eq!(
+        labels,
+        [
+            "if a CCD 0 core at 0 is named",
+            "if a CCD 1 core at 0 is named"
+        ],
+        "{labels:?}"
+    );
+
     for decisions in [
         Vec::new(),
         vec![DecisionPayload::TunerDecision(backoff(1, -31, -30, None))],
@@ -574,7 +638,9 @@ fn outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure() {
         assert!(!rows.is_empty(), "{decisions:?}");
         if decisions.is_empty() {
             assert_eq!(
-                rows.iter().map(|row| row.label.as_str()).collect::<Vec<_>>(),
+                rows.iter()
+                    .map(|row| row.label.as_str())
+                    .collect::<Vec<_>>(),
                 ["pass or fail"],
                 "a pass and a failure with nothing to add are one row"
             );

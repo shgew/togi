@@ -398,7 +398,7 @@ fn the_regime_table_keeps_its_regime_column() {
     let rows: Vec<&str> = shown.lines().skip(at).collect();
     assert_eq!(
         rows[0].split_whitespace().collect::<Vec<_>>(),
-        ["REGIME", "WORKLOAD", "TRIALS"]
+        ["REGIME", "WORKLOAD", "VALID", "PASSES"]
     );
     assert_eq!(
         rows[1].split_whitespace().collect::<Vec<_>>(),

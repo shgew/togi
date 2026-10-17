@@ -509,10 +509,7 @@ fn chains_cycles_and_rounds_have_phrases() {
     );
     let line = |payload: &Payload| history_line(payload).unwrap().text;
     assert_eq!(line(&start), "cycle 2 started · 0 steps");
-    assert_eq!(
-        line(&ended(true, true)),
-        "cycle 2 passed, a full cycle"
-    );
+    assert_eq!(line(&ended(true, true)), "cycle 2 passed, a full cycle");
     assert_eq!(
         line(&ended(true, false)),
         "cycle 2 passed but missing R2, R5"

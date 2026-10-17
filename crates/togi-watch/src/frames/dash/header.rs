@@ -121,14 +121,21 @@ pub(crate) fn header(scene: &Scene<'_>, width: usize, compact: bool) -> Line<'st
                     paint(Paint::Hunt, format!("screen paused · planned end {minute}")),
                     4,
                 ),
-                Form::new(paint(Paint::Hunt, format!("paused · planned end {minute}")), 3),
+                Form::new(
+                    paint(Paint::Hunt, format!("paused · planned end {minute}")),
+                    3,
+                ),
                 Form::empty(),
             ],
         ));
     }
     let line = fit_clauses(width, &clauses);
     #[cfg(test)]
-    crate::corpus::line("dash.header", if compact { "compact" } else { "full" }, &line);
+    crate::corpus::line(
+        "dash.header",
+        if compact { "compact" } else { "full" },
+        &line,
+    );
     line
 }
 

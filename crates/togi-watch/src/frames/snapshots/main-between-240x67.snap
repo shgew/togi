@@ -11,15 +11,15 @@ expression: body
 │
 │  BETWEEN TRIALS ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │  last: PASS after 5:00 · R7 all-core on 00-07 · Tctl max 75°C
-│  next: step 1: R7 all-core with mprime AVX2 36K-248K
+│  next trial: step 1: R7 all-core with mprime AVX2 36K-248K
 │
 │
 │
 │
 │
-│  if it passes         CCD 0 partial on 00-04 06 07 per offset order → part 1 is done → next: step 1: R7 all-core on 00-04 06 07 with mprime AVX2 36K-248K
-│  if a core is named   its failure point is recorded → it backs off per offset order → next: rerun R7 all-core on 00-07 · 2m
-│  if none is named     core 05 -9 → -8 per offset order → next: rerun R7 all-core on 00-07 · 2m
+│  if it passes:        CCD 0 partial on 00-04 06 07 per offset order → part 1 is done; next trial: step 1: R7 all-core on 00-04 06 07 with mprime AVX2 36K-248K
+│  if a core is named:  its failure point is recorded → it backs off per offset order; next trial: rerun R7 all-core on 00-07 · 2m
+│  if none is named:    core 05 -9 → -8 per offset order; next trial: rerun R7 all-core on 00-07 · 2m
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  not under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
 │    00  -25  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                           -26                                            08   -5  HAS ROOM  ▄▄▄▄▄·▬                                                -7   top by offset
@@ -37,10 +37,10 @@ expression: body
 │  CYCLE 1 ───────────────────────────────────────────────────────────────────────────────────────── 18 steps · 0 done     09:58  pass     rerun of R7 all-core on 00-07 · 5 of 5 passed · Tctl max 76°C
 │                                                                                                                          09:48  backoff  core 01 -16 → -15
 │    #   kind                  where                   workload                      schedule       result                 09:48  fail     core 01 fails at -16
-│  ►  1  R7 all-core           2 CCDs · 3+ parts       mprime AVX2 36K-248K          3+ parts       part 2 of 3            09:48  fail     rerun of R7 all-core on 00-07 · the stress program stalled · core 01 named
+│  ►  1  R7 all-core           2 CCDs · 3+ parts       mprime AVX2 36K-248K          3+ parts       part 2 of 3            09:48  fail     rerun of R7 all-core on 00-07 · the backend stalled · core 01 named
 │        ├ full CCD 0          00-07                                                 3 x 2m + 5m    4/4 passed             09:48  backoff  core 00 -26 → -25
 │        ├ full CCD 1          08-15                                                 3 x 2m + 5m                           09:48  fail     core 00 fails at -26
-│        ├ full CCD 0+1        00-15                                                 3 x 2m + 10m                          09:48  fail     R7 full CCD 0 on 00-07 · the stress program quit · core 00 named
+│        ├ full CCD 0+1        00-15                                                 3 x 2m + 10m                          09:48  fail     R7 full CCD 0 on 00-07 · the backend quit · core 00 named
 │        └ partials may follow                                                                                             09:47  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K
 │  ○  2  R7 all-core           2 CCDs · 3+ parts       mprime AVX-512 36K-248K       3+ parts                              09:47  cycle    cycle 1 started · 18 steps
 │  ○  3  R7 all-core           2 CCDs · 3+ parts       y-cruncher FFTv4 + N63 + VT3  3+ parts                              09:47  limit    cores 06, 13 solo limit -38
@@ -58,13 +58,13 @@ expression: body
 │  ○ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m                               08:28  limit    core 08 solo limit -6
 │  ○ 16  R4 partial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m                               07:34  confirm  core 06 confirming -38 as its solo limit
 │  ○ 17  R4 partial load       one core at a time      y-cruncher SNT + SVT          16 x 2m                               07:34  fail     core 06 fails at -39
-│  ○ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   07:34  fail     core 06 · R2 heavy vector at -39 · the stress program stalled
+│  ○ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m                                   07:34  fail     core 06 · R2 heavy vector at -39 · the backend stalled
 │                                                                                                                          07:32  confirm  core 13 confirming -38 as its solo limit
 │  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     07:32  fail     core 13 fails at -39
 │  mprime AVX2 36K-248K           05 08 by offset          05                                                              07:32  crash    core 13 · R2 heavy vector at -39 · rebooted · midway through trial 1 of 1
-│  mprime AVX-512 36K-248K        05 08 by offset          none yet                                                        07:07  step     core 06 passed -38, next -39
-│  y-cruncher FFTv4 + N63 + VT3   05 08 by offset          none yet                                                        07:04  step     core 13 passed -38, next -39
-│                                                                                                                          06:40  step     core 06 passed -37, next -38
+│  mprime AVX-512 36K-248K        05 08 by offset          none yet                                                        07:07  step     core 06 passed -38; searches -39 on its next turn
+│  y-cruncher FFTv4 + N63 + VT3   05 08 by offset          none yet                                                        07:04  step     core 13 passed -38; searches -39 on its next turn
+│                                                                                                                          06:40  step     core 06 passed -37; searches -38 on its next turn
 │                                                                                                                          +191 more
 │
 │   ?  help    l  log    esc  back    q  close view

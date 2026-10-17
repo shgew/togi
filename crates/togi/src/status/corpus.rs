@@ -70,11 +70,16 @@ fn narration_corpus() {
         .filter(|(branch, hits)| {
             branch.id != "parser.unclassified" && branch.unreachable.is_none() && hits.0.is_empty()
         })
-        .map(|(branch, _)| branch.id)
+        .map(|(branch, _)| branch.id.as_str())
         .collect();
-    assert!(missing.is_empty(), "status branches not rendered: {missing:?}");
     assert!(
-        corpus.entries.keys().all(|(rank, _)| FAMILIES.get(*rank).is_some_and(|(name, _)| *name != "unclassified")),
+        missing.is_empty(),
+        "status branches not rendered: {missing:?}"
+    );
+    assert!(
+        corpus.entries.keys().all(|(rank, _)| FAMILIES
+            .get(*rank)
+            .is_some_and(|(name, _)| *name != "unclassified")),
         "the status catalogue contains unclassified output"
     );
     for diagnostic in diagnostics {
@@ -415,7 +420,8 @@ fn hunt_from_a_carried_fact(trial: bool, signal: Option<Signal>) -> Vec<Event> {
         fact.into()
     } else {
         start.regime = Regime::R6;
-        start.workload = first_hunt_start(Base::Probe.events().expect("the base simulates")).workload;
+        start.workload =
+            first_hunt_start(Base::Probe.events().expect("the base simulates")).workload;
         start.trial = None;
         carried_idle_crash(&base, start.cores, start.failing).into()
     };
@@ -439,10 +445,17 @@ fn defect_found(events: &[Event], direction: &str) -> Vec<Event> {
 }
 
 fn reset(events: &[Event], target: &serde_json::Value) -> Vec<Event> {
-    then_json(events, "command.reset", serde_json::json!({ "target": target }))
+    then_json(
+        events,
+        "command.reset",
+        serde_json::json!({ "target": target }),
+    )
 }
 
-fn carried_session(events: &[Event], data: impl FnOnce(serde_json::Value) -> serde_json::Value) -> Vec<Event> {
+fn carried_session(
+    events: &[Event],
+    data: impl FnOnce(serde_json::Value) -> serde_json::Value,
+) -> Vec<Event> {
     let start = session_start(events);
     let source = serde_json::json!({
         "session": start.session, "schema": start.build.schema, "ruleset": start.build.ruleset,
@@ -469,15 +482,18 @@ fn short_cycle() -> Vec<Event> {
         togi_watchtest::Stop::cycles(1),
     )
     .expect("the short cycle simulates");
-    cut_trial(&events, |intent| intent.activity == Some(Activity::Checking))
-        .expect("a checking trial")
-        .to_vec()
+    cut_trial(&events, |intent| {
+        intent.activity == Some(Activity::Checking)
+    })
+    .expect("a checking trial")
+    .to_vec()
 }
 
 fn hunt_parked_at_a_cycle_end() -> Vec<Event> {
     let base = Base::LaterHunt.events().expect("the base simulates");
     let mut events = cut_when(base, |state, event| {
-        event.kind() == EventKind::TrialStart && state.hunt_plan().is_some_and(|plan| plan.number == 4)
+        event.kind() == EventKind::TrialStart
+            && state.hunt_plan().is_some_and(|plan| plan.number == 4)
     })
     .expect("hunt 4 starts a trial")
     .to_vec();
@@ -520,10 +536,26 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
     );
     let one = reset(&answered, &serde_json::json!({"core": 3}));
     let both = reset(&one, &serde_json::json!({"core": 5}));
-    add("defect-found", "search + a too-cautious defect.found on cores 3 5", found.clone());
-    add("defect-answered", "defect-found + defect.answered no", answered);
-    add("defect-reset-one-core", "defect-answered + command.reset core 3", one);
-    add("defect-reset-each-core", "defect-answered + command.reset cores 3 then 5", both);
+    add(
+        "defect-found",
+        "search + a too-cautious defect.found on cores 3 5",
+        found.clone(),
+    );
+    add(
+        "defect-answered",
+        "defect-found + defect.answered no",
+        answered,
+    );
+    add(
+        "defect-reset-one-core",
+        "defect-answered + command.reset core 3",
+        one,
+    );
+    add(
+        "defect-reset-each-core",
+        "defect-answered + command.reset cores 3 then 5",
+        both,
+    );
     add(
         "defect-reset-all",
         "defect-found + command.reset all",
@@ -564,9 +596,10 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
     add(
         "session-carried-failure-points",
         "search + session.carried with failure points",
-        carried_session(&search, |source| {
-            serde_json::json!({"sources": [source], "failure_points": true})
-        }),
+        carried_session(
+            &search,
+            |source| serde_json::json!({"sources": [source], "failure_points": true}),
+        ),
     );
     add(
         "session-carried-points-behind-reason",
@@ -580,9 +613,10 @@ fn edge_journals() -> Vec<(String, String, Vec<Event>)> {
     add(
         "session-carried-points-behind-no-reason",
         "search + session.carried leaving failure points behind, no reason",
-        carried_session(&search, |source| {
-            serde_json::json!({"sources": [source], "failure_points": false})
-        }),
+        carried_session(
+            &search,
+            |source| serde_json::json!({"sources": [source], "failure_points": false}),
+        ),
     );
 
     let intent = last_intent(&between);
@@ -827,7 +861,9 @@ fn synthetic_render(events: &[Event], synth: Synth) -> Result<String, String> {
     let mut projection = tuner.project();
     let scan = Scan::of(events);
     let base = model.snapshot();
-    let mut hunt = base.hunt.map(|view| (view.plan.clone(), view.facts.clone()));
+    let mut hunt = base
+        .hunt
+        .map(|view| (view.plan.clone(), view.facts.clone()));
     let mut snap = base;
     match synth {
         Synth::NoPhasePlan => projection.phase_plan = None,
@@ -1040,7 +1076,8 @@ fn run_status(dir: &Path, failing_stdout: bool) -> (String, String, String) {
         run(&Args {}, &mut ctx)
     };
     let shown = dir.display().to_string();
-    let clean = |bytes: &[u8]| plain(&String::from_utf8_lossy(bytes)).replace(&shown, "<state-dir>");
+    let clean =
+        |bytes: &[u8]| plain(&String::from_utf8_lossy(bytes)).replace(&shown, "<state-dir>");
     (format!("{exit:?}"), clean(&out), clean(&err))
 }
 
@@ -1104,7 +1141,12 @@ fn diagnostics() -> Vec<Diagnostic> {
     let mut kept = lines(skipped.path());
     let last = kept.pop().expect("a journal");
     let unknown_seq = kept.len() as u64 + 1;
-    kept.push(line_after(&last, unknown_seq, "future.thing", &serde_json::json!({})));
+    kept.push(line_after(
+        &last,
+        unknown_seq,
+        "future.thing",
+        &serde_json::json!({}),
+    ));
     let mut moved: serde_json::Value = serde_json::from_str(&last).expect("a JSON line");
     moved["seq"] = (unknown_seq + 1).into();
     kept.push(moved.to_string());
@@ -1227,21 +1269,23 @@ enum Table {
 
 impl Table {
     fn of_header(line: &str) -> Option<Self> {
-        Some(if line.starts_with("CORE ") && line.contains("SELF-SUFFICIENT") {
-            Self::R7
-        } else if line.starts_with("CORE ") {
-            Self::Cores
-        } else if line.starts_with("GROUP ") {
-            Self::Groups
-        } else if line.starts_with("CANDIDATE ") {
-            Self::Candidates
-        } else if line.starts_with("CHECK ") {
-            Self::Checks
-        } else if line.starts_with("REGIME ") {
-            Self::Regimes
-        } else {
-            return None;
-        })
+        Some(
+            if line.starts_with("CORE ") && line.contains("SELF-SUFFICIENT") {
+                Self::R7
+            } else if line.starts_with("CORE ") {
+                Self::Cores
+            } else if line.starts_with("GROUP ") {
+                Self::Groups
+            } else if line.starts_with("CANDIDATE ") {
+                Self::Candidates
+            } else if line.starts_with("CHECK ") {
+                Self::Checks
+            } else if line.starts_with("REGIME ") {
+                Self::Regimes
+            } else {
+                return None;
+            },
+        )
     }
 
     const fn columns(self) -> &'static [&'static str] {
@@ -1285,32 +1329,65 @@ const FAMILIES: &[(&str, &str)] = &[
     ("header", "status.rs Status::header, phase_clause"),
     ("session", "status.rs Status::write, session line"),
     ("bios.context", "status.rs Status::write, BIOS context line"),
-    ("in-flight", "status.rs Status::write, the in-flight event's msg"),
+    (
+        "in-flight",
+        "status.rs Status::write, the in-flight event's msg",
+    ),
     ("dead-end", "status.rs Status::write with dead_end_label"),
-    ("carried", "status.rs Status::write, the session.carried msg held by Scan::of"),
+    (
+        "carried",
+        "status.rs Status::write, the session.carried msg held by Scan::of",
+    ),
     ("cores.header", "status.rs Status::cores, header row"),
-    ("cores.row", "status.rs Status::cores, bios_cell, notes: the last decision's msg"),
+    (
+        "cores.row",
+        "status.rs Status::cores, bios_cell, notes: the last decision's msg",
+    ),
     ("bios.note", "status.rs Status::bios_note, unconfirmed_note"),
     ("combinations", "status.rs Status::combinations"),
     ("r7.heading", "status.rs Status::r7, heading line"),
     ("r7.header", "status.rs Status::r7, header row"),
     ("r7.row", "status.rs Status::r7, self_sufficiency"),
-    ("between", "status.rs Status::write, the mce msg held by Scan::of"),
-    ("hunt", "status.rs Status::hunt, parked_source, hunt_failure"),
+    (
+        "between",
+        "status.rs Status::write, the mce msg held by Scan::of",
+    ),
+    (
+        "hunt",
+        "status.rs Status::hunt, parked_source, hunt_failure",
+    ),
     ("groups.header", "status.rs Status::hunt, header row"),
     ("groups.row", "status.rs Status::hunt, group_cores"),
     ("phase2.round", "status.rs Status::phase2, round line"),
-    ("candidates.header", "status.rs Status::phase2, candidate header row"),
+    (
+        "candidates.header",
+        "status.rs Status::phase2, candidate header row",
+    ),
     ("candidates.row", "status.rs Status::phase2, candidate rows"),
-    ("phase2.remaining", "status.rs Status::phase2, remaining-rounds line"),
-    ("checks.header", "status.rs Status::phase2, check header row"),
+    (
+        "phase2.remaining",
+        "status.rs Status::phase2, remaining-rounds line",
+    ),
+    (
+        "checks.header",
+        "status.rs Status::phase2, check header row",
+    ),
     ("checks.row", "status.rs Status::phase2, check rows"),
     ("defect", "status.rs Status::defects"),
-    ("evidence.heading", "status.rs EVIDENCE_HEADING, Status::evidence"),
+    (
+        "evidence.heading",
+        "status.rs EVIDENCE_HEADING, Status::evidence",
+    ),
     ("evidence.header", "status.rs Status::evidence, header row"),
     ("evidence.row", "status.rs Status::evidence, exposure rows"),
-    ("evidence.tctl", "status.rs Status::evidence, Tctl peak line"),
-    ("unclassified", "no family: a line the corpus parser does not place"),
+    (
+        "evidence.tctl",
+        "status.rs Status::evidence, Tctl peak line",
+    ),
+    (
+        "unclassified",
+        "no family: a line the corpus parser does not place",
+    ),
 ];
 
 /// Prose lines by their opening words, tried before a table row so a line right under a table is not taken for one.
@@ -1381,7 +1458,8 @@ fn blocks(text: &str) -> Vec<Block> {
                 .collect();
             table = Some((kind, starts));
             kind.header_family()
-        } else if let Some(&(_, family)) = PROSE.iter().find(|(prefix, _)| line.starts_with(prefix)) {
+        } else if let Some(&(_, family)) = PROSE.iter().find(|(prefix, _)| line.starts_with(prefix))
+        {
             family
         } else if let Some((kind, starts)) = &table {
             cells = starts
@@ -1389,7 +1467,10 @@ fn blocks(text: &str) -> Vec<Block> {
                 .enumerate()
                 .map(|(at, &start)| {
                     let end = starts.get(at + 1).copied().unwrap_or(line.len());
-                    line.get(start..end.max(start)).unwrap_or("").trim().to_owned()
+                    line.get(start..end.max(start))
+                        .unwrap_or("")
+                        .trim()
+                        .to_owned()
                 })
                 .collect();
             kind.row_family()
@@ -1473,10 +1554,18 @@ fn number(text: &str) -> Option<u32> {
 /// The `passed/needed` of a cell or a header's `checks a/b`.
 fn fraction(text: &str) -> Option<(u32, u32)> {
     let (passed, needed) = text.split_once('/')?;
-    Some((number(passed)?, number(needed.split(|c: char| !c.is_ascii_digit()).next()?)?))
+    Some((
+        number(passed)?,
+        number(needed.split(|c: char| !c.is_ascii_digit()).next()?)?,
+    ))
 }
 
-fn branch(id: &str, source: &'static str, what: &str, test: impl Fn(&[Block]) -> bool + 'static) -> Branch {
+fn branch(
+    id: &str,
+    source: &'static str,
+    what: &str,
+    test: impl Fn(&[Block]) -> bool + 'static,
+) -> Branch {
     Branch {
         id: id.to_owned(),
         source,
@@ -1487,7 +1576,13 @@ fn branch(id: &str, source: &'static str, what: &str, test: impl Fn(&[Block]) ->
     }
 }
 
-fn silent(id: &str, source: &'static str, what: &str, fixture: &'static str, test: impl Fn(&[Block]) -> bool + 'static) -> Branch {
+fn silent(
+    id: &str,
+    source: &'static str,
+    what: &str,
+    fixture: &'static str,
+    test: impl Fn(&[Block]) -> bool + 'static,
+) -> Branch {
     Branch {
         only: Some(fixture),
         ..branch(id, source, what, test)
@@ -1520,14 +1615,30 @@ fn cell_branch(
 
 fn branches() -> Vec<Branch> {
     let mut all = vec![
-        branch("header.search", "status.rs:search_left", "search: N cores left", |b| header(b).starts_with("search: ") && header(b).contains(" cores left")),
-        branch("header.search-one", "status.rs:search_left", "search: 1 core left", |b| header(b).starts_with("search: 1 core left")),
-        branch("header.hunt", "status.rs:header, hunt_plan", "hunt N, group N", |b| {
-            header(b).starts_with("hunt ")
-        }),
-        branch("header.round", "status.rs:header, deepening", "phase 2 round N, checks N/N", |b| {
-            header(b).starts_with("phase 2 round ")
-        }),
+        branch(
+            "header.search",
+            "status.rs:search_left",
+            "search: N cores left",
+            |b| header(b).starts_with("search: ") && header(b).contains(" cores left"),
+        ),
+        branch(
+            "header.search-one",
+            "status.rs:search_left",
+            "search: 1 core left",
+            |b| header(b).starts_with("search: 1 core left"),
+        ),
+        branch(
+            "header.hunt",
+            "status.rs:header, hunt_plan",
+            "hunt N, group N",
+            |b| header(b).starts_with("hunt "),
+        ),
+        branch(
+            "header.round",
+            "status.rs:header, deepening",
+            "phase 2 round N, checks N/N",
+            |b| header(b).starts_with("phase 2 round "),
+        ),
         branch(
             "header.round-check-done",
             "status.rs:header, deepening checks",
@@ -1539,17 +1650,27 @@ fn branches() -> Vec<Branch> {
                     .is_some_and(|(done, _)| done > 0)
             },
         ),
-        branch("header.cycle", "status.rs:header, cycle_plan", "checking cycle N, steps N/N", |b| {
-            header(b).starts_with("checking cycle ")
-        }),
-        branch("header.cycle-not-full", "status.rs:header, missing_coverage", "the cycle's missing coverage", |b| {
-            header(b).contains(", not full: ")
-        }),
+        branch(
+            "header.cycle",
+            "status.rs:header, cycle_plan",
+            "checking cycle N, steps N/N",
+            |b| header(b).starts_with("checking cycle "),
+        ),
+        branch(
+            "header.cycle-not-full",
+            "status.rs:header, missing_coverage",
+            "the cycle's missing coverage",
+            |b| header(b).contains(", not full: "),
+        ),
         branch(
             "header.cycle-missing-one-step",
             "status.rs:missing_coverage",
             "a regime one step short: `1 more step`",
-            |b| header(b).split("; ").any(|part| part.ends_with(": 1 more step")),
+            |b| {
+                header(b)
+                    .split("; ")
+                    .any(|part| part.ends_with(": 1 more step"))
+            },
         ),
         branch(
             "header.cycle-missing-steps",
@@ -1557,34 +1678,80 @@ fn branches() -> Vec<Branch> {
             "a regime several steps short: `N more steps`",
             |b| header(b).contains(" more steps"),
         ),
-        branch("header.not-started", "status.rs:header, final arm", "checking not started", |b| {
-            header(b).starts_with("checking not started")
-        }),
-        branch("phase.none", "status.rs:header, phase_clause None", "no phase plan: no clause", |b| {
-            !header(b).contains(" | ")
-        })
+        branch(
+            "header.not-started",
+            "status.rs:header, final arm",
+            "checking not started",
+            |b| header(b).starts_with("checking not started"),
+        ),
+        branch(
+            "phase.none",
+            "status.rs:header, phase_clause None",
+            "no phase plan: no clause",
+            |b| !header(b).contains(" | "),
+        )
         .unreachable(WHY_NO_PHASE_PLAN),
-        branch("phase.one", "status.rs:phase_clause, PhaseNo::One", "| phase 1", |b| header(b).ends_with(" | phase 1")),
-        branch("phase.concluded", "status.rs:phase_clause, PhaseNo::Concluded", "| phase 2 concluded: clean cycles N, latest clean cycle N", |b| {
-            header(b).contains("| phase 2 concluded: ")
-        }),
-        branch("phase.confirming", "status.rs:phase_clause, plan.confirming", "| phase 2: confirmation cycle", |b| {
-            header(b).ends_with("| phase 2: confirmation cycle")
-        }),
-        branch("phase.rounds-one", "status.rs:phase_clause, rounds", "| phase 2: at most 1 round left", |b| {
-            header(b).contains("| phase 2: at most 1 round left")
-        }),
-        branch("phase.rounds-many", "status.rs:phase_clause, rounds", "| phase 2: at most N rounds left", |b| {
-            header(b).contains("| phase 2: at most ") && !header(b).contains("at most 1 round left")
-        }),
-        branch("session", "status.rs:write, session line", "session ID started TIME", |b| any(b, "session", |_| true)),
-        branch("bios.context", "status.rs:write, BIOS context line", "BIOS context", |b| any(b, "bios.context", |_| true)),
-        branch("in-flight.trial", "status.rs:write, in_flight Some", "in flight: [#N] msg", |b| {
-            any(b, "in-flight", |block| block.flat.starts_with("in flight: [#"))
-        }),
-        branch("in-flight.none", "status.rs:write, in_flight None", "in flight: none", |b| {
-            any(b, "in-flight", |block| block.flat == "in flight: none")
-        }),
+        branch(
+            "phase.one",
+            "status.rs:phase_clause, PhaseNo::One",
+            "| phase 1",
+            |b| header(b).ends_with(" | phase 1"),
+        ),
+        branch(
+            "phase.concluded",
+            "status.rs:phase_clause, PhaseNo::Concluded",
+            "| phase 2 concluded: clean cycles N, latest clean cycle N",
+            |b| header(b).contains("| phase 2 concluded: "),
+        ),
+        branch(
+            "phase.confirming",
+            "status.rs:phase_clause, plan.confirming",
+            "| phase 2: confirmation cycle",
+            |b| header(b).ends_with("| phase 2: confirmation cycle"),
+        ),
+        branch(
+            "phase.rounds-one",
+            "status.rs:phase_clause, rounds",
+            "| phase 2: at most 1 round left",
+            |b| header(b).contains("| phase 2: at most 1 round left"),
+        ),
+        branch(
+            "phase.rounds-many",
+            "status.rs:phase_clause, rounds",
+            "| phase 2: at most N rounds left",
+            |b| {
+                header(b).contains("| phase 2: at most ")
+                    && !header(b).contains("at most 1 round left")
+            },
+        ),
+        branch(
+            "session",
+            "status.rs:write, session line",
+            "session ID started TIME",
+            |b| any(b, "session", |_| true),
+        ),
+        branch(
+            "bios.context",
+            "status.rs:write, BIOS context line",
+            "BIOS context",
+            |b| any(b, "bios.context", |_| true),
+        ),
+        branch(
+            "in-flight.trial",
+            "status.rs:write, in_flight Some",
+            "in flight: [#N] msg",
+            |b| {
+                any(b, "in-flight", |block| {
+                    block.flat.starts_with("in flight: [#")
+                })
+            },
+        ),
+        branch(
+            "in-flight.none",
+            "status.rs:write, in_flight None",
+            "in flight: none",
+            |b| any(b, "in-flight", |block| block.flat == "in flight: none"),
+        ),
     ];
     for &condition in DeadEndCondition::ALL {
         let shown = format!("dead end: {} [#", dead_end_label(condition));
@@ -1779,9 +1946,7 @@ impl Cases {
     /// produced the text, and how many renderings there are in all.
     fn ids(&self, limit: usize) -> String {
         let mut cases: Vec<(&String, &Vec<u64>)> = self.0.iter().collect();
-        cases.sort_by(|a, b| {
-            (a.0.starts_with("base:"), a.0).cmp(&(b.0.starts_with("base:"), b.0))
-        });
+        cases.sort_by(|a, b| (a.0.starts_with("base:"), a.0).cmp(&(b.0.starts_with("base:"), b.0)));
         let mut shown: Vec<String> = cases
             .iter()
             .take(limit)
@@ -1806,7 +1971,6 @@ impl Cases {
         shown.join("; ")
     }
 }
-
 
 struct Entry {
     raw: String,
@@ -1910,7 +2074,10 @@ impl Corpus {
              width, 80 columns (`table.rs` `WIDTH`); the status reads no clock, so each journal prefix has exactly one \
              rendering.\n"
         );
-        let _ = writeln!(doc, "- Sweep: every prefix of every `Base::ALL` journal, folded event by event:");
+        let _ = writeln!(
+            doc,
+            "- Sweep: every prefix of every `Base::ALL` journal, folded event by event:"
+        );
         for base in &self.bases {
             let _ = writeln!(
                 doc,
@@ -1953,7 +2120,10 @@ impl Corpus {
              further fixtures and renderings. A case ID is `{SURFACE}·<fixture>·{FORM}`.\n"
         );
         if !self.problems.is_empty() {
-            let _ = writeln!(doc, "**Journals the status refused to render** (listed under diagnostics' terms, not phrases):\n");
+            let _ = writeln!(
+                doc,
+                "**Journals the status refused to render** (listed under diagnostics' terms, not phrases):\n"
+            );
             for (problem, cases) in &self.problems {
                 let _ = writeln!(doc, "- `{}`: {}", problem.replace('`', "'"), cases.ids(3));
             }
@@ -1971,12 +2141,19 @@ impl Corpus {
              rewritten), `synthetic only` (only a case that alters the writer's input), or `unreachable` (no journal \
              the command accepts reaches it, shown by source reading below).\n"
         );
-        let _ = writeln!(doc, "| Branch | Source | Renders | Reached | Cases | Examples |");
+        let _ = writeln!(
+            doc,
+            "| Branch | Source | Renders | Reached | Cases | Examples |"
+        );
         let _ = writeln!(doc, "|---|---|---|---|---|---|");
         let mut unreached = Vec::new();
         let mut unreachable = Vec::new();
         for (branch, hits) in self.branches.iter().zip(&self.hits) {
-            let synthetic = !hits.0.is_empty() && hits.0.keys().all(|fixture| fixture.starts_with("synthetic:"));
+            let synthetic = !hits.0.is_empty()
+                && hits
+                    .0
+                    .keys()
+                    .all(|fixture| fixture.starts_with("synthetic:"));
             let reached = match (hits.0.is_empty(), synthetic, branch.unreachable) {
                 (true, _, None) => {
                     if branch.id != "parser.unclassified" {
@@ -2005,16 +2182,27 @@ impl Corpus {
                 branch.id,
                 branch.source,
                 what.replace('|', "\\|"),
-                if hits.0.is_empty() { "0".to_owned() } else { hits.count().to_string() },
+                if hits.0.is_empty() {
+                    "0".to_owned()
+                } else {
+                    hits.count().to_string()
+                },
                 hits.ids(3).replace('|', "\\|")
             );
         }
         let _ = writeln!(doc, "\n#### Coverage gaps\n");
         if unreached.is_empty() {
-            let _ = writeln!(doc, "Every listed branch rendered in at least one case, or is shown unreachable below.\n");
+            let _ = writeln!(
+                doc,
+                "Every listed branch rendered in at least one case, or is shown unreachable below.\n"
+            );
         } else {
             for branch in unreached {
-                let _ = writeln!(doc, "- `{}` ({}): {} — not reached by any case above.", branch.id, branch.source, branch.what);
+                let _ = writeln!(
+                    doc,
+                    "- `{}` ({}): {} — not reached by any case above.",
+                    branch.id, branch.source, branch.what
+                );
             }
             let _ = writeln!(doc);
         }
@@ -2024,11 +2212,21 @@ impl Corpus {
         }
         for (branch, rendered) in unreachable {
             let shown = if rendered {
-                format!("rendered only by the synthetic case(s) {}", self.synthetic_ids(branch))
+                format!(
+                    "rendered only by the synthetic case(s) {}",
+                    self.synthetic_ids(branch)
+                )
             } else {
                 "no case renders it".to_owned()
             };
-            let _ = writeln!(doc, "- `{}` ({}): {} — {shown}. {}", branch.id, branch.source, branch.what, branch.unreachable.unwrap_or(""));
+            let _ = writeln!(
+                doc,
+                "- `{}` ({}): {} — {shown}. {}",
+                branch.id,
+                branch.source,
+                branch.what,
+                branch.unreachable.unwrap_or("")
+            );
         }
         let _ = writeln!(doc);
         let _ = writeln!(
@@ -2055,12 +2253,21 @@ impl Corpus {
             if *rank != family {
                 family = *rank;
                 item = 0;
-                let (name, source) = FAMILIES.get(family).copied().unwrap_or(("unclassified", "-"));
+                let (name, source) = FAMILIES
+                    .get(family)
+                    .copied()
+                    .unwrap_or(("unclassified", "-"));
                 let _ = writeln!(doc, "#### `{name}` — {source}\n");
             }
             item += 1;
-            let name = FAMILIES.get(family).map_or("unclassified", |(name, _)| *name);
-            let _ = writeln!(doc, "**{SURFACE}.{name}.{item}** · template `{}`\n", template.replace('`', "'"));
+            let name = FAMILIES
+                .get(family)
+                .map_or("unclassified", |(name, _)| *name);
+            let _ = writeln!(
+                doc,
+                "**{SURFACE}.{name}.{item}** · template `{}`\n",
+                template.replace('`', "'")
+            );
             let _ = writeln!(doc, "```text\n{}\n```\n", entry.raw);
             let _ = writeln!(doc, "Cases: {}\n", entry.cases.ids(3));
         }
@@ -2101,25 +2308,47 @@ fn roster(doc: &mut String, scenarios: &[Whole], edges: &[Whole], synthetics: &[
 }
 
 fn diagnostics_section(doc: &mut String, diagnostics: &[Diagnostic]) {
-    let _ = writeln!(doc, "### Diagnostics (stderr, separate from the status prose)\n");
-    let _ = writeln!(doc, "| Case | Source | Recipe | Exit | Expected in stderr | Seen |");
+    let _ = writeln!(
+        doc,
+        "### Diagnostics (stderr, separate from the status prose)\n"
+    );
+    let _ = writeln!(
+        doc,
+        "| Case | Source | Recipe | Exit | Expected in stderr | Seen |"
+    );
     let _ = writeln!(doc, "|---|---|---|---|---|---|");
     for diagnostic in diagnostics {
-        let seen = if diagnostic.stderr.contains(diagnostic.expect) { "yes" } else { "**no**" };
+        let seen = if diagnostic.stderr.contains(diagnostic.expect) {
+            "yes"
+        } else {
+            "**no**"
+        };
         let _ = writeln!(
             doc,
             "| `{SURFACE}·{}·stderr` | {} | {} | {} | `{}` | {seen} |",
-            diagnostic.fixture, diagnostic.source, diagnostic.recipe, diagnostic.exit, diagnostic.expect
+            diagnostic.fixture,
+            diagnostic.source,
+            diagnostic.recipe,
+            diagnostic.exit,
+            diagnostic.expect
         );
     }
     let _ = writeln!(doc);
     for diagnostic in diagnostics {
         let _ = writeln!(doc, "#### `{SURFACE}·{}·stderr`\n", diagnostic.fixture);
-        let _ = writeln!(doc, "Exit `{}`; stdout {}.\n", diagnostic.exit, if diagnostic.stdout.is_empty() {
-            "empty".to_owned()
-        } else {
-            format!("{} lines (the status itself)", diagnostic.stdout.lines().count())
-        });
+        let _ = writeln!(
+            doc,
+            "Exit `{}`; stdout {}.\n",
+            diagnostic.exit,
+            if diagnostic.stdout.is_empty() {
+                "empty".to_owned()
+            } else {
+                format!(
+                    "{} lines (the status itself)",
+                    diagnostic.stdout.lines().count()
+                )
+            }
+        );
         let _ = writeln!(doc, "```text\n{}```\n", diagnostic.stderr);
     }
 }

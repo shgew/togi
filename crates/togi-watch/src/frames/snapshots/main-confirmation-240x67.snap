@@ -17,9 +17,9 @@ expression: body
 │  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
 │  0:40 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 │
-│  if 5 of 5 pass       cycle 2 starts → next: step 1: R7 all-core with mprime AVX2 36K-248K
-│  if a core is named   its failure point is recorded → it backs off per offset order → next: this load again
-│  if none is named     core 03 -24 → -23 per offset order → next: this load again
+│  if 5 of 5 pass:      cycle 2 starts; next trial: step 1: R7 all-core with mprime AVX2 36K-248K
+│  if a core is named:  its failure point is recorded → it backs off per offset order; next trial: this load again
+│  if none is named:    core 03 -24 → -23 per offset order; next trial: this load again
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  3 under load · 3 judged                CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
 │    00  -23  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬···                           -24                                            08   -5  HAS ROOM  ▄▄▄▄▄·▬                                                -7   top by offset
@@ -38,10 +38,10 @@ expression: body
 │                                                                                                                          08:32  room     core 06 has room again at -37
 │  CYCLE 1 ──────────────────────────────────────────────────────────────────────────────────────── 18 steps · 18 done     08:32  room     core 08 has room again at -5
 │                                                                                                                          08:32  backoff  core 03 -25 → -24
-│    #   kind                  where                   workload                      schedule       result                 08:32  room     core 15 -14 → -13 so others go deeper
-│  ■  1  R7 all-core           2 CCDs · 13 parts       mprime AVX2 36K-248K          13 parts       done                   08:32  room     core 07 -30 → -29 so others go deeper
-│  ■  2  R7 all-core           2 CCDs · 13 parts       mprime AVX-512 36K-248K       13 parts       done                   08:32  room     core 06 -38 → -37 so others go deeper
-│  ■  3  R7 all-core           2 CCDs · 13 parts       y-cruncher FFTv4 + N63 + VT3  13 parts       done                   08:32  room     core 08 -6 → -5 so others go deeper
+│    #   kind                  where                   workload                      schedule       result                 08:32  room     core 15 yields -14 → -13; no later round moves it
+│  ■  1  R7 all-core           2 CCDs · 13 parts       mprime AVX2 36K-248K          13 parts       done                   08:32  room     core 07 yields -30 → -29; no later round moves it
+│  ■  2  R7 all-core           2 CCDs · 13 parts       mprime AVX-512 36K-248K       13 parts       done                   08:32  room     core 06 yields -38 → -37; no later round moves it
+│  ■  3  R7 all-core           2 CCDs · 13 parts       y-cruncher FFTv4 + N63 + VT3  13 parts       done                   08:32  room     core 08 yields -6 → -5; no later round moves it
 │  ■  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m        done · hunt 1          08:32  round    #1 stopped: failure #7705: blame goes to the deepened cores
 │  ■  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m        done                   08:32  crash    R7 all-core on 03 06 07 · rebooted · midway through trial 1 of 5 · no core named
 │  ■  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m        done                   06:49  room     core 15 -13 → -14
@@ -50,7 +50,7 @@ expression: body
 │  ■  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m        done                   06:49  room     core 03 -24 → -25
 │  ■ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m        done                   06:49  room     core 08 -5 → -6
 │  ■ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m        done                   06:49  round    #1: core 03 goes deeper to -25, core 06 goes deeper to -38, core 07 goes deeper to -30, core 08...
-│  ■ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m        done · hunt 3          06:49  cycle    cycle 1 passed, a full cycle of every kind of test
+│  ■ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m        done · hunt 3          06:49  cycle    cycle 1 passed, a full cycle
 │  ■ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m        done                   06:49  pass     R6 idle + bursts on 00-15 · passed · Tctl max 72°C
 │  ■ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m        done                   06:34  pass     R4 partial load on core 15 at -13 · passed · Tctl max 64°C
 │  ■ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m        done                   06:32  pass     R4 partial load on core 07 at -29 · passed · Tctl max 76°C

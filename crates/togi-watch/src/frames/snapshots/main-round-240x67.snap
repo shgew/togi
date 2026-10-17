@@ -17,9 +17,9 @@ expression: body
 │  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
 │  0:40 of 2:00                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 │
-│  if 5 of 5 pass       next: deepening round 1: R2 heavy vector on core 00 alone at -11
-│  if a core is named   its failure point is recorded → ... → core 06 yields -11 → -10 → core 14 yields -11 → -10 → core 07 yields -11 → -10 → core 15 yields -11 → -10 → it backs off → next: rerun R1 light on core 00 at -10 · 2m
-│  if inconclusive      the same trial runs again
+│  if 5 of 5 pass:      next trial: deepening round 1: R2 heavy vector, core 00 alone at -11
+│  if a core is named:  its failure point is recorded → ... → core 07 yields -11 → -10, back to its round baseline → core 15 yields -11 → -10, back to its round baseline → it backs off; next trial: rerun R1 light, core 00 at -10 · 2m
+│  if inconclusive:     the same trial runs again
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  one core under load at a time          CCD 1               0       -10       -20       -30       -40       -50 fail pt  waiting at 0
 │  ► 00  -11  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄                                                                                          08    0  HAS ROOM  ···········
@@ -49,7 +49,7 @@ expression: body
 │  R1 on 01  0/5 passed  mprime SSE 4K-21K                                                                                 15:15  room     core 08 -10 → -11
 │  R2 on 01  0/5 passed  mprime AVX2 36K-248K                                                                              15:15  room     core 00 -10 → -11
 │  R1 on 09  0/5 passed  mprime SSE 4K-21K                                                                                 15:15  round    #1: core 00 goes deeper to -11, core 01 goes deeper to -11, core 02 goes deeper to -11, core 03...
-│  R2 on 09  0/5 passed  mprime AVX2 36K-248K                                                                              15:15  cycle    cycle 1 passed, a full cycle of every kind of test
+│  R2 on 09  0/5 passed  mprime AVX2 36K-248K                                                                              15:15  cycle    cycle 1 passed, a full cycle
 │  R1 on 02  0/5 passed  mprime SSE 4K-21K                                                                                 15:15  pass     R6 idle + bursts on 00-15 · passed · Tctl max 64°C
 │  R2 on 02  0/5 passed  mprime AVX2 36K-248K                                                                              15:00  pass     R4 partial load on core 15 at -10 · passed · Tctl max 66°C
 │  R1 on 10  0/5 passed  mprime SSE 4K-21K                                                                                 14:58  pass     R4 partial load on core 07 at -10 · passed · Tctl max 63°C
