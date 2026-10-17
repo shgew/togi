@@ -9,7 +9,8 @@ use common::Tree;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use togi_tool_bench::{Error, Selection, Split, Suite};
+use togi_tool_bench::{Error, Selection, Suite};
+use togi_tool_forecast::Split;
 
 fn bench_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench")
@@ -443,7 +444,10 @@ fn leaves(prefix: &str, value: &serde_json::Value, out: &mut BTreeMap<String, se
                 leaves(&format!("{prefix}/{index}"), inner, out);
             }
         }
-        _ => {
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {
             out.insert(prefix.to_owned(), value.clone());
         }
     }

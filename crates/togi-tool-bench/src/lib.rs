@@ -74,4 +74,4 @@ pub use record::{
 };
 pub use run::{Options, Report, RunFinding, execute, set_scenario_shares};
 pub use simulator::{Session, Simulator};
-pub use suite::{Machine, Plan, RunSpec, Selection, Split, Suite, SuiteError, SuiteSource};
+pub use suite::{Machine, Plan, RunSpec, Selection, Suite, SuiteError, SuiteSource};

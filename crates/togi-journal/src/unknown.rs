@@ -26,6 +26,8 @@ pub(crate) struct Unknown {
     field: String,
 }
 
+/// How serde starts its refusal of an unknown field. This module reads serde's wording as a protocol;
+/// `serde_refuses_an_unknown_field_in_the_words_locate_reads` pins it.
 const REFUSAL: &str = "unknown field `";
 
 /// Whether `error` is serde's refusal of a field the type does not have.

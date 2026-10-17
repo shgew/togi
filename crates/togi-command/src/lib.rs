@@ -604,6 +604,7 @@ mod fault {
 mod admission_tests {
     use std::time::{Duration, Instant as StdInstant};
 
+    use test_case::test_case;
     use tokio::time::Instant;
 
     use super::{Error, Invocation, fault};
@@ -631,26 +632,25 @@ mod admission_tests {
             .unwrap()
     }
 
-    #[test]
-    fn a_deadline_not_in_the_future_times_out_without_spawning() {
+    #[test_case(Duration::ZERO ; "now")]
+    #[test_case(Duration::from_secs(1) ; "one second ago")]
+    fn a_deadline_not_in_the_future_times_out_without_spawning(age: Duration) {
         let _refuse = RefuseStart::new();
         let invocation = Invocation::new("sh");
         runtime().block_on(async {
-            let now = Instant::now();
-            for deadline in [now, now.checked_sub(Duration::from_secs(1)).unwrap()] {
-                let started = StdInstant::now();
-                #[expect(
-                    clippy::disallowed_methods,
-                    reason = "the fake start refuses all process effects"
-                )]
-                let error = super::run(&invocation, deadline).await.unwrap_err();
-                assert!(started.elapsed() < Duration::from_millis(100));
-                let Error::TimedOut { program, timeout } = error else {
-                    panic!("{error:?}");
-                };
-                assert_eq!(program, "sh");
-                assert_eq!(timeout, Duration::ZERO);
-            }
+            let deadline = Instant::now().checked_sub(age).unwrap();
+            let started = StdInstant::now();
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "the fake start refuses all process effects"
+            )]
+            let error = super::run(&invocation, deadline).await.unwrap_err();
+            assert!(started.elapsed() < Duration::from_millis(100));
+            let Error::TimedOut { program, timeout } = error else {
+                panic!("{error:?}");
+            };
+            assert_eq!(program, "sh");
+            assert_eq!(timeout, Duration::ZERO);
         });
         assert_eq!(fault::START_ATTEMPTS.get(), 0);
     }
@@ -672,18 +672,17 @@ mod admission_tests {
         assert_eq!(fault::START_ATTEMPTS.get(), 0);
     }
 
-    #[test]
-    fn run_blocking_inside_a_runtime_does_not_spawn() {
+    #[test_case(Duration::ZERO ; "zero timeout")]
+    #[test_case(Duration::from_secs(10) ; "ten second timeout")]
+    fn run_blocking_inside_a_runtime_does_not_spawn(timeout: Duration) {
         let _refuse = RefuseStart::new();
         runtime().block_on(async {
-            for timeout in [Duration::ZERO, Duration::from_secs(10)] {
-                #[expect(
-                    clippy::disallowed_methods,
-                    reason = "the fake start refuses all process effects"
-                )]
-                let error = super::run_blocking(&Invocation::new("sh"), timeout).unwrap_err();
-                assert!(matches!(error, Error::InsideRuntime { program } if program == "sh"));
-            }
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "the fake start refuses all process effects"
+            )]
+            let error = super::run_blocking(&Invocation::new("sh"), timeout).unwrap_err();
+            assert!(matches!(error, Error::InsideRuntime { program } if program == "sh"));
         });
         assert_eq!(fault::START_ATTEMPTS.get(), 0);
     }

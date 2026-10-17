@@ -286,7 +286,14 @@ impl<R: SessionRunner> Job<'_, R> {
         let spec = &self.plan.runs[index];
         self.measure(spec).map_err(|source| match source {
             RunError::Interrupted => Error::Interrupted,
-            source => Error::Run {
+            source @ (RunError::Directory { .. }
+            | RunError::Start(_)
+            | RunError::Wait(_)
+            | RunError::TimedOut { .. }
+            | RunError::Read { .. }
+            | RunError::Journal(_)
+            | RunError::Measure(_)
+            | RunError::Model(_)) => Error::Run {
                 run: spec.name(),
                 source: Box::new(source),
             },

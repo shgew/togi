@@ -13,7 +13,8 @@ use crate::cache::{Costs, longest_first};
 use crate::error::RunError;
 use crate::pool;
 use crate::process::Fleet;
-use crate::suite::{RunSpec, Split};
+use crate::suite::RunSpec;
+use togi_tool_forecast::Split;
 
 use super::SameError;
 use super::digests::{DigestCache, SideRecord, inputs};
@@ -365,9 +366,14 @@ impl Comparison<'_> {
         if self.config.fleet.cancelled() {
             return Err(SameError::Interrupted);
         }
-        let failure = errors.into_iter().find_map(|(_, halt)| match halt {
-            Halt::Failed(error) if !error.interrupted() => Some(error),
-            _ => None,
+        let failure = errors.into_iter().find_map(|(_, halt)| {
+            if let Halt::Failed(error) = halt
+                && !error.interrupted()
+            {
+                Some(error)
+            } else {
+                None
+            }
         });
         if let Some(error) = failure {
             return Err(error);
