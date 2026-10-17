@@ -131,6 +131,33 @@ fn header_counts_agree_in_number() {
 }
 
 #[test]
+fn the_pause_notice_beside_the_clock_leaves_before_either_duration_is_shortened_or_cut() {
+    let model = Model::new();
+    let start = at("2026-10-12T10:00:00Z");
+    let now = at("2026-10-12T10:01:00Z");
+    let view = session(start);
+    let running = trial(Regime::R6, Some(at("2026-10-12T10:00:30Z")), 60);
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.trial = Some(&running);
+    let roomy = header_text(&s, now, 120, true);
+    assert!(roomy.contains("paused · planned end"), "{roomy}");
+    let narrow = header_text(&s, now, 80, true);
+    assert!(!narrow.contains("paused"), "{narrow}");
+    assert!(
+        narrow.contains("tuning 0h00m") && narrow.contains("session 0h00m"),
+        "{narrow}"
+    );
+    assert!(narrow.contains("0 failures · 0 crashes"), "{narrow}");
+    let tight = header_text(&s, now, 60, true);
+    assert!(!tight.contains("paused"), "{tight}");
+    assert!(
+        tight.contains("tune 0h00m") && tight.contains("age 0h00m"),
+        "{tight}"
+    );
+}
+
+#[test]
 fn the_header_drops_clauses_in_order_and_keeps_the_counts() {
     let model = Model::new();
     let start = at("2026-10-12T10:00:00Z");

@@ -551,11 +551,26 @@ fn header_row(buf: &Buffer, screen: &Screen) -> String {
         .to_owned()
 }
 
-/// The minutes in the `XhYYm` that follows `label` on the header row.
+/// The minutes in the whole `XhYYm` that follows the word `label` on the header row; a cut value has none.
 fn header_minutes(row: &str, label: &str) -> Option<u64> {
-    let value = row.split_once(label)?.1.split_whitespace().next()?;
-    let (hours, minutes) = value.split_once('h')?;
-    Some(hours.parse::<u64>().ok()? * 60 + minutes.trim_end_matches('m').parse::<u64>().ok()?)
+    let mut words = row.split_whitespace();
+    words.find(|&word| word == label)?;
+    let (hours, minutes) = words.next()?.strip_suffix('m')?.split_once('h')?;
+    if minutes.len() != 2 {
+        return None;
+    }
+    Some(hours.parse::<u64>().ok()? * 60 + minutes.parse::<u64>().ok()?)
+}
+
+/// The tuning time and the session age of the header row, each in minutes and whether its label is the long one,
+/// whichever label each wears.
+fn header_clocks(row: &str) -> Option<((bool, u64), (bool, u64))> {
+    let clock = |long, short| {
+        header_minutes(row, long)
+            .map(|minutes| (true, minutes))
+            .or_else(|| header_minutes(row, short).map(|minutes| (false, minutes)))
+    };
+    Some((clock("tuning", "tune")?, clock("session", "age")?))
 }
 
 #[test]
@@ -571,36 +586,26 @@ fn the_header_shows_tuning_time_within_the_session_age_and_freezes_both_with_the
             let screen = main_screen(width, height);
             let (buf, _) = fx.draw(&screen, fx.now);
             let head = header_row(&buf, &screen);
-            let long = head.contains("tuning ") && head.contains("session ");
-            let short = head.contains("tune ") && head.contains("age ");
+            let ((tuning_long, tuned), (age_long, aged)) = header_clocks(&head).unwrap_or_else(|| {
+                panic!("{scenario} {width}x{height} lacks a whole tuning time or session age: {head:?}")
+            });
             assert!(
-                long || short,
-                "{scenario} {width}x{height} lacks a clock: {head:?}"
-            );
-            assert!(
-                width < 160 || long,
+                width < 160 || (tuning_long && age_long),
                 "{scenario} {width}x{height} abbreviates a clock it has room for: {head:?}"
-            );
-            let (tuning, age) = if long {
-                ("tuning ", "session ")
-            } else {
-                ("tune ", "age ")
-            };
-            let (tuned, aged) = (
-                header_minutes(&head, tuning).expect("the tuning time"),
-                header_minutes(&head, age).expect("the session age"),
             );
             assert!(tuned <= aged, "{scenario} {width}x{height}: {head:?}");
             if matches!(scenario, Scenario::Search) {
                 continue;
             }
             // The wall clock and the failure's age move with the time; the two durations hold still while the
-            // frame does.
+            // frame does. Their labels may differ when a failure's longer age takes room, so only the minutes
+            // are compared.
             let (after, _) = fx.draw(&screen, later(fx.now, 7 * 3600));
             let after = header_row(&after, &screen);
+            let held = header_clocks(&after).map(|((_, tuned), (_, aged))| (tuned, aged));
             assert_eq!(
-                (header_minutes(&after, tuning), header_minutes(&after, age)),
-                (Some(tuned), Some(aged)),
+                held,
+                Some((tuned, aged)),
                 "{scenario} {width}x{height}: a frozen frame's clocks moved: {after:?}"
             );
         }

@@ -23,9 +23,10 @@ fn head(colours: Colours, zone: &TimeZone, now: Timestamp) -> Line<'static> {
 /// is the time inside runs ([`crate::tuning`]); the age is the time since the session started. Both stop at a
 /// dead end or a stop, and an idle trial's hold shows both as of the trial's start.
 ///
-/// Drop order, first to last: how long ago the last failure was and then its time, the long labels `session`
-/// and `tuning` (the later first) for `age` and `tune`, the words after the failure and crash counts, the pause
-/// notice. The clock, both durations and the counts are never left out.
+/// Drop order, first to last: how long ago the last failure was and then its time, the pause notice (`compact`
+/// names it beside the clock, otherwise it shortens first), the long labels `session` and `tuning` (the later
+/// first) for `age` and `tune`, the words after the failure and crash counts. The clock, both durations and the
+/// counts are never left out.
 pub(crate) fn header(scene: &Scene<'_>, width: usize, compact: bool) -> Line<'static> {
     let colours = scene.colours;
     let paint = |p: Paint, text: String| scene.paint(p, text);
@@ -47,13 +48,16 @@ pub(crate) fn header(scene: &Scene<'_>, width: usize, compact: bool) -> Line<'st
     if let (true, Some(until)) = (paused_beside, planned_end) {
         clauses.push(Clause::new(
             GAP,
-            vec![Form::new(
-                paint(
-                    Paint::Hunt,
-                    format!("paused · planned end {}", scene.wall_minute(until)),
+            vec![
+                Form::new(
+                    paint(
+                        Paint::Hunt,
+                        format!("paused · planned end {}", scene.wall_minute(until)),
+                    ),
+                    3,
                 ),
-                0,
-            )],
+                Form::empty(),
+            ],
         ));
         paused = None;
     }
