@@ -131,6 +131,7 @@ fn a_failed_publication_never_replaces_the_state_with_a_partial_write() {
 #[test]
 fn the_directory_is_synced_after_the_state_rename() {
     let fs = MemFs::new();
+    fs.record_history();
     let mut dir = dir(&fs);
     dir.write_state(&Doc { n: 1 }).unwrap();
     let log = fs.log();
@@ -267,6 +268,7 @@ fn carry_pending_dir(fs: &MemFs) -> StateDir {
 #[test]
 fn the_reset_boundary_is_synced_before_a_carry_marker_is_removed() {
     let fs = MemFs::new();
+    fs.record_history();
     let mut dir = carry_pending_dir(&fs);
     dir.drop_pending_carry().unwrap();
     let log = fs.log();
@@ -471,10 +473,10 @@ fn every_lock_syncs_the_whole_created_chain_again_after_a_failed_sync() {
     fs.inject(Fault::before(Op::SyncDir, 1));
     assert!(StateDir::lock_in(Arc::new(fs.clone()), path, false).is_err());
     fs.clear_faults();
-    let mark = fs.log().len();
+    fs.record_history();
     let held = StateDir::lock_in(Arc::new(fs.clone()), path, false).unwrap();
     let log = fs.log();
-    let synced: Vec<&Path> = log[mark..]
+    let synced: Vec<&Path> = log
         .iter()
         .filter(|(op, _)| *op == Op::SyncDir)
         .map(|(_, path)| path.as_path())
@@ -510,6 +512,7 @@ fn a_failed_mode_change_takes_no_lock() {
 #[test]
 fn the_directory_mode_is_set_before_the_lock_file_is_opened() {
     let fs = MemFs::new();
+    fs.record_history();
     let _held = dir(&fs);
     let log = fs.log();
     let mode = log

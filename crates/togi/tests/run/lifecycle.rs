@@ -376,6 +376,7 @@ fn a_journal_close_failure_keeps_its_cause_and_changes_the_exit_status() {
         (fake, fs)
     };
     let (baseline, fs) = on_memory();
+    fs.record_history();
     let (exit, _, baseline_err) = baseline.run(&["run", "--no-tui"]);
     assert_eq!(exit, Exit::Ok);
     let syncs = fs

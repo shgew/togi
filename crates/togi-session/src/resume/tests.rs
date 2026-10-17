@@ -372,6 +372,7 @@ fn state_publications(bench: &Bench) -> usize {
 #[test]
 fn a_run_that_adopts_a_capsule_neither_reads_nor_rebuilds_the_state_a_crash_left_pending() {
     let bench = bench();
+    bench.mem.record_history();
     let capsule = crashed(&bench).capsule.unwrap();
     assert_eq!(state_publications(&bench), 0);
     bench.sim.reboot();
@@ -391,6 +392,7 @@ fn a_run_that_adopts_a_capsule_neither_reads_nor_rebuilds_the_state_a_crash_left
 #[test]
 fn a_run_that_cannot_adopt_a_capsule_reads_the_state_and_rebuilds_what_a_crash_left_pending() {
     let bench = bench();
+    bench.mem.record_history();
     let capsule = crashed(&bench).capsule.unwrap();
     bench.sim.reboot();
     let resumed = one_cycle(&bench, None);
