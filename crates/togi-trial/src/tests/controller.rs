@@ -146,9 +146,10 @@ fn immortal() -> Launch {
 }
 
 fn kill_hangs(call: &Systemd) -> Option<Reply> {
-    match call {
-        Systemd::Kill { .. } => Some(Reply::Hang),
-        _ => None,
+    if let Systemd::Kill { .. } = call {
+        Some(Reply::Hang)
+    } else {
+        None
     }
 }
 

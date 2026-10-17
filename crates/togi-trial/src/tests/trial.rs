@@ -827,9 +827,10 @@ fn a_watched_poll_that_uses_the_rest_of_the_duration_still_drains_a_quiet_instan
 
 /// Every error of a joined start failure, in order.
 fn joined(error: &togi_machine::Error) -> Vec<&Error> {
-    match crate_error(error) {
-        Some(Error::Joined(joined)) => joined.errors().iter().collect(),
-        _ => Vec::new(),
+    if let Some(Error::Joined(joined)) = crate_error(error) {
+        joined.errors().iter().collect()
+    } else {
+        Vec::new()
     }
 }
 
@@ -1071,13 +1072,15 @@ fn refusing_ownership_of(target: &'static str) -> Chown {
 
 /// The preparation error a failed start carries, first of the joined ones when there are several.
 fn prepare_error(error: &togi_machine::Error) -> Option<&PrepareError> {
-    match crate_error(error)? {
-        Error::Prepare(error) => Some(error),
-        Error::Joined(joined) => match joined.errors().first() {
-            Some(Error::Prepare(error)) => Some(error),
-            _ => None,
-        },
-        _ => None,
+    let error = crate_error(error)?;
+    if let Error::Prepare(error) = error {
+        Some(error)
+    } else if let Error::Joined(joined) = error
+        && let Some(Error::Prepare(error)) = joined.errors().first()
+    {
+        Some(error)
+    } else {
+        None
     }
 }
 

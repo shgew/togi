@@ -226,7 +226,10 @@ impl ProcCtx {
             if ends(delivery) {
                 self.exit(match delivery {
                     Delivery::Group(GroupSignal::Term) => ExitInfo::Signal(15),
-                    _ => ExitInfo::Signal(9),
+                    Delivery::Group(GroupSignal::Cont | GroupSignal::Kill | GroupSignal::Stop)
+                    | Delivery::Scope(KillSignal::Cont | KillSignal::Term | KillSignal::Kill) => {
+                        ExitInfo::Signal(9)
+                    }
                 });
                 return;
             }

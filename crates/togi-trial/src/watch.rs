@@ -764,7 +764,9 @@ impl Watched {
         let poll = loop {
             match self.poll(until, &mut every, &mut late).await {
                 Poll::Pending if Instant::now() < until => {}
-                other => break other,
+                other @ (Poll::Idle | Poll::Drained | Poll::Pending | Poll::Failed(_)) => {
+                    break other;
+                }
             }
         };
         self.final_read_pending = matches!(poll, Poll::Pending);
@@ -1459,7 +1461,7 @@ mod tests {
                 match poll {
                     Poll::Failed(WatchError::LineTooLong) => break,
                     Poll::Pending => assert!(total < 100),
-                    other => panic!("{other:?}"),
+                    other @ (Poll::Idle | Poll::Drained | Poll::Failed(_)) => panic!("{other:?}"),
                 }
             }
             assert_eq!(f.watched.oversized(), Some(&vec![b'x'; LINE_LIMIT][..]));

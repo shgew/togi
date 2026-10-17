@@ -73,7 +73,12 @@ impl togi_trialfiles::Storage for MemoryCompression<'_> {
             Some(togi_journal::fs::FileKind::File) => {
                 self.0.open_read(path).map(Some).map_err(error)
             }
-            _ => Ok(None),
+            Some(
+                togi_journal::fs::FileKind::Dir
+                | togi_journal::fs::FileKind::Symlink
+                | togi_journal::fs::FileKind::Other,
+            )
+            | None => Ok(None),
         }
     }
 
@@ -348,9 +353,10 @@ impl Trials for Runner {
                 };
             }
             let root = TrialsRoot::open(&self.dir, false).map_err(|error| {
-                let kind = match &error {
-                    crate::error::PrepareError::Directory { source, .. } => source.kind(),
-                    _ => std::io::ErrorKind::Other,
+                let kind = if let crate::error::PrepareError::Directory { source, .. } = &error {
+                    source.kind()
+                } else {
+                    std::io::ErrorKind::Other
                 };
                 std::io::Error::new(kind, error)
             })?;
