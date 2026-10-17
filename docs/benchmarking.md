@@ -438,6 +438,8 @@ First derivations are never skipped. A skipped derivation's seconds count only i
 
 `--witnesses FILE` writes the records as JSON Lines, tagged by `record`: `derivation` for each derivation a candidate does not keep (`verdict` `skipped` or `unresolved`, with `reason` `after_failure`, `after_decision`, `source`, `diverged` or `order`, its trials and seconds); `failure` for each skipped failure; `cycle` for each cycle that held a derivation, with `status` (`covered`, `diverged`, `unidentified` when the final chain or its evidence cannot be told, `abandoned`, `open`), the ending `profile` and per class `needed` passes, the `witnesses`' and `rerun` passes' `trial.end` sequences, `unobserved` and, for a tie-kept set, `instead_of` the recorded one; and one `summary` per candidate.
 
+`just counterfactuals RUNS OUT` runs `--counterfactual --witnesses` and `--chains` over every development session a bench `--keep RUNS` directory holds, writing four files per session to `OUT`; #896's brief runs it over its frozen corpus, `tools/bench/research/896/suite.json`.
+
 ## Research campaigns
 
 A research campaign is a finite run of experiments by an agent following one issue's brief. Only the owner starts one, naming the issue, the limits and the output directory; a brief, a readiness change or a scheduled issue is not authorization. This section owns the rules every campaign shares; a mode's program and an issue's brief add only their own.

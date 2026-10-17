@@ -155,6 +155,24 @@ forecast state_dir *args: _dev-shell
 pass-cost *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- pass-cost "$@"
 
+# Account every development session a bench run kept under RUNS (its `--keep` directory) for #896: per session S (`<scenario>-<seed>`), `stats --chains` writes OUT/S.report.txt and the chain attribution OUT/S.chains.jsonl, and `stats --counterfactual` writes OUT/S.counterfactual.txt and its witness records OUT/S.witnesses.jsonl (`just counterfactuals $RUN/runs $RUN/accounting`; tools/bench/research/896.md)
+[group('run')]
+counterfactuals runs out: _dev-shell
+    #!/usr/bin/env bash
+    set -euo pipefail
+    shopt -s nullglob
+    sessions=("$1"/bench-*/*/dev-*/)
+    (( ${#sessions[@]} )) || { echo "counterfactuals: no kept development session under $1" >&2; exit 1; }
+    mkdir -p "$2"
+    cargo build --release --locked -p togi-tool-stats
+    for dir in "${sessions[@]}"; do
+        seed=$(basename "$dir")
+        name="$(basename "$(dirname "$dir")")-${seed#dev-}"
+        stats=(cargo run --quiet --release --locked -p togi-tool-stats -- --state-dir "$dir")
+        "${stats[@]}" --chains "$2/$name.chains.jsonl" >"$2/$name.report.txt"
+        "${stats[@]}" --counterfactual --witnesses "$2/$name.witnesses.jsonl" >"$2/$name.counterfactual.txt"
+    done
+
 # Re-record the committed bench baseline over all seeds, without model checks or wall times (`just bench-baseline` writes tools/bench/baseline.jsonl, `just bench-baseline OUT` another file)
 [group('run')]
 bench-baseline out="tools/bench/baseline.jsonl": _dev-shell
