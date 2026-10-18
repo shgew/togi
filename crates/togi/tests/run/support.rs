@@ -379,6 +379,10 @@ impl System for Fake {
         }
     }
 
+    fn topology(&self) -> Result<Vec<togi_machine::CoreInfo>, Error> {
+        panic!("run obtains topology from its machine, not the doctor survey")
+    }
+
     fn config_path(&self) -> &Path {
         &self.default_config
     }
