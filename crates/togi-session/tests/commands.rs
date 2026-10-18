@@ -436,7 +436,7 @@ fn trial_elapsed_seconds_are_checked(seconds: u64, refused: bool) {
         inner: input.machine.trials,
         time: ReportedTime::Elapsed(std::time::Duration::from_secs(seconds)),
         cancel: input.cancel.clone(),
-        starts: Default::default(),
+        starts: std::rc::Rc::default(),
     });
     let ended = run(input);
     assert_eq!(
@@ -620,7 +620,7 @@ fn kernel_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
         inner: input.machine.trials,
         time: ReportedTime::Elapsed(std::time::Duration::from_secs(90)),
         cancel: input.cancel.clone(),
-        starts: Default::default(),
+        starts: std::rc::Rc::default(),
     });
     let ended = run(input);
     assert_eq!(
@@ -711,7 +711,7 @@ fn an_overflowing_duration_keeps_the_containment_dead_end_durable() {
         inner: input.machine.trials,
         time: ReportedTime::EscapedOverflow,
         cancel: input.cancel.clone(),
-        starts: Default::default(),
+        starts: std::rc::Rc::default(),
     });
     let ended = run(input);
     assert!(
@@ -746,7 +746,7 @@ fn recovered_sample_elapsed_seconds_are_checked(elapsed_ms: i64, refused: bool) 
         inner: input.machine.trials,
         time: ReportedTime::CrashedSample(elapsed_ms),
         cancel: input.cancel.clone(),
-        starts: Default::default(),
+        starts: std::rc::Rc::default(),
     });
     let ended = run(input);
     let last = ended
@@ -800,7 +800,7 @@ fn an_overflowing_teardown_mce_keeps_the_containment_dead_end_durable() {
         inner: input.machine.trials,
         time: ReportedTime::EscapedOverflow,
         cancel: input.cancel.clone(),
-        starts: Default::default(),
+        starts: std::rc::Rc::default(),
     });
     let ended = run(input);
     assert!(
