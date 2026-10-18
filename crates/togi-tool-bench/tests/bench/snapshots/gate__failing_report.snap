@@ -1,0 +1,12 @@
+---
+source: crates/togi-tool-bench/tests/bench/gate.rs
+expression: out
+---
+gate test: judged against ruleset 10 at abc on every dev seed; quantiles of worst_r7_hazard_per_h fail only when the 95% interval of candidate minus baseline (10000 paired resamples, seed 1) lies above 0; time is the geometric mean ratio over pairs both concluded.
+gate conclusion adv baseline_concluded=24 candidate_concluded=23 lost=1 lost_seeds=[6] threshold=lost==0 FAIL
+gate conclusion hand baseline_concluded=2 candidate_concluded=2 lost=0 lost_seeds=[] threshold=lost==0 PASS
+gate median adv baseline=12.500000 candidate=14.000000 change=+1.500000 ci=[+1.000000,+2.000000] threshold=ci_low<=0 FAIL
+gate p90 adv baseline=21.700000 candidate=23.400000 change=+1.700000 ci=[+1.000000,+2.000000] threshold=ci_low<=0 FAIL
+gate time adv ratio=1.0000 timed=23 threshold=ratio<=2 PASS
+gate pooled_median adv baseline=12.500000 candidate=14.000000 change=+1.500000 threshold=change<0 FAIL
+gate test: FAIL 4 of 6 criteria

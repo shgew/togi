@@ -22,18 +22,17 @@ fn machine_dir(root: &str) -> Tree {
     dir
 }
 
-#[test]
-fn the_tree_key_binds_both_binaries_and_the_boot_cap() {
+#[test_case::test_case(tree_key("sim2", "bench", 1000); "tree key sim2 bench 1000")]
+#[test_case::test_case(tree_key("sim", "bench2", 1000); "tree key sim bench2 1000")]
+#[test_case::test_case(tree_key("sim", "bench", 999); "tree key sim bench 999")]
+#[test_case::test_case(tree_key("bench", "sim", 1000); "tree key bench sim 1000")]
+fn the_tree_key_binds_both_binaries_and_the_boot_cap(case: String) {
+    let other = case;
     let key = tree_key("sim", "bench", 1000);
     assert_eq!(key, tree_key("sim", "bench", 1000));
-    for other in [
-        tree_key("sim2", "bench", 1000),
-        tree_key("sim", "bench2", 1000),
-        tree_key("sim", "bench", 999),
-        tree_key("bench", "sim", 1000),
-    ] {
-        assert_ne!(key, other);
-    }
+
+    assert_ne!(key, other);
+
     assert_eq!(key.len(), 64);
 }
 
@@ -321,13 +320,17 @@ fn costs_are_kept_per_scope_with_the_latest_run_as_the_fallback() {
     assert_eq!(costs.get("a", "z/dev-1"), None);
 }
 
-#[test]
-fn a_cost_that_is_not_a_positive_finite_time_is_not_kept() {
+#[test_case::test_case(0.0; "0 0")]
+#[test_case::test_case(-1.0; "1 0")]
+#[test_case::test_case(f64::NAN; "f64 NAN")]
+#[test_case::test_case(f64::INFINITY; "f64 INFINITY")]
+fn a_cost_that_is_not_a_positive_finite_time_is_not_kept(case: f64) {
+    let wall = case;
     let dir = Tree::new();
     let costs = Costs::with_fs(dir.path().join("costs.json"), dir.fs.clone());
-    for wall in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-        costs.set("a", "x/dev-1", wall);
-    }
+
+    costs.set("a", "x/dev-1", wall);
+
     assert_eq!(costs.get("a", "x/dev-1"), None);
 }
 
@@ -347,8 +350,17 @@ fn costs_survive_a_scope_that_has_none_and_keep_the_eight_latest_scopes() {
     );
 }
 
-#[test]
-fn costs_round_trip_through_their_file_and_a_damaged_file_is_empty() {
+#[test_case::test_case(("positional file", r#"[{"x/dev-1":5.0},[]]"#); "positional file")]
+#[test_case::test_case((
+            "positional scope",
+            r#"{"latest":{"x/dev-1":5.0},"scopes":[["a",{"x/dev-1":5.0}]]}"#,
+        ); "positional scope")]
+#[test_case::test_case((
+            "unknown key",
+            r#"{"latest":{"x/dev-1":5.0},"scopes":[],"extra":1}"#,
+        ); "unknown key")]
+fn costs_round_trip_through_their_file_and_a_damaged_file_is_empty(case: (&str, &str)) {
+    let (name, text) = case;
     let dir = Tree::new();
     let path = dir.path().join("sub/costs.json");
     let costs = Costs::with_fs(path.clone(), dir.fs.clone());
@@ -363,24 +375,13 @@ fn costs_round_trip_through_their_file_and_a_damaged_file_is_empty() {
         Costs::with_fs(path.clone(), dir.fs.clone()).get("a", "x/dev-1"),
         None
     );
-    for (name, text) in [
-        ("positional file", r#"[{"x/dev-1":5.0},[]]"#),
-        (
-            "positional scope",
-            r#"{"latest":{"x/dev-1":5.0},"scopes":[["a",{"x/dev-1":5.0}]]}"#,
-        ),
-        (
-            "unknown key",
-            r#"{"latest":{"x/dev-1":5.0},"scopes":[],"extra":1}"#,
-        ),
-    ] {
-        dir.write(&path, text);
-        assert_eq!(
-            Costs::with_fs(path.clone(), dir.fs.clone()).get("a", "x/dev-1"),
-            None,
-            "{name}"
-        );
-    }
+
+    dir.write(&path, text);
+    assert_eq!(
+        Costs::with_fs(path.clone(), dir.fs.clone()).get("a", "x/dev-1"),
+        None,
+        "{name}"
+    );
 }
 
 #[test]

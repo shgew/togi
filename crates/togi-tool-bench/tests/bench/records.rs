@@ -240,56 +240,53 @@ fn absent_optional_measurements_are_omitted_or_null_as_the_format_says() {
     assert!(object["first_passed_cycle_h"].is_null());
 }
 
-#[test]
-fn a_run_status_follows_the_exit_status_and_what_the_session_left() {
-    let cases = [
-        (
+#[test_case::test_case((
             "concluded",
             Status::of(0, true, false, false),
             Status::Concluded,
-        ),
-        (
+        ); "concluded")]
+#[test_case::test_case((
             "empty journal",
             Status::of(0, false, false, false),
             Status::Error,
-        ),
-        (
+        ); "empty journal")]
+#[test_case::test_case((
             "dead end in the journal",
             Status::of(1, true, true, false),
             Status::DeadEnd,
-        ),
-        (
+        ); "dead end in the journal")]
+#[test_case::test_case((
             "dead end in the log",
             Status::of(1, false, false, true),
             Status::DeadEnd,
-        ),
-        (
+        ); "dead end in the log")]
+#[test_case::test_case((
             "plain failure",
             Status::of(1, false, false, false),
             Status::Error,
-        ),
-        (
+        ); "plain failure")]
+#[test_case::test_case((
             "boot cap",
             Status::of(3, true, false, false),
             Status::Censored,
-        ),
-        (
+        ); "boot cap")]
+#[test_case::test_case((
             "boot cap without a journal",
             Status::of(3, false, false, false),
             Status::Error,
-        ),
-        (
+        ); "boot cap without a journal")]
+#[test_case::test_case((
             "usage error",
             Status::of(2, true, false, false),
             Status::Error,
-        ),
-        (
+        ); "usage error")]
+#[test_case::test_case((
             "killed by a signal",
             Status::of(-1, true, false, false),
             Status::Error,
-        ),
-    ];
-    for (name, got, want) in cases {
-        assert_eq!(got, want, "{name}");
-    }
+        ); "killed by a signal")]
+fn a_run_status_follows_the_exit_status_and_what_the_session_left(case: (&str, Status, Status)) {
+    let (name, got, want) = case;
+
+    assert_eq!(got, want, "{name}");
 }

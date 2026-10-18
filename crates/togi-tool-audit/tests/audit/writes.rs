@@ -5,10 +5,39 @@ use togi_tool_audit::Completion::{Finished, InProgress};
 
 use crate::fixtures::*;
 
-#[test]
-fn a_write_follows_its_intent_and_is_read_back() {
-    run(vec![
-        case(
+fn mismatch() -> Vec<Event> {
+    vec![
+        intent(2, set(0, -5)),
+        write(3, set(0, -5), 2),
+        cause(
+            event(
+                4,
+                "smu.readback",
+                json!({"core": 0, "offset": -3, "expected": -5}),
+            ),
+            &[3],
+        ),
+    ]
+}
+
+fn then(rest: Vec<Event>) -> Vec<Event> {
+    let mut events = mismatch();
+    events.extend(rest);
+    events
+}
+
+fn smu_dead_end(seq: u64) -> Event {
+    cause(
+        event(
+            seq,
+            "deadend",
+            json!({"condition": "smu", "detail": "readback -3, expected -5"}),
+        ),
+        &[4],
+    )
+}
+
+#[test_case::test_case(case(
             "a set-all read back on every core",
             vec![
                 intent(2, set_all(0)),
@@ -19,8 +48,8 @@ fn a_write_follows_its_intent_and_is_read_back() {
             ],
             Finished,
             &[],
-        ),
-        case(
+        ); "a set-all read back on every core")]
+#[test_case::test_case(case(
             "a write without an intent",
             vec![
                 event(2, "smu.write", set(0, 0)),
@@ -29,8 +58,8 @@ fn a_write_follows_its_intent_and_is_read_back() {
             ],
             Finished,
             &[(2, WriteProtocol)],
-        ),
-        case(
+        ); "a write without an intent")]
+#[test_case::test_case(case(
             "a write citing the intent of another core",
             vec![
                 intent(2, set(8, 0)),
@@ -40,8 +69,8 @@ fn a_write_follows_its_intent_and_is_read_back() {
             ],
             Finished,
             &[(3, WriteProtocol)],
-        ),
-        case(
+        ); "a write citing the intent of another core")]
+#[test_case::test_case(case(
             "a write citing the intent of another offset",
             vec![
                 intent(2, set(0, -5)),
@@ -51,8 +80,8 @@ fn a_write_follows_its_intent_and_is_read_back() {
             ],
             Finished,
             &[(3, WriteProtocol)],
-        ),
-        case(
+        ); "a write citing the intent of another offset")]
+#[test_case::test_case(case(
             "a set-all missing one core's readback",
             vec![
                 intent(2, set_all(0)),
@@ -62,14 +91,14 @@ fn a_write_follows_its_intent_and_is_read_back() {
             ],
             Finished,
             &[(3, WriteProtocol)],
-        ),
-        case(
+        ); "a set-all missing one core's readback")]
+#[test_case::test_case(case(
             "a write still in flight in a live journal",
             vec![intent(2, set(0, 0)), write(3, set(0, 0), 2)],
             InProgress,
             &[],
-        ),
-        case(
+        ); "a write still in flight in a live journal")]
+#[test_case::test_case(case(
             "an unread write is judged when the next write begins",
             vec![
                 intent(2, set(0, -5)),
@@ -80,14 +109,12 @@ fn a_write_follows_its_intent_and_is_read_back() {
             ],
             InProgress,
             &[(3, WriteProtocol)],
-        ),
-    ]);
+        ); "an unread write is judged when the next write begins")]
+fn a_write_follows_its_intent_and_is_read_back(case: Case) {
+    run(case);
 }
 
-#[test]
-fn an_intent_authorizes_one_write_in_its_own_boot() {
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "an intent of an earlier boot",
             vec![
                 intent(2, set(0, 0)),
@@ -97,8 +124,8 @@ fn an_intent_authorizes_one_write_in_its_own_boot() {
             ],
             Finished,
             &[(3, WriteProtocol)],
-        ),
-        case(
+        ); "an intent of an earlier boot")]
+#[test_case::test_case(case(
             "an intent used twice",
             vec![
                 intent(2, set(0, 0)),
@@ -110,14 +137,12 @@ fn an_intent_authorizes_one_write_in_its_own_boot() {
             ],
             Finished,
             &[(5, WriteProtocol)],
-        ),
-    ]);
+        ); "an intent used twice")]
+fn an_intent_authorizes_one_write_in_its_own_boot(case: Case) {
+    run(case);
 }
 
-#[test]
-fn a_reboot_may_interrupt_a_write_before_its_readback() {
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "the next boot owes no readback",
             vec![
                 intent(2, set(0, -5)),
@@ -127,8 +152,8 @@ fn a_reboot_may_interrupt_a_write_before_its_readback() {
             ],
             Finished,
             &[],
-        ),
-        case(
+        ); "the next boot owes no readback")]
+#[test_case::test_case(case(
             "same-boot reconciliation reads every core without citing the write",
             vec![
                 intent(2, set(0, -5)),
@@ -140,14 +165,12 @@ fn a_reboot_may_interrupt_a_write_before_its_readback() {
             ],
             Finished,
             &[],
-        ),
-    ]);
+        ); "same-boot reconciliation reads every core without citing the write")]
+fn a_reboot_may_interrupt_a_write_before_its_readback(case: Case) {
+    run(case);
 }
 
-#[test]
-fn a_readback_matches_the_write_it_cites() {
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "a readback of a core the write did not touch",
             vec![
                 intent(2, set(0, -5)),
@@ -157,8 +180,8 @@ fn a_readback_matches_the_write_it_cites() {
             ],
             InProgress,
             &[(5, WriteProtocol)],
-        ),
-        case(
+        ); "a readback of a core the write did not touch")]
+#[test_case::test_case(case(
             "a readback expecting another offset than the write's",
             vec![
                 intent(2, set(0, -5)),
@@ -174,8 +197,8 @@ fn a_readback_matches_the_write_it_cites() {
             ],
             InProgress,
             &[(4, WriteProtocol)],
-        ),
-        case(
+        ); "a readback expecting another offset than the write's")]
+#[test_case::test_case(case(
             "a mismatching observed offset is the session's dead end, not a protocol breach",
             vec![
                 intent(2, set(0, -5)),
@@ -191,8 +214,8 @@ fn a_readback_matches_the_write_it_cites() {
             ],
             InProgress,
             &[],
-        ),
-        case(
+        ); "a mismatching observed offset is the session's dead end, not a protocol breach")]
+#[test_case::test_case(case(
             "firmware offsets in a readback and baseline are not bounded",
             vec![
                 event(2, "smu.readback", json!({"core": 0, "offset": 10})),
@@ -203,43 +226,12 @@ fn a_readback_matches_the_write_it_cites() {
             ],
             InProgress,
             &[],
-        ),
-    ]);
+        ); "firmware offsets in a readback and baseline are not bounded")]
+fn a_readback_matches_the_write_it_cites(case: Case) {
+    run(case);
 }
 
-#[test]
-fn a_mismatching_readback_ends_the_session_in_an_smu_dead_end() {
-    let mismatch = || {
-        vec![
-            intent(2, set(0, -5)),
-            write(3, set(0, -5), 2),
-            cause(
-                event(
-                    4,
-                    "smu.readback",
-                    json!({"core": 0, "offset": -3, "expected": -5}),
-                ),
-                &[3],
-            ),
-        ]
-    };
-    let then = |rest: Vec<Event>| {
-        let mut events = mismatch();
-        events.extend(rest);
-        events
-    };
-    let smu_dead_end = |seq| {
-        cause(
-            event(
-                seq,
-                "deadend",
-                json!({"condition": "smu", "detail": "readback -3, expected -5"}),
-            ),
-            &[4],
-        )
-    };
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "the smu dead end and its shutdown follow the mismatch",
             then(vec![
                 smu_dead_end(5),
@@ -247,14 +239,14 @@ fn a_mismatching_readback_ends_the_session_in_an_smu_dead_end() {
             ]),
             Finished,
             &[],
-        ),
-        case(
+        ); "the smu dead end and its shutdown follow the mismatch")]
+#[test_case::test_case(case(
             "an ordinary shutdown follows the mismatch",
             then(vec![stop(5)]),
             Finished,
             &[(4, WriteProtocol)],
-        ),
-        case(
+        ); "an ordinary shutdown follows the mismatch")]
+#[test_case::test_case(case(
             "another dead end does not answer the mismatch",
             then(vec![
                 dead_end(5, "d"),
@@ -262,25 +254,24 @@ fn a_mismatching_readback_ends_the_session_in_an_smu_dead_end() {
             ]),
             Finished,
             &[(4, WriteProtocol)],
-        ),
-        case(
+        ); "another dead end does not answer the mismatch")]
+#[test_case::test_case(case(
             "tuning continues with another write",
             then(vec![intent(5, set(0, -6))]),
             InProgress,
             &[(5, WriteProtocol)],
-        ),
-        case(
+        ); "tuning continues with another write")]
+#[test_case::test_case(case(
             "a crash before the dead end leaves it to the next boot",
             then(vec![boot(smu_dead_end(5), "b2")]),
             InProgress,
             &[],
-        ),
-    ]);
+        ); "a crash before the dead end leaves it to the next boot")]
+fn a_mismatching_readback_ends_the_session_in_an_smu_dead_end(case: Case) {
+    run(case);
 }
 
-#[test]
-fn a_mismatching_readback_of_a_set_all_write_leaves_its_other_cores_unread() {
-    run(vec![case(
+#[test_case::test_case(case(
         "the session stops reading at the first mismatch and ends in the smu dead end",
         vec![
             intent(2, set_all(-5)),
@@ -305,5 +296,7 @@ fn a_mismatching_readback_of_a_set_all_write_leaves_its_other_cores_unread() {
         ],
         Finished,
         &[],
-    )]);
+    ); "the session stops reading at the first mismatch and ends in the smu dead end")]
+fn a_mismatching_readback_of_a_set_all_write_leaves_its_other_cores_unread(case: Case) {
+    run(case);
 }

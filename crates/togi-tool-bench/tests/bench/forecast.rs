@@ -334,84 +334,86 @@ fn execute(options: &Options, fleet: &Fleet) -> Result<Report, togi_tool_bench::
     execute_unsynced(options, fleet)
 }
 
-#[test]
-fn a_forecast_counts_only_what_follows_the_anchor_and_leaves_the_copy_alone() {
-    for in_flight in [false, true] {
-        let fixture = Fixture::new(in_flight);
-        let before: Vec<_> = fixture
-            .history
-            .entries()
-            .into_iter()
-            .map(|(path, kind)| {
-                let bytes = fixture.history.contents(&path);
-                (path, kind, bytes)
-            })
-            .collect();
-        let copied = Session::decode(
-            Path::new("events.jsonl"),
-            &fixture.history.contents("/state/events.jsonl").unwrap(),
-        )
-        .unwrap()
-        .unwrap();
-        if in_flight {
-            let last = copied.events().last().unwrap();
-            assert!(matches!(last.payload, Payload::TrialStart(_)));
-            assert_eq!(last.seq, fixture.anchor.seq);
-        }
-        assert!(crashes_after(copied.events(), Seq::new(1).unwrap()) > 0);
-        let first = fixture.report();
-        let second = fixture.report();
-        assert_eq!(written(&first), written(&second));
-        assert_eq!(first.record.anchor, fixture.anchor);
-        assert_eq!(first.record.summary.runs, 3);
-        assert_eq!(first.record.summary.concluded, 3);
-        for (run, seed) in first.record.runs.iter().zip(
-            [Split::Dev, Split::Dev, Split::Holdout]
-                .into_iter()
-                .zip(SEEDS),
-        ) {
-            assert_eq!((run.split, run.seed), seed);
-            assert_eq!(run.outcome.status, Status::Concluded);
-            assert_eq!(
-                run.outcome.crashes,
-                crashes_after(fixture.sessions(run.seed)[0].events(), fixture.anchor.seq)
-            );
-        }
-        let (record, _) = written(&first);
-        assert_eq!(
-            Record::decode(record.as_slice(), "forecast.json").unwrap(),
-            first.record
-        );
-        let after: Vec<_> = fixture
-            .history
-            .entries()
-            .into_iter()
-            .map(|(path, kind)| {
-                let bytes = fixture.history.contents(&path);
-                (path, kind, bytes)
-            })
-            .collect();
-        assert_eq!(before, after, "the forecast changed its input");
+#[test_case::test_case(false; "false")]
+#[test_case::test_case(true; "true")]
+fn a_forecast_counts_only_what_follows_the_anchor_and_leaves_the_copy_alone(case: bool) {
+    let in_flight = case;
+
+    let fixture = Fixture::new(in_flight);
+    let before: Vec<_> = fixture
+        .history
+        .entries()
+        .into_iter()
+        .map(|(path, kind)| {
+            let bytes = fixture.history.contents(&path);
+            (path, kind, bytes)
+        })
+        .collect();
+    let copied = Session::decode(
+        Path::new("events.jsonl"),
+        &fixture.history.contents("/state/events.jsonl").unwrap(),
+    )
+    .unwrap()
+    .unwrap();
+    if in_flight {
+        let last = copied.events().last().unwrap();
+        assert!(matches!(last.payload, Payload::TrialStart(_)));
+        assert_eq!(last.seq, fixture.anchor.seq);
     }
+    assert!(crashes_after(copied.events(), Seq::new(1).unwrap()) > 0);
+    let first = fixture.report();
+    let second = fixture.report();
+    assert_eq!(written(&first), written(&second));
+    assert_eq!(first.record.anchor, fixture.anchor);
+    assert_eq!(first.record.summary.runs, 3);
+    assert_eq!(first.record.summary.concluded, 3);
+    for (run, seed) in first.record.runs.iter().zip(
+        [Split::Dev, Split::Dev, Split::Holdout]
+            .into_iter()
+            .zip(SEEDS),
+    ) {
+        assert_eq!((run.split, run.seed), seed);
+        assert_eq!(run.outcome.status, Status::Concluded);
+        assert_eq!(
+            run.outcome.crashes,
+            crashes_after(fixture.sessions(run.seed)[0].events(), fixture.anchor.seq)
+        );
+    }
+    let (record, _) = written(&first);
+    assert_eq!(
+        Record::decode(record.as_slice(), "forecast.json").unwrap(),
+        first.record
+    );
+    let after: Vec<_> = fixture
+        .history
+        .entries()
+        .into_iter()
+        .map(|(path, kind)| {
+            let bytes = fixture.history.contents(&path);
+            (path, kind, bytes)
+        })
+        .collect();
+    assert_eq!(before, after, "the forecast changed its input");
 }
 
-#[test]
-fn real_process_a_run_that_fails_or_is_killed_fails_the_forecast() {
+#[test_case::test_case(("exit 2", "", 2); "exit 2")]
+#[test_case::test_case(("killed", "kill -9 $$", 0); "killed")]
+fn real_process_a_run_that_fails_or_is_killed_fails_the_forecast(case: (&str, &str, i32)) {
+    let (name, extra, exit) = case;
     let fixture = DiskFixture::new(false);
-    for (name, extra, exit) in [("exit 2", "", 2), ("killed", "kill -9 $$", 0)] {
-        let failed = execute(
-            &fixture.options(fixture.simulator(extra, exit)),
-            &Fleet::new(),
-        )
-        .unwrap_err();
-        assert!(
-            matches!(*failed.error, ForecastError::Runs(_)),
-            "{name}: {failed}"
-        );
-        let message = failed.to_string();
-        assert!(message.contains("forecast target/"), "{name}: {message}");
-        assert!(!message.contains("interrupted"), "{name}: {message}");
-    }
+
+    let failed = execute(
+        &fixture.options(fixture.simulator(extra, exit)),
+        &Fleet::new(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(*failed.error, ForecastError::Runs(_)),
+        "{name}: {failed}"
+    );
+    let message = failed.to_string();
+    assert!(message.contains("forecast target/"), "{name}: {message}");
+    assert!(!message.contains("interrupted"), "{name}: {message}");
 }
 
 #[test]
@@ -844,20 +846,20 @@ fn real_process_the_command_prints_the_forecast() {
     assert!(stdout.contains("\nmetric   median"), "{stdout}");
 }
 
-#[test]
-#[expect(
-    clippy::disallowed_methods,
-    reason = "real_process coverage exercises command exit codes for invalid flags"
-)]
-fn real_process_bench_flags_that_judge_a_run_are_usage_errors_with_forecast() {
-    for flag in ["--split=all", "--baseline=b.jsonl", "--same=."] {
-        let output = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"))
-            .args(["forecast", ".", flag])
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2), "{flag}");
-        assert!(output.stdout.is_empty(), "{flag}");
-    }
+#[test_case::test_case("--split=all"; "split")]
+#[test_case::test_case("--baseline=b.jsonl"; "baseline")]
+#[test_case::test_case("--same=."; "same")]
+fn real_process_bench_flags_that_judge_a_run_are_usage_errors_with_forecast(flag: &str) {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "real_process coverage exercises command exit codes for invalid flags"
+    )]
+    let output = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"))
+        .args(["forecast", ".", flag])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{flag}");
+    assert!(output.stdout.is_empty(), "{flag}");
 }
 
 #[test]
@@ -879,30 +881,28 @@ fn a_run_cut_off_by_the_boot_cap_is_a_censored_outcome() {
     );
 }
 
-#[test]
-fn an_exit_code_that_disagrees_with_the_journal_names_both() {
-    let fixture = Fixture::new(false);
-    for (name, cut, exit, message) in [
-        (
+#[test_case::test_case((
             "censored exit, concluded journal",
             false,
             3,
             "simulator exit 3 means censored, but the journal after the anchor is concluded",
-        ),
-        (
+        ); "censored exit, concluded journal")]
+#[test_case::test_case((
             "clean exit, cut journal",
             true,
             0,
             "simulator exit 0 means concluded, but the journal after the anchor is censored",
-        ),
-    ] {
-        let mut sessions = fixture.sessions(SEEDS[0]);
-        if cut {
-            sessions = fixture.cut_sessions(SEEDS[0]);
-        }
-        let failed = outcome(&sessions, &fixture.anchor, exit, false).unwrap_err();
-        assert!(failed.to_string().contains(message), "{name}: {failed}");
+        ); "clean exit, cut journal")]
+fn an_exit_code_that_disagrees_with_the_journal_names_both(case: (&str, bool, i32, &str)) {
+    let (name, cut, exit, message) = case;
+    let fixture = Fixture::new(false);
+
+    let mut sessions = fixture.sessions(SEEDS[0]);
+    if cut {
+        sessions = fixture.cut_sessions(SEEDS[0]);
     }
+    let failed = outcome(&sessions, &fixture.anchor, exit, false).unwrap_err();
+    assert!(failed.to_string().contains(message), "{name}: {failed}");
 }
 
 #[test]

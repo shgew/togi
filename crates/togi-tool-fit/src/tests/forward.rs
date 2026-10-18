@@ -131,8 +131,21 @@ fn a_sealed_session_is_neither_fitted_nor_scored() {
     );
 }
 
-#[test]
-fn the_log_loss_clamps_the_probability_and_the_constant_predictor_is_scored_alongside() {
+#[derive(Clone, Copy)]
+enum ProbabilityBoundary {
+    NeverFails,
+    AlwaysPasses,
+    NeverPasses,
+    AlwaysFails,
+}
+
+#[test_case::test_case(ProbabilityBoundary::NeverFails; "NeverFails")]
+#[test_case::test_case(ProbabilityBoundary::AlwaysPasses; "AlwaysPasses")]
+#[test_case::test_case(ProbabilityBoundary::NeverPasses; "NeverPasses")]
+#[test_case::test_case(ProbabilityBoundary::AlwaysFails; "AlwaysFails")]
+fn the_log_loss_clamps_the_probability_and_the_constant_predictor_is_scored_alongside(
+    scenario: ProbabilityBoundary,
+) {
     let mut cfg = blank_machine(2);
     cfg.model.past_limit_rate = 0.0;
     cfg.core[0].flat = std::f64::consts::LN_2;
@@ -164,17 +177,17 @@ fn the_log_loss_clamps_the_probability_and_the_constant_predictor_is_scored_alon
     assert_eq!(regimes[&Regime::R1], score.counts);
     let clamp = -(1e-4_f64).ln();
     let other = -(1.0 - 1e-4_f64).ln();
-    for (p, failure, want) in [
-        (0.0, true, clamp),
-        (1.0, false, clamp),
-        (0.0, false, other),
-        (1.0, true, other),
-    ] {
-        assert!(
-            (log_loss(p, failure) - want).abs() < 1e-12,
-            "p={p} failure={failure}"
-        );
-    }
+    let (p, failure, want) = match scenario {
+        ProbabilityBoundary::NeverFails => (0.0, true, clamp),
+        ProbabilityBoundary::AlwaysPasses => (1.0, false, clamp),
+        ProbabilityBoundary::NeverPasses => (0.0, false, other),
+        ProbabilityBoundary::AlwaysFails => (1.0, true, other),
+    };
+
+    assert!(
+        (log_loss(p, failure) - want).abs() < 1e-12,
+        "p={p} failure={failure}"
+    );
 }
 
 #[test]
@@ -405,8 +418,19 @@ fn eligible_group(core: usize, failures: u64, first: u64) -> Vec<TrialFact> {
         .collect()
 }
 
-#[test]
-fn a_reference_group_counts_once_when_any_member_flags_it_in_any_member_order() {
+#[derive(Clone, Copy)]
+enum MemberOrder {
+    Forward,
+    Reverse,
+    Repeated,
+}
+
+#[test_case::test_case(MemberOrder::Forward; "Forward")]
+#[test_case::test_case(MemberOrder::Reverse; "Reverse")]
+#[test_case::test_case(MemberOrder::Repeated; "Repeated")]
+fn a_reference_group_counts_once_when_any_member_flags_it_in_any_member_order(
+    scenario: MemberOrder,
+) {
     // A blank machine whose only hazard is a loaded core's flat rate: a one-second trial loading core
     // 0, 1 or 2 alone fails with probability p[0], p[1] or p[2].
     let member = |p: [f64; 3]| {
@@ -452,17 +476,17 @@ fn a_reference_group_counts_once_when_any_member_flags_it_in_any_member_order() 
         (1, 3),
         "the mean prediction of x and y flags core 1 only"
     );
-    for members in [
-        vec![x.clone(), y.clone()],
-        vec![y.clone(), x.clone()],
-        vec![y.clone(), x.clone(), y.clone()],
-    ] {
-        assert_eq!(
-            groups(&members),
-            (2, 3),
-            "core 0 flagged by x alone and core 1 by both count once each, core 2 is eligible only"
-        );
-    }
+    let members = match scenario {
+        MemberOrder::Forward => vec![x.clone(), y.clone()],
+        MemberOrder::Reverse => vec![y.clone(), x.clone()],
+        MemberOrder::Repeated => vec![y.clone(), x.clone(), y.clone()],
+    };
+
+    assert_eq!(
+        groups(&members),
+        (2, 3),
+        "core 0 flagged by x alone and core 1 by both count once each, core 2 is eligible only"
+    );
 
     let check = reference_check(&trials, 0, &[y, x]).unwrap();
     let mut out = Vec::new();

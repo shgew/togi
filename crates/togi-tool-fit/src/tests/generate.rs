@@ -142,8 +142,17 @@ fn an_ensemble_is_written_checked_against_the_original_evidence_and_reproducible
     }
 }
 
-#[test]
-fn the_ensemble_report_and_files_are_the_same_on_one_thread_and_on_many() {
+#[derive(Clone, Copy)]
+enum EnsembleConstraint {
+    Constrained,
+    Unconstrained,
+}
+
+#[test_case::test_case(EnsembleConstraint::Constrained; "Constrained")]
+#[test_case::test_case(EnsembleConstraint::Unconstrained; "Unconstrained")]
+fn the_ensemble_report_and_files_are_the_same_on_one_thread_and_on_many(
+    scenario: EnsembleConstraint,
+) {
     struct Case {
         records: Vec<TrialFact>,
         seed: u64,
@@ -152,156 +161,156 @@ fn the_ensemble_report_and_files_are_the_same_on_one_thread_and_on_many() {
     }
     let mut deep = r1_trials(-10, 30, 0);
     deep.extend(r1_trials(-5, 30, 15));
-    let cases = [
-        Case {
+
+    let case = match scenario {
+        EnsembleConstraint::Constrained => Case {
             records: r1_trials(-10, 30, 1),
             seed: 263,
             constrained_somewhere: true,
             unconstrained: false,
         },
-        Case {
+        EnsembleConstraint::Unconstrained => Case {
             records: deep,
             seed: 263,
             constrained_somewhere: false,
             unconstrained: true,
         },
-    ];
-    for case in cases {
-        let run = run_dir(&case.records);
-        let mut outputs = Vec::new();
-        for threads in [1, 5] {
-            let out = run.dir.join(threads.to_string()).join("machines");
-            let mut report = Vec::new();
-            let generated = pool(threads)
-                .install(|| {
-                    generate_records(
-                        &run.records,
-                        &run.extract,
-                        &out,
-                        Ensemble {
-                            seed: case.seed,
-                            bootstrap: 4,
-                        },
-                        &mut report,
-                        &mut run.output.clone(),
-                    )
-                })
-                .unwrap();
-            let files: Vec<String> = (0..5)
-                .map(|n| run.output.read_to_string(&member(&out, n)).unwrap())
-                .collect();
-            let report = String::from_utf8(report)
-                .unwrap()
-                .replace(out.to_str().unwrap(), "OUT");
-            outputs.push((report, files, generated));
-        }
-        let (serial, parallel) = (&outputs[0], &outputs[1]);
-        assert_eq!(
-            serial.0, parallel.0,
-            "the parallel report differs from the serial one"
-        );
-        assert_eq!(
-            serial.1, parallel.1,
-            "the parallel machines differ from the serial ones"
-        );
-        let fits = &serial.2.fits;
-        let unseeded = serial
-            .0
-            .lines()
-            .filter(|l| l.contains("written unconstrained"))
-            .count();
-        let constrained = fits.iter().filter(|f| !f.constrained.is_empty()).count();
-        assert_eq!(constrained > 0, case.constrained_somewhere, "{}", serial.0);
-        if case.unconstrained {
-            assert_eq!(unseeded, 4, "{}", serial.0);
-            assert!(fits.iter().all(|f| f.constrained.is_empty()));
-            assert!(fits.iter().all(|f| f.flagged.len() == 1));
-        } else {
-            assert_eq!(unseeded, 0);
-            let shared = TargetOffset::new(-10).unwrap();
-            for (n, fitted) in fits.iter().enumerate() {
-                assert!(
-                    fitted.flagged.is_empty(),
-                    "member {n} is flagged after the restart: {:?}",
-                    fitted.flagged
-                );
-                for group in &fitted.constrained {
-                    assert!(
-                        group.flagged && (group.depth, group.n, group.k) == (shared, 30, 1),
-                        "member {n} is constrained by a group other than the -10 n=30 k=1 one: {group:?}"
-                    );
-                }
-                assert!(fitted.constrained.len() <= 1, "member {n}");
-            }
-            let members: Vec<usize> = fits
-                .iter()
-                .enumerate()
-                .filter(|(_, f)| !f.constrained.is_empty())
-                .map(|(n, _)| n)
-                .collect();
-            let failure_free: Vec<usize> = fits
-                .iter()
-                .enumerate()
-                .skip(1)
-                .filter(|(_, f)| failures(&f.sample) == 0)
-                .map(|(n, _)| n)
-                .collect();
-            assert_eq!(
-                members, failure_free,
-                "exactly the resamples that never drew the failure are constrained: {}",
-                serial.0
-            );
-        }
+    };
+
+    let run = run_dir(&case.records);
+    let mut outputs = Vec::new();
+    for threads in [1, 5] {
+        let out = run.dir.join(threads.to_string()).join("machines");
+        let mut report = Vec::new();
+        let generated = pool(threads)
+            .install(|| {
+                generate_records(
+                    &run.records,
+                    &run.extract,
+                    &out,
+                    Ensemble {
+                        seed: case.seed,
+                        bootstrap: 4,
+                    },
+                    &mut report,
+                    &mut run.output.clone(),
+                )
+            })
+            .unwrap();
+        let files: Vec<String> = (0..5)
+            .map(|n| run.output.read_to_string(&member(&out, n)).unwrap())
+            .collect();
+        let report = String::from_utf8(report)
+            .unwrap()
+            .replace(out.to_str().unwrap(), "OUT");
+        outputs.push((report, files, generated));
+    }
+    let (serial, parallel) = (&outputs[0], &outputs[1]);
+    assert_eq!(
+        serial.0, parallel.0,
+        "the parallel report differs from the serial one"
+    );
+    assert_eq!(
+        serial.1, parallel.1,
+        "the parallel machines differ from the serial ones"
+    );
+    let fits = &serial.2.fits;
+    let unseeded = serial
+        .0
+        .lines()
+        .filter(|l| l.contains("written unconstrained"))
+        .count();
+    let constrained = fits.iter().filter(|f| !f.constrained.is_empty()).count();
+    assert_eq!(constrained > 0, case.constrained_somewhere, "{}", serial.0);
+    if case.unconstrained {
+        assert_eq!(unseeded, 4, "{}", serial.0);
+        assert!(fits.iter().all(|f| f.constrained.is_empty()));
+        assert!(fits.iter().all(|f| f.flagged.len() == 1));
+    } else {
+        assert_eq!(unseeded, 0);
+        let shared = TargetOffset::new(-10).unwrap();
         for (n, fitted) in fits.iter().enumerate() {
-            let flagged: Vec<&Group> = fitted.check.flagged().collect();
-            assert_eq!(
-                flagged.len(),
-                fitted.flagged.len(),
-                "member {n}: flags before writing differ from the written file's"
+            assert!(
+                fitted.flagged.is_empty(),
+                "member {n} is flagged after the restart: {:?}",
+                fitted.flagged
             );
-            let notes = &file::decode(&serial.1[n]).unwrap().notes;
-            let header: Vec<&String> = notes
-                .iter()
-                .filter(|note| note.starts_with("Model check") || note.starts_with("Flagged:"))
-                .collect();
-            assert_eq!(header.len(), 1 + flagged.len(), "member {n}: {notes:?}");
-            if flagged.is_empty() {
-                assert_eq!(
-                    header[0],
-                    "Model check against the original extract: ok, no flagged groups."
-                );
-            } else {
-                assert_eq!(
-                    header[0],
-                    "Model check against the original extract: flagged."
+            for group in &fitted.constrained {
+                assert!(
+                    group.flagged && (group.depth, group.n, group.k) == (shared, 30, 1),
+                    "member {n} is constrained by a group other than the -10 n=30 k=1 one: {group:?}"
                 );
             }
-            if !fitted.constrained.is_empty() {
-                let base = fits[0].check.groups[0].mean_p;
-                let p = fitted.check.groups[0].mean_p;
-                assert!(
-                    p < base,
-                    "refit {n} kept the all-facts prediction {base}, want below it: {p}"
-                );
-                assert_eq!(
-                    failures(&fitted.sample),
-                    0,
-                    "only a failure-free resample is flagged here"
-                );
-                let trials = f64::from(u32::try_from(fitted.sample.len()).unwrap());
-                let loss = -trials * (-p).ln_1p();
-                assert!(
-                    (fitted.loss - loss).abs() < 1e-4,
-                    "refit {n} loss {} is not the failure-free likelihood {loss} at its written prediction {p}",
-                    fitted.loss
-                );
-                assert!(
-                    notes
-                        .iter()
-                        .any(|note| note == "Signal mix: no failures; default weights."),
-                    "refit {n} keeps a signal mix its failure-free resample never recorded: {notes:?}"
-                );
-            }
+            assert!(fitted.constrained.len() <= 1, "member {n}");
+        }
+        let members: Vec<usize> = fits
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| !f.constrained.is_empty())
+            .map(|(n, _)| n)
+            .collect();
+        let failure_free: Vec<usize> = fits
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter(|(_, f)| failures(&f.sample) == 0)
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(
+            members, failure_free,
+            "exactly the resamples that never drew the failure are constrained: {}",
+            serial.0
+        );
+    }
+    for (n, fitted) in fits.iter().enumerate() {
+        let flagged: Vec<&Group> = fitted.check.flagged().collect();
+        assert_eq!(
+            flagged.len(),
+            fitted.flagged.len(),
+            "member {n}: flags before writing differ from the written file's"
+        );
+        let notes = &file::decode(&serial.1[n]).unwrap().notes;
+        let header: Vec<&String> = notes
+            .iter()
+            .filter(|note| note.starts_with("Model check") || note.starts_with("Flagged:"))
+            .collect();
+        assert_eq!(header.len(), 1 + flagged.len(), "member {n}: {notes:?}");
+        if flagged.is_empty() {
+            assert_eq!(
+                header[0],
+                "Model check against the original extract: ok, no flagged groups."
+            );
+        } else {
+            assert_eq!(
+                header[0],
+                "Model check against the original extract: flagged."
+            );
+        }
+        if !fitted.constrained.is_empty() {
+            let base = fits[0].check.groups[0].mean_p;
+            let p = fitted.check.groups[0].mean_p;
+            assert!(
+                p < base,
+                "refit {n} kept the all-facts prediction {base}, want below it: {p}"
+            );
+            assert_eq!(
+                failures(&fitted.sample),
+                0,
+                "only a failure-free resample is flagged here"
+            );
+            let trials = f64::from(u32::try_from(fitted.sample.len()).unwrap());
+            let loss = -trials * (-p).ln_1p();
+            assert!(
+                (fitted.loss - loss).abs() < 1e-4,
+                "refit {n} loss {} is not the failure-free likelihood {loss} at its written prediction {p}",
+                fitted.loss
+            );
+            assert!(
+                notes
+                    .iter()
+                    .any(|note| note == "Signal mix: no failures; default weights."),
+                "refit {n} keeps a signal mix its failure-free resample never recorded: {notes:?}"
+            );
         }
     }
 }
@@ -335,43 +344,44 @@ fn evidence_with_no_decisive_trial_is_refused_before_anything_is_written() {
     assert!(report.is_empty(), "refused evidence reported a fit");
 }
 
-#[test]
-fn a_destination_that_conflicts_is_refused_and_left_as_it_was() {
-    for directory in [false, true] {
-        let run = run_dir(&r1_trials(-10, 1, 0));
-        let out = run.dir.join("machines");
-        let (conflict, action) = if directory {
-            (member(&out, 0), "write fitted machine")
-        } else {
-            (out.clone(), "create output directory")
-        };
-        if directory {
-            run.output.create_dir_all(&conflict).unwrap();
-        } else {
-            run.output
-                .create_dir_all(conflict.parent().unwrap())
-                .unwrap();
-            run.output.write(&conflict, "preserve").unwrap();
-        }
-        let mut report = Vec::new();
-        let error = generate_records(
-            &run.records,
-            &run.extract,
-            &out,
-            ensemble(0),
-            &mut report,
-            &mut run.output.clone(),
-        )
-        .unwrap_err();
-        assert!(
-            matches!(&error, Error::Io { action: a, .. } if *a == action),
-            "{error}"
-        );
-        assert!(report.is_empty(), "a refused run printed a report");
-        assert_eq!(run.output.is_dir(&conflict), directory);
-        if !directory {
-            assert_eq!(run.output.read_to_string(&conflict).unwrap(), "preserve");
-        }
+#[test_case::test_case(false; "false")]
+#[test_case::test_case(true; "true")]
+fn a_destination_that_conflicts_is_refused_and_left_as_it_was(case: bool) {
+    let directory = case;
+
+    let run = run_dir(&r1_trials(-10, 1, 0));
+    let out = run.dir.join("machines");
+    let (conflict, action) = if directory {
+        (member(&out, 0), "write fitted machine")
+    } else {
+        (out.clone(), "create output directory")
+    };
+    if directory {
+        run.output.create_dir_all(&conflict).unwrap();
+    } else {
+        run.output
+            .create_dir_all(conflict.parent().unwrap())
+            .unwrap();
+        run.output.write(&conflict, "preserve").unwrap();
+    }
+    let mut report = Vec::new();
+    let error = generate_records(
+        &run.records,
+        &run.extract,
+        &out,
+        ensemble(0),
+        &mut report,
+        &mut run.output.clone(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&error, Error::Io { action: a, .. } if *a == action),
+        "{error}"
+    );
+    assert!(report.is_empty(), "a refused run printed a report");
+    assert_eq!(run.output.is_dir(&conflict), directory);
+    if !directory {
+        assert_eq!(run.output.read_to_string(&conflict).unwrap(), "preserve");
     }
 }
 

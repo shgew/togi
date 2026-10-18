@@ -91,8 +91,15 @@ fn a_stamped_event_that_does_not_decode_is_an_error() {
     assert!(journal::normalize(b"{\"kind\":\"session.start\"\n").is_err());
 }
 
-#[test]
-fn a_build_only_difference_is_not_a_difference() {
+#[test_case::test_case(("session", r#""session":"s""#, r#""session":"other""#); "session")]
+#[test_case::test_case(("ruleset", r#""ruleset":7"#, r#""ruleset":8"#); "ruleset")]
+#[test_case::test_case(("schema", r#""schema":1"#, r#""schema":2"#); "schema")]
+#[test_case::test_case(("fixes", r#""fixes":3"#, r#""fixes":4"#); "fixes")]
+#[test_case::test_case(("evidence", r#""evidence":2"#, r#""evidence":3"#); "evidence")]
+#[test_case::test_case(("message decision", "2 cores", "3 cores"); "message decision")]
+#[test_case::test_case(("cores", r#""cores":[]"#, r#""cores":[1]"#); "cores")]
+fn a_build_only_difference_is_not_a_difference(case: (&str, &str, &str)) {
+    let (name, before, after) = case;
     let base = plain();
     let head = base.replace("old", "new").replace("abc", "def");
     let diff = |head: &str| {
@@ -104,17 +111,8 @@ fn a_build_only_difference_is_not_a_difference() {
         .is_some()
     };
     assert!(!diff(&head));
-    for (name, before, after) in [
-        ("session", r#""session":"s""#, r#""session":"other""#),
-        ("ruleset", r#""ruleset":7"#, r#""ruleset":8"#),
-        ("schema", r#""schema":1"#, r#""schema":2"#),
-        ("fixes", r#""fixes":3"#, r#""fixes":4"#),
-        ("evidence", r#""evidence":2"#, r#""evidence":3"#),
-        ("message decision", "2 cores", "3 cores"),
-        ("cores", r#""cores":[]"#, r#""cores":[1]"#),
-    ] {
-        assert!(diff(&head.replacen(before, after, 1)), "{name}");
-    }
+
+    assert!(diff(&head.replacen(before, after, 1)), "{name}");
 }
 
 #[test]
@@ -149,8 +147,27 @@ fn write(dir: &MemoryDir, name: &str, content: &str) {
     dir.fs.put(dir.path().join(name), content.as_bytes());
 }
 
-#[test]
-fn directories_differ_in_the_journal_one_side_lacks_but_not_in_other_files() {
+#[derive(Clone, Copy)]
+enum DirectoryDifference {
+    Equal,
+    MissingHeadArchive,
+    MissingBaseLive,
+    EmptyFile,
+    Samples,
+    ArchivedSamples,
+    Marker,
+}
+
+#[test_case::test_case(DirectoryDifference::Equal; "Equal")]
+#[test_case::test_case(DirectoryDifference::MissingHeadArchive; "MissingHeadArchive")]
+#[test_case::test_case(DirectoryDifference::MissingBaseLive; "MissingBaseLive")]
+#[test_case::test_case(DirectoryDifference::EmptyFile; "EmptyFile")]
+#[test_case::test_case(DirectoryDifference::Samples; "Samples")]
+#[test_case::test_case(DirectoryDifference::ArchivedSamples; "ArchivedSamples")]
+#[test_case::test_case(DirectoryDifference::Marker; "Marker")]
+fn directories_differ_in_the_journal_one_side_lacks_but_not_in_other_files(
+    scenario: DirectoryDifference,
+) {
     let difference = |file: &str, line: usize, base: &str, head: &str| {
         Some(Difference {
             file: file.to_owned(),
@@ -159,62 +176,62 @@ fn directories_differ_in_the_journal_one_side_lacks_but_not_in_other_files() {
             head: head.to_owned(),
         })
     };
-    for (name, file, content, side, want) in [
-        ("equal", "", "", 0, None),
-        (
+    let (name, file, content, side, want) = match scenario {
+        DirectoryDifference::Equal => ("equal", "", "", 0, None),
+        DirectoryDifference::MissingHeadArchive => (
             "head lacks an archive",
             "archive/session.jsonl",
             "{}\n",
             0,
             difference("archive/session.jsonl", 1, "{}", "<missing file>"),
         ),
-        (
+        DirectoryDifference::MissingBaseLive => (
             "base lacks the live journal",
             "events.jsonl",
             "{}\n",
             1,
             difference("events.jsonl", 1, "<missing file>", "{}"),
         ),
-        (
+        DirectoryDifference::EmptyFile => (
             "an empty file still exists",
             "events.jsonl",
             "",
             0,
             difference("events.jsonl", 1, "<empty file>", "<missing file>"),
         ),
-        (
+        DirectoryDifference::Samples => (
             "samples are not journals",
             "trials/t/samples.jsonl",
             "{}\n",
             1,
             None,
         ),
-        (
+        DirectoryDifference::ArchivedSamples => (
             "archived samples are not journals",
             "archive/session-trials/t/samples.jsonl",
             "{}\n",
             1,
             None,
         ),
-        (
+        DirectoryDifference::Marker => (
             "a marker is not a journal",
             "archive/s-reset-all",
             "x",
             1,
             None,
         ),
-    ] {
-        let fs = MemFs::new();
-        let dirs = [Path::new("/base"), Path::new("/head")];
-        for dir in dirs {
-            fs.put(dir.join("archive/common.jsonl"), "{}\n");
-        }
-        if !file.is_empty() {
-            fs.put(dirs[side].join(file), content.as_bytes());
-        }
-        let got = journal::compare_dirs_with(&fs, dirs[0], dirs[1]).unwrap();
-        assert_eq!(got, want, "{name}");
+    };
+
+    let fs = MemFs::new();
+    let dirs = [Path::new("/base"), Path::new("/head")];
+    for dir in dirs {
+        fs.put(dir.join("archive/common.jsonl"), "{}\n");
     }
+    if !file.is_empty() {
+        fs.put(dirs[side].join(file), content.as_bytes());
+    }
+    let got = journal::compare_dirs_with(&fs, dirs[0], dirs[1]).unwrap();
+    assert_eq!(got, want, "{name}");
 }
 
 #[test]
@@ -497,41 +514,38 @@ fn the_report_names_each_differing_session_and_the_sessions_one_tree_lacks() {
     );
 }
 
-#[test]
-fn a_session_is_identified_by_its_split_and_judged_by_its_exit_status() {
-    for (name, splits, exits, different) in [
-        (
+#[test_case::test_case((
             "equal nonzero exits",
             [Split::Dev, Split::Dev],
             [1, 1],
             false,
-        ),
-        ("different exits", [Split::Dev, Split::Dev], [0, 1], true),
-        (
+        ); "equal nonzero exits")]
+#[test_case::test_case(("different exits", [Split::Dev, Split::Dev], [0, 1], true); "different exits")]
+#[test_case::test_case((
             "split is part of identity",
             [Split::Dev, Split::Holdout],
             [0, 0],
             true,
-        ),
-    ] {
-        let root = MemoryDir::new();
-        let fleet = Fleet::new();
-        let pairs = compare::pair([vec![spec("s", splits[0], 1)], vec![spec("s", splits[1], 1)]]);
-        let fake = Fake::new(&root, &fleet, move |side, _| Behavior {
-            exit: exits[side.index()],
-            ..journal("{}\n")
-        });
-        let mut config = config(&fleet);
-        config.keep_going = true;
-        let outcome = compare::run(&pairs, &config, &fake).unwrap();
-        assert_eq!(outcome.different(), different, "{name}");
-    }
+        ); "split is part of identity")]
+fn a_session_is_identified_by_its_split_and_judged_by_its_exit_status(
+    case: (&str, [Split; 2], [i32; 2], bool),
+) {
+    let (name, splits, exits, different) = case;
+
+    let root = MemoryDir::new();
+    let fleet = Fleet::new();
+    let pairs = compare::pair([vec![spec("s", splits[0], 1)], vec![spec("s", splits[1], 1)]]);
+    let fake = Fake::new(&root, &fleet, move |side, _| Behavior {
+        exit: exits[side.index()],
+        ..journal("{}\n")
+    });
+    let mut config = config(&fleet);
+    config.keep_going = true;
+    let outcome = compare::run(&pairs, &config, &fake).unwrap();
+    assert_eq!(outcome.different(), different, "{name}");
 }
 
-#[test]
-fn only_differing_sessions_keep_their_runs_unless_asked_to_keep_all() {
-    for (keep, want) in [
-        (
+#[test_case::test_case((
             false,
             vec![
                 "base/differs/dev-1/events.jsonl",
@@ -539,8 +553,8 @@ fn only_differing_sessions_keep_their_runs_unless_asked_to_keep_all() {
                 "head/differs/dev-1/events.jsonl",
                 "head/differs/dev-1/sim.log",
             ],
-        ),
-        (
+        ); "false vec base differs dev 1 events jsonl base differs dev 1 sim ")]
+#[test_case::test_case((
             true,
             vec![
                 "base/differs/dev-1/events.jsonl",
@@ -552,62 +566,64 @@ fn only_differing_sessions_keep_their_runs_unless_asked_to_keep_all() {
                 "head/matches/dev-1/events.jsonl",
                 "head/matches/dev-1/sim.log",
             ],
-        ),
-    ] {
-        let root = MemoryDir::new();
-        let fleet = Fleet::new();
-        let pairs = compare::pair([
-            vec![
-                spec("matches", Split::Dev, 1),
-                spec("differs", Split::Dev, 1),
-            ],
-            vec![
-                spec("matches", Split::Dev, 1),
-                spec("differs", Split::Dev, 1),
-            ],
-        ]);
-        let fake = Fake::new(&root, &fleet, |side, spec| Behavior {
-            exit: i32::from(side == Side::Head && spec.scenario == "differs"),
-            ..journal("{}\n")
-        });
-        let mut config = config(&fleet);
-        config.keep = keep;
-        config.keep_going = true;
-        compare::run(&pairs, &config, &fake).unwrap();
-        assert_eq!(files_under(&root), want, "keep={keep}");
-    }
+        ); "true vec base differs dev 1 events jsonl base differs dev 1 sim l")]
+fn only_differing_sessions_keep_their_runs_unless_asked_to_keep_all(case: (bool, Vec<&str>)) {
+    let (keep, want) = case;
+
+    let root = MemoryDir::new();
+    let fleet = Fleet::new();
+    let pairs = compare::pair([
+        vec![
+            spec("matches", Split::Dev, 1),
+            spec("differs", Split::Dev, 1),
+        ],
+        vec![
+            spec("matches", Split::Dev, 1),
+            spec("differs", Split::Dev, 1),
+        ],
+    ]);
+    let fake = Fake::new(&root, &fleet, |side, spec| Behavior {
+        exit: i32::from(side == Side::Head && spec.scenario == "differs"),
+        ..journal("{}\n")
+    });
+    let mut config = config(&fleet);
+    config.keep = keep;
+    config.keep_going = true;
+    compare::run(&pairs, &config, &fake).unwrap();
+    assert_eq!(files_under(&root), want, "keep={keep}");
 }
 
-#[test]
-fn a_matching_session_is_removed_before_the_next_one_starts() {
-    for keep in [false, true] {
-        let root = MemoryDir::new();
-        let fleet = Fleet::new();
-        let pairs = compare::pair([
-            vec![spec("first", Split::Dev, 1), spec("second", Split::Dev, 1)],
-            vec![spec("first", Split::Dev, 1), spec("second", Split::Dev, 1)],
-        ]);
-        let mut fake = Fake::new(&root, &fleet, |_, _| journal("{}\n"));
-        let seen = root.path().to_path_buf();
-        let fs = Arc::clone(&root.fs);
-        fake.hook = Some(Box::new(move |side, spec| {
-            if side == Side::Base && spec.scenario == "second" {
-                for name in ["base", "head"] {
-                    let path = seen.join(name).join("first/dev-1");
-                    let present = fs
-                        .entries()
-                        .iter()
-                        .any(|(entry, kind)| *kind == FileKind::File && entry.starts_with(&path));
-                    assert_eq!(present, keep, "{name} first/dev-1 with keep={keep}");
-                }
+#[test_case::test_case(false; "false")]
+#[test_case::test_case(true; "true")]
+fn a_matching_session_is_removed_before_the_next_one_starts(case: bool) {
+    let keep = case;
+
+    let root = MemoryDir::new();
+    let fleet = Fleet::new();
+    let pairs = compare::pair([
+        vec![spec("first", Split::Dev, 1), spec("second", Split::Dev, 1)],
+        vec![spec("first", Split::Dev, 1), spec("second", Split::Dev, 1)],
+    ]);
+    let mut fake = Fake::new(&root, &fleet, |_, _| journal("{}\n"));
+    let seen = root.path().to_path_buf();
+    let fs = Arc::clone(&root.fs);
+    fake.hook = Some(Box::new(move |side, spec| {
+        if side == Side::Base && spec.scenario == "second" {
+            for name in ["base", "head"] {
+                let path = seen.join(name).join("first/dev-1");
+                let present = fs
+                    .entries()
+                    .iter()
+                    .any(|(entry, kind)| *kind == FileKind::File && entry.starts_with(&path));
+                assert_eq!(present, keep, "{name} first/dev-1 with keep={keep}");
             }
-        }));
-        let mut config = config(&fleet);
-        config.jobs = 1;
-        config.keep = keep;
-        let outcome = compare::run(&pairs, &config, &fake).unwrap();
-        assert!(!outcome.different());
-    }
+        }
+    }));
+    let mut config = config(&fleet);
+    config.jobs = 1;
+    config.keep = keep;
+    let outcome = compare::run(&pairs, &config, &fake).unwrap();
+    assert!(!outcome.different());
 }
 
 #[test]
@@ -664,24 +680,22 @@ fn a_failed_run_stops_the_comparison_and_leaves_its_own_diagnostics() {
     }
 }
 
-#[test]
-fn sessions_without_journals_or_events_never_compare_equal() {
-    for (journal, message) in [
-        (None, "missing journals"),
-        (Some(String::new()), "journals contain no events"),
-    ] {
-        let root = MemoryDir::new();
-        let fleet = Fleet::new();
-        let fake = Fake::new(&root, &fleet, move |_, _| Behavior {
-            journal: journal.clone(),
-            exit: 1,
-            wall: 1.0,
-            fail: false,
-        });
-        let error = compare::run(&same_sessions(&[1]), &config(&fleet), &fake).unwrap_err();
-        let chain = togi_machine::error_chain(&error);
-        assert!(chain.contains(message), "{chain}");
-    }
+#[test_case::test_case((None, "missing journals"); "None missing journals")]
+#[test_case::test_case((Some(String::new()), "journals contain no events"); "Some String new journals contain no events")]
+fn sessions_without_journals_or_events_never_compare_equal(case: (Option<String>, &str)) {
+    let (journal, message) = case;
+
+    let root = MemoryDir::new();
+    let fleet = Fleet::new();
+    let fake = Fake::new(&root, &fleet, move |_, _| Behavior {
+        journal: journal.clone(),
+        exit: 1,
+        wall: 1.0,
+        fail: false,
+    });
+    let error = compare::run(&same_sessions(&[1]), &config(&fleet), &fake).unwrap_err();
+    let chain = togi_machine::error_chain(&error);
+    assert!(chain.contains(message), "{chain}");
 }
 
 #[test]
@@ -784,40 +798,41 @@ fn a_difference_reruns_only_the_sides_that_have_no_run_to_show() {
     );
 }
 
-#[test]
-fn the_comparison_stops_at_the_first_difference_unless_told_to_go_on() {
-    for keep_going in [false, true] {
-        let root = MemoryDir::new();
-        let fleet = Fleet::new();
-        let fake = Fake::new(&root, &fleet, |side, spec| {
-            if spec.seed == 1 && side == Side::Head {
-                journal("{\"changed\":true}\n")
-            } else {
-                journal("{}\n")
-            }
-        });
-        let mut config = config(&fleet);
-        config.jobs = 1;
-        config.keep_going = keep_going;
-        let outcome = compare::run(&same_sessions(&[1, 2, 3, 4]), &config, &fake).unwrap();
-        assert!(outcome.different());
-        let (launches, summary) = if keep_going {
-            (8, "same: 1 of 4 sessions differ")
+#[test_case::test_case(false; "false")]
+#[test_case::test_case(true; "true")]
+fn the_comparison_stops_at_the_first_difference_unless_told_to_go_on(case: bool) {
+    let keep_going = case;
+
+    let root = MemoryDir::new();
+    let fleet = Fleet::new();
+    let fake = Fake::new(&root, &fleet, |side, spec| {
+        if spec.seed == 1 && side == Side::Head {
+            journal("{\"changed\":true}\n")
         } else {
-            (2, "same: stopped at the first difference")
-        };
-        assert_eq!(fake.launches().len(), launches, "keep_going={keep_going}");
-        assert!(report(&outcome).contains(summary), "{}", report(&outcome));
-        assert_eq!(
-            files_under(&root),
-            [
-                "base/s/dev-1/events.jsonl",
-                "base/s/dev-1/sim.log",
-                "head/s/dev-1/events.jsonl",
-                "head/s/dev-1/sim.log"
-            ]
-        );
-    }
+            journal("{}\n")
+        }
+    });
+    let mut config = config(&fleet);
+    config.jobs = 1;
+    config.keep_going = keep_going;
+    let outcome = compare::run(&same_sessions(&[1, 2, 3, 4]), &config, &fake).unwrap();
+    assert!(outcome.different());
+    let (launches, summary) = if keep_going {
+        (8, "same: 1 of 4 sessions differ")
+    } else {
+        (2, "same: stopped at the first difference")
+    };
+    assert_eq!(fake.launches().len(), launches, "keep_going={keep_going}");
+    assert!(report(&outcome).contains(summary), "{}", report(&outcome));
+    assert_eq!(
+        files_under(&root),
+        [
+            "base/s/dev-1/events.jsonl",
+            "base/s/dev-1/sim.log",
+            "head/s/dev-1/events.jsonl",
+            "head/s/dev-1/sim.log"
+        ]
+    );
 }
 
 #[test]
@@ -836,55 +851,53 @@ fn an_interrupt_removes_every_run_and_reports_nothing() {
     );
 }
 
-#[test]
-fn a_differing_session_keeps_the_journals_of_its_cached_sides() {
-    for (name, missing_on_head, exits) in [
-        ("exit code", false, [0, 1]),
-        ("missing on head", true, [0, 0]),
-    ] {
-        let cache = cached();
-        let fleets = [Fleet::new(), Fleet::new()];
-        let pairs = || {
-            let mut pairs = same_sessions(&[1]);
-            if missing_on_head {
-                pairs[0].runs[1] = None;
-            }
-            pairs
-        };
-        let behave = move |side: Side, _: &RunSpec| Behavior {
-            exit: exits[side.index()],
-            ..journal("{}\n")
-        };
-        let mut config = cache.config(&fleets[0]);
-        config.keep = true;
-        let cold = MemoryDir::new();
-        let first = Fake::new(&cold, &fleets[0], behave);
-        assert!(
-            compare::run(&pairs(), &config, &first).unwrap().different(),
-            "{name}"
-        );
-        let root = MemoryDir::new();
-        let second = Fake::new(&root, &fleets[1], behave);
-        let mut cached_config = cache.config(&fleets[1]);
-        cached_config.keep = true;
-        assert!(
-            compare::run(&pairs(), &cached_config, &second)
-                .unwrap()
-                .different(),
-            "{name}"
-        );
-        let want: Vec<&str> = if missing_on_head {
-            vec!["base/s/dev-1/events.jsonl", "base/s/dev-1/sim.log"]
-        } else {
-            vec![
-                "base/s/dev-1/events.jsonl",
-                "base/s/dev-1/sim.log",
-                "head/s/dev-1/events.jsonl",
-                "head/s/dev-1/sim.log",
-            ]
-        };
-        assert_eq!(files_under(&root), want, "{name}");
-    }
+#[test_case::test_case(("exit code", false, [0, 1]); "exit code")]
+#[test_case::test_case(("missing on head", true, [0, 0]); "missing on head")]
+fn a_differing_session_keeps_the_journals_of_its_cached_sides(case: (&str, bool, [i32; 2])) {
+    let (name, missing_on_head, exits) = case;
+
+    let cache = cached();
+    let fleets = [Fleet::new(), Fleet::new()];
+    let pairs = || {
+        let mut pairs = same_sessions(&[1]);
+        if missing_on_head {
+            pairs[0].runs[1] = None;
+        }
+        pairs
+    };
+    let behave = move |side: Side, _: &RunSpec| Behavior {
+        exit: exits[side.index()],
+        ..journal("{}\n")
+    };
+    let mut config = cache.config(&fleets[0]);
+    config.keep = true;
+    let cold = MemoryDir::new();
+    let first = Fake::new(&cold, &fleets[0], behave);
+    assert!(
+        compare::run(&pairs(), &config, &first).unwrap().different(),
+        "{name}"
+    );
+    let root = MemoryDir::new();
+    let second = Fake::new(&root, &fleets[1], behave);
+    let mut cached_config = cache.config(&fleets[1]);
+    cached_config.keep = true;
+    assert!(
+        compare::run(&pairs(), &cached_config, &second)
+            .unwrap()
+            .different(),
+        "{name}"
+    );
+    let want: Vec<&str> = if missing_on_head {
+        vec!["base/s/dev-1/events.jsonl", "base/s/dev-1/sim.log"]
+    } else {
+        vec![
+            "base/s/dev-1/events.jsonl",
+            "base/s/dev-1/sim.log",
+            "head/s/dev-1/events.jsonl",
+            "head/s/dev-1/sim.log",
+        ]
+    };
+    assert_eq!(files_under(&root), want, "{name}");
 }
 
 #[test]
@@ -1033,22 +1046,33 @@ fn a_session_s_inputs_change_with_any_file_of_its_machine() {
     assert_eq!(base, with("m.json", "aa"));
 }
 
-#[test]
-fn a_session_s_inputs_change_with_its_identity_and_replay() {
+#[derive(Clone, Copy)]
+enum SessionInput {
+    Seed,
+    Split,
+    Name,
+    Replay,
+}
+
+#[test_case::test_case(SessionInput::Seed; "Seed")]
+#[test_case::test_case(SessionInput::Split; "Split")]
+#[test_case::test_case(SessionInput::Name; "Name")]
+#[test_case::test_case(SessionInput::Replay; "Replay")]
+fn a_session_s_inputs_change_with_its_identity_and_replay(scenario: SessionInput) {
     use togi_sim::replay::Replay;
     let base = spec("s", Split::Dev, 1);
     let want = super::digests::inputs(&base);
     assert_eq!(want, super::digests::inputs(&spec("s", Split::Dev, 1)));
     let mut replaying = base.clone();
     replaying.replay = Some(Arc::new(Replay::default()));
-    for (what, other) in [
-        ("seed", spec("s", Split::Dev, 2)),
-        ("split", spec("s", Split::Holdout, 1)),
-        ("name", spec("t", Split::Dev, 1)),
-        ("replay", replaying),
-    ] {
-        assert_ne!(super::digests::inputs(&other), want, "{what}");
-    }
+    let (what, other) = match scenario {
+        SessionInput::Seed => ("seed", spec("s", Split::Dev, 2)),
+        SessionInput::Split => ("split", spec("s", Split::Holdout, 1)),
+        SessionInput::Name => ("name", spec("t", Split::Dev, 1)),
+        SessionInput::Replay => ("replay", replaying),
+    };
+
+    assert_ne!(super::digests::inputs(&other), want, "{what}");
 }
 
 #[test]
@@ -1080,8 +1104,11 @@ fn a_digest_record_holds_only_for_the_inputs_that_made_it() {
     assert_eq!(cache.get(&spec("s", Split::Dev, 2), "in"), None);
 }
 
-#[test]
-fn a_corrupt_digest_record_misses() {
+#[test_case::test_case(("truncated", "{"); "truncated")]
+#[test_case::test_case(("an array", "[]"); "an array")]
+#[test_case::test_case(("another shape", "{\"inputs\":\"in\",\"record\":{}}"); "another shape")]
+fn a_corrupt_digest_record_misses(case: (&str, &str)) {
+    let (what, bytes) = case;
     let dir = MemoryDir::new();
     let cache = DigestCache::with_fs(dir.path(), "k", dir.fs.clone());
     let run = spec("s", Split::Dev, 1);
@@ -1092,14 +1119,9 @@ fn a_corrupt_digest_record_misses() {
     };
     cache.put(&run, "in", &record).unwrap();
     let path = dir.path().join("same/k/s/dev-1.json");
-    for (what, bytes) in [
-        ("truncated", "{"),
-        ("an array", "[]"),
-        ("another shape", "{\"inputs\":\"in\",\"record\":{}}"),
-    ] {
-        dir.fs.put(&path, bytes.as_bytes());
-        assert_eq!(cache.get(&run, "in"), None, "{what}");
-    }
+
+    dir.fs.put(&path, bytes.as_bytes());
+    assert_eq!(cache.get(&run, "in"), None, "{what}");
 }
 
 const SUITE: &str = r#"{"scenarios":[{"name":"default","dev":[1,2],"holdout":[101],"smoke":[2]},{"name":"late","dev":[1],"smoke":[1]}]}"#;
@@ -1127,8 +1149,10 @@ fn plan(bytes: &str, path: &Path) -> Result<Vec<RunSpec>, crate::error::Error> {
         .map(|plan| plan.runs)
 }
 
-#[test]
-fn two_trees_that_build_the_same_simulator_from_the_same_inputs_run_nothing() {
+#[test_case::test_case((true, false); "true false")]
+#[test_case::test_case((false, true); "false true")]
+fn two_trees_that_build_the_same_simulator_from_the_same_inputs_run_nothing(case: (bool, bool)) {
+    let (no_cache, keep) = case;
     let options = options();
     let trees = [options.base.clone(), options.head.clone()];
     let pairs =
@@ -1155,12 +1179,11 @@ fn two_trees_that_build_the_same_simulator_from_the_same_inputs_run_nothing() {
     let mut changed = pairs;
     changed[0].inputs[1].push_str("changed");
     assert!(!super::same_inputs(&keys, &changed));
-    for (no_cache, keep) in [(true, false), (false, true)] {
-        let mut options = options.clone();
-        options.no_cache = no_cache;
-        options.keep = keep.then(|| PathBuf::from("/kept"));
-        assert!(super::identical_report(&options, 4, true, super::Timings::default()).is_none());
-    }
+
+    let mut options = options.clone();
+    options.no_cache = no_cache;
+    options.keep = keep.then(|| PathBuf::from("/kept"));
+    assert!(super::identical_report(&options, 4, true, super::Timings::default()).is_none());
 }
 
 #[test]
@@ -1304,22 +1327,23 @@ fn full_pairs() -> Vec<Pair> {
     )
 }
 
-#[test]
-fn identical_simulators_still_run_when_asked_to_keep_or_ignore_the_cache() {
-    for (no_cache, keep) in [(true, false), (false, true)] {
-        let cache = cached();
-        let root = MemoryDir::new();
-        let fleet = Fleet::new();
-        let fake = Fake::new(&root, &fleet, |_, _| journal("{}\n"));
-        let mut config = cache.config(&fleet);
-        config.fresh = no_cache || keep;
-        config.keep = keep;
-        let done = compare::run(&full_pairs(), &config, &fake).unwrap();
-        assert!(!done.different());
-        assert_eq!(done.scheduled, [4, 4]);
-        assert_eq!(fake.launches().len(), 8, "no_cache={no_cache} keep={keep}");
-        assert_eq!(!files_under(&root).is_empty(), keep);
-    }
+#[test_case::test_case((true, false); "true false")]
+#[test_case::test_case((false, true); "false true")]
+fn identical_simulators_still_run_when_asked_to_keep_or_ignore_the_cache(case: (bool, bool)) {
+    let (no_cache, keep) = case;
+
+    let cache = cached();
+    let root = MemoryDir::new();
+    let fleet = Fleet::new();
+    let fake = Fake::new(&root, &fleet, |_, _| journal("{}\n"));
+    let mut config = cache.config(&fleet);
+    config.fresh = no_cache || keep;
+    config.keep = keep;
+    let done = compare::run(&full_pairs(), &config, &fake).unwrap();
+    assert!(!done.different());
+    assert_eq!(done.scheduled, [4, 4]);
+    assert_eq!(fake.launches().len(), 8, "no_cache={no_cache} keep={keep}");
+    assert_eq!(!files_under(&root).is_empty(), keep);
 }
 
 #[test]

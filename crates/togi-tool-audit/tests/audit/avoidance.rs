@@ -6,34 +6,54 @@ use togi_tool_audit::Completion::InProgress;
 
 use crate::fixtures::*;
 
-#[test]
-fn failure_points_and_combinations_are_avoided_by_applied_profiles() {
-    run(vec![
-        case(
+fn parked() -> Event {
+    trial_intent(2, "0001", "R7", "parked", &[0, 8])
+}
+
+fn named() -> Event {
+    failure_with(
+        3,
+        json!({"core": 8, "offset": 0, "trial": "0001", "regime": "R7", "condition": "parked"}),
+    )
+}
+
+fn r7(loaded: &[u8], rest: Vec<Event>) -> Vec<Event> {
+    let mut events = vec![
+        trial_intent(2, "0001", "R7", "together", loaded),
+        failure_with(
+            3,
+            json!({"core": 8, "offset": -20, "trial": "0001", "regime": "R7", "condition": "together"}),
+        ),
+    ];
+    events.extend(rest);
+    events
+}
+
+#[test_case::test_case(case(
             "one count shallower than a point is safe",
             vec![phase(2, 0, Some(-30)), applied(3, [-29, 0])],
             InProgress,
             &[],
-        ),
-        case(
+        ); "one count shallower than a point is safe")]
+#[test_case::test_case(case(
             "a profile at a point reaches it",
             vec![phase(2, 0, Some(-30)), applied(3, [-30, 0])],
             InProgress,
             &[(3, Avoidance)],
-        ),
-        case(
+        ); "a profile at a point reaches it")]
+#[test_case::test_case(case(
             "a failure records its point, and a restore deeper than it reaches it",
             vec![failure(2, 0, -30), restored(3, [-31, 0])],
             InProgress,
             &[(3, Avoidance)],
-        ),
-        case(
+        ); "a failure records its point, and a restore deeper than it reaches it")]
+#[test_case::test_case(case(
             "a profile applied before the point is recorded is not judged by it",
             vec![applied(2, [-30, 0]), phase(3, 0, Some(-30))],
             InProgress,
             &[],
-        ),
-        case(
+        ); "a profile applied before the point is recorded is not judged by it")]
+#[test_case::test_case(case(
             "a profile shallower than one member of a combination is safe",
             vec![
                 combination(2, 1, &[(0, -30), (8, -20)]),
@@ -41,8 +61,8 @@ fn failure_points_and_combinations_are_avoided_by_applied_profiles() {
             ],
             InProgress,
             &[],
-        ),
-        case(
+        ); "a profile shallower than one member of a combination is safe")]
+#[test_case::test_case(case(
             "a profile reaching every member reaches the combination",
             vec![
                 combination(2, 1, &[(0, -30), (8, -20)]),
@@ -50,8 +70,8 @@ fn failure_points_and_combinations_are_avoided_by_applied_profiles() {
             ],
             InProgress,
             &[(3, Avoidance)],
-        ),
-        case(
+        ); "a profile reaching every member reaches the combination")]
+#[test_case::test_case(case(
             "a carried failure point binds the new session",
             vec![
                 event(
@@ -63,8 +83,8 @@ fn failure_points_and_combinations_are_avoided_by_applied_profiles() {
             ],
             InProgress,
             &[(3, Avoidance)],
-        ),
-        case(
+        ); "a carried failure point binds the new session")]
+#[test_case::test_case(case(
             "failure points are not carried across a BIOS change",
             vec![
                 event(
@@ -76,8 +96,8 @@ fn failure_points_and_combinations_are_avoided_by_applied_profiles() {
             ],
             InProgress,
             &[],
-        ),
-        case(
+        ); "failure points are not carried across a BIOS change")]
+#[test_case::test_case(case(
             "an SMU write one count shallower than a point is safe",
             vec![
                 phase(2, 0, Some(-30)),
@@ -87,8 +107,8 @@ fn failure_points_and_combinations_are_avoided_by_applied_profiles() {
             ],
             InProgress,
             &[],
-        ),
-        case(
+        ); "an SMU write one count shallower than a point is safe")]
+#[test_case::test_case(case(
             "an SMU write at a point reaches it",
             vec![
                 phase(2, 0, Some(-30)),
@@ -98,14 +118,12 @@ fn failure_points_and_combinations_are_avoided_by_applied_profiles() {
             ],
             InProgress,
             &[(4, Avoidance)],
-        ),
-    ]);
+        ); "an SMU write at a point reaches it")]
+fn failure_points_and_combinations_are_avoided_by_applied_profiles(case: Case) {
+    run(case);
 }
 
-#[test]
-fn the_audit_keeps_its_own_failure_history() {
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "failure points accumulate when the tuner's projection omits one",
             vec![
                 failure(2, 0, -20),
@@ -114,14 +132,14 @@ fn the_audit_keeps_its_own_failure_history() {
             ],
             InProgress,
             &[(4, Avoidance)],
-        ),
-        case(
+        ); "failure points accumulate when the tuner's projection omits one")]
+#[test_case::test_case(case(
             "the shallowest point wins",
             vec![failure(2, 0, -20), failure(3, 0, -30), applied(4, [-25, 0])],
             InProgress,
             &[(4, Avoidance)],
-        ),
-        case(
+        ); "the shallowest point wins")]
+#[test_case::test_case(case(
             "a hunt culprit records its failing offset",
             vec![
                 event(
@@ -138,8 +156,8 @@ fn the_audit_keeps_its_own_failure_history() {
             ],
             InProgress,
             &[(4, Avoidance)],
-        ),
-        case(
+        ); "a hunt culprit records its failing offset")]
+#[test_case::test_case(case(
             "a hunt that names no single culprit records no point",
             vec![
                 event(
@@ -156,8 +174,8 @@ fn the_audit_keeps_its_own_failure_history() {
             ],
             InProgress,
             &[],
-        ),
-        case(
+        ); "a hunt that names no single culprit records no point")]
+#[test_case::test_case(case(
             "a combination is judged against sparse ids as the SMU writes reach it",
             vec![
                 event(2, "session.baseline", json!({"offsets": offsets([0, 0])})),
@@ -171,14 +189,12 @@ fn the_audit_keeps_its_own_failure_history() {
             ],
             InProgress,
             &[(8, Avoidance)],
-        ),
-    ]);
+        ); "a combination is judged against sparse ids as the SMU writes reach it")]
+fn the_audit_keeps_its_own_failure_history(case: Case) {
+    run(case);
 }
 
-#[test]
-fn a_held_failure_records_no_point() {
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "the hold cancels the failure's point",
             vec![
                 failure(2, 0, -20),
@@ -187,8 +203,8 @@ fn a_held_failure_records_no_point() {
             ],
             InProgress,
             &[],
-        ),
-        case(
+        ); "the hold cancels the failure's point")]
+#[test_case::test_case(case(
             "a backoff keeps it",
             vec![
                 failure(2, 0, -20),
@@ -197,8 +213,8 @@ fn a_held_failure_records_no_point() {
             ],
             InProgress,
             &[(4, Avoidance)],
-        ),
-        case(
+        ); "a backoff keeps it")]
+#[test_case::test_case(case(
             "the failure that pairs with a hold records its own point",
             vec![
                 failure(2, 0, -20),
@@ -209,14 +225,12 @@ fn a_held_failure_records_no_point() {
             ],
             InProgress,
             &[(6, Avoidance)],
-        ),
-    ]);
+        ); "the failure that pairs with a hold records its own point")]
+fn a_held_failure_records_no_point(case: Case) {
+    run(case);
 }
 
-#[test]
-fn a_failure_counts_against_the_core_its_decision_charges() {
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "charged to another core, the named core keeps no point",
             vec![
                 failure(2, 8, -20),
@@ -225,8 +239,8 @@ fn a_failure_counts_against_the_core_its_decision_charges() {
             ],
             InProgress,
             &[],
-        ),
-        case(
+        ); "charged to another core, the named core keeps no point")]
+#[test_case::test_case(case(
             "the charged core's own point stands",
             vec![
                 failure(2, 8, -20),
@@ -235,8 +249,8 @@ fn a_failure_counts_against_the_core_its_decision_charges() {
             ],
             InProgress,
             &[(4, Avoidance)],
-        ),
-        case(
+        ); "the charged core's own point stands")]
+#[test_case::test_case(case(
             "charged to its named core once, the point survives a later charge elsewhere",
             vec![
                 failure(2, 8, -20),
@@ -246,8 +260,9 @@ fn a_failure_counts_against_the_core_its_decision_charges() {
             ],
             InProgress,
             &[(5, Avoidance)],
-        ),
-    ]);
+        ); "charged to its named core once, the point survives a later charge elsewhere")]
+fn a_failure_counts_against_the_core_its_decision_charges(case: Case) {
+    run(case);
 }
 
 fn carried_source() -> serde_json::Value {
@@ -319,21 +334,7 @@ fn known_failure_case(name: &'static str, source: Vec<Event>, moves: bool) -> Ca
     case(name, events, InProgress, want)
 }
 
-#[test]
-fn a_failure_moves_to_another_core_only_on_grounds_the_journal_records() {
-    let r7 = |loaded: &[u8], rest: Vec<Event>| {
-        let mut events = vec![
-            trial_intent(2, "0001", "R7", "together", loaded),
-            failure_with(
-                3,
-                json!({"core": 8, "offset": -20, "trial": "0001", "regime": "R7", "condition": "together"}),
-            ),
-        ];
-        events.extend(rest);
-        events
-    };
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "a search backoff of another core that records no point leaves the alone trial's point",
             vec![
                 failure(2, 8, -20),
@@ -342,8 +343,8 @@ fn a_failure_moves_to_another_core_only_on_grounds_the_journal_records() {
             ],
             InProgress,
             &[(4, Avoidance)],
-        ),
-        case(
+        ); "a search backoff of another core that records no point leaves the alone trial's point")]
+#[test_case::test_case(case(
             "a checking backoff of another core that records no point leaves it too",
             vec![
                 failure(2, 8, -20),
@@ -352,8 +353,8 @@ fn a_failure_moves_to_another_core_only_on_grounds_the_journal_records() {
             ],
             InProgress,
             &[(4, Avoidance)],
-        ),
-        case(
+        ); "a checking backoff of another core that records no point leaves it too")]
+#[test_case::test_case(case(
             "a phase-2 decision charging another core moves it",
             vec![
                 failure(2, 8, -20),
@@ -362,8 +363,8 @@ fn a_failure_moves_to_another_core_only_on_grounds_the_journal_records() {
             ],
             InProgress,
             &[],
-        ),
-        case(
+        ); "a phase-2 decision charging another core moves it")]
+#[test_case::test_case(case(
             "a multi-core R7 failure moves to a core its trial loaded",
             r7(
                 &[0, 8],
@@ -374,8 +375,8 @@ fn a_failure_moves_to_another_core_only_on_grounds_the_journal_records() {
             ),
             InProgress,
             &[],
-        ),
-        case(
+        ); "a multi-core R7 failure moves to a core its trial loaded")]
+#[test_case::test_case(case(
             "a multi-core R7 failure does not move to a core its trial left idle",
             r7(
                 &[8, 9],
@@ -386,44 +387,42 @@ fn a_failure_moves_to_another_core_only_on_grounds_the_journal_records() {
             ),
             InProgress,
             &[(5, Avoidance)],
-        ),
-        known_failure_case(
+        ); "a multi-core R7 failure does not move to a core its trial left idle")]
+#[test_case::test_case(known_failure_case(
             "a known failure takes its loaded cores from a trial.carried, so the charge moves to a core in it",
             carried_trial(&[0, 8]),
             true,
-        ),
-        known_failure_case(
+        ); "a known failure takes its loaded cores from a trial.carried, so the charge moves to a core in it")]
+#[test_case::test_case(known_failure_case(
             "a known failure's trial.carried class leaves a core outside it unmoved",
             carried_trial(&[8, 9]),
             false,
-        ),
-        known_failure_case(
+        ); "a known failure's trial.carried class leaves a core outside it unmoved")]
+#[test_case::test_case(known_failure_case(
             "a known failure takes its loaded cores from a failure.carried, so the charge moves to a core in it",
             carried_failure(&[0, 8]),
             true,
-        ),
-        known_failure_case(
+        ); "a known failure takes its loaded cores from a failure.carried, so the charge moves to a core in it")]
+#[test_case::test_case(known_failure_case(
             "a known failure's failure.carried class leaves a core outside it unmoved",
             carried_failure(&[8, 9]),
             false,
-        ),
-        known_failure_case(
+        ); "a known failure's failure.carried class leaves a core outside it unmoved")]
+#[test_case::test_case(known_failure_case(
             "a known failure takes its loaded cores from an earlier failure's trial, so the charge moves to a core in it",
             earlier_failure(&[0, 8]),
             true,
-        ),
-        known_failure_case(
+        ); "a known failure takes its loaded cores from an earlier failure's trial, so the charge moves to a core in it")]
+#[test_case::test_case(known_failure_case(
             "a known failure's earlier failure's trial leaves a core outside it unmoved",
             earlier_failure(&[8, 9]),
             false,
-        ),
-    ]);
+        ); "a known failure's earlier failure's trial leaves a core outside it unmoved")]
+fn a_failure_moves_to_another_core_only_on_grounds_the_journal_records(case: Case) {
+    run(case);
 }
 
-#[test]
-fn a_reset_clears_the_marks_once_search_restarts() {
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "search restarting after a reset clears the point and the combinations naming the core",
             vec![
                 phase(2, 0, Some(-30)),
@@ -434,8 +433,8 @@ fn a_reset_clears_the_marks_once_search_restarts() {
             ],
             InProgress,
             &[],
-        ),
-        case(
+        ); "search restarting after a reset clears the point and the combinations naming the core")]
+#[test_case::test_case(case(
             "a reset only queued has cleared nothing",
             vec![
                 phase(2, 0, Some(-30)),
@@ -444,8 +443,8 @@ fn a_reset_clears_the_marks_once_search_restarts() {
             ],
             InProgress,
             &[(4, Avoidance)],
-        ),
-        case(
+        ); "a reset only queued has cleared nothing")]
+#[test_case::test_case(case(
             "a reset of another core clears nothing of this one",
             vec![
                 phase(2, 0, Some(-30)),
@@ -455,29 +454,22 @@ fn a_reset_clears_the_marks_once_search_restarts() {
             ],
             InProgress,
             &[(5, Avoidance)],
-        ),
-    ]);
+        ); "a reset of another core clears nothing of this one")]
+fn a_reset_clears_the_marks_once_search_restarts(case: Case) {
+    run(case);
 }
 
-#[test]
-fn a_multi_core_r7_failure_naming_a_core_at_zero_counts_only_once_a_dead_end_cites_it() {
-    let parked = trial_intent(2, "0001", "R7", "parked", &[0, 8]);
-    let named = failure_with(
-        3,
-        json!({"core": 8, "offset": 0, "trial": "0001", "regime": "R7", "condition": "parked"}),
-    );
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "routed to the unloaded cores, it records no point",
-            vec![parked.clone(), named.clone(), applied(4, [-30, -1])],
+            vec![parked(), named(), applied(4, [-30, -1])],
             InProgress,
             &[],
-        ),
-        case(
+        ); "routed to the unloaded cores, it records no point")]
+#[test_case::test_case(case(
             "a dead end citing it records the point at zero",
             vec![
-                parked.clone(),
-                named,
+                parked(),
+                named(),
                 cause(
                     event(
                         4,
@@ -490,8 +482,8 @@ fn a_multi_core_r7_failure_naming_a_core_at_zero_counts_only_once_a_dead_end_cit
             ],
             InProgress,
             &[(5, Avoidance)],
-        ),
-        case(
+        ); "a dead end citing it records the point at zero")]
+#[test_case::test_case(case(
             "a single-core R7 failure at zero records it at once",
             vec![
                 trial_intent(2, "0001", "R7", "together", &[8]),
@@ -503,8 +495,8 @@ fn a_multi_core_r7_failure_naming_a_core_at_zero_counts_only_once_a_dead_end_cit
             ],
             InProgress,
             &[(4, Avoidance)],
-        ),
-        case(
+        ); "a single-core R7 failure at zero records it at once")]
+#[test_case::test_case(case(
             "a named core off zero records its point",
             vec![
                 failure_with(
@@ -515,8 +507,8 @@ fn a_multi_core_r7_failure_naming_a_core_at_zero_counts_only_once_a_dead_end_cit
             ],
             InProgress,
             &[(3, Avoidance)],
-        ),
-        case(
+        ); "a named core off zero records its point")]
+#[test_case::test_case(case(
             "a known failure takes its loaded cores from the trial it cites",
             vec![
                 trial_intent(2, "0001", "R7", "parked", &[0, 8]),
@@ -532,26 +524,24 @@ fn a_multi_core_r7_failure_naming_a_core_at_zero_counts_only_once_a_dead_end_cit
             ],
             InProgress,
             &[],
-        ),
-    ]);
+        ); "a known failure takes its loaded cores from the trial it cites")]
+fn a_multi_core_r7_failure_naming_a_core_at_zero_counts_only_once_a_dead_end_cites_it(case: Case) {
+    run(case);
 }
 
-#[test]
-fn zeroing_is_never_a_deepening_into_a_failure_point() {
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "restoring zero after a failure at zero is safe",
             vec![failure(2, 0, 0), restored(3, [0, 0])],
             InProgress,
             &[],
-        ),
-        case(
+        ); "restoring zero after a failure at zero is safe")]
+#[test_case::test_case(case(
             "one count deeper than a point at zero is not",
             vec![failure(2, 0, 0), applied(3, [-1, 0])],
             InProgress,
             &[(3, Avoidance)],
-        ),
-        case(
+        ); "one count deeper than a point at zero is not")]
+#[test_case::test_case(case(
             "zeroing every core is safe against a combination of members at zero",
             vec![
                 combination(2, 1, &[(0, 0), (8, 0)]),
@@ -562,6 +552,7 @@ fn zeroing_is_never_a_deepening_into_a_failure_point() {
             ],
             InProgress,
             &[],
-        ),
-    ]);
+        ); "zeroing every core is safe against a combination of members at zero")]
+fn zeroing_is_never_a_deepening_into_a_failure_point(case: Case) {
+    run(case);
 }

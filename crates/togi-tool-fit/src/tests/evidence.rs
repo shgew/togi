@@ -12,30 +12,26 @@ fn valid() -> togi_tool_trialfacts::TrialFact {
     fact
 }
 
-#[test]
-fn a_fact_that_describes_no_machine_exposure_is_refused() {
-    type Change = fn(&mut togi_tool_trialfacts::TrialFact);
-    let cases: [(&str, Change, Problem); 5] = [
-        (
+#[test_case::test_case((
             "one core",
-            |f| f.profile = super::profile(&[0]),
+            |f| f.profile = crate::tests::profile(&[0]),
             Problem::CoreCount(1),
-        ),
-        (
+        ); "one core")]
+#[test_case::test_case((
             "odd cores",
-            |f| f.profile = super::profile(&[0, 0, 0]),
+            |f| f.profile = crate::tests::profile(&[0, 0, 0]),
             Problem::CoreCount(3),
-        ),
-        (
+        ); "odd cores")]
+#[test_case::test_case((
             "no loaded cores",
             |f| {
                 if let Class::Trial(class) = &mut f.class {
-                    class.loaded = super::cores(&[]);
+                    class.loaded = crate::tests::cores(&[]);
                 }
             },
             Problem::NoLoadedCore,
-        ),
-        (
+        ); "no loaded cores")]
+#[test_case::test_case((
             "no exposure",
             |f| {
                 if let Class::Trial(class) = &mut f.class {
@@ -43,31 +39,34 @@ fn a_fact_that_describes_no_machine_exposure_is_refused() {
                 }
             },
             Problem::ZeroDuration,
-        ),
-        (
+        ); "no exposure")]
+#[test_case::test_case((
             "past the last core",
             |f| {
                 if let Class::Trial(class) = &mut f.class {
-                    class.loaded = super::cores(&[2]);
+                    class.loaded = crate::tests::cores(&[2]);
                 }
             },
             Problem::LoadedCore { core: 2, cores: 2 },
-        ),
-    ];
-    for (name, change, problem) in cases {
-        let mut fact = valid();
-        change(&mut fact);
-        let error = decisive(&[fact.clone()]).unwrap_err();
-        assert_eq!(
-            error,
-            EvidenceError::Invalid {
-                session: fact.session,
-                seq: fact.seq,
-                problem
-            },
-            "{name}"
-        );
-    }
+        ); "past the last core")]
+fn a_fact_that_describes_no_machine_exposure_is_refused(
+    case: (&str, fn(&mut togi_tool_trialfacts::TrialFact), Problem),
+) {
+    let (name, change, problem) = case;
+
+    let mut fact = valid();
+    change(&mut fact);
+    let error = decisive(&[fact.clone()]).unwrap_err();
+    assert_eq!(
+        error,
+        EvidenceError::Invalid {
+            session: fact.session,
+            seq: fact.seq,
+            problem
+        },
+        "{name}"
+    );
+
     let mut mismatch = valid();
     mismatch.profile = super::profile(&[0, 0, 0, 0]);
     assert_eq!(
@@ -97,17 +96,30 @@ fn idle_failures_are_left_out_and_the_context_is_kept() {
     assert_eq!(decisive(&[idle]), Err(EvidenceError::NoTrials));
 }
 
-#[test]
-fn evidence_of_two_bios_contexts_is_refused_whichever_comes_first() {
+#[derive(Clone, Copy)]
+enum ContextPair {
+    KnownOther,
+    KnownMissing,
+    MissingKnown,
+}
+
+#[test_case::test_case(ContextPair::KnownOther; "KnownOther")]
+#[test_case::test_case(ContextPair::KnownMissing; "KnownMissing")]
+#[test_case::test_case(ContextPair::MissingKnown; "MissingKnown")]
+fn evidence_of_two_bios_contexts_is_refused_whichever_comes_first(scenario: ContextPair) {
     let known = valid();
     let mut other = valid();
     other.context.as_mut().unwrap().bios_version = "B".into();
     let mut missing = valid();
     missing.context = None;
-    for pair in [[&known, &other], [&known, &missing], [&missing, &known]] {
-        let records = [pair[0].clone(), pair[1].clone()];
-        assert_eq!(decisive(&records), Err(EvidenceError::MixedContexts));
-    }
+    let pair = match scenario {
+        ContextPair::KnownOther => [&known, &other],
+        ContextPair::KnownMissing => [&known, &missing],
+        ContextPair::MissingKnown => [&missing, &known],
+    };
+
+    let records = [pair[0].clone(), pair[1].clone()];
+    assert_eq!(decisive(&records), Err(EvidenceError::MixedContexts));
 }
 
 #[test]

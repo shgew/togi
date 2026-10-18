@@ -303,72 +303,73 @@ fn an_anchor_keeps_an_empty_bios_field_and_replays_the_facts_that_carry_it() {
     );
 }
 
-#[test]
-fn a_flagged_anchor_prints_its_scores_and_never_writes() {
-    for existing in [false, true] {
-        let fixture = fixture(&anchor_records());
-        let path = fixture.out.join("target-shared-voltage.json");
-        if existing {
-            fixture.output.create_dir_all(&fixture.out).unwrap();
-            fixture.output.write(&path, "preserve anchor").unwrap();
-        }
-        let (result, report) = run(&fixture, |records| {
-            let (mut cfg, loss) = anchor_config(records);
-            let shared = cfg.shared_voltage.as_mut().unwrap();
-            shared.background_rate = 0.0;
-            for w in shared.workload.values_mut() {
-                for core in &mut w.core {
-                    core.threshold_v = 0.8;
-                }
+#[test_case::test_case(false; "false")]
+#[test_case::test_case(true; "true")]
+fn a_flagged_anchor_prints_its_scores_and_never_writes(case: bool) {
+    let existing = case;
+
+    let fixture = fixture(&anchor_records());
+    let path = fixture.out.join("target-shared-voltage.json");
+    if existing {
+        fixture.output.create_dir_all(&fixture.out).unwrap();
+        fixture.output.write(&path, "preserve anchor").unwrap();
+    }
+    let (result, report) = run(&fixture, |records| {
+        let (mut cfg, loss) = anchor_config(records);
+        let shared = cfg.shared_voltage.as_mut().unwrap();
+        shared.background_rate = 0.0;
+        for w in shared.workload.values_mut() {
+            for core in &mut w.core {
+                core.threshold_v = 0.8;
             }
-            Ok((cfg, loss))
-        });
-        assert!(matches!(result, Err(Error::AnchorFlagged)), "{result:?}");
-        assert!(report.contains("flagged (1 eligible groups"), "{report}");
-        assert!(
-            report.contains(
-                "cores=0,1,2,3,4,5,6,7 duration=120s depth=-20 n=20 k=10 interval=[0,0] mean_p="
-            ),
-            "{report}"
-        );
-        assert!(report.contains(
-            "All trials in-sample (record only): trials=20 raw total in-sample log loss "
-        ));
-        assert_eq!(report.matches("log_loss/trial=").count(), 2, "{report}");
-        assert!(!report.contains("Wrote IN-SAMPLE anchor:"));
-        if existing {
-            assert_eq!(
-                fixture.output.read_to_string(&path).unwrap(),
-                "preserve anchor",
-                "the flagged fit replaced the anchor"
-            );
-        } else {
-            assert!(
-                !fixture.output.exists(&fixture.out),
-                "the flagged fit created the output directory"
-            );
         }
+        Ok((cfg, loss))
+    });
+    assert!(matches!(result, Err(Error::AnchorFlagged)), "{result:?}");
+    assert!(report.contains("flagged (1 eligible groups"), "{report}");
+    assert!(
+        report.contains(
+            "cores=0,1,2,3,4,5,6,7 duration=120s depth=-20 n=20 k=10 interval=[0,0] mean_p="
+        ),
+        "{report}"
+    );
+    assert!(
+        report.contains(
+            "All trials in-sample (record only): trials=20 raw total in-sample log loss "
+        )
+    );
+    assert_eq!(report.matches("log_loss/trial=").count(), 2, "{report}");
+    assert!(!report.contains("Wrote IN-SAMPLE anchor:"));
+    if existing {
+        assert_eq!(
+            fixture.output.read_to_string(&path).unwrap(),
+            "preserve anchor",
+            "the flagged fit replaced the anchor"
+        );
+    } else {
+        assert!(
+            !fixture.output.exists(&fixture.out),
+            "the flagged fit created the output directory"
+        );
     }
 }
 
-#[test]
-fn facts_the_anchor_cannot_replay_are_refused_before_any_fit() {
-    type Edit = fn(&mut Vec<TrialFact>);
-    type Expected = fn(&Error) -> bool;
-    let cases: [(&str, Edit, Expected); 3] = [
-        (
+type AnchorEdit = fn(&mut Vec<TrialFact>);
+type AnchorExpectation = fn(&Error) -> bool;
+
+#[test_case::test_case((
             "core count",
             |records| {
                 for record in records {
-                    record.profile = super::profile(&[-20, -20]);
+                    record.profile = crate::tests::profile(&[-20, -20]);
                     if let Class::Trial(class) = &mut record.class {
-                        class.loaded = super::cores(&[0, 1]);
+                        class.loaded = crate::tests::cores(&[0, 1]);
                     }
                 }
             },
             |e| matches!(e, Error::NeedsSixteenCores { cores: 2, .. }),
-        ),
-        (
+        ); "core count")]
+#[test_case::test_case((
             "missing BIOS",
             |records| {
                 for record in records {
@@ -376,27 +377,29 @@ fn facts_the_anchor_cannot_replay_are_refused_before_any_fit() {
                 }
             },
             |e| matches!(e, Error::NeedsContext),
-        ),
-        (
+        ); "missing BIOS")]
+#[test_case::test_case((
             "mixed BIOS",
             |records| records[1].context.as_mut().unwrap().board = "other".into(),
             |e| matches!(e, Error::Evidence(EvidenceError::MixedContexts)),
-        ),
-    ];
-    for (name, edit, expected) in cases {
-        let mut records = anchor_records();
-        edit(&mut records);
-        let fixture = fixture(&records);
-        let (result, report) = run(&fixture, |_| {
-            panic!("invalid facts reached the shared-voltage fit")
-        });
-        let error = result.unwrap_err();
-        assert!(expected(&error), "{name}: {error}");
-        assert!(
-            report.is_empty() && !fixture.output.exists(&fixture.out),
-            "{name}"
-        );
-    }
+        ); "mixed BIOS")]
+fn facts_the_anchor_cannot_replay_are_refused_before_any_fit(
+    case: (&str, AnchorEdit, AnchorExpectation),
+) {
+    let (name, edit, expected) = case;
+
+    let mut records = anchor_records();
+    edit(&mut records);
+    let fixture = fixture(&records);
+    let (result, report) = run(&fixture, |_| {
+        panic!("invalid facts reached the shared-voltage fit")
+    });
+    let error = result.unwrap_err();
+    assert!(expected(&error), "{name}: {error}");
+    assert!(
+        report.is_empty() && !fixture.output.exists(&fixture.out),
+        "{name}"
+    );
 }
 
 #[test]
@@ -423,38 +426,39 @@ fn only_r7_trials_enter_the_r7_line_of_the_report() {
     );
 }
 
-#[test]
-fn an_anchor_that_cannot_be_written_is_an_error_and_leaves_the_destination_alone() {
-    for directory in [false, true] {
-        let fixture = fixture(&anchor_records());
-        let path = fixture.out.join("target-shared-voltage.json");
-        let conflict = if directory {
-            path.clone()
-        } else {
-            fixture.out.clone()
-        };
-        if directory {
-            fixture.output.create_dir_all(&conflict).unwrap();
-        } else {
-            fixture
-                .output
-                .create_dir_all(conflict.parent().unwrap())
-                .unwrap();
-            fixture.output.write(&conflict, "preserve").unwrap();
-        }
-        let (result, report) = run(&fixture, |records| Ok(anchor_config(records)));
-        let error = result.unwrap_err();
-        assert!(
-            matches!(&error, Error::Io { action, .. } if action.starts_with(if directory { "write" } else { "create" })),
-            "{error}"
+#[test_case::test_case(false; "false")]
+#[test_case::test_case(true; "true")]
+fn an_anchor_that_cannot_be_written_is_an_error_and_leaves_the_destination_alone(case: bool) {
+    let directory = case;
+
+    let fixture = fixture(&anchor_records());
+    let path = fixture.out.join("target-shared-voltage.json");
+    let conflict = if directory {
+        path.clone()
+    } else {
+        fixture.out.clone()
+    };
+    if directory {
+        fixture.output.create_dir_all(&conflict).unwrap();
+    } else {
+        fixture
+            .output
+            .create_dir_all(conflict.parent().unwrap())
+            .unwrap();
+        fixture.output.write(&conflict, "preserve").unwrap();
+    }
+    let (result, report) = run(&fixture, |records| Ok(anchor_config(records)));
+    let error = result.unwrap_err();
+    assert!(
+        matches!(&error, Error::Io { action, .. } if action.starts_with(if directory { "write" } else { "create" })),
+        "{error}"
+    );
+    assert!(!report.contains("Wrote IN-SAMPLE anchor"), "{report}");
+    assert_eq!(fixture.output.is_dir(&conflict), directory);
+    if !directory {
+        assert_eq!(
+            fixture.output.read_to_string(&conflict).unwrap(),
+            "preserve"
         );
-        assert!(!report.contains("Wrote IN-SAMPLE anchor"), "{report}");
-        assert_eq!(fixture.output.is_dir(&conflict), directory);
-        if !directory {
-            assert_eq!(
-                fixture.output.read_to_string(&conflict).unwrap(),
-                "preserve"
-            );
-        }
     }
 }

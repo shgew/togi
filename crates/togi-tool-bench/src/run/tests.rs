@@ -343,26 +343,24 @@ fn every_run_gets_one_record_in_suite_order_stamped_with_the_tree() {
     );
     assert_eq!(report.cached, 0);
 }
-#[test]
-fn a_status_follows_the_exit_status_and_the_log() {
+#[test_case::test_case((0, "", Status::Concluded); "0 Status Concluded")]
+#[test_case::test_case((3, "", Status::Censored); "3 Status Censored")]
+#[test_case::test_case((1, "sim: dead end stock: unstable", Status::DeadEnd); "1 sim dead end stock unstable Status DeadEnd")]
+#[test_case::test_case((1, "sim: failed to read file", Status::Error); "1 sim failed to read file Status Error")]
+#[test_case::test_case((2, "", Status::Error); "2 Status Error")]
+fn a_status_follows_the_exit_status_and_the_log(case: (i32, &str, Status)) {
+    let (exit, log, want) = case;
     let bench = Bench::new();
-    for (exit, log, want) in [
-        (0, "", Status::Concluded),
-        (3, "", Status::Censored),
-        (1, "sim: dead end stock: unstable", Status::DeadEnd),
-        (1, "sim: failed to read file", Status::Error),
-        (2, "", Status::Error),
-    ] {
-        let sim = bench.simulator(&format!("sim-{exit}"), exit, log, "");
-        let mut options = bench.options(sim);
-        options.cache = None;
-        let report = run(&options);
-        assert!(
-            report.records.iter().all(|r| r.status == want),
-            "{exit} {log}"
-        );
-        assert!(report.records.iter().all(|r| r.exit_code == exit));
-    }
+
+    let sim = bench.simulator(&format!("sim-{exit}"), exit, log, "");
+    let mut options = bench.options(sim);
+    options.cache = None;
+    let report = run(&options);
+    assert!(
+        report.records.iter().all(|r| r.status == want),
+        "{exit} {log}"
+    );
+    assert!(report.records.iter().all(|r| r.exit_code == exit));
 }
 
 #[test]

@@ -4,60 +4,57 @@ use togi_tool_audit::Completion::{Finished, InProgress};
 
 use crate::fixtures::*;
 
-#[test]
-fn a_finished_run_ends_in_a_conclusion() {
-    run(vec![
-        case("a shutdown", vec![stop(2)], Finished, &[]),
-        case(
+#[test_case::test_case(case("a shutdown", vec![stop(2)], Finished, &[]); "a shutdown")]
+#[test_case::test_case(case(
             "a dead end",
             vec![dead_end(2, "unsupported machine")],
             Finished,
             &[],
-        ),
-        case(
+        ); "a dead end")]
+#[test_case::test_case(case(
             "an archive followed by a projection warning",
             vec![phase(2, 0, None), archived(3), warning(4)],
             Finished,
             &[],
-        ),
-        case("a reset of every core", vec![reset_all(2)], Finished, &[]),
-        case(
+        ); "an archive followed by a projection warning")]
+#[test_case::test_case(case("a reset of every core", vec![reset_all(2)], Finished, &[]); "a reset of every core")]
+#[test_case::test_case(case(
             "a reset of one core concludes nothing",
             vec![reset_core(2, 0)],
             Finished,
             &[(2, Termination)],
-        ),
-        case(
+        ); "a reset of one core concludes nothing")]
+#[test_case::test_case(case(
             "no conclusion",
             vec![phase(2, 0, None)],
             Finished,
             &[(2, Termination)],
-        ),
-        case(
+        ); "no conclusion")]
+#[test_case::test_case(case(
             "a dead end without a reason",
             vec![dead_end(2, "")],
             Finished,
             &[(2, Termination)],
-        ),
-        case(
+        ); "a dead end without a reason")]
+#[test_case::test_case(case(
             "an open journal owes no conclusion",
             vec![phase(2, 0, None)],
             InProgress,
             &[],
-        ),
-        case(
+        ); "an open journal owes no conclusion")]
+#[test_case::test_case(case(
             "a projection warning after the shutdown keeps the conclusion",
             vec![stop(2), warning(3), warning(4)],
             Finished,
             &[],
-        ),
-        case(
+        ); "a projection warning after the shutdown keeps the conclusion")]
+#[test_case::test_case(case(
             "projection warnings alone conclude nothing",
             vec![warning(2), warning(3)],
             Finished,
             &[(3, Termination)],
-        ),
-        case(
+        ); "projection warnings alone conclude nothing")]
+#[test_case::test_case(case(
             "a boot's leave reason after the shutdown keeps the conclusion",
             vec![
                 stop(2),
@@ -69,32 +66,30 @@ fn a_finished_run_ends_in_a_conclusion() {
             ],
             Finished,
             &[],
-        ),
-        case(
+        ); "a boot's leave reason after the shutdown keeps the conclusion")]
+#[test_case::test_case(case(
             "an event after the shutdown reopens the run",
             vec![stop(2), phase(3, 0, None)],
             Finished,
             &[(3, Termination)],
-        ),
-    ]);
+        ); "an event after the shutdown reopens the run")]
+fn a_finished_run_ends_in_a_conclusion(case: Case) {
+    run(case);
 }
 
-#[test]
-fn a_shutdown_agrees_with_the_events_that_led_to_it() {
-    run(vec![
-        case(
+#[test_case::test_case(case(
             "a dead-end shutdown after its dead end",
             vec![dead_end(2, "d"), shutdown(3, json!({"reason": "dead_end"}))],
             Finished,
             &[],
-        ),
-        case(
+        ); "a dead-end shutdown after its dead end")]
+#[test_case::test_case(case(
             "a dead-end shutdown without a dead end",
             vec![shutdown(2, json!({"reason": "dead_end"}))],
             Finished,
             &[(2, Termination)],
-        ),
-        case(
+        ); "a dead-end shutdown without a dead end")]
+#[test_case::test_case(case(
             "a dead end is consumed by its shutdown",
             vec![
                 dead_end(2, "d"),
@@ -103,8 +98,8 @@ fn a_shutdown_agrees_with_the_events_that_led_to_it() {
             ],
             Finished,
             &[(4, Termination)],
-        ),
-        case(
+        ); "a dead end is consumed by its shutdown")]
+#[test_case::test_case(case(
             "a cycles shutdown while a dead end awaits its own shutdown",
             vec![
                 cycle_end(2, true, true),
@@ -113,8 +108,8 @@ fn a_shutdown_agrees_with_the_events_that_led_to_it() {
             ],
             Finished,
             &[(4, Termination)],
-        ),
-        case(
+        ); "a cycles shutdown while a dead end awaits its own shutdown")]
+#[test_case::test_case(case(
             "a first-result shutdown while a dead end awaits its own shutdown",
             vec![
                 dead_end(2, "d"),
@@ -122,8 +117,8 @@ fn a_shutdown_agrees_with_the_events_that_led_to_it() {
             ],
             Finished,
             &[(3, Termination)],
-        ),
-        case(
+        ); "a first-result shutdown while a dead end awaits its own shutdown")]
+#[test_case::test_case(case(
             "a signal interrupts a dead end, and the next run completes it",
             vec![
                 dead_end(2, "d"),
@@ -132,8 +127,8 @@ fn a_shutdown_agrees_with_the_events_that_led_to_it() {
             ],
             Finished,
             &[],
-        ),
-        case(
+        ); "a signal interrupts a dead end, and the next run completes it")]
+#[test_case::test_case(case(
             "a cycles shutdown after the requested passed full cycles",
             vec![
                 cycle_end(2, true, true),
@@ -142,8 +137,8 @@ fn a_shutdown_agrees_with_the_events_that_led_to_it() {
             ],
             Finished,
             &[],
-        ),
-        case(
+        ); "a cycles shutdown after the requested passed full cycles")]
+#[test_case::test_case(case(
             "a cycles shutdown before enough passed full cycles",
             vec![
                 cycle_end(2, true, true),
@@ -153,8 +148,8 @@ fn a_shutdown_agrees_with_the_events_that_led_to_it() {
             ],
             Finished,
             &[(5, Termination)],
-        ),
-        case(
+        ); "a cycles shutdown before enough passed full cycles")]
+#[test_case::test_case(case(
             "a cycles shutdown that records no count",
             vec![
                 cycle_end(2, true, true),
@@ -162,12 +157,13 @@ fn a_shutdown_agrees_with_the_events_that_led_to_it() {
             ],
             Finished,
             &[(3, Termination)],
-        ),
-        case(
+        ); "a cycles shutdown that records no count")]
+#[test_case::test_case(case(
             "a signal shutdown needs no cause",
             vec![shutdown(2, json!({"reason": "signal"}))],
             Finished,
             &[],
-        ),
-    ]);
+        ); "a signal shutdown needs no cause")]
+fn a_shutdown_agrees_with_the_events_that_led_to_it(case: Case) {
+    run(case);
 }

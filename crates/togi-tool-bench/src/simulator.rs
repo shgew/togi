@@ -520,95 +520,120 @@ mod tests {
         panic!("no interpreter should be read")
     }
 
-    #[test]
-    fn a_host_binary_or_a_script_with_a_host_binary_interpreter_passes() {
+    #[test_case::test_case(&b"#!/bin/sh\n"[..]; "b bin sh n")]
+    #[test_case::test_case(b"#! /bin/sh -e\necho hi\n"; "b bin sh e necho hi n")]
+    #[test_case::test_case(b"#!\t/bin/sh\n"; "b t bin sh n")]
+    fn a_host_binary_or_a_script_with_a_host_binary_interpreter_passes(case: &[u8]) {
+        let script = case;
         assert_eq!(check_runnable(HOST, 0o755, no_interpreter), Ok(()));
-        for script in [
-            &b"#!/bin/sh\n"[..],
-            b"#! /bin/sh -e\necho hi\n",
-            b"#!\t/bin/sh\n",
-        ] {
-            assert_eq!(
-                check_runnable(script, 0o755, |path| {
-                    assert_eq!(path, Path::new("/bin/sh"));
-                    Ok((HOST.to_vec(), 0o755))
-                }),
-                Ok(()),
-                "{script:?}"
-            );
-        }
+
+        assert_eq!(
+            check_runnable(script, 0o755, |path| {
+                assert_eq!(path, Path::new("/bin/sh"));
+                Ok((HOST.to_vec(), 0o755))
+            }),
+            Ok(()),
+            "{script:?}"
+        );
     }
 
-    #[test]
-    fn a_file_the_kernel_would_hand_to_a_shell_is_refused() {
-        for bytes in [
-            &b"not a program"[..],
-            b"echo hi\n",
-            b"",
-            b"\x7fEL",
-            b" #!/bin/sh",
-            FOREIGN,
-        ] {
-            assert_eq!(
-                check_runnable(bytes, 0o755, no_interpreter),
-                Err(Unrunnable::NotAProgram),
-                "{bytes:?}"
-            );
-        }
+    #[test_case::test_case(&b"not a program"[..]; "b not a program")]
+    #[test_case::test_case(b"echo hi\n"; "b echo hi n")]
+    #[test_case::test_case(b""; "b")]
+    #[test_case::test_case(b"\x7fEL"; "b x7fEL")]
+    #[test_case::test_case(b" #!/bin/sh"; "b bin sh")]
+    #[test_case::test_case(FOREIGN; "FOREIGN")]
+    fn a_file_the_kernel_would_hand_to_a_shell_is_refused(case: &[u8]) {
+        let bytes = case;
+
+        assert_eq!(
+            check_runnable(bytes, 0o755, no_interpreter),
+            Err(Unrunnable::NotAProgram),
+            "{bytes:?}"
+        );
     }
 
     #[cfg(target_os = "macos")]
-    #[test]
-    fn a_mach_o_that_is_not_an_executable_is_refused() {
+    #[derive(Clone, Copy)]
+    enum MachOInput {
+        DynamicLibrary,
+        BigEndian,
+        Truncated,
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test_case::test_case(MachOInput::DynamicLibrary; "DynamicLibrary")]
+    #[test_case::test_case(MachOInput::BigEndian; "BigEndian")]
+    #[test_case::test_case(MachOInput::Truncated; "Truncated")]
+    fn a_mach_o_that_is_not_an_executable_is_refused(scenario: MachOInput) {
         let mut dylib = MACH_O_EXECUTE;
         dylib[12] = 0x06;
         let mut big_endian = MACH_O_EXECUTE;
         big_endian[..4].copy_from_slice(&[0xfe, 0xed, 0xfa, 0xcf]);
-        for bytes in [&dylib[..], &big_endian, &MACH_O_EXECUTE[..12]] {
-            assert_eq!(
-                check_runnable(bytes, 0o755, no_interpreter),
-                Err(Unrunnable::NotAProgram),
-                "{bytes:?}"
-            );
-        }
+        let bytes: &[u8] = match scenario {
+            MachOInput::DynamicLibrary => &dylib[..],
+            MachOInput::BigEndian => &big_endian,
+            MachOInput::Truncated => &MACH_O_EXECUTE[..12],
+        };
+
+        assert_eq!(
+            check_runnable(bytes, 0o755, no_interpreter),
+            Err(Unrunnable::NotAProgram),
+            "{bytes:?}"
+        );
     }
 
-    #[test]
-    fn a_script_naming_no_interpreter_is_refused() {
-        for script in [&b"#!\n"[..], b"#!   \necho hi\n", b"#!\t \t\n"] {
-            assert_eq!(
-                check_runnable(script, 0o755, no_interpreter),
-                Err(Unrunnable::NoInterpreter),
-                "{script:?}"
-            );
-        }
+    #[test_case::test_case(&b"#!\n"[..]; "b n")]
+    #[test_case::test_case(b"#!   \necho hi\n"; "b necho hi n")]
+    #[test_case::test_case(b"#!\t \t\n"; "b t t n")]
+    fn a_script_naming_no_interpreter_is_refused(case: &[u8]) {
+        let script = case;
+
+        assert_eq!(
+            check_runnable(script, 0o755, no_interpreter),
+            Err(Unrunnable::NoInterpreter),
+            "{script:?}"
+        );
     }
 
-    #[test]
-    fn a_script_whose_first_line_outruns_the_kernel_is_refused() {
+    #[derive(Clone, Copy)]
+    enum ShebangLength {
+        Unterminated,
+        TooLong,
+    }
+
+    #[test_case::test_case(ShebangLength::Unterminated; "Unterminated")]
+    #[test_case::test_case(ShebangLength::TooLong; "TooLong")]
+    fn a_script_whose_first_line_outruns_the_kernel_is_refused(scenario: ShebangLength) {
         let mut long = b"#!/bin/sh ".to_vec();
         long.resize(SHEBANG_LIMIT, b'x');
         long.push(b'\n');
-        for script in [&b"#!/bin/sh"[..], &long] {
-            assert_eq!(
-                check_runnable(script, 0o755, no_interpreter),
-                Err(Unrunnable::LongShebang)
-            );
-        }
+        let script: &[u8] = match scenario {
+            ShebangLength::Unterminated => &b"#!/bin/sh"[..],
+            ShebangLength::TooLong => &long,
+        };
+
+        assert_eq!(
+            check_runnable(script, 0o755, no_interpreter),
+            Err(Unrunnable::LongShebang)
+        );
     }
 
-    #[test]
-    fn a_script_whose_interpreter_is_not_a_host_binary_is_refused() {
+    #[test_case::test_case(&b"#!/bin/sh\n"[..]; "b bin sh n")]
+    #[test_case::test_case(FOREIGN; "FOREIGN")]
+    #[test_case::test_case(b"echo hi\n"; "b echo hi n")]
+    fn a_script_whose_interpreter_is_not_a_host_binary_is_refused(case: &[u8]) {
+        let prefix = case;
         let interpreter = PathBuf::from("/opt/run");
-        for prefix in [&b"#!/bin/sh\n"[..], FOREIGN, b"echo hi\n"] {
-            assert_eq!(
-                check_runnable(b"#!/opt/run\n", 0o755, |_| Ok((prefix.to_vec(), 0o755))),
-                Err(Unrunnable::InterpreterNotAProgram {
-                    interpreter: interpreter.clone()
-                }),
-                "{prefix:?}"
-            );
-        }
+
+        assert_eq!(
+            check_runnable(b"#!/opt/run\n", 0o755, |_| Ok((prefix.to_vec(), 0o755))),
+            Err(Unrunnable::InterpreterNotAProgram {
+                interpreter: interpreter.clone()
+            }),
+            "{prefix:?}"
+        );
+
         assert_eq!(
             check_runnable(b"#!/opt/run\n", 0o755, |_| Ok((HOST.to_vec(), 0o644))),
             Err(Unrunnable::InterpreterNotExecutable { interpreter })

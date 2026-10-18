@@ -673,51 +673,49 @@ mod tests {
         .unwrap()
     }
 
-    #[test]
-    fn record_publication_writes_every_byte_before_sync_and_propagates_failures() {
+    #[test_case::test_case((None, false); "None false")]
+    #[test_case::test_case((Some(0), false); "Some 0 false")]
+    #[test_case::test_case((Some(64), false); "Some 64 false")]
+    #[test_case::test_case((None, true); "None true")]
+    fn record_publication_writes_every_byte_before_sync_and_propagates_failures(
+        case: (Option<usize>, bool),
+    ) {
+        let (write_limit, fail_sync) = case;
         let record = record();
         let mut expected = Vec::new();
         record.write(&mut expected).unwrap();
-        for (write_limit, fail_sync) in [
-            (None, false),
-            (Some(0), false),
-            (Some(64), false),
-            (None, true),
-        ] {
-            let mut writer = RecordingWriter {
-                bytes: Vec::new(),
-                calls: Vec::new(),
-                write_limit,
-                fail_sync,
-            };
-            let result = write_record_to(&record, &mut writer, RecordingWriter::sync);
-            if let Some(limit) = write_limit {
+
+        let mut writer = RecordingWriter {
+            bytes: Vec::new(),
+            calls: Vec::new(),
+            write_limit,
+            fail_sync,
+        };
+        let result = write_record_to(&record, &mut writer, RecordingWriter::sync);
+        if let Some(limit) = write_limit {
+            assert!(
+                togi_machine::error_chain(result.unwrap_err().as_ref()).contains("write failed")
+            );
+            assert!(writer.calls.iter().all(|call| *call == "write"));
+            assert_eq!(
+                writer.bytes,
+                expected[..limit],
+                "a failed write leaves only its prefix and never syncs"
+            );
+        } else {
+            assert_eq!(writer.bytes, expected);
+            assert_eq!(writer.calls.last(), Some(&"sync"));
+            assert!(
+                writer.calls[..writer.calls.len() - 1]
+                    .iter()
+                    .all(|call| *call == "write")
+            );
+            if fail_sync {
                 assert!(
-                    togi_machine::error_chain(result.unwrap_err().as_ref())
-                        .contains("write failed")
-                );
-                assert!(writer.calls.iter().all(|call| *call == "write"));
-                assert_eq!(
-                    writer.bytes,
-                    expected[..limit],
-                    "a failed write leaves only its prefix and never syncs"
+                    togi_machine::error_chain(result.unwrap_err().as_ref()).contains("sync failed")
                 );
             } else {
-                assert_eq!(writer.bytes, expected);
-                assert_eq!(writer.calls.last(), Some(&"sync"));
-                assert!(
-                    writer.calls[..writer.calls.len() - 1]
-                        .iter()
-                        .all(|call| *call == "write")
-                );
-                if fail_sync {
-                    assert!(
-                        togi_machine::error_chain(result.unwrap_err().as_ref())
-                            .contains("sync failed")
-                    );
-                } else {
-                    result.unwrap();
-                }
+                result.unwrap();
             }
         }
     }
