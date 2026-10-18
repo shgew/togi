@@ -2,9 +2,10 @@
 # dependency closure leave its derivation hash alone.
 #
 # A source keeps the workspace manifests and `Cargo.lock`, so Cargo resolves the workspace and `--locked` holds, and
-# the files of the members the derivation builds. Cargo still insists that every member has its target files, so
-# `postPatch` creates an empty file at each target path of the members left out. The stubs are made at build time,
-# not in a source derivation, so crane reads the source without import-from-derivation.
+# the files of the members the derivation builds. Cargo still insists that every member has its declared target files,
+# and nextest's filters see only the targets Cargo finds, so `postPatch` creates an empty file at each target path the
+# source leaves out. The stubs are made at build time, not in a source derivation, so crane reads the source without
+# import-from-derivation.
 { lib }:
 let
   inherit (lib) fileset;
@@ -60,13 +61,33 @@ let
   closureWithDev =
     roots: closure (roots ++ lib.concatMap (memberDeps [ "dev-dependencies" ]) (closure roots));
 
-  # The paths Cargo requires to exist for a member to load: its library and every declared target.
+  # The paths of a member's library and of every target Cargo declares or discovers. Stubbing the discovered ones
+  # too keeps `cargo metadata` of a narrowed source equal to the workspace's, so a nextest filter naming a test
+  # binary of a member left out still matches it.
   targetPaths =
     name:
     let
       toml = manifest name;
       declared =
         table: default: map (target: target.path or (default target.name)) (toml.${table} or [ ]);
+      discovered =
+        flag: sub:
+        let
+          path = dir name + "/${sub}";
+          entries = if builtins.pathExists path then builtins.readDir path else { };
+          target =
+            entry: type:
+            if type == "regular" && lib.hasSuffix ".rs" entry then
+              [ "${sub}/${entry}" ]
+            else if type == "directory" && builtins.pathExists (path + "/${entry}/main.rs") then
+              [ "${sub}/${entry}/main.rs" ]
+            else
+              [ ];
+        in
+        lib.optionals (toml.package.${flag} or true) (lib.concatLists (lib.mapAttrsToList target entries));
+      mainBin = lib.optional (
+        (toml.package.autobins or true) && builtins.pathExists (dir name + "/src/main.rs")
+      ) "src/main.rs";
     in
     lib.unique (
       [ (toml.lib.path or "src/lib.rs") ]
@@ -76,6 +97,11 @@ let
       ++ declared "bench" (target: "benches/${target}.rs")
       ++ declared "test" (target: "tests/${target}.rs")
       ++ declared "example" (target: "examples/${target}.rs")
+      ++ mainBin
+      ++ discovered "autobins" "src/bin"
+      ++ discovered "autobenches" "benches"
+      ++ discovered "autotests" "tests"
+      ++ discovered "autoexamples" "examples"
     );
 
   rustIn = path: fileset.intersection (fileset.fileFilter (file: file.hasExt "rs") cratesDir) path;
@@ -83,7 +109,8 @@ let
   # `code`: members built but not tested, as their `.rs` files under `src` and `benches`.
   # `rs`: members as all their `.rs` files, tests included, for tools that read code and no data.
   # `full`: members as their whole directory, test data included.
-  # `files`: other files, such as fixtures a test reads. Members in none of the three are stubbed.
+  # `files`: other files, such as fixtures a test reads. Every target path a member's selection leaves out is
+  # stubbed: all of them for members in none of the three, the tests and examples of `code` members.
   source =
     {
       code ? [ ],
@@ -92,10 +119,10 @@ let
       files ? [ ],
     }:
     let
-      included = lib.unique (code ++ rs ++ full);
       stubs = lib.concatMap (crate: map (path: "crates/${crate}/${path}") (targetPaths crate)) (
-        lib.subtractLists included members
+        lib.subtractLists (rs ++ full) members
       );
+      included = lib.unique (code ++ rs ++ full);
     in
     {
       src = fileset.toSource {
@@ -127,8 +154,10 @@ let
       };
       postPatch = ''
         for stub in ${lib.escapeShellArgs stubs}; do
-          mkdir -p "$(dirname "$stub")"
-          touch "$stub"
+          if [[ ! -e "$stub" ]]; then
+            mkdir -p "$(dirname "$stub")"
+            touch "$stub"
+          fi
         done
       '';
     };
