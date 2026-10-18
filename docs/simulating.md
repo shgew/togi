@@ -256,34 +256,8 @@ A session exits 0 for a stop other than a dead end, 1 for an error or a dead end
 
 `suite` runs every session of one shard of the suite (`togi_tool_sim::shard`, equal cost per session) in this process, `--jobs` sessions at a time (default the available parallelism), each in its own in-memory state directory with warm resumes, the capsule verified after every crash and `--max-boots` (default 1000) as the cap. Sessions share nothing, so the manifest is the same for any `--jobs`; the full suite peaked at 416 MiB resident with `--jobs 4`. A session is `clean` only when it stopped for its clean cycle, its last boot's capsule matched a fresh fold of the journal, `togi_tuner::replay` folds the whole journal and `togi-tool-audit` finds no violation in any journal of the directory or in its published `state.json`, which must exist, be at the journal's last event and be written exactly as this build writes the fresh fold. Otherwise it is `failed`, `capped`, `dead_end`, `stopped` (another stop reason), `verify_failed`, `replay_failed` or `audit_violations`, with its detail. Each session's line on stderr, in the order sessions finish, gives its id, its wall time and its outcome. The shard's results go to `DIR/shard-I.jsonl` in suite order, one JSON object per session, and the command exits 1 unless every session was clean. `check` reads a directory that must hold only `shard-I.jsonl` files and checks each shard's manifest against exactly the runs the suite's partition gives that shard, for every shard of the stated count or, with `--shard I`, for that shard alone: a shard with no manifest, a manifest that is not expected, a session missing, reported twice, reported by a shard that does not own it or not among those checked, and every session that was not clean are all named, and any of them exits 1. The release's dispatched full check, not pull request CI, runs the suite this way as the [suite gate](benchmarking.md#the-suite-gate); `just gate` and `just push-fix` also build its shards on Linux.
 
-## Measured reference journals
+## Reading real reference journals
 
-[`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. These three archived sessions came from one Ryzen 9 9950X3D2 under one BIOS context. The table was computed from their full journals, which are no longer in the tree, so it is a record, not something to recompute. Their privacy-safe trial facts remain in `tools/bench/facts/target.jsonl.gz` under the same session IDs.
+[`just stats`](reviewing.md) reports exposure and failures from real journals; it does not fit simulator defaults. The [historical evidence and gate](https://github.com/shgew/togi/issues/105) record the archived reference sessions. Their privacy-safe trial facts remain in `tools/bench/facts/target.jsonl.gz`.
 
-|Session (ruleset)|Regime|Trials|Trial hours|Crashes|Computation errors|Unexpected exits|
-|---|---|---:|---:|---:|---:|---:|
-|20260924T204352Z (1)|R1|388|12.854|15|0|1|
-|20260924T204352Z (1)|R2|271|8.109|13|14|0|
-|20260924T204352Z (1)|R3|54|2.900|0|0|0|
-|20260924T204352Z (1)|R4|54|2.900|0|0|0|
-|20260924T204352Z (1)|R5|22|1.572|4|1|1|
-|20260924T204352Z (1)|R6|2|0.500|0|0|0|
-|20260924T204352Z (1)|R7|2|0.008|2|0|0|
-|20260926T151414Z (2)|R1|197|11.394|1|0|0|
-|20260926T151414Z (2)|R2|155|8.395|9|8|0|
-|20260926T151414Z (2)|R3|57|2.776|0|0|0|
-|20260926T151414Z (2)|R4|50|2.567|0|0|0|
-|20260926T151414Z (2)|R5|18|1.415|2|0|0|
-|20260926T151414Z (2)|R6|3|0.750|0|0|0|
-|20260926T151414Z (2)|R7|2|0.000|1|1|0|
-|20260927T221954Z (3)|R1|51|4.250|0|0|0|
-|20260927T221954Z (3)|R2|282|11.838|1|3|0|
-|20260927T221954Z (3)|R3|17|1.417|0|0|0|
-|20260927T221954Z (3)|R4|17|1.417|0|0|0|
-|20260927T221954Z (3)|R5|17|1.378|0|1|0|
-|20260927T221954Z (3)|R6|0|0.000|0|0|0|
-|20260927T221954Z (3)|R7|20|0.701|9|4|0|
-
-R2's failures concentrate in mprime AVX-512 (16, 15 and 4 respectively), with y-cruncher FFTv4/N63/VT3 contributing 11, 2 and 0. R7 mprime AVX2 contributes 1, 1 and 5, mprime AVX-512 1, 1 and 4, and y-cruncher 0, 0 and 4. Unattributed crashes load CCD0 alone 3, 1 and 7 times, both CCDs 2, 0 and 1 times, and CCD1 alone 0, 0 and 1 times. Failures contradicting earlier passes of the same class at equal-or-deeper profiles number 0, 1 and 4.
-
-These are observed trials and last-evidence trial hours, not wall-clock session duration. A crash can have zero recorded exposure, and older journals can record a failure before `trial.start`. Rulesets, offsets, workloads and intended durations changed between sessions, so pooled rates are not per-offset failure probabilities. The simulator's fast seeded default remains unchanged. The synthetic bench machines are adversarial scenarios; the `target-fit-*` ensemble instead fits the committed extract and is checked against its eligible groups, with the limits described in [benchmarking](benchmarking.md#fitting-the-target-machine). The tables provide no evidence for adding R3 or R4 schedule-dependent hazards.
+Trial hours are last-evidence exposure, not wall-clock session duration. A crash can have zero recorded exposure, and older journals can record a failure before `trial.start`. Rulesets, offsets, workloads and intended durations vary between sessions, so pooled rates are not per-offset failure probabilities. The simulator's fast seeded default remains unchanged. Synthetic bench machines are adversarial scenarios; a fitted ensemble must pass its model check before supporting a target-machine claim ([benchmarking](benchmarking.md#fitting-the-target-machine)). These observations do not establish R3 or R4 schedule-dependent hazards.
