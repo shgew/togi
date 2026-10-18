@@ -107,6 +107,23 @@ fn a_ready_machine_prints_the_table_and_ready() {
 }
 
 #[test]
+fn a_four_ccd_machine_is_not_ready() {
+    let session = Session::new();
+    let mut host = host_with(ready(), session.fs.clone());
+    host.topology = (0..4)
+        .map(|n| togi_machine::CoreInfo {
+            core: togi_machine::CoreId::new(n).unwrap(),
+            ccd: togi_machine::CcdId::new(n).unwrap(),
+            cpus: vec![togi_machine::CpuId::from(u16::try_from(n).unwrap())],
+        })
+        .collect();
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Preflight, "{}", ran.out);
+    assert!(ran.out.contains("not supported"), "{}", ran.out);
+    assert!(ran.out.ends_with("not ready: topology\n"), "{}", ran.out);
+}
+
+#[test]
 fn a_changed_context_is_a_warning_not_a_failure() {
     let mut diagnosis = ready();
     diagnosis.ran.pop();

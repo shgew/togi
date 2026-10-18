@@ -123,6 +123,7 @@ pub struct Host {
     /// What `open_machine` hands out once: the machine of a command that opens one, or why it
     /// cannot. Empty when the test expects the command not to open any.
     pub machine: RefCell<Option<Result<Machine<'static>, togi_hardware::Error>>>,
+    pub topology: Vec<togi_machine::CoreInfo>,
     pub facts: OutputFacts,
     pub stdout_facts: Option<OutputFacts>,
     directory: Option<TempDir>,
@@ -158,6 +159,11 @@ impl Host {
             calls: Cell::new(0),
             lock_busy_in_diagnose: Cell::new(None),
             machine: RefCell::new(None),
+            topology: vec![togi_machine::CoreInfo {
+                core: togi_machine::CoreId::new(0).unwrap(),
+                ccd: togi_machine::CcdId::new(0).unwrap(),
+                cpus: vec![togi_machine::CpuId::from(0_u16)],
+            }],
             facts: OutputFacts::default(),
             stdout_facts: None,
             directory: None,
@@ -341,6 +347,10 @@ impl System for Host {
 
     fn zone(&self) -> TimeZone {
         TimeZone::UTC
+    }
+
+    fn topology(&self) -> Result<Vec<togi_machine::CoreInfo>, togi_hardware::Error> {
+        Ok(self.topology.clone())
     }
 
     fn diagnose(

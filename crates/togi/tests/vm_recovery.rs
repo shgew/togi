@@ -401,6 +401,10 @@ mod vm_recovery {
             self.0.check_platform()
         }
 
+        fn topology(&self) -> Result<Vec<CoreInfo>, HardwareError> {
+            self.0.topology()
+        }
+
         fn privileged(&self) -> bool {
             self.0.privileged()
         }

@@ -42,6 +42,14 @@ pub fn check_platform() -> Result<(), Error> {
 
 const SYSTEM_ROOT: &str = "/";
 
+/// Reads the online cores without accessing the SMU mailbox.
+pub fn topology() -> Result<Vec<togi_machine::CoreInfo>, Error> {
+    check_platform()?;
+    Driver::identity_only(Path::new(SYSTEM_ROOT))
+        .and_then(|driver| driver.topology())
+        .map_err(Error::OpenSmu)
+}
+
 /// Assembles the machine under the held host lock. Reads the topology and nothing else from the
 /// hardware: no mailbox, SMN or PM table access happens before `Host::validate_smu`.
 ///
