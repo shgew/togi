@@ -52,3 +52,17 @@ fn a_cause_names_an_existing_earlier_event(case: Case) {
 fn sequences_count_up_from_one_and_start_with_the_session(case: Case) {
     run(case);
 }
+
+#[test]
+fn the_first_event_must_be_session_start() {
+    assert_eq!(
+        found(&[phase(1, 0, None)], InProgress),
+        vec![(1, Sequence)],
+        "the first event is not session.start"
+    );
+}
+
+#[test]
+fn an_empty_journal_has_no_sequence_violation() {
+    assert_eq!(found(&[], InProgress), vec![], "an empty journal");
+}
