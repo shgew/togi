@@ -10,6 +10,7 @@ pub use coverage::{
     CoverageError, ExpectedShard, ManifestError, Outcome, Problem, RunResult, ShardManifest, check,
     encode_manifest, parse_manifest,
 };
-pub use run::{Run, RunId, Split};
+pub use run::{Run, RunId};
 pub use shard::{ShardError, partition, shard};
 pub use suite::{Suite, SuiteError};
+pub use togi_tool_forecast::Split;

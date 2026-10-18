@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use togi_machine::object_only;
 
-use crate::run::{Run, RunId, Split};
+use crate::{Run, RunId, Split};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SuiteError {
