@@ -37,7 +37,7 @@ pub enum Record {
     },
 }
 
-/// The evaluator a run invokes, through its `just` recipe.
+/// The evaluator a campaign records and invokes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Recipe {
@@ -53,6 +53,26 @@ impl Recipe {
             Self::Fit => "fit",
             Self::Bench => "bench",
         }
+    }
+
+    pub fn command(self) -> &'static [&'static str] {
+        match self {
+            Self::Forward => &["fit", "--forward-only"],
+            Self::Fit => &["fit"],
+            Self::Bench => &["bench"],
+        }
+    }
+}
+
+impl std::fmt::Display for Recipe {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, word) in self.command().iter().enumerate() {
+            if index != 0 {
+                formatter.write_str(" ")?;
+            }
+            formatter.write_str(word)?;
+        }
+        Ok(())
     }
 }
 

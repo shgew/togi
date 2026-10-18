@@ -20,9 +20,9 @@ A new blind claim needs new evidence recorded after the candidate freezes, score
 
 ## The metric
 
-`just forward --facts ARTIFACT` runs only the [forward-chained check](../../docs/benchmarking.md#forward-chained-check) on the approved artifact: for each session after the first, it fits the earlier sessions' decisive trials and scores the held-out session, writing no machine files. `--seal 1` leaves the historical confirmation session out. `--jobs` bounds the parallel fits; worker count does not change the samples, machine files or report order.
+`just fit --forward-only --facts ARTIFACT` runs only the [forward-chained check](../../docs/benchmarking.md#forward-chained-check) on the approved artifact: for each session after the first, it fits the earlier sessions' decisive trials and scores the held-out session, writing no machine files. `--seal 1` leaves the historical confirmation session out. `--jobs` bounds the parallel fits; worker count does not change the samples, machine files or report order.
 
-- **Primary:** the `Pooled` `log_loss/trial fit` of `just forward --facts ARTIFACT --seal 1`. Lower is better. The `constant` predictor's pooled loss on the same line is the bar a useful model must clear.
+- **Primary:** the `Pooled` `log_loss/trial fit` of `just fit --forward-only --facts ARTIFACT --seal 1`. Lower is better. The `constant` predictor's pooled loss on the same line is the bar a useful model must clear.
 - **F1, surprises:** the pooled `failures_p<0.01` must not rise. These are failures the model called nearly impossible; a lower loss bought with more of them hides blind spots.
 - **F2, calibration:** the pooled `|ln(predicted / failures)|` must not rise. Log loss alone can improve while the model predicts several times too many failures. A subset with no failures reports its predicted count instead of a ratio.
 - **F3, breadth:** the fit loss must improve in a majority of the development held-out sessions. The largest session holds more than a third of their trials and must not decide alone.
@@ -31,7 +31,7 @@ A new blind claim needs new evidence recorded after the candidate freezes, score
 
 Each forward run writes its full-precision records with `--records FILE` inside the run directory, and `just forward-compare CANDIDATE REFERENCE` pairs a candidate's records with its reference run's, trial by trial, and prints the primary and F1–F3 exactly, per session and subset, with the paired trial-bootstrap interval of each session's and the pool's loss ratio over all its trials ([benchmarking](../../docs/benchmarking.md#forward-chained-check)). The reference is the unchanged fitter's forward run on the same artifact and seal; the committed all-facts ensemble is not it. `--metrics FILE` gives the outcome's metrics.
 
-Score the historical confirmation session (`just forward --facts ARTIFACT`, no seal) once per campaign, for its one dev winner, after its dev experiments end. It is one session, so the check asks that the winner be no worse within noise: its fit loss must stay at most 1.10 times the unchanged reference's on the same artifact, and its `failures_p<0.01` must not rise. Report the 95% interval of that loss ratio from a paired bootstrap that resamples the session's trials; the 1.10 threshold alone decides. A failed confirmation ends the campaign; its outcome never reopens the candidate queue. The dispatcher spends the confirmation when it writes the start line, which binds the kept candidate's changes hash, the reference revision and the artifact's hash; the raw output repeats the rows' `Facts: sha256` and reads `Historical confirmation 20261004T000701Z: scored`, where a development run reads `sealed`.
+Score the historical confirmation session (`just fit --forward-only --facts ARTIFACT`, no seal) once per campaign, for its one dev winner, after its dev experiments end. It is one session, so the check asks that the winner be no worse within noise: its fit loss must stay at most 1.10 times the unchanged reference's on the same artifact, and its `failures_p<0.01` must not rise. Report the 95% interval of that loss ratio from a paired bootstrap that resamples the session's trials; the 1.10 threshold alone decides. A failed confirmation ends the campaign; its outcome never reopens the candidate queue. The dispatcher spends the confirmation when it writes the start line, which binds the kept candidate's changes hash, the reference revision and the artifact's hash; the raw output repeats the rows' `Facts: sha256` and reads `Historical confirmation 20261004T000701Z: scored`, where a development run reads `sealed`.
 
 ## What you may change
 
@@ -44,6 +44,8 @@ Everything else is frozen:
 - **The score:** the scoring, clamping, constant and sealing in `crates/togi-tool-fit/src/forward.rs`, the `togi-tool-modelcheck` and `togi-tool-trialfacts` crates, and the extract under `tools/bench/facts/`.
 - **The tuner and the bench:** `togi-tuner`, `togi-config`, `togi-tool-bench` and `tools/bench` with its suite, committed machine files and baseline.
 - **The run loop, journal and hardware path:** `togi-session`, `togi-journal`, `togi-smu`, `togi-trial` and `togi-detect`.
+
+The retained all-facts anchor mode is `just fit --shared-voltage-in-sample --facts ARTIFACT --out DIRECTORY`. It is not forward validation; [#480](https://github.com/shgew/togi/issues/480) owns removing that mode.
 
 ## Hard rules
 

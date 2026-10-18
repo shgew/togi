@@ -163,7 +163,7 @@ pub fn render(campaign: &Campaign, notes: &str) -> String {
             started.seq,
             started.candidate,
             started.role.name(),
-            started.recipe.name(),
+            started.recipe,
             started.args.join(" ").replace(&manifest.output, "$RUN"),
             end.map_or_else(|| "never ended".to_owned(), End::describe),
             short(&started.tree_sha256),

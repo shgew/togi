@@ -14,7 +14,9 @@ use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 
 use super::campaign::{self, Campaign, Halt, Refusal};
-use super::ledger::{End, Ledger, LedgerError, Outcome, Record, Role, StopReason, end_torn_tail};
+use super::ledger::{
+    End, Ledger, LedgerError, Outcome, Recipe, Record, Role, StopReason, end_torn_tail,
+};
 use super::manifest::{Manifest, sha256};
 use super::report;
 use super::{GitWorkspace, WorkspaceError};
@@ -273,7 +275,7 @@ pub fn exec(
     dir.append(&[Record::ExperimentStarted(started.clone())])?;
     let end = evaluate(
         &workspace.root,
-        started.recipe.name(),
+        started.recipe,
         &started.args,
         stdout,
         stderr,
@@ -327,15 +329,15 @@ enum Event {
     Signal,
 }
 
-/// Runs `just RECIPE ARGS` in its own process group. The group is terminated when the wall time left runs out
-/// or the dispatcher is told to stop.
+/// Runs the evaluator's `just` command in its own process group. The group is terminated when the wall
+/// time left runs out or the dispatcher is told to stop.
 #[expect(
     clippy::disallowed_methods,
     reason = "the dispatcher runs the repository's own evaluator recipes"
 )]
 fn evaluate(
     root: &Path,
-    recipe: &str,
+    recipe: Recipe,
     args: &[String],
     stdout: File,
     stderr: File,
@@ -352,7 +354,7 @@ fn evaluate(
         }
     });
     let mut child = Command::new("just")
-        .arg(recipe)
+        .args(recipe.command())
         .args(args)
         .current_dir(root)
         .stdin(Stdio::null())

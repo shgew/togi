@@ -12,6 +12,93 @@
 //! Every search scores its candidates on rayon's threads, each into its own slot, and folds the slots in
 //! candidate order with a strict improvement test; randomness is seeded per fit. The machine files, the
 //! report and the forward check are therefore byte for byte the same on a pool of any size.
+//!
+//! # Fitting objective and search
+//!
+//! All-facts, whole-trial bootstrap and forward-prefix fits use one path: Bernoulli negative log
+//! likelihood plus shared-voltage threshold shrinkage, a margin prior and named-core attribution.
+//! Reports show raw Bernoulli loss, excluding priors and attribution. Predictions use
+//! `togi_sim::Model::failure_probability` over intended, not measured, trial durations. Equal
+//! profile/class observations are aggregated without losing counts; bootstrap trials retain their
+//! request/clock telemetry and named-core evidence.
+//!
+//! Bounded coordinate search fits alone/together limits, workload overrides, hazard shape, supported
+//! flat and idle mechanisms, and shared-voltage parameters. It finds a local optimum, not a guaranteed
+//! global optimum. Coupled sweeps shift active integer limits by `delta` and scale the past-limit rate
+//! by `growth^(-delta)`, preserving already-past-limit hazards until a profile crosses a limit.
+//! Unsupported -50 limits stay fixed; the same bounds and original-evidence constraints apply.
+//!
+//! Positive past-limit rates range from `1e-8` to `0.5` failures/s, near-limit rates from `1e-8` to
+//! `0.001`/s, flat rates from `1e-10` to `0.001`/s, growth from `1.05` to `8`, and limits from -50 to 1.
+//! Zero is also considered for each rate. No R7 joints or CCD residuals are fitted; the simulator
+//! retains their legacy file formats.
+//!
+//! # Shared-voltage fit
+//!
+//! Multi-core R7 uses a shared rail instead of per-core limits, joints or CCD residuals. Loaded
+//! requests combine a per-core/workload base, count coefficient and clock coefficient. Required
+//! voltage combines a threshold with its own clock coefficient times `(CCD MHz-reference MHz)/100`.
+//! The margin against the highest loaded request across both CCDs determines the smooth hazard.
+//! Request/clock measurements and named-core failure attribution constrain the fit. Threshold
+//! shrinkage is 10 mV within CCD/workload; the lognormal margin prior is centered at 6 mV with log-2
+//! width. One augmented objective serves every coordinate and sweep acceptance.
+//!
+//! A separate CO-independent platform background rate applies once per multi-core R7 trial,
+//! independently of profile, workload and load size, including CO 0. It produces unattributed
+//! crashes. Legacy flat hazards are suppressed in shared R7 and cannot supply this mechanism.
+//!
+//! | Parameter | Bounds |
+//! |---|---|
+//! | Request count coefficient | 0.0025–0.005 V/count |
+//! | Request and required-voltage clock coefficients | 0.005–0.06 V/100 MHz |
+//! | Shared per-core rate | `1e-5`–0.03 failures/s |
+//! | Platform background rate | 0–0.001 failures/s |
+//! | Smooth margin | 0.001–0.03 V |
+//! | Required-voltage thresholds | 0.8–1.5 V |
+//! | Per-core/workload request bases | 0.9–1.5 V |
+//! | Clock gain per unloaded core | 0–60 MHz/core |
+//! | Package and CCD-balance clock responses | 0–30 MHz/W |
+//! | Full-load CCD clock intercepts | 4000–6000 MHz |
+//!
+//! The request reference is 5240 MHz. Power and thermal limits are fixed at 192 W; workload power is
+//! 13 W/core for mprime AVX2 and 15 W/core for AVX-512 and y-cruncher, plus 0.12 W per offset count
+//! relative to -35. Full-load clocks use measured medians; unsupported ones retain priors.
+//! Unsupported y-cruncher R7 uses each core's maximum AVX2/AVX-512 threshold, not a validated
+//! hardware threshold.
+//!
+//! # Identifiability and signals
+//!
+//! Unsupported or all-passing boundaries stay at -50; no failures does not prove that boundary.
+//! Sparse failures cannot resolve separate hazard shapes per core/regime. Unsupported workload
+//! overrides remain absent and flat rates remain zero without support. Onset and delays remain zero:
+//! binary outcomes do not identify failure-time shapes. Crash-MCE probability, bank attribution and
+//! reset kinds retain simulator defaults, outside the binary likelihood. Idle facts have no exposure
+//! denominator; idle limits require decisive trials with nonzero unloaded-core offsets.
+//!
+//! Failure-signal counts set pooled `model.signals` and per-regime `model.regime_signals`. Unseen
+//! signals get no weight; regimes without failures use the pooled counts. An uncorrected MCE counts
+//! as a crash; the simulator's `crash_mce` controls MCE production. Missing signals are not counted,
+//! and a sample without recorded failure signals retains simulator defaults. Named-core attribution
+//! affects fitting, while forward and model checks score binary outcomes only.
+//!
+//! # Bootstrap constraints and reproducibility
+//!
+//! A bootstrap sample is fitted unconstrained first. If its original-extract model check flags a
+//! group and the all-facts fit passes, restart from that passing fit and minimize the same resampled
+//! augmented objective, accepting only moves within every original group's unchanged 99% interval.
+//! Samples are never redrawn or seeds tuned. This truncates the ensemble's spread: it is not an
+//! unconstrained bootstrap confidence interval. If the all-facts fit fails, write flagged members
+//! unconstrained instead; a flagged member cannot support a target-machine claim.
+//!
+//! One Rayon pool bounds independent fits, candidate scoring, constrained restarts and prefix fits.
+//! Scores fold in candidate order. Refit `n` resamples with `StdRng` seeded `SEED+n`.
+//! Files have stable order and full-precision parameters, no timestamps and omitted default fields.
+//! Provenance and model-check diagnostics live in `notes`; BIOS context is preserved as supplied.
+//! Fixed inputs and seed reproduce bytes on one host regardless of worker count. Cross-architecture
+//! last-digit equality is unmeasured; compare decoded values. Elapsed report times are not
+//! deterministic; `mean_p` uses scientific notation. The committed machines remain historical
+//! Go-generated output until deliberate regeneration; this optimizer is not expected to reproduce
+//! their parameters, bootstrap streams or losses.
 
 mod anchor;
 pub mod artifact;
