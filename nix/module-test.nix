@@ -190,6 +190,8 @@ assert
 assert kmsconService.startLimitBurst == 3;
 assert kmsconService.startLimitIntervalSec == 180;
 assert kmsconService.onFailure == [ "togi-watch-fallback.service" ];
+assert kmsconService.conflicts == [ "togi-watch.service" ];
+assert builtins.elem "togi-watch.service" kmsconService.after;
 assert builtins.elem pkgs.dejavu_fonts kmscon.fonts.packages;
 assert kmscon.hardware.graphics.enable;
 assert kmscon.fonts.fontconfig.enable;

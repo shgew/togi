@@ -297,6 +297,14 @@ in
           machine.wait_for_text("preflight")
 
       with subtest("three killed kmscon starts fall back to the Linux console"):
+          # Fresh start-limit window, independent of how long the earlier subtests took.
+          machine.succeed("systemctl reset-failed togi-kmscon.service && systemctl restart togi-kmscon.service")
+          machine.wait_until_succeeds(
+              "systemctl is-active --quiet togi-kmscon.service && "
+              "test $(systemctl show togi-kmscon.service -p NRestarts --value) -eq 0"
+          )
+          machine.wait_until_succeeds("pgrep -f '^/nix/store/[^ ]*/bin/togi watch --tuning-boot$'")
+          machine.fail("systemctl is-active --quiet togi-watch.service")
           for attempt in range(3):
               machine.succeed("systemctl kill --kill-whom=main --signal=SIGKILL togi-kmscon.service")
               if attempt < 2:

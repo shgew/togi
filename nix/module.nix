@@ -234,8 +234,10 @@ in
             after = [
               "systemd-user-sessions.service"
               "togi-kernel-log.service"
+              "togi-watch.service"
             ];
             wants = [ "togi-kernel-log.service" ];
+            conflicts = [ "togi-watch.service" ];
             onFailure = [ "togi-watch-fallback.service" ];
             unitConfig.ConditionPathExists = "/dev/tty1";
             startLimitIntervalSec = 180;
