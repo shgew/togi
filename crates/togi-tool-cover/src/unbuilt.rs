@@ -112,7 +112,12 @@ static MODULE_DECLARATION: LazyLock<Result<Regex, regex::Error>> = LazyLock::new
 /// whose file a dep-info names. The declaration holds no lines of the module, so the trace measures
 /// the module in its own file. An indented declaration sits in an inline module and resolves
 /// under that module's directory, so it proves nothing.
-fn module_built(root: &Path, path: &str, item: &str, built: &HashSet<String>) -> Result<bool, Error> {
+fn module_built(
+    root: &Path,
+    path: &str,
+    item: &str,
+    built: &HashSet<String>,
+) -> Result<bool, Error> {
     let pattern = MODULE_DECLARATION
         .as_ref()
         .map_err(|error| Error::Pattern(error.clone()))?;
