@@ -7,7 +7,7 @@ use togi_journal::{
     TrialIntent,
 };
 use togi_machine::{BootId, CoreId, CoreSet, Signal, WorkloadId};
-use togi_tuner::{Profile, Topology};
+use togi_tuner::{Load, Profile, Topology};
 
 use crate::journal::Journal;
 
@@ -62,9 +62,7 @@ impl PartialOrd for Class {
 
 /// The cores a trial loads: the one it names, or its set.
 pub(crate) fn loaded(intent: &TrialIntent) -> CoreSet {
-    intent
-        .core
-        .map_or(intent.cores, |core| CoreSet::from_iter([core]))
+    Load::recorded(intent.core, intent.cores).cores()
 }
 
 /// Two-digit core numbers, comma separated.

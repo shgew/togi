@@ -6,7 +6,7 @@ use togi_journal::{
     ResetTarget, Seq, TrialId, TrialIntent, TunerDecision,
 };
 use togi_machine::{Condition, CoreId, CoreSet, PerCore, Regime, TargetOffset};
-use togi_tuner::FailurePoint;
+use togi_tuner::{FailurePoint, Load};
 
 use crate::auditor::Seen;
 use crate::violation::{Check, Findings};
@@ -33,12 +33,11 @@ struct Loaded {
 
 impl Loaded {
     fn of(intent: &TrialIntent) -> Self {
-        let mut cores = intent.cores;
-        if cores.is_empty() {
-            if let Some(core) = intent.core {
-                cores.insert(core);
-            }
-        }
+        let cores = Load::recorded(
+            intent.core.filter(|_| intent.cores.is_empty()),
+            intent.cores,
+        )
+        .cores();
         Self {
             cores,
             regime: intent.regime,
@@ -67,8 +66,8 @@ impl Marks {
             .iter()
             .copied()
             .reduce(|best, point| {
-                let merged = FailurePoint::new(point.offset)
-                    .merge(Some(FailurePoint::new(best.offset)));
+                let merged =
+                    FailurePoint::new(point.offset).merge(Some(FailurePoint::new(best.offset)));
                 if merged.offset() != best.offset {
                     point
                 } else {

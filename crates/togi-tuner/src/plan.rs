@@ -8,7 +8,7 @@ use togi_journal::{
 };
 use togi_machine::{Condition, CoreId, CoreSet, Regime, WorkloadId, pick_workload};
 
-use crate::{ClassKey, Profile, Secs, Window};
+use crate::{ClassKey, FoldError, Profile, Secs, Topology, Window};
 
 macro_rules! ordinal {
     ($(#[$meta:meta])* $name:ident) => {
@@ -46,6 +46,28 @@ pub enum Load {
 }
 
 impl Load {
+    /// The recorded load shape, before checking it against a session's topology.
+    /// A named core takes precedence over the set; callers retain their wire-shape preconditions.
+    pub fn recorded(core: Option<CoreId>, cores: CoreSet) -> Self {
+        match core {
+            Some(core) => Self::Single(core),
+            None => Self::Many(cores),
+        }
+    }
+
+    /// Decodes a trial's load and refuses an empty load or any core outside the topology.
+    pub fn decode(intent: &TrialIntent, topology: &Topology) -> Result<Self, FoldError> {
+        let load = Self::recorded(intent.core, intent.cores);
+        let cores = load.cores();
+        if cores.is_empty() {
+            return Err(FoldError::NoLoad(intent.trial.clone()));
+        }
+        if let Some(core) = cores.iter().find(|&core| !topology.contains(core)) {
+            return Err(FoldError::UnknownCore(core));
+        }
+        Ok(load)
+    }
+
     pub fn cores(self) -> CoreSet {
         match self {
             Self::Single(core) => std::iter::once(core).collect(),

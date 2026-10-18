@@ -837,9 +837,10 @@ impl ClassKey {
         Self {
             regime: intent.regime,
             workload: intent.workload,
-            cores: intent
-                .core
-                .map_or_else(|| intent.cores.iter().collect(), |core| vec![core]),
+            cores: togi_tuner::Load::recorded(intent.core, intent.cores)
+                .cores()
+                .iter()
+                .collect(),
             duration_s: intent.duration_s,
         }
     }

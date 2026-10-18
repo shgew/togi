@@ -1,5 +1,6 @@
 use std::num::NonZeroU32;
 
+use test_case::test_case;
 use togi_journal::{
     Activity, Attribution, CorePhase, CoreTransition, DeadEnd, DeadEndCondition, Decision, Failure,
     Mce, Notice, Outcome, Payload, Seq, TrialId, TrialProgress, TunerDecision,
@@ -341,6 +342,46 @@ fn rotation_counts_each_regime_apart_and_all_loads_apart_from_one_core() {
 fn trial_intent(j: &Journal) -> (togi_journal::TrialIntent, TrialPlan) {
     let plan = j.next_trial();
     (plan.intent(TrialId::from("0001".to_owned()), 0), plan)
+}
+
+#[test_case(Some(0), &[], Load::Single(core(0)); "single core")]
+#[test_case(None, &[0, 1], Load::Many(set(&[0, 1])); "multiple cores")]
+#[test_case(None, &[1], Load::Many(set(&[1])); "one core in a set")]
+#[test_case(Some(0), &[9], Load::Single(core(0)); "named core has precedence")]
+fn intent_load_decoding_preserves_the_recorded_shape(
+    single: Option<u8>,
+    many: &[u8],
+    expected: Load,
+) {
+    let j = Journal::search_at(&[-10, -10]);
+    let (mut intent, _) = trial_intent(&j);
+    intent.core = single.map(core);
+    intent.cores = set(many);
+    assert_eq!(
+        Load::decode(&intent, &crate::tests::topology(&[0, 1])).unwrap(),
+        expected
+    );
+}
+
+#[test_case(None, &[], None; "empty load")]
+#[test_case(Some(9), &[], Some(9); "foreign single core")]
+#[test_case(None, &[0, 9], Some(9); "foreign core in a set")]
+fn intent_load_decoding_validates_single_and_multi_core_loads(
+    single: Option<u8>,
+    many: &[u8],
+    unknown: Option<u8>,
+) {
+    let mut j = Journal::search_at(&[-10, -10]);
+    let (mut intent, _) = trial_intent(&j);
+    intent.core = single.map(core);
+    intent.cores = set(many);
+    let error = j.try_append(intent.into(), &[]).unwrap_err();
+    match unknown {
+        Some(id) => assert!(matches!(error, FoldError::UnknownCore(found) if found == core(id))),
+        None => assert!(
+            matches!(error, FoldError::NoLoad(trial) if trial == TrialId::from("0001".to_owned()))
+        ),
+    }
 }
 
 #[test]

@@ -114,7 +114,6 @@ impl Run {
         }
         let class = self.class_of_intent(intent)?;
         let profile = Profile::new(&self.topo, intent.profile)?;
-        self.require_cores(intent.core.into_iter().collect())?;
         let requirement = self.schedule_intent(intent, class, &event.cause)?;
         if let Some(turn) = requirement.context.turn() {
             self.search

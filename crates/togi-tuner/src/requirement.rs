@@ -72,16 +72,7 @@ impl Run {
                 workload: intent.workload,
             });
         }
-        let loaded = match intent.core {
-            Some(core) => Load::Single(core).cores(),
-            None => intent.cores,
-        };
-        if loaded.is_empty() {
-            return Err(FoldError::NoLoad(intent.trial.clone()));
-        }
-        if let Some(core) = loaded.iter().find(|&core| !self.topo.contains(core)) {
-            return Err(FoldError::UnknownCore(core));
-        }
+        let loaded = Load::decode(intent, &self.topo)?.cores();
         let duration = NonZeroU32::new(intent.duration_s).ok_or(FoldError::ZeroDuration)?;
         Ok(ClassKey::new(intent.workload, loaded, Secs::new(duration)))
     }
@@ -179,10 +170,10 @@ impl Run {
     /// Keeps an inconclusive trial to retry under the requirement it was scheduled for.
     pub(crate) fn save_retry(&mut self, open: &OpenTrial) {
         let intent = &open.intent;
-        let load = match intent.core {
-            Some(core) if intent.cores.is_empty() => Load::Single(core),
-            _ => Load::Many(intent.cores),
-        };
+        let load = Load::recorded(
+            intent.core.filter(|_| intent.cores.is_empty()),
+            intent.cores,
+        );
         let (condition, activity, cause) = match open.requirement.context {
             TrialContext::ZeroRerun { failure } => (
                 Condition::Parked,

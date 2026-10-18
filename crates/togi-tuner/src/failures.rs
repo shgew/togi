@@ -255,10 +255,13 @@ impl Run {
             None => None,
         };
         let load = match awaiting {
-            Some(awaiting) => match awaiting.intent.core {
-                Some(core) if awaiting.intent.cores.is_empty() => Load::Single(core),
-                _ => Load::Many(class.loaded()),
-            },
+            Some(awaiting) => Load::recorded(
+                awaiting
+                    .intent
+                    .core
+                    .filter(|_| awaiting.intent.cores.is_empty()),
+                class.loaded(),
+            ),
             None => crate::failures::load_of(class),
         };
         let round = failure

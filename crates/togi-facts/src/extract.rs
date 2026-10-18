@@ -323,9 +323,7 @@ impl Extractor {
             observation: Observation::Trial {
                 class: TrialClass {
                     workload: intent.workload,
-                    loaded: intent
-                        .core
-                        .map_or(intent.cores, |core| CoreSet::from_iter([core])),
+                    loaded: togi_tuner::Load::recorded(intent.core, intent.cores).cores(),
                     duration_s: intent.duration_s,
                 },
                 condition: intent.condition,

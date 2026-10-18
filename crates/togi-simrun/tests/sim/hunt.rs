@@ -212,10 +212,10 @@ fn script(signal: Option<Signal>, core: CoreId) -> Script {
 
 fn condition_limit_script(definition: &MachineDefinition, intent: &TrialIntent) -> Script {
     let offset = |core: CoreId| intent.profile.get(core).map_or(0, TargetOffset::get);
-    let loaded: Vec<CoreId> = match intent.core {
-        Some(core) => vec![core],
-        None => intent.cores.iter().collect(),
-    };
+    let loaded: Vec<CoreId> = togi_tuner::Load::recorded(intent.core, intent.cores)
+        .cores()
+        .iter()
+        .collect();
     let regime = regime_index(intent.regime);
     let alone = intent.condition == Condition::Alone;
     for core in &loaded {

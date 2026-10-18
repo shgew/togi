@@ -597,7 +597,7 @@ fn class_of(event: &Event) -> Option<(TrialId, ClassKey)> {
     let Payload::TrialIntent(intent) = &event.payload else {
         return None;
     };
-    let loaded = intent.core.map_or(intent.cores, |core| set(&[core.get()]));
+    let loaded = Load::recorded(intent.core, intent.cores).cores();
     let secs = Secs::new(std::num::NonZeroU32::new(intent.duration_s).unwrap());
     Some((
         intent.trial.clone(),
