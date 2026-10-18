@@ -4,7 +4,6 @@ exclude = ["crates/togi-journal/fuzz"]
 resolver = "3"
 
 [workspace.package]
-version = "0.0.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/shgew/togi"
@@ -33,37 +32,37 @@ signal-hook = { version = "0.4", default-features = false, features = ["iterator
 tempfile = "3"
 test-case = "3"
 thiserror = "2"
-togi-backend = { path = "crates/togi-backend", version = "0.0.0" }
-togi-carry = { path = "crates/togi-carry", version = "0.0.0" }
-togi-command = { path = "crates/togi-command", version = "0.0.0" }
-togi-config = { path = "crates/togi-config", version = "0.0.0" }
-togi-defect = { path = "crates/togi-defect", version = "0.0.0" }
-togi-detect = { path = "crates/togi-detect", version = "0.0.0" }
-togi-facts = { path = "crates/togi-facts", version = "0.0.0" }
-togi-hardware = { path = "crates/togi-hardware", version = "0.0.0" }
-togi-hostlock = { path = "crates/togi-hostlock", version = "0.0.0" }
-togi-journal = { path = "crates/togi-journal", version = "0.0.0" }
-togi-machine = { path = "crates/togi-machine", version = "0.0.0" }
-togi-mprime = { path = "crates/togi-mprime", version = "0.0.0" }
-togi-render = { path = "crates/togi-render", version = "0.0.0" }
-togi-requests = { path = "crates/togi-requests", version = "0.0.0" }
-togi-session = { path = "crates/togi-session", version = "0.0.0" }
-togi-sim = { path = "crates/togi-sim", version = "0.0.0" }
-togi-simrun = { path = "crates/togi-simrun", version = "0.0.0" }
-togi-smu = { path = "crates/togi-smu", version = "0.0.0" }
-togi-statecopy = { path = "crates/togi-statecopy", version = "0.0.0" }
-togi-tool-audit = { path = "crates/togi-tool-audit", version = "0.0.0" }
-togi-tool-forecast = { path = "crates/togi-tool-forecast", version = "0.0.0" }
-togi-tool-modelcheck = { path = "crates/togi-tool-modelcheck", version = "0.0.0" }
-togi-tool-trialfacts = { path = "crates/togi-tool-trialfacts", version = "0.0.0" }
-togi-trial = { path = "crates/togi-trial", version = "0.0.0" }
-togi-trialfiles = { path = "crates/togi-trialfiles", version = "0.0.0" }
-togi-tuner = { path = "crates/togi-tuner", version = "0.0.0" }
-togi-tuningboot = { path = "crates/togi-tuningboot", version = "0.0.0" }
-togi-version = { path = "crates/togi-version", version = "0.0.0" }
-togi-watch = { path = "crates/togi-watch", version = "0.0.0" }
-togi-watchtest = { path = "crates/togi-watchtest", version = "0.0.0" }
-togi-ycruncher = { path = "crates/togi-ycruncher", version = "0.0.0" }
+togi-backend = { path = "crates/togi-backend" }
+togi-carry = { path = "crates/togi-carry" }
+togi-command = { path = "crates/togi-command" }
+togi-config = { path = "crates/togi-config" }
+togi-defect = { path = "crates/togi-defect" }
+togi-detect = { path = "crates/togi-detect" }
+togi-facts = { path = "crates/togi-facts" }
+togi-hardware = { path = "crates/togi-hardware" }
+togi-hostlock = { path = "crates/togi-hostlock" }
+togi-journal = { path = "crates/togi-journal" }
+togi-machine = { path = "crates/togi-machine" }
+togi-mprime = { path = "crates/togi-mprime" }
+togi-render = { path = "crates/togi-render" }
+togi-requests = { path = "crates/togi-requests" }
+togi-session = { path = "crates/togi-session" }
+togi-sim = { path = "crates/togi-sim" }
+togi-simrun = { path = "crates/togi-simrun" }
+togi-smu = { path = "crates/togi-smu" }
+togi-statecopy = { path = "crates/togi-statecopy" }
+togi-tool-audit = { path = "crates/togi-tool-audit" }
+togi-tool-forecast = { path = "crates/togi-tool-forecast" }
+togi-tool-modelcheck = { path = "crates/togi-tool-modelcheck" }
+togi-tool-trialfacts = { path = "crates/togi-tool-trialfacts" }
+togi-trial = { path = "crates/togi-trial" }
+togi-trialfiles = { path = "crates/togi-trialfiles" }
+togi-tuner = { path = "crates/togi-tuner" }
+togi-tuningboot = { path = "crates/togi-tuningboot" }
+togi-version = { path = "crates/togi-version" }
+togi-watch = { path = "crates/togi-watch" }
+togi-watchtest = { path = "crates/togi-watchtest" }
+togi-ycruncher = { path = "crates/togi-ycruncher" }
 tokio = { version = "1", default-features = false }
 toml_edit = { version = "0.25", default-features = false, features = ["parse"] }
 unicode-width = "0.2"
