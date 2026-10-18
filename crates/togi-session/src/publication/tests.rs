@@ -2,6 +2,7 @@ use super::*;
 use crate::emergency::{Response, Withheld};
 use crate::session::{Control, Stop};
 use crate::testing::{Bench, kinds_of, swept};
+use test_case::test_case;
 use togi_journal::fs::{Fault, Op};
 
 #[test]
@@ -49,47 +50,46 @@ fn state_write_failure_warns_continues_and_rebuilds() {
     assert_eq!(saved.tuner, resumed.appender.tuner().project());
 }
 
-#[test]
-fn projection_warning_append_failure_is_fatal() {
-    for after_sweep in [false, true] {
-        let bench = Bench::new(2);
-        let mut session = if after_sweep {
-            swept(&bench)
-        } else {
-            let mut session = bench.open();
-            session.start().unwrap();
-            session
-        };
-        if after_sweep {
-            session.validated = Some(session.host.validate_smu().unwrap());
-        }
-        bench.mem.fail_state_publication();
-        bench
-            .mem
-            .inject(Fault::before(Op::Write, 1).named("events.jsonl"));
-        let error = session.appender.publish_state().unwrap_err();
-        let ended = session.close(Err(error.into()));
-        assert!(matches!(
-            ended.errors.first(),
-            Some(SessionError::Journal(_))
-        ));
-        let emergency = ended.emergency.unwrap();
-        if after_sweep {
-            assert!(matches!(emergency.response, Response::Zeroed(_)));
-        } else {
-            assert!(matches!(
-                emergency.response,
-                Response::Withheld(Withheld::NoSweep)
-            ));
-        }
-        assert!(
-            !ended
-                .journal
-                .events()
-                .iter()
-                .any(|event| matches!(event.payload, Payload::Shutdown(_)))
-        );
+#[test_case(false; "false")]
+#[test_case(true; "true")]
+fn projection_warning_append_failure_is_fatal(after_sweep: bool) {
+    let bench = Bench::new(2);
+    let mut session = if after_sweep {
+        swept(&bench)
+    } else {
+        let mut session = bench.open();
+        session.start().unwrap();
+        session
+    };
+    if after_sweep {
+        session.validated = Some(session.host.validate_smu().unwrap());
     }
+    bench.mem.fail_state_publication();
+    bench
+        .mem
+        .inject(Fault::before(Op::Write, 1).named("events.jsonl"));
+    let error = session.appender.publish_state().unwrap_err();
+    let ended = session.close(Err(error.into()));
+    assert!(matches!(
+        ended.errors.first(),
+        Some(SessionError::Journal(_))
+    ));
+    let emergency = ended.emergency.unwrap();
+    if after_sweep {
+        assert!(matches!(emergency.response, Response::Zeroed(_)));
+    } else {
+        assert!(matches!(
+            emergency.response,
+            Response::Withheld(Withheld::NoSweep)
+        ));
+    }
+    assert!(
+        !ended
+            .journal
+            .events()
+            .iter()
+            .any(|event| matches!(event.payload, Payload::Shutdown(_)))
+    );
 }
 
 #[test]

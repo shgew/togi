@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::rc::Rc;
+use test_case::test_case;
 
 use togi_journal::{DeadEndCondition, Payload, SmuOp};
 use togi_machine::{Condition, CoreId, Error, ObservedOffset, PerCore, TargetOffset};
@@ -551,38 +552,37 @@ fn the_first_failed_append_latches_and_cancels_the_running_trial() {
     assert_eq!(first.to_string(), second.to_string());
 }
 
-#[test]
-fn a_crash_at_every_smu_access_leaves_the_intent_and_no_invented_evidence() {
-    let cases = [
-        (SimOp::Set, HookPhase::Before, 1),
-        (SimOp::Set, HookPhase::After, 1),
-        (SimOp::Read, HookPhase::Before, 2),
-        (SimOp::Read, HookPhase::After, 2),
-    ];
-    for (op, phase, added) in cases {
-        let mut rig = Rig::new(2);
-        rig.start_at_zero();
-        let mut expected = rig.kinds();
-        expected.extend(["smu.intent", "smu.write"].into_iter().take(added));
-        let intent = rig
-            .appender
-            .journal()
-            .events()
-            .last()
-            .unwrap()
-            .seq
-            .next()
-            .unwrap();
-        rig.crash_at(op, phase);
-        let failure = rig.set(0, -10).unwrap_err();
-        assert!(matches!(failure, WriteFailure::Crashed), "{op:?} {phase:?}");
-        assert_eq!(rig.kinds(), expected, "{op:?} {phase:?}");
-        assert!(matches!(Flow::from(failure), Flow::Fatal(_)));
-        assert_eq!(rig.hardware.slot(core(0)), Some(Slot::Unknown));
-        let pending = rig.appender.recovery().latest_unmatched_intent(&rig.boot);
-        assert_eq!(pending, (added == 1).then_some(intent), "{op:?} {phase:?}");
-        assert_fold_consistent(&rig.appender);
-    }
+#[test_case(SimOp::Set, HookPhase::Before, 1; "before set")]
+#[test_case(SimOp::Set, HookPhase::After, 1; "after set")]
+#[test_case(SimOp::Read, HookPhase::Before, 2; "before read")]
+#[test_case(SimOp::Read, HookPhase::After, 2; "after read")]
+fn a_crash_at_every_smu_access_leaves_the_intent_and_no_invented_evidence(
+    op: SimOp,
+    phase: HookPhase,
+    added: usize,
+) {
+    let mut rig = Rig::new(2);
+    rig.start_at_zero();
+    let mut expected = rig.kinds();
+    expected.extend(["smu.intent", "smu.write"].into_iter().take(added));
+    let intent = rig
+        .appender
+        .journal()
+        .events()
+        .last()
+        .unwrap()
+        .seq
+        .next()
+        .unwrap();
+    rig.crash_at(op, phase);
+    let failure = rig.set(0, -10).unwrap_err();
+    assert!(matches!(failure, WriteFailure::Crashed), "{op:?} {phase:?}");
+    assert_eq!(rig.kinds(), expected, "{op:?} {phase:?}");
+    assert!(matches!(Flow::from(failure), Flow::Fatal(_)));
+    assert_eq!(rig.hardware.slot(core(0)), Some(Slot::Unknown));
+    let pending = rig.appender.recovery().latest_unmatched_intent(&rig.boot);
+    assert_eq!(pending, (added == 1).then_some(intent), "{op:?} {phase:?}");
+    assert_fold_consistent(&rig.appender);
 }
 
 #[test]
@@ -643,26 +643,28 @@ fn combination(members: &[(i64, i64)]) -> Payload {
     })
 }
 
-#[test]
-fn a_write_reaching_a_folded_failure_point_is_refused_with_no_intent_appended() {
+#[test_case(-30; "-30")]
+#[test_case(-31; "-31")]
+#[test_case(-50; "-50")]
+fn a_write_reaching_a_folded_failure_point_is_refused_with_no_intent_appended(deeper: i64) {
     let mut rig = Rig::new(4);
     rig.zero_all().unwrap();
     let state = tuner_after(&mut rig, vec![failure_point(2, -30)]);
     let before = rig.kinds();
-    for deeper in [-30, -31, -50] {
-        let refused = rig
-            .hardware
-            .check_set(core(2), target(deeper), &mut |after| {
-                super::refusal(&state, after)
-            })
-            .unwrap_err();
-        assert_eq!(
-            togi_render::error_chain(&refused),
-            format!(
-                "refusing to write core 02 to {deeper}: check the resulting profile: failure point -30 of core 02"
-            )
-        );
-    }
+
+    let refused = rig
+        .hardware
+        .check_set(core(2), target(deeper), &mut |after| {
+            super::refusal(&state, after)
+        })
+        .unwrap_err();
+    assert_eq!(
+        togi_render::error_chain(&refused),
+        format!(
+            "refusing to write core 02 to {deeper}: check the resulting profile: failure point -30 of core 02"
+        )
+    );
+
     assert_eq!(rig.kinds(), before);
     assert_eq!(rig.offset(2), 0);
     drop(

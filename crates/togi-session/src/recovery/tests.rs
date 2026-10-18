@@ -1,4 +1,5 @@
 use std::time::Duration;
+use test_case::test_case;
 
 use jiff::Timestamp;
 use proptest::prelude::*;
@@ -534,30 +535,27 @@ fn a_hunt_group_stays_armed_through_a_restoration_until_something_replaces_it() 
     );
 }
 
-#[test]
-fn a_together_application_a_profile_change_or_the_hunts_end_disarms_the_group() {
-    let disarming: [Payload; 3] = [
-        applied(Condition::Together),
-        Payload::ProfileChange(ProfileChange {
+#[test_case(applied(Condition::Together); "together application")]
+#[test_case(Payload::ProfileChange(ProfileChange {
             from: None,
             to: PerCore::default(),
-        }),
-        Payload::HuntEnd(HuntEnd {
+        }); "profile change")]
+#[test_case(Payload::HuntEnd(HuntEnd {
             hunt: std::num::NonZeroU32::MIN,
             result: HuntOutcome::Fallback,
             cores: CoreSet::default(),
             members: Vec::new(),
             groups: 1,
             reason: "r".into(),
-        }),
-    ];
-    for payload in disarming {
-        let mut log = Log::new();
-        log.baseline(&[(0, 0), (8, 0)]);
-        log.add(hunt_group(), &[]);
-        log.add(payload.clone(), &[]);
-        assert!(!log.state().hunt_group_armed(), "{:?}", payload.kind());
-    }
+        }); "hunt end")]
+fn a_together_application_a_profile_change_or_the_hunts_end_disarms_the_group(payload: Payload) {
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    log.add(hunt_group(), &[]);
+    let kind = payload.kind();
+    log.add(payload, &[]);
+    assert!(!log.state().hunt_group_armed(), "{kind:?}");
+
     let mut log = Log::new();
     log.add(hunt_group(), &[]);
     log.trial_intent("0001", Some(0), Regime::R1);
@@ -718,161 +716,48 @@ fn live_trial(cores: &mut Log) {
         .mono(11_000)
         .started("window", Some(10_000_000_000), intent);
 }
-struct Case {
-    name: &'static str,
-    from_boot: Option<&'static str>,
-    event_boot: &'static str,
-    mono_ns: Option<u64>,
-    corrected: bool,
-    between: bool,
-    want: bool,
-}
 
-#[test]
-fn which_machine_checks_belong_to_the_trial_and_which_to_its_crash() {
-    let ns = |n: u64| Some(n);
-    let ten = 10_000_000_000_u64;
-    let case = |name, from_boot, event_boot, mono_ns, corrected, between, want| Case {
-        name,
-        from_boot,
-        event_boot,
-        mono_ns,
-        corrected,
-        between,
-        want,
+#[test_case("recovered before the window", Some("old"), "new", Some(10_000_000_000_u64 - 1), false, false, false; "recovered before the window")]
+#[test_case("recovered at the window start", Some("old"), "new", Some(10_000_000_000_u64), false, false, true; "recovered at the window start")]
+#[test_case("recovered unread crash tail", Some("old"), "new", Some(12_000_000_000), false, false, true; "recovered unread crash tail")]
+#[test_case("recovered zero is a time", Some("old"), "new", Some(0), false, false, false; "recovered zero is a time")]
+#[test_case("retained by the next boot, uncorrected, at zero", Some("new"), "new", Some(0), false, false, true; "retained by the next boot, uncorrected, at zero")]
+#[test_case("retained by the next boot, uncorrected, late", Some("new"), "new", Some(3_600_000_000_000), false, false, true; "retained by the next boot, uncorrected, late")]
+#[test_case("retained by the next boot, corrected", Some("new"), "new", Some(0), true, false, false; "retained by the next boot, corrected")]
+#[test_case("another boot", Some("other"), "new", Some(12_000_000_000), false, false, false; "another boot")]
+#[test_case("live before the window", None, "old", Some(0), false, false, false; "live before the window")]
+#[test_case("live at the window start", None, "old", Some(10_000_000_000_u64), false, false, true; "live at the window start")]
+#[test_case("live from a different boot", None, "new", Some(12_000_000_000), false, false, false; "live from a different boot")]
+#[test_case("live after the window", None, "old", Some(12_000_000_000), false, true, false; "live after the window")]
+#[test_case("live without a time", None, "old", None, false, false, true; "live without a time")]
+fn which_machine_checks_belong_to_the_trial_and_which_to_its_crash(
+    case_name: &str,
+    case_from_boot: Option<&str>,
+    case_event_boot: &str,
+    case_mono_ns: Option<u64>,
+    case_corrected: bool,
+    case_between: bool,
+    case_want: bool,
+) {
+    let mut log = Log::new();
+    live_trial(&mut log);
+    log.at(case_event_boot, 12_000);
+    log.mce(Mce {
+        from_boot: case_from_boot.map(boot),
+        monotonic_ns: case_mono_ns,
+        corrected: case_corrected,
+        between_trials: case_between,
+        ..mce(false)
+    });
+    let state = log.state();
+    let mut seqs = state.open_trial().unwrap().mces.clone();
+    seqs.extend(state.recorded_for(&boot("old"), &boot("new")));
+    let want: Vec<Seq> = if case_want {
+        vec![log.next().prev()]
+    } else {
+        Vec::new()
     };
-    let cases = [
-        case(
-            "recovered before the window",
-            Some("old"),
-            "new",
-            ns(ten - 1),
-            false,
-            false,
-            false,
-        ),
-        case(
-            "recovered at the window start",
-            Some("old"),
-            "new",
-            ns(ten),
-            false,
-            false,
-            true,
-        ),
-        case(
-            "recovered unread crash tail",
-            Some("old"),
-            "new",
-            ns(12_000_000_000),
-            false,
-            false,
-            true,
-        ),
-        case(
-            "recovered zero is a time",
-            Some("old"),
-            "new",
-            ns(0),
-            false,
-            false,
-            false,
-        ),
-        case(
-            "retained by the next boot, uncorrected, at zero",
-            Some("new"),
-            "new",
-            ns(0),
-            false,
-            false,
-            true,
-        ),
-        case(
-            "retained by the next boot, uncorrected, late",
-            Some("new"),
-            "new",
-            ns(3_600_000_000_000),
-            false,
-            false,
-            true,
-        ),
-        case(
-            "retained by the next boot, corrected",
-            Some("new"),
-            "new",
-            ns(0),
-            true,
-            false,
-            false,
-        ),
-        case(
-            "another boot",
-            Some("other"),
-            "new",
-            ns(12_000_000_000),
-            false,
-            false,
-            false,
-        ),
-        case(
-            "live before the window",
-            None,
-            "old",
-            ns(0),
-            false,
-            false,
-            false,
-        ),
-        case(
-            "live at the window start",
-            None,
-            "old",
-            ns(ten),
-            false,
-            false,
-            true,
-        ),
-        case(
-            "live from a different boot",
-            None,
-            "new",
-            ns(12_000_000_000),
-            false,
-            false,
-            false,
-        ),
-        case(
-            "live after the window",
-            None,
-            "old",
-            ns(12_000_000_000),
-            false,
-            true,
-            false,
-        ),
-        case("live without a time", None, "old", None, false, false, true),
-    ];
-    for case in cases {
-        let mut log = Log::new();
-        live_trial(&mut log);
-        log.at(case.event_boot, 12_000);
-        log.mce(Mce {
-            from_boot: case.from_boot.map(boot),
-            monotonic_ns: case.mono_ns,
-            corrected: case.corrected,
-            between_trials: case.between,
-            ..mce(false)
-        });
-        let state = log.state();
-        let mut seqs = state.open_trial().unwrap().mces.clone();
-        seqs.extend(state.recorded_for(&boot("old"), &boot("new")));
-        let want: Vec<Seq> = if case.want {
-            vec![log.next().prev()]
-        } else {
-            Vec::new()
-        };
-        assert_eq!(seqs, want, "{}", case.name);
-    }
+    assert_eq!(seqs, want, "{case_name}");
 }
 
 #[test]
@@ -911,8 +796,12 @@ fn a_crash_claims_its_machine_checks_once() {
     );
 }
 
-#[test]
-fn a_machine_check_is_the_same_by_boot_time_cpu_and_bank_not_by_its_text() {
+#[test_case(|seen| seen.monotonic = Duration::from_secs(5); "different time")]
+#[test_case(|seen| seen.cpu = CpuId::from(1); "different CPU")]
+#[test_case(|seen| seen.bank = 2; "different bank")]
+fn a_machine_check_is_the_same_by_boot_time_cpu_and_bank_not_by_its_text(
+    change: fn(&mut togi_machine::Mce),
+) {
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
     log.at("b0", 4_000).mce(Mce {
@@ -932,22 +821,10 @@ fn a_machine_check_is_the_same_by_boot_time_cpu_and_bank_not_by_its_text() {
     };
     assert!(state.has_recorded(&boot("b0"), &seen));
     assert!(!state.has_recorded(&boot("b1"), &seen));
-    for different in [
-        togi_machine::Mce {
-            monotonic: Duration::from_secs(5),
-            ..seen.clone()
-        },
-        togi_machine::Mce {
-            cpu: CpuId::from(1),
-            ..seen.clone()
-        },
-        togi_machine::Mce {
-            bank: 2,
-            ..seen.clone()
-        },
-    ] {
-        assert!(!state.has_recorded(&boot("b0"), &different));
-    }
+
+    let mut different = seen.clone();
+    change(&mut different);
+    assert!(!state.has_recorded(&boot("b0"), &different));
 }
 
 #[test]
@@ -1228,64 +1105,34 @@ fn crash_with(log: &mut Log, previous: &str, edit: impl FnOnce(&mut CrashDetecte
     log.add(Payload::CrashDetected(detected), &[])
 }
 
-#[test]
-fn recorded_crashes_stand_as_stray_idle_or_thermal_evidence_and_nothing_else() {
-    struct Case {
-        stray: bool,
-        inconclusive: bool,
-        reset: Option<ResetKind>,
-        want: (usize, usize, bool),
-    }
-    let cases = [
-        Case {
-            stray: true,
-            inconclusive: false,
-            reset: None,
-            want: (1, 0, false),
-        },
-        Case {
-            stray: false,
-            inconclusive: true,
-            reset: Some(ResetKind::ThermalTrip),
-            want: (0, 0, true),
-        },
-        Case {
-            stray: false,
-            inconclusive: true,
-            reset: Some(ResetKind::PowerButton),
-            want: (0, 0, false),
-        },
-        Case {
-            stray: false,
-            inconclusive: true,
-            reset: None,
-            want: (0, 0, false),
-        },
-        Case {
-            stray: false,
-            inconclusive: false,
-            reset: None,
-            want: (0, 1, false),
-        },
-    ];
-    for case in cases {
-        let mut log = Log::new();
-        log.baseline(&[(0, 0), (8, 0)]);
-        crash_with(&mut log, "a", |detected| {
-            detected.stray = case.stray;
-            detected.inconclusive = case.inconclusive;
-            detected.reset_reason = case.reset;
-        });
-        let state = log.state();
-        assert_eq!(
-            (
-                state.stray().len(),
-                state.pending_idle().len(),
-                state.thermal_evidence().is_some()
-            ),
-            case.want
-        );
-    }
+#[test_case(true, false, None, (1, 0, false); "stray")]
+#[test_case(false, true, Some(ResetKind::ThermalTrip), (0, 0, true); "thermal")]
+#[test_case(false, true, Some(ResetKind::PowerButton), (0, 0, false); "power button")]
+#[test_case(false, true, None, (0, 0, false); "unknown reset")]
+#[test_case(false, false, None, (0, 1, false); "idle")]
+fn recorded_crashes_stand_as_stray_idle_or_thermal_evidence_and_nothing_else(
+    case_stray: bool,
+    case_inconclusive: bool,
+    case_reset: Option<ResetKind>,
+    case_want: (usize, usize, bool),
+) {
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    crash_with(&mut log, "a", |detected| {
+        detected.stray = case_stray;
+        detected.inconclusive = case_inconclusive;
+        detected.reset_reason = case_reset;
+    });
+    let state = log.state();
+    assert_eq!(
+        (
+            state.stray().len(),
+            state.pending_idle().len(),
+            state.thermal_evidence().is_some()
+        ),
+        case_want
+    );
+
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
     log.at("a", 0).trial_intent("t1", None, Regime::R1);

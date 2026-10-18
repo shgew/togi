@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::rc::Rc;
 use std::time::Duration;
+use test_case::test_case;
 
 use togi_config::Config;
 use togi_journal::fs::{Fault, Op};
@@ -247,122 +248,120 @@ fn recorded_accesses(fixture: &SameBoot) -> (Ended, Vec<SmuOperation>) {
     (ended, accesses)
 }
 
-#[test]
-fn every_smu_access_window_of_the_same_boot_restoration_converges() {
-    for pending in [false, true] {
-        let reference = SameBoot::new(pending);
-        let (ended, accesses) = recorded_accesses(&reference);
-        assert!(ended.errors.is_empty(), "{:?}", ended.errors);
-        let want = reference.offsets();
-        assert_eq!(want, HELD);
-        let reads = accesses
-            .iter()
-            .filter(|access| access.op == SmuOp::Read && access.phase == HookPhase::After)
-            .count();
-        assert!(reads >= 4 && accesses.len() > 2 * reads, "{accesses:?}");
-        for (index, &access) in accesses.iter().enumerate() {
-            let fixture = SameBoot::new(pending);
-            let boot = fixture.boot();
-            let fired = kill_at(&fixture, index + 1, Some(access));
+#[test_case(false; "false")]
+#[test_case(true; "true")]
+fn every_smu_access_window_of_the_same_boot_restoration_converges(pending: bool) {
+    let reference = SameBoot::new(pending);
+    let (ended, accesses) = recorded_accesses(&reference);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let want = reference.offsets();
+    assert_eq!(want, HELD);
+    let reads = accesses
+        .iter()
+        .filter(|access| access.op == SmuOp::Read && access.phase == HookPhase::After)
+        .count();
+    assert!(reads >= 4 && accesses.len() > 2 * reads, "{accesses:?}");
+    for (index, &access) in accesses.iter().enumerate() {
+        let fixture = SameBoot::new(pending);
+        let boot = fixture.boot();
+        let fired = kill_at(&fixture, index + 1, Some(access));
+        let killed = fixture.resume();
+        assert!(fired.get() && killed.crashed(), "{:?}", killed.errors);
+        drop(killed);
+        for _ in 0..2 {
+            let fired = kill_at(&fixture, 8, None);
             let killed = fixture.resume();
             assert!(fired.get() && killed.crashed(), "{:?}", killed.errors);
-            drop(killed);
-            for _ in 0..2 {
-                let fired = kill_at(&fixture, 8, None);
-                let killed = fixture.resume();
-                assert!(fired.get() && killed.crashed(), "{:?}", killed.errors);
-                assert_eq!(fixture.boot(), boot);
-            }
-            fixture.bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
-            let resumed = fixture.resume();
-            assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
-            assert_eq!(resumed.stop, ended.stop);
-            assert_eq!(
-                fixture.offsets(),
-                want,
-                "pending {pending}, access #{} {access:?}",
-                index + 1
-            );
-            assert!(fixture.bench.sim.violations().is_empty());
-            assert!(fixture.clears() <= 1);
+            assert_eq!(fixture.boot(), boot);
         }
+        fixture.bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+        let resumed = fixture.resume();
+        assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
+        assert_eq!(resumed.stop, ended.stop);
+        assert_eq!(
+            fixture.offsets(),
+            want,
+            "pending {pending}, access #{} {access:?}",
+            index + 1
+        );
+        assert!(fixture.bench.sim.violations().is_empty());
+        assert!(fixture.clears() <= 1);
     }
 }
 
-#[test]
-fn a_kill_after_every_durable_restoration_event_of_the_same_boot_converges() {
-    for pending in [false, true] {
-        let reference = SameBoot::new(pending);
-        let ended = reference.resume();
-        assert!(ended.errors.is_empty(), "{:?}", ended.errors);
-        let events = reference.since(&ended);
-        let restored = position(events, EventKind::ProfileRestored).unwrap();
-        let durable = [
-            EventKind::SmuReadback,
-            EventKind::SmuIntent,
-            EventKind::SmuWrite,
-            EventKind::ProfileRestored,
-        ];
-        let boundaries: Vec<(usize, EventKind)> = events[..=restored]
-            .iter()
-            .enumerate()
-            .map(|(index, event)| (index, event.kind()))
-            .filter(|(_, kind)| durable.contains(kind))
-            .collect();
-        for kind in durable {
-            assert!(boundaries.iter().any(|(_, k)| *k == kind), "{kind:?}");
-        }
-        let mut mixed = false;
-        for (index, kind) in boundaries {
-            let fixture = SameBoot::new(pending);
-            let boot = fixture.boot();
-            let durable_events = fixture.left + index + 1;
-            kill_after_durable(&fixture, index + 1);
-            let killed = fixture.resume();
-            fixture.bench.mem.clear_faults();
-            assert!(killed.capsule.is_none(), "{kind:?} at {index}");
-            drop(killed);
-            assert_eq!(fixture.durable().len(), durable_events);
-            assert_eq!(fixture.durable()[durable_events - 1].kind(), kind);
-            let partial = fixture.offsets();
-            mixed |= partial != LEFT && partial != HELD;
-            for (n, &offset) in partial.iter().enumerate() {
-                assert!(
-                    offset == LEFT[n] || offset == HELD[n],
-                    "pending {pending}, {kind:?} at {index}: core {n} at {offset} in {partial:?}"
-                );
-            }
-            if kind == EventKind::ProfileRestored {
-                assert_eq!(partial, HELD);
-            }
-            for _ in 0..2 {
-                let fired = kill_at(&fixture, 8, None);
-                let killed = fixture.resume();
-                assert!(fired.get() && killed.crashed(), "{:?}", killed.errors);
-                assert_eq!(fixture.boot(), boot);
-            }
-            fixture.bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
-            let resumed = fixture.resume();
-            assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
-            assert_eq!(
-                resumed.journal.events()[fixture.left + index].kind(),
-                kind,
-                "the killed event stayed durable, pending {pending}"
-            );
-            assert_eq!(resumed.stop, ended.stop);
-            assert_eq!(
-                fixture.offsets(),
-                HELD,
-                "pending {pending}, {kind:?} at {index}"
-            );
-            assert!(fixture.bench.sim.violations().is_empty());
-            assert!(fixture.clears() <= 1);
-        }
-        assert!(
-            mixed,
-            "no kill left a partial restoration, pending {pending}"
-        );
+#[test_case(false; "false")]
+#[test_case(true; "true")]
+fn a_kill_after_every_durable_restoration_event_of_the_same_boot_converges(pending: bool) {
+    let reference = SameBoot::new(pending);
+    let ended = reference.resume();
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let events = reference.since(&ended);
+    let restored = position(events, EventKind::ProfileRestored).unwrap();
+    let durable = [
+        EventKind::SmuReadback,
+        EventKind::SmuIntent,
+        EventKind::SmuWrite,
+        EventKind::ProfileRestored,
+    ];
+    let boundaries: Vec<(usize, EventKind)> = events[..=restored]
+        .iter()
+        .enumerate()
+        .map(|(index, event)| (index, event.kind()))
+        .filter(|(_, kind)| durable.contains(kind))
+        .collect();
+    for kind in durable {
+        assert!(boundaries.iter().any(|(_, k)| *k == kind), "{kind:?}");
     }
+    let mut mixed = false;
+    for (index, kind) in boundaries {
+        let fixture = SameBoot::new(pending);
+        let boot = fixture.boot();
+        let durable_events = fixture.left + index + 1;
+        kill_after_durable(&fixture, index + 1);
+        let killed = fixture.resume();
+        fixture.bench.mem.clear_faults();
+        assert!(killed.capsule.is_none(), "{kind:?} at {index}");
+        drop(killed);
+        assert_eq!(fixture.durable().len(), durable_events);
+        assert_eq!(fixture.durable()[durable_events - 1].kind(), kind);
+        let partial = fixture.offsets();
+        mixed |= partial != LEFT && partial != HELD;
+        for (n, &offset) in partial.iter().enumerate() {
+            assert!(
+                offset == LEFT[n] || offset == HELD[n],
+                "pending {pending}, {kind:?} at {index}: core {n} at {offset} in {partial:?}"
+            );
+        }
+        if kind == EventKind::ProfileRestored {
+            assert_eq!(partial, HELD);
+        }
+        for _ in 0..2 {
+            let fired = kill_at(&fixture, 8, None);
+            let killed = fixture.resume();
+            assert!(fired.get() && killed.crashed(), "{:?}", killed.errors);
+            assert_eq!(fixture.boot(), boot);
+        }
+        fixture.bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
+        let resumed = fixture.resume();
+        assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
+        assert_eq!(
+            resumed.journal.events()[fixture.left + index].kind(),
+            kind,
+            "the killed event stayed durable, pending {pending}"
+        );
+        assert_eq!(resumed.stop, ended.stop);
+        assert_eq!(
+            fixture.offsets(),
+            HELD,
+            "pending {pending}, {kind:?} at {index}"
+        );
+        assert!(fixture.bench.sim.violations().is_empty());
+        assert!(fixture.clears() <= 1);
+    }
+    assert!(
+        mixed,
+        "no kill left a partial restoration, pending {pending}"
+    );
 }
 
 /// Kills the next run right after its `nth` journal append from now is on disk: that append reports a failure as the
@@ -390,24 +389,23 @@ fn kill_after_durable(fixture: &SameBoot, nth: usize) {
     });
 }
 
-#[test]
-fn a_different_boot_never_reconciles_what_the_same_boot_left() {
-    for pending in [false, true] {
-        let fixture = SameBoot::new(pending);
-        fixture.bench.sim.reboot();
-        let ended = fixture.resume();
-        assert!(ended.errors.is_empty(), "{:?}", ended.errors);
-        assert_eq!(fixture.offsets(), BIOS);
-        for event in fixture.since(&ended) {
-            assert!(
-                !matches!(
-                    event.kind(),
-                    EventKind::SmuReadback | EventKind::SmuIntent | EventKind::ProfileRestored
-                ),
-                "pending {pending}: {}",
-                event.kind().as_str()
-            );
-        }
+#[test_case(false; "false")]
+#[test_case(true; "true")]
+fn a_different_boot_never_reconciles_what_the_same_boot_left(pending: bool) {
+    let fixture = SameBoot::new(pending);
+    fixture.bench.sim.reboot();
+    let ended = fixture.resume();
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert_eq!(fixture.offsets(), BIOS);
+    for event in fixture.since(&ended) {
+        assert!(
+            !matches!(
+                event.kind(),
+                EventKind::SmuReadback | EventKind::SmuIntent | EventKind::ProfileRestored
+            ),
+            "pending {pending}: {}",
+            event.kind().as_str()
+        );
     }
 }
 
@@ -594,81 +592,82 @@ fn assert_untouched(fixture: &SameBoot, events: &[Event]) {
     assert_eq!(fixture.offsets(), LEFT);
 }
 
-#[test]
-fn a_pending_boot_loop_survives_a_same_boot_preflight_that_fails_and_finishes_once_it_passes() {
-    for check in ["watchdog", "root"] {
-        let mut evidence = Vec::new();
-        let mut original = None;
-        let fixture = SameBoot::killed(false, |_, session| {
-            for n in 0..3 {
-                let crash = CrashDetected {
-                    previous_boot: BootId::from(format!("prior-{n}")),
-                    in_flight: None,
-                    stray: true,
-                    condition: None,
-                    reset_reason: None,
-                    reset_reason_raw: Vec::new(),
-                    inconclusive: false,
-                    pstore: None,
-                };
-                evidence.push(
-                    session
-                        .appender
-                        .append(Payload::CrashDetected(crash), &[])
-                        .unwrap(),
-                );
-            }
-            let dead_end = DeadEnd {
-                condition: DeadEndCondition::BootLoop,
-                core: None,
-                detail: "three crashes before application".into(),
-                action: Some(DeadEndAction::ClearSavedEntryAndReboot),
+#[test_case("watchdog"; "watchdog")]
+#[test_case("root"; "root")]
+fn a_pending_boot_loop_survives_a_same_boot_preflight_that_fails_and_finishes_once_it_passes(
+    check: &str,
+) {
+    let mut evidence = Vec::new();
+    let mut original = None;
+    let fixture = SameBoot::killed(false, |_, session| {
+        for n in 0..3 {
+            let crash = CrashDetected {
+                previous_boot: BootId::from(format!("prior-{n}")),
+                in_flight: None,
+                stray: true,
+                condition: None,
+                reset_reason: None,
+                reset_reason_raw: Vec::new(),
+                inconclusive: false,
+                pstore: None,
             };
-            let seq = session
-                .appender
-                .append(Payload::DeadEnd(dead_end.clone()), &evidence)
-                .unwrap();
-            original = Some((seq, dead_end));
-        })
-        .with_tuning_boot();
-        let (original_seq, original) = original.unwrap();
-        fixture
-            .bench
-            .sim
-            .fail_check(check, "temporarily unavailable");
-        let blocked = fixture.resume();
-        assert!(blocked.errors.is_empty(), "{check}: {:?}", blocked.errors);
-        assert_eq!(
-            pending_dead_end(blocked.stop.as_ref()).map(|dead_end| dead_end.condition),
-            Some(DeadEndCondition::Preflight),
-            "{check}"
-        );
-        let after_original: Vec<Event> = blocked
-            .journal
-            .events()
-            .iter()
-            .filter(|event| event.seq > original_seq)
-            .cloned()
-            .collect();
-        assert_eq!(position(&after_original, EventKind::DeadEnd), None);
-        assert_untouched(&fixture, &after_original);
-        drop(blocked);
+            evidence.push(
+                session
+                    .appender
+                    .append(Payload::CrashDetected(crash), &[])
+                    .unwrap(),
+            );
+        }
+        let dead_end = DeadEnd {
+            condition: DeadEndCondition::BootLoop,
+            core: None,
+            detail: "three crashes before application".into(),
+            action: Some(DeadEndAction::ClearSavedEntryAndReboot),
+        };
+        let seq = session
+            .appender
+            .append(Payload::DeadEnd(dead_end.clone()), &evidence)
+            .unwrap();
+        original = Some((seq, dead_end));
+    })
+    .with_tuning_boot();
+    let (original_seq, original) = original.unwrap();
+    fixture
+        .bench
+        .sim
+        .fail_check(check, "temporarily unavailable");
+    let blocked = fixture.resume();
+    assert!(blocked.errors.is_empty(), "{check}: {:?}", blocked.errors);
+    assert_eq!(
+        pending_dead_end(blocked.stop.as_ref()).map(|dead_end| dead_end.condition),
+        Some(DeadEndCondition::Preflight),
+        "{check}"
+    );
+    let after_original: Vec<Event> = blocked
+        .journal
+        .events()
+        .iter()
+        .filter(|event| event.seq > original_seq)
+        .cloned()
+        .collect();
+    assert_eq!(position(&after_original, EventKind::DeadEnd), None);
+    assert_untouched(&fixture, &after_original);
+    drop(blocked);
 
-        fixture.bench.sim.fail_check(check, "");
-        let ended = fixture.resume();
-        assert!(ended.errors.is_empty(), "{check}: {:?}", ended.errors);
-        assert_eq!(
-            ended.stop,
-            Some(Stop::DeadEnd {
-                dead_end: original.clone(),
-                causes: evidence.clone(),
-                reboot: true,
-            }),
-            "{check}"
-        );
-        assert_eq!(fixture.offsets(), HELD);
-        assert_eq!(fixture.clears(), 1);
-    }
+    fixture.bench.sim.fail_check(check, "");
+    let ended = fixture.resume();
+    assert!(ended.errors.is_empty(), "{check}: {:?}", ended.errors);
+    assert_eq!(
+        ended.stop,
+        Some(Stop::DeadEnd {
+            dead_end: original.clone(),
+            causes: evidence.clone(),
+            reboot: true,
+        }),
+        "{check}"
+    );
+    assert_eq!(fixture.offsets(), HELD);
+    assert_eq!(fixture.clears(), 1);
 }
 
 #[test]

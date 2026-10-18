@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_journal::{CrashDetected, SmuError, SmuOp};
 
 use super::*;
@@ -59,26 +60,24 @@ fn smu_offsets(bench: &Bench) -> Vec<i64> {
         .collect()
 }
 
-#[test]
-fn a_configured_core_the_machine_lacks_is_refused() {
-    for source in ["start_offsets", "candidate_solo_limits"] {
-        let mut bench = Bench::new(2);
-        bench.config =
-            togi_config::Config::parse(&format!(r#"{{"{source}":{{"5":-10}}}}"#)).unwrap();
-        let before = smu_offsets(&bench);
-        let ended = crate::run::run(bench.input());
-        assert!(
-            matches!(
-                ended.errors.as_slice(),
-                [SessionError::NoSuchCore { core }] if *core == crate::testing::core(5)
-            ),
-            "{source}: {:?}",
-            ended.errors
-        );
-        assert_eq!(ended.stop, None, "{source}");
-        assert!(ended.journal.events().is_empty(), "{source}");
-        assert_eq!(smu_offsets(&bench), before, "{source}");
-    }
+#[test_case("start_offsets"; "start_offsets")]
+#[test_case("candidate_solo_limits"; "candidate_solo_limits")]
+fn a_configured_core_the_machine_lacks_is_refused(source: &str) {
+    let mut bench = Bench::new(2);
+    bench.config = togi_config::Config::parse(&format!(r#"{{"{source}":{{"5":-10}}}}"#)).unwrap();
+    let before = smu_offsets(&bench);
+    let ended = crate::run::run(bench.input());
+    assert!(
+        matches!(
+            ended.errors.as_slice(),
+            [SessionError::NoSuchCore { core }] if *core == crate::testing::core(5)
+        ),
+        "{source}: {:?}",
+        ended.errors
+    );
+    assert_eq!(ended.stop, None, "{source}");
+    assert!(ended.journal.events().is_empty(), "{source}");
+    assert_eq!(smu_offsets(&bench), before, "{source}");
 }
 
 #[test]
@@ -439,38 +438,39 @@ fn a_refused_topology_leaves_the_tuning_boot_and_keeps_a_failed_clear() {
     assert!(ended.journal.events().is_empty());
 }
 
-#[test]
-fn a_resumed_session_refuses_added_or_removed_cores_before_any_append() {
-    let cases: [(Reshape, &[u8], &[u8]); 2] =
-        [(without_core_one, &[], &[1]), (with_core_five, &[5], &[])];
-    for (change, added, removed) in cases {
-        let bench = Bench::new(2);
-        let mut first = bench.open();
-        first.start().unwrap();
-        drop(first);
-        let mut input = bench.input();
-        let host = input.machine.host;
-        input.machine.host = Box::new(Cores(host, change));
-        let Ok(mut session) = Session::open(input) else {
-            panic!("open");
-        };
-        let before = crate::testing::kinds_of(session.appender());
-        let Err(SessionError::TopologyChanged {
-            added: got_added,
-            removed: got_removed,
-        }) = session.start()
-        else {
-            panic!("not refused");
-        };
-        let ids = |set: togi_machine::CoreSet| {
-            set.into_iter()
-                .map(togi_machine::CoreId::get)
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(ids(got_added), added);
-        assert_eq!(ids(got_removed), removed);
-        assert_eq!(crate::testing::kinds_of(session.appender()), before);
-    }
+#[test_case(without_core_one, &[], &[1]; "removed core")]
+#[test_case(with_core_five, &[5], &[]; "added core")]
+fn a_resumed_session_refuses_added_or_removed_cores_before_any_append(
+    change: Reshape,
+    added: &[u8],
+    removed: &[u8],
+) {
+    let bench = Bench::new(2);
+    let mut first = bench.open();
+    first.start().unwrap();
+    drop(first);
+    let mut input = bench.input();
+    let host = input.machine.host;
+    input.machine.host = Box::new(Cores(host, change));
+    let Ok(mut session) = Session::open(input) else {
+        panic!("open");
+    };
+    let before = crate::testing::kinds_of(session.appender());
+    let Err(SessionError::TopologyChanged {
+        added: got_added,
+        removed: got_removed,
+    }) = session.start()
+    else {
+        panic!("not refused");
+    };
+    let ids = |set: togi_machine::CoreSet| {
+        set.into_iter()
+            .map(togi_machine::CoreId::get)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(got_added), added);
+    assert_eq!(ids(got_removed), removed);
+    assert_eq!(crate::testing::kinds_of(session.appender()), before);
 }
 
 #[test]
@@ -750,70 +750,69 @@ fn the_machine_checks_of_both_partial_reads_survive_a_failed_reanchor() {
     );
 }
 
-#[test]
-fn a_reopened_session_resumes_its_own_boots_cursor_and_files_the_tail_between_trials() {
+#[test_case(false; "false")]
+#[test_case(true; "true")]
+fn a_reopened_session_resumes_its_own_boots_cursor_and_files_the_tail_between_trials(reboot: bool) {
     use togi_machine::Regime;
 
-    for reboot in [false, true] {
-        let bench = Bench::new(2);
-        let mut first = crate::testing::begun(&bench);
-        let plan = crate::testing::search_plan(&first, crate::testing::core(0), Regime::R1);
-        assert_eq!(
-            crate::testing::run_plan(&mut first, plan).unwrap(),
-            Control::Continue
-        );
-        let recorded = first
-            .appender()
-            .recovery()
-            .kernel_cursor(&first.boot)
-            .cloned()
-            .expect("the trial recorded the kernel cursor");
-        drop(first);
-        if reboot {
-            bench.sim.reboot();
-        }
-        let tail = machine_check(bench.sim.monotonic(), 3, "after the last trial");
-        let resumed = KernelCursor::from("resumed".to_owned());
-        let (mut session, seen) = resumed_over(
-            &bench,
-            vec![Ok(togi_machine::KernelRead {
-                mces: vec![tail],
-                cursor: resumed.clone(),
-            })],
-        );
-        assert_eq!(session.same_boot(), !reboot);
-        assert_eq!(session.start().unwrap(), Control::Continue);
-        let expected = (!reboot).then(|| recorded.as_str().to_owned());
-        assert_eq!(*seen.borrow(), [expected], "reboot={reboot}");
-        let events = session.appender().journal().events();
-        let found: Vec<_> = events
-            .iter()
-            .filter_map(|event| {
-                if let Payload::Mce(mce) = &event.payload {
-                    Some(mce)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let [mce] = found.as_slice() else {
-            panic!("reboot={reboot}: {found:?}");
-        };
-        assert!(
-            mce.between_trials && mce.trial.is_none() && mce.from_boot.is_none(),
-            "reboot={reboot}: {mce:?}"
-        );
-        let loaded = events
-            .iter()
-            .rev()
-            .find_map(|event| {
-                if let Payload::ConfigLoaded(loaded) = &event.payload {
-                    Some(loaded)
-                } else {
-                    None
-                }
-            })
-            .unwrap();
-        assert_eq!(loaded.kernel_cursor, Some(resumed), "reboot={reboot}");
+    let bench = Bench::new(2);
+    let mut first = crate::testing::begun(&bench);
+    let plan = crate::testing::search_plan(&first, crate::testing::core(0), Regime::R1);
+    assert_eq!(
+        crate::testing::run_plan(&mut first, plan).unwrap(),
+        Control::Continue
+    );
+    let recorded = first
+        .appender()
+        .recovery()
+        .kernel_cursor(&first.boot)
+        .cloned()
+        .expect("the trial recorded the kernel cursor");
+    drop(first);
+    if reboot {
+        bench.sim.reboot();
     }
+    let tail = machine_check(bench.sim.monotonic(), 3, "after the last trial");
+    let resumed = KernelCursor::from("resumed".to_owned());
+    let (mut session, seen) = resumed_over(
+        &bench,
+        vec![Ok(togi_machine::KernelRead {
+            mces: vec![tail],
+            cursor: resumed.clone(),
+        })],
+    );
+    assert_eq!(session.same_boot(), !reboot);
+    assert_eq!(session.start().unwrap(), Control::Continue);
+    let expected = (!reboot).then(|| recorded.as_str().to_owned());
+    assert_eq!(*seen.borrow(), [expected], "reboot={reboot}");
+    let events = session.appender().journal().events();
+    let found: Vec<_> = events
+        .iter()
+        .filter_map(|event| {
+            if let Payload::Mce(mce) = &event.payload {
+                Some(mce)
+            } else {
+                None
+            }
+        })
+        .collect();
+    let [mce] = found.as_slice() else {
+        panic!("reboot={reboot}: {found:?}");
+    };
+    assert!(
+        mce.between_trials && mce.trial.is_none() && mce.from_boot.is_none(),
+        "reboot={reboot}: {mce:?}"
+    );
+    let loaded = events
+        .iter()
+        .rev()
+        .find_map(|event| {
+            if let Payload::ConfigLoaded(loaded) = &event.payload {
+                Some(loaded)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(loaded.kernel_cursor, Some(resumed), "reboot={reboot}");
 }

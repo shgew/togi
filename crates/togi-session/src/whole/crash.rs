@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::Duration;
+use test_case::test_case;
 
 use togi_config::Config;
 use togi_journal::fs::{AppendPoint, AppendTrigger};
@@ -661,8 +662,11 @@ fn trial_end<'a>(events: &'a [Event], trial: &TrialId) -> &'a togi_journal::Tria
         .unwrap()
 }
 
-#[test]
-fn a_partial_crash_recovers_into_the_named_or_loaded_core_backoff_through_run() {
+#[test_case(None; "None")]
+#[test_case(Some(Signal::ComputationError); "Some(Signal::ComputationError)")]
+fn a_partial_crash_recovers_into_the_named_or_loaded_core_backoff_through_run(
+    signal: Option<Signal>,
+) {
     let reference = drive(&r7_bench());
     let partial = first_partial(reference.journal.events()).clone();
     let top = partial
@@ -681,113 +685,114 @@ fn a_partial_crash_recovers_into_the_named_or_loaded_core_backoff_through_run() 
         "{:?}",
         partial.profile
     );
-    for signal in [None, Some(Signal::ComputationError)] {
-        let bench = r7_bench();
-        bench
-            .sim
-            .script_trial(
-                partial.trial.as_str(),
-                Script {
-                    signal: Some(signal.unwrap_or(Signal::Crash)),
-                    at_s: 1.0,
-                    core: named,
-                    reset: None,
-                    then_crash: true,
-                },
-            )
-            .unwrap();
-        let mut before = bench.input();
-        before.policy.cycles = Some(NonZeroU32::MIN);
-        let crashed = run(before);
-        assert!(crashed.crashed(), "{:?}", crashed.errors);
-        drop(crashed);
-        bench.sim.reboot();
 
-        let mut resumed = bench.input();
-        resumed.policy.cycles = Some(NonZeroU32::MIN);
-        resumed.machine.trials = Box::new(CancelAfterAnotherTrial {
-            inner: resumed.machine.trials,
-            cancel: resumed.cancel.clone(),
-            recovered: partial.trial.to_string(),
-        });
-        let ended = run(resumed);
-        assert!(ended.errors.is_empty(), "{:?}", ended.errors);
-        assert_eq!(ended.stop, Some(Stop::Signal));
-        let events = ended.journal.events();
-        let end = trial_end(events, &partial.trial);
-        assert_eq!(end.outcome, Outcome::Failure, "{signal:?}");
-        let failure = events
-            .iter()
-            .find_map(|event| {
-                if let Payload::Failure(failure) = &event.payload
-                    && failure.trial.as_ref() == Some(&partial.trial)
-                {
-                    Some(failure)
-                } else {
-                    None
-                }
-            })
-            .expect("no recovered failure");
-        let after_end = events
-            .iter()
-            .position(|event| matches!(&event.payload, Payload::TrialEnd(end) if end.trial == partial.trial))
-            .unwrap();
-        let next = events[after_end..]
-            .iter()
-            .find_map(|event| {
-                if let Payload::TrialIntent(intent) = &event.payload {
-                    Some(intent)
-                } else {
-                    None
-                }
-            })
-            .expect("no trial after the recovered partial");
-        let backoff = events.iter().find_map(|event| {
-            if let Payload::TunerDecision(decision) = &event.payload
-                && decision.decision == Decision::Backoff
-                && decision.activity != Activity::Search
+    let bench = r7_bench();
+    bench
+        .sim
+        .script_trial(
+            partial.trial.as_str(),
+            Script {
+                signal: Some(signal.unwrap_or(Signal::Crash)),
+                at_s: 1.0,
+                core: named,
+                reset: None,
+                then_crash: true,
+            },
+        )
+        .unwrap();
+    let mut before = bench.input();
+    before.policy.cycles = Some(NonZeroU32::MIN);
+    let crashed = run(before);
+    assert!(crashed.crashed(), "{:?}", crashed.errors);
+    drop(crashed);
+    bench.sim.reboot();
+
+    let mut resumed = bench.input();
+    resumed.policy.cycles = Some(NonZeroU32::MIN);
+    resumed.machine.trials = Box::new(CancelAfterAnotherTrial {
+        inner: resumed.machine.trials,
+        cancel: resumed.cancel.clone(),
+        recovered: partial.trial.to_string(),
+    });
+    let ended = run(resumed);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    assert_eq!(ended.stop, Some(Stop::Signal));
+    let events = ended.journal.events();
+    let end = trial_end(events, &partial.trial);
+    assert_eq!(end.outcome, Outcome::Failure, "{signal:?}");
+    let failure = events
+        .iter()
+        .find_map(|event| {
+            if let Payload::Failure(failure) = &event.payload
+                && failure.trial.as_ref() == Some(&partial.trial)
             {
-                Some(decision)
+                Some(failure)
             } else {
                 None
             }
-        });
-        let hunted = events
-            .iter()
-            .any(|event| matches!(event.payload, Payload::HuntStart(_)));
-        assert!(
-            !events
-                .iter()
-                .any(|event| matches!(event.payload, Payload::Combination(_))),
-            "an R7 partial combined cores"
-        );
-        assert!(!hunted, "{signal:?}: a hunt started before the backoff");
-        let backoff = backoff.expect("no checking backoff");
-        if let Some(signal) = signal {
-            assert_ne!(
-                partial.profile, next.profile,
-                "the failed partial did not back off"
-            );
-            assert_eq!(end.signal, Some(signal));
-            assert_eq!(end.core, Some(named));
-            assert_eq!(failure.attribution, Attribution::Attributed);
-            assert_eq!(failure.core, Some(named));
-            assert_eq!(backoff.core, named);
+        })
+        .expect("no recovered failure");
+    let after_end = events
+        .iter()
+        .position(
+            |event| matches!(&event.payload, Payload::TrialEnd(end) if end.trial == partial.trial),
+        )
+        .unwrap();
+    let next = events[after_end..]
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialIntent(intent) = &event.payload {
+                Some(intent)
+            } else {
+                None
+            }
+        })
+        .expect("no trial after the recovered partial");
+    let backoff = events.iter().find_map(|event| {
+        if let Payload::TunerDecision(decision) = &event.payload
+            && decision.decision == Decision::Backoff
+            && decision.activity != Activity::Search
+        {
+            Some(decision)
         } else {
-            assert_eq!(end.signal, Some(Signal::Crash));
-            assert_eq!(failure.attribution, Attribution::Unattributed);
-            assert!(partial.cores.contains(backoff.core), "{backoff:?}");
-            assert!(
-                backoff
-                    .reason
-                    .contains("the unloaded cores have not been checked by a located hunt yet"),
-                "{}",
-                backoff.reason
-            );
-            assert!(next.rerun, "{next:?}");
-            assert_eq!(next.condition, Condition::Together);
-            assert_eq!(next.cores, partial.cores);
+            None
         }
+    });
+    let hunted = events
+        .iter()
+        .any(|event| matches!(event.payload, Payload::HuntStart(_)));
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event.payload, Payload::Combination(_))),
+        "an R7 partial combined cores"
+    );
+    assert!(!hunted, "{signal:?}: a hunt started before the backoff");
+    let backoff = backoff.expect("no checking backoff");
+    if let Some(signal) = signal {
+        assert_ne!(
+            partial.profile, next.profile,
+            "the failed partial did not back off"
+        );
+        assert_eq!(end.signal, Some(signal));
+        assert_eq!(end.core, Some(named));
+        assert_eq!(failure.attribution, Attribution::Attributed);
+        assert_eq!(failure.core, Some(named));
+        assert_eq!(backoff.core, named);
+    } else {
+        assert_eq!(end.signal, Some(Signal::Crash));
+        assert_eq!(failure.attribution, Attribution::Unattributed);
+        assert!(partial.cores.contains(backoff.core), "{backoff:?}");
+        assert!(
+            backoff
+                .reason
+                .contains("the unloaded cores have not been checked by a located hunt yet"),
+            "{}",
+            backoff.reason
+        );
+        assert!(next.rerun, "{next:?}");
+        assert_eq!(next.condition, Condition::Together);
+        assert_eq!(next.cores, partial.cores);
     }
 }
 

@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::rc::Rc;
+use test_case::test_case;
 
 use jiff::tz::TimeZone;
 use togi_journal::fs::{Fault, Op};
@@ -347,19 +348,18 @@ fn a_reason_an_archived_journal_holds_is_cleared_without_a_new_event() {
     assert_eq!(grub.value(REASON_VARIABLE), None);
 }
 
-#[test]
-fn bootloader_failures_are_ordinary_errors_and_the_journal_keeps_working() {
-    for name in [COUNT_VARIABLE, REASON_VARIABLE] {
-        let grub = Grub::with_count("1");
-        grub.pending(&exhausted());
-        grub.refuse(name);
-        let (mut rig, first) = Rig::custom(2, Some(grub.handoff().unwrap()), |_| {});
-        assert!(matches!(first, Err(AppendFailure::Boot(_))), "{name}");
-        assert!(rig.appender.failure().is_none(), "{name}");
-        assert!(grub.value(REASON_VARIABLE).is_some(), "{name}");
-        warning(&mut rig.appender).unwrap();
-        assert!(rig.appender.failure().is_none(), "{name}");
-    }
+#[test_case(COUNT_VARIABLE; "COUNT_VARIABLE")]
+#[test_case(REASON_VARIABLE; "REASON_VARIABLE")]
+fn bootloader_failures_are_ordinary_errors_and_the_journal_keeps_working(name: &str) {
+    let grub = Grub::with_count("1");
+    grub.pending(&exhausted());
+    grub.refuse(name);
+    let (mut rig, first) = Rig::custom(2, Some(grub.handoff().unwrap()), |_| {});
+    assert!(matches!(first, Err(AppendFailure::Boot(_))), "{name}");
+    assert!(rig.appender.failure().is_none(), "{name}");
+    assert!(grub.value(REASON_VARIABLE).is_some(), "{name}");
+    warning(&mut rig.appender).unwrap();
+    assert!(rig.appender.failure().is_none(), "{name}");
 }
 
 #[test]
@@ -482,140 +482,136 @@ fn resumed_dead_end_after(
     (bench, session)
 }
 
-#[test]
-fn a_resumed_dead_end_whose_pending_reason_cannot_be_acknowledged_stops_before_the_grub_handoff() {
-    for fault in [
-        HandoffFault::Lookup,
-        HandoffFault::Append,
-        HandoffFault::Reset,
-        HandoffFault::Clear,
-    ] {
-        let grub = Grub::with_count("2");
-        let prior = exhausted();
-        let (bench, mut session) = resumed_dead_end(&grub, &prior);
-        let before = session.appender().journal().events().len();
-        match fault {
-            HandoffFault::Lookup => bench.mem.inject(Fault::before(Op::Read, 1)),
-            HandoffFault::Append => bench
-                .mem
-                .inject(Fault::before(Op::Write, 1).named("events.jsonl")),
-            HandoffFault::Reset => grub.refuse(COUNT_VARIABLE),
-            HandoffFault::Clear => grub.refuse(REASON_VARIABLE),
-        }
-        let error = session.resume_dead_end().unwrap_err();
-        let kept = matches!(
-            (fault, &error),
-            (HandoffFault::Lookup, SessionError::Lookup(_))
-                | (HandoffFault::Append, SessionError::Journal(_))
-                | (
-                    HandoffFault::Reset,
-                    SessionError::Bootloader(togi_tuningboot::Error::ResetCount(_))
-                )
-                | (
-                    HandoffFault::Clear,
-                    SessionError::Bootloader(togi_tuningboot::Error::ClearReason(_))
-                )
-        );
-        assert!(kept, "{fault:?}: {error:?}");
-        assert_eq!(
-            session.appender().failure().is_some(),
-            matches!(fault, HandoffFault::Append),
-            "{fault:?}: only a failed append latches the journal"
-        );
-        assert_eq!(grub.0.borrow().entries_cleared, 0, "{fault:?}");
-        let pending = togi_tuningboot::read_reason(&mut grub.clone())
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            pending.id, prior.id,
-            "{fault:?}: the pending reason was replaced"
-        );
-        let added: Vec<_> = session.appender().journal().events()[before..]
-            .iter()
-            .map(togi_journal::Event::kind)
-            .collect();
-        assert!(
-            added.iter().all(|kind| *kind == EventKind::BootLeaveReason),
-            "{fault:?}: {added:?}"
-        );
-        assert!(
-            !session
-                .appender()
-                .journal()
-                .events()
-                .iter()
-                .any(|event| matches!(
-                    event.payload,
-                    Payload::BootSavedEntry(_) | Payload::Shutdown(_)
-                )),
-            "{fault:?}: a handoff event authorizes a reboot"
-        );
+#[test_case(HandoffFault::Lookup; "HandoffFault::Lookup")]
+#[test_case(HandoffFault::Append; "HandoffFault::Append")]
+#[test_case(HandoffFault::Reset; "HandoffFault::Reset")]
+#[test_case(HandoffFault::Clear; "HandoffFault::Clear")]
+fn a_resumed_dead_end_whose_pending_reason_cannot_be_acknowledged_stops_before_the_grub_handoff(
+    fault: HandoffFault,
+) {
+    let grub = Grub::with_count("2");
+    let prior = exhausted();
+    let (bench, mut session) = resumed_dead_end(&grub, &prior);
+    let before = session.appender().journal().events().len();
+    match fault {
+        HandoffFault::Lookup => bench.mem.inject(Fault::before(Op::Read, 1)),
+        HandoffFault::Append => bench
+            .mem
+            .inject(Fault::before(Op::Write, 1).named("events.jsonl")),
+        HandoffFault::Reset => grub.refuse(COUNT_VARIABLE),
+        HandoffFault::Clear => grub.refuse(REASON_VARIABLE),
     }
-}
-
-#[test]
-fn a_resumed_dead_end_acknowledges_the_pending_tuning_boot_reason_once_and_leaves_its_own() {
-    for recorded in [
-        Recorded::Nothing,
-        Recorded::SavedEntry,
-        Recorded::PriorReason,
-    ] {
-        let grub = Grub::with_count("2");
-        let prior = exhausted();
-        let (bench, mut session) = resumed_dead_end_after(&grub, &prior, recorded);
-        let stop = session.resume_dead_end().unwrap().unwrap();
-        assert!(
-            matches!(stop, Stop::DeadEnd { reboot: true, .. }),
-            "{recorded:?}: {stop:?}"
-        );
-        let completed = session.close(Ok(stop));
-        assert!(completed.errors.is_empty(), "{recorded:?}");
-        let completion_boot = completed.journal.events().last().unwrap().boot.clone();
-        let acknowledged: Vec<_> = completed
-            .journal
+    let error = session.resume_dead_end().unwrap_err();
+    let kept = matches!(
+        (fault, &error),
+        (HandoffFault::Lookup, SessionError::Lookup(_))
+            | (HandoffFault::Append, SessionError::Journal(_))
+            | (
+                HandoffFault::Reset,
+                SessionError::Bootloader(togi_tuningboot::Error::ResetCount(_))
+            )
+            | (
+                HandoffFault::Clear,
+                SessionError::Bootloader(togi_tuningboot::Error::ClearReason(_))
+            )
+    );
+    assert!(kept, "{fault:?}: {error:?}");
+    assert_eq!(
+        session.appender().failure().is_some(),
+        matches!(fault, HandoffFault::Append),
+        "{fault:?}: only a failed append latches the journal"
+    );
+    assert_eq!(grub.0.borrow().entries_cleared, 0, "{fault:?}");
+    let pending = togi_tuningboot::read_reason(&mut grub.clone())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        pending.id, prior.id,
+        "{fault:?}: the pending reason was replaced"
+    );
+    let added: Vec<_> = session.appender().journal().events()[before..]
+        .iter()
+        .map(togi_journal::Event::kind)
+        .collect();
+    assert!(
+        added.iter().all(|kind| *kind == EventKind::BootLeaveReason),
+        "{fault:?}: {added:?}"
+    );
+    assert!(
+        !session
+            .appender()
+            .journal()
             .events()
             .iter()
-            .filter_map(|event| {
-                if let Payload::BootLeaveReason(leave) = &event.payload {
-                    Some(leave.reason_id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        assert_eq!(
-            acknowledged,
-            [prior.id.to_string()],
-            "{recorded:?}: the prior reason is in the journal once"
-        );
-        let pending = togi_tuningboot::read_reason(&mut grub.clone()).unwrap();
-        if matches!(recorded, Recorded::SavedEntry) {
-            assert!(pending.is_none(), "{recorded:?}: {pending:?}");
-        } else {
-            let pending = pending.expect("the dead end's own reason is saved");
-            assert_ne!(pending.id, prior.id, "{recorded:?}");
-            assert_eq!(
-                pending.reason.as_str(),
-                "dead end boot_loop: interrupted handoff",
-                "{recorded:?}"
-            );
-        }
-        drop(completed);
+            .any(|event| matches!(
+                event.payload,
+                Payload::BootSavedEntry(_) | Payload::Shutdown(_)
+            )),
+        "{fault:?}: a handoff event authorizes a reboot"
+    );
+}
 
-        bench.sim.reboot();
-        let mut next = bench.open();
-        next.recover_prior().unwrap();
-        assert!(
-            !next
-                .appender()
-                .journal()
-                .events()
-                .iter()
-                .any(|event| matches!(&event.payload,
-                    Payload::CrashDetected(crash) if crash.previous_boot == completion_boot)),
-            "{recorded:?}: a clean dead end was recorded as a crash"
+#[test_case(Recorded::Nothing; "Recorded::Nothing")]
+#[test_case(Recorded::SavedEntry; "Recorded::SavedEntry")]
+#[test_case(Recorded::PriorReason; "Recorded::PriorReason")]
+fn a_resumed_dead_end_acknowledges_the_pending_tuning_boot_reason_once_and_leaves_its_own(
+    recorded: Recorded,
+) {
+    let grub = Grub::with_count("2");
+    let prior = exhausted();
+    let (bench, mut session) = resumed_dead_end_after(&grub, &prior, recorded);
+    let stop = session.resume_dead_end().unwrap().unwrap();
+    assert!(
+        matches!(stop, Stop::DeadEnd { reboot: true, .. }),
+        "{recorded:?}: {stop:?}"
+    );
+    let completed = session.close(Ok(stop));
+    assert!(completed.errors.is_empty(), "{recorded:?}");
+    let completion_boot = completed.journal.events().last().unwrap().boot.clone();
+    let acknowledged: Vec<_> = completed
+        .journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::BootLeaveReason(leave) = &event.payload {
+                Some(leave.reason_id.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        acknowledged,
+        [prior.id.to_string()],
+        "{recorded:?}: the prior reason is in the journal once"
+    );
+    let pending = togi_tuningboot::read_reason(&mut grub.clone()).unwrap();
+    if matches!(recorded, Recorded::SavedEntry) {
+        assert!(pending.is_none(), "{recorded:?}: {pending:?}");
+    } else {
+        let pending = pending.expect("the dead end's own reason is saved");
+        assert_ne!(pending.id, prior.id, "{recorded:?}");
+        assert_eq!(
+            pending.reason.as_str(),
+            "dead end boot_loop: interrupted handoff",
+            "{recorded:?}"
         );
     }
+    drop(completed);
+
+    bench.sim.reboot();
+    let mut next = bench.open();
+    next.recover_prior().unwrap();
+    assert!(
+        !next
+            .appender()
+            .journal()
+            .events()
+            .iter()
+            .any(|event| matches!(&event.payload,
+                    Payload::CrashDetected(crash) if crash.previous_boot == completion_boot)),
+        "{recorded:?}: a clean dead end was recorded as a crash"
+    );
 }
 
 #[test]

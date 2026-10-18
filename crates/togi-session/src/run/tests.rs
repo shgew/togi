@@ -1,6 +1,7 @@
 use super::*;
 use crate::testing::{Bench, core};
 use std::num::NonZeroU32;
+use test_case::test_case;
 use togi_journal::{Payload, ShutdownReason};
 use togi_machine::{
     CancellationToken, Error, Partial, Running, Signal, Stopped, Swept, TrialSpec, Trials,
@@ -597,39 +598,35 @@ fn a_panic_taking_in_an_event_after_it_is_durable_latches_the_appender_instead_o
     assert_emergency_zeroed(&bench, &ended);
 }
 
-#[test]
-fn a_panic_whose_teardown_cannot_be_confirmed_reports_both_and_restores_nothing() {
-    for (stop_error, crashed) in [
-        (
-            (|| Error::Containment("workload still running".into())) as fn() -> Error,
-            false,
+#[test_case((|| Error::Containment("workload still running".into())) as fn() -> Error, false; "(|| Error::Containment(workload still running.into())) as fn() -> Error, false")]
+#[test_case(|| Error::Crashed, true; "|| Error::Crashed, true")]
+fn a_panic_whose_teardown_cannot_be_confirmed_reports_both_and_restores_nothing(
+    stop_error: fn() -> Error,
+    crashed: bool,
+) {
+    let bench = two_cores_at_minus_ten();
+    let rigged = Rigged {
+        panic_in_wait: true,
+        stop_error: Some(stop_error),
+        ..Rigged::default()
+    };
+    let (mut ended, joins) = run_rigged(&bench, rigged, None);
+    assert_eq!(joins.load(Ordering::SeqCst), 1);
+    assert!(
+        matches!(
+            ended.errors.as_slice(),
+            [SessionError::Panicked(_), SessionError::Machine(error)]
+                if matches!(error, Error::Crashed) == crashed
         ),
-        (|| Error::Crashed, true),
-    ] {
-        let bench = two_cores_at_minus_ten();
-        let rigged = Rigged {
-            panic_in_wait: true,
-            stop_error: Some(stop_error),
-            ..Rigged::default()
-        };
-        let (mut ended, joins) = run_rigged(&bench, rigged, None);
-        assert_eq!(joins.load(Ordering::SeqCst), 1);
-        assert!(
-            matches!(
-                ended.errors.as_slice(),
-                [SessionError::Panicked(_), SessionError::Machine(error)]
-                    if matches!(error, Error::Crashed) == crashed
-            ),
-            "{:?}",
-            ended.errors
-        );
-        assert_eq!(ended.crashed(), crashed);
-        assert!(ended.panic.take().is_some());
-        assert!(
-            !restored(&ended),
-            "an unconfirmed teardown restores nothing"
-        );
-    }
+        "{:?}",
+        ended.errors
+    );
+    assert_eq!(ended.crashed(), crashed);
+    assert!(ended.panic.take().is_some());
+    assert!(
+        !restored(&ended),
+        "an unconfirmed teardown restores nothing"
+    );
 }
 
 struct PanicsWhileSweeping;
