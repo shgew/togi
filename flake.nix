@@ -388,7 +388,7 @@
                 }
                 ''
                   cd "$src"
-                  HOME=$TMPDIR lychee --offline --include-fragments --no-progress --format compact './**/*.md'
+                  HOME=$TMPDIR lychee --offline --hidden --include-fragments --no-progress --format compact './**/*.md'
                   touch "$out"
                 '';
             clippy = craneLib.mkCargoDerivation (
