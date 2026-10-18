@@ -10,8 +10,8 @@ use togi_journal::{
 };
 use togi_machine::BootId;
 
-const CHILD: &str = "real_process_child_appends_then_aborts";
-const ENV: &str = "TOGI_JOURNAL_ABORT_DIR";
+const CHILD: &str = "real_process_child_appends_then_is_killed";
+const ENV: &str = "TOGI_JOURNAL_KILL_DIR";
 const APPENDS: u64 = 25;
 
 #[cfg(test)]
@@ -180,7 +180,7 @@ fn a_simulated_journal_reads_back_whole() {
 }
 
 #[test]
-fn real_process_child_appends_then_aborts() {
+fn real_process_child_appends_then_is_killed() {
     let Some(dir) = std::env::var_os(ENV) else {
         return;
     };
@@ -190,7 +190,10 @@ fn real_process_child_appends_then_aborts() {
             .append(stamp(1), note(&format!("event {index}")), &[])
             .unwrap();
     }
-    std::process::abort();
+    // SIGKILL rather than abort: equally abrupt, but it never dumps core.
+    rustix::process::kill_process(rustix::process::getpid(), rustix::process::Signal::KILL)
+        .unwrap();
+    unreachable!("SIGKILL cannot be caught");
 }
 
 #[test]
@@ -208,8 +211,8 @@ fn real_process_an_abrupt_exit_loses_no_acknowledged_event() {
         .unwrap();
     assert_eq!(
         status.signal(),
-        Some(6),
-        "the child must die by abort, not exit: {status:?}"
+        Some(rustix::process::Signal::KILL.as_raw()),
+        "the child must die by SIGKILL, not exit: {status:?}"
     );
 
     let journal = unsynced(&state).open(boot(2)).unwrap();
