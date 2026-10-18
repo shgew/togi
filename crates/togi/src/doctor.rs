@@ -29,10 +29,11 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// event, changes no offset and leaves GRUB alone. As root it makes every check and takes the host
 /// lock, so a running run or reset stops it. Without root it checks the CPU, the `ryzen_smu` driver
 /// identity, the backends, the backend user and the watchdog, and marks the PM table, readback,
-/// slot mapping, systemd-run and BIOS context checks skipped.
+/// slot mapping, systemd-run and BIOS context checks skipped. With or without root it also checks
+/// whether the tuner supports the topology, reporting a failed topology row when it does not.
 ///
-/// Prints one row per check, with ok, FAIL, warn or skipped, then ready, not fully checked, or not
-/// ready with the failed checks: those run would turn into a preflight dead end. A missing
+/// Prints the check rows with ok, FAIL, warn or skipped, then ready, not fully checked, or not
+/// ready with the failed checks: those run would refuse at startup. A missing
 /// hardware watchdog is a warning, as in a run started outside the tuning boot. A changed BIOS
 /// context is a warning too: run archives the session and starts a new one. A journal with a
 /// newer schema, ruleset or evidence epoch, or with unknown event kinds, is refused as run refuses
