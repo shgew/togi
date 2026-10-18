@@ -226,6 +226,8 @@ in
             };
           };
           fonts.packages = lib.mkIf (cfg.tuning.display == "kmscon") [ pkgs.dejavu_fonts ];
+          fonts.fontconfig.enable = lib.mkIf (cfg.tuning.display == "kmscon") true;
+          hardware.graphics.enable = lib.mkIf (cfg.tuning.display == "kmscon") true;
           systemd.services.togi-kmscon = lib.mkIf (cfg.tuning.display == "kmscon") {
             description = "togi dashboard in kmscon on tty1";
             wantedBy = [ "multi-user.target" ];

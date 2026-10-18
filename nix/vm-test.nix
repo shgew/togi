@@ -246,7 +246,6 @@ in
         y = 1440;
       };
       boot.initrd.kernelModules = [ "virtio_gpu" ];
-      hardware.graphics.enable = true;
       services.togi.tuning.display = "kmscon";
     };
     testScript = ''

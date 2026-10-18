@@ -191,6 +191,9 @@ assert kmsconService.startLimitBurst == 3;
 assert kmsconService.startLimitIntervalSec == 180;
 assert kmsconService.onFailure == [ "togi-watch-fallback.service" ];
 assert builtins.elem pkgs.dejavu_fonts kmscon.fonts.packages;
+assert kmscon.hardware.graphics.enable;
+assert kmscon.fonts.fontconfig.enable;
+assert !tuning.hardware.graphics.enable;
 assert lib.hasInfix "--font-size 27" kmsconService.serviceConfig.ExecStart;
 assert lib.hasInfix "--font-size 30" largeFont.systemd.services.togi-kmscon.serviceConfig.ExecStart;
 assert lib.hasSuffix "--login -- ${lib.getExe pkgs.hello} watch --tuning-boot"
