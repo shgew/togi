@@ -48,25 +48,25 @@ fn prior(history: &[Past], before: Option<usize>) -> usize {
     )
 }
 
-#[test_case(vec![(vec![-10, -10], Outcome::Pass, nothing), (vec![-11, -10], Outcome::Pass, nothing)], None, 2; "equal and deeper count")]
-#[test_case(vec![(vec![-9, -10], Outcome::Pass, nothing), (vec![-11, -9], Outcome::Pass, nothing)], None, 0; "shallow and incomparable do not")]
-#[test_case(vec![(vec![-11, -11], Outcome::Pass, nothing), (vec![-9, -9], Outcome::Failure, nothing), (vec![-10, -10], Outcome::Pass, nothing)], None, 1; "later shallow failure invalidates")]
-#[test_case(vec![(vec![-10, -10], Outcome::Pass, nothing), (vec![-11, -11], Outcome::Failure, nothing)], None, 1; "deeper failure does not invalidate")]
-#[test_case(vec![(vec![-10, -10], Outcome::Pass, |t| t.condition = Condition::Together)], None, 1; "same cores and another condition")]
-#[test_case(vec![
+#[test_case(&[(vec![-10, -10], Outcome::Pass, nothing), (vec![-11, -10], Outcome::Pass, nothing)], None, 2; "equal and deeper count")]
+#[test_case(&[(vec![-9, -10], Outcome::Pass, nothing), (vec![-11, -9], Outcome::Pass, nothing)], None, 0; "shallow and incomparable do not")]
+#[test_case(&[(vec![-11, -11], Outcome::Pass, nothing), (vec![-9, -9], Outcome::Failure, nothing), (vec![-10, -10], Outcome::Pass, nothing)], None, 1; "later shallow failure invalidates")]
+#[test_case(&[(vec![-10, -10], Outcome::Pass, nothing), (vec![-11, -11], Outcome::Failure, nothing)], None, 1; "deeper failure does not invalidate")]
+#[test_case(&[(vec![-10, -10], Outcome::Pass, |t| t.condition = Condition::Together)], None, 1; "same cores and another condition")]
+#[test_case(&[
     (vec![-10, -10], Outcome::Pass, |t| t.duration_s = 300),
     (vec![-10, -10], Outcome::Pass, |t| t.workload = workload(Regime::R7, 1)),
     (vec![-10, -10], Outcome::Pass, |t| { t.regime = Regime::R6; t.workload = workload(Regime::R6, 0); }),
     (vec![-10, -10], Outcome::Pass, |t| t.cores = set(&[0])),
 ], None, 0; "class fields matter")]
-#[test_case(vec![(vec![-10, -10], Outcome::Pass, nothing), (vec![-10, -10], Outcome::Pass, nothing)], Some(0), 0; "hunt boundary is excluded")]
-#[test_case(vec![(vec![-10, -10], Outcome::Pass, nothing), (vec![-9, -9], Outcome::Inconclusive, nothing)], None, 1; "inconclusive does not invalidate")]
+#[test_case(&[(vec![-10, -10], Outcome::Pass, nothing), (vec![-10, -10], Outcome::Pass, nothing)], Some(0), 0; "hunt boundary is excluded")]
+#[test_case(&[(vec![-10, -10], Outcome::Pass, nothing), (vec![-9, -9], Outcome::Inconclusive, nothing)], None, 1; "inconclusive does not invalidate")]
 fn prior_passes_count_what_is_as_deep_and_not_ruled_out_by_a_failure(
-    history: Vec<Past>,
+    history: &[Past],
     before: Option<usize>,
     want: usize,
 ) {
-    assert_eq!(prior(&history, before), want);
+    assert_eq!(prior(history, before), want);
 }
 
 fn idle_crash(regime: Regime, loaded: &[i64], idle_profile: Option<&[i64]>) -> usize {
