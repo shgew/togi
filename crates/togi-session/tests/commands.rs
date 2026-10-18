@@ -415,17 +415,13 @@ fn trial_elapsed_seconds_are_checked(seconds: u64, refused: bool) {
         "{:?}",
         ended.errors
     );
-    let duration = ended
-        .journal
-        .events()
-        .iter()
-        .find_map(|event| {
-            if let Payload::TrialEnd(end) = &event.payload {
-                Some(end.duration_s)
-            } else {
-                None
-            }
-        });
+    let duration = ended.journal.events().iter().find_map(|event| {
+        if let Payload::TrialEnd(end) = &event.payload {
+            Some(end.duration_s)
+        } else {
+            None
+        }
+    });
     assert_eq!(duration, u32::try_from(seconds).ok());
 }
 
@@ -486,17 +482,13 @@ fn trial_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
         "{:?}",
         ended.errors
     );
-    let start = ended
-        .journal
-        .events()
-        .iter()
-        .find_map(|event| {
-            if let Payload::TrialStart(start) = &event.payload {
-                start.window_start_ns
-            } else {
-                None
-            }
-        });
+    let start = ended.journal.events().iter().find_map(|event| {
+        if let Payload::TrialStart(start) = &event.payload {
+            start.window_start_ns
+        } else {
+            None
+        }
+    });
     assert_eq!(start, u64::try_from(mono.as_nanos()).ok());
 }
 
@@ -595,17 +587,13 @@ fn kernel_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
         "{:?}",
         ended.errors
     );
-    let recorded = ended
-        .journal
-        .events()
-        .iter()
-        .find_map(|event| {
-            if let Payload::Mce(mce) = &event.payload {
-                mce.monotonic_ns
-            } else {
-                None
-            }
-        });
+    let recorded = ended.journal.events().iter().find_map(|event| {
+        if let Payload::Mce(mce) = &event.payload {
+            mce.monotonic_ns
+        } else {
+            None
+        }
+    });
     assert_eq!(recorded, u64::try_from(mono.as_nanos()).ok());
 }
 
