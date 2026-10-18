@@ -11,6 +11,6 @@ pub use coverage::{
     encode_manifest, parse_manifest,
 };
 pub use run::{Run, RunId};
-pub use togi_tool_forecast::Split;
 pub use shard::{ShardError, partition, shard};
 pub use suite::{Suite, SuiteError};
+pub use togi_tool_forecast::Split;
