@@ -123,6 +123,25 @@ If the machine freezes during an in-session trial, it needs a manual reset unles
 
 Reboot and pick "NixOS - togi" in the GRUB menu once. That entry boots to a console with no desktop, and tty1 shows `togi watch --tuning-boot`, a dashboard of the session. That dashboard ignores `q`, `Q`, Ctrl-C and Ctrl-D, so a stray keypress cannot close it, and its help and footer name no quit key; `systemctl stop togi-watch.service` still ends it. Its log is on tty3 (Alt+F3), with the kernel's messages; tty2 has a login prompt. `togi.service` tunes unattended. GRUB remembers the entry, so every crash reboot returns to it and the service resumes. Shutting down or rebooting on purpose, with the power button, `poweroff` or `reboot`, leaves the tuning boot: togi stops cleanly and the next boot selects your newest normal generation. To keep tuning across your own reboots instead, set `services.togi.tuning.leaveOnShutdown = false;`. Automatic service restart-limit retry reboots are different and keep the tuning entry even with this option on ([Restart-limit retry boots and leave reasons](spec/runtime.md#restart-limit-retry-boots-and-leave-reasons)).
 
+For a GPU-rendered terminal instead of the Linux console, enable kmscon and rebuild before selecting the tuning boot:
+
+```nix
+services.togi.tuning.display = "kmscon";
+services.togi.tuning.kmscon.fontSize = 27; # Default: 160x45 cells at 2560x1440.
+```
+
+The module ships DejaVu Sans Mono, so no host font setup is needed. With kmscon, use Ctrl+Alt+F2 for the login prompt, Ctrl+Alt+F3 for logs, and Ctrl+Alt+F1 to return. Stop `togi-kmscon.service` rather than `togi-watch.service` to close that display. Failed starts or repeated crashes automatically hand tty1 back to the console watcher; tuning is independent of both displays ([Tuning boot](spec/runtime.md#tuning-boot)).
+
+kmscon clones every connected output and fits the dashboard to the smallest grid. To keep a monitor dark, for example an OLED, disable its connector with `video=<connector>:d`. Find connector names under `/sys/class/drm/` (for example, `card0-HDMI-A-1` means `HDMI-A-1`). To limit this to the tuning boot, use the following in a NixOS module taking `{ config, lib, ... }`; replace the connector name. Priority 40 overrides the module's forced console routing, so retain the normal system's other parameters and the tuning boot's console parameters:
+
+```nix
+specialisation.togi.configuration.boot.kernelParams = lib.mkOverride 40 (
+  lib.filter (p: builtins.match "console=tty[0-9]+(,.*)?" p == null)
+    config.boot.kernelParams
+  ++ [ "console=tty3" "printk.always_kmsg_dump=1" "video=HDMI-A-1:d" ]
+);
+```
+
 The tuning boot loads `sp5100_tco` in the initrd and lets systemd arm and feed the hardware watchdog. togi starts tuning only with an active hardware watchdog; otherwise it stops with a preflight dead end ([Preflight](spec/runtime.md#preflight)). `togi events --kind preflight.check` shows the final `watchdog` result. A normal `sudo togi run` only warns.
 
 The tuning boot also saves kernel messages on an orderly reboot or shutdown, as well as panic ([Tuning boot](spec/runtime.md#tuning-boot)). After an unclean togi boot, `togi events --json --kind crash.detected` includes `pstore.path` and the last lines of the saved kernel messages when it finds that boot's matching EFI pstore archive ([Trial outcome](spec/workloads.md#trial-outcome)). The archive stays under `/var/lib/systemd/pstore/`.
