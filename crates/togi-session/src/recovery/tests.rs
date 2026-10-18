@@ -552,8 +552,9 @@ fn a_together_application_a_profile_change_or_the_hunts_end_disarms_the_group(pa
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
     log.add(hunt_group(), &[]);
-    log.add(payload.clone(), &[]);
-    assert!(!log.state().hunt_group_armed(), "{:?}", payload.kind());
+    let kind = payload.kind();
+    log.add(payload, &[]);
+    assert!(!log.state().hunt_group_armed(), "{kind:?}");
 
     let mut log = Log::new();
     log.add(hunt_group(), &[]);
@@ -756,7 +757,7 @@ fn which_machine_checks_belong_to_the_trial_and_which_to_its_crash(
     } else {
         Vec::new()
     };
-    assert_eq!(seqs, want, "{}", case_name);
+    assert_eq!(seqs, want, "{case_name}");
 }
 
 #[test]

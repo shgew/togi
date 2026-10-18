@@ -230,24 +230,22 @@ fn a_dead_end_interrupted_before_the_saved_entry_clear_resumes_and_clears_it_onc
     interrupt(&bench, Fault::after(Op::Write, dead_end));
     let interrupted = drive(&bench, Some(&grub));
     assert_interrupted(&interrupted);
-    assert_eq!(grub.clears(), 0, "{}", case_name);
+    assert_eq!(grub.clears(), 0, "{case_name}");
     drop(interrupted);
 
     let resumed = drive(&bench, Some(&grub));
     assert!(
         resumed.errors.is_empty(),
-        "{}: {:?}",
-        case_name,
+        "{case_name}: {:?}",
         resumed.errors
     );
     assert!(
         matches!(&resumed.stop, Some(Stop::DeadEnd { dead_end, reboot, .. })
                 if dead_end.action == Some(case_action) && *reboot == case_reboot),
-        "{}: {:?}",
-        case_name,
+        "{case_name}: {:?}",
         resumed.stop
     );
-    assert_eq!(grub.clears(), 1, "{}", case_name);
+    assert_eq!(grub.clears(), 1, "{case_name}");
     let events = resumed.journal.events();
     assert_eq!(count_after(events, dead_end, EventKind::DeadEnd), 0);
     assert_eq!(count_after(events, dead_end, EventKind::TrialIntent), 0);
@@ -255,7 +253,7 @@ fn a_dead_end_interrupted_before_the_saved_entry_clear_resumes_and_clears_it_onc
     assert_eq!(count_after(events, dead_end, EventKind::Shutdown), 1);
     assert_eq!(events.last().unwrap().kind(), EventKind::Shutdown);
     let [entry] = saved_entries(events)[..] else {
-        panic!("{}: not one saved entry", case_name);
+        panic!("{case_name}: not one saved entry");
     };
     assert_eq!(
         entry.cause.iter().map(|seq| seq.get()).collect::<Vec<_>>(),
@@ -264,7 +262,7 @@ fn a_dead_end_interrupted_before_the_saved_entry_clear_resumes_and_clears_it_onc
     let Payload::BootSavedEntry(recorded) = &entry.payload else {
         unreachable!()
     };
-    assert_eq!(recorded.error.is_some(), case_fails_clear, "{}", case_name);
+    assert_eq!(recorded.error.is_some(), case_fails_clear, "{case_name}");
     assert!(bench.sim.violations().is_empty());
 }
 
@@ -660,43 +658,39 @@ fn a_tuning_boot_handoff_interrupted_at_any_cleanup_boundary_resumes_without_rep
     if case_entry_not_shutdown && !case_after_write {
         assert!(
             !matches!(&interrupted.stop, Some(Stop::DeadEnd { reboot: true, .. })),
-            "{}: authorized a reboot before the cleanup was durable",
-            case_name
+            "{case_name}: authorized a reboot before the cleanup was durable"
         );
     }
     drop(interrupted);
     assert_eq!(
         grub.saved() == "togi",
         case_clear == Clear::FailsUntouched,
-        "{}",
-        case_name
+        "{case_name}"
     );
 
     grub.repair();
     let resumed = resume_cancelled(&handoff, &grub);
     assert!(
         resumed.errors.is_empty(),
-        "{}: {:?}",
-        case_name,
+        "{case_name}: {:?}",
         resumed.errors
     );
     if case_completed {
-        assert_eq!(resumed.stop, Some(Stop::Signal), "{}", case_name);
+        assert_eq!(resumed.stop, Some(Stop::Signal), "{case_name}");
     } else {
         assert!(
             matches!(&resumed.stop, Some(Stop::DeadEnd { dead_end, reboot: true, .. })
                     if dead_end.detail == HANDOFF),
-            "{}: {:?}",
-            case_name,
+            "{case_name}: {:?}",
             resumed.stop
         );
     }
-    assert_eq!(grub.saved(), "", "{}", case_name);
-    assert_eq!(grub.clears(), case_clears, "{}", case_name);
+    assert_eq!(grub.saved(), "", "{case_name}");
+    assert_eq!(grub.clears(), case_clears, "{case_name}");
     let events = resumed.journal.events();
     assert_cleanup_order(events, handoff.dead_end);
     let [entry] = saved_entries(events)[..] else {
-        panic!("{}: duplicate or missing saved entry", case_name);
+        panic!("{case_name}: duplicate or missing saved entry");
     };
     assert_eq!(
         entry.cause.iter().map(|seq| seq.get()).collect::<Vec<_>>(),
@@ -705,12 +699,7 @@ fn a_tuning_boot_handoff_interrupted_at_any_cleanup_boundary_resumes_without_rep
     let Payload::BootSavedEntry(recorded) = &entry.payload else {
         unreachable!()
     };
-    assert_eq!(
-        recorded.before.as_deref(),
-        Some(case_before),
-        "{}",
-        case_name
-    );
+    assert_eq!(recorded.before.as_deref(), Some(case_before), "{case_name}");
     assert_eq!(recorded.after.as_deref(), Some(""));
     assert_eq!(recorded.error, None);
     let shutdowns = events
@@ -720,15 +709,10 @@ fn a_tuning_boot_handoff_interrupted_at_any_cleanup_boundary_resumes_without_rep
                 if shutdown.reason == ShutdownReason::DeadEnd)
         })
         .count();
-    assert_eq!(shutdowns, 1, "{}", case_name);
-    assert_eq!(decisions(events), facts, "{}", case_name);
+    assert_eq!(shutdowns, 1, "{case_name}");
+    assert_eq!(decisions(events), facts, "{case_name}");
     drop(resumed);
-    assert_eq!(
-        offsets_of(&handoff.bench),
-        expected_offsets,
-        "{}",
-        case_name
-    );
+    assert_eq!(offsets_of(&handoff.bench), expected_offsets, "{case_name}");
     assert!(handoff.bench.sim.violations().is_empty());
 }
 
@@ -995,12 +979,12 @@ fn assert_restored_and_published(bench: &Bench, ended: &Ended) {
     assert_eq!(state.tuner, tuner.project());
 }
 
-#[test_case("signal after a passed trial", Stop::Signal; "signal after a passed trial")]
-#[test_case("requested cycles", Stop::Cycles; "requested cycles")]
-#[test_case("first confirmed result", Stop::FirstResult; "first confirmed result")]
+#[test_case("signal after a passed trial", &Stop::Signal; "signal after a passed trial")]
+#[test_case("requested cycles", &Stop::Cycles; "requested cycles")]
+#[test_case("first confirmed result", &Stop::FirstResult; "first confirmed result")]
 fn every_stop_and_error_exit_joins_the_trial_restores_the_hardware_publishes_the_state_and_returns_the_journal(
     case_name: &str,
-    case_stop: Stop,
+    case_stop: &Stop,
 ) {
     let bench = quiet();
     let joins = Rc::new(Joins::default());
@@ -1011,9 +995,9 @@ fn every_stop_and_error_exit_joins_the_trial_restores_the_hardware_publishes_the
         Stop::Signal | Stop::DeadEnd { .. } => {}
     }
     let ended = run(input);
-    assert!(ended.errors.is_empty(), "{}: {:?}", case_name, ended.errors);
-    assert_eq!(ended.stop, Some(case_stop.clone()), "{}", case_name);
-    assert!(ended.emergency.is_none(), "{}", case_name);
+    assert!(ended.errors.is_empty(), "{case_name}: {:?}", ended.errors);
+    assert_eq!(ended.stop, Some(case_stop.clone()), "{case_name}");
+    assert!(ended.emergency.is_none(), "{case_name}");
     assert_owned_exit(&bench, &joins, &ended);
     assert_restored_and_published(&bench, &ended);
     assert!(
@@ -1021,8 +1005,7 @@ fn every_stop_and_error_exit_joins_the_trial_restores_the_hardware_publishes_the
             &ended.journal.events().last().unwrap().payload,
             Payload::Shutdown(_)
         ),
-        "{}",
-        case_name
+        "{case_name}"
     );
 
     let bench = quiet();

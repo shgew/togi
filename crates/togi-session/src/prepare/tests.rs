@@ -403,7 +403,7 @@ fn an_archive_that_cannot_be_read_still_fails_the_carry() {
     );
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum BrokenLayout {
     ArchiveFile,
     ArchiveTargetDirectory,

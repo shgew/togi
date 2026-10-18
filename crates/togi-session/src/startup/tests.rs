@@ -924,7 +924,7 @@ impl Bootloader for CountedBoot {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum Waited {
     Trial,
     DeadEnd,

@@ -732,35 +732,32 @@ fn the_reset_after_a_crash_decides_what_an_open_trial_ended_as(
     h.recover().unwrap();
     let (crash_event, crash) = h.crashes()[0];
     let ends = h.ends();
-    assert_eq!(ends.len(), 1, "{}", case_name);
+    assert_eq!(ends.len(), 1, "{case_name}");
     let (end_event, end) = ends[0];
-    assert_eq!(end.outcome, case_outcome, "{}", case_name);
-    assert_eq!(end_event.cause, [crash_event.seq], "{}", case_name);
+    assert_eq!(end.outcome, case_outcome, "{case_name}");
+    assert_eq!(end_event.cause, [crash_event.seq], "{case_name}");
     assert_eq!(
         crash.inconclusive,
         case_outcome == Outcome::Inconclusive,
-        "{}",
-        case_name
+        "{case_name}"
     );
-    assert!(!crash.stray, "{}", case_name);
-    assert_eq!(crash.condition, None, "{}", case_name);
+    assert!(!crash.stray, "{case_name}");
+    assert_eq!(crash.condition, None, "{case_name}");
     if case_outcome == Outcome::Failure {
-        assert_eq!(end.signal, Some(Signal::Crash), "{}", case_name);
-        assert!(!end.interrupted, "{}", case_name);
+        assert_eq!(end.signal, Some(Signal::Crash), "{case_name}");
+        assert!(!end.interrupted, "{case_name}");
     } else {
-        assert_eq!(end.signal, None, "{}", case_name);
-        assert!(end.interrupted, "{}", case_name);
+        assert_eq!(end.signal, None, "{case_name}");
+        assert!(end.interrupted, "{case_name}");
     }
     assert_eq!(
         h.appender().recovery().thermal_evidence().is_some(),
         case_thermal,
-        "{}",
-        case_name
+        "{case_name}"
     );
     assert!(
         h.appender().recovery().open_trial().is_none(),
-        "{}",
-        case_name
+        "{case_name}"
     );
     h.consistent();
 }
@@ -1326,9 +1323,9 @@ fn a_cancelled_wait_appends_nothing_and_a_pending_retry_is_not_read_again() {
     assert_eq!(h.appender().recovery().kernel_retries().len(), 1);
 }
 
-#[test_case(Error::Cancelled; "Error::Cancelled")]
-#[test_case(Error::Crashed; "Error::Crashed")]
-fn a_run_cut_short_in_a_retry_wait_waits_the_same_attempt_again_without_a_new_record(cut: Error) {
+#[test_case(&Error::Cancelled; "Error::Cancelled")]
+#[test_case(&Error::Crashed; "Error::Crashed")]
+fn a_run_cut_short_in_a_retry_wait_waits_the_same_attempt_again_without_a_new_record(cut: &Error) {
     let mut h = Harness::new(&trial_log(), "b1");
     h.reasons(&[
         ("b0", Some(ResetKind::Watchdog)),

@@ -412,45 +412,45 @@ fn set(ids: &[i64]) -> CoreSet {
     ids.iter().map(|&id| core(id)).collect()
 }
 
-#[test_case("first stall", vec![
+#[test_case("first stall", &[
                 &[(2, 1000), (7, 1000)],
                 &[(2, 1000), (7, 2000)],
                 &[(2, 1000), (7, 2000)],
             ], Regime::R7, Some((2, 2000)); "first stall")]
-#[test_case("scheduled R6 suspension", vec![&[(2, 0), (7, 0)], &[(2, 0), (7, 100)], &[(2, 0), (7, 200)]], Regime::R6, None; "scheduled R6 suspension")]
-#[test_case("advancing until end", vec![&[(2, 1000), (7, 1000)], &[(2, 2000), (7, 2000)]], Regime::R7, None; "advancing until end")]
-#[test_case("tie", vec![&[(2, 1000), (7, 1000)], &[(2, 1000), (7, 1000)]], Regime::R7, None; "tie")]
-#[test_case("missing reading", vec![
+#[test_case("scheduled R6 suspension", &[&[(2, 0), (7, 0)], &[(2, 0), (7, 100)], &[(2, 0), (7, 200)]], Regime::R6, None; "scheduled R6 suspension")]
+#[test_case("advancing until end", &[&[(2, 1000), (7, 1000)], &[(2, 2000), (7, 2000)]], Regime::R7, None; "advancing until end")]
+#[test_case("tie", &[&[(2, 1000), (7, 1000)], &[(2, 1000), (7, 1000)]], Regime::R7, None; "tie")]
+#[test_case("missing reading", &[
                 &[(2, 1000), (7, 1000)],
                 &[(2, 1000)],
                 &[(2, 1000), (7, 2000)],
             ], Regime::R7, None; "missing reading")]
-#[test_case("no samples", vec![], Regime::R7, None; "no samples")]
-#[test_case("one sample", vec![&[(2, 1000), (7, 1000)]], Regime::R7, None; "one sample")]
-#[test_case("transient plateau resumes", vec![
+#[test_case("no samples", &[], Regime::R7, None; "no samples")]
+#[test_case("one sample", &[&[(2, 1000), (7, 1000)]], Regime::R7, None; "one sample")]
+#[test_case("transient plateau resumes", &[
                 &[(2, 1000), (7, 1000)],
                 &[(2, 1000), (7, 2000)],
                 &[(2, 2000), (7, 3000)],
             ], Regime::R7, None; "transient plateau resumes")]
-#[test_case("later worker stalls first", vec![
+#[test_case("later worker stalls first", &[
                 &[(2, 1000), (7, 1000)],
                 &[(2, 2000), (7, 1000)],
                 &[(2, 2000), (7, 1000)],
             ], Regime::R7, Some((7, 2000)); "later worker stalls first")]
-#[test_case("counter decrease", vec![
+#[test_case("counter decrease", &[
                 &[(2, 1000), (7, 1000)],
                 &[(2, 0), (7, 2000)],
                 &[(2, 0), (7, 3000)],
             ], Regime::R7, None; "counter decrease")]
 fn only_a_unique_earliest_persistent_stall_names_a_core(
     name: &str,
-    readings: Vec<&[(i64, i64)]>,
+    readings: &[&[(i64, i64)]],
     regime: Regime,
     want: Option<(i64, i64)>,
 ) {
     let r7 = Regime::R7;
 
-    let got = workers(&readings, &[2, 7], regime);
+    let got = workers(readings, &[2, 7], regime);
     let stalled = got
         .summary
         .stalled

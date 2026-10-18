@@ -95,7 +95,7 @@ fn lower(rig: &mut Rig, n: i64, offset: i64) {
 
 #[test_case(|rig, _held| Access::gate(&Lifecycle::Unswept, Some(rig.validated)), Withheld::NoSweep, "offsets unchanged before successful trial-scope sweep"; "unswept validated")]
 #[test_case(|rig, _held| Access::gate(&rig.lifecycle, None), Withheld::NoValidation, "offsets unchanged: the SMU interface was not validated"; "swept unvalidated")]
-#[test_case(|rig, held| Access::gate(&held, Some(rig.validated)), Withheld::TeardownUnconfirmed, "offsets unchanged: the stop of every workload is not confirmed"; "teardown unconfirmed")]
+#[test_case(|rig, held| Access::gate(held, Some(rig.validated)), Withheld::TeardownUnconfirmed, "offsets unchanged: the stop of every workload is not confirmed"; "teardown unconfirmed")]
 #[test_case(|_rig, _held| Access::gate(&Lifecycle::Unswept, None), Withheld::NoSweep, "offsets unchanged before successful trial-scope sweep"; "unswept unvalidated")]
 #[test_case(|rig, _held| Access::gate(&Lifecycle::Faulted(Fault::Containment), Some(rig.validated)), Withheld::TeardownUnconfirmed, "offsets unchanged: the stop of every workload is not confirmed"; "containment fault")]
 #[test_case(|rig, _held| Access::gate(&Lifecycle::Faulted(Fault::Crashed), Some(rig.validated)), Withheld::Crashed, "offsets unchanged: the machine crashed"; "crashed")]
