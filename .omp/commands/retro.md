@@ -21,15 +21,11 @@ Then fan out in ONE parallel task call. Give every agent the export paths; an ag
 
 Done when every agent reported and you have checked each figure you will publish against the exports.
 
-## 3. Ask the operator
+## 3. Write the retro
 
-Ask only what needs eyes on the machine: what the dashboard on tty1 showed, by the checks `docs/reviewing.md` lists. Skip it when the run never used the tuning boot.
+Write it by `docs/reviewing.md`, in the full or the short form. Lead each item with the finding, then the numbers; mark inferences. The system journal is full of hostnames, usernames and paths: publish none of them (`AGENTS.md`, Writing). Ask the owner nothing about the dashboard or the UI: the owner files those issues directly. Done when every section the form requires is there and every number traces to step 2.
 
-## 4. Write the retro
-
-Write it by `docs/reviewing.md`, in the full or the short form. Lead each item with the finding, then the numbers; mark inferences. The system journal is full of hostnames, usernames and paths: publish none of them (`AGENTS.md`, Writing). Done when every section the form requires is there and every number traces to step 2.
-
-## 5. File the actions
+## 4. File the actions
 
 For each action, find the issue that already owns it (`gh issue list --search`, `just board`) before filing one:
 
@@ -40,10 +36,10 @@ For each action, find the issue that already owns it (`gh issue list --search`, 
 
 Triage what you file. Done when every action links an issue or a comment.
 
-## 6. Post
+## 5. Post
 
 Post the retro as a new comment on #260 and reread it there.
 
-## 7. Report
+## 6. Report
 
 In chat: the retro link, every issue filed or commented, and your overall take: what works, what worries you and what you would do next, each with the number behind it. Offer to grill it. When #492's Status says an audit is due, say so.
