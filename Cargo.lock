@@ -1608,6 +1608,7 @@ dependencies = [
  "togi-facts",
  "togi-journal",
  "togi-machine",
+ "togi-tuner",
 ]
 
 [[package]]
@@ -1671,6 +1672,7 @@ dependencies = [
  "togi-config",
  "togi-journal",
  "togi-machine",
+ "togi-tuner",
 ]
 
 [[package]]
@@ -2154,6 +2156,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "test-case",
  "thiserror",
  "togi-config",
  "togi-journal",

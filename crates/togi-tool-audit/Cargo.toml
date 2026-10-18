@@ -4,7 +4,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "The journal invariant audit: checks a recorded session against the tuner's rules without using the tuner"
+description = "The journal invariant audit: checks a recorded session against the tuner's rules without running its scheduler"
 
 [dependencies]
 clap.workspace = true

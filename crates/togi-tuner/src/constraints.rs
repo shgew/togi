@@ -20,6 +20,14 @@ impl FailurePoint {
     pub const fn offset(self) -> TargetOffset {
         self.0
     }
+
+    /// Merges a newly observed failure with the recorded point; the shallower point wins.
+    #[must_use]
+    pub fn merge(self, prior: Option<Self>) -> Self {
+        prior
+            .filter(|old| old.offset().shallower_than(self.offset()))
+            .unwrap_or(self)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -167,11 +175,9 @@ impl Constraints {
         if !self.cores.contains(core) {
             return Err(ConstraintError::UnknownCore(core));
         }
-        let keep = match self.failure_points.get(core) {
-            Some(old) => point.offset().shallower_than(old.offset()),
-            None => true,
-        };
-        if keep {
+        let prior = self.failure_points.get(core);
+        let point = point.merge(prior);
+        if prior != Some(point) {
             self.set_point(core, Some(point));
         }
         Ok(())
@@ -194,7 +200,7 @@ impl Constraints {
     fn set_point(&mut self, core: CoreId, point: Option<FailurePoint>) {
         let old = self.failure_points.get(core);
         if let Some(point) = point {
-            let shallower = old.is_none_or(|old| point.offset().shallower_than(old.offset()));
+            let shallower = old != Some(point) && point.merge(old) == point;
             if shallower {
                 self.recent = CoreSet::default();
                 self.recent.insert(core);

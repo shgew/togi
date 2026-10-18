@@ -9,8 +9,8 @@ use crate::cores::Core;
 use crate::ledger::carried_clause;
 use crate::state::Run;
 use crate::{
-    Action, BackendId, ClassKey, DecisionAction, DecisionPayload, Depth, Evidence, Load, Profile,
-    TrialPlan, Window, WorkloadChoice,
+    Action, BackendId, ClassKey, DecisionAction, DecisionPayload, Depth, Evidence, FailurePoint,
+    Load, Profile, TrialPlan, Window, WorkloadChoice,
 };
 
 /// How many counts shallower than its solo limit a core starts checking.
@@ -41,10 +41,6 @@ pub(crate) struct Search {
 impl Search {
     pub(crate) fn turn(&mut self, cursor: Option<usize>) {
         self.cursor = cursor;
-    }
-
-    pub(crate) const fn cursor(&self) -> Option<usize> {
-        self.cursor
     }
 
     pub(crate) fn clear(&mut self, core: CoreId) {
@@ -200,13 +196,9 @@ impl Run {
             }
             .into();
         }
-        let fail = view.fail.map_or(offset, |old| {
-            if old.shallower_than(offset) {
-                old
-            } else {
-                offset
-            }
-        });
+        let fail = FailurePoint::new(offset)
+            .merge(view.fail.map(FailurePoint::new))
+            .offset();
         let (pass, discarded) = match view.pass {
             Some(pass) if !pass.shallower_than(fail) => (
                 None,
@@ -290,6 +282,28 @@ impl Run {
 
     pub(crate) fn searching(&self, id: CoreId) -> Option<Core> {
         Some(self.core(id)).filter(|core| core.phase.searching())
+    }
+
+    pub(crate) fn search_second_only(&self, id: CoreId) -> bool {
+        self.searching(id)
+            .is_some_and(|core| core.phase.check().is_none())
+            && matches!(self.search.current(id, &self.evidence), (Some(_), None))
+    }
+
+    /// Finish the current turn's R2 first, then visit searching cores in CCD-alternating
+    /// order after the cursor. The scheduler settles completed steps and retries before this.
+    pub(crate) fn search_order(&self) -> impl Iterator<Item = CoreId> + '_ {
+        let order = self.topo.order();
+        let cursor = self.search.cursor;
+        let priority = cursor
+            .and_then(|at| order.get(at).copied())
+            .filter(|&id| self.search_second_only(id));
+        let start = cursor.map_or(0, |at| at + 1);
+        priority.into_iter().chain(
+            (0..order.len())
+                .map(move |step| order[(start + step) % order.len()])
+                .filter(move |&id| Some(id) != priority && self.searching(id).is_some()),
+        )
     }
 
     fn candidate_exit(&self, id: CoreId, core: Core) -> Option<Action> {
@@ -386,27 +400,16 @@ impl Run {
         if let Some(plan) = self.serve_retry() {
             return Some(Action::RunTrial(plan));
         }
-        if let Some(id) = cursor {
-            let current = self
-                .searching(id)
-                .filter(|core| core.phase.check().is_none());
-            if current.is_some()
-                && matches!(self.search.current(id, &self.evidence), (Some(_), None))
-            {
-                return Some(Action::RunTrial(self.search_trial(id, Regime::R2, None)));
-            }
-        }
-        let start = self.search.cursor.map_or(0, |at| at + 1);
-        for step in 0..order.len() {
-            let id = order[(start + step) % order.len()];
-            let Some(core) = self.searching(id) else {
-                continue;
-            };
-            if core.phase.check().is_none() {
-                return Some(Action::RunTrial(self.search_trial(id, Regime::R1, None)));
-            }
+        let id = self.search_order().next()?;
+        let core = self.core(id);
+        if core.phase.check().is_some() {
             return self.candidate_exit(id, core);
         }
-        None
+        let regime = if Some(id) == cursor && self.search_second_only(id) {
+            Regime::R2
+        } else {
+            Regime::R1
+        };
+        Some(Action::RunTrial(self.search_trial(id, regime, None)))
     }
 }

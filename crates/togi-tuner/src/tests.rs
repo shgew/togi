@@ -1,6 +1,7 @@
 use std::num::NonZeroU32;
 
 use proptest::prelude::*;
+use test_case::test_case;
 use togi_machine::{
     CcdId, CoreId, CoreInfo, CoreSet, PerCore, ResetKind, ResetReason, TargetOffset,
 };
@@ -305,18 +306,22 @@ fn constraints_check_failure_points_before_combinations_in_core_order() {
     );
 }
 
-#[test]
-fn failure_point_keeps_the_shallowest() {
+#[test_case(-30, -20, -20; "new shallower point")]
+#[test_case(-20, -40, -20; "prior shallower point")]
+#[test_case(-20, -20, -20; "equal points")]
+#[test_case(-50, 0, 0; "zero point")]
+fn failure_point_keeps_the_shallowest(prior: i64, observed: i64, expected: i64) {
     let topology = topology(&[0]);
     let mut constraints = Constraints::new(&topology);
-    for value in [-30, -20, -40] {
-        constraints
-            .insert_failure_point(core(0), FailurePoint::new(off(value)))
-            .unwrap();
-    }
+    constraints
+        .insert_failure_point(core(0), FailurePoint::new(off(prior)))
+        .unwrap();
+    constraints
+        .insert_failure_point(core(0), FailurePoint::new(off(observed)))
+        .unwrap();
     assert_eq!(
         constraints.failure_points().get(core(0)),
-        Some(FailurePoint::new(off(-20)))
+        Some(FailurePoint::new(off(expected)))
     );
     assert_eq!(
         constraints.insert_failure_point(core(1), FailurePoint::new(off(0))),

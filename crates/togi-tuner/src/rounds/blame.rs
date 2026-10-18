@@ -6,7 +6,7 @@ use super::{Round, Shape, actions, shallowest};
 use crate::failures::Pending;
 use crate::r7::order::lowest_ranked;
 use crate::state::Run;
-use crate::{DecisionAction, Depth, Profile, Ranking};
+use crate::{DecisionAction, Depth, FailurePoint, Profile, Ranking};
 
 #[cfg(test)]
 mod tests;
@@ -238,9 +238,9 @@ impl Run {
             (Some(named), Some(offset)) if named == blamed => offset,
             _ => blame.profile.get(blamed)?,
         };
-        let point = self
-            .failure_point(blamed)
-            .map_or(failed, |old| shallowest(failed, old));
+        let point = FailurePoint::new(failed)
+            .merge(self.failure_point(blamed).map(FailurePoint::new))
+            .offset();
         let to = shallowest(shallowest(core.offset, blame.back), point.shallower_by(1));
         let place: Vec<String> = [
             record.fact.failure.regime.map(|regime| regime.to_string()),

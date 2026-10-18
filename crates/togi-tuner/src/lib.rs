@@ -1,5 +1,9 @@
 //! The tuning rules: the core topology, topology-complete profiles, the failure points and
 //! combinations that bound them with the safe optimum they allow, and crash classification.
+//!
+//! [`FailurePoint::merge`] owns accumulated failure-point selection. [`Load::decode`] validates
+//! journal intent loads; readers without a session topology use [`Load::recorded`] for the same
+//! field precedence without claiming validation.
 
 mod checking;
 mod class;

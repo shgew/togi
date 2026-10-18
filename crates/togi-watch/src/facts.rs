@@ -10,7 +10,7 @@ use togi_journal::{
     TrialIntent,
 };
 use togi_machine::{BootId, CoreId, CoreSet, ObservedOffset, Regime, Signal, TargetOffset};
-use togi_tuner::{CombinationId, State as TunerState, TrialHistory};
+use togi_tuner::{CombinationId, Load, State as TunerState, TrialHistory};
 
 use crate::history::{History, LOG_LIMIT, LogEntry};
 use crate::model::{Count, DeadEndView, HuntShape, SessionView, StopView, TrialEndView};
@@ -104,10 +104,7 @@ pub(crate) fn secs(seconds: u32) -> Duration {
 }
 
 pub(crate) fn trial_cores(intent: &TrialIntent) -> CoreSet {
-    match intent.core {
-        Some(core) => std::iter::once(core).collect(),
-        None => intent.cores,
-    }
+    Load::recorded(intent.core, intent.cores).cores()
 }
 
 impl Facts {

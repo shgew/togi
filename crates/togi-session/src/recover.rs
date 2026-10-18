@@ -8,8 +8,8 @@ use togi_journal::{
     SessionWarning, TrialEnd, TrialId,
 };
 use togi_machine::{
-    BootId, CancellationToken, CoreId, CoreSet, Error, Kernel, PerCore, Regime, ResetReason,
-    Signal, TargetOffset, Trials,
+    BootId, CancellationToken, CoreId, Error, Kernel, PerCore, Regime, ResetReason, Signal,
+    TargetOffset, Trials,
 };
 use togi_tuner::{CrashFacts, CrashKind, classify_crash, recorded_kind};
 
@@ -696,11 +696,7 @@ fn close_open_trial(recovery: &mut Recovery<'_, '_>) -> Step<()> {
             u32::try_from(open.ran().as_secs()).unwrap_or(u32::MAX),
         )
     };
-    let loaded: CoreSet = if open.intent.cores.is_empty() {
-        open.intent.core.into_iter().collect()
-    } else {
-        open.intent.cores
-    };
+    let loaded = togi_tuner::Load::recorded(open.intent.core, open.intent.cores).cores();
     let topology = state.topology();
     let summary = evidence::summarize_samples(
         recovery.trials.samples(trial.as_str()),

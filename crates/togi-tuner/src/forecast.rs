@@ -11,7 +11,7 @@ use crate::flight::OpenTrial;
 use crate::r7::order::RequestOrder;
 use crate::state::Run;
 use crate::{
-    Action, DecisionPayload, LoadKey, Profile, State, StepNo, TrialContext, TrialPlan,
+    Action, DecisionPayload, Load, LoadKey, Profile, State, StepNo, TrialContext, TrialPlan,
     WorkloadChoice,
 };
 
@@ -348,12 +348,6 @@ fn repeats(open: &OpenTrial, plan: &TrialPlan) -> bool {
         && next.step == intent.step
 }
 
-fn loaded_of(intent: &TrialIntent) -> CoreSet {
-    intent
-        .core
-        .map_or(intent.cores, |core| std::iter::once(core).collect())
-}
-
 fn multi_core_r7(intent: &TrialIntent) -> bool {
     intent.regime == Regime::R7 && intent.core.is_none() && intent.cores.len() > 1
 }
@@ -363,7 +357,10 @@ impl Run {
         RequestOrder::derive(
             &self.r7.measurements,
             &self.topo,
-            LoadKey::new(intent.workload, loaded_of(intent)),
+            LoadKey::new(
+                intent.workload,
+                Load::recorded(intent.core, intent.cores).cores(),
+            ),
             profile,
         )
     }
@@ -375,7 +372,7 @@ impl Run {
     }
 
     fn named_representatives(&self, intent: &TrialIntent, profile: &Profile) -> Vec<CoreId> {
-        let loaded = loaded_of(intent);
+        let loaded = Load::recorded(intent.core, intent.cores).cores();
         if multi_core_r7(intent) {
             let top = self.request_order(intent, profile).top();
             let mut movable = None;

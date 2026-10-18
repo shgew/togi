@@ -7,7 +7,7 @@ use togi_requests::{VOLTS_PER_COUNT, counts, top};
 use togi_journal::Seq;
 use togi_machine::WorkloadId;
 
-use crate::{BackendId, ClassKey, Depth, Evidence, LoadKey, Profile, Topology};
+use crate::{BackendId, ClassKey, Depth, Evidence, FailurePoint, LoadKey, Profile, Topology};
 
 const NAMED_CLOCK_TOLERANCE_MHZ: i64 = 25;
 
@@ -550,13 +550,9 @@ pub(crate) fn backoff_move(
     prior_failure_point: Option<TargetOffset>,
     counts: i64,
 ) -> Move {
-    let failure_point = prior_failure_point.map_or(applied, |prior| {
-        if prior.shallower_than(applied) {
-            prior
-        } else {
-            applied
-        }
-    });
+    let failure_point = FailurePoint::new(applied)
+        .merge(prior_failure_point.map(FailurePoint::new))
+        .offset();
     let counts = u8::try_from(counts.clamp(0, i64::from(u8::MAX))).unwrap_or(u8::MAX);
     let by_counts = applied.shallower_by(counts);
     let past_failure = failure_point.shallower_by(1);

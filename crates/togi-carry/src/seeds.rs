@@ -8,6 +8,7 @@ use togi_journal::{
     Provenance, Seq, SessionId, TrialId,
 };
 use togi_machine::{Condition, CoreId, CoreSet, PerCore, Signal, TargetOffset};
+use togi_tuner::FailurePoint;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Exclusions {
@@ -477,8 +478,12 @@ impl SeedFold {
                             || end.is_some_and(|end| self.rerun_failed.contains(&end))
                     }
                 };
-                if confirmed && best.is_none_or(|held| candidate.point.offset > held.offset) {
-                    best = Some(candidate.point);
+                if confirmed {
+                    let point = FailurePoint::new(candidate.point.offset)
+                        .merge(best.map(|held| FailurePoint::new(held.offset)));
+                    if best.is_none_or(|held| held.offset != point.offset()) {
+                        best = Some(candidate.point);
+                    }
                 }
             }
             if let Some(best) = best {

@@ -1,7 +1,8 @@
 //! The journal invariant audit: whether a recorded session kept the rules of `docs/spec/tuner.md` and
-//! `docs/spec/journal.md`, judged from its events alone and independently of the tuner's own predicates. Only the
-//! check of a published `state.json` replays the journal through the tuner, since that document is the tuner's
-//! projection.
+//! `docs/spec/journal.md`, judged from its events alone without running the tuner's scheduler.
+//! Failure-point merging and recorded intent loads use the tuner's domain operations; the audit's
+//! invariant checks remain its own. Checking a published `state.json` replays the journal through
+//! the tuner, since that document is the tuner's projection.
 //!
 //! Offsets the tuner chooses are [`togi_machine::TargetOffset`]s, which cannot leave [-50, 0] and are refused by the
 //! journal's decoder, so a journal holding one is unreadable ([`AuditError`]) rather than a violation. Readbacks and

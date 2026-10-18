@@ -4,7 +4,7 @@ use togi_machine::{Condition, CoreId, TargetOffset};
 use crate::failures::Pending;
 use crate::state::Run;
 use crate::zero::AtZero;
-use crate::{Action, DecisionAction, Depth};
+use crate::{Action, DecisionAction, Depth, FailurePoint};
 
 impl Run {
     /// What the attributed failure of the first core with one pending decides: a search core
@@ -56,13 +56,9 @@ impl Run {
     ) -> DecisionAction {
         let core = self.core(id);
         let failure = &record.fact.failure;
-        let point = self.failure_point(id).map_or(failed, |old| {
-            if old.shallower_than(failed) {
-                old
-            } else {
-                failed
-            }
-        });
+        let point = FailurePoint::new(failed)
+            .merge(self.failure_point(id).map(FailurePoint::new))
+            .offset();
         let target = failed.shallower_by(1);
         let to = if target.shallower_than(core.offset) {
             target
