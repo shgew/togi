@@ -2,7 +2,7 @@
 
 Status: see [the index](README.md).
 
-Supersedes [ADR 0016](0016-every-pull-request-runs-every-check.md)'s check and release gates; amends [ADR 0047](0047-gate-before-every-push.md)'s gate contents and [ADR 0051](0051-light-checks-for-review-fixes.md)'s fix-push checks ([#1141](https://github.com/shgew/togi/issues/1141)).
+Supersedes [ADR 0016](0016-every-pull-request-runs-every-check.md)'s check and release gates and [ADR 0061](0061-no-macos-ci.md)'s cancellation of superseded `main` check runs; amends [ADR 0047](0047-gate-before-every-push.md)'s gate contents and [ADR 0051](0051-light-checks-for-review-fixes.md)'s fix-push checks ([#1141](https://github.com/shgew/togi/issues/1141)).
 
 ## Context
 
