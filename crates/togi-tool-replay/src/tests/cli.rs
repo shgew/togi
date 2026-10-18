@@ -159,16 +159,10 @@ fn at_prints_one_frame_of_the_recording_in_the_supplied_time_zone() {
     assert_eq!(String::from_utf8(out).unwrap(), want);
 }
 
-#[test_case("main", View::Main)]
-#[test_case("cores", View::Cores)]
-#[test_case("cycle", View::Cycle)]
-#[test_case("r7", View::R7)]
-#[test_case("hunts", View::Hunts)]
-#[test_case("bios", View::Bios)]
-#[test_case("history", View::History)]
-#[test_case("journal", View::Log)]
-#[test_case("help", View::Help)]
-fn every_page_can_be_printed(name: &str, view: View) {
+#[test_case("main", View::Main; "main view")]
+#[test_case("help", View::Help; "help view")]
+#[test_case("log", View::Log; "log view")]
+fn every_view_can_be_printed(name: &str, view: View) {
     let bytes = recording(Scenario::Checking);
     let events = Scenario::Checking.events().unwrap();
     let cli = parse(&["--at", "30", "--view", name]).unwrap();
@@ -183,21 +177,6 @@ fn every_page_can_be_printed(name: &str, view: View) {
     };
     let want = draw(&events, prefix(&events, 30), &frame, &TimeZone::UTC).unwrap();
     assert_eq!(String::from_utf8(out).unwrap(), want);
-}
-
-#[test_case("main", View::Main)]
-#[test_case("cores", View::Cores)]
-#[test_case("cycle", View::Cycle)]
-#[test_case("r7", View::R7)]
-#[test_case("hunts", View::Hunts)]
-#[test_case("bios", View::Bios)]
-#[test_case("history", View::History)]
-#[test_case("journal", View::Log)]
-#[test_case("log", View::Log)]
-#[test_case("help", View::Help)]
-fn the_page_names_are_the_nine_pages_and_log_still_names_the_journal(name: &str, view: View) {
-    let cli = parse(&["--at", "2", "--view", name]).unwrap();
-    assert_eq!(View::from(cli.view), view);
 }
 
 #[test]

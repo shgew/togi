@@ -3,8 +3,6 @@
 
 use std::borrow::Cow;
 
-use jiff::Timestamp;
-use jiff::tz::TimeZone;
 use ratatui::text::{Line, Span};
 
 use super::super::colours::Paint;
@@ -132,15 +130,9 @@ pub(super) fn cell(
     Line::from(scene.paint(paint, text))
 }
 
-/// `at` in `zone` as a local date, `2026-10-17`.
-pub(super) fn wall_date(zone: &TimeZone, at: Timestamp) -> String {
-    let local = zone.to_datetime(at);
-    format!(
-        "{:04}-{:02}-{:02}",
-        local.year(),
-        local.month(),
-        local.day()
-    )
+/// Whether a row shows nothing but blanks.
+pub(super) fn is_blank(line: &Line<'_>) -> bool {
+    plain(line).trim().is_empty()
 }
 
 #[cfg(test)]

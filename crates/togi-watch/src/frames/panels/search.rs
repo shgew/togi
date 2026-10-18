@@ -11,11 +11,11 @@ use togi_tuner::TurnKind;
 
 use super::super::colours::Paint;
 use super::super::dash::note_line;
-use super::super::fit::{cut_styled, plain, rule, wrap_styled};
+use super::super::fit::{cut_styled, plain, rule};
 use super::super::layout::SizeClass;
 use super::super::measure::Tables;
 use super::super::scene::{Scene, regime_list};
-use super::table::{cell, stage_marker, table_row, wall_date};
+use super::table::{cell, stage_marker, table_row};
 use crate::words::{candidate_word, core_ids, noun, plural};
 
 type Shape = (TargetOffset, Option<TargetOffset>, u32, bool);
@@ -123,21 +123,21 @@ pub(super) fn turn_lines(
     out
 }
 
-const NO_PROFILE: &str =
-    "No BIOS profile yet: it appears once the tuner has a phase for every core.";
-const NOTHING_CONFIRMED: &str =
-    "none confirmed yet: phase 1 has not passed a full cycle, so nothing here is confirmed";
 const BIOS_NOTE: &str = "unconfirmed: a passed full cycle confirms it, unless a failure is held";
 const BIOS_NOTE_SHORT: &str = "a passed full cycle confirms, unless a failure is held";
 
-/// The BIOS profile page: the profile to enter, one row per CCD in slot order, with a star on every
-/// unconfirmed offset, and which cycle confirmed the rest and when, with the journal event as evidence.
-pub(super) fn bios_page(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> {
-    let track = scene.style(Paint::Track);
+/// The profile to enter in BIOS, one row per CCD in slot order, with a star on every unconfirmed offset. The
+/// compact layout has no rows to spare for saying that phase 1 has confirmed nothing: its phase 1 stage says so.
+pub(super) fn bios_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> Vec<Line<'static>> {
     if scene.s.phases.is_none() {
-        return wrap_styled(NO_PROFILE, width, scene.style(Paint::Grey));
+        return Vec::new();
     }
+    let compact = class == SizeClass::Compact;
+    let track = scene.style(Paint::Track);
     let Some(bios) = scene.s.bios else {
+        if compact {
+            return Vec::new();
+        }
         return vec![
             rule(
                 width,
@@ -145,55 +145,44 @@ pub(super) fn bios_page(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> {
                 &Line::default(),
                 track,
             ),
-            Line::default(),
-        ]
-        .into_iter()
-        .chain(wrap_styled(
-            NOTHING_CONFIRMED,
-            width,
-            scene.style(Paint::Grey),
-        ))
-        .collect();
+            cut_styled(
+                &cell(
+                    scene,
+                    Paint::Grey,
+                    "none confirmed yet: phase 1 has not passed a full cycle",
+                ),
+                width,
+            ),
+        ];
     };
-    let mut right = Line::default();
-    if !bios.unconfirmed.is_empty() {
-        right = cell(
+    let confirmed = bios.confirmed.map_or(0, |confirmed| confirmed.seq.get());
+    let mut right = if compact {
+        cell(scene, Paint::Grey, format!("confirmed #{confirmed}"))
+    } else {
+        cell(
             scene,
-            Paint::Hunt,
+            Paint::Grey,
+            format!("confirmed by the cycle ending #{confirmed}"),
+        )
+    };
+    if !bios.unconfirmed.is_empty() {
+        let since = bios.since().map_or(0, Seq::get);
+        let text = if compact {
+            format!("UNCONFIRMED since #{since}")
+        } else {
             format!(
-                "UNCONFIRMED · cores {}",
+                "UNCONFIRMED since #{since} · cores {}",
                 core_ids(bios.unconfirmed.iter().map(|mark| mark.core))
-            ),
-        );
-    }
-    let mut out = vec![
-        rule(
-            width,
-            &cell(scene, Paint::Grey, "BIOS PROFILE"),
-            &right,
-            track,
-        ),
-        Line::default(),
-    ];
-    let grey = scene.style(Paint::Grey);
-    if let Some(confirmed) = bios.confirmed {
-        let text = match scene.s.bios_confirmation {
-            Some(done) => format!(
-                "confirmed by the passed full cycle {} that ended {} {}",
-                done.cycle,
-                wall_date(scene.zone, done.at),
-                scene.wall_minute(done.at)
-            ),
-            None => "confirmed by a passed full cycle".to_owned(),
+            )
         };
-        out.extend(wrap_styled(&text, width, grey));
-        out.extend(wrap_styled(
-            &format!("evidence: journal event #{}", confirmed.seq.get()),
-            width,
-            grey,
-        ));
-        out.push(Line::default());
+        right = cell(scene, Paint::Hunt, text);
     }
+    let mut out = vec![rule(
+        width,
+        &cell(scene, Paint::Grey, "BIOS PROFILE"),
+        &right,
+        track,
+    )];
     let mut cells: BTreeMap<CcdId, Vec<Span<'static>>> = BTreeMap::new();
     let mut slots: BTreeMap<CcdId, Vec<u8>> = BTreeMap::new();
     for core in scene.s.cores {
@@ -225,8 +214,7 @@ pub(super) fn bios_page(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> {
         out.push(Line::from(spans));
     }
     if !bios.unconfirmed.is_empty() {
-        out.push(Line::default());
-        // The star and the heading already say unconfirmed, so a page too narrow for the whole note drops that word.
+        // The star and the heading already say unconfirmed, so a panel too narrow for the whole note drops that word.
         let note = if width >= 2 + BIOS_NOTE.len() {
             BIOS_NOTE
         } else {
@@ -239,22 +227,17 @@ pub(super) fn bios_page(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> {
             ]),
             width,
         ));
-        let since = bios.since().map_or(0, Seq::get);
-        out.extend(wrap_styled(
-            &format!("unconfirmed since journal event #{since}"),
-            width,
-            grey,
-        ));
     }
     #[cfg(test)]
-    crate::corpus::lines("page.bios", "", &out);
+    crate::corpus::lines("panel.bios", &format!("{class:?}"), &out);
     out
 }
 
-/// The open round: its candidates with their gaps, the bound on what is left, and its checks.
-pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>> {
+/// The open round: its candidates with their gaps, the bound on what is left, and its checks. Also how many
+/// leading rows are the heading, the bound and the candidates, which the panel keeps first.
+pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> (Vec<Line<'static>>, usize) {
     let Some(phases) = scene.s.phases else {
-        return Vec::new();
+        return (Vec::new(), 0);
     };
     let round = phases.round.unwrap_or(0);
     let mut out = vec![
@@ -311,6 +294,7 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>
             width,
         ));
     }
+    let head = out.len();
     out.push(Line::default());
     out.push(cell(scene, Paint::Grey, "CHECKS"));
     for check in scene.s.deepening.iter().flat_map(|round| &round.checks) {
@@ -334,15 +318,13 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> Vec<Line<'static>
     }
     #[cfg(test)]
     crate::corpus::lines("panel.phase2", "", &out);
-    out
+    (out, head)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU8;
-
-    use jiff::Timestamp;
     use jiff::tz::TimeZone;
+    use std::num::NonZeroU8;
     use test_case::test_case;
     use togi_machine::Regime;
     use togi_tuner::{
@@ -353,8 +335,8 @@ mod tests {
     use super::super::super::layout::SizeClass;
     use super::super::super::measure::Tables;
     use super::super::fixtures::{bios, core_view, phases, scene, texts, topology};
-    use super::{bios_page, phase2_lines, turn_lines};
-    use crate::model::{BiosConfirmation, Confirm, CoreState, Model};
+    use super::{bios_lines, phase2_lines, turn_lines};
+    use crate::model::{Confirm, CoreState, Model};
     use crate::tests::kit::{core, nz, off, seq, set};
 
     fn confirm_turn(light: u32, heavy: u32) -> Vec<String> {
@@ -535,8 +517,7 @@ mod tests {
     fn bios_rows(
         bios: Option<&BiosProfile>,
         phases: Option<&PhasePlan>,
-        confirmation: Option<BiosConfirmation>,
-        width: usize,
+        class: SizeClass,
     ) -> Vec<String> {
         let cores = [core_view(0, 0), core_view(1, 0), core_view(8, 1)];
         let model = Model::new();
@@ -544,78 +525,57 @@ mod tests {
         s.cores = &cores;
         s.bios = bios;
         s.phases = phases;
-        s.bios_confirmation = confirmation;
-        let zone = TimeZone::fixed(jiff::tz::offset(2));
+        let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
-        texts(&bios_page(&scene, width))
-    }
-
-    fn confirmation() -> BiosConfirmation {
-        BiosConfirmation {
-            cycle: 3,
-            at: Timestamp::from_second(1_767_311_998).expect("a timestamp"),
-            seq: seq(12),
-        }
+        texts(&bios_lines(&scene, 80, class))
     }
 
     #[test]
     fn the_bios_profile_stars_what_a_cycle_has_not_confirmed() {
         let plan = phases(None);
         let held = bios(true);
-        let rows = bios_rows(Some(&held), Some(&plan), Some(confirmation()), 80);
+        let rows = bios_rows(Some(&held), Some(&plan), SizeClass::Wide);
         assert!(rows[0].starts_with("BIOS PROFILE"));
-        assert!(rows[0].ends_with("UNCONFIRMED · cores 01"), "{}", rows[0]);
-        let slot = rows
-            .iter()
-            .position(|row| row.starts_with("slot"))
-            .expect("slots");
-        assert_eq!(rows[slot].trim_end(), "slot      0    1");
-        assert_eq!(rows[slot + 1].trim_end(), "CCD 0   -20  -25*");
-        assert_eq!(rows[slot + 2].trim_end(), "CCD 1   -10");
         assert!(
-            rows.contains(
-                &"* unconfirmed: a passed full cycle confirms it, unless a failure is held"
-                    .to_owned()
-            ),
-            "{rows:?}"
+            rows[0].ends_with("UNCONFIRMED since #15 · cores 01"),
+            "{}",
+            rows[0]
         );
-        assert!(
-            rows.contains(&"unconfirmed since journal event #15".to_owned()),
-            "{rows:?}"
+        assert_eq!(rows[1].trim_end(), "slot      0    1");
+        assert_eq!(rows[2].trim_end(), "CCD 0   -20  -25*");
+        assert_eq!(rows[3].trim_end(), "CCD 1   -10");
+        assert_eq!(
+            rows[4],
+            "* unconfirmed: a passed full cycle confirms it, unless a failure is held"
         );
-    }
-
-    #[test]
-    fn a_confirmation_is_described_by_its_cycle_and_local_date_with_the_event_as_evidence() {
-        let plan = phases(None);
+        assert!(!rows[4].contains("not confirmed"), "{}", rows[4]);
+        let rows = bios_rows(Some(&held), Some(&plan), SizeClass::Compact);
+        assert!(rows[0].ends_with("UNCONFIRMED since #15"), "{}", rows[0]);
         let confirmed = bios(false);
-        let rows = bios_rows(Some(&confirmed), Some(&plan), Some(confirmation()), 100);
-        assert_eq!(
-            rows[2],
-            "confirmed by the passed full cycle 3 that ended 2026-01-02 01:59"
+        let rows = bios_rows(Some(&confirmed), Some(&plan), SizeClass::Wide);
+        assert!(
+            rows[0].ends_with("confirmed by the cycle ending #12"),
+            "{}",
+            rows[0]
         );
-        assert_eq!(rows[3], "evidence: journal event #12");
-        assert!(rows.iter().all(|row| !row.contains("ending #")), "{rows:?}");
-        let unknown = bios_rows(Some(&confirmed), Some(&plan), None, 100);
-        assert_eq!(unknown[2], "confirmed by a passed full cycle");
-        assert_eq!(unknown[3], "evidence: journal event #12");
+        assert_eq!(rows.len(), 4);
+        let rows = bios_rows(Some(&confirmed), Some(&plan), SizeClass::Compact);
+        assert!(rows[0].ends_with("confirmed #12"), "{}", rows[0]);
     }
 
     #[test]
-    fn before_a_confirmed_profile_the_bios_page_says_none_is_confirmed() {
+    fn before_a_confirmed_profile_the_bios_panel_says_so_or_stays_out() {
         let plan = phases(None);
-        let rows = bios_rows(None, Some(&plan), None, 100);
+        let rows = bios_rows(None, Some(&plan), SizeClass::Wide);
+        assert_eq!(rows.len(), 2);
         assert!(rows[0].starts_with("BIOS PROFILE"));
         assert_eq!(
-            rows[2],
-            "none confirmed yet: phase 1 has not passed a full cycle, so nothing here is confirmed"
+            rows[1],
+            "none confirmed yet: phase 1 has not passed a full cycle"
         );
+        assert!(bios_rows(None, Some(&plan), SizeClass::Compact).is_empty());
         let held = bios(false);
-        let rows = bios_rows(Some(&held), None, None, 100);
-        assert_eq!(
-            rows,
-            ["No BIOS profile yet: it appears once the tuner has a phase for every core."]
-        );
+        assert!(bios_rows(Some(&held), None, SizeClass::Wide).is_empty());
     }
 
     #[test]
@@ -660,7 +620,8 @@ mod tests {
         s.deepening = Some(&round);
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
-        let rows = texts(&phase2_lines(&scene, 100));
+        let (rows, head) = phase2_lines(&scene, 100);
+        let rows = texts(&rows);
         assert!(rows[0].starts_with("PHASE 2 · ROUND 3"));
         assert_eq!(rows[2], "2 rounds left if none fails, then one full cycle");
         assert_eq!(
@@ -668,6 +629,7 @@ mod tests {
             "cores 00 01  -30 → solo -25  gap 5  checked again in place"
         );
         assert_eq!(rows[4], "core 08  -30 → solo -25  gap 5  moving");
+        assert_eq!(head, 5);
         assert_eq!(rows[5], "");
         assert_eq!(rows[6], "CHECKS");
         assert!(

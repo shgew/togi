@@ -1,18 +1,21 @@
-//! The band that replaces the NOW rows when no trial runs: between trials, stopped, at a dead end, around a crash.
+//! The trial band when no trial runs, and the last trial's ending beside the narration.
 
 use std::fmt::Write as _;
 
-use togi_journal::Outcome;
+use ratatui::text::Line;
+use togi_journal::{Outcome, ShutdownReason};
 use togi_machine::{Condition, CoreId, ResetKind, Signal};
 use togi_tuner::Uncertainty;
 
 use super::super::colours::Paint;
 use super::super::scene::{Scene, clock};
-use super::super::terms::{cycle_place, stop_words, trial_name};
+use super::super::terms::{cycle_place, trial_name};
 use super::RestingBand;
 use super::outcome::{NEXT_TRIAL, next_trial_words};
 use crate::model::{RecoveryView, TrialEndView};
 use crate::words::{kind_words, lateness, on_cores, signal_words};
+
+const SAVED_ROWS: &str = "Rows show the saved profile, not applied now.";
 
 /// The resting band: no trial in flight, a stop, a dead end, a crashed trial or a recovery.
 pub(crate) fn resting_band(scene: &Scene<'_>) -> RestingBand {
@@ -25,11 +28,14 @@ pub(crate) fn resting_band(scene: &Scene<'_>) -> RestingBand {
 fn band(scene: &Scene<'_>) -> RestingBand {
     let s = &scene.s;
     if let Some(dead_end) = s.dead_end {
-        let lines = vec![format!(
+        let mut lines = vec![format!(
             "{}: {}",
             dead_end.condition.as_str().replace('_', " "),
             dead_end.detail
         )];
+        if s.stopped.is_some_and(|stopped| stopped.saved) {
+            lines.push(SAVED_ROWS.to_owned());
+        }
         return RestingBand {
             title: "DEAD END",
             paint: Paint::Bad,
@@ -49,8 +55,8 @@ fn band(scene: &Scene<'_>) -> RestingBand {
             scene.wall_second(stopped.at),
             stop_words(stopped.reason)
         )];
-        if let Some(last) = s.last {
-            lines.push(format!("last: {}", last_description(last)));
+        if stopped.saved {
+            lines.push(SAVED_ROWS.to_owned());
         }
         return RestingBand {
             title: "STOPPED",
@@ -66,15 +72,24 @@ fn band(scene: &Scene<'_>) -> RestingBand {
         };
     }
     let mut lines = Vec::with_capacity(2);
-    match s.last {
-        Some(last) => lines.push(format!("last: {}", last_description(last))),
-        None => lines.push("No trial has run yet".to_owned()),
+    if let Some(last) = s.last {
+        lines.push(format!("last: {}", last_description(last)));
     }
     lines.push(next_line(scene));
     RestingBand {
         title: "BETWEEN TRIALS",
         paint: Paint::Grey,
         lines,
+    }
+}
+
+fn stop_words(reason: ShutdownReason) -> &'static str {
+    match reason {
+        ShutdownReason::Signal => "stopped by a signal",
+        ShutdownReason::Cycles => "requested clean cycles completed",
+        ShutdownReason::FirstResult => "stopped at the first confirmed result",
+        ShutdownReason::Command => "read-only command finished; no applied offsets changed",
+        ShutdownReason::DeadEnd => "tuning stopped at a dead end",
     }
 }
 
@@ -214,4 +229,20 @@ fn last_description(end: &TrialEndView) -> String {
         None => on_cores(end.cores),
     };
     format!("{text} · {}", facts.join(" · "))
+}
+
+/// The last trial's ending beside the narration: `last trial      PASS  10:00 on 00-15 · …`.
+pub(crate) fn last_lines(scene: &Scene<'_>) -> Vec<Line<'static>> {
+    let Some(last) = scene.s.last else {
+        return Vec::new();
+    };
+    let (word, paint) = end_word(last);
+    let lines = vec![Line::from(vec![
+        scene.paint(Paint::Grey, "last trial      "),
+        scene.paint(paint, word),
+        scene.paint(Paint::Grey, format!("  {}", end_facts(last).join(" · "))),
+    ])];
+    #[cfg(test)]
+    crate::corpus::lines("story.last", word, &lines);
+    lines
 }

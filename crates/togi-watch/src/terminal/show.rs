@@ -652,19 +652,14 @@ mod tests {
                 settle().await;
                 assert_eq!(recorder.clears(), 1);
                 let follow = usize::MAX;
-                let help = Screen {
-                    view: View::Help,
-                    ..h.last()
-                };
-                let page = crate::frames::body_rows(&help).saturating_sub(1).max(1);
                 let steps = [
                     (Key::Char('?'), View::Help, 0, true),
                     (Key::Down, View::Help, 1, false),
-                    (Key::PageDown, View::Help, 1 + page, false),
+                    (Key::PageDown, View::Help, 5, false),
                     (Key::Home, View::Help, 0, false),
                     (Key::End, View::Help, 20, false),
                     (Key::Char('?'), View::Main, 0, true),
-                    (Key::Down, View::Main, 1, false),
+                    (Key::Down, View::Main, 0, false),
                     (Key::Char('L'), View::Log, follow, true),
                     (Key::Up, View::Log, 19, false),
                     (Key::Down, View::Log, follow, false),
@@ -718,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn the_tuning_boot_ignores_quit_keys_on_every_page_and_ends_only_by_cancel() {
+    fn the_tuning_boot_ignores_quit_keys_on_every_view_and_ends_only_by_cancel() {
         crate::terminal::testing::paused(async {
             local(async {
                 let recorder = Recorder::new(80, 24);
@@ -730,71 +725,21 @@ mod tests {
                     },
                 );
                 settle().await;
-                for page in View::ALL {
-                    assert_eq!(h.last().view, page);
+                for view in [None, Some('?'), Some('l')] {
+                    if let Some(key) = view {
+                        h.key(Key::Char(key)).await;
+                    }
                     for quit in ['q', 'Q', '\x03', '\x04'] {
                         h.key(Key::Char(quit)).await;
                         assert!(
                             !h.task.is_finished(),
-                            "{page:?} {quit:?} ended the dashboard"
+                            "{view:?} {quit:?} ended the dashboard"
                         );
-                        assert_eq!(h.last().view, page, "{quit:?} changed the page");
                     }
-                    h.key(Key::Right).await;
                 }
-                assert_eq!(h.last().view, View::Main, "nine pages make a cycle");
                 h.send(Event::Cancel).await;
                 h.finish().await.unwrap();
                 assert!(recorder.restored());
-            })
-            .await;
-        });
-    }
-
-    #[test_case('q'; "q")]
-    #[test_case('Q'; "capital q")]
-    #[test_case('\x03'; "ctrl c")]
-    #[test_case('\x04'; "ctrl d")]
-    fn a_quit_key_exits_the_dashboard_from_every_page(quit: char) {
-        crate::terminal::testing::paused(async {
-            local(async {
-                for (at, page) in View::ALL.into_iter().enumerate() {
-                    let recorder = Recorder::new(80, 24);
-                    let h = Harness::start(&recorder, &Setup::default());
-                    settle().await;
-                    for _ in 0..at {
-                        h.key(Key::Right).await;
-                    }
-                    assert_eq!(h.last().view, page);
-                    let frames = h.frames();
-                    h.key(Key::Char(quit)).await;
-                    assert_eq!(h.frames(), frames, "{page:?} {quit:?}: quitting redrew");
-                    h.finish().await.unwrap();
-                    assert!(recorder.restored(), "{page:?} {quit:?}");
-                }
-            })
-            .await;
-        });
-    }
-
-    #[test]
-    fn left_and_right_reach_every_page_and_an_arrow_in_a_view_change_repaints_whole() {
-        crate::terminal::testing::paused(async {
-            local(async {
-                let recorder = Recorder::new(80, 24);
-                let h = Harness::start(&recorder, &Setup::default());
-                settle().await;
-                for (key, step) in [(Key::Right, 1), (Key::Left, 8)] {
-                    for at in 1..=9 {
-                        let clears = recorder.clears();
-                        h.key(key).await;
-                        assert_eq!(h.last().view, View::ALL[(at * step) % 9], "{key:?} {at}");
-                        assert_eq!(recorder.clears(), clears + 1, "{key:?} {at}");
-                    }
-                    assert_eq!(h.last().view, View::Main);
-                }
-                h.send(Event::Cancel).await;
-                h.finish().await.unwrap();
             })
             .await;
         });

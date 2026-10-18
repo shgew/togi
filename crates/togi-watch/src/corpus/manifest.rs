@@ -44,8 +44,8 @@ const SOURCES: &[(&str, &str)] = &[
     ("frames/dash/r7.rs", include_str!("../frames/dash/r7.rs")),
     ("frames/notes.rs", include_str!("../frames/notes.rs")),
     (
-        "frames/panels/pages.rs",
-        include_str!("../frames/panels/pages.rs"),
+        "frames/panels/context.rs",
+        include_str!("../frames/panels/context.rs"),
     ),
     (
         "frames/panels/cycle.rs",
@@ -70,10 +70,6 @@ const SOURCES: &[(&str, &str)] = &[
     ("frames/footer.rs", include_str!("../frames/footer.rs")),
     ("frames/help.rs", include_str!("../frames/help.rs")),
     ("frames/render.rs", include_str!("../frames/render.rs")),
-    (
-        "frames/main_page.rs",
-        include_str!("../frames/main_page.rs"),
-    ),
     ("frames/scene.rs", include_str!("../frames/scene.rs")),
     ("frames/draw.rs", include_str!("../frames/draw.rs")),
     ("words.rs", include_str!("../words.rs")),
@@ -94,12 +90,6 @@ const NOT_PHRASES: &[&str] = &[
     "include_str",
 ];
 
-/// Why the outcome-phrase columns render nothing: since the dashboard redesign no production code reads them.
-const UNREAD_COLUMNS: &str = "read only through `Words::detailed`, `Words::compact`, `decision_detail` or `decision_brief`, which no production code reads since the dashboard redesign: the history and the story word these events themselves";
-
-/// Why `hunt_end_phrase` renders nothing.
-const UNREAD_HUNT_END: &str = "`hunt_end_phrase` has no production caller: `HuntEnd`'s history is contextual and `describe.rs` words a hunt's end itself";
-
 /// Why the story never tells of a singleton whose probe is done, bracketed or stopped.
 const UNREACHED_DONE: &str = "`hunt_story` words a singleton only while its probe trial runs, and `HuntView::singleton` stages it bracketed or stopped only once its probe is done, which the tuner marks only when its probing ends, which ends the hunt";
 
@@ -112,37 +102,6 @@ pub(crate) const SILENT: &[(&str, &str, &str)] = &[
         "idle with short bursts",
         "`regime_words(R6)` has no production caller: `load_words` words R6 itself",
     ),
-    (
-        "words.rs",
-        "core {core:02} starts its search",
-        UNREAD_COLUMNS,
-    ),
-    ("words.rs", "the hunt ends", UNREAD_HUNT_END),
-    ("words.rs", "hunt {hunt} ends: ", UNREAD_HUNT_END),
-    (
-        "words.rs",
-        "hunt {hunt} keeps {cores} together",
-        UNREAD_HUNT_END,
-    ),
-    (
-        "words.rs",
-        "hunt {hunt} keeps the failure on loaded",
-        UNREAD_HUNT_END,
-    ),
-    (
-        "words.rs",
-        "core {core:02} starts confirming",
-        UNREAD_COLUMNS,
-    ),
-    ("words.rs", "core {core:02} deepens", UNREAD_COLUMNS),
-    ("words.rs", "core {core:02} failure held at", UNREAD_COLUMNS),
-    ("words.rs", "CCD {} partial on", UNREAD_COLUMNS),
-    ("words.rs", "deepening round {round} starts", UNREAD_COLUMNS),
-    ("words.rs", "deepening round {round} ends", UNREAD_COLUMNS),
-    ("words.rs", "tuning stops: ", UNREAD_COLUMNS),
-    ("words.rs", "hunt {} starts over", UNREAD_COLUMNS),
-    ("words.rs", "hunt ends", UNREAD_COLUMNS),
-    ("words.rs", "no hunt", UNREAD_COLUMNS),
     (
         "frames/panels/hunt.rs",
         "→ core {id:02} failed alone; testing its parked offset",

@@ -1,16 +1,17 @@
-//! Where Main's rows sit, and the columns of the detail tables.
+//! Where the main view's model-dependent panels sit: the trial band, the outcome lines, a table per CCD, the
+//! context panel and the history, measured from the screen's [`Layout`] and the snapshot.
 //!
-//! Main's rectangles depend on the screen alone: a live trial state (running, preparing, between trials, stopped,
-//! crashed, recovering) changes what a row says, never where it is.
-//!
-//! - Reference (160 columns by 45 rows or more): the exact row budget of the design, the two 77-cell CCD gauges
-//!   side by side. Taller or wider screens only give What happened more rows and the explanation more room.
-//! - Compact, at least 80 by 30: the same top rows, then the numeric core table, then What happened.
-//! - Smaller: one scrolled body under the shared header, stage line and title.
+//! Every live trial state (running, preparing, between trials) gives each panel the same rectangle: between trials
+//! the trial band's slot holds the resting text and the outcome lines keep the last trial's outcomes. A stop, a
+//! dead end, a crash or a recovery takes the rows its band needs and the outcome lines give theirs up, so the
+//! panels below move up rather than leaving blank rows.
 
 use ratatui::layout::Rect;
+use togi_machine::CcdId;
 
 use super::layout::{Layout, SizeClass};
+use super::scene::Scene;
+use super::story::resting_band;
 use crate::screen::Screen;
 
 /// A table column inside its panel: the cell it starts at and how many cells it may use. A column of width 0
@@ -139,272 +140,178 @@ impl Tables {
     }
 }
 
-/// The columns one CCD's gauge takes: three for the core id and its badges, one blank, 50 for the lane, one
-/// blank, 22 for the values.
-pub(crate) const GAUGE_WIDTH: u16 = 77;
-/// The rows one CCD's gauge takes: a heading, the column labels and eight three-row core records.
-pub(crate) const GAUGE_HEIGHT: u16 = 26;
-/// The cells between the two gauges.
-const GAUGE_GAP: u16 = 3;
-/// The row the gauges start at.
-const GAUGES_AT: u16 = 9;
-/// The numeric table's rows: a heading and sixteen cores.
-const TABLE_HEIGHT: u16 = 17;
-/// The rows of What happened a scrolled Main shows under its table.
-pub(crate) const SCROLLED_HISTORY_ROWS: usize = 4;
-
-/// How Main is laid out at a screen size.
+/// The columns of a CCD's core table, as cells from the table's left edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MainForm {
-    /// 160 by 45 or more: the two CCD gauges.
-    Gauges,
-    /// 80 by 30 or more, under the gauges' size: the numeric table in its own rows.
-    Table,
-    /// Under 80 by 30: one scrolled body.
-    Scrolled,
+pub(crate) struct CoreColumns {
+    /// The core id.
+    pub(crate) id: usize,
+    /// The applied offset.
+    pub(crate) offset: usize,
+    /// The state word.
+    pub(crate) state: usize,
+    /// The gauge.
+    pub(crate) gauge: usize,
+    /// The gauge's cells.
+    pub(crate) cells: usize,
+    /// The failure point.
+    pub(crate) failure: usize,
+    /// The note.
+    pub(crate) note: usize,
+    /// The role sits beside the CCD name and notes are bare numbers.
+    pub(crate) brief: bool,
 }
 
-/// Main's rectangles on a screen. A rectangle the form does not use has no cells.
+/// One CCD's core table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Main {
-    /// The form.
-    pub(crate) form: MainForm,
-    /// The phase headline and the requirement under it.
-    pub(crate) progress: Rect,
-    /// The NOW sentence and the trial row under it.
+pub(crate) struct Ccd {
+    /// The CCD.
+    pub(crate) id: CcdId,
+    /// Where its table draws: a heading row, then a row per core.
+    pub(crate) rect: Rect,
+    /// Its columns.
+    pub(crate) columns: CoreColumns,
+}
+
+/// The main view's rectangles.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Measure {
+    /// What depends on the screen alone.
+    pub(crate) layout: Layout,
+    /// The trial band, or the resting band: the same slot while a trial runs, is prepared or is awaited.
     pub(crate) now: Rect,
-    /// The left and the right CCD's gauge.
-    pub(crate) gauges: [Rect; 2],
-    /// What the gauges' marks mean.
-    pub(crate) explain: Rect,
-    /// The numeric core table.
-    pub(crate) table: Rect,
-    /// The What happened heading; none when What happened has a single row.
-    pub(crate) history_head: Rect,
-    /// What happened's rows.
+    /// The outcome lines; no rows while stopped, at a dead end, crashed or recovering.
+    pub(crate) outcomes: Rect,
+    /// A table per CCD, in CCD order.
+    pub(crate) ccds: Vec<Ccd>,
+    /// The context panel: BIOS, cycle, hunt, turns, round, combinations, R7.
+    pub(crate) context: Rect,
+    /// What happened; no rows when the CCD tables do not sit side by side.
     pub(crate) history: Rect,
-    /// The unread-journal warning.
-    pub(crate) warning: Rect,
+    /// The context tables' columns.
+    pub(crate) tables: Tables,
 }
 
-impl Main {
-    /// Main on `screen`.
-    pub(crate) fn new(screen: &Screen) -> Self {
-        let layout = Layout::new(screen);
-        let (margin, full, hint) = (layout.margin, layout.full, layout.hint);
-        let none = Rect::default();
-        let top = Self {
-            form: MainForm::Scrolled,
-            progress: Rect::new(margin, 3, full, 2),
-            now: Rect::new(margin, 6, full, 2),
-            gauges: [none; 2],
-            explain: none,
-            table: none,
-            history_head: none,
-            history: none,
-            warning: none,
+fn rect(x: u16, y: u16, w: usize, h: usize) -> Rect {
+    let w = u16::try_from(w).unwrap_or(u16::MAX);
+    let h = u16::try_from(h).unwrap_or(u16::MAX);
+    Rect::new(x, y, w, h)
+}
+
+/// The main view of `scene` on `screen`.
+pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
+    let layout = Layout::new(screen);
+    let class = layout.class;
+    let rows = layout.rows;
+    let hint = usize::from(layout.hint);
+    let margin = layout.margin;
+    let (full, left, gap) = (
+        usize::from(layout.full),
+        usize::from(layout.left),
+        usize::from(layout.gap),
+    );
+    let mut now_height = usize::from(rows.now_height);
+    let mut outcomes_height = usize::from(rows.outcomes_height);
+    let mut ccd_y = usize::from(rows.ccd);
+    if scene.s.resting() && !scene.s.between_trials() {
+        now_height = resting_band(scene).lines.len();
+        if class != SizeClass::Compact {
+            now_height += 1;
+        }
+        outcomes_height = 0;
+        ccd_y = usize::from(rows.now) + now_height + 1;
+    }
+    let mut ids: Vec<CcdId> = scene.s.cores.iter().map(|core| core.ccd).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let side = left >= 50;
+    let mut low_y = ccd_y;
+    let mut ccds = Vec::with_capacity(ids.len());
+    for (i, &id) in ids.iter().enumerate() {
+        let cores = scene.s.cores.iter().filter(|core| core.ccd == id).count();
+        let (x, y, w) = if side {
+            let x = usize::from(margin) + (i % 2) * (left + gap);
+            (x, if i >= 2 { low_y } else { ccd_y }, left)
+        } else {
+            (usize::from(margin), low_y, full)
         };
-        match layout.class {
-            SizeClass::Medium | SizeClass::Wide => {
-                let block = 2 * GAUGE_WIDTH + GAUGE_GAP;
-                let left = margin + full.saturating_sub(block) / 2;
-                let history_at = GAUGES_AT + GAUGE_HEIGHT + 3;
-                Self {
-                    form: MainForm::Gauges,
-                    gauges: [
-                        Rect::new(left, GAUGES_AT, GAUGE_WIDTH, GAUGE_HEIGHT),
-                        Rect::new(
-                            left + GAUGE_WIDTH + GAUGE_GAP,
-                            GAUGES_AT,
-                            GAUGE_WIDTH,
-                            GAUGE_HEIGHT,
-                        ),
-                    ],
-                    explain: Rect::new(left, GAUGES_AT + GAUGE_HEIGHT, block, 1),
-                    history_head: Rect::new(margin, history_at - 1, full, 1),
-                    history: Rect::new(
-                        margin,
-                        history_at,
-                        full,
-                        hint.saturating_sub(history_at + 1),
-                    ),
-                    warning: Rect::new(margin, hint.saturating_sub(1), full, 1),
-                    ..top
-                }
-            }
-            SizeClass::Compact if screen.width >= 80 && screen.height >= 30 => {
-                let history_at = GAUGES_AT + TABLE_HEIGHT;
-                let rows = hint.saturating_sub(history_at + 1);
-                let headed = rows > 1;
-                Self {
-                    form: MainForm::Table,
-                    table: Rect::new(margin, GAUGES_AT, full, TABLE_HEIGHT),
-                    history_head: Rect::new(margin, history_at, full, u16::from(headed)),
-                    history: Rect::new(
-                        margin,
-                        history_at + u16::from(headed),
-                        full,
-                        rows - u16::from(headed),
-                    ),
-                    warning: Rect::new(margin, hint - 1, full, 1),
-                    ..top
-                }
-            }
-            SizeClass::Compact => Self {
-                progress: none,
-                now: none,
-                ..top
+        let mut height = (cores + 1).min(hint.saturating_sub(y + 1));
+        if !side {
+            let share = (hint.saturating_sub(ccd_y + 3) / ids.len().max(1)).max(1);
+            height = height.min(share);
+        }
+        let mut columns = match class {
+            SizeClass::Wide => CoreColumns {
+                id: 2,
+                offset: 6,
+                state: 11,
+                gauge: 21,
+                cells: 50,
+                failure: 73,
+                note: 81,
+                brief: false,
             },
-        }
+            SizeClass::Medium => CoreColumns {
+                id: 2,
+                offset: 6,
+                state: 11,
+                gauge: 21,
+                cells: 25,
+                failure: 48,
+                note: 56,
+                brief: false,
+            },
+            SizeClass::Compact if !side => CoreColumns {
+                id: 2,
+                offset: 6,
+                state: 11,
+                gauge: 21,
+                cells: 25,
+                failure: 48,
+                note: 56,
+                brief: false,
+            },
+            SizeClass::Compact => CoreColumns {
+                id: 2,
+                offset: 5,
+                state: 9,
+                gauge: 18,
+                cells: 25,
+                failure: 44,
+                note: 50,
+                brief: true,
+            },
+        };
+        columns.cells = columns.cells.min(w.saturating_sub(columns.gauge + 1));
+        let x = u16::try_from(x).unwrap_or(u16::MAX);
+        let top = u16::try_from(y).unwrap_or(u16::MAX);
+        ccds.push(Ccd {
+            id,
+            rect: rect(x, top, w, height),
+            columns,
+        });
+        low_y = low_y.max(y + height + 1);
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use ratatui::layout::Rect;
-    use test_case::test_case;
-
-    use super::{Main, MainForm};
-    use crate::frames::layout::Layout;
-    use crate::frames::testing::screen;
-    use crate::screen::{Colours, View};
-
-    fn main_at(width: u16, height: u16) -> Main {
-        Main::new(&screen(View::Main, width, height, Colours::Full, true))
-    }
-
-    fn inside(rect: Rect, outer: Rect) -> bool {
-        rect.is_empty()
-            || outer.contains(rect.as_position())
-                && rect.right() <= outer.right()
-                && rect.bottom() <= outer.bottom()
-    }
-
-    #[test]
-    fn the_reference_size_has_the_designs_exact_rows_and_columns() {
-        let m = main_at(160, 45);
-        assert_eq!(m.form, MainForm::Gauges);
-        assert_eq!(m.progress, Rect::new(1, 3, 157, 2));
-        assert_eq!(m.now, Rect::new(1, 6, 157, 2));
-        assert_eq!(
-            m.gauges,
-            [Rect::new(1, 9, 77, 26), Rect::new(81, 9, 77, 26)]
-        );
-        assert_eq!(m.explain, Rect::new(1, 35, 157, 1));
-        assert_eq!(m.history_head, Rect::new(1, 37, 157, 1));
-        assert_eq!(m.history, Rect::new(1, 38, 157, 4));
-        assert_eq!(m.warning, Rect::new(1, 42, 157, 1));
-        assert_eq!(
-            Layout::new(&screen(View::Main, 160, 45, Colours::Full, true))
-                .footer
-                .y,
-            43
-        );
-        assert!(m.table.is_empty());
-    }
-
-    #[test_case(160, 45; "160 by 45")]
-    #[test_case(170, 50; "170 by 50")]
-    #[test_case(200, 60; "200 by 60")]
-    #[test_case(240, 67; "240 by 67")]
-    #[test_case(300, 90; "300 by 90")]
-    fn every_reference_rectangle_lies_inside_the_frame_area(width: u16, height: u16) {
-        let sc = screen(View::Main, width, height, Colours::Full, true);
-        let area = Layout::new(&sc).area;
-        let m = Main::new(&sc);
-        for rect in [
-            m.progress,
-            m.now,
-            m.gauges[0],
-            m.gauges[1],
-            m.explain,
-            m.history_head,
-            m.history,
-            m.warning,
-        ] {
-            assert!(
-                inside(rect, area),
-                "{width}x{height}: {rect:?} outside {area:?}"
-            );
-        }
-    }
-
-    #[test_case(200, 60; "200 by 60")]
-    #[test_case(240, 67; "240 by 67")]
-    fn the_gauges_keep_their_geometry_and_the_extra_room_goes_to_what_happened(
-        width: u16,
-        height: u16,
-    ) {
-        let reference = main_at(160, 45);
-        let m = main_at(width, height);
-        assert_eq!(m.form, MainForm::Gauges, "{width}x{height}");
-        for gauge in m.gauges {
-            assert_eq!((gauge.width, gauge.height), (77, 26));
-        }
-        assert_eq!(m.gauges[1].x - m.gauges[0].x, 80);
-        assert_eq!(m.gauges[0].y, 9);
-        assert_eq!(
-            (
-                m.progress.y,
-                m.now.y,
-                m.explain.y,
-                m.history_head.y,
-                m.history.y
-            ),
-            (3, 6, 35, 37, 38)
-        );
-        let layout = Layout::new(&screen(View::Main, width, height, Colours::Full, true));
-        assert_eq!(m.history.bottom() + 1, layout.footer.y);
-        assert!(m.history.height > reference.history.height);
-    }
-
-    #[test]
-    fn extra_room_centres_the_gauges() {
-        let centred = main_at(240, 67);
-        assert_eq!(centred.gauges[0].x, 1 + (237 - 157) / 2);
-    }
-
-    #[test]
-    fn a_screen_a_cell_under_the_reference_is_compact() {
-        assert_eq!(main_at(159, 45).form, MainForm::Table);
-        assert_eq!(main_at(160, 44).form, MainForm::Table);
-        assert_eq!(main_at(160, 45).form, MainForm::Gauges);
-        assert_eq!(main_at(80, 30).form, MainForm::Table);
-        assert_eq!(main_at(79, 30).form, MainForm::Scrolled);
-        assert_eq!(main_at(80, 29).form, MainForm::Scrolled);
-        assert_eq!(main_at(79, 29).form, MainForm::Scrolled);
-    }
-
-    #[test]
-    fn compact_main_at_80_by_30_has_the_designs_rows() {
-        let m = main_at(80, 30);
-        assert_eq!(m.progress, Rect::new(1, 3, 77, 2));
-        assert_eq!(m.now, Rect::new(1, 6, 77, 2));
-        assert_eq!(m.table, Rect::new(1, 9, 77, 17));
-        assert!(m.history_head.is_empty());
-        assert_eq!(m.history, Rect::new(1, 26, 77, 1));
-        assert_eq!(m.warning, Rect::new(1, 27, 77, 1));
-        assert_eq!(
-            Layout::new(&screen(View::Main, 80, 30, Colours::Full, true))
-                .footer
-                .y,
-            28
-        );
-    }
-
-    #[test]
-    fn more_compact_height_adds_what_happened_rows_under_a_heading() {
-        let m = main_at(100, 40);
-        assert_eq!(m.table, Rect::new(1, 9, 97, 17));
-        assert_eq!(m.history_head, Rect::new(1, 26, 97, 1));
-        assert_eq!(m.history, Rect::new(1, 27, 97, 10));
-        assert_eq!(m.warning.y, 37);
-    }
-
-    #[test]
-    fn below_80_by_30_main_is_one_scrolled_body() {
-        let m = main_at(79, 29);
-        assert!(m.table.is_empty() && m.history.is_empty() && m.progress.is_empty());
-        assert!(m.gauges.iter().all(|rect| rect.is_empty()));
+    let context_height = hint.saturating_sub(low_y + 1);
+    let low = u16::try_from(low_y).unwrap_or(u16::MAX);
+    let (context, history) = if side {
+        (
+            rect(margin, low, left, context_height),
+            rect(layout.right_x, low, left, context_height),
+        )
+    } else {
+        let below = u16::try_from(low_y + context_height).unwrap_or(u16::MAX);
+        (
+            rect(margin, low, full, context_height),
+            rect(margin, below, full, 0),
+        )
+    };
+    Measure {
+        now: rect(margin, rows.now, full, now_height),
+        outcomes: rect(margin, rows.outcomes, full, outcomes_height),
+        ccds,
+        tables: Tables::new(class, usize::from(context.width)),
+        context,
+        history,
+        layout,
     }
 }

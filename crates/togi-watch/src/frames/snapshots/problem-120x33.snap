@@ -4,7 +4,7 @@ expression: body
 ---
 │ togi   22:13:20   can't read journal
 │
-│ MAIN · 1/9 · < Help | Cores >
+│
 │ ▌  JOURNAL UNREADABLE   can't read journal: events.jsonl: unexpected end of file
 │ ▌                       I'll retry when the journal changes. Tuning itself is not affected by this screen.
 │
@@ -33,4 +33,4 @@ expression: body
 │
 │
 │
-│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
+│  ?  help    l  log    esc  back    q  exit dashboard

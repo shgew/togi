@@ -4,6 +4,7 @@
 
 use super::super::Story;
 use super::*;
+use test_case::test_case;
 
 fn dead_end(condition: DeadEndCondition, detail: &str) -> DeadEndView {
     DeadEndView {
@@ -40,7 +41,7 @@ fn every_dead_end_condition_is_narrated_with_and_without_a_saved_profile() {
                 ),
                 "{condition:?}"
             );
-            assert_eq!(band.lines.len(), 1, "{condition:?} {saved}");
+            assert_eq!(band.lines.len(), 1 + usize::from(saved), "{condition:?}");
         }
     }
 }
@@ -61,7 +62,125 @@ fn every_stop_reason_is_narrated_saved_or_not() {
             assert!(!said.lines.is_empty(), "{reason:?} {saved}");
             let band = resting_band(&scene);
             assert_eq!(band.title, "STOPPED", "{reason:?} {saved}");
-            assert_eq!(band.lines.len(), 1, "{reason:?} {saved}");
+            assert_eq!(
+                band.lines.len(),
+                1 + usize::from(saved),
+                "{reason:?} {saved}"
+            );
+        }
+    }
+}
+
+fn running() -> Fx {
+    let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1), (3, 1)]);
+    fx.trial = Some(counted(
+        in_cycle(trial(Regime::R1, Condition::Together, &[0, 1]), 1, 1, 1, 1),
+        0,
+        1,
+        2,
+    ));
+    fx
+}
+
+/// Every premise under every uncertainty, with each decision the tuner records and each flag a branch carries,
+/// and with each kind of next trial, in the outcome rows and in the lines fitted at three widths.
+#[test]
+fn every_premise_and_uncertainty_is_narrated_without_inventing_a_next_trial() {
+    let nexts = [
+        None,
+        Some(plan(
+            Regime::R1,
+            many(&[0, 1]),
+            Condition::Together,
+            cycle_ctx(1, 2),
+            120,
+        )),
+        Some(plan(
+            Regime::R6,
+            Load::Single(core(1)),
+            Condition::Alone,
+            cycle_ctx(1, 3),
+            600,
+        )),
+        Some(plan(
+            Regime::R7,
+            many(&[0, 1]),
+            Condition::Parked,
+            cycle_ctx(1, 1),
+            60,
+        )),
+    ];
+    let premises = [
+        Premise::Pass,
+        Premise::AllPass,
+        Premise::Named(core(0)),
+        Premise::Named(core(3)),
+        Premise::Unnamed,
+        Premise::Inconclusive,
+    ];
+    let uncertainties = [
+        None,
+        Some(Uncertainty::NeedsRanking),
+        Some(Uncertainty::NeedsHistory),
+        Some(Uncertainty::RecurringPlan),
+        Some(Uncertainty::Stopped { after: 0 }),
+        Some(Uncertainty::Stopped { after: 2 }),
+    ];
+    let mut hold = backoff(1, -20, -20, None);
+    hold.decision = Decision::Hold;
+    let decisions: [Vec<DecisionPayload>; 4] = [
+        Vec::new(),
+        vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))],
+        vec![DecisionPayload::TunerDecision(hold)],
+        vec![
+            DecisionPayload::Failure(failure(Some(0))),
+            DecisionPayload::TunerDecision(backoff(0, -31, -30, Some(-31))),
+        ],
+    ];
+    let mut fx = running();
+    for premise in premises {
+        for uncertainty in uncertainties {
+            for decision in &decisions {
+                for next in &nexts {
+                    for flags in 0..16_u8 {
+                        let mut one = branch(premise);
+                        one.uncertainty = uncertainty;
+                        one.decisions.clone_from(decision);
+                        one.next.clone_from(next);
+                        one.at_zero = flags & 1 != 0;
+                        one.without_telemetry = flags & 2 != 0;
+                        one.offset_order = flags & 4 != 0;
+                        one.top_requester = flags & 8 != 0;
+                        fx.forecast.branches = vec![one];
+                        let scene = fx.scene(ts(1010));
+                        let rows = outcome_rows(&scene);
+                        assert!(!rows.is_empty(), "{premise:?} {uncertainty:?} says nothing");
+                        for row in &rows {
+                            assert!(!row.label.is_empty(), "{premise:?} {uncertainty:?}");
+                            if next.is_none() {
+                                let said = fit_phrases(&row.phrases, 400);
+                                assert!(
+                                    !said.contains("next trial: "),
+                                    "{premise:?} {uncertainty:?} invents a next trial: {said}"
+                                );
+                            }
+                        }
+                        for (width, compact) in [
+                            (100, false),
+                            (60, false),
+                            (34, false),
+                            (100, true),
+                            (40, true),
+                        ] {
+                            let lines = outcome_lines(&scene, width, compact);
+                            assert!(
+                                !lines.is_empty(),
+                                "{premise:?} {uncertainty:?} at {width} compact {compact}"
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -347,28 +466,19 @@ fn capitalized(text: &str) -> String {
     })
 }
 
-/// Draws `fx` as the dashboard shows it at the three main sizes on every page that tells about the work; returns
-/// the rows of the widest size, the pages one after the other.
+/// Draws `fx` as the dashboard shows it at the three main sizes; returns the rows of the widest.
 fn drawn(fx: &Fx) -> Vec<String> {
     let mut widest = Vec::new();
     for (width, height) in [(240, 67), (160, 45), (120, 33)] {
-        for view in [
-            View::Main,
-            View::Cycle,
-            View::R7,
-            View::Hunts,
-            View::History,
-        ] {
-            let snapshot = fx.snap();
-            let journal = crate::screen::Journal::Ready {
-                snapshot,
-                log: snapshot.log(),
-            };
-            let sc = screen(view, width, height, Colours::None, false);
-            let (buf, _) = crate::frames::testing::render_checked(&journal, &sc, ts(1010));
-            if width == 240 {
-                widest.extend(rows_of(&buf));
-            }
+        let snapshot = fx.snap();
+        let journal = crate::screen::Journal::Ready {
+            snapshot,
+            log: snapshot.log(),
+        };
+        let sc = screen(View::Main, width, height, Colours::None, false);
+        let (buf, _) = crate::frames::testing::render_checked(&journal, &sc, ts(1010));
+        if widest.is_empty() {
+            widest = rows_of(&buf);
         }
     }
     widest
@@ -470,4 +580,102 @@ fn a_cycle_step_that_finished_after_two_hunts_lists_them() {
         1,
     ));
     shows(&drawn(&fx), "done · hunts 1-2");
+}
+
+/// Outcome rows the forecast merges: a zero core on each CCD, a pass and a failure that say the same, and a core
+/// that starts its search over.
+#[test]
+fn outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure() {
+    let mut fx = running();
+    let mut zero = [0, 3].map(|id| {
+        let mut one = branch(Premise::Named(core(id)));
+        one.at_zero = true;
+        one
+    });
+    fx.forecast.branches = zero.to_vec();
+    let scene = fx.scene(ts(1010));
+    assert_eq!(zero_words(&scene, &zero[0]), "a CCD 0 core at 0");
+    assert_eq!(zero_words(&scene, &zero[1]), "a CCD 1 core at 0");
+    zero[0].top_requester = true;
+    fx.forecast.branches = zero.to_vec();
+    let scene = fx.scene(ts(1010));
+    assert_eq!(zero_words(&scene, &zero[0]), "a top requester at 0");
+    assert_eq!(
+        zero_words(&scene, &zero[1]),
+        "a core at 0",
+        "a top requester at 0 does not move another CCD's group"
+    );
+
+    // Two named failures at 0 on different CCDs that say different things are two rows, each naming its CCD.
+    let mut apart = [0, 3].map(|id| {
+        let mut one = branch(Premise::Named(core(id)));
+        one.at_zero = true;
+        one
+    });
+    apart[0].decisions = vec![DecisionPayload::TunerDecision(backoff(1, -31, -30, None))];
+    fx.forecast.branches = apart.to_vec();
+    let labels: Vec<String> = fx.row_set().into_iter().map(|row| row.label).collect();
+    assert_eq!(
+        labels,
+        [
+            "if a CCD 0 core at 0 is named",
+            "if a CCD 1 core at 0 is named"
+        ],
+        "{labels:?}"
+    );
+}
+
+/// A pass and a failure at 0 that add nothing are one row; with a decision to share they still say something.
+#[test_case(&[], Some("pass or fail"); "nothing to add is one row")]
+#[test_case(
+    &[DecisionPayload::TunerDecision(backoff(1, -31, -30, None))],
+    None;
+    "a shared backoff"
+)]
+fn a_pass_and_a_failure_at_zero_merge_only_when_they_add_nothing(
+    decisions: &[DecisionPayload],
+    merged: Option<&str>,
+) {
+    let mut fx = running();
+    let mut pass = branch(Premise::Pass);
+    decisions.clone_into(&mut pass.decisions);
+    let mut failed = branch(Premise::Named(core(0)));
+    decisions.clone_into(&mut failed.decisions);
+    failed.at_zero = true;
+    fx.forecast.branches = vec![pass, failed];
+    let rows = fx.row_set();
+    assert!(!rows.is_empty(), "{decisions:?}");
+    if let Some(label) = merged {
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.label.as_str())
+                .collect::<Vec<_>>(),
+            [label],
+            "a pass and a failure with nothing to add are one row"
+        );
+    }
+}
+
+#[test_case(Premise::Pass; "a pass")]
+#[test_case(Premise::Unnamed; "an unnamed failure")]
+#[test_case(Premise::Inconclusive; "an inconclusive trial")]
+fn a_core_that_starts_its_search_over_is_named_under_every_premise(premise: Premise) {
+    use crate::tests::kit::{Start, transition};
+    let restart = Start {
+        from: Some(togi_journal::CorePhase::AtLimit),
+        to: togi_journal::CorePhase::Search,
+        offset: -27,
+        pass: None,
+        fail: None,
+    };
+    let mut fx = running();
+    let mut one = branch(premise);
+    one.decisions = vec![DecisionPayload::CorePhase(transition(1, restart))];
+    fx.forecast.branches = vec![one];
+    let rows = fx.rows();
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("core 01 starts its search over")),
+        "{premise:?}: {rows:?}"
+    );
 }

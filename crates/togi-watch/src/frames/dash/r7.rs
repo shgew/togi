@@ -3,10 +3,9 @@ use togi_machine::{CoreSet, Regime, WorkloadId, workloads};
 use togi_tuner::R7CoreStatus;
 
 use crate::frames::colours::Paint;
-use crate::frames::fit::{
-    Clause, Form, cut_words, display_width, fit_clauses, line_width, rule, tint, wrap_styled,
-};
+use crate::frames::fit::{Clause, Form, cut_words, display_width, fit_clauses, line_width, tint};
 use crate::frames::layout::SizeClass;
+use crate::frames::measure::Measure;
 use crate::frames::scene::Scene;
 use crate::words::{core_ids, workload_display};
 
@@ -85,7 +84,7 @@ fn dashes(scene: &Scene<'_>, n: usize) -> Span<'static> {
 
 /// Heads the R7 lines with their column names; a wide panel says the evidence is no guarantee.
 pub(super) fn r7_rule(scene: &Scene<'_>, width: usize, name: usize, top: usize) -> Line<'static> {
-    let grey = |text: &str| scene.paint(Paint::Grey, text.to_owned());
+    let grey = |text: &'static str| scene.paint(Paint::Grey, text);
     let top_label = if top >= 20 { "top requesters" } else { "top" };
     let mut line = Line::from(vec![
         grey("R7"),
@@ -214,120 +213,12 @@ pub(super) fn r7_rows(scene: &Scene<'_>, class: SizeClass, width: usize) -> Vec<
     out
 }
 
-const EMPTY: &str =
-    "No R7 evidence yet: request order and self-sufficiency appear once checking has a cycle.";
-const RAIL: &str = "All loaded cores share one voltage rail, set by the loaded core with the highest voltage request. R7 attribution keeps a separate top-request group on each loaded CCD: the cores within 1 mV of that CCD's highest request, tied. An unattributed failure is charged to the affected CCD's top group first, and that group need not contain the core that sets the rail.";
-const PROVENANCE: &str = "Request order is read from the telemetry recorded for each CCD's full part. `per offset order` marks a CCD where no measurement covers a loaded core, so the order is taken from the offsets instead.";
-const SELF_SUFFICIENT: &str = "Self-sufficient means the core has been observed passing as a top requester at its current offset or deeper. That is evidence so far, not a guarantee against future failures.";
-const CONDITIONAL: &str = "While this R7 trial runs, any outcome is conditional: its end may add request or clock telemetry that changes the top requesters, the backoff targets and the partials derived from them.";
-
-/// The R7 evidence page in `width` cells: what the shared rail and the request order mean, then for every R7
-/// workload and CCD its top requesters, where that order comes from and which cores are self-sufficient. Before
-/// checking has a cycle it says so in one sentence.
-pub(crate) fn r7_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> Vec<Line<'static>> {
-    let text = scene.style(Paint::Text);
-    let grey = scene.style(Paint::Grey);
-    let track = scene.style(Paint::Track);
-    if scene.s.cycle.is_none() || scene.s.r7.is_empty() {
-        return wrap_styled(EMPTY, width, text);
-    }
-    let mut out = vec![
-        rule(
-            width,
-            &Line::from(scene.paint(Paint::Grey, "R7 EVIDENCE")),
-            &Line::from(scene.paint(Paint::Grey, NOTE)),
-            track,
-        ),
-        Line::default(),
-    ];
-    for note in [RAIL, PROVENANCE, SELF_SUFFICIENT] {
-        out.extend(wrap_styled(note, width, grey));
-    }
-    let r7_runs = scene
-        .s
-        .trial
-        .is_some_and(|trial| trial.regime == Regime::R7)
-        && scene.trial_runs();
-    if r7_runs {
-        out.push(Line::default());
-        out.extend(wrap_styled(CONDITIONAL, width, grey));
-    }
-    out.push(Line::default());
-    out.extend(r7_rows(scene, class, width));
-    let current = scene.s.r7_workload();
-    for index in 0..workloads(Regime::R7).len() {
-        let Some(id) = WorkloadId::new(Regime::R7, index) else {
-            continue;
-        };
-        let rows: Vec<_> = scene
-            .s
-            .r7
-            .iter()
-            .filter(|status| status.workload == id)
-            .collect();
-        if rows.is_empty() {
-            continue;
-        }
-        out.push(Line::default());
-        let name = match (current == Some(id), r7_runs) {
-            (true, true) => format!("{} · loading now", workload_display(id)),
-            (true, false) => format!("{} · current step", workload_display(id)),
-            (false, _) => workload_display(id).to_owned(),
-        };
-        out.push(Line::from(scene.paint(Paint::Text, name)));
-        let mut ccds: Vec<_> = rows.iter().map(|status| status.ccd).collect();
-        ccds.dedup();
-        for ccd in ccds {
-            let Evidence {
-                measured,
-                by_offset,
-                own,
-                total,
-            } = evidence(rows.iter().copied().filter(|status| status.ccd == ccd));
-            let tied = if measured.len() > 1 { " · tied" } else { "" };
-            let top = if !by_offset.is_empty() {
-                format!(
-                    "top requesters {} · per offset order",
-                    ids(measured.iter().chain(by_offset).collect())
-                )
-            } else if measured.is_empty() {
-                "no top requester recorded yet".to_owned()
-            } else {
-                format!("top requesters {}{tied} · per request order", ids(measured))
-            };
-            let sufficient = if own.len() == total {
-                format!("self-sufficient: all {total} cores")
-            } else if own.is_empty() {
-                "self-sufficient: none yet".to_owned()
-            } else {
-                format!(
-                    "self-sufficient: {} ({} of {} cores)",
-                    ids(own),
-                    own.len(),
-                    total
-                )
-            };
-            let head = format!("CCD {}  ", ccd.get());
-            let indent = " ".repeat(head.len());
-            let room = width.saturating_sub(head.len()).max(1);
-            let mut body = wrap_styled(&top, room, text);
-            body.extend(wrap_styled(&sufficient, room, grey));
-            for (row, line) in body.into_iter().enumerate() {
-                let lead = if row == 0 {
-                    head.clone()
-                } else {
-                    indent.clone()
-                };
-                let mut spans = vec![scene.paint(Paint::Grey, lead)];
-                spans.extend(line.spans);
-                out.push(Line::from(spans));
-            }
-        }
-    }
-    #[cfg(test)]
-    crate::corpus::lines("page.r7", &format!("{class:?}"), &out);
-    out
+/// Every R7 workload's current top requesters and self-sufficient cores, under their own rule, for the context
+/// panel; empty before checking has a cycle.
+pub(crate) fn r7_lines(scene: &Scene<'_>, measure: &Measure) -> Vec<Line<'static>> {
+    r7_rows(
+        scene,
+        measure.layout.class,
+        usize::from(measure.context.width),
+    )
 }
-
-#[cfg(test)]
-mod tests;

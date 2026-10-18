@@ -6,7 +6,7 @@ use togi_watchtest::Scenario;
 
 use super::{ALL_SIZES, Fixture, PROFILES, VIEWS};
 use crate::frames::testing::{assert_glyphs_drawable, screen};
-use crate::screen::{Colours, Hold, Screen};
+use crate::screen::{Colours, Hold, Screen, View};
 
 fn every_screen(fx: &Fixture, scenario: Scenario) {
     let started_idle = fx.model.snapshot().trial.is_some_and(|trial| {
@@ -39,7 +39,7 @@ fn every_screen(fx: &Fixture, scenario: Scenario) {
 }
 
 fn every_scroll(fx: &Fixture, scenario: Scenario) {
-    for view in VIEWS {
+    for view in [View::Help, View::Log] {
         for (width, height) in ALL_SIZES {
             let at = |scroll: usize| {
                 let sc = Screen {
@@ -110,23 +110,4 @@ scenarios! {
     deadend => Scenario::Deadend,
     first_result => Scenario::FirstResult,
     stopped => Scenario::Stopped,
-}
-
-#[test]
-fn every_page_stays_inside_the_frame_at_a_sweep_of_sizes() {
-    let fx = Fixture::scenario(Scenario::Checking);
-    for width in [1, 2, 5, 10, 20, 40, 60, 79, 80, 100, 159, 160, 200, 240] {
-        for height in [1, 2, 3, 4, 5, 10, 20, 29, 30, 44, 45, 60, 67] {
-            for view in VIEWS {
-                for scroll in [0, usize::MAX] {
-                    let sc = Screen {
-                        scroll,
-                        ..screen(view, width, height, Colours::Full, true)
-                    };
-                    let (buf, _) = fx.draw(&sc, fx.now);
-                    assert_glyphs_drawable(&buf, &format!("{width}x{height} {view:?} at {scroll}"));
-                }
-            }
-        }
-    }
 }

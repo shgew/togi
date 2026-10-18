@@ -2,59 +2,57 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   00:00:40   tuning 0h00m   session 0h00m   0 failures · 0 crashes
-│ ► SOLO LIMITS  0/16 → ○ PHASE 1 → ○ PHASE 2 → ○ CLEAN CYCLES
+│  togi   00:00:40   tuning 0h00m   session 0h00m   0 failures · 0 crashes
 │
-│ SOLO LIMITS · 0/16 solo limits found
-│ current core confirming · 0/5 credited checks
+│  ► SOLO LIMITS  0 of 16 found · core 00 confirming -11  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
 │
-│ NOW  CONFIRM CORE 00 AT -11 · LIGHT   R1   light load  on core 00 alone at -11   mprime SSE 4K-21K · 1 worker
-│ ██████████░░░░░░░░░░░░░░  0:40 / 1:30 · trial 1 of 5
+│  ▌  SOLO LIMITS   -11 is core 00's candidate solo limit, and I'm confirming it.
+│  ▌                One core at a time with the rest at 0, so any failure belongs to the loaded core.
 │
-│                                            0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
-│                                         core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
-│                                         00  ███████████                                        tune -11 now -11         08  ███████████                                        tune -11 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                judged                                                                          idle at 0
-│                                         01  ███████████                                        tune -11 now   0         09  ███████████                                        tune -11 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         02  ███████████                                        tune -11 now   0         10  ███████████                                        tune -11 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         03  ███████████                                        tune -11 now   0         11  ███████████                                        tune -11 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         04  ███████████                                        tune -11 now   0         12  ███████████                                        tune -11 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         05  ███████████                                        tune -11 now   0         13  ███████████                                        tune -11 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         06  ███████████                                        tune -11 now   0         14  ███████████                                        tune -11 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         07  ███████████                                        tune -11 now   0         15  ███████████                                        tune -11 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         white=tune · red point=recorded failure · gap=counts shallower than solo
+│  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0001
+│   R1   light load  on core 00 alone at -11   mprime SSE 4K-21K · 1 worker                                                                                                                                     CONFIRM CORE 00 AT -11 · LIGHT
 │
-│ WHAT HAPPENED
-│ 00:00  start    session started on 16 cores
+│  ██████████████████████████████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          █▀█   █▀▀ █▀█
+│  ██████████████████████████████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          █ █ ▀ ▀▀█ █ █
+│  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
+│  0:40 of 1:30                                                                                                                                                                      0 passed · trial 1 of 5  ► · · · ·                   left
 │
+│  if it passes:        next trial: R1 light, core 08 alone at -11
+│  if a core is named:  its failure point is recorded → it backs off; next trial: R1 light, core 08 alone at -11
+│  if inconclusive:     the same trial runs again
 │
+│  CCD 0               0       -10       -20       -30       -40       -50 fail pt  one core under load at a time          CCD 1               0       -10       -20       -30       -40       -50 fail pt  waiting at 0
+│  ► 00  -11  CONFIRM   ▄▄▄▄▄▄▄▄▄▄▄                                                 -11: light 0/5, heavy 0/5                08    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+│    01    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                09    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+│    02    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                10    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+│    03    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                11    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+│    04    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                12    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+│    05    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                13    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+│    06    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                14    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
+│    07    0  CONFIRM                                                               -11: light 0/5, heavy 0/5                15    0  CONFIRM                                                               -11: light 0/5, heavy 0/5
 │
+│  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+│  none confirmed yet: phase 1 has not passed a full cycle
+│                                                                                                                          00:00  start    session started on 16 cores
+│  TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order
 │
-│
-│
-│
-│
-│
-│
-│
-│
-│
-│
+│    core   this turn                      at     workload                  so far
+│    08     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    01     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    09     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    02     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    10     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    03     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    11     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    04     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    12     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    05     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    13     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    06     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    14     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    07     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│    15     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
+│  ► 00     confirm: light trial 1 of 5    -11    mprime SSE 4K-21K         light 0/5, heavy 0/5
 │
 │
 │
@@ -67,4 +65,6 @@ expression: body
 │
 │
 │
-│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
+│
+│
+│   ?  help    l  log    esc  back    q  exit dashboard

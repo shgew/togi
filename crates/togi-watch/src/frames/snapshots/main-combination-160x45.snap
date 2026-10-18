@@ -2,47 +2,47 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   07:08:40   tuning 31h08m   session 31h08m   8 failures · 8 crashes   last observed failure 08:22, 22h46m ago
-│ STOPPED  ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ■ PHASE 2 → ○ CLEAN CYCLES
+│  togi   07:08:40   tuning 31h08m   session 31h08m   8 failures · 8 crashes   last observed failure 08:22, 22h46m ago
 │
-│ STOPPED · CLEAN CYCLES · 1 clean cycle recorded · cycle 2 · 18/18 steps complete
-│ BIOS profile: page 6
+│  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ■ PHASE 2  concluded  ───  CLEAN CYCLES 1  ───  ■ CYCLE 2
 │
-│ NOW  STOPPED · 07:08:00 · requested clean cycles completed
-│ last: PASS after 15:00 · R6 idle + bursts on 00-15 · Tctl max 67°C
+│  ▌  STOPPED   The requested clean cycles are complete, so I restored...          last trial      PASS  15:00 on 00-15 · Tctl max 67°C
 │
-│    0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
-│ core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
-│ 00  ███████████                                        tune -11 now   0         08  ███████████                                        tune -11 now   0
-│                                                        s-11 g0 f none                                                                  s-11 g0 f none
-│                                                        idle at 0                                                                       idle at 0
-│ 01  ███████████                                        tune -11 now   0         09  ███████████                                        tune -11 now   0
-│                                                        s-11 g0 f none                                                                  s-11 g0 f none
-│                                                        idle at 0                                                                       idle at 0
-│ 02  ███████████                                        tune -11 now   0         10  ███████████                                        tune -11 now   0
-│                                                        s-11 g0 f none                                                                  s-11 g0 f none
-│                                                        idle at 0                                                                       idle at 0
-│ 03  ███████████                                        tune -11 now   0         11  █████████                                          tune  -9 now   0
-│                                                        s-11 g0 f none                                                                  s-11 g2 f none
-│                                                        idle at 0                                                                       idle at 0
-│ 04  ███████████                                        tune -11 now   0         12  ███████████                                        tune -11 now   0
-│                                                        s-11 g0 f none                                                                  s-11 g0 f none
-│                                                        idle at 0                                                                       idle at 0
-│ 05  ███████████                                        tune -11 now   0         13  ███████████                                        tune -11 now   0
-│                                                        s-11 g0 f none                                                                  s-11 g0 f none
-│                                                        idle at 0                                                                       idle at 0
-│ 06  ███████████                                        tune -11 now   0         14  ███████████                                        tune -11 now   0
-│                                                        s-11 g0 f none                                                                  s-11 g0 f none
-│                                                        idle at 0                                                                       idle at 0
-│ 07  ███████████                                        tune -11 now   0         15  ███████████                                        tune -11 now   0
-│                                                        s-11 g0 f none                                                                  s-11 g0 f none
-│                                                        idle at 0                                                                       idle at 0
-│ white=tune · red point=recorded failure · gap=counts shallower than solo
 │
-│ WHAT HAPPENED
-│ 07:08  stop     stopped
-│ 07:08  cycle    cycle 2 passed, a full cycle
-│ 07:08  step     cycle 2 step 18: R6 idle + bursts, y-cruncher BKT + SFTv4 · 1 credited check
-│ 06:53  step     cycle 2 step 17: R4 partial load, y-cruncher SNT + SVT · 16 credited checks
+│  STOPPED ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│  07:08:00 · requested clean cycles completed
+│  Rows show the saved profile, not applied now.
 │
-│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
+│  CCD 0               0  2 counts/cell       -50 fail pt  not under load          CCD 1               0  2 counts/cell       -50 fail pt  not under load
+│    00  -11  HAS ROOM  ▄▄▄▄▄▄                                                       08  -11  HAS ROOM  ▄▄▄▄▄▄
+│    01  -11  HAS ROOM  ▄▄▄▄▄▄                                                       09  -11  HAS ROOM  ▄▄▄▄▄▄
+│    02  -11  HAS ROOM  ▄▄▄▄▄▄                                                       10  -11  HAS ROOM  ▄▄▄▄▄▄
+│    03  -11  HAS ROOM  ▄▄▄▄▄▄                                                       11   -9  AT LIMIT  ▄▄▄▄▄░                             C1 · solo -11
+│    04  -11  HAS ROOM  ▄▄▄▄▄▄                                                       12  -11  HAS ROOM  ▄▄▄▄▄▄
+│    05  -11  HAS ROOM  ▄▄▄▄▄▄                                                       13  -11  HAS ROOM  ▄▄▄▄▄▄
+│    06  -11  HAS ROOM  ▄▄▄▄▄▄                                                       14  -11  HAS ROOM  ▄▄▄▄▄▄
+│    07  -11  HAS ROOM  ▄▄▄▄▄▄                                                       15  -11  HAS ROOM  ▄▄▄▄▄▄
+│
+│  BIOS PROFILE ────────────────────────── confirmed by the cycle ending #5905     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
+│  slot      0    1    2    3    4    5    6    7
+│  CCD 0   -11  -11  -11  -11  -11  -11  -11  -11                                  07:08  stop     stopped
+│  CCD 1   -11  -11  -11   -9  -11  -11  -11  -11                                  07:08  cycle    cycle 2 passed, a full cycle
+│                                                                                  07:08  pass     R6 idle + bursts on 00-15 · passed · Tctl max 67°C
+│  CYCLE 2 ──────────────────────────────────────────────── 18 steps · 18 done     06:53  pass     R4 partial load on core 15 at -11 · passed · Tctl max 67°C
+│    #  kind              where               schedule      result                 06:51  pass     R4 partial load on core 07 at -11 · passed · Tctl max 64°C
+│  ■  1 R7 all-core       2 CCDs · 4 parts    4 parts       done                   06:49  pass     R4 partial load on core 14 at -11 · passed · Tctl max 75°C
+│  ■  2 R7 all-core       2 CCDs · 4 parts    4 parts       done                   06:47  pass     R4 partial load on core 06 at -11 · passed · Tctl max 73°C
+│  ■  3 R7 all-core       2 CCDs · 4 parts    4 parts       done                   06:45  pass     R4 partial load on core 13 at -11 · passed · Tctl max 62°C
+│  ■  4 R2 heavy vector   one core at a time  16 x 2m       done                   06:43  pass     R4 partial load on core 05 at -11 · passed · Tctl max 70°C
+│  ■  5 R2 heavy vector   one core at a time  16 x 2m       done                   06:41  pass     R4 partial load on core 12 at -11 · passed · Tctl max 67°C
+│  ■  6 R2 heavy vector   one core at a time  16 x 2m       done                   06:39  pass     R4 partial load on core 04 at -11 · passed · Tctl max 69°C
+│  ■  7 R6 idle + bursts  all cores idle      15m           done                   06:37  pass     R4 partial load on core 11 at -9 · passed · Tctl max 62°C
+│  ■  8 R5 both threads   one core at a time  16 x 2m       done                   06:35  pass     R4 partial load on core 03 at -11 · passed · Tctl max 66°C
+│  +17 more                                                                        06:33  pass     R4 partial load on core 10 at -11 · passed · Tctl max 76°C
+│                                                                                  06:31  pass     R4 partial load on core 02 at -11 · passed · Tctl max 67°C
+│  R7 ───────────────────── top requesters ───── self-sufficient ─────────────     06:29  pass     R4 partial load on core 09 at -11 · passed · Tctl max 69°C
+│  mprime AVX2 36K-248K     00-07 11 by offset   all                               06:27  pass     R4 partial load on core 01 at -11 · passed · Tctl max 69°C
+│  mprime AVX-512 36K-248K  00-07 11 by offset   all                               06:25  pass     R4 partial load on core 08 at -11 · passed · Tctl max 74°C
+│  y-cruncher FFTv4         00-07 11 by offset   all                               +510 more
+│
+│   ?  help    l  log    esc  back    q  exit dashboard

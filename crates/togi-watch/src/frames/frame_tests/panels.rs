@@ -1,19 +1,287 @@
-//! Detail pages and panels whole: the cycle, R7, hunt and BIOS pages, the trial bar and a partial trial.
+//! Panels whole: the history count, the combination overflow, the round, the R7 rows, the trial bar and the notes.
 
 use jiff::tz::TimeZone;
-use togi_journal::{Mce, Payload};
-use togi_machine::{BankType, CpuId, Regime, WorkloadId, workloads};
+use togi_journal::{Mce, Member, Payload};
+use togi_machine::{BankType, CcdId, CpuId, ObservedOffset, Regime, WorkloadId, workloads};
+use togi_tuner::{CombinationId, Limit, R7CoreStatus, Reached};
 use togi_watchtest::Scenario;
 
-use super::{Fixture, SIZES, append, bar, later, main_screen, some_time, text};
-use crate::frames::fit::plain;
-use crate::frames::layout::SizeClass;
-use crate::frames::panels::{history_page, page_lines};
+use super::{Fixture, SIZES, append, bar, later, main_screen, rows_of, some_time, text, words};
+use crate::frames::measure::measure;
 use crate::frames::scene::Scene;
-use crate::model::Model;
-use crate::screen::{Colours, Journal, View};
-use crate::tests::kit::core;
+use crate::model::{ComboView, CoreState, CoreView, Model, SessionView};
+use crate::screen::{Colours, Journal, Screen};
+use crate::tests::kit::{Script, Start, core, nz, off, set, warning};
 use crate::words::workload_display;
+
+fn core_view(id: u8, ccd: u8, state: CoreState) -> CoreView {
+    CoreView {
+        id: core(id),
+        ccd: CcdId::try_from(ccd).unwrap(),
+        state,
+        queued: None,
+        applied: Some(ObservedOffset(0)),
+        profile: off(0),
+        solo: None,
+        pass: None,
+        next: None,
+        fail: None,
+        holder: None,
+        gave_back: None,
+        group_fails: Vec::new(),
+        returns_to: None,
+        confirm: None,
+        loaded: false,
+        judged: false,
+    }
+}
+
+struct Hand {
+    model: Model,
+    session: SessionView,
+    cores: Vec<CoreView>,
+    combos: Vec<ComboView>,
+}
+
+impl Hand {
+    fn new(cores: Vec<CoreView>, combos: Vec<ComboView>) -> Self {
+        Self {
+            model: Model::new(),
+            session: SessionView {
+                start: some_time(),
+                activity: None,
+            },
+            cores,
+            combos,
+        }
+    }
+
+    fn journal(&self) -> Journal<'_> {
+        let mut snapshot = self.model.snapshot();
+        snapshot.session = Some(&self.session);
+        snapshot.cores = &self.cores;
+        snapshot.combos = &self.combos;
+        Journal::Ready {
+            snapshot,
+            log: snapshot.log(),
+        }
+    }
+}
+
+fn region(rows: &[String], rect: ratatui::layout::Rect) -> Vec<String> {
+    rows[usize::from(rect.y)..usize::from(rect.y + rect.height)]
+        .iter()
+        .map(|row| {
+            row.chars()
+                .skip(usize::from(rect.x))
+                .take(usize::from(rect.width))
+                .collect::<String>()
+                .trim()
+                .to_owned()
+        })
+        .collect()
+}
+
+#[test]
+fn a_history_too_short_for_its_entries_counts_every_one_it_leaves_out() {
+    let cores: Vec<(u8, u8)> = (0..16).map(|id| (id, id / 8)).collect();
+    let mut script = Script::new(&cores, &[Start::search(0); 16]);
+    for index in 0..700 {
+        script.append(warning(&format!("warning {index}")), &[]);
+    }
+    let fx = Fixture::of(&script.events);
+    let snapshot = fx.model.snapshot();
+    let total = snapshot.history.len() + snapshot.history_dropped;
+    assert!(total > 700);
+    for width in [120, 160, 240] {
+        for height in [24, 25] {
+            let sc = main_screen(width, height);
+            let zone = TimeZone::UTC;
+            let scene = Scene::new(snapshot, fx.now, &zone, Colours::None);
+            let history = measure(&scene, &sc).history;
+            assert!(history.height >= 1, "{width}x{height}");
+            let (buf, _) = fx.draw(&sc, fx.now);
+            let rows = region(&rows_of(&buf), history);
+            let (last, entries) = rows.split_last().expect("a history row");
+            let visible = entries
+                .iter()
+                .filter(|row| row.as_bytes().first().is_some_and(u8::is_ascii_digit))
+                .count();
+            assert_eq!(
+                last,
+                &format!("+{} more", total - visible),
+                "{width}x{height}: the last visible history row counts every hidden entry ({rows:?})"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_combination_wider_than_its_columns_names_the_omitted_cores_and_the_journal_bound() {
+    for (members, omitted) in [
+        (vec![0u8, 1, 2, 3, 4, 5, 6, 7, 9], "09"),
+        (vec![0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 15], "09 11 15"),
+    ] {
+        let cores = (0..16)
+            .map(|id| {
+                let mut view = core_view(id, id / 8, CoreState::AtLimit);
+                view.profile = off(-20);
+                view
+            })
+            .collect();
+        let combos = vec![ComboView {
+            id: CombinationId::new(nz(1)),
+            members: members
+                .iter()
+                .rev()
+                .map(|&id| Member {
+                    core: core(id),
+                    offset: off(-25),
+                })
+                .collect(),
+            hunt: 7,
+            probed: true,
+            fallback: false,
+            holds: None,
+            clear: set(&[]),
+        }];
+        let hand = Hand::new(cores, combos);
+        let sc = main_screen(240, 67);
+        let (buf, _) = super::draw_journal(&hand.journal(), &sc, some_time(), &TimeZone::UTC);
+        let Journal::Ready { snapshot, .. } = hand.journal() else {
+            unreachable!()
+        };
+        let zone = TimeZone::UTC;
+        let scene = Scene::new(snapshot, some_time(), &zone, Colours::None);
+        let context = region(&rows_of(&buf), measure(&scene, &sc).context);
+        assert_eq!(
+            context[3],
+            format!(
+                "columns show 8 of {} member cores; not shown: {omitted} · l: last 400 events",
+                members.len()
+            ),
+            "{context:?}"
+        );
+        for id in &members[..8] {
+            assert!(context[2].contains(&format!("{id:02}")), "{}", context[2]);
+        }
+        for id in &members[8..] {
+            assert!(!context[2].contains(&format!("{id:02}")), "{}", context[2]);
+        }
+    }
+}
+
+#[test]
+fn medium_core_notes_keep_the_combination_and_the_solo_offset() {
+    let mut at_limit = core_view(0, 0, CoreState::AtLimit);
+    at_limit.profile = off(-26);
+    at_limit.applied = Some(ObservedOffset(-26));
+    at_limit.solo = Some(off(-31));
+    at_limit.holder = Some(Limit::Reached(Reached::Combination(CombinationId::new(
+        nz(4),
+    ))));
+    let mut gave_back = core_view(8, 1, CoreState::HasRoom);
+    gave_back.profile = off(-36);
+    gave_back.applied = Some(ObservedOffset(-36));
+    gave_back.solo = Some(off(-37));
+    gave_back.gave_back = Some(CombinationId::new(nz(1)));
+    let hand = Hand::new(vec![at_limit, gave_back], Vec::new());
+    let (buf, _) = super::draw_journal(
+        &hand.journal(),
+        &main_screen(160, 45),
+        some_time(),
+        &TimeZone::UTC,
+    );
+    let shown = text(&buf);
+    for note in ["C4 · solo -31", "C1 · solo -37"] {
+        assert!(
+            shown.contains(note),
+            "a medium frame hid {note:?}:\n{shown}"
+        );
+    }
+}
+
+#[test]
+fn the_round_keeps_its_candidate_rows_at_every_height() {
+    let fx = Fixture::scenario(Scenario::Round);
+    for width in [120, 160] {
+        for height in 33..=60 {
+            let (buf, _) = fx.main(width, height);
+            let shown = text(&buf);
+            assert!(
+                shown.contains("gap "),
+                "{width}x{height}: the round lost its candidate rows:\n{shown}"
+            );
+        }
+    }
+}
+
+fn r7_names() -> Vec<String> {
+    (0..workloads(Regime::R7).len())
+        .filter_map(|index| WorkloadId::new(Regime::R7, index))
+        .map(|id| {
+            workload_display(id)
+                .split_whitespace()
+                .take(2)
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect()
+}
+
+#[test]
+fn a_short_dashboard_reaches_every_r7_workload_and_the_running_part() {
+    let fx = Fixture::scenario(Scenario::Checking);
+    let real = fx.model.snapshot();
+    let populated: Vec<R7CoreStatus> = real
+        .r7
+        .iter()
+        .cloned()
+        .map(|mut status| {
+            status.self_sufficient = status.core.get() % 2 == 0;
+            status
+        })
+        .collect();
+    let mut with_own = real;
+    with_own.r7 = &populated;
+    for snapshot in [real, with_own] {
+        let journal = Journal::Ready {
+            snapshot,
+            log: snapshot.log(),
+        };
+        for keys in [false, true] {
+            let draw = |height| {
+                let sc = Screen {
+                    keys,
+                    ..main_screen(120, height)
+                };
+                super::draw_journal(&journal, &sc, fx.now, &TimeZone::UTC).0
+            };
+            let buf = draw(33);
+            let rows = rows_of(&buf);
+            let shown = text(&buf);
+            assert!(shown.contains("self-sufficient"), "keys {keys}: {shown}");
+            for name in r7_names() {
+                assert!(
+                    rows.iter().any(|row| row.starts_with(&format!(" {name} "))),
+                    "keys {keys}: the R7 {name} status is omitted:\n{shown}"
+                );
+            }
+            assert!(shown.contains("trial 1 of"), "keys {keys}:\n{shown}");
+            let rule = rows
+                .iter()
+                .position(|row| row.starts_with(" R7 ─"))
+                .expect("the R7 rule");
+            let more = rows[rule - 2].trim_start();
+            assert!(
+                more.starts_with('+') && more.contains(" more"),
+                "keys {keys}: the cycle checklist is cut without saying how much it leaves out:\n{shown}"
+            );
+            let short = text(&draw(31));
+            assert!(short.contains("trial 1 of"), "keys {keys}:\n{short}");
+        }
+    }
+}
 
 #[test]
 fn a_between_trial_machine_check_is_not_hidden() {
@@ -42,17 +310,10 @@ fn a_between_trial_machine_check_is_not_hidden() {
         Some(Payload::Mce(_))
     ));
     let fx = Fixture::of(&events);
-    let snapshot = fx.model.snapshot();
-    let zone = TimeZone::UTC;
-    let scene = Scene::new(snapshot, fx.now, &zone, Colours::None);
-    let said = history_page(&scene, 120)
-        .iter()
-        .map(plain)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let said = words(&fx.main(240, 67).0);
     assert!(
         said.contains("between trials (recorded only)"),
-        "the history page hides a between-trial machine check: {said}"
+        "watch hides a between-trial machine check: {said}"
     );
 }
 
@@ -100,209 +361,5 @@ fn a_partial_trial_is_named_by_its_ordinary_evidence() {
         let shown = text(&buf);
         assert!(shown.contains("PARTIAL"), "{width}x{height}:\n{shown}");
         assert!(!shown.contains("RECORD ONLY"), "{width}x{height}:\n{shown}");
-    }
-}
-
-fn page(fx: &Fixture, view: View, width: usize, class: SizeClass) -> Vec<String> {
-    let snapshot = fx.model.snapshot();
-    let zone = TimeZone::UTC;
-    let scene = Scene::new(snapshot, fx.now, &zone, Colours::None);
-    page_lines(&scene, view, width, class)
-        .iter()
-        .map(plain)
-        .collect()
-}
-
-const CLASSES: [(usize, SizeClass); 3] = [
-    (60, SizeClass::Compact),
-    (100, SizeClass::Medium),
-    (150, SizeClass::Wide),
-];
-
-#[test]
-fn the_cycle_page_lists_the_search_turns_while_solo_limits_are_searched() {
-    let fx = Fixture::scenario(Scenario::Search);
-    for (width, class) in CLASSES {
-        let rows = page(&fx, View::Cycle, width, class);
-        assert!(rows[0].starts_with("TURNS"), "{width}: {rows:?}");
-        assert!(rows.iter().any(|row| row.contains("search:")), "{rows:?}");
-        assert!(rows.iter().all(|row| !row.contains(" more")), "{rows:?}");
-    }
-}
-
-#[test]
-fn the_cycle_page_lists_the_whole_checklist_with_the_open_r7_parts() {
-    let fx = Fixture::scenario(Scenario::Checking);
-    for (width, class) in CLASSES {
-        let rows = page(&fx, View::Cycle, width, class);
-        assert!(rows[0].starts_with("CYCLE"), "{width}: {rows:?}");
-        let steps = rows
-            .iter()
-            .filter(|row| row.contains("R1 ") || row.contains("R2 ") || row.contains("R7 "))
-            .count();
-        assert!(steps >= 3, "{width}: {rows:?}");
-        assert!(
-            rows.iter()
-                .all(|row| !row.contains(" more") || row.contains("more may follow"))
-        );
-        assert!(
-            rows.iter().any(|row| row.contains("known part")),
-            "{width}: an open R7 step counts its known parts: {rows:?}"
-        );
-    }
-}
-
-#[test]
-fn the_cycle_page_shows_the_open_phase_2_round() {
-    let fx = Fixture::scenario(Scenario::Round);
-    let rows = page(&fx, View::Cycle, 100, SizeClass::Medium);
-    assert!(rows[0].starts_with("PHASE 2 · ROUND"), "{rows:?}");
-    assert!(rows.iter().any(|row| row.contains("gap ")), "{rows:?}");
-    assert!(rows.iter().any(|row| row == "CHECKS"), "{rows:?}");
-}
-
-#[test]
-fn a_stopped_session_draws_no_running_marker_on_the_cycle_page() {
-    let fx = Fixture::scenario(Scenario::Stopped);
-    for (width, class) in CLASSES {
-        let rows = page(&fx, View::Cycle, width, class);
-        assert!(rows.iter().all(|row| !row.contains('►')), "{rows:?}");
-    }
-}
-
-#[test]
-fn the_r7_page_explains_the_rail_and_the_evidence() {
-    let fx = Fixture::scenario(Scenario::Checking);
-    for (width, class) in CLASSES {
-        let rows = page(&fx, View::R7, width, class);
-        let shown = rows.join("\n");
-        assert!(rows[0].starts_with("R7 EVIDENCE"), "{width}: {shown}");
-        for want in [
-            "share one voltage rail",
-            "per offset order",
-            "not a guarantee",
-        ] {
-            assert!(shown.contains(want), "{width} lacks {want:?}:\n{shown}");
-        }
-        for name in r7_names() {
-            assert!(
-                shown.contains(&name),
-                "{width} lacks workload {name}:\n{shown}"
-            );
-        }
-        assert!(shown.contains("CCD 0"), "{shown}");
-    }
-}
-
-#[test]
-fn a_running_r7_trial_gives_its_forecast_neutral_conditional_wording() {
-    let fx = Fixture::scenario(Scenario::Checking);
-    let shown = page(&fx, View::R7, 100, SizeClass::Medium).join("\n");
-    assert!(shown.contains("any outcome is conditional"), "{shown}");
-}
-
-fn r7_names() -> Vec<String> {
-    (0..workloads(Regime::R7).len())
-        .filter_map(|index| WorkloadId::new(Regime::R7, index))
-        .map(|id| workload_display(id).to_owned())
-        .collect()
-}
-
-#[test]
-fn the_hunts_page_leads_with_the_cause_of_the_running_hunt() {
-    let fx = Fixture::scenario(Scenario::Hunt);
-    for (width, class) in CLASSES {
-        let rows = page(&fx, View::Hunts, width, class);
-        assert!(rows[0].starts_with("HUNT "), "{width}: {rows:?}");
-        assert!(rows[2].starts_with("cause"), "{width}: {rows:?}");
-    }
-    let probes = Fixture::scenario(Scenario::MemberProbe);
-    let rows = page(&probes, View::Hunts, 150, SizeClass::Wide);
-    assert!(rows.iter().any(|row| row.contains("member")), "{rows:?}");
-}
-
-#[test]
-fn pages_with_nothing_to_show_say_so_in_a_sentence() {
-    let search = Fixture::scenario(Scenario::Search);
-    let hunts = page(&search, View::Hunts, 100, SizeClass::Medium).join(" ");
-    assert!(hunts.contains("No hunt is running"), "{hunts}");
-    let r7 = page(&search, View::R7, 100, SizeClass::Medium).join(" ");
-    assert!(r7.contains("No R7 evidence yet"), "{r7}");
-    let bios = page(&search, View::Bios, 100, SizeClass::Medium);
-    assert!(
-        bios.iter().any(|row| row.contains("none confirmed yet")),
-        "{bios:?}"
-    );
-    let empty = Fixture {
-        model: Model::new(),
-        now: some_time(),
-    };
-    for (view, want) in [
-        (View::Cycle, "No session has started yet"),
-        (View::Bios, "No BIOS profile yet"),
-    ] {
-        let shown = page(&empty, view, 100, SizeClass::Medium).join(" ");
-        assert!(shown.contains(want), "{view:?}: {shown}");
-    }
-}
-
-#[test]
-fn the_bios_page_stars_unconfirmed_offsets_and_dates_the_confirmation() {
-    let unconfirmed = Fixture::scenario(Scenario::HuntBios);
-    for (width, class) in CLASSES {
-        let rows = page(&unconfirmed, View::Bios, width, class);
-        let shown = rows.join("\n");
-        assert!(rows[0].starts_with("BIOS PROFILE"), "{shown}");
-        assert!(shown.contains("UNCONFIRMED"), "{shown}");
-        assert!(rows.iter().any(|row| row.contains('*')), "{shown}");
-        assert!(
-            shown.contains("unconfirmed since journal event #"),
-            "{shown}"
-        );
-    }
-    let confirmed = Fixture::scenario(Scenario::FirstResult);
-    let shown = page(&confirmed, View::Bios, 100, SizeClass::Medium).join("\n");
-    assert!(
-        shown.contains("confirmed by the passed full cycle"),
-        "{shown}"
-    );
-    assert!(shown.contains("evidence: journal event #"), "{shown}");
-    assert!(!shown.contains("ending #"), "{shown}");
-}
-
-#[test]
-fn the_bios_page_stays_after_the_session_stopped() {
-    let fx = Fixture::scenario(Scenario::FirstResult);
-    let rows = page(&fx, View::Bios, 100, SizeClass::Medium);
-    assert!(rows[0].starts_with("BIOS PROFILE"), "{rows:?}");
-    assert!(rows.iter().any(|row| row.starts_with("CCD 0")), "{rows:?}");
-}
-
-#[test]
-fn the_other_pages_have_no_body_here() {
-    let fx = Fixture::scenario(Scenario::Checking);
-    for view in [
-        View::Main,
-        View::Cores,
-        View::History,
-        View::Log,
-        View::Help,
-    ] {
-        assert!(
-            page(&fx, view, 100, SizeClass::Medium).is_empty(),
-            "{view:?}"
-        );
-    }
-}
-
-#[test]
-fn the_cycle_page_at_the_reference_width_holds_every_value_whole() {
-    let fx = Fixture::scenario(Scenario::Checking);
-    for class in [SizeClass::Compact, SizeClass::Medium, SizeClass::Wide] {
-        let rows = page(&fx, View::Cycle, 154, class);
-        assert!(
-            rows.iter().all(|row| !row.contains("...")),
-            "{class:?}: a value is cut: {rows:?}"
-        );
     }
 }

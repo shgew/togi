@@ -1,8 +1,11 @@
-//! The help page: static explanations of the pages, keys and gauges, in three columns when wide and one scrolling
-//! column otherwise.
+//! The help view: static explanations of the screen, in three columns when wide and one scrolling column
+//! otherwise.
 //!
-//! Labels keep whole words at every width. The page shows a scrollbar whenever its contents need scrolling, and
-//! scrolling to the end reaches the last text row, not trailing blank rows.
+//! Labels and examples keep whole words and values at every width: a help
+//! example's gauge is clipped by cells first, and its failure point, state
+//! word or offset are left out whole, never cut. The view shows a scrollbar
+//! whenever its contents need scrolling, and scrolling to the end reaches the
+//! last text row, not trailing blank rows.
 
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
@@ -17,154 +20,35 @@ struct Section<'a> {
     items: &'a [(&'static str, &'static str)],
 }
 
-const NAVIGATION: Section = Section {
-    title: "NAVIGATION",
+const SCREEN: Section = Section {
+    title: "READING THE SCREEN",
     items: &[
+        ("►", "the core carries load in this trial"),
         (
-            "← →",
-            "Move through the nine pages in a fixed cycle that wraps, from Main to Help and back to Main. The footer shows the page's place, such as 2/9 Cores.",
+            "▄▄▄",
+            "offset applied now, or saved after a stop restored the hardware; white when this trial judges the core",
         ),
-        ("↑ ↓", "Scroll a page one line. j and k do the same."),
+        ("?", "no hardware offset has been read back for this core"),
         (
-            "PgUp PgDn",
-            "Scroll a page by its height less one line. b, f and space do the same.",
-        ),
-        (
-            "Home End",
-            "Go to the top or the end of a page. g and G do the same.",
-        ),
-        ("Esc, m", "Go back to Main."),
-        (
-            "?, h",
-            "Open this help. The same key on the help returns to Main.",
+            "grey ▄▄▄",
+            "the same depth, grey when the core is not judged",
         ),
         (
-            "l",
-            "Open the journal, which opens at its newest event and follows new ones. The same key on the journal returns to Main.",
+            "···",
+            "depth it reached but does not use now: given back, parked, waiting",
         ),
+        ("░░░", "depth a combination blocks now"),
         (
-            "scroll",
-            "A page opens at its top. Only a key changes the page or its scroll, so a refresh never moves it. Main scrolls only on a screen smaller than 160x45, where it shows numbers instead of gauges.",
+            "▬",
+            "its failure point: the shallowest offset ruled out for this core",
         ),
-    ],
-};
-
-/// The navigation row for the quit keys: the keys that exit under [`Quit::Keys`], and the plain fact that there
-/// are none under [`Quit::Ignored`].
-const EXIT: (&str, &str) = (
-    "q, Ctrl-C",
-    "Exit the dashboard; tuning itself keeps running.",
-);
-const NO_EXIT: (&str, &str) = (
-    "exit",
-    "This dashboard has no exit key: only stopping its service ends it. Tuning itself keeps running.",
-);
-
-const PAGES: Section = Section {
-    title: "THE PAGES",
-    items: &[
-        (
-            "1 Main",
-            "Which phase and how far through it, what runs now, every core's gauge and a short What happened.",
-        ),
-        (
-            "2 Cores",
-            "Each core's exact tune, now, solo, gap and failure, its role and where its failure came from.",
-        ),
-        (
-            "3 Cycle",
-            "The current phase's work list: search turns, the cycle's steps or the phase 2 round.",
-        ),
-        (
-            "4 R7 evidence",
-            "R7 request order, top requesters and which cores passed as top requester.",
-        ),
-        (
-            "5 Hunts / probes",
-            "The cause of a failure and how sure the attribution is, hunt groups, splits and probe evidence.",
-        ),
-        (
-            "6 BIOS profile",
-            "The profile to enter in BIOS, one row per CCD in slot order. A * marks an offset not yet confirmed.",
-        ),
-        (
-            "7 History",
-            "What happened, expanded, with the local date of each day.",
-        ),
-        (
-            "8 Journal",
-            "The newest 400 journal events. Scrolled back, it holds its list still and counts new events until End.",
-        ),
-        ("9 Help", "This page."),
-    ],
-};
-
-const GAUGES: Section = Section {
-    title: "THE GAUGES",
-    items: &[
-        (
-            "tune",
-            "The tuning profile's offset for the core: a white full-height █ bar, one cell per count, -1 at the left to -50 at the right. It is drawn from the profile in every phase, never from what is applied. A core at 0 has an empty bar.",
-        ),
-        (
-            "now",
-            "The offset observed applied to the hardware now. After a stop, now shows the offset the stop restored, such as 0 for a zero baseline, while tune keeps the profile. now ? means no application was observed; it is not a zero.",
-        ),
-        (
-            "red point",
-            "One full-height red █ in a lane of its own under the bar, at the depth of the recorded failure constraint. No recorded failure reads f none; a failure at 0 reads f0 and draws no cell.",
-        ),
-        (
-            "solo",
-            "The deepest offset the core confirmed alone under load. s? means none is known, and then g? too.",
-        ),
-        (
-            "gap",
-            "Tune minus solo, in counts shallower than solo: tune -9 and solo -45 is gap 36. It is a number, not a verdict. A negative gap means tune is deeper than solo.",
-        ),
-        (
-            "fail",
-            "The recorded failure constraint as an offset: f-50 is -50, f none is no failure recorded.",
-        ),
-        (
-            "role",
-            "What the core does now: loaded, judged, idle at 0 or reset queued.",
-        ),
-        (
-            "!",
-            "A current failure, shown until work moves to another step or operation.",
-        ),
-        (
-            "R",
-            "A reset is queued for the core. It does not reopen a stopped session.",
-        ),
+        ("▀", "a group trial failed with this core at that offset"),
         ("cyan", "running now"),
-        ("amber", "a hunt or a repair, and what it paused"),
+        ("amber", "a hunt, and what it paused"),
         ("red", "failures, past and present"),
         ("green", "passed, done"),
+        ("magenta", "combinations"),
         ("grey", "idle, parked, still to come"),
-    ],
-};
-
-const SOURCES: Section = Section {
-    title: "FAILURE SOURCES",
-    items: &[
-        (
-            "alone",
-            "The core failed by itself, loaded alone. Its red point is that failure.",
-        ),
-        (
-            "named",
-            "A failure named this core directly, or a hunt traced a group's failure to it.",
-        ),
-        (
-            "R7-charged",
-            "An all-core R7 failure the decision charged to this core. The attribution may be uncertain.",
-        ),
-        (
-            "constraint",
-            "A red point is a recorded failure constraint, not always a core that failed alone. The Cores page names the source and the journal entry.",
-        ),
     ],
 };
 
@@ -183,44 +67,47 @@ const TOP: Section = Section {
     ],
 };
 
+/// The top-line row that names the quit key, left out where the keys are ignored.
+const EXIT: (&str, &str) = ("q", "exit dashboard; tuning itself keeps running");
+
 const TUNING: Section = Section {
     title: "WHAT TOGI DOES",
     items: &[
         (
             "SOLO LIMITS",
-            "Finding each core's solo limit alone. The count is the solo limits found, never time.",
+            "The cores whose solo limit is found, and the core being searched or confirmed.",
         ),
         (
             "PHASE 1",
-            "Checking toward the first confirmed profile, counted in the steps of its cycle.",
-        ),
-        (
-            "PHASE 2",
-            "Deepening in rounds, counted in credited checks, with its confirmation cycle: PHASE 2 · confirmation cycle.",
-        ),
-        (
-            "CLEAN CYCLES",
-            "The count of clean cycles for the current profile. It has no percentage and no ETA.",
-        ),
-        (
-            "Cycle",
-            "Not a phase: the list of steps a phase checks through, on the Cycle page.",
+            "Checking toward the first confirmed profile. The stage shows whether phase 1 is open or finished.",
         ),
         (
             "HUNT",
-            "An amber detour inside a phase, not a phase of its own: the parent phase stays current while parked trials find the core or combination behind a failure.",
+            "An amber detour: parked trials that find the core or combination behind a failure. The hunt panel shows its groups and member probes.",
         ),
         (
-            "STOPPED",
-            "STOPPED or RECOVERY replaces every running marker on the stage line. A stop keeps the stages already completed.",
+            "PHASE 2",
+            "Deepening: its rounds and its confirmation cycle. A round lists its candidates and their gaps.",
         ),
         (
-            "forecasts",
-            "What a result would lead to is always conditional, neutral in colour and no promise. A hunt can start at any time, so there is no ETA.",
+            "BIOS PROFILE",
+            "The profile to enter in BIOS, one row per CCD in slot order. A * marks an offset not yet confirmed.",
+        ),
+        (
+            "CYCLE",
+            "Checking: every core at its offset together, through the steps of a cycle. The stage shows the cycle's number and step; the cycle panel lists its steps and R7 parts.",
+        ),
+        (
+            "CLEAN CYCLES",
+            "The count of clean cycles for the current profile.",
         ),
         (
             "R6",
-            "During idle trials every page holds still, clock included, so it cannot wake the cores.",
+            "During idle trials this screen holds still, clock included, so it cannot wake the cores.",
+        ),
+        (
+            "NO ETA",
+            "A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial.",
         ),
         (
             "RULES",
@@ -256,9 +143,15 @@ const WORDS: Section = Section {
             "the deepest offset a core confirmed under load alone",
         ),
         (
-            "failure constraint",
-            "the shallowest offset recorded as ruled out for a core",
+            "failure point",
+            "the shallowest ruled-out offset for a core",
         ),
+        (
+            "combination",
+            "offsets at which a group of cores failed together",
+        ),
+        ("at its limit", "a core that cannot go deeper"),
+        ("has room", "a core that can still go deeper"),
         ("suspect", "a core a hunt keeps at its failing offset"),
         (
             "parked",
@@ -362,9 +255,168 @@ fn section_lines(
     out
 }
 
+/// A help example keeps the text of its row whole: its heads run from the full core, offset and state to
+/// nothing, each with its failure point or without, and the first that fits wins. Only the gauge is clipped by
+/// cells.
+fn example_row(
+    width: usize,
+    heads: &[String],
+    gauge: &Line<'static>,
+    failure: &str,
+    colours: Colours,
+) -> Line<'static> {
+    for head in heads {
+        for with_failure in [true, false] {
+            let head_width = display_width(head);
+            let used = head_width
+                + if with_failure {
+                    2 + display_width(failure)
+                } else {
+                    0
+                };
+            if used > width {
+                continue;
+            }
+            let mut spans = Vec::new();
+            if !head.is_empty() {
+                spans.push(Paint::White.span(colours, head.clone()));
+            }
+            spans.extend(gauge.spans.iter().cloned());
+            let mut line = truncate_styled(&Line::from(spans), width - used + head_width);
+            if with_failure {
+                line.spans.push(Span::raw("  "));
+                line.spans
+                    .push(Paint::Bad.span(colours, failure.to_owned()));
+            }
+            return line;
+        }
+    }
+    Line::default()
+}
+
+fn gauge(colours: Colours, parts: &[(Paint, &str, usize)]) -> Line<'static> {
+    let mut spans: Vec<Span<'static>> = parts
+        .iter()
+        .map(|&(tone, glyph, count)| tone.span(colours, glyph.repeat(count)))
+        .collect();
+    let used: usize = parts
+        .iter()
+        .map(|&(_, glyph, count)| display_width(glyph) * count)
+        .sum();
+    spans.push(Span::raw(" ".repeat(50usize.saturating_sub(used))));
+    Line::from(spans)
+}
+
+fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
+    struct Example {
+        core: u32,
+        offset: i32,
+        failure: i32,
+        state: &'static str,
+        note: &'static str,
+        gauge: Line<'static>,
+    }
+    let examples = [
+        Example {
+            core: 4,
+            offset: -28,
+            failure: -36,
+            state: "AT LIMIT",
+            note: "at its limit: it cannot go deeper",
+            gauge: gauge(
+                colours,
+                &[
+                    (Paint::White, "▄", 28),
+                    (Paint::Combination, "░", 7),
+                    (Paint::Bad, "▬", 1),
+                ],
+            ),
+        },
+        Example {
+            core: 0,
+            offset: -26,
+            failure: -32,
+            state: "HAS ROOM",
+            note: "has room: backed off after a hunt, may deepen",
+            gauge: gauge(
+                colours,
+                &[
+                    (Paint::White, "▄", 26),
+                    (Paint::Grey, "·", 5),
+                    (Paint::Bad, "▬", 1),
+                ],
+            ),
+        },
+        Example {
+            core: 9,
+            offset: 0,
+            failure: -48,
+            state: "PARKED",
+            note: "parked at 0 by a hunt; returns to -47",
+            gauge: gauge(colours, &[(Paint::Grey, "·", 47), (Paint::Bad, "▬", 1)]),
+        },
+        Example {
+            core: 0,
+            offset: -26,
+            failure: -32,
+            state: "PROBE",
+            note: "probe: the group failed with core 00 at -30, -29, -27",
+            gauge: gauge(
+                colours,
+                &[(Paint::White, "▄", 26), (Paint::Bad, "▀ ▀▀ ▬", 1)],
+            ),
+        },
+    ];
+    let mut out = vec![title_rule(SCREEN.title, width, colours), blank()];
+    for example in examples {
+        let marker = if example.state == "PARKED" {
+            "  "
+        } else {
+            "► "
+        };
+        let Example {
+            core,
+            offset,
+            failure,
+            state,
+            ..
+        } = example;
+        let prefix = format!("{marker}{core:02}  {offset:3}  {state:<8} ");
+        let heads = [
+            prefix.clone(),
+            format!("{marker}{core:02}  {offset:3} "),
+            format!("{marker}{core:02} "),
+            String::new(),
+        ];
+        out.push(example_row(
+            width,
+            &heads,
+            &example.gauge,
+            &format!("{failure:3}"),
+            colours,
+        ));
+        let indent = display_width(&prefix).min(width.saturating_sub(20));
+        for line in wrap_styled(
+            example.note,
+            width.saturating_sub(indent).max(1),
+            Paint::Grey.style(colours),
+        ) {
+            let mut spans = vec![Span::raw(" ".repeat(indent))];
+            spans.extend(line.spans);
+            out.push(Line::from(spans));
+        }
+        out.push(blank());
+    }
+    out.extend(
+        section_lines(&SCREEN, width, false, colours)
+            .into_iter()
+            .skip(2),
+    );
+    out
+}
+
 /// The help body in `width` cells and `height` rows, scrolled `scroll` lines down, with its scrollbar in the
-/// first two cells of every row; and how far it can scroll. A scroll at or past that extent shows the end. Under
-/// [`Quit::Ignored`] the navigation says there is no exit key instead of naming one.
+/// first two cells of every row; and how far it can scroll. A scroll at or past that extent shows the end.
 #[must_use]
 pub fn help_body(
     width: usize,
@@ -373,48 +425,38 @@ pub fn help_body(
     colours: Colours,
     quit: Quit,
 ) -> (Vec<Line<'static>>, usize) {
-    let navigation_items: Vec<_> = NAVIGATION
+    let top_items: Vec<_> = TOP
         .items
         .iter()
         .copied()
-        .chain([if quit == Quit::Keys { EXIT } else { NO_EXIT }])
+        .chain((quit == Quit::Keys).then_some(EXIT))
         .collect();
-    let navigation = Section {
-        title: NAVIGATION.title,
-        items: &navigation_items,
+    let top = Section {
+        title: TOP.title,
+        items: &top_items,
     };
-    let sections = [
-        &navigation,
-        &PAGES,
-        &GAUGES,
-        &SOURCES,
-        &TUNING,
-        &TOP,
-        &WORDS,
-        &LOAD,
-    ];
     let body_width = width.saturating_sub(2).max(1);
     let lines = if width >= THREE_COLUMNS {
         let usable = body_width - 8;
         let left = usable * 81 / 227;
         let middle = usable * 75 / 227;
         let right = usable - left - middle;
+        let columns = [
+            [
+                reading(left, colours),
+                vec![blank(), blank()],
+                section_lines(&top, left, false, colours),
+            ]
+            .concat(),
+            section_lines(&TUNING, middle, true, colours),
+            [
+                section_lines(&WORDS, right, false, colours),
+                vec![blank(), blank()],
+                section_lines(&LOAD, right, false, colours),
+            ]
+            .concat(),
+        ];
         let widths = [left, middle, right];
-        let mut columns: [Vec<Line<'static>>; 3] = Default::default();
-        for section in sections {
-            let at = (0..columns.len())
-                .min_by_key(|&column| columns[column].len())
-                .unwrap_or(0);
-            if !columns[at].is_empty() {
-                columns[at].extend([blank(), blank()]);
-            }
-            columns[at].extend(section_lines(
-                section,
-                widths[at],
-                section.title == TUNING.title,
-                colours,
-            ));
-        }
         let count = columns.iter().map(Vec::len).max().unwrap_or(0);
         (0..count)
             .map(|row| {
@@ -437,11 +479,9 @@ pub fn help_body(
             })
             .collect()
     } else {
-        let mut lines = Vec::new();
-        for section in sections {
-            if !lines.is_empty() {
-                lines.extend([blank(), blank()]);
-            }
+        let mut lines = reading(body_width, colours);
+        for section in [&top, &TUNING, &WORDS, &LOAD] {
+            lines.extend([blank(), blank()]);
             lines.extend(section_lines(
                 section,
                 body_width,
@@ -456,8 +496,9 @@ pub fn help_body(
 
 #[cfg(test)]
 mod tests {
-    use super::{LOAD, Section, TUNING, help_body, section_lines, title_rule};
-    use crate::frames::body_rows;
+    use super::{
+        LOAD, Section, THREE_COLUMNS, TOP, TUNING, help_body, reading, section_lines, title_rule,
+    };
     use crate::frames::fit::{line_width, plain};
     use crate::frames::layout::Layout;
     use crate::frames::testing::{
@@ -468,31 +509,8 @@ mod tests {
 
     const C: Colours = Colours::Full;
 
-    const TITLES: [&str; 8] = [
-        "NAVIGATION",
-        "THE PAGES",
-        "THE GAUGES",
-        "FAILURE SOURCES",
-        "WHAT TOGI DOES",
-        "THE TOP LINE",
-        "WORDS",
-        "KINDS OF LOAD",
-    ];
-
     fn plain_rows(lines: &[ratatui::text::Line<'static>]) -> Vec<String> {
         lines.iter().map(plain).collect()
-    }
-
-    /// The help in one column as words, with the scrollbar's two cells dropped.
-    fn words(quit: Quit) -> String {
-        plain_rows(&help_body(115, 1000, 0, C, quit).0)
-            .iter()
-            .map(|row| row.chars().skip(2).collect::<String>())
-            .collect::<Vec<_>>()
-            .join("\n")
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
     }
 
     fn chars_from(text: &str, from: usize) -> String {
@@ -504,17 +522,19 @@ mod tests {
     }
 
     #[test]
-    fn wide_help_uses_three_columns_and_every_section_is_in_it() {
-        let (body, scroll) = help_body(235, 1000, 0, C, Quit::Keys);
-        assert_eq!(scroll, 0, "full wide help needs no scrolling");
+    fn wide_help_uses_three_columns() {
+        let (body, scroll) = help_body(235, 61, 0, C, Quit::Keys);
+        assert_eq!(scroll, 0, "wide help unexpectedly needs scrolling");
         let rows = plain_rows(&body);
-        let columns = ["NAVIGATION", "THE PAGES", "THE GAUGES"]
-            .iter()
-            .filter(|title| rows[0].contains(**title))
-            .count();
-        assert_eq!(columns, 3, "wide help lost a column: {:?}", rows[0]);
+        for title in ["READING THE SCREEN", "WHAT TOGI DOES", "WORDS"] {
+            assert!(
+                rows[0].contains(title),
+                "wide help lost column {title:?}: {:?}",
+                rows[0]
+            );
+        }
         let text = rows.join("\n");
-        for title in TITLES {
+        for title in ["THE TOP LINE", "KINDS OF LOAD", "NO ETA", "CLEAN CYCLES"] {
             assert!(text.contains(title), "wide help lost {title:?}");
         }
         for (row, line) in body.iter().enumerate() {
@@ -524,17 +544,19 @@ mod tests {
             !rows[rows.len() - 1].trim().is_empty(),
             "wide help ends on a blank content row"
         );
-        let single = help_body(115, 1000, 0, C, Quit::Keys).0.len();
-        assert!(
-            body.len() < single,
-            "three columns are shorter than one: {} against {single}",
-            body.len()
-        );
+        for section in [&TOP, &TUNING, &LOAD] {
+            let lines = section_lines(section, 70, section.title == TUNING.title, C);
+            assert!(
+                !plain(&lines[lines.len() - 1]).trim().is_empty(),
+                "wide column's final section {:?} ends on blank padding",
+                section.title
+            );
+        }
     }
 
     #[test_case(195; "195 columns")]
     #[test_case(235; "235 columns")]
-    fn short_wide_help_scrolls_with_a_scrollbar_to_its_last_row(width: usize) {
+    fn short_wide_help_scrolls_and_keeps_its_scrollbar(width: usize) {
         let (top, scroll) = help_body(width, 19, 0, C, Quit::Keys);
         let (end, end_scroll) = help_body(width, 19, usize::MAX, C, Quit::Keys);
         let (clamped, _) = help_body(width, 19, scroll + 100, C, Quit::Keys);
@@ -543,7 +565,12 @@ mod tests {
             "short wide help must scroll: top={scroll} end={end_scroll}"
         );
         assert_eq!(plain_rows(&end), plain_rows(&clamped), "scroll beyond end");
-        assert!(plain(&top[0]).contains("NAVIGATION"));
+        for title in ["READING THE SCREEN", "WHAT TOGI DOES", "WORDS"] {
+            assert!(
+                plain(&top[0]).contains(title),
+                "short wide help lost column {title:?}"
+            );
+        }
         let thumb = (19 * 19 / (scroll + 19)).max(1);
         for (name, page, bar) in [
             (
@@ -582,112 +609,38 @@ mod tests {
     }
 
     #[test]
-    fn help_explains_the_pages_and_every_key() {
-        let help = words(Quit::Keys);
-        for said in [
-            "← → Move through the nine pages in a fixed cycle that wraps, from Main to Help and back to Main.",
-            "↑ ↓ Scroll a page one line. j and k do the same.",
-            "PgUp PgDn Scroll a page by its height less one line. b, f and space do the same.",
-            "Home End Go to the top or the end of a page. g and G do the same.",
-            "Esc, m Go back to Main.",
-            "?, h Open this help. The same key on the help returns to Main.",
-            "l Open the journal, which opens at its newest event and follows new ones.",
-            "A page opens at its top.",
-            "a refresh never moves it.",
-            "1 Main",
-            "2 Cores",
-            "3 Cycle",
-            "4 R7 evidence",
-            "5 Hunts / probes",
-            "6 BIOS profile",
-            "7 History",
-            "8 Journal",
-            "9 Help This page.",
-            "A * marks an offset not yet confirmed.",
-        ] {
-            assert!(help.contains(said), "help lost {said:?}: {help}");
+    fn help_glosses_no_record_only_trial() {
+        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys);
+        let words = plain_rows(&help)
+            .join("\n")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        for gone in ["record only", "record-only"] {
+            assert!(!words.contains(gone), "help glosses {gone:?}: {words}");
         }
-    }
-
-    #[test]
-    fn help_explains_the_profile_the_applied_offset_and_the_gauge_grammar() {
-        let help = words(Quit::Keys);
-        for said in [
-            "tune The tuning profile's offset for the core: a white full-height █ bar, one cell per count, -1 at the left to -50 at the right.",
-            "never from what is applied.",
-            "now The offset observed applied to the hardware now.",
-            "After a stop, now shows the offset the stop restored, such as 0 for a zero baseline, while tune keeps the profile.",
-            "now ? means no application was observed; it is not a zero.",
-            "One full-height red █ in a lane of its own under the bar, at the depth of the recorded failure constraint.",
-            "No recorded failure reads f none; a failure at 0 reads f0 and draws no cell.",
-            "gap Tune minus solo, in counts shallower than solo: tune -9 and solo -45 is gap 36. It is a number, not a verdict.",
-            "A negative gap means tune is deeper than solo.",
-            "s? means none is known, and then g? too.",
-            "! A current failure",
-            "R A reset is queued for the core.",
-        ] {
-            assert!(help.contains(said), "help lost {said:?}: {help}");
-        }
-    }
-
-    #[test]
-    fn help_names_the_failure_sources_the_phases_and_the_conditional_forecasts() {
-        let help = words(Quit::Keys);
-        for said in [
-            "alone The core failed by itself, loaded alone.",
-            "named A failure named this core directly, or a hunt traced a group's failure to it.",
-            "R7-charged An all-core R7 failure the decision charged to this core.",
-            "not always a core that failed alone.",
-            "SOLO LIMITS Finding each core's solo limit alone.",
-            "PHASE 1 Checking toward the first confirmed profile",
-            "PHASE 2 Deepening in rounds",
-            "PHASE 2 · confirmation cycle.",
-            "CLEAN CYCLES The count of clean cycles for the current profile.",
-            "Cycle Not a phase",
-            "HUNT An amber detour inside a phase, not a phase of its own",
-            "STOPPED STOPPED or RECOVERY replaces every running marker on the stage line.",
-            "forecasts What a result would lead to is always conditional, neutral in colour and no promise.",
-        ] {
-            assert!(help.contains(said), "help lost {said:?}: {help}");
-        }
-    }
-
-    #[test]
-    fn help_has_no_zoom_and_describes_no_panel_the_main_page_lost() {
-        for quit in [Quit::Keys, Quit::Ignored] {
-            let help = words(quit);
-            for gone in [
-                "zoom",
-                "+/-",
-                "2 counts",
-                "two counts",
-                "context panel",
-                "outcome",
-                "closes this view",
-                "record only",
-                "record-only",
-                "its failure point",
-                "READING THE SCREEN",
-                "▄",
-                "░",
-                "▬",
-                "▀",
-            ] {
-                assert!(!help.contains(gone), "help still says {gone:?}: {help}");
-            }
-        }
+        assert!(
+            words.contains("changed what togi does; skips do not count"),
+            "help lost the top-line note: {words}"
+        );
     }
 
     #[test]
     fn help_words_claim_no_more_than_the_journal_shows() {
-        let help = words(Quit::Keys);
+        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys);
+        let words = plain_rows(&help)
+            .join("\n")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         for said in [
-            "changed what togi does; skips do not count",
-            "the shallowest offset recorded as ruled out for a core",
+            "Checking toward the first confirmed profile.",
+            "its failure point: the shallowest offset ruled out for this core",
+            "the shallowest ruled-out offset for a core",
             "a core a hunt holds no deeper than its failing offset, outside the selected group",
             "highest-request group on each CCD, ties included",
         ] {
-            assert!(help.contains(said), "help lost {said:?}: {help}");
+            assert!(words.contains(said), "help lost {said:?}: {words}");
         }
         for gone in [
             "The first full cycle",
@@ -695,18 +648,24 @@ mod tests {
             "shallower than its failing offset",
             "setting the shared core voltage",
         ] {
-            assert!(!help.contains(gone), "help still says {gone:?}: {help}");
+            assert!(!words.contains(gone), "help still says {gone:?}: {words}");
         }
     }
 
     #[test]
     fn help_links_the_tuner_spec_and_states_no_rule() {
-        let help = words(Quit::Keys);
+        let (help, _) = help_body(115, 1000, 0, C, Quit::Keys);
+        let words = plain_rows(&help)
+            .join("\n")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         assert!(
-            help.contains("https://github.com/shgew/togi/blob/main/docs/spec/tuner.md"),
-            "help lost the tuner specification link: {help}"
+            words.contains("https://github.com/shgew/togi/blob/main/docs/spec/tuner.md"),
+            "help lost the tuner specification link: {words}"
         );
         for rule in [
+            "request order",
             "when the part starts",
             "voltage-targeted counts",
             "halfway",
@@ -737,7 +696,7 @@ mod tests {
             "until every core has one",
         ] {
             assert!(
-                !help.contains(rule),
+                !words.contains(rule),
                 "help restates the tuning rule {rule:?}"
             );
         }
@@ -745,28 +704,37 @@ mod tests {
 
     #[test_case(115; "115 columns")]
     #[test_case(235; "235 columns")]
-    fn the_full_help_renders_unscrolled_and_ends_on_text(width: usize) {
+    fn full_help_renders_whole_and_explains_the_states(width: usize) {
         let (body, scroll) = help_body(width, 1000, 0, C, Quit::Keys);
         assert!(
             scroll == 0 && !body.is_empty(),
             "{width} columns: full help was not rendered"
         );
-        assert!(
-            !plain(&body[body.len() - 1]).trim().is_empty(),
-            "{width} columns: full help ends on a blank content row"
-        );
-    }
-
-    #[test]
-    fn help_under_three_columns_keeps_the_state_explanations_whole() {
-        let width = 115;
-        let (body, _) = help_body(width, 1000, 0, C, Quit::Keys);
-        let words = plain_rows(&body)
+        let mut column = 0;
+        if width >= THREE_COLUMNS {
+            let first = plain(&body[0]);
+            let prefix = first
+                .split_once("WORDS")
+                .unwrap_or_else(|| panic!("wide help lost the words column: {first}"))
+                .0;
+            column = prefix.chars().count();
+        }
+        let lines: Vec<String> = body
             .iter()
-            .map(|row| row.chars().skip(2).collect::<String>())
+            .enumerate()
+            .map(|(row, line)| {
+                assert!(
+                    line_width(line) <= width,
+                    "{width} columns: full help row {row} exceeds its rectangle"
+                );
+                chars_from(&plain(line), column)
+            })
+            .collect();
+        let words = lines
+            .join("\n")
+            .split_whitespace()
             .collect::<Vec<_>>()
-            .join("\n");
-        let one: String = words.split_whitespace().collect::<Vec<_>>().join(" ");
+            .join(" ");
         for explanation in [
             "SEARCH finding its solo limit with light and heavy-vector trials alone",
             "CONFIRM checking its candidate solo limit with repeated light and heavy-vector trials alone",
@@ -775,14 +743,18 @@ mod tests {
             "MEMBER kept with its hunt group at its failing offset; another member may be probed",
         ] {
             assert!(
-                one.contains(explanation),
+                words.contains(explanation),
                 "{width} columns: help lost state explanation {explanation:?}"
             );
         }
+        assert!(
+            !plain(&body[body.len() - 1]).trim().is_empty(),
+            "{width} columns: full help ends on a blank content row"
+        );
     }
 
     #[test]
-    fn narrow_help_scrolls_one_column_through_every_section() {
+    fn narrow_help_scrolls_one_column() {
         let (top, scroll) = help_body(77, 19, 0, C, Quit::Keys);
         let (end, end_scroll) = help_body(77, 19, usize::MAX, C, Quit::Keys);
         let (clamped, _) = help_body(77, 19, scroll + 100, C, Quit::Keys);
@@ -792,7 +764,7 @@ mod tests {
         );
         assert_eq!(plain_rows(&end), plain_rows(&clamped), "scroll beyond end");
         assert!(
-            plain(&top[0]).contains("NAVIGATION"),
+            plain(&top[0]).contains("READING THE SCREEN"),
             "help does not open at the first section: {:?}",
             plain(&top[0])
         );
@@ -802,7 +774,7 @@ mod tests {
             "help end loses the last section: {text}"
         );
         assert!(
-            !plain(&top[0]).contains("THE PAGES"),
+            !plain(&top[0]).contains("WHAT TOGI DOES"),
             "narrow help squeezes columns together"
         );
         assert!(
@@ -822,15 +794,6 @@ mod tests {
                     plain(line)
                 );
             }
-        }
-        let mut all = Vec::new();
-        let (_, extent) = help_body(77, 19, 0, C, Quit::Keys);
-        for at in 0..=extent {
-            all.extend(plain_rows(&help_body(77, 19, at, C, Quit::Keys).0));
-        }
-        let all = all.join("\n");
-        for title in TITLES {
-            assert!(all.contains(title), "scrolling never reaches {title:?}");
         }
     }
 
@@ -870,18 +833,18 @@ mod tests {
         }
     }
 
-    #[test_case(&[("requester", "evidence")], 20, 6, ""; "a label too long for its column is dropped")]
-    #[test_case(&[("top requester", "evidence")], 30, 10, "top..."; "a label is cut at a word")]
-    #[test_case(&[("top requester", "evidence")], 60, 15, "top requester"; "a label that fits stays whole")]
+    #[test_case("requester", 20, 6, ""; "omit a word that cannot fit")]
+    #[test_case("top requester", 30, 10, "top..."; "shorten at a word")]
+    #[test_case("top requester", 60, 15, "top requester"; "keep a fitting label")]
     fn help_labels_keep_whole_words(
-        items: &[(&'static str, &'static str)],
+        label: &'static str,
         width: usize,
         label_width: usize,
         want: &str,
     ) {
         let section = Section {
             title: "WORDS",
-            items,
+            items: &[(label, "evidence")],
         };
         let lines = section_lines(&section, width, false, C);
         let row = plain(&lines[2]);
@@ -897,37 +860,111 @@ mod tests {
         );
     }
 
-    #[test_case(&TUNING; "tuning")]
-    #[test_case(&LOAD; "load")]
-    fn a_section_ends_on_text_not_padding(section: &Section) {
-        for width in [40, 70, 115] {
-            let lines = section_lines(section, width, section.title == TUNING.title, C);
+    #[test]
+    fn help_examples_keep_whole_values() {
+        let examples: [&[&str]; 4] = [
+            &["►", "04", "-28", "AT", "LIMIT", "-36"],
+            &["►", "00", "-26", "HAS", "ROOM", "-32"],
+            &["09", "0", "PARKED", "-48"],
+            &["►", "00", "-26", "PROBE", "-32"],
+        ];
+        for width in 1..=100 {
+            let lines = reading(width, C);
+            let mut at = 2;
+            for (i, tokens) in examples.iter().enumerate() {
+                let row = plain(&lines[at]);
+                let fields: Vec<&str> = row.split_whitespace().collect();
+                for field in &fields {
+                    assert!(
+                        field.trim_matches(['▄', '░', '·', '▬', '▀']).is_empty()
+                            || tokens.contains(field),
+                        "width {width} example {i}: text or value cut to {field:?}: {row:?}"
+                    );
+                }
+                for pair in [("AT", "LIMIT"), ("HAS", "ROOM")] {
+                    assert_eq!(
+                        fields.contains(&pair.0),
+                        fields.contains(&pair.1),
+                        "width {width} example {i}: state word cut: {row:?}"
+                    );
+                }
+                assert!(
+                    line_width(&lines[at]) <= width,
+                    "width {width} example {i}: row exceeds width: {row:?}"
+                );
+                if width == 100 {
+                    assert!(
+                        fields.last() == tokens.last()
+                            && fields.contains(&tokens[tokens.len() - 2]),
+                        "wide example {i} lost its state or failure point: {row:?}"
+                    );
+                }
+                while !plain(&lines[at]).is_empty() {
+                    at += 1;
+                }
+                at += 1;
+            }
+        }
+    }
+
+    #[test_case(13)]
+    #[test_case(20)]
+    fn the_help_view_examples_keep_whole_values(width: u16) {
+        let sc = screen(View::Help, width, 60, C, false);
+        let (buf, _) = render_missing(&sc);
+        for line in rows_of(&buf) {
+            let fields: Vec<&str> = line.split_whitespace().collect();
             assert!(
-                !plain(&lines[lines.len() - 1]).trim().is_empty(),
-                "{:?} at {width} ends on blank padding",
-                section.title
+                !fields.contains(&"-2"),
+                "width {width}: help example cut a value: {line:?}"
+            );
+            assert_eq!(
+                fields.contains(&"AT"),
+                fields.contains(&"LIMIT"),
+                "width {width}: help example cut a state word: {line:?}"
             );
         }
     }
 
     #[test]
-    fn help_names_the_exit_key_only_where_it_works() {
-        let standalone = words(Quit::Keys);
-        assert!(standalone.contains("q, Ctrl-C Exit the dashboard; tuning itself keeps running."));
-        assert!(!standalone.contains("no exit key"), "{standalone}");
-        let boot = words(Quit::Ignored);
-        assert!(
-            boot.contains(
-                "exit This dashboard has no exit key: only stopping its service ends it. Tuning itself keeps running."
-            ),
-            "{boot}"
+    fn the_help_view_draws_inside_its_body_and_reports_its_extent() {
+        let sc = screen(View::Help, 80, 24, C, true);
+        let layout = Layout::new(&sc);
+        let (buf, drawn) = render_missing(&sc);
+        let (_, extent) = help_body(
+            usize::from(layout.body.width),
+            usize::from(layout.body.height),
+            0,
+            C,
+            Quit::Keys,
         );
-        for gone in [
-            "exit dashboard",
-            "Exit the dashboard",
-            "q, Ctrl-C",
-            "Ctrl-D",
-        ] {
+        assert_eq!(
+            drawn,
+            Drawn {
+                scroll: extent,
+                hold: Hold::Never
+            }
+        );
+        let rows = rows_of(&buf);
+        assert!(rows[usize::from(layout.header.y)].contains("no session yet"));
+        assert!(rows[usize::from(layout.body.y)].contains("READING THE SCREEN"));
+        assert!(rows[usize::from(layout.footer.y)].contains("exit dashboard"));
+    }
+
+    #[test]
+    fn help_labels_the_quit_key_exit_dashboard_and_the_tuning_boot_drops_it() {
+        let words = |quit| {
+            plain_rows(&help_body(115, 1000, 0, C, quit).0)
+                .join("\n")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let standalone = words(Quit::Keys);
+        assert!(standalone.contains("q exit dashboard; tuning itself keeps running"));
+        assert!(!standalone.contains("closes this view"), "{standalone}");
+        let boot = words(Quit::Ignored);
+        for gone in ["exit dashboard", "closes this view", "itself keeps running"] {
             assert!(
                 !boot.contains(gone),
                 "tuning-boot help says {gone:?}: {boot}"
@@ -945,35 +982,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_help_view_draws_inside_its_body_and_reports_its_extent() {
-        let sc = screen(View::Help, 80, 24, C, true);
-        let layout = Layout::new(&sc);
-        let (buf, drawn) = render_missing(&sc);
-        let (_, extent) = help_body(
-            usize::from(layout.body.width),
-            body_rows(&sc),
-            0,
-            C,
-            Quit::Keys,
-        );
-        assert_eq!(
-            drawn,
-            Drawn {
-                scroll: extent,
-                hold: Hold::Never
-            }
-        );
-        let rows = rows_of(&buf);
-        assert!(rows[usize::from(layout.header.y)].contains("no session yet"));
-        assert!(rows.iter().any(|row| row.contains("NAVIGATION")));
-        assert!(rows[usize::from(layout.footer.y)].contains("9/9 Help"));
-    }
-
-    #[test_case(80, 24; "80 by 24")]
-    #[test_case(160, 45; "160 by 45")]
-    #[test_case(240, 67; "240 by 67")]
-    #[test_case(240, 30; "240 by 30")]
+    #[test_case(80, 24)]
+    #[test_case(160, 45)]
+    #[test_case(240, 67)]
+    #[test_case(240, 30)]
     fn a_scroll_at_or_past_the_extent_follows_the_end(width: u16, height: u16) {
         let mut sc = screen(View::Help, width, height, C, true);
         sc.scroll = usize::MAX;
@@ -996,29 +1008,26 @@ mod tests {
         }
     }
 
-    #[test_case(240, 67; "240 by 67")]
-    #[test_case(160, 45; "160 by 45")]
-    #[test_case(120, 33; "120 by 33")]
-    #[test_case(80, 24; "80 by 24")]
-    fn help_stays_in_bounds_and_draws_only_console_glyphs_at_the_size(width: u16, height: u16) {
+    #[test_case(240, 67)]
+    #[test_case(160, 45)]
+    #[test_case(120, 33)]
+    #[test_case(80, 24)]
+    fn help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size(width: u16, height: u16) {
         for colours in [Colours::Full, Colours::Console, Colours::None] {
-            for quit in [Quit::Keys, Quit::Ignored] {
-                for scroll in [0, 3, usize::MAX, 100_000] {
-                    for keys in [true, false] {
-                        let mut sc = screen(View::Help, width, height, colours, keys);
-                        sc.scroll = scroll;
-                        sc.quit = quit;
-                        let (buf, _) = render_missing(&sc);
-                        assert_frame_bounds(&buf, &sc);
-                        assert_glyphs_drawable(&buf, &format!("help {width}x{height}"));
-                    }
+            for scroll in [0, 3, usize::MAX, 100_000] {
+                for keys in [true, false] {
+                    let mut sc = screen(View::Help, width, height, colours, keys);
+                    sc.scroll = scroll;
+                    let (buf, _) = render_missing(&sc);
+                    assert_frame_bounds(&buf, &sc);
+                    assert_glyphs_drawable(&buf, &format!("help {width}x{height}"));
                 }
             }
         }
     }
 
     #[test]
-    fn help_stays_in_bounds_at_every_tiny_size() {
+    fn help_stays_in_bounds_at_every_small_width() {
         for width in 0..=80 {
             for height in [0, 1, 2, 3, 4, 5, 8, 24] {
                 let sc = screen(View::Help, width, height, Colours::Full, true);

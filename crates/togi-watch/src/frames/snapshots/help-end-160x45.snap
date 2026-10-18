@@ -2,47 +2,47 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
-│ ■ SOLO LIMITS  16/16 → ► PHASE 1 · cycle 1 → ○ PHASE 2 → ○ CLEAN CYCLES   1:20 left
-│ HELP · 9/9 · < Journal | Main >
-│ │ R6            During idle trials every page holds still, clock included, so it cannot wake the cores.
-│ │
-│ │ RULES         How togi decides what to do: https://github.com/shgew/togi/blob/main/docs/spec/tuner.md
-│ │
-│ │
-│ │ THE TOP LINE ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-│ │
-│ │ failures       failure decisions, including trials skipped because they already failed
-│ │ crashes        boots that ended without a clean shutdown
-│ │ last observed  the last failure seen in this session that changed what togi does; skips do not count
-│ │
-│ │
-│ │ WORDS ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-│ │
-│ │ SEARCH              finding its solo limit with light and heavy-vector trials alone
-│ │ CONFIRM             checking its candidate solo limit with repeated light and heavy-vector trials alone
-│ │ FOUND               solo limit checked; waiting at 0
-│ │ WAITING             at 0, waiting for its first search turn
-│ │ MEMBER              kept with its hunt group at its failing offset; another member may be probed
-│ │ offset              Curve Optimizer counts, 0 to -50; deeper is more negative
-│ │ trial               one launch of one workload on its target
-│ │ solo limit          the deepest offset a core confirmed under load alone
-│ │ failure constraint  the shallowest offset recorded as ruled out for a core
-│ │ suspect             a core a hunt keeps at its failing offset
-│ │ parked              a core a hunt holds no deeper than its failing offset, outside the selected group
-│ │ partial part        an R7 part with the top requesters idle
-│ │ top requester       an R7 workload's highest-request group on each CCD, ties included; marked top on the CCD tables
-│ █ self-sufficient     observed passing as top requester for this R7 workload
-│ █ cycle               one pass through the checking schedule
-│ █
-│ █
-│ █ KINDS OF LOAD ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-│ █
-│ █ R1 light          one light thread: compiling, browsing
-│ █ R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
-│ █ R3 load steps     load switching on and off: current steps
-│ █ R4 partial load   light load at 25-75% duty: bursty work
-│ █ R5 both threads   both threads of one core: SMT pressure
-│ █ R6 idle + bursts  idle with short wake-ups: idle and boost
-│ █ R7 all-core       a CCD, part of one, or every core: power and heat
-│  ←/→  pages  9/9 Help   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
+│  togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
+│
+│  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 1 of 18 · part 1 of 3 · trial 1 of 4  ───  1:20 left
+│
+│  │ R6            During idle trials this screen holds still, clock included, so it cannot wake the cores.
+│  │
+│  │ NO ETA        A hunt can start at any time, so togi shows only what is scheduled and the time left in the current trial.
+│  │
+│  │ RULES         How togi decides what to do: https://github.com/shgew/togi/blob/main/docs/spec/tuner.md
+│  │
+│  │
+│  │ WORDS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│  │
+│  │ SEARCH           finding its solo limit with light and heavy-vector trials alone
+│  │ CONFIRM          checking its candidate solo limit with repeated light and heavy-vector trials alone
+│  │ FOUND            solo limit checked; waiting at 0
+│  │ WAITING          at 0, waiting for its first search turn
+│  │ MEMBER           kept with its hunt group at its failing offset; another member may be probed
+│  │ offset           Curve Optimizer counts, 0 to -50; deeper is more negative
+│  │ trial            one launch of one workload on its target
+│  │ solo limit       the deepest offset a core confirmed under load alone
+│  │ failure point    the shallowest ruled-out offset for a core
+│  │ combination      offsets at which a group of cores failed together
+│  │ at its limit     a core that cannot go deeper
+│  │ has room         a core that can still go deeper
+│  │ suspect          a core a hunt keeps at its failing offset
+│  │ parked           a core a hunt holds no deeper than its failing offset, outside the selected group
+│  █ partial part     an R7 part with the top requesters idle
+│  █ top requester    an R7 workload's highest-request group on each CCD, ties included; marked top on the CCD tables
+│  █ self-sufficient  observed passing as top requester for this R7 workload
+│  █ cycle            one pass through the checking schedule
+│  █
+│  █
+│  █ KINDS OF LOAD ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│  █
+│  █ R1 light          one light thread: compiling, browsing
+│  █ R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+│  █ R3 load steps     load switching on and off: current steps
+│  █ R4 partial load   light load at 25-75% duty: bursty work
+│  █ R5 both threads   both threads of one core: SMT pressure
+│  █ R6 idle + bursts  idle with short wake-ups: idle and boost
+│  █ R7 all-core       a CCD, part of one, or every core: power and heat
+│
+│   ?  help    l  log    esc  back    q  exit dashboard
