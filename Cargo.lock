@@ -2059,6 +2059,7 @@ dependencies = [
  "togi-sim",
  "togi-simrun",
  "togi-tool-audit",
+ "togi-tool-forecast",
  "togi-tool-trialfacts",
  "togi-tuner",
  "togi-version",
