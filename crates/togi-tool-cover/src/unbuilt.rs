@@ -89,7 +89,7 @@ pub fn not_built(
                 continue;
             }
             let text = String::from_utf8_lossy(&lines[item.indices()].join(&b'\n')).into_owned();
-            if module_built(path, &text, built)? {
+            if module_built(tree, root, path, &text, built)? {
                 continue;
             }
             if changes.iter().any(|&change| change.overlaps(item)) {
@@ -110,19 +110,35 @@ static MODULE_DECLARATION: LazyLock<Result<Regex, regex::Error>> = LazyLock::new
 
 /// Whether `item`, the text of an item in the source file `path`, declares an out-of-line module
 /// whose file a dep-info names. The declaration holds no lines of the module, so the trace measures
-/// the module in its own file. A path attribute names another file, so it proves nothing. An
-/// indented declaration sits in an inline module and resolves under that module's directory, so it
-/// proves nothing.
-fn module_built(path: &str, item: &str, built: &HashSet<String>) -> Result<bool, Error> {
+/// the module in its own file. An indented declaration sits in an inline module and resolves
+/// under that module's directory, so it proves nothing.
+fn module_built(
+    tree: &dyn Tree,
+    root: &Path,
+    path: &str,
+    item: &str,
+    built: &HashSet<String>,
+) -> Result<bool, Error> {
     let pattern = MODULE_DECLARATION
         .as_ref()
         .map_err(|error| Error::Pattern(error.clone()))?;
     let Some(declaration) = pattern.captures(item.trim_end_matches([' ', '\t', '\r', '\n'])) else {
         return Ok(false);
     };
-    if has_path_attribute(&declaration[1]) {
+    let attributes = &declaration[1];
+    if attributes
+        .split("#[")
+        .filter_map(|attribute| attribute.trim_end().strip_suffix(']'))
+        .any(|attribute| {
+            crate::cfg::path_attribute(attribute).is_none() && has_path_attribute(attribute)
+        })
+    {
         return Ok(false);
     }
+    let plain_path = attributes
+        .split("#[")
+        .filter_map(|attribute| attribute.trim_end().strip_suffix(']'))
+        .find_map(crate::cfg::path_attribute);
     let (dir, file) = path
         .rsplit_once('/')
         .map_or(("", path), |(dir, file)| (dir, file));
@@ -131,8 +147,26 @@ fn module_built(path: &str, item: &str, built: &HashSet<String>) -> Result<bool,
     } else {
         format!("{dir}/")
     };
+    if let Some(target) = plain_path {
+        return Ok(relative(root, &root.join(&dir).join(target))
+            .is_some_and(|target| built.contains(&target)));
+    }
+    if has_path_attribute(attributes) {
+        return Ok(false);
+    }
     let stem = file.strip_suffix(".rs").unwrap_or(file);
-    if !matches!(stem, "lib" | "main" | "mod") {
+    let package = if file == "build.rs" {
+        Some(dir.trim_end_matches('/'))
+    } else {
+        ["/tests/", "/benches/", "/examples/", "/src/bin/"]
+            .into_iter()
+            .find_map(|suffix| dir.strip_suffix(suffix))
+    };
+    let crate_root = package.is_some_and(|package| {
+        tree.list(&root.join(package))
+            .is_ok_and(|entries| entries.iter().any(|entry| entry == "Cargo.toml"))
+    });
+    if !matches!(stem, "lib" | "main" | "mod") && !crate_root {
         dir.push_str(stem);
         dir.push('/');
     }

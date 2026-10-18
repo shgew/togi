@@ -71,7 +71,7 @@ fn not_built_one(
     built: &HashSet<String>,
     measured: &[(u32, bool)],
 ) -> Vec<String> {
-    let tree = MemTree::new("/repo", &[(path, src)]);
+    let tree = MemTree::new("/repo", &[(path, src), ("crates/a/Cargo.toml", "")]);
     let changed = BTreeMap::from([(
         path.to_owned(),
         changed
@@ -117,6 +117,20 @@ fn cfg_items(src: &str, changed: &[(u32, u32)], measured: &[(u32, bool)], left_o
 #[test_case(LIB, "#[cfg(feature = \"x\")]\nmod x;\n", &[LIB, "crates/b/src/x.rs"], true ; "a feature module whose file another crate's dep-info names")]
 #[test_case("crates/a/src/foo.rs", "#[cfg(test)]\nmod tests;\n", &["crates/a/src/foo.rs", "crates/a/src/tests.rs"], true ; "a module declared in a non-root file is not proven by a sibling file")]
 #[test_case("crates/a/src/foo.rs", "#[cfg(test)]\nmod tests;\n", &["crates/a/src/foo.rs", "crates/a/src/foo/tests.rs"], false ; "a module declared in a non-root file found under the file's stem")]
+#[test_case(LIB, "#[cfg(test)]\n#[path = \"tests/x.rs\"]\nmod tests;\n", &[LIB, "crates/a/src/tests/x.rs"], false ; "a plain path test module named by dep-info")]
+#[test_case("crates/a/src/foo.rs", "#[cfg(test)]\n#[path = \"tests/x.rs\"]\nmod tests;\n", &["crates/a/src/foo.rs", "crates/a/src/tests/x.rs"], false ; "a path is relative to the declaring directory not its stem")]
+#[test_case("crates/a/src/foo.rs", "#[cfg(test)]\n#[path = \"../tests/x.rs\"]\nmod tests;\n", &["crates/a/src/foo.rs", "crates/a/tests/x.rs"], false ; "a path containing parent components is normalized")]
+#[test_case(LIB, "#[cfg(test)]\n#[path = r#\"tests/x.rs\"#]\nmod tests;\n", &[LIB, "crates/a/src/tests/x.rs"], false ; "a raw path string")]
+#[test_case(LIB, "#[cfg(test)]\n#[path = \"tests/\\x78.rs\"]\nmod tests;\n", &[LIB, "crates/a/src/tests/x.rs"], false ; "an escaped path string")]
+#[test_case("crates/a/src/build.rs", "#[cfg(test)]\nmod tests;\n", &["crates/a/src/build.rs", "crates/a/src/tests.rs"], true ; "a module named build is not a build-script root")]
+#[test_case("crates/a/src/build.rs", "#[cfg(test)]\nmod tests;\n", &["crates/a/src/build.rs", "crates/a/src/build/tests.rs"], false ; "a module named build resolves under its stem")]
+#[test_case("crates/a/src/tests/foo.rs", "#[cfg(test)]\nmod tests;\n", &["crates/a/src/tests/foo.rs", "crates/a/src/tests/tests.rs"], true ; "a unit-test directory is not an integration-test root")]
+#[test_case("crates/a/src/tests/foo.rs", "#[cfg(test)]\nmod tests;\n", &["crates/a/src/tests/foo.rs", "crates/a/src/tests/foo/tests.rs"], false ; "a unit-test module resolves under its stem")]
+#[test_case(LIB, "#[cfg(test)]\n#[cfg_attr(unix, path = \"a.rs\")]\n#[path = \"b.rs\"]\nmod tests;\n", &[LIB, "crates/a/src/b.rs"], true ; "a conditional path remains unproven beside a plain path")]
+#[test_case(LIB, "#[cfg(windows)]\n#[cfg_attr(unix, path = \"x.rs\")]\nmod imp;\n", &[LIB, "crates/a/src/x.rs"], true ; "a conditional path target in dep-info is not proof")]
+#[test_case("crates/a/build.rs", "#[cfg(test)]\nmod tests;\n", &["crates/a/build.rs", "crates/a/tests.rs"], false ; "a build script is a crate root")]
+#[test_case("crates/a/tests/a.rs", "#[cfg(test)]\nmod tests;\n", &["crates/a/tests/a.rs", "crates/a/tests/tests.rs"], false ; "an integration test is a crate root")]
+#[test_case("crates/a/src/bin/a.rs", "#[cfg(test)]\nmod tests;\n", &["crates/a/src/bin/a.rs", "crates/a/src/bin/tests.rs"], false ; "a binary is a crate root")]
 #[test_case(LIB, "#[cfg(windows)]\n#[path = \"win.rs\"]\nmod imp;\n", &[LIB, "crates/a/src/imp.rs"], true ; "a module whose path attribute names another file")]
 #[test_case(LIB, "#[cfg(windows)]\n#[cfg_attr(unix, path = \"x.rs\")]\nmod imp;\n", &[LIB, "crates/a/src/imp.rs"], true ; "a module whose cfg_attr path names another file")]
 #[test_case(LIB, "mod outer {\n    #[cfg(feature = \"x\")]\n    mod tests;\n}\n", &[LIB, "crates/a/src/tests.rs"], true ; "a module declared inside an inline module is not proven by a top-level file")]
