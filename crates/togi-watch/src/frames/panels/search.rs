@@ -253,7 +253,7 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> (Vec<Line<'static
                 scene,
                 Paint::Grey,
                 format!(
-                    "at most {} left, then one full cycle",
+                    "{} left if none fails, then one full cycle",
                     plural(phases.rounds_left as usize, "round")
                 ),
             ),
@@ -623,7 +623,7 @@ mod tests {
         let (rows, head) = phase2_lines(&scene, 100);
         let rows = texts(&rows);
         assert!(rows[0].starts_with("PHASE 2 · ROUND 3"));
-        assert_eq!(rows[2], "at most 2 rounds left, then one full cycle");
+        assert_eq!(rows[2], "2 rounds left if none fails, then one full cycle");
         assert_eq!(
             rows[3],
             "cores 00 01  -30 → solo -25  gap 5  checked again in place"

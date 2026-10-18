@@ -29,7 +29,7 @@ use crate::frames::scene::Scene;
 use crate::frames::testing::rows_of;
 use crate::model::{
     CoreState, CoreView, Count, CycleView, DeadEndView, HuntCause, HuntFacts, HuntView, IdleHold,
-    Model, SessionView, Snapshot, StopView, TrialView,
+    Model, RecoveryView, SessionView, Snapshot, StopView, TrialView,
 };
 use crate::screen::Colours;
 use crate::tests::kit::{config_loaded, core, off, seq};
@@ -393,6 +393,48 @@ fn the_stage_line_marks_what_runs_and_what_stopped() {
     assert_eq!(line_width(&none), 0);
 }
 
+#[test]
+fn recovery_and_a_dead_end_suppress_the_running_marker() {
+    let model = Model::new();
+    let start = at("2026-10-12T10:00:00Z");
+    let view = session(start);
+    let cores = [
+        core_view(0, 0, CoreState::Search),
+        core_view(1, 0, CoreState::Waiting),
+    ];
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.cores = &cores;
+    let stage = |s: Snapshot<'_>| {
+        plain(&stage_line(
+            &scene(&s, start, &TimeZone::UTC, Colours::Full),
+            SizeClass::Wide,
+            false,
+        ))
+    };
+    let recovery = RecoveryView {
+        crash_at: start,
+        reset: None,
+        trial: None,
+        end: None,
+    };
+    let mut recovering = s;
+    recovering.recover = Some(&recovery);
+    let text = stage(recovering);
+    assert!(text.starts_with("○ SOLO LIMITS  0 of 2 found"), "{text}");
+    assert!(!text.contains('►'), "{text}");
+    let dead = DeadEndView {
+        at: start,
+        condition: DeadEndCondition::BootLoop,
+        detail: String::new(),
+    };
+    let mut ended = s;
+    ended.dead_end = Some(&dead);
+    let text = stage(ended);
+    assert!(text.starts_with("○ SOLO LIMITS  0 of 2 found"), "{text}");
+    assert!(!text.contains('►'), "{text}");
+}
+
 fn cycle_step(done: bool) -> CycleStep {
     CycleStep {
         regime: Regime::R1,
@@ -445,41 +487,45 @@ fn hunt_facts() -> HuntFacts {
     }
 }
 
-#[test]
-fn a_cycle_with_every_step_done_names_no_step_it_pauses_at() {
+fn cycle_stage_line(plan: &CyclePlan, class: SizeClass) -> String {
     let model = Model::new();
     let start = at("2026-10-12T10:00:00Z");
     let view = session(start);
-    let mut plan = CyclePlan {
-        number: std::num::NonZeroU32::new(1),
-        open: true,
-        steps: vec![cycle_step(true), cycle_step(true)],
-        current: 2,
-        paused: true,
-    };
     let mut s = model.snapshot();
     s.session = Some(&view);
-    let line = |plan: &CyclePlan, class| {
-        let mut s = s;
-        s.cycle = Some(CycleView {
-            plan,
-            step_hunts: &[],
-            resume: None,
-        });
-        plain(&stage_line(
-            &scene(&s, start, &TimeZone::UTC, Colours::Full),
-            class,
-            false,
-        ))
-    };
-    for class in [SizeClass::Wide, SizeClass::Compact] {
-        let done = line(&plan, class);
-        assert!(done.ends_with("■ CYCLE 1"), "{done}");
-        assert!(!done.contains("paused"), "{done}");
+    s.cycle = Some(CycleView {
+        plan,
+        step_hunts: &[],
+        resume: None,
+    });
+    plain(&stage_line(
+        &scene(&s, start, &TimeZone::UTC, Colours::Full),
+        class,
+        false,
+    ))
+}
+
+fn paused_cycle(steps: [bool; 2], current: usize) -> CyclePlan {
+    CyclePlan {
+        number: std::num::NonZeroU32::new(1),
+        open: true,
+        steps: steps.map(cycle_step).to_vec(),
+        current,
+        paused: true,
     }
-    plan.steps[1].done = false;
-    plan.current = 1;
-    let open = line(&plan, SizeClass::Wide);
+}
+
+#[test_case(SizeClass::Wide; "wide")]
+#[test_case(SizeClass::Compact; "compact")]
+fn a_cycle_with_every_step_done_names_no_step_it_pauses_at(class: SizeClass) {
+    let done = cycle_stage_line(&paused_cycle([true, true], 2), class);
+    assert!(done.ends_with("■ CYCLE 1"), "{done}");
+    assert!(!done.contains("paused"), "{done}");
+}
+
+#[test]
+fn a_paused_cycle_with_an_open_step_names_it() {
+    let open = cycle_stage_line(&paused_cycle([true, false], 1), SizeClass::Wide);
     assert!(open.ends_with("○ CYCLE 1  paused at step 2 of 2"), "{open}");
 }
 
@@ -518,13 +564,13 @@ fn a_hunt_in_phase_two_holds_the_stage_without_running_it() {
     };
     let hunting = line(true);
     assert!(
-        hunting.contains("○ PHASE 2  round 3 · at most 2 left"),
+        hunting.contains("○ PHASE 2  round 3 · 2 left if none fails"),
         "{hunting}"
     );
     assert!(!hunting.contains("► PHASE 2"), "{hunting}");
     let quiet = line(false);
     assert!(
-        quiet.contains("► PHASE 2  round 3 · at most 2 left"),
+        quiet.contains("► PHASE 2  round 3 · 2 left if none fails"),
         "{quiet}"
     );
 }
@@ -638,117 +684,92 @@ fn every_state_has_its_word() {
     assert_eq!(state_word(CoreState::Parked), "PARKED");
 }
 
-#[test]
-fn a_ccd_role_counts_load_and_probes() {
+fn role_of_ccd_zero(states: &[(CoreState, bool)]) -> (String, String) {
     let model = Model::new();
     let zone = TimeZone::UTC;
-    for (name, cores, want) in [
-        (
-            "parked with a load left",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Parked)
-                },
-                core_view(1, 0, CoreState::Parked),
-            ],
-            "parked at 0, 1 under load",
-        ),
-        (
-            "parked and idle",
-            vec![
-                core_view(0, 0, CoreState::Parked),
-                core_view(1, 0, CoreState::Parked),
-            ],
-            "parked at 0, idle",
-        ),
-        (
-            "a member probed",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Member)
-                },
-                CoreView {
-                    loaded: true,
-                    ..core_view(1, 0, CoreState::Probe)
-                },
-            ],
-            "members, one probed shallower than its failing offset",
-        ),
-        (
-            "parked and every core still loaded",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Parked)
-                },
-                CoreView {
-                    loaded: true,
-                    ..core_view(1, 0, CoreState::Parked)
-                },
-            ],
-            "parked at 0, still under load",
-        ),
-        (
-            "every suspect loaded",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Suspect)
-                },
-                CoreView {
-                    loaded: true,
-                    ..core_view(1, 0, CoreState::Suspect)
-                },
-            ],
-            "suspects at their failing offsets",
-        ),
-        (
-            "every member loaded and none probed",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Member)
-                },
-                CoreView {
-                    loaded: true,
-                    ..core_view(1, 0, CoreState::Member)
-                },
-            ],
-            "members at their failing offsets",
-        ),
-        (
-            "every core loaded in mixed states",
-            vec![
-                CoreView {
-                    loaded: true,
-                    ..core_view(0, 0, CoreState::Suspect)
-                },
-                CoreView {
-                    loaded: true,
-                    ..core_view(1, 0, CoreState::Member)
-                },
-            ],
-            "all under load",
-        ),
-    ] {
-        let mut s = model.snapshot();
-        s.cores = &cores;
-        let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-        assert_eq!(
-            ccd_role(&scene, CcdId::try_from(0_u8).unwrap()).0,
-            want,
-            "{name}"
-        );
-    }
+    let cores: Vec<CoreView> = states
+        .iter()
+        .enumerate()
+        .map(|(id, &(state, loaded))| CoreView {
+            loaded,
+            ..core_view(u8::try_from(id).unwrap(), 0, state)
+        })
+        .collect();
     let mut s = model.snapshot();
-    let none: [CoreView; 0] = [];
-    s.cores = &none;
+    s.cores = &cores;
+    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
+    ccd_role(&scene, CcdId::try_from(0_u8).unwrap())
+}
+
+#[test_case(
+    &[(CoreState::Parked, true), (CoreState::Parked, false)],
+    "parked at 0, 1 under load";
+    "parked with a load left"
+)]
+#[test_case(
+    &[(CoreState::Parked, false), (CoreState::Parked, false)],
+    "parked at 0, idle";
+    "parked and idle"
+)]
+#[test_case(
+    &[(CoreState::Member, true), (CoreState::Probe, true)],
+    "members, one probed shallower than its failing offset";
+    "a member probed"
+)]
+#[test_case(
+    &[(CoreState::Parked, true), (CoreState::Parked, true)],
+    "parked at 0, still under load";
+    "parked and every core still loaded"
+)]
+#[test_case(
+    &[(CoreState::Suspect, true), (CoreState::Suspect, true)],
+    "suspects at their failing offsets";
+    "every suspect loaded"
+)]
+#[test_case(
+    &[(CoreState::Member, true), (CoreState::Member, true)],
+    "members at their failing offsets";
+    "every member loaded and none probed"
+)]
+#[test_case(
+    &[(CoreState::Suspect, true), (CoreState::Member, true)],
+    "all under load";
+    "every core loaded in mixed states"
+)]
+fn a_ccd_role_counts_load_and_probes(states: &[(CoreState, bool)], want: &str) {
+    assert_eq!(role_of_ccd_zero(states).0, want);
+}
+
+#[test]
+fn a_ccd_with_no_cores_has_no_role() {
+    assert_eq!(role_of_ccd_zero(&[]), (String::new(), String::new()));
+}
+
+#[test]
+fn a_partly_loaded_ccd_counts_its_loaded_and_judged_cores() {
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let cores = [
+        CoreView {
+            loaded: true,
+            ..core_view(0, 0, CoreState::Search)
+        },
+        CoreView {
+            loaded: true,
+            ..core_view(1, 0, CoreState::Search)
+        },
+        CoreView {
+            judged: true,
+            ..core_view(2, 0, CoreState::Search)
+        },
+        core_view(3, 0, CoreState::Search),
+    ];
+    let mut s = model.snapshot();
+    s.cores = &cores;
     let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
     assert_eq!(
         ccd_role(&scene, CcdId::try_from(0_u8).unwrap()),
-        (String::new(), String::new())
+        ("2 under load · 1 judged".to_owned(), "2 loaded".to_owned())
     );
 }
 
@@ -789,31 +810,27 @@ fn a_gauge_shows_the_depth_a_combination_holds() {
     );
 }
 
-#[test]
-fn a_failure_point_is_a_half_height_bar_in_both_cell_widths() {
+#[test_case(50, Colours::None; "a wide cell, no colour")]
+#[test_case(25, Colours::None; "a narrow cell, no colour")]
+#[test_case(25, Colours::Full; "a narrow cell, full colour")]
+fn a_failure_point_is_a_half_height_bar_in_both_cell_widths(cells: usize, colours: Colours) {
     let model = Model::new();
     let zone = TimeZone::UTC;
     let core = CoreView {
         fail: Some(off(-8)),
         ..core_view(0, 0, CoreState::AtLimit)
     };
-    for (cells, colours) in [
-        (50, Colours::None),
-        (25, Colours::None),
-        (25, Colours::Full),
-    ] {
-        let scene = scene(&model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
-        let line = gauge(&scene, &core, Some(-4), cells);
-        let text = plain(&line);
-        assert_eq!(text.matches('▬').count(), 1, "{cells} cells: {text:?}");
-        assert!(!text.contains('█'), "{cells} cells: {text:?}");
-        let bad = line
-            .spans
-            .iter()
-            .find(|span| span.content.contains('▬'))
-            .map(|span| span.style);
-        assert_eq!(bad, Some(Paint::Bad.style(colours)), "{cells} cells");
-    }
+    let scene = scene(&model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
+    let line = gauge(&scene, &core, Some(-4), cells);
+    let text = plain(&line);
+    assert_eq!(text.matches('▬').count(), 1, "{cells} cells: {text:?}");
+    assert!(!text.contains('█'), "{cells} cells: {text:?}");
+    let bad = line
+        .spans
+        .iter()
+        .find(|span| span.content.contains('▬'))
+        .map(|span| span.style);
+    assert_eq!(bad, Some(Paint::Bad.style(colours)), "{cells} cells");
 }
 
 #[test]
@@ -956,8 +973,10 @@ fn a_ccd_table_names_its_columns_and_counts_what_it_leaves_out() {
     assert!(brief[0].contains("fail"), "{:?}", brief[0]);
 }
 
-#[test]
-fn core_rows_mark_the_running_workloads_top_requesters() {
+#[test_case(75, false, "top by offset"; "a wide row says top by offset")]
+#[test_case(60, true, "offset top"; "a brief row shortens it")]
+#[test_case(57, true, ""; "a brief row too narrow for it leaves it out")]
+fn core_rows_mark_the_running_workloads_top_requesters(width: u16, brief: bool, want: &str) {
     let first = WorkloadId::new(Regime::R7, 0).expect("a workload");
     let second = WorkloadId::new(Regime::R7, 1).expect("a workload");
     let status = |core_id: u8, workload, proxy| R7CoreStatus {
@@ -977,61 +996,55 @@ fn core_rows_mark_the_running_workloads_top_requesters() {
     let running = trial(Regime::R7, None, 120);
     let mut running = running;
     running.workload = second;
-    for (width, brief, want) in [
-        (75, false, "top by offset"),
-        (60, true, "offset top"),
-        (57, true, ""),
-    ] {
-        let model = Model::new();
-        let zone = TimeZone::UTC;
-        let view = session(Timestamp::UNIX_EPOCH);
-        let mut s = model.snapshot();
-        s.session = Some(&view);
-        s.cores = &cores;
-        s.r7 = &statuses;
-        s.trial = Some(&running);
-        let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-        let rect = Rect::new(0, 0, width, 4);
-        let mut buf = Buffer::empty(rect);
-        let columns = if brief {
-            CoreColumns {
-                id: 2,
-                offset: 5,
-                state: 9,
-                gauge: 18,
-                cells: 25,
-                failure: 44,
-                note: 50,
-                brief: true,
-            }
-        } else {
-            CoreColumns {
-                id: 2,
-                offset: 6,
-                state: 11,
-                gauge: 21,
-                cells: 25,
-                failure: 48,
-                note: 56,
-                brief: false,
-            }
-        };
-        super::draw_ccd(
-            &mut buf,
-            &Ccd {
-                id: CcdId::try_from(0_u8).unwrap(),
-                rect,
-                columns,
-            },
-            &scene,
-        );
-        let rows = rows_of(&buf);
-        assert!(!rows[1].contains("top"), "{:?}", rows[1]);
-        if want.is_empty() {
-            assert!(!rows[2].contains("top"), "{width}: {:?}", rows[2]);
-        } else {
-            assert!(rows[2].trim_end().ends_with(want), "{width}: {:?}", rows[2]);
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let view = session(Timestamp::UNIX_EPOCH);
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.cores = &cores;
+    s.r7 = &statuses;
+    s.trial = Some(&running);
+    let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
+    let rect = Rect::new(0, 0, width, 4);
+    let mut buf = Buffer::empty(rect);
+    let columns = if brief {
+        CoreColumns {
+            id: 2,
+            offset: 5,
+            state: 9,
+            gauge: 18,
+            cells: 25,
+            failure: 44,
+            note: 50,
+            brief: true,
         }
+    } else {
+        CoreColumns {
+            id: 2,
+            offset: 6,
+            state: 11,
+            gauge: 21,
+            cells: 25,
+            failure: 48,
+            note: 56,
+            brief: false,
+        }
+    };
+    super::draw_ccd(
+        &mut buf,
+        &Ccd {
+            id: CcdId::try_from(0_u8).unwrap(),
+            rect,
+            columns,
+        },
+        &scene,
+    );
+    let rows = rows_of(&buf);
+    assert!(!rows[1].contains("top"), "{:?}", rows[1]);
+    if want.is_empty() {
+        assert!(!rows[2].contains("top"), "{width}: {:?}", rows[2]);
+    } else {
+        assert!(rows[2].trim_end().ends_with(want), "{width}: {:?}", rows[2]);
     }
 }
 

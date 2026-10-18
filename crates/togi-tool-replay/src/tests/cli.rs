@@ -159,28 +159,24 @@ fn at_prints_one_frame_of_the_recording_in_the_supplied_time_zone() {
     assert_eq!(String::from_utf8(out).unwrap(), want);
 }
 
-#[test]
-fn every_page_can_be_printed() {
+#[test_case("main", View::Main; "main view")]
+#[test_case("help", View::Help; "help view")]
+#[test_case("log", View::Log; "log view")]
+fn every_view_can_be_printed(name: &str, view: View) {
     let bytes = recording(Scenario::Checking);
     let events = Scenario::Checking.events().unwrap();
-    for (name, view) in [
-        ("main", View::Main),
-        ("help", View::Help),
-        ("log", View::Log),
-    ] {
-        let cli = parse(&["--at", "30", "--view", name]).unwrap();
-        let mut out = Vec::new();
-        assert!(run(&cli, &bytes, &mut out).is_empty());
-        let frame = Frame {
-            view,
-            width: 240,
-            height: 67,
-            colour: false,
-            after: SignedDuration::ZERO,
-        };
-        let want = draw(&events, prefix(&events, 30), &frame, &TimeZone::UTC).unwrap();
-        assert_eq!(String::from_utf8(out).unwrap(), want, "{name}");
-    }
+    let cli = parse(&["--at", "30", "--view", name]).unwrap();
+    let mut out = Vec::new();
+    assert!(run(&cli, &bytes, &mut out).is_empty());
+    let frame = Frame {
+        view,
+        width: 240,
+        height: 67,
+        colour: false,
+        after: SignedDuration::ZERO,
+    };
+    let want = draw(&events, prefix(&events, 30), &frame, &TimeZone::UTC).unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), want);
 }
 
 #[test]

@@ -29,7 +29,7 @@ expression: body
 │                                                             15:15  room     core 14 -10 → -11
 │ PHASE 2 · ROUND 1 ───────────────────────────────────────   15:15  room     core 06 -10 → -11
 │                                                             15:15  room     core 13 -10 → -11
-│ at most 1 round left, then one full cycle                   15:15  room     core 05 -10 → -11
+│ 1 round left if none fails, then one full cycle             15:15  room     core 05 -10 → -11
 │ cores 00-10 12-15  -10 → solo -11  gap 1  moving            15:15  room     core 12 -10 → -11
 │ +38 more                                                    +277 more
 │

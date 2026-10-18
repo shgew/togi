@@ -4,6 +4,7 @@
 
 use super::super::Story;
 use super::*;
+use test_case::test_case;
 
 fn dead_end(condition: DeadEndCondition, detail: &str) -> DeadEndView {
     DeadEndView {
@@ -585,7 +586,6 @@ fn a_cycle_step_that_finished_after_two_hunts_lists_them() {
 /// that starts its search over.
 #[test]
 fn outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure() {
-    use crate::tests::kit::{Start, transition};
     let mut fx = running();
     let mut zero = [0, 3].map(|id| {
         let mut one = branch(Premise::Named(core(id)));
@@ -623,30 +623,44 @@ fn outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure() {
         ],
         "{labels:?}"
     );
+}
 
-    for decisions in [
-        Vec::new(),
-        vec![DecisionPayload::TunerDecision(backoff(1, -31, -30, None))],
-    ] {
-        let mut pass = branch(Premise::Pass);
-        pass.decisions.clone_from(&decisions);
-        let mut failed = branch(Premise::Named(core(0)));
-        failed.decisions.clone_from(&decisions);
-        failed.at_zero = true;
-        fx.forecast.branches = vec![pass, failed];
-        let rows = fx.row_set();
-        assert!(!rows.is_empty(), "{decisions:?}");
-        if decisions.is_empty() {
-            assert_eq!(
-                rows.iter()
-                    .map(|row| row.label.as_str())
-                    .collect::<Vec<_>>(),
-                ["pass or fail"],
-                "a pass and a failure with nothing to add are one row"
-            );
-        }
+/// A pass and a failure at 0 that add nothing are one row; with a decision to share they still say something.
+#[test_case(&[], Some("pass or fail"); "nothing to add is one row")]
+#[test_case(
+    &[DecisionPayload::TunerDecision(backoff(1, -31, -30, None))],
+    None;
+    "a shared backoff"
+)]
+fn a_pass_and_a_failure_at_zero_merge_only_when_they_add_nothing(
+    decisions: &[DecisionPayload],
+    merged: Option<&str>,
+) {
+    let mut fx = running();
+    let mut pass = branch(Premise::Pass);
+    decisions.clone_into(&mut pass.decisions);
+    let mut failed = branch(Premise::Named(core(0)));
+    decisions.clone_into(&mut failed.decisions);
+    failed.at_zero = true;
+    fx.forecast.branches = vec![pass, failed];
+    let rows = fx.row_set();
+    assert!(!rows.is_empty(), "{decisions:?}");
+    if let Some(label) = merged {
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.label.as_str())
+                .collect::<Vec<_>>(),
+            [label],
+            "a pass and a failure with nothing to add are one row"
+        );
     }
+}
 
+#[test_case(Premise::Pass; "a pass")]
+#[test_case(Premise::Unnamed; "an unnamed failure")]
+#[test_case(Premise::Inconclusive; "an inconclusive trial")]
+fn a_core_that_starts_its_search_over_is_named_under_every_premise(premise: Premise) {
+    use crate::tests::kit::{Start, transition};
     let restart = Start {
         from: Some(togi_journal::CorePhase::AtLimit),
         to: togi_journal::CorePhase::Search,
@@ -654,15 +668,14 @@ fn outcome_rows_name_the_ccd_of_a_zero_core_and_merge_a_pass_with_a_failure() {
         pass: None,
         fail: None,
     };
-    for premise in [Premise::Pass, Premise::Unnamed, Premise::Inconclusive] {
-        let mut one = branch(premise);
-        one.decisions = vec![DecisionPayload::CorePhase(transition(1, restart))];
-        fx.forecast.branches = vec![one];
-        let rows = fx.rows();
-        assert!(
-            rows.iter()
-                .any(|row| row.contains("core 01 starts its search over")),
-            "{premise:?}: {rows:?}"
-        );
-    }
+    let mut fx = running();
+    let mut one = branch(premise);
+    one.decisions = vec![DecisionPayload::CorePhase(transition(1, restart))];
+    fx.forecast.branches = vec![one];
+    let rows = fx.rows();
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("core 01 starts its search over")),
+        "{premise:?}: {rows:?}"
+    );
 }

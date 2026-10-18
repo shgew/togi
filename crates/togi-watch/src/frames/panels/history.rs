@@ -133,6 +133,7 @@ fn verdict_sentence(scene: &Scene<'_>, failed: &Failed, room: usize) -> Line<'st
 mod tests {
     use jiff::tz::TimeZone;
     use ratatui::text::Line;
+    use test_case::test_case;
 
     use super::super::super::colours::Paint;
     use super::super::super::fit::{cut_words, line_width, plain};
@@ -197,95 +198,87 @@ mod tests {
         }
     }
 
-    #[test]
-    fn tiny_and_tall_budgets_count_every_entry_left_out() {
+    #[test_case(0, 0, 0, ""; "no rows")]
+    #[test_case(1, 1, 0, "+701 more"; "one row")]
+    #[test_case(2, 2, 0, "+701 more"; "two rows")]
+    #[test_case(3, 3, 0, "+701 more"; "three rows")]
+    #[test_case(10, 10, 7, "+694 more"; "ten rows")]
+    #[test_case(202, 202, 199, "+502 more"; "one short of every entry")]
+    #[test_case(203, 203, 200, "+501 more"; "every entry")]
+    #[test_case(222, 203, 200, "+501 more"; "more room than entries")]
+    fn tiny_and_tall_budgets_count_every_entry_left_out(
+        height: usize,
+        rows: usize,
+        shown: usize,
+        footer: &str,
+    ) {
         let kept = entries(HISTORY_LIMIT);
         let dropped = 501;
-        for (height, rows, shown, footer) in [
-            (0, 0, 0, ""),
-            (1, 1, 0, "+701 more"),
-            (2, 2, 0, "+701 more"),
-            (3, 3, 0, "+701 more"),
-            (10, 10, 7, "+694 more"),
-            (202, 202, 199, "+502 more"),
-            (203, 203, 200, "+501 more"),
-            (222, 203, 200, "+501 more"),
-        ] {
-            let drawn = texts(&panel(&kept, dropped, 100, height));
-            assert_budget("tiny and tall", &drawn, 100, height, rows, footer);
-            if drawn.len() == rows && shown > 0 {
-                for (i, entry) in kept[..shown].iter().enumerate() {
-                    let want = cut_words(&entry.text(), 84);
-                    assert!(
-                        drawn[2 + i].ends_with(&want),
-                        "height {height}: entry {i} is {:?}, want suffix {want:?}",
-                        drawn[2 + i]
-                    );
-                }
-            }
-        }
-        assert!(panel(&kept, dropped, 0, 10).is_empty());
-    }
-
-    #[test]
-    fn empty_and_small_budgets_leave_nothing_uncounted() {
-        let one = entries(1);
-        let three = entries(3);
-        for (name, kept, dropped, budgets) in [
-            (
-                "empty",
-                &[][..],
-                0,
-                vec![(0, 0, ""), (1, 1, ""), (2, 2, ""), (3, 2, ""), (10, 2, "")],
-            ),
-            (
-                "one entry",
-                &one,
-                0,
-                vec![
-                    (0, 0, ""),
-                    (1, 1, "+1 more"),
-                    (2, 2, "+1 more"),
-                    (3, 3, ""),
-                    (10, 3, ""),
-                ],
-            ),
-            (
-                "three entries",
-                &three,
-                0,
-                vec![
-                    (0, 0, ""),
-                    (1, 1, "+3 more"),
-                    (2, 2, "+3 more"),
-                    (3, 3, "+3 more"),
-                    (4, 4, "+2 more"),
-                    (5, 5, ""),
-                    (10, 5, ""),
-                ],
-            ),
-            (
-                "only dropped entries",
-                &[][..],
-                7,
-                vec![
-                    (0, 0, ""),
-                    (1, 1, "+7 more"),
-                    (2, 2, "+7 more"),
-                    (3, 3, "+7 more"),
-                    (10, 3, "+7 more"),
-                ],
-            ),
-        ] {
-            for (height, rows, footer) in budgets {
-                let drawn = texts(&panel(kept, dropped, 100, height));
-                assert_budget(name, &drawn, 100, height, rows, footer);
+        let drawn = texts(&panel(&kept, dropped, 100, height));
+        assert_budget("tiny and tall", &drawn, 100, height, rows, footer);
+        if drawn.len() == rows && shown > 0 {
+            for (i, entry) in kept[..shown].iter().enumerate() {
+                let want = cut_words(&entry.text(), 84);
+                assert!(
+                    drawn[2 + i].ends_with(&want),
+                    "height {height}: entry {i} is {:?}, want suffix {want:?}",
+                    drawn[2 + i]
+                );
             }
         }
     }
 
     #[test]
-    fn the_panel_counts_every_entry_the_model_left_out() {
+    fn a_zero_width_panel_is_empty() {
+        let kept = entries(HISTORY_LIMIT);
+        assert!(panel(&kept, 501, 0, 10).is_empty());
+    }
+
+    #[test_case(0, 0, ""; "no rows")]
+    #[test_case(1, 1, ""; "one row")]
+    #[test_case(2, 2, ""; "two rows")]
+    #[test_case(3, 2, ""; "three rows")]
+    #[test_case(10, 2, ""; "ten rows")]
+    fn an_empty_history_leaves_nothing_uncounted(height: usize, rows: usize, footer: &str) {
+        let drawn = texts(&panel(&[], 0, 100, height));
+        assert_budget("empty", &drawn, 100, height, rows, footer);
+    }
+
+    #[test_case(0, 0, ""; "no rows")]
+    #[test_case(1, 1, "+1 more"; "one row")]
+    #[test_case(2, 2, "+1 more"; "two rows")]
+    #[test_case(3, 3, ""; "three rows")]
+    #[test_case(10, 3, ""; "ten rows")]
+    fn one_entry_leaves_nothing_uncounted(height: usize, rows: usize, footer: &str) {
+        let drawn = texts(&panel(&entries(1), 0, 100, height));
+        assert_budget("one entry", &drawn, 100, height, rows, footer);
+    }
+
+    #[test_case(0, 0, ""; "no rows")]
+    #[test_case(1, 1, "+3 more"; "one row")]
+    #[test_case(2, 2, "+3 more"; "two rows")]
+    #[test_case(3, 3, "+3 more"; "three rows")]
+    #[test_case(4, 4, "+2 more"; "four rows")]
+    #[test_case(5, 5, ""; "five rows")]
+    #[test_case(10, 5, ""; "ten rows")]
+    fn three_entries_leave_nothing_uncounted(height: usize, rows: usize, footer: &str) {
+        let drawn = texts(&panel(&entries(3), 0, 100, height));
+        assert_budget("three entries", &drawn, 100, height, rows, footer);
+    }
+
+    #[test_case(0, 0, ""; "no rows")]
+    #[test_case(1, 1, "+7 more"; "one row")]
+    #[test_case(2, 2, "+7 more"; "two rows")]
+    #[test_case(3, 3, "+7 more"; "three rows")]
+    #[test_case(10, 3, "+7 more"; "ten rows")]
+    fn only_dropped_entries_leave_nothing_uncounted(height: usize, rows: usize, footer: &str) {
+        let drawn = texts(&panel(&[], 7, 100, height));
+        assert_budget("only dropped entries", &drawn, 100, height, rows, footer);
+    }
+
+    #[test_case(2 + HISTORY_LIMIT + 20, 2 + HISTORY_LIMIT + 1, HISTORY_LIMIT; "room for every kept entry")]
+    #[test_case(2 + 50, 2 + 50, 49; "room for fifty rows")]
+    fn the_panel_counts_every_entry_the_model_left_out(height: usize, rows: usize, shown: usize) {
         let mut script = Script::new(&[(0, 0)], &[]);
         for i in 0..2 * HISTORY_LIMIT + 5 {
             script.append(warning(&i.to_string()), &[]);
@@ -296,19 +289,13 @@ mod tests {
         let total = s.history_dropped + s.history.len();
         assert!(total > 2 * HISTORY_LIMIT);
         let zone = TimeZone::UTC;
-        let scene = scene(&s, &zone);
-        for (height, rows, left_out) in [
-            (
-                2 + HISTORY_LIMIT + 20,
-                2 + HISTORY_LIMIT + 1,
-                s.history_dropped,
-            ),
-            (2 + 50, 2 + 50, total - 49),
-        ] {
-            let drawn = texts(&history(&scene, 100, height));
-            assert_eq!(drawn.len(), rows);
-            assert_eq!(drawn.last(), Some(&format!("+{left_out} more")));
-        }
+        let drawn = texts(&history(&scene(&s, &zone), 100, height));
+        assert_eq!(drawn.len(), rows);
+        assert_eq!(drawn.last(), Some(&format!("+{} more", total - shown)));
+    }
+
+    #[test]
+    fn a_panel_with_room_for_every_entry_has_no_count_row() {
         let mut short = Script::new(&[(0, 0)], &[]);
         for i in 0..4 {
             short.append(warning(&i.to_string()), &[]);
@@ -400,32 +387,24 @@ mod tests {
         assert_eq!(rows[2], "00:16  note     x\\x1b[2Jy \\u009b31m");
     }
 
-    #[test]
-    fn a_tag_is_painted_by_its_entry_s_tone() {
-        for (tone, paint) in [
-            (Tone::Plain, Paint::Text),
-            (Tone::Good, Paint::Good),
-            (Tone::Bad, Paint::Bad),
-            (Tone::Warn, Paint::Hunt),
-            (Tone::Hunt, Paint::Hunt),
-            (Tone::Combo, Paint::Combination),
-        ] {
-            let kept = [Entry::line(at(1000), Tag::Note, "x".to_owned(), tone)];
-            let model = Model::new();
-            let mut s = model.snapshot();
-            s.history = &kept;
-            let zone = TimeZone::UTC;
-            let colourful = super::super::super::scene::Scene {
-                colours: Colours::Full,
-                ..scene(&s, &zone)
-            };
-            let rows = history(&colourful, 100, 4);
-            assert_eq!(
-                rows[2].spans[2].style,
-                paint.style(Colours::Full),
-                "{tone:?}"
-            );
-        }
+    #[test_case(Tone::Plain, Paint::Text; "plain")]
+    #[test_case(Tone::Good, Paint::Good; "good")]
+    #[test_case(Tone::Bad, Paint::Bad; "bad")]
+    #[test_case(Tone::Warn, Paint::Hunt; "warn")]
+    #[test_case(Tone::Hunt, Paint::Hunt; "hunt")]
+    #[test_case(Tone::Combo, Paint::Combination; "combo")]
+    fn a_tag_is_painted_by_its_entry_s_tone(tone: Tone, paint: Paint) {
+        let kept = [Entry::line(at(1000), Tag::Note, "x".to_owned(), tone)];
+        let model = Model::new();
+        let mut s = model.snapshot();
+        s.history = &kept;
+        let zone = TimeZone::UTC;
+        let colourful = super::super::super::scene::Scene {
+            colours: Colours::Full,
+            ..scene(&s, &zone)
+        };
+        let rows = history(&colourful, 100, 4);
+        assert_eq!(rows[2].spans[2].style, paint.style(Colours::Full));
     }
 
     /// The history pane of the Medium class at 160x45: 75 cells, 16 of them before the sentence.

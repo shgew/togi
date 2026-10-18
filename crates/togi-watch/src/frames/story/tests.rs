@@ -799,7 +799,7 @@ mod the_story {
         let scene = fx.scene(ts(1010));
         let said = story(&scene);
         assert_eq!(said.label, "PHASE 2 · ROUND 1");
-        assert!(said.lines[0].starts_with("Round 1 checks again the offsets kept from the round that ended unpassed; at most 2 rounds left"));
+        assert!(said.lines[0].starts_with("Round 1 checks again the offsets kept from the round that ended unpassed; 2 rounds left if none fails, then one full cycle."));
         assert!(!said.lines.join(" ").contains(" alone at "));
         assert_eq!(plain(&operation(&scene, &together)), "PHASE 2 · ROUND 1");
     }
@@ -828,7 +828,7 @@ mod the_story {
             candidates: vec![candidate(0, true), candidate(1, false), candidate(2, true)],
         });
         let said = story(&fx.scene(ts(1010)));
-        assert!(said.lines[0].starts_with("Round 2 moves cores 00, 02 one count toward their solo limits; at most 1 round left, then one full cycle."));
+        assert!(said.lines[0].starts_with("Round 2 moves cores 00, 02 one count toward their solo limits; 1 round left if none fails, then one full cycle."));
         assert_eq!(said.brief, "Checking round 2's proposed profile.");
     }
 
@@ -1995,6 +1995,7 @@ mod the_trial_band {
 
 mod the_resting_band {
     use super::*;
+    use test_case::test_case;
 
     #[test]
     fn between_trials_names_the_last_outcome_and_what_comes_next_not_a_countdown() {
@@ -2103,22 +2104,6 @@ mod the_resting_band {
             last_lines(&full)[0].spans[1].style,
             Paint::Good.style(Colours::Full)
         );
-        for (outcome, signal, word, paint) in [
-            (
-                Outcome::Failure,
-                Some(Signal::ComputationError),
-                "FAILURE",
-                Paint::Bad,
-            ),
-            (Outcome::Failure, Some(Signal::Crash), "CRASH", Paint::Bad),
-            (Outcome::Inconclusive, None, "INCONCLUSIVE", Paint::Hunt),
-        ] {
-            fx.last = Some(end_view(outcome, signal));
-            let full = Scene::new(fx.snap(), ts(1), &UTC, Colours::Full);
-            let line = &last_lines(&full)[0];
-            assert_eq!(line.spans[1].content, word);
-            assert_eq!(line.spans[1].style, paint.style(Colours::Full));
-        }
         fx.last = Some(end_view(Outcome::Failure, Some(Signal::ComputationError)));
         assert_eq!(
             text(&last_lines(&fx.scene(ts(1))))[0],
@@ -2130,10 +2115,28 @@ mod the_resting_band {
             "last trial      CRASH  on 00 01"
         );
     }
+
+    #[test_case(Outcome::Failure, Some(Signal::ComputationError), "FAILURE", Paint::Bad; "a wrong result")]
+    #[test_case(Outcome::Failure, Some(Signal::Crash), "CRASH", Paint::Bad; "a crash")]
+    #[test_case(Outcome::Inconclusive, None, "INCONCLUSIVE", Paint::Hunt; "an inconclusive trial")]
+    fn the_last_trial_word_takes_its_outcomes_colour(
+        outcome: Outcome,
+        signal: Option<Signal>,
+        word: &str,
+        paint: Paint,
+    ) {
+        let mut fx = Fx::new();
+        fx.last = Some(end_view(outcome, signal));
+        let full = Scene::new(fx.snap(), ts(1), &UTC, Colours::Full);
+        let line = &last_lines(&full)[0];
+        assert_eq!(line.spans[1].content, word);
+        assert_eq!(line.spans[1].style, paint.style(Colours::Full));
+    }
 }
 
 mod the_outcome_lines {
     use super::*;
+    use test_case::test_case;
 
     fn same_part_fx() -> Fx {
         let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1)]);
@@ -2239,6 +2242,47 @@ mod the_outcome_lines {
     }
 
     #[test]
+    fn a_pass_that_records_the_step_says_the_step_is_done_once() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (3, 1)]);
+        let steps = vec![
+            step(
+                Regime::R2,
+                vec![part(&[1], None, true, false), part(&[3], None, true, false)],
+            ),
+            step(Regime::R6, vec![part(&[1, 3], None, true, false)]),
+        ];
+        fx.cycle = Some((cycle_plan(1, steps, 0), vec![Vec::new(); 2], None));
+        fx.trial = Some(counted(
+            in_cycle(alone(Regime::R2, 3, -16), 1, 1, 2, 2),
+            0,
+            1,
+            1,
+        ));
+        let mut pass = branch(Premise::Pass);
+        pass.passes = 1;
+        pass.decisions = vec![DecisionPayload::CheckingStep(CheckingStep {
+            cycle: nz(1),
+            step: nz(2),
+            profile: PerCore::default(),
+        })];
+        pass.next = Some(plan(
+            Regime::R6,
+            many(&[1, 3]),
+            Condition::Together,
+            cycle_ctx(1, 2),
+            900,
+        ));
+        fx.forecast.branches = vec![pass];
+        let idle = crate::words::workload_display(workloads(Regime::R6)[0].id());
+        assert_eq!(
+            fx.rows(),
+            [format!(
+                "if it passes | step 1 is done; next trial: step 2: R6 idle + bursts with {idle}"
+            )]
+        );
+    }
+
+    #[test]
     fn the_forecast_names_the_all_zero_rerun_after_a_rerun() {
         let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
         let mut rerun = trial(Regime::R6, Condition::Together, &[0, 1]);
@@ -2330,43 +2374,39 @@ mod the_outcome_lines {
         (fx, next)
     }
 
-    #[test]
-    fn a_backoff_forecast_is_conditional_on_earlier_requests() {
-        for (fallback, want) in [
-            (false, "core 00 -31 → -30 per earlier requests"),
-            (true, "core 00 -31 → -30 per offset order"),
-        ] {
-            let (mut fx, next) = r7_fx();
-            let mut pass = branch(Premise::Pass);
-            pass.next = Some(next.clone());
-            pass.without_telemetry = true;
-            let mut unnamed = branch(Premise::Unnamed);
-            unnamed.decisions = vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))];
-            unnamed.next = Some(next);
-            unnamed.without_telemetry = true;
-            unnamed.offset_order = fallback;
-            fx.forecast.branches = vec![pass, unnamed];
-            let rows = fx.row_set();
-            assert_eq!(rows.len(), 2);
-            assert!(
-                !fit_phrases(&rows[0].phrases, 200).contains("per "),
-                "a pass decides nothing from requests"
-            );
-            assert_eq!(rows[0].basis, None);
-            let backoff_row = fit_phrases(&rows[1].phrases, 200);
-            assert!(backoff_row.starts_with(want), "{backoff_row}");
-            let basis = rows[1].basis.expect("a basis");
-            let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
-            assert!(
-                compact[0].contains(&format!("backoffs {basis}")),
-                "{compact:?}"
-            );
-            let narrow = text(&outcome_lines(&fx.scene(ts(1)), 70, true));
-            assert!(
-                narrow[0].contains(basis) || narrow[0].contains('?'),
-                "the basis stays on screen: {narrow:?}"
-            );
-        }
+    #[test_case(false, "core 00 -31 → -30 per earlier requests"; "requests order the backoff")]
+    #[test_case(true, "core 00 -31 → -30 per offset order"; "offset order falls back")]
+    fn a_backoff_forecast_is_conditional_on_earlier_requests(fallback: bool, want: &str) {
+        let (mut fx, next) = r7_fx();
+        let mut pass = branch(Premise::Pass);
+        pass.next = Some(next.clone());
+        pass.without_telemetry = true;
+        let mut unnamed = branch(Premise::Unnamed);
+        unnamed.decisions = vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))];
+        unnamed.next = Some(next);
+        unnamed.without_telemetry = true;
+        unnamed.offset_order = fallback;
+        fx.forecast.branches = vec![pass, unnamed];
+        let rows = fx.row_set();
+        assert_eq!(rows.len(), 2);
+        assert!(
+            !fit_phrases(&rows[0].phrases, 200).contains("per "),
+            "a pass decides nothing from requests"
+        );
+        assert_eq!(rows[0].basis, None);
+        let backoff_row = fit_phrases(&rows[1].phrases, 200);
+        assert!(backoff_row.starts_with(want), "{backoff_row}");
+        let basis = rows[1].basis.expect("a basis");
+        let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
+        assert!(
+            compact[0].contains(&format!("backoffs {basis}")),
+            "{compact:?}"
+        );
+        let narrow = text(&outcome_lines(&fx.scene(ts(1)), 70, true));
+        assert!(
+            narrow[0].contains(basis) || narrow[0].contains('?'),
+            "the basis stays on screen: {narrow:?}"
+        );
     }
 
     #[test]
@@ -2481,8 +2521,12 @@ mod the_outcome_lines {
         );
     }
 
-    #[test]
-    fn a_pass_forecast_names_the_derived_partial_and_its_basis() {
+    #[test_case(vec![seq(5)], "per earlier requests"; "sources from earlier requests")]
+    #[test_case(Vec::new(), "per offset order"; "no sources fall back to offset order")]
+    fn a_pass_forecast_names_the_derived_partial_and_its_basis(
+        sources: Vec<togi_journal::Seq>,
+        basis: &'static str,
+    ) {
         let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
         let full_part = {
             let mut part = part(&[0, 1, 2, 3], Some(0), true, true);
@@ -2515,42 +2559,37 @@ mod the_outcome_lines {
             cycle_ctx(1, 1),
             120,
         );
-        for (sources, basis) in [
-            (vec![seq(5)], "per earlier requests"),
-            (Vec::new(), "per offset order"),
-        ] {
-            let mut chain = CheckingChain {
-                cycle: nz(1),
-                step: nz(1),
-                ccd: CcdId::try_from(0_u8).unwrap(),
-                workload: workloads(Regime::R7)[0].id(),
-                groups: Vec::new(),
-                cores: set(&[0, 1, 2]),
-                source_seqs: sources,
-                profile: PerCore::default(),
-                part: nz(1),
-                rederived: None,
-            };
-            chain.source_seqs.dedup();
-            let mut pass = branch(Premise::Pass);
-            pass.passes = 1;
-            pass.decisions = vec![DecisionPayload::CheckingChain(chain)];
-            pass.next = Some(partial.clone());
-            pass.without_telemetry = true;
-            pass.offset_order = basis == "per offset order";
-            fx.forecast.branches = vec![pass];
-            let rows = fx.row_set();
-            let line = fit_phrases(&rows[0].phrases, 400);
-            assert_eq!(rows[0].basis, Some(basis));
-            assert!(
-                line.contains(&format!("CCD 0 partial on 00-02 {basis}")),
-                "{line}"
-            );
-            assert!(
-                line.contains("next trial: step 1: R7 all-core on 00-02 with"),
-                "{line}"
-            );
-        }
+        let mut chain = CheckingChain {
+            cycle: nz(1),
+            step: nz(1),
+            ccd: CcdId::try_from(0_u8).unwrap(),
+            workload: workloads(Regime::R7)[0].id(),
+            groups: Vec::new(),
+            cores: set(&[0, 1, 2]),
+            source_seqs: sources,
+            profile: PerCore::default(),
+            part: nz(1),
+            rederived: None,
+        };
+        chain.source_seqs.dedup();
+        let mut pass = branch(Premise::Pass);
+        pass.passes = 1;
+        pass.decisions = vec![DecisionPayload::CheckingChain(chain)];
+        pass.next = Some(partial);
+        pass.without_telemetry = true;
+        pass.offset_order = basis == "per offset order";
+        fx.forecast.branches = vec![pass];
+        let rows = fx.row_set();
+        let line = fit_phrases(&rows[0].phrases, 400);
+        assert_eq!(rows[0].basis, Some(basis));
+        assert!(
+            line.contains(&format!("CCD 0 partial on 00-02 {basis}")),
+            "{line}"
+        );
+        assert!(
+            line.contains("next trial: step 1: R7 all-core on 00-02 with"),
+            "{line}"
+        );
     }
 
     #[test]
@@ -2632,48 +2671,38 @@ mod the_outcome_lines {
         (words, compact)
     }
 
-    #[test]
-    fn tight_next_keeps_trial_targets() {
-        for (load, condition, full, tight) in [
-            (
-                Load::Single(core(3)),
-                Condition::Alone,
-                ", core 03 alone at -16",
-                "core 03",
-            ),
-            (
-                Load::Single(core(3)),
-                Condition::Together,
-                ", core 03 at -16",
-                "core 03",
-            ),
-            (many(&[3]), Condition::Together, " on 03", "on 03"),
-            (
-                many(&[0, 1, 2, 8, 9, 10, 15]),
-                Condition::Together,
-                " on 00-02 08-10 15",
-                "on 00-02 08-10 15",
-            ),
-        ] {
-            let (words, compact) = next_words(load, condition);
-            assert_eq!(words, format!("R1 light{full}"));
-            assert_eq!(compact, format!("→ R1 light{full}"));
-            assert_eq!(tight_next(&compact), format!("→ R1 {tight}"));
-        }
-        for regime in [
-            Regime::R2,
-            Regime::R3,
-            Regime::R4,
-            Regime::R5,
-            Regime::R6,
-            Regime::R7,
-        ] {
-            let text = format!(
-                "→ {regime} {}, core 03 alone at -16",
-                crate::words::kind_words(regime)
-            );
-            assert_eq!(tight_next(&text), format!("→ {regime} core 03"), "{text}");
-        }
+    #[test_case(
+        Load::Single(core(3)), Condition::Alone, ", core 03 alone at -16", "core 03";
+        "a core alone"
+    )]
+    #[test_case(
+        Load::Single(core(3)), Condition::Together, ", core 03 at -16", "core 03";
+        "a core together"
+    )]
+    #[test_case(many(&[3]), Condition::Together, " on 03", "on 03"; "one core of many")]
+    #[test_case(
+        many(&[0, 1, 2, 8, 9, 10, 15]), Condition::Together, " on 00-02 08-10 15", "on 00-02 08-10 15";
+        "several runs of cores"
+    )]
+    fn tight_next_keeps_trial_targets(load: Load, condition: Condition, full: &str, tight: &str) {
+        let (words, compact) = next_words(load, condition);
+        assert_eq!(words, format!("R1 light{full}"));
+        assert_eq!(compact, format!("→ R1 light{full}"));
+        assert_eq!(tight_next(&compact), format!("→ R1 {tight}"));
+    }
+
+    #[test_case(Regime::R2)]
+    #[test_case(Regime::R3)]
+    #[test_case(Regime::R4)]
+    #[test_case(Regime::R5)]
+    #[test_case(Regime::R6)]
+    #[test_case(Regime::R7)]
+    fn tight_next_keeps_the_core_of_every_other_regime(regime: Regime) {
+        let text = format!(
+            "→ {regime} {}, core 03 alone at -16",
+            crate::words::kind_words(regime)
+        );
+        assert_eq!(tight_next(&text), format!("→ {regime} core 03"), "{text}");
     }
 
     #[test]
@@ -2765,26 +2794,20 @@ mod the_outcome_lines {
         assert_eq!(tight_next(&compact), compact);
     }
 
-    #[test]
-    fn what_comes_next_shortens_to_its_position() {
-        for (next, want) in [
-            ("next trial: part 2: full CCD 0 on 00-07, 5m", "part 2"),
-            ("next trial: part 4: core 09 at -26, 2m", "part 4: core 09"),
-            ("next trial: part 3: 00-02, 1m", "part 3: 00-02,"),
-            (
-                "next trial: hunt 2 group 8: R7 all-core on 00-03",
-                "group 8",
-            ),
-            ("next trial: step 3: R7 all-core with mprime", "step 3"),
-            ("next trial: rerun R7 all-core on 00-03 · 2m", "rerun"),
-            (
-                "next trial: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m",
-                "rerun at offset 0",
-            ),
-            ("the same trial runs again", "the same trial runs again"),
-        ] {
-            assert_eq!(compact_next(next), want, "{next}");
-        }
+    #[test_case("next trial: part 2: full CCD 0 on 00-07, 5m", "part 2"; "a part")]
+    #[test_case("next trial: part 4: core 09 at -26, 2m", "part 4: core 09"; "a part keeps its core")]
+    #[test_case("next trial: part 3: 00-02, 1m", "part 3: 00-02,"; "a part keeps its cores")]
+    #[test_case("next trial: hunt 2 group 8: R7 all-core on 00-03", "group 8"; "a hunt group")]
+    #[test_case("next trial: step 3: R7 all-core with mprime", "step 3"; "a step")]
+    #[test_case("next trial: rerun R7 all-core on 00-03 · 2m", "rerun"; "a rerun")]
+    #[test_case(
+        "next trial: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m",
+        "rerun at offset 0";
+        "a rerun at offset 0"
+    )]
+    #[test_case("the same trial runs again", "the same trial runs again"; "the same trial")]
+    fn what_comes_next_shortens_to_its_position(next: &str, want: &str) {
+        assert_eq!(compact_next(next), want, "{next}");
     }
 
     #[test]

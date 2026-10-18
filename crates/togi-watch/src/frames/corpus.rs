@@ -16,7 +16,7 @@ use ratatui::buffer::Buffer;
 use togi_journal::Event;
 use togi_watchtest::{Base, Scenario, cycle_completed_by_rerun};
 
-use super::layout::Layout;
+use super::layout::{Layout, SizeClass};
 use super::measure::Measure;
 use super::scene::Scene;
 use super::testing::{FIXED_NOW, ready, render_checked, screen};
@@ -64,7 +64,9 @@ pub(super) fn frame(m: &Measure, scene: &Scene<'_>, buf: &Buffer, screen: &Scree
         View::Main => {
             region("frame.stage", &form, buf, layout.stage);
             region("frame.say", &form, buf, layout.say);
-            region("frame.last", &form, buf, layout.last);
+            if layout.class != SizeClass::Compact {
+                region("frame.last", &form, buf, layout.last);
+            }
             region("frame.now", &form, buf, m.now);
             region("frame.outcomes", &form, buf, m.outcomes);
             for ccd in &m.ccds {
@@ -307,4 +309,36 @@ pub(crate) fn run() -> Swept {
     }
     states(&mut swept);
     swept
+}
+
+#[cfg(test)]
+mod tests {
+    use test_case::test_case;
+
+    use super::*;
+
+    #[test_case((120, 33), false; "compact frames draw no last outcome")]
+    #[test_case((160, 45), true; "medium frames draw the last outcome")]
+    #[test_case((240, 67), true; "wide frames draw the last outcome")]
+    fn the_last_outcome_region_is_recorded_only_where_it_is_drawn(size: (u16, u16), drawn: bool) {
+        let events = Base::Probe.events().expect("the probe journal");
+        let model = project(events);
+        let journal = ready(&model);
+        let now =
+            events.last().expect("a journal with events").time + SignedDuration::from_secs(40);
+        crate::corpus::start();
+        draw(
+            &mut Swept::default(),
+            "last-region",
+            &journal,
+            &screen_of(View::Main, size, false),
+            now,
+        );
+        let collector = crate::corpus::finish();
+        let recorded = collector
+            .items
+            .keys()
+            .any(|(producer, _)| producer == "frame.last");
+        assert_eq!(recorded, drawn, "{size:?}");
+    }
 }

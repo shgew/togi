@@ -484,11 +484,11 @@ impl Collector {
     }
 }
 
-fn start() {
+pub(crate) fn start() {
     LOCAL.with(|local| *local.borrow_mut() = Some(Collector::default()));
 }
 
-fn finish() -> Collector {
+pub(crate) fn finish() -> Collector {
     LOCAL
         .with(|local| local.borrow_mut().take())
         .expect("the exporter's thread collects")

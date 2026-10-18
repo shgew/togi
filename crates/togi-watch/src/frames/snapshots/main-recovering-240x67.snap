@@ -4,7 +4,7 @@ expression: body
 ---
 │  togi   01:41:10   tuning 1h41m   session 1h41m   0 failures · 1 crash
 │
-│  ► SOLO LIMITS  0 of 16 found  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
+│  ○ SOLO LIMITS  0 of 16 found  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
 │
 │  ▌  RECOVERED   I picked up from the journal after the reboot; nothing it recorded is lost.                              last trial      PASS  1:30 on core 00 · Tctl max 62°C
 │

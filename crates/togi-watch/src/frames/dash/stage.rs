@@ -12,7 +12,7 @@ use crate::frames::terms::first_open_part;
 use crate::words::plural;
 
 fn ended(scene: &Scene<'_>) -> bool {
-    scene.s.stopped.is_some() || scene.s.dead_end.is_some()
+    scene.s.stopped.is_some() || scene.s.dead_end.is_some() || scene.s.recover.is_some()
 }
 
 fn mark(scene: &Scene<'_>, running: Paint) -> Span<'static> {
@@ -101,10 +101,10 @@ fn phase2_stage(scene: &Scene<'_>, name: &str, short: bool) -> Vec<Span<'static>
     let left = phases.rounds_left;
     match phases.round {
         Some(round) if short => out.push(text(format!(" r{round}"))),
-        Some(round) => out.push(text(format!("  round {round} · at most {left} left"))),
+        Some(round) => out.push(text(format!("  round {round} · {left} left if none fails"))),
         None if phases.confirming && !short => out.push(text("  confirmation cycle".into())),
         None if !short => out.push(text(format!(
-            "  at most {} left",
+            "  {} left if none fails",
             plural(left as usize, "round")
         ))),
         None => {}

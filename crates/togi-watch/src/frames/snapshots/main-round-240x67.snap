@@ -4,7 +4,7 @@ expression: body
 ---
 │  togi   15:15:40   tuning 15h15m   session 15h15m   8 failures · 8 crashes   last observed failure 08:22, 6h53m ago
 │
-│  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ► PHASE 2  round 1 · at most 1 left  ───  CLEAN CYCLES 0  ───  ■ CYCLE 1
+│  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ► PHASE 2  round 1 · 1 left if none fails  ───  CLEAN CYCLES 0  ───  ■ CYCLE 1
 │
 │  ▌  PHASE 2 · ROUND 1   Core 00 runs alone at its proposed -11, like every moved core's light and heavy checks.          last trial      PASS  15:00 on 00-15 · Tctl max 64°C
 │  ▌                      R7 then checks the parts where a moved core is a top requester.
@@ -38,7 +38,7 @@ expression: body
 │                                                                                                                          15:15  room     core 14 -10 → -11
 │  PHASE 2 · ROUND 1 ─────────────────────────────────────────────────────────────────────────────────────────────────     15:15  room     core 06 -10 → -11
 │                                                                                                                          15:15  room     core 13 -10 → -11
-│  at most 1 round left, then one full cycle                                                                               15:15  room     core 05 -10 → -11
+│  1 round left if none fails, then one full cycle                                                                         15:15  room     core 05 -10 → -11
 │  cores 00-10 12-15  -10 → solo -11  gap 1  moving                                                                        15:15  room     core 12 -10 → -11
 │                                                                                                                          15:15  room     core 04 -10 → -11
 │  CHECKS                                                                                                                  15:15  room     core 03 -10 → -11
