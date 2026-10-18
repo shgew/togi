@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 use std::rc::Rc;
 use std::time::Duration;
+use test_case::test_case;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -632,74 +633,49 @@ fn an_idle_crash_is_recorded_once_and_answered_with_one_failure() {
     h.consistent();
 }
 
-#[test]
-#[expect(clippy::type_complexity, reason = "a table of cases")]
-fn an_idle_failure_names_a_core_only_when_the_journal_proves_it() {
-    type Applied = fn(&mut Log);
-    let cases: [(&str, bool, Applied, Option<(i64, i64)>, Option<[i64; 2]>); 4] = [
-        (
-            "one proven nonzero core",
-            true,
-            |log| written(log, 0, -20),
-            Some((0, -20)),
-            Some([-20, 0]),
-        ),
-        (
-            "two nonzero cores",
-            true,
-            |log| {
+#[test_case("one proven nonzero core", true, |log| written(log, 0, -20), Some((0, -20)), Some([-20, 0]); "one proven nonzero core")]
+#[test_case("two nonzero cores", true, |log| {
                 written(log, 0, -20);
                 written(log, 8, -10);
-            },
-            None,
-            Some([-20, -10]),
-        ),
-        (
-            "a write no readback answered",
-            true,
-            |log| {
+            }, None, Some([-20, -10]); "two nonzero cores")]
+#[test_case("a write no readback answered", true, |log| {
                 log.intent(0, -20, &[]);
-            },
-            None,
-            Some([-20, 0]),
-        ),
-        (
-            "a core without a baseline",
-            false,
-            |log| written(log, 0, -20),
-            None,
-            None,
-        ),
-    ];
-    for (name, baseline, applied, sole, profile) in cases {
-        let mut log = if baseline { base() } else { Log::new() };
-        log.at("b0", 20_000);
-        applied(&mut log);
-        let mut h = Harness::new(&log, "b1");
-        h.reasons(&[("b0", None), ("b1", Some(ResetKind::Watchdog))]);
-        h.recover().unwrap();
-        let failures = h.failures();
-        assert_eq!(failures.len(), 1, "{name}");
-        let failure = failures[0].1;
-        assert_eq!(
-            failure
-                .core
-                .zip(failure.offset)
-                .map(|(core, offset)| (i64::from(core.get()), offset.get())),
-            sole,
-            "{name}"
-        );
-        assert_eq!(
-            failure.attribution == togi_journal::Attribution::Attributed,
-            sole.is_some(),
-            "{name}"
-        );
-        let held = failure.profile.map(|profile| {
-            [core(0), core(8)].map(|core| profile.get(core).map_or(i64::MIN, TargetOffset::get))
-        });
-        assert_eq!(held, profile, "{name}");
-        h.consistent();
-    }
+            }, None, Some([-20, 0]); "a write no readback answered")]
+#[test_case("a core without a baseline", false, |log| written(log, 0, -20), None, None; "a core without a baseline")]
+fn an_idle_failure_names_a_core_only_when_the_journal_proves_it(
+    name: &str,
+    baseline: bool,
+    applied: fn(&mut Log),
+    sole: Option<(i64, i64)>,
+    profile: Option<[i64; 2]>,
+) {
+    let mut log = if baseline { base() } else { Log::new() };
+    log.at("b0", 20_000);
+    applied(&mut log);
+    let mut h = Harness::new(&log, "b1");
+    h.reasons(&[("b0", None), ("b1", Some(ResetKind::Watchdog))]);
+    h.recover().unwrap();
+    let failures = h.failures();
+    assert_eq!(failures.len(), 1, "{name}");
+    let failure = failures[0].1;
+    assert_eq!(
+        failure
+            .core
+            .zip(failure.offset)
+            .map(|(core, offset)| (i64::from(core.get()), offset.get())),
+        sole,
+        "{name}"
+    );
+    assert_eq!(
+        failure.attribution == togi_journal::Attribution::Attributed,
+        sole.is_some(),
+        "{name}"
+    );
+    let held = failure.profile.map(|profile| {
+        [core(0), core(8)].map(|core| profile.get(core).map_or(i64::MIN, TargetOffset::get))
+    });
+    assert_eq!(held, profile, "{name}");
+    h.consistent();
 }
 
 #[test]
@@ -733,175 +709,105 @@ fn a_crash_under_an_armed_hunt_group_is_a_parked_application() {
     h.consistent();
 }
 
-#[test]
-fn the_reset_after_a_crash_decides_what_an_open_trial_ended_as() {
-    struct Row {
-        name: &'static str,
-        successor: Option<ResetKind>,
-        confirmed: bool,
-        outcome: Outcome,
-        thermal: bool,
+#[test_case("watchdog", Some(ResetKind::Watchdog), true, Outcome::Failure, false; "watchdog")]
+#[test_case("sync flood", Some(ResetKind::SyncFlood), true, Outcome::Failure, false; "sync flood")]
+#[test_case("cpu shutdown", Some(ResetKind::CpuShutdown), true, Outcome::Failure, false; "cpu shutdown")]
+#[test_case("power button", Some(ResetKind::PowerButton), true, Outcome::Failure, false; "power button")]
+#[test_case("a reset nothing named", Some(ResetKind::Unknown), true, Outcome::Failure, false; "a reset nothing named")]
+#[test_case("power loss on a kernel that names resets", None, true, Outcome::Inconclusive, false; "power loss on a kernel that names resets")]
+#[test_case("power loss on a kernel never seen to name one", None, false, Outcome::Failure, false; "power loss on a kernel never seen to name one")]
+#[test_case("thermal trip", Some(ResetKind::ThermalTrip), true, Outcome::Inconclusive, true; "thermal trip")]
+fn the_reset_after_a_crash_decides_what_an_open_trial_ended_as(
+    case_name: &str,
+    case_successor: Option<ResetKind>,
+    case_confirmed: bool,
+    case_outcome: Outcome,
+    case_thermal: bool,
+) {
+    let mut h = Harness::new(&trial_log(), "b1");
+    h.reasons(&[
+        ("b0", case_confirmed.then_some(ResetKind::Watchdog)),
+        ("b1", case_successor),
+    ]);
+    h.recover().unwrap();
+    let (crash_event, crash) = h.crashes()[0];
+    let ends = h.ends();
+    assert_eq!(ends.len(), 1, "{}", case_name);
+    let (end_event, end) = ends[0];
+    assert_eq!(end.outcome, case_outcome, "{}", case_name);
+    assert_eq!(end_event.cause, [crash_event.seq], "{}", case_name);
+    assert_eq!(
+        crash.inconclusive,
+        case_outcome == Outcome::Inconclusive,
+        "{}",
+        case_name
+    );
+    assert!(!crash.stray, "{}", case_name);
+    assert_eq!(crash.condition, None, "{}", case_name);
+    if case_outcome == Outcome::Failure {
+        assert_eq!(end.signal, Some(Signal::Crash), "{}", case_name);
+        assert!(!end.interrupted, "{}", case_name);
+    } else {
+        assert_eq!(end.signal, None, "{}", case_name);
+        assert!(end.interrupted, "{}", case_name);
     }
-    let row = |name, successor, confirmed, outcome, thermal| Row {
-        name,
-        successor,
-        confirmed,
+    assert_eq!(
+        h.appender().recovery().thermal_evidence().is_some(),
+        case_thermal,
+        "{}",
+        case_name
+    );
+    assert!(
+        h.appender().recovery().open_trial().is_none(),
+        "{}",
+        case_name
+    );
+    h.consistent();
+}
+
+#[test_case(ResetKind::Watchdog, false; "ResetKind::Watchdog, false")]
+#[test_case(ResetKind::PowerButton, true; "ResetKind::PowerButton, true")]
+#[test_case(ResetKind::ThermalTrip, true; "ResetKind::ThermalTrip, true")]
+fn an_idle_crash_follows_the_reset_after_it_and_only_a_failure_is_answered(
+    kind: ResetKind,
+    inconclusive: bool,
+) {
+    let mut h = Harness::new(&idle_log(|log| written(log, 0, -20)), "b1");
+    h.reasons(&[("b0", None), ("b1", Some(kind))]);
+    h.recover().unwrap();
+    let crash = h.crashes()[0].1;
+    assert_eq!(crash.inconclusive, inconclusive, "{kind:?}");
+    assert_eq!(h.failures().len(), usize::from(!inconclusive), "{kind:?}");
+    h.consistent();
+}
+
+#[test_case(ResetKind::Watchdog, ResetKind::ThermalTrip, Outcome::Failure; "ResetKind::Watchdog, ResetKind::ThermalTrip, Outcome::Failure")]
+#[test_case(ResetKind::ThermalTrip, ResetKind::Watchdog, Outcome::Inconclusive; "ResetKind::ThermalTrip, ResetKind::Watchdog, Outcome::Inconclusive")]
+#[test_case(ResetKind::PowerButton, ResetKind::Watchdog, Outcome::Failure; "ResetKind::PowerButton, ResetKind::Watchdog, Outcome::Failure")]
+fn a_later_boot_cannot_replace_the_reset_reason_of_the_boot_that_followed_the_crash(
+    successor: ResetKind,
+    later: ResetKind,
+    outcome: Outcome,
+) {
+    let mut log = trial_log();
+    log.at("b0", 40_000);
+    let mut h = Harness::new(&log, "b2");
+    h.kernel
+        .borrow_mut()
+        .order
+        .splice(1..1, [boot("elsewhere")]);
+    h.reasons(&[
+        ("b0", Some(ResetKind::Watchdog)),
+        ("elsewhere", Some(successor)),
+        ("b2", Some(later)),
+    ]);
+    h.recover().unwrap();
+    assert_eq!(h.crashes()[0].1.reset_reason, Some(successor));
+    assert_eq!(
+        h.ends()[0].1.outcome,
         outcome,
-        thermal,
-    };
-    let failure = Outcome::Failure;
-    let rows = [
-        row("watchdog", Some(ResetKind::Watchdog), true, failure, false),
-        row(
-            "sync flood",
-            Some(ResetKind::SyncFlood),
-            true,
-            failure,
-            false,
-        ),
-        row(
-            "cpu shutdown",
-            Some(ResetKind::CpuShutdown),
-            true,
-            failure,
-            false,
-        ),
-        row(
-            "power button",
-            Some(ResetKind::PowerButton),
-            true,
-            failure,
-            false,
-        ),
-        row(
-            "a reset nothing named",
-            Some(ResetKind::Unknown),
-            true,
-            failure,
-            false,
-        ),
-        row(
-            "power loss on a kernel that names resets",
-            None,
-            true,
-            Outcome::Inconclusive,
-            false,
-        ),
-        row(
-            "power loss on a kernel never seen to name one",
-            None,
-            false,
-            failure,
-            false,
-        ),
-        row(
-            "thermal trip",
-            Some(ResetKind::ThermalTrip),
-            true,
-            Outcome::Inconclusive,
-            true,
-        ),
-    ];
-    for row in rows {
-        let mut h = Harness::new(&trial_log(), "b1");
-        h.reasons(&[
-            ("b0", row.confirmed.then_some(ResetKind::Watchdog)),
-            ("b1", row.successor),
-        ]);
-        h.recover().unwrap();
-        let (crash_event, crash) = h.crashes()[0];
-        let ends = h.ends();
-        assert_eq!(ends.len(), 1, "{}", row.name);
-        let (end_event, end) = ends[0];
-        assert_eq!(end.outcome, row.outcome, "{}", row.name);
-        assert_eq!(end_event.cause, [crash_event.seq], "{}", row.name);
-        assert_eq!(
-            crash.inconclusive,
-            row.outcome == Outcome::Inconclusive,
-            "{}",
-            row.name
-        );
-        assert!(!crash.stray, "{}", row.name);
-        assert_eq!(crash.condition, None, "{}", row.name);
-        if row.outcome == Outcome::Failure {
-            assert_eq!(end.signal, Some(Signal::Crash), "{}", row.name);
-            assert!(!end.interrupted, "{}", row.name);
-        } else {
-            assert_eq!(end.signal, None, "{}", row.name);
-            assert!(end.interrupted, "{}", row.name);
-        }
-        assert_eq!(
-            h.appender().recovery().thermal_evidence().is_some(),
-            row.thermal,
-            "{}",
-            row.name
-        );
-        assert!(
-            h.appender().recovery().open_trial().is_none(),
-            "{}",
-            row.name
-        );
-        h.consistent();
-    }
-}
-
-#[test]
-fn an_idle_crash_follows_the_reset_after_it_and_only_a_failure_is_answered() {
-    for (kind, inconclusive) in [
-        (ResetKind::Watchdog, false),
-        (ResetKind::PowerButton, true),
-        (ResetKind::ThermalTrip, true),
-    ] {
-        let mut h = Harness::new(&idle_log(|log| written(log, 0, -20)), "b1");
-        h.reasons(&[("b0", None), ("b1", Some(kind))]);
-        h.recover().unwrap();
-        let crash = h.crashes()[0].1;
-        assert_eq!(crash.inconclusive, inconclusive, "{kind:?}");
-        assert_eq!(h.failures().len(), usize::from(!inconclusive), "{kind:?}");
-        h.consistent();
-    }
-}
-
-#[test]
-fn a_later_boot_cannot_replace_the_reset_reason_of_the_boot_that_followed_the_crash() {
-    let cases = [
-        (
-            ResetKind::Watchdog,
-            ResetKind::ThermalTrip,
-            Outcome::Failure,
-        ),
-        (
-            ResetKind::ThermalTrip,
-            ResetKind::Watchdog,
-            Outcome::Inconclusive,
-        ),
-        (
-            ResetKind::PowerButton,
-            ResetKind::Watchdog,
-            Outcome::Failure,
-        ),
-    ];
-    for (successor, later, outcome) in cases {
-        let mut log = trial_log();
-        log.at("b0", 40_000);
-        let mut h = Harness::new(&log, "b2");
-        h.kernel
-            .borrow_mut()
-            .order
-            .splice(1..1, [boot("elsewhere")]);
-        h.reasons(&[
-            ("b0", Some(ResetKind::Watchdog)),
-            ("elsewhere", Some(successor)),
-            ("b2", Some(later)),
-        ]);
-        h.recover().unwrap();
-        assert_eq!(h.crashes()[0].1.reset_reason, Some(successor));
-        assert_eq!(
-            h.ends()[0].1.outcome,
-            outcome,
-            "{successor:?} then {later:?}"
-        );
-    }
+        "{successor:?} then {later:?}"
+    );
 }
 
 #[test]
@@ -918,35 +824,37 @@ fn a_crash_without_an_identified_successor_borrows_no_reset_reason_from_this_boo
     assert!(h.appender().recovery().thermal_evidence().is_none());
 }
 
-#[test]
-fn an_uncorrected_machine_check_the_next_boot_kept_is_evidence_and_a_corrected_one_is_not() {
-    for (corrected, evidence) in [(false, true), (true, false)] {
-        let mut h = Harness::new(&idle_log(|log| written(log, 0, -20)), "b1");
-        h.reasons(&[("b0", None), ("b1", Some(ResetKind::PowerButton))]);
-        h.kernel
-            .borrow_mut()
-            .mces
-            .insert(boot("b1"), vec![kernel_mce(3, corrected)]);
-        h.recover().unwrap();
-        let crash = h.crashes()[0].1;
-        assert_eq!(crash.inconclusive, !evidence, "corrected {corrected}");
+#[test_case(false, true; "false, true")]
+#[test_case(true, false; "true, false")]
+fn an_uncorrected_machine_check_the_next_boot_kept_is_evidence_and_a_corrected_one_is_not(
+    corrected: bool,
+    evidence: bool,
+) {
+    let mut h = Harness::new(&idle_log(|log| written(log, 0, -20)), "b1");
+    h.reasons(&[("b0", None), ("b1", Some(ResetKind::PowerButton))]);
+    h.kernel
+        .borrow_mut()
+        .mces
+        .insert(boot("b1"), vec![kernel_mce(3, corrected)]);
+    h.recover().unwrap();
+    let crash = h.crashes()[0].1;
+    assert_eq!(crash.inconclusive, !evidence, "corrected {corrected}");
+    assert_eq!(
+        h.failures().len(),
+        usize::from(evidence),
+        "corrected {corrected}"
+    );
+    let mces = h.mces();
+    assert_eq!(mces.len(), usize::from(evidence), "corrected {corrected}");
+    if let Some((mce_event, mce)) = mces.first() {
+        assert_eq!(mce.from_boot, Some(boot("b1")));
+        assert_eq!(h.crashes()[0].0.cause, [mce_event.seq]);
         assert_eq!(
-            h.failures().len(),
-            usize::from(evidence),
-            "corrected {corrected}"
+            h.failures()[0].0.cause,
+            [h.crashes()[0].0.seq, mce_event.seq]
         );
-        let mces = h.mces();
-        assert_eq!(mces.len(), usize::from(evidence), "corrected {corrected}");
-        if let Some((mce_event, mce)) = mces.first() {
-            assert_eq!(mce.from_boot, Some(boot("b1")));
-            assert_eq!(h.crashes()[0].0.cause, [mce_event.seq]);
-            assert_eq!(
-                h.failures()[0].0.cause,
-                [h.crashes()[0].0.seq, mce_event.seq]
-            );
-        }
-        h.consistent();
     }
+    h.consistent();
 }
 
 #[test]
@@ -974,37 +882,37 @@ fn the_crashed_boots_own_machine_checks_are_the_trials_only_inside_its_window() 
     h.consistent();
 }
 
-#[test]
-fn a_machine_check_an_interrupted_recovery_journaled_still_fails_the_crash_when_the_kernel_forgot_it()
- {
-    for corrected in [false, true] {
-        let mut log = trial_log();
-        log.at("b0", 41_000);
-        let Payload::Mce(mut mce) = recorded_mce(20, false) else {
-            panic!("not a machine check");
-        };
-        mce.corrected = corrected;
-        let held = log.add(Payload::Mce(mce), &[]);
-        let mut h = Harness::new(&log, "b1");
-        h.reasons(&[("b0", Some(ResetKind::Watchdog)), ("b1", None)]);
-        h.recover().unwrap();
-        let (crash_event, crash) = h.crashes()[0];
-        assert!(!crash.inconclusive);
-        assert_eq!(crash_event.cause, [held]);
-        let (end_event, end) = h.ends()[0];
-        assert_eq!(end.outcome, Outcome::Failure);
-        assert_eq!(
-            end.signal,
-            Some(if corrected {
-                Signal::CorrectedMce
-            } else {
-                Signal::UncorrectedMce
-            })
-        );
-        assert!(end_event.cause.contains(&held));
-        assert_eq!(h.mces().len(), 1);
-        h.consistent();
-    }
+#[test_case(false; "false")]
+#[test_case(true; "true")]
+fn a_machine_check_an_interrupted_recovery_journaled_still_fails_the_crash_when_the_kernel_forgot_it(
+    corrected: bool,
+) {
+    let mut log = trial_log();
+    log.at("b0", 41_000);
+    let Payload::Mce(mut mce) = recorded_mce(20, false) else {
+        panic!("not a machine check");
+    };
+    mce.corrected = corrected;
+    let held = log.add(Payload::Mce(mce), &[]);
+    let mut h = Harness::new(&log, "b1");
+    h.reasons(&[("b0", Some(ResetKind::Watchdog)), ("b1", None)]);
+    h.recover().unwrap();
+    let (crash_event, crash) = h.crashes()[0];
+    assert!(!crash.inconclusive);
+    assert_eq!(crash_event.cause, [held]);
+    let (end_event, end) = h.ends()[0];
+    assert_eq!(end.outcome, Outcome::Failure);
+    assert_eq!(
+        end.signal,
+        Some(if corrected {
+            Signal::CorrectedMce
+        } else {
+            Signal::UncorrectedMce
+        })
+    );
+    assert!(end_event.cause.contains(&held));
+    assert_eq!(h.mces().len(), 1);
+    h.consistent();
 }
 
 #[test]
@@ -1031,35 +939,31 @@ fn a_machine_check_the_journal_already_holds_is_never_recorded_or_claimed_again(
     h.consistent();
 }
 
-#[test]
-fn a_backend_signal_before_the_power_loss_survives_and_keeps_its_core() {
-    for signal in [
-        Signal::ComputationError,
-        Signal::UnexpectedExit,
-        Signal::Stall,
-    ] {
-        let mut log = base();
-        log.at("b0", 10_000);
-        let intent = log.add(intent("0001"), &[]);
-        log.mono(11_000);
-        let start = log.started("0001", Some(11_000_000_000), intent);
-        log.mono(40_000);
-        log.add(progress("0001", Some(signal)), &[start]);
-        let mut h = Harness::new(&log, "b1");
-        h.reasons(&[("b0", Some(ResetKind::Watchdog)), ("b1", None)]);
-        h.recover().unwrap();
-        let (_, end) = h.ends()[0];
-        assert_eq!(end.outcome, Outcome::Failure, "{signal:?}");
-        assert_eq!(end.signal, Some(signal), "{signal:?}");
-        assert_eq!(end.core, Some(core(0)), "{signal:?}");
-        assert_eq!(
-            end.reason.as_deref(),
-            Some("backend reported a failure before the reset"),
-            "{signal:?}"
-        );
-        assert!(!h.crashes()[0].1.inconclusive, "{signal:?}");
-        h.consistent();
-    }
+#[test_case(Signal::ComputationError; "Signal::ComputationError")]
+#[test_case(Signal::UnexpectedExit; "Signal::UnexpectedExit")]
+#[test_case(Signal::Stall; "Signal::Stall")]
+fn a_backend_signal_before_the_power_loss_survives_and_keeps_its_core(signal: Signal) {
+    let mut log = base();
+    log.at("b0", 10_000);
+    let intent = log.add(intent("0001"), &[]);
+    log.mono(11_000);
+    let start = log.started("0001", Some(11_000_000_000), intent);
+    log.mono(40_000);
+    log.add(progress("0001", Some(signal)), &[start]);
+    let mut h = Harness::new(&log, "b1");
+    h.reasons(&[("b0", Some(ResetKind::Watchdog)), ("b1", None)]);
+    h.recover().unwrap();
+    let (_, end) = h.ends()[0];
+    assert_eq!(end.outcome, Outcome::Failure, "{signal:?}");
+    assert_eq!(end.signal, Some(signal), "{signal:?}");
+    assert_eq!(end.core, Some(core(0)), "{signal:?}");
+    assert_eq!(
+        end.reason.as_deref(),
+        Some("backend reported a failure before the reset"),
+        "{signal:?}"
+    );
+    assert!(!h.crashes()[0].1.inconclusive, "{signal:?}");
+    h.consistent();
 }
 
 #[test]
@@ -1186,67 +1090,67 @@ fn the_kernel_log_is_retried_after_one_five_and_thirty_minutes_then_read_or_give
     assert_eq!(h.sleeps().len(), 3);
 }
 
-#[test]
-fn partial_machine_checks_survive_retries_and_decide_the_crash() {
-    for (from, corrected, evidence) in [
-        ("b0", false, true),
-        ("b0", true, true),
-        ("b1", false, true),
-        ("b1", true, false),
-    ] {
-        let mut h = Harness::new(&trial_log(), "b1");
-        h.reasons(&[("b0", None), ("b1", Some(ResetKind::ThermalTrip))]);
-        {
-            let mut script = h.kernel.borrow_mut();
-            script
-                .mces
-                .insert(boot(from), vec![kernel_mce(20, corrected)]);
-            script.failing = Some(boot(from));
-            script.failures = u32::MAX;
-        }
-        let recovered = h.recover().unwrap();
-        assert_eq!(
-            h.sleeps(),
-            [
-                Duration::from_mins(1),
-                Duration::from_mins(5),
-                Duration::from_mins(30),
-            ]
-        );
-        assert_eq!(h.retries().len(), 3);
-        if !evidence {
-            assert!(matches!(recovered, Recovered::Unreadable(_)));
-            assert!(h.mces().is_empty());
-            assert!(h.crashes().is_empty());
-            continue;
-        }
-        assert_eq!(recovered, Recovered::Done);
-        let mces = h.mces();
-        assert_eq!(mces.len(), 1);
-        let (mce_event, mce) = mces[0];
-        assert_eq!(mce.from_boot, Some(boot(from)));
-        assert!(!mce.between_trials);
-        assert!(mce_event.seq < h.retries()[0].0.seq);
-        let (crash_event, crash) = h.crashes()[0];
-        assert_eq!(crash_event.cause, [mce_event.seq]);
-        assert!(!crash.inconclusive);
-        let (end_event, end) = h.ends()[0];
-        assert_eq!(end.outcome, Outcome::Failure);
-        assert_eq!(
-            end.signal,
-            Some(if corrected {
-                Signal::CorrectedMce
-            } else {
-                Signal::UncorrectedMce
-            })
-        );
-        assert!(end_event.cause.contains(&mce_event.seq));
-        let before = h.events().len();
-        h.reopen();
-        h.recover().unwrap();
-        assert_eq!(h.events().len(), before);
-        h.consistent();
+#[test_case("b0", false, true; "b0, false, true")]
+#[test_case("b0", true, true; "b0, true, true")]
+#[test_case("b1", false, true; "b1, false, true")]
+#[test_case("b1", true, false; "b1, true, false")]
+fn partial_machine_checks_survive_retries_and_decide_the_crash(
+    from: &str,
+    corrected: bool,
+    evidence: bool,
+) {
+    let mut h = Harness::new(&trial_log(), "b1");
+    h.reasons(&[("b0", None), ("b1", Some(ResetKind::ThermalTrip))]);
+    {
+        let mut script = h.kernel.borrow_mut();
+        script
+            .mces
+            .insert(boot(from), vec![kernel_mce(20, corrected)]);
+        script.failing = Some(boot(from));
+        script.failures = u32::MAX;
     }
+    let recovered = h.recover().unwrap();
+    assert_eq!(
+        h.sleeps(),
+        [
+            Duration::from_mins(1),
+            Duration::from_mins(5),
+            Duration::from_mins(30),
+        ]
+    );
+    assert_eq!(h.retries().len(), 3);
+    if !evidence {
+        assert!(matches!(recovered, Recovered::Unreadable(_)));
+        assert!(h.mces().is_empty());
+        assert!(h.crashes().is_empty());
+        return;
+    }
+    assert_eq!(recovered, Recovered::Done);
+    let mces = h.mces();
+    assert_eq!(mces.len(), 1);
+    let (mce_event, mce) = mces[0];
+    assert_eq!(mce.from_boot, Some(boot(from)));
+    assert!(!mce.between_trials);
+    assert!(mce_event.seq < h.retries()[0].0.seq);
+    let (crash_event, crash) = h.crashes()[0];
+    assert_eq!(crash_event.cause, [mce_event.seq]);
+    assert!(!crash.inconclusive);
+    let (end_event, end) = h.ends()[0];
+    assert_eq!(end.outcome, Outcome::Failure);
+    assert_eq!(
+        end.signal,
+        Some(if corrected {
+            Signal::CorrectedMce
+        } else {
+            Signal::UncorrectedMce
+        })
+    );
+    assert!(end_event.cause.contains(&mce_event.seq));
+    let before = h.events().len();
+    h.reopen();
+    h.recover().unwrap();
+    assert_eq!(h.events().len(), before);
+    h.consistent();
 }
 
 #[test]
@@ -1291,49 +1195,48 @@ fn partial_checks_are_durable_before_a_cancelled_wait_and_reused_after_resume() 
     h.consistent();
 }
 
-#[test]
-fn unreadable_reset_reasons_leave_the_crash_to_relevant_evidence_after_retries() {
-    for evidence in [true, false] {
-        let mut h = Harness::new(&trial_log(), "b1");
-        {
-            let mut script = h.kernel.borrow_mut();
-            if evidence {
-                script.mces.insert(boot("b0"), vec![kernel_mce(20, false)]);
-            }
-            script.reasons_unreadable = true;
+#[test_case(true; "true")]
+#[test_case(false; "false")]
+fn unreadable_reset_reasons_leave_the_crash_to_relevant_evidence_after_retries(evidence: bool) {
+    let mut h = Harness::new(&trial_log(), "b1");
+    {
+        let mut script = h.kernel.borrow_mut();
+        if evidence {
+            script.mces.insert(boot("b0"), vec![kernel_mce(20, false)]);
         }
-        let recovered = h.recover().unwrap();
-        assert_eq!(
-            h.sleeps(),
-            [
-                Duration::from_mins(1),
-                Duration::from_mins(5),
-                Duration::from_mins(30),
-            ],
-            "evidence {evidence}"
-        );
-        assert_eq!(h.retries().len(), 3, "evidence {evidence}");
-        if !evidence {
-            assert!(
-                matches!(recovered, Recovered::Unreadable(_)),
-                "{recovered:?}"
-            );
-            assert!(h.crashes().is_empty() && h.ends().is_empty());
-            continue;
-        }
-        assert_eq!(recovered, Recovered::Done);
-        let (mce_event, mce) = h.mces()[0];
-        assert!(!mce.corrected && !mce.between_trials);
-        let (crash_event, crash) = h.crashes()[0];
-        assert_eq!(crash.reset_reason, None);
-        assert!(crash.reset_reason_raw.is_empty());
-        assert_eq!(crash_event.cause, [mce_event.seq]);
-        let (end_event, end) = h.ends()[0];
-        assert_eq!(end.outcome, Outcome::Failure);
-        assert_eq!(end.signal, Some(Signal::UncorrectedMce));
-        assert!(end_event.cause.contains(&mce_event.seq));
-        h.consistent();
+        script.reasons_unreadable = true;
     }
+    let recovered = h.recover().unwrap();
+    assert_eq!(
+        h.sleeps(),
+        [
+            Duration::from_mins(1),
+            Duration::from_mins(5),
+            Duration::from_mins(30),
+        ],
+        "evidence {evidence}"
+    );
+    assert_eq!(h.retries().len(), 3, "evidence {evidence}");
+    if !evidence {
+        assert!(
+            matches!(recovered, Recovered::Unreadable(_)),
+            "{recovered:?}"
+        );
+        assert!(h.crashes().is_empty() && h.ends().is_empty());
+        return;
+    }
+    assert_eq!(recovered, Recovered::Done);
+    let (mce_event, mce) = h.mces()[0];
+    assert!(!mce.corrected && !mce.between_trials);
+    let (crash_event, crash) = h.crashes()[0];
+    assert_eq!(crash.reset_reason, None);
+    assert!(crash.reset_reason_raw.is_empty());
+    assert_eq!(crash_event.cause, [mce_event.seq]);
+    let (end_event, end) = h.ends()[0];
+    assert_eq!(end.outcome, Outcome::Failure);
+    assert_eq!(end.signal, Some(Signal::UncorrectedMce));
+    assert!(end_event.cause.contains(&mce_event.seq));
+    h.consistent();
 }
 
 #[test]
@@ -1423,50 +1326,49 @@ fn a_cancelled_wait_appends_nothing_and_a_pending_retry_is_not_read_again() {
     assert_eq!(h.appender().recovery().kernel_retries().len(), 1);
 }
 
-#[test]
-fn a_run_cut_short_in_a_retry_wait_waits_the_same_attempt_again_without_a_new_record() {
-    for cut in [Error::Cancelled, Error::Crashed] {
-        let mut h = Harness::new(&trial_log(), "b1");
-        h.reasons(&[
-            ("b0", Some(ResetKind::Watchdog)),
-            ("b1", Some(ResetKind::Watchdog)),
-        ]);
-        {
-            let mut script = h.kernel.borrow_mut();
-            script.failing = Some(boot("b0"));
-            script.failures = 1;
-        }
-        let crashed = matches!(cut, Error::Crashed);
-        if crashed {
-            h.clock.borrow_mut().crash_at = Some(0);
-        } else {
-            h.clock.borrow_mut().cancel_at = Some(0);
-        }
-        let first = h.recover();
-        if crashed {
-            assert!(fatal_crash(&first));
-        } else {
-            assert_eq!(first.unwrap(), Recovered::Cancelled);
-        }
-        assert_eq!(h.retries().len(), 1);
-        assert!(h.crashes().is_empty());
-
-        h.reopen();
-        h.cancel = CancellationToken::new();
-        {
-            let mut state = h.clock.borrow_mut();
-            state.crash_at = None;
-            state.cancel_at = None;
-        }
-        assert_eq!(h.recover().unwrap(), Recovered::Done);
-        assert_eq!(h.retries().len(), 1);
-        assert_eq!(h.sleeps(), [Duration::from_mins(1), Duration::from_mins(1)]);
-        let crashes = h.crashes();
-        assert_eq!(crashes.len(), 1);
-        assert!(!crashes[0].1.stray);
-        assert!(h.appender().recovery().kernel_retries().is_empty());
-        h.consistent();
+#[test_case(Error::Cancelled; "Error::Cancelled")]
+#[test_case(Error::Crashed; "Error::Crashed")]
+fn a_run_cut_short_in_a_retry_wait_waits_the_same_attempt_again_without_a_new_record(cut: Error) {
+    let mut h = Harness::new(&trial_log(), "b1");
+    h.reasons(&[
+        ("b0", Some(ResetKind::Watchdog)),
+        ("b1", Some(ResetKind::Watchdog)),
+    ]);
+    {
+        let mut script = h.kernel.borrow_mut();
+        script.failing = Some(boot("b0"));
+        script.failures = 1;
     }
+    let crashed = matches!(cut, Error::Crashed);
+    if crashed {
+        h.clock.borrow_mut().crash_at = Some(0);
+    } else {
+        h.clock.borrow_mut().cancel_at = Some(0);
+    }
+    let first = h.recover();
+    if crashed {
+        assert!(fatal_crash(&first));
+    } else {
+        assert_eq!(first.unwrap(), Recovered::Cancelled);
+    }
+    assert_eq!(h.retries().len(), 1);
+    assert!(h.crashes().is_empty());
+
+    h.reopen();
+    h.cancel = CancellationToken::new();
+    {
+        let mut state = h.clock.borrow_mut();
+        state.crash_at = None;
+        state.cancel_at = None;
+    }
+    assert_eq!(h.recover().unwrap(), Recovered::Done);
+    assert_eq!(h.retries().len(), 1);
+    assert_eq!(h.sleeps(), [Duration::from_mins(1), Duration::from_mins(1)]);
+    let crashes = h.crashes();
+    assert_eq!(crashes.len(), 1);
+    assert!(!crashes[0].1.stray);
+    assert!(h.appender().recovery().kernel_retries().is_empty());
+    h.consistent();
 }
 
 #[test]
@@ -1589,24 +1491,26 @@ fn crashed_trial_with(samples: &str) -> Harness {
     h
 }
 
-#[test]
-fn a_crashed_trials_end_carries_the_last_complete_sample_and_ignores_a_torn_one() {
+#[test_case("complete", ""; "complete")]
+#[test_case("torn after it", "{\"elapsed_ms\":30"; "torn after it")]
+fn a_crashed_trials_end_carries_the_last_complete_sample_and_ignores_a_torn_one(
+    name: &str,
+    tail: &str,
+) {
     let complete = concat!(
         "{\"elapsed_ms\":1000,\"tctl_c\":70,\"core_mhz\":{\"0\":4400,\"8\":4300}}\n",
         "{\"elapsed_ms\":2000,\"tctl_c\":85,\"core_mhz\":{\"0\":4500,\"8\":4300}}\n",
     );
-    for (name, text) in [
-        ("complete", complete.to_owned()),
-        ("torn after it", format!("{complete}{{\"elapsed_ms\":30")),
-    ] {
-        let h = crashed_trial_with(&text);
-        let (_, end) = h.ends()[0];
-        assert_eq!(end.last_sample_s, Some(2), "{name}");
-        assert_eq!(end.last_sample_tctl_c, Some(85), "{name}");
-        assert_eq!(end.last_sample_min_mhz, Some(4300), "{name}");
-        assert_eq!(end.last_sample_max_mhz, Some(4500), "{name}");
-        assert_eq!(h.ended(), ["0001"], "{name}");
-    }
+
+    let text = format!("{complete}{tail}");
+    let h = crashed_trial_with(&text);
+    let (_, end) = h.ends()[0];
+    assert_eq!(end.last_sample_s, Some(2), "{name}");
+    assert_eq!(end.last_sample_tctl_c, Some(85), "{name}");
+    assert_eq!(end.last_sample_min_mhz, Some(4300), "{name}");
+    assert_eq!(end.last_sample_max_mhz, Some(4500), "{name}");
+    assert_eq!(h.ended(), ["0001"], "{name}");
+
     let h = crashed_trial_with("");
     let (_, end) = h.ends()[0];
     assert_eq!(
@@ -1620,30 +1524,32 @@ fn a_crashed_trials_end_carries_the_last_complete_sample_and_ignores_a_torn_one(
     assert_eq!(h.ended(), ["0001"]);
 }
 
-#[test]
-fn an_interrupted_trial_ran_until_its_last_own_sample_and_another_trials_sample_adds_nothing() {
-    for (sampled, ran_s) in [("0001", 59), ("0002", 29)] {
-        let mut log = trial_log();
-        log.mono(70_000).add(
-            Payload::TrialSample(TrialSample {
-                trial: trial_id(sampled),
-                warning: "sample".into(),
-                pid: 1,
-                tid: 1,
-                cpu: CpuId::from(0),
-            }),
-            &[],
-        );
-        let mut h = Harness::new(&log, "b1");
-        h.reasons(&[
-            ("b0", Some(ResetKind::Watchdog)),
-            ("b1", Some(ResetKind::Watchdog)),
-        ]);
-        assert_eq!(h.recover().unwrap(), Recovered::Done);
-        let ends = h.ends();
-        assert_eq!(ends.len(), 1, "{sampled}");
-        assert_eq!(ends[0].1.duration_s, ran_s, "{sampled}");
-    }
+#[test_case("0001", 59; "0001, 59")]
+#[test_case("0002", 29; "0002, 29")]
+fn an_interrupted_trial_ran_until_its_last_own_sample_and_another_trials_sample_adds_nothing(
+    sampled: &str,
+    ran_s: u32,
+) {
+    let mut log = trial_log();
+    log.mono(70_000).add(
+        Payload::TrialSample(TrialSample {
+            trial: trial_id(sampled),
+            warning: "sample".into(),
+            pid: 1,
+            tid: 1,
+            cpu: CpuId::from(0),
+        }),
+        &[],
+    );
+    let mut h = Harness::new(&log, "b1");
+    h.reasons(&[
+        ("b0", Some(ResetKind::Watchdog)),
+        ("b1", Some(ResetKind::Watchdog)),
+    ]);
+    assert_eq!(h.recover().unwrap(), Recovered::Done);
+    let ends = h.ends();
+    assert_eq!(ends.len(), 1, "{sampled}");
+    assert_eq!(ends[0].1.duration_s, ran_s, "{sampled}");
 }
 
 #[test]
@@ -1931,8 +1837,17 @@ fn a_trial_closes_by_the_first_evidence_that_holds() {
     );
 }
 
-#[test]
-fn a_closure_rules_the_outcome_and_whether_the_trial_was_interrupted() {
+#[test_case(Some(ResetKind::Watchdog), false, Outcome::Failure, Some(Signal::Crash), false; "watchdog")]
+#[test_case(Some(ResetKind::ThermalTrip), true, Outcome::Inconclusive, None, true; "thermal trip")]
+#[test_case(None, true, Outcome::Inconclusive, None, true; "inconclusive unknown reset")]
+#[test_case(None, false, Outcome::Failure, Some(Signal::Crash), false; "failed unknown reset")]
+fn a_closure_rules_the_outcome_and_whether_the_trial_was_interrupted(
+    kind: Option<ResetKind>,
+    inconclusive: bool,
+    outcome: Outcome,
+    signal: Option<Signal>,
+    interrupted: bool,
+) {
     let stopped = Closure::Stopped { causes: seqs(&[1]) }.ruling();
     assert_eq!(
         (
@@ -1974,38 +1889,19 @@ fn a_closure_rules_the_outcome_and_whether_the_trial_was_interrupted() {
         "togi stopped during the trial after a machine check"
     );
 
-    for (kind, inconclusive, outcome, signal, interrupted) in [
-        (
-            Some(ResetKind::Watchdog),
-            false,
-            Outcome::Failure,
-            Some(Signal::Crash),
-            false,
-        ),
-        (
-            Some(ResetKind::ThermalTrip),
-            true,
-            Outcome::Inconclusive,
-            None,
-            true,
-        ),
-        (None, true, Outcome::Inconclusive, None, true),
-        (None, false, Outcome::Failure, Some(Signal::Crash), false),
-    ] {
-        let ruling = Closure::Crashed {
-            reset: super::reset_verdict(&detected(kind, inconclusive)),
-            causes: seqs(&[9]),
-        }
-        .ruling();
-        assert_eq!(
-            (
-                ruling.outcome,
-                ruling.signal,
-                ruling.interrupted,
-                ruling.stopped
-            ),
-            (outcome, signal, interrupted, false),
-            "{kind:?} {inconclusive}"
-        );
+    let ruling = Closure::Crashed {
+        reset: super::reset_verdict(&detected(kind, inconclusive)),
+        causes: seqs(&[9]),
     }
+    .ruling();
+    assert_eq!(
+        (
+            ruling.outcome,
+            ruling.signal,
+            ruling.interrupted,
+            ruling.stopped
+        ),
+        (outcome, signal, interrupted, false),
+        "{kind:?} {inconclusive}"
+    );
 }

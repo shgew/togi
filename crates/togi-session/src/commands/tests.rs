@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_journal::{Journal, ResetTarget, SessionId};
 
 use super::*;
@@ -114,22 +115,19 @@ fn a_core_of_a_session_interrupted_before_its_phases_can_still_be_reset() {
     assert_eq!(kinds(&journal)[before..], ["command.reset"]);
 }
 
-#[test]
-fn resetting_everything_archives_across_a_ruleset_an_evidence_epoch_or_a_schema_mismatch() {
-    type Change = fn(&mut Build);
-    let changes: [(&str, Change); 3] = [
-        ("ruleset", |build| build.ruleset += 1),
-        ("evidence", |build| build.evidence += 1),
-        ("schema", |build| build.schema += 1),
-    ];
-    for (name, change) in changes {
-        let bench = Bench::new(2);
-        let journal = journal_after_a_run(&bench);
-        let mut other = build();
-        change(&mut other);
-        let (session, dir) = reset_all(&other, journal, &mut *bench.sim.seams().clock).expect(name);
-        assert_eq!(dir.archives().unwrap(), [session], "{name}");
-    }
+#[test_case("ruleset", |build| build.ruleset += 1; "ruleset")]
+#[test_case("evidence", |build| build.evidence += 1; "evidence")]
+#[test_case("schema", |build| build.schema += 1; "schema")]
+fn resetting_everything_archives_across_a_ruleset_an_evidence_epoch_or_a_schema_mismatch(
+    name: &str,
+    change: fn(&mut Build),
+) {
+    let bench = Bench::new(2);
+    let journal = journal_after_a_run(&bench);
+    let mut other = build();
+    change(&mut other);
+    let (session, dir) = reset_all(&other, journal, &mut *bench.sim.seams().clock).expect(name);
+    assert_eq!(dir.archives().unwrap(), [session], "{name}");
 }
 
 fn unfoldable(bench: &Bench) -> Journal {

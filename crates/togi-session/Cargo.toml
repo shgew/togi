@@ -24,6 +24,7 @@ togi-tuningboot.workspace = true
 [dev-dependencies]
 flate2.workspace = true
 proptest.workspace = true
+test-case.workspace = true
 togi-sim.workspace = true
 
 [lints]

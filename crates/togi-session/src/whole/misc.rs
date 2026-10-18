@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::Duration;
+use test_case::test_case;
 
 use togi_config::Config;
 use togi_defect::{Clause, Entry};
@@ -589,97 +590,107 @@ fn assert_preflight_then_sweep(events: &[Event], expected_checks: &BTreeSet<Stri
     sweep
 }
 
-#[test]
-fn every_startup_runs_preflight_then_the_sweep_before_its_first_smu_write() {
-    for tuning_boot in [false, true] {
-        for startup in [Startup::Fresh, Startup::SameBoot, Startup::Reboot] {
-            for sweep_fails in [false, true] {
-                let case =
-                    format!("tuning boot {tuning_boot}, {startup:?}, sweep fails {sweep_fails}");
-                let bench = bench();
-                let mut start = 0;
-                if !matches!(startup, Startup::Fresh) {
-                    let (setup, _) = watched_run(&bench, tuning_boot, false);
-                    assert_eq!(setup.stop, Some(Stop::Signal), "{case}: {:?}", setup.errors);
-                    start = setup.journal.events().len();
-                    drop(setup);
-                    if matches!(startup, Startup::Reboot) {
-                        bench.sim.reboot();
-                    }
-                }
-                let expected_checks: BTreeSet<String> = bench
-                    .sim
-                    .seams()
-                    .host
-                    .preflight()
-                    .into_iter()
-                    .map(|check| check.name.clone())
-                    .collect();
-                assert!(!expected_checks.is_empty());
-                let (ended, touched) = watched_run(&bench, tuning_boot, sweep_fails);
-                assert!(ended.errors.is_empty(), "{case}: {:?}", ended.errors);
-                assert_no_violations(&bench);
-                let events = &ended.journal.events()[start..];
-                let sweep = assert_preflight_then_sweep(events, &expected_checks);
-                let Payload::PreflightCheck(check) = &events[sweep].payload else {
-                    unreachable!()
-                };
-                if sweep_fails {
-                    assert!(!check.ok, "{case}");
-                    assert!(
-                        matches!(&ended.stop, Some(Stop::DeadEnd { dead_end, causes, .. })
+#[test_case(false, Startup::Fresh, false; "tuning boot false Fresh sweep fails false")]
+#[test_case(false, Startup::Fresh, true; "tuning boot false Fresh sweep fails true")]
+#[test_case(false, Startup::SameBoot, false; "tuning boot false SameBoot sweep fails false")]
+#[test_case(false, Startup::SameBoot, true; "tuning boot false SameBoot sweep fails true")]
+#[test_case(false, Startup::Reboot, false; "tuning boot false Reboot sweep fails false")]
+#[test_case(false, Startup::Reboot, true; "tuning boot false Reboot sweep fails true")]
+#[test_case(true, Startup::Fresh, false; "tuning boot true Fresh sweep fails false")]
+#[test_case(true, Startup::Fresh, true; "tuning boot true Fresh sweep fails true")]
+#[test_case(true, Startup::SameBoot, false; "tuning boot true SameBoot sweep fails false")]
+#[test_case(true, Startup::SameBoot, true; "tuning boot true SameBoot sweep fails true")]
+#[test_case(true, Startup::Reboot, false; "tuning boot true Reboot sweep fails false")]
+#[test_case(true, Startup::Reboot, true; "tuning boot true Reboot sweep fails true")]
+fn every_startup_runs_preflight_then_the_sweep_before_its_first_smu_write(
+    tuning_boot: bool,
+    startup: Startup,
+    sweep_fails: bool,
+) {
+    let case = format!("tuning boot {tuning_boot}, {startup:?}, sweep fails {sweep_fails}");
+    let bench = bench();
+    let mut start = 0;
+    if !matches!(startup, Startup::Fresh) {
+        let (setup, _) = watched_run(&bench, tuning_boot, false);
+        assert_eq!(setup.stop, Some(Stop::Signal), "{case}: {:?}", setup.errors);
+        start = setup.journal.events().len();
+        drop(setup);
+        if matches!(startup, Startup::Reboot) {
+            bench.sim.reboot();
+        }
+    }
+    let expected_checks: BTreeSet<String> = bench
+        .sim
+        .seams()
+        .host
+        .preflight()
+        .into_iter()
+        .map(|check| check.name.clone())
+        .collect();
+    assert!(!expected_checks.is_empty());
+    let (ended, touched) = watched_run(&bench, tuning_boot, sweep_fails);
+    assert!(ended.errors.is_empty(), "{case}: {:?}", ended.errors);
+    assert_no_violations(&bench);
+    let events = &ended.journal.events()[start..];
+    let sweep = assert_preflight_then_sweep(events, &expected_checks);
+    let Payload::PreflightCheck(check) = &events[sweep].payload else {
+        unreachable!()
+    };
+    if sweep_fails {
+        assert!(!check.ok, "{case}");
+        assert!(
+            matches!(&ended.stop, Some(Stop::DeadEnd { dead_end, causes, .. })
                             if dead_end.condition == togi_journal::DeadEndCondition::Containment
                                 && *causes == [events[sweep].seq]),
-                        "{case}: {:?}",
-                        ended.stop
-                    );
-                    assert_eq!(touched, [Touch::Sweep], "{case}");
-                    assert!(
-                        !events.iter().any(|event| is_smu_record(event)
-                            || matches!(event.payload, Payload::TrialIntent(_))),
-                        "{case}"
-                    );
-                } else {
-                    assert!(check.ok, "{case}");
-                    assert_eq!(ended.stop, Some(Stop::Signal), "{case}");
-                    let at = |wanted: Touch| touched.iter().position(|touch| *touch == wanted);
-                    assert_eq!(touched.first(), Some(&Touch::Sweep), "{case}: {touched:?}");
-                    assert_eq!(
-                        touched
-                            .iter()
-                            .filter(|touch| **touch == Touch::Sweep)
-                            .count(),
-                        1,
-                        "{case}: {touched:?}"
-                    );
-                    assert_eq!(
-                        touched
-                            .iter()
-                            .filter(|touch| **touch == Touch::Start)
-                            .count(),
-                        1,
-                        "{case}: {touched:?}"
-                    );
-                    assert!(
-                        at(Touch::Write).is_some_and(|write| write < at(Touch::Start).unwrap()),
-                        "no SMU write before the start: {case}: {touched:?}"
-                    );
-                    let first_write = events.iter().position(is_smu_record).unwrap();
-                    let start = events
-                        .iter()
-                        .position(|event| matches!(event.payload, Payload::TrialStart(_)))
-                        .unwrap();
-                    assert!(sweep < first_write && first_write < start, "{case}");
-                    assert_eq!(
-                        events
-                            .iter()
-                            .filter(|event| matches!(event.payload, Payload::TrialIntent(_)))
-                            .count(),
-                        1,
-                        "{case}"
-                    );
-                }
-            }
-        }
+            "{case}: {:?}",
+            ended.stop
+        );
+        assert_eq!(touched, [Touch::Sweep], "{case}");
+        assert!(
+            !events
+                .iter()
+                .any(|event| is_smu_record(event)
+                    || matches!(event.payload, Payload::TrialIntent(_))),
+            "{case}"
+        );
+    } else {
+        assert!(check.ok, "{case}");
+        assert_eq!(ended.stop, Some(Stop::Signal), "{case}");
+        let at = |wanted: Touch| touched.iter().position(|touch| *touch == wanted);
+        assert_eq!(touched.first(), Some(&Touch::Sweep), "{case}: {touched:?}");
+        assert_eq!(
+            touched
+                .iter()
+                .filter(|touch| **touch == Touch::Sweep)
+                .count(),
+            1,
+            "{case}: {touched:?}"
+        );
+        assert_eq!(
+            touched
+                .iter()
+                .filter(|touch| **touch == Touch::Start)
+                .count(),
+            1,
+            "{case}: {touched:?}"
+        );
+        assert!(
+            at(Touch::Write).is_some_and(|write| write < at(Touch::Start).unwrap()),
+            "no SMU write before the start: {case}: {touched:?}"
+        );
+        let first_write = events.iter().position(is_smu_record).unwrap();
+        let start = events
+            .iter()
+            .position(|event| matches!(event.payload, Payload::TrialStart(_)))
+            .unwrap();
+        assert!(sweep < first_write && first_write < start, "{case}");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.payload, Payload::TrialIntent(_)))
+                .count(),
+            1,
+            "{case}"
+        );
     }
 }

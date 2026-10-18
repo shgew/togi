@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_journal::{CorePhase, CoreTransition, Payload};
 use togi_machine::Condition;
 use togi_tuner::Profile;
@@ -6,27 +7,26 @@ use super::{Flow, SessionError};
 use crate::testing::{Bench, begun, core, kinds_of, run_plan, search_plan, target};
 use crate::write::{ConstraintRefusal, ProfileFailure, Refused};
 
-#[test]
-fn a_refused_or_misshapen_profile_is_a_fatal_session_error_never_dead_end_evidence() {
-    let refused = ProfileFailure::Refused(Refused::Reaches {
+#[test_case(ProfileFailure::Refused(Refused::Reaches {
         core: core(0),
         target: target(-20),
         refusal: ConstraintRefusal::Reached(togi_tuner::Reached::FailurePoint {
             core: core(0),
             point: togi_tuner::FailurePoint::new(target(-10)),
         }),
-    });
-    let shape = ProfileFailure::Shape {
+    }); "refused constraint")]
+#[test_case(ProfileFailure::Shape {
         profile: 2,
         cores: 4,
+    }; "misshapen profile")]
+fn a_refused_or_misshapen_profile_is_a_fatal_session_error_never_dead_end_evidence(
+    failure: ProfileFailure,
+) {
+    let text = failure.to_string();
+    let Flow::Fatal(SessionError::Profile(kept)) = Flow::from(failure) else {
+        panic!("{text}: not a fatal profile error");
     };
-    for failure in [refused, shape] {
-        let text = failure.to_string();
-        let Flow::Fatal(SessionError::Profile(kept)) = Flow::from(failure) else {
-            panic!("{text}: not a fatal profile error");
-        };
-        assert_eq!(kept.to_string(), text);
-    }
+    assert_eq!(kept.to_string(), text);
 }
 
 #[test]

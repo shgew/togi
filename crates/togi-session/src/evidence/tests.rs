@@ -1,4 +1,5 @@
 use std::time::Duration;
+use test_case::test_case;
 use togi_config::DeadEndThreshold;
 
 use togi_journal::{Outcome, Seq};
@@ -152,52 +153,41 @@ fn the_stronger_evidence_decides_in_every_pairing() {
     }
 }
 
-#[test]
-fn a_backend_failure_survives_every_weaker_diagnostic_and_keeps_its_core() {
-    for signal in [
-        Signal::ComputationError,
-        Signal::Stall,
-        Signal::UnexpectedExit,
-    ] {
-        let mut case = Case::new();
-        case.result.failure = Some(TrialFailure {
-            signal,
-            core: core(5),
-        });
-        case.missing = Some("canceled; cleanup failed".into());
-        case.reset = Some(ResetVerdict {
-            outcome: Outcome::Inconclusive,
-            signal: None,
-            reason: None,
-        });
-        case.mces = vec![mce(true)];
-        let end = case.adjudicate();
-        assert_eq!(end.signal, Some(signal));
-        assert_eq!(end.outcome, Outcome::Failure);
-        assert_eq!(end.core, Some(core(5)));
-        assert_eq!(end.reason.as_deref(), Some("canceled; cleanup failed"));
-    }
+#[test_case(Signal::ComputationError; "Signal::ComputationError")]
+#[test_case(Signal::Stall; "Signal::Stall")]
+#[test_case(Signal::UnexpectedExit; "Signal::UnexpectedExit")]
+fn a_backend_failure_survives_every_weaker_diagnostic_and_keeps_its_core(signal: Signal) {
+    let mut case = Case::new();
+    case.result.failure = Some(TrialFailure {
+        signal,
+        core: core(5),
+    });
+    case.missing = Some("canceled; cleanup failed".into());
+    case.reset = Some(ResetVerdict {
+        outcome: Outcome::Inconclusive,
+        signal: None,
+        reason: None,
+    });
+    case.mces = vec![mce(true)];
+    let end = case.adjudicate();
+    assert_eq!(end.signal, Some(signal));
+    assert_eq!(end.outcome, Outcome::Failure);
+    assert_eq!(end.core, Some(core(5)));
+    assert_eq!(end.reason.as_deref(), Some("canceled; cleanup failed"));
 }
 
-#[test]
-fn a_trial_passes_only_when_it_ran_its_full_duration() {
-    for (ran, outcome) in [
-        (
-            MINUTE.saturating_sub(Duration::from_nanos(1)),
-            Outcome::Inconclusive,
-        ),
-        (MINUTE, Outcome::Pass),
-        (MINUTE + Duration::from_nanos(1), Outcome::Pass),
-    ] {
-        let mut case = Case::new();
-        case.result.ran = ran;
-        let end = case.adjudicate();
-        assert_eq!(end.outcome, outcome, "{ran:?}");
-        assert_eq!(
-            end.reason.as_deref(),
-            (outcome == Outcome::Inconclusive).then_some("trial ended before its full duration")
-        );
-    }
+#[test_case(MINUTE.saturating_sub(Duration::from_nanos(1)), Outcome::Inconclusive; "MINUTE.saturating_sub(Duration::from_nanos(1)), Outcome::Inconclusive")]
+#[test_case(MINUTE, Outcome::Pass; "MINUTE, Outcome::Pass")]
+#[test_case(MINUTE + Duration::from_nanos(1), Outcome::Pass; "MINUTE + Duration::from_nanos(1), Outcome::Pass")]
+fn a_trial_passes_only_when_it_ran_its_full_duration(ran: Duration, outcome: Outcome) {
+    let mut case = Case::new();
+    case.result.ran = ran;
+    let end = case.adjudicate();
+    assert_eq!(end.outcome, outcome, "{ran:?}");
+    assert_eq!(
+        end.reason.as_deref(),
+        (outcome == Outcome::Inconclusive).then_some("trial ended before its full duration")
+    );
 }
 
 #[test]
@@ -272,35 +262,27 @@ fn diagnostics_join_with_a_semicolon_and_empty_ones_vanish() {
     );
 }
 
-#[test]
-fn a_kernel_machine_check_belongs_to_a_trial_inside_its_window_both_ends_inclusive() {
+#[test_case("zero", Duration::ZERO, Placement::BetweenTrials; "zero")]
+#[test_case("before", Duration::from_secs(10).saturating_sub(Duration::from_nanos(1)), Placement::BetweenTrials; "before")]
+#[test_case("start", Duration::from_secs(10), Placement::Trial; "start")]
+#[test_case("inside", Duration::from_secs(15), Placement::Trial; "inside")]
+#[test_case("teardown", Duration::from_secs(20), Placement::Trial; "teardown")]
+#[test_case("future", Duration::from_secs(20) + Duration::from_nanos(1), Placement::BetweenTrials; "future")]
+fn a_kernel_machine_check_belongs_to_a_trial_inside_its_window_both_ends_inclusive(
+    name: &str,
+    mono: Duration,
+    want: Placement,
+) {
     let window = Some(Window {
         since: Duration::from_secs(10),
         until: Duration::from_secs(20),
     });
-    let ns = Duration::from_nanos(1);
-    for (name, mono, want) in [
-        ("zero", Duration::ZERO, Placement::BetweenTrials),
-        (
-            "before",
-            Duration::from_secs(10).saturating_sub(ns),
-            Placement::BetweenTrials,
-        ),
-        ("start", Duration::from_secs(10), Placement::Trial),
-        ("inside", Duration::from_secs(15), Placement::Trial),
-        ("teardown", Duration::from_secs(20), Placement::Trial),
-        (
-            "future",
-            Duration::from_secs(20) + ns,
-            Placement::BetweenTrials,
-        ),
-    ] {
-        assert_eq!(
-            place_kernel_mce(mono, true, window, false, false),
-            want,
-            "{name}"
-        );
-    }
+
+    assert_eq!(
+        place_kernel_mce(mono, true, window, false, false),
+        want,
+        "{name}"
+    );
 }
 
 #[test]
@@ -430,95 +412,56 @@ fn set(ids: &[i64]) -> CoreSet {
     ids.iter().map(|&id| core(id)).collect()
 }
 
-#[test]
-#[expect(clippy::type_complexity, reason = "a table of cases")]
-fn only_a_unique_earliest_persistent_stall_names_a_core() {
-    let r7 = Regime::R7;
-    let cases: Vec<(&str, Vec<&[(i64, i64)]>, Regime, Option<(i64, i64)>)> = vec![
-        (
-            "first stall",
-            vec![
+#[test_case("first stall", vec![
                 &[(2, 1000), (7, 1000)],
                 &[(2, 1000), (7, 2000)],
                 &[(2, 1000), (7, 2000)],
-            ],
-            r7,
-            Some((2, 2000)),
-        ),
-        (
-            "scheduled R6 suspension",
-            vec![&[(2, 0), (7, 0)], &[(2, 0), (7, 100)], &[(2, 0), (7, 200)]],
-            Regime::R6,
-            None,
-        ),
-        (
-            "advancing until end",
-            vec![&[(2, 1000), (7, 1000)], &[(2, 2000), (7, 2000)]],
-            r7,
-            None,
-        ),
-        (
-            "tie",
-            vec![&[(2, 1000), (7, 1000)], &[(2, 1000), (7, 1000)]],
-            r7,
-            None,
-        ),
-        (
-            "missing reading",
-            vec![
+            ], Regime::R7, Some((2, 2000)); "first stall")]
+#[test_case("scheduled R6 suspension", vec![&[(2, 0), (7, 0)], &[(2, 0), (7, 100)], &[(2, 0), (7, 200)]], Regime::R6, None; "scheduled R6 suspension")]
+#[test_case("advancing until end", vec![&[(2, 1000), (7, 1000)], &[(2, 2000), (7, 2000)]], Regime::R7, None; "advancing until end")]
+#[test_case("tie", vec![&[(2, 1000), (7, 1000)], &[(2, 1000), (7, 1000)]], Regime::R7, None; "tie")]
+#[test_case("missing reading", vec![
                 &[(2, 1000), (7, 1000)],
                 &[(2, 1000)],
                 &[(2, 1000), (7, 2000)],
-            ],
-            r7,
-            None,
-        ),
-        ("no samples", vec![], r7, None),
-        ("one sample", vec![&[(2, 1000), (7, 1000)]], r7, None),
-        (
-            "transient plateau resumes",
-            vec![
+            ], Regime::R7, None; "missing reading")]
+#[test_case("no samples", vec![], Regime::R7, None; "no samples")]
+#[test_case("one sample", vec![&[(2, 1000), (7, 1000)]], Regime::R7, None; "one sample")]
+#[test_case("transient plateau resumes", vec![
                 &[(2, 1000), (7, 1000)],
                 &[(2, 1000), (7, 2000)],
                 &[(2, 2000), (7, 3000)],
-            ],
-            r7,
-            None,
-        ),
-        (
-            "later worker stalls first",
-            vec![
+            ], Regime::R7, None; "transient plateau resumes")]
+#[test_case("later worker stalls first", vec![
                 &[(2, 1000), (7, 1000)],
                 &[(2, 2000), (7, 1000)],
                 &[(2, 2000), (7, 1000)],
-            ],
-            r7,
-            Some((7, 2000)),
-        ),
-        (
-            "counter decrease",
-            vec![
+            ], Regime::R7, Some((7, 2000)); "later worker stalls first")]
+#[test_case("counter decrease", vec![
                 &[(2, 1000), (7, 1000)],
                 &[(2, 0), (7, 2000)],
                 &[(2, 0), (7, 3000)],
-            ],
-            r7,
-            None,
-        ),
-    ];
-    for (name, readings, regime, want) in cases {
-        let got = workers(&readings, &[2, 7], regime);
-        let stalled = got
-            .summary
-            .stalled
-            .map(|stall| (i64::from(stall.core.get()), stall.since_ms));
-        assert_eq!(stalled, want, "{name}");
-        assert_eq!(
-            got.summary.last.map(|last| last.elapsed_ms),
-            got.last,
-            "{name}"
-        );
-    }
+            ], Regime::R7, None; "counter decrease")]
+fn only_a_unique_earliest_persistent_stall_names_a_core(
+    name: &str,
+    readings: Vec<&[(i64, i64)]>,
+    regime: Regime,
+    want: Option<(i64, i64)>,
+) {
+    let r7 = Regime::R7;
+
+    let got = workers(&readings, &[2, 7], regime);
+    let stalled = got
+        .summary
+        .stalled
+        .map(|stall| (i64::from(stall.core.get()), stall.since_ms));
+    assert_eq!(stalled, want, "{name}");
+    assert_eq!(
+        got.summary.last.map(|last| last.elapsed_ms),
+        got.last,
+        "{name}"
+    );
+
     let single = workers(&[&[(2, 1000)], &[(2, 1000)]], &[2], r7);
     assert_eq!(single.summary.stalled, None);
 }
@@ -535,77 +478,45 @@ fn voltage_sample(a: f32, b: f32) -> TrialConditions {
     }
 }
 
-#[test]
-#[expect(clippy::type_complexity, reason = "a table of cases")]
-fn the_requested_voltage_is_the_loaded_cores_highest_request_by_median_and_minimum() {
-    let none = TrialConditions::default;
-    let cases: Vec<(&str, &[i64], Vec<TrialConditions>, Option<(f64, f64)>)> = vec![
-        (
-            "loaded subset odd",
-            &[2, 7],
-            vec![
+#[test_case("loaded subset odd", &[2, 7], vec![
                 voltage_sample(1.0, 1.125),
                 voltage_sample(1.5, 1.25),
                 voltage_sample(1.25, 1.0),
-            ],
-            Some((1.25, 1.125)),
-        ),
-        (
-            "loaded subset even",
-            &[2, 7],
-            vec![
+            ], Some((1.25, 1.125)); "loaded subset odd")]
+#[test_case("loaded subset even", &[2, 7], vec![
                 voltage_sample(1.5, 1.25),
                 voltage_sample(1.0, 1.125),
                 voltage_sample(1.25, 1.0),
                 voltage_sample(1.375, 1.125),
-            ],
-            Some((1.3125, 1.125)),
-        ),
-        (
-            "missing lanes skipped",
-            &[2, 7],
-            vec![
-                none(),
+            ], Some((1.3125, 1.125)); "loaded subset even")]
+#[test_case("missing lanes skipped", &[2, 7], vec![
+                TrialConditions::default(),
                 voltage_sample(1.0, 1.125),
-                none(),
+                TrialConditions::default(),
                 voltage_sample(1.5, 1.25),
-                none(),
-            ],
-            Some((1.3125, 1.125)),
-        ),
-        (
-            "single core",
-            &[7],
-            vec![voltage_sample(1.5, 1.0), voltage_sample(1.375, 1.25)],
-            Some((1.125, 1.0)),
-        ),
-        ("all missing", &[2, 7], vec![none(), none()], None),
-        ("no samples", &[2, 7], vec![], None),
-        (
-            "no loaded cores",
-            &[],
-            vec![voltage_sample(1.0, 1.25)],
-            None,
-        ),
-        (
-            "non-finite lane skipped",
-            &[2, 7],
-            vec![voltage_sample(f32::NAN, 1.0), voltage_sample(1.5, 1.0)],
-            Some((1.5, 1.5)),
-        ),
-    ];
-    for (name, loaded, samples, want) in cases {
-        let got = summarize_samples(samples.into_iter().map(Ok), set(loaded), Regime::R7, |_| {
-            None
-        })
-        .unwrap()
-        .voltage;
-        assert_eq!(
-            got.map(|voltage| (voltage.median_v, voltage.min_v)),
-            want,
-            "{name}"
-        );
-    }
+                TrialConditions::default(),
+            ], Some((1.3125, 1.125)); "missing lanes skipped")]
+#[test_case("single core", &[7], vec![voltage_sample(1.5, 1.0), voltage_sample(1.375, 1.25)], Some((1.125, 1.0)); "single core")]
+#[test_case("all missing", &[2, 7], vec![TrialConditions::default(), TrialConditions::default()], None; "all missing")]
+#[test_case("no samples", &[2, 7], vec![], None; "no samples")]
+#[test_case("no loaded cores", &[], vec![voltage_sample(1.0, 1.25)], None; "no loaded cores")]
+#[test_case("non-finite lane skipped", &[2, 7], vec![voltage_sample(f32::NAN, 1.0), voltage_sample(1.5, 1.0)], Some((1.5, 1.5)); "non-finite lane skipped")]
+fn the_requested_voltage_is_the_loaded_cores_highest_request_by_median_and_minimum(
+    name: &str,
+    loaded: &[i64],
+    samples: Vec<TrialConditions>,
+    want: Option<(f64, f64)>,
+) {
+    let got = summarize_samples(samples.into_iter().map(Ok), set(loaded), Regime::R7, |_| {
+        None
+    })
+    .unwrap()
+    .voltage;
+    assert_eq!(
+        got.map(|voltage| (voltage.median_v, voltage.min_v)),
+        want,
+        "{name}"
+    );
 }
 
 fn telemetry_samples(count: usize) -> Vec<TrialConditions> {
@@ -621,29 +532,34 @@ fn telemetry_samples(count: usize) -> Vec<TrialConditions> {
         .collect()
 }
 
-#[test]
-fn request_telemetry_needs_twenty_samples_after_the_warmup_and_every_loaded_core_on_a_known_ccd() {
+#[test_case(Regime::R1; "Regime::R1")]
+#[test_case(Regime::R3; "Regime::R3")]
+#[test_case(Regime::R6; "Regime::R6")]
+#[test_case(Regime::R7; "Regime::R7")]
+fn request_telemetry_needs_twenty_samples_after_the_warmup_and_every_loaded_core_on_a_known_ccd(
+    regime: Regime,
+) {
     let ccd = |core: CoreId| CcdId::try_from(core.get() / 4).ok();
-    for regime in [Regime::R1, Regime::R3, Regime::R6, Regime::R7] {
-        let enough = summarize_samples(
-            telemetry_samples(20).into_iter().map(Ok),
-            set(&[2, 7]),
-            regime,
-            ccd,
-        )
-        .unwrap();
-        let telemetry = enough.telemetry.unwrap();
-        assert_eq!(telemetry.requests.get(core(7)), Some(1.5), "{regime}");
-        assert_eq!(telemetry.ccd_mhz.len(), 2, "{regime}");
-        let short = summarize_samples(
-            telemetry_samples(19).into_iter().map(Ok),
-            set(&[2, 7]),
-            regime,
-            ccd,
-        )
-        .unwrap();
-        assert!(short.telemetry.is_none(), "{regime}");
-    }
+
+    let enough = summarize_samples(
+        telemetry_samples(20).into_iter().map(Ok),
+        set(&[2, 7]),
+        regime,
+        ccd,
+    )
+    .unwrap();
+    let telemetry = enough.telemetry.unwrap();
+    assert_eq!(telemetry.requests.get(core(7)), Some(1.5), "{regime}");
+    assert_eq!(telemetry.ccd_mhz.len(), 2, "{regime}");
+    let short = summarize_samples(
+        telemetry_samples(19).into_iter().map(Ok),
+        set(&[2, 7]),
+        regime,
+        ccd,
+    )
+    .unwrap();
+    assert!(short.telemetry.is_none(), "{regime}");
+
     let unknown = summarize_samples(
         telemetry_samples(20).into_iter().map(Ok),
         set(&[2, 7]),

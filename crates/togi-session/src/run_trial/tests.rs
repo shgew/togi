@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
+use test_case::test_case;
 
 use togi_config::Config;
 use togi_journal::fs::{Fault as FsFault, Op};
@@ -849,38 +850,36 @@ fn profile_writes_and_retry_waits_are_outside_every_trial_window() {
     assert_eq!(kind_count(&rig.session, "failure"), 0);
 }
 
-#[test]
-fn a_lost_start_boundary_keeps_its_error_below_stronger_evidence() {
-    type Loss = fn() -> Error;
-    let losses: [Loss; 2] = [failure, || Error::CursorMissing];
-    for loss in losses {
-        for signal in [
-            None,
-            Some(Signal::ComputationError),
-            Some(Signal::CorrectedMce),
-        ] {
-            let mut rig = rigged(Bench::new(2));
-            lose_read(&rig.log, 1, loss);
-            match signal {
-                Some(Signal::CorrectedMce) => mce_when_the_trial_starts(&rig, true),
-                Some(signal) => rig.rigs.borrow_mut().result = Some(failing_with(signal)),
-                None => {}
-            }
-            trial(&mut rig).unwrap();
-            let end = ends(&rig.session).pop().unwrap();
-            let want = if signal.is_some() {
-                Verdict::Failure
-            } else {
-                Verdict::Inconclusive
-            };
-            assert_eq!(end.outcome, want, "{signal:?}");
-            assert_eq!(end.signal, signal, "{signal:?}");
-            assert!(end.kernel_error.is_some(), "{signal:?}");
-            if signal.is_none() {
-                assert_eq!(trial(&mut rig).unwrap(), Control::Continue);
-                assert_eq!(ends(&rig.session).pop().unwrap().outcome, Verdict::Pass);
-            }
-        }
+#[test_case(failure, None; "boot missing without signal")]
+#[test_case(failure, Some(Signal::ComputationError); "boot missing with computation error")]
+#[test_case(failure, Some(Signal::CorrectedMce); "boot missing with corrected MCE")]
+#[test_case(|| Error::CursorMissing, None; "cursor missing without signal")]
+#[test_case(|| Error::CursorMissing, Some(Signal::ComputationError); "cursor missing with computation error")]
+#[test_case(|| Error::CursorMissing, Some(Signal::CorrectedMce); "cursor missing with corrected MCE")]
+fn a_lost_start_boundary_keeps_its_error_below_stronger_evidence(
+    loss: fn() -> Error,
+    signal: Option<Signal>,
+) {
+    let mut rig = rigged(Bench::new(2));
+    lose_read(&rig.log, 1, loss);
+    match signal {
+        Some(Signal::CorrectedMce) => mce_when_the_trial_starts(&rig, true),
+        Some(signal) => rig.rigs.borrow_mut().result = Some(failing_with(signal)),
+        None => {}
+    }
+    trial(&mut rig).unwrap();
+    let end = ends(&rig.session).pop().unwrap();
+    let want = if signal.is_some() {
+        Verdict::Failure
+    } else {
+        Verdict::Inconclusive
+    };
+    assert_eq!(end.outcome, want, "{signal:?}");
+    assert_eq!(end.signal, signal, "{signal:?}");
+    assert!(end.kernel_error.is_some(), "{signal:?}");
+    if signal.is_none() {
+        assert_eq!(trial(&mut rig).unwrap(), Control::Continue);
+        assert_eq!(ends(&rig.session).pop().unwrap().outcome, Verdict::Pass);
     }
 }
 
@@ -918,41 +917,40 @@ fn a_partial_kernel_read_with_a_machine_check_outranks_the_read_error() {
     assert!(end.kernel_error.is_some());
 }
 
-#[test]
-fn partial_machine_check_evidence_outranks_a_failed_or_successful_reanchor() {
-    let fresh_failures: [Option<fn() -> Error>; 2] =
-        [None, Some(|| Error::Other("reanchor failed".into()))];
-    for fresh in fresh_failures {
-        let mut rig = rigged(Bench::new(2));
-        answer_read(
-            &rig.log,
-            2,
-            Answer {
-                mce: Some("partial evidence"),
-                error: || Error::CursorMissing,
-            },
-        );
-        if let Some(error) = fresh {
-            answer_read(&rig.log, 3, Answer { mce: None, error });
-        }
-        let before = rig.log.borrow().reads;
-        trial(&mut rig).unwrap();
-        assert_eq!(rig.log.borrow().reads - before, 3, "{fresh:?}");
-        let end = ends(&rig.session).pop().unwrap();
-        assert_eq!(end.outcome, Verdict::Failure, "{fresh:?}");
-        assert_eq!(end.signal, Some(Signal::CorrectedMce), "{fresh:?}");
-        assert!(cites_trial_mce(&rig.session, &end, true), "{fresh:?}");
-        let kernel_error = end.kernel_error.unwrap();
-        assert!(
-            kernel_error.contains("kernel log cursor cannot be resumed"),
-            "{kernel_error}"
-        );
-        assert_eq!(
-            kernel_error.contains("reanchor failed"),
-            fresh.is_some(),
-            "{kernel_error}"
-        );
+#[test_case(None; "successful reanchor")]
+#[test_case(Some(|| Error::Other("reanchor failed".into())); "failed reanchor")]
+fn partial_machine_check_evidence_outranks_a_failed_or_successful_reanchor(
+    fresh: Option<fn() -> Error>,
+) {
+    let mut rig = rigged(Bench::new(2));
+    answer_read(
+        &rig.log,
+        2,
+        Answer {
+            mce: Some("partial evidence"),
+            error: || Error::CursorMissing,
+        },
+    );
+    if let Some(error) = fresh {
+        answer_read(&rig.log, 3, Answer { mce: None, error });
     }
+    let before = rig.log.borrow().reads;
+    trial(&mut rig).unwrap();
+    assert_eq!(rig.log.borrow().reads - before, 3, "{fresh:?}");
+    let end = ends(&rig.session).pop().unwrap();
+    assert_eq!(end.outcome, Verdict::Failure, "{fresh:?}");
+    assert_eq!(end.signal, Some(Signal::CorrectedMce), "{fresh:?}");
+    assert!(cites_trial_mce(&rig.session, &end, true), "{fresh:?}");
+    let kernel_error = end.kernel_error.unwrap();
+    assert!(
+        kernel_error.contains("kernel log cursor cannot be resumed"),
+        "{kernel_error}"
+    );
+    assert_eq!(
+        kernel_error.contains("reanchor failed"),
+        fresh.is_some(),
+        "{kernel_error}"
+    );
 }
 
 #[test]
@@ -1047,106 +1045,64 @@ fn a_crash_at_a_kernel_boundary_never_invents_a_pass() {
     assert!(ends[0].reason.as_deref().unwrap().contains("crashed"));
 }
 
-#[test]
-fn a_missing_current_boot_leaves_what_the_trial_itself_showed() {
-    #[expect(clippy::type_complexity, reason = "a table of cases")]
-    let cases: [(&str, Option<Signal>, bool, Verdict, Option<Signal>); 5] = [
-        ("missing", None, false, Verdict::Inconclusive, None),
-        (
-            "computation error",
-            Some(Signal::ComputationError),
-            false,
-            Verdict::Failure,
-            Some(Signal::ComputationError),
-        ),
-        (
-            "stall",
-            Some(Signal::Stall),
-            false,
-            Verdict::Failure,
-            Some(Signal::Stall),
-        ),
-        (
-            "early exit",
-            Some(Signal::UnexpectedExit),
-            false,
-            Verdict::Failure,
-            Some(Signal::UnexpectedExit),
-        ),
-        (
-            "mce",
-            None,
-            true,
-            Verdict::Failure,
-            Some(Signal::CorrectedMce),
-        ),
-    ];
-    for (name, signal, mce, outcome, want) in cases {
-        let mut rig = rigged(Bench::new(2));
-        lose_read(&rig.log, 2, || Error::BootMissing);
-        if let Some(signal) = signal {
-            rig.rigs.borrow_mut().result = Some(failing_with(signal));
-        }
-        if mce {
-            mce_when_the_trial_starts(&rig, true);
-        }
-        trial(&mut rig).unwrap();
-        let end = ends(&rig.session).pop().unwrap();
-        assert_eq!((end.outcome, end.signal), (outcome, want), "{name}");
+#[test_case("missing", None, false, Verdict::Inconclusive, None; "missing")]
+#[test_case("computation error", Some(Signal::ComputationError), false, Verdict::Failure, Some(Signal::ComputationError); "computation error")]
+#[test_case("stall", Some(Signal::Stall), false, Verdict::Failure, Some(Signal::Stall); "stall")]
+#[test_case("early exit", Some(Signal::UnexpectedExit), false, Verdict::Failure, Some(Signal::UnexpectedExit); "early exit")]
+#[test_case("mce", None, true, Verdict::Failure, Some(Signal::CorrectedMce); "mce")]
+fn a_missing_current_boot_leaves_what_the_trial_itself_showed(
+    name: &str,
+    signal: Option<Signal>,
+    mce: bool,
+    outcome: Verdict,
+    want: Option<Signal>,
+) {
+    let mut rig = rigged(Bench::new(2));
+    lose_read(&rig.log, 2, || Error::BootMissing);
+    if let Some(signal) = signal {
+        rig.rigs.borrow_mut().result = Some(failing_with(signal));
     }
+    if mce {
+        mce_when_the_trial_starts(&rig, true);
+    }
+    trial(&mut rig).unwrap();
+    let end = ends(&rig.session).pop().unwrap();
+    assert_eq!((end.outcome, end.signal), (outcome, want), "{name}");
 }
 
-#[test]
-fn evidence_survives_a_runner_error_and_the_error_stays_in_the_reason() {
-    #[expect(clippy::type_complexity, reason = "a table of cases")]
-    let cases: [(&str, Option<TrialResult>, bool, Verdict, Option<Signal>); 3] = [
-        (
-            "signal",
-            Some(failing_with(Signal::ComputationError)),
-            false,
-            Verdict::Failure,
-            Some(Signal::ComputationError),
-        ),
-        (
-            "escape",
-            Some(TrialResult {
+#[test_case("signal", Some(failing_with(Signal::ComputationError)), false, Verdict::Failure, Some(Signal::ComputationError); "signal")]
+#[test_case("escape", Some(TrialResult {
                 ran: full_run(),
                 escaped: vec![CpuId::from(99)],
                 ..TrialResult::default()
-            }),
-            false,
-            Verdict::Inconclusive,
-            None,
-        ),
-        (
-            "mce",
-            None,
-            true,
-            Verdict::Failure,
-            Some(Signal::CorrectedMce),
-        ),
-    ];
-    for (name, result, mce, outcome, want) in cases {
-        let mut rig = rigged(Bench::new(2));
-        {
-            let mut rigs = rig.rigs.borrow_mut();
-            rigs.wait_error = Some(|| Error::Other("cleanup failed".into()));
-            rigs.result = result.or_else(|| {
-                Some(TrialResult {
-                    ran: full_run(),
-                    ..TrialResult::default()
-                })
-            });
-        }
-        if mce {
-            mce_when_the_trial_starts(&rig, true);
-            lose_read(&rig.log, 2, failure);
-        }
-        trial(&mut rig).unwrap();
-        let end = ends(&rig.session).pop().unwrap();
-        assert_eq!((end.outcome, end.signal), (outcome, want), "{name}");
-        assert!(end.reason.unwrap().contains("cleanup failed"), "{name}");
+            }), false, Verdict::Inconclusive, None; "escape")]
+#[test_case("mce", None, true, Verdict::Failure, Some(Signal::CorrectedMce); "mce")]
+fn evidence_survives_a_runner_error_and_the_error_stays_in_the_reason(
+    name: &str,
+    result: Option<TrialResult>,
+    mce: bool,
+    outcome: Verdict,
+    want: Option<Signal>,
+) {
+    let mut rig = rigged(Bench::new(2));
+    {
+        let mut rigs = rig.rigs.borrow_mut();
+        rigs.wait_error = Some(|| Error::Other("cleanup failed".into()));
+        rigs.result = result.or_else(|| {
+            Some(TrialResult {
+                ran: full_run(),
+                ..TrialResult::default()
+            })
+        });
     }
+    if mce {
+        mce_when_the_trial_starts(&rig, true);
+        lose_read(&rig.log, 2, failure);
+    }
+    trial(&mut rig).unwrap();
+    let end = ends(&rig.session).pop().unwrap();
+    assert_eq!((end.outcome, end.signal), (outcome, want), "{name}");
+    assert!(end.reason.unwrap().contains("cleanup failed"), "{name}");
 }
 
 #[test]
@@ -1176,20 +1132,26 @@ fn request_samples(count: usize) -> Vec<TrialConditions> {
         .collect()
 }
 
-#[test]
-fn request_telemetry_needs_twenty_samples_after_the_warmup() {
-    for (count, recorded) in [(19, false), (20, true)] {
-        let mut rig = rigged(Bench::new(2));
-        rig.rigs.borrow_mut().samples = Some(request_samples(count));
-        trial(&mut rig).unwrap();
-        let end = ends(&rig.session).pop().unwrap();
-        assert_eq!(!end.voltage_requests_v.is_empty(), recorded, "{count}");
-        assert_eq!(!end.ccd_mhz.is_empty(), recorded, "{count}");
-    }
+#[test_case(19, false; "19, false")]
+#[test_case(20, true; "20, true")]
+fn request_telemetry_needs_twenty_samples_after_the_warmup(count: usize, recorded: bool) {
+    let mut rig = rigged(Bench::new(2));
+    rig.rigs.borrow_mut().samples = Some(request_samples(count));
+    trial(&mut rig).unwrap();
+    let end = ends(&rig.session).pop().unwrap();
+    assert_eq!(!end.voltage_requests_v.is_empty(), recorded, "{count}");
+    assert_eq!(!end.ccd_mhz.is_empty(), recorded, "{count}");
 }
 
-#[test]
-fn unreadable_samples_warn_and_omit_all_sample_fields_without_changing_the_outcome() {
+#[test_case(false, "decode conditions sample", false; "compressed false failure false")]
+#[test_case(false, "decode conditions sample", true; "compressed false failure true")]
+#[test_case(true, "gzip decoding", false; "compressed true failure false")]
+#[test_case(true, "gzip decoding", true; "compressed true failure true")]
+fn unreadable_samples_warn_and_omit_all_sample_fields_without_changing_the_outcome(
+    compressed: bool,
+    error: &str,
+    failure: bool,
+) {
     use std::io::Write as _;
 
     let mut bytes = Vec::new();
@@ -1203,58 +1165,54 @@ fn unreadable_samples_warn_and_omit_all_sample_fields_without_changing_the_outco
     gzip.write_all(&bytes).unwrap();
     let mut corrupt_gzip = gzip.finish().unwrap();
     corrupt_gzip.extend_from_slice(b"not a second gzip member");
-    for (bytes, compressed, error) in [
-        (malformed, false, "decode conditions sample"),
-        (corrupt_gzip, true, "gzip decoding"),
-    ] {
-        for failure in [false, true] {
-            let mut rig = rigged(Bench::new(2));
-            {
-                let mut rigs = rig.rigs.borrow_mut();
-                rigs.samples_file = Some((bytes.clone(), compressed));
-                rigs.result = Some(TrialResult {
-                    ran: full_run(),
-                    tctl_max_c: Some(77),
-                    failure: failure.then_some(TrialFailure {
-                        signal: Signal::ComputationError,
-                        core: core(0),
-                    }),
-                    ..TrialResult::default()
-                });
-            }
-            trial(&mut rig).unwrap();
-            let end = ends(&rig.session).pop().unwrap();
-            assert_eq!(
-                end.outcome,
-                if failure {
-                    Verdict::Failure
-                } else {
-                    Verdict::Pass
-                }
-            );
-            assert_sample_fields_absent(&end);
-            let events = rig.session.appender().journal().events();
-            let warning = events
-                .iter()
-                .find_map(|event| {
-                    if let Payload::SessionWarning(warning) = &event.payload
-                        && warning.operation == "read conditions samples"
-                    {
-                        Some((event, warning))
-                    } else {
-                        None
-                    }
-                })
-                .unwrap();
-            assert_eq!(warning.1.trial.as_ref(), Some(&end.trial));
-            assert!(warning.1.error.contains(error), "{}", warning.1.error);
-            let ended = events
-                .iter()
-                .find(|event| matches!(&event.payload, Payload::TrialEnd(_)))
-                .unwrap();
-            assert_eq!(warning.0.cause, [ended.seq]);
-        }
+
+    let bytes = if compressed { corrupt_gzip } else { malformed };
+
+    let mut rig = rigged(Bench::new(2));
+    {
+        let mut rigs = rig.rigs.borrow_mut();
+        rigs.samples_file = Some((bytes.clone(), compressed));
+        rigs.result = Some(TrialResult {
+            ran: full_run(),
+            tctl_max_c: Some(77),
+            failure: failure.then_some(TrialFailure {
+                signal: Signal::ComputationError,
+                core: core(0),
+            }),
+            ..TrialResult::default()
+        });
     }
+    trial(&mut rig).unwrap();
+    let end = ends(&rig.session).pop().unwrap();
+    assert_eq!(
+        end.outcome,
+        if failure {
+            Verdict::Failure
+        } else {
+            Verdict::Pass
+        }
+    );
+    assert_sample_fields_absent(&end);
+    let events = rig.session.appender().journal().events();
+    let warning = events
+        .iter()
+        .find_map(|event| {
+            if let Payload::SessionWarning(warning) = &event.payload
+                && warning.operation == "read conditions samples"
+            {
+                Some((event, warning))
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(warning.1.trial.as_ref(), Some(&end.trial));
+    assert!(warning.1.error.contains(error), "{}", warning.1.error);
+    let ended = events
+        .iter()
+        .find(|event| matches!(&event.payload, Payload::TrialEnd(_)))
+        .unwrap();
+    assert_eq!(warning.0.cause, [ended.seq]);
 }
 
 fn assert_sample_fields_absent(end: &TrialEnd) {
@@ -1717,58 +1675,39 @@ fn contained() -> Error {
     Error::Containment("workload still running".into())
 }
 
-#[test]
-fn a_failed_start_record_and_a_failed_join_leave_the_machine_alone() {
-    for (name, stop, signal, want) in [
-        (
-            "start, containment",
-            contained as fn() -> Error,
-            false,
-            crate::Withheld::TeardownUnconfirmed,
-        ),
-        (
-            "start, crash",
-            || Error::Crashed,
-            false,
-            crate::Withheld::Crashed,
-        ),
-        (
-            "signal, containment",
-            contained,
-            true,
-            crate::Withheld::TeardownUnconfirmed,
-        ),
-        (
-            "signal, crash",
-            || Error::Crashed,
-            true,
-            crate::Withheld::Crashed,
-        ),
-    ] {
-        let run = whole(
-            Faults {
-                write_at_start: Some(if signal { 2 } else { 1 }),
-                ..Faults::default()
-            },
-            |rigging| {
-                rigging.stop_error = Some(stop);
-                if signal {
-                    rigging.schedule = Some(LoadSchedule::Random { seed: 1 });
-                }
-            },
-        );
-        let kinds = run.kinds();
-        assert!(!run.ended.errors.is_empty(), "{name}");
-        assert_eq!(run.ended.stop, None, "{name}");
-        assert_eq!(run.withheld(), Some(want), "{name}: {kinds:?}");
-        assert!(
-            kinds.contains(&"trial.start") == signal,
-            "{name}: {kinds:?}"
-        );
-        assert!(!kinds.contains(&"trial.signal"), "{name}: {kinds:?}");
-        assert!(!kinds.contains(&"trial.end"), "{name}: {kinds:?}");
-        run.leaves_the_machine_and_the_journal_alone();
-    }
+#[test_case("start, containment", contained as fn() -> Error, false, crate::Withheld::TeardownUnconfirmed; "start containment")]
+#[test_case("start, crash", || Error::Crashed, false, crate::Withheld::Crashed; "start crash")]
+#[test_case("signal, containment", contained, true, crate::Withheld::TeardownUnconfirmed; "signal containment")]
+#[test_case("signal, crash", || Error::Crashed, true, crate::Withheld::Crashed; "signal crash")]
+fn a_failed_start_record_and_a_failed_join_leave_the_machine_alone(
+    name: &str,
+    stop: fn() -> Error,
+    signal: bool,
+    want: crate::Withheld,
+) {
+    let run = whole(
+        Faults {
+            write_at_start: Some(if signal { 2 } else { 1 }),
+            ..Faults::default()
+        },
+        |rigging| {
+            rigging.stop_error = Some(stop);
+            if signal {
+                rigging.schedule = Some(LoadSchedule::Random { seed: 1 });
+            }
+        },
+    );
+    let kinds = run.kinds();
+    assert!(!run.ended.errors.is_empty(), "{name}");
+    assert_eq!(run.ended.stop, None, "{name}");
+    assert_eq!(run.withheld(), Some(want), "{name}: {kinds:?}");
+    assert!(
+        kinds.contains(&"trial.start") == signal,
+        "{name}: {kinds:?}"
+    );
+    assert!(!kinds.contains(&"trial.signal"), "{name}: {kinds:?}");
+    assert!(!kinds.contains(&"trial.end"), "{name}: {kinds:?}");
+    run.leaves_the_machine_and_the_journal_alone();
 }
 
 #[test]
@@ -1921,19 +1860,15 @@ fn an_unconfirmed_non_containment_start_journals_its_source() {
     );
 }
 
-#[test]
-fn containment_from_wait_or_stop_journals_its_cause() {
-    for fail in [
-        (|rigging: &mut Rigging| rigging.wait_error = Some(contained)) as fn(&mut Rigging),
-        |rigging: &mut Rigging| rigging.stop_error = Some(contained),
-    ] {
-        let run = whole(Faults::default(), fail);
-        let end = containment_dead_end(&run);
-        assert_eq!(
-            end.containment_error.as_deref(),
-            Some("trial cleanup could not be confirmed: workload still running")
-        );
-    }
+#[test_case((|rigging: &mut Rigging| rigging.wait_error = Some(contained)) as fn(&mut Rigging); "(|rigging: &mut Rigging| rigging.wait_error = Some(contained)) as fn(&mut Rigging)")]
+#[test_case(|rigging: &mut Rigging| rigging.stop_error = Some(contained); "|rigging: &mut Rigging| rigging.stop_error = Some(contained)")]
+fn containment_from_wait_or_stop_journals_its_cause(fail: fn(&mut Rigging)) {
+    let run = whole(Faults::default(), fail);
+    let end = containment_dead_end(&run);
+    assert_eq!(
+        end.containment_error.as_deref(),
+        Some("trial cleanup could not be confirmed: workload still running")
+    );
 }
 
 #[test]

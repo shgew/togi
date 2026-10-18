@@ -1776,6 +1776,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "test-case",
  "thiserror",
  "togi-carry",
  "togi-config",

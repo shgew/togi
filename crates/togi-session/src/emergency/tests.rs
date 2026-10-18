@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::rc::Rc;
+use test_case::test_case;
 
 use togi_journal::AppendError;
 use togi_machine::{
@@ -92,53 +93,30 @@ fn lower(rig: &mut Rig, n: i64, offset: i64) {
     );
 }
 
-#[test]
-fn nothing_touches_the_smu_without_a_sweep_a_validation_and_a_confirmed_teardown() {
+#[test_case(|rig, _held| Access::gate(&Lifecycle::Unswept, Some(rig.validated)), Withheld::NoSweep, "offsets unchanged before successful trial-scope sweep"; "unswept validated")]
+#[test_case(|rig, _held| Access::gate(&rig.lifecycle, None), Withheld::NoValidation, "offsets unchanged: the SMU interface was not validated"; "swept unvalidated")]
+#[test_case(|rig, held| Access::gate(&held, Some(rig.validated)), Withheld::TeardownUnconfirmed, "offsets unchanged: the stop of every workload is not confirmed"; "teardown unconfirmed")]
+#[test_case(|_rig, _held| Access::gate(&Lifecycle::Unswept, None), Withheld::NoSweep, "offsets unchanged before successful trial-scope sweep"; "unswept unvalidated")]
+#[test_case(|rig, _held| Access::gate(&Lifecycle::Faulted(Fault::Containment), Some(rig.validated)), Withheld::TeardownUnconfirmed, "offsets unchanged: the stop of every workload is not confirmed"; "containment fault")]
+#[test_case(|rig, _held| Access::gate(&Lifecycle::Faulted(Fault::Crashed), Some(rig.validated)), Withheld::Crashed, "offsets unchanged: the machine crashed"; "crashed")]
+fn nothing_touches_the_smu_without_a_sweep_a_validation_and_a_confirmed_teardown(
+    gate: for<'a> fn(&'a Rig, &'a Lifecycle) -> Result<Access<'a>, Withheld>,
+    withheld: Withheld,
+    said: &str,
+) {
     let rig = Rig::new(2);
     let held = Lifecycle::Swept(Swept {
         cleared: rig.cleared(),
         stopped: None,
         confirmed: None,
     });
-    let cases = [
-        (
-            Access::gate(&Lifecycle::Unswept, Some(rig.validated)),
-            Withheld::NoSweep,
-            "offsets unchanged before successful trial-scope sweep",
-        ),
-        (
-            Access::gate(&rig.lifecycle, None),
-            Withheld::NoValidation,
-            "offsets unchanged: the SMU interface was not validated",
-        ),
-        (
-            Access::gate(&held, Some(rig.validated)),
-            Withheld::TeardownUnconfirmed,
-            "offsets unchanged: the stop of every workload is not confirmed",
-        ),
-        (
-            Access::gate(&Lifecycle::Unswept, None),
-            Withheld::NoSweep,
-            "offsets unchanged before successful trial-scope sweep",
-        ),
-        (
-            Access::gate(&Lifecycle::Faulted(Fault::Containment), Some(rig.validated)),
-            Withheld::TeardownUnconfirmed,
-            "offsets unchanged: the stop of every workload is not confirmed",
-        ),
-        (
-            Access::gate(&Lifecycle::Faulted(Fault::Crashed), Some(rig.validated)),
-            Withheld::Crashed,
-            "offsets unchanged: the machine crashed",
-        ),
-    ];
-    for (gate, withheld, said) in cases {
-        let mut report = Vec::new();
-        let outcome = respond(&failure(), gate, &mut Forbidden, cores(2), &mut report);
-        assert!(matches!(outcome.response, Response::Withheld(held) if held == withheld));
-        outcome.report.unwrap();
-        assert_eq!(text(report), format!("{ORIGINAL}; {said}\n"));
-    }
+
+    let gate = gate(&rig, &held);
+    let mut report = Vec::new();
+    let outcome = respond(&failure(), gate, &mut Forbidden, cores(2), &mut report);
+    assert!(matches!(outcome.response, Response::Withheld(held) if held == withheld));
+    outcome.report.unwrap();
+    assert_eq!(text(report), format!("{ORIGINAL}; {said}\n"));
 }
 
 #[test]

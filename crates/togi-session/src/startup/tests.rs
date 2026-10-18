@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::io;
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use test_case::test_case;
 
 use togi_config::Config;
 use togi_defect::{Clause, Entry};
@@ -931,137 +932,130 @@ enum Waited {
     ClockError,
 }
 
-#[test]
-fn the_watchdog_wait_polls_each_second_until_armed_or_thirty_seconds_and_stops_on_a_signal_or_clock_error()
- {
-    let cases = [
-        ("already armed", 0, false, false, 0, Waited::Trial),
-        ("late arm", 3, false, false, 3, Waited::Trial),
-        ("deadline arm", 30, false, false, 30, Waited::Trial),
-        ("too late", 31, false, false, 30, Waited::DeadEnd),
-        (
-            "signal while sleeping",
-            3600,
-            true,
-            false,
-            1,
-            Waited::Signal,
-        ),
-        ("clock error", 3600, false, true, 0, Waited::ClockError),
-    ];
-    for (case, ready_at, signal, fails, waited, outcome) in cases {
-        let bench = Bench::new(2);
-        let slept = Rc::new(Cell::new(Duration::ZERO));
-        let polls = Rc::new(RefCell::new(Vec::new()));
-        let clears = Rc::new(Cell::new(0));
-        let mut input = bench.input();
-        input.bootloader = Some(Box::new(CountedBoot {
-            env: MemBoot::default(),
-            clears: Rc::clone(&clears),
-        }));
-        input.machine.clock = Box::new(PolledClock {
-            inner: input.machine.clock,
-            slept: Rc::clone(&slept),
-            signal: signal.then(|| input.cancel.clone()),
-            fails,
-        });
-        input.machine.host = Box::new(ArmsLate {
-            inner: input.machine.host,
-            slept: Rc::clone(&slept),
-            ready_at: Duration::from_secs(ready_at),
-            polls: Rc::clone(&polls),
-        });
-        let accesses = smu_accesses(&bench);
-        let (ended, touched) = observed_run(input, false);
-        let expected_polls: Vec<Duration> = match outcome {
-            Waited::Signal | Waited::ClockError => vec![Duration::ZERO],
-            Waited::Trial | Waited::DeadEnd => (0..=waited).map(Duration::from_secs).collect(),
-        };
-        assert_eq!(*polls.borrow(), expected_polls, "{case}");
-        let events = ended.journal.events();
-        let watchdog: Vec<(bool, &str)> = events
-            .iter()
-            .filter_map(|event| {
-                if let Payload::PreflightCheck(check) = &event.payload
-                    && check.check == "watchdog"
-                {
-                    Some((check.ok, check.detail.as_str()))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let detail =
-            format!("test hardware watchdog; waited {waited}s for an armed hardware watchdog");
-        match outcome {
-            Waited::Trial => {
-                assert!(ended.errors.is_empty(), "{case}: {:?}", ended.errors);
-                assert_eq!(ended.stop, Some(Stop::Signal), "{case}");
-                assert_eq!(watchdog, [(true, detail.as_str())], "{case}");
-                assert!(touched.contains(&Touch::Start), "{case}: {touched:?}");
-                let armed = events
+#[test_case("already armed", 0, false, false, 0, Waited::Trial; "already armed")]
+#[test_case("late arm", 3, false, false, 3, Waited::Trial; "late arm")]
+#[test_case("deadline arm", 30, false, false, 30, Waited::Trial; "deadline arm")]
+#[test_case("too late", 31, false, false, 30, Waited::DeadEnd; "too late")]
+#[test_case("signal while sleeping", 3600, true, false, 1, Waited::Signal; "signal while sleeping")]
+#[test_case("clock error", 3600, false, true, 0, Waited::ClockError; "clock error")]
+fn the_watchdog_wait_polls_each_second_until_armed_or_thirty_seconds_and_stops_on_a_signal_or_clock_error(
+    case: &str,
+    ready_at: u64,
+    signal: bool,
+    fails: bool,
+    waited: u64,
+    outcome: Waited,
+) {
+    let bench = Bench::new(2);
+    let slept = Rc::new(Cell::new(Duration::ZERO));
+    let polls = Rc::new(RefCell::new(Vec::new()));
+    let clears = Rc::new(Cell::new(0));
+    let mut input = bench.input();
+    input.bootloader = Some(Box::new(CountedBoot {
+        env: MemBoot::default(),
+        clears: Rc::clone(&clears),
+    }));
+    input.machine.clock = Box::new(PolledClock {
+        inner: input.machine.clock,
+        slept: Rc::clone(&slept),
+        signal: signal.then(|| input.cancel.clone()),
+        fails,
+    });
+    input.machine.host = Box::new(ArmsLate {
+        inner: input.machine.host,
+        slept: Rc::clone(&slept),
+        ready_at: Duration::from_secs(ready_at),
+        polls: Rc::clone(&polls),
+    });
+    let accesses = smu_accesses(&bench);
+    let (ended, touched) = observed_run(input, false);
+    let expected_polls: Vec<Duration> = match outcome {
+        Waited::Signal | Waited::ClockError => vec![Duration::ZERO],
+        Waited::Trial | Waited::DeadEnd => (0..=waited).map(Duration::from_secs).collect(),
+    };
+    assert_eq!(*polls.borrow(), expected_polls, "{case}");
+    let events = ended.journal.events();
+    let watchdog: Vec<(bool, &str)> = events
+        .iter()
+        .filter_map(|event| {
+            if let Payload::PreflightCheck(check) = &event.payload
+                && check.check == "watchdog"
+            {
+                Some((check.ok, check.detail.as_str()))
+            } else {
+                None
+            }
+        })
+        .collect();
+    let detail = format!("test hardware watchdog; waited {waited}s for an armed hardware watchdog");
+    match outcome {
+        Waited::Trial => {
+            assert!(ended.errors.is_empty(), "{case}: {:?}", ended.errors);
+            assert_eq!(ended.stop, Some(Stop::Signal), "{case}");
+            assert_eq!(watchdog, [(true, detail.as_str())], "{case}");
+            assert!(touched.contains(&Touch::Start), "{case}: {touched:?}");
+            let armed = events
                     .iter()
                     .position(|event| matches!(&event.payload, Payload::PreflightCheck(check) if check.check == "watchdog"))
                     .unwrap();
-                let first_action = events
-                    .iter()
-                    .position(|event| {
-                        matches!(event.kind(), EventKind::SmuIntent | EventKind::TrialIntent)
-                    })
-                    .unwrap();
-                assert!(armed < first_action, "{case}");
-            }
-            Waited::DeadEnd => {
-                assert!(ended.errors.is_empty(), "{case}: {:?}", ended.errors);
-                let (dead_end, causes) = stopped_dead_end(&ended);
-                assert_eq!(dead_end.condition, DeadEndCondition::Preflight, "{case}");
-                assert_eq!(
-                    dead_end.detail,
-                    format!("failed checks: watchdog ({detail})"),
-                    "{case}"
-                );
-                assert_eq!(causes.len(), 1, "{case}");
-                assert_eq!(watchdog, [(false, detail.as_str())], "{case}");
-                assert_eq!(clears.get(), 1, "{case}");
-            }
-            Waited::Signal => {
-                assert!(ended.errors.is_empty(), "{case}: {:?}", ended.errors);
-                assert_eq!(ended.stop, Some(Stop::Signal), "{case}");
-                assert_eq!(watchdog, [], "{case}");
-            }
-            Waited::ClockError => {
-                assert!(
-                    matches!(
-                        ended.errors.first(),
-                        Some(SessionError::Machine(Error::Other(detail))) if detail.to_string() == "clock unavailable"
-                    ),
-                    "{case}: {:?}",
-                    ended.errors
-                );
-                assert_eq!(watchdog, [], "{case}");
-            }
+            let first_action = events
+                .iter()
+                .position(|event| {
+                    matches!(event.kind(), EventKind::SmuIntent | EventKind::TrialIntent)
+                })
+                .unwrap();
+            assert!(armed < first_action, "{case}");
         }
-        assert!(slept.get() >= Duration::from_secs(waited), "{case}");
-        if !matches!(outcome, Waited::Trial) {
-            assert_eq!(slept.get(), Duration::from_secs(waited), "{case}");
-            assert_eq!(touched, [], "{case}");
-            assert!(
-                accesses.borrow().is_empty(),
-                "{case}: {:?}",
-                accesses.borrow()
-            );
-            assert!(
-                !any_of(
-                    events,
-                    &[
-                        EventKind::SmuIntent,
-                        EventKind::SmuWrite,
-                        EventKind::TrialIntent
-                    ]
-                ),
+        Waited::DeadEnd => {
+            assert!(ended.errors.is_empty(), "{case}: {:?}", ended.errors);
+            let (dead_end, causes) = stopped_dead_end(&ended);
+            assert_eq!(dead_end.condition, DeadEndCondition::Preflight, "{case}");
+            assert_eq!(
+                dead_end.detail,
+                format!("failed checks: watchdog ({detail})"),
                 "{case}"
             );
+            assert_eq!(causes.len(), 1, "{case}");
+            assert_eq!(watchdog, [(false, detail.as_str())], "{case}");
+            assert_eq!(clears.get(), 1, "{case}");
         }
+        Waited::Signal => {
+            assert!(ended.errors.is_empty(), "{case}: {:?}", ended.errors);
+            assert_eq!(ended.stop, Some(Stop::Signal), "{case}");
+            assert_eq!(watchdog, [], "{case}");
+        }
+        Waited::ClockError => {
+            assert!(
+                matches!(
+                    ended.errors.first(),
+                    Some(SessionError::Machine(Error::Other(detail))) if detail.to_string() == "clock unavailable"
+                ),
+                "{case}: {:?}",
+                ended.errors
+            );
+            assert_eq!(watchdog, [], "{case}");
+        }
+    }
+    assert!(slept.get() >= Duration::from_secs(waited), "{case}");
+    if !matches!(outcome, Waited::Trial) {
+        assert_eq!(slept.get(), Duration::from_secs(waited), "{case}");
+        assert_eq!(touched, [], "{case}");
+        assert!(
+            accesses.borrow().is_empty(),
+            "{case}: {:?}",
+            accesses.borrow()
+        );
+        assert!(
+            !any_of(
+                events,
+                &[
+                    EventKind::SmuIntent,
+                    EventKind::SmuWrite,
+                    EventKind::TrialIntent
+                ]
+            ),
+            "{case}"
+        );
     }
 }
 
@@ -1385,48 +1379,49 @@ fn a_defect_prompt_cancelled_at_startup_stops_the_run_before_any_trial() {
         Payload::Shutdown(shutdown) if shutdown.reason == ShutdownReason::Signal));
 }
 
-#[test]
-fn a_same_boot_resume_with_an_unsupported_smu_is_a_preflight_dead_end_that_leaves_the_offsets() {
-    for check in ["cpu", "ryzen_smu"] {
-        let bench = Bench::new(2);
-        let applied = left_applied(&bench, &[-10, -12]);
-        let before = applied.appender().journal().events().len();
-        drop(applied);
-        bench.sim.fail_check(check, "unsupported");
-        let accesses = smu_accesses(&bench);
-        let (ended, touched) = observed_run(bench.input(), false);
-        assert!(ended.errors.is_empty(), "{check}: {:?}", ended.errors);
-        let (dead_end, _) = stopped_dead_end(&ended);
-        assert_eq!(dead_end.condition, DeadEndCondition::Preflight, "{check}");
-        assert!(
-            dead_end.detail.contains(&format!("{check} (unsupported)")),
-            "{check}: {}",
-            dead_end.detail
-        );
-        assert!(
-            accesses.borrow().is_empty(),
-            "{check}: {:?}",
-            accesses.borrow()
-        );
-        assert_eq!(touched, [], "{check}");
-        let events = &ended.journal.events()[before..];
-        assert!(
-            !any_of(
-                events,
-                &[
-                    EventKind::SmuIntent,
-                    EventKind::SmuWrite,
-                    EventKind::SmuReadback,
-                    EventKind::ProfileRestored,
-                    EventKind::Shutdown,
-                    EventKind::TrialIntent,
-                ]
-            ),
-            "{check}: {:?}",
-            kinds_of_events(events)
-        );
-        assert_eq!(offsets_on(&bench), [-10, -12], "{check}");
-    }
+#[test_case("cpu"; "cpu")]
+#[test_case("ryzen_smu"; "ryzen_smu")]
+fn a_same_boot_resume_with_an_unsupported_smu_is_a_preflight_dead_end_that_leaves_the_offsets(
+    check: &str,
+) {
+    let bench = Bench::new(2);
+    let applied = left_applied(&bench, &[-10, -12]);
+    let before = applied.appender().journal().events().len();
+    drop(applied);
+    bench.sim.fail_check(check, "unsupported");
+    let accesses = smu_accesses(&bench);
+    let (ended, touched) = observed_run(bench.input(), false);
+    assert!(ended.errors.is_empty(), "{check}: {:?}", ended.errors);
+    let (dead_end, _) = stopped_dead_end(&ended);
+    assert_eq!(dead_end.condition, DeadEndCondition::Preflight, "{check}");
+    assert!(
+        dead_end.detail.contains(&format!("{check} (unsupported)")),
+        "{check}: {}",
+        dead_end.detail
+    );
+    assert!(
+        accesses.borrow().is_empty(),
+        "{check}: {:?}",
+        accesses.borrow()
+    );
+    assert_eq!(touched, [], "{check}");
+    let events = &ended.journal.events()[before..];
+    assert!(
+        !any_of(
+            events,
+            &[
+                EventKind::SmuIntent,
+                EventKind::SmuWrite,
+                EventKind::SmuReadback,
+                EventKind::ProfileRestored,
+                EventKind::Shutdown,
+                EventKind::TrialIntent,
+            ]
+        ),
+        "{check}: {:?}",
+        kinds_of_events(events)
+    );
+    assert_eq!(offsets_on(&bench), [-10, -12], "{check}");
 }
 
 fn kinds_of_events(events: &[Event]) -> Vec<&'static str> {
@@ -1469,70 +1464,70 @@ enum Failing {
     Sweep,
 }
 
-#[test]
-fn a_same_boot_open_trial_is_ended_only_after_a_successful_sweep() {
-    for failing in [Failing::Nothing, Failing::Preflight, Failing::Sweep] {
-        let bench = Bench::new(2);
-        let trial = left_open(&bench);
-        if matches!(failing, Failing::Preflight) {
-            bench.sim.fail_check("root", "not root");
+#[test_case(Failing::Nothing; "Failing::Nothing")]
+#[test_case(Failing::Preflight; "Failing::Preflight")]
+#[test_case(Failing::Sweep; "Failing::Sweep")]
+fn a_same_boot_open_trial_is_ended_only_after_a_successful_sweep(failing: Failing) {
+    let bench = Bench::new(2);
+    let trial = left_open(&bench);
+    if matches!(failing, Failing::Preflight) {
+        bench.sim.fail_check("root", "not root");
+    }
+    let (ended, touched) = observed_run(bench.input(), matches!(failing, Failing::Sweep));
+    assert!(ended.errors.is_empty(), "{failing:?}: {:?}", ended.errors);
+    let events = ended.journal.events();
+    let condition = match failing {
+        Failing::Nothing => {
+            assert_eq!(ended.stop, Some(Stop::Signal), "{failing:?}");
+            assert_eq!(
+                touched[..3],
+                [Touch::Sweep, Touch::Ended(trial.clone()), Touch::Start],
+                "{failing:?}"
+            );
+            let swept = swept_ok(events).unwrap();
+            let end = trial_end(events, &trial).unwrap();
+            assert!(swept < end, "{failing:?}: sweep {swept:?}, end {end:?}");
+            return;
         }
-        let (ended, touched) = observed_run(bench.input(), matches!(failing, Failing::Sweep));
-        assert!(ended.errors.is_empty(), "{failing:?}: {:?}", ended.errors);
-        let events = ended.journal.events();
-        let condition = match failing {
-            Failing::Nothing => {
-                assert_eq!(ended.stop, Some(Stop::Signal), "{failing:?}");
-                assert_eq!(
-                    touched[..3],
-                    [Touch::Sweep, Touch::Ended(trial.clone()), Touch::Start],
-                    "{failing:?}"
-                );
-                let swept = swept_ok(events).unwrap();
-                let end = trial_end(events, &trial).unwrap();
-                assert!(swept < end, "{failing:?}: sweep {swept:?}, end {end:?}");
-                continue;
-            }
-            Failing::Preflight => {
-                assert_eq!(touched, [], "{failing:?}");
-                DeadEndCondition::Preflight
-            }
-            Failing::Sweep => {
-                assert_eq!(touched, [Touch::Sweep], "{failing:?}");
-                DeadEndCondition::Containment
-            }
-        };
-        assert_eq!(
-            stopped_dead_end(&ended).0.condition,
-            condition,
-            "{failing:?}"
-        );
-        assert_eq!(trial_end(events, &trial), None, "{failing:?}");
-        let before = events.len();
-        drop(ended);
+        Failing::Preflight => {
+            assert_eq!(touched, [], "{failing:?}");
+            DeadEndCondition::Preflight
+        }
+        Failing::Sweep => {
+            assert_eq!(touched, [Touch::Sweep], "{failing:?}");
+            DeadEndCondition::Containment
+        }
+    };
+    assert_eq!(
+        stopped_dead_end(&ended).0.condition,
+        condition,
+        "{failing:?}"
+    );
+    assert_eq!(trial_end(events, &trial), None, "{failing:?}");
+    let before = events.len();
+    drop(ended);
 
-        bench.sim.fail_check("root", "");
-        let (retry, touched) = observed_run(bench.input(), false);
-        assert!(retry.errors.is_empty(), "{failing:?}: {:?}", retry.errors);
-        assert_eq!(
-            stopped_dead_end(&retry).0.condition,
-            condition,
-            "{failing:?}"
-        );
-        assert_eq!(
-            touched,
-            [Touch::Sweep, Touch::Ended(trial.clone())],
-            "{failing:?}"
-        );
-        let events = &retry.journal.events()[before..];
-        let swept = swept_ok(events).unwrap();
-        let end = trial_end(events, &trial).unwrap();
-        assert!(swept < end, "{failing:?}: sweep {swept:?}, end {end:?}");
-        if let Some(shutdown) = events
-            .iter()
-            .find(|event| event.kind() == EventKind::Shutdown)
-        {
-            assert!(end < shutdown.seq, "{failing:?}");
-        }
+    bench.sim.fail_check("root", "");
+    let (retry, touched) = observed_run(bench.input(), false);
+    assert!(retry.errors.is_empty(), "{failing:?}: {:?}", retry.errors);
+    assert_eq!(
+        stopped_dead_end(&retry).0.condition,
+        condition,
+        "{failing:?}"
+    );
+    assert_eq!(
+        touched,
+        [Touch::Sweep, Touch::Ended(trial.clone())],
+        "{failing:?}"
+    );
+    let events = &retry.journal.events()[before..];
+    let swept = swept_ok(events).unwrap();
+    let end = trial_end(events, &trial).unwrap();
+    assert!(swept < end, "{failing:?}: sweep {swept:?}, end {end:?}");
+    if let Some(shutdown) = events
+        .iter()
+        .find(|event| event.kind() == EventKind::Shutdown)
+    {
+        assert!(end < shutdown.seq, "{failing:?}");
     }
 }

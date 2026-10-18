@@ -1,4 +1,5 @@
 use std::num::NonZeroU32;
+use test_case::test_case;
 
 use togi_journal::{Outcome, Payload, TrialId, TrialProgress, TrialSample};
 use togi_machine::{CancellationToken, CpuId, Reporter, Sample, Signal};
@@ -72,55 +73,34 @@ fn the_first_append_failure_is_kept_cancels_the_trial_and_silences_later_reports
     assert_eq!(rig.events().len(), before);
 }
 
-#[test]
-fn every_signal_is_journaled_with_its_label_and_a_core_only_where_one_is_named() {
-    let cases = [
-        (
-            Signal::ComputationError,
-            "core 07 computation error: bad sum",
-            true,
-        ),
-        (
-            Signal::UnexpectedExit,
-            "core 07 backend exited early: bad sum",
-            true,
-        ),
-        (Signal::Stall, "core 07 backend stalled: bad sum", true),
-        (
-            Signal::CorrectedMce,
-            "core 07 corrected_mce: bad sum",
-            false,
-        ),
-        (
-            Signal::UncorrectedMce,
-            "core 07 uncorrected_mce: bad sum",
-            false,
-        ),
-        (Signal::Crash, "core 07 crash: bad sum", true),
-    ];
-    for (signal, detail, named) in cases {
-        let mut rig = Rig::new(8);
-        let start = rig.events().last().unwrap().seq;
-        let before = rig.events().len();
-        let cancel = CancellationToken::new();
-        let trial = trial();
-        Journaled::new(&mut rig.appender, &trial, start, &cancel).signal(
-            core(7),
-            signal,
-            "bad sum",
-        );
-        assert_eq!(
-            payloads(&rig, before),
-            [Payload::TrialProgress(TrialProgress {
-                trial: trial.clone(),
-                detail: detail.to_owned(),
-                signal: Some(signal),
-                core: named.then(|| core(7)),
-            })],
-            "{signal:?}"
-        );
-        assert_eq!(rig.events().last().unwrap().cause, [start], "{signal:?}");
-    }
+#[test_case(Signal::ComputationError, "core 07 computation error: bad sum", true; "computation error")]
+#[test_case(Signal::UnexpectedExit, "core 07 backend exited early: bad sum", true; "unexpected exit")]
+#[test_case(Signal::Stall, "core 07 backend stalled: bad sum", true; "stall")]
+#[test_case(Signal::CorrectedMce, "core 07 corrected_mce: bad sum", false; "corrected MCE")]
+#[test_case(Signal::UncorrectedMce, "core 07 uncorrected_mce: bad sum", false; "uncorrected MCE")]
+#[test_case(Signal::Crash, "core 07 crash: bad sum", true; "crash")]
+fn every_signal_is_journaled_with_its_label_and_a_core_only_where_one_is_named(
+    signal: Signal,
+    detail: &str,
+    named: bool,
+) {
+    let mut rig = Rig::new(8);
+    let start = rig.events().last().unwrap().seq;
+    let before = rig.events().len();
+    let cancel = CancellationToken::new();
+    let trial = trial();
+    Journaled::new(&mut rig.appender, &trial, start, &cancel).signal(core(7), signal, "bad sum");
+    assert_eq!(
+        payloads(&rig, before),
+        [Payload::TrialProgress(TrialProgress {
+            trial: trial.clone(),
+            detail: detail.to_owned(),
+            signal: Some(signal),
+            core: named.then(|| core(7)),
+        })],
+        "{signal:?}"
+    );
+    assert_eq!(rig.events().last().unwrap().cause, [start], "{signal:?}");
 }
 
 fn crashed_after(bench: &Bench, signal: Signal) -> Ended {

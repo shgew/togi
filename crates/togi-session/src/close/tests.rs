@@ -1,4 +1,5 @@
 use std::time::Duration;
+use test_case::test_case;
 
 use jiff::Timestamp;
 use std::collections::BTreeMap;
@@ -187,18 +188,17 @@ fn without_the_proof_that_every_workload_stopped_nothing_is_restored_or_recorded
     assert_eq!(smu_offsets(&bench), [-5, -5]);
 }
 
-#[test]
-fn a_machine_out_of_reach_is_left_alone_and_records_no_shutdown() {
-    for fault in [Broken::Containment, Broken::Crashed] {
-        let bench = Bench::new(2);
-        let mut session = tuned(&bench);
-        let run = Ok(signalled(&mut session));
-        session.lifecycle = Lifecycle::Faulted(fault);
-        let before = kinds(session.appender().journal().events());
-        let ended = close(session, run);
-        assert_eq!(kinds(ended.journal.events()), before, "{fault:?}");
-        assert_eq!(smu_offsets(&bench), [-5, -5], "{fault:?}");
-    }
+#[test_case(Broken::Containment; "Broken::Containment")]
+#[test_case(Broken::Crashed; "Broken::Crashed")]
+fn a_machine_out_of_reach_is_left_alone_and_records_no_shutdown(fault: Broken) {
+    let bench = Bench::new(2);
+    let mut session = tuned(&bench);
+    let run = Ok(signalled(&mut session));
+    session.lifecycle = Lifecycle::Faulted(fault);
+    let before = kinds(session.appender().journal().events());
+    let ended = close(session, run);
+    assert_eq!(kinds(ended.journal.events()), before, "{fault:?}");
+    assert_eq!(smu_offsets(&bench), [-5, -5], "{fault:?}");
 }
 
 #[test]
@@ -499,8 +499,12 @@ fn latched(bench: &Bench, prepare: impl FnOnce(&mut Session)) -> Ended {
     close(session, run)
 }
 
-#[test]
-fn the_emergency_is_withheld_without_a_validated_smu_or_after_a_fault() {
+#[test_case(Broken::Crashed, Withheld::Crashed; "Broken::Crashed, Withheld::Crashed")]
+#[test_case(Broken::Containment, Withheld::TeardownUnconfirmed; "Broken::Containment, Withheld::TeardownUnconfirmed")]
+fn the_emergency_is_withheld_without_a_validated_smu_or_after_a_fault(
+    fault: Broken,
+    reason: Withheld,
+) {
     let bench = Bench::new(2);
     let ended = latched(&bench, |session| session.validated = None);
     assert!(matches!(
@@ -517,20 +521,15 @@ fn the_emergency_is_withheld_without_a_validated_smu_or_after_a_fault() {
     ));
     assert_eq!(smu_offsets(&bench), [-5, -5]);
 
-    for (fault, reason) in [
-        (Broken::Crashed, Withheld::Crashed),
-        (Broken::Containment, Withheld::TeardownUnconfirmed),
-    ] {
-        let bench = Bench::new(2);
-        let ended = latched(&bench, |session| {
-            session.lifecycle = Lifecycle::Faulted(fault);
-        });
-        assert!(matches!(
-            ended.emergency.unwrap().response,
-            Response::Withheld(withheld) if withheld == reason
-        ));
-        assert_eq!(smu_offsets(&bench), [-5, -5]);
-    }
+    let bench = Bench::new(2);
+    let ended = latched(&bench, |session| {
+        session.lifecycle = Lifecycle::Faulted(fault);
+    });
+    assert!(matches!(
+        ended.emergency.unwrap().response,
+        Response::Withheld(withheld) if withheld == reason
+    ));
+    assert_eq!(smu_offsets(&bench), [-5, -5]);
 }
 
 #[test]
@@ -700,43 +699,43 @@ fn a_crash_at_the_final_kernel_boundary_leaves_the_machine_alone_when_publicatio
     assert_eq!(smu_offsets(&bench), [-5, -5]);
 }
 
-#[test]
-fn an_append_failing_while_a_signal_drains_keeps_its_error_skips_the_restoration_and_gets_the_emergency()
- {
-    for nth in [1, 2] {
-        let bench = Bench::new(2);
-        let mut session = failed_search(&bench, -5);
-        put(&mut session, &[-5, -5]);
-        let run = Ok(signalled(&mut session));
-        let before = session.appender().journal().events().len();
-        fail_events_write(&bench, nth);
-        let ended = close(session, run);
-        assert!(
-            matches!(ended.errors.as_slice(), [SessionError::Journal(_)]),
-            "nth {nth}: {:?}",
-            ended.errors
-        );
-        let events = ended.journal.events();
-        let drained = &events[before..];
-        assert_eq!(
-            drained.len(),
-            usize::try_from(nth).unwrap() - 1,
-            "nth {nth}: {:?}",
-            kinds(drained)
-        );
-        let kinds = kinds(events);
-        assert!(!kinds.contains(&"profile.restored"), "nth {nth}");
-        assert!(!kinds.contains(&"shutdown"), "nth {nth}");
-        let Some(emergency) = ended.emergency else {
-            panic!("nth {nth}: no emergency");
-        };
-        assert!(
-            matches!(&emergency.response, Response::Zeroed(zeroed) if zeroed.is_clean()),
-            "nth {nth}"
-        );
-        assert_eq!(smu_offsets(&bench), [0, 0], "nth {nth}");
-        assert!(ended.capsule.is_none(), "nth {nth}");
-    }
+#[test_case(1; "1")]
+#[test_case(2; "2")]
+fn an_append_failing_while_a_signal_drains_keeps_its_error_skips_the_restoration_and_gets_the_emergency(
+    nth: u64,
+) {
+    let bench = Bench::new(2);
+    let mut session = failed_search(&bench, -5);
+    put(&mut session, &[-5, -5]);
+    let run = Ok(signalled(&mut session));
+    let before = session.appender().journal().events().len();
+    fail_events_write(&bench, nth);
+    let ended = close(session, run);
+    assert!(
+        matches!(ended.errors.as_slice(), [SessionError::Journal(_)]),
+        "nth {nth}: {:?}",
+        ended.errors
+    );
+    let events = ended.journal.events();
+    let drained = &events[before..];
+    assert_eq!(
+        drained.len(),
+        usize::try_from(nth).unwrap() - 1,
+        "nth {nth}: {:?}",
+        kinds(drained)
+    );
+    let kinds = kinds(events);
+    assert!(!kinds.contains(&"profile.restored"), "nth {nth}");
+    assert!(!kinds.contains(&"shutdown"), "nth {nth}");
+    let Some(emergency) = ended.emergency else {
+        panic!("nth {nth}: no emergency");
+    };
+    assert!(
+        matches!(&emergency.response, Response::Zeroed(zeroed) if zeroed.is_clean()),
+        "nth {nth}"
+    );
+    assert_eq!(smu_offsets(&bench), [0, 0], "nth {nth}");
+    assert!(ended.capsule.is_none(), "nth {nth}");
 }
 
 #[test]
@@ -1134,139 +1133,134 @@ fn stopped_at(edge: Edge) -> (Bench, Ended) {
     panic!("{edge:?}: the machine kept crashing");
 }
 
-#[test]
-fn a_stop_at_a_durable_boundary_drains_what_it_owes_and_starts_no_new_work() {
-    for edge in [
-        Edge::TogetherTrialEnd,
-        Edge::TogetherFailure,
-        Edge::UnattributedTrialEnd,
-        Edge::UnattributedFailure,
-        Edge::ZeroTrialEnd,
-        Edge::ZeroFailure,
-        Edge::HuntEnd,
-        Edge::Combination,
-    ] {
-        let (bench, ended) = stopped_at(edge);
-        assert!(ended.errors.is_empty(), "{edge:?}: {:?}", ended.errors);
-        assert!(ended.emergency.is_none(), "{edge:?}");
-        let events = ended.journal.events();
-        let boundary = edge_event(events, edge).unwrap();
-        let mut restored = None;
-        let mut moves = 0;
-        for event in &events[boundary + 1..] {
-            match &event.payload {
-                Payload::TrialIntent(_)
-                | Payload::HuntStart(_)
-                | Payload::HuntGroup(_)
-                | Payload::DeepeningRound(_)
-                | Payload::HostRanking(_) => {
-                    panic!("{edge:?}: new work during the drain: {event:?}")
-                }
-                Payload::TunerDecision(decision) => {
-                    assert!(
-                        matches!(
-                            decision.decision,
-                            togi_journal::Decision::Backoff
-                                | togi_journal::Decision::CheckSoloLimit
-                        ),
-                        "{edge:?}: a new move during the drain: {decision:?}"
-                    );
-                    moves += 1;
-                }
-                Payload::ProfileRestored(profile) => restored = Some(profile.offsets),
-                Payload::SessionStart(_)
-                | Payload::SessionContext(_)
-                | Payload::SessionBaseline(_)
-                | Payload::SessionNotice(_)
-                | Payload::SessionWarning(_)
-                | Payload::SessionArchived(_)
-                | Payload::SessionCarried(_)
-                | Payload::ConfigLoaded(_)
-                | Payload::PreflightCheck(_)
-                | Payload::SmuIntent(_)
-                | Payload::SmuWrite(_)
-                | Payload::SmuReadback(_)
-                | Payload::SmuError(_)
-                | Payload::ProfileApplied(_)
-                | Payload::ProfileChange(_)
-                | Payload::TrialStart(_)
-                | Payload::TrialProgress(_)
-                | Payload::TrialSignal(_)
-                | Payload::TrialSample(_)
-                | Payload::TrialEnd(_)
-                | Payload::TrialCarried(_)
-                | Payload::Failure(_)
-                | Payload::FailureCarried(_)
-                | Payload::Mce(_)
-                | Payload::CrashDetected(_)
-                | Payload::CorePhase(_)
-                | Payload::CheckingCycle(_)
-                | Payload::CheckingStep(_)
-                | Payload::CheckingChain(_)
-                | Payload::HuntEnd(_)
-                | Payload::HuntSkipped(_)
-                | Payload::Combination(_)
-                | Payload::TunerWarning(_)
-                | Payload::BackendRetry(_)
-                | Payload::CommandReset(_)
-                | Payload::DefectFound(_)
-                | Payload::DefectAnswered(_)
-                | Payload::DeadEnd(_)
-                | Payload::BootSavedEntry(_)
-                | Payload::BootLeaveReason(_)
-                | Payload::Shutdown(_)
-                | Payload::JournalTorn(_)
-                | Payload::StateRebuilt(_) => {}
+#[test_case(Edge::TogetherTrialEnd; "Edge::TogetherTrialEnd")]
+#[test_case(Edge::TogetherFailure; "Edge::TogetherFailure")]
+#[test_case(Edge::UnattributedTrialEnd; "Edge::UnattributedTrialEnd")]
+#[test_case(Edge::UnattributedFailure; "Edge::UnattributedFailure")]
+#[test_case(Edge::ZeroTrialEnd; "Edge::ZeroTrialEnd")]
+#[test_case(Edge::ZeroFailure; "Edge::ZeroFailure")]
+#[test_case(Edge::HuntEnd; "Edge::HuntEnd")]
+#[test_case(Edge::Combination; "Edge::Combination")]
+fn a_stop_at_a_durable_boundary_drains_what_it_owes_and_starts_no_new_work(edge: Edge) {
+    let (bench, ended) = stopped_at(edge);
+    assert!(ended.errors.is_empty(), "{edge:?}: {:?}", ended.errors);
+    assert!(ended.emergency.is_none(), "{edge:?}");
+    let events = ended.journal.events();
+    let boundary = edge_event(events, edge).unwrap();
+    let mut restored = None;
+    let mut moves = 0;
+    for event in &events[boundary + 1..] {
+        match &event.payload {
+            Payload::TrialIntent(_)
+            | Payload::HuntStart(_)
+            | Payload::HuntGroup(_)
+            | Payload::DeepeningRound(_)
+            | Payload::HostRanking(_) => {
+                panic!("{edge:?}: new work during the drain: {event:?}")
             }
+            Payload::TunerDecision(decision) => {
+                assert!(
+                    matches!(
+                        decision.decision,
+                        togi_journal::Decision::Backoff | togi_journal::Decision::CheckSoloLimit
+                    ),
+                    "{edge:?}: a new move during the drain: {decision:?}"
+                );
+                moves += 1;
+            }
+            Payload::ProfileRestored(profile) => restored = Some(profile.offsets),
+            Payload::SessionStart(_)
+            | Payload::SessionContext(_)
+            | Payload::SessionBaseline(_)
+            | Payload::SessionNotice(_)
+            | Payload::SessionWarning(_)
+            | Payload::SessionArchived(_)
+            | Payload::SessionCarried(_)
+            | Payload::ConfigLoaded(_)
+            | Payload::PreflightCheck(_)
+            | Payload::SmuIntent(_)
+            | Payload::SmuWrite(_)
+            | Payload::SmuReadback(_)
+            | Payload::SmuError(_)
+            | Payload::ProfileApplied(_)
+            | Payload::ProfileChange(_)
+            | Payload::TrialStart(_)
+            | Payload::TrialProgress(_)
+            | Payload::TrialSignal(_)
+            | Payload::TrialSample(_)
+            | Payload::TrialEnd(_)
+            | Payload::TrialCarried(_)
+            | Payload::Failure(_)
+            | Payload::FailureCarried(_)
+            | Payload::Mce(_)
+            | Payload::CrashDetected(_)
+            | Payload::CorePhase(_)
+            | Payload::CheckingCycle(_)
+            | Payload::CheckingStep(_)
+            | Payload::CheckingChain(_)
+            | Payload::HuntEnd(_)
+            | Payload::HuntSkipped(_)
+            | Payload::Combination(_)
+            | Payload::TunerWarning(_)
+            | Payload::BackendRetry(_)
+            | Payload::CommandReset(_)
+            | Payload::DefectFound(_)
+            | Payload::DefectAnswered(_)
+            | Payload::DeadEnd(_)
+            | Payload::BootSavedEntry(_)
+            | Payload::BootLeaveReason(_)
+            | Payload::Shutdown(_)
+            | Payload::JournalTorn(_)
+            | Payload::StateRebuilt(_) => {}
         }
-        assert_eq!(moves, usize::from(edge.owes_a_move()), "{edge:?}");
-        let restored = restored.unwrap_or_else(|| {
-            if edge.zero() {
-                crate::testing::offsets(&[0; 4])
-            } else {
-                let mut smu = bench.sim.seams().smu;
-                let held: Vec<i64> = (0..4).map(|n| smu.offset(core(n)).unwrap().0).collect();
-                if matches!(edge, Edge::HuntEnd | Edge::Combination) {
-                    assert_eq!(held, [-30, -29, 0, 0], "{edge:?}");
-                }
-                crate::testing::offsets(&held)
-            }
-        });
-        for event in events {
-            if let Payload::Failure(failure) = &event.payload {
-                if let (Some(failed), Some(offset)) = (failure.core, failure.offset) {
-                    assert!(
-                        restored.get(failed).unwrap() > offset,
-                        "{edge:?}: {restored:?} reaches {failure:?}"
-                    );
-                }
-            } else if let Payload::Combination(combination) = &event.payload {
-                let reaches = combination
-                    .members
-                    .iter()
-                    .all(|member| restored.get(member.core).unwrap() <= member.offset);
-                assert!(!reaches, "{edge:?}: {restored:?} reaches {combination:?}");
-            }
-        }
-        let mut smu = bench.sim.seams().smu;
-        let actual: Vec<i64> = (0..4).map(|n| smu.offset(core(n)).unwrap().0).collect();
-        let want: Vec<i64> = (0..4)
-            .map(|n| restored.get(core(n)).unwrap().get())
-            .collect();
-        assert_eq!(actual, want, "{edge:?}");
+    }
+    assert_eq!(moves, usize::from(edge.owes_a_move()), "{edge:?}");
+    let restored = restored.unwrap_or_else(|| {
         if edge.zero() {
-            let Some(Stop::DeadEnd { dead_end, .. }) = &ended.stop else {
-                panic!("{edge:?}: {:?}", ended.stop);
-            };
-            assert_eq!(dead_end.condition, DeadEndCondition::FailureAtZero);
-            let cleared = events
-                .iter()
-                .filter(|event| matches!(event.payload, Payload::BootSavedEntry(_)))
-                .count();
-            assert_eq!(cleared, 1, "{edge:?}");
+            crate::testing::offsets(&[0; 4])
         } else {
-            assert_eq!(ended.stop, Some(Stop::Signal), "{edge:?}");
+            let mut smu = bench.sim.seams().smu;
+            let held: Vec<i64> = (0..4).map(|n| smu.offset(core(n)).unwrap().0).collect();
+            if matches!(edge, Edge::HuntEnd | Edge::Combination) {
+                assert_eq!(held, [-30, -29, 0, 0], "{edge:?}");
+            }
+            crate::testing::offsets(&held)
         }
+    });
+    for event in events {
+        if let Payload::Failure(failure) = &event.payload {
+            if let (Some(failed), Some(offset)) = (failure.core, failure.offset) {
+                assert!(
+                    restored.get(failed).unwrap() > offset,
+                    "{edge:?}: {restored:?} reaches {failure:?}"
+                );
+            }
+        } else if let Payload::Combination(combination) = &event.payload {
+            let reaches = combination
+                .members
+                .iter()
+                .all(|member| restored.get(member.core).unwrap() <= member.offset);
+            assert!(!reaches, "{edge:?}: {restored:?} reaches {combination:?}");
+        }
+    }
+    let mut smu = bench.sim.seams().smu;
+    let actual: Vec<i64> = (0..4).map(|n| smu.offset(core(n)).unwrap().0).collect();
+    let want: Vec<i64> = (0..4)
+        .map(|n| restored.get(core(n)).unwrap().get())
+        .collect();
+    assert_eq!(actual, want, "{edge:?}");
+    if edge.zero() {
+        let Some(Stop::DeadEnd { dead_end, .. }) = &ended.stop else {
+            panic!("{edge:?}: {:?}", ended.stop);
+        };
+        assert_eq!(dead_end.condition, DeadEndCondition::FailureAtZero);
+        let cleared = events
+            .iter()
+            .filter(|event| matches!(event.payload, Payload::BootSavedEntry(_)))
+            .count();
+        assert_eq!(cleared, 1, "{edge:?}");
+    } else {
+        assert_eq!(ended.stop, Some(Stop::Signal), "{edge:?}");
     }
 }
 
