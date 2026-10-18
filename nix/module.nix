@@ -32,6 +32,19 @@ in
       default = true;
       description = "Clear GRUB's saved entry on an orderly operator shutdown or reboot of the tuning boot, so the next boot is the normal system. Restart-limit retry reboots preserve the tuning entry; crash reboots return to it either way.";
     };
+    tuning.display = lib.mkOption {
+      type = lib.types.enum [
+        "console"
+        "kmscon"
+      ];
+      default = "console";
+      description = "Dashboard display in the tuning boot. console keeps the Linux virtual console; kmscon uses a GPU-accelerated terminal on tty1 with truecolour advertised to the dashboard. Repeated kmscon failures fall back to the console for this boot, without affecting tuning.";
+    };
+    tuning.kmscon.fontSize = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 27;
+      description = "DejaVu Sans Mono font size in pixels for the kmscon tuning display. The default gives 16x32 pixel cells, at least 160x45 cells on a 2560x1440 output. With multiple outputs, kmscon clones the display and uses the smallest grid.";
+    };
     backends.mprime.enable = lib.mkEnableOption "the mprime backend (unfree)";
     backends.ycruncher.enable = lib.mkEnableOption "the y-cruncher backend (unfree)";
     tuning.consoleFont = lib.mkOption {
@@ -195,7 +208,7 @@ in
               "togi-kernel-log.service"
             ];
             wants = [ "togi-kernel-log.service" ];
-            wantedBy = [ "multi-user.target" ];
+            wantedBy = lib.optional (cfg.tuning.display == "console") "multi-user.target";
             unitConfig.ConditionPathExists = "/dev/tty1";
             environment.TERM = "linux";
             serviceConfig = {
@@ -211,6 +224,104 @@ in
               RestartSec = 1;
               Nice = -10;
             };
+          };
+          fonts.packages = lib.mkIf (cfg.tuning.display == "kmscon") [ pkgs.dejavu_fonts ];
+          systemd.services.togi-kmscon = lib.mkIf (cfg.tuning.display == "kmscon") {
+            description = "togi dashboard in kmscon on tty1";
+            wantedBy = [ "multi-user.target" ];
+            after = [
+              "systemd-user-sessions.service"
+              "togi-kernel-log.service"
+            ];
+            wants = [ "togi-kernel-log.service" ];
+            onFailure = [ "togi-watch-fallback.service" ];
+            unitConfig.ConditionPathExists = "/dev/tty1";
+            startLimitIntervalSec = 180;
+            startLimitBurst = 3;
+            environment = {
+              COLORTERM = "truecolor";
+              TERM = "xterm-256color";
+            };
+            serviceConfig = {
+              ExecStart = lib.escapeShellArgs (
+                [
+                  "${pkgs.kmscon}/bin/kmscon"
+                  "--vt"
+                  "1"
+                  "--no-libseat"
+                  "--switchvt"
+                  "--no-reset-env"
+                  "--no-issue"
+                  "--no-blink"
+                  "--no-mouse"
+                  "--dpms-timeout"
+                  "0"
+                  "--oneshot"
+                  "--session-max"
+                  "1"
+                  "--no-session-control"
+                  "--sb-size"
+                  "0"
+                  "--font-engine"
+                  "pango"
+                  "--font-name"
+                  "DejaVu Sans Mono"
+                  "--font-size"
+                  (toString cfg.tuning.kmscon.fontSize)
+                  "--term"
+                  "xterm-256color"
+                  "--hwaccel"
+                ]
+                ++
+                  lib.concatMap
+                    (grab: [
+                      "--grab-${grab}"
+                      ""
+                    ])
+                    [
+                      "scroll-up"
+                      "scroll-down"
+                      "page-up"
+                      "page-down"
+                      "zoom-in"
+                      "zoom-out"
+                      "session-next"
+                      "session-prev"
+                      "session-close"
+                      "terminal-new"
+                      "rotate-cw"
+                      "rotate-ccw"
+                      "reboot"
+                    ]
+                ++ [
+                  "--login"
+                  "--"
+                  (lib.getExe cfg.package)
+                  "watch"
+                  "--tuning-boot"
+                ]
+              );
+              # Direct VT/DRM access needs root; the child keeps the console watcher's existing root identity.
+              StandardInput = "tty";
+              StandardOutput = "journal";
+              StandardError = "journal";
+              TTYPath = "/dev/tty1";
+              TTYReset = true;
+              TTYVHangup = true;
+              TTYVTDisallocate = true;
+              Restart = "always";
+              RestartSec = 1;
+              Nice = -10;
+            };
+          };
+          systemd.services.togi-watch-fallback = lib.mkIf (cfg.tuning.display == "kmscon") {
+            description = "Fall back to the console after kmscon exhausts its starts";
+            after = [ "togi-kmscon.service" ];
+            serviceConfig.Type = "oneshot";
+            script = ''
+              [ "''${MONITOR_SERVICE_RESULT:-}" = start-limit-hit ] || exit 0
+              exec ${config.systemd.package}/bin/systemctl --no-block start togi-watch.service
+            '';
           };
           systemd.services.togi-console = {
             description = "togi tuning boot log on tty3";

@@ -230,6 +230,97 @@ in
     '';
   };
 
+  kmscon-display = pkgs.testers.runNixOSTest {
+    name = "togi-kmscon-display";
+    enableOCR = true;
+    nodes.machine = {
+      imports = [ tuningBoot ];
+      virtualisation.cores = 3;
+      virtualisation.memorySize = 2048;
+      virtualisation.qemu.options = [
+        "-vga none"
+        "-device virtio-gpu-pci,xres=2560,yres=1440"
+      ];
+      virtualisation.resolution = {
+        x = 2560;
+        y = 1440;
+      };
+      boot.initrd.kernelModules = [ "virtio_gpu" ];
+      hardware.graphics.enable = true;
+      services.togi.tuning.display = "kmscon";
+    };
+    testScript = ''
+      machine.start(allow_reboot=True)
+      machine.wait_for_unit("multi-user.target")
+      tuning_system = machine.succeed("readlink -f /run/current-system/specialisation/togi").strip()
+      machine.succeed("grub-set-default 'NixOS - togi'")
+      machine.reboot()
+      machine.wait_for_unit("multi-user.target")
+      assert machine.succeed("readlink -f /run/current-system").strip() == tuning_system
+      machine.wait_for_unit("togi-kmscon.service")
+      machine.wait_until_succeeds("pgrep -f '^/nix/store/[^ ]*/bin/togi watch --tuning-boot$'")
+      kmscon_pid = machine.succeed("systemctl show togi-kmscon.service -p MainPID --value").strip()
+      watch_pid = machine.succeed(f"pgrep -P {kmscon_pid} -x togi").strip()
+      assert watch_pid, "kmscon did not launch the shipped watcher"
+      machine.succeed(f"grep -zqx 'COLORTERM=truecolor' /proc/{watch_pid}/environ")
+      machine.succeed(f"grep -zqx 'TERM=xterm-256color' /proc/{watch_pid}/environ")
+      machine.succeed(f"test $(stat -c %u /proc/{watch_pid}) -eq 0")
+      machine.succeed("test $(fgconsole) -eq 1")
+      machine.succeed(f"test $(readlink /proc/{kmscon_pid}/fd/0) = /dev/tty1")
+      machine.fail("systemctl is-active --quiet togi-watch.service")
+      machine.wait_for_text("preflight", timeout=120)
+      machine.screenshot("kmscon-dashboard")
+      tuner_before = machine.succeed("systemctl show togi.service -p InvocationID -p ActiveState -p NRestarts")
+      boot_before = machine.succeed("cat /proc/sys/kernel/random/boot_id")
+
+      with subtest("kmscon lockdown leaves the dashboard and its single session intact"):
+          for key in [
+              "ctrl-meta_r-backspace", "ctrl-meta_r-ret",
+              "ctrl-meta_r-left", "ctrl-meta_r-right",
+              "shift-up", "shift-down", "shift-pgup", "shift-pgdn",
+              "ctrl-minus", "ctrl-equal", "meta_r-equal", "meta_r-minus",
+              "q", "ctrl-c", "ctrl-d",
+          ]:
+              machine.send_key(key)
+          assert machine.succeed("systemctl show togi-kmscon.service -p MainPID --value").strip() == kmscon_pid
+          assert machine.succeed(f"pgrep -P {kmscon_pid} -x togi").strip() == watch_pid
+          machine.wait_for_text("preflight")
+
+      with subtest("Ctrl Alt Fn reaches the login and logs while kmscon owns tty1"):
+          machine.send_key("ctrl-alt-f2")
+          machine.wait_until_succeeds("test $(fgconsole) -eq 2")
+          machine.wait_for_unit("getty@tty2.service")
+          machine.send_key("ctrl-alt-f3")
+          machine.wait_until_succeeds("test $(fgconsole) -eq 3")
+          machine.succeed("systemctl is-active --quiet togi-console.service")
+          machine.send_key("ctrl-alt-f1")
+          machine.wait_until_succeeds("test $(fgconsole) -eq 1")
+          machine.wait_for_text("preflight")
+
+      with subtest("three killed kmscon starts fall back to the Linux console"):
+          for attempt in range(3):
+              pid = machine.succeed("systemctl show togi-kmscon.service -p MainPID --value").strip()
+              machine.succeed("systemctl kill --kill-whom=main --signal=SIGKILL togi-kmscon.service")
+              if attempt < 2:
+                  machine.wait_until_succeeds(
+                      f"test $(systemctl show togi-kmscon.service -p MainPID --value) -ne 0 && "
+                      f"test $(systemctl show togi-kmscon.service -p MainPID --value) -ne {pid}"
+                  )
+          machine.wait_until_succeeds(
+              "test $(systemctl show togi-kmscon.service -p Result --value) = start-limit-hit"
+          )
+          machine.wait_for_unit("togi-watch.service")
+          console_pid = machine.succeed("systemctl show togi-watch.service -p MainPID --value").strip()
+          machine.succeed(f"test $(readlink /proc/{console_pid}/fd/0) = /dev/tty1")
+          machine.succeed(f"grep -zqx 'TERM=linux' /proc/{console_pid}/environ")
+          machine.wait_until_succeeds("grep -aq 'preflight: failed checks' /dev/vcs1")
+          machine.screenshot("console-fallback")
+          assert machine.succeed("systemctl show togi.service -p InvocationID -p ActiveState -p NRestarts") == tuner_before
+          assert machine.succeed("cat /proc/sys/kernel/random/boot_id") == boot_before
+          machine.log(machine.succeed("journalctl -b -u togi-kmscon -u togi-watch-fallback -u togi-watch --no-pager"))
+    '';
+  };
+
   # The host lock on a normal boot of the module with a hardware-test group: nix/provision-lock.py, the program
   # docs/howto.md gives manual installs, on fresh, legacy, held and symlinked locks; an unrelated user's denial;
   # and the installed `togi`'s refusals of a foreign owner, a read-only lock and a held lock. Its checks are exit
