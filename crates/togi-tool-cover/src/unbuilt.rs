@@ -89,7 +89,7 @@ pub fn not_built(
                 continue;
             }
             let text = String::from_utf8_lossy(&lines[item.indices()].join(&b'\n')).into_owned();
-            if module_built(root, path, &text, built)? {
+            if module_built(tree, root, path, &text, built)? {
                 continue;
             }
             if changes.iter().any(|&change| change.overlaps(item)) {
@@ -113,6 +113,7 @@ static MODULE_DECLARATION: LazyLock<Result<Regex, regex::Error>> = LazyLock::new
 /// the module in its own file. An indented declaration sits in an inline module and resolves
 /// under that module's directory, so it proves nothing.
 fn module_built(
+    tree: &dyn Tree,
     root: &Path,
     path: &str,
     item: &str,
@@ -125,6 +126,15 @@ fn module_built(
         return Ok(false);
     };
     let attributes = &declaration[1];
+    if attributes
+        .split("#[")
+        .filter_map(|attribute| attribute.trim_end().strip_suffix(']'))
+        .any(|attribute| {
+            crate::cfg::path_attribute(attribute).is_none() && has_path_attribute(attribute)
+        })
+    {
+        return Ok(false);
+    }
     let plain_path = attributes
         .split("#[")
         .filter_map(|attribute| attribute.trim_end().strip_suffix(']'))
@@ -145,11 +155,17 @@ fn module_built(
         return Ok(false);
     }
     let stem = file.strip_suffix(".rs").unwrap_or(file);
-    let crate_root = file == "build.rs"
-        || dir.ends_with("/tests/")
-        || dir.ends_with("/benches/")
-        || dir.ends_with("/examples/")
-        || dir.ends_with("/src/bin/");
+    let package = if file == "build.rs" {
+        Some(dir.trim_end_matches('/'))
+    } else {
+        ["/tests/", "/benches/", "/examples/", "/src/bin/"]
+            .into_iter()
+            .find_map(|suffix| dir.strip_suffix(suffix))
+    };
+    let crate_root = package.is_some_and(|package| {
+        tree.list(&root.join(package))
+            .is_ok_and(|entries| entries.iter().any(|entry| entry == "Cargo.toml"))
+    });
     if !matches!(stem, "lib" | "main" | "mod") && !crate_root {
         dir.push_str(stem);
         dir.push('/');
