@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use tempfile::tempdir;
+use test_case::test_case;
 use togi_journal::Recording;
 use togi_tool_trialfacts::{ExtractError, decode, from_recordings, read, write_unsynced};
 
@@ -35,13 +36,16 @@ fn the_extracted_facts_are_encoded_in_memory() {
     assert_eq!(facts[0].profile.as_slice().len(), 2);
 }
 
+#[test_case(recordings(false); "recordings without facts")]
+#[test_case(Vec::new(); "no recordings")]
+fn a_source_that_yields_no_facts_leaves_the_output_untouched(recordings: Vec<Recording>) {
+    let mut output = COMMITTED.to_vec();
+    assert!(generate_recordings(recordings, &mut output).is_err());
+    assert_eq!(output, COMMITTED);
+}
+
 #[test]
-fn a_source_that_yields_no_facts_leaves_the_output_untouched() {
-    for recordings in [recordings(false), Vec::<Recording>::new()] {
-        let mut output = COMMITTED.to_vec();
-        assert!(generate_recordings(recordings, &mut output).is_err());
-        assert_eq!(output, COMMITTED);
-    }
+fn no_facts_does_not_publish_the_output() {
     let mut called = false;
     assert!(
         finish(Err(ExtractError::NoFacts), |_| {

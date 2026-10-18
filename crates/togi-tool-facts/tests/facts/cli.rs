@@ -1,3 +1,5 @@
+use test_case::test_case;
+
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -145,15 +147,11 @@ fn a_bare_output_name_is_passed_to_the_publication_adapter_unchanged() {
     );
 }
 
-#[test]
-fn a_wrong_argument_count_is_a_usage_error() {
-    for args in [
-        vec!["togi-tool-facts"],
-        vec!["togi-tool-facts", "one"],
-        vec!["togi-tool-facts", "a", "b", "c"],
-    ] {
-        let error = Cli::try_parse_from(args).unwrap_err();
-        assert_eq!(error.exit_code(), 2);
-        assert!(error.to_string().contains("Usage"));
-    }
+#[test_case(&["togi-tool-facts"]; "no arguments")]
+#[test_case(&["togi-tool-facts", "one"]; "one argument")]
+#[test_case(&["togi-tool-facts", "a", "b", "c"]; "three arguments")]
+fn a_wrong_argument_count_is_a_usage_error(args: &[&str]) {
+    let error = Cli::try_parse_from(args).unwrap_err();
+    assert_eq!(error.exit_code(), 2);
+    assert!(error.to_string().contains("Usage"));
 }

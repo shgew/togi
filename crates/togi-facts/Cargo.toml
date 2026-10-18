@@ -13,6 +13,7 @@ togi-journal.workspace = true
 togi-machine.workspace = true
 
 [dev-dependencies]
+test-case.workspace = true
 togi-config.workspace = true
 
 [lints]

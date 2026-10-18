@@ -1,5 +1,6 @@
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngSeed};
+use test_case::test_case;
 use togi_journal::{
     Activity, Attribution, HuntOutcome, Outcome, TrialProgress, TrialSample, TrialSignal,
 };
@@ -90,103 +91,99 @@ impl Interruption {
     }
 }
 
-#[test]
-fn the_recovery_gap_runs_from_the_last_evidence_whatever_the_wall_clock_did() {
-    for jump in [-3600, 3600] {
-        for evidence in [Evidence::Progress, Evidence::Signal, Evidence::Sample] {
-            let mut cut = Interruption::new(evidence, Signal::Crash);
-            cut.jump = jump;
-            let journal = cut.log().journal();
-            let p = Projection::new(&journal);
-            let m = compute(&p, None);
-            assert_eq!(
-                m.recovery,
-                RecoveryGap {
-                    count: 1,
-                    shortest: 80.0,
-                    median: 80.0,
-                    longest: 80.0
-                },
-                "{evidence:?} after a jump of {jump} s"
-            );
-            assert!(
-                (m.time.downtime_s - 70.0).abs() < 1e-9,
-                "{evidence:?} after a jump of {jump} s: downtime {}",
-                m.time.downtime_s
-            );
-        }
-    }
+#[test_case(-3600, Evidence::Progress; "backward progress")]
+#[test_case(-3600, Evidence::Signal; "backward signal")]
+#[test_case(-3600, Evidence::Sample; "backward sample")]
+#[test_case(3600, Evidence::Progress; "forward progress")]
+#[test_case(3600, Evidence::Signal; "forward signal")]
+#[test_case(3600, Evidence::Sample; "forward sample")]
+fn the_recovery_gap_runs_from_the_last_evidence_whatever_the_wall_clock_did(
+    jump: i64,
+    evidence: Evidence,
+) {
+    let mut cut = Interruption::new(evidence, Signal::Crash);
+    cut.jump = jump;
+    let journal = cut.log().journal();
+    let p = Projection::new(&journal);
+    let m = compute(&p, None);
+    assert_eq!(
+        m.recovery,
+        RecoveryGap {
+            count: 1,
+            shortest: 80.0,
+            median: 80.0,
+            longest: 80.0
+        },
+        "{evidence:?} after a jump of {jump} s"
+    );
+    assert!(
+        (m.time.downtime_s - 70.0).abs() < 1e-9,
+        "{evidence:?} after a jump of {jump} s: downtime {}",
+        m.time.downtime_s
+    );
 }
 
-#[test]
-fn a_crash_keeps_its_stronger_signal_in_every_metric() {
-    for signal in [
-        Signal::ComputationError,
-        Signal::Stall,
-        Signal::CorrectedMce,
-        Signal::UncorrectedMce,
-    ] {
-        let journal = Interruption::new(Evidence::Progress, signal)
-            .log()
-            .journal();
-        let p = Projection::new(&journal);
-        let m = compute(&p, None);
-        assert_eq!(
-            m.recovery,
-            RecoveryGap {
-                count: 1,
-                shortest: 80.0,
-                median: 80.0,
-                longest: 80.0
-            },
-            "{signal}"
-        );
-        assert!(
-            (m.time.downtime_s - 70.0).abs() < 1e-9,
-            "{signal}: downtime {}",
-            m.time.downtime_s
-        );
-        assert_eq!(m.failures.timing, [0, 1, 0, 0, 0], "{signal}");
-        assert_eq!(m.hunts[0].crashes, 1, "{signal}");
-        assert_eq!(
-            m.failures.counts.into_iter().collect::<Vec<_>>(),
-            [(
-                (
-                    Some(Regime::R7),
-                    Some(workload(Regime::R7, 0)),
-                    signal,
-                    Attribution::Unattributed
-                ),
-                1
-            )],
-            "{signal}"
-        );
-    }
+#[test_case(Signal::ComputationError; "computation error")]
+#[test_case(Signal::Stall; "stall")]
+#[test_case(Signal::CorrectedMce; "corrected mce")]
+#[test_case(Signal::UncorrectedMce; "uncorrected mce")]
+fn a_crash_keeps_its_stronger_signal_in_every_metric(signal: Signal) {
+    let journal = Interruption::new(Evidence::Progress, signal)
+        .log()
+        .journal();
+    let p = Projection::new(&journal);
+    let m = compute(&p, None);
+    assert_eq!(
+        m.recovery,
+        RecoveryGap {
+            count: 1,
+            shortest: 80.0,
+            median: 80.0,
+            longest: 80.0
+        },
+        "{signal}"
+    );
+    assert!(
+        (m.time.downtime_s - 70.0).abs() < 1e-9,
+        "{signal}: downtime {}",
+        m.time.downtime_s
+    );
+    assert_eq!(m.failures.timing, [0, 1, 0, 0, 0], "{signal}");
+    assert_eq!(m.hunts[0].crashes, 1, "{signal}");
+    assert_eq!(
+        m.failures.counts.into_iter().collect::<Vec<_>>(),
+        [(
+            (
+                Some(Regime::R7),
+                Some(workload(Regime::R7, 0)),
+                signal,
+                Attribution::Unattributed
+            ),
+            1
+        )],
+        "{signal}"
+    );
 }
 
-#[test]
-fn crashes_are_binned_by_the_trial_seconds_before_their_last_evidence() {
-    for (ran, bin) in [
-        (0, 0),
-        (1, 1),
-        (29, 1),
-        (30, 2),
-        (59, 2),
-        (60, 3),
-        (119, 3),
-        (120, 4),
-    ] {
-        let mut cut = Interruption::new(Evidence::Progress, Signal::Crash);
-        cut.ran = ran;
-        let journal = cut.log().journal();
-        let mut want = [0; 5];
-        want[bin] = 1;
-        assert_eq!(
-            compute(&Projection::new(&journal), None).failures.timing,
-            want,
-            "{ran} s"
-        );
-    }
+#[test_case(0, 0; "zero seconds")]
+#[test_case(1, 1; "one second")]
+#[test_case(29, 1; "twenty nine seconds")]
+#[test_case(30, 2; "thirty seconds")]
+#[test_case(59, 2; "fifty nine seconds")]
+#[test_case(60, 3; "sixty seconds")]
+#[test_case(119, 3; "one hundred nineteen seconds")]
+#[test_case(120, 4; "one hundred twenty seconds")]
+fn crashes_are_binned_by_the_trial_seconds_before_their_last_evidence(ran: i64, bin: usize) {
+    let mut cut = Interruption::new(Evidence::Progress, Signal::Crash);
+    cut.ran = ran;
+    let journal = cut.log().journal();
+    let mut want = [0; 5];
+    want[bin] = 1;
+    assert_eq!(
+        compute(&Projection::new(&journal), None).failures.timing,
+        want,
+        "{ran} s"
+    );
 }
 
 #[test]

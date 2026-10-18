@@ -3,6 +3,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use tempfile::tempdir;
+use test_case::test_case;
 use togi_journal::Seq;
 use togi_tool_stats::{Journal, backoff_records, chain_records, counterfactual, report};
 
@@ -36,26 +37,32 @@ fn state_with_torn_tail() -> (tempfile::TempDir, String) {
     (dir, want)
 }
 
-#[test]
-fn real_process_the_report_reads_only_the_journal_and_leaves_it_as_it_was() {
+#[derive(Clone, Copy)]
+enum Source {
+    StateDirectory,
+    Journal,
+}
+
+#[test_case(Source::StateDirectory; "state directory")]
+#[test_case(Source::Journal; "explicit journal overrides absent state directory")]
+fn real_process_the_report_reads_only_the_journal_and_leaves_it_as_it_was(source: Source) {
     let (dir, want) = state_with_torn_tail();
     let journal = dir.path().join("events.jsonl");
     let before = fs::read(&journal).unwrap();
     let absent = dir.path().join("absent");
-    for args in [
-        vec![os("--state-dir"), dir.path().as_os_str()],
-        vec![
+    let args = match source {
+        Source::StateDirectory => vec![os("--state-dir"), dir.path().as_os_str()],
+        Source::Journal => vec![
             os("--journal"),
             journal.as_os_str(),
             os("--state-dir"),
             absent.as_os_str(),
         ],
-    ] {
-        let ran = stats(&args);
-        assert_eq!(ran.status.code(), Some(0));
-        assert_eq!(text(ran.stderr), "");
-        assert_eq!(text(ran.stdout), want);
-    }
+    };
+    let ran = stats(&args);
+    assert_eq!(ran.status.code(), Some(0));
+    assert_eq!(text(ran.stderr), "");
+    assert_eq!(text(ran.stdout), want);
     assert_eq!(fs::read(&journal).unwrap(), before);
 }
 
@@ -200,57 +207,25 @@ fn real_process_since_keeps_what_starts_at_or_after_the_cutoff() {
     );
 }
 
-#[test]
-fn real_process_rejected_arguments_exit_two_without_a_report() {
+#[test_case(&["unexpected"]; "positional argument")]
+#[test_case(&["--since", "not-a-time"]; "invalid cutoff")]
+#[test_case(&["--unknown"]; "unknown option")]
+#[test_case(&["--forecast", "forecast.json", "--journal", "events.jsonl"]; "forecast and journal")]
+#[test_case(&["--forecast", "forecast.json", "--since", "2026-10-07T00:00:00Z"]; "forecast and cutoff")]
+#[test_case(&["--forecast", "forecast.json", "--chains", "chains.jsonl"]; "forecast and chains")]
+#[test_case(&["--forecast", "forecast.json", "--backoffs", "backoffs.jsonl"]; "forecast and backoffs")]
+#[test_case(&["--counterfactual", "--since", "2026-10-07T00:00:00Z"]; "counterfactual and cutoff")]
+#[test_case(&["--counterfactual", "--chains", "chains.jsonl"]; "counterfactual and chains")]
+#[test_case(&["--witnesses", "witnesses.jsonl"]; "witnesses without counterfactual")]
+#[test_case(&["--counterfactual", "--backoffs", "backoffs.jsonl"]; "counterfactual and backoffs")]
+fn real_process_rejected_arguments_exit_two_without_a_report(args: &[&str]) {
     let dir = tempdir().unwrap();
-    for args in [
-        vec![os("unexpected")],
-        vec![os("--since"), os("not-a-time")],
-        vec![os("--unknown")],
-        vec![
-            os("--forecast"),
-            os("forecast.json"),
-            os("--journal"),
-            os("events.jsonl"),
-        ],
-        vec![
-            os("--forecast"),
-            os("forecast.json"),
-            os("--since"),
-            os("2026-10-07T00:00:00Z"),
-        ],
-        vec![
-            os("--forecast"),
-            os("forecast.json"),
-            os("--chains"),
-            os("chains.jsonl"),
-        ],
-        vec![
-            os("--forecast"),
-            os("forecast.json"),
-            os("--backoffs"),
-            os("backoffs.jsonl"),
-        ],
-        vec![
-            os("--counterfactual"),
-            os("--since"),
-            os("2026-10-07T00:00:00Z"),
-        ],
-        vec![os("--counterfactual"), os("--chains"), os("chains.jsonl")],
-        vec![os("--witnesses"), os("witnesses.jsonl")],
-        vec![
-            os("--counterfactual"),
-            os("--backoffs"),
-            os("backoffs.jsonl"),
-        ],
-    ] {
-        let mut full = vec![os("--state-dir"), dir.path().as_os_str()];
-        full.extend(args.iter().copied());
-        let ran = stats(&full);
-        assert_eq!(ran.status.code(), Some(2), "{args:?}");
-        assert_eq!(text(ran.stdout), "", "{args:?}");
-        assert!(!text(ran.stderr).is_empty(), "{args:?}");
-    }
+    let mut full = vec![os("--state-dir"), dir.path().as_os_str()];
+    full.extend(args.iter().map(|arg| os(arg)));
+    let ran = stats(&full);
+    assert_eq!(ran.status.code(), Some(2), "{args:?}");
+    assert_eq!(text(ran.stdout), "", "{args:?}");
+    assert!(!text(ran.stderr).is_empty(), "{args:?}");
 }
 
 #[test]
