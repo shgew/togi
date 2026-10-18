@@ -1,5 +1,5 @@
 //! What a new release commit waits for: an empty target-machine queue (ADR 0043) and a passing `check` run on
-//! the commit it builds on (ADR 0014).
+//! the commit it builds on (ADR 0074).
 
 use std::fmt;
 use std::io::{self, Write};
@@ -12,9 +12,9 @@ use serde::de::IgnoredAny;
 use crate::github::{ApiError, GitHub, Method, Repository, escape, query};
 use crate::release::DEFAULT_BRANCH;
 
-/// The workflow whose push run on `main` must pass before a release.
+/// The workflow whose full dispatch run on `main` must pass before a release.
 pub const CHECK_WORKFLOW: &str = "check.yml";
-/// Several times the ten minutes a check run takes, leaving room for runs waiting on a runner.
+/// Allows a full check, including VM tests, time to run and wait for runners.
 pub const CHECK_TIMEOUT: Duration = Duration::from_hours(1);
 /// How often the check run is looked up while it has not finished.
 pub const CHECK_POLL: Duration = Duration::from_secs(30);
@@ -173,7 +173,7 @@ struct CheckRuns {
 /// Where an unfinished check run stands.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Pending {
-    /// No push run of [`CHECK_WORKFLOW`] on `main` for the commit has started.
+    /// No dispatch run of [`CHECK_WORKFLOW`] on `main` for the commit has started.
     Missing { commit: String },
     /// The run has started but not completed.
     Running {
@@ -210,6 +210,14 @@ pub enum CheckError {
         #[source]
         source: ApiError,
     },
+    #[error("look up the head of {DEFAULT_BRANCH}")]
+    Head(#[source] ApiError),
+    #[error(
+        "cannot dispatch {CHECK_WORKFLOW}: {DEFAULT_BRANCH} is at {head}, not release base {commit}"
+    )]
+    Moved { commit: String, head: String },
+    #[error("dispatch {CHECK_WORKFLOW} on {DEFAULT_BRANCH}")]
+    Dispatch(#[source] ApiError),
     #[error("check run {url} for {commit} concluded {conclusion}")]
     Concluded {
         url: String,
@@ -233,7 +241,7 @@ fn latest_check_run(
         escape(CHECK_WORKFLOW),
         query(&[
             ("branch", DEFAULT_BRANCH),
-            ("event", "push"),
+            ("event", "workflow_dispatch"),
             ("head_sha", commit),
             ("per_page", "1"),
         ])
@@ -247,8 +255,54 @@ fn latest_check_run(
     Ok(runs.workflow_runs.into_iter().next())
 }
 
-/// Looks up the check run for `commit` every [`CHECK_POLL`] until it completes or [`CHECK_TIMEOUT`] passes, and
-/// fails unless it succeeded; each change of state is reported to `out`.
+#[derive(Deserialize)]
+struct BranchHead {
+    object: Commit,
+}
+
+#[derive(Deserialize)]
+struct Commit {
+    sha: String,
+}
+
+fn dispatch_check(
+    api: &mut GitHub,
+    repository: &Repository,
+    commit: &str,
+) -> Result<(), CheckError> {
+    let head: BranchHead = api
+        .decoded(
+            Method::Get,
+            &format!(
+                "{}/git/ref/heads/{}",
+                repository.path(),
+                escape(DEFAULT_BRANCH)
+            ),
+            None,
+        )
+        .map_err(CheckError::Head)?;
+    if head.object.sha != commit {
+        return Err(CheckError::Moved {
+            commit: commit.to_owned(),
+            head: head.object.sha,
+        });
+    }
+    api.request(
+        Method::Post,
+        &format!(
+            "{}/actions/workflows/{}/dispatches",
+            repository.path(),
+            escape(CHECK_WORKFLOW),
+        ),
+        Some(&serde_json::json!({"ref": DEFAULT_BRANCH})),
+        &[],
+    )
+    .map_err(CheckError::Dispatch)?;
+    Ok(())
+}
+
+/// Reuses the latest full check run for `commit`, or dispatches one on `main`, then polls until it completes
+/// or [`CHECK_TIMEOUT`] passes. Fails unless it succeeds; each change of state is reported to `out`.
 pub fn wait_for_green_check(
     api: &mut GitHub,
     repository: &Repository,
@@ -257,9 +311,13 @@ pub fn wait_for_green_check(
     out: &mut dyn Write,
 ) -> Result<(), CheckError> {
     let deadline = clock.now() + CHECK_TIMEOUT;
+    let mut run = latest_check_run(api, repository, commit)?;
+    if run.is_none() {
+        dispatch_check(api, repository, commit)?;
+    }
     let mut reported = None;
     loop {
-        let pending = match latest_check_run(api, repository, commit)? {
+        let pending = match run {
             Some(run) if run.status == "completed" => {
                 let conclusion = run.conclusion.unwrap_or_default();
                 if conclusion == "success" {
@@ -294,6 +352,7 @@ pub fn wait_for_green_check(
             reported = Some(pending);
         }
         clock.sleep(CHECK_POLL.min(left));
+        run = latest_check_run(api, repository, commit)?;
     }
 }
 

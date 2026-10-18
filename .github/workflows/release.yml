@@ -3,7 +3,7 @@ name: release
 on: workflow_dispatch
 
 permissions:
-  actions: read
+  actions: write
   contents: write
   issues: read
 
