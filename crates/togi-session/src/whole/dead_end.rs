@@ -988,7 +988,7 @@ fn every_stop_and_error_exit_joins_the_trial_restores_the_hardware_publishes_the
 ) {
     let bench = quiet();
     let joins = Rc::new(Joins::default());
-    let mut input = owned_input(&bench, &joins, case_stop == Stop::Signal);
+    let mut input = owned_input(&bench, &joins, *case_stop == Stop::Signal);
     match case_stop {
         Stop::Cycles => input.policy.cycles = Some(NonZeroU32::MIN),
         Stop::FirstResult => input.policy.first_result = true,
