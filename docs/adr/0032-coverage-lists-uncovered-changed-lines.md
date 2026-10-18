@@ -25,3 +25,7 @@ The mechanism after the Rust cutover; the decision and its reasons are unchanged
 ## Amendment (#633, #1038)
 
 The program is the `togi-tool-cover` crate, which keeps the LCOV route's flags and output and exits 1 on a refusal; it differs in that `-h` exits 0, a usage refusal has its own wording and prints the usage, a failed `git diff` names git's message, and non-UTF-8 input is decoded lossily. The decision and its reasons are unchanged. The Go profile route is gone with the last Go code.
+
+## Amendment (#1105)
+
+An out-of-line module declaration has no executable line of its own. When dep-info names its resolved module file, the declaration is built even if its `cfg` is not a host predicate. A plain `#[path = "..."]` resolves relative to the declaring file's directory; conditional paths inside `cfg_attr` remain unproven. Conventional build-script, integration-test, benchmark, example and binary crate roots resolve ordinary `mod x;` declarations from their directory, like `lib.rs`, `main.rs` and `mod.rs`.
