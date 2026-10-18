@@ -5,6 +5,7 @@ use togi_defect::Entry;
 use togi_facts::{Fact, SessionFacts};
 use togi_journal::{CarriedCore, CarriedSource, Event, Payload, ResetTarget, SessionId};
 use togi_machine::{BiosContext, CoreSet};
+use togi_tuner::FailurePoint;
 
 use crate::archives::{Archives, CarryError};
 use crate::seeds::Exclusions;
@@ -172,9 +173,14 @@ fn merge_seeds(sources: &[Rc<SourceSummary>]) -> Vec<CarriedCore> {
                 candidate_solo_limit: None,
                 failure_point: None,
             });
+            let merged = FailurePoint::new(point.offset).merge(
+                entry
+                    .failure_point
+                    .map(|held| FailurePoint::new(held.offset)),
+            );
             if entry
                 .failure_point
-                .is_none_or(|held| point.offset > held.offset)
+                .is_none_or(|held| held.offset != merged.offset())
             {
                 entry.failure_point = Some(point);
             }

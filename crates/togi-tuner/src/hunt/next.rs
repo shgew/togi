@@ -17,8 +17,8 @@ use crate::ledger::carried_clause;
 use crate::r7::respond::R7Route;
 use crate::state::Run;
 use crate::{
-    Action, ClassKey, DecisionAction, Depth, Load, Profile, Requirement, Secs, TrialContext,
-    TrialPlan, Window, WorkloadChoice,
+    Action, ClassKey, DecisionAction, Depth, FailurePoint, Load, Profile, Requirement, Secs,
+    TrialContext, TrialPlan, Window, WorkloadChoice,
 };
 
 enum Settled {
@@ -639,10 +639,9 @@ impl Run {
             .and_then(|end| end.payload.members.iter().find(|member| member.core == id))
             .map(|member| member.offset)
             .or_else(|| hunt.failing.get(id))?;
-        let point = self
-            .failure_point(id)
-            .filter(|&fail| fail.shallower_than(failing))
-            .unwrap_or(failing);
+        let point = FailurePoint::new(failing)
+            .merge(self.failure_point(id).map(FailurePoint::new))
+            .offset();
         let past = point.shallower_by(1);
         let to = if core.offset.shallower_than(past) {
             core.offset

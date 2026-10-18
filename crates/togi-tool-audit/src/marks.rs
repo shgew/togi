@@ -6,6 +6,7 @@ use togi_journal::{
     ResetTarget, Seq, TrialId, TrialIntent, TunerDecision,
 };
 use togi_machine::{Condition, CoreId, CoreSet, PerCore, Regime, TargetOffset};
+use togi_tuner::FailurePoint;
 
 use crate::auditor::Seen;
 use crate::violation::{Check, Findings};
@@ -66,7 +67,9 @@ impl Marks {
             .iter()
             .copied()
             .reduce(|best, point| {
-                if point.offset > best.offset {
+                let merged = FailurePoint::new(point.offset)
+                    .merge(Some(FailurePoint::new(best.offset)));
+                if merged.offset() != best.offset {
                     point
                 } else {
                     best

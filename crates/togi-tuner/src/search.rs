@@ -9,7 +9,7 @@ use crate::cores::Core;
 use crate::ledger::carried_clause;
 use crate::state::Run;
 use crate::{
-    Action, BackendId, ClassKey, DecisionAction, DecisionPayload, Depth, Evidence, Load, Profile,
+    Action, BackendId, ClassKey, DecisionAction, DecisionPayload, Depth, Evidence, FailurePoint, Load, Profile,
     TrialPlan, Window, WorkloadChoice,
 };
 
@@ -200,13 +200,9 @@ impl Run {
             }
             .into();
         }
-        let fail = view.fail.map_or(offset, |old| {
-            if old.shallower_than(offset) {
-                old
-            } else {
-                offset
-            }
-        });
+        let fail = FailurePoint::new(offset)
+            .merge(view.fail.map(FailurePoint::new))
+            .offset();
         let (pass, discarded) = match view.pass {
             Some(pass) if !pass.shallower_than(fail) => (
                 None,
