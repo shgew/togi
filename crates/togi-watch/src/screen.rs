@@ -10,88 +10,16 @@ use jiff::Timestamp;
 use crate::history::LogEntry;
 use crate::model::Snapshot;
 
-/// Which page the dashboard shows. The pages form one fixed cycle in declaration order, which Left and Right
-/// walk with wrap.
+/// Which page the dashboard shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum View {
-    /// Phase progress, the operation now, every core's gauge and a short What happened.
+    /// The dashboard itself.
     #[default]
     Main,
-    /// Each core's exact values, roles and failure evidence.
-    Cores,
-    /// The current phase's work list: search turns, the cycle checklist or the phase 2 round.
-    Cycle,
-    /// R7 request order, top requesters and self-sufficiency.
-    R7,
-    /// Hunts and probes: cause, attribution, groups, splits and probe evidence.
-    Hunts,
-    /// The profile to enter in BIOS.
-    Bios,
-    /// What happened, expanded.
-    History,
-    /// The journal's events.
-    Log,
-    /// The key and term help.
+    /// The key help.
     Help,
-}
-
-impl View {
-    /// Every page in cycle order.
-    pub const ALL: [Self; 9] = [
-        Self::Main,
-        Self::Cores,
-        Self::Cycle,
-        Self::R7,
-        Self::Hunts,
-        Self::Bios,
-        Self::History,
-        Self::Log,
-        Self::Help,
-    ];
-
-    /// The page's position in the cycle, from 1.
-    #[must_use]
-    pub const fn number(self) -> usize {
-        match self {
-            Self::Main => 1,
-            Self::Cores => 2,
-            Self::Cycle => 3,
-            Self::R7 => 4,
-            Self::Hunts => 5,
-            Self::Bios => 6,
-            Self::History => 7,
-            Self::Log => 8,
-            Self::Help => 9,
-        }
-    }
-
-    /// The page after this one, wrapping from the last to the first.
-    #[must_use]
-    pub const fn next(self) -> Self {
-        Self::ALL[self.number() % Self::ALL.len()]
-    }
-
-    /// The page before this one, wrapping from the first to the last.
-    #[must_use]
-    pub const fn prev(self) -> Self {
-        Self::ALL[(self.number() + Self::ALL.len() - 2) % Self::ALL.len()]
-    }
-
-    /// The page's name as titles and the footer show it.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Main => "Main",
-            Self::Cores => "Cores",
-            Self::Cycle => "Cycle",
-            Self::R7 => "R7 evidence",
-            Self::Hunts => "Hunts / probes",
-            Self::Bios => "BIOS profile",
-            Self::History => "History",
-            Self::Log => "Journal",
-            Self::Help => "Help",
-        }
-    }
+    /// The full event log.
+    Log,
 }
 
 /// How much colour the output may use.

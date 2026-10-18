@@ -8,7 +8,6 @@ mod escapes;
 mod holds;
 mod live_panels;
 mod local_time;
-mod pages;
 mod panels;
 mod without_journal;
 
@@ -25,19 +24,8 @@ use crate::model::{Model, project};
 use crate::screen::{Colours, Drawn, Journal, Screen, View};
 
 pub(super) const SIZES: [(u16, u16); 3] = [(240, 67), (160, 45), (120, 33)];
-/// Every size the frames are checked at: the classes' boundaries on both sides, the numeric table's 80 by 30 and
-/// the scrolled form under it.
-pub(super) const ALL_SIZES: [(u16, u16); 8] = [
-    (240, 67),
-    (160, 45),
-    (159, 45),
-    (160, 44),
-    (120, 33),
-    (80, 30),
-    (80, 24),
-    (79, 29),
-];
-pub(super) const VIEWS: [View; 9] = View::ALL;
+pub(super) const ALL_SIZES: [(u16, u16); 4] = [(240, 67), (160, 45), (120, 33), (80, 24)];
+pub(super) const VIEWS: [View; 3] = [View::Main, View::Help, View::Log];
 pub(super) const PROFILES: [Colours; 3] = [Colours::Full, Colours::Console, Colours::None];
 
 pub(super) struct Fixture {

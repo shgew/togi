@@ -72,38 +72,16 @@ fn the_main_view_of_a_prefix_is_printed_as_plain_text() {
 }
 
 #[test]
-fn a_refused_batch_reports_the_sequence_of_the_first_invalid_event() {
-    let mut events = scenario(Scenario::Checking);
-    events[1] = events[0].clone();
-    let error = draw(
-        &events,
-        events.len(),
-        &frame(View::Main, (120, 33)),
-        &TimeZone::UTC,
-    )
-    .unwrap_err();
-    let Error::Fold { seq, .. } = error else {
-        panic!("expected a fold error, got {error}");
-    };
-    assert_eq!(seq, events[1].seq.get());
-}
-
-#[test_case(View::Help, "9/9 Help", include_str!("snapshots/help-80x24.snap"); "help")]
-#[test_case(View::Log, "8/9 Journal", include_str!("snapshots/log-80x24.snap"); "log")]
-fn the_help_and_log_views_are_printed_with_their_page_names_and_no_key_hints(
-    view: View,
-    place: &str,
-    snapshot: &str,
-) {
+fn the_help_and_log_views_are_printed_without_the_key_footer() {
     let events = scenario(Scenario::Checking);
-    let print = text(&events, events.len(), &frame(view, (80, 24)));
-    let footer = print.lines().last().unwrap_or_default();
-    assert!(footer.contains(place), "{footer:?}");
-    assert!(
-        !footer.contains("Esc") && !footer.contains("PgUp"),
-        "{footer:?}"
+    shown_snapshot(
+        include_str!("snapshots/help-80x24.snap"),
+        &text(&events, events.len(), &frame(View::Help, (80, 24))),
     );
-    shown_snapshot(snapshot, &print);
+    shown_snapshot(
+        include_str!("snapshots/log-80x24.snap"),
+        &text(&events, events.len(), &frame(View::Log, (80, 24))),
+    );
 }
 
 /// The newest short message the log lists as of the first `shown` events.

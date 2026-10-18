@@ -2,69 +2,69 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   06:50:01   tuning 30h49m   session 30h49m   56 failures · 11 crashes   last observed failure 04:43, 2h06m ago
-│ STOPPED  ■ SOLO LIMITS  16/16 → ■ PHASE 1 → ○ PHASE 2 → ○ CLEAN CYCLES
+│  togi   06:50:01   tuning 30h49m   session 30h49m   56 failures · 11 crashes   last observed failure 04:43, 2h06m ago
 │
-│ STOPPED · PHASE 2 · between rounds · 5 candidates · 0 moving · 1 round left if none fails
-│ BIOS profile: page 6
+│  ■ SOLO LIMITS  16/16  ───  ■ PHASE 1  ───  ○ PHASE 2  at most 1 round left  ───  CLEAN CYCLES 0  ───  ■ CYCLE 1
 │
-│ NOW  STOPPED · 06:49:21 · stopped at the first confirmed result
-│ last: PASS after 15:00 · R6 idle + bursts on 00-15 · Tctl max 72°C
+│  ▌  STOPPED   The BIOS profile is confirmed, so I stopped at the first result as asked. togi status shows it; togi       last trial      PASS  15:00 on 00-15 · Tctl max 72°C
+│  ▌            run continues with phase 2.
 │
-│                                            0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
-│                                         core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
-│                                         00  ███████████████████████                            tune -23 now   0         08  █████                                              tune  -5 now   0
-│                                                                    █                           s-27 g4 f-24                       █                                            s-6 g1 f-7
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         01  ███████████████                                    tune -15 now   0         09  █████████████████████████████████                  tune -33 now   0
-│                                                            █                                   s-17 g2 f-16                                                  █                 s-35 g2 f-34
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         02  ████████████████████████                           tune -24 now   0         10  █████████████                                      tune -13 now   0
-│                                                                     █                          s-26 g2 f-25                              █                                     s-18 g5 f-14
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         03  ████████████████████████                           tune -24 now   0         11  ███████                                            tune  -7 now   0
-│                                                                      █                         s-25 g1 f-26                        █                                           s-10 g3 f-8
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         04  █████████████                                      tune -13 now   0         12  ██████████████                                     tune -14 now   0
-│                                                          █                                     s-16 g3 f-14                               █                                    s-17 g3 f-15
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         05  ████████                                           tune  -8 now   0         13  ███████████████████████████████████                tune -35 now   0
-│                                                     █                                          s-10 g2 f-9                                                     █               s-38 g3 f-36
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         06  █████████████████████████████████████              tune -37 now   0         14  ████████████                                       tune -12 now   0
-│                                                                                   █            s-38 g1 f-39                             █                                      s-16 g4 f-13
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         07  █████████████████████████████                      tune -29 now   0         15  █████████████                                      tune -13 now   0
-│                                                                           █                    s-30 g1 f-31                               █                                    s-14 g1 f-15
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         white=tune · red point=recorded failure · gap=counts shallower than solo
+│  STOPPED ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│  06:49:21 · stopped at the first confirmed result
+│  Rows show the saved profile, not applied now.
 │
-│ WHAT HAPPENED
-│ 06:49  stop     stopped
-│ 06:49  cycle    cycle 1 passed, a full cycle
-│ 06:49  step     cycle 1 step 18: R6 idle + bursts, y-cruncher BKT + SFTv4 · 1 credited check
-│ 06:34  step     cycle 1 step 17: R4 partial load, y-cruncher SNT + SVT · 16 credited checks
-│ 06:02  step     cycle 1 step 16: R4 partial load, y-cruncher BKT + SFTv4 · 16 credited checks
-│ 05:30  step     cycle 1 step 15: R4 partial load, mprime SSE 4K-21K · 2 credited checks
-│ 05:26  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 3 credited checks · 3 chain notes
-│ 05:15  step     cycle 1 step 2: R7 all-core, mprime AVX-512 36K-248K · 3 credited checks · 12 chain notes
-│ 05:04  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K · 3 credited checks · 12 chain notes
-│ 04:53  pass     5 credited checks · 9 chain notes
-│ 04:43  backoff  core 14 -13 → -12
-│ 04:43  fail     core 14 fails at -13
-│ 04:43  fail     rerun of R4 partial load on core 14 at -13 · corrected hardware error · no core named
-│ 04:41  backoff  core 14 -14 → -13
-│ 04:41  fail     core 14 fails at -14
-│ 04:41  fail     R4 partial load on core 14 at -14 · wrong result · core 14 named
-│ 04:41  step     cycle 1 step 15: R4 partial load, mprime SSE 4K-21K · 13 credited checks
-│ 04:15  step     cycle 1 step 14: R3 load steps, y-cruncher SNT + SVT · 16 credited checks
-│ 03:43  step     cycle 1 step 13: R3 load steps, y-cruncher BKT + SFTv4 · 16 credited checks
-│ 03:11  step     cycle 1 step 12: R3 load steps, mprime SSE 4K-21K · 15 credited checks
-│ 02:41  step     cycle 1 step 3: R7 all-core, y-cruncher FFTv4 + N63 + VT3 · 3 credited checks · 7 chain notes
-│ 02:30  step     cycle 1 step 2: R7 all-core, mprime AVX-512 36K-248K · 3 credited checks · 11 chain notes
-│ 02:19  step     cycle 1 step 1: R7 all-core, mprime AVX2 36K-248K · 3 credited checks · 11 chain notes
-│ 02:08  pass     5 credited checks · 4 chain notes
-│ 01:58  backoff  core 00 -24 → -23
-│ 01:58  hunt     #3 done · 4 groups in 20m15s · core 00 named
+│  CCD 0               0       -10       -20       -30       -40       -50 fail pt  not under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
+│    00  -23  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬···                           -24                                            08   -5  HAS ROOM  ▄▄▄▄▄·▬                                                -7
+│    01  -15  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                                     -16                                            09  -33  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                   -34
+│    02  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·                            -25                                            10  -13  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▬····                                    -14
+│    03  -24  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                            -26                                            11   -7  AT LIMIT  ▄▄▄▄▄▄▄▬··                                             -8
+│    04  -13  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                                      -14                                            12  -14  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                                     -15
+│    05   -8  AT LIMIT  ▄▄▄▄▄▄▄▄▬·                                             -9                                            13  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬··                -36
+│    06  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬               -39                                            14  -12  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▬···                                      -13
+│    07  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                       -31                                            15  -13  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                       -15
 │
-│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
+│  BIOS PROFILE ────────────────────────────────────────────────────────────────── confirmed by the cycle ending #7128     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+│  slot      0    1    2    3    4    5    6    7
+│  CCD 0   -23  -15  -24  -24  -13   -8  -37  -29                                                                          06:49  stop     stopped
+│  CCD 1    -5  -33  -13   -7  -14  -35  -12  -13                                                                          06:49  cycle    cycle 1 passed, a full cycle
+│                                                                                                                          06:49  pass     R6 idle + bursts on 00-15 · passed · Tctl max 72°C
+│  CYCLE 1 ──────────────────────────────────────────────────────────────────────────────────────── 18 steps · 18 done     06:34  pass     R4 partial load on core 15 at -13 · passed · Tctl max 64°C
+│                                                                                                                          06:32  pass     R4 partial load on core 07 at -29 · passed · Tctl max 76°C
+│    #   kind                  where                   workload                      schedule       result                 06:30  pass     R4 partial load on core 14 at -12 · passed · Tctl max 76°C
+│  ■  1  R7 all-core           2 CCDs · 13 parts       mprime AVX2 36K-248K          13 parts       done                   06:28  pass     R4 partial load on core 06 at -37 · passed · Tctl max 72°C
+│  ■  2  R7 all-core           2 CCDs · 13 parts       mprime AVX-512 36K-248K       13 parts       done                   06:26  pass     R4 partial load on core 13 at -35 · passed · Tctl max 75°C
+│  ■  3  R7 all-core           2 CCDs · 13 parts       y-cruncher FFTv4 + N63 + VT3  13 parts       done                   06:24  pass     R4 partial load on core 05 at -8 · passed · Tctl max 70°C
+│  ■  4  R2 heavy vector       one core at a time      mprime AVX2 36K-248K          16 x 2m        done · hunt 1          06:22  pass     R4 partial load on core 12 at -14 · passed · Tctl max 64°C
+│  ■  5  R2 heavy vector       one core at a time      mprime AVX-512 36K-248K       16 x 2m        done                   06:20  pass     R4 partial load on core 04 at -13 · passed · Tctl max 67°C
+│  ■  6  R2 heavy vector       one core at a time      y-cruncher FFTv4 + N63 + VT3  16 x 2m        done                   06:18  pass     R4 partial load on core 11 at -7 · passed · Tctl max 68°C
+│  ■  7  R6 idle + bursts      all cores idle          mprime SSE 4K-21K             15m            done                   06:16  pass     R4 partial load on core 03 at -24 · passed · Tctl max 63°C
+│  ■  8  R5 both threads       one core at a time      mprime SSE 4K-21K             16 x 2m        done · hunt 2          06:14  pass     R4 partial load on core 10 at -13 · passed · Tctl max 62°C
+│  ■  9  R1 light              one core at a time      mprime SSE 4K-21K             16 x 2m        done                   06:12  pass     R4 partial load on core 02 at -24 · passed · Tctl max 76°C
+│  ■ 10  R1 light              one core at a time      y-cruncher BKT + SFTv4        16 x 2m        done                   06:10  pass     R4 partial load on core 09 at -33 · passed · Tctl max 62°C
+│  ■ 11  R1 light              one core at a time      y-cruncher SNT + SVT          16 x 2m        done                   06:08  pass     R4 partial load on core 01 at -15 · passed · Tctl max 72°C
+│  ■ 12  R3 load steps         one core at a time      mprime SSE 4K-21K             16 x 2m        done · hunt 3          06:06  pass     R4 partial load on core 08 at -5 · passed · Tctl max 62°C
+│  ■ 13  R3 load steps         one core at a time      y-cruncher BKT + SFTv4        16 x 2m        done                   06:04  pass     R4 partial load on core 00 at -23 · passed · Tctl max 72°C
+│  ■ 14  R3 load steps         one core at a time      y-cruncher SNT + SVT          16 x 2m        done                   06:02  pass     R4 partial load on core 15 at -13 · passed · Tctl max 62°C
+│  ■ 15  R4 partial load       one core at a time      mprime SSE 4K-21K             16 x 2m        done                   06:00  pass     R4 partial load on core 07 at -29 · passed · Tctl max 72°C
+│  ■ 16  R4 partial load       one core at a time      y-cruncher BKT + SFTv4        16 x 2m        done                   05:58  pass     R4 partial load on core 14 at -12 · passed · Tctl max 66°C
+│  ■ 17  R4 partial load       one core at a time      y-cruncher SNT + SVT          16 x 2m        done                   05:56  pass     R4 partial load on core 06 at -37 · passed · Tctl max 72°C
+│  ■ 18  R6 idle + bursts      all cores idle          y-cruncher BKT + SFTv4        15m            done                   05:54  pass     R4 partial load on core 13 at -35 · passed · Tctl max 70°C
+│                                                                                                                          05:52  pass     R4 partial load on core 05 at -8 · passed · Tctl max 65°C
+│  R7 ─────────────────────────── top requesters ───────── self-sufficient ───────────────── observed, not a guarantee     05:50  pass     R4 partial load on core 12 at -14 · passed · Tctl max 63°C
+│  mprime AVX2 36K-248K           05 08 by offset          00-05 07-12 14 15                                               05:48  pass     R4 partial load on core 04 at -13 · passed · Tctl max 71°C
+│  mprime AVX-512 36K-248K        05 08 by offset          00-05 07-12 14 15                                               05:46  pass     R4 partial load on core 11 at -7 · passed · Tctl max 73°C
+│  y-cruncher FFTv4 + N63 + VT3   05 08 by offset          00-05 07-12 14 15                                               05:44  pass     R4 partial load on core 03 at -24 · passed · Tctl max 69°C
+│                                                                                                                          05:42  pass     R4 partial load on core 10 at -13 · passed · Tctl max 68°C
+│                                                                                                                          05:40  pass     R4 partial load on core 02 at -24 · passed · Tctl max 65°C
+│                                                                                                                          05:38  pass     R4 partial load on core 09 at -33 · passed · Tctl max 64°C
+│                                                                                                                          05:36  pass     R4 partial load on core 01 at -15 · passed · Tctl max 64°C
+│                                                                                                                          05:34  pass     R4 partial load on core 08 at -5 · passed · Tctl max 66°C
+│                                                                                                                          05:32  pass     R4 partial load on core 00 at -23 · passed · Tctl max 62°C
+│                                                                                                                          05:30  pass     R4 partial load on core 15 at -13 · passed · Tctl max 66°C
+│                                                                                                                          05:28  pass     R4 partial load on core 07 at -29 · passed · Tctl max 64°C
+│                                                                                                                          05:26  chain    cycle 1 step 3 · CCD 1 partials end
+│                                                                                                                          05:26  chain    cycle 1 step 3 · CCD 1 partial 5 loads 09 13
+│                                                                                                                          05:26  chain    cycle 1 step 3 · CCD 1 partial 4 loads 09 12 13
+│                                                                                                                          +899 more
+│
+│   ?  help    l  log    esc  back    q  exit dashboard

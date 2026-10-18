@@ -1,6 +1,5 @@
 //! Keys: decoding the raw bytes a terminal sends, and what a key does to the screen.
 
-use crate::frames::body_rows;
 use crate::screen::{Quit, Screen, View};
 
 /// One key press.
@@ -11,8 +10,6 @@ pub(super) enum Key {
     Esc,
     Up,
     Down,
-    Left,
-    Right,
     PageUp,
     PageDown,
     Home,
@@ -23,13 +20,11 @@ pub(super) enum Key {
 const PENDING_LIMIT: usize = 128;
 
 /// The key an escape sequence names, from the bytes after the escape: the ones the Linux console and common
-/// terminals send for the arrows, page keys, Home and End, in both the CSI (`[`) and SS3 (`O`) forms.
+/// terminals send for the keys that scroll.
 fn sequence_key(sequence: &[u8]) -> Option<Key> {
     match sequence {
         b"[A" | b"OA" => Some(Key::Up),
         b"[B" | b"OB" => Some(Key::Down),
-        b"[C" | b"OC" => Some(Key::Right),
-        b"[D" | b"OD" => Some(Key::Left),
         b"[5~" => Some(Key::PageUp),
         b"[6~" => Some(Key::PageDown),
         b"[H" | b"OH" | b"[1~" | b"[7~" => Some(Key::Home),
@@ -115,16 +110,14 @@ impl Decoder {
     }
 }
 
-/// The main page, unless it is already shown: Esc and `m` do nothing there.
 fn main_view(screen: Screen) -> Screen {
-    if screen.view == View::Main {
-        screen
-    } else {
-        view(screen, View::Main)
+    Screen {
+        view: View::Main,
+        scroll: 0,
+        ..screen
     }
 }
 
-/// `to` as a fresh page: detail pages open at their top, the journal at its end, where it follows new events.
 fn view(screen: Screen, view: View) -> Screen {
     Screen {
         view,
@@ -133,20 +126,18 @@ fn view(screen: Screen, view: View) -> Screen {
     }
 }
 
-/// Applies a key to the screen and reports whether to quit.
-///
-/// Left and Right walk the nine pages with wrap; `?` and `h` open the help, `l` the journal, and pressing a
-/// page's own shortcut on it returns to the main page, as do Esc and `m`. The up and down arrows (or `k`, `j`)
-/// scroll a line, the page keys (or `b`, space, `f`) a body height less one line, Home and End (or `g`, `G`) go
-/// to the ends of a page that can scroll up to `scrolled` lines. A page change resets the scroll: the pages open
-/// at their top and the journal at its end (`usize::MAX`), where it keeps following new events until a scroll
-/// leaves the end; a key that scrolls never changes the page, and nothing but a key changes the scroll, so a
-/// background refresh never resets it. `q`, `Q`, Ctrl-C and Ctrl-D quit unless the screen's [`Quit`] is
-/// `Ignored`, which makes them do nothing on every page. Every other key, `+` and `-` among them, does nothing.
+/// Applies a key to the screen: `?` and `h` toggle the help and `l` the event log, Esc returns to the main view,
+/// the arrow, page, Home and End keys (or `k`, `j`, `b`, space, `f`, `g` and `G`) scroll a view that can scroll up
+/// to `scrolled` lines, and `q`, `Q`, Ctrl-C and Ctrl-D quit unless the screen's [`Quit`] is `Ignored`, which makes
+/// them do nothing on every view. The help opens at its top and the log at its end, where it keeps following new
+/// events (`usize::MAX`) until a scroll leaves the end. Reports whether to quit.
 pub(super) fn press(screen: Screen, key: Key, scrolled: usize) -> (Screen, bool) {
-    let page = body_rows(&screen).saturating_sub(1).max(1);
+    let page = usize::from(screen.height.saturating_sub(8)).max(1);
     let at = screen.scroll.min(scrolled);
     let to = |line: usize| {
+        if screen.view == View::Main {
+            return screen;
+        }
         let scroll = line.min(scrolled);
         Screen {
             scroll: if scroll == scrolled && screen.view == View::Log {
@@ -159,8 +150,6 @@ pub(super) fn press(screen: Screen, key: Key, scrolled: usize) -> (Screen, bool)
     };
     match key {
         Key::Char('q' | 'Q' | '\x03' | '\x04') => (screen, screen.quit == Quit::Keys),
-        Key::Left => (view(screen, screen.view.prev()), false),
-        Key::Right => (view(screen, screen.view.next()), false),
         Key::Char('?' | 'h' | 'H') => (
             if screen.view == View::Help {
                 main_view(screen)
@@ -177,7 +166,7 @@ pub(super) fn press(screen: Screen, key: Key, scrolled: usize) -> (Screen, bool)
             },
             false,
         ),
-        Key::Esc | Key::Char('m') => (main_view(screen), false),
+        Key::Esc => (main_view(screen), false),
         Key::Up | Key::Char('k') => (to(at.saturating_sub(1)), false),
         Key::Down | Key::Char('j') => (to(at.saturating_add(1)), false),
         Key::PageUp | Key::Char('b') => (to(at.saturating_sub(page)), false),
@@ -191,20 +180,20 @@ pub(super) fn press(screen: Screen, key: Key, scrolled: usize) -> (Screen, bool)
 #[cfg(test)]
 mod tests {
     use super::{Decoder, Key, decode, press};
-    use crate::frames::body_rows;
     use crate::screen::{Colours, Quit, Screen, View};
     use test_case::test_case;
 
     const FOLLOW: usize = usize::MAX;
+    const VIEWS: [View; 3] = [View::Main, View::Help, View::Log];
 
-    /// Where a page opens: its top, or for the journal its end, which it follows.
+    /// Where a view opens: its top, or for the journal its end, which it follows.
     fn opening(view: View) -> usize {
         if view == View::Log { FOLLOW } else { 0 }
     }
 
     /// How far a page key moves on `from`.
     fn page(from: &Screen) -> usize {
-        body_rows(from).saturating_sub(1).max(1)
+        usize::from(from.height.saturating_sub(8)).max(1)
     }
 
     fn screen(view: View, scroll: usize, height: u16) -> Screen {
@@ -226,8 +215,7 @@ mod tests {
     #[test_case(screen(View::Log, 0, 0), Key::Char('l'), 0, View::Main, 0; "l closes the log")]
     #[test_case(screen(View::Help, 2, 0), Key::Char('l'), 9, View::Log, FOLLOW; "l from the help opens the log")]
     #[test_case(screen(View::Log, 5, 0), Key::Esc, 9, View::Main, 0; "esc returns to the main view")]
-    #[test_case(screen(View::Cores, 5, 0), Key::Char('m'), 9, View::Main, 0; "m returns to the main view")]
-    #[test_case(screen(View::Main, 6, 0), Key::Esc, 20, View::Main, 6; "esc on the main view leaves its scroll alone")]
+    #[test_case(screen(View::Main, 6, 0), Key::Esc, 20, View::Main, 0; "esc returns to the dashboard at its top")]
     #[test_case(screen(View::Help, 0, 0), Key::Down, 9, View::Help, 1; "down scrolls the help one line")]
     #[test_case(screen(View::Help, 9, 0), Key::Char('j'), 9, View::Help, 9; "j stops at the end")]
     #[test_case(screen(View::Log, FOLLOW, 0), Key::Up, 9, View::Log, 8; "up from the log's end leaves it")]
@@ -237,8 +225,7 @@ mod tests {
     #[test_case(screen(View::Help, 0, 0), Key::End, 9, View::Help, 9; "end goes to the help's end")]
     #[test_case(screen(View::Help, 50, 0), Key::Up, 9, View::Help, 8; "a scroll beyond the content clamps first")]
     #[test_case(screen(View::Main, 0, 0), Key::Down, 0, View::Main, 0; "a main view that fits does not scroll")]
-    #[test_case(screen(View::Main, 3, 0), Key::Down, 20, View::Main, 4; "a main view that does not fit scrolls by the extent the frame reports")]
-    #[test_case(screen(View::Main, 20, 0), Key::End, 20, View::Main, 20; "the compact main view stops at its end")]
+    #[test_case(screen(View::Main, 3, 0), Key::Down, 20, View::Main, 3; "the dashboard does not scroll")]
     #[test_case(screen(View::Help, 2, 0), Key::Char('x'), 9, View::Help, 2; "other keys change nothing")]
     fn press_maps_each_key_to_its_view_and_scroll(
         from: Screen,
@@ -257,65 +244,13 @@ mod tests {
         );
     }
 
-    #[test_case(Key::Right, 1; "right walks to the next page")]
-    #[test_case(Key::Left, 8; "left walks to the previous page")]
-    fn an_arrow_walks_the_nine_pages_with_wrap_from_every_page(key: Key, step: usize) {
-        assert_eq!(View::ALL.len(), 9);
-        for (at, view) in View::ALL.into_iter().enumerate() {
-            let want = View::ALL[(at + step) % 9];
-            for scroll in [0, 7, FOLLOW] {
-                let from = screen(view, scroll, 24);
-                let (got, quit) = press(from, key, 40);
-                assert!(!quit);
-                assert_eq!(got.view, want, "{view:?} {key:?}");
-                assert_eq!(
-                    got.scroll,
-                    opening(want),
-                    "{view:?} {key:?} from scroll {scroll}: the new page opens where pages open"
-                );
-                assert_eq!(
-                    (got.width, got.height, got.keys, got.quit),
-                    (from.width, from.height, true, from.quit)
-                );
-            }
-        }
-    }
-
-    #[test_case(Key::Right; "right")]
-    #[test_case(Key::Left; "left")]
-    fn nine_arrows_visit_every_page_once_and_come_home(key: Key) {
-        for start in View::ALL {
-            let mut now = screen(start, 0, 24);
-            let mut seen = vec![now.view];
-            for _ in 0..9 {
-                now = press(now, key, 40).0;
-                seen.push(now.view);
-            }
-            assert_eq!(now.view, start, "{key:?} from {start:?}");
-            seen.pop();
-            seen.sort_by_key(|view| view.number());
-            assert_eq!(seen, View::ALL, "{key:?} from {start:?}");
-        }
-    }
-
-    #[test]
-    fn left_from_main_wraps_to_the_last_page_and_right_returns() {
-        let main = press(screen(View::Main, 0, 24), Key::Left, 0).0;
-        assert_eq!(
-            main.view,
-            View::Help,
-            "Left from Main wraps to the last page"
-        );
-        assert_eq!(press(main, Key::Right, 0).0.view, View::Main);
-    }
-
     #[test_case('?', View::Help; "question mark opens the help")]
     #[test_case('h', View::Help; "h opens the help")]
     #[test_case('H', View::Help; "capital h opens the help")]
     #[test_case('l', View::Log; "l opens the log")]
     #[test_case('L', View::Log; "capital l opens the log")]
-    fn a_shortcut_opens_its_page_and_returns_to_main_on_its_own_page(key: char, target: View) {
-        for view in View::ALL {
+    fn a_shortcut_opens_its_view_and_returns_to_main_on_its_own_view(key: char, target: View) {
+        for view in VIEWS {
             for scroll in [0, 6, FOLLOW] {
                 let from = screen(view, scroll, 24);
                 let (got, quit) = press(from, Key::Char(key), 40);
@@ -335,17 +270,15 @@ mod tests {
     }
 
     #[test_case(Key::Esc; "escape")]
-    #[test_case(Key::Char('m'); "m")]
-    fn a_return_key_goes_to_main_and_keeps_the_main_scroll(key: Key) {
-        for view in View::ALL {
+    fn escape_returns_to_the_dashboard_at_its_top(key: Key) {
+        for view in VIEWS {
             for scroll in [0, 6, FOLLOW] {
                 let from = screen(view, scroll, 24);
                 let (got, quit) = press(from, key, 40);
                 assert!(!quit);
-                let want_scroll = if view == View::Main { from.scroll } else { 0 };
                 assert_eq!(
                     (got.view, got.scroll),
-                    (View::Main, want_scroll),
+                    (View::Main, 0),
                     "{key:?} on {view:?} at {scroll}"
                 );
             }
@@ -354,10 +287,10 @@ mod tests {
 
     const EXTENT: usize = 400;
 
-    /// Presses `key` on every page at three sizes, checking that it stays on the page, and passes `check` the scroll
-    /// `key` reaches from a given scroll, the page step, the page's end and a label naming the case.
-    fn on_every_page(key: Key, check: impl Fn(&dyn Fn(usize) -> usize, usize, usize, &str)) {
-        for view in View::ALL {
+    /// Presses `key` on every view at three sizes, checking that it stays on the view, and passes `check` the scroll
+    /// `key` reaches from a given scroll, the page step, the view's end and a label naming the case.
+    fn on_every_view(key: Key, check: impl Fn(&dyn Fn(usize) -> usize, usize, usize, &str)) {
+        for view in [View::Help, View::Log] {
             for (width, height) in [(80, 24), (160, 45), (240, 67)] {
                 let base = Screen {
                     width,
@@ -366,7 +299,7 @@ mod tests {
                 let after = |scroll| {
                     let (got, quit) = press(Screen { scroll, ..base }, key, EXTENT);
                     assert!(!quit);
-                    assert_eq!(got.view, view, "{key:?} changed the page");
+                    assert_eq!(got.view, view, "{key:?} changed the view");
                     got.scroll
                 };
                 let last = if view == View::Log { FOLLOW } else { EXTENT };
@@ -383,7 +316,7 @@ mod tests {
     #[test_case(Key::Down; "down")]
     #[test_case(Key::Char('j'); "j")]
     fn a_line_down_key_scrolls_one_line_to_the_end(key: Key) {
-        on_every_page(key, |after, _, last, case| {
+        on_every_view(key, |after, _, last, case| {
             assert_eq!(after(10), 11, "{case}");
             assert_eq!(after(EXTENT - 1), last, "{case} end");
         });
@@ -392,7 +325,7 @@ mod tests {
     #[test_case(Key::Up; "up")]
     #[test_case(Key::Char('k'); "k")]
     fn a_line_up_key_scrolls_one_line_to_the_top(key: Key) {
-        on_every_page(key, |after, _, _, case| {
+        on_every_view(key, |after, _, _, case| {
             assert_eq!(after(10), 9, "{case}");
             assert_eq!(after(0), 0, "{case} top");
         });
@@ -402,7 +335,7 @@ mod tests {
     #[test_case(Key::Char(' '); "space")]
     #[test_case(Key::Char('f'); "f")]
     fn a_page_down_key_scrolls_one_page_to_the_end(key: Key) {
-        on_every_page(key, |after, page, last, case| {
+        on_every_view(key, |after, page, last, case| {
             assert_eq!(after(10), 10 + page, "{case}");
             assert_eq!(after(EXTENT - 1), last, "{case} end");
         });
@@ -411,7 +344,7 @@ mod tests {
     #[test_case(Key::PageUp; "page up")]
     #[test_case(Key::Char('b'); "b")]
     fn a_page_up_key_scrolls_one_page_to_the_top(key: Key) {
-        on_every_page(key, |after, page, _, case| {
+        on_every_view(key, |after, page, _, case| {
             assert_eq!(after(100), 100 - page, "{case}");
             assert_eq!(after(1), 0, "{case} top");
         });
@@ -420,7 +353,7 @@ mod tests {
     #[test_case(Key::Home; "home")]
     #[test_case(Key::Char('g'); "g")]
     fn a_home_key_goes_to_the_top(key: Key) {
-        on_every_page(key, |after, _, _, case| {
+        on_every_view(key, |after, _, _, case| {
             assert_eq!(after(77), 0, "{case}");
             assert_eq!(after(FOLLOW), 0, "{case} from the end");
         });
@@ -429,14 +362,14 @@ mod tests {
     #[test_case(Key::End; "end")]
     #[test_case(Key::Char('G'); "capital g")]
     fn an_end_key_goes_to_the_end(key: Key) {
-        on_every_page(key, |after, _, last, case| {
+        on_every_view(key, |after, _, last, case| {
             assert_eq!(after(3), last, "{case}");
         });
     }
 
     #[test]
-    fn a_page_key_moves_the_body_height_less_one_and_at_least_one_line() {
-        for view in View::ALL {
+    fn a_page_key_moves_a_screen_less_eight_lines_and_at_least_one_line() {
+        for view in [View::Help, View::Log] {
             for height in [0, 1, 2, 3, 12, 24, 29, 30, 45, 67] {
                 let from = screen(view, 5, height);
                 let moved = page(&from);
@@ -451,7 +384,7 @@ mod tests {
                 assert_eq!(up, 500 - moved, "{view:?} {height}");
             }
         }
-        let tiny = screen(View::Cores, 0, 1);
+        let tiny = screen(View::Log, 0, 1);
         assert_eq!(
             press(tiny, Key::PageDown, 50).0.scroll,
             1,
@@ -463,8 +396,8 @@ mod tests {
     #[test_case('-'; "minus")]
     #[test_case('='; "equals")]
     #[test_case('_'; "underscore")]
-    fn zoom_keys_do_nothing_on_every_page(key: char) {
-        for view in View::ALL {
+    fn zoom_keys_do_nothing_on_every_view(key: char) {
+        for view in VIEWS {
             for scroll in [0, 4, FOLLOW] {
                 let from = screen(view, scroll, 30);
                 assert_eq!(
@@ -480,8 +413,8 @@ mod tests {
     #[test_case('Q'; "capital q")]
     #[test_case('\x03'; "ctrl c")]
     #[test_case('\x04'; "ctrl d")]
-    fn a_quit_key_quits_and_changes_nothing_on_every_page(key: char) {
-        for view in View::ALL {
+    fn a_quit_key_quits_and_changes_nothing_on_every_view(key: char) {
+        for view in VIEWS {
             let from = screen(view, 3, 20);
             let (got, quit) = press(from, Key::Char(key), 9);
             assert!(quit, "{view:?} {key:?}");
@@ -493,8 +426,8 @@ mod tests {
     #[test_case('Q'; "capital q")]
     #[test_case('\x03'; "ctrl c")]
     #[test_case('\x04'; "ctrl d")]
-    fn the_tuning_boot_ignores_a_quit_key_on_every_page_and_scroll(key: char) {
-        for view in View::ALL {
+    fn the_tuning_boot_ignores_a_quit_key_on_every_view_and_scroll(key: char) {
+        for view in VIEWS {
             for scroll in [0, 3, FOLLOW] {
                 let from = Screen {
                     quit: Quit::Ignored,
@@ -520,9 +453,8 @@ mod tests {
     #[test_case('h', Key::Char('?'); "h is the help key")]
     #[test_case('H', Key::Char('?'); "capital h is the help key")]
     #[test_case('L', Key::Char('l'); "capital l is the log key")]
-    #[test_case('m', Key::Esc; "m is escape")]
-    fn a_letter_alias_acts_like_the_named_key_on_every_page(alias: char, named: Key) {
-        for view in View::ALL {
+    fn a_letter_alias_acts_like_the_named_key_on_every_view(alias: char, named: Key) {
+        for view in VIEWS {
             let from = screen(view, 10, 30);
             assert_eq!(
                 press(from, Key::Char(alias), 90),
@@ -546,24 +478,19 @@ mod tests {
     #[test_case("\x1b", &[Key::Esc]; "a lone escape")]
     #[test_case("\x1b[A\x1b[B", &[Key::Up, Key::Down]; "csi up and down")]
     #[test_case("\x1bOA", &[Key::Up]; "ss3 up")]
-    #[test_case("\x1b[C\x1b[D", &[Key::Right, Key::Left]; "csi right and left")]
-    #[test_case("\x1bOC\x1bOD", &[Key::Right, Key::Left]; "ss3 right and left")]
-    #[test_case("\x1b[D\x1bOCq", &[Key::Left, Key::Right, Key::Char('q')]; "mixed csi and ss3 arrows then a character")]
     #[test_case("\x1b[5~\x1b[6~", &[Key::PageUp, Key::PageDown]; "page up and page down")]
     #[test_case("\x1b[1~\x1b[4~\x1b[H\x1b[F", &[Key::Home, Key::End, Key::Home, Key::End]; "home and end in every form")]
     #[test_case("\x1b[15~q", &[Key::Char('q')]; "an unmapped tilde sequence is dropped")]
     #[test_case("\x1bq", &[Key::Esc, Key::Char('q')]; "escape then a character")]
     #[test_case("\x1b[", &[]; "an unfinished sequence yields nothing")]
+    #[test_case("\x1b[C\x1b[D", &[]; "horizontal csi arrows are ignored")]
+    #[test_case("\x1bOC\x1bOD", &[]; "horizontal ss3 arrows are ignored")]
     fn decode_maps_input_bytes_to_keys(input: &str, want: &[Key]) {
         assert_eq!(decode(input.as_bytes()), want);
     }
 
     #[test_case("\x1b[A", Key::Up; "csi up")]
     #[test_case("\x1b[B", Key::Down; "csi down")]
-    #[test_case("\x1b[C", Key::Right; "csi right")]
-    #[test_case("\x1b[D", Key::Left; "csi left")]
-    #[test_case("\x1bOC", Key::Right; "ss3 right")]
-    #[test_case("\x1bOD", Key::Left; "ss3 left")]
     #[test_case("\x1bOA", Key::Up; "ss3 up")]
     #[test_case("\x1bOB", Key::Down; "ss3 down")]
     #[test_case("\x1b[5~", Key::PageUp; "page up")]
@@ -590,10 +517,6 @@ mod tests {
 
     #[test_case(b"\x1b[A", Key::Up; "csi up")]
     #[test_case(b"\x1bOA", Key::Up; "ss3 up")]
-    #[test_case(b"\x1b[C", Key::Right; "csi right")]
-    #[test_case(b"\x1bOC", Key::Right; "ss3 right")]
-    #[test_case(b"\x1b[D", Key::Left; "csi left")]
-    #[test_case(b"\x1bOD", Key::Left; "ss3 left")]
     fn a_byte_by_byte_arrow_is_one_key(arrow: &[u8], key: Key) {
         let mut decoder = Decoder::default();
         let keys: Vec<Key> = arrow
@@ -602,16 +525,6 @@ mod tests {
             .flat_map(|byte| decoder.push(&[*byte]))
             .collect();
         assert_eq!(keys, [key, Key::Char('j')]);
-    }
-
-    #[test]
-    fn horizontal_arrows_split_across_reads_stay_whole_keys() {
-        let mut decoder = Decoder::default();
-        let mut keys = decoder.push(b"\x1b[C\x1b");
-        keys.extend(decoder.push(b"[D\x1bO"));
-        keys.extend(decoder.push(b"C"));
-        assert_eq!(keys, [Key::Right, Key::Left, Key::Right]);
-        assert!(!decoder.is_pending());
     }
 
     #[test_case("\x1b", &[Key::Esc]; "a lone escape flushes as escape")]

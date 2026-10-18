@@ -1,14 +1,16 @@
-//! A live trial state never moves a row: Main's rectangles depend on the screen alone, so What happened keeps its
-//! heading row and the NOW rows keep their place while a trial runs, ends, waits for the next intent, is prepared
-//! and starts again.
+//! A live trial state never moves a panel: the rectangles stay put while a trial runs, ends, waits for the next
+//! intent, is prepared and starts again.
 
+use jiff::tz::TimeZone;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use togi_journal::Outcome;
 
 use super::{Fixture, SIZES, main_screen};
-use crate::frames::measure::Main;
+use crate::frames::measure::{Measure, measure};
+use crate::frames::scene::Scene;
 use crate::frames::testing::rows_of;
+use crate::screen::Colours;
 use crate::tests::kit::Script;
 
 fn slot(buf: &Buffer, rect: Rect) -> Vec<String> {
@@ -16,12 +18,18 @@ fn slot(buf: &Buffer, rect: Rect) -> Vec<String> {
         .iter()
         .skip(usize::from(rect.y))
         .take(usize::from(rect.height))
-        .map(|row| row.trim().to_owned())
+        .map(|row| row.trim_end().to_owned())
         .collect()
 }
 
+fn measured(fx: &Fixture, width: u16, height: u16) -> Measure {
+    let zone = TimeZone::UTC;
+    let scene = Scene::new(fx.model.snapshot(), fx.now, &zone, Colours::None);
+    measure(&scene, &main_screen(width, height))
+}
+
 #[test]
-fn live_panels_keep_their_rows_from_a_running_trial_to_the_next() {
+fn live_panels_keep_their_rectangles_from_a_running_trial_to_the_next() {
     let mut script = Script::at_limit();
     let mut cuts: Vec<(&str, usize)> = vec![("no trial yet", script.events.len())];
     let plan = script.next_trial();
@@ -42,38 +50,60 @@ fn live_panels_keep_their_rows_from_a_running_trial_to_the_next() {
         .iter()
         .map(|&(name, len)| (name, Fixture::of(&script.events[..len])))
         .collect();
+    let running = &frames[3].1;
     assert!(
-        frames[3]
-            .1
+        running
             .model
             .snapshot()
             .trial
             .is_some_and(|t| t.started.is_some())
     );
     for (width, height) in SIZES {
-        let main = Main::new(&main_screen(width, height));
+        let want = measured(running, width, height);
+        let (running_buf, _) = running.main(width, height);
+        let outcomes = slot(&running_buf, want.outcomes);
+        assert!(
+            outcomes.iter().any(|row| !row.is_empty()),
+            "{width}x{height}: a running trial shows outcome lines"
+        );
         for (name, fx) in &frames {
             let snapshot = fx.model.snapshot();
-            let (buf, _) = fx.main(width, height);
-            let heading = slot(&buf, main.history_head).join("\n");
-            assert!(
-                heading.starts_with("WHAT HAPPENED"),
-                "{width}x{height}: {name} moves What happened off row {}:\n{heading}",
-                main.history_head.y
+            let between = snapshot.trial.is_none();
+            assert_eq!(
+                measured(fx, width, height),
+                want,
+                "{width}x{height}: {name} moves a panel"
             );
-            if snapshot.trial.is_some() {
+            let (buf, _) = fx.main(width, height);
+            if !between {
                 continue;
             }
             assert!(snapshot.between_trials(), "{name}");
-            let band = slot(&buf, main.now).join("\n");
+            let band = slot(&buf, want.now).join("\n");
             assert!(
                 band.contains("BETWEEN TRIALS"),
-                "{width}x{height}: {name} loses the between-trials sentence:\n{band}"
+                "{width}x{height}: {name} loses the between-trials band:\n{band}"
             );
             assert!(
                 !band.contains("left") && !band.contains("past"),
                 "{width}x{height}: {name} invents a countdown:\n{band}"
             );
+            assert!(
+                band.contains("next trial:"),
+                "{width}x{height}: {name} hides the next trial:\n{band}"
+            );
+            assert_eq!(
+                band.contains("last:"),
+                snapshot.last.is_some(),
+                "{width}x{height}: {name} misreports the last trial:\n{band}"
+            );
+            if snapshot.last.is_some() {
+                assert_eq!(
+                    slot(&buf, want.outcomes),
+                    outcomes,
+                    "{width}x{height}: {name} drops the last trial's outcomes"
+                );
+            }
         }
     }
 }

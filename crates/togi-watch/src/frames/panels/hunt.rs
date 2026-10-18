@@ -1871,7 +1871,7 @@ mod tests {
         let zone = TimeZone::UTC;
         plain(&crate::frames::dash::stage_line(
             &scene(&s, &zone),
-            240,
+            crate::frames::layout::SizeClass::Wide,
             false,
         ))
     }
@@ -1880,7 +1880,7 @@ mod tests {
     fn the_stage_line_names_a_singleton_hunt_testing_its_anchor() {
         let shown = singleton_stage_line(probe(3, 0, true, false));
         assert!(
-            shown.contains(" · HUNT 1 · culprit probes · testing anchor "),
+            shown.contains("HUNT 1   culprit probes · testing anchor "),
             "{shown}"
         );
     }
@@ -1889,7 +1889,7 @@ mod tests {
     fn the_stage_line_names_a_singleton_hunt_whose_probes_are_done() {
         let shown = singleton_stage_line(probe(3, -30, false, true));
         assert!(
-            shown.contains(" · HUNT 1 · culprit probes · probes done "),
+            shown.contains("HUNT 1   culprit probes · probes done "),
             "{shown}"
         );
     }

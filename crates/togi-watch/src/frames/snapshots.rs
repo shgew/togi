@@ -4,7 +4,6 @@
 //! A text snapshot is the frame's rows; a styled one adds a row of tone letters under each row that has styling.
 
 use std::ffi::OsStr;
-use std::path::Path;
 
 use jiff::Timestamp;
 use ratatui::buffer::Buffer;
@@ -13,7 +12,6 @@ use togi_render::OutputFacts;
 use togi_watchtest::Scenario;
 
 use super::colours::colours_for;
-use super::measure::Main;
 use super::testing::{
     FIXED_NOW, assert_glyphs_drawable, ready, render_checked, rows_of, scenario_model, screen,
     styled_snapshot, text_snapshot,
@@ -24,9 +22,6 @@ const MAIN_SIZES: [(u16, u16); 3] = [(240, 67), (160, 45), (120, 33)];
 const VIEW_SIZES: [(u16, u16); 3] = [(80, 24), (160, 45), (240, 67)];
 const WIDE: (u16, u16) = (240, 67);
 const WIDE_ONLY: [(u16, u16); 1] = [WIDE];
-const REFERENCE: (u16, u16) = (160, 45);
-/// Both sides of the reference size's boundary, the numeric table's smallest size and one cell under it.
-const COMPACT_SIZES: [(u16, u16); 4] = [(159, 45), (160, 44), (80, 30), (79, 29)];
 
 macro_rules! expected {
     ($name:expr; $($snapshot:literal),* $(,)?) => {
@@ -37,25 +32,8 @@ macro_rules! expected {
     };
 }
 
-/// Set to rewrite every compared snapshot from the frame drawn now instead of comparing; a name new to the list
-/// below needs its (empty) file to exist first, because the fixtures are compiled in.
-const BLESS: &str = "TOGI_BLESS_FRAMES";
-
-fn write_snapshot(name: &str, body: &str) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/frames/snapshots")
-        .join(format!("{name}.snap"));
-    let header = "---\nsource: crates/togi-watch/src/frames/snapshots.rs\nexpression: body\n---\n";
-    std::fs::write(&path, format!("{header}{body}"))
-        .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
-}
-
 #[track_caller]
 fn check(name: &str, body: &str) {
-    if std::env::var_os(BLESS).is_some() {
-        write_snapshot(name, body);
-        return;
-    }
     // Compile the committed fixtures into the test: comparisons never invoke insta's disk/config machinery.
     let snapshot = expected! { name;
         "main-between-240x67",
@@ -130,37 +108,6 @@ fn check(name: &str, body: &str) {
         "log-240x67",
         "log-80x24",
         "log-top-160x45",
-        "main-checking-159x45",
-        "main-checking-160x44",
-        "main-checking-80x30",
-        "main-checking-79x29",
-        "main-stopped-80x30",
-        "main-stopped-79x29",
-        "main-checking-160x45-full",
-        "main-checking-160x45-console",
-        "main-checking-160x45-none",
-        "main-member-probe-160x45-full",
-        "main-member-probe-160x45-console",
-        "main-member-probe-160x45-none",
-        "main-idle-160x45-full",
-        "main-idle-160x45-console",
-        "main-idle-160x45-none",
-        "page-cores-search-160x45",
-        "page-cycle-search-160x45",
-        "page-r7-search-160x45",
-        "page-hunts-search-160x45",
-        "page-bios-search-160x45",
-        "page-history-search-160x45",
-        "page-cores-checking-160x45",
-        "page-cores-stopped-160x45",
-        "page-cycle-checking-160x45",
-        "page-cycle-confirmation-160x45",
-        "page-r7-checking-160x45",
-        "page-hunts-hunt-160x45",
-        "page-hunts-member-probe-160x45",
-        "page-bios-hunt-bios-160x45",
-        "page-bios-unconfirmed-160x45",
-        "page-history-stopped-160x45",
     };
     let (_, expected) = snapshot
         .strip_prefix("---\n")
@@ -221,46 +168,85 @@ fn terminal() -> OutputFacts {
     }
 }
 
-fn shapes_without_colour(scenario: Scenario, buf: &Buffer) {
-    let rows = rows_of(buf);
-    let stage = &rows[1];
-    if matches!(
-        scenario,
-        Scenario::Crashed | Scenario::Recovering | Scenario::Deadend | Scenario::Stopped
-    ) {
+fn first_row_with<'a>(rows: &'a [String], word: &str) -> &'a str {
+    rows.iter()
+        .map(String::as_str)
+        .find(|row| row.contains(word))
+        .unwrap_or_else(|| panic!("no row has {word:?}"))
+}
+
+fn assert_nothing_runs(scenario: Scenario, rows: &[String]) {
+    const STATES: [&str; 8] = [
+        "SEARCH", "CONFIRM", "HAS ROOM", "AT LIMIT", "PARKED", "MEMBER", "PROBE", "SUSPECT",
+    ];
+    for row in rows.iter().skip(3) {
+        let table = STATES.iter().any(|state| row.contains(state))
+            || row.contains("search step")
+            || row.contains("confirm:");
         assert!(
-            !stage.contains('►'),
-            "{}: {stage:?} marks a step as running",
+            !(table && row.contains('►')),
+            "{}: {row:?} marks a core or turn as running",
+            scenario.name()
+        );
+        assert!(
+            !row.contains("► trial"),
+            "{}: {row:?} marks a part as running",
+            scenario.name()
+        );
+        assert!(
+            !row.contains("under load") || row.contains("not under load"),
+            "{}: {row:?} puts cores under load",
             scenario.name()
         );
     }
-    let main = Main::new(&screen_of(View::Main, REFERENCE, Colours::None, 0, false));
-    let trial = &rows[usize::from(main.now.y) + 1];
-    let bar_cells = trial.chars().filter(|c| matches!(c, '█' | '░')).count();
-    let gauges = &rows[usize::from(main.gauges[0].y)..usize::from(main.gauges[0].bottom())];
-    let marked = |from: u16| {
-        gauges.iter().any(|row| {
-            row.chars()
-                .skip(usize::from(from))
-                .take(usize::from(main.gauges[0].width))
-                .any(|c| c == '█')
-        })
+}
+
+fn shapes_without_colour(scenario: Scenario, buf: &Buffer) {
+    let rows = rows_of(buf);
+    if matches!(
+        scenario,
+        Scenario::Crashed
+            | Scenario::Recovering
+            | Scenario::Deadend
+            | Scenario::Stopped
+            | Scenario::FirstResult
+            | Scenario::Combination
+            | Scenario::Between
+    ) {
+        assert_nothing_runs(scenario, &rows);
+    }
+    let bar = |glyph: char| {
+        rows.iter()
+            .map(|row| row.trim_start())
+            .find(|row| row.starts_with(glyph))
+            .unwrap_or_else(|| panic!("no bar row starts with {glyph:?}"))
     };
     match scenario {
         Scenario::Checking => {
-            assert_eq!(bar_cells, 24, "{trial:?}: the trial bar is 24 cells");
-            assert!(
-                marked(main.gauges[0].x) && marked(main.gauges[1].x),
-                "both gauges draw tune bars"
-            );
+            let elapsed = bar('█');
+            assert!(elapsed.trim_start_matches('█').starts_with('░'));
+            assert!(bar('▀').starts_with("▀▀▀▀"));
+            let core = first_row_with(&rows, "HAS ROOM");
+            for glyph in ['▄', '·', '▬'] {
+                assert!(core.contains(glyph), "{glyph:?} missing from {core:?}");
+            }
         }
-        Scenario::MemberProbe => assert!(marked(main.gauges[0].x) || marked(main.gauges[1].x)),
+        Scenario::MemberProbe => {
+            let probe = first_row_with(&rows, "PROBE");
+            assert!(probe.contains('▄') && probe.contains('▀'), "{probe:?}");
+            assert!(first_row_with(&rows, "PARKED").contains('·'));
+        }
+        Scenario::Round => {
+            assert!(first_row_with(&rows, "AT LIMIT").contains('░'));
+        }
         Scenario::Idle => {
-            assert!(
-                !trial.contains('█'),
-                "{trial:?}: an idle trial's bar has no elapsed fill"
-            );
-            assert!(trial.contains("planned"), "{trial:?}");
+            let quiet = bar('░');
+            assert!(quiet.trim_start_matches('░').starts_with(' '));
+            assert!(!rows.iter().any(|row| row.trim_start().starts_with('█')));
+        }
+        Scenario::Deadend => {
+            let stage = &rows[2];
+            assert!(!stage.contains('►') && stage.contains('○'), "{stage:?}");
         }
         Scenario::Between => {
             for row in &rows {
@@ -278,7 +264,6 @@ fn shapes_without_colour(scenario: Scenario, buf: &Buffer) {
         Scenario::Search
         | Scenario::Confirm
         | Scenario::Hunt
-        | Scenario::Round
         | Scenario::Confirmation
         | Scenario::Concluded
         | Scenario::Unconfirmed
@@ -286,7 +271,6 @@ fn shapes_without_colour(scenario: Scenario, buf: &Buffer) {
         | Scenario::Crashed
         | Scenario::Recovering
         | Scenario::Combination
-        | Scenario::Deadend
         | Scenario::FirstResult
         | Scenario::Stopped => {}
     }
@@ -297,16 +281,16 @@ fn main_views(scenario: Scenario, sizes: &[(u16, u16)]) {
     let journal = ready(&model);
     for &size in sizes {
         let name = format!("main-{}-{}x{}", scenario.name(), size.0, size.1);
-        text(
+        let buf = text(
             &name,
             &journal,
             now,
             &screen_of(View::Main, size, Colours::None, 0, false),
         );
+        if size == WIDE {
+            shapes_without_colour(scenario, &buf);
+        }
     }
-    let sc = screen_of(View::Main, REFERENCE, Colours::None, 0, false);
-    let (buf, _) = render_checked(&journal, &sc, now);
-    shapes_without_colour(scenario, &buf);
 }
 
 macro_rules! main_view_tests {
@@ -364,19 +348,17 @@ fn every_scenario_has_a_main_view_snapshot() {
 }
 
 #[test]
-fn every_scenario_fits_the_frame_on_every_page_at_every_size() {
+fn every_scenario_fits_the_frame_at_every_main_size() {
     for scenario in Scenario::ALL {
         let (model, now) = scenario_model(scenario);
         let journal = ready(&model);
-        for size in MAIN_SIZES.into_iter().chain(COMPACT_SIZES) {
-            for view in View::ALL {
-                let sc = screen_of(view, size, Colours::None, 0, false);
-                let (buf, _) = render_checked(&journal, &sc, now);
-                assert_glyphs_drawable(
-                    &buf,
-                    &format!("{}-{}-{}x{}", slug(view), scenario.name(), size.0, size.1),
-                );
-            }
+        for size in MAIN_SIZES {
+            let sc = screen_of(View::Main, size, Colours::None, 0, false);
+            let (buf, _) = render_checked(&journal, &sc, now);
+            assert_glyphs_drawable(
+                &buf,
+                &format!("main-{}-{}x{}", scenario.name(), size.0, size.1),
+            );
         }
     }
 }
@@ -418,18 +400,16 @@ fn profiles(scenario: Scenario) {
     let console = colours_for(terminal(), linux);
     let none = colours_for(no_color, xterm);
     assert_eq!(none, colours_for(journald, xterm));
-    for size in [REFERENCE, WIDE] {
-        for (profile, colours) in [("full", full), ("console", console), ("none", none)] {
-            let name = format!("main-{}-{}x{}-{profile}", scenario.name(), size.0, size.1);
-            let buf = styled(
-                &name,
-                &journal,
-                now,
-                &screen_of(View::Main, size, colours, 0, false),
-            );
-            assert!(has_no_attribute(&buf), "{name} draws an attribute");
-            assert_eq!(has_no_styling(&buf), colours == Colours::None, "{name}");
-        }
+    for (profile, colours) in [("full", full), ("console", console), ("none", none)] {
+        let name = format!("main-{}-{}x{}-{profile}", scenario.name(), WIDE.0, WIDE.1);
+        let buf = styled(
+            &name,
+            &journal,
+            now,
+            &screen_of(View::Main, WIDE, colours, 0, false),
+        );
+        assert!(has_no_attribute(&buf), "{name} draws an attribute");
+        assert_eq!(has_no_styling(&buf), colours == Colours::None, "{name}");
     }
 }
 
@@ -561,67 +541,5 @@ fn one_frame_prints_the_live_text_without_the_key_footer() {
         };
         let (live_buf, _) = render_checked(&journal, &live, now);
         assert_eq!(rows_of(&buf), rows_of(&live_buf));
-    }
-}
-
-#[test]
-fn the_numeric_main_at_its_boundary_sizes() {
-    main_views(Scenario::Checking, &COMPACT_SIZES);
-    main_views(Scenario::Stopped, &[(80, 30), (79, 29)]);
-}
-
-fn slug(view: View) -> &'static str {
-    match view {
-        View::Main => "main",
-        View::Cores => "cores",
-        View::Cycle => "cycle",
-        View::R7 => "r7",
-        View::Hunts => "hunts",
-        View::Bios => "bios",
-        View::History => "history",
-        View::Log => "log",
-        View::Help => "help",
-    }
-}
-
-// Each detail page over a session that fills it and over the search, which leaves most of them to their
-// explicit empty states.
-const PAGES: [(View, Scenario); 16] = [
-    (View::Cores, Scenario::Search),
-    (View::Cycle, Scenario::Search),
-    (View::R7, Scenario::Search),
-    (View::Hunts, Scenario::Search),
-    (View::Bios, Scenario::Search),
-    (View::History, Scenario::Search),
-    (View::Cores, Scenario::Checking),
-    (View::Cores, Scenario::Stopped),
-    (View::Cycle, Scenario::Checking),
-    (View::Cycle, Scenario::Confirmation),
-    (View::R7, Scenario::Checking),
-    (View::Hunts, Scenario::Hunt),
-    (View::Hunts, Scenario::MemberProbe),
-    (View::Bios, Scenario::HuntBios),
-    (View::Bios, Scenario::Unconfirmed),
-    (View::History, Scenario::Stopped),
-];
-
-#[test]
-fn every_detail_page_at_the_reference_size() {
-    for (view, scenario) in PAGES {
-        let (model, now) = scenario_model(scenario);
-        let journal = ready(&model);
-        let name = format!(
-            "page-{}-{}-{}x{}",
-            slug(view),
-            scenario.name(),
-            REFERENCE.0,
-            REFERENCE.1
-        );
-        text(
-            &name,
-            &journal,
-            now,
-            &screen_of(view, REFERENCE, Colours::None, 0, false),
-        );
     }
 }

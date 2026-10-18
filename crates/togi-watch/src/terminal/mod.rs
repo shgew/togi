@@ -199,10 +199,9 @@ impl Drop for RawMode<'_> {
 }
 
 /// Shows the dashboard of the journal in `state_dir` on `out` until the viewer quits or SIGINT, SIGTERM or
-/// SIGHUP arrives. When `keys` is a terminal, keys change page and scroll: the left and right arrows cycle the nine
-/// pages, `?` opens the help, `l` the journal and Esc or `m` the main page, the up and down, page, Home and End keys
-/// scroll, and `q`, `Q`, Ctrl-C and Ctrl-D quit unless `quit` is [`Quit::Ignored`], where they do nothing on any
-/// page and the hints leave them out. Frames are drawn by
+/// SIGHUP arrives. When `keys` is a terminal, keys switch views and scroll: `?` explains the screen, `l` shows the
+/// event log, the arrow and page keys scroll, and `q`, `Q`, Ctrl-C and Ctrl-D quit unless `quit` is
+/// [`Quit::Ignored`], where they do nothing on any page and the hints leave them out. Frames are drawn by
 /// [`frames::render`] in the system's time zone, in the colour profile [`frames::colours_for`] chooses for `out`,
 /// `NO_COLOR`, `JOURNAL_STREAM` and `TERM`.
 ///
@@ -606,7 +605,6 @@ fn write_plain(buffer: &Buffer, out: &mut impl Write) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
     use std::os::fd::OwnedFd;
     use std::panic::AssertUnwindSafe;
 
@@ -614,7 +612,6 @@ mod tests {
     use ratatui::buffer::Buffer;
 
     use super::console::RESET_PALETTE;
-    use super::keys::Key;
     use super::source::MemoryJournal;
     use super::testing::{Faults, Recorder, lines, session_with_warnings};
     use super::{
@@ -959,99 +956,6 @@ mod tests {
                 Some(RESET_PALETTE),
                 "{name}: the palette"
             );
-        }
-    }
-
-    /// What a journal that cannot show a session is.
-    #[derive(Debug, Clone, Copy)]
-    enum Without {
-        Missing,
-        Starting,
-        Problem,
-    }
-
-    /// A feed of one journal state that holds no session.
-    struct Bare {
-        without: Without,
-        error: io::Error,
-    }
-
-    impl Feed for Bare {
-        fn journal(&mut self, _: &Screen) -> Journal<'_> {
-            match self.without {
-                Without::Missing => Journal::Missing,
-                Without::Starting => Journal::Starting,
-                Without::Problem => Journal::Problem(&self.error),
-            }
-        }
-
-        fn reload(&mut self) -> bool {
-            false
-        }
-    }
-
-    #[test]
-    fn the_quit_policy_holds_on_every_page_of_a_missing_starting_or_unreadable_journal() {
-        for without in [Without::Missing, Without::Starting, Without::Problem] {
-            for quit in [Quit::Keys, Quit::Ignored] {
-                for (at, page) in View::ALL.into_iter().enumerate() {
-                    let recorder = Recorder::new(80, 12);
-                    let stop = Stop::new();
-                    let live = Config {
-                        watch: None,
-                        tick: None,
-                        stop: Some(&stop),
-                        terminating: false,
-                        quit,
-                    };
-                    let watchdog = Watchdog::start({
-                        let stop = stop.clone();
-                        move || stop.stop()
-                    });
-                    let mut sent = false;
-                    let mut pages = Vec::new();
-                    run_events(
-                        &recorder,
-                        &live,
-                        Bare {
-                            without,
-                            error: io::Error::other("unreadable"),
-                        },
-                        Colours::None,
-                        |journal, screen, now, buf, events| {
-                            assert_eq!(
-                                matches!(journal, Journal::Missing),
-                                matches!(without, Without::Missing)
-                            );
-                            pages.push(screen.view);
-                            if !sent {
-                                sent = true;
-                                for _ in 0..at {
-                                    events.send(Event::Key(Key::Right)).unwrap();
-                                }
-                                for quit_key in ['q', 'Q', '\x03', '\x04'] {
-                                    events.send(Event::Key(Key::Char(quit_key))).unwrap();
-                                }
-                                events.send(Event::Cancel).unwrap();
-                            }
-                            plain(journal, screen, now, buf)
-                        },
-                    )
-                    .unwrap();
-                    assert!(!watchdog.fired(), "{without:?} {quit:?} {page:?} hung");
-                    let want = match quit {
-                        Quit::Keys => at + 1,
-                        Quit::Ignored => at + 5,
-                    };
-                    assert_eq!(
-                        pages.len(),
-                        want,
-                        "{without:?} {quit:?} {page:?}: a quit key {} the dashboard",
-                        if quit == Quit::Keys { "left" } else { "ended" }
-                    );
-                    assert_eq!(pages.last(), Some(&page), "{without:?} {quit:?}");
-                }
-            }
         }
     }
 
@@ -1400,7 +1304,7 @@ mod tests {
         let mut out = Vec::new();
         one_frame(&state, 120, 33, &mut out).unwrap();
         let text = String::from_utf8(out).unwrap();
-        assert!(text.contains("screen paused"), "{text}");
+        assert!(text.contains("this screen holds still"), "{text}");
         assert!(
             text.lines().all(|line| line.chars().count() <= 119),
             "{text}"

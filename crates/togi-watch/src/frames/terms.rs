@@ -3,37 +3,11 @@
 
 use std::fmt::Write as _;
 
-use togi_journal::{DeadEndCondition, ShutdownReason};
 use togi_machine::{Condition, Regime};
 use togi_tuner::{CyclePart, CycleStep};
 
 use crate::model::{CyclePlace, TrialView};
 use crate::words::{core_ids, kind_words};
-
-/// Why the session stopped, in a clause.
-pub(crate) fn stop_words(reason: ShutdownReason) -> &'static str {
-    match reason {
-        ShutdownReason::Signal => "stopped by a signal",
-        ShutdownReason::Cycles => "requested clean cycles completed",
-        ShutdownReason::FirstResult => "stopped at the first confirmed result",
-        ShutdownReason::Command => "read-only command finished; no applied offsets changed",
-        ShutdownReason::DeadEnd => "tuning stopped at a dead end",
-    }
-}
-
-/// Why tuning cannot continue, in a clause.
-pub(crate) fn dead_end_words(condition: DeadEndCondition) -> &'static str {
-    match condition {
-        DeadEndCondition::FailureAtZero => "a core failed at offset 0",
-        DeadEndCondition::Smu => "the CPU did not take an offset as written",
-        DeadEndCondition::NoEvidence => "no conclusive trial evidence",
-        DeadEndCondition::BootLoop => "repeated crashes before any offset was applied",
-        DeadEndCondition::Containment => "stress programs not confirmed contained",
-        DeadEndCondition::Preflight => "a check before tuning failed",
-        DeadEndCondition::Defect => "an earlier build may have moved offsets deeper than proven",
-        DeadEndCondition::ThermalTrip => "the CPU shut down from heat",
-    }
-}
 
 /// A trial's regime, kind and cores: `R7 all-core on 00-15`, or `core 03 · R1 light vector at -20` alone.
 pub(crate) fn trial_name(trial: &TrialView) -> String {
@@ -45,7 +19,9 @@ pub(crate) fn trial_name(trial: &TrialView) -> String {
             kind_words(trial.regime),
             offset.get()
         ),
-        _ => format!(
+        (Condition::Together | Condition::Parked, _, _)
+        | (Condition::Alone, None, _)
+        | (Condition::Alone, Some(_), None) => format!(
             "{} {} on {}",
             trial.regime,
             kind_words(trial.regime),
@@ -111,11 +87,10 @@ pub(crate) fn recut_words(cut: u32, upper: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use togi_journal::DeadEndCondition;
     use togi_machine::{CcdId, CoreId, CoreSet, Regime};
     use togi_tuner::{CyclePart, CycleStep, Lengths, Quota};
 
-    use super::{dead_end_words, first_open_part, part_name, recut_words};
+    use super::{first_open_part, part_name, recut_words};
 
     fn part(cores: &[u8], ccd: Option<u8>, full: bool, done: bool, running: bool) -> CyclePart {
         CyclePart {
@@ -179,36 +154,5 @@ mod tests {
         assert_eq!(recut_words(1, true), "");
         assert_eq!(recut_words(2, false), "re-cut 1 · ");
         assert_eq!(recut_words(3, true), "RE-CUT 2 · ");
-    }
-
-    #[test]
-    fn every_dead_end_cause_has_its_own_true_explanation() {
-        let table = [
-            (DeadEndCondition::FailureAtZero, "a core failed at offset 0"),
-            (
-                DeadEndCondition::Smu,
-                "the CPU did not take an offset as written",
-            ),
-            (DeadEndCondition::NoEvidence, "no conclusive trial evidence"),
-            (
-                DeadEndCondition::BootLoop,
-                "repeated crashes before any offset was applied",
-            ),
-            (
-                DeadEndCondition::Containment,
-                "stress programs not confirmed contained",
-            ),
-            (DeadEndCondition::Preflight, "a check before tuning failed"),
-            (
-                DeadEndCondition::Defect,
-                "an earlier build may have moved offsets deeper than proven",
-            ),
-            (DeadEndCondition::ThermalTrip, "the CPU shut down from heat"),
-        ];
-        let causes: Vec<DeadEndCondition> = table.iter().map(|&(cause, _)| cause).collect();
-        assert_eq!(causes, DeadEndCondition::ALL, "every cause is in the table");
-        for (cause, words) in table {
-            assert_eq!(dead_end_words(cause), words, "{cause}");
-        }
     }
 }

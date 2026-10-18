@@ -256,30 +256,12 @@ pub(super) mod tests {
         );
     }
 
-    #[test_case(b"[", b"C", Key::Right; "csi right")]
-    #[test_case(b"[", b"D", Key::Left; "csi left")]
-    #[test_case(b"O", b"C", Key::Right; "ss3 right")]
-    #[test_case(b"O", b"D", Key::Left; "ss3 left")]
-    fn fragmented_left_and_right_arrows_are_one_key_each_in_both_forms(
-        lead: &'static [u8],
-        final_byte: &'static [u8],
-        want: Key,
-    ) {
-        let (keys, _) = keys([
-            Step::Data(b"\x1b"),
-            Step::Data(lead),
-            Step::Data(final_byte),
-            Step::Eof,
-        ]);
-        assert_eq!(keys, [want]);
-    }
-
-    #[test_case(b"\x1b", &[Key::Esc]; "a lone escape becomes escape")]
-    #[test_case(b"\x1b[", &[]; "a csi prefix becomes nothing")]
-    #[test_case(b"\x1bO", &[]; "an ss3 prefix becomes nothing")]
+    #[test_case(b"\x1b", vec![Key::Esc]; "escape")]
+    #[test_case(b"\x1b[", vec![]; "csi prefix")]
+    #[test_case(b"\x1bO", vec![]; "ss3 prefix")]
     fn a_quiet_escape_prefix_times_out_into_esc_or_nothing_and_keeps_the_next_key(
         prefix: &'static [u8],
-        released: &[Key],
+        mut want: Vec<Key>,
     ) {
         let (keys, timeouts) = keys([
             Step::Data(prefix),
@@ -287,9 +269,8 @@ pub(super) mod tests {
             Step::Data(b"j"),
             Step::Eof,
         ]);
-        let mut want = released.to_vec();
         want.push(Key::Char('j'));
-        assert_eq!(keys, want);
+        assert_eq!(keys, want, "{prefix:?}");
         assert_eq!(timeouts[1], Some(ESCAPE_TIMEOUT));
         assert_eq!(timeouts[2], None, "the timeout released the prefix");
     }

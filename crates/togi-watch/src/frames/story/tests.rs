@@ -7,21 +7,29 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use togi_journal::{Activity, DeadEndCondition, Member, Outcome, ShutdownReason};
+use togi_journal::{
+    Activity, CheckingChain, CheckingStep, Combination, CycleEvent, DeadEnd, DeadEndCondition,
+    Decision, Failure, HuntEnd, HuntOutcome, HuntStart, Member, Outcome, ShutdownReason,
+    TunerDecision,
+};
 use togi_machine::{
     CcdId, Condition, CoreId, CoreSet, ObservedOffset, PerCore, Regime, ResetKind, Signal,
     workloads,
 };
 use togi_tuner::{
-    Between, ClassKey, CyclePart, CyclePlan, CycleStep, Forecast, GroupState, HuntGroup, HuntPart,
-    HuntPlan, Lengths, Load, PartNo, PhaseNo, PhasePlan, Profile, Quota, R7CoreStatus, Requirement,
-    RerunPlan, Secs, StepNo, Topology, TrialContext, TrialPlan, Uncertainty, Window,
-    WorkloadChoice,
+    Between, Branch, ClassKey, CyclePart, CyclePlan, CycleStep, DecisionPayload, Forecast,
+    GroupState, HuntGroup, HuntPart, HuntPlan, Lengths, Load, PartNo, PhaseNo, PhasePlan, Premise,
+    Profile, Quota, R7CoreStatus, Requirement, RerunPlan, Secs, StepNo, Topology, TrialContext,
+    TrialPlan, Uncertainty, Window, WorkloadChoice,
 };
 
+use super::outcome::{
+    OutcomeRow, compact_next, decision_phrases, fit_phrases, next_trial_words, outcome_rows,
+    tight_next, zero_words,
+};
 use super::{
-    crash_evidence, known_words, narrator_lines, operation, problem_story, resting_band,
-    split_words, starting_story, story, trial_where,
+    crash_evidence, known_words, last_lines, narrator_lines, operation, outcome_lines,
+    problem_story, resting_band, split_words, starting_story, story, trial_where,
 };
 use crate::frames::colours::Paint;
 use crate::frames::fit::{inert, plain};
@@ -138,6 +146,18 @@ impl Fx {
     fn scene(&self, now: Timestamp) -> Scene<'_> {
         Scene::new(self.snap(), now, &UTC, Colours::None)
     }
+
+    fn rows(&self) -> Vec<String> {
+        let scene = self.scene(ts(1000));
+        outcome_rows(&scene)
+            .iter()
+            .map(|row| format!("{} | {}", row.label, fit_phrases(&row.phrases, 400)))
+            .collect()
+    }
+
+    fn row_set(&self) -> Vec<OutcomeRow> {
+        outcome_rows(&self.scene(ts(1000)))
+    }
 }
 
 fn core_view(id: u8, ccd: u8) -> CoreView {
@@ -159,7 +179,6 @@ fn core_view(id: u8, ccd: u8) -> CoreView {
         confirm: None,
         loaded: false,
         judged: false,
-        evidence: crate::model::CoreEvidence::default(),
     }
 }
 
@@ -196,6 +215,11 @@ fn in_cycle(mut trial: TrialView, cycle: u32, step: u32, part: u32, parts: u32) 
         part: Some(part),
         parts,
     });
+    trial
+}
+
+fn counted(mut trial: TrialView, passed: u32, index: u32, of: u32) -> TrialView {
+    trial.count = Count { passed, index, of };
     trial
 }
 
@@ -289,6 +313,43 @@ fn cycle_ctx(cycle: u32, step: u32) -> TrialContext {
 
 fn many(cores: &[u8]) -> Load {
     Load::Many(set(cores))
+}
+
+fn branch(premise: Premise) -> Branch {
+    Branch {
+        premise,
+        passes: 0,
+        all_pass: None,
+        decisions: Vec::new(),
+        next: None,
+        next_step: None,
+        resume: None,
+        uncertainty: None,
+        without_telemetry: false,
+        offset_order: false,
+        at_zero: false,
+        top_requester: false,
+    }
+}
+
+fn backoff(core_id: u8, from: i64, to: i64, point: Option<i64>) -> TunerDecision {
+    TunerDecision {
+        core: core(core_id),
+        activity: Activity::Checking,
+        decision: Decision::Backoff,
+        from_offset: off(from),
+        to_offset: off(to),
+        pass: None,
+        failure_point: point.map(off),
+        workloads: Vec::new(),
+        reason: String::new(),
+    }
+}
+
+fn failure(core_id: Option<u8>) -> Failure {
+    let mut failure = crate::tests::kit::failure(Signal::ComputationError, None);
+    failure.core = core_id.map(core);
+    failure
 }
 
 fn hunt_plan() -> HuntPlan {
@@ -576,10 +637,13 @@ mod the_story {
         assert_eq!(band.title, "STOPPED");
         assert_eq!(
             band.lines,
-            [format!(
-                "{} · requested clean cycles completed",
-                crate::frames::scene::wall_second(&UTC, ts(100))
-            )]
+            [
+                format!(
+                    "{} · requested clean cycles completed",
+                    crate::frames::scene::wall_second(&UTC, ts(100))
+                ),
+                "Rows show the saved profile, not applied now.".to_owned()
+            ]
         );
         for (reason, saved, want) in [
             (
@@ -673,7 +737,13 @@ mod the_story {
             reason: ShutdownReason::DeadEnd,
             saved: true,
         });
-        assert_eq!(resting_band(&fx.scene(ts(3))).lines.len(), 1);
+        assert_eq!(
+            resting_band(&fx.scene(ts(3)))
+                .lines
+                .last()
+                .map(String::as_str),
+            Some("Rows show the saved profile, not applied now.")
+        );
     }
 
     #[test]
@@ -729,7 +799,7 @@ mod the_story {
         let scene = fx.scene(ts(1010));
         let said = story(&scene);
         assert_eq!(said.label, "PHASE 2 · ROUND 1");
-        assert!(said.lines[0].starts_with("Round 1 checks again the offsets kept from the round that ended unpassed; 2 rounds left if no round fails"));
+        assert!(said.lines[0].starts_with("Round 1 checks again the offsets kept from the round that ended unpassed; at most 2 rounds left"));
         assert!(!said.lines.join(" ").contains(" alone at "));
         assert_eq!(plain(&operation(&scene, &together)), "PHASE 2 · ROUND 1");
     }
@@ -758,7 +828,7 @@ mod the_story {
             candidates: vec![candidate(0, true), candidate(1, false), candidate(2, true)],
         });
         let said = story(&fx.scene(ts(1010)));
-        assert!(said.lines[0].starts_with("Round 2 moves cores 00, 02 one count toward their solo limits; 1 round left if no round fails, then one full cycle."));
+        assert!(said.lines[0].starts_with("Round 2 moves cores 00, 02 one count toward their solo limits; at most 1 round left, then one full cycle."));
         assert_eq!(said.brief, "Checking round 2's proposed profile.");
     }
 
@@ -1963,23 +2033,7 @@ mod the_resting_band {
             "next trial: read the core ranking before deciding"
         );
         fx.last = None;
-        let band = resting_band(&fx.scene(ts(2000)));
-        assert_eq!(band.lines[0], "No trial has run yet");
-        assert_eq!(band.lines.len(), 2);
-    }
-
-    #[test]
-    fn the_last_trial_names_its_peak_tctl_and_median_voltage_request() {
-        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
-        fx.last = Some(TrialEndView {
-            tctl_max_c: Some(81),
-            voltage_v: Some(1.104),
-            ..end_view(Outcome::Pass, None)
-        });
-        assert_eq!(
-            resting_band(&fx.scene(ts(2000))).lines[0],
-            "last: PASS after 10:00 · R1 light on 00 01 · Tctl max 81°C · 1.10 V median"
-        );
+        assert_eq!(resting_band(&fx.scene(ts(2000))).lines.len(), 1);
     }
 
     #[test]
@@ -2029,6 +2083,1173 @@ mod the_resting_band {
         let band = resting_band(&fx.scene(ts(4000)));
         assert!(band.lines[0].starts_with("crash with no trial in flight · detected "));
         assert!(!band.lines[0].contains("reset"));
+    }
+
+    #[test]
+    fn the_last_trial_reads_as_a_word_and_its_measurements() {
+        let mut fx = Fx::new();
+        assert!(last_lines(&fx.scene(ts(1))).is_empty());
+        let mut end = end_view(Outcome::Pass, None);
+        end.tctl_max_c = Some(81);
+        end.voltage_v = Some(1.1234);
+        fx.last = Some(end.clone());
+        let lines = last_lines(&fx.scene(ts(1)));
+        assert_eq!(
+            text(&lines),
+            ["last trial      PASS  10:00 on 00 01 · Tctl max 81°C · 1.12 V median"]
+        );
+        let full = Scene::new(fx.snap(), ts(1), &UTC, Colours::Full);
+        assert_eq!(
+            last_lines(&full)[0].spans[1].style,
+            Paint::Good.style(Colours::Full)
+        );
+        for (outcome, signal, word, paint) in [
+            (
+                Outcome::Failure,
+                Some(Signal::ComputationError),
+                "FAILURE",
+                Paint::Bad,
+            ),
+            (Outcome::Failure, Some(Signal::Crash), "CRASH", Paint::Bad),
+            (Outcome::Inconclusive, None, "INCONCLUSIVE", Paint::Hunt),
+        ] {
+            fx.last = Some(end_view(outcome, signal));
+            let full = Scene::new(fx.snap(), ts(1), &UTC, Colours::Full);
+            let line = &last_lines(&full)[0];
+            assert_eq!(line.spans[1].content, word);
+            assert_eq!(line.spans[1].style, paint.style(Colours::Full));
+        }
+        fx.last = Some(end_view(Outcome::Failure, Some(Signal::ComputationError)));
+        assert_eq!(
+            text(&last_lines(&fx.scene(ts(1))))[0],
+            "last trial      FAILURE  10:00 on 00 01 · wrong result"
+        );
+        fx.last = Some(end_view(Outcome::Failure, Some(Signal::Crash)));
+        assert_eq!(
+            text(&last_lines(&fx.scene(ts(1))))[0],
+            "last trial      CRASH  on 00 01"
+        );
+    }
+}
+
+mod the_outcome_lines {
+    use super::*;
+
+    fn same_part_fx() -> Fx {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1)]);
+        let running = counted(
+            in_cycle(trial(Regime::R7, Condition::Together, &[1, 2]), 1, 1, 1, 1),
+            0,
+            1,
+            4,
+        );
+        fx.trial = Some(running);
+        fx
+    }
+
+    #[test]
+    fn branches_merge_and_name_the_next_trial_of_the_same_part() {
+        let mut fx = same_part_fx();
+        let next = plan(
+            Regime::R7,
+            many(&[1, 2]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            120,
+        );
+        let long = plan(
+            Regime::R7,
+            many(&[1, 2]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            300,
+        );
+        let mut pass = branch(Premise::Pass);
+        pass.passes = 1;
+        pass.next = Some(next.clone());
+        let mut all = branch(Premise::AllPass);
+        all.passes = 3;
+        all.next = Some(long);
+        let mut named = branch(Premise::Named(core(1)));
+        named.next = Some(next.clone());
+        let mut unnamed = branch(Premise::Unnamed);
+        unnamed.next = Some(next);
+        fx.forecast.branches = vec![pass, all, named, unnamed];
+        assert_eq!(
+            fx.rows(),
+            [
+                "if 3 of 4 pass | next trial: trial 4 of 4 · 5m",
+                "if it fails | next trial: this load again",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_passing_outcome_names_the_next_part_or_step() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (3, 1)]);
+        let steps = vec![
+            step(
+                Regime::R2,
+                vec![part(&[1], None, true, false), part(&[3], None, true, false)],
+            ),
+            step(Regime::R6, vec![part(&[1, 3], None, true, false)]),
+        ];
+        fx.cycle = Some((cycle_plan(1, steps, 0), vec![Vec::new(); 2], None));
+        let per_core = |id: u8, part_no: u32| {
+            counted(
+                in_cycle(alone(Regime::R2, id, -16), 1, 1, part_no, 2),
+                0,
+                1,
+                1,
+            )
+        };
+        let mut pass = branch(Premise::Pass);
+        pass.passes = 1;
+        fx.trial = Some(per_core(1, 1));
+        pass.next = Some(plan(
+            Regime::R2,
+            Load::Single(core(3)),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            120,
+        ));
+        fx.forecast.branches = vec![pass.clone()];
+        assert_eq!(
+            fx.rows(),
+            ["if it passes | part 1 is done; next trial: part 2: core 03 at -16, 2m"]
+        );
+        assert_eq!(fx.row_set()[0].compact, "→ part 2: core 03");
+        fx.trial = Some(per_core(3, 2));
+        pass.next = Some(plan(
+            Regime::R6,
+            many(&[1, 3]),
+            Condition::Together,
+            cycle_ctx(1, 2),
+            900,
+        ));
+        fx.forecast.branches = vec![pass];
+        let idle = crate::words::workload_display(workloads(Regime::R6)[0].id());
+        assert_eq!(
+            fx.rows(),
+            [format!(
+                "if it passes | step 1 is done; next trial: step 2: R6 idle + bursts with {idle}"
+            )]
+        );
+        assert_eq!(fx.row_set()[0].compact, "→ step 2");
+    }
+
+    #[test]
+    fn the_forecast_names_the_all_zero_rerun_after_a_rerun() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
+        let mut rerun = trial(Regime::R6, Condition::Together, &[0, 1]);
+        rerun.rerun = true;
+        fx.trial = Some(rerun);
+        let ctx = TrialContext::Rerun { failure: seq(1) };
+        let mut again = plan(Regime::R6, many(&[0, 1]), Condition::Together, ctx, 120);
+        again.retry = true;
+        let zero = plan(
+            Regime::R6,
+            many(&[0, 1]),
+            Condition::Parked,
+            TrialContext::ZeroRerun { failure: seq(1) },
+            120,
+        );
+        let mut inconclusive = branch(Premise::Inconclusive);
+        inconclusive.next = Some(again);
+        let mut named = branch(Premise::Named(core(0)));
+        named.at_zero = true;
+        named.decisions = vec![DecisionPayload::Failure(failure(Some(0)))];
+        named.next = Some(zero);
+        named.without_telemetry = true;
+        fx.forecast.branches = vec![inconclusive, named];
+        let rows = fx.rows();
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        assert!(
+            rows.iter()
+                .any(|row| row.ends_with("the same trial runs again")),
+            "{rows:?}"
+        );
+        assert!(
+            rows.iter().any(|row| row.ends_with(
+                "next trial: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m"
+            )),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn r7_evidence_stays_out_of_the_forecast() {
+        let mut fx = Fx::new();
+        fx.cycle = Some((cycle_plan(1, Vec::new(), 0), Vec::new(), None));
+        let w = workloads(Regime::R7)[0].id();
+        fx.r7 = vec![
+            R7CoreStatus {
+                core: core(0),
+                ccd: CcdId::try_from(0_u8).unwrap(),
+                workload: w,
+                top_requester: true,
+                offset_proxy: false,
+                self_sufficient: true,
+                passes: 0,
+            },
+            R7CoreStatus {
+                core: core(1),
+                ccd: CcdId::try_from(0_u8).unwrap(),
+                workload: w,
+                top_requester: false,
+                offset_proxy: false,
+                self_sufficient: false,
+                passes: 0,
+            },
+        ];
+        assert!(
+            fx.row_set().is_empty(),
+            "evidence must not invent forecast branches"
+        );
+        fx.trial = Some(trial(Regime::R7, Condition::Together, &[0, 1]));
+        assert!(outcome_lines(&fx.scene(ts(1)), 100, false).is_empty());
+        assert!(outcome_lines(&fx.scene(ts(1)), 100, true).is_empty());
+    }
+
+    fn r7_fx() -> (Fx, TrialPlan) {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
+        let running = counted(
+            in_cycle(trial(Regime::R7, Condition::Together, &[0, 1]), 1, 1, 1, 1),
+            0,
+            1,
+            4,
+        );
+        fx.trial = Some(running);
+        let next = plan(
+            Regime::R7,
+            many(&[0, 1]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            120,
+        );
+        (fx, next)
+    }
+
+    #[test]
+    fn a_backoff_forecast_is_conditional_on_earlier_requests() {
+        for (fallback, want) in [
+            (false, "core 00 -31 → -30 per earlier requests"),
+            (true, "core 00 -31 → -30 per offset order"),
+        ] {
+            let (mut fx, next) = r7_fx();
+            let mut pass = branch(Premise::Pass);
+            pass.next = Some(next.clone());
+            pass.without_telemetry = true;
+            let mut unnamed = branch(Premise::Unnamed);
+            unnamed.decisions = vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))];
+            unnamed.next = Some(next);
+            unnamed.without_telemetry = true;
+            unnamed.offset_order = fallback;
+            fx.forecast.branches = vec![pass, unnamed];
+            let rows = fx.row_set();
+            assert_eq!(rows.len(), 2);
+            assert!(
+                !fit_phrases(&rows[0].phrases, 200).contains("per "),
+                "a pass decides nothing from requests"
+            );
+            assert_eq!(rows[0].basis, None);
+            let backoff_row = fit_phrases(&rows[1].phrases, 200);
+            assert!(backoff_row.starts_with(want), "{backoff_row}");
+            let basis = rows[1].basis.expect("a basis");
+            let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
+            assert!(
+                compact[0].contains(&format!("backoffs {basis}")),
+                "{compact:?}"
+            );
+            let narrow = text(&outcome_lines(&fx.scene(ts(1)), 70, true));
+            assert!(
+                narrow[0].contains(basis) || narrow[0].contains('?'),
+                "the basis stays on screen: {narrow:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_backoff_or_a_derived_partial_states_its_request_basis() {
+        let (mut fx, next) = r7_fx();
+        let mut pass = branch(Premise::AllPass);
+        pass.passes = 4;
+        pass.decisions = vec![DecisionPayload::CheckingCycle(crate::tests::kit::cycle(
+            2,
+            CycleEvent::Start,
+        ))];
+        pass.next = Some(next.clone());
+        pass.without_telemetry = true;
+        let mut unnamed = branch(Premise::Unnamed);
+        unnamed.decisions = vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))];
+        unnamed.next = Some(next);
+        unnamed.without_telemetry = true;
+        unnamed.offset_order = true;
+        fx.forecast.branches = vec![pass, unnamed];
+        let rows = fx.row_set();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].basis, None);
+        assert!(
+            !fit_phrases(&rows[0].phrases, 200).contains("per "),
+            "{:?}",
+            rows[0].phrases
+        );
+        assert_eq!(rows[1].basis, Some("per offset order"));
+        let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
+        assert!(
+            compact[0].ends_with("backoffs per offset order"),
+            "{compact:?}"
+        );
+    }
+
+    #[test]
+    fn every_r7_named_outcome_keeps_a_row() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
+        let running = counted(
+            in_cycle(
+                trial(Regime::R7, Condition::Together, &[0, 1, 2, 3]),
+                1,
+                1,
+                1,
+                1,
+            ),
+            0,
+            1,
+            4,
+        );
+        fx.trial = Some(running);
+        let rerun = plan(
+            Regime::R7,
+            many(&[0, 1, 2, 3]),
+            Condition::Together,
+            TrialContext::Rerun { failure: seq(1) },
+            120,
+        );
+        let same = plan(
+            Regime::R7,
+            many(&[0, 1, 2, 3]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            120,
+        );
+        let mv = |core_id| DecisionPayload::TunerDecision(backoff(core_id, -30, -16, Some(-30)));
+        let mut pass = branch(Premise::Pass);
+        pass.next = Some(same.clone());
+        pass.without_telemetry = true;
+        let mut named0 = branch(Premise::Named(core(0)));
+        named0.decisions = vec![DecisionPayload::Failure(failure(Some(0))), mv(0)];
+        named0.next = Some(rerun.clone());
+        named0.without_telemetry = true;
+        let mut named2 = branch(Premise::Named(core(2)));
+        named2.at_zero = true;
+        named2.decisions = vec![DecisionPayload::Failure(failure(Some(2))), mv(1)];
+        named2.next = Some(rerun.clone());
+        named2.without_telemetry = true;
+        let mut named3 = branch(Premise::Named(core(3)));
+        named3.at_zero = true;
+        named3.top_requester = true;
+        named3.decisions = vec![
+            DecisionPayload::Failure(failure(Some(3))),
+            DecisionPayload::DeadEnd(DeadEnd {
+                condition: DeadEndCondition::FailureAtZero,
+                core: None,
+                detail: String::new(),
+                action: None,
+            }),
+        ];
+        named3.without_telemetry = true;
+        let mut unnamed = branch(Premise::Unnamed);
+        unnamed.decisions = vec![DecisionPayload::Failure(failure(None)), mv(1)];
+        unnamed.next = Some(rerun);
+        unnamed.without_telemetry = true;
+        let mut inconclusive = branch(Premise::Inconclusive);
+        inconclusive.next = Some(same);
+        fx.forecast.branches = vec![pass, named0, named2, named3, unnamed, inconclusive];
+        assert_eq!(
+            fx.rows(),
+            [
+                "if it passes | next trial: trial 2 of 4",
+                "if another core is named | its failure point is recorded → it backs off per earlier requests; next trial: rerun R7 all-core on 00-03 · 2m · a top requester at 0: tuning stops",
+                "if none or a core at 0 is named | core 01 -30 → -16 per earlier requests; next trial: rerun R7 all-core on 00-03 · 2m",
+            ]
+        );
+        let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
+        assert!(compact[0].contains("+1 at 0"), "{compact:?}");
+        assert!(
+            compact[0].contains("none or core at 0 named → backs off"),
+            "{compact:?}"
+        );
+    }
+
+    #[test]
+    fn a_pass_forecast_names_the_derived_partial_and_its_basis() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
+        let full_part = {
+            let mut part = part(&[0, 1, 2, 3], Some(0), true, true);
+            part.lengths.as_mut().unwrap().short.count = 4;
+            part
+        };
+        let rest = part(&[0, 1, 2, 3, 4, 5, 6, 7], None, false, false);
+        fx.cycle = Some((
+            cycle_plan(1, vec![step(Regime::R7, vec![full_part, rest])], 0),
+            vec![Vec::new()],
+            None,
+        ));
+        let running = counted(
+            in_cycle(
+                trial(Regime::R7, Condition::Together, &[0, 1, 2, 3]),
+                1,
+                1,
+                1,
+                2,
+            ),
+            3,
+            4,
+            4,
+        );
+        fx.trial = Some(running);
+        let partial = plan(
+            Regime::R7,
+            many(&[0, 1, 2]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            120,
+        );
+        for (sources, basis) in [
+            (vec![seq(5)], "per earlier requests"),
+            (Vec::new(), "per offset order"),
+        ] {
+            let mut chain = CheckingChain {
+                cycle: nz(1),
+                step: nz(1),
+                ccd: CcdId::try_from(0_u8).unwrap(),
+                workload: workloads(Regime::R7)[0].id(),
+                groups: Vec::new(),
+                cores: set(&[0, 1, 2]),
+                source_seqs: sources,
+                profile: PerCore::default(),
+                part: nz(1),
+                rederived: None,
+            };
+            chain.source_seqs.dedup();
+            let mut pass = branch(Premise::Pass);
+            pass.passes = 1;
+            pass.decisions = vec![DecisionPayload::CheckingChain(chain)];
+            pass.next = Some(partial.clone());
+            pass.without_telemetry = true;
+            pass.offset_order = basis == "per offset order";
+            fx.forecast.branches = vec![pass];
+            let rows = fx.row_set();
+            let line = fit_phrases(&rows[0].phrases, 400);
+            assert_eq!(rows[0].basis, Some(basis));
+            assert!(
+                line.contains(&format!("CCD 0 partial on 00-02 {basis}")),
+                "{line}"
+            );
+            assert!(
+                line.contains("next trial: step 1: R7 all-core on 00-02 with"),
+                "{line}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_named_zero_core_moving_its_ccd_records_no_own_failure_point() {
+        let fx = Fx::new();
+        let moved = DecisionPayload::TunerDecision(backoff(1, -30, -16, Some(-30)));
+        let phrases = decision_phrases(
+            &fx.scene(ts(1)),
+            &[DecisionPayload::Failure(failure(Some(2))), moved],
+            true,
+        );
+        assert_eq!(fit_phrases(&phrases, 400), "core 01 -30 → -16");
+        let own = DecisionPayload::TunerDecision(backoff(2, -30, -29, Some(-30)));
+        let phrases = decision_phrases(
+            &fx.scene(ts(1)),
+            &[DecisionPayload::Failure(failure(Some(2))), own],
+            true,
+        );
+        assert_eq!(
+            fit_phrases(&phrases, 400),
+            "its failure point is recorded → it backs off"
+        );
+    }
+
+    #[test]
+    fn zero_offset_cores_on_different_ccds_are_named_apart() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1), (3, 1)]);
+        fx.trial = Some(trial(Regime::R7, Condition::Together, &[0, 1, 2, 3]));
+        let mut a = branch(Premise::Named(core(1)));
+        a.at_zero = true;
+        let mut b = branch(Premise::Named(core(2)));
+        b.at_zero = true;
+        fx.forecast.branches = vec![a, b];
+        let scene = fx.scene(ts(1));
+        let words: Vec<_> = scene
+            .s
+            .forecast
+            .branches
+            .iter()
+            .map(|branch| zero_words(&scene, branch))
+            .collect();
+        assert_eq!(words, ["a CCD 0 core at 0", "a CCD 1 core at 0"]);
+        fx.forecast.branches.pop();
+        let scene = fx.scene(ts(1));
+        assert_eq!(
+            zero_words(&scene, &scene.s.forecast.branches[0]),
+            "a core at 0",
+            "cores at 0 on one CCD need no CCD"
+        );
+        fx.forecast.branches[0].top_requester = true;
+        let scene = fx.scene(ts(1));
+        assert_eq!(
+            zero_words(&scene, &scene.s.forecast.branches[0]),
+            "a top requester at 0"
+        );
+    }
+
+    fn next_words(load: Load, condition: Condition) -> (String, String) {
+        let mut fx = Fx::new();
+        fx.trial = None;
+        let mut next = plan(
+            Regime::R1,
+            load,
+            condition,
+            TrialContext::Search {
+                core: core(3),
+                regime: Regime::R1,
+                offset: off(-16),
+            },
+            120,
+        );
+        next.regime = Regime::R1;
+        let scene = fx.scene(ts(1));
+        let words = next_trial_words(&scene, &next, None, None);
+        let mut pass = branch(Premise::Pass);
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        let compact = outcome_rows(&fx.scene(ts(1)))[0].compact.clone();
+        (words, compact)
+    }
+
+    #[test]
+    fn tight_next_keeps_trial_targets() {
+        for (load, condition, full, tight) in [
+            (
+                Load::Single(core(3)),
+                Condition::Alone,
+                ", core 03 alone at -16",
+                "core 03",
+            ),
+            (
+                Load::Single(core(3)),
+                Condition::Together,
+                ", core 03 at -16",
+                "core 03",
+            ),
+            (many(&[3]), Condition::Together, " on 03", "on 03"),
+            (
+                many(&[0, 1, 2, 8, 9, 10, 15]),
+                Condition::Together,
+                " on 00-02 08-10 15",
+                "on 00-02 08-10 15",
+            ),
+        ] {
+            let (words, compact) = next_words(load, condition);
+            assert_eq!(words, format!("R1 light{full}"));
+            assert_eq!(compact, format!("→ R1 light{full}"));
+            assert_eq!(tight_next(&compact), format!("→ R1 {tight}"));
+        }
+        for regime in [
+            Regime::R2,
+            Regime::R3,
+            Regime::R4,
+            Regime::R5,
+            Regime::R6,
+            Regime::R7,
+        ] {
+            let text = format!(
+                "→ {regime} {}, core 03 alone at -16",
+                crate::words::kind_words(regime)
+            );
+            assert_eq!(tight_next(&text), format!("→ {regime} core 03"), "{text}");
+        }
+    }
+
+    #[test]
+    fn compact_next_reads_the_next_trial_prefix() {
+        assert_eq!(compact_next("next trial: step 3: R7 all-core"), "step 3");
+        assert_eq!(
+            compact_next("next trial: part 2: 08-15 on 08-15, 2m"),
+            "part 2"
+        );
+        assert_eq!(
+            compact_next("next trial: hunt 2 group 4: R1 light, core 01 alone at 0"),
+            "group 4"
+        );
+        assert_eq!(
+            compact_next("next trial: part 1: R1 light, core 01 alone at 0"),
+            "part 1"
+        );
+        assert_eq!(
+            compact_next("next trial: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m"),
+            "rerun at offset 0"
+        );
+        assert_eq!(
+            compact_next("next trial: R1 light, core 01 alone at 0"),
+            "R1 light, core 01 alone at 0"
+        );
+    }
+
+    /// The owner's forecast: the core's own next search turn and the session's next trial are told apart, at
+    /// every width the line is fitted to, and the next trial keeps its target.
+    #[test]
+    fn the_owner_forecast_separates_a_cores_next_turn_from_the_next_trial() {
+        let mut fx = Fx::new();
+        fx.trial = Some(trial(Regime::R2, Condition::Together, &[0, 1]));
+        let mut step = backoff(8, 0, -5, None);
+        step.decision = Decision::StepDeeper;
+        let next = plan(
+            Regime::R1,
+            Load::Single(core(1)),
+            Condition::Alone,
+            TrialContext::Search {
+                core: core(1),
+                regime: Regime::R1,
+                offset: off(0),
+            },
+            120,
+        );
+        let mut pass = branch(Premise::Pass);
+        pass.decisions = vec![DecisionPayload::TunerDecision(step)];
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        let owner =
+            "core 08 searches -5 on its next turn; next trial: R1 light, core 01 alone at 0";
+        assert_eq!(fx.rows(), [format!("if it passes | {owner}")]);
+        let full = text(&outcome_lines(&fx.scene(ts(1)), 110, false));
+        assert_eq!(full, [format!("{:<21}{owner}", "if it passes:")]);
+        let medium = text(&outcome_lines(&fx.scene(ts(1)), 60, true));
+        assert_eq!(medium, ["pass → R1 light, core 01 alone at 0"]);
+        let compact = text(&outcome_lines(&fx.scene(ts(1)), 20, true));
+        assert_eq!(compact, ["pass → R1 core 01"]);
+    }
+
+    #[test]
+    fn tight_next_leaves_non_core_outcomes_unchanged() {
+        for text in [
+            "→ R2 heavy vector",
+            "→ R6 idle + bursts",
+            "→ R2 heavy vector on no cores",
+            "→ step 3",
+            "→ part 2",
+            "→ group 4",
+            "→ rerun",
+            "→ no next trial projected",
+        ] {
+            assert_eq!(tight_next(text), text);
+        }
+        let mut fx = Fx::new();
+        let next = plan(
+            Regime::R2,
+            many(&[0]),
+            Condition::Together,
+            cycle_ctx(1, 3),
+            120,
+        );
+        let mut pass = branch(Premise::Pass);
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        let compact = outcome_rows(&fx.scene(ts(1)))[0].compact.clone();
+        assert_eq!(compact, "→ step 3");
+        assert_eq!(tight_next(&compact), compact);
+    }
+
+    #[test]
+    fn what_comes_next_shortens_to_its_position() {
+        for (next, want) in [
+            ("next trial: part 2: full CCD 0 on 00-07, 5m", "part 2"),
+            ("next trial: part 4: core 09 at -26, 2m", "part 4: core 09"),
+            ("next trial: part 3: 00-02, 1m", "part 3: 00-02,"),
+            (
+                "next trial: hunt 2 group 8: R7 all-core on 00-03",
+                "group 8",
+            ),
+            ("next trial: step 3: R7 all-core with mprime", "step 3"),
+            ("next trial: rerun R7 all-core on 00-03 · 2m", "rerun"),
+            (
+                "next trial: rerun R6 idle + bursts on 00 01 with every core at 0 · 2m",
+                "rerun at offset 0",
+            ),
+            ("the same trial runs again", "the same trial runs again"),
+        ] {
+            assert_eq!(compact_next(next), want, "{next}");
+        }
+    }
+
+    #[test]
+    fn phrases_leave_out_minor_ones_then_the_middle_until_the_line_fits() {
+        let ps = |items: &[(&str, bool)]| {
+            items
+                .iter()
+                .map(|&(text, minor)| super::super::outcome::Phrase {
+                    text: text.to_owned(),
+                    minor,
+                })
+                .collect::<Vec<_>>()
+        };
+        let phrases = ps(&[
+            ("first", false),
+            ("minor note", true),
+            ("middle", false),
+            ("last", false),
+        ]);
+        assert_eq!(
+            fit_phrases(&phrases, 100),
+            "first → minor note → middle → last"
+        );
+        assert_eq!(fit_phrases(&phrases, 28), "first → ... → middle → last");
+        assert_eq!(fit_phrases(&phrases, 16), "first → ... → last");
+        assert_eq!(
+            fit_phrases(&phrases, 1),
+            "first → ... → last",
+            "the first and the last are never left out"
+        );
+    }
+
+    #[test]
+    fn a_forecast_says_only_what_it_knows() {
+        let mut fx = Fx::new();
+        fx.trial = Some(counted(
+            in_cycle(trial(Regime::R1, Condition::Together, &[0]), 1, 1, 1, 1),
+            0,
+            1,
+            1,
+        ));
+        let mut ranking = branch(Premise::Pass);
+        ranking.uncertainty = Some(Uncertainty::NeedsRanking);
+        let mut history = branch(Premise::Unnamed);
+        history.uncertainty = Some(Uncertainty::NeedsHistory);
+        let mut recurring = branch(Premise::Inconclusive);
+        recurring.uncertainty = Some(Uncertainty::RecurringPlan);
+        fx.forecast.branches = vec![ranking, history, recurring];
+        let rows = fx.rows();
+        for want in [
+            "read the core ranking before deciding",
+            "complete hunt history needed before deciding",
+            "the hunt would repeat this plan; nothing further is projected",
+        ] {
+            assert!(
+                rows.iter().any(|row| row.ends_with(want)),
+                "lost {want}: {rows:?}"
+            );
+        }
+        let nothing = branch(Premise::Named(core(0)));
+        fx.forecast.branches = vec![nothing];
+        assert!(
+            fx.rows()
+                .iter()
+                .any(|row| row.ends_with("no next trial projected")),
+            "{:?}",
+            fx.rows()
+        );
+        let mut stopped = branch(Premise::Unnamed);
+        stopped.decisions = vec![DecisionPayload::TunerDecision(backoff(0, -31, -30, None))];
+        stopped.uncertainty = Some(Uncertainty::Stopped { after: 1 });
+        fx.forecast.branches = vec![stopped];
+        assert_eq!(fx.rows(), ["if none is named | core 00 -31 → -30"]);
+    }
+
+    #[test]
+    fn a_tuner_hold_is_worded_as_a_hold() {
+        let fx = Fx::new();
+        let mut hold = backoff(4, -20, -20, None);
+        hold.decision = Decision::Hold;
+        let phrases = decision_phrases(
+            &fx.scene(ts(1)),
+            &[DecisionPayload::TunerDecision(hold.clone())],
+            false,
+        );
+        assert_eq!(
+            fit_phrases(&phrases, 100),
+            "core 04 failure held at -20; no tuning move"
+        );
+        let phrases = decision_phrases(
+            &fx.scene(ts(1)),
+            &[
+                DecisionPayload::Failure(failure(Some(4))),
+                DecisionPayload::TunerDecision(hold),
+            ],
+            true,
+        );
+        assert!(
+            fit_phrases(&phrases, 200).ends_with("core 04 failure held at -20; no tuning move"),
+            "a hold is no backoff: {phrases:?}"
+        );
+    }
+
+    #[test]
+    fn decisions_read_in_the_order_the_tuner_records_them() {
+        let fx = Fx::new();
+        let hunt_start = |hunt, cores: &[u8]| {
+            let mut start = crate::tests::kit::hunt_start(hunt, cores);
+            start.failing = crate::tests::kit::offsets(&[-10, -20]);
+            start
+        };
+        let decisions = vec![
+            DecisionPayload::HuntStart(hunt_start(2, &[0, 1])),
+            DecisionPayload::HuntGroup(carried(2, 1, togi_journal::Inference::Pass)),
+            DecisionPayload::HuntGroup(carried(2, 2, togi_journal::Inference::Pass)),
+            DecisionPayload::HuntGroup(carried(2, 3, togi_journal::Inference::Failure)),
+            DecisionPayload::HuntGroup(skipped(2, 4)),
+            DecisionPayload::HuntEnd(crate::tests::kit::hunt_end(
+                2,
+                HuntOutcome::Combination,
+                &[0, 1],
+            )),
+            DecisionPayload::Combination(crate::tests::kit::combination(
+                3,
+                2,
+                &[(0, -10), (1, -20)],
+                false,
+            )),
+            DecisionPayload::CheckingStep(CheckingStep {
+                cycle: nz(1),
+                step: nz(3),
+                profile: PerCore::default(),
+            }),
+            DecisionPayload::CheckingCycle(crate::tests::kit::cycle(2, CycleEvent::Start)),
+            DecisionPayload::DeadEnd(DeadEnd {
+                condition: DeadEndCondition::NoEvidence,
+                core: None,
+                detail: String::new(),
+                action: None,
+            }),
+        ];
+        let phrases = decision_phrases(&fx.scene(ts(1)), &decisions, false);
+        let texts: Vec<_> = phrases
+            .iter()
+            .map(|phrase| (phrase.text.as_str(), phrase.minor))
+            .collect();
+        assert_eq!(
+            texts,
+            [
+                ("hunt 2 starts over 00 01", true),
+                ("groups 1-2 answered by existing evidence", true),
+                ("group 3 failed on existing evidence", false),
+                ("group 4 skipped", false),
+                ("hunt 2 keeps 00 01 together", false),
+                ("C3 over 00 01", false),
+                ("step 2 is done", false),
+                ("cycle 2 starts", true),
+                ("tuning stops: no evidence", false),
+            ]
+        );
+    }
+
+    fn carried(
+        hunt: u32,
+        group: u32,
+        inferred: togi_journal::Inference,
+    ) -> togi_journal::HuntGroup {
+        let mut g = crate::tests::kit::hunt_group(hunt, group, &[0, 1]);
+        g.inferred = Some(inferred);
+        g
+    }
+
+    fn skipped(hunt: u32, group: u32) -> togi_journal::HuntGroup {
+        let mut g = crate::tests::kit::hunt_group(hunt, group, &[0, 1]);
+        g.skipped = true;
+        g
+    }
+
+    #[test]
+    fn a_known_failure_names_the_skipped_trial_and_whether_it_was_carried() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
+        let mut known = crate::tests::kit::failure(Signal::Crash, None);
+        known.regime = Some(Regime::R7);
+        known.known_failure = Some(seq(9));
+        let decisions = vec![
+            DecisionPayload::Failure(known.clone()),
+            DecisionPayload::HuntStart(crate::tests::kit::hunt_start(1, &[0, 1])),
+        ];
+        let scene = fx.scene(ts(1));
+        assert_eq!(
+            fit_phrases(&decision_phrases(&scene, &decisions, false), 400)
+                .split(" → ")
+                .next(),
+            Some("R7 all-core on 00-02 at these offsets already crashed")
+        );
+        fx.carried.insert(seq(9));
+        known.signal = Signal::ComputationError;
+        let decisions = vec![DecisionPayload::Failure(known)];
+        let text = fit_phrases(&decision_phrases(&fx.scene(ts(1)), &decisions, false), 400);
+        assert_eq!(
+            text,
+            "R7 all-core at these offsets already failed in a carried trial"
+        );
+        let mut ordinary = trial(Regime::R7, Condition::Together, &[0, 1]);
+        ordinary.cycle = Some(CyclePlace {
+            cycle: 1,
+            step: Some(1),
+            part: Some(1),
+            parts: 2,
+        });
+        fx.trial = Some(ordinary);
+        fx.cycle = Some((
+            cycle_plan(
+                1,
+                vec![step(
+                    Regime::R7,
+                    vec![part(&[0, 1, 2], Some(0), true, true)],
+                )],
+                0,
+            ),
+            vec![Vec::new()],
+            None,
+        ));
+        let mut again = crate::tests::kit::failure(Signal::ComputationError, None);
+        again.regime = Some(Regime::R7);
+        again.known_failure = Some(seq(9));
+        let decisions = vec![
+            DecisionPayload::Failure(again),
+            DecisionPayload::HuntStart(crate::tests::kit::hunt_start(1, &[0, 1])),
+        ];
+        let text = fit_phrases(&decision_phrases(&fx.scene(ts(1)), &decisions, false), 400);
+        assert!(
+            text.starts_with("full CCD 0 at these offsets already failed in a carried trial"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn an_idle_known_failure_is_named_idle_not_by_an_empty_regime() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
+        let mut known = crate::tests::kit::failure(Signal::ComputationError, None);
+        known.known_failure = Some(seq(9));
+        let decisions = vec![DecisionPayload::Failure(known)];
+        let words =
+            |fx: &Fx| fit_phrases(&decision_phrases(&fx.scene(ts(1)), &decisions, false), 400);
+        assert_eq!(words(&fx), "idle at these offsets already failed");
+        fx.carried.insert(seq(9));
+        assert_eq!(
+            words(&fx),
+            "idle at these offsets already failed in a carried trial"
+        );
+    }
+
+    #[test]
+    fn a_core_leaving_its_search_records_its_solo_limit_and_a_restart_is_unnamed_only() {
+        use crate::tests::kit::{Start, transition};
+        use togi_journal::CorePhase;
+        let fx = Fx::new();
+        let phrases = |decision: Start, named: bool| {
+            fit_phrases(
+                &decision_phrases(
+                    &fx.scene(ts(1)),
+                    &[DecisionPayload::CorePhase(transition(1, decision))],
+                    named,
+                ),
+                400,
+            )
+        };
+        let exit = Start {
+            from: Some(CorePhase::Search),
+            to: CorePhase::AtLimit,
+            offset: -27,
+            pass: Some(-28),
+            fail: None,
+        };
+        assert_eq!(phrases(exit, false), "core 01 solo limit -28");
+        assert_eq!(phrases(exit, true), "core 01 solo limit -28");
+        let no_pass = Start { pass: None, ..exit };
+        assert_eq!(phrases(no_pass, false), "");
+        let restart = Start {
+            from: Some(CorePhase::AtLimit),
+            to: CorePhase::Search,
+            offset: -27,
+            pass: None,
+            fail: None,
+        };
+        assert_eq!(phrases(restart, false), "core 01 starts its search over");
+        assert_eq!(phrases(restart, true), "");
+    }
+
+    #[test]
+    fn a_passing_part_names_the_next_part_of_a_multi_part_step() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1), (3, 1)]);
+        let steps = vec![step(
+            Regime::R7,
+            vec![
+                part(&[0, 1], Some(0), true, true),
+                part(&[2, 3], Some(1), true, false),
+            ],
+        )];
+        fx.cycle = Some((cycle_plan(1, steps, 0), vec![Vec::new()], None));
+        fx.trial = Some(counted(
+            in_cycle(trial(Regime::R7, Condition::Together, &[0, 1]), 1, 1, 1, 2),
+            0,
+            1,
+            1,
+        ));
+        let mut pass = branch(Premise::Pass);
+        pass.passes = 1;
+        pass.next = Some(plan(
+            Regime::R7,
+            many(&[2, 3]),
+            Condition::Together,
+            cycle_ctx(1, 1),
+            300,
+        ));
+        fx.forecast.branches = vec![pass];
+        assert_eq!(
+            fx.rows(),
+            ["if it passes | part 1 is done; next trial: part 2: full CCD 1 on 02 03, 5m"]
+        );
+        assert_eq!(fx.row_set()[0].compact, "→ part 2");
+    }
+
+    #[test]
+    fn a_rotating_workload_is_the_same_requirement_but_another_frozen_one_is_not() {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (3, 1)]);
+        fx.trial = Some(alone(Regime::R1, 3, -16));
+        let search = TrialContext::Search {
+            core: core(3),
+            regime: Regime::R1,
+            offset: off(-16),
+        };
+        let mut next = plan(
+            Regime::R1,
+            Load::Single(core(3)),
+            Condition::Alone,
+            search,
+            120,
+        );
+        let mut unnamed = branch(Premise::Unnamed);
+        next.workload = WorkloadChoice::Rotate;
+        unnamed.next = Some(next.clone());
+        fx.forecast.branches = vec![unnamed.clone()];
+        assert_eq!(
+            fx.rows(),
+            ["if none is named | next trial: this load again"]
+        );
+        next.workload = WorkloadChoice::Frozen(workloads(Regime::R2)[0].id());
+        unnamed.next = Some(next);
+        fx.forecast.branches = vec![unnamed];
+        let rows = fx.rows();
+        assert!(
+            rows[0].starts_with("if none is named | next trial: ")
+                && !rows[0].contains("this load again"),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn a_combination_outcome_is_named_by_its_decisions() {
+        let (mut fx, next) = r7_fx();
+        let mut pass = branch(Premise::Pass);
+        pass.decisions = vec![
+            DecisionPayload::HuntStart(HuntStart {
+                ..crate::tests::kit::hunt_start(4, &[0, 1])
+            }),
+            DecisionPayload::Combination(Combination {
+                ..crate::tests::kit::combination(2, 4, &[(0, -10), (1, -20)], false)
+            }),
+        ];
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        let rows = fx.row_set();
+        assert_eq!(rows[0].compact, "→ hunt 4");
+        let mut hunt_end = branch(Premise::Unnamed);
+        hunt_end.decisions = vec![DecisionPayload::HuntEnd(HuntEnd {
+            ..crate::tests::kit::hunt_end(4, HuntOutcome::Direct, &[1])
+        })];
+        fx.forecast.branches = vec![hunt_end];
+        assert_eq!(fx.row_set()[0].compact, "→ hunt ends");
+    }
+
+    #[test]
+    fn rows_are_ordered_by_premise_and_a_hunt_puts_the_unnamed_first() {
+        let (mut fx, next) = r7_fx();
+        let build = |premise| {
+            let mut b = branch(premise);
+            b.next = Some(next.clone());
+            b
+        };
+        let mut unnamed = build(Premise::Unnamed);
+        unnamed.decisions = vec![DecisionPayload::Failure(failure(None))];
+        let mut named = build(Premise::Named(core(0)));
+        named.decisions = vec![
+            DecisionPayload::Failure(failure(Some(0))),
+            DecisionPayload::TunerDecision(backoff(0, -30, -29, None)),
+        ];
+        fx.forecast.branches = vec![unnamed.clone(), named.clone()];
+        let labels: Vec<_> = fx.row_set().iter().map(|row| row.label.clone()).collect();
+        assert_eq!(labels, ["if a core is named", "if none is named"]);
+        let mut hunting = hunting_fx();
+        hunting.trial = fx.trial.clone();
+        hunting.forecast.branches = vec![unnamed, named];
+        let labels: Vec<_> = hunting
+            .row_set()
+            .iter()
+            .map(|row| row.label.clone())
+            .collect();
+        assert_eq!(labels, ["if none is named", "if a core is named"]);
+    }
+
+    fn hunting_fx() -> Fx {
+        let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 0), (3, 0)]);
+        fx.hunt = Some((
+            hunt_plan(),
+            HuntFacts {
+                started: None,
+                cause: cause(),
+                parking: None,
+                group_signals: Vec::new(),
+            },
+        ));
+        fx
+    }
+
+    #[test]
+    fn outcome_rows_draw_with_their_label_in_twenty_one_cells() {
+        let (mut fx, next) = r7_fx();
+        let mut pass = branch(Premise::Pass);
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        let wide = text(&outcome_lines(&fx.scene(ts(1)), 100, false));
+        assert_eq!(wide.len(), 1);
+        assert!(
+            wide[0].starts_with("if it passes:        next trial: trial 2 of 4"),
+            "{wide:?}"
+        );
+        let full = Scene::new(fx.snap(), ts(1), &UTC, Colours::Full);
+        let lines = outcome_lines(&full, 100, false);
+        assert_eq!(lines[0].spans[0].style, Paint::Good.style(Colours::Full));
+        assert_eq!(lines[0].spans[1].style, Paint::Text.style(Colours::Full));
+        let narrow = outcome_lines(&fx.scene(ts(1)), 30, false);
+        assert!(crate::frames::fit::line_width(&narrow[0]) <= 30);
+        let compact = text(&outcome_lines(&fx.scene(ts(1)), 100, true));
+        assert_eq!(compact, ["pass → trial 2 of 4"]);
+    }
+
+    #[test]
+    fn no_outcome_lines_when_nothing_runs() {
+        let (mut fx, next) = r7_fx();
+        let mut pass = branch(Premise::Pass);
+        pass.next = Some(next);
+        fx.forecast.branches = vec![pass];
+        fx.stopped = Some(StopView {
+            at: ts(1),
+            reason: ShutdownReason::Signal,
+            saved: false,
+        });
+        assert!(outcome_lines(&fx.scene(ts(5)), 100, false).is_empty());
+        fx.stopped = None;
+        fx.trial.as_mut().expect("a trial").crashed = true;
+        assert!(outcome_lines(&fx.scene(ts(5)), 100, true).is_empty());
+        fx.trial = None;
+        assert!(outcome_lines(&fx.scene(ts(5)), 100, false).is_empty());
     }
 }
 
@@ -2083,16 +3304,23 @@ mod the_simulated_sessions {
             band.lines
         );
         assert!(band.lines.iter().all(|line| !line.contains("left")));
+        assert_eq!(last_lines(&scene).len(), 1);
+        assert!(!outcome_lines(&scene, 100, false).is_empty());
     }
 
     #[test]
-    fn a_stopped_session_names_its_stop_and_never_calls_the_rows_unapplied() {
+    fn a_stopped_session_labels_saved_not_applied_offsets() {
         let (model, at) = model_of(Scenario::Stopped);
         let scene = scene_of(&model, at);
         let band = resting_band(&scene);
         assert_eq!(band.title, "STOPPED");
         assert_eq!(story(&scene).label, "STOPPED");
-        assert!(band.lines.iter().all(|line| !line.contains("not applied")));
+        assert!(model.snapshot().stopped.is_some_and(|stop| stop.saved));
+        assert!(
+            band.lines
+                .iter()
+                .any(|line| line == "Rows show the saved profile, not applied now.")
+        );
     }
 
     #[test]
@@ -2112,7 +3340,7 @@ mod the_simulated_sessions {
     }
 
     #[test]
-    fn a_running_checking_trial_has_a_story_and_an_operation() {
+    fn a_running_checking_trial_has_a_story_and_outcome_rows_the_forecast_backs() {
         let (model, at) = model_of(Scenario::Checking);
         let scene = scene_of(&model, at + jiff::SignedDuration::from_secs(5));
         let said = story(&scene);
@@ -2122,9 +3350,20 @@ mod the_simulated_sessions {
             said.label
         );
         let snapshot = model.snapshot();
+        let rows = outcome_rows(&scene);
+        assert!(!rows.is_empty() && rows.len() <= super::super::outcome::ROW_LIMIT);
+        assert!(rows.len() <= snapshot.forecast.branches.len());
         let trial = snapshot.trial.expect("a running trial");
         assert!(!plain(&operation(&scene, trial)).is_empty());
         assert!(trial_where(&scene, trial).starts_with("on "));
+        for width in [80, 120] {
+            for compact in [false, true] {
+                for line in outcome_lines(&scene, width, compact) {
+                    let cells = crate::frames::fit::line_width(&line);
+                    assert!(cells <= width, "{cells} > {width}");
+                }
+            }
+        }
     }
 
     #[test]

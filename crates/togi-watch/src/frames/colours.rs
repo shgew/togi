@@ -31,10 +31,8 @@ pub enum Paint {
     Hunt,
     /// Passed, done.
     Good,
-    /// Failures that happen now, and crashes.
+    /// Failures, past and present.
     Bad,
-    /// A failure point the journal recorded: the normal dark red slot, never dimmed.
-    Recorded,
     /// Combinations.
     Combination,
     /// Rules and unfilled tracks.
@@ -49,7 +47,7 @@ pub enum Paint {
 
 impl Paint {
     /// Every paint, for tests and legends.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 12] = [
         Self::Text,
         Self::Grey,
         Self::White,
@@ -57,7 +55,6 @@ impl Paint {
         Self::Hunt,
         Self::Good,
         Self::Bad,
-        Self::Recorded,
         Self::Combination,
         Self::Track,
         Self::Chip,
@@ -78,7 +75,6 @@ impl Paint {
             Self::Hunt => fg(Color::LightYellow),
             Self::Good => fg(Color::LightGreen),
             Self::Bad => fg(Color::LightRed),
-            Self::Recorded => fg(Color::Red),
             Self::Combination => fg(Color::LightMagenta),
             Self::Track => fg(Color::Magenta),
             Self::Chip => fg(Color::White).bg(Color::Magenta),
@@ -254,18 +250,6 @@ mod tests {
         let span = Paint::Bad.span(Colours::Full, "█");
         assert_eq!(span.content, "█");
         assert_eq!(span.style, Paint::Bad.style(Colours::Full));
-    }
-
-    #[test]
-    fn a_recorded_failure_is_the_dark_red_slot_and_a_current_one_the_bright_slot() {
-        for colours in [Colours::Full, Colours::Console] {
-            assert_eq!(slot(Paint::Recorded.style(colours).fg), Some(1));
-            assert_eq!(slot(Paint::Bad.style(colours).fg), Some(9));
-            assert_eq!(
-                Paint::Recorded.style(colours).add_modifier,
-                Modifier::empty()
-            );
-        }
     }
 
     #[test]

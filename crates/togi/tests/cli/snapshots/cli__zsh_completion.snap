@@ -111,7 +111,7 @@ _arguments "${_arguments_options[@]}" : \
 '--width=[Frame width in columns, 1 to 1000, when stdout is not a terminal]:columns:' \
 '--height=[Frame height in rows, 1 to 1000, when stdout is not a terminal]:rows:' \
 '--state-dir=[State directory]:path:_files -/' \
-'--tuning-boot[Run as the unattended tuning-boot dashboard\: ignore q, Q, Ctrl-C and Ctrl-D on every page and leave the quit key out of the help and footer]' \
+'--tuning-boot[Run as the unattended tuning-boot dashboard\: ignore q, Q, Ctrl-C and Ctrl-D in every view and leave the quit key out of the help and footer]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 && ret=0

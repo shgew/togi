@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use togi_journal::{
-    Activity, DeadEndCondition, Decision, Event, Member, Payload, Seq, ShutdownReason,
-    State as JournalState, TrialId,
+    Activity, DeadEndCondition, Event, Member, Payload, Seq, ShutdownReason, State as JournalState,
+    TrialId,
 };
 use togi_machine::{
     CcdId, Condition, CoreId, CoreSet, ObservedOffset, PerCore, Regime, ResetKind, Signal,
@@ -89,57 +89,6 @@ pub struct Confirm {
     pub needed: u32,
 }
 
-/// Where a core's recorded failure constraint came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FailureSource {
-    /// The core failed alone.
-    Alone,
-    /// A failure or a hunt named the core among the cores that ran together.
-    Named,
-    /// An unattributed multi-core R7 failure was charged to the core by voltage-targeted backoff.
-    R7Charged,
-    /// The journal does not say how the constraint arose.
-    Unrecorded,
-}
-
-/// The recorded failure constraint of a core and the journal event that recorded it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FailureEvidence {
-    /// The constraint's offset.
-    pub offset: TargetOffset,
-    /// Where it came from.
-    pub source: FailureSource,
-    /// The event that recorded it.
-    pub seq: Seq,
-}
-
-/// The tuner's latest move of a core's offset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OffsetDecision {
-    /// The `tuner.decision` event.
-    pub seq: Seq,
-    /// What the tuner decided.
-    pub decision: Decision,
-    /// What the session was doing.
-    pub activity: Activity,
-    /// The offset before.
-    pub from: TargetOffset,
-    /// The offset after.
-    pub to: TargetOffset,
-}
-
-/// What the journal records about a core beside the tuner's profile.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct CoreEvidence {
-    /// How its failure constraint arose; `None` when it has none or the journal does not say.
-    pub failure: Option<FailureEvidence>,
-    /// Its latest offset decision.
-    pub decision: Option<OffsetDecision>,
-    /// The failure constraint was recorded in the step or operation now running, or in the last one before the
-    /// run ended; it stops being current when work moves to another step or operation, and at the next run.
-    pub current_failure: bool,
-}
-
 /// One core as a frame shows it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoreView {
@@ -178,8 +127,6 @@ pub struct CoreView {
     pub loaded: bool,
     /// Whether the trial in flight can name it.
     pub judged: bool,
-    /// What the journal records about it beside the profile.
-    pub evidence: CoreEvidence,
 }
 
 /// What a hunt sets each core to: its failing offsets and the offsets it parks the rest at.
@@ -594,17 +541,6 @@ pub struct SessionView {
     pub activity: Option<Activity>,
 }
 
-/// The passed full checking cycle whose end confirmed the BIOS profile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BiosConfirmation {
-    /// The cycle's number.
-    pub cycle: u32,
-    /// When it ended.
-    pub at: Timestamp,
-    /// The journal event that ended it.
-    pub seq: Seq,
-}
-
 /// Everything one frame shows, lent by the model. Empty when the journal has no session or the model is in a
 /// problem state.
 #[derive(Debug, Clone, Copy)]
@@ -645,8 +581,6 @@ pub struct Snapshot<'a> {
     pub deepening: Option<&'a DeepeningView>,
     /// The profile to enter in BIOS.
     pub bios: Option<&'a BiosProfile>,
-    /// The cycle that confirmed [`Snapshot::bios`], when the journal still names it.
-    pub bios_confirmation: Option<BiosConfirmation>,
     /// A crash detected on this boot with no trial started since.
     pub recover: Option<&'a RecoveryView>,
     /// The session stopped.
@@ -922,18 +856,6 @@ impl Model {
                 .bios_profile
                 .as_ref()
                 .filter(|bios| bios.confirmed.is_some()),
-            bios_confirmation: projection
-                .bios_profile
-                .as_ref()
-                .and_then(|bios| bios.confirmed)
-                .and_then(|confirmed| {
-                    let &(cycle, at) = facts.cycle_ends.get(&confirmed.seq)?;
-                    Some(BiosConfirmation {
-                        cycle,
-                        at,
-                        seq: confirmed.seq,
-                    })
-                }),
             recover: derived.recover.as_ref(),
             stopped: facts.stop.as_ref().filter(|_| facts.stopped),
             dead_end: facts

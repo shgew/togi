@@ -31,14 +31,13 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 ///
 /// It redraws when the journal changes and once a second for the clock. During an idle trial it
 /// holds still, clock included, until the journal changes, a key is pressed or the terminal is
-/// resized. The Main page answers four things: which phase and how far through it, what runs now,
-/// which cores need a look (all sixteen gauges, each with its tuning-profile offset, applied offset,
-/// recorded solo limit and failure), and what happened recently. Eight more pages hold the details:
-/// Cores, Cycle, R7 evidence, Hunts / probes, BIOS profile, History, Journal and Help. On a
-/// terminal, the left and right arrows cycle the nine pages, the up and down arrows, `PgUp`, `PgDn`,
-/// Home and End scroll, Esc or `m` returns to Main, `?` opens the help, `l` the newest 400 journal
-/// events, and `q` exits the dashboard. A journal scrolled back holds its list still and counts new
-/// events until End. It is rendered from the journal, which it reloads only when it changes.
+/// resized. togi says in plain words what it is doing and why, how far the current trial and cycle
+/// have come, and what each outcome would lead to. Each CCD's cores show their offsets and limits
+/// side by side; below them, the cycle, hunt or search beside what happened recently. On a
+/// terminal, keys switch views: `?` explains the screen, `l` shows the newest 400 journal events,
+/// Up/Down and PageUp/PageDown scroll both, Esc returns, and `q` exits the dashboard. A journal scrolled back holds its list still
+/// and counts new events until End. It is rendered from the journal, which it reloads only when
+/// it changes.
 ///
 /// The screen's words are explained by `?` on the screen itself; the rules behind them are in
 /// docs/spec/tuner.md.
@@ -50,7 +49,7 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// is refused before any frame: exit 1 with the cutover step on stderr, live or not. A missing
 /// journal (no session yet) is not an error. An event of a kind this build does not know is
 /// skipped and an unknown field is ignored; the footer says which. The tuning boot shows it on tty1 with
-/// `--tuning-boot`, which keeps it open: `q`, `Q`, Ctrl-C and Ctrl-D do nothing on every page and the help and
+/// `--tuning-boot`, which keeps it open: `q`, `Q`, Ctrl-C and Ctrl-D do nothing in every view and the help and
 /// footer leave the quit key out, so only stopping the service, or a signal such as SIGTERM, ends it. A terminal
 /// alone never sets it. `NO_COLOR` turns colour off.
 #[derive(ClapArgs, Debug)]
@@ -76,7 +75,7 @@ pub struct Args {
     )]
     height: u16,
 
-    /// Run as the unattended tuning-boot dashboard: ignore q, Q, Ctrl-C and Ctrl-D on every page and leave the quit key out of the help and footer
+    /// Run as the unattended tuning-boot dashboard: ignore q, Q, Ctrl-C and Ctrl-D in every view and leave the quit key out of the help and footer
     #[arg(long)]
     tuning_boot: bool,
 }

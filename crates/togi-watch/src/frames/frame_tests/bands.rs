@@ -11,7 +11,6 @@ use togi_watchtest::{Scenario, cut_at};
 
 use super::{ALL_SIZES, Fixture, SIZES, append, later, main_screen, one_frame, text, words};
 use crate::frames::layout::Layout;
-use crate::frames::terms::dead_end_words;
 use crate::frames::testing::rows_of;
 use crate::screen::{Hold, Screen, View};
 use crate::tests::kit::{Script, crash, end_payload, warning};
@@ -62,15 +61,15 @@ fn between_trials_names_the_last_outcome_and_the_next_action_not_a_countdown() {
 }
 
 #[test]
-fn a_stopped_frame_shows_saved_tune_against_the_offset_now_and_no_running_stage() {
+fn a_stopped_frame_shows_the_saved_profile_and_no_running_stage() {
     let fx = Fixture::scenario(Scenario::Stopped);
     assert!(fx.model.snapshot().stopped.is_some_and(|stop| stop.saved));
     for (width, height) in ALL_SIZES {
         let (buf, _) = fx.main(width, height);
         let shown = text(&buf).to_lowercase();
         assert!(
-            shown.contains("stopped") && shown.contains("tune") && shown.contains("now"),
-            "{width}x{height} hides the saved tune against the offset now:\n{shown}"
+            shown.contains("stopped") && shown.contains("saved"),
+            "{width}x{height} hides the saved profile:\n{shown}"
         );
         let stage = stage_line(&buf, &main_screen(width, height));
         assert!(
@@ -139,29 +138,6 @@ fn a_dead_end_frame_keeps_the_recorded_cause_and_invents_no_diagnosis(
         shown.contains("DEAD END") && shown.contains(detail) && !shown.contains(wrong),
         "a dead end loses its recorded cause or invents one:\n{shown}"
     );
-}
-
-#[test]
-fn a_dead_end_frame_says_why_tuning_cannot_continue_for_every_condition() {
-    for &condition in DeadEndCondition::ALL {
-        let mut script = Script::at_limit();
-        script.append(
-            DeadEnd {
-                condition,
-                core: None,
-                detail: "the recorded detail".to_owned(),
-                action: None,
-            }
-            .into(),
-            &[],
-        );
-        let (buf, _) = Fixture::of(&script.events).main(240, 67);
-        let shown = text(&buf);
-        assert!(
-            shown.contains(dead_end_words(condition)),
-            "a {condition:?} dead end hides why tuning cannot continue:\n{shown}"
-        );
-    }
 }
 
 fn trial_events() -> (Vec<togi_journal::Event>, usize) {
@@ -265,10 +241,13 @@ fn a_trial_past_its_planned_end_shows_how_long_without_claiming_a_crash() {
         let before = words(&fx.draw(&sc, later(end, -1)).0);
         let required = trial.duration.as_secs();
         let clock = |secs: u64| format!("{}:{:02}", secs / 60, secs % 60);
+        let timed = if width >= 200 && height >= 60 {
+            before.contains(&format!("{} of {}", clock(required - 1), clock(required)))
+        } else {
+            before.contains("0:01 left")
+        };
         assert!(
-            before.contains(&format!("{} / {}", clock(required - 1), clock(required)))
-                && !before.contains("left")
-                && !before.contains("past"),
+            timed && !before.contains("past"),
             "{width}x{height} before the planned end: {before}"
         );
         let (buf, drawn) = fx.draw(&sc, later(end, 42));
@@ -477,7 +456,7 @@ fn a_command_shutdown_does_not_mask_an_unrecovered_crash() {
     let (wide, _) = fx.draw(&summary, fx.now);
     let stage = stage_line(&wide, &summary);
     assert!(
-        stage.contains("STOPPED") && !stage.contains('►') && !stage.contains("left"),
+        stage.contains("trial crashed") && !stage.contains('►') && !stage.contains("left"),
         "a reset after a reboot presents a running stage: {stage:?}"
     );
 }
@@ -489,18 +468,14 @@ fn a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the
     for (n, events) in built.running.iter().enumerate() {
         let fx = Fixture::of(events);
         let (wide, _) = fx.main(240, 67);
-        let cycle = Screen {
-            view: View::Cycle,
-            ..main_screen(240, 67)
-        };
-        let said = format!("{} {}", words(&wide), words(&fx.draw(&cycle, fx.now).0));
+        let said = words(&wide);
         assert!(
-            said.contains("checking resumes at step 2"),
+            said.contains("waits at step 2") || said.contains("paused at step 2"),
             "rerun {}: {said}",
             n + 1
         );
         assert!(
-            !said.contains("resumes at step 1") && !said.contains("resumes at step 3"),
+            !said.contains("waits at step 1") && !said.contains("waits at step 3"),
             "rerun {}: {said}",
             n + 1
         );
@@ -508,7 +483,7 @@ fn a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the
             let sc = main_screen(width, height);
             let stage = stage_line(&fx.draw(&sc, fx.now).0, &sc);
             assert!(
-                stage.contains("repairing"),
+                stage.contains("paused at step 2"),
                 "rerun {} at {width}x{height}: {stage:?}",
                 n + 1
             );

@@ -3,26 +3,25 @@ source: crates/togi-tool-replay/src/tests/frames.rs
 expression: body
 ---
  togi   09:47:51   tuning 9h47m   session 9h47m   31 failures · 7 crashes
- ■ SOLO → ► P1 → ○ P2 → ○ CLEAN   2:00 left
- HELP · 9/9 · < Journal | Main >
- █ NAVIGATION ────────────────────────────────────────────────────────────────
+ ■ SOLO ─ ► P1 ─ ○ P2 ─ CLEAN 0 ─ ► CYCLE 1 ─ 2:00 left
+
+ █ READING THE SCREEN ────────────────────────────────────────────────────────
  █
- │ ← →        Move through the nine pages in a fixed cycle that wraps, from
- │            Main to Help and back to Main. The footer shows the page's
- │            place, such as 2/9 Cores.
- │ ↑ ↓        Scroll a page one line. j and k do the same.
- │ PgUp PgDn  Scroll a page by its height less one line. b, f and space do the
- │            same.
- │ Home End   Go to the top or the end of a page. g and G do the same.
- │ Esc, m     Go back to Main.
- │ ?, h       Open this help. The same key on the help returns to Main.
- │ l          Open the journal, which opens at its newest event and follows
- │            new ones. The same key on the journal returns to Main.
- │ scroll     A page opens at its top. Only a key changes the page or its
- │            scroll, so a refresh never moves it. Main scrolls only on a
- │            screen smaller than 160x45, where it shows numbers instead of
- │            gauges.
- │ q, Ctrl-C  Exit the dashboard; tuning itself keeps running.
+ │ ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░▬                -36
+ │                     at its limit: it cannot go deeper
  │
- 9/9 Help
+ │ ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····▬                    -32
+ │                     has room: backed off after a hunt, may deepen
+ │
+ │   09    0  PARKED   ···············································▬    -48
+ │                     parked at 0 by a hunt; returns to -47
+ │
+ │ ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ ▬                    -32
+ │                     probe: the group failed with core 00 at -30, -29, -27
+ │
+ │ ►         the core carries load in this trial
+ │ ▄▄▄       offset applied now, or saved after a stop restored the hardware;
+ │           white when this trial judges the core
+ │ ?         no hardware offset has been read back for this core
+
 

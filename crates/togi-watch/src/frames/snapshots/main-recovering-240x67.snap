@@ -2,69 +2,69 @@
 source: crates/togi-watch/src/frames/snapshots.rs
 expression: body
 ---
-│ togi   01:41:10   tuning 1h41m   session 1h41m   0 failures · 1 crash
-│ RECOVERY  ○ SOLO LIMITS  0/16 → ○ PHASE 1 → ○ PHASE 2 → ○ CLEAN CYCLES
+│  togi   01:41:10   tuning 1h41m   session 1h41m   0 failures · 1 crash
 │
-│ RECOVERY · SOLO LIMITS · 0/16 solo limits found
-│ crash detected 01:40
+│  ► SOLO LIMITS  0 of 16 found  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE
 │
-│ NOW  RECOVERED FROM A CRASH · crash in core 08 · R1 light at -10
-│ detected 01:40:30 after a watchdog reset · next trial: R1 light, core 01 alone at -10
+│  ▌  RECOVERED   I picked up from the journal after the reboot; nothing it recorded is lost.                              last trial      PASS  1:30 on core 00 · Tctl max 62°C
 │
-│                                            0 CCD 0 -10       -20       -30       -40       -50                             0 CCD 1 -10       -20       -30       -40       -50
-│                                         core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail      core  tune now  █ tune  █ fail  ! failing  R reset     s=solo g=gap f=fail
-│                                         00  ███████████████                                    tune -15 now   0         08  ██████████                                         tune -10 now -10
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle
-│                                         01  ██████████                                         tune -10 now   0         09  ██████████                                         tune -10 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         02  ██████████                                         tune -10 now   0         10  ██████████                                         tune -10 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         03  ██████████                                         tune -10 now   0         11  ██████████                                         tune -10 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         04  ██████████                                         tune -10 now   0         12  ██████████                                         tune -10 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         05  ██████████                                         tune -10 now   0         13  ██████████                                         tune -10 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         06  ██████████                                         tune -10 now   0         14  ██████████                                         tune -10 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         07  ██████████                                         tune -10 now   0         15  ██████████                                         tune -10 now   0
-│                                                                                                s? g? f none                                                                    s? g? f none
-│                                                                                                idle at 0                                                                       idle at 0
-│                                         white=tune · red point=recorded failure · gap=counts shallower than solo
 │
-│ WHAT HAPPENED
-│ 01:40  crash    with the offsets applied, rebooted
-│ 01:39  step     core 00 passed -10; searches -15 on its next turn
-│ 01:36  step     core 15 passed -5; searches -10 on its next turn
-│ 01:33  step     core 07 passed -5; searches -10 on its next turn
-│ 01:30  step     core 14 passed -5; searches -10 on its next turn
-│ 01:27  step     core 06 passed -5; searches -10 on its next turn
-│ 01:24  step     core 13 passed -5; searches -10 on its next turn
-│ 01:21  step     core 05 passed -5; searches -10 on its next turn
-│ 01:18  step     core 12 passed -5; searches -10 on its next turn
-│ 01:15  step     core 04 passed -5; searches -10 on its next turn
-│ 01:12  step     core 11 passed -5; searches -10 on its next turn
-│ 01:09  step     core 03 passed -5; searches -10 on its next turn
-│ 01:06  step     core 10 passed -5; searches -10 on its next turn
-│ 01:03  step     core 02 passed -5; searches -10 on its next turn
-│ 01:00  step     core 09 passed -5; searches -10 on its next turn
-│ 00:57  step     core 01 passed -5; searches -10 on its next turn
-│ 00:54  step     core 08 passed -5; searches -10 on its next turn
-│ 00:51  step     core 00 passed -5; searches -10 on its next turn
-│ 00:48  step     core 15 passed 0; searches -5 on its next turn
-│ 00:45  step     core 07 passed 0; searches -5 on its next turn
-│ 00:42  step     core 14 passed 0; searches -5 on its next turn
-│ 00:39  step     core 06 passed 0; searches -5 on its next turn
-│ 00:36  step     core 13 passed 0; searches -5 on its next turn
-│ 00:33  step     core 05 passed 0; searches -5 on its next turn
-│ 00:30  step     core 12 passed 0; searches -5 on its next turn
-│ 00:27  step     core 04 passed 0; searches -5 on its next turn
+│  RECOVERED FROM A CRASH ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+│  crash in core 08 · R1 light at -10
+│  detected 01:40:30 after a watchdog reset
+│  next trial: R1 light, core 01 alone at -10
 │
-│  ←/→  pages  1/9 Main   ↑/↓  scroll   PgUp/PgDn    Esc  Main   ?  help   q  exit dashboard
+│  CCD 0               0       -10       -20       -30       -40       -50 fail pt  waiting at 0                           CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
+│    00    0  SEARCH    ··········                                                  passed -10 · next -15                    08  -10  SEARCH    ▄▄▄▄▄▄▄▄▄▄                                                  passed -5 · next -10
+│    01    0  SEARCH    ·····                                                       passed -5 · next -10                     09    0  SEARCH    ·····                                                       passed -5 · next -10
+│    02    0  SEARCH    ·····                                                       passed -5 · next -10                     10    0  SEARCH    ·····                                                       passed -5 · next -10
+│    03    0  SEARCH    ·····                                                       passed -5 · next -10                     11    0  SEARCH    ·····                                                       passed -5 · next -10
+│    04    0  SEARCH    ·····                                                       passed -5 · next -10                     12    0  SEARCH    ·····                                                       passed -5 · next -10
+│    05    0  SEARCH    ·····                                                       passed -5 · next -10                     13    0  SEARCH    ·····                                                       passed -5 · next -10
+│    06    0  SEARCH    ·····                                                       passed -5 · next -10                     14    0  SEARCH    ·····                                                       passed -5 · next -10
+│    07    0  SEARCH    ·····                                                       passed -5 · next -10                     15    0  SEARCH    ·····                                                       passed -5 · next -10
+│
+│  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+│  none confirmed yet: phase 1 has not passed a full cycle
+│                                                                                                                          01:40  crash    with the offsets applied, rebooted
+│  TURNS ──────────────────────────────────────────────────────────────────────────── one core per turn, in this order     01:39  step     core 00 passed -10; searches -15 on its next turn
+│                                                                                                                          01:36  step     core 15 passed -5; searches -10 on its next turn
+│    core   this turn                      at     workload                  so far                                         01:33  step     core 07 passed -5; searches -10 on its next turn
+│    01     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:30  step     core 14 passed -5; searches -10 on its next turn
+│    09     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:27  step     core 06 passed -5; searches -10 on its next turn
+│    02     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:24  step     core 13 passed -5; searches -10 on its next turn
+│    10     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:21  step     core 05 passed -5; searches -10 on its next turn
+│    03     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:18  step     core 12 passed -5; searches -10 on its next turn
+│    11     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:15  step     core 04 passed -5; searches -10 on its next turn
+│    04     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:12  step     core 11 passed -5; searches -10 on its next turn
+│    12     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:09  step     core 03 passed -5; searches -10 on its next turn
+│    05     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:06  step     core 10 passed -5; searches -10 on its next turn
+│    13     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:03  step     core 02 passed -5; searches -10 on its next turn
+│    06     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           01:00  step     core 09 passed -5; searches -10 on its next turn
+│    14     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:57  step     core 01 passed -5; searches -10 on its next turn
+│    07     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:54  step     core 08 passed -5; searches -10 on its next turn
+│    15     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:51  step     core 00 passed -5; searches -10 on its next turn
+│    00     search: light, then heavy      -15    mprime SSE 4K-21K         passed -10 · next -15                          00:48  step     core 15 passed 0; searches -5 on its next turn
+│    08     search: light, then heavy      -10    y-cruncher SNT + SVT      passed -5 · next -10                           00:45  step     core 07 passed 0; searches -5 on its next turn
+│                                                                                                                          00:42  step     core 14 passed 0; searches -5 on its next turn
+│                                                                                                                          00:39  step     core 06 passed 0; searches -5 on its next turn
+│                                                                                                                          00:36  step     core 13 passed 0; searches -5 on its next turn
+│                                                                                                                          00:33  step     core 05 passed 0; searches -5 on its next turn
+│                                                                                                                          00:30  step     core 12 passed 0; searches -5 on its next turn
+│                                                                                                                          00:27  step     core 04 passed 0; searches -5 on its next turn
+│                                                                                                                          00:24  step     core 11 passed 0; searches -5 on its next turn
+│                                                                                                                          00:21  step     core 03 passed 0; searches -5 on its next turn
+│                                                                                                                          00:18  step     core 10 passed 0; searches -5 on its next turn
+│                                                                                                                          00:15  step     core 02 passed 0; searches -5 on its next turn
+│                                                                                                                          00:12  step     core 09 passed 0; searches -5 on its next turn
+│                                                                                                                          00:09  step     core 01 passed 0; searches -5 on its next turn
+│                                                                                                                          00:06  step     core 08 passed 0; searches -5 on its next turn
+│                                                                                                                          00:03  step     core 00 passed 0; searches -5 on its next turn
+│                                                                                                                          00:00  start    session started on 16 cores
+│
+│
+│
+│
+│
+│
+│   ?  help    l  log    esc  back    q  exit dashboard

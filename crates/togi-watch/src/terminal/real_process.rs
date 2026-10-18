@@ -77,12 +77,6 @@ fn frame(
             View::Main => 'a',
             View::Help => 'b',
             View::Log => 'c',
-            View::Cores => 'd',
-            View::Cycle => 'e',
-            View::R7 => 'f',
-            View::Hunts => 'g',
-            View::Bios => 'h',
-            View::History => 'i',
         };
         let count = u32::try_from(received.load(Ordering::SeqCst)).unwrap();
         let count = char::from_digit(count, 10).unwrap();
@@ -979,7 +973,7 @@ fn dashboard(scenario: Scenario, shown: &str) -> (TempDir, Pty, Helper) {
 
 #[test]
 fn real_process_a_started_idle_trial_holds_the_dashboard_still() {
-    let (_state, mut pty, helper) = dashboard(Scenario::Idle, "screen paused");
+    let (_state, mut pty, helper) = dashboard(Scenario::Idle, "this screen holds still");
     let first = pty.seen.len();
     assert!(
         pty.falls_quiet(QUIET, QUIET * 2),

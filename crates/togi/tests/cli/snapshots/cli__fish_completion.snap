@@ -85,7 +85,7 @@ complete -c togi -n "__fish_togi_using_subcommand status" -s h -l help -d 'Print
 complete -c togi -n "__fish_togi_using_subcommand watch" -l width -d 'Frame width in columns, 1 to 1000, when stdout is not a terminal' -r -f
 complete -c togi -n "__fish_togi_using_subcommand watch" -l height -d 'Frame height in rows, 1 to 1000, when stdout is not a terminal' -r -f
 complete -c togi -n "__fish_togi_using_subcommand watch" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
-complete -c togi -n "__fish_togi_using_subcommand watch" -l tuning-boot -d 'Run as the unattended tuning-boot dashboard: ignore q, Q, Ctrl-C and Ctrl-D on every page and leave the quit key out of the help and footer'
+complete -c togi -n "__fish_togi_using_subcommand watch" -l tuning-boot -d 'Run as the unattended tuning-boot dashboard: ignore q, Q, Ctrl-C and Ctrl-D in every view and leave the quit key out of the help and footer'
 complete -c togi -n "__fish_togi_using_subcommand watch" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "run" -d 'Start or resume the tuning session in the foreground'
 complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run completion doctor events reset restart-limit emergency-stop status watch help" -f -a "completion" -d 'Print a shell completion script'
