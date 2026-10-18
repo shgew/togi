@@ -7,6 +7,7 @@ use togi_tuner::{Branch, Premise, Uncertainty};
 use super::outcome::{OutcomeRow, Phrase, fit_phrases};
 use super::{RestingBand, Story};
 use crate::corpus::{lines, shape, text};
+use crate::screen::Colours;
 
 fn premise(premise: Premise) -> &'static str {
     match premise {
@@ -64,7 +65,7 @@ pub(super) fn branch(
     text(
         "outcome.branch",
         &form,
-        &fit_phrases(phrases, usize::MAX >> 1),
+        &fit_phrases(phrases, usize::MAX >> 1, Colours::None),
     );
     text("outcome.branch.compact", &form, compact);
     if let Some(basis) = basis {
@@ -82,7 +83,7 @@ pub(super) fn rows(rows: &[OutcomeRow]) {
         text(
             "outcome.row.full",
             &row.label,
-            &fit_phrases(&row.phrases, usize::MAX >> 1),
+            &fit_phrases(&row.phrases, usize::MAX >> 1, Colours::None),
         );
     }
 }

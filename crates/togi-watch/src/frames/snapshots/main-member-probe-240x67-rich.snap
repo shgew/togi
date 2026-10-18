@@ -1,0 +1,129 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
+│  togi   08:22:00   tuning 8h22m   session 8h22m   8 failures · 8 crashes   last observed failure 08:22   screen paused · planned end 08:24
+~  gggg   wwwwwwww   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg   ggggggggggggggggggggggttttt   aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+│
+│  ■ SOLO LIMITS  16/16  ───  ►  HUNT 1   member probes · member 1 of 2  ───  ○ PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ○ CYCLE 1  paused at step 7 of 18
+~  pptttttttttttgggggggttkkkttaallllllllaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaattkkkttgggggggggttkkkttgggggggggttkkkttggggggggggggggttkkkttaatttttttaaaaaaaaaaaaaaaaaaaaaaaa
+│
+│  ▌  HUNT 1   03 11 crashed together at their offsets, and every smaller part of them that was tested passed.             last trial      CRASH  on 00-15
+~  a  aaaaaaaaattttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt             ggggggggggggggggfffffgggggggggg
+│  ▌           So I probe each member: how shallow must it go for the combination to pass? Core 03 first.
+~  a           tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│
+│  NOW ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trial 0273
+~  ggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk gggggggggg
+│   R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between                                                                                                                              HUNT 1 · GROUP 42 · CORE 03 AT -9
+~  hhhh  wwwwwwwwwwwww  ttttttttttttttt   ggggggggggggggggggggggggggggggggggggg                                                                                                                              aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+│
+│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █▀█ █▀█   ▀▀█ █ █
+~  kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk      ggggggggggggggggg
+│  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · planned end 08:24, so it cannot wake the idle cores  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      █ █ █▀█ ▀ █▀▀ ▀▀█
+~  kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkktttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk      ggggggggggggggggg
+│                                                                                                                                                                                                                            ▀▀▀ ▀▀▀ ▀ ▀▀▀   ▀
+~                                                                                                                                                                                                                            ggggggggggggggggg
+│  started 08:22 · 2:00                                                                                                                                                                                                                ends at
+~  ggggggggtttttggggggg                                                                                                                                                                                                                ggggggg
+│
+│  if 5 of 5 pass:      next trial: hunt 1 group 43: R6 idle + bursts on 00-15 · 03 at failing offsets, core 11 at -9, 00-02 04-10 12-15 parked at 0
+~  ppppppppppppppppppppptttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  if none is named:    next trial: hunt 1 group 43: R6 idle + bursts on 00-15 · 11 at failing offsets, core 03 at -8, 00-02 04-10 12-15 parked at 0
+~  ffffffffffffffffffffftttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  if a core is named:  its failure point is recorded → the hunt ends → it backs off; next trial: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun at offset 0
+~  fffffffffffffffffffffttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│
+│  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  all under load
+~  wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg                         wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg
+│  ► 00    0  PARKED    ·········┆·                                                 returns to -10                         ► 08    0  PARKED    ·········┆·                                                 returns to -10
+~  c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg                         c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg
+│  ► 01    0  PARKED    ·········┆·                                                 returns to -10                         ► 09    0  PARKED    ·········┆·                                                 returns to -10
+~  c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg                         c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg
+│  ► 02    0  PARKED    ·········┆·                                                 returns to -10                         ► 10    0  PARKED    ·········┆·                                                 returns to -10
+~  c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg                         c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg
+│  ► 03   -9  PROBE     ▆▆▆▆▆▆▆▆▆┆·                                                 group failed at -10                    ► 11  -10  MEMBER    ▆▆▆▆▆▆▆▆▆┆·
+~  c ww  www  aaaaa     wwwwwwwwwfg                                                 ttttttttttttttttttt                    c ww  www  tttttt    wwwwwwwwwfg
+│  ► 04    0  PARKED    ·········┆·                                                 returns to -10                         ► 12    0  PARKED    ·········┆·                                                 returns to -10
+~  c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg                         c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg
+│  ► 05    0  PARKED    ·········┆·                                                 returns to -10                         ► 13    0  PARKED    ·········┆·                                                 returns to -10
+~  c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg                         c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg
+│  ► 06    0  PARKED    ·········┆·                                                 returns to -10                         ► 14    0  PARKED    ·········┆·                                                 returns to -10
+~  c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg                         c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg
+│  ► 07    0  PARKED    ·········┆·                                                 returns to -10                         ► 15    0  PARKED    ·········┆·                                                 returns to -10
+~  c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg                         c tt  ttt  gggggg    gggggggggfg                                                 gggggggggggggg
+│
+│  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events
+~  gggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk     ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggggggggggggggggggggggggg
+│  none confirmed yet: phase 1 has not passed a full cycle
+~  ggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│                                                                                                                          08:22  group    hunt 1 groups 40-41 · parts of 03 11 · all passed on existing evidence
+~                                                                                                                          ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  HUNT 1 ────────────────────────────────────────────────────────────────────────────── started 07:31 · 50m30s so far     08:22  crash    hunt 1 group 39 · 03 11 at failing offsets · rebooted
+~  gggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggggggggggggggggggggg     ggggg  ffffffff ttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                          08:20  group    hunt 1 groups 35-38 · parts of 03 10 11 · all passed on existing evidence
+~                                                                                                                          ggggg  aaaaaaaa ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  cause       crash in R6 idle + bursts on 00-15 · cycle 1 step 7, trial 1 of 1 · no core named                           08:20  crash    hunt 1 group 34 · 03 10 11 at failing offsets · rebooted
+~  ggggggggggggtttttttttttttttttttttttttttttttttt   tttttttttttttttttttttttttttt   ttttttttttttt                           ggggg  ffffffff tttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  candidates  00-15, deeper at failure than at their parked offsets                                                       08:19  group    hunt 1 groups 28-33 · parts of 02 03 10 11 · all passed on existing evidence
+~  ggggggggggggttttt  tttttttttttttttttttttttttttttttttttttttttttttt                                                       ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                          08:19  crash    hunt 1 group 27 · 02 03 10 11 at failing offsets · rebooted
+~                                                                                                                          ggggg  ffffffff ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  parts       groups 1-2   parts of 00-15                               all passed                                        08:17  group    hunt 1 groups 23-26 · parts of 02 03 08-11 · all passed on existing evidence
+~  ggggg       tttttttttt   gggggggggggggg                               pppppppppp                                        ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              group 3      00-15 at failing offsets                     crashed                                           08:17  crash    hunt 1 group 22 · 02 03 08-11 at failing offsets · rebooted
+~              ttttttt      gggggggggggggggggggggggg                     fffffff                                           ggggg  ffffffff ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              groups 4-8   parts of 00-15 and their complements         all passed                                        08:16  group    hunt 1 groups 16-21 · parts of 00-03 08-11 · all passed on existing evidence
+~              tttttttttt   gggggggggggggggggggggggggggggggggggg         pppppppppp                                        ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              group 9      00-03 08-15 at failing offsets, 04-07 parked crashed                                           08:16  crash    hunt 1 group 15 · 00-03 08-11 at failing offsets · rebooted
+~              ttttttt      gggggggggggggggggggggggggggggggggggggggggggg fffffff                                           ggggg  ffffffff ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              groups 10-14 parts of 00-03 08-15 and their complements   all passed                                        08:14  pass     hunt 1 group 14 · 00-03 12-15 at failing offsets · 5 of 5 passed · Tctl max 75°C
+~              tttttttttttt gggggggggggggggggggggggggggggggggggggggggg   pppppppppp                                        ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              group 15     00-03 08-11 at failing offsets               crashed                                           08:04  group    hunt 1 groups 10-13 · parts of 00-03 08-15 · all passed on existing evidence
+~              tttttttt     gggggggggggggggggggggggggggggg               fffffff                                           ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              groups 16-21 parts of 00-03 08-11                         all passed                                        08:04  crash    hunt 1 group 9 · 00-03 08-15 at failing offsets · rebooted
+~              tttttttttttt gggggggggggggggggggg                         pppppppppp                                        ggggg  ffffffff tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              group 22     02 03 08-11 at failing offsets               crashed                                           08:03  pass     hunt 1 group 8 · 04-15 at failing offsets · 5 of 5 passed · Tctl max 74°C
+~              tttttttt     gggggggggggggggggggggggggggggg               fffffff                                           ggggg  pppppppp ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              groups 23-26 parts of 02 03 08-11 and their complements   all passed                                        07:53  group    hunt 1 groups 4-7 · parts of 00-15 · all passed on existing evidence
+~              tttttttttttt gggggggggggggggggggggggggggggggggggggggggg   pppppppppp                                        ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              group 27     02 03 10 11 at failing offsets               crashed                                           07:53  crash    hunt 1 group 3 · 00-15 at failing offsets · rebooted
+~              tttttttt     gggggggggggggggggggggggggggggg               fffffff                                           ggggg  ffffffff tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              groups 28-33 parts of 02 03 10 11                         all passed                                        07:51  pass     hunt 1 group 2 · 08-15 at failing offsets · 5 of 5 passed · Tctl max 76°C
+~              tttttttttttt gggggggggggggggggggg                         pppppppppp                                        ggggg  pppppppp ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              group 34     03 10 11 at failing offsets                  crashed                                           07:41  pass     hunt 1 group 1 · 00-07 at failing offsets · 5 of 5 passed · Tctl max 76°C
+~              tttttttt     ggggggggggggggggggggggggggg                  fffffff                                           ggggg  pppppppp ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              groups 35-38 parts of 03 10 11 and their complements      all passed                                        07:31  hunt     #1 started · part 1: 00-07 at failing offsets, 08-15 parked
+~              tttttttttttt ggggggggggggggggggggggggggggggggggggggg      pppppppppp                                        ggggg  aaaaaaaa ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              group 39     03 11 at failing offsets                     crashed                                           07:31  crash    R6 idle + bursts on 00-15 · rebooted · no core named
+~              tttttttt     gggggggggggggggggggggggg                     fffffff                                           ggggg  ffffffff tttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              groups 40-41 parts of 03 11                               all passed                                        07:30  pass     R2 heavy vector on core 15 at -10 · passed · Tctl max 73°C
+~              tttttttttttt gggggggggggggg                               pppppppppp                                        ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              → 03 11 kept together; probing members                                                                      07:28  pass     R2 heavy vector on core 07 at -10 · passed · Tctl max 72°C
+~              wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww                                                                      ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                          07:26  pass     R2 heavy vector on core 14 at -10 · passed · Tctl max 70°C
+~                                                                                                                          ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  probes      member  now   group failed at     passed at              state                                              07:24  pass     R2 heavy vector on core 06 at -10 · passed · Tctl max 72°C
+~  gggggg      gggggg  ggg   ggggggggggggggg     ggggggggg              ggggg                                              ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              03      -9                                               ► trial 1 of 5                                     07:22  pass     R2 heavy vector on core 13 at -10 · passed · Tctl max 75°C
+~              ww      ww                                               cccccccccccccc                                     ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              11                                                       waiting                                            07:20  pass     R2 heavy vector on core 05 at -10 · passed · Tctl max 64°C
+~              tt                                                       ggggggg                                            ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                          07:18  pass     R2 heavy vector on core 12 at -10 · passed · Tctl max 69°C
+~                                                                                                                          ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  then        after the hunt:                                                                                             07:16  pass     R2 heavy vector on core 04 at -10 · passed · Tctl max 73°C
+~  ggggggggggggggggggggggggggg                                                                                             ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              1  record the combination: 03 11 at the offsets that still fail                                             07:14  pass     R2 heavy vector on core 11 at -10 · passed · Tctl max 64°C
+~              g  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                             ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              2  back off one member to a tested passing probe that keeps the profile clear                               07:12  pass     R2 heavy vector on core 03 at -10 · passed · Tctl max 74°C
+~              g  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                               ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              3  rerun R6 idle + bursts on 00-15: 5 trials of 2m, then 1 of 15m                                           07:10  pass     R2 heavy vector on core 10 at -10 · passed · Tctl max 68°C
+~              g  ttttttwwwwwwwwwwwwwwwwwwwwwwwwwttttttttttttttttttttttttttttttt                                           ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│              4  if the rerun passes, resume cycle 1                                                                      07:08  pass     R2 heavy vector on core 02 at -10 · passed · Tctl max 64°C
+~              g  ttttttttttttttttttttttttttttwwwwwww                                                                      ggggg  pppppppp tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                          +57 more
+~                                                                                                                          gggggggg
+│
+│   ?  help    l  log    esc  back    q  exit dashboard
+~  hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg

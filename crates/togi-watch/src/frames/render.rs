@@ -70,6 +70,7 @@ fn folded(scene: &Scene<'_>, log: &Log<'_>, screen: &Screen, buf: &mut Buffer) -
         0,
         0,
         &header(scene, usize::from(layout.header.width), compact),
+        scene.colours,
     );
     put(
         buf,
@@ -77,6 +78,7 @@ fn folded(scene: &Scene<'_>, log: &Log<'_>, screen: &Screen, buf: &mut Buffer) -
         0,
         0,
         &stage_line(scene, layout.class, screen.view != View::Main),
+        scene.colours,
     );
     let mut scroll = 0;
     match screen.view {
@@ -168,6 +170,7 @@ fn unfolded(
             status,
             usize::from(layout.header.width),
         ),
+        screen.colours,
     );
     let mut scroll = 0;
     match screen.view {

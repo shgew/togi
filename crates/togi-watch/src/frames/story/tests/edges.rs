@@ -158,7 +158,7 @@ fn every_premise_and_uncertainty_is_narrated_without_inventing_a_next_trial() {
                         for row in &rows {
                             assert!(!row.label.is_empty(), "{premise:?} {uncertainty:?}");
                             if next.is_none() {
-                                let said = fit_phrases(&row.phrases, 400);
+                                let said = fit_phrases(&row.phrases, 400, Colours::None);
                                 assert!(
                                     !said.contains("next trial: "),
                                     "{premise:?} {uncertainty:?} invents a next trial: {said}"

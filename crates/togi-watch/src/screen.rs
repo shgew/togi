@@ -25,8 +25,10 @@ pub enum View {
 /// How much colour the output may use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Colours {
-    /// Every colour and attribute the terminal offers.
+    /// The terminal's named colour slots and console-compatible glyphs.
     Full,
+    /// Existing console RGB colours emitted directly, with Unicode glyphs.
+    Rich,
     /// The Linux console (`TERM=linux`): 16 colours and no bold.
     Console,
     /// No colour at all: `NO_COLOR`, journald or a one-frame print.

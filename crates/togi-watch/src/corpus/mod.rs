@@ -105,7 +105,11 @@ pub(crate) fn text(producer: &str, form: &str, text: &str) {
 /// Records the plain text of one rendered line.
 pub(crate) fn line(producer: &str, form: &str, line: &Line<'_>) {
     if collecting() {
-        text(producer, form, &crate::frames::plain(line));
+        text(
+            producer,
+            form,
+            &crate::frames::plain(line, crate::screen::Colours::None),
+        );
     }
 }
 
@@ -113,7 +117,11 @@ pub(crate) fn line(producer: &str, form: &str, line: &Line<'_>) {
 pub(crate) fn lines(producer: &str, form: &str, lines: &[Line<'_>]) {
     if collecting() {
         for line in lines {
-            text(producer, form, &crate::frames::plain(line));
+            text(
+                producer,
+                form,
+                &crate::frames::plain(line, crate::screen::Colours::None),
+            );
         }
     }
 }

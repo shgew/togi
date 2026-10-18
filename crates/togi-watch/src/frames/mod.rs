@@ -4,7 +4,7 @@
 //! - [`Paint`] and [`colours_for`]: the drawing roles the panels paint with and
 //!   how each [`Colours`](crate::screen::Colours) profile applies them.
 //! - [`cut_words`], [`fit_clauses`], [`CoreNote`] and the rest of the fitting:
-//!   every line is measured as the console shows it, escaped, and never cut
+//!   every line is measured as the screen shows it, escaped, and never cut
 //!   inside a value or a word.
 //! - [`Layout`] and [`check_frame_bounds`]: the size classes and the frame area,
 //!   `(width - 1) x (height - 1)`.
@@ -37,8 +37,8 @@ mod testing;
 pub use colours::{Paint, colours_for, console_palette};
 pub use draw::{bounded_rows, put, put_cells, rows};
 pub use fit::{
-    CUT_MARKER, Clause, Form, console_text, cut_styled, cut_words, display_width, fit_clauses,
-    inert, is_console_glyph, line_width, plain, rule, tint, truncate_styled, wrap_styled,
+    Clause, Form, cut_marker, cut_styled, cut_words, display_width, fit_clauses, glyph_text, inert,
+    is_console_glyph, line_width, plain, rule, tint, truncate_styled, wrap_styled,
 };
 pub use footer::{footer, key_hints};
 pub use help::{help_body, title_rule};

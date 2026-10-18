@@ -151,7 +151,13 @@ impl Fx {
         let scene = self.scene(ts(1000));
         outcome_rows(&scene)
             .iter()
-            .map(|row| format!("{} | {}", row.label, fit_phrases(&row.phrases, 400)))
+            .map(|row| {
+                format!(
+                    "{} | {}",
+                    row.label,
+                    fit_phrases(&row.phrases, 400, Colours::None)
+                )
+            })
             .collect()
     }
 
@@ -393,7 +399,10 @@ fn cause() -> HuntCause {
 }
 
 fn text(lines: &[ratatui::text::Line<'static>]) -> Vec<String> {
-    lines.iter().map(plain).collect()
+    lines
+        .iter()
+        .map(|line| plain(line, Colours::None))
+        .collect()
 }
 
 fn said(story: &super::Story) -> String {
@@ -479,7 +488,7 @@ mod the_story {
         );
         let drawn = text(&narrator_lines(&problem, 120, 4, false, Colours::None)).join("");
         assert!(!drawn.contains('\u{1b}') && !drawn.contains('\u{7}'));
-        assert!(drawn.contains(inert("\u{1b}[31m").as_ref()));
+        assert!(drawn.contains(inert("\u{1b}[31m", Colours::None).as_ref()));
     }
 
     #[test]
@@ -787,7 +796,7 @@ mod the_story {
                 .contains("solo limit, one turn at a time")
         );
         assert_eq!(
-            plain(&operation(&scene, &round)),
+            plain(&operation(&scene, &round), Colours::None),
             "PHASE 2 · ROUND 1 · CORE 00 AT -11 · LIGHT"
         );
         let together = {
@@ -801,7 +810,10 @@ mod the_story {
         assert_eq!(said.label, "PHASE 2 · ROUND 1");
         assert!(said.lines[0].starts_with("Round 1 checks again the offsets kept from the round that ended unpassed; 2 rounds left if none fails, then one full cycle."));
         assert!(!said.lines.join(" ").contains(" alone at "));
-        assert_eq!(plain(&operation(&scene, &together)), "PHASE 2 · ROUND 1");
+        assert_eq!(
+            plain(&operation(&scene, &together), Colours::None),
+            "PHASE 2 · ROUND 1"
+        );
     }
 
     #[test]
@@ -849,10 +861,10 @@ mod the_story {
             "{tight}"
         );
         assert_eq!(
-            plain(&operation(
-                &fx.scene(ts(1010)),
-                fx.trial.as_ref().expect("a trial")
-            )),
+            plain(
+                &operation(&fx.scene(ts(1010)), fx.trial.as_ref().expect("a trial")),
+                Colours::None
+            ),
             "SEARCH CORE 03 AT -16 · LIGHT"
         );
         fx.cores[1].confirm = Some(Confirm {
@@ -873,10 +885,10 @@ mod the_story {
             "Core 03 failed at -16, so -15 is its candidate solo limit, and I'm confirming it."
         );
         assert_eq!(
-            plain(&operation(
-                &fx.scene(ts(1010)),
-                fx.trial.as_ref().expect("a trial")
-            )),
+            plain(
+                &operation(&fx.scene(ts(1010)), fx.trial.as_ref().expect("a trial")),
+                Colours::None
+            ),
             "CONFIRM CORE 03 AT -16 · LIGHT"
         );
     }
@@ -901,7 +913,7 @@ mod the_story {
             said.brief,
             "Step 1, R7 partial loads 01; passes and failures count."
         );
-        let op = plain(&operation(&fx.scene(ts(1010)), &partial));
+        let op = plain(&operation(&fx.scene(ts(1010)), &partial), Colours::None);
         assert!(
             op.contains("PARTIAL") && !op.contains("RECORD ONLY"),
             "{op}"
@@ -1001,7 +1013,10 @@ mod the_story {
         let scene = fx.scene(ts(1010));
         let said = story(&scene);
         assert_eq!(said.label, "RERUN AT OFFSET 0");
-        assert_eq!(plain(&operation(&scene, &rerun)), "RERUN AT OFFSET 0");
+        assert_eq!(
+            plain(&operation(&scene, &rerun), Colours::None),
+            "RERUN AT OFFSET 0"
+        );
         assert!(said.lines[0].starts_with("A failure at offset 0 would stop tuning."));
         assert_eq!(
             said.brief,
@@ -1036,7 +1051,7 @@ mod the_story {
                 .ends_with("; cycle 1 waits at step 3 until the rerun passes.")
         );
         assert_eq!(
-            plain(&operation(&fx.scene(ts(1010)), &rerun)),
+            plain(&operation(&fx.scene(ts(1010)), &rerun), Colours::None),
             "RERUN AFTER BACKOFF"
         );
         fx.cycle.as_mut().expect("a cycle").2 = None;
@@ -1292,7 +1307,10 @@ mod the_story {
             "{}",
             said.brief
         );
-        assert_eq!(plain(&operation(&scene, &running)), "HUNT 1 · PART 1 OF 2");
+        assert_eq!(
+            plain(&operation(&scene, &running), Colours::None),
+            "HUNT 1 · PART 1 OF 2"
+        );
         running.hunt = Some(HuntPlace {
             hunt: 1,
             group: 3,
@@ -1302,7 +1320,7 @@ mod the_story {
             probe: None,
         });
         assert_eq!(
-            plain(&operation(&scene, &running)),
+            plain(&operation(&scene, &running), Colours::None),
             "HUNT 1 · RE-CUT 2 · PART 2 OF 3"
         );
         running.hunt = Some(HuntPlace {
@@ -1317,7 +1335,7 @@ mod the_story {
             }),
         });
         assert_eq!(
-            plain(&operation(&scene, &running)),
+            plain(&operation(&scene, &running), Colours::None),
             "HUNT 1 · GROUP 3 · CORE 02 AT -12"
         );
         running.hunt = Some(HuntPlace {
@@ -1328,7 +1346,10 @@ mod the_story {
             cut: 0,
             probe: None,
         });
-        assert_eq!(plain(&operation(&scene, &running)), "HUNT 1 · GROUP 3");
+        assert_eq!(
+            plain(&operation(&scene, &running), Colours::None),
+            "HUNT 1 · GROUP 3"
+        );
     }
 
     #[test]
@@ -1790,6 +1811,30 @@ mod the_narrator {
     }
 
     #[test]
+    fn the_narrator_on_the_rich_profile_keeps_unicode_and_cuts_to_one_cell() {
+        let said = super::super::Story {
+            label: "RERUN".to_owned(),
+            lines: vec!["日本語 – ab".to_owned()],
+            brief: "日本語 – ab cd ef".to_owned(),
+            paint: Paint::Running,
+        };
+        let rows = |lines: Vec<ratatui::text::Line<'static>>| -> Vec<String> {
+            lines
+                .iter()
+                .map(|line| plain(line, Colours::Rich))
+                .collect()
+        };
+        assert_eq!(
+            rows(narrator_lines(&said, 17, 1, true, Colours::Rich)),
+            ["▌  日本語 – ab…"]
+        );
+        assert_eq!(
+            rows(narrator_lines(&said, 30, 1, false, Colours::Rich)),
+            ["▌  RERUN   日本語 – ab"]
+        );
+    }
+
+    #[test]
     fn the_bar_and_the_label_take_the_stories_paint() {
         let said = super::super::Story {
             label: "DEAD END".to_owned(),
@@ -1945,10 +1990,13 @@ mod the_trial_band {
         let fx = Fx::new();
         let scene = fx.scene(ts(1));
         let step = in_cycle(trial(Regime::R2, Condition::Together, &[0]), 2, 3, 1, 1);
-        assert_eq!(plain(&operation(&scene, &step)), "CYCLE 2 · STEP 3");
+        assert_eq!(
+            plain(&operation(&scene, &step), Colours::None),
+            "CYCLE 2 · STEP 3"
+        );
         let parted = in_cycle(trial(Regime::R2, Condition::Together, &[0]), 2, 3, 4, 6);
         assert_eq!(
-            plain(&operation(&scene, &parted)),
+            plain(&operation(&scene, &parted), Colours::None),
             "CYCLE 2 · STEP 3 · PART 4"
         );
         let line = operation(&scene, &parted);
@@ -2390,11 +2438,11 @@ mod the_outcome_lines {
         let rows = fx.row_set();
         assert_eq!(rows.len(), 2);
         assert!(
-            !fit_phrases(&rows[0].phrases, 200).contains("per "),
+            !fit_phrases(&rows[0].phrases, 200, Colours::None).contains("per "),
             "a pass decides nothing from requests"
         );
         assert_eq!(rows[0].basis, None);
-        let backoff_row = fit_phrases(&rows[1].phrases, 200);
+        let backoff_row = fit_phrases(&rows[1].phrases, 200, Colours::None);
         assert!(backoff_row.starts_with(want), "{backoff_row}");
         let basis = rows[1].basis.expect("a basis");
         let compact = text(&outcome_lines(&fx.scene(ts(1)), 118, true));
@@ -2430,7 +2478,7 @@ mod the_outcome_lines {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].basis, None);
         assert!(
-            !fit_phrases(&rows[0].phrases, 200).contains("per "),
+            !fit_phrases(&rows[0].phrases, 200, Colours::None).contains("per "),
             "{:?}",
             rows[0].phrases
         );
@@ -2580,7 +2628,7 @@ mod the_outcome_lines {
         pass.offset_order = basis == "per offset order";
         fx.forecast.branches = vec![pass];
         let rows = fx.row_set();
-        let line = fit_phrases(&rows[0].phrases, 400);
+        let line = fit_phrases(&rows[0].phrases, 400, Colours::None);
         assert_eq!(rows[0].basis, Some(basis));
         assert!(
             line.contains(&format!("CCD 0 partial on 00-02 {basis}")),
@@ -2601,7 +2649,10 @@ mod the_outcome_lines {
             &[DecisionPayload::Failure(failure(Some(2))), moved],
             true,
         );
-        assert_eq!(fit_phrases(&phrases, 400), "core 01 -30 → -16");
+        assert_eq!(
+            fit_phrases(&phrases, 400, Colours::None),
+            "core 01 -30 → -16"
+        );
         let own = DecisionPayload::TunerDecision(backoff(2, -30, -29, Some(-30)));
         let phrases = decision_phrases(
             &fx.scene(ts(1)),
@@ -2609,7 +2660,7 @@ mod the_outcome_lines {
             true,
         );
         assert_eq!(
-            fit_phrases(&phrases, 400),
+            fit_phrases(&phrases, 400, Colours::None),
             "its failure point is recorded → it backs off"
         );
     }
@@ -2828,15 +2879,52 @@ mod the_outcome_lines {
             ("last", false),
         ]);
         assert_eq!(
-            fit_phrases(&phrases, 100),
+            fit_phrases(&phrases, 100, Colours::None),
             "first → minor note → middle → last"
         );
-        assert_eq!(fit_phrases(&phrases, 28), "first → ... → middle → last");
-        assert_eq!(fit_phrases(&phrases, 16), "first → ... → last");
         assert_eq!(
-            fit_phrases(&phrases, 1),
+            fit_phrases(&phrases, 28, Colours::None),
+            "first → ... → middle → last"
+        );
+        assert_eq!(
+            fit_phrases(&phrases, 16, Colours::None),
+            "first → ... → last"
+        );
+        assert_eq!(
+            fit_phrases(&phrases, 1, Colours::None),
             "first → ... → last",
             "the first and the last are never left out"
+        );
+    }
+
+    #[test]
+    fn rich_phrases_keep_unicode_and_elide_with_the_one_cell_marker() {
+        let ps = |items: &[(&str, bool)]| {
+            items
+                .iter()
+                .map(|&(text, minor)| super::super::outcome::Phrase {
+                    text: text.to_owned(),
+                    minor,
+                })
+                .collect::<Vec<_>>()
+        };
+        let phrases = ps(&[
+            ("first × 2", false),
+            ("minor note", true),
+            ("middle", false),
+            ("last", false),
+        ]);
+        assert_eq!(
+            fit_phrases(&phrases, 100, Colours::Rich),
+            "first × 2 → minor note → middle → last"
+        );
+        assert_eq!(
+            fit_phrases(&phrases, 30, Colours::Rich),
+            "first × 2 → … → middle → last"
+        );
+        assert_eq!(
+            fit_phrases(&phrases, 30, Colours::Console),
+            "first x 2 → ... → last",
         );
     }
 
@@ -2894,7 +2982,7 @@ mod the_outcome_lines {
             false,
         );
         assert_eq!(
-            fit_phrases(&phrases, 100),
+            fit_phrases(&phrases, 100, Colours::None),
             "core 04 failure held at -20; no tuning move"
         );
         let phrases = decision_phrases(
@@ -2906,7 +2994,8 @@ mod the_outcome_lines {
             true,
         );
         assert!(
-            fit_phrases(&phrases, 200).ends_with("core 04 failure held at -20; no tuning move"),
+            fit_phrases(&phrases, 200, Colours::None)
+                .ends_with("core 04 failure held at -20; no tuning move"),
             "a hold is no backoff: {phrases:?}"
         );
     }
@@ -2998,15 +3087,23 @@ mod the_outcome_lines {
         ];
         let scene = fx.scene(ts(1));
         assert_eq!(
-            fit_phrases(&decision_phrases(&scene, &decisions, false), 400)
-                .split(" → ")
-                .next(),
+            fit_phrases(
+                &decision_phrases(&scene, &decisions, false),
+                400,
+                Colours::None
+            )
+            .split(" → ")
+            .next(),
             Some("R7 all-core on 00-02 at these offsets already crashed")
         );
         fx.carried.insert(seq(9));
         known.signal = Signal::ComputationError;
         let decisions = vec![DecisionPayload::Failure(known)];
-        let text = fit_phrases(&decision_phrases(&fx.scene(ts(1)), &decisions, false), 400);
+        let text = fit_phrases(
+            &decision_phrases(&fx.scene(ts(1)), &decisions, false),
+            400,
+            Colours::None,
+        );
         assert_eq!(
             text,
             "R7 all-core at these offsets already failed in a carried trial"
@@ -3038,7 +3135,11 @@ mod the_outcome_lines {
             DecisionPayload::Failure(again),
             DecisionPayload::HuntStart(crate::tests::kit::hunt_start(1, &[0, 1])),
         ];
-        let text = fit_phrases(&decision_phrases(&fx.scene(ts(1)), &decisions, false), 400);
+        let text = fit_phrases(
+            &decision_phrases(&fx.scene(ts(1)), &decisions, false),
+            400,
+            Colours::None,
+        );
         assert!(
             text.starts_with("full CCD 0 at these offsets already failed in a carried trial"),
             "{text}"
@@ -3051,8 +3152,13 @@ mod the_outcome_lines {
         let mut known = crate::tests::kit::failure(Signal::ComputationError, None);
         known.known_failure = Some(seq(9));
         let decisions = vec![DecisionPayload::Failure(known)];
-        let words =
-            |fx: &Fx| fit_phrases(&decision_phrases(&fx.scene(ts(1)), &decisions, false), 400);
+        let words = |fx: &Fx| {
+            fit_phrases(
+                &decision_phrases(&fx.scene(ts(1)), &decisions, false),
+                400,
+                Colours::None,
+            )
+        };
         assert_eq!(words(&fx), "idle at these offsets already failed");
         fx.carried.insert(seq(9));
         assert_eq!(
@@ -3074,6 +3180,7 @@ mod the_outcome_lines {
                     named,
                 ),
                 400,
+                Colours::None,
             )
         };
         let exit = Start {
@@ -3251,7 +3358,7 @@ mod the_outcome_lines {
         assert_eq!(lines[0].spans[0].style, Paint::Good.style(Colours::Full));
         assert_eq!(lines[0].spans[1].style, Paint::Text.style(Colours::Full));
         let narrow = outcome_lines(&fx.scene(ts(1)), 30, false);
-        assert!(crate::frames::fit::line_width(&narrow[0]) <= 30);
+        assert!(crate::frames::fit::line_width(&narrow[0], Colours::None) <= 30);
         let compact = text(&outcome_lines(&fx.scene(ts(1)), 100, true));
         assert_eq!(compact, ["pass → trial 2 of 4"]);
     }
@@ -3377,12 +3484,12 @@ mod the_simulated_sessions {
         assert!(!rows.is_empty() && rows.len() <= super::super::outcome::ROW_LIMIT);
         assert!(rows.len() <= snapshot.forecast.branches.len());
         let trial = snapshot.trial.expect("a running trial");
-        assert!(!plain(&operation(&scene, trial)).is_empty());
+        assert!(!plain(&operation(&scene, trial), Colours::None).is_empty());
         assert!(trial_where(&scene, trial).starts_with("on "));
         for width in [80, 120] {
             for compact in [false, true] {
                 for line in outcome_lines(&scene, width, compact) {
-                    let cells = crate::frames::fit::line_width(&line);
+                    let cells = crate::frames::fit::line_width(&line, Colours::None);
                     assert!(cells <= width, "{cells} > {width}");
                 }
             }
@@ -3402,7 +3509,7 @@ mod the_simulated_sessions {
             said.lines
         );
         let trial = model.snapshot().trial.expect("a hunt trial");
-        assert!(plain(&operation(&scene, trial)).starts_with("HUNT "));
+        assert!(plain(&operation(&scene, trial), Colours::None).starts_with("HUNT "));
     }
 
     #[test]

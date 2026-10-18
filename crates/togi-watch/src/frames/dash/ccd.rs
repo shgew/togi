@@ -12,6 +12,7 @@ use crate::frames::measure::Ccd;
 use crate::frames::notes::{CoreNote, top_note};
 use crate::frames::scene::Scene;
 use crate::model::{CoreState, CoreView};
+use crate::screen::Colours;
 use crate::words::phase_word;
 
 /// The word a core's state is shown as.
@@ -47,6 +48,32 @@ fn shown_offset(scene: &Scene<'_>, core: &CoreView) -> Option<i64> {
     }
 }
 
+/// The glyphs a gauge draws applied depth, failure point and group failure with. The help legend and examples
+/// use the same set.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Marks {
+    pub(crate) applied: char,
+    pub(crate) failure: char,
+    pub(crate) group: char,
+}
+
+/// The marks of a colour profile: the console's half-height bars, or the rich profile's three-quarter-height bar
+/// for the applied depth and the failure point (told apart by colour) and a dashed red line for group failures.
+pub(crate) const fn marks(colours: Colours) -> Marks {
+    match colours {
+        Colours::Rich => Marks {
+            applied: '▆',
+            failure: '▆',
+            group: '┆',
+        },
+        Colours::Full | Colours::Console | Colours::None => Marks {
+            applied: '▄',
+            failure: '▄',
+            group: '▀',
+        },
+    }
+}
+
 /// The gauge of a core in `cells` cells, 2 counts to a cell at 25 cells and 1 at 50; `applied` is the offset it
 /// draws as applied.
 pub(super) fn gauge(
@@ -71,6 +98,7 @@ pub(super) fn gauge(
     } else {
         (1, 0)
     };
+    let marks = marks(scene.colours);
     let total = i64::try_from(cells).unwrap_or(i64::MAX);
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut run = String::new();
@@ -80,12 +108,12 @@ pub(super) fn gauge(
         let (lo, hi) = (i * 50 / total + 1, (i + 1) * 50 / total);
         let hits = |point: i64| (lo..=hi).contains(&-point);
         let (glyph, paint) = if core.fail.is_some_and(|fail| hits(fail.get())) {
-            ('▬', Some(Paint::Bad))
+            (marks.failure, Some(Paint::Bad))
         } else if core.group_fails.iter().any(|mark| hits(mark.get())) {
-            ('▀', Some(Paint::Bad))
+            (marks.group, Some(Paint::Bad))
         } else if applied.is_some_and(|applied| -applied >= lo) {
             (
-                '▄',
+                marks.applied,
                 Some(if core.judged {
                     Paint::White
                 } else {
@@ -235,6 +263,7 @@ fn role(scene: &Scene<'_>, id: CcdId) -> (String, String) {
 pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
     let (r, col, id) = (ccd.rect, ccd.columns, ccd.id);
     let width = usize::from(r.width);
+    let colours = scene.colours;
     let paint = |p: Paint, text: String| Line::from(scene.paint(p, text));
     let (role, short) = ccd_role(scene, id);
     let name = format!("CCD {}", id.get());
@@ -243,11 +272,11 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
         let head = Line::from(vec![
             scene.paint(Paint::White, name),
             Span::raw(" "),
-            scene.paint(Paint::Grey, cut_words(&short, room)),
+            scene.paint(Paint::Grey, cut_words(&short, room, colours)),
         ]);
-        put(buf, r, 0, 0, &head);
+        put(buf, r, 0, 0, &head, colours);
     } else {
-        put(buf, r, 0, 0, &paint(Paint::White, name));
+        put(buf, r, 0, 0, &paint(Paint::White, name), colours);
     }
     put(
         buf,
@@ -255,6 +284,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
         at(col.gauge.saturating_sub(1)),
         0,
         &paint(Paint::Grey, "0".into()),
+        colours,
     );
     if col.cells == 50 {
         for n in (10..=50).step_by(10) {
@@ -264,6 +294,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
                 at((col.gauge + n).saturating_sub(3)),
                 0,
                 &paint(Paint::Grey, format!("-{n}")),
+                colours,
             );
         }
     } else {
@@ -273,6 +304,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             at(col.gauge + 2),
             0,
             &paint(Paint::Track, "2 counts/cell".into()),
+            colours,
         );
         put(
             buf,
@@ -280,6 +312,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             at((col.gauge + col.cells).saturating_sub(3)),
             0,
             &paint(Paint::Grey, "-50".into()),
+            colours,
         );
     }
     let cores: Vec<&CoreView> = scene.s.cores.iter().filter(|core| core.ccd == id).collect();
@@ -290,9 +323,17 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             at(col.failure),
             0,
             &paint(Paint::Grey, "fail".into()),
+            colours,
         );
         if cores.iter().any(|core| core.returns_to.is_some()) {
-            put(buf, r, at(col.note), 0, &paint(Paint::Grey, "back".into()));
+            put(
+                buf,
+                r,
+                at(col.note),
+                0,
+                &paint(Paint::Grey, "back".into()),
+                colours,
+            );
         }
     } else {
         put(
@@ -301,6 +342,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             at(col.failure.saturating_sub(1)),
             0,
             &paint(Paint::Grey, "fail pt".into()),
+            colours,
         );
         let both = fit_clauses(
             width.saturating_sub(col.note),
@@ -308,6 +350,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
                 "",
                 vec![Form::new(role, 1), Form::new(short, 0)],
             )],
+            colours,
         );
         put(
             buf,
@@ -315,6 +358,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             at(col.note),
             0,
             &tint(both, scene.style(Paint::Grey)),
+            colours,
         );
     }
     let rows = usize::from(r.height.saturating_sub(1));
@@ -322,9 +366,9 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
     if cores.len() > shown && shown > 0 {
         shown -= 1;
         let more = paint(Paint::Grey, format!("+{} more", cores.len() - shown));
-        put(buf, r, 0, r.height - 1, &more);
+        put(buf, r, 0, r.height - 1, &more, colours);
     }
-    let top = scene.s.r7_top();
+    let top = (col.note < width).then(|| scene.s.r7_top());
     for (i, core) in cores.iter().take(shown).enumerate() {
         let y = at(i + 1);
         let applied = shown_offset(scene, core);
@@ -334,7 +378,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             Paint::Text
         };
         if core.loaded && scene.trial_runs() {
-            put(buf, r, 0, y, &paint(Paint::Running, "►".into()));
+            put(buf, r, 0, y, &paint(Paint::Running, "►".into()), colours);
         }
         put(
             buf,
@@ -342,6 +386,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             at(col.id),
             y,
             &paint(own, format!("{:02}", core.id.get())),
+            colours,
         );
         put(
             buf,
@@ -352,6 +397,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
                 own,
                 applied.map_or_else(|| "  ?".to_owned(), |offset| format!("{offset:3}")),
             ),
+            colours,
         );
         let state = match core.state {
             CoreState::Parked | CoreState::Waiting => Paint::Grey,
@@ -370,6 +416,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             at(col.state),
             y,
             &paint(state, state_word(core.state).into()),
+            colours,
         );
         put_cells(
             buf,
@@ -377,6 +424,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
             at(col.gauge),
             y,
             &gauge(scene, core, applied, col.cells),
+            colours,
         );
         if let Some(fail) = core.fail {
             let fail_paint = if core.judged {
@@ -389,14 +437,17 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
                 r,
                 at(col.failure),
                 y,
-                &paint(fail_paint, format!("{:5}", fail.get())),
+                &paint(fail_paint, format!("{:>1$}", fail.get(), col.failure_width)),
+                colours,
             );
         }
-        let room = width.saturating_sub(col.note);
-        let mut note = note_line(scene, core, room);
-        if let Some(&by_offset) = top.get(&core.id) {
-            note = top_note(&note, by_offset, room, scene.colours);
+        if let Some(top) = &top {
+            let room = width - col.note;
+            let mut note = note_line(scene, core, room);
+            if let Some(&by_offset) = top.get(&core.id) {
+                note = top_note(&note, by_offset, room, colours);
+            }
+            put(buf, r, at(col.note), y, &note, colours);
         }
-        put(buf, r, at(col.note), y, &note);
     }
 }

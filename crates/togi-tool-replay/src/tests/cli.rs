@@ -3,7 +3,7 @@ use clap::error::ErrorKind;
 use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use test_case::test_case;
-use togi_watch::screen::View;
+use togi_watch::screen::{Colours, View};
 use togi_watchtest::Scenario;
 
 use super::plant::{plant, recording};
@@ -62,6 +62,7 @@ fn the_state_directory_is_required_and_nothing_else_may_follow() {
 #[test_case(&["--width", "80"]; "width")]
 #[test_case(&["--height", "24"]; "height")]
 #[test_case(&["--color"]; "color")]
+#[test_case(&["--rich"]; "rich")]
 #[test_case(&["--view", "log"]; "view")]
 fn the_frame_options_need_a_frame_to_apply_to(option: &[&str]) {
     assert_eq!(
@@ -79,6 +80,29 @@ fn from_and_at_conflict() {
         parse(&["--from", "2", "--at", "3"]).unwrap_err().kind(),
         ErrorKind::ArgumentConflict
     );
+}
+
+#[test]
+fn console_and_rich_frame_profiles_are_mutually_exclusive() {
+    assert_eq!(
+        parse(&["--at", "2", "--color", "--rich"])
+            .unwrap_err()
+            .kind(),
+        ErrorKind::ArgumentConflict
+    );
+}
+
+#[test]
+fn rich_prints_unicode_and_truecolour_from_the_recording() {
+    let events = Scenario::Checking.events().unwrap();
+    let at = events.last().unwrap().seq.get().to_string();
+    let bytes = recording(Scenario::Checking);
+    let cli = parse(&["--at", &at, "--rich", "--after", "40s"]).unwrap();
+    let mut out = Vec::new();
+    assert!(run(&cli, &bytes, &mut out).is_empty());
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains('▆'), "{text}");
+    assert!(text.contains("\x1b[0;38;2;255;107;107m"), "{text}");
 }
 
 #[test_case(&["--width", "0"]; "zero width")]
@@ -150,7 +174,7 @@ fn at_prints_one_frame_of_the_recording_in_the_supplied_time_zone() {
             view: View::Log,
             width: 100,
             height: 30,
-            colour: false,
+            colours: Colours::None,
             after: SignedDuration::from_secs(40),
         },
         &zone,
@@ -172,7 +196,7 @@ fn every_view_can_be_printed(name: &str, view: View) {
         view,
         width: 240,
         height: 67,
-        colour: false,
+        colours: Colours::None,
         after: SignedDuration::ZERO,
     };
     let want = draw(&events, prefix(&events, 30), &frame, &TimeZone::UTC).unwrap();
@@ -214,7 +238,7 @@ fn at_draws_a_recording_with_an_unknown_kind_and_fields_as_the_known_events_alon
         view: View::Main,
         width: 240,
         height: 67,
-        colour: false,
+        colours: Colours::None,
         after: SignedDuration::ZERO,
     };
     let want = draw(&known, prefix(&known, at), &frame, &TimeZone::UTC).unwrap();

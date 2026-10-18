@@ -13,14 +13,14 @@ expression: body
 │ 5/5 pass → part 2: 08   none named → hunt ends   core named → hunt ends
 │
 │ CCD 0 one loaded 0  2 counts/cell       -50 fail            CCD 1 idle       0  2 counts/cell       -50 fail  back
-│ ► 00 -23 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▬··              -24             08  -5 PARKED   ▄▄▄▬                         -7   -6
-│   01 -15 AT LIMIT ▄▄▄▄▄▄▄▬·                   -16             09 -33 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·          -34
-│   02 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▬               -25             10 -13 AT LIMIT ▄▄▄▄▄▄▬··                   -14
-│   03 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▬               -25             11  -7 AT LIMIT ▄▄▄▬·                        -8
-│   04 -13 AT LIMIT ▄▄▄▄▄▄▬·                    -14             12 -14 AT LIMIT ▄▄▄▄▄▄▄▬·                   -15
-│   05  -8 AT LIMIT ▄▄▄▄▬                        -9             13 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·         -36
-│   06 -38 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬        -39             14 -12 AT LIMIT ▄▄▄▄▄▄▬·                    -13
-│   07 -29 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬             -30             15 -13 AT LIMIT ▄▄▄▄▄▄▬                     -14
+│ ► 00 -23 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄··              -24             08  -5 PARKED   ▄▄▄▄                         -7   -6
+│   01 -15 AT LIMIT ▄▄▄▄▄▄▄▄·                   -16             09 -33 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·          -34
+│   02 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄               -25             10 -13 AT LIMIT ▄▄▄▄▄▄▄··                   -14
+│   03 -24 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄               -25             11  -7 AT LIMIT ▄▄▄▄·                        -8
+│   04 -13 AT LIMIT ▄▄▄▄▄▄▄·                    -14             12 -14 AT LIMIT ▄▄▄▄▄▄▄▄·                   -15
+│   05  -8 AT LIMIT ▄▄▄▄▄                        -9             13 -35 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·         -36
+│   06 -38 MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄        -39             14 -12 AT LIMIT ▄▄▄▄▄▄▄·                    -13
+│   07 -29 AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄             -30             15 -13 AT LIMIT ▄▄▄▄▄▄▄                     -14
 │
 │ BIOS PROFILE ─────────────────── UNCONFIRMED since #11459   WHAT HAPPENED ─────────────────────────────── l: last 400
 │ slot      0    1    2    3    4    5    6    7

@@ -17,15 +17,15 @@ expression: body
 │  if none is named:    next trial: hunt 1 group 43: R6 idle + bursts on 00-15 · 11 at failing offsets, core 03 at -8, 00-02 04-10 12-15 parked at 0
 │  if a core is named:  its failure point is recorded → ... → it backs off; next trial: rerun R6 idle + bursts on 00-15 · 2m · a core at 0: rerun at offset 0
 │
-│  CCD 0               0  2 counts/cell       -50 fail pt  all under load          CCD 1               0  2 counts/cell       -50 fail pt  all under load
-│  ► 00    0  PARKED    ····▀·                             returns to -10          ► 08    0  PARKED    ····▀·                             returns to -10
-│  ► 01    0  PARKED    ····▀·                             returns to -10          ► 09    0  PARKED    ····▀·                             returns to -10
-│  ► 02    0  PARKED    ····▀·                             returns to -10          ► 10    0  PARKED    ····▀·                             returns to -10
-│  ► 03   -9  PROBE     ▄▄▄▄▀·                             group failed at -10     ► 11  -10  MEMBER    ▄▄▄▄▀·
-│  ► 04    0  PARKED    ····▀·                             returns to -10          ► 12    0  PARKED    ····▀·                             returns to -10
-│  ► 05    0  PARKED    ····▀·                             returns to -10          ► 13    0  PARKED    ····▀·                             returns to -10
-│  ► 06    0  PARKED    ····▀·                             returns to -10          ► 14    0  PARKED    ····▀·                             returns to -10
-│  ► 07    0  PARKED    ····▀·                             returns to -10          ► 15    0  PARKED    ····▀·                             returns to -10
+│  CCD 0 all loaded   0       -10       -20       -30       -40       -50 fail     CCD 1 all loaded   0       -10       -20       -30       -40       -50 fail
+│  ► 00    0  PARKED   ·········▀·                                                 ► 08    0  PARKED   ·········▀·
+│  ► 01    0  PARKED   ·········▀·                                                 ► 09    0  PARKED   ·········▀·
+│  ► 02    0  PARKED   ·········▀·                                                 ► 10    0  PARKED   ·········▀·
+│  ► 03   -9  PROBE    ▄▄▄▄▄▄▄▄▄▀·                                                 ► 11  -10  MEMBER   ▄▄▄▄▄▄▄▄▄▀·
+│  ► 04    0  PARKED   ·········▀·                                                 ► 12    0  PARKED   ·········▀·
+│  ► 05    0  PARKED   ·········▀·                                                 ► 13    0  PARKED   ·········▀·
+│  ► 06    0  PARKED   ·········▀·                                                 ► 14    0  PARKED   ·········▀·
+│  ► 07    0  PARKED   ·········▀·                                                 ► 15    0  PARKED   ·········▀·
 │
 │  BIOS PROFILE ──────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  none confirmed yet: phase 1 has not passed a full cycle

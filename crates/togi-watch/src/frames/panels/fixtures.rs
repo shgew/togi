@@ -21,8 +21,8 @@ use crate::screen::Colours;
 use crate::tests::kit::{core, infos, off, offsets, seq, set};
 
 /// The rows as the screen shows them, without their style.
-pub(super) fn texts(lines: &[Line<'_>]) -> Vec<String> {
-    lines.iter().map(plain).collect()
+pub(super) fn texts(lines: &[Line<'_>], colours: Colours) -> Vec<String> {
+    lines.iter().map(|line| plain(line, colours)).collect()
 }
 
 pub(super) fn at(second: i64) -> Timestamp {

@@ -219,6 +219,7 @@ mod tests {
                     "cd".into(),
                     Paint::Grey.span(sc.colours, "e"),
                 ]),
+                sc.colours,
             );
             Drawn {
                 scroll: 0,

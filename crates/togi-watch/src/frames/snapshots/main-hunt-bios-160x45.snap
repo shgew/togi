@@ -17,15 +17,15 @@ expression: body
 │  if none is named:    hunt 5 ends: 06 named → core 06 -38 → -37; next trial: rerun R2 heavy vector, core 00 at -23 · 2m
 │  if a core is named:  its failure point is recorded → the hunt ends → it backs off; next trial: rerun R2 heavy vector, core 00 at -22 · 2m
 │
-│  CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  not under load
-│  ► 00  -23  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▬··               -24                             08   -5  PARKED    ▄▄▄▬                          -7   returns to -6
-│    01  -15  AT LIMIT  ▄▄▄▄▄▄▄▬·                    -16                             09  -33  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·           -34
-│    02  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▬                -25                             10  -13  AT LIMIT  ▄▄▄▄▄▄▬··                    -14
-│    03  -24  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▬                -25                             11   -7  AT LIMIT  ▄▄▄▬·                         -8
-│    04  -13  AT LIMIT  ▄▄▄▄▄▄▬·                     -14                             12  -14  AT LIMIT  ▄▄▄▄▄▄▄▬·                    -15
-│    05   -8  AT LIMIT  ▄▄▄▄▬                         -9                             13  -35  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬·          -36
-│    06  -38  MEMBER    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬         -39                             14  -12  AT LIMIT  ▄▄▄▄▄▄▬·                     -13
-│    07  -29  AT LIMIT  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▬              -30                             15  -13  AT LIMIT  ▄▄▄▄▄▄▬                      -14
+│  CCD 0 one loaded   0       -10       -20       -30       -40       -50 fail     CCD 1 idle         0       -10       -20       -30       -40       -50 fail
+│  ► 00  -23  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄···                         -24       08   -5  PARKED   ▄▄▄▄▄·▄                                              -7
+│    01  -15  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·                                   -16       09  -33  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·                 -34
+│    02  -24  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·                          -25       10  -13  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄····                                  -14
+│    03  -24  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                           -25       11   -7  AT LIMIT ▄▄▄▄▄▄▄▄··                                           -8
+│    04  -13  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄··                                    -14       12  -14  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄··                                   -15
+│    05   -8  AT LIMIT ▄▄▄▄▄▄▄▄▄·                                           -9       13  -35  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄··              -36
+│    06  -38  MEMBER   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄             -39       14  -12  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄···                                    -13
+│    07  -29  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄                      -30       15  -13  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄                                      -14
 │
 │  BIOS PROFILE ─────────────────────── UNCONFIRMED since #11459 · cores 06 08     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  slot      0    1    2    3    4    5    6    7

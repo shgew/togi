@@ -33,6 +33,7 @@ pub(super) fn turn_lines(
             &cell(scene, Paint::Grey, "TURNS"),
             &cell(scene, Paint::Grey, "one core per turn, in this order"),
             scene.style(Paint::Track),
+            scene.colours,
         ),
         Line::default(),
     ];
@@ -47,6 +48,7 @@ pub(super) fn turn_lines(
                 cell(scene, Paint::Grey, "workload"),
                 cell(scene, Paint::Grey, "so far"),
             ],
+            scene.colours,
         ));
     }
     for turn in scene.s.turns {
@@ -81,7 +83,7 @@ pub(super) fn turn_lines(
                     n.light, n.needed, n.heavy, n.needed
                 );
             } else {
-                let note = plain(&note_line(scene, core, t.turns[5].w));
+                let note = plain(&note_line(scene, core, t.turns[5].w), scene.colours);
                 if !note.is_empty() {
                     so_far = note;
                 }
@@ -97,6 +99,7 @@ pub(super) fn turn_lines(
                 cell(scene, Paint::Grey, turn.workload.workload().label),
                 cell(scene, faint, so_far),
             ],
+            scene.colours,
         ));
     }
     let found: CoreSet = scene
@@ -116,6 +119,7 @@ pub(super) fn turn_lines(
                 scene.paint(Paint::Grey, "  · solo limits found"),
             ]),
             width,
+            scene.colours,
         ));
     }
     #[cfg(test)]
@@ -144,6 +148,7 @@ pub(super) fn bios_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> V
                 &cell(scene, Paint::Grey, "BIOS PROFILE"),
                 &Line::default(),
                 track,
+                scene.colours,
             ),
             cut_styled(
                 &cell(
@@ -152,6 +157,7 @@ pub(super) fn bios_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> V
                     "none confirmed yet: phase 1 has not passed a full cycle",
                 ),
                 width,
+                scene.colours,
             ),
         ];
     };
@@ -182,6 +188,7 @@ pub(super) fn bios_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> V
         &cell(scene, Paint::Grey, "BIOS PROFILE"),
         &right,
         track,
+        scene.colours,
     )];
     let mut cells: BTreeMap<CcdId, Vec<Span<'static>>> = BTreeMap::new();
     let mut slots: BTreeMap<CcdId, Vec<u8>> = BTreeMap::new();
@@ -226,6 +233,7 @@ pub(super) fn bios_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> V
                 scene.paint(Paint::Grey, note),
             ]),
             width,
+            scene.colours,
         ));
     }
     #[cfg(test)]
@@ -246,6 +254,7 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> (Vec<Line<'static
             &cell(scene, Paint::Grey, format!("PHASE 2 · ROUND {round}")),
             &Line::default(),
             scene.style(Paint::Track),
+            scene.colours,
         ),
         Line::default(),
         cut_styled(
@@ -258,6 +267,7 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> (Vec<Line<'static
                 ),
             ),
             width,
+            scene.colours,
         ),
     ];
     let mut shapes: Vec<(Shape, CoreSet)> = Vec::new();
@@ -292,6 +302,7 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> (Vec<Line<'static
                 scene.paint(Paint::Grey, note),
             ]),
             width,
+            scene.colours,
         ));
     }
     let head = out.len();
@@ -314,6 +325,7 @@ pub(super) fn phase2_lines(scene: &Scene<'_>, width: usize) -> (Vec<Line<'static
                 scene.paint(Paint::Grey, check.workload.workload().label),
             ]),
             width,
+            scene.colours,
         ));
     }
     #[cfg(test)]
@@ -337,6 +349,7 @@ mod tests {
     use super::super::fixtures::{bios, core_view, phases, scene, texts, topology};
     use super::{bios_lines, phase2_lines, turn_lines};
     use crate::model::{Confirm, CoreState, Model};
+    use crate::screen::Colours;
     use crate::tests::kit::{core, nz, off, seq, set};
 
     fn confirm_turn(light: u32, heavy: u32) -> Vec<String> {
@@ -368,12 +381,10 @@ mod tests {
         let scene = scene(&s, &zone);
         let mut all = Vec::new();
         for class in [SizeClass::Wide, SizeClass::Medium] {
-            all.extend(texts(&turn_lines(
-                &scene,
-                &Tables::new(class, 80),
-                80,
-                class,
-            )));
+            all.extend(texts(
+                &turn_lines(&scene, &Tables::new(class, 80), 80, class),
+                Colours::None,
+            ));
         }
         all
     }
@@ -425,7 +436,10 @@ mod tests {
         s.turns = &turns;
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
-        let rows = texts(&turn_lines(&scene, &t, 75, SizeClass::Medium));
+        let rows = texts(
+            &turn_lines(&scene, &t, 75, SizeClass::Medium),
+            Colours::None,
+        );
         let pair = rows
             .iter()
             .find(|row| row.contains("search: light, then heavy"))
@@ -446,7 +460,7 @@ mod tests {
     fn a_medium_turn_description_fits_its_column_whole(words: &str) {
         let column = Tables::new(SizeClass::Medium, 75).turns[2].w;
         assert!(
-            super::super::super::fit::display_width(words) <= column,
+            super::super::super::fit::display_width(words, Colours::None) <= column,
             "{words} in {column}"
         );
     }
@@ -491,12 +505,15 @@ mod tests {
             s.cores = cores;
             s.turns = &turns;
             let scene = scene(&s, &zone);
-            texts(&turn_lines(
-                &scene,
-                &Tables::new(SizeClass::Wide, 80),
-                80,
-                SizeClass::Wide,
-            ))
+            texts(
+                &turn_lines(
+                    &scene,
+                    &Tables::new(SizeClass::Wide, 80),
+                    80,
+                    SizeClass::Wide,
+                ),
+                Colours::None,
+            )
         };
         let before = rows(std::slice::from_ref(&running));
         assert!(
@@ -527,7 +544,7 @@ mod tests {
         s.phases = phases;
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
-        texts(&bios_lines(&scene, 80, class))
+        texts(&bios_lines(&scene, 80, class), Colours::None)
     }
 
     #[test]
@@ -621,7 +638,7 @@ mod tests {
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
         let (rows, head) = phase2_lines(&scene, 100);
-        let rows = texts(&rows);
+        let rows = texts(&rows, Colours::None);
         assert!(rows[0].starts_with("PHASE 2 · ROUND 3"));
         assert_eq!(rows[2], "2 rounds left if none fails, then one full cycle");
         assert_eq!(

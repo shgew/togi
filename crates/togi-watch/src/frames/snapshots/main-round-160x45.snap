@@ -17,15 +17,15 @@ expression: body
 │  if a core is named:  its failure point is recorded → ... → it backs off; next trial: rerun R1 light, core 00 at -10 · 2m
 │  if inconclusive:     the same trial runs again
 │
-│  CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  waiting at 0
-│  ► 00  -11  HAS ROOM  ▄▄▄▄▄▄                                                       08    0  HAS ROOM  ······
-│    01    0  HAS ROOM  ······                                                       09    0  HAS ROOM  ······
-│    02    0  HAS ROOM  ······                                                       10    0  HAS ROOM  ······
-│    03    0  HAS ROOM  ······                                                       11    0  AT LIMIT  ····░░                             C1 · solo -11
-│    04    0  HAS ROOM  ······                                                       12    0  HAS ROOM  ······
-│    05    0  HAS ROOM  ······                                                       13    0  HAS ROOM  ······
-│    06    0  HAS ROOM  ······                                                       14    0  HAS ROOM  ······
-│    07    0  HAS ROOM  ······                                                       15    0  HAS ROOM  ······
+│  CCD 0 one loaded   0       -10       -20       -30       -40       -50 fail     CCD 1 waiting      0       -10       -20       -30       -40       -50 fail
+│  ► 00  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄                                                   08    0  HAS ROOM ···········
+│    01    0  HAS ROOM ···········                                                   09    0  HAS ROOM ···········
+│    02    0  HAS ROOM ···········                                                   10    0  HAS ROOM ···········
+│    03    0  HAS ROOM ···········                                                   11    0  AT LIMIT ·········░░
+│    04    0  HAS ROOM ···········                                                   12    0  HAS ROOM ···········
+│    05    0  HAS ROOM ···········                                                   13    0  HAS ROOM ···········
+│    06    0  HAS ROOM ···········                                                   14    0  HAS ROOM ···········
+│    07    0  HAS ROOM ···········                                                   15    0  HAS ROOM ···········
 │
 │  BIOS PROFILE ────────────────────────── confirmed by the cycle ending #3364     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  slot      0    1    2    3    4    5    6    7

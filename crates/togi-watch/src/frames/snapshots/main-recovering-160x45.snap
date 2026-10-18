@@ -14,15 +14,15 @@ expression: body
 │  detected 01:40:30 after a watchdog reset
 │  next trial: R1 light, core 01 alone at -10
 │
-│  CCD 0               0  2 counts/cell       -50 fail pt  waiting at 0            CCD 1               0  2 counts/cell       -50 fail pt  not under load
-│    00    0  SEARCH    ·····                              p -10 · next -15          08  -10  SEARCH    ▄▄▄▄▄                              p -5 · next -10
-│    01    0  SEARCH    ···                                p -5 · next -10           09    0  SEARCH    ···                                p -5 · next -10
-│    02    0  SEARCH    ···                                p -5 · next -10           10    0  SEARCH    ···                                p -5 · next -10
-│    03    0  SEARCH    ···                                p -5 · next -10           11    0  SEARCH    ···                                p -5 · next -10
-│    04    0  SEARCH    ···                                p -5 · next -10           12    0  SEARCH    ···                                p -5 · next -10
-│    05    0  SEARCH    ···                                p -5 · next -10           13    0  SEARCH    ···                                p -5 · next -10
-│    06    0  SEARCH    ···                                p -5 · next -10           14    0  SEARCH    ···                                p -5 · next -10
-│    07    0  SEARCH    ···                                p -5 · next -10           15    0  SEARCH    ···                                p -5 · next -10
+│  CCD 0 waiting      0       -10       -20       -30       -40       -50 fail     CCD 1 idle         0       -10       -20       -30       -40       -50 fail
+│    00    0  SEARCH   ··········                                                    08  -10  SEARCH   ▄▄▄▄▄▄▄▄▄▄
+│    01    0  SEARCH   ·····                                                         09    0  SEARCH   ·····
+│    02    0  SEARCH   ·····                                                         10    0  SEARCH   ·····
+│    03    0  SEARCH   ·····                                                         11    0  SEARCH   ·····
+│    04    0  SEARCH   ·····                                                         12    0  SEARCH   ·····
+│    05    0  SEARCH   ·····                                                         13    0  SEARCH   ·····
+│    06    0  SEARCH   ·····                                                         14    0  SEARCH   ·····
+│    07    0  SEARCH   ·····                                                         15    0  SEARCH   ·····
 │
 │  BIOS PROFILE ──────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  none confirmed yet: phase 1 has not passed a full cycle

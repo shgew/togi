@@ -34,7 +34,7 @@ pub(super) fn context(scene: &Scene<'_>, measure: &Measure) -> Vec<Line<'static>
     out.push(Line::default());
     if let Some(mut panel) = panel {
         if panel.len() > room && class == SizeClass::Compact {
-            panel.retain(|row| !is_blank(row));
+            panel.retain(|row| !is_blank(row, scene.colours));
         }
         out.extend(bounded_rows(panel, room, scene.colours));
     } else {
@@ -192,7 +192,7 @@ mod tests {
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
         let m = measured(&scene, 160, 45);
-        let rows = texts(&context(&scene, &m));
+        let rows = texts(&context(&scene, &m), Colours::None);
         assert!(rows[0].starts_with("TURNS"), "{rows:?}");
         assert!(
             rows.iter()
@@ -226,12 +226,12 @@ mod tests {
         let scene = scene(&s, &zone);
         let mut m = measured(&scene, 80, 24);
         m.context.height = 30;
-        let all = texts(&context(&scene, &m));
+        let all = texts(&context(&scene, &m), Colours::None);
         assert!(all[0].starts_with("BIOS PROFILE"));
         assert_eq!(all[5], "");
         assert!(all[6].starts_with("HUNT 1"), "{all:?}");
         m.context.height = 9;
-        let tight = texts(&context(&scene, &m));
+        let tight = texts(&context(&scene, &m), Colours::None);
         assert!(tight.len() <= 9, "{tight:?}");
         assert!(tight[6..].iter().all(|row| !row.is_empty()), "{tight:?}");
         assert!(
@@ -279,7 +279,7 @@ mod tests {
         let scene = scene(&s, &zone);
         let mut m = measured(&scene, 160, 45);
         m.context.height = height;
-        texts(&activity_under(&scene, &m, r7))
+        texts(&activity_under(&scene, &m, r7), Colours::None)
     }
 
     #[test]
@@ -322,7 +322,7 @@ mod tests {
         let scene = scene(&s, &zone);
         let mut m = measured(&scene, 80, 24);
         m.context.height = 5;
-        let rows = texts(&activity_under(&scene, &m, &r7(2)));
+        let rows = texts(&activity_under(&scene, &m, &r7(2)), Colours::None);
         assert!(rows[0].starts_with("CYCLE 2"), "{rows:?}");
         assert_eq!(rows[1], "+18 more", "{rows:?}");
     }
@@ -352,7 +352,7 @@ mod tests {
         s.phases = Some(&phases);
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
-        texts(&round(&scene, 100, height, r7))
+        texts(&round(&scene, 100, height, r7), Colours::None)
     }
 
     #[test]
@@ -435,7 +435,7 @@ mod tests {
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
         let m = measured(&scene, 160, 45);
-        let rows = texts(&activity_under(&scene, &m, &[]));
+        let rows = texts(&activity_under(&scene, &m, &[]), Colours::None);
         assert!(rows[0].starts_with("PHASE 2 · ROUND 2"), "{rows:?}");
     }
 }

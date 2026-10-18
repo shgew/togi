@@ -1,16 +1,20 @@
-//! Text fitting: every dashboard line is measured as the console will show it.
+//! Text fitting: every dashboard line is measured as the screen will show it.
 //!
 //! Text from the journal is untrusted, so everything passes through [`inert`]
 //! first: control characters become visible escapes
-//! ([`togi_render::escape_text`]), then glyphs the console font cannot draw
-//! become ASCII or a `\u` escape ([`console_text`]). Widths are display cells
-//! of that escaped text, so a line never overflows because of what it
-//! escapes to.
+//! ([`togi_render::escape_text`]). On the console profiles glyphs the console
+//! font cannot draw then become ASCII or a `\u` escape ([`console_text`]);
+//! [`Colours::Rich`] draws Unicode as it is, except that characters joining or
+//! restyling a neighbour into one glyph (variation selectors, zero-width
+//! joiners, skin-tone modifiers, regional indicators, emoji tags) become a `\u`
+//! escape too, since terminals disagree on the width of such sequences. Widths
+//! are display cells of that escaped text (double-width characters take two),
+//! so a line never overflows because of what it escapes to.
 //!
 //! A line that does not fit never cuts inside a value or a word: it first
 //! shortens or leaves out whole clauses ([`fit_clauses`]), lowest priority
 //! first, and text that must still be cut keeps the words that fit and ends
-//! with [`CUT_MARKER`] ([`cut_words`]).
+//! with the profile's [`cut_marker`] ([`cut_words`]).
 
 use std::borrow::Cow;
 use std::fmt::Write as _;
@@ -20,8 +24,25 @@ use ratatui::text::{Line, Span};
 use togi_render::escape_text;
 use unicode_width::UnicodeWidthChar as _;
 
-/// Ends text cut to fit; the console font has no `…`.
-pub const CUT_MARKER: &str = "...";
+use crate::screen::Colours;
+
+/// Ends text cut to fit on the console profiles; the console font has no `…`.
+const CONSOLE_CUT_MARKER: &str = "...";
+
+/// Ends text cut to fit: three ASCII dots on the console profiles, one `…` cell on [`Colours::Rich`].
+#[must_use]
+pub const fn cut_marker(colours: Colours) -> &'static str {
+    if rich(colours) {
+        "…"
+    } else {
+        CONSOLE_CUT_MARKER
+    }
+}
+
+/// Whether `colours` draws Unicode as it is instead of the console's character set.
+const fn rich(colours: Colours) -> bool {
+    matches!(colours, Colours::Rich)
+}
 
 /// Characters a cut leaves dangling at the end of the kept words.
 const DANGLING: &str = " ·→,;:";
@@ -38,7 +59,7 @@ pub fn is_console_glyph(c: char) -> bool {
 /// Replaces what the console font cannot draw: common typography by ASCII, anything else by a visible `\u`
 /// escape.
 #[must_use]
-pub fn console_text(text: &str) -> Cow<'_, str> {
+fn console_text(text: &str) -> Cow<'_, str> {
     if text.chars().all(is_console_glyph) {
         return Cow::Borrowed(text);
     }
@@ -47,7 +68,7 @@ pub fn console_text(text: &str) -> Cow<'_, str> {
         match c {
             c if is_console_glyph(c) => out.push(c),
             '×' => out.push('x'),
-            '…' => out.push_str(CUT_MARKER),
+            '…' => out.push_str(CONSOLE_CUT_MARKER),
             '–' | '—' => out.push('-'),
             '‘' | '’' => out.push('\''),
             '“' | '”' => out.push('"'),
@@ -59,10 +80,51 @@ pub fn console_text(text: &str) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
-/// `text` as the screen may show it: untrusted control characters escaped, then what the console cannot draw.
-/// Idempotent, so escaping twice changes nothing.
+/// `text` with the glyphs `colours` cannot draw replaced as [`console_text`] does; unchanged on [`Colours::Rich`].
+/// Does not escape controls; [`inert`] does, at the point of measuring.
 #[must_use]
-pub fn inert(text: &str) -> Cow<'_, str> {
+pub fn glyph_text(text: &str, colours: Colours) -> Cow<'_, str> {
+    if rich(colours) {
+        Cow::Borrowed(text)
+    } else {
+        console_text(text)
+    }
+}
+
+/// Whether `c` joins or restyles a neighbouring character into one glyph whose width terminals disagree on:
+/// variation selectors, the zero-width joiner, emoji skin-tone modifiers, regional indicators and emoji tags.
+const fn joins_graphemes(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200d}'
+            | '\u{fe00}'..='\u{fe0f}'
+            | '\u{1f1e6}'..='\u{1f1ff}'
+            | '\u{1f3fb}'..='\u{1f3ff}'
+            | '\u{e0020}'..='\u{e007f}'
+            | '\u{e0100}'..='\u{e01ef}'
+    )
+}
+
+/// `text` as the screen may show it: untrusted control characters escaped, then, on the console profiles, what the
+/// console cannot draw, and on [`Colours::Rich`] the characters that join graphemes ([`joins_graphemes`]), so
+/// each character left takes the cells its own width says. Idempotent, so escaping twice changes nothing.
+#[must_use]
+pub fn inert(text: &str, colours: Colours) -> Cow<'_, str> {
+    if rich(colours) {
+        let escaped = escape_text(text).into_cow();
+        if !escaped.chars().any(joins_graphemes) {
+            return escaped;
+        }
+        let mut out = String::with_capacity(escaped.len() + 8);
+        for c in escaped.chars() {
+            if joins_graphemes(c) {
+                let _ = write!(out, "\\u{:04x}", u32::from(c));
+            } else {
+                out.push(c);
+            }
+        }
+        return Cow::Owned(out);
+    }
     if text
         .chars()
         .all(|c| c == ' ' || c.is_ascii_graphic() || (!c.is_ascii() && is_console_glyph(c)))
@@ -82,32 +144,35 @@ fn char_width(c: char) -> usize {
 
 /// The display width of `text` once escaped for the screen.
 #[must_use]
-pub fn display_width(text: &str) -> usize {
-    inert(text).chars().map(char_width).sum()
+pub fn display_width(text: &str, colours: Colours) -> usize {
+    inert(text, colours).chars().map(char_width).sum()
 }
 
 /// The display width of `line` once escaped for the screen.
 #[must_use]
-pub fn line_width(line: &Line<'_>) -> usize {
+pub fn line_width(line: &Line<'_>, colours: Colours) -> usize {
     line.spans
         .iter()
-        .map(|span| display_width(&span.content))
+        .map(|span| display_width(&span.content, colours))
         .sum()
 }
 
 /// `line` as plain text, as the screen shows it.
 #[must_use]
-pub fn plain(line: &Line<'_>) -> String {
-    line.spans.iter().map(|span| inert(&span.content)).collect()
+pub fn plain(line: &Line<'_>, colours: Colours) -> String {
+    line.spans
+        .iter()
+        .map(|span| inert(&span.content, colours))
+        .collect()
 }
 
 type Cell = (char, Style);
 
-fn cells_of(line: &Line<'_>) -> Vec<Cell> {
+fn cells_of(line: &Line<'_>, colours: Colours) -> Vec<Cell> {
     let mut out = Vec::new();
     for span in &line.spans {
         let style = line.style.patch(span.style);
-        out.extend(inert(&span.content).chars().map(|c| (c, style)));
+        out.extend(inert(&span.content, colours).chars().map(|c| (c, style)));
     }
     out
 }
@@ -159,24 +224,25 @@ pub fn tint(line: Line<'static>, style: Style) -> Line<'static> {
 /// `line` cut by display cells to `width`, escaped for the screen. For gauges and rule dashes, which are clipped
 /// by cell; text uses [`cut_styled`].
 #[must_use]
-pub fn truncate_styled(line: &Line<'_>, width: usize) -> Line<'static> {
-    let cells = cells_of(line);
+pub fn truncate_styled(line: &Line<'_>, width: usize, colours: Colours) -> Line<'static> {
+    let cells = cells_of(line, colours);
     line_of(&cells[..prefix_len(&cells, width)])
 }
 
-/// `line` fitted to `width` display cells as the console will show it. Text that does not fit keeps the whole
-/// words that fit and ends with [`CUT_MARKER`] in the style of the last kept word, or is left out when no word
-/// fits.
+/// `line` fitted to `width` display cells as the screen will show it. Text that does not fit keeps the whole
+/// words that fit and ends with the [`cut_marker`] in the style of the last kept word, or is left out when no
+/// word fits.
 #[must_use]
-pub fn cut_styled(line: &Line<'_>, width: usize) -> Line<'static> {
-    let mut cells = cells_of(line);
+pub fn cut_styled(line: &Line<'_>, width: usize, colours: Colours) -> Line<'static> {
+    let mut cells = cells_of(line, colours);
     if width == 0 {
         return Line::default();
     }
     if cells_width(&cells) <= width {
         return line_of(&cells);
     }
-    let Some(room) = width.checked_sub(CUT_MARKER.len()) else {
+    let marker = cut_marker(colours);
+    let Some(room) = width.checked_sub(marker.chars().map(char_width).sum()) else {
         return Line::default();
     };
     let mut keep = prefix_len(&cells, room);
@@ -194,14 +260,14 @@ pub fn cut_styled(line: &Line<'_>, width: usize) -> Line<'static> {
     }
     let style = cells[keep - 1].1;
     cells.truncate(keep);
-    cells.extend(CUT_MARKER.chars().map(|c| (c, style)));
+    cells.extend(marker.chars().map(|c| (c, style)));
     line_of(&cells)
 }
 
 /// `text` fitted to `width` display cells; see [`cut_styled`].
 #[must_use]
-pub fn cut_words(text: &str, width: usize) -> String {
-    plain(&cut_styled(&Line::from(text), width))
+pub fn cut_words(text: &str, width: usize, colours: Colours) -> String {
+    plain(&cut_styled(&Line::from(text), width, colours), colours)
 }
 
 /// One way a clause reads. `rank` is how early the clause leaves this form for the next one when the line does
@@ -265,17 +331,17 @@ impl Clause {
 /// Joins `clauses` into `width` display cells, shortening or leaving out the clauses the caller ranks lowest
 /// until the line fits; once none has another form, [`cut_styled`] cuts the line.
 #[must_use]
-pub fn fit_clauses(width: usize, clauses: &[Clause]) -> Line<'static> {
+pub fn fit_clauses(width: usize, clauses: &[Clause], colours: Colours) -> Line<'static> {
     let mut at = vec![0; clauses.len()];
     loop {
         let mut line: Vec<Cell> = Vec::new();
         for (clause, &form) in clauses.iter().zip(&at) {
-            let text = cells_of(&clause.forms[form].text);
+            let text = cells_of(&clause.forms[form].text, colours);
             if text.is_empty() {
                 continue;
             }
             if !line.is_empty() {
-                line.extend(cells_of(&clause.sep));
+                line.extend(cells_of(&clause.sep, colours));
             }
             line.extend(text);
         }
@@ -289,21 +355,22 @@ pub fn fit_clauses(width: usize, clauses: &[Clause]) -> Line<'static> {
         }
         match next {
             Some(next) if cells_width(&line) > width => at[next] += 1,
-            _ => return cut_styled(&line_of(&line), width),
+            _ => return cut_styled(&line_of(&line), width, colours),
         }
     }
 }
 
 /// `text` wrapped to `width` display cells in `style`; see [`wrap_line`].
 #[must_use]
-pub fn wrap_styled(text: &str, width: usize, style: Style) -> Vec<Line<'static>> {
-    wrap_line(&Line::from(Span::styled(text, style)), width)
+pub fn wrap_styled(text: &str, width: usize, style: Style, colours: Colours) -> Vec<Line<'static>> {
+    wrap_line(&Line::from(Span::styled(text, style)), width, colours)
 }
 
 /// `line` wrapped to `width` display cells, every word in its own style and every gap in the style of the space
-/// it replaces. A newline starts a paragraph; a word wider than the width is broken by cells.
+/// it replaces. A newline starts a paragraph; a word wider than the width is broken by cells, and a character
+/// wider than the width is left out.
 #[must_use]
-pub(crate) fn wrap_line(line: &Line<'_>, width: usize) -> Vec<Line<'static>> {
+pub(crate) fn wrap_line(line: &Line<'_>, width: usize, colours: Colours) -> Vec<Line<'static>> {
     if width == 0 {
         return Vec::new();
     }
@@ -319,7 +386,7 @@ pub(crate) fn wrap_line(line: &Line<'_>, width: usize) -> Vec<Line<'static>> {
                 paragraphs.push(Vec::new());
             }
             if let Some(paragraph) = paragraphs.last_mut() {
-                paragraph.extend(inert(piece).chars().map(|c| (c, style)));
+                paragraph.extend(inert(piece, colours).chars().map(|c| (c, style)));
             }
         }
     }
@@ -348,7 +415,11 @@ pub(crate) fn wrap_line(line: &Line<'_>, width: usize) -> Vec<Line<'static>> {
                     push(&mut out, &row);
                     row.clear();
                 }
-                let head = prefix_len(word, width).max(1);
+                let head = prefix_len(word, width);
+                if head == 0 {
+                    word = &word[1..];
+                    continue;
+                }
                 push(&mut out, &word[..head]);
                 word = &word[head..];
             }
@@ -376,10 +447,16 @@ pub(crate) fn wrap_line(line: &Line<'_>, width: usize) -> Vec<Line<'static>> {
 /// A rule: `title`, then a dash track in `track`, then `right` when the whole of it fits. A title that does not
 /// fit keeps its whole words.
 #[must_use]
-pub fn rule(width: usize, title: &Line<'_>, right: &Line<'_>, track: Style) -> Line<'static> {
-    let title = cut_styled(title, width);
-    let right = cells_of(right);
-    let (title_width, right_width) = (line_width(&title), cells_width(&right));
+pub fn rule(
+    width: usize,
+    title: &Line<'_>,
+    right: &Line<'_>,
+    track: Style,
+    colours: Colours,
+) -> Line<'static> {
+    let title = cut_styled(title, width, colours);
+    let right = cells_of(right, colours);
+    let (title_width, right_width) = (line_width(&title, colours), cells_width(&right));
     let mut spans = title.spans;
     if right_width == 0 || title_width + right_width + 2 > width {
         if title_width < width {
@@ -405,9 +482,13 @@ mod tests {
     use test_case::test_case;
 
     use super::{
-        CUT_MARKER, Clause, Form, console_text, cut_styled, cut_words, display_width, fit_clauses,
+        Clause, Form, console_text, cut_marker, cut_styled, cut_words, display_width, fit_clauses,
         inert, is_console_glyph, line_width, plain, rule, truncate_styled, wrap_line, wrap_styled,
     };
+    use crate::screen::Colours;
+
+    const CONSOLE: Colours = Colours::Console;
+    const RICH: Colours = Colours::Rich;
 
     #[test_case("idle until noon", 15, "idle until noon"; "fits")]
     #[test_case("so a freeze needs a manual reset", 22, "so a freeze needs a..."; "cut at a word")]
@@ -419,12 +500,41 @@ mod tests {
     #[test_case("██ ██ ██", 7, "██..."; "width counts cells, not bytes")]
     #[test_case("a … b", 5, "a..."; "marker glyph counts as its console form")]
     fn cut_words_keeps_whole_words_and_marks_the_cut(text: &str, width: usize, want: &str) {
-        let got = cut_words(text, width);
+        let got = cut_words(text, width, CONSOLE);
         assert_eq!(got, want, "cut_words({text:?}, {width})");
         assert!(
-            display_width(&got) <= width,
+            display_width(&got, CONSOLE) <= width,
             "{got:?} is wider than {width}"
         );
+    }
+
+    #[test_case("idle until noon", 15, "idle until noon"; "fits")]
+    #[test_case("heavy vector load", 13, "heavy vector…"; "the one-cell marker leaves room for another word")]
+    #[test_case("heavy vector load", 12, "heavy…"; "never inside a word")]
+    #[test_case("31 failures · 8 crashes", 14, "31 failures…"; "separator before the marker goes")]
+    #[test_case("31 failures · 8 crashes", 17, "31 failures · 8…"; "the one-cell marker keeps another word")]
+    #[test_case("a … b", 5, "a … b"; "marker glyph stays")]
+    #[test_case("5 × 2m “q” — ok", 20, "5 × 2m “q” — ok"; "typography stays")]
+    #[test_case("日本語 日本語", 13, "日本語 日本語"; "double-width words fit by cells")]
+    #[test_case("日本語 日本語", 8, "日本語…"; "double-width words are cut by cells")]
+    #[test_case("日本語 日本語", 6, ""; "a wide word with no room for the marker is omitted")]
+    #[test_case("日本語 日本語", 7, "日本語…"; "exact wide word plus marker")]
+    fn rich_cut_words_keep_unicode_whole_and_end_in_one_cell(text: &str, width: usize, want: &str) {
+        let got = cut_words(text, width, RICH);
+        assert_eq!(got, want, "cut_words({text:?}, {width})");
+        assert!(
+            display_width(&got, RICH) <= width,
+            "{got:?} is wider than {width}"
+        );
+    }
+
+    #[test]
+    fn the_cut_marker_is_one_cell_only_on_rich() {
+        assert_eq!(cut_marker(RICH), "…");
+        assert_eq!(display_width(cut_marker(RICH), RICH), 1);
+        for colours in [Colours::Full, Colours::Console, Colours::None] {
+            assert_eq!(cut_marker(colours), "...", "{colours:?}");
+        }
     }
 
     fn red() -> Style {
@@ -447,25 +557,31 @@ mod tests {
         width: usize,
         want: &str,
     ) {
-        let got = cut_styled(line, width);
-        assert_eq!(plain(&got), want);
+        let got = cut_styled(line, width, CONSOLE);
+        assert_eq!(plain(&got, CONSOLE), want);
         if want.is_empty() {
             assert!(
                 got.spans.is_empty(),
                 "no fitting word leaves no marker or styling: {got:?}"
             );
         }
-        assert!(line_width(&got) <= width, "cut exceeds {width} cells");
+        assert!(
+            line_width(&got, CONSOLE) <= width,
+            "cut exceeds {width} cells"
+        );
     }
 
     #[test]
     fn a_cut_keeps_the_style_of_the_words_it_kept() {
         let red = Style::new().fg(Color::Red);
-        let cut = cut_styled(&Line::from(Span::styled("top requester", red)), 6);
+        let cut = cut_styled(&Line::from(Span::styled("top requester", red)), 6, CONSOLE);
         assert!(cut.spans.iter().all(|span| span.style == red), "{cut:?}");
         let mixed = Line::from(vec![Span::styled("top ", red), Span::raw("requester")]);
-        let cut = cut_styled(&mixed, 6);
-        assert_eq!(plain(&cut), "top...");
+        let cut = cut_styled(&mixed, 6, CONSOLE);
+        assert_eq!(plain(&cut, CONSOLE), "top...");
+        assert_eq!(cut.spans[0].style, red);
+        let cut = cut_styled(&mixed, 5, RICH);
+        assert_eq!(plain(&cut, RICH), "top…");
         assert_eq!(cut.spans[0].style, red);
     }
 
@@ -476,16 +592,22 @@ mod tests {
     #[test_case("SOLO LIMITS", 11, "SOLO LIMITS"; "the whole title")]
     #[test_case("REQUESTERS", 8, ""; "a word wider than the room")]
     fn the_rule_keeps_whole_title_words(title: &str, width: usize, want: &str) {
-        let line = rule(width, &Line::from(title), &Line::default(), Style::new());
+        let line = rule(
+            width,
+            &Line::from(title),
+            &Line::default(),
+            Style::new(),
+            CONSOLE,
+        );
         assert_eq!(
-            plain(&line).trim_end_matches(['─', ' ']),
+            plain(&line, CONSOLE).trim_end_matches(['─', ' ']),
             want,
             "rule({width}, {title:?})"
         );
         assert!(
-            line_width(&line) <= width,
+            line_width(&line, CONSOLE) <= width,
             "rule exceeds {width} cells: {}",
-            plain(&line)
+            plain(&line, CONSOLE)
         );
     }
 
@@ -493,15 +615,31 @@ mod tests {
     fn the_rule_puts_its_right_side_at_the_end_when_all_of_it_fits() {
         let right = Line::from("12:00");
         let track = Style::new().fg(Color::Magenta);
-        let line = rule(20, &Line::from("NOW"), &right, track);
-        assert_eq!(plain(&line), format!("NOW {} 12:00", "─".repeat(10)));
-        assert_eq!(line_width(&line), 20);
-        let tight = rule(9, &Line::from("NOW"), &right, track);
+        let line = rule(20, &Line::from("NOW"), &right, track, CONSOLE);
         assert_eq!(
-            plain(&tight),
+            plain(&line, CONSOLE),
+            format!("NOW {} 12:00", "─".repeat(10))
+        );
+        assert_eq!(line_width(&line, CONSOLE), 20);
+        let tight = rule(9, &Line::from("NOW"), &right, track, CONSOLE);
+        assert_eq!(
+            plain(&tight, CONSOLE),
             format!("NOW {}", "─".repeat(5)),
             "a right side that does not fit is left out"
         );
+    }
+
+    #[test]
+    fn a_rich_rule_counts_double_width_titles_by_cells() {
+        let line = rule(
+            12,
+            &Line::from("日本語"),
+            &Line::from("終"),
+            Style::new(),
+            RICH,
+        );
+        assert_eq!(plain(&line, RICH), format!("日本語 {} 終", "─".repeat(2)));
+        assert_eq!(line_width(&line, RICH), 12);
     }
 
     fn clauses() -> Vec<Clause> {
@@ -527,15 +665,36 @@ mod tests {
     #[test_case(13, "returns to..."; "the first clause is cut")]
     fn fit_clauses_leaves_out_lower_priority_clauses_before_cutting(width: usize, want: &str) {
         assert_eq!(
-            plain(&fit_clauses(width, &clauses())),
+            plain(&fit_clauses(width, &clauses(), CONSOLE), CONSOLE),
             want,
             "width {width}"
         );
     }
 
+    #[test_case(19, "日本語 · held by C2"; "everything fits")]
+    #[test_case(18, "日本語 · C2"; "the longest form gives way")]
+    #[test_case(8, "日本語"; "the optional clause is left out by cells")]
+    #[test_case(5, ""; "a whole value that does not fit is cut")]
+    fn rich_clauses_fit_by_display_cells(width: usize, want: &str) {
+        let clauses = vec![
+            Clause::whole("", "日本語"),
+            Clause::new(
+                " · ",
+                vec![
+                    Form::new("held by C2", 2),
+                    Form::new("C2", 1),
+                    Form::empty(),
+                ],
+            ),
+        ];
+        let line = fit_clauses(width, &clauses, RICH);
+        assert_eq!(plain(&line, RICH), want, "width {width}");
+        assert!(line_width(&line, RICH) <= width);
+    }
+
     #[test]
     fn fit_clauses_without_clauses_is_empty() {
-        assert!(fit_clauses(10, &[]).spans.is_empty());
+        assert!(fit_clauses(10, &[], CONSOLE).spans.is_empty());
     }
 
     #[test_case("5 × 2m", "5 x 2m"; "a multiplication sign")]
@@ -555,9 +714,80 @@ mod tests {
         let hostile =
             "日本語\x1b[2J\x1b]52;c;data\x07\r\n\u{9b}31m\u{9d}0;title\u{9c}\u{2028}\u{2029}";
         let escaped = r"\u65e5\u672c\u8a9e\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u009d0;title\u009c\u2028\u2029";
-        assert_eq!(inert(hostile), escaped);
-        assert_eq!(inert(escaped), escaped);
-        assert!(inert(hostile).chars().all(is_console_glyph));
+        for colours in [Colours::Full, Colours::Console, Colours::None] {
+            assert_eq!(inert(hostile, colours), escaped, "{colours:?}");
+            assert_eq!(inert(escaped, colours), escaped, "{colours:?}");
+            assert!(inert(hostile, colours).chars().all(is_console_glyph));
+        }
+    }
+
+    #[test]
+    fn rich_inert_keeps_unicode_and_escapes_controls_visibly() {
+        let hostile = "日本語 ✓ × … “q”\x1b[2J\x1b]52;c;data\x07\r\n\u{9b}31m\u{202e}\u{2028}";
+        let escaped = r"日本語 ✓ × … “q”\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u202e\u2028";
+        assert_eq!(inert(hostile, RICH), escaped);
+        assert_eq!(inert(escaped, RICH), escaped, "idempotent");
+        assert!(inert(hostile, RICH).chars().all(|c| !c.is_control()));
+        assert!(matches!(
+            inert("plain ascii", RICH),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
+
+    #[test_case("⌨\u{fe0f}x", r"⌨\ufe0fx"; "emoji presentation selector")]
+    #[test_case("a\u{fe0e}b", r"a\ufe0eb"; "text presentation selector")]
+    #[test_case("a\u{e0100}b", r"a\ue0100b"; "supplementary variation selector")]
+    #[test_case("👨\u{200d}👩\u{200d}👧", r"👨\u200d👩\u200d👧"; "zero-width joiner family")]
+    #[test_case("👍\u{1f3fd}", r"👍\u1f3fd"; "skin-tone modifier")]
+    #[test_case("\u{1f1ef}\u{1f1f5}", r"\u1f1ef\u1f1f5"; "regional-indicator flag")]
+    #[test_case("🏴\u{e0067}\u{e007f}", r"🏴\ue0067\ue007f"; "emoji tag characters")]
+    #[test_case("e\u{301}", "e\u{301}"; "ordinary combining marks stay")]
+    fn rich_inert_escapes_grapheme_joining_characters(text: &str, want: &str) {
+        assert_eq!(inert(text, RICH), want);
+        assert_eq!(inert(want, RICH), want, "idempotent");
+    }
+
+    #[test]
+    fn rich_inert_borrows_text_with_nothing_to_escape() {
+        assert!(matches!(
+            inert("日本語 e\u{301} ✓", RICH),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn rich_width_of_a_variation_selector_sequence_is_what_is_drawn() {
+        // Every character left draws its own cells: the selector is visible text, so `x` is not covered.
+        assert_eq!(display_width("⌨\u{fe0f}x", RICH), 1 + 6 + 1);
+        assert_eq!(plain(&Line::from("⌨\u{fe0f}x"), RICH), r"⌨\ufe0fx");
+    }
+
+    #[test_case("ab ⌨\u{fe0f}x cd"; "variation selector")]
+    #[test_case("ab 👨\u{200d}👩\u{200d}👧 cd"; "joiner family")]
+    #[test_case("ab \u{1f1ef}\u{1f1f5} cd"; "flag")]
+    #[test_case("ab 👍\u{1f3fd} cd"; "skin tone")]
+    fn rich_cut_never_exceeds_the_room_with_joining_sequences(text: &str) {
+        for room in 0..=display_width(text, RICH) + 1 {
+            let got = cut_words(text, room, RICH);
+            assert!(
+                display_width(&got, RICH) <= room,
+                "cut_words({text:?}, {room}) = {got:?} is wider than {room}"
+            );
+        }
+    }
+
+    #[test]
+    fn rich_text_is_measured_as_the_terminal_draws_it() {
+        assert_eq!(display_width("日本", RICH), 4);
+        assert_eq!(display_width("日本", CONSOLE), 12, "console escapes it");
+        assert_eq!(display_width("a×…b", RICH), 4);
+        assert_eq!(display_width("a×…b", CONSOLE), 1 + 1 + 3 + 1);
+        assert_eq!(display_width("\x1b", RICH), 4, "controls count as escaped");
+        assert_eq!(
+            display_width("e\u{301}", RICH),
+            1,
+            "a combining mark takes no cell"
+        );
     }
 
     #[test]
@@ -574,28 +804,28 @@ mod tests {
     #[test]
     fn undrawable_glyphs_are_measured_escaped() {
         let text = format!("journal error: {}", "界".repeat(60));
-        let wrapped: String = wrap_styled(&text, 100, Style::new())
+        let wrapped: String = wrap_styled(&text, 100, Style::new(), CONSOLE)
             .iter()
-            .map(plain)
+            .map(|line| plain(line, CONSOLE))
             .collect();
         assert_eq!(
             wrapped.matches(r"\u754c").count(),
             60,
             "wrapped escapes lost text: {wrapped:?}"
         );
-        let cut = cut_words(&text, 30);
-        assert!(display_width(&cut) <= 30, "trimmed escape {cut:?}");
+        let cut = cut_words(&text, 30, CONSOLE);
+        assert!(display_width(&cut, CONSOLE) <= 30, "trimmed escape {cut:?}");
         assert!(cut.starts_with("journal error"), "trimmed escape {cut:?}");
-        assert_eq!(display_width("界"), 6);
-        assert_eq!(display_width("\x1b"), 4);
+        assert_eq!(display_width("界", CONSOLE), 6);
+        assert_eq!(display_width("\x1b", CONSOLE), 4);
     }
 
     #[test]
     fn wrap_breaks_between_words_and_inside_words_wider_than_the_width() {
         let lines = |text, width| {
-            wrap_styled(text, width, Style::new())
+            wrap_styled(text, width, Style::new(), CONSOLE)
                 .iter()
-                .map(plain)
+                .map(|line| plain(line, CONSOLE))
                 .collect::<Vec<_>>()
         };
         assert_eq!(lines("one two three", 7), ["one two", "three"]);
@@ -603,6 +833,24 @@ mod tests {
         assert_eq!(lines("a\n\nb", 5), ["a", "", "b"]);
         assert_eq!(lines("", 5), [""]);
         assert!(lines("anything", 0).is_empty());
+    }
+
+    #[test]
+    fn rich_wrap_keeps_unicode_and_breaks_by_display_cells() {
+        let lines = |text, width| {
+            wrap_styled(text, width, Style::new(), RICH)
+                .iter()
+                .map(|line| plain(line, RICH))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(lines("日本 語 ok", 5), ["日本", "語 ok"]);
+        assert_eq!(lines("日本語日本", 4), ["日本", "語日", "本"]);
+        assert_eq!(
+            lines("日a", 1),
+            ["a"],
+            "a character wider than the width is left out"
+        );
+        assert_eq!(lines("a\x1bb", 20), [r"a\x1bb"]);
     }
 
     #[test]
@@ -619,7 +867,7 @@ mod tests {
                 .map(|span| (span.content.to_string(), span.style == red))
                 .collect::<Vec<_>>()
         };
-        let rows: Vec<_> = wrap_line(&line, 6).iter().map(styled).collect();
+        let rows: Vec<_> = wrap_line(&line, 6, CONSOLE).iter().map(styled).collect();
         assert_eq!(
             rows,
             [
@@ -631,8 +879,14 @@ mod tests {
 
     #[test]
     fn truncate_cuts_by_cells_inside_words() {
-        let cut = truncate_styled(&Line::from("██ ██ ██"), 7);
-        assert_eq!(plain(&cut), "██ ██ █");
-        assert_eq!(CUT_MARKER, "...");
+        let cut = truncate_styled(&Line::from("██ ██ ██"), 7, CONSOLE);
+        assert_eq!(plain(&cut, CONSOLE), "██ ██ █");
+    }
+
+    #[test]
+    fn rich_truncate_never_splits_a_double_width_character() {
+        let cut = truncate_styled(&Line::from("日本語"), 5, RICH);
+        assert_eq!(plain(&cut, RICH), "日本");
+        assert_eq!(line_width(&cut, RICH), 4);
     }
 }

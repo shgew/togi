@@ -12,25 +12,25 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │    READING THE SCREEN ─────────────────────────────────────────────────────────────    WHAT TOGI DOES ───────────────────────────────────────────────────────────    WORDS ─────────────────────────────────────────────────────────────────
 ~    wwwwwwwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg    wwwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg    wwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
 │
-│    ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░▬                -36         SOLO LIMITS   The cores whose solo limit is found, and the core being         SEARCH           finding its solo limit with light and heavy-vector
+│    ► 04  -28  AT LIMIT ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄░░░░░░░▄                -36         SOLO LIMITS   The cores whose solo limit is found, and the core being         SEARCH           finding its solo limit with light and heavy-vector
 ~    wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwmmmmmmmf                fff         wwwwwwwwwww   ttttttttttttttttttttttttttttttttttttttttttttttttttttttt         wwwwww           tttttttttttttttttttttttttttttttttttttttttttttttttt
 │                        at its limit: it cannot go deeper                                             searched or confirmed.                                                           trials alone
 ~                        ggggggggggggggggggggggggggggggggg                                             tttttttttttttttttttttt                                                           tttttttttttt
 │                                                                                                                                                                      CONFIRM          checking its candidate solo limit with repeated light
 ~                                                                                                                                                                      wwwwwww          ttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│    ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····▬                    -32         PHASE 1       Checking toward the first confirmed profile. The stage shows                     and heavy-vector trials alone
+│    ► 00  -26  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·····▄                    -32         PHASE 1       Checking toward the first confirmed profile. The stage shows                     and heavy-vector trials alone
 ~    wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgggggf                    fff         wwwwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                     ttttttttttttttttttttttttttttt
 │                        has room: backed off after a hunt, may deepen                                 whether phase 1 is open or finished.                            FOUND            solo limit checked; waiting at 0
 ~                        ggggggggggggggggggggggggggggggggggggggggggggg                                 tttttttttttttttttttttttttttttttttttt                            wwwww            tttttttttttttttttttttttttttttttt
 │                                                                                                                                                                      WAITING          at 0, waiting for its first search turn
 ~                                                                                                                                                                      wwwwwww          ttttttttttttttttttttttttttttttttttttttt
-│      09    0  PARKED   ···············································▬    -48         HUNT          An amber detour: parked trials that find the core or            MEMBER           kept with its hunt group at its failing offset;
+│      09    0  PARKED   ···············································▄    -48         HUNT          An amber detour: parked trials that find the core or            MEMBER           kept with its hunt group at its failing offset;
 ~    wwwwwwwwwwwwwwwwwwwwgggggggggggggggggggggggggggggggggggggggggggggggf    fff         wwww          tttttttttttttttttttttttttttttttttttttttttttttttttttt            wwwwww           ttttttttttttttttttttttttttttttttttttttttttttttt
 │                        parked at 0 by a hunt; returns to -47                                         combination behind a failure. The hunt panel shows its                           another member may be probed
 ~                        ggggggggggggggggggggggggggggggggggggg                                         tttttttttttttttttttttttttttttttttttttttttttttttttttttt                           tttttttttttttttttttttttttttt
 │                                                                                                      groups and member probes.                                       offset           Curve Optimizer counts, 0 to -50; deeper is more
 ~                                                                                                      ttttttttttttttttttttttttt                                       wwwwww           tttttttttttttttttttttttttttttttttttttttttttttttt
-│    ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ ▬                    -32                                                                                                        negative
+│    ► 00  -26  PROBE    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀ ▀▀ ▄                    -32                                                                                                        negative
 ~    wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwffffff                    fff                                                                                                        tttttttt
 │                        probe: the group failed with core 00 at -30, -29, -27           PHASE 2       Deepening: its rounds and its confirmation cycle. A round       trial            one launch of one workload on its target
 ~                        ggggggggggggggggggggggggggggggggggggggggggggggggggggg           wwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttt       wwwww            tttttttttttttttttttttttttttttttttttttttt
@@ -50,42 +50,44 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 ~    www       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                      tttttttttttttttttttttttttttttttttttttttttttttttttttttttt        wwwwww           tttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │    ░░░       depth a combination blocks now                                                          step; the cycle panel lists its steps and R7 parts.                              outside the selected group
 ~    www       tttttttttttttttttttttttttttttt                                                          ttttttttttttttttttttttttttttttttttttttttttttttttttt                              tttttttttttttttttttttttttt
-│    ▬         its failure point: the shallowest offset ruled out for this core                                                                                        partial part     an R7 part with the top requesters idle
-~    w         tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                        wwwwwwwwwwww     ttttttttttttttttttttttttttttttttttttttt
-│    ▀         a group trial failed with this core at that offset                        CLEAN CYCLES  The count of clean cycles for the current profile.              top requester    an R7 workload's highest-request group on each CCD,
-~    w         tttttttttttttttttttttttttttttttttttttttttttttttttt                        wwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttt              wwwwwwwwwwwww    ttttttttttttttttttttttttttttttttttttttttttttttttttt
-│    cyan      running now                                                                                                                                                              ties included; marked top on the CCD tables
-~    wwww      ttttttttttt                                                                                                                                                              ttttttttttttttttttttttttttttttttttttttttttt
-│    amber     a hunt, and what it paused                                                R6            During idle trials this screen holds still, clock included,     self-sufficient  observed passing as top requester for this R7 workload
-~    wwwww     tttttttttttttttttttttttttt                                                ww            ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt     wwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│    red       failures, past and present                                                              so it cannot wake the cores.                                    cycle            one pass through the checking schedule
-~    www       tttttttttttttttttttttttttt                                                              tttttttttttttttttttttttttttt                                    wwwww            tttttttttttttttttttttttttttttttttttttt
-│    green     passed, done
-~    wwwww     tttttttttttt
-│    magenta   combinations                                                              NO ETA        A hunt can start at any time, so togi shows only what is
-~    wwwwwww   tttttttttttt                                                              wwwwww        tttttttttttttttttttttttttttttttttttttttttttttttttttttttt
-│    grey      idle, parked, still to come                                                             scheduled and the time left in the current trial.               KINDS OF LOAD ─────────────────────────────────────────────────────────
-~    wwww      ttttttttttttttttttttttttttt                                                             ttttttttttttttttttttttttttttttttttttttttttttttttt               wwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
-│
+│    red ▄     its failure point: the shallowest offset ruled out for this core, one                                                                                   partial part     an R7 part with the top requesters idle
+~    wwwww     ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                   wwwwwwwwwwww     ttttttttttttttttttttttttttttttttttttttt
+│              count wide at Wide and Medium                                             CLEAN CYCLES  The count of clean cycles for the current profile.              top requester    an R7 workload's highest-request group on each CCD,
+~              ttttttttttttttttttttttttttttt                                             wwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttt              wwwwwwwwwwwww    ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    ▀         a group trial failed with this core at that offset                                                                                                                       ties included; marked top on the CCD tables
+~    w         tttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                                                       ttttttttttttttttttttttttttttttttttttttttttt
+│    cyan      running now                                                               R6            During idle trials this screen holds still, clock included,     self-sufficient  observed passing as top requester for this R7 workload
+~    wwww      ttttttttttt                                                               ww            ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt     wwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    amber     a hunt, and what it paused                                                              so it cannot wake the cores.                                    cycle            one pass through the checking schedule
+~    wwwww     tttttttttttttttttttttttttt                                                              tttttttttttttttttttttttttttt                                    wwwww            tttttttttttttttttttttttttttttttttttttt
+│    red       failures, past and present
+~    www       tttttttttttttttttttttttttt
+│    green     passed, done                                                              NO ETA        A hunt can start at any time, so togi shows only what is
+~    wwwww     tttttttttttt                                                              wwwwww        tttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│    magenta   combinations                                                                            scheduled and the time left in the current trial.               KINDS OF LOAD ─────────────────────────────────────────────────────────
+~    wwwwwww   tttttttttttt                                                                            ttttttttttttttttttttttttttttttttttttttttttttttttt               wwwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│    grey      idle, parked, still to come
+~    wwww      ttttttttttttttttttttttttttt
 │                                                                                        RULES         How togi decides what to do:                                    R1 light          one light thread: compiling, browsing
 ~                                                                                        wwwww         tttttttttttttttttttttttttttt                                    wwwwwwww          ttttttttttttttttttttttttttttttttttttt
-│    THE TOP LINE ───────────────────────────────────────────────────────────────────                  https://github.com/shgew/togi/blob/main/docs/spec/tuner.md      R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
-~    wwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt      wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttt
-│                                                                                                                                                                      R3 load steps     load switching on and off: current steps
-~                                                                                                                                                                      wwwwwwwwwwwww     tttttttttttttttttttttttttttttttttttttttt
-│    failures       failure decisions, including trials skipped because they already                                                                                   R4 partial load   light load at 25-75% duty: bursty work
+│                                                                                                      https://github.com/shgew/togi/blob/main/docs/spec/tuner.md      R2 heavy vector   one AVX2/AVX-512 thread: encoding, rendering
+~                                                                                                      tttttttttttttttttttttttttttttttttttttttttttttttttttttttttt      wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttttttttt
+│    THE TOP LINE ───────────────────────────────────────────────────────────────────                                                                                  R3 load steps     load switching on and off: current steps
+~    wwwwwwwwwwww ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg                                                                                  wwwwwwwwwwwww     tttttttttttttttttttttttttttttttttttttttt
+│                                                                                                                                                                      R4 partial load   light load at 25-75% duty: bursty work
+~                                                                                                                                                                      wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
+│    failures       failure decisions, including trials skipped because they already                                                                                   R5 both threads   both threads of one core: SMT pressure
 ~    wwwwwwww       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                   wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
-│                   failed                                                                                                                                             R5 both threads   both threads of one core: SMT pressure
-~                   tttttt                                                                                                                                             wwwwwwwwwwwwwww   tttttttttttttttttttttttttttttttttttttt
-│    crashes        boots that ended without a clean shutdown                                                                                                          R6 idle + bursts  idle with short wake-ups: idle and boost
-~    wwwwwww        ttttttttttttttttttttttttttttttttttttttttt                                                                                                          wwwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttt
-│    last observed  the last failure seen in this session that changed what togi                                                                                       R7 all-core       a CCD, part of one, or every core: power and heat
-~    wwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt                                                                                       wwwwwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttt
+│                   failed                                                                                                                                             R6 idle + bursts  idle with short wake-ups: idle and boost
+~                   tttttt                                                                                                                                             wwwwwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttt
+│    crashes        boots that ended without a clean shutdown                                                                                                          R7 all-core       a CCD, part of one, or every core: power and heat
+~    wwwwwww        ttttttttttttttttttttttttttttttttttttttttt                                                                                                          wwwwwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttt
+│    last observed  the last failure seen in this session that changed what togi
+~    wwwwwwwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │                   does; skips do not count
 ~                   tttttttttttttttttttttttt
 │    q              exit dashboard; tuning itself keeps running
 ~    w              ttttttttttttttttttttttttttttttttttttttttttt
-│
 │
 │
 │

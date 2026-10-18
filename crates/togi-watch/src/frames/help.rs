@@ -11,6 +11,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use super::colours::Paint;
+use super::dash::marks;
 use super::fit::{cut_words, display_width, line_width, truncate_styled, wrap_styled};
 use super::scroll::scroll_body_with_bar;
 use crate::screen::{Colours, Quit};
@@ -20,17 +21,22 @@ struct Section<'a> {
     items: &'a [(&'static str, &'static str)],
 }
 
-const SCREEN: Section = Section {
-    title: "READING THE SCREEN",
-    items: &[
+const SCREEN_TITLE: &str = "READING THE SCREEN";
+
+/// The rows of the reading legend. Applied depth and the failure point share the profile's bar glyph, told
+/// apart by colour; group failures have their own mark.
+fn screen_items(colours: Colours) -> Vec<(&'static str, &'static str)> {
+    let rich = colours == Colours::Rich;
+    let pick = |console, rich_| if rich { rich_ } else { console };
+    vec![
         ("►", "the core carries load in this trial"),
         (
-            "▄▄▄",
+            pick("▄▄▄", "▆▆▆"),
             "offset applied now, or saved after a stop restored the hardware; white when this trial judges the core",
         ),
         ("?", "no hardware offset has been read back for this core"),
         (
-            "grey ▄▄▄",
+            pick("grey ▄▄▄", "grey ▆▆▆"),
             "the same depth, grey when the core is not judged",
         ),
         (
@@ -39,18 +45,24 @@ const SCREEN: Section = Section {
         ),
         ("░░░", "depth a combination blocks now"),
         (
-            "▬",
-            "its failure point: the shallowest offset ruled out for this core",
+            pick("red ▄", "red ▆"),
+            "its failure point: the shallowest offset ruled out for this core, one count wide at Wide and Medium",
         ),
-        ("▀", "a group trial failed with this core at that offset"),
+        (
+            pick("▀", "red ┆"),
+            pick(
+                "a group trial failed with this core at that offset",
+                "a group trial failed with this core at that offset; dashed, not the solid red ▆ of the core's own failure point",
+            ),
+        ),
         ("cyan", "running now"),
         ("amber", "a hunt, and what it paused"),
         ("red", "failures, past and present"),
         ("green", "passed, done"),
         ("magenta", "combinations"),
         ("grey", "idle, parked, still to come"),
-    ],
-};
+    ]
+}
 
 const TOP: Section = Section {
     title: "THE TOP LINE",
@@ -198,8 +210,8 @@ const THREE_COLUMNS: usize = 195;
 /// A rule across `width` cells: the whole words of `title` that fit in white, then a grey dash track.
 #[must_use]
 pub fn title_rule(title: &str, width: usize, colours: Colours) -> Line<'static> {
-    let title = cut_words(title, width);
-    let used = display_width(&title);
+    let title = cut_words(title, width, colours);
+    let used = display_width(&title, colours);
     let mut spans = Vec::new();
     if !title.is_empty() {
         spans.push(Paint::White.span(colours, title));
@@ -225,7 +237,7 @@ fn section_lines(
     let widest = section
         .items
         .iter()
-        .map(|&(label, _)| display_width(label))
+        .map(|&(label, _)| display_width(label, colours))
         .max()
         .unwrap_or(0);
     let label_width = (widest + 2).min((width / 3).max(1));
@@ -236,17 +248,18 @@ fn section_lines(
             text,
             width.saturating_sub(label_width).max(1),
             Paint::Text.style(colours),
+            colours,
         );
         for (row, line) in wrapped.into_iter().enumerate() {
             let mut spans = if row == 0 {
-                let name = cut_words(label, label_width.saturating_sub(1));
-                let pad = label_width.saturating_sub(display_width(&name));
+                let name = cut_words(label, label_width.saturating_sub(1), colours);
+                let pad = label_width.saturating_sub(display_width(&name, colours));
                 vec![Paint::White.span(colours, name), Span::raw(" ".repeat(pad))]
             } else {
                 vec![Span::raw(" ".repeat(label_width))]
             };
             spans.extend(line.spans);
-            out.push(truncate_styled(&Line::from(spans), width));
+            out.push(truncate_styled(&Line::from(spans), width, colours));
         }
         if spaced && i + 1 < section.items.len() {
             out.push(blank());
@@ -267,10 +280,10 @@ fn example_row(
 ) -> Line<'static> {
     for head in heads {
         for with_failure in [true, false] {
-            let head_width = display_width(head);
+            let head_width = display_width(head, colours);
             let used = head_width
                 + if with_failure {
-                    2 + display_width(failure)
+                    2 + display_width(failure, colours)
                 } else {
                     0
                 };
@@ -282,7 +295,7 @@ fn example_row(
                 spans.push(Paint::White.span(colours, head.clone()));
             }
             spans.extend(gauge.spans.iter().cloned());
-            let mut line = truncate_styled(&Line::from(spans), width - used + head_width);
+            let mut line = truncate_styled(&Line::from(spans), width - used + head_width, colours);
             if with_failure {
                 line.spans.push(Span::raw("  "));
                 line.spans
@@ -301,7 +314,7 @@ fn gauge(colours: Colours, parts: &[(Paint, &str, usize)]) -> Line<'static> {
         .collect();
     let used: usize = parts
         .iter()
-        .map(|&(_, glyph, count)| display_width(glyph) * count)
+        .map(|&(_, glyph, count)| display_width(glyph, colours) * count)
         .sum();
     spans.push(Span::raw(" ".repeat(50usize.saturating_sub(used))));
     Line::from(spans)
@@ -316,6 +329,12 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
         note: &'static str,
         gauge: Line<'static>,
     }
+    let marks = marks(colours);
+    let (applied, failure, group) = (
+        marks.applied.to_string(),
+        marks.failure.to_string(),
+        marks.group.to_string(),
+    );
     let examples = [
         Example {
             core: 4,
@@ -326,9 +345,9 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
             gauge: gauge(
                 colours,
                 &[
-                    (Paint::White, "▄", 28),
+                    (Paint::White, &applied, 28),
                     (Paint::Combination, "░", 7),
-                    (Paint::Bad, "▬", 1),
+                    (Paint::Bad, &failure, 1),
                 ],
             ),
         },
@@ -341,9 +360,9 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
             gauge: gauge(
                 colours,
                 &[
-                    (Paint::White, "▄", 26),
+                    (Paint::White, &applied, 26),
                     (Paint::Grey, "·", 5),
-                    (Paint::Bad, "▬", 1),
+                    (Paint::Bad, &failure, 1),
                 ],
             ),
         },
@@ -353,7 +372,10 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
             failure: -48,
             state: "PARKED",
             note: "parked at 0 by a hunt; returns to -47",
-            gauge: gauge(colours, &[(Paint::Grey, "·", 47), (Paint::Bad, "▬", 1)]),
+            gauge: gauge(
+                colours,
+                &[(Paint::Grey, "·", 47), (Paint::Bad, &failure, 1)],
+            ),
         },
         Example {
             core: 0,
@@ -363,11 +385,14 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
             note: "probe: the group failed with core 00 at -30, -29, -27",
             gauge: gauge(
                 colours,
-                &[(Paint::White, "▄", 26), (Paint::Bad, "▀ ▀▀ ▬", 1)],
+                &[
+                    (Paint::White, &applied, 26),
+                    (Paint::Bad, &format!("{group} {group}{group} {failure}"), 1),
+                ],
             ),
         },
     ];
-    let mut out = vec![title_rule(SCREEN.title, width, colours), blank()];
+    let mut out = vec![title_rule(SCREEN_TITLE, width, colours), blank()];
     for example in examples {
         let marker = if example.state == "PARKED" {
             "  "
@@ -395,11 +420,12 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
             &format!("{failure:3}"),
             colours,
         ));
-        let indent = display_width(&prefix).min(width.saturating_sub(20));
+        let indent = display_width(&prefix, colours).min(width.saturating_sub(20));
         for line in wrap_styled(
             example.note,
             width.saturating_sub(indent).max(1),
             Paint::Grey.style(colours),
+            colours,
         ) {
             let mut spans = vec![Span::raw(" ".repeat(indent))];
             spans.extend(line.spans);
@@ -407,10 +433,19 @@ fn reading(width: usize, colours: Colours) -> Vec<Line<'static>> {
         }
         out.push(blank());
     }
+    let screen_items = screen_items(colours);
     out.extend(
-        section_lines(&SCREEN, width, false, colours)
-            .into_iter()
-            .skip(2),
+        section_lines(
+            &Section {
+                title: SCREEN_TITLE,
+                items: &screen_items,
+            },
+            width,
+            false,
+            colours,
+        )
+        .into_iter()
+        .skip(2),
     );
     out
 }
@@ -463,7 +498,7 @@ pub fn help_body(
                 let mut spans = Vec::new();
                 for (col, column) in columns.iter().enumerate() {
                     let cell = column.get(row);
-                    let used = cell.map_or(0, line_width);
+                    let used = cell.map_or(0, |cell| line_width(cell, colours));
                     if let Some(cell) = cell {
                         spans.extend(cell.spans.iter().cloned());
                     }
@@ -510,7 +545,11 @@ mod tests {
     const C: Colours = Colours::Full;
 
     fn plain_rows(lines: &[ratatui::text::Line<'static>]) -> Vec<String> {
-        lines.iter().map(plain).collect()
+        lines.iter().map(|line| plain(line, C)).collect()
+    }
+
+    fn plain_rows_in(lines: &[ratatui::text::Line<'static>], colours: Colours) -> Vec<String> {
+        lines.iter().map(|line| plain(line, colours)).collect()
     }
 
     fn chars_from(text: &str, from: usize) -> String {
@@ -538,7 +577,10 @@ mod tests {
             assert!(text.contains(title), "wide help lost {title:?}");
         }
         for (row, line) in body.iter().enumerate() {
-            assert!(line_width(line) <= 235, "row {row} exceeds help rectangle");
+            assert!(
+                line_width(line, C) <= 235,
+                "row {row} exceeds help rectangle"
+            );
         }
         assert!(
             !rows[rows.len() - 1].trim().is_empty(),
@@ -547,7 +589,7 @@ mod tests {
         for section in [&TOP, &TUNING, &LOAD] {
             let lines = section_lines(section, 70, section.title == TUNING.title, C);
             assert!(
-                !plain(&lines[lines.len() - 1]).trim().is_empty(),
+                !plain(&lines[lines.len() - 1], C).trim().is_empty(),
                 "wide column's final section {:?} ends on blank padding",
                 section.title
             );
@@ -567,7 +609,7 @@ mod tests {
         assert_eq!(plain_rows(&end), plain_rows(&clamped), "scroll beyond end");
         for title in ["READING THE SCREEN", "WHAT TOGI DOES", "WORDS"] {
             assert!(
-                plain(&top[0]).contains(title),
+                plain(&top[0], C).contains(title),
                 "short wide help lost column {title:?}"
             );
         }
@@ -588,10 +630,10 @@ mod tests {
             let mut got = String::new();
             for (row, line) in page.iter().enumerate() {
                 assert!(
-                    line_width(line) <= width,
+                    line_width(line, C) <= width,
                     "{name} row {row} exceeds the help rectangle"
                 );
-                let text = plain(line);
+                let text = plain(line, C);
                 assert_eq!(
                     text.chars().nth(1),
                     Some(' '),
@@ -601,7 +643,7 @@ mod tests {
             }
             assert_eq!(got, bar, "{name} scrollbar");
         }
-        let last = plain(&end[end.len() - 1]);
+        let last = plain(&end[end.len() - 1], C);
         assert!(
             !chars_from(&last, 2).trim().is_empty(),
             "short wide help ends on a blank content row"
@@ -712,7 +754,7 @@ mod tests {
         );
         let mut column = 0;
         if width >= THREE_COLUMNS {
-            let first = plain(&body[0]);
+            let first = plain(&body[0], C);
             let prefix = first
                 .split_once("WORDS")
                 .unwrap_or_else(|| panic!("wide help lost the words column: {first}"))
@@ -724,10 +766,10 @@ mod tests {
             .enumerate()
             .map(|(row, line)| {
                 assert!(
-                    line_width(line) <= width,
+                    line_width(line, C) <= width,
                     "{width} columns: full help row {row} exceeds its rectangle"
                 );
-                chars_from(&plain(line), column)
+                chars_from(&plain(line, C), column)
             })
             .collect();
         let words = lines
@@ -748,7 +790,7 @@ mod tests {
             );
         }
         assert!(
-            !plain(&body[body.len() - 1]).trim().is_empty(),
+            !plain(&body[body.len() - 1], C).trim().is_empty(),
             "{width} columns: full help ends on a blank content row"
         );
     }
@@ -764,9 +806,9 @@ mod tests {
         );
         assert_eq!(plain_rows(&end), plain_rows(&clamped), "scroll beyond end");
         assert!(
-            plain(&top[0]).contains("READING THE SCREEN"),
+            plain(&top[0], C).contains("READING THE SCREEN"),
             "help does not open at the first section: {:?}",
-            plain(&top[0])
+            plain(&top[0], C)
         );
         let text = plain_rows(&end).join("\n");
         assert!(
@@ -774,11 +816,13 @@ mod tests {
             "help end loses the last section: {text}"
         );
         assert!(
-            !plain(&top[0]).contains("WHAT TOGI DOES"),
+            !plain(&top[0], C).contains("WHAT TOGI DOES"),
             "narrow help squeezes columns together"
         );
         assert!(
-            !chars_from(&plain(&end[end.len() - 1]), 2).trim().is_empty(),
+            !chars_from(&plain(&end[end.len() - 1], C), 2)
+                .trim()
+                .is_empty(),
             "narrow help ends on a blank content row"
         );
         for lines in [&top, &end] {
@@ -789,9 +833,9 @@ mod tests {
             );
             for line in lines {
                 assert!(
-                    line_width(line) <= 77,
+                    line_width(line, C) <= 77,
                     "help exceeds its column allocation: {:?}",
-                    plain(line)
+                    plain(line, C)
                 );
             }
         }
@@ -810,9 +854,9 @@ mod tests {
                     );
                     for line in &body {
                         assert!(
-                            line_width(line) <= width,
+                            line_width(line, C) <= width,
                             "{width}x{height}: body writes beyond rectangle: {:?}",
-                            plain(line)
+                            plain(line, C)
                         );
                     }
                 }
@@ -822,14 +866,14 @@ mod tests {
 
     #[test]
     fn the_title_rule_keeps_whole_words_and_a_dash_track() {
-        let text = |title, width| plain(&title_rule(title, width, C));
+        let text = |title, width| plain(&title_rule(title, width, C), C);
         assert_eq!(text("SOLO LIMITS", 11), "SOLO LIMITS");
         assert_eq!(text("SOLO LIMITS", 14), "SOLO LIMITS ──");
         assert_eq!(text("SOLO LIMITS", 8), "SOLO... ");
         assert_eq!(text("SOLO LIMITS", 0), "");
         assert_eq!(text("REQUESTERS", 8), " ───────");
         for width in 0..30 {
-            assert!(line_width(&title_rule("SOLO LIMITS", width, C)) <= width);
+            assert!(line_width(&title_rule("SOLO LIMITS", width, C), C) <= width);
         }
     }
 
@@ -847,7 +891,7 @@ mod tests {
             items: &[(label, "evidence")],
         };
         let lines = section_lines(&section, width, false, C);
-        let row = plain(&lines[2]);
+        let row = plain(&lines[2], C);
         assert_eq!(
             row[..label_width].trim(),
             want,
@@ -872,11 +916,11 @@ mod tests {
             let lines = reading(width, C);
             let mut at = 2;
             for (i, tokens) in examples.iter().enumerate() {
-                let row = plain(&lines[at]);
+                let row = plain(&lines[at], C);
                 let fields: Vec<&str> = row.split_whitespace().collect();
                 for field in &fields {
                     assert!(
-                        field.trim_matches(['▄', '░', '·', '▬', '▀']).is_empty()
+                        field.trim_matches(['▄', '░', '·', '▀']).is_empty()
                             || tokens.contains(field),
                         "width {width} example {i}: text or value cut to {field:?}: {row:?}"
                     );
@@ -889,7 +933,7 @@ mod tests {
                     );
                 }
                 assert!(
-                    line_width(&lines[at]) <= width,
+                    line_width(&lines[at], C) <= width,
                     "width {width} example {i}: row exceeds width: {row:?}"
                 );
                 if width == 100 {
@@ -899,7 +943,7 @@ mod tests {
                         "wide example {i} lost its state or failure point: {row:?}"
                     );
                 }
-                while !plain(&lines[at]).is_empty() {
+                while !plain(&lines[at], C).is_empty() {
                     at += 1;
                 }
                 at += 1;
@@ -1035,5 +1079,63 @@ mod tests {
                 assert_frame_bounds(&buf, &sc);
             }
         }
+    }
+
+    #[test_case(Colours::Rich, "▆▆▆", "red ▆", "red ┆"; "rich")]
+    #[test_case(Colours::Full, "▄▄▄", "red ▄", "▀"; "console")]
+    fn the_legend_names_the_profiles_own_gauge_glyphs(
+        colours: Colours,
+        applied: &str,
+        failure: &str,
+        group: &str,
+    ) {
+        let (help, _) = help_body(115, 1000, 0, colours, Quit::Keys);
+        let rows = plain_rows_in(&help, colours);
+        let row_of = |label: &str| {
+            rows.iter()
+                .find(|row| row.chars().skip(2).collect::<String>().starts_with(label))
+                .unwrap_or_else(|| panic!("no legend row {label:?}: {rows:#?}"))
+                .clone()
+        };
+        assert!(row_of(applied).contains("offset applied now"));
+        assert!(row_of(failure).contains("its failure point"));
+        assert!(row_of(group).contains("a group trial failed"));
+        let text = rows.join("\n");
+        let rich = colours == Colours::Rich;
+        assert_eq!(text.contains("dashed"), rich);
+        assert!(!text.contains('▬'));
+        for glyph in ['▄', '▀'] {
+            assert_eq!(text.contains(glyph), !rich, "{glyph:?}");
+        }
+    }
+
+    #[test_case(Colours::Console; "console")]
+    #[test_case(Colours::Rich; "rich")]
+    fn examples_draw_the_failure_and_group_marks_at_their_counts(colours: Colours) {
+        let marks = super::marks(colours);
+        let lines = reading(100, colours);
+        let gauge_of = |row: usize| {
+            let text = plain(&lines[row], colours);
+            let at = text.find([marks.applied, '·']).expect("a gauge");
+            text[at..].chars().take(50).collect::<Vec<_>>()
+        };
+        let first = gauge_of(2);
+        assert!(first[..28].iter().all(|&c| c == marks.applied));
+        assert!(first[28..35].iter().all(|&c| c == '░'));
+        assert_eq!(first[35], marks.failure, "-36 is the 36th cell");
+        let mut at = 2;
+        while !plain(&lines[at], colours).contains("PROBE") {
+            at += 1;
+        }
+        let probe: String = gauge_of(at).into_iter().collect();
+        assert!(
+            probe.starts_with(&format!(
+                "{}{g} {g}{g} {f}",
+                marks.applied.to_string().repeat(26),
+                g = marks.group,
+                f = marks.failure,
+            )),
+            "{probe}"
+        );
     }
 }

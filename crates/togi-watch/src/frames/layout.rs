@@ -16,7 +16,7 @@ pub enum SizeClass {
     Compact,
     /// Width 150 and height 40 or more: the two CCD tables sit side by side and the countdown is inline.
     Medium,
-    /// Width 200 and height 60 or more: a three-row trial bar and large remaining-time digits.
+    /// Width 200 and height 60 or more: a two-row trial bar and large remaining-time digits.
     Wide,
 }
 

@@ -23,8 +23,8 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 ~  cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk          wwwwwwwwwwwww
 │  ██████████████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░           █  ▀ █▀▀ █ █
 ~  cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk          wwwwwwwwwwwww
-│  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀          ▀▀▀ ▀ ▀▀▀ ▀▀▀
-~  cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk          wwwwwwwwwwwww
+│                                                                                                                                                                                                                                ▀▀▀ ▀ ▀▀▀ ▀▀▀
+~                                                                                                                                                                                                                                wwwwwwwwwwwww
 │  0:40 of 2:00                                                                                                                                                                        0 passed · trial 1 of 4  ► · · ·                   left
 ~  ttttgggggggg                                                                                                                                                                        tttttttttttttttttttttttttc g g g                   gggg
 │
@@ -37,21 +37,21 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 │
 │  CCD 0               0       -10       -20       -30       -40       -50 fail pt  all under load                         CCD 1               0       -10       -20       -30       -40       -50 fail pt  not under load
 ~  wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg                         wwwww               g       ggg       ggg       ggg       ggg       ggg ggggggg  gggggggggggggg
-│  ► 00  -26  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                          -28                                            08   -5  HAS ROOM  ▄▄▄▄▄·▬                                                -7   top by offset
+│  ► 00  -26  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄                          -28                                            08   -5  HAS ROOM  ▄▄▄▄▄·▄                                                -7   top by offset
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwgf                        ttttt                                            tt  ttt  tttttttt  ggggggf                                             ggggg   ttttttttttttt
-│  ► 01  -16  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                    -18                                            09  -34  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                  -36
+│  ► 01  -16  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄                                    -18                                            09  -34  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄                  -36
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwgf                                  ttttt                                            tt  ttt  tttttttt  gggggggggggggggggggggggggggggggggggf                ggggg
-│  ► 02  -25  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                           -27                                            10  -17  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                   -19
+│  ► 02  -25  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄                           -27                                            10  -17  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄                                   -19
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwgf                         ttttt                                            tt  ttt  tttttttt  ggggggggggggggggggf                                 ggggg
-│  ► 03  -24  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                            -26                                            11   -9  HAS ROOM  ▄▄▄▄▄▄▄▄▄·▬                                           -11
+│  ► 03  -24  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄                            -26                                            11   -9  HAS ROOM  ▄▄▄▄▄▄▄▄▄·▄                                           -11
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwgf                          ttttt                                            tt  ttt  tttttttt  ggggggggggf                                         ggggg
-│  ► 04  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                     -17                                            12  -16  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                    -18
+│  ► 04  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄                                     -17                                            12  -16  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄                                    -18
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwgf                                   ttttt                                            tt  ttt  tttttttt  gggggggggggggggggf                                  ggggg
-│  ► 05   -9  HAS ROOM  ▄▄▄▄▄▄▄▄▄·▬                                           -11   top by offset                            13  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬               -39
+│  ► 05   -9  HAS ROOM  ▄▄▄▄▄▄▄▄▄·▄                                           -11   top by offset                            13  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄               -39
 ~  c ww  www  tttttttt  wwwwwwwwwgf                                         ttttt   ttttttttttttt                            tt  ttt  tttttttt  ggggggggggggggggggggggggggggggggggggggf             ggggg
-│  ► 06  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬               -39                                            14  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                     -17
+│  ► 06  -37  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄               -39                                            14  -15  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄                                     -17
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf             ttttt                                            tt  ttt  tttttttt  ggggggggggggggggf                                   ggggg
-│  ► 07  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                       -31                                            15  -13  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄·▬                                       -15
+│  ► 07  -29  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄·▄                       -31                                            15  -13  HAS ROOM  ▄▄▄▄▄▄▄▄▄▄▄▄▄·▄                                       -15
 ~  c ww  www  tttttttt  wwwwwwwwwwwwwwwwwwwwwwwwwwwwwgf                     ttttt                                            tt  ttt  tttttttt  ggggggggggggggf                                     ggggg
 │
 │  BIOS PROFILE ──────────────────────────────────────────────────────────────────────────────────────────────────────     WHAT HAPPENED ─────────────────────────────────────────────────────────────────── newest first · l: last 400 events

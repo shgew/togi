@@ -108,6 +108,15 @@ fn check(name: &str, body: &str) {
         "log-240x67",
         "log-80x24",
         "log-top-160x45",
+        "main-checking-120x33-rich",
+        "main-checking-160x45-rich",
+        "main-checking-240x67-rich",
+        "main-member-probe-120x33-rich",
+        "main-member-probe-160x45-rich",
+        "main-member-probe-240x67-rich",
+        "help-120x33-rich",
+        "help-160x45-rich",
+        "help-240x67-rich",
     };
     let (_, expected) = snapshot
         .strip_prefix("---\n")
@@ -225,9 +234,8 @@ fn shapes_without_colour(scenario: Scenario, buf: &Buffer) {
         Scenario::Checking => {
             let elapsed = bar('█');
             assert!(elapsed.trim_start_matches('█').starts_with('░'));
-            assert!(bar('▀').starts_with("▀▀▀▀"));
             let core = first_row_with(&rows, "HAS ROOM");
-            for glyph in ['▄', '·', '▬'] {
+            for glyph in ['▄', '·'] {
                 assert!(core.contains(glyph), "{glyph:?} missing from {core:?}");
             }
         }
@@ -296,6 +304,7 @@ fn main_views(scenario: Scenario, sizes: &[(u16, u16)]) {
 macro_rules! main_view_tests {
     ($($test:ident: $scenario:ident in $sizes:ident),* $(,)?) => {
         const LISTED: &[Scenario] = &[$(Scenario::$scenario),*];
+        const MAIN_CASES: &[(Scenario, &[(u16, u16)])] = &[$((Scenario::$scenario, &$sizes)),*];
 
         $(
             #[test]
@@ -347,18 +356,27 @@ fn every_scenario_has_a_main_view_snapshot() {
     }
 }
 
-#[test]
-fn every_scenario_fits_the_frame_at_every_main_size() {
+#[test_case::test_case(Colours::Console; "console")]
+#[test_case::test_case(Colours::None; "plain")]
+#[test_case::test_case(Colours::Rich; "rich")]
+fn every_scenario_fits_the_frame_at_every_main_size(colours: Colours) {
     for scenario in Scenario::ALL {
         let (model, now) = scenario_model(scenario);
         let journal = ready(&model);
         for size in MAIN_SIZES {
-            let sc = screen_of(View::Main, size, Colours::None, 0, false);
+            let sc = screen_of(View::Main, size, colours, 0, false);
             let (buf, _) = render_checked(&journal, &sc, now);
-            assert_glyphs_drawable(
-                &buf,
-                &format!("main-{}-{}x{}", scenario.name(), size.0, size.1),
-            );
+            let name = format!("main-{}-{}x{}-{colours:?}", scenario.name(), size.0, size.1);
+            if colours == Colours::Rich {
+                assert!(
+                    !text_snapshot(&buf)
+                        .chars()
+                        .any(|c| c.is_control() && c != '\n'),
+                    "{name}"
+                );
+            } else {
+                assert_glyphs_drawable(&buf, &name);
+            }
         }
     }
 }
@@ -375,12 +393,12 @@ fn no_color_and_journald_map_to_one_profile_and_the_console_to_its_own() {
         journald: true,
         ..terminal()
     };
-    assert_eq!(colours_for(terminal(), xterm), Colours::Full);
-    assert_eq!(colours_for(terminal(), linux), Colours::Console);
-    assert_eq!(colours_for(no_color, xterm), Colours::None);
-    assert_eq!(colours_for(journald, xterm), Colours::None);
-    assert_eq!(colours_for(no_color, linux), Colours::None);
-    assert_eq!(colours_for(journald, linux), Colours::None);
+    assert_eq!(colours_for(terminal(), xterm, None), Colours::Full);
+    assert_eq!(colours_for(terminal(), linux, None), Colours::Console);
+    assert_eq!(colours_for(no_color, xterm, None), Colours::None);
+    assert_eq!(colours_for(journald, xterm, None), Colours::None);
+    assert_eq!(colours_for(no_color, linux, None), Colours::None);
+    assert_eq!(colours_for(journald, linux, None), Colours::None);
 }
 
 fn profiles(scenario: Scenario) {
@@ -396,10 +414,10 @@ fn profiles(scenario: Scenario) {
     };
     let (model, now) = scenario_model(scenario);
     let journal = ready(&model);
-    let full = colours_for(terminal(), xterm);
-    let console = colours_for(terminal(), linux);
-    let none = colours_for(no_color, xterm);
-    assert_eq!(none, colours_for(journald, xterm));
+    let full = colours_for(terminal(), xterm, None);
+    let console = colours_for(terminal(), linux, None);
+    let none = colours_for(no_color, xterm, None);
+    assert_eq!(none, colours_for(journald, xterm, None));
     for (profile, colours) in [("full", full), ("console", console), ("none", none)] {
         let name = format!("main-{}-{}x{}-{profile}", scenario.name(), WIDE.0, WIDE.1);
         let buf = styled(
@@ -541,5 +559,108 @@ fn one_frame_prints_the_live_text_without_the_key_footer() {
         };
         let (live_buf, _) = render_checked(&journal, &live, now);
         assert_eq!(rows_of(&buf), rows_of(&live_buf));
+    }
+}
+
+fn rich_frames(mut visit: impl FnMut(&str, &Buffer)) {
+    for (scenario, view, prefix) in [
+        (Scenario::Checking, View::Main, "main-checking"),
+        (Scenario::MemberProbe, View::Main, "main-member-probe"),
+        (Scenario::Checking, View::Help, "help"),
+    ] {
+        let (model, now) = scenario_model(scenario);
+        for size in MAIN_SIZES {
+            let sc = screen_of(view, size, Colours::Rich, 0, false);
+            let (buf, _) = render_checked(&ready(&model), &sc, now);
+            visit(&format!("{prefix}-{}x{}-rich", size.0, size.1), &buf);
+        }
+    }
+}
+
+#[test]
+fn rich_frames_preserve_their_glyphs_and_have_no_controls_or_attributes() {
+    rich_frames(|name, buf| {
+        let body = styled_snapshot(buf, Colours::Rich);
+        assert!(!body.chars().any(|c| c.is_control() && c != '\n'), "{name}");
+        assert!(has_no_attribute(buf), "{name}");
+        assert!(body.contains('▆'), "{name}");
+        assert!(!body.contains(r"\u2586"), "{name}");
+        check(name, &body);
+    });
+}
+
+/// Regenerate fixtures explicitly, outside the ordinary in-memory tests:
+/// `TOGI_SNAPSHOTS="${TMPDIR:-/tmp}/togi-snaps" cargo test -p togi-watch real_fs_generate_snapshots -- --ignored`.
+/// Review and copy the emitted `.snap` files into this module's `snapshots/` directory.
+#[test]
+#[ignore = "writes regenerated snapshot fixtures to an explicitly supplied temporary directory"]
+fn real_fs_generate_snapshots() {
+    let directory = std::env::var_os("TOGI_SNAPSHOTS").expect("set TOGI_SNAPSHOTS");
+    let directory = std::path::Path::new(&directory);
+    assert!(
+        directory.starts_with(std::env::temp_dir()),
+        "use a temporary directory"
+    );
+    std::fs::create_dir_all(directory).unwrap();
+    let emit = |name: &str, body: String| {
+        std::fs::write(
+            directory.join(format!("{name}.snap")),
+            format!("---\nsource: crates/togi-watch/src/frames/snapshots.rs\nexpression: body\n---\n{body}"),
+        )
+        .unwrap();
+    };
+    rich_frames(|name, buf| emit(name, styled_snapshot(buf, Colours::Rich)));
+    for &(scenario, sizes) in MAIN_CASES {
+        let (model, now) = scenario_model(scenario);
+        for &size in sizes {
+            let sc = screen_of(View::Main, size, Colours::None, 0, false);
+            let (buf, _) = render_checked(&ready(&model), &sc, now);
+            emit(
+                &format!("main-{}-{}x{}", scenario.name(), size.0, size.1),
+                text_snapshot(&buf),
+            );
+        }
+    }
+    for scenario in [Scenario::Checking, Scenario::MemberProbe, Scenario::Idle] {
+        let (model, now) = scenario_model(scenario);
+        for (profile, colours) in [
+            ("full", Colours::Full),
+            ("console", Colours::Console),
+            ("none", Colours::None),
+        ] {
+            let sc = screen_of(View::Main, WIDE, colours, 0, false);
+            let (buf, _) = render_checked(&ready(&model), &sc, now);
+            emit(
+                &format!("main-{}-{}x{}-{profile}", scenario.name(), WIDE.0, WIDE.1),
+                styled_snapshot(&buf, colours),
+            );
+        }
+    }
+    let (model, now) = scenario_model(Scenario::Checking);
+    for size in VIEW_SIZES {
+        for (prefix, scroll) in [("help", 0), ("help-end", usize::MAX)] {
+            let sc = screen_of(View::Help, size, Colours::None, scroll, false);
+            let (buf, _) = render_checked(&ready(&model), &sc, now);
+            emit(
+                &format!("{prefix}-{}x{}", size.0, size.1),
+                text_snapshot(&buf),
+            );
+            if size == WIDE {
+                let sc = screen_of(View::Help, size, Colours::Full, scroll, false);
+                let (buf, _) = render_checked(&ready(&model), &sc, now);
+                emit(
+                    &format!("{prefix}-{}x{}-full", size.0, size.1),
+                    styled_snapshot(&buf, Colours::Full),
+                );
+            }
+        }
+    }
+    for size in [WIDE, (120, 33)] {
+        let sc = screen_of(View::Main, size, Colours::None, 0, true);
+        let (buf, _) = render_checked(&ready(&model), &sc, now);
+        emit(
+            &format!("one-frame-checking-{}x{}", size.0, size.1),
+            text_snapshot(&buf),
+        );
     }
 }

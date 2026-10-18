@@ -87,7 +87,7 @@ pub fn key_hints(
         clauses.push(Clause::new("   ", forms));
     }
     clauses.extend_from_slice(after);
-    fit_clauses(width, &clauses)
+    fit_clauses(width, &clauses, colours)
 }
 
 /// The footer clause for what the lenient read of the journal skipped or ignored, last in the footer's `after`.
@@ -124,9 +124,9 @@ pub fn footer(screen: &Screen, after: &[Clause], buf: &mut Buffer) {
     } else if after.is_empty() {
         return;
     } else {
-        fit_clauses(width, after)
+        fit_clauses(width, after, screen.colours)
     };
-    put(buf, layout.footer, 0, 0, &line);
+    put(buf, layout.footer, 0, 0, &line, screen.colours);
 }
 
 #[cfg(test)]
@@ -148,21 +148,15 @@ mod tests {
     fn the_skipped_report_follows_the_keys_whole_and_then_as_a_pointer_that_keeps_them() {
         let report = "skipped 1 event of a kind this build does not know (future.thing at line 3)";
         let after = [skipped_clause(report, Colours::None)];
-        let wide = plain(&key_hints(
-            View::Main,
-            200,
-            &after,
+        let wide = plain(
+            &key_hints(View::Main, 200, &after, Colours::None, Quit::Keys),
             Colours::None,
-            Quit::Keys,
-        ));
+        );
         assert!(wide.contains(report), "{wide}");
-        let narrow = plain(&key_hints(
-            View::Main,
-            100,
-            &after,
+        let narrow = plain(
+            &key_hints(View::Main, 100, &after, Colours::None, Quit::Keys),
             Colours::None,
-            Quit::Keys,
-        ));
+        );
         assert!(narrow.contains("togi events"), "{narrow}");
         let fields: Vec<&str> = narrow.split_whitespace().collect();
         for key in ["?", "l", "esc", "q"] {
@@ -178,8 +172,14 @@ mod tests {
         let after = [skipped_clause(REPORT, Colours::None)];
         for view in VIEWS {
             for width in 20..=120 {
-                let text = plain(&key_hints(view, width, &after, Colours::None, Quit::Keys));
-                assert!(display_width(&text) <= width, "{view:?} {width}: {text:?}");
+                let text = plain(
+                    &key_hints(view, width, &after, Colours::None, Quit::Keys),
+                    Colours::None,
+                );
+                assert!(
+                    display_width(&text, Colours::None) <= width,
+                    "{view:?} {width}: {text:?}"
+                );
                 let fields: Vec<&str> = text.split_whitespace().collect();
                 for key in ["?", "l", "esc", "q"] {
                     assert!(
@@ -199,13 +199,10 @@ mod tests {
     fn the_skipped_warning_shortens_by_steps_at_normal_narrow_widths() {
         let after = [skipped_clause(REPORT, Colours::None)];
         let text = |width| {
-            plain(&key_hints(
-                View::Help,
-                width,
-                &after,
+            plain(
+                &key_hints(View::Help, width, &after, Colours::None, Quit::Keys),
                 Colours::None,
-                Quit::Keys,
-            ))
+            )
         };
         assert!(text(20).ends_with("   !"), "{}", text(20));
         assert!(text(30).ends_with("   skipped"), "{}", text(30));
@@ -227,8 +224,14 @@ mod tests {
         let after = [skipped_clause(REPORT, Colours::None)];
         for view in VIEWS {
             for width in 1..20 {
-                let text = plain(&key_hints(view, width, &after, Colours::None, Quit::Keys));
-                assert!(display_width(&text) <= width, "{view:?} {width}: {text:?}");
+                let text = plain(
+                    &key_hints(view, width, &after, Colours::None, Quit::Keys),
+                    Colours::None,
+                );
+                assert!(
+                    display_width(&text, Colours::None) <= width,
+                    "{view:?} {width}: {text:?}"
+                );
                 assert!(
                     text.split_whitespace().any(|key| key == "q"),
                     "{view:?} {width}: {text:?}"
@@ -238,7 +241,10 @@ mod tests {
                 }
             }
             assert_eq!(
-                plain(&key_hints(view, 0, &after, Colours::None, Quit::Keys)),
+                plain(
+                    &key_hints(view, 0, &after, Colours::None, Quit::Keys),
+                    Colours::None
+                ),
                 ""
             );
         }
@@ -361,15 +367,21 @@ mod tests {
         for view in VIEWS {
             for width in 1..20 {
                 let line = key_hints(view, width, &[], Colours::None, Quit::Keys);
-                let text = plain(&line);
-                assert!(display_width(&text) <= width, "{view:?} {width}: {text:?}");
+                let text = plain(&line, Colours::None);
+                assert!(
+                    display_width(&text, Colours::None) <= width,
+                    "{view:?} {width}: {text:?}"
+                );
                 assert!(
                     text.split_whitespace().any(|key| key == "q"),
                     "{view:?} {width}: {text:?}"
                 );
             }
             assert_eq!(
-                plain(&key_hints(view, 0, &[], Colours::None, Quit::Keys)),
+                plain(
+                    &key_hints(view, 0, &[], Colours::None, Quit::Keys),
+                    Colours::None
+                ),
                 ""
             );
         }
@@ -379,7 +391,7 @@ mod tests {
     fn the_full_footer_names_every_key_and_marks_the_view_on_screen() {
         let line = key_hints(View::Help, 80, &[], Colours::Full, Quit::Keys);
         assert_eq!(
-            plain(&line),
+            plain(&line, Colours::None),
             " ?  help    l  log    esc  back    q  exit dashboard"
         );
         let style_of = |text: &str| {
@@ -423,13 +435,10 @@ mod tests {
             ],
         )];
         let text = |width| {
-            plain(&key_hints(
-                View::Log,
-                width,
-                &arrival,
+            plain(
+                &key_hints(View::Log, width, &arrival, Colours::None, Quit::Keys),
                 Colours::None,
-                Quit::Keys,
-            ))
+            )
         };
         assert_eq!(
             text(80),
@@ -494,8 +503,14 @@ mod tests {
         for view in VIEWS {
             for width in 0..=120 {
                 for after in [&[][..], &skipped[..]] {
-                    let text = plain(&key_hints(view, width, after, Colours::None, Quit::Ignored));
-                    assert!(display_width(&text) <= width, "{view:?} {width}: {text:?}");
+                    let text = plain(
+                        &key_hints(view, width, after, Colours::None, Quit::Ignored),
+                        Colours::None,
+                    );
+                    assert!(
+                        display_width(&text, Colours::None) <= width,
+                        "{view:?} {width}: {text:?}"
+                    );
                     for word in text.split_whitespace() {
                         assert!(
                             !["q", "exit", "dashboard", "close"].contains(&word),
@@ -505,7 +520,10 @@ mod tests {
                 }
             }
             assert_eq!(
-                plain(&key_hints(view, 80, &[], Colours::None, Quit::Ignored)),
+                plain(
+                    &key_hints(view, 80, &[], Colours::None, Quit::Ignored),
+                    Colours::None
+                ),
                 " ?  help    l  log    esc  back"
             );
         }

@@ -1,0 +1,62 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
+│ togi   08:22:00   paused · planned end 08:24   tuning 8h22m   session 8h22m   8 failures · 8 crashes
+~ gggg   wwwwwwww   aaaaaaaaaaaaaaaaaaaaaaaaaa   gggggggttttt   ggggggggttttt   tggggggggggggtgggggggg
+│ ■ SOLO ─ ►  HUNT 1   member 1 of 2 ─ ○ P1 ─ ○ P2 ─ CLEAN 0 ─ ○ CYCLE 1 paused at 7/18
+~ pptttttktaallllllllaaaaaaaaaaaaaaatktggggtktggggtktgggggggtktaatttttttaaaaaaaaaaaaaaa
+│
+│ ▌  Probing members of 03 11: core 03 at -9.
+~ a  tttttttttttttttttttttttttttttttttttttttt
+│
+│  R6   idle + bursts  on all 16 cores   short wake-ups, no workers in between        HUNT 1 · GROUP 42 · CORE 03 AT -9
+~ hhhh  wwwwwwwwwwwww  ttttttttttttttt   ggggggggggggggggggggggggggggggggggggg        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+│ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  screen paused · planned end 08:24
+~ kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk  ggggggggggggggggggggggggggggttttt
+│
+│ 5/5 pass → group 43   none named → group 43   core named → hunt ends · a core at 0: rerun at offset 0
+~ pppppppp tttttttttt   ffffffffff tttttttttt   ffffffffff tttttttttttttttttttttttttttttttttttttttttttt
+│
+│ CCD 0 all loaded 0  2 counts/cell       -50 fail  back      CCD 1 all loaded 0  2 counts/cell       -50 fail  back
+~ wwwww gggggggggg g  kkkkkkkkkkkkk       ggg gggg  gggg      wwwww gggggggggg g  kkkkkkkkkkkkk       ggg gggg  gggg
+│ ► 00   0 PARKED   ····┆·                           -10      ► 08   0 PARKED   ····┆·                           -10
+~ c tt ttt gggggg   ggggfg                          gggg      c tt ttt gggggg   ggggfg                          gggg
+│ ► 01   0 PARKED   ····┆·                           -10      ► 09   0 PARKED   ····┆·                           -10
+~ c tt ttt gggggg   ggggfg                          gggg      c tt ttt gggggg   ggggfg                          gggg
+│ ► 02   0 PARKED   ····┆·                           -10      ► 10   0 PARKED   ····┆·                           -10
+~ c tt ttt gggggg   ggggfg                          gggg      c tt ttt gggggg   ggggfg                          gggg
+│ ► 03  -9 PROBE    ▆▆▆▆┆·                          -10       ► 11 -10 MEMBER   ▆▆▆▆┆·
+~ c ww www aaaaa    wwwwfg                          ttt       c ww www tttttt   wwwwfg
+│ ► 04   0 PARKED   ····┆·                           -10      ► 12   0 PARKED   ····┆·                           -10
+~ c tt ttt gggggg   ggggfg                          gggg      c tt ttt gggggg   ggggfg                          gggg
+│ ► 05   0 PARKED   ····┆·                           -10      ► 13   0 PARKED   ····┆·                           -10
+~ c tt ttt gggggg   ggggfg                          gggg      c tt ttt gggggg   ggggfg                          gggg
+│ ► 06   0 PARKED   ····┆·                           -10      ► 14   0 PARKED   ····┆·                           -10
+~ c tt ttt gggggg   ggggfg                          gggg      c tt ttt gggggg   ggggfg                          gggg
+│ ► 07   0 PARKED   ····┆·                           -10      ► 15   0 PARKED   ····┆·                           -10
+~ c tt ttt gggggg   ggggfg                          gggg      c tt ttt gggggg   ggggfg                          gggg
+│
+│ HUNT 1 ─────────────────────────────────── 07:31 · 50m30s   WHAT HAPPENED ─────────────────────────────── l: last 400
+~ gggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk gggggggggggggg   ggggggggggggg kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk ggggggggggg
+│
+│ cause      crash in R6 idle + bursts, no core named         08:22  group    hunt 1 groups 40-41 · parts of 03 11…
+~ gggggggggggttttttttttttttttttttttttt  ttttttttttttt         ggggg  aaaaaaaa ttttttttttttttttttttttttttttttttttttt
+│                                                             08:22  crash    hunt 1 group 39 · 03 11 at… · rebooted
+~                                                             ggggg  ffffffff tttttttttttttttttttttttttttttttttttttt
+│ groups 1-2   parts of 00-15          all passed             08:20  group    hunt 1 groups 35-38 · parts of 03 10 11…
+~ tttttttttt   gggggggggggggg          pppppppppp             ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttt
+│ group 3      00-15 at failing…       crashed                08:20  crash    hunt 1 group 34 · 03 10 11 at… · rebooted
+~ ttttttt      ggggggggggggggggg       fffffff                ggggg  ffffffff ttttttttttttttttttttttttttttttttttttttttt
+│ groups 4-8   parts of 00-15 and…     all passed             08:19  group    hunt 1 groups 28-33 · parts of 02 03 10…
+~ tttttttttt   ggggggggggggggggggg     pppppppppp             ggggg  aaaaaaaa tttttttttttttttttttttttttttttttttttttttt
+│ group 9      00-03 08-15 at failing… crashed                08:19  crash    hunt 1 group 27 · 02 03 10 11… · rebooted
+~ ttttttt      ggggggggggggggggggggggg fffffff                ggggg  ffffffff ttttttttttttttttttttttttttttttttttttttttt
+│ groups 10-14 parts of 00-03 08-15…   all passed             08:17  group    hunt 1 groups 23-26 · parts of 02 03…
+~ tttttttttttt ggggggggggggggggggggg   pppppppppp             ggggg  aaaaaaaa ttttttttttttttttttttttttttttttttttttt
+│ +18 more                                                    +82 more
+~ gggggggg                                                    gggggggg
+│
+│  ?  help    l  log    esc  back    q  exit dashboard
+~ hhh gggg   hhh ggg   kkkkk kkkk   hhh gggggggggggggg

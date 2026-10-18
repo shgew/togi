@@ -85,7 +85,7 @@ impl CoreNote<'_> {
         let sep = " · ";
         let one = |forms: Vec<Form>| Clause::new(sep, forms);
         let short = |paint: Paint, clauses: &[Clause]| {
-            tint(fit_clauses(width, clauses), paint.style(colours))
+            tint(fit_clauses(width, clauses, colours), paint.style(colours))
         };
         match *self {
             Self::GroupFailed(offsets) if !offsets.is_empty() => {
@@ -176,7 +176,9 @@ impl CoreNote<'_> {
                 }
                 short(Paint::Grey, &clauses)
             }
-            Self::Queued(why) => Line::styled(cut_words(why, width), Paint::Grey.style(colours)),
+            Self::Queued(why) => {
+                Line::styled(cut_words(why, width, colours), Paint::Grey.style(colours))
+            }
         }
     }
 }
@@ -211,13 +213,13 @@ pub fn top_note(
     } else {
         short
     };
-    if line_width(note) == 0 {
+    if line_width(note, colours) == 0 {
         // Alone, the word is cut when it does not fit; an offset fallback must not be cut to a bare `top`.
         if width < word.len() {
             return Line::default();
         }
         return tint(
-            fit_clauses(width, &[Clause::whole("", word)]),
+            fit_clauses(width, &[Clause::whole("", word)], colours),
             Paint::Text.style(colours),
         );
     }
@@ -238,6 +240,7 @@ pub fn top_note(
             Clause::whole("", note.clone()),
             Clause::new(Line::styled(" · ", Paint::Grey.style(colours)), forms),
         ],
+        colours,
     )
 }
 
@@ -253,7 +256,7 @@ mod tests {
     use crate::screen::Colours;
 
     fn note(note: CoreNote<'_>, width: usize) -> String {
-        plain(&note.line(width, Colours::Full))
+        plain(&note.line(width, Colours::Full), Colours::None)
     }
 
     fn t(offset: i64) -> TargetOffset {
@@ -286,8 +289,11 @@ mod tests {
     fn a_note_shows_its_value_whole_or_nothing_at_every_width(core: CoreNote<'_>) {
         for width in 0..60 {
             let line = core.line(width, Colours::Full);
-            let text = plain(&line);
-            assert!(line_width(&line) <= width, "{core:?} in {width}: {text:?}");
+            let text = plain(&line, Colours::None);
+            assert!(
+                line_width(&line, Colours::None) <= width,
+                "{core:?} in {width}: {text:?}"
+            );
             for token in text
                 .split(' ')
                 .filter(|token| token.starts_with('-') && token.len() > 1)
@@ -391,7 +397,10 @@ mod tests {
             ("-11", 9, "-11 · top"),
         ] {
             assert_eq!(
-                plain(&top_note(&Line::from(text), false, width, Colours::Full)),
+                plain(
+                    &top_note(&Line::from(text), false, width, Colours::Full),
+                    Colours::None
+                ),
                 want,
                 "top_note({text:?}, {width})"
             );
@@ -413,7 +422,10 @@ mod tests {
             ("-11", 9, "-11"),
             ("-11", 3, "-11"),
         ] {
-            let got = plain(&top_note(&Line::from(text), true, width, Colours::Full));
+            let got = plain(
+                &top_note(&Line::from(text), true, width, Colours::Full),
+                Colours::None,
+            );
             assert_eq!(got, want, "top_note({text:?}, {width})");
             assert!(
                 got != "top" && !got.ends_with(" top") || got.ends_with("offset top"),
