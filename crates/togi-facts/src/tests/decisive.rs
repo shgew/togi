@@ -1,3 +1,5 @@
+use test_case::test_case;
+
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
@@ -176,25 +178,22 @@ fn decisive_facts() {
     );
 }
 
-#[test]
-fn config_loaded_changing_a_durable_stamp_is_an_error() {
-    type Change = fn(&mut togi_journal::Build);
-    let changes: [(&str, Change); 3] = [
-        ("schema", |b| b.schema += 1),
-        ("ruleset", |b| b.ruleset += 1),
-        ("evidence", |b| b.evidence += 1),
-    ];
-    for (name, change) in changes {
-        let mut stamp = refreshed(&build(1), "0.2.0");
-        change(&mut stamp);
-        let mut s = Script::begin(&[0]);
-        let seq = s.add(config_loaded(stamp));
-        let result = s.try_extract(first());
-        assert!(
-            matches!(&result, Err(FactsError::StampChanged { seq: at, field }) if *at == seq && *field == name),
-            "{name}: {result:?}"
-        );
-    }
+#[test_case("schema", |b| b.schema += 1; "schema")]
+#[test_case("ruleset", |b| b.ruleset += 1; "ruleset")]
+#[test_case("evidence", |b| b.evidence += 1; "evidence")]
+fn config_loaded_changing_a_durable_stamp_is_an_error(
+    name: &str,
+    change: fn(&mut togi_journal::Build),
+) {
+    let mut stamp = refreshed(&build(1), "0.2.0");
+    change(&mut stamp);
+    let mut s = Script::begin(&[0]);
+    let seq = s.add(config_loaded(stamp));
+    let result = s.try_extract(first());
+    assert!(
+        matches!(&result, Err(FactsError::StampChanged { seq: at, field }) if *at == seq && *field == name),
+        "{name}: {result:?}"
+    );
 }
 
 #[test]
@@ -242,57 +241,21 @@ fn failure_keeps_attribution_and_telemetry() {
     assert_eq!(telemetry.voltage_requests_v.get(core(7)), Some(1.25));
 }
 
-#[test]
-fn telemetry_is_present_when_any_one_lane_is_populated() {
-    let voltage: togi_machine::PerCore<f64> = [(core(0), 1.0625)].into_iter().collect();
-    let cases = [
-        (
-            "voltage requests",
-            TrialEnd {
-                voltage_requests_v: voltage,
-                ..pass("t", 5)
-            },
-            Telemetry {
-                voltage_requests_v: voltage,
-                top_requesters: set(&[]),
-                ccd_mhz: BTreeMap::new(),
-            },
-        ),
-        (
-            "top requesters",
-            TrialEnd {
-                top_requesters: set(&[0]),
-                ..pass("t", 5)
-            },
-            Telemetry {
-                voltage_requests_v: togi_machine::PerCore::default(),
-                top_requesters: set(&[0]),
-                ccd_mhz: BTreeMap::new(),
-            },
-        ),
-        (
-            "ccd mhz",
-            TrialEnd {
-                ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4700)]),
-                ..pass("t", 5)
-            },
-            Telemetry {
-                voltage_requests_v: togi_machine::PerCore::default(),
-                top_requesters: set(&[]),
-                ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4700)]),
-            },
-        ),
-    ];
-    for (name, trial_end, want) in cases {
-        let mut s = Script::begin(&[0]);
-        s.add(alone("t", 0, -5, &[0]));
-        s.add(trial_end);
-        let facts = s.extract();
-        let Observation::Trial { telemetry, .. } = &facts.facts[0].observation else {
-            unreachable!()
-        };
-        assert_eq!(telemetry.as_ref(), Some(&want), "{name}");
-    }
+#[test_case(TrialEnd { voltage_requests_v: [(core(0), 1.0625)].into_iter().collect(), ..pass("t", 5) },
+    Telemetry { voltage_requests_v: [(core(0), 1.0625)].into_iter().collect(), top_requesters: set(&[]), ccd_mhz: BTreeMap::new() }; "voltage requests")]
+#[test_case(TrialEnd { top_requesters: set(&[0]), ..pass("t", 5) },
+    Telemetry { voltage_requests_v: togi_machine::PerCore::default(), top_requesters: set(&[0]), ccd_mhz: BTreeMap::new() }; "top requesters")]
+#[test_case(TrialEnd { ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4700)]), ..pass("t", 5) },
+    Telemetry { voltage_requests_v: togi_machine::PerCore::default(), top_requesters: set(&[]), ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4700)]) }; "ccd mhz")]
+fn telemetry_is_present_when_any_one_lane_is_populated(trial_end: TrialEnd, want: Telemetry) {
+    let mut s = Script::begin(&[0]);
+    s.add(alone("t", 0, -5, &[0]));
+    s.add(trial_end);
+    let facts = s.extract();
+    let Observation::Trial { telemetry, .. } = &facts.facts[0].observation else {
+        unreachable!()
+    };
+    assert_eq!(telemetry.as_ref(), Some(&want));
 }
 
 #[test]

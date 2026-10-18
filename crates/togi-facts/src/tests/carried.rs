@@ -1,3 +1,5 @@
+use test_case::test_case;
+
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
@@ -147,138 +149,51 @@ fn carried_payload_round_trip_matches_the_recorded_idle_failure() {
     assert_eq!(carried.failure.round, NonZeroU32::new(2));
 }
 
-#[test]
-fn carried_facts_must_be_decisive_well_formed() {
+#[test_case(|copy| copy.outcome = Outcome::Inconclusive, |error| matches!(error, FactsError::NotDecisive { .. }); "inconclusive")]
+#[test_case(|copy| copy.signal = None, |error| matches!(error, FactsError::Incomplete { .. }); "signal")]
+#[test_case(|copy| copy.class.workload = None, |error| matches!(error, FactsError::Incomplete { .. }); "workload")]
+fn carried_trials_must_be_decisive_well_formed(
+    change: fn(&mut TrialCarried),
+    expected: fn(&FactsError<std::convert::Infallible>) -> bool,
+) {
     let first = original();
-    let Payload::TrialCarried(trial_copy) = first.facts[0].to_payload() else {
+    let Payload::TrialCarried(mut copy) = first.facts[0].to_payload() else {
         unreachable!()
     };
-    let Payload::FailureCarried(idle_copy) = first.facts[1].to_payload() else {
+    change(&mut copy);
+    let mut s = Script::begin(&[7, 1, 3]);
+    s.add(copy);
+    let result = s.try_extract(super::first());
+    assert!(
+        matches!(&result, Err(error) if expected(error)),
+        "{result:?}"
+    );
+}
+
+#[test_case(|copy| copy.failure.trial = Some(trial("x")), |error| matches!(error, FactsError::NotIdle { .. }); "in a trial")]
+#[test_case(|copy| copy.failure.attribution = Attribution::Attributed, |error| matches!(error, FactsError::NotIdle { .. }); "attributed")]
+#[test_case(|copy| copy.failure.known_failure = Some(Seq::new(1).unwrap()), |error| matches!(error, FactsError::NotIdle { .. }); "known failure")]
+#[test_case(|copy| copy.failure.condition = Some(Condition::Alone), |error| matches!(error, FactsError::NotIdle { .. }); "alone")]
+#[test_case(|copy| copy.failure.profile = Some(profile(&[])), |error| matches!(error, FactsError::NotIdle { .. }); "empty profile")]
+#[test_case(|copy| copy.class.cores = set(&[1, 3]), |error| matches!(error, FactsError::NotIdle { .. }); "profile cores differ from class")]
+#[test_case(|copy| copy.failure.condition = None, |error| matches!(error, FactsError::Incomplete { .. }); "condition")]
+#[test_case(|copy| copy.failure.profile = None, |error| matches!(error, FactsError::Incomplete { .. }); "profile")]
+fn carried_idle_failures_must_be_well_formed(
+    change: fn(&mut FailureCarried),
+    expected: fn(&FactsError<std::convert::Infallible>) -> bool,
+) {
+    let first = original();
+    let Payload::FailureCarried(mut copy) = first.facts[1].to_payload() else {
         unreachable!()
     };
-    let cases: Vec<(Payload, &str)> = vec![
-        (
-            Payload::TrialCarried(TrialCarried {
-                outcome: Outcome::Inconclusive,
-                ..trial_copy.clone()
-            }),
-            "inconclusive",
-        ),
-        (
-            Payload::TrialCarried(TrialCarried {
-                signal: None,
-                ..trial_copy.clone()
-            }),
-            "signal",
-        ),
-        (
-            Payload::TrialCarried(TrialCarried {
-                class: togi_journal::TrialClass {
-                    workload: None,
-                    ..trial_copy.class.clone()
-                },
-                ..trial_copy
-            }),
-            "workload",
-        ),
-        (
-            Payload::FailureCarried(FailureCarried {
-                failure: togi_journal::Failure {
-                    trial: Some(trial("x")),
-                    ..idle_copy.failure.clone()
-                },
-                ..idle_copy.clone()
-            }),
-            "not idle: in a trial",
-        ),
-        (
-            Payload::FailureCarried(FailureCarried {
-                failure: togi_journal::Failure {
-                    attribution: Attribution::Attributed,
-                    ..idle_copy.failure.clone()
-                },
-                ..idle_copy.clone()
-            }),
-            "not idle: attributed",
-        ),
-        (
-            Payload::FailureCarried(FailureCarried {
-                failure: togi_journal::Failure {
-                    known_failure: Some(Seq::new(1).unwrap()),
-                    ..idle_copy.failure.clone()
-                },
-                ..idle_copy.clone()
-            }),
-            "not idle: known failure",
-        ),
-        (
-            Payload::FailureCarried(FailureCarried {
-                failure: togi_journal::Failure {
-                    condition: Some(Condition::Alone),
-                    ..idle_copy.failure.clone()
-                },
-                ..idle_copy.clone()
-            }),
-            "not idle: alone",
-        ),
-        (
-            Payload::FailureCarried(FailureCarried {
-                failure: togi_journal::Failure {
-                    profile: Some(profile(&[])),
-                    ..idle_copy.failure.clone()
-                },
-                ..idle_copy.clone()
-            }),
-            "not idle: empty profile",
-        ),
-        (
-            Payload::FailureCarried(FailureCarried {
-                class: togi_journal::TrialClass {
-                    cores: set(&[1, 3]),
-                    ..idle_copy.class.clone()
-                },
-                ..idle_copy.clone()
-            }),
-            "not idle: profile cores differ from the class",
-        ),
-        (
-            Payload::FailureCarried(FailureCarried {
-                failure: togi_journal::Failure {
-                    condition: None,
-                    ..idle_copy.failure.clone()
-                },
-                ..idle_copy.clone()
-            }),
-            "condition",
-        ),
-        (
-            Payload::FailureCarried(FailureCarried {
-                failure: togi_journal::Failure {
-                    profile: None,
-                    ..idle_copy.failure.clone()
-                },
-                ..idle_copy
-            }),
-            "profile",
-        ),
-    ];
-    for (payload, name) in cases {
-        let mut s = Script::begin(&[7, 1, 3]);
-        s.add(payload);
-        let result = s.try_extract(super::first());
-        assert!(
-            matches!(
-                (name, &result),
-                ("inconclusive", Err(FactsError::NotDecisive { .. }))
-                    | (
-                        "signal" | "workload" | "condition" | "profile",
-                        Err(FactsError::Incomplete { .. })
-                    )
-            ) || (name.starts_with("not idle")
-                && matches!(result, Err(FactsError::NotIdle { .. }))),
-            "{name}: {result:?}"
-        );
-    }
+    change(&mut copy);
+    let mut s = Script::begin(&[7, 1, 3]);
+    s.add(copy);
+    let result = s.try_extract(super::first());
+    assert!(
+        matches!(&result, Err(error) if expected(error)),
+        "{result:?}"
+    );
 }
 
 #[test]

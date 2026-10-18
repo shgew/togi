@@ -1,3 +1,5 @@
+use test_case::test_case;
+
 use jiff::SignedDuration;
 use togi_journal::{
     Activity, CycleEvent, Decision, Event, FactSource, FailureCarried, HuntStage, Inference,
@@ -22,29 +24,19 @@ fn target_intent() -> TrialIntent {
 
 type Past = (Vec<i64>, Outcome, fn(&mut TrialIntent));
 
-struct Case {
-    name: &'static str,
-    history: Vec<Past>,
-    want: usize,
-    /// The index of the history trial whose end the query stops at, or after every trial.
-    before: Option<usize>,
-}
-
 fn nothing(_: &mut TrialIntent) {}
 
-fn prior(case: &Case) -> usize {
+fn prior(history: &[Past], before: Option<usize>) -> usize {
     let mut log = Log::new(&[(0, 0), (1, 0)]);
     let mut ends = Vec::new();
-    for (i, (offsets, outcome, modify)) in case.history.iter().enumerate() {
+    for (i, (offsets, outcome, modify)) in history.iter().enumerate() {
         let mut past = target_intent();
         past.trial = format!("h{i}").into();
         past.profile = profile(offsets);
         modify(&mut past);
         ends.push(trial(&mut log, past, *outcome));
     }
-    let before = case
-        .before
-        .map_or_else(|| seq(log.events.len() as u64 + 1), |index| ends[index]);
+    let before = before.map_or_else(|| seq(log.events.len() as u64 + 1), |index| ends[index]);
     let journal = log.journal();
     let p = Projection::new(&journal);
     let target = target_intent();
@@ -56,91 +48,25 @@ fn prior(case: &Case) -> usize {
     )
 }
 
-#[test]
-fn prior_passes_count_what_is_as_deep_and_not_ruled_out_by_a_failure() {
-    let pass = Outcome::Pass;
-    let cases = [
-        Case {
-            name: "equal and deeper count",
-            history: vec![
-                (vec![-10, -10], pass, nothing),
-                (vec![-11, -10], pass, nothing),
-            ],
-            want: 2,
-            before: None,
-        },
-        Case {
-            name: "shallow and incomparable do not",
-            history: vec![
-                (vec![-9, -10], pass, nothing),
-                (vec![-11, -9], pass, nothing),
-            ],
-            want: 0,
-            before: None,
-        },
-        Case {
-            name: "later shallow failure invalidates",
-            history: vec![
-                (vec![-11, -11], pass, nothing),
-                (vec![-9, -9], Outcome::Failure, nothing),
-                (vec![-10, -10], pass, nothing),
-            ],
-            want: 1,
-            before: None,
-        },
-        Case {
-            name: "deeper failure does not invalidate",
-            history: vec![
-                (vec![-10, -10], pass, nothing),
-                (vec![-11, -11], Outcome::Failure, nothing),
-            ],
-            want: 1,
-            before: None,
-        },
-        Case {
-            name: "same cores and another condition",
-            history: vec![(vec![-10, -10], pass, |t| t.condition = Condition::Together)],
-            want: 1,
-            before: None,
-        },
-        Case {
-            name: "class fields matter",
-            history: vec![
-                (vec![-10, -10], pass, |t| t.duration_s = 300),
-                (vec![-10, -10], pass, |t| {
-                    t.workload = workload(Regime::R7, 1);
-                }),
-                (vec![-10, -10], pass, |t| {
-                    t.regime = Regime::R6;
-                    t.workload = workload(Regime::R6, 0);
-                }),
-                (vec![-10, -10], pass, |t| t.cores = set(&[0])),
-            ],
-            want: 0,
-            before: None,
-        },
-        Case {
-            name: "the hunt boundary is excluded",
-            history: vec![
-                (vec![-10, -10], pass, nothing),
-                (vec![-10, -10], pass, nothing),
-            ],
-            want: 0,
-            before: Some(0),
-        },
-        Case {
-            name: "inconclusive does not invalidate",
-            history: vec![
-                (vec![-10, -10], pass, nothing),
-                (vec![-9, -9], Outcome::Inconclusive, nothing),
-            ],
-            want: 1,
-            before: None,
-        },
-    ];
-    for case in &cases {
-        assert_eq!(prior(case), case.want, "{}", case.name);
-    }
+#[test_case(vec![(vec![-10, -10], Outcome::Pass, nothing), (vec![-11, -10], Outcome::Pass, nothing)], None, 2; "equal and deeper count")]
+#[test_case(vec![(vec![-9, -10], Outcome::Pass, nothing), (vec![-11, -9], Outcome::Pass, nothing)], None, 0; "shallow and incomparable do not")]
+#[test_case(vec![(vec![-11, -11], Outcome::Pass, nothing), (vec![-9, -9], Outcome::Failure, nothing), (vec![-10, -10], Outcome::Pass, nothing)], None, 1; "later shallow failure invalidates")]
+#[test_case(vec![(vec![-10, -10], Outcome::Pass, nothing), (vec![-11, -11], Outcome::Failure, nothing)], None, 1; "deeper failure does not invalidate")]
+#[test_case(vec![(vec![-10, -10], Outcome::Pass, |t| t.condition = Condition::Together)], None, 1; "same cores and another condition")]
+#[test_case(vec![
+    (vec![-10, -10], Outcome::Pass, |t| t.duration_s = 300),
+    (vec![-10, -10], Outcome::Pass, |t| t.workload = workload(Regime::R7, 1)),
+    (vec![-10, -10], Outcome::Pass, |t| { t.regime = Regime::R6; t.workload = workload(Regime::R6, 0); }),
+    (vec![-10, -10], Outcome::Pass, |t| t.cores = set(&[0])),
+], None, 0; "class fields matter")]
+#[test_case(vec![(vec![-10, -10], Outcome::Pass, nothing), (vec![-10, -10], Outcome::Pass, nothing)], Some(0), 0; "hunt boundary is excluded")]
+#[test_case(vec![(vec![-10, -10], Outcome::Pass, nothing), (vec![-9, -9], Outcome::Inconclusive, nothing)], None, 1; "inconclusive does not invalidate")]
+fn prior_passes_count_what_is_as_deep_and_not_ruled_out_by_a_failure(
+    history: Vec<Past>,
+    before: Option<usize>,
+    want: usize,
+) {
+    assert_eq!(prior(&history, before), want);
 }
 
 fn idle_crash(regime: Regime, loaded: &[i64], idle_profile: Option<&[i64]>) -> usize {
@@ -393,106 +319,26 @@ fn pool(decided_at: i64, payload: impl Into<Payload>, cause: &[u64]) -> Vec<Even
     ]
 }
 
-type Scenario = (
-    &'static str,
-    Payload,
-    &'static [u64],
-    Option<jiff::Timestamp>,
-    u32,
-);
-
-#[test]
-fn a_decision_resting_on_one_carried_failure_is_counted() {
-    let backoff = || decision(Decision::Backoff, 0, -10, -9);
-    let at = |seconds| Some(EPOCH + SignedDuration::from_secs(seconds));
-    let cases: [Scenario; 12] = [
-        (
-            "inferred failure with hunt context",
-            inferred(Inference::Failure).into(),
-            &[5, 1],
-            None,
-            1,
-        ),
-        (
-            "carried idle failure backoff",
-            backoff().into(),
-            &[2],
-            None,
-            1,
-        ),
-        (
-            "repeated cause is one observation",
-            inferred(Inference::Failure).into(),
-            &[1, 1],
-            None,
-            1,
-        ),
-        (
-            "two carried failures",
-            inferred(Inference::Failure).into(),
-            &[1, 2],
-            None,
-            0,
-        ),
-        (
-            "carried and live failures",
-            backoff().into(),
-            &[1, 3],
-            None,
-            0,
-        ),
-        ("live failure only", backoff().into(), &[3], None, 0),
-        (
-            "passing inference with context failure",
-            inferred(Inference::Pass).into(),
-            &[1, 4, 5],
-            None,
-            0,
-        ),
-        (
-            "hunt start context citation",
-            hunt_start(1, "t", 1).into(),
-            &[1],
-            None,
-            0,
-        ),
-        (
-            "non-backoff decision",
-            decision(Decision::CheckSoloLimit, 0, -10, -9).into(),
-            &[1],
-            None,
-            0,
-        ),
-        (
-            "carried pass is not a failure",
-            inferred(Inference::Failure).into(),
-            &[4],
-            None,
-            0,
-        ),
-        (
-            "decision before the cutoff",
-            inferred(Inference::Failure).into(),
-            &[1],
-            at(1),
-            0,
-        ),
-        (
-            "decision at the cutoff uses earlier evidence",
-            inferred(Inference::Failure).into(),
-            &[1],
-            at(0),
-            1,
-        ),
-    ];
-    for (name, payload, cause, since, want) in cases {
-        let events = pool(0, payload, cause);
-        assert_eq!(
-            single_carried_failure_decisions(&events, since),
-            want,
-            "{name}"
-        );
-    }
+#[test_case(inferred(Inference::Failure).into(), &[5, 1], None, 1; "inferred failure with hunt context")]
+#[test_case(decision(Decision::Backoff, 0, -10, -9).into(), &[2], None, 1; "carried idle failure backoff")]
+#[test_case(inferred(Inference::Failure).into(), &[1, 1], None, 1; "repeated cause is one observation")]
+#[test_case(inferred(Inference::Failure).into(), &[1, 2], None, 0; "two carried failures")]
+#[test_case(decision(Decision::Backoff, 0, -10, -9).into(), &[1, 3], None, 0; "carried and live failures")]
+#[test_case(decision(Decision::Backoff, 0, -10, -9).into(), &[3], None, 0; "live failure only")]
+#[test_case(inferred(Inference::Pass).into(), &[1, 4, 5], None, 0; "passing inference with context failure")]
+#[test_case(hunt_start(1, "t", 1).into(), &[1], None, 0; "hunt start context citation")]
+#[test_case(decision(Decision::CheckSoloLimit, 0, -10, -9).into(), &[1], None, 0; "non backoff decision")]
+#[test_case(inferred(Inference::Failure).into(), &[4], None, 0; "carried pass is not a failure")]
+#[test_case(inferred(Inference::Failure).into(), &[1], Some(EPOCH + SignedDuration::from_secs(1)), 0; "decision before cutoff")]
+#[test_case(inferred(Inference::Failure).into(), &[1], Some(EPOCH + SignedDuration::from_secs(0)), 1; "decision at cutoff uses earlier evidence")]
+fn a_decision_resting_on_one_carried_failure_is_counted(
+    payload: Payload,
+    cause: &[u64],
+    since: Option<jiff::Timestamp>,
+    want: u32,
+) {
+    let events = pool(0, payload, cause);
+    assert_eq!(single_carried_failure_decisions(&events, since), want);
 }
 
 #[test]
