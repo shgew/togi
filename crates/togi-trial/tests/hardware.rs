@@ -1204,7 +1204,7 @@ mod hardware {
     #[test_case::test_case("stderr", "stderr.log"; "stderr")]
     #[test_case::test_case("watched", "watched output"; "watched")]
     fn oversized_output_on_every_source_is_inconclusive_and_the_scope_ends(
-        mode: &str,
+        mode: &'static str,
         source: &str,
     ) {
         let staged = Staged::new();
