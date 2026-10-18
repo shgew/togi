@@ -276,6 +276,10 @@ fn real_process_a_campaign_starts_runs_an_evaluator_stops_and_reports() {
         "{report}"
     );
     assert!(report.contains("Nothing was kept."), "{report}");
+    assert!(
+        report.contains(&format!("`just fit --forward-only --facts {FACTS} --seal 1 --jobs 4`")),
+        "{report}"
+    );
 
     let ledger = fixture.ledger();
     let events: Vec<&str> = ledger

@@ -618,6 +618,9 @@ Each generated file's `notes` array records provenance and diagnostics: the gene
 
 A model-check flag is not silently repaired or excluded: inspect the named class, depth and interval before using that ensemble member as target evidence. A flag may reflect a poor local optimum, model assumptions, or a sparse failure absent from a bootstrap sample; it is not by itself proof of an impossible fit. The shared `togi-tool-modelcheck` crate is used by both `just fit` and `just bench`, with the same 99% intervals and unchanged shallowest-loaded-offset grouping.
 
+Treat fits as local optima with sparse-data limits, not discovered hardware boundaries: unsupported/all-passing limits, flat and idle hazards, workload overrides, onset/delay and attribution defaults are qualified in the crate documentation. Multi-core shared-voltage R7 has no unloaded-core hazard. Fixed inputs and seed reproduce output on one host for any `--jobs`, excluding elapsed report lines; cross-architecture last-digit equality is unmeasured. Historical committed files are not a regeneration oracle: [#561](https://github.com/shgew/togi/issues/561) records an unexplained last-digit discrepancy despite same-host equivalence of the old and refactored fitter.
+
+
 ### In-sample shared-voltage anchor
 
 ```sh
