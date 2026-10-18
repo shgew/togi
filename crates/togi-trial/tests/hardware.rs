@@ -1200,49 +1200,48 @@ mod hardware {
         assert!(scope_gone("togi-trial-hardware-c01"));
     }
 
-    #[test]
-    fn oversized_output_on_every_source_is_inconclusive_and_the_scope_ends() {
-        for (mode, source) in [
-            ("stdout", "stdout.log"),
-            ("stderr", "stderr.log"),
-            ("watched", "watched output"),
-        ] {
-            let staged = Staged::new();
-            let mut runner = runner(&staged.tree, Helper::new(&staged.tree, mode));
-            let begun = Instant::now();
-            let mut trial = start(&mut runner, spec(Regime::R1, &[0], Duration::from_secs(30)));
-            let result = trial
-                .wait(&CancellationToken::new(), &mut Quiet)
-                .unwrap_or_else(|partial| partial.value);
-            assert_eq!(
-                result.inconclusive.as_deref(),
-                Some(&*format!(
-                    "core 00 read {source}: backend output line exceeds 64 KiB"
-                )),
-                "{mode}"
-            );
+    #[test_case::test_case("stdout", "stdout.log"; "stdout")]
+    #[test_case::test_case("stderr", "stderr.log"; "stderr")]
+    #[test_case::test_case("watched", "watched output"; "watched")]
+    fn oversized_output_on_every_source_is_inconclusive_and_the_scope_ends(
+        mode: &'static str,
+        source: &str,
+    ) {
+        let staged = Staged::new();
+        let mut runner = runner(&staged.tree, Helper::new(&staged.tree, mode));
+        let begun = Instant::now();
+        let mut trial = start(&mut runner, spec(Regime::R1, &[0], Duration::from_secs(30)));
+        let result = trial
+            .wait(&CancellationToken::new(), &mut Quiet)
+            .unwrap_or_else(|partial| partial.value);
+        assert_eq!(
+            result.inconclusive.as_deref(),
+            Some(&*format!(
+                "core 00 read {source}: backend output line exceeds 64 KiB"
+            )),
+            "{mode}"
+        );
+        assert!(
+            result.failure.is_none() && result.escaped.is_empty(),
+            "{mode}"
+        );
+        let cgroup = staged.tree.read(WORK, "cgroup.txt", REPORT_LIMIT).unwrap();
+        assert!(
+            names_scope(&String::from_utf8_lossy(&cgroup), "togi-trial-hardware"),
+            "{mode} ran in its scope"
+        );
+        assert!(trial.stop().is_ok(), "{mode}");
+        assert!(begun.elapsed() < Duration::from_secs(20), "{mode}");
+        if mode != "watched" {
+            let log = staged.tree.read(WORK, source, 2 * LINE_LIMIT).unwrap();
+            let last = log.rsplit(|&byte| byte == b'\n').next().unwrap_or_default();
             assert!(
-                result.failure.is_none() && result.escaped.is_empty(),
-                "{mode}"
+                last.len() == LINE_LIMIT && last.iter().all(|&byte| byte == b'x'),
+                "{mode} kept {} bytes of the oversized line",
+                last.len()
             );
-            let cgroup = staged.tree.read(WORK, "cgroup.txt", REPORT_LIMIT).unwrap();
-            assert!(
-                names_scope(&String::from_utf8_lossy(&cgroup), "togi-trial-hardware"),
-                "{mode} ran in its scope"
-            );
-            assert!(trial.stop().is_ok(), "{mode}");
-            assert!(begun.elapsed() < Duration::from_secs(20), "{mode}");
-            if mode != "watched" {
-                let log = staged.tree.read(WORK, source, 2 * LINE_LIMIT).unwrap();
-                let last = log.rsplit(|&byte| byte == b'\n').next().unwrap_or_default();
-                assert!(
-                    last.len() == LINE_LIMIT && last.iter().all(|&byte| byte == b'x'),
-                    "{mode} kept {} bytes of the oversized line",
-                    last.len()
-                );
-            }
-            assert!(scope_gone("togi-trial-hardware"), "{mode}");
         }
+        assert!(scope_gone("togi-trial-hardware"), "{mode}");
     }
 
     #[test]

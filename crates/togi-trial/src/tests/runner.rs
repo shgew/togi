@@ -872,71 +872,53 @@ fn a_repeated_wait_reports_the_failure_the_first_one_did() {
     assert!(trial.stop().is_ok());
 }
 
-#[test]
-fn shared_errors_render_each_cause_once() {
-    let launch = || Error::Launch {
+fn launch_error() -> Error {
+    Error::Launch {
         instance: "c01".into(),
         scope: "togi-trial-t1-c01".into(),
         source: std::io::Error::other("systemd-run missing"),
-    };
+    }
+}
+
+fn joined_containment_error() -> Error {
     let containment = crate::Containment::new(CleanupFailure::Reap {
         instance: "c00".into(),
         source: std::io::Error::other("the leader did not exit"),
     })
-    .caused_by(launch());
-    let joined = Error::join_after(
+    .caused_by(launch_error());
+    Error::join_after(
         Error::Containment(std::sync::Arc::new(containment)),
         vec![Error::Cancelled],
-    );
-    for (error, expected) in [
-        (
-            launch(),
-            "wait for the trial: launch instance c01 in scope togi-trial-t1-c01: systemd-run missing",
-        ),
-        (
-            joined,
-            "trial cleanup could not be confirmed: wait for the trial: \
-             trial cleanup could not be confirmed: \
-             the start failed: launch instance c01 in scope togi-trial-t1-c01: systemd-run missing; \
-             reap instance c00: the leader did not exit; cancelled",
-        ),
-    ] {
-        let error = crate::error::Shared::seam(&std::sync::Arc::new(error));
-        assert_eq!(togi_machine::error_chain(&error), expected);
-    }
+    )
+}
+
+#[test_case::test_case(launch_error(), "wait for the trial: launch instance c01 in scope togi-trial-t1-c01: systemd-run missing"; "launch")]
+#[test_case::test_case(joined_containment_error(), "trial cleanup could not be confirmed: wait for the trial: trial cleanup could not be confirmed: the start failed: launch instance c01 in scope togi-trial-t1-c01: systemd-run missing; reap instance c00: the leader did not exit; cancelled"; "joined containment")]
+fn shared_errors_render_each_cause_once(error: Error, expected: &str) {
+    let error = crate::error::Shared::seam(&std::sync::Arc::new(error));
+    assert_eq!(togi_machine::error_chain(&error), expected);
+}
+
+#[test_case::test_case(launch_error(), true; "ordinary")]
+#[test_case::test_case(Error::Stuck { operation: "stop", bound: Duration::from_secs(1) }, false; "containment")]
+fn a_kept_joined_error_is_reachable_through_the_public_source_chain(error: Error, is_other: bool) {
+    let error = Error::join_after(error, vec![Error::Cancelled]);
+    let seam = crate::error::Shared::seam(&Arc::new(error));
+    let (togi_machine::Error::Other(inner) | togi_machine::Error::Containment(inner)) = &seam
+    else {
+        panic!("{seam:?}");
+    };
+    assert_eq!(matches!(seam, togi_machine::Error::Other(_)), is_other);
+    let kept = std::iter::successors(
+        Some(&**inner as &(dyn std::error::Error + 'static)),
+        |error| error.source(),
+    )
+    .find_map(|error| error.downcast_ref::<Error>());
+    assert!(matches!(kept, Some(Error::Joined(_))), "{seam:?}");
 }
 
 #[test]
-fn a_kept_joined_error_is_reachable_through_the_public_source_chain() {
-    let other = Error::join_after(
-        Error::Launch {
-            instance: "c01".into(),
-            scope: "togi-trial-t1-c01".into(),
-            source: std::io::Error::other("systemd-run missing"),
-        },
-        vec![Error::Cancelled],
-    );
-    let containment = Error::join_after(
-        Error::Stuck {
-            operation: "stop",
-            bound: Duration::from_secs(1),
-        },
-        vec![Error::Cancelled],
-    );
-    for (error, is_other) in [(other, true), (containment, false)] {
-        let seam = crate::error::Shared::seam(&Arc::new(error));
-        let (togi_machine::Error::Other(inner) | togi_machine::Error::Containment(inner)) = &seam
-        else {
-            panic!("{seam:?}");
-        };
-        assert_eq!(matches!(seam, togi_machine::Error::Other(_)), is_other);
-        let kept = std::iter::successors(
-            Some(&**inner as &(dyn std::error::Error + 'static)),
-            |error| error.source(),
-        )
-        .find_map(|error| error.downcast_ref::<Error>());
-        assert!(matches!(kept, Some(Error::Joined(_))), "{seam:?}");
-    }
+fn a_stuck_error_renders_its_cause_once() {
     let stuck = Error::Stuck {
         operation: "stop",
         bound: Duration::from_secs(1),

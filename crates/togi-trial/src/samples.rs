@@ -664,34 +664,33 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_directory_sync_failure_is_reported_without_syncing_any_later_directory() {
-        for failed in ["trial", "parent"] {
-            let operations = Arc::new(Mutex::new(Vec::new()));
-            let trial = Directory {
-                name: "trial",
-                fail: failed == "trial",
-                operations: Arc::clone(&operations),
-            };
-            let parent = Directory {
-                name: "parent",
-                fail: failed == "parent",
-                operations: Arc::clone(&operations),
-            };
-            let error = sync_directories(&trial, &parent, recorded_directory_sync).unwrap_err();
-            assert!(
-                matches!(error, StorageError::SyncDirectory(source) if source.to_string() == failed)
-            );
-            let expected: &[_] = if failed == "trial" {
-                &["trial"]
-            } else {
-                &["trial", "parent"]
-            };
-            assert_eq!(
-                &*operations.lock().unwrap_or_else(PoisonError::into_inner),
-                expected
-            );
-        }
+    #[test_case::test_case("trial"; "trial")]
+    #[test_case::test_case("parent"; "parent")]
+    fn a_directory_sync_failure_is_reported_without_syncing_any_later_directory(failed: &str) {
+        let operations = Arc::new(Mutex::new(Vec::new()));
+        let trial = Directory {
+            name: "trial",
+            fail: failed == "trial",
+            operations: Arc::clone(&operations),
+        };
+        let parent = Directory {
+            name: "parent",
+            fail: failed == "parent",
+            operations: Arc::clone(&operations),
+        };
+        let error = sync_directories(&trial, &parent, recorded_directory_sync).unwrap_err();
+        assert!(
+            matches!(error, StorageError::SyncDirectory(source) if source.to_string() == failed)
+        );
+        let expected: &[_] = if failed == "trial" {
+            &["trial"]
+        } else {
+            &["trial", "parent"]
+        };
+        assert_eq!(
+            &*operations.lock().unwrap_or_else(PoisonError::into_inner),
+            expected
+        );
     }
 
     #[test]

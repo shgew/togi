@@ -140,43 +140,44 @@ fn a_clean_machine_sweeps_to_success_without_signalling_anything() {
     });
 }
 
-#[test]
-fn a_lingering_unit_or_a_process_moved_out_of_its_scope_is_containment_after_the_verify_slot() {
+#[test_case::test_case(false; "lingering unit")]
+#[test_case::test_case(true; "moved process")]
+fn a_lingering_unit_or_a_process_moved_out_of_its_scope_is_containment_after_the_verify_slot(
+    moved_out: bool,
+) {
     crate::testing::runtime(true).block_on(async move {
-        for moved_out in [false, true] {
-            local(async {
-                let rig = rig();
-                let begun = Instant::now();
-                if moved_out {
-                    let recovered = rig.fake.add_recovered(process("togi-trial-x", 99));
-                    rig.fake.add_unit("togi-trial-x.scope");
-                    rig.fake.on_systemd(move |call| {
-                        if matches!(call, Systemd::Kill { .. }) {
-                            recovered.visible.set(false);
-                        }
+        local(async {
+            let rig = rig();
+            let begun = Instant::now();
+            if moved_out {
+                let recovered = rig.fake.add_recovered(process("togi-trial-x", 99));
+                rig.fake.add_unit("togi-trial-x.scope");
+                rig.fake.on_systemd(move |call| {
+                    if matches!(call, Systemd::Kill { .. }) {
+                        recovered.visible.set(false);
+                    }
+                    None
+                });
+            } else {
+                rig.fake.add_unit("togi-trial-x.scope");
+                rig.fake.on_systemd(|call| {
+                    if let Systemd::Stop { .. } | Systemd::Kill { .. } = call {
+                        Some(Reply::Output {
+                            success: true,
+                            text: String::new(),
+                        })
+                    } else {
                         None
-                    });
-                } else {
-                    rig.fake.add_unit("togi-trial-x.scope");
-                    rig.fake.on_systemd(|call| {
-                        if let Systemd::Stop { .. } | Systemd::Kill { .. } = call {
-                            Some(Reply::Output {
-                                success: true,
-                                text: String::new(),
-                            })
-                        } else {
-                            None
-                        }
-                    });
-                }
-                let error = sweep(&rig.env).await.err().unwrap();
-                let elapsed = begun.elapsed();
-                assert!(elapsed >= secs(10) && elapsed <= secs(15), "{elapsed:?}");
-                let failures = containment(&error).failures();
-                assert!(matches!(failures.last(), Some(CleanupFailure::Leftover)));
-            })
-            .await;
-        }
+                    }
+                });
+            }
+            let error = sweep(&rig.env).await.err().unwrap();
+            let elapsed = begun.elapsed();
+            assert!(elapsed >= secs(10) && elapsed <= secs(15), "{elapsed:?}");
+            let failures = containment(&error).failures();
+            assert!(matches!(failures.last(), Some(CleanupFailure::Leftover)));
+        })
+        .await;
     });
 }
 
@@ -775,67 +776,68 @@ fn a_hanging_process_scan_is_cut_short_of_the_deadline_and_listed_scopes_are_sti
     });
 }
 
-#[test]
-fn a_stop_that_hangs_or_fails_after_a_successful_kill_is_kept_and_the_other_scopes_still_stop() {
+#[test_case::test_case(true; "hung stop")]
+#[test_case::test_case(false; "failed stop")]
+fn a_stop_that_hangs_or_fails_after_a_successful_kill_is_kept_and_the_other_scopes_still_stop(
+    hang: bool,
+) {
     crate::testing::runtime(true).block_on(async move {
-        for hang in [true, false] {
-            local(async move {
-                let rig = rig();
-                for name in ["togi-trial-a", "togi-trial-b", "togi-trial-c"] {
-                    rig.fake.add_unit(&format!("{name}.scope"));
-                }
-                rig.fake.on_systemd(move |call| {
-                    if let Systemd::Stop { scope } = call
-                        && scope.to_string() == "togi-trial-a"
-                    {
-                        Some(if hang {
-                            Reply::Hang
-                        } else {
-                            Reply::Output {
-                                success: false,
-                                text: "Access denied".into(),
-                            }
-                        })
+        local(async move {
+            let rig = rig();
+            for name in ["togi-trial-a", "togi-trial-b", "togi-trial-c"] {
+                rig.fake.add_unit(&format!("{name}.scope"));
+            }
+            rig.fake.on_systemd(move |call| {
+                if let Systemd::Stop { scope } = call
+                    && scope.to_string() == "togi-trial-a"
+                {
+                    Some(if hang {
+                        Reply::Hang
                     } else {
-                        None
-                    }
-                });
-                let begun = Instant::now();
-                let error = sweep(&rig.env).await.err().unwrap();
-                assert!(begun.elapsed() <= secs(15), "{:?}", begun.elapsed());
-                let all = calls(&rig);
-                assert_eq!(all.iter().filter(|(_, w)| *w == "SIGKILL").count(), 3);
-                assert_eq!(
-                    all.iter().filter(|(_, w)| *w == "stop").count(),
-                    3,
-                    "the other scopes are still stopped"
-                );
-                let stops = rig
-                    .fake
-                    .systemd_calls()
+                        Reply::Output {
+                            success: false,
+                            text: "Access denied".into(),
+                        }
+                    })
+                } else {
+                    None
+                }
+            });
+            let begun = Instant::now();
+            let error = sweep(&rig.env).await.err().unwrap();
+            assert!(begun.elapsed() <= secs(15), "{:?}", begun.elapsed());
+            let all = calls(&rig);
+            assert_eq!(all.iter().filter(|(_, w)| *w == "SIGKILL").count(), 3);
+            assert_eq!(
+                all.iter().filter(|(_, w)| *w == "stop").count(),
+                3,
+                "the other scopes are still stopped"
+            );
+            let stops = rig
+                .fake
+                .systemd_calls()
+                .iter()
+                .filter(|(call, _)| matches!(call, Systemd::Stop { .. }))
+                .map(|(_, at)| at.duration_since(begun))
+                .collect::<Vec<_>>();
+            assert!(stops.iter().all(|at| *at <= secs(2)), "{stops:?}");
+            let failures = containment(&error).failures();
+            assert!(
+                failures.iter().any(|failure| matches!(
+                    failure,
+                    CleanupFailure::StopScope { scope, .. } if scope == "togi-trial-a"
+                )),
+                "{failures:?}"
+            );
+            assert!(
+                !failures
                     .iter()
-                    .filter(|(call, _)| matches!(call, Systemd::Stop { .. }))
-                    .map(|(_, at)| at.duration_since(begun))
-                    .collect::<Vec<_>>();
-                assert!(stops.iter().all(|at| *at <= secs(2)), "{stops:?}");
-                let failures = containment(&error).failures();
-                assert!(
-                    failures.iter().any(|failure| matches!(
-                        failure,
-                        CleanupFailure::StopScope { scope, .. } if scope == "togi-trial-a"
-                    )),
-                    "{failures:?}"
-                );
-                assert!(
-                    !failures
-                        .iter()
-                        .any(|failure| matches!(failure, CleanupFailure::KillScope { .. })),
-                    "the kill itself succeeded: {failures:?}"
-                );
-                assert_eq!(rig.fake.units(), ["togi-trial-a.scope"]);
-            })
-            .await;
-        }
+                    .any(|failure| matches!(failure, CleanupFailure::KillScope { .. })),
+                "the kill itself succeeded: {failures:?}"
+            );
+            assert_eq!(rig.fake.units(), ["togi-trial-a.scope"]);
+        })
+        .await;
     });
 }
 
@@ -928,77 +930,78 @@ fn cancelling_during_discovery_returns_cancelled_at_once_and_signals_nothing() {
     });
 }
 
-#[test]
-fn cancelling_during_initial_process_scan_finishes_listed_scope_cleanup_and_keeps_errors() {
+#[test_case::test_case(false; "successful stop")]
+#[test_case::test_case(true; "failed stop")]
+fn cancelling_during_initial_process_scan_finishes_listed_scope_cleanup_and_keeps_errors(
+    fail_stop: bool,
+) {
     crate::testing::runtime(true).block_on(async move {
-        for fail_stop in [false, true] {
-            local(async move {
-                let rig = rig();
-                rig.fake.add_unit("togi-trial-a.scope");
-                rig.fake.hang_scans();
-                if fail_stop {
-                    rig.fake.on_systemd(|call| {
-                        if let Systemd::Stop { .. } = call {
-                            Some(Reply::Output {
-                                success: false,
-                                text: "Access denied".into(),
-                            })
-                        } else {
-                            None
-                        }
-                    });
-                }
-                let scanning = std::rc::Rc::new(tokio::sync::Notify::new());
-                let entered = std::rc::Rc::clone(&scanning);
-                rig.fake.on_scan(move || entered.notify_one());
-                let cancel = CancellationToken::new();
-                let trigger = cancel.clone();
-                spawn_local(async move {
-                    scanning.notified().await;
-                    trigger.cancel();
-                });
-                let begun = Instant::now();
-                let error = run_sweep(&rig.env, &cancel).await.err().unwrap();
-                let all = calls(&rig);
-                assert!(
-                    all.contains(&("togi-trial-a".to_owned(), "SIGKILL")),
-                    "{all:?}"
-                );
-                assert!(
-                    all.contains(&("togi-trial-a".to_owned(), "stop")),
-                    "{all:?}"
-                );
-                assert!(begun.elapsed() <= secs(15), "{:?}", begun.elapsed());
-                for (operation, at) in rig.fake.systemd_calls() {
-                    if matches!(operation, Systemd::Kill { .. } | Systemd::Stop { .. }) {
-                        assert!(at.duration_since(begun) < secs(15));
+        local(async move {
+            let rig = rig();
+            rig.fake.add_unit("togi-trial-a.scope");
+            rig.fake.hang_scans();
+            if fail_stop {
+                rig.fake.on_systemd(|call| {
+                    if let Systemd::Stop { .. } = call {
+                        Some(Reply::Output {
+                            success: false,
+                            text: "Access denied".into(),
+                        })
+                    } else {
+                        None
                     }
+                });
+            }
+            let scanning = std::rc::Rc::new(tokio::sync::Notify::new());
+            let entered = std::rc::Rc::clone(&scanning);
+            rig.fake.on_scan(move || entered.notify_one());
+            let cancel = CancellationToken::new();
+            let trigger = cancel.clone();
+            spawn_local(async move {
+                scanning.notified().await;
+                trigger.cancel();
+            });
+            let begun = Instant::now();
+            let error = run_sweep(&rig.env, &cancel).await.err().unwrap();
+            let all = calls(&rig);
+            assert!(
+                all.contains(&("togi-trial-a".to_owned(), "SIGKILL")),
+                "{all:?}"
+            );
+            assert!(
+                all.contains(&("togi-trial-a".to_owned(), "stop")),
+                "{all:?}"
+            );
+            assert!(begun.elapsed() <= secs(15), "{:?}", begun.elapsed());
+            for (operation, at) in rig.fake.systemd_calls() {
+                if matches!(operation, Systemd::Kill { .. } | Systemd::Stop { .. }) {
+                    assert!(at.duration_since(begun) < secs(15));
                 }
-                let Error::Joined(joined) = &error else {
-                    panic!("not joined: {error:?}");
-                };
-                let [Error::Cancelled, second] = joined.errors() else {
-                    panic!("unexpected members: {error:?}");
-                };
-                let failures = containment(second).failures();
-                assert!(matches!(
-                    failures.first(),
-                    Some(CleanupFailure::Observe {
-                        what: "the trial processes",
-                        ..
-                    })
-                ));
-                assert_eq!(
-                    failures
-                        .iter()
-                        .any(|failure| matches!(failure, CleanupFailure::StopScope { .. })),
-                    fail_stop,
-                    "{failures:?}"
-                );
-                assert_eq!(rig.fake.units().is_empty(), !fail_stop);
-            })
-            .await;
-        }
+            }
+            let Error::Joined(joined) = &error else {
+                panic!("not joined: {error:?}");
+            };
+            let [Error::Cancelled, second] = joined.errors() else {
+                panic!("unexpected members: {error:?}");
+            };
+            let failures = containment(second).failures();
+            assert!(matches!(
+                failures.first(),
+                Some(CleanupFailure::Observe {
+                    what: "the trial processes",
+                    ..
+                })
+            ));
+            assert_eq!(
+                failures
+                    .iter()
+                    .any(|failure| matches!(failure, CleanupFailure::StopScope { .. })),
+                fail_stop,
+                "{failures:?}"
+            );
+            assert_eq!(rig.fake.units().is_empty(), !fail_stop);
+        })
+        .await;
     });
 }
 
@@ -1667,47 +1670,48 @@ mod killed_owner {
         }
     }
 
-    #[test]
-    fn real_process_owner_setup_failures_leave_no_owner_or_detached_descendant() {
-        for fault in ["immediately", "before-publication-read", "read", "parse"] {
-            let dir = crate::testing::tempdir();
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            let _enter = runtime.enter();
-            let os = linux();
-            let mut witness = SetupWitness::new(dir.path());
-            let begun = std::time::Instant::now();
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                setup_owner(&os, dir.path(), |owner| {
-                    witness.note_owner(owner);
-                    assert!(fault != "immediately", "injected setup failure");
-                    let published = dir.path().join("descendant.pid");
-                    assert!(poll_until(
-                        std::time::Instant::now() + Duration::from_secs(10),
-                        || published.exists()
-                    ));
-                    std::fs::rename(&published, dir.path().join("descendant.pid.tmp")).unwrap();
-                    match fault {
-                        "before-publication-read" => panic!("injected setup failure"),
-                        "read" => std::fs::create_dir(&published).unwrap(),
-                        "parse" => std::fs::write(&published, "invalid pid").unwrap(),
-                        _ => unreachable!(),
-                    }
-                })
-            }));
-            let leaked: Vec<u32> = witness.live_in_dir().iter().map(Escaped::pid).collect();
-            let unreaped = witness.owner_unreaped();
-            drop(witness);
-            assert!(result.is_err(), "{fault}");
-            assert!(
-                leaked.is_empty(),
-                "processes leaked after {fault}: {leaked:?}"
-            );
-            assert!(!unreaped, "the owner was not reaped after {fault}");
-            assert!(begun.elapsed() < Duration::from_secs(15), "{fault}");
-        }
+    #[test_case::test_case("immediately"; "immediately")]
+    #[test_case::test_case("before-publication-read"; "before publication read")]
+    #[test_case::test_case("read"; "read failure")]
+    #[test_case::test_case("parse"; "parse failure")]
+    fn real_process_owner_setup_failures_leave_no_owner_or_detached_descendant(fault: &str) {
+        let dir = crate::testing::tempdir();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let _enter = runtime.enter();
+        let os = linux();
+        let mut witness = SetupWitness::new(dir.path());
+        let begun = std::time::Instant::now();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            setup_owner(&os, dir.path(), |owner| {
+                witness.note_owner(owner);
+                assert!(fault != "immediately", "injected setup failure");
+                let published = dir.path().join("descendant.pid");
+                assert!(poll_until(
+                    std::time::Instant::now() + Duration::from_secs(10),
+                    || published.exists()
+                ));
+                std::fs::rename(&published, dir.path().join("descendant.pid.tmp")).unwrap();
+                match fault {
+                    "before-publication-read" => panic!("injected setup failure"),
+                    "read" => std::fs::create_dir(&published).unwrap(),
+                    "parse" => std::fs::write(&published, "invalid pid").unwrap(),
+                    _ => unreachable!(),
+                }
+            })
+        }));
+        let leaked: Vec<u32> = witness.live_in_dir().iter().map(Escaped::pid).collect();
+        let unreaped = witness.owner_unreaped();
+        drop(witness);
+        assert!(result.is_err(), "{fault}");
+        assert!(
+            leaked.is_empty(),
+            "processes leaked after {fault}: {leaked:?}"
+        );
+        assert!(!unreaped, "the owner was not reaped after {fault}");
+        assert!(begun.elapsed() < Duration::from_secs(15), "{fault}");
     }
 
     /// A real owner starts a detached descendant and is killed; the descendant survives, and the

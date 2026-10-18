@@ -387,43 +387,42 @@ fn an_invalid_spec_or_missing_backend_or_identity_never_touches_the_disk() {
     });
 }
 
-#[test]
-fn final_unterminated_pipe_output_survives_confirmed_and_unconfirmed_cleanup() {
+#[test_case::test_case(false; "confirmed")]
+#[test_case::test_case(true; "unconfirmed")]
+fn final_unterminated_pipe_output_survives_confirmed_and_unconfirmed_cleanup(hang_scope: bool) {
     crate::testing::runtime(true).block_on(async move {
-        for hang_scope in [false, true] {
-            local(async {
-                let rig = rig();
-                rig.fake.on_launch(|_, _| {
-                    Launch::Run(script(|mut ctx: ProcCtx| async move {
-                        ctx.until_killed_ignoring_term().await;
-                        ctx.print("COMPUTE ERROR").await;
-                    }))
+        local(async {
+            let rig = rig();
+            rig.fake.on_launch(|_, _| {
+                Launch::Run(script(|mut ctx: ProcCtx| async move {
+                    ctx.until_killed_ignoring_term().await;
+                    ctx.print("COMPUTE ERROR").await;
+                }))
+            });
+            if hang_scope {
+                rig.fake.on_systemd(|call| {
+                    if let Systemd::Kill { .. } = call {
+                        Some(Reply::Hang)
+                    } else {
+                        None
+                    }
                 });
-                if hang_scope {
-                    rig.fake.on_systemd(|call| {
-                        if let Systemd::Kill { .. } = call {
-                            Some(Reply::Hang)
-                        } else {
-                            None
-                        }
-                    });
-                }
-                let cancel = CancellationToken::new();
-                let handle = rig
-                    .start_with(&cancel, spec(Regime::R1, &[4], secs(60)))
-                    .await
-                    .unwrap();
-                cancel.cancel();
-                let run = finish(&handle).await;
-                let failure = run.finished.result.failure.unwrap();
-                assert_eq!(
-                    (failure.signal, failure.core),
-                    (Signal::ComputationError, core(4))
-                );
-                assert_eq!(run.finished.teardown.is_err(), hang_scope);
-            })
-            .await;
-        }
+            }
+            let cancel = CancellationToken::new();
+            let handle = rig
+                .start_with(&cancel, spec(Regime::R1, &[4], secs(60)))
+                .await
+                .unwrap();
+            cancel.cancel();
+            let run = finish(&handle).await;
+            let failure = run.finished.result.failure.unwrap();
+            assert_eq!(
+                (failure.signal, failure.core),
+                (Signal::ComputationError, core(4))
+            );
+            assert_eq!(run.finished.teardown.is_err(), hang_scope);
+        })
+        .await;
     });
 }
 

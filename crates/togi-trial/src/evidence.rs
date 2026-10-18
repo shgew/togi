@@ -469,34 +469,32 @@ mod tests {
         assert_eq!(decision.reports, [Report::Progress("core 07 ok".into())]);
     }
 
-    #[test]
-    fn computation_error_replaces_setup_error_in_either_order() {
-        for order in [[setup(), compute()], [compute(), setup()]] {
-            let mut s = selector();
-            for observation in order {
-                s.observe(observation);
-            }
-            let verdict = conclude(s);
-            assert_eq!(
-                verdict.failure.map(|f| f.signal),
-                Some(Signal::ComputationError)
-            );
-            assert_eq!(verdict.inconclusive, None);
+    #[test_case::test_case([setup(), compute()]; "setup first")]
+    #[test_case::test_case([compute(), setup()]; "computation first")]
+    fn computation_error_replaces_setup_error_in_either_order(order: [Observation; 2]) {
+        let mut s = selector();
+        for observation in order {
+            s.observe(observation);
         }
+        let verdict = conclude(s);
+        assert_eq!(
+            verdict.failure.map(|f| f.signal),
+            Some(Signal::ComputationError)
+        );
+        assert_eq!(verdict.inconclusive, None);
     }
 
-    #[test]
-    fn affinity_error_wins_over_computation_error_in_either_order() {
-        for order in [[compute(), affinity()], [affinity(), compute()]] {
-            let mut s = selector();
-            for observation in order {
-                s.observe(observation);
-            }
-            let verdict = conclude(s);
-            assert_eq!(verdict.escaped, [CpuId::from(9)]);
-            assert_eq!(verdict.failure, None);
-            assert_eq!(verdict.inconclusive, None);
+    #[test_case::test_case([compute(), affinity()]; "computation first")]
+    #[test_case::test_case([affinity(), compute()]; "affinity first")]
+    fn affinity_error_wins_over_computation_error_in_either_order(order: [Observation; 2]) {
+        let mut s = selector();
+        for observation in order {
+            s.observe(observation);
         }
+        let verdict = conclude(s);
+        assert_eq!(verdict.escaped, [CpuId::from(9)]);
+        assert_eq!(verdict.failure, None);
+        assert_eq!(verdict.inconclusive, None);
     }
 
     #[test]
@@ -616,29 +614,31 @@ mod tests {
         assert_eq!(conclude(s).escaped, [CpuId::from(3)]);
     }
 
-    #[test]
-    fn the_cap_error_is_suppressed_by_stronger_evidence_in_both_orders() {
-        for order in [[too_long(), compute()], [compute(), too_long()]] {
-            let mut s = selector();
-            for observation in order {
-                s.observe(observation);
-            }
-            let verdict = conclude(s);
-            assert_eq!(
-                verdict.failure.map(|f| f.signal),
-                Some(Signal::ComputationError)
-            );
-            assert_eq!(verdict.inconclusive, None);
+    #[test_case::test_case([too_long(), compute()]; "cap first")]
+    #[test_case::test_case([compute(), too_long()]; "computation first")]
+    fn the_cap_error_is_suppressed_by_computation_in_both_orders(order: [Observation; 2]) {
+        let mut s = selector();
+        for observation in order {
+            s.observe(observation);
         }
-        for order in [[too_long(), affinity()], [affinity(), too_long()]] {
-            let mut s = selector();
-            for observation in order {
-                s.observe(observation);
-            }
-            let verdict = conclude(s);
-            assert_eq!(verdict.escaped, [CpuId::from(9)]);
-            assert_eq!(verdict.inconclusive, None);
+        let verdict = conclude(s);
+        assert_eq!(
+            verdict.failure.map(|f| f.signal),
+            Some(Signal::ComputationError)
+        );
+        assert_eq!(verdict.inconclusive, None);
+    }
+
+    #[test_case::test_case([too_long(), affinity()]; "cap first")]
+    #[test_case::test_case([affinity(), too_long()]; "affinity first")]
+    fn the_cap_error_is_suppressed_by_affinity_in_both_orders(order: [Observation; 2]) {
+        let mut s = selector();
+        for observation in order {
+            s.observe(observation);
         }
+        let verdict = conclude(s);
+        assert_eq!(verdict.escaped, [CpuId::from(9)]);
+        assert_eq!(verdict.inconclusive, None);
     }
 
     #[test]
@@ -656,28 +656,38 @@ mod tests {
         );
     }
 
-    #[test]
-    fn the_cap_error_survives_a_sampling_loss_and_stronger_evidence_drops_it() {
-        let loss = || Observation::SamplingLoss {
+    fn sampling_loss() -> Observation {
+        Observation::SamplingLoss {
             instance: 0,
             what: "usage sampling lost: x".into(),
-        };
+        }
+    }
+
+    #[test_case::test_case([sampling_loss(), too_long()]; "loss first")]
+    #[test_case::test_case([too_long(), sampling_loss()]; "cap first")]
+    fn the_cap_error_survives_a_sampling_loss(order: [Observation; 2]) {
         let cap = "core 03 read stdout.log: backend output line exceeds 64 KiB";
-        for order in [[loss(), too_long()], [too_long(), loss()]] {
-            let mut s = selector();
-            for observation in order {
-                s.observe(observation);
-            }
-            let verdict = conclude(s);
-            assert_eq!(verdict.diagnostics, [cap]);
-            assert!(verdict.inconclusive.is_some());
+        let mut s = selector();
+        for observation in order {
+            s.observe(observation);
         }
-        for strong in [compute(), affinity()] {
-            let mut s = selector();
-            s.observe(too_long());
-            s.observe(strong);
-            assert!(conclude(s).diagnostics.is_empty());
-        }
+        let verdict = conclude(s);
+        assert_eq!(verdict.diagnostics, [cap]);
+        assert!(verdict.inconclusive.is_some());
+    }
+
+    #[test_case::test_case(compute(); "computation")]
+    #[test_case::test_case(affinity(); "affinity")]
+    fn stronger_evidence_drops_the_cap_error(strong: Observation) {
+        let mut s = selector();
+        s.observe(too_long());
+        s.observe(strong);
+        assert!(conclude(s).diagnostics.is_empty());
+    }
+
+    #[test]
+    fn an_unexpected_exit_keeps_the_cap_error() {
+        let cap = "core 03 read stdout.log: backend output line exceeds 64 KiB";
         let mut s = selector();
         s.observe(too_long());
         s.observe(Observation::UnexpectedExit {
@@ -800,22 +810,21 @@ mod tests {
         );
     }
 
-    #[test]
-    fn an_unreadable_affinity_cpu_is_the_first_cpu_of_the_instance_that_reported_it() {
-        for (instance, cpu) in [
-            (0, CpuId::from(6)),
-            (1, CpuId::from(10)),
-            (2, CpuId::from(18)),
-        ] {
-            let mut s = three();
-            s.observe(on(
-                instance,
-                Stream::Stderr,
-                Line::AffinityError(None),
-                "AFFINITY:x",
-            ));
-            assert_eq!(conclude(s).escaped, [cpu], "instance {instance}");
-        }
+    #[test_case::test_case(0, CpuId::from(6); "first instance")]
+    #[test_case::test_case(1, CpuId::from(10); "second instance")]
+    #[test_case::test_case(2, CpuId::from(18); "third instance")]
+    fn an_unreadable_affinity_cpu_is_the_first_cpu_of_the_instance_that_reported_it(
+        instance: usize,
+        cpu: CpuId,
+    ) {
+        let mut s = three();
+        s.observe(on(
+            instance,
+            Stream::Stderr,
+            Line::AffinityError(None),
+            "AFFINITY:x",
+        ));
+        assert_eq!(conclude(s).escaped, [cpu], "instance {instance}");
     }
 
     #[test]
@@ -917,23 +926,31 @@ mod tests {
                 detail: "exit status 0".into()
             }]
         );
-        for blocker in [setup(), too_long(), compute(), affinity()] {
-            let mut s = selector();
-            s.observe(exit());
-            s.observe(blocker);
-            let (verdict, reports) = s.conclude();
-            assert_ne!(
-                verdict.failure.map(|f| f.signal),
-                Some(Signal::UnexpectedExit)
-            );
-            assert!(reports.iter().all(|r| !matches!(
-                r,
-                Report::Signal {
-                    signal: Signal::UnexpectedExit,
-                    ..
-                }
-            )));
-        }
+    }
+
+    #[test_case::test_case(setup(); "setup")]
+    #[test_case::test_case(too_long(); "cap")]
+    #[test_case::test_case(compute(); "computation")]
+    #[test_case::test_case(affinity(); "affinity")]
+    fn stronger_evidence_explains_a_queued_exit(blocker: Observation) {
+        let mut s = selector();
+        s.observe(Observation::UnexpectedExit {
+            instance: 0,
+            detail: "exit status 0".into(),
+        });
+        s.observe(blocker);
+        let (verdict, reports) = s.conclude();
+        assert_ne!(
+            verdict.failure.map(|f| f.signal),
+            Some(Signal::UnexpectedExit)
+        );
+        assert!(reports.iter().all(|r| !matches!(
+            r,
+            Report::Signal {
+                signal: Signal::UnexpectedExit,
+                ..
+            }
+        )));
     }
 
     #[test]
@@ -955,25 +972,25 @@ mod tests {
         assert_eq!(verdict.inconclusive, None);
     }
 
+    #[test_case::test_case("Failed to start transient scope unit: Access denied"; "scope refused")]
+    #[test_case::test_case("Failed to execute /bin/x: No such file"; "execution failed")]
+    fn systemd_startup_text_on_stderr_is_a_setup_error_not_an_exit(text: &str) {
+        let mut s = selector();
+        assert!(s.observe(line(Stream::Stderr, Line::Other, text)).stop);
+        s.observe(Observation::UnexpectedExit {
+            instance: 0,
+            detail: "exit status 1".into(),
+        });
+        let verdict = conclude(s);
+        assert_eq!(verdict.failure, None);
+        assert_eq!(
+            verdict.inconclusive.as_deref(),
+            Some(&*format!("mprime setup error: {text}"))
+        );
+    }
+
     #[test]
-    fn systemd_startup_text_on_stderr_is_a_setup_error_not_an_exit() {
-        for text in [
-            "Failed to start transient scope unit: Access denied",
-            "Failed to execute /bin/x: No such file",
-        ] {
-            let mut s = selector();
-            assert!(s.observe(line(Stream::Stderr, Line::Other, text)).stop);
-            s.observe(Observation::UnexpectedExit {
-                instance: 0,
-                detail: "exit status 1".into(),
-            });
-            let verdict = conclude(s);
-            assert_eq!(verdict.failure, None);
-            assert_eq!(
-                verdict.inconclusive.as_deref(),
-                Some(&*format!("mprime setup error: {text}"))
-            );
-        }
+    fn systemd_startup_text_on_stdout_is_not_a_setup_error() {
         let mut s = selector();
         assert!(
             !s.observe(line(Stream::Stdout, Line::Other, "Failed to execute"))

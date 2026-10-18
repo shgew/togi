@@ -499,10 +499,19 @@ mod tests {
             (identity_of(1000, 100).uid(), identity_of(1000, 100).gid()),
             (1000, 100)
         );
-        for (uid, gid) in [(0, 0), (0, 100), (1000, 0), (u32::MAX, 100)] {
-            let identity = identity_of(uid, gid);
-            assert_eq!((identity.uid(), identity.gid()), (65534, 65534));
-        }
+    }
+
+    #[test_case::test_case(0, 0; "root")]
+    #[test_case::test_case(0, 100; "root uid")]
+    #[test_case::test_case(1000, 0; "root gid")]
+    #[test_case::test_case(u32::MAX, 100; "reserved uid")]
+    fn reserved_fixture_accounts_use_nobody(uid: u32, gid: u32) {
+        let identity = identity_of(uid, gid);
+        assert_eq!((identity.uid(), identity.gid()), (65534, 65534));
+    }
+
+    #[test]
+    fn own_fixture_identity_is_the_effective_account_or_nobody() {
         let own = own_identity();
         let (uid, gid) = (
             rustix::process::geteuid().as_raw(),
@@ -672,20 +681,29 @@ mod tests {
     }
     }
 
-    crate::testing::test! {
-    async fn an_expired_systemd_deadline_times_out_without_running_the_script_or_its_effect() {
-        let fake = Fake::default();
-        let scripted = Rc::new(std::cell::Cell::new(0));
-        let seen = Rc::clone(&scripted);
-        fake.on_systemd(move |_| {
-            seen.set(seen.get() + 1);
-            None
-        });
-        fake.add_unit("togi-trial-t1.scope");
-        let scope = crate::id::ScopeName::from_unit("togi-trial-t1.scope").unwrap();
-        let now = Instant::now();
-        for deadline in [now, now - Duration::from_millis(1)] {
-            for operation in [
+    #[test_case::test_case(Duration::ZERO, 0; "stop at deadline")]
+    #[test_case::test_case(Duration::ZERO, 1; "kill at deadline")]
+    #[test_case::test_case(Duration::ZERO, 2; "list at deadline")]
+    #[test_case::test_case(Duration::from_millis(1), 0; "stop past deadline")]
+    #[test_case::test_case(Duration::from_millis(1), 1; "kill past deadline")]
+    #[test_case::test_case(Duration::from_millis(1), 2; "list past deadline")]
+    fn an_expired_systemd_deadline_times_out_without_running_the_script_or_its_effect(
+        age: Duration,
+        operation_index: usize,
+    ) {
+        crate::testing::runtime(true).block_on(async {
+            let fake = Fake::default();
+            let scripted = Rc::new(std::cell::Cell::new(0));
+            let seen = Rc::clone(&scripted);
+            fake.on_systemd(move |_| {
+                seen.set(seen.get() + 1);
+                None
+            });
+            fake.add_unit("togi-trial-t1.scope");
+            let scope = crate::id::ScopeName::from_unit("togi-trial-t1.scope").unwrap();
+            let now = Instant::now();
+            let deadline = now - age;
+            let operation = [
                 Systemd::Stop {
                     scope: scope.clone(),
                 },
@@ -694,29 +712,28 @@ mod tests {
                     signal: KillSignal::Kill,
                 },
                 Systemd::ListScopes,
-            ] {
-                let outcome = fake.systemd(&operation, deadline).await;
-                assert!(
-                    matches!(outcome, Err(togi_command::Error::TimedOut { .. })),
-                    "{operation:?}"
-                );
-            }
-        }
-        assert_eq!(scripted.get(), 0, "the script is never asked");
-        assert_eq!(
-            fake.units(),
-            ["togi-trial-t1.scope"],
-            "the stop was not applied"
-        );
-        let later = fake
-            .systemd(
-                &Systemd::Stop { scope },
-                Instant::now() + Duration::from_secs(1),
-            )
-            .await;
-        assert!(later.is_ok(), "a live deadline still applies the effect");
-        assert!(fake.units().is_empty());
-    }
+            ][operation_index]
+                .clone();
+            let outcome = fake.systemd(&operation, deadline).await;
+            assert!(
+                matches!(outcome, Err(togi_command::Error::TimedOut { .. })),
+                "{operation:?}"
+            );
+            assert_eq!(scripted.get(), 0, "the script is never asked");
+            assert_eq!(
+                fake.units(),
+                ["togi-trial-t1.scope"],
+                "the stop was not applied"
+            );
+            let later = fake
+                .systemd(
+                    &Systemd::Stop { scope },
+                    Instant::now() + Duration::from_secs(1),
+                )
+                .await;
+            assert!(later.is_ok(), "a live deadline still applies the effect");
+            assert!(fake.units().is_empty());
+        });
     }
 
     crate::testing::test! {

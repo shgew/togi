@@ -1147,38 +1147,29 @@ mod tests {
         });
     }
 
-    #[test]
-    fn real_fs_symlinks_directories_and_fifos_are_rejected_without_reading() {
+    #[test_case::test_case(|p, target| {
+        fs::write(target, "secret\n").unwrap();
+        symlink(target, p).unwrap();
+    }; "symlink")]
+    #[test_case::test_case(|p, _| fs::create_dir(p).unwrap(); "directory")]
+    #[test_case::test_case(|p, _| {
+        rustix::fs::mknodat(rustix::fs::CWD, p, FileType::Fifo, Mode::from_raw_mode(0o600), 0).unwrap();
+    }; "fifo")]
+    fn real_fs_symlinks_directories_and_fifos_are_rejected_without_reading(
+        make: fn(&std::path::Path, &std::path::Path),
+    ) {
         crate::testing::runtime(false).block_on(async {
-            for make in [
-                |p: &std::path::Path, target: &std::path::Path| {
-                    fs::write(target, "secret\n").unwrap();
-                    symlink(target, p).unwrap();
-                },
-                |p: &std::path::Path, _: &std::path::Path| fs::create_dir(p).unwrap(),
-                |p: &std::path::Path, _: &std::path::Path| {
-                    rustix::fs::mknodat(
-                        rustix::fs::CWD,
-                        p,
-                        FileType::Fifo,
-                        Mode::from_raw_mode(0o600),
-                        0,
-                    )
-                    .unwrap();
-                },
-            ] {
-                let mut f = real_fixture();
-                let target = f.directory().join("target");
-                make(&f.path(), &target);
-                let (poll, lines) = f.poll().await;
-                assert!(
-                    matches!(poll, Poll::Failed(WatchError::Unsupported)),
-                    "{poll:?}"
-                );
-                assert!(lines.is_empty());
-                assert!(!f.watched.backlog());
-                assert!(matches!(f.poll().await.0, Poll::Drained));
-            }
+            let mut f = real_fixture();
+            let target = f.directory().join("target");
+            make(&f.path(), &target);
+            let (poll, lines) = f.poll().await;
+            assert!(
+                matches!(poll, Poll::Failed(WatchError::Unsupported)),
+                "{poll:?}"
+            );
+            assert!(lines.is_empty());
+            assert!(!f.watched.backlog());
+            assert!(matches!(f.poll().await.0, Poll::Drained));
         });
     }
 

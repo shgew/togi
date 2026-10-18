@@ -688,69 +688,63 @@ fn real_process_a_helper_that_pins_itself_elsewhere_is_an_escape() {
     assert_eq!(outcome.result.failure, None);
 }
 
-#[test]
-fn real_process_oversized_output_on_any_source_is_inconclusive_with_the_exact_prefix_and_no_containment()
- {
-    for (mode, log) in [
-        ("oversized-stdout", Some("stdout.log")),
-        ("oversized-stderr", Some("stderr.log")),
-        ("oversized-watched", None),
-    ] {
-        let dir = crate::testing::tempdir();
-        let mut oversized = runner(mode, true, timing(), dir.path());
-        let outcome = run(&mut oversized, spec(Regime::R1, &[0], secs(30)));
-        assert!(outcome.result.inconclusive.is_some(), "{mode}");
-        assert_eq!(
-            (outcome.result.failure, outcome.result.escaped.len()),
-            (None, 0),
-            "{mode}"
-        );
-        assert!(outcome.stopped.is_ok(), "{mode}");
-        let Some(waited) = &outcome.waited else {
-            panic!("{mode}: the cap must surface as an error of the wait");
-        };
-        assert_eq!(cap_diagnostics(waited).len(), 1, "{mode}: {waited:?}");
-        assert!(outcome.elapsed < secs(15), "{mode}: {:?}", outcome.elapsed);
-        if let Some(log) = log {
-            assert_capped_prefix(dir.path(), log, mode);
-        }
+#[test_case::test_case("oversized-stdout", Some("stdout.log"); "stdout")]
+#[test_case::test_case("oversized-stderr", Some("stderr.log"); "stderr")]
+#[test_case::test_case("oversized-watched", None; "watched")]
+fn real_process_oversized_output_on_any_source_is_inconclusive_with_the_exact_prefix_and_no_containment(
+    mode: &str,
+    log: Option<&str>,
+) {
+    let dir = crate::testing::tempdir();
+    let mut oversized = runner(mode, true, timing(), dir.path());
+    let outcome = run(&mut oversized, spec(Regime::R1, &[0], secs(30)));
+    assert!(outcome.result.inconclusive.is_some(), "{mode}");
+    assert_eq!(
+        (outcome.result.failure, outcome.result.escaped.len()),
+        (None, 0),
+        "{mode}"
+    );
+    assert!(outcome.stopped.is_ok(), "{mode}");
+    let Some(waited) = &outcome.waited else {
+        panic!("{mode}: the cap must surface as an error of the wait");
+    };
+    assert_eq!(cap_diagnostics(waited).len(), 1, "{mode}: {waited:?}");
+    assert!(outcome.elapsed < secs(15), "{mode}: {:?}", outcome.elapsed);
+    if let Some(log) = log {
+        assert_capped_prefix(dir.path(), log, mode);
     }
 }
 
 /// The helper makes the cap and the classified failure both reach the selector, in either order,
 /// because it writes the second only after teardown's SIGTERM, which only the first can have caused.
-#[test]
-fn real_process_affinity_and_computation_errors_beat_an_overlong_line() {
-    for mode in [
-        "affinity-then-oversized",
-        "compute-then-oversized",
-        "oversized-then-affinity",
-        "oversized-then-compute",
-    ] {
-        let dir = crate::testing::tempdir();
-        let mut helper = runner(mode, false, timing(), dir.path());
-        let outcome = run(&mut helper, spec(Regime::R1, &[0], secs(30)));
-        outcome.assert_clean(mode);
-        assert_eq!(outcome.result.inconclusive, None, "{mode}");
-        if mode.contains("affinity") {
-            assert_eq!(outcome.result.escaped, [CpuId::from(9)], "{mode}");
-            assert_eq!(outcome.failure(), None, "{mode}");
-        } else {
-            assert_eq!(outcome.failure(), Some(Signal::ComputationError), "{mode}");
-            assert!(outcome.result.escaped.is_empty(), "{mode}");
-            assert_eq!(
-                outcome
-                    .signals
-                    .iter()
-                    .filter(|(signal, _)| *signal == Signal::ComputationError)
-                    .count(),
-                1,
-                "{mode}"
-            );
-        }
-        assert_capped_prefix(dir.path(), "stdout.log", mode);
-        assert!(outcome.elapsed < secs(15), "{mode}: {:?}", outcome.elapsed);
+#[test_case::test_case("affinity-then-oversized", true; "affinity first")]
+#[test_case::test_case("compute-then-oversized", false; "computation first")]
+#[test_case::test_case("oversized-then-affinity", true; "affinity last")]
+#[test_case::test_case("oversized-then-compute", false; "computation last")]
+fn real_process_affinity_and_computation_errors_beat_an_overlong_line(mode: &str, affinity: bool) {
+    let dir = crate::testing::tempdir();
+    let mut helper = runner(mode, false, timing(), dir.path());
+    let outcome = run(&mut helper, spec(Regime::R1, &[0], secs(30)));
+    outcome.assert_clean(mode);
+    assert_eq!(outcome.result.inconclusive, None, "{mode}");
+    if affinity {
+        assert_eq!(outcome.result.escaped, [CpuId::from(9)], "{mode}");
+        assert_eq!(outcome.failure(), None, "{mode}");
+    } else {
+        assert_eq!(outcome.failure(), Some(Signal::ComputationError), "{mode}");
+        assert!(outcome.result.escaped.is_empty(), "{mode}");
+        assert_eq!(
+            outcome
+                .signals
+                .iter()
+                .filter(|(signal, _)| *signal == Signal::ComputationError)
+                .count(),
+            1,
+            "{mode}"
+        );
     }
+    assert_capped_prefix(dir.path(), "stdout.log", mode);
+    assert!(outcome.elapsed < secs(15), "{mode}: {:?}", outcome.elapsed);
 }
 
 #[test]
