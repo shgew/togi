@@ -802,20 +802,12 @@ impl RecoveryState {
                 }
             }
         }
-        if !end.escaped.is_empty() {
+        if let Some(detail) =
+            containment_detail(&end.escaped, &start_cpus, end.containment_error.as_deref())
+        {
             self.containment = Some(Cited {
                 seq: event.seq,
-                detail: format!(
-                    "backend thread on cpu {} outside allowed cpus {}",
-                    cpu_list(&end.escaped),
-                    cpu_list(&start_cpus)
-                ),
-            });
-        }
-        if let Some(error) = &end.containment_error {
-            self.containment = Some(Cited {
-                seq: event.seq,
-                detail: error.clone(),
+                detail,
             });
         }
         if end.backend_missing {
@@ -858,6 +850,22 @@ impl RecoveryState {
             | DeadEndCondition::Defect => {}
         }
     }
+}
+
+pub(crate) fn containment_detail(
+    escaped: &[CpuId],
+    allowed: &[CpuId],
+    uncontained: Option<&str>,
+) -> Option<String> {
+    uncontained.map(str::to_owned).or_else(|| {
+        (!escaped.is_empty()).then(|| {
+            format!(
+                "backend thread on cpu {} outside allowed cpus {}",
+                cpu_list(escaped),
+                cpu_list(allowed)
+            )
+        })
+    })
 }
 
 fn cpu_list(cpus: &[CpuId]) -> String {

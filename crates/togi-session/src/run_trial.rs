@@ -528,7 +528,12 @@ impl Session<'_> {
                     joined = Joined::Crashed { uncontained: None };
                     error.get_or_insert(Error::Crashed);
                 }
-                Err(flow) => return Err(flow),
+                Err(flow) => {
+                    if matches!(&flow, crate::error::Flow::Fatal(SessionError::Monotonic(_))) {
+                        self.keep_containment(trial, &result, joined.uncontained())?;
+                    }
+                    return Err(flow);
+                }
             }
         }
         let crashed = joined.crashed();
@@ -565,23 +570,7 @@ impl Session<'_> {
         }) {
             Ok(adjudication) => adjudication,
             Err(error) => {
-                if !result.escaped.is_empty() || containment.is_some() {
-                    let stop = self.dead_end(
-                        togi_journal::DeadEnd {
-                            condition: togi_journal::DeadEndCondition::Containment,
-                            core: None,
-                            detail: format!(
-                                "trial {}: escaped CPUs {:?}; unconfirmed cleanup: {}",
-                                trial.id,
-                                result.escaped,
-                                containment.unwrap_or("none")
-                            ),
-                            action: None,
-                        },
-                        &[trial.start],
-                    )?;
-                    self.record_shutdown(&stop);
-                }
+                self.keep_containment(trial, &result, containment)?;
                 return Err(error.into());
             }
         };
@@ -632,6 +621,42 @@ impl Session<'_> {
         if crashed {
             return Err(SessionError::Machine(Error::Crashed).into());
         }
+        Ok(())
+    }
+
+    fn keep_containment(
+        &mut self,
+        trial: &Trial<'_>,
+        result: &TrialResult,
+        uncontained: Option<&str>,
+    ) -> Result<(), SessionError> {
+        let allowed = self
+            .appender
+            .journal()
+            .event(trial.start)
+            .and_then(|event| {
+                if let Payload::TrialStart(start) = &event.payload {
+                    Some(start.cpus.as_slice())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        let Some(detail) =
+            crate::recovery::containment_detail(&result.escaped, allowed, uncontained)
+        else {
+            return Ok(());
+        };
+        let stop = self.dead_end(
+            togi_journal::DeadEnd {
+                condition: togi_journal::DeadEndCondition::Containment,
+                core: None,
+                detail,
+                action: None,
+            },
+            &[trial.start],
+        )?;
+        self.record_shutdown(&stop);
         Ok(())
     }
 

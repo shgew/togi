@@ -525,6 +525,7 @@ fn trial_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
 struct MonotonicKernel {
     inner: Box<dyn togi_machine::Kernel>,
     mono: std::time::Duration,
+    visible: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
 impl MonotonicKernel {
@@ -548,7 +549,11 @@ impl togi_machine::Kernel for MonotonicKernel {
         _: &togi_machine::BootId,
         _: std::time::Duration,
     ) -> Result<Vec<togi_machine::Mce>, togi_machine::Partial<Vec<togi_machine::Mce>>> {
-        Ok(vec![self.mce()])
+        Ok(if self.visible.get() {
+            vec![self.mce()]
+        } else {
+            Vec::new()
+        })
     }
 
     fn read_mces(
@@ -557,7 +562,9 @@ impl togi_machine::Kernel for MonotonicKernel {
         after: Option<&togi_machine::KernelCursor>,
     ) -> Result<togi_machine::KernelRead, togi_machine::Partial<Vec<togi_machine::Mce>>> {
         let mut read = self.inner.read_mces(boot, after)?;
-        read.mces.push(self.mce());
+        if self.visible.get() {
+            read.mces.push(self.mce());
+        }
         Ok(read)
     }
 
@@ -601,6 +608,7 @@ fn kernel_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
     input.machine.kernel = Box::new(MonotonicKernel {
         inner: input.machine.kernel,
         mono,
+        visible: std::rc::Rc::new(std::cell::Cell::new(true)),
     });
     input.machine.trials = Box::new(DurationTrials {
         inner: input.machine.trials,
@@ -707,7 +715,7 @@ fn an_overflowing_duration_keeps_the_containment_dead_end_durable() {
     assert!(ended.journal.events().iter().any(|event| matches!(
         &event.payload,
         Payload::DeadEnd(dead) if dead.condition == togi_journal::DeadEndCondition::Containment
-            && dead.detail.contains("escaped CPUs")
+            && dead.detail.contains("backend thread on cpu 63 outside allowed cpus")
     )));
     assert!(
         !ended
@@ -760,4 +768,47 @@ fn recovered_sample_elapsed_seconds_are_checked(elapsed_ms: i64, refused: bool) 
         )
     });
     assert_eq!(warning, refused);
+}
+
+#[test]
+fn an_overflowing_teardown_mce_keeps_the_containment_dead_end_durable() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    let started = std::rc::Rc::new(std::cell::Cell::new(false));
+    let visible = std::rc::Rc::clone(&started);
+    input.on_append = Some(Box::new(move |event| {
+        if matches!(&event.payload, Payload::TrialStart(_)) {
+            started.set(true);
+        }
+    }));
+    input.machine.kernel = Box::new(MonotonicKernel {
+        inner: input.machine.kernel,
+        mono: std::time::Duration::from_nanos(u64::MAX) + std::time::Duration::from_nanos(1),
+        visible,
+    });
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        time: ReportedTime::EscapedOverflow,
+        cancel: input.cancel.clone(),
+    });
+    let ended = run(input);
+    assert!(
+        ended
+            .errors
+            .iter()
+            .any(|error| matches!(error, togi_session::SessionError::Monotonic(_)))
+    );
+    assert!(ended.journal.events().iter().any(|event| matches!(
+        &event.payload,
+        Payload::DeadEnd(dead) if dead.condition == togi_journal::DeadEndCondition::Containment
+            && dead.detail.contains("backend thread on cpu 63 outside allowed cpus")
+    )));
+    assert!(
+        !ended
+            .journal
+            .events()
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::TrialEnd(_)))
+    );
 }
