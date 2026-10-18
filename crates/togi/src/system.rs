@@ -122,6 +122,9 @@ pub trait System {
     /// The zone event lines are shown in.
     fn zone(&self) -> TimeZone;
 
+    /// The online cores, read without accessing the SMU mailbox.
+    fn topology(&self) -> Result<Vec<togi_machine::CoreInfo>, togi_hardware::Error>;
+
     /// The checks `run` makes at startup; privileged checks borrow the held host lock.
     fn diagnose(
         &self,
@@ -222,6 +225,10 @@ impl System for Real {
 
     fn zone(&self) -> TimeZone {
         TimeZone::system()
+    }
+
+    fn topology(&self) -> Result<Vec<togi_machine::CoreInfo>, togi_hardware::Error> {
+        togi_hardware::topology()
     }
 
     fn diagnose(

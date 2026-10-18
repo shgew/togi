@@ -86,10 +86,21 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     } else {
         None
     };
-    let diagnosis = match system.diagnose(&config, recorded.as_ref(), lock.as_ref()) {
+    let mut diagnosis = match system.diagnose(&config, recorded.as_ref(), lock.as_ref()) {
         Ok(diagnosis) => diagnosis,
         Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
     };
+    let topology = match system.topology() {
+        Ok(topology) => topology,
+        Err(error) => return fail(ctx, COMMAND, togi_render::error_chain(&error)),
+    };
+    if let Err(error) = togi_tuner::Topology::new(&topology) {
+        diagnosis.ran.push(togi_machine::Check {
+            name: "topology".into(),
+            detail: format!("this machine's topology is not supported: {error}"),
+            ok: false,
+        });
+    }
     let (table, failed) = table(&diagnosis);
     if let Err(exit) = ctx.out.write_all(table.as_bytes()).map_err(|error| {
         ctx.error(format!(
