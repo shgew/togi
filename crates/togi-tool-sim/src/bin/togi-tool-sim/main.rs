@@ -8,7 +8,6 @@ mod signals;
 mod suite;
 
 #[cfg(test)]
-#[path = "../../../tests/cli/content.rs"]
 mod tests;
 
 use std::io::Write as _;

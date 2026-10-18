@@ -59,7 +59,7 @@ fn a_machine_without_an_extract_cannot_replay() {
     let mut host = Host::default();
     host.put(
         "/machine.json",
-        include_str!("../../../../tools/bench/machines/flat-hazard.json"),
+        include_str!("../../../../../../tools/bench/machines/flat-hazard.json"),
     );
     let ran = host.run([
         "--replay-facts",
@@ -90,11 +90,11 @@ fn overlays_are_loaded_through_the_same_memory_source() {
     let mut host = Host::default();
     host.put(
         "/target-shared-voltage.json",
-        include_str!("../../../../tools/bench/machines/target-shared-voltage.json"),
+        include_str!("../../../../../../tools/bench/machines/target-shared-voltage.json"),
     );
     host.put(
         "/overlay.json",
-        include_str!("../../../../tools/bench/machines/target-r7-vf-boost.json"),
+        include_str!("../../../../../../tools/bench/machines/target-r7-vf-boost.json"),
     );
     let ran = host.run([
         "--machine",
