@@ -176,31 +176,45 @@ fn later_sessions(dir: &Path) -> PathBuf {
     write_extract(dir, &facts)
 }
 
-#[test]
-fn real_process_sessions_after_the_artifact_are_read_only_with_the_current_extract() {
+#[derive(Clone, Copy)]
+enum LaterSessionMode {
+    ForwardOnly,
+    Output,
+    SharedVoltage,
+}
+
+#[test_case::test_case(LaterSessionMode::ForwardOnly; "ForwardOnly")]
+#[test_case::test_case(LaterSessionMode::Output; "Output")]
+#[test_case::test_case(LaterSessionMode::SharedVoltage; "SharedVoltage")]
+fn real_process_sessions_after_the_artifact_are_read_only_with_the_current_extract(
+    scenario: LaterSessionMode,
+) {
     let dir = tempfile::tempdir().unwrap();
     let extract = later_sessions(dir.path());
     let out = dir.path().join("machines");
     let facts = extract.to_str().unwrap();
-    for args in [
-        &["--forward-only", "--seal", "0"][..],
-        &["--out", out.to_str().unwrap()],
-        &["--out", out.to_str().unwrap(), "--shared-voltage-in-sample"],
-    ] {
-        let mut all = vec!["--facts", facts];
-        all.extend_from_slice(args);
-        let ran = fit(&all);
-        assert_eq!(ran.status.code(), Some(1), "{args:?}");
-        assert_eq!(
-            text(&ran.stderr),
-            format!(
-                "togi-tool-fit: {facts} holds session 20261004T211726Z, recorded after the original research artifact: only --current-extract reads later sessions, and no research campaign does\n"
-            ),
-            "{args:?}"
-        );
-        assert!(ran.stdout.is_empty(), "{args:?}");
-        assert!(!out.exists(), "{args:?} created the output directory");
-    }
+    let args: &[&str] = match scenario {
+        LaterSessionMode::ForwardOnly => &["--forward-only", "--seal", "0"][..],
+        LaterSessionMode::Output => &["--out", out.to_str().unwrap()],
+        LaterSessionMode::SharedVoltage => {
+            &["--out", out.to_str().unwrap(), "--shared-voltage-in-sample"]
+        }
+    };
+
+    let mut all = vec!["--facts", facts];
+    all.extend_from_slice(args);
+    let ran = fit(&all);
+    assert_eq!(ran.status.code(), Some(1), "{args:?}");
+    assert_eq!(
+        text(&ran.stderr),
+        format!(
+            "togi-tool-fit: {facts} holds session 20261004T211726Z, recorded after the original research artifact: only --current-extract reads later sessions, and no research campaign does\n"
+        ),
+        "{args:?}"
+    );
+    assert!(ran.stdout.is_empty(), "{args:?}");
+    assert!(!out.exists(), "{args:?} created the output directory");
+
     let ran = fit(&["--facts", facts, "--forward-only", "--current-extract"]);
     assert_eq!(ran.status.code(), Some(0), "{}", text(&ran.stderr));
     assert!(
@@ -311,110 +325,121 @@ fn real_process_a_failed_check_leaves_no_records_file() {
     assert!(!records.exists(), "a failed check left its records file");
 }
 
-#[test]
-fn real_process_an_unreadable_extract_exits_1_with_the_error_on_stderr() {
+#[derive(Clone, Copy)]
+enum UnreadableExtractMode {
+    Output,
+    ForwardOnly,
+    SharedVoltage,
+    Artifact,
+}
+
+#[test_case::test_case(UnreadableExtractMode::Output; "Output")]
+#[test_case::test_case(UnreadableExtractMode::ForwardOnly; "ForwardOnly")]
+#[test_case::test_case(UnreadableExtractMode::SharedVoltage; "SharedVoltage")]
+#[test_case::test_case(UnreadableExtractMode::Artifact; "Artifact")]
+fn real_process_an_unreadable_extract_exits_1_with_the_error_on_stderr(
+    scenario: UnreadableExtractMode,
+) {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("missing.gz");
     let out = dir.path().join("out");
     let out = out.to_str().unwrap();
-    for extra in [
-        &["--out", out][..],
-        &["--forward-only"],
-        &["--out", out, "--shared-voltage-in-sample"],
-        &["--write-artifact", out],
-    ] {
-        let mut args = vec!["--facts", missing.to_str().unwrap()];
-        args.extend_from_slice(extra);
-        let ran = fit(&args);
-        assert_eq!(ran.status.code(), Some(1), "{extra:?}");
-        assert_eq!(
-            text(&ran.stderr),
-            format!(
-                "togi-tool-fit: open extract {}: No such file or directory (os error 2)\n",
-                missing.display()
-            ),
-            "{extra:?}"
-        );
-        assert!(ran.stdout.is_empty(), "{extra:?}");
-    }
+    let extra: &[&str] = match scenario {
+        UnreadableExtractMode::Output => &["--out", out][..],
+        UnreadableExtractMode::ForwardOnly => &["--forward-only"],
+        UnreadableExtractMode::SharedVoltage => &["--out", out, "--shared-voltage-in-sample"],
+        UnreadableExtractMode::Artifact => &["--write-artifact", out],
+    };
+
+    let mut args = vec!["--facts", missing.to_str().unwrap()];
+    args.extend_from_slice(extra);
+    let ran = fit(&args);
+    assert_eq!(ran.status.code(), Some(1), "{extra:?}");
+    assert_eq!(
+        text(&ran.stderr),
+        format!(
+            "togi-tool-fit: open extract {}: No such file or directory (os error 2)\n",
+            missing.display()
+        ),
+        "{extra:?}"
+    );
+    assert!(ran.stdout.is_empty(), "{extra:?}");
 }
 
-#[test]
-fn real_process_flags_that_do_not_go_together_are_usage_errors() {
-    for args in [
-        &["--forward-only"][..],
-        &["--facts", "f.gz"],
-        &["--facts", "f.gz", "--forward-only", "--out", "o"],
-        &[
+#[test_case::test_case(&["--forward-only"][..]; "forward only")]
+#[test_case::test_case(&["--facts", "f.gz"]; "facts f gz")]
+#[test_case::test_case(&["--facts", "f.gz", "--forward-only", "--out", "o"]; "facts f gz forward only out o")]
+#[test_case::test_case(&[
             "--facts",
             "f.gz",
             "--forward-only",
             "--reference-machine",
             "m.json",
-        ],
-        &[
+        ]; "facts f gz forward only reference machine m json")]
+#[test_case::test_case(&[
             "--facts",
             "f.gz",
             "--write-artifact",
             "a.gz",
             "--current-extract",
-        ],
-        &["--facts", "f.gz", "--write-artifact", "a.gz", "--out", "o"],
-        &[
+        ]; "facts f gz write artifact a gz current extract")]
+#[test_case::test_case(&["--facts", "f.gz", "--write-artifact", "a.gz", "--out", "o"]; "facts f gz write artifact a gz out o")]
+#[test_case::test_case(&[
             "--facts",
             "f.gz",
             "--write-artifact",
             "a.gz",
             "--forward-only",
-        ],
-        &[
+        ]; "facts f gz write artifact a gz forward only")]
+#[test_case::test_case(&[
             "--facts",
             "f.gz",
             "--shared-voltage-in-sample",
             "--forward-only",
-        ],
-        &[
+        ]; "facts f gz shared voltage in sample forward only")]
+#[test_case::test_case(&[
             "--facts",
             "f.gz",
             "--shared-voltage-in-sample",
             "--bootstrap",
             "0",
-        ],
-        &[
+        ]; "facts f gz shared voltage in sample bootstrap 0")]
+#[test_case::test_case(&[
             "--facts",
             "f.gz",
             "--shared-voltage-in-sample",
             "--seed",
             "263",
-        ],
-        &[
+        ]; "facts f gz shared voltage in sample seed 263")]
+#[test_case::test_case(&[
             "--facts",
             "f.gz",
             "--shared-voltage-in-sample",
             "--seal",
             "0",
-        ],
-        &["--facts", "f.gz", "--seal", "1"],
-        &["--facts", "f.gz", "--forward-only", "--seal", "-1"],
-        &["--facts", "f.gz", "--forward-only", "--jobs", "0"],
-        &["--facts", "f.gz", "--out", "o", "--bootstrap", "-1"],
-        &["--facts", "f.gz", "--forward-only", "extra"],
-        &["--facts", "f.gz", "--records", "r.jsonl"],
-        &["--compare", "a.jsonl"],
-        &["--compare", "a.jsonl", "b.jsonl", "--facts", "f.gz"],
-        &["--compare", "a.jsonl", "b.jsonl", "--forward-only"],
-        &["--compare", "a.jsonl", "b.jsonl", "--jobs", "1"],
-        &["--metrics", "m.json"],
-    ] {
-        let ran = fit(args);
-        assert_eq!(
-            ran.status.code(),
-            Some(2),
-            "{args:?}: {}",
-            text(&ran.stderr)
-        );
-        assert!(ran.stdout.is_empty(), "{args:?}");
-    }
+        ]; "facts f gz shared voltage in sample seal 0")]
+#[test_case::test_case(&["--facts", "f.gz", "--seal", "1"]; "facts f gz seal 1")]
+#[test_case::test_case(&["--facts", "f.gz", "--forward-only", "--seal", "-1"]; "facts f gz forward only seal 1")]
+#[test_case::test_case(&["--facts", "f.gz", "--forward-only", "--jobs", "0"]; "facts f gz forward only jobs 0")]
+#[test_case::test_case(&["--facts", "f.gz", "--out", "o", "--bootstrap", "-1"]; "facts f gz out o bootstrap 1")]
+#[test_case::test_case(&["--facts", "f.gz", "--forward-only", "extra"]; "facts f gz forward only extra")]
+#[test_case::test_case(&["--facts", "f.gz", "--records", "r.jsonl"]; "facts f gz records r jsonl")]
+#[test_case::test_case(&["--compare", "a.jsonl"]; "compare a jsonl")]
+#[test_case::test_case(&["--compare", "a.jsonl", "b.jsonl", "--facts", "f.gz"]; "compare a jsonl b jsonl facts f gz")]
+#[test_case::test_case(&["--compare", "a.jsonl", "b.jsonl", "--forward-only"]; "compare a jsonl b jsonl forward only")]
+#[test_case::test_case(&["--compare", "a.jsonl", "b.jsonl", "--jobs", "1"]; "compare a jsonl b jsonl jobs 1")]
+#[test_case::test_case(&["--metrics", "m.json"]; "metrics m json")]
+fn real_process_flags_that_do_not_go_together_are_usage_errors(case: &[&str]) {
+    let args = case;
+
+    let ran = fit(args);
+    assert_eq!(
+        ran.status.code(),
+        Some(2),
+        "{args:?}: {}",
+        text(&ran.stderr)
+    );
+    assert!(ran.stdout.is_empty(), "{args:?}");
 }
 
 #[test]

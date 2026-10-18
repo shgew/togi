@@ -266,56 +266,57 @@ fn a_constrained_refit_maximizes_the_resampled_likelihood_inside_the_original_ev
     assert_eq!(fitted, again);
 }
 
-#[test]
-fn an_outcome_the_model_calls_impossible_costs_infinity_and_a_certain_one_costs_nothing() {
+#[test_case::test_case((0.0, 1, true); "0 0 1 true")]
+#[test_case::test_case((100.0, 0, true); "100 0 0 true")]
+#[test_case::test_case((0.0, 0, false); "0 0 0 false")]
+#[test_case::test_case((100.0, 1, false); "100 0 1 false")]
+fn an_outcome_the_model_calls_impossible_costs_infinity_and_a_certain_one_costs_nothing(
+    case: (f64, u32, bool),
+) {
+    let (flat, failures, impossible) = case;
     let obs = [observation(&[-10, 0], Regime::R1, &[0], 90, 1, 0)];
     let mut obs = obs.to_vec();
-    for (flat, failures, impossible) in [
-        (0.0, 1, true),
-        (100.0, 0, true),
-        (0.0, 0, false),
-        (100.0, 1, false),
-    ] {
-        let mut cfg = blank_machine(16);
-        cfg.core[0].flat = flat;
-        obs[0].k = failures;
-        let l = Likelihood::new(cfg, &obs, None, None);
-        let loss = l.value_of(l.model.as_ref().unwrap(), 0);
-        if impossible {
-            assert!(
-                loss.is_infinite() && loss > 0.0,
-                "flat={flat} failures={failures}: {loss}"
-            );
-        } else {
-            assert!(
-                loss.abs() < f64::EPSILON,
-                "flat={flat} failures={failures}: {loss}"
-            );
-        }
+
+    let mut cfg = blank_machine(16);
+    cfg.core[0].flat = flat;
+    obs[0].k = failures;
+    let l = Likelihood::new(cfg, &obs, None, None);
+    let loss = l.value_of(l.model.as_ref().unwrap(), 0);
+    if impossible {
+        assert!(
+            loss.is_infinite() && loss > 0.0,
+            "flat={flat} failures={failures}: {loss}"
+        );
+    } else {
+        assert!(
+            loss.abs() < f64::EPSILON,
+            "flat={flat} failures={failures}: {loss}"
+        );
     }
 }
 
-#[test]
-fn a_workload_override_needs_ten_trials_and_a_better_likelihood() {
+#[test_case::test_case(9_u32; "9 u32")]
+#[test_case::test_case(10; "10")]
+fn a_workload_override_needs_ten_trials_and_a_better_likelihood(case: u32) {
+    let n = case;
     let id = pick_workload(Regime::R1, 0).id();
-    for n in [9_u32, 10] {
-        let mut cfg = initial_config(&[&seed_fact()]);
-        cfg.model.near_limit_rate = 0.0;
-        let obs = [observation(&[-20, 0], Regime::R1, &[0], 60, n, 1)];
-        let mut l = Likelihood::new(cfg, &obs, None, None);
-        let before = l.score(&[0]);
-        l.fit_workloads();
-        assert_eq!(
-            l.cfg.core[0].workload.contains_key(&id),
-            n >= 10,
-            "{n} trials"
+
+    let mut cfg = initial_config(&[&seed_fact()]);
+    cfg.model.near_limit_rate = 0.0;
+    let obs = [observation(&[-20, 0], Regime::R1, &[0], 60, n, 1)];
+    let mut l = Likelihood::new(cfg, &obs, None, None);
+    let before = l.score(&[0]);
+    l.fit_workloads();
+    assert_eq!(
+        l.cfg.core[0].workload.contains_key(&id),
+        n >= 10,
+        "{n} trials"
+    );
+    if n >= 10 {
+        assert!(
+            l.score(&[0]) < before,
+            "the override did not explain the failure"
         );
-        if n >= 10 {
-            assert!(
-                l.score(&[0]) < before,
-                "the override did not explain the failure"
-            );
-        }
     }
 }
 
@@ -419,17 +420,21 @@ fn the_idle_limit_keeps_the_total_likelihood_from_worsening() {
     assert!(l.score(&all) <= before + 1e-9);
 }
 
-#[test]
-fn an_idle_limit_needs_a_negative_offset_on_an_unloaded_core_to_be_fitted() {
+#[test_case::test_case((None, None); "None None")]
+#[test_case::test_case((Some(0), Some(0)); "Some 0 Some 0")]
+#[test_case::test_case((Some(-50), None); "Some 50 None")]
+fn an_idle_limit_needs_a_negative_offset_on_an_unloaded_core_to_be_fitted(
+    case: (Option<i64>, Option<i64>),
+) {
+    let (initial, want) = case;
     let obs = [
         observation(&[-1, 0], Regime::R1, &[0], 60, 1, 1),
         observation(&[0, -1], Regime::R1, &[1], 60, 100, 0),
     ];
-    for (initial, want) in [(None, None), (Some(0), Some(0)), (Some(-50), None)] {
-        let mut cfg = idle_machine();
-        cfg.core[1].idle = initial;
-        let mut l = Likelihood::new(cfg, &obs, None, None);
-        l.fit_idle();
-        assert_eq!(l.cfg.core[1].idle, want, "initial {initial:?}");
-    }
+
+    let mut cfg = idle_machine();
+    cfg.core[1].idle = initial;
+    let mut l = Likelihood::new(cfg, &obs, None, None);
+    l.fit_idle();
+    assert_eq!(l.cfg.core[1].idle, want, "initial {initial:?}");
 }

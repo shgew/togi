@@ -73,8 +73,15 @@ fn the_committed_extract_is_refused_unless_the_run_names_the_current_extract() {
     assert!(current.sessions > 7, "{}", current.sessions);
 }
 
-#[test]
-fn an_edited_or_partial_artifact_is_refused() {
+#[derive(Clone, Copy)]
+enum ArtifactEdit {
+    DroppedRecord,
+    DevelopmentOnly,
+}
+
+#[test_case::test_case(ArtifactEdit::DroppedRecord; "DroppedRecord")]
+#[test_case::test_case(ArtifactEdit::DevelopmentOnly; "DevelopmentOnly")]
+fn an_edited_or_partial_artifact_is_refused(scenario: ArtifactEdit) {
     let full = artifact_rows();
     let mut lines: Vec<&[u8]> = full.split_inclusive(|&byte| byte == b'\n').collect();
     lines.remove(0);
@@ -89,23 +96,28 @@ fn an_edited_or_partial_artifact_is_refused() {
         .flatten()
         .copied()
         .collect();
-    for rows in [dropped, development] {
-        match admit(path(), &rows, Sessions::Artifact) {
-            Err(Error::NotTheArtifact { sha256, .. }) => assert_ne!(sha256, SHA256),
-            other => panic!("{other:?}"),
-        }
-        assert!(admit(path(), &rows, Sessions::Current).is_ok());
+    let rows = match scenario {
+        ArtifactEdit::DroppedRecord => dropped,
+        ArtifactEdit::DevelopmentOnly => development,
+    };
+
+    match admit(path(), &rows, Sessions::Artifact) {
+        Err(Error::NotTheArtifact { sha256, .. }) => assert_ne!(sha256, SHA256),
+        other => panic!("{other:?}"),
     }
+    assert!(admit(path(), &rows, Sessions::Current).is_ok());
 }
 
-#[test]
-fn a_session_after_the_confirmation_is_refused_even_with_a_suffix() {
-    for later in ["20261004T000701Z-2", "20261004T000702Z", "20261010T230611Z"] {
-        let facts = [trial("20260101T000000Z", 1), trial(later, 2)];
-        match admit(path(), &rows(&facts), Sessions::Artifact) {
-            Err(Error::LaterSession { session, .. }) => assert_eq!(session, later),
-            other => panic!("{later}: {other:?}"),
-        }
+#[test_case::test_case("20261004T000701Z-2"; "20261004T000701Z 2")]
+#[test_case::test_case("20261004T000702Z"; "20261004T000702Z")]
+#[test_case::test_case("20261010T230611Z"; "20261010T230611Z")]
+fn a_session_after_the_confirmation_is_refused_even_with_a_suffix(case: &str) {
+    let later = case;
+
+    let facts = [trial("20260101T000000Z", 1), trial(later, 2)];
+    match admit(path(), &rows(&facts), Sessions::Artifact) {
+        Err(Error::LaterSession { session, .. }) => assert_eq!(session, later),
+        other => panic!("{later}: {other:?}"),
     }
 }
 
