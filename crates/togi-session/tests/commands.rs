@@ -419,9 +419,12 @@ fn trial_elapsed_seconds_are_checked(seconds: u64, refused: bool) {
         .journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialEnd(end) => Some(end.duration_s),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end.duration_s)
+            } else {
+                None
+            }
         });
     assert_eq!(duration, u32::try_from(seconds).ok());
 }
@@ -459,7 +462,7 @@ fn trial_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
     let max = std::time::Duration::from_nanos(u64::MAX);
     let nano = std::time::Duration::from_nanos(1);
     let mono = match delta {
-        -1 => max - nano,
+        -1 => max.checked_sub(nano).unwrap(),
         0 => max,
         1 => max + nano,
         _ => unreachable!(),
@@ -487,9 +490,12 @@ fn trial_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
         .journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialStart(start) => start.window_start_ns,
-            _ => None,
+        .find_map(|event| {
+            if let Payload::TrialStart(start) = &event.payload {
+                start.window_start_ns
+            } else {
+                None
+            }
         });
     assert_eq!(start, u64::try_from(mono.as_nanos()).ok());
 }
@@ -565,7 +571,7 @@ fn kernel_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
     let max = std::time::Duration::from_nanos(u64::MAX);
     let nano = std::time::Duration::from_nanos(1);
     let mono = match delta {
-        -1 => max - nano,
+        -1 => max.checked_sub(nano).unwrap(),
         0 => max,
         1 => max + nano,
         _ => unreachable!(),
@@ -593,9 +599,12 @@ fn kernel_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
         .journal
         .events()
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::Mce(mce) => mce.monotonic_ns,
-            _ => None,
+        .find_map(|event| {
+            if let Payload::Mce(mce) = &event.payload {
+                mce.monotonic_ns
+            } else {
+                None
+            }
         });
     assert_eq!(recorded, u64::try_from(mono.as_nanos()).ok());
 }
@@ -649,9 +658,12 @@ fn retry_waits_preserve_the_bounded_seconds_schedule() {
         .journal
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::BackendRetry(retry) => Some((retry.attempt, retry.wait_s)),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::BackendRetry(retry) = &event.payload {
+                Some((retry.attempt, retry.wait_s))
+            } else {
+                None
+            }
         })
         .collect();
     assert_eq!(waits, [(1, 60), (2, 300), (3, 1800)]);
