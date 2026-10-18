@@ -1717,8 +1717,8 @@ fn symbol(buf: &Buffer, x: usize, y: usize) -> &str {
     buf[(u16::try_from(x).unwrap(), u16::try_from(y).unwrap())].symbol()
 }
 
-fn foreground(buf: &Buffer, x: usize, y: usize) -> Option<ratatui::style::Color> {
-    Some(buf[(u16::try_from(x).unwrap(), u16::try_from(y).unwrap())].fg)
+fn foreground(buf: &Buffer, x: usize, y: usize) -> ratatui::style::Color {
+    buf[(u16::try_from(x).unwrap(), u16::try_from(y).unwrap())].fg
 }
 
 /// The rendered rich frame puts the failure point on its own count in the Wide and Medium tables: the gauge
@@ -1746,7 +1746,7 @@ fn the_rendered_rich_frame_puts_each_failure_on_its_count(
         .iter()
         .position(|row| row.contains("CCD 0") && row.contains("fail"))
         .expect("the CCD 0 table");
-    let bad = Paint::Bad.style(Colours::Rich).fg;
+    let bad = Paint::Bad.style(Colours::Rich).fg.unwrap();
     let y = heading + 1;
     let at = |depth: i64| 2 + gauge_column + usize::try_from(depth).unwrap() - 1;
     let mark = at(-fail);
@@ -1843,7 +1843,7 @@ fn the_rendered_wide_bar_has_an_edge_only_on_its_full_height_rows(extra: usize) 
         };
         assert_eq!(
             foreground(&buf, x, y),
-            paint.style(Colours::Rich).fg,
+            paint.style(Colours::Rich).fg.unwrap(),
             "row {y}"
         );
     }
@@ -1859,10 +1859,10 @@ fn the_rendered_wide_bar_has_an_edge_only_on_its_full_height_rows(extra: usize) 
     );
     assert_eq!(
         foreground(&buf, x - 1, top + 2),
-        Paint::Running.style(Colours::Rich).fg
+        Paint::Running.style(Colours::Rich).fg.unwrap()
     );
     assert_eq!(
         foreground(&buf, x, top + 2),
-        Paint::Track.style(Colours::Rich).fg
+        Paint::Track.style(Colours::Rich).fg.unwrap()
     );
 }
