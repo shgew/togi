@@ -351,8 +351,13 @@ fn evaluate(
             let _ = on_signal.send(Event::Signal);
         }
     });
-    let mut child = Command::new("just")
-        .arg(recipe)
+    let mut command = Command::new("just");
+    if recipe == "forward" {
+        command.args(["fit", "--forward-only"]);
+    } else {
+        command.arg(recipe);
+    }
+    let mut child = command
         .args(args)
         .current_dir(root)
         .stdin(Stdio::null())

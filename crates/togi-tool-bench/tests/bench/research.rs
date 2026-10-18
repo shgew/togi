@@ -222,7 +222,7 @@ fn real_process_a_campaign_starts_runs_an_evaluator_stops_and_reports() {
     let raw = fs::read_to_string(fixture.run_dir().join("raw/0001-h1-reference.stdout")).unwrap();
     assert_eq!(
         raw,
-        format!("just forward --facts {FACTS} --seal 1 --jobs 4\n")
+        format!("just fit --forward-only --facts {FACTS} --seal 1 --jobs 4\n")
     );
 
     let refused = fixture

@@ -232,20 +232,10 @@ copy-state src dst: _dev-shell
 fit *args: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- "$@"
 
-# Fit the all-facts IN-SAMPLE shared-voltage anchor from named facts into a named directory; not forward-validated
-[group('run')]
-fit-shared-voltage *args: _dev-shell
-    cargo run --release --locked -p togi-tool-fit -- --shared-voltage-in-sample "$@"
-
 # Write the original seven-session research artifact from the committed extract to the new file OUT, checking its hash (tools/fit/program.md#the-data)
 [group('run')]
 fit-artifact out: _dev-shell
     cargo run --release --locked -p togi-tool-fit -- --facts tools/bench/facts/target.jsonl.gz --write-artifact "$1"
-
-# Run only the forward-chained check on named facts, writing no machine files (`just forward --facts ARTIFACT --seal 1`)
-[group('run')]
-forward *args: _dev-shell
-    cargo run --release --locked -p togi-tool-fit -- --forward-only "$@"
 
 # Pair a candidate's forward records with a reference's and compare them exactly (`just forward-compare CANDIDATE REFERENCE --metrics FILE`)
 [group('run')]
