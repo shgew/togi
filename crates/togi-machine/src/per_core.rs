@@ -43,7 +43,6 @@ impl<T> PerCore<T> {
     pub const fn is_empty(&self) -> bool {
         self.present == 0
     }
-
 }
 
 impl<T: Copy> PerCore<T> {
@@ -91,10 +90,9 @@ mod tests {
         let low = CoreId::from_index(2);
         let high = CoreId::from_index(15);
         let hole = CoreId::from_index(7);
-        let mut values: PerCore<Option<Vec<u32>>> =
-            [(high, Some(vec![15])), (low, Some(vec![2]))]
-                .into_iter()
-                .collect();
+        let mut values: PerCore<Option<Vec<u32>>> = [(high, Some(vec![15])), (low, Some(vec![2]))]
+            .into_iter()
+            .collect();
         assert_eq!(values.get_ref(hole), None);
         values.get_mut(low).unwrap().as_mut().unwrap().push(3);
         assert_eq!(
