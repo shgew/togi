@@ -298,10 +298,12 @@ impl Session<'_> {
                 .ok_or(SessionError::NoSuchTrialCore { core })?;
             self.write_core(core, offset, &[intent])?;
         }
+        let since = self.appender.clock().monotonic();
+        let window_start_ns = u64::try_from(since.as_nanos()).map_err(SessionError::Monotonic)?;
         let mut trial = Trial {
             plan,
             id,
-            since: self.appender.clock().monotonic(),
+            since,
             start: intent,
             alone,
         };
@@ -356,7 +358,7 @@ impl Session<'_> {
         self.appender.watch_trial(Some(token.clone()));
         let mut running = running;
         let window = catch_unwind(AssertUnwindSafe(|| {
-            self.watch_started(&mut *running, &mut trial, &token, &cites)
+            self.watch_started(&mut *running, &mut trial, &token, &cites, window_start_ns)
         }));
         let (scheduled, waiting) = match window {
             Ok(Ok(window)) => window,
@@ -392,14 +394,13 @@ impl Session<'_> {
         trial: &mut Trial<'_>,
         token: &CancellationToken,
         cites: &[Seq],
+        window_start_ns: u64,
     ) -> Step<(bool, Waiting)> {
         let started = running.started();
         let scheduled = started.schedule.is_some();
         let record = TrialStart {
             trial: trial.id.clone(),
-            window_start_ns: Some(
-                u64::try_from(trial.since.as_nanos()).map_err(SessionError::Monotonic)?,
-            ),
+            window_start_ns: Some(window_start_ns),
             scope: started.scope,
             pid: started.pid,
             cpus: started.cpus,

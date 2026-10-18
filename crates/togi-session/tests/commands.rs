@@ -335,6 +335,7 @@ struct DurationTrials {
     inner: Box<dyn togi_machine::Trials>,
     time: ReportedTime,
     cancel: CancellationToken,
+    starts: std::rc::Rc<std::cell::Cell<usize>>,
 }
 
 struct DurationRunning {
@@ -395,6 +396,7 @@ impl togi_machine::Trials for DurationTrials {
         ready: togi_machine::Stopped,
     ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
     {
+        self.starts.set(self.starts.get() + 1);
         Ok(Box::new(DurationRunning {
             inner: self.inner.start(cancel, spec, ready)?,
             time: self.time,
@@ -434,6 +436,7 @@ fn trial_elapsed_seconds_are_checked(seconds: u64, refused: bool) {
         inner: input.machine.trials,
         time: ReportedTime::Elapsed(std::time::Duration::from_secs(seconds)),
         cancel: input.cancel.clone(),
+        starts: Default::default(),
     });
     let ended = run(input);
     assert_eq!(
@@ -497,10 +500,12 @@ fn trial_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
         inner: input.machine.clock,
         mono,
     });
+    let starts = std::rc::Rc::new(std::cell::Cell::new(0));
     input.machine.trials = Box::new(DurationTrials {
         inner: input.machine.trials,
         time: ReportedTime::Elapsed(std::time::Duration::from_secs(90)),
         cancel: input.cancel.clone(),
+        starts: std::rc::Rc::clone(&starts),
     });
     let ended = run(input);
     assert_eq!(
@@ -520,6 +525,7 @@ fn trial_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
         }
     });
     assert_eq!(start, u64::try_from(mono.as_nanos()).ok());
+    assert_eq!(starts.get(), usize::from(!refused));
 }
 
 struct MonotonicKernel {
@@ -614,6 +620,7 @@ fn kernel_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
         inner: input.machine.trials,
         time: ReportedTime::Elapsed(std::time::Duration::from_secs(90)),
         cancel: input.cancel.clone(),
+        starts: Default::default(),
     });
     let ended = run(input);
     assert_eq!(
@@ -704,6 +711,7 @@ fn an_overflowing_duration_keeps_the_containment_dead_end_durable() {
         inner: input.machine.trials,
         time: ReportedTime::EscapedOverflow,
         cancel: input.cancel.clone(),
+        starts: Default::default(),
     });
     let ended = run(input);
     assert!(
@@ -738,6 +746,7 @@ fn recovered_sample_elapsed_seconds_are_checked(elapsed_ms: i64, refused: bool) 
         inner: input.machine.trials,
         time: ReportedTime::CrashedSample(elapsed_ms),
         cancel: input.cancel.clone(),
+        starts: Default::default(),
     });
     let ended = run(input);
     let last = ended
@@ -791,6 +800,7 @@ fn an_overflowing_teardown_mce_keeps_the_containment_dead_end_durable() {
         inner: input.machine.trials,
         time: ReportedTime::EscapedOverflow,
         cancel: input.cancel.clone(),
+        starts: Default::default(),
     });
     let ended = run(input);
     assert!(
