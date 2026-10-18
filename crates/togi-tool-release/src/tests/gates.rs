@@ -12,7 +12,9 @@ const IN_PROGRESS: &str = r#"[{"html_url":"u","status":"in_progress","conclusion
 const SUCCESS: &str = r#"[{"html_url":"u","status":"completed","conclusion":"success"}]"#;
 const FAILURE: &str = r#"[{"html_url":"u","status":"completed","conclusion":"failure"}]"#;
 const CANCELLED: &str = r#"[{"html_url":"u","status":"completed","conclusion":"cancelled"}]"#;
-const LOOKUP: &str = "GET /repos/o/r/actions/workflows/check.yml/runs?branch=main&event=push&head_sha=base&per_page=1";
+const LOOKUP: &str = "GET /repos/o/r/actions/workflows/check.yml/runs?branch=main&event=workflow_dispatch&head_sha=base&per_page=1";
+const HEAD: &str = "GET /repos/o/r/git/ref/heads/main";
+const DISPATCH: &str = "POST /repos/o/r/actions/workflows/check.yml/dispatches";
 
 /// Waits on a fake API serving `runs` in order, repeating the last, each lookup taking `lookup` of the clock.
 fn wait(runs: &[&'static str], lookup: Duration) -> Waited {
@@ -20,8 +22,23 @@ fn wait(runs: &[&'static str], lookup: Duration) -> Waited {
     let start = clock.now.get();
     let now = Rc::clone(&clock.now);
     let runs = runs.to_vec();
+    let dispatch = runs[0] == NONE;
     let mut served = 0;
-    let (mut api, requests) = fake_api(move |_| {
+    let (mut api, requests) = fake_api(move |request| {
+        if request.url.ends_with("/git/ref/heads/main") {
+            return respond(200, r#"{"object":{"sha":"base"}}"#);
+        }
+        if request.url.ends_with("/dispatches") {
+            assert_eq!(request.method, Method::Post);
+            assert_eq!(
+                request
+                    .body
+                    .as_deref()
+                    .map(|body| { serde_json::from_str::<serde_json::Value>(body).unwrap() }),
+                Some(serde_json::json!({"ref": "main"}))
+            );
+            return respond(204, "");
+        }
         let runs = runs[served.min(runs.len() - 1)];
         served += 1;
         now.set(now.get() + lookup);
@@ -32,8 +49,17 @@ fn wait(runs: &[&'static str], lookup: Duration) -> Waited {
     });
     let mut out = Vec::new();
     let result = wait_for_green_check(&mut api, &repository(), "base", &mut clock, &mut out);
-    let lookups = uris(&requests);
-    assert!(lookups.iter().all(|uri| uri == LOOKUP), "{lookups:?}");
+    let all_requests = uris(&requests);
+    let lookups: Vec<_> = all_requests
+        .iter()
+        .filter(|uri| uri.as_str() == LOOKUP)
+        .collect();
+    let mut expected = vec![LOOKUP];
+    if dispatch {
+        expected.extend([HEAD, DISPATCH]);
+    }
+    expected.extend(std::iter::repeat_n(LOOKUP, lookups.len() - 1));
+    assert_eq!(all_requests, expected);
     Waited {
         result,
         out: String::from_utf8(out).unwrap(),
@@ -51,7 +77,7 @@ struct Waited {
     elapsed: Duration,
 }
 
-#[test_case(&[SUCCESS], "", "", &[] ; "success")]
+#[test_case(&[SUCCESS], "", "", &[] ; "reuses existing successful dispatch")]
 #[test_case(&[FAILURE], "check run u for base concluded failure", "", &[] ; "failure")]
 #[test_case(&[CANCELLED], "check run u for base concluded cancelled", "", &[] ; "cancelled")]
 #[test_case(
@@ -59,7 +85,7 @@ struct Waited {
     "",
     "no check.yml run on main for base; waiting up to 1h0m0s for it to pass\ncheck run u for base is in_progress; waiting up to 59m30s for it to pass\n",
     &[30, 30, 30] ;
-    "missing then in progress then success"
+    "dispatches missing run then waits for success"
 )]
 #[test_case(
     &[QUEUED, FAILURE],
@@ -107,8 +133,28 @@ fn check_lookup_failure_reaches_operator() {
         .unwrap_err();
     assert_eq!(
         chain(&error),
-        "look up the check.yml run for base: GET /repos/o/r/actions/workflows/check.yml/runs?branch=main&event=push&head_sha=base&per_page=1: HTTP 403: denied"
+        "look up the check.yml run for base: GET /repos/o/r/actions/workflows/check.yml/runs?branch=main&event=workflow_dispatch&head_sha=base&per_page=1: HTTP 403: denied"
     );
+    assert_eq!(clock.sleeps, []);
+}
+
+#[test]
+fn refuses_dispatch_after_main_moves() {
+    let (mut api, requests) = fake_api(|request| {
+        if request.url.ends_with("/git/ref/heads/main") {
+            respond(200, r#"{"object":{"sha":"new-head"}}"#)
+        } else {
+            respond(200, r#"{"workflow_runs":[]}"#)
+        }
+    });
+    let mut clock = FakeClock::new();
+    let error = wait_for_green_check(&mut api, &repository(), "base", &mut clock, &mut Vec::new())
+        .unwrap_err();
+    assert_eq!(
+        chain(&error),
+        "cannot dispatch check.yml: main is at new-head, not release base base"
+    );
+    assert_eq!(uris(&requests), [LOOKUP, HEAD]);
     assert_eq!(clock.sleeps, []);
 }
 

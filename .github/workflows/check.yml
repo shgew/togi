@@ -1,45 +1,84 @@
-# CI's definition of green: every Linux flake check on GitHub-hosted runners, one job per check so the VM
-# tests boot in parallel. No job runs on macOS (ADR 0061): `just lint` and `just gate` clippy the Rust
-# workspace for aarch64-apple-darwin from Linux, and a breakage found on a Mac is fixed as a bug. The
-# aggregating `check` job requires the Linux checks. Jobs substitute from the public Cachix cache `togi`
-# and push each check's output when CACHIX_AUTH_TOKEN is available, so a check whose inputs are unchanged
-# passes without running; the checks build the package with the revision `dev` so that a new commit alone
-# changes none of them (ADR 0021).
-# The release workflow builds the default package and runs nextest on the release commit.
+# Pull request CI gates landing on main: clippy, nextest, doc and one light job for fmt, changes, deny,
+# shear, module, board-test, sql-test and package. A workflow_dispatch runs every Linux flake check,
+# one job per check so the VM tests boot in parallel (ADR 0074). The release dispatches and waits for
+# this full run on the exact main head before making its release commit.
+# No job runs on macOS (ADR 0061): `just lint` and `just gate` clippy the Rust workspace for
+# aarch64-apple-darwin from Linux, and a breakage found on a Mac is fixed as a bug.
+# eval skips outputs already in the public Cachix cache `togi`; build jobs substitute from it and push
+# their outputs when CACHIX_AUTH_TOKEN is available. The aggregate `check` accepts cached or successful
+# builds, even when all outputs were cached. Checks build the package with revision `dev` so that a new
+# commit alone changes none of them (ADR 0021).
 name: check
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-# Only the newest run of a pull request or main needs checking; releases wait for the exact main head.
+# Only pull request runs may cancel an earlier run; a release can be waiting on a dispatch.
 concurrency:
   group: check-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   eval:
     runs-on: ubuntu-26.04
     outputs:
       checks: ${{ steps.list.outputs.checks }}
+      light: ${{ steps.list.outputs.light }}
       vm-checks: ${{ steps.list.outputs.vm-checks }}
+      all-checks: ${{ steps.list.outputs.all-checks }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
       - name: nix flake check --no-build
         run: nix flake check --no-build
       - id: list
-        name: List the checks
+        name: Select checks missing from Cachix
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          echo "checks=$(nix eval --json .#checks.x86_64-linux --apply builtins.attrNames)" >> "$GITHUB_OUTPUT"
-          echo "vm-checks=$(nix eval --json .#checks.x86_64-linux --apply 'checks: builtins.filter (name: checks.${name} ? driver) (builtins.attrNames checks)')" >> "$GITHUB_OUTPUT"
+          selected='builtins.attrNames checks'
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            selected='[ "clippy" "nextest" "doc" "fmt" "changes" "deny" "shear" "module" "board-test" "sql-test" "package" ]'
+          fi
+          info=$(nix eval --json .#checks.x86_64-linux --apply "
+            checks: let all = builtins.attrNames checks; in {
+              all-checks = all;
+              vm-checks = builtins.filter (name: checks.\${name} ? driver) all;
+              selected = map (name: { inherit name; out = checks.\${name}.outPath; }) ($selected);
+            }")
+          jq -e '.selected | length > 0' <<< "$info" > /dev/null
+          rows=$(jq -er '.selected[] | [.name, .out] | @tsv' <<< "$info")
+          matrix_checks=()
+          light_checks=()
+          printf '%-24s %s\n' 'Selected check' 'Cached'
+          while IFS=$'\t' read -r name out_path; do
+            store_name=${out_path##*/}
+            hash=${store_name:0:32}
+            if curl -sfI --retry 2 --connect-timeout 5 --max-time 15 "https://togi.cachix.org/$hash.narinfo" > /dev/null; then
+              printf '%-24s %s\n' "$name" yes
+              continue
+            fi
+            printf '%-24s %s\n' "$name" no
+            if [[ "$EVENT_NAME" == pull_request && "$name" != clippy && "$name" != nextest && "$name" != doc ]]; then
+              light_checks+=("$name")
+            else
+              matrix_checks+=("$name")
+            fi
+          done <<< "$rows"
+          {
+            echo "checks=$(jq -cn --args '$ARGS.positional' "${matrix_checks[@]}")"
+            echo "light=${light_checks[*]}"
+            echo "vm-checks=$(jq -c '."vm-checks"' <<< "$info")"
+            echo "all-checks=$(jq -c '."all-checks"' <<< "$info")"
+          } >> "$GITHUB_OUTPUT"
 
   build:
     needs: eval
+    if: needs.eval.outputs.checks != '' && needs.eval.outputs.checks != '[]'
     name: ${{ matrix.check }}
     strategy:
       fail-fast: false
@@ -75,20 +114,61 @@ jobs:
         continue-on-error: true
         run: cachix push togi < "$RUNNER_TEMP/out-paths"
 
+  light:
+    needs: eval
+    if: needs.eval.outputs.light != ''
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: togi
+          authToken: ${{ env.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+      - name: Build the light checks together
+        env:
+          LIGHT_CHECKS: ${{ needs.eval.outputs.light }}
+        run: |
+          read -r -a checks <<< "$LIGHT_CHECKS"
+          installables=()
+          for check in "${checks[@]}"; do
+            installables+=(".#checks.x86_64-linux.$check")
+          done
+          nix build --no-link --print-build-logs --keep-going --print-out-paths "${installables[@]}" > "$RUNNER_TEMP/out-paths"
+      - name: Push the checks' outputs to Cachix
+        if: env.CACHIX_AUTH_TOKEN != ''
+        continue-on-error: true
+        run: cachix push togi < "$RUNNER_TEMP/out-paths"
 
   check:
     if: always()
-    needs: [eval, build]
+    needs: [eval, build, light]
     runs-on: ubuntu-26.04
     steps:
       - name: Every check passed
         env:
+          EVAL: ${{ needs.eval.result }}
           BUILD: ${{ needs.build.result }}
-        run: test "$BUILD" = success
+          LIGHT: ${{ needs.light.result }}
+        run: |
+          printf 'eval=%s build=%s light=%s\n' "$EVAL" "$BUILD" "$LIGHT"
+          test "$EVAL" = success
+          for result in "$BUILD" "$LIGHT"; do
+            case "$result" in
+              success|skipped) ;;
+              *) exit 1 ;;
+            esac
+          done
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: github.event_name == 'workflow_dispatch'
       - name: Every simulator suite shard was built
+        if: github.event_name == 'workflow_dispatch'
         env:
-          CHECKS: ${{ needs.eval.outputs.checks }}
+          CHECKS: ${{ needs.eval.outputs.all-checks }}
         run: |
           want=$(jq -ce '.shards as $n | select($n >= 1) | [range($n) | "sim-suite-\(.)"]' nix/sim-suite.json)
           got=$(jq -c '[.[] | select(startswith("sim-suite-"))] | sort_by(ltrimstr("sim-suite-") | tonumber)' <<<"$CHECKS")

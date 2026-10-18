@@ -1,6 +1,6 @@
 # Every pull request runs every flake check; the release trusts `main`
 
-Status: see [the index](README.md).
+Status: superseded by [ADR 0074](0074-pull-request-ci-gates-landing-on-main.md); see [the index](README.md) for earlier amendments.
 
 Pull requests ran only `just ci`: lint, the formatting check and the Go tests. The Nix builds, the NixOS VM test and the race detector first ran in the release workflow ([ADR 0014](0014-release-from-a-workflow.md)), so a stale `vendorHash`, a flake or module regression, or a data race surfaced mid-release, after the change had merged.
 

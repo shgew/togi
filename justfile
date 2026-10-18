@@ -70,7 +70,7 @@ lint: _dev-shell
 fmt:
     nix fmt
 
-# Run every non-VM flake check but the sim-suite-* shards, which CI and `just check` on Linux run (`just sim-suite` or `just check-one sim-suite-<i>` reproduces them), and cargo-deny's advisory audit, which only the deny flake check runs, cheapest first, using a warm dev-shell cargo cache
+# Run the local checks cheapest first with a warm cargo cache, then build the VM tests and sim shards on Linux (Nix rebuilds only what changed); cargo-deny's advisory audit runs only in the deny flake check
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -84,13 +84,39 @@ gate: _dev-shell
     cargo test --locked --doc
     cargo deny --locked check bans licenses sources
     cargo shear
+    just _heavy-gate gate
 
-# Run every flake check this host builds, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
+_heavy-checks:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ '{{ os() }}' == linux ]] || exit 0
+    nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: checks.${name} ? driver || builtins.match "sim-suite-.*" name != null) (builtins.attrNames checks))'
+
+_heavy-gate name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ '{{ os() }}' != linux ]]; then
+        echo "$1: the VM tests and simulator shards build on Linux only; the release's full check runs them"
+        exit 0
+    fi
+    names=$(just _heavy-checks)
+    read -r -a checks <<< "$names"
+    if [[ ! -w /dev/kvm ]]; then
+        echo "$1: /dev/kvm is not writable; skipping the VM tests, but building the simulator shards; the release's full check runs the VM tests"
+        shards=()
+        for check in "${checks[@]}"; do
+            if [[ "$check" == sim-suite-* ]]; then shards+=("$check"); fi
+        done
+        checks=("${shards[@]}")
+    fi
+    if ((${#checks[@]})); then just check-one "${checks[@]}"; fi
+
+# Run every flake check this host builds, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest, doc, cargo-deps, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest, doc, cargo-deps, cargo-fmt, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one module`)
+# Build named flake checks, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest, doc, cargo-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one module`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -240,6 +266,26 @@ release-preview: _dev-shell
 changes: _dev-shell
     cargo run --quiet --locked -p togi-tool-release -- -check changes
 
+# Dispatch every flake check on main's head and follow it: the full run the release waits on
+[group('github')]
+check-main: _dev-shell
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git fetch origin main
+    head=$(git rev-parse refs/remotes/origin/main)
+    previous=$(gh run list --workflow check.yml --event workflow_dispatch --branch main --commit "$head" --json databaseId --jq 'map(.databaseId) | max // 0')
+    gh workflow run check.yml --ref main
+    for ((attempt = 0; attempt < 30; attempt++)); do
+        run=$(gh run list --workflow check.yml --event workflow_dispatch --branch main --commit "$head" --json databaseId --jq "map(select(.databaseId > $previous)) | max_by(.databaseId) | .databaseId // empty")
+        if [[ -n "$run" ]]; then
+            gh run watch "$run" --exit-status
+            exit 0
+        fi
+        sleep 2
+    done
+    echo "check-main: no new workflow_dispatch check run appeared for $head" >&2
+    exit 1
+
 # Print who may post on the repository, what waits on the owner and on the target machine, untriaged issues, work in progress, ready work, overlaps and the open Ruleset issue
 [group('github')]
 board: _dev-shell
@@ -329,7 +375,7 @@ _touched-crates pushed:
         git cat-file -e "HEAD:${dir}Cargo.toml" 2>/dev/null && basename "$dir"
     done || true
 
-# Push a fix to a pull request under review: format, lint, test the changed Rust crates, Nushell board and SQL views, then push as `just ship` does without the gate; the first push of a branch uses `just ship`
+# Push a review fix: format, lint, test changed Rust crates, board and SQL views, build the VM tests and sim shards on Linux (Nix rebuilds only what changed), then push as `just ship` does; the first push uses `just ship`
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -356,6 +402,7 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
         for crate in "${crates[@]}"; do args+=(-p "$crate"); done
         just test "${args[@]}"
     fi
+    just _heavy-gate push-fix
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
 # Wait until pull request N has check and review passing on its head and no unresolved review thread, then report it ready for the owner; never merges
