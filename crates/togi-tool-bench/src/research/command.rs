@@ -14,14 +14,14 @@ pub enum CommandError {
     Recipe { recipe: String, mode: &'static str },
     #[error("just {recipe} in a {role} run: {why}")]
     Argument {
-        recipe: &'static str,
+        recipe: Recipe,
         role: &'static str,
         why: String,
     },
 }
 
-/// Which evaluator a campaign of `mode` may run, by its `just` recipe. Model development runs `bench` only as
-/// its F5 finalization check, which [`arguments`] holds it to.
+/// Which evaluator a campaign of `mode` may run. Model development runs `bench` only as its F5
+/// finalization check, which [`arguments`] holds it to.
 pub(super) fn recipe(mode: Mode, name: &str) -> Result<Recipe, CommandError> {
     let recipe = match (mode, name) {
         (Mode::ModelDevelopment, "forward") => Recipe::Forward,
@@ -61,7 +61,7 @@ pub(super) fn arguments(
     args: &[String],
 ) -> Result<Vec<String>, CommandError> {
     let refuse = |why: String| CommandError::Argument {
-        recipe: recipe.name(),
+        recipe,
         role: role.name(),
         why,
     };

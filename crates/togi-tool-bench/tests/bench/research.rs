@@ -246,6 +246,11 @@ fn real_process_a_campaign_starts_runs_an_evaluator_stops_and_reports() {
         "{}",
         text(&refused.stderr)
     );
+    assert!(
+        text(&refused.stderr).contains("just fit --forward-only in a candidate run:"),
+        "{}",
+        text(&refused.stderr)
+    );
 
     let run = fixture.run_dir();
     let run = run.to_str().unwrap();
