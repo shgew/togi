@@ -18,8 +18,8 @@ pub struct Frame {
     pub view: View,
     pub width: u16,
     pub height: u16,
-    /// Whether the text keeps its ANSI colour.
-    pub colour: bool,
+    /// The rendering profile; coloured profiles keep ANSI styling in the text.
+    pub colours: Colours,
     /// How long after the last event of the prefix the frame is drawn.
     pub after: SignedDuration,
 }
@@ -50,11 +50,7 @@ pub fn draw(
         width: frame.width,
         height: frame.height,
         one_frame: true,
-        colours: if frame.colour {
-            Colours::Console
-        } else {
-            Colours::None
-        },
+        colours: frame.colours,
         quit: Quit::Keys,
     };
     let last = events
@@ -71,7 +67,7 @@ pub fn draw(
         zone,
         &mut buffer,
     );
-    Ok(text(&buffer, frame.colour))
+    Ok(text(&buffer, frame.colours != Colours::None))
 }
 
 pub(crate) fn text(buffer: &Buffer, colour: bool) -> String {

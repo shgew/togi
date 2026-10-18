@@ -14,11 +14,12 @@ use togi_tuner::{
 };
 
 use super::super::colours::Paint;
-use super::super::fit::{console_text, cut_styled, cut_words, display_width, line_width};
+use super::super::fit::{cut_marker, cut_styled, cut_words, display_width, glyph_text, line_width};
 use super::super::scene::{Scene, short_duration};
 use super::super::terms::part_name;
 use super::shape_words;
 use crate::model::{HuntShape, Snapshot, TrialView};
+use crate::screen::Colours;
 use crate::words::{
     carried_groups, core_ids, decision_brief, decision_detail, decision_phrase, hunt_end_phrase,
     kind_words, solo_limit, workload_display,
@@ -94,20 +95,24 @@ pub(crate) fn outcome_lines(scene: &Scene<'_>, width: usize, compact: bool) -> V
     let rows = outcome_rows(scene);
     let lines: Vec<Line<'static>> = if compact {
         compact_line(scene, &rows, width)
-            .map(|line| cut_styled(&line, width))
+            .map(|line| cut_styled(&line, width, scene.colours))
             .into_iter()
             .collect()
     } else {
         rows.iter()
             .map(|row| {
                 let label = format!("{}:", row.label);
-                let gap = if display_width(&label) < 21 {
-                    21 - display_width(&label)
+                let gap = if display_width(&label, scene.colours) < 21 {
+                    21 - display_width(&label, scene.colours)
                 } else {
                     1
                 };
-                let room = width.saturating_sub(display_width(&label) + gap);
-                let text = cut_words(&fit_phrases(&row.phrases, room), room);
+                let room = width.saturating_sub(display_width(&label, scene.colours) + gap);
+                let text = cut_words(
+                    &fit_phrases(&row.phrases, room, scene.colours),
+                    room,
+                    scene.colours,
+                );
                 let label = scene.paint(row.paint, format!("{label}{}", " ".repeat(gap)));
                 Line::from(vec![label, scene.paint(Paint::Text, text)])
             })
@@ -145,12 +150,12 @@ fn compact_line(scene: &Scene<'_>, rows: &[OutcomeRow], width: usize) -> Option<
     };
     let mut level = 0;
     let mut line = Line::from(parts(0, false));
-    while level < 2 && line_width(&line) > width {
+    while level < 2 && line_width(&line, scene.colours) > width {
         level += 1;
         line = Line::from(parts(level, false));
     }
     if let Some(basis) = basis {
-        let room = width.cast_signed() - line_width(&line).cast_signed() - 3;
+        let room = width.cast_signed() - line_width(&line, scene.colours).cast_signed() - 3;
         let say = |text: String, line: &mut Line<'static>| {
             line.spans.push(Span::raw("   "));
             line.spans.push(scene.paint(Paint::Grey, text));
@@ -168,7 +173,7 @@ fn compact_line(scene: &Scene<'_>, rows: &[OutcomeRow], width: usize) -> Option<
 
 /// An outcome line's phrases joined with arrows, the next trial with a semicolon, leaving out minor ones, then
 /// any but the first and the last, until it fits.
-pub(super) fn fit_phrases(phrases: &[Phrase], width: usize) -> String {
+pub(super) fn fit_phrases(phrases: &[Phrase], width: usize, colours: Colours) -> String {
     let join = |phrases: &[Phrase]| {
         let mut text = String::new();
         for (i, phrase) in phrases.iter().enumerate() {
@@ -179,29 +184,32 @@ pub(super) fn fit_phrases(phrases: &[Phrase], width: usize) -> String {
                     " → "
                 });
             }
-            text.push_str(&console_text(&phrase.text));
+            text.push_str(&glyph_text(&phrase.text, colours));
         }
         text
     };
     let mut text = join(phrases);
-    if display_width(&text) <= width {
+    if display_width(&text, colours) <= width {
         return text;
     }
+    let marker = cut_marker(colours);
     let mut phrases = phrases.to_vec();
-    while display_width(&text) > width {
+    while display_width(&text, colours) > width {
         let drop = phrases
             .iter()
-            .position(|phrase| phrase.minor && phrase.text != "...")
-            .or_else(|| (1..phrases.len().saturating_sub(1)).find(|&i| phrases[i].text != "..."));
+            .position(|phrase| phrase.minor && phrase.text != marker)
+            .or_else(|| (1..phrases.len().saturating_sub(1)).find(|&i| phrases[i].text != marker));
         let Some(drop) = drop else {
             return text;
         };
-        if drop > 0 && phrases[drop - 1].text == "..."
-            || phrases.get(drop + 1).is_some_and(|next| next.text == "...")
+        if drop > 0 && phrases[drop - 1].text == marker
+            || phrases
+                .get(drop + 1)
+                .is_some_and(|next| next.text == marker)
         {
             phrases.remove(drop);
         } else {
-            phrases[drop] = Phrase::new("...", true);
+            phrases[drop] = Phrase::new(marker, true);
         }
         text = join(&phrases);
     }
@@ -255,7 +263,7 @@ pub(super) fn outcome_rows(scene: &Scene<'_>) -> Vec<OutcomeRow> {
     let mut groups: Vec<Group> = Vec::new();
     for branch in &scene.s.forecast.branches {
         let (phrases, compact, basis) = outcome_words(scene, branch);
-        let text = fit_phrases(&phrases, usize::MAX >> 1);
+        let text = fit_phrases(&phrases, usize::MAX >> 1, scene.colours);
         #[cfg(test)]
         super::corpus::branch(branch, &phrases, &compact, basis);
         let at = groups

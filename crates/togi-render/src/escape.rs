@@ -1,8 +1,22 @@
+use std::borrow::Cow;
 use std::fmt;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Escaped<'a> {
     bytes: &'a [u8],
+}
+
+impl<'a> Escaped<'a> {
+    /// Escaped text, borrowing valid UTF-8 that needs no escaping.
+    #[must_use]
+    pub fn into_cow(self) -> Cow<'a, str> {
+        if let Ok(text) = std::str::from_utf8(self.bytes)
+            && !text.chars().any(needs_escape)
+        {
+            return Cow::Borrowed(text);
+        }
+        Cow::Owned(self.to_string())
+    }
 }
 
 #[must_use]
@@ -75,6 +89,24 @@ mod tests {
 
     fn bytes(input: &[u8]) -> String {
         escape_bytes(input).to_string()
+    }
+
+    #[test_case("▆ … 日本語 e\u{301}", true, "▆ … 日本語 e\u{301}"; "safe Unicode is borrowed")]
+    #[test_case("a\x1b[2J", false, r"a\x1b[2J"; "terminal command")]
+    #[test_case("a\u{202e}b", false, r"a\u202eb"; "bidirectional control")]
+    fn owned_escaping_allocates_only_when_text_changes(
+        input: &str,
+        borrowed: bool,
+        expected: &str,
+    ) {
+        let escaped = escape_text(input).into_cow();
+        assert_eq!(matches!(escaped, std::borrow::Cow::Borrowed(_)), borrowed);
+        assert_eq!(escaped, expected);
+    }
+
+    #[test]
+    fn owned_escaping_keeps_invalid_bytes_visible() {
+        assert_eq!(escape_bytes(b"a\xffb").into_cow(), r"a\xffb");
     }
 
     #[test]

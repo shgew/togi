@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use test_case::test_case;
 use togi_journal::Event;
-use togi_watch::screen::View;
+use togi_watch::screen::{Colours, View};
 use togi_watchtest::Scenario;
 
 use crate::{Error, Frame, draw, offset, prefix};
@@ -15,7 +15,7 @@ fn frame(view: View, (width, height): (u16, u16)) -> Frame {
         view,
         width,
         height,
-        colour: false,
+        colours: Colours::None,
         after: SignedDuration::ZERO,
     }
 }
@@ -155,7 +155,7 @@ fn colour_keeps_ansi_that_strips_back_to_the_plain_frame() {
         &events,
         events.len(),
         &Frame {
-            colour: true,
+            colours: Colours::Console,
             ..frame(View::Main, (240, 67))
         },
     );
@@ -167,6 +167,29 @@ fn colour_keeps_ansi_that_strips_back_to_the_plain_frame() {
     for line in coloured.lines().filter(|line| line.contains('\x1b')) {
         assert!(line.ends_with("\x1b[0m"), "{line:?} leaves its styling on");
     }
+}
+
+#[test_case((240, 67); "wide")]
+#[test_case((160, 45); "medium")]
+fn rich_frames_keep_unicode_and_emit_the_existing_palette_as_truecolour(size: (u16, u16)) {
+    let events = scenario(Scenario::Checking);
+    let rich = text(
+        &events,
+        events.len(),
+        &Frame {
+            colours: Colours::Rich,
+            after: SignedDuration::from_secs(40),
+            ..frame(View::Main, size)
+        },
+    );
+    assert!(rich.contains("\x1b[0;38;2;255;107;107m"), "{rich}");
+    assert!(rich.contains('▆'), "{rich}");
+    assert!(!rich.contains("\x1b]P"), "{rich}");
+    let plain = strip_ansi(&rich);
+    assert!(
+        !plain.chars().any(|c| c.is_control() && c != '\n'),
+        "{plain}"
+    );
 }
 
 #[test_case((240, 67); "240x67")]

@@ -53,8 +53,8 @@ pub fn scroll_body_with_bar(
         .zip(bar)
         .map(|(line, bar)| {
             let mut row = vec![bar, Span::raw(" ")];
-            row.extend(truncate_styled(line, width.saturating_sub(2)).spans);
-            truncate_styled(&Line::from(row), width)
+            row.extend(truncate_styled(line, width.saturating_sub(2), colours).spans);
+            truncate_styled(&Line::from(row), width, colours)
         })
         .collect();
     (page, scrolled)
@@ -110,16 +110,16 @@ mod tests {
             scroll_body_with_bar(&lines, 20, 10, scroll, Colours::None).0,
             end
         );
-        assert_eq!(plain(&end[9]), "█ row 29");
+        assert_eq!(plain(&end[9], Colours::None), "█ row 29");
     }
 
     #[test]
     fn the_top_and_a_middle_scroll_put_the_thumb_where_they_are() {
         let lines = numbered(30);
         let (top, _) = scroll_body_with_bar(&lines, 20, 10, 0, Colours::None);
-        assert_eq!(plain(&top[0]), "█ row 00");
+        assert_eq!(plain(&top[0], Colours::None), "█ row 00");
         let (middle, _) = scroll_body_with_bar(&lines, 20, 10, 5, Colours::None);
-        assert_eq!(plain(&middle[0]), "│ row 05");
+        assert_eq!(plain(&middle[0], Colours::None), "│ row 05");
     }
 
     #[test]
@@ -127,7 +127,9 @@ mod tests {
         let (page, extent) = scroll_body_with_bar(&numbered(3), 5, 10, 0, Colours::None);
         assert_eq!(extent, 0);
         assert_eq!(
-            page.iter().map(plain).collect::<Vec<_>>(),
+            page.iter()
+                .map(|line| plain(line, Colours::None))
+                .collect::<Vec<_>>(),
             ["  row", "  row", "  row"]
         );
         assert!(
@@ -136,7 +138,10 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(
-            plain(&scroll_body_with_bar(&numbered(3), 1, 3, 0, Colours::None).0[0]),
+            plain(
+                &scroll_body_with_bar(&numbered(3), 1, 3, 0, Colours::None).0[0],
+                Colours::None
+            ),
             " "
         );
     }

@@ -31,7 +31,7 @@ pub(super) fn body(
     let mut lines = vec![rule_line(log, inner, colours), Line::default()];
     if log.entries.is_empty() {
         lines.push(Line::styled(
-            cut_words("No journal entries yet.", inner),
+            cut_words("No journal entries yet.", inner, colours),
             Paint::Grey.style(colours),
         ));
     }
@@ -62,7 +62,7 @@ fn rule_line(log: &Log<'_>, width: usize, colours: Colours) -> Line<'static> {
         ]
     };
     for note in notes {
-        let room = width.saturating_sub(display_width(&note) + 1);
+        let room = width.saturating_sub(display_width(&note, colours) + 1);
         if "JOURNAL".len() < room {
             let mut line = title_rule("JOURNAL", room, colours);
             line.spans.push(Span::raw(" "));
@@ -77,10 +77,10 @@ fn rule_line(log: &Log<'_>, width: usize, colours: Colours) -> Line<'static> {
 /// message fits beside them, else the time and the tag, else the time, else nothing.
 fn row(entry: &LogEntry, width: usize, zone: &TimeZone, colours: Colours) -> Line<'static> {
     let stamp = Paint::Grey.span(colours, wall_second(zone, entry.at));
-    let tag = cut_words(&entry.tag, TAG_CELLS);
-    let text = cut_words(&entry.msg, width.saturating_sub(LOG_PREFIX));
+    let tag = cut_words(&entry.tag, TAG_CELLS, colours);
+    let text = cut_words(&entry.msg, width.saturating_sub(LOG_PREFIX), colours);
     if !text.is_empty() {
-        let pad = " ".repeat(TAG_CELLS.saturating_sub(display_width(&tag)));
+        let pad = " ".repeat(TAG_CELLS.saturating_sub(display_width(&tag, colours)));
         return Line::from(vec![
             stamp,
             Span::raw("  "),
@@ -101,6 +101,7 @@ fn row(entry: &LogEntry, width: usize, zone: &TimeZone, colours: Colours) -> Lin
                 ],
             ),
         ],
+        colours,
     )
 }
 
@@ -131,7 +132,7 @@ mod tests {
     use ratatui::text::Line;
 
     use super::super::super::colours::Paint;
-    use super::super::super::fit::{CUT_MARKER, cut_words, fit_clauses, line_width, plain};
+    use super::super::super::fit::{cut_marker, cut_words, fit_clauses, line_width, plain};
     use super::super::super::footer::key_hints;
     use super::super::fixtures::at;
     use super::{arrivals, body, rule_line};
@@ -160,7 +161,10 @@ mod tests {
 
     fn rows(log: &Log<'_>, width: usize, height: usize, scroll: usize) -> (Vec<String>, usize) {
         let (page, extent) = body(log, width, height, scroll, &TimeZone::UTC, Colours::None);
-        (page.iter().map(plain).collect(), extent)
+        (
+            page.iter().map(|line| plain(line, Colours::None)).collect(),
+            extent,
+        )
     }
 
     fn text_cells(row: &str) -> String {
@@ -211,14 +215,15 @@ mod tests {
             assert!(message.len() <= words.len(), "width {width}: {row:?}");
             for (i, field) in message.iter().enumerate() {
                 let (mut field, mut want) = (*field, words[i]);
-                if i + 1 == message.len() && field.ends_with(CUT_MARKER) {
-                    field = field.trim_end_matches(CUT_MARKER);
+                if i + 1 == message.len() && field.ends_with(cut_marker(Colours::None)) {
+                    field = field.trim_end_matches(cut_marker(Colours::None));
                     field = field.trim_end_matches([',', ';', ':']);
                     want = want.trim_end_matches([',', ';', ':']);
                 } else {
                     assert!(
                         i + 1 < message.len() || message.len() == words.len(),
-                        "width {width}: message ends early without {CUT_MARKER}: {row:?}"
+                        "width {width}: message ends early without {}: {row:?}",
+                        cut_marker(Colours::None)
                     );
                 }
                 assert_eq!(field, want, "width {width}: {row:?}");
@@ -257,7 +262,7 @@ mod tests {
         let log = log(&entries);
         let east = TimeZone::fixed(offset(3));
         let (page, _) = body(&log, 120, 10, 0, &east, Colours::None);
-        let page: Vec<String> = page.iter().map(plain).collect();
+        let page: Vec<String> = page.iter().map(|line| plain(line, Colours::None)).collect();
         assert_eq!(
             text_cells(&page[2]),
             format!("02:59:58  start{}  first message", " ".repeat(15))
@@ -358,7 +363,7 @@ mod tests {
                 total,
                 arrived: 0,
             };
-            plain(&rule_line(&log, width, Colours::None))
+            plain(&rule_line(&log, width, Colours::None), Colours::None)
         };
         assert!(rule(12, 80).starts_with("JOURNAL"));
         assert!(rule(12, 80).ends_with("12 events · SMU and preflight left out"));
@@ -376,15 +381,18 @@ mod tests {
         assert_eq!(rule(12, 3), " ──");
         for width in 1..120 {
             assert!(
-                line_width(&rule_line(
-                    &Log {
-                        entries: &[],
-                        total: 500,
-                        arrived: 0
-                    },
-                    width,
+                line_width(
+                    &rule_line(
+                        &Log {
+                            entries: &[],
+                            total: 500,
+                            arrived: 0
+                        },
+                        width,
+                        Colours::None
+                    ),
                     Colours::None
-                )) <= width
+                ) <= width
             );
         }
     }
@@ -410,9 +418,9 @@ mod tests {
                     );
                     for line in &page {
                         assert!(
-                            line_width(line) <= width,
+                            line_width(line, Colours::None) <= width,
                             "{width}x{height}: {:?}",
-                            plain(line)
+                            plain(line, Colours::None)
                         );
                     }
                 }
@@ -432,12 +440,12 @@ mod tests {
             let held = Log { arrived, ..none };
             let clause = arrivals(&held, Colours::Full);
             assert_eq!(clause.len(), 1);
-            let line = |width| plain(&fit_clauses(width, &clause));
+            let line = |width| plain(&fit_clauses(width, &clause, Colours::None), Colours::None);
             assert_eq!(line(80), format!("{count} · End: latest"));
             assert_eq!(line(count.len() + 4), count);
             assert_eq!(line(count.len()), count);
             assert_eq!(line(3), "");
-            assert_eq!(cut_words(&line(80), 80), line(80));
+            assert_eq!(cut_words(&line(80), 80, Colours::None), line(80));
         }
     }
 
@@ -457,12 +465,12 @@ mod tests {
             };
             let clause = arrivals(&held, Colours::Full);
             let footer = |width| key_hints(View::Log, width, &clause, Colours::Full, Quit::Keys);
-            let wide = plain(&footer(120));
+            let wide = plain(&footer(120), Colours::None);
             assert!(wide.contains(&format!("{count} · End: latest")), "{wide}");
             let reference = footer(120);
             for width in [20, 30, 40, 50] {
                 let line = footer(width);
-                let text = plain(&line);
+                let text = plain(&line, Colours::None);
                 let fields: Vec<&str> = text.split_whitespace().collect();
                 for key in keys {
                     assert!(
@@ -482,7 +490,7 @@ mod tests {
                     );
                 }
                 assert!(
-                    !text.contains(CUT_MARKER),
+                    !text.contains(cut_marker(Colours::None)),
                     "width {width} cut text: {text:?}"
                 );
                 assert!(
@@ -492,10 +500,10 @@ mod tests {
                 if width == 50 {
                     assert!(text.contains(&count), "{text:?}");
                 }
-                assert!(line_width(&line) <= width);
+                assert!(line_width(&line, Colours::None) <= width);
             }
             for width in [4, 5, 6, 10] {
-                let text = plain(&footer(width));
+                let text = plain(&footer(width), Colours::None);
                 let fields: Vec<&str> = text.split_whitespace().collect();
                 assert!(fields.contains(&"q"), "width {width}: {text:?}");
                 let words: Vec<&str> = count.split_whitespace().collect();

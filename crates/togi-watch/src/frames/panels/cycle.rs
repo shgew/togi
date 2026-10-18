@@ -54,6 +54,7 @@ pub(super) fn cycle_lines(
                 format!("{} steps · {done} done", plan.steps.len()),
             ),
             scene.style(Paint::Track),
+            scene.colours,
         ),
         Line::default(),
     ];
@@ -73,6 +74,7 @@ pub(super) fn cycle_lines(
                 cell(scene, Paint::Grey, "schedule"),
                 cell(scene, Paint::Grey, "result"),
             ],
+            scene.colours,
         ));
     }
     let hunt_open = scene.s.hunt.is_some();
@@ -133,6 +135,7 @@ pub(super) fn cycle_lines(
                 cell(scene, style, schedule),
                 result,
             ],
+            scene.colours,
         ));
         if current {
             for (j, line) in part_lines(scene, t, step).into_iter().enumerate() {
@@ -232,6 +235,7 @@ fn part_lines(scene: &Scene<'_>, t: &Tables, step: &CycleStep) -> Vec<Line<'stat
                 cell(scene, faint, part_schedule(part)),
                 part_result(scene, part),
             ],
+            scene.colours,
         ));
     }
     if more {
@@ -251,6 +255,7 @@ fn part_lines(scene: &Scene<'_>, t: &Tables, step: &CycleStep) -> Vec<Line<'stat
                     scene.paint(Paint::Grey, pending),
                 ]),
             ],
+            scene.colours,
         ));
     }
     out
@@ -346,6 +351,7 @@ pub(super) fn combination_lines(
             &cell(scene, Paint::Grey, "COMBINATIONS"),
             &cell(scene, Paint::Grey, right),
             scene.style(Paint::Track),
+            scene.colours,
         ),
         Line::default(),
     ];
@@ -384,6 +390,7 @@ pub(super) fn combination_lines(
                 cell(scene, Paint::Grey, found),
                 cell(scene, Paint::Grey, "against the profile now"),
             ],
+            scene.colours,
         ));
     }
     if 0 < shown && shown < ids.len() {
@@ -392,7 +399,11 @@ pub(super) fn combination_lines(
             ids.len(),
             core_ids(ids.iter().skip(shown)),
         );
-        out.push(cell(scene, Paint::Grey, cut_words(&text, width)));
+        out.push(cell(
+            scene,
+            Paint::Grey,
+            cut_words(&text, width, scene.colours),
+        ));
     }
     for combo in scene.s.combos {
         let member = |id: CoreId| -> (String, Paint) {
@@ -440,6 +451,7 @@ pub(super) fn combination_lines(
                 Line::from(by),
                 against,
             ],
+            scene.colours,
         ));
     }
     if shown > 0 {
@@ -453,6 +465,7 @@ pub(super) fn combination_lines(
         out.push(table_row(
             &t.combos,
             &[cell(scene, Paint::White, "now"), now],
+            scene.colours,
         ));
     }
     #[cfg(test)]
@@ -474,6 +487,7 @@ mod tests {
     };
     use super::{combination_lines, cycle_lines};
     use crate::model::{ComboView, CycleView, HuntView, Model, SessionView, StopView};
+    use crate::screen::Colours;
     use crate::tests::kit::{core, nz, off, set};
     use togi_journal::{Member, ShutdownReason};
     use togi_tuner::CombinationId;
@@ -546,7 +560,7 @@ mod tests {
             SizeClass::Wide,
             height,
         );
-        (texts(&drawn.lines), drawn.focus)
+        (texts(&drawn.lines, Colours::None), drawn.focus)
     }
 
     #[test]
@@ -654,12 +668,10 @@ mod tests {
         s.combos = combos;
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
-        texts(&combination_lines(
-            &scene,
-            &Tables::new(class, 120),
-            120,
-            class,
-        ))
+        texts(
+            &combination_lines(&scene, &Tables::new(class, 120), 120, class),
+            Colours::None,
+        )
     }
 
     #[test]
@@ -742,7 +754,7 @@ mod tests {
                 SizeClass::Wide,
                 40,
             );
-            texts(&drawn.lines)[3].clone()
+            texts(&drawn.lines, Colours::None)[3].clone()
         };
         assert!(step_row(None).ends_with("trial 1 of 1"));
         let row = step_row(Some(&stopped));
@@ -785,6 +797,7 @@ mod tests {
                     40,
                 )
                 .lines,
+                Colours::None,
             )
         };
         assert!(rows(None).iter().any(|row| row.starts_with('►')));

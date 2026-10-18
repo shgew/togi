@@ -14,7 +14,7 @@ use jiff::SignedDuration;
 use jiff::tz::TimeZone;
 use togi_journal::{FileError, Refusal};
 use togi_watch::model::FoldError;
-use togi_watch::screen::View;
+use togi_watch::screen::{Colours, View};
 use togi_watch::terminal::ONE_FRAME_SIZE;
 
 pub use frame::{Frame, draw};
@@ -90,9 +90,12 @@ pub struct Cli {
     /// With --at, the frame height.
     #[arg(long, requires = "at", default_value_t = ONE_FRAME_SIZE.1, value_parser = clap::value_parser!(u16).range(1..))]
     pub height: u16,
-    /// With --at, keep the ANSI colour in the frame.
-    #[arg(long, requires = "at")]
+    /// With --at, keep the console profile's ANSI colour in the frame.
+    #[arg(long, requires = "at", conflicts_with = "rich")]
     pub color: bool,
+    /// With --at, render Unicode glyphs and the existing palette as ANSI truecolour.
+    #[arg(long, requires = "at")]
+    pub rich: bool,
     /// With --at, the page to draw.
     #[arg(long, requires = "at", value_enum, default_value = "main")]
     pub view: Page,
@@ -126,7 +129,13 @@ fn run_with(
                 view: cli.view.into(),
                 width: cli.width,
                 height: cli.height,
-                colour: cli.color,
+                colours: if cli.rich {
+                    Colours::Rich
+                } else if cli.color {
+                    Colours::Console
+                } else {
+                    Colours::None
+                },
                 after: cli.after.unwrap_or_default(),
             };
             let text = draw(&events, prefix(&events, at), &frame, &timezone())?;

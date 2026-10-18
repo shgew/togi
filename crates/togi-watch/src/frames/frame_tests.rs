@@ -19,14 +19,45 @@ use togi_machine::BootId;
 use togi_watchtest::Scenario;
 
 use super::render;
-use super::testing::{draw_checked, rows_of, screen};
+use super::testing::{assert_glyphs_drawable, draw_checked, rows_of, screen};
 use crate::model::{Model, project};
 use crate::screen::{Colours, Drawn, Journal, Screen, View};
 
 pub(super) const SIZES: [(u16, u16); 3] = [(240, 67), (160, 45), (120, 33)];
 pub(super) const ALL_SIZES: [(u16, u16); 4] = [(240, 67), (160, 45), (120, 33), (80, 24)];
 pub(super) const VIEWS: [View; 3] = [View::Main, View::Help, View::Log];
-pub(super) const PROFILES: [Colours; 3] = [Colours::Full, Colours::Console, Colours::None];
+pub(super) const PROFILES: [Colours; 4] = [
+    Colours::Full,
+    Colours::Rich,
+    Colours::Console,
+    Colours::None,
+];
+
+/// Fails the test when `buf` shows what `colours` cannot draw: glyphs outside IBM437 on the console profiles, any
+/// control or bidi formatting character on [`Colours::Rich`], which draws other Unicode as it is.
+#[track_caller]
+pub(super) fn assert_glyphs_safe(buf: &Buffer, colours: Colours, what: &str) {
+    if colours != Colours::Rich {
+        assert_glyphs_drawable(buf, what);
+        return;
+    }
+    for (row, text) in rows_of(buf).iter().enumerate() {
+        for c in text.chars() {
+            assert!(
+                !c.is_control()
+                    && !matches!(
+                        c,
+                        '\u{61c}'
+                            | '\u{200e}'
+                            | '\u{200f}'
+                            | '\u{2028}'..='\u{202e}'
+                            | '\u{2066}'..='\u{2069}'
+                    ),
+                "{what} row {row} draws the control {c:?}: {text:?}"
+            );
+        }
+    }
+}
 
 pub(super) struct Fixture {
     pub(super) model: Model,

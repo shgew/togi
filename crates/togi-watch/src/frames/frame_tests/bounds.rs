@@ -1,11 +1,11 @@
 //! Every scenario at every size, view, key setting and colour profile stays inside the frame area and draws only
-//! console glyphs; help and log scroll to their extent and stay there.
+//! glyphs its profile can draw; help and log scroll to their extent and stay there.
 
 use togi_machine::Regime;
 use togi_watchtest::Scenario;
 
-use super::{ALL_SIZES, Fixture, PROFILES, VIEWS};
-use crate::frames::testing::{assert_glyphs_drawable, screen};
+use super::{ALL_SIZES, Fixture, PROFILES, VIEWS, assert_glyphs_safe};
+use crate::frames::testing::screen;
 use crate::screen::{Colours, Hold, Screen, View};
 
 fn every_screen(fx: &Fixture, scenario: Scenario) {
@@ -24,8 +24,9 @@ fn every_screen(fx: &Fixture, scenario: Scenario) {
                 for keys in [true, false] {
                     let sc = screen(view, width, height, colours, keys);
                     let (buf, drawn) = fx.draw(&sc, fx.now);
-                    assert_glyphs_drawable(
+                    assert_glyphs_safe(
                         &buf,
+                        colours,
                         &format!("{scenario} {width}x{height} {view:?} {colours:?} keys {keys}"),
                     );
                     assert_eq!(

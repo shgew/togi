@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use jiff::Timestamp;
 use jiff::tz::{TimeZone, offset};
+use jiff::{SignedDuration, Timestamp};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
@@ -23,16 +23,17 @@ use super::stage::stage_line;
 use crate::frames::colours::Paint;
 use crate::frames::fit::{line_width, plain};
 use crate::frames::layout::SizeClass;
-use crate::frames::measure::{Ccd, CoreColumns};
+use crate::frames::measure::{Ccd, CoreColumns, measure};
 use crate::frames::notes::top_note;
+use crate::frames::render;
 use crate::frames::scene::Scene;
-use crate::frames::testing::rows_of;
+use crate::frames::testing::{draw_checked, rows_of, screen};
 use crate::model::{
     CoreState, CoreView, Count, CycleView, DeadEndView, HuntCause, HuntFacts, HuntView, IdleHold,
     Model, RecoveryView, SessionView, Snapshot, StopView, TrialView,
 };
-use crate::screen::Colours;
-use crate::tests::kit::{config_loaded, core, off, seq};
+use crate::screen::{Colours, Journal, View};
+use crate::tests::kit::{Script, Start, config_loaded, core, off, readback, seq};
 use crate::tuning::TuningClock;
 
 fn at(text: &str) -> Timestamp {
@@ -99,11 +100,14 @@ fn scene<'a>(s: &Snapshot<'a>, now: Timestamp, zone: &'a TimeZone, colours: Colo
 }
 
 fn header_text(s: &Snapshot<'_>, now: Timestamp, width: usize, compact: bool) -> String {
-    plain(&header(
-        &scene(s, now, &TimeZone::UTC, Colours::Full),
-        width,
-        compact,
-    ))
+    plain(
+        &header(
+            &scene(s, now, &TimeZone::UTC, Colours::Full),
+            width,
+            compact,
+        ),
+        Colours::None,
+    )
 }
 
 #[test]
@@ -188,7 +192,11 @@ fn the_header_drops_clauses_in_order_and_keeps_the_counts() {
     );
     for width in 18..60 {
         let line = header(&scene(&s, now, &TimeZone::UTC, Colours::None), width, false);
-        assert!(line_width(&line) <= width, "{width}: {}", plain(&line));
+        assert!(
+            line_width(&line, Colours::None) <= width,
+            "{width}: {}",
+            plain(&line, Colours::None)
+        );
     }
 }
 
@@ -250,7 +258,11 @@ fn the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both() {
     );
     for width in 18..=160 {
         let line = header(&scene(&s, now, &TimeZone::UTC, Colours::None), width, false);
-        assert!(line_width(&line) <= width, "{width}: {}", plain(&line));
+        assert!(
+            line_width(&line, Colours::None) <= width,
+            "{width}: {}",
+            plain(&line, Colours::None)
+        );
     }
 
     let later = at("2026-10-12T14:00:00Z");
@@ -285,7 +297,7 @@ fn the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both() {
     idle.trial = Some(&running);
     let zone = TimeZone::UTC;
     let held = scene(&idle, later, &zone, Colours::None);
-    let text = plain(&header(&held, 160, false));
+    let text = plain(&header(&held, 160, false), Colours::None);
     assert!(
         text.contains("tuning 1h15m") && text.contains("session 2h15m"),
         "{text}"
@@ -295,13 +307,10 @@ fn the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both() {
 #[test]
 fn a_journal_that_is_not_folded_names_its_status_and_no_earlier_run() {
     let now = at("2026-10-12T10:00:00Z");
-    let line = plain(&status_header(
-        now,
-        &TimeZone::UTC,
-        Colours::Full,
-        "starting",
-        80,
-    ));
+    let line = plain(
+        &status_header(now, &TimeZone::UTC, Colours::Full, "starting", 80),
+        Colours::None,
+    );
     assert_eq!(line, "togi   10:00:00   starting");
     let missing = header_text(&Model::new().snapshot(), now, 80, false);
     assert_eq!(missing, "togi   10:00:00   no session yet");
@@ -320,21 +329,27 @@ fn every_time_on_screen_is_local() {
     s.session = Some(&view);
     s.last_failure = Some(at("2026-10-12T10:20:00Z"));
     let now = at("2026-10-12T10:30:45Z");
-    let text = plain(&header(&scene(&s, now, &east, Colours::Full), 240, false));
+    let text = plain(
+        &header(&scene(&s, now, &east, Colours::Full), 240, false),
+        Colours::None,
+    );
     assert!(text.contains("togi   19:30:45"), "{text}");
     assert!(text.contains("last observed failure 19:20"), "{text}");
-    let line = plain(&status_header(now, &east, Colours::Full, "starting", 80));
+    let line = plain(
+        &status_header(now, &east, Colours::Full, "starting", 80),
+        Colours::None,
+    );
     assert!(line.starts_with("togi   19:30:45"), "{line}");
 
     let running = trial(Regime::R6, Some(start), 600);
     s.trial = Some(&running);
     let held = scene(&s, at("2026-10-12T11:00:00Z"), &east, Colours::Full);
     assert_eq!(held.now, start);
-    let head = plain(&header(&held, 240, true));
+    let head = plain(&header(&held, 240, true), Colours::None);
     assert!(head.starts_with("togi   19:00:00"), "{head}");
     assert!(head.contains("paused · planned end 19:10"), "{head}");
     assert!(!head.contains("paused until"), "{head}");
-    let stage = plain(&stage_line(&held, SizeClass::Wide, true));
+    let stage = plain(&stage_line(&held, SizeClass::Wide, true), Colours::None);
     assert!(
         stage.contains("screen paused · planned end 19:10"),
         "{stage}"
@@ -355,11 +370,14 @@ fn the_stage_line_marks_what_runs_and_what_stopped() {
     s.session = Some(&view);
     s.cores = &cores;
     let stage = |s: Snapshot<'_>, class| {
-        plain(&stage_line(
-            &scene(&s, start, &TimeZone::UTC, Colours::Full),
-            class,
-            false,
-        ))
+        plain(
+            &stage_line(
+                &scene(&s, start, &TimeZone::UTC, Colours::Full),
+                class,
+                false,
+            ),
+            Colours::None,
+        )
     };
     let running = stage(s, SizeClass::Wide);
     assert!(
@@ -390,7 +408,7 @@ fn the_stage_line_marks_what_runs_and_what_stopped() {
         SizeClass::Wide,
         false,
     );
-    assert_eq!(line_width(&none), 0);
+    assert_eq!(line_width(&none, Colours::None), 0);
 }
 
 #[test]
@@ -406,11 +424,14 @@ fn recovery_and_a_dead_end_suppress_the_running_marker() {
     s.session = Some(&view);
     s.cores = &cores;
     let stage = |s: Snapshot<'_>| {
-        plain(&stage_line(
-            &scene(&s, start, &TimeZone::UTC, Colours::Full),
-            SizeClass::Wide,
-            false,
-        ))
+        plain(
+            &stage_line(
+                &scene(&s, start, &TimeZone::UTC, Colours::Full),
+                SizeClass::Wide,
+                false,
+            ),
+            Colours::None,
+        )
     };
     let recovery = RecoveryView {
         crash_at: start,
@@ -498,11 +519,14 @@ fn cycle_stage_line(plan: &CyclePlan, class: SizeClass) -> String {
         step_hunts: &[],
         resume: None,
     });
-    plain(&stage_line(
-        &scene(&s, start, &TimeZone::UTC, Colours::Full),
-        class,
-        false,
-    ))
+    plain(
+        &stage_line(
+            &scene(&s, start, &TimeZone::UTC, Colours::Full),
+            class,
+            false,
+        ),
+        Colours::None,
+    )
 }
 
 fn paused_cycle(steps: [bool; 2], current: usize) -> CyclePlan {
@@ -556,11 +580,14 @@ fn a_hunt_in_phase_two_holds_the_stage_without_running_it() {
                 facts: &facts,
             });
         }
-        plain(&stage_line(
-            &scene(&s, start, &TimeZone::UTC, Colours::Full),
-            SizeClass::Wide,
-            false,
-        ))
+        plain(
+            &stage_line(
+                &scene(&s, start, &TimeZone::UTC, Colours::Full),
+                SizeClass::Wide,
+                false,
+            ),
+            Colours::None,
+        )
     };
     let hunting = line(true);
     assert!(
@@ -589,11 +616,14 @@ fn a_summary_stage_line_ends_in_the_trials_time() {
         t.crashed = crashed;
         let mut s = s;
         s.trial = Some(&t);
-        plain(&stage_line(
-            &scene(&s, at(now), &TimeZone::UTC, Colours::Full),
-            SizeClass::Medium,
-            true,
-        ))
+        plain(
+            &stage_line(
+                &scene(&s, at(now), &TimeZone::UTC, Colours::Full),
+                SizeClass::Medium,
+                true,
+            ),
+            Colours::None,
+        )
     };
     assert!(line("2026-10-12T10:04:00Z", false).ends_with("6:00 left"));
     assert!(line("2026-10-12T10:11:00Z", false).ends_with("1:00 past its end"));
@@ -627,7 +657,7 @@ fn medium_core_notes_retain_combination_and_solo_offsets() {
     gave.solo = Some(off(-37));
     gave.gave_back = Some(CombinationId::new(crate::tests::kit::nz(1)));
     for (view, want) in [(&at_limit, "C4 · solo -31"), (&gave, "C1 · solo -37")] {
-        let note = plain(&note_line(&scene, view, 25));
+        let note = plain(&note_line(&scene, view, 25), Colours::None);
         assert!(note.ends_with(want), "{note}");
     }
 }
@@ -642,7 +672,7 @@ fn a_note_follows_the_core_in_the_order_the_dashboard_prefers() {
         &zone,
         Colours::None,
     );
-    let text = |view: &CoreView| plain(&note_line(&scene, view, 60));
+    let text = |view: &CoreView| plain(&note_line(&scene, view, 60), Colours::None);
     let mut probe = core_view(0, 0, CoreState::Probe);
     probe.group_fails = vec![off(-30), off(-28)];
     assert_eq!(text(&probe), "group failed at -30 -28");
@@ -782,7 +812,7 @@ fn gauge_text(core: &CoreView, applied: i64) -> String {
         &zone,
         Colours::None,
     );
-    plain(&gauge(&scene, core, Some(applied), 50))
+    plain(&gauge(&scene, core, Some(applied), 50), Colours::None)
         .trim_end()
         .to_owned()
 }
@@ -822,7 +852,7 @@ fn a_failure_point_is_a_half_height_bar_in_both_cell_widths(cells: usize, colour
     };
     let scene = scene(&model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
     let line = gauge(&scene, &core, Some(-4), cells);
-    let text = plain(&line);
+    let text = plain(&line, Colours::None);
     assert_eq!(text.matches('▬').count(), 1, "{cells} cells: {text:?}");
     assert!(!text.contains('█'), "{cells} cells: {text:?}");
     let bad = line
@@ -846,7 +876,11 @@ fn a_gauge_shows_group_failures_and_judging() {
     let mut core = core_view(0, 0, CoreState::Probe);
     core.group_fails = vec![off(-4)];
     let line = gauge(&scene, &core, Some(-2), 25);
-    assert!(plain(&line).starts_with("▄▀"), "{}", plain(&line));
+    assert!(
+        plain(&line, Colours::None).starts_with("▄▀"),
+        "{}",
+        plain(&line, Colours::None)
+    );
     let painted = |judged: bool| {
         let mut core = core.clone();
         core.judged = judged;
@@ -854,7 +888,10 @@ fn a_gauge_shows_group_failures_and_judging() {
     };
     assert_eq!(painted(true), Paint::White.style(Colours::Full));
     assert_eq!(painted(false), Paint::Grey.style(Colours::Full));
-    assert_eq!(line_width(&gauge(&scene, &core, Some(0), 0)), 0);
+    assert_eq!(
+        line_width(&gauge(&scene, &core, Some(0), 0), Colours::None),
+        0
+    );
 }
 
 fn table(cores: &[CoreView], stopped: Option<&StopView>, width: u16, brief: bool) -> Vec<String> {
@@ -874,6 +911,7 @@ fn table(cores: &[CoreView], stopped: Option<&StopView>, width: u16, brief: bool
             gauge: 18,
             cells: 25,
             failure: 44,
+            failure_width: 5,
             note: 50,
             brief: true,
         }
@@ -885,6 +923,7 @@ fn table(cores: &[CoreView], stopped: Option<&StopView>, width: u16, brief: bool
             gauge: 21,
             cells: 25,
             failure: 48,
+            failure_width: 5,
             note: 56,
             brief: false,
         }
@@ -1015,6 +1054,7 @@ fn core_rows_mark_the_running_workloads_top_requesters(width: u16, brief: bool, 
             gauge: 18,
             cells: 25,
             failure: 44,
+            failure_width: 5,
             note: 50,
             brief: true,
         }
@@ -1026,6 +1066,7 @@ fn core_rows_mark_the_running_workloads_top_requesters(width: u16, brief: bool, 
             gauge: 21,
             cells: 25,
             failure: 48,
+            failure_width: 5,
             note: 56,
             brief: false,
         }
@@ -1051,13 +1092,16 @@ fn core_rows_mark_the_running_workloads_top_requesters(width: u16, brief: bool, 
 #[test]
 fn the_top_note_fits_beside_a_note_at_its_exact_width() {
     let note = Line::from("held by C4 · solo -31");
-    let width = line_width(&note) + 3 + "top requester".len();
+    let width = line_width(&note, Colours::None) + 3 + "top requester".len();
     assert_eq!(
-        plain(&top_note(&note, false, width, Colours::Full)),
+        plain(&top_note(&note, false, width, Colours::Full), Colours::None),
         "held by C4 · solo -31 · top requester"
     );
     assert_eq!(
-        plain(&top_note(&note, false, width - 1, Colours::Full)),
+        plain(
+            &top_note(&note, false, width - 1, Colours::Full),
+            Colours::None
+        ),
         "held by C4 · solo -31"
     );
 }
@@ -1087,7 +1131,10 @@ fn r7_fixture(
         });
     }
     let scene = scene(&s, Timestamp::UNIX_EPOCH, &zone, Colours::None);
-    r7_rows(&scene, class, width).iter().map(plain).collect()
+    r7_rows(&scene, class, width)
+        .iter()
+        .map(|line| plain(line, Colours::None))
+        .collect()
 }
 
 fn r7_status(core_id: u8, top: bool, proxy: bool, own: bool) -> R7CoreStatus {
@@ -1161,11 +1208,15 @@ fn cut_top_requesters_keep_their_offset_label() {
         top_cell(
             crate::tests::kit::set(&[0]),
             crate::tests::kit::set(&[8, 9, 10, 11, 12, 13, 14, 15]),
-            17
+            17,
+            Colours::None
         ),
         "08-15 by offset"
     );
-    assert_eq!(top_cell(CoreSet::default(), CoreSet::default(), 17), "-");
+    assert_eq!(
+        top_cell(CoreSet::default(), CoreSet::default(), 17, Colours::None),
+        "-"
+    );
 }
 
 #[test]
@@ -1178,7 +1229,7 @@ fn r7_values_stay_whole() {
         statuses.extend(proxies.iter().map(|&id| r7_status(id, true, true, false)));
         let lines = r7_fixture(&statuses, class, width, true);
         assert!(
-            line_width(&Line::from(lines[1].as_str())) <= width,
+            line_width(&Line::from(lines[1].as_str()), Colours::None) <= width,
             "{lines:?}"
         );
         lines[1][name + 1..name + 1 + top].trim().to_owned()
@@ -1242,7 +1293,7 @@ fn narrow_r7_rows_keep_offset_provenance_and_fit() {
         }
         for row in &rows {
             assert!(
-                line_width(&Line::from(row.as_str())) <= width,
+                line_width(&Line::from(row.as_str()), Colours::None) <= width,
                 "{width}: {row:?}"
             );
         }
@@ -1252,7 +1303,7 @@ fn narrow_r7_rows_keep_offset_provenance_and_fit() {
         assert_eq!(rows[1].trim(), want, "{width}");
         for row in &rows {
             assert!(
-                line_width(&Line::from(row.as_str())) <= width,
+                line_width(&Line::from(row.as_str()), Colours::None) <= width,
                 "{width}: {row:?}"
             );
         }
@@ -1298,19 +1349,21 @@ fn the_trial_bar_shows_elapsed_without_colour() {
         let line = progress_bar(
             &scene,
             20,
-            filled(20, Duration::from_secs(elapsed), total),
-            "█",
-            "░",
+            Duration::from_secs(elapsed),
+            total,
+            ("█", "░"),
+            true,
         );
         assert!(
             line.spans
                 .iter()
                 .all(|span| span.style == ratatui::style::Style::new())
         );
-        plain(&line)
+        plain(&line, Colours::None)
     };
     assert_eq!(bar(0), "░".repeat(20));
     assert_eq!(bar(30), format!("{}{}", "█".repeat(5), "░".repeat(15)));
+    assert_eq!(bar(31), format!("{}{}", "█".repeat(5), "░".repeat(15)));
     assert_eq!(bar(120), "█".repeat(20));
     assert_eq!(bar(999), "█".repeat(20));
     assert_eq!(filled(20, Duration::from_secs(5), Duration::ZERO), 0);
@@ -1320,9 +1373,94 @@ fn the_trial_bar_shows_elapsed_without_colour() {
         &zone,
         Colours::Full,
     );
-    let line = progress_bar(&full, 4, 1, "█", "░");
+    let line = progress_bar(
+        &full,
+        4,
+        Duration::from_secs(30),
+        Duration::from_secs(120),
+        ("█", "░"),
+        true,
+    );
     assert_eq!(line.spans[0].style, Paint::Running.style(Colours::Full));
     assert_eq!(line.spans[1].style, Paint::Track.style(Colours::Full));
+}
+
+fn rich_bar(elapsed: u64, partial: bool, glyphs: (&str, &str)) -> Line<'static> {
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let scene = scene(
+        &model.snapshot(),
+        Timestamp::UNIX_EPOCH,
+        &zone,
+        Colours::Rich,
+    );
+    progress_bar(
+        &scene,
+        20,
+        Duration::from_secs(elapsed),
+        Duration::from_secs(160),
+        glyphs,
+        partial,
+    )
+}
+
+#[test_case(0, ""; "nothing elapsed")]
+#[test_case(1, "▏"; "one eighth")]
+#[test_case(4, "▌"; "half a cell")]
+#[test_case(7, "▉"; "seven eighths")]
+#[test_case(8, "█"; "one whole cell")]
+#[test_case(13, "█▋"; "a cell and five eighths")]
+#[test_case(159, "███████████████████▉"; "just short of the end")]
+#[test_case(160, "████████████████████"; "the end")]
+fn a_rich_bar_ends_in_an_eighth_block_leading_edge(elapsed: u64, filled: &str) {
+    let line = rich_bar(elapsed, true, ("█", "░"));
+    let cells = filled.chars().count();
+    assert_eq!(
+        plain(&line, Colours::Rich),
+        format!("{filled}{}", "░".repeat(20 - cells))
+    );
+    assert_eq!(
+        line.spans[0].style,
+        Paint::Running.style(Colours::Rich),
+        "the leading edge is drawn in the bar's colour"
+    );
+    assert_eq!(line.spans.len(), 2, "equal cells share a span");
+    assert_eq!(line.spans[1].style, Paint::Track.style(Colours::Rich));
+}
+
+#[test_case(1, 0; "an eighth does not reach a whole cell")]
+#[test_case(7, 0; "seven eighths does not either")]
+#[test_case(13, 1; "a cell and five eighths keeps the cell")]
+fn a_half_height_rich_row_keeps_an_integer_edge(elapsed: u64, whole: usize) {
+    let line = rich_bar(elapsed, false, ("▀", "▀"));
+    assert_eq!(
+        plain(&line, Colours::Rich),
+        "▀".repeat(20),
+        "{whole} whole cells, the rest the track, and no eighth glyph below the row"
+    );
+    assert_eq!(line.spans[0].content.chars().count(), whole);
+    assert_eq!(line.spans[0].style, Paint::Running.style(Colours::Rich));
+}
+
+#[test_case(Colours::Full; "full colour")]
+#[test_case(Colours::Console; "console")]
+fn only_the_rich_profile_draws_an_eighth_block_edge(colours: Colours) {
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let scene = scene(&model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
+    let line = progress_bar(
+        &scene,
+        20,
+        Duration::from_secs(13),
+        Duration::from_secs(160),
+        ("█", "░"),
+        true,
+    );
+    assert_eq!(
+        plain(&line, colours),
+        format!("█{}", "░".repeat(19)),
+        "elapsed time rounds down to whole cells"
+    );
 }
 
 #[test]
@@ -1350,17 +1488,23 @@ fn the_requirement_line_counts_passes_and_marks_the_running_trial() {
         Colours::None,
     );
     let mut t = trial(Regime::R1, None, 60);
-    assert_eq!(line_width(&requirement_line(&scene, &t, false)), 0);
+    assert_eq!(
+        line_width(&requirement_line(&scene, &t, false), Colours::None),
+        0
+    );
     t.count = Count {
         passed: 1,
         index: 2,
         of: 4,
     };
     assert_eq!(
-        plain(&requirement_line(&scene, &t, false)),
+        plain(&requirement_line(&scene, &t, false), Colours::None),
         "1 passed · trial 2 of 4  ■ ► · ·"
     );
-    assert_eq!(plain(&requirement_line(&scene, &t, true)), "1/4 ■ ► · ·");
+    assert_eq!(
+        plain(&requirement_line(&scene, &t, true), Colours::None),
+        "1/4 ■ ► · ·"
+    );
 }
 
 #[test]
@@ -1381,7 +1525,7 @@ fn an_idle_hold_pins_the_clock_to_the_trials_start() {
             planned_end: at("2026-10-12T10:10:00Z"),
         })
     );
-    let text = plain(&header(&scene, 240, false));
+    let text = plain(&header(&scene, 240, false), Colours::None);
     assert!(text.starts_with("togi   10:00:00"), "{text}");
     assert!(text.contains("screen paused · planned end 10:10"), "{text}");
     assert!(!text.contains("paused until"), "{text}");
@@ -1405,7 +1549,7 @@ fn an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_eve
         let zone = TimeZone::UTC;
         let scene = scene(&model.snapshot(), now, &zone, Colours::None);
         assert!(scene.hold.is_some(), "the idle trial holds the frame");
-        plain(&header(&scene, 160, false))
+        plain(&header(&scene, 160, false), Colours::None)
     }
 
     let mut script = Script::at_limit();
@@ -1475,5 +1619,250 @@ fn an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_eve
         snap.tuning.at(ended),
         Duration::from_hours(6),
         "the accumulator advanced behind the hold and counts through the trial's end"
+    );
+}
+
+fn gauge_in(colours: Colours, core: &CoreView, applied: i64, cells: usize) -> Line<'static> {
+    let model = Model::new();
+    let zone = TimeZone::UTC;
+    let scene = scene(&model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
+    gauge(&scene, core, Some(applied), cells)
+}
+
+fn gauge_text_in(colours: Colours, core: &CoreView, applied: i64, cells: usize) -> String {
+    plain(&gauge_in(colours, core, applied, cells), colours)
+        .trim_end()
+        .to_owned()
+}
+
+#[test_case(-27, -28; "an odd applied depth and an even failure")]
+#[test_case(-26, -27; "an even applied depth and an odd failure")]
+fn a_rich_gauge_marks_each_count_of_fifty_cells(applied: i64, fail: i64) {
+    let core = CoreView {
+        fail: Some(off(fail)),
+        judged: true,
+        ..core_view(0, 0, CoreState::AtLimit)
+    };
+    let line = gauge_in(Colours::Rich, &core, applied, 50);
+    let depth = usize::try_from(-applied).unwrap();
+    let mark = usize::try_from(-fail).unwrap() - 1;
+    let want = format!("{}{}▆", "▆".repeat(depth), " ".repeat(mark - depth));
+    assert_eq!(plain(&line, Colours::Rich).trim_end(), want);
+    let blank = ratatui::style::Style::new();
+    let mut spans = vec![Paint::White.style(Colours::Rich)];
+    if mark > depth {
+        spans.push(blank);
+    }
+    spans.extend([Paint::Bad.style(Colours::Rich), blank]);
+    let styles: Vec<_> = line.spans.iter().map(|span| span.style).collect();
+    assert_eq!(styles, spans, "equal runs share one span");
+}
+
+#[test]
+fn a_rich_gauge_keeps_the_gap_the_held_depth_and_the_group_marks() {
+    let held_core = CoreView {
+        profile: off(-43),
+        solo: Some(off(-44)),
+        fail: Some(off(-45)),
+        holder: held(4),
+        ..core_view(0, 0, CoreState::AtLimit)
+    };
+    let text = |applied| gauge_text_in(Colours::Rich, &held_core, applied, 50);
+    assert_eq!(text(-43).trim_end(), format!("{}░▆", "▆".repeat(43)));
+    assert_eq!(
+        text(0).trim_end(),
+        format!("{}░▆", "·".repeat(43)),
+        "the proven-pass gap stays a grey dot"
+    );
+    let probe = CoreView {
+        group_fails: vec![off(-3), off(-5), off(-6)],
+        fail: Some(off(-8)),
+        ..core_view(0, 0, CoreState::Probe)
+    };
+    let line = gauge_in(Colours::Rich, &probe, -2, 50);
+    assert_eq!(gauge_text_in(Colours::Rich, &probe, -2, 50), "▆▆┆ ┆┆ ▆");
+    assert!(
+        line.spans
+            .iter()
+            .filter(|span| span.content.contains('┆'))
+            .all(|span| span.style == Paint::Bad.style(Colours::Rich))
+    );
+}
+
+#[test]
+fn a_rich_gauge_in_twenty_five_cells_keeps_the_console_scale_with_rich_shapes() {
+    let core = CoreView {
+        fail: Some(off(-8)),
+        group_fails: vec![off(-4)],
+        ..core_view(0, 0, CoreState::Probe)
+    };
+    assert_eq!(gauge_text_in(Colours::Rich, &core, -2, 25), "▆┆ ▆");
+    assert_eq!(gauge_text_in(Colours::Full, &core, -2, 25), "▄▀ ▬");
+}
+
+fn rich_frame(model: &Model, width: u16, height: u16, now: Timestamp) -> Buffer {
+    let sc = screen(View::Main, width, height, Colours::Rich, true);
+    let snapshot = model.snapshot();
+    let journal = Journal::Ready {
+        snapshot,
+        log: snapshot.log(),
+    };
+    draw_checked(&sc, |sc, buf| {
+        render(&journal, sc, now, &TimeZone::UTC, buf)
+    })
+    .0
+}
+
+fn symbol(buf: &Buffer, x: usize, y: usize) -> &str {
+    buf[(u16::try_from(x).unwrap(), u16::try_from(y).unwrap())].symbol()
+}
+
+fn foreground(buf: &Buffer, x: usize, y: usize) -> Option<ratatui::style::Color> {
+    Some(buf[(u16::try_from(x).unwrap(), u16::try_from(y).unwrap())].fg)
+}
+
+/// The rendered rich frame puts the failure point on its own count in the Wide and Medium tables: the gauge
+/// starts at cell 21 (Wide) or 20 (Medium) after the table's margin, one count to a cell.
+#[test_case(240, 67, 21, 75, 5, -27; "wide odd")]
+#[test_case(240, 67, 21, 75, 5, -28; "wide even")]
+#[test_case(160, 45, 20, 73, 4, -27; "medium odd")]
+#[test_case(160, 45, 20, 73, 4, -28; "medium even")]
+fn the_rendered_rich_frame_puts_each_failure_on_its_count(
+    width: u16,
+    height: u16,
+    gauge_column: usize,
+    fail_column: usize,
+    field: usize,
+    fail: i64,
+) {
+    let applied = fail + 1;
+    let mut script = Script::new(&[(0, 0)], &[Start::at_limit(applied, fail)]);
+    script.append(readback(0, applied), &[]);
+    let model = script.model();
+    let now = script.events.last().expect("an event").time + SignedDuration::from_secs(40);
+    let buf = rich_frame(&model, width, height, now);
+    let rows = rows_of(&buf);
+    let heading = rows
+        .iter()
+        .position(|row| row.contains("CCD 0") && row.contains("fail"))
+        .expect("the CCD 0 table");
+    let bad = Paint::Bad.style(Colours::Rich).fg;
+    let y = heading + 1;
+    let at = |depth: i64| 2 + gauge_column + usize::try_from(depth).unwrap() - 1;
+    let mark = at(-fail);
+    assert_eq!(symbol(&buf, mark, y), "▆", "failure {fail}");
+    assert_eq!(foreground(&buf, mark, y), bad, "failure {fail} is red");
+    assert_eq!(
+        symbol(&buf, mark - 1, y),
+        "▆",
+        "applied {applied} touches it"
+    );
+    assert_ne!(foreground(&buf, mark - 1, y), bad, "applied is not red");
+    assert_eq!(
+        symbol(&buf, mark + 1, y),
+        " ",
+        "nothing deeper than the failure"
+    );
+    assert_eq!(symbol(&buf, at(1), y), "▆");
+    let text: String = rows[y].chars().skip(fail_column).take(field).collect();
+    assert_eq!(text, format!("{fail:>field$}"), "failure point column");
+}
+
+#[test_case(240, 67, Colours::Rich, 21, 50, 73, 5; "wide rich")]
+#[test_case(160, 45, Colours::Rich, 20, 50, 71, 4; "medium rich")]
+#[test_case(160, 45, Colours::Full, 21, 25, 48, 5; "medium console")]
+#[test_case(80, 24, Colours::Rich, 20, 50, 71, 4; "compact rich where fifty cells fit")]
+#[test_case(70, 24, Colours::Rich, 21, 25, 48, 5; "compact rich where they do not")]
+#[test_case(80, 24, Colours::Full, 21, 25, 48, 5; "compact console")]
+fn rich_gauge_geometry_depends_on_the_room_for_fifty_cells(
+    width: u16,
+    height: u16,
+    colours: Colours,
+    gauge: usize,
+    cells: usize,
+    failure: usize,
+    failure_width: usize,
+) {
+    let model = Script::at_limit().model();
+    let zone = TimeZone::UTC;
+    let scene = Scene::new(model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
+    let measured = measure(&scene, &screen(View::Main, width, height, colours, true));
+    let columns = measured.ccds[0].columns;
+    assert_eq!(
+        (
+            columns.gauge,
+            columns.cells,
+            columns.failure,
+            columns.failure_width
+        ),
+        (gauge, cells, failure, failure_width)
+    );
+}
+
+fn running_model() -> Model {
+    let mut script = Script::at_limit();
+    let plan = script.next_trial();
+    let (_, trial) = script.intent(&plan);
+    script.start(&trial);
+    script.model()
+}
+
+/// The elapsed time that fills `eighths` eighths of a `cells`-cell bar of `total`.
+fn elapsed_for(total: Duration, cells: usize, eighths: usize) -> SignedDuration {
+    let nanos = (total.as_nanos() * eighths as u128).div_ceil(cells as u128 * 8);
+    SignedDuration::from_nanos(i64::try_from(nanos).unwrap())
+}
+
+#[test_case(4; "half a cell")]
+#[test_case(3; "three eighths")]
+#[test_case(7; "seven eighths")]
+fn the_rendered_wide_bar_has_an_edge_only_on_its_full_height_rows(extra: usize) {
+    let model = running_model();
+    let snapshot = model.snapshot();
+    let trial = snapshot.trial.expect("a running trial");
+    let started = trial.started.expect("a started trial");
+    let zone = TimeZone::UTC;
+    let probe = Scene::new(snapshot, started, &zone, Colours::Rich);
+    let sc = screen(View::Main, 240, 67, Colours::Rich, true);
+    let now_rect = measure(&probe, &sc).now;
+    let cells = usize::from(now_rect.width) - 23;
+    let eighths = cells * 8 / 3 + extra;
+    let (whole, edge) = (eighths / 8, eighths % 8);
+    let at = started + elapsed_for(trial.duration, cells, eighths);
+    let buf = rich_frame(&model, 240, 67, at);
+    let rows = rows_of(&buf);
+    let (x, top) = (usize::from(now_rect.x) + whole, usize::from(now_rect.y) + 3);
+    let edges = ['▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+    for y in [top, top + 1] {
+        let expected = if edge == 0 { '░' } else { edges[edge - 1] };
+        assert_eq!(rows[y].chars().nth(x), Some(expected), "row {y}");
+        let paint = if edge > 0 {
+            Paint::Running
+        } else {
+            Paint::Track
+        };
+        assert_eq!(
+            foreground(&buf, x, y),
+            paint.style(Colours::Rich).fg,
+            "row {y}"
+        );
+    }
+    let bottom: Vec<char> = rows[top + 2]
+        .chars()
+        .skip(usize::from(now_rect.x))
+        .take(cells)
+        .collect();
+    assert!(bottom.iter().all(|&c| c == '▀'), "{bottom:?}");
+    assert!(
+        rows[top + 2].chars().all(|c| !edges.contains(&c)),
+        "no eighth glyph reaches below the half-height row"
+    );
+    assert_eq!(
+        foreground(&buf, x - 1, top + 2),
+        Paint::Running.style(Colours::Rich).fg
+    );
+    assert_eq!(
+        foreground(&buf, x, top + 2),
+        Paint::Track.style(Colours::Rich).fg
     );
 }

@@ -52,6 +52,7 @@ pub(super) fn hunt_lines(
             &cell(scene, Paint::Grey, format!("HUNT {}", hunt.plan.number)),
             &right,
             scene.style(Paint::Track),
+            scene.colours,
         ),
         Line::default(),
         field_row(
@@ -83,6 +84,7 @@ pub(super) fn hunt_lines(
                     ],
                 ),
             ],
+            scene.colours,
         );
         out.push(field_row(scene, t, "candidates", candidates, width));
     }
@@ -113,14 +115,18 @@ fn cause_line(scene: &Scene<'_>, hunt: &HuntView<'_>, compact: bool, room: usize
     let cause = &hunt.facts.cause;
     let say = |text: String| cell(scene, Paint::Text, text);
     if cause.known {
-        return fit_clauses(room, &[Clause::whole("", say(known_words(cause)))]);
+        return fit_clauses(
+            room,
+            &[Clause::whole("", say(known_words(cause)))],
+            scene.colours,
+        );
     }
     let Some(trial) = &cause.trial else {
         let text = format!(
             "{} while idle, with no trial running",
             cause.signal.map_or("crash", signal_words)
         );
-        return fit_clauses(room, &[Clause::whole("", say(text))]);
+        return fit_clauses(room, &[Clause::whole("", say(text))], scene.colours);
     };
     let signal = cause.signal.map_or("failure", signal_words);
     let rerun = if cause.rerun_of { "the rerun of " } else { "" };
@@ -170,7 +176,7 @@ fn cause_line(scene: &Scene<'_>, hunt: &HuntView<'_>, compact: bool, room: usize
         if compact { ", " } else { " · " },
         say(named),
     ));
-    fit_clauses(room, &clauses)
+    fit_clauses(room, &clauses, scene.colours)
 }
 
 /// What the journal holds about a crash that falls short of naming a core, then that it does not attribute the
@@ -204,6 +210,7 @@ fn evidence_line(scene: &Scene<'_>, hunt: &HuntView<'_>, room: usize) -> Option<
             Clause::new("", forms),
             Clause::whole(" · ", cell(scene, Paint::Grey, "not enough to attribute")),
         ],
+        scene.colours,
     ))
 }
 
@@ -258,7 +265,9 @@ fn part_lines(
                     cell(scene, Paint::Grey, "schedule"),
                     cell(scene, Paint::Grey, "state"),
                 ],
+                scene.colours,
             ),
+            scene.colours,
         ));
     }
     let trial = scene.s.trial.filter(|trial| trial.count.of > 0);
@@ -315,6 +324,7 @@ fn part_lines(
                 ),
                 state,
             ],
+            scene.colours,
         ));
     }
     if !compact && let Some(row) = holding_row(scene, hunt, t, width) {
@@ -371,7 +381,7 @@ fn holding_row(
     if clauses.is_empty() {
         return None;
     }
-    let line = fit_clauses(width.saturating_sub(t.field), &clauses);
+    let line = fit_clauses(width.saturating_sub(t.field), &clauses, scene.colours);
     Some(field_row(scene, t, "others", line, width))
 }
 
@@ -429,7 +439,7 @@ fn group_lines(
             .collect();
         if !rest.is_empty() {
             let with_rest = format!("{what}, {} parked", core_ids(rest));
-            if display_width(&with_rest) <= t.groups[1].w {
+            if display_width(&with_rest, scene.colours) <= t.groups[1].w {
                 what = with_rest;
             }
         }
@@ -473,7 +483,9 @@ fn group_lines(
                     cell(scene, Paint::Grey, what),
                     Line::from(result),
                 ],
+                scene.colours,
             ),
+            scene.colours,
         ));
     }
     if let Some(single) = hunt.singleton() {
@@ -546,7 +558,9 @@ fn probe_lines(
                     cell(scene, Paint::Grey, "passed at"),
                     cell(scene, Paint::Grey, "state"),
                 ],
+                scene.colours,
             ),
+            scene.colours,
         ));
     }
     let trial = scene.s.trial.filter(|trial| trial.count.of > 0);
@@ -563,6 +577,7 @@ fn probe_lines(
                     Line::default(),
                     cell(scene, Paint::Grey, "waiting"),
                 ],
+                scene.colours,
             ));
             *waiting = CoreSet::default();
         }
@@ -612,6 +627,7 @@ fn probe_lines(
                 passed,
                 state,
             ],
+            scene.colours,
         ));
     }
     flush(&mut waiting, &mut out);
@@ -724,7 +740,12 @@ fn then_lines(
     if compact {
         out.push(overlay(
             scene.paint(Paint::Grey, "then"),
-            table_row(&t.steps, &[cell(scene, Paint::Grey, "1"), lines[0].clone()]),
+            table_row(
+                &t.steps,
+                &[cell(scene, Paint::Grey, "1"), lines[0].clone()],
+                scene.colours,
+            ),
+            scene.colours,
         ));
     } else {
         out.push(field_row(
@@ -737,12 +758,14 @@ fn then_lines(
         out.push(table_row(
             &t.steps,
             &[cell(scene, Paint::Grey, "1"), lines[0].clone()],
+            scene.colours,
         ));
     }
     for (i, line) in lines.into_iter().enumerate().skip(1) {
         out.push(table_row(
             &t.steps,
             &[cell(scene, Paint::Grey, (i + 1).to_string()), line],
+            scene.colours,
         ));
     }
     out
@@ -868,7 +891,7 @@ mod tests {
     use togi_machine::{Regime, Signal};
     use togi_tuner::GroupState;
 
-    use super::super::super::fit::{CUT_MARKER, cut_words, plain};
+    use super::super::super::fit::{cut_marker, cut_words, plain};
     use super::super::super::layout::SizeClass;
     use super::super::super::measure::Tables;
     use super::super::fixtures::{
@@ -882,6 +905,7 @@ mod tests {
         CyclePlace, CycleView, DeadEndView, HuntFacts, HuntView, Model, SessionView, StopView,
         TrialEndView,
     };
+    use crate::screen::Colours;
     use crate::tests::kit::{core, off, set};
 
     fn stage_of(plan: &togi_tuner::HuntPlan, short: bool) -> String {
@@ -991,12 +1015,15 @@ mod tests {
         plan.probes = vec![probe(0, -9, true, false)];
         let facts = hunt_facts();
         let rows = with_hunt(&plan, &facts, |scene, hunt| {
-            texts(&probe_lines(
-                scene,
-                hunt,
-                &Tables::new(SizeClass::Medium, 80),
-                SizeClass::Medium,
-            ))
+            texts(
+                &probe_lines(
+                    scene,
+                    hunt,
+                    &Tables::new(SizeClass::Medium, 80),
+                    SizeClass::Medium,
+                ),
+                Colours::None,
+            )
         });
         assert_eq!(rows.len(), 2, "{rows:?}");
         assert!(rows[0].starts_with("probes"));
@@ -1032,12 +1059,15 @@ mod tests {
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
         let hunt = scene.s.hunt.expect("a hunt");
-        let rows = texts(&probe_lines(
-            &scene,
-            &hunt,
-            &Tables::new(SizeClass::Wide, 100),
-            SizeClass::Wide,
-        ));
+        let rows = texts(
+            &probe_lines(
+                &scene,
+                &hunt,
+                &Tables::new(SizeClass::Wide, 100),
+                SizeClass::Wide,
+            ),
+            Colours::None,
+        );
         assert_eq!(rows.len(), 4, "{rows:?}");
         assert!(rows[1].contains("-18") && rows[1].contains("-15 5/5, -12 carried"));
         assert!(rows[1].ends_with("done"));
@@ -1079,12 +1109,15 @@ mod tests {
             let zone = TimeZone::UTC;
             let scene = scene(&s, &zone);
             let hunt = scene.s.hunt.expect("a hunt");
-            texts(&probe_lines(
-                &scene,
-                &hunt,
-                &Tables::new(SizeClass::Wide, 100),
-                SizeClass::Wide,
-            ))
+            texts(
+                &probe_lines(
+                    &scene,
+                    &hunt,
+                    &Tables::new(SizeClass::Wide, 100),
+                    SizeClass::Wide,
+                ),
+                Colours::None,
+            )
         };
         assert!(rows(None, None)[1].contains("► trial 2 of 5"));
         for over in [rows(Some(&stopped), None), rows(None, Some(&dead_end))] {
@@ -1123,13 +1156,16 @@ mod tests {
         s.hunt = Some(hunt);
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
-        let wide = texts(&part_lines(
-            &scene,
-            &hunt,
-            &Tables::new(SizeClass::Wide, 100),
-            100,
-            SizeClass::Wide,
-        ));
+        let wide = texts(
+            &part_lines(
+                &scene,
+                &hunt,
+                &Tables::new(SizeClass::Wide, 100),
+                100,
+                SizeClass::Wide,
+            ),
+            Colours::None,
+        );
         assert!(wide[0].starts_with("parts") && wide[0].contains("parked at 0"));
         assert!(
             wide[1].contains("1 of 2")
@@ -1139,13 +1175,16 @@ mod tests {
         assert!(wide[2].contains("2 of 2") && wide[2].contains("if part 1 passes"));
         assert!(wide[3].contains("failed parts are split again; complements test what remains"));
         assert!(!wide[3].contains("until one fails"));
-        let compact = texts(&part_lines(
-            &scene,
-            &hunt,
-            &Tables::new(SizeClass::Compact, 80),
-            80,
-            SizeClass::Compact,
-        ));
+        let compact = texts(
+            &part_lines(
+                &scene,
+                &hunt,
+                &Tables::new(SizeClass::Compact, 80),
+                80,
+                SizeClass::Compact,
+            ),
+            Colours::None,
+        );
         assert_eq!(compact.len(), 2, "{compact:?}");
         assert!(compact[0].contains("part 1/2") && compact[0].contains("trial 2/5"));
     }
@@ -1155,13 +1194,16 @@ mod tests {
         let facts = hunt_facts();
         let state_rows = |plan: &togi_tuner::HuntPlan| {
             with_hunt(plan, &facts, |scene, hunt| {
-                texts(&part_lines(
-                    scene,
-                    hunt,
-                    &Tables::new(SizeClass::Wide, 100),
-                    100,
-                    SizeClass::Wide,
-                ))
+                texts(
+                    &part_lines(
+                        scene,
+                        hunt,
+                        &Tables::new(SizeClass::Wide, 100),
+                        100,
+                        SizeClass::Wide,
+                    ),
+                    Colours::None,
+                )
             })
         };
         let waiting = hunt_plan(
@@ -1239,12 +1281,15 @@ mod tests {
         ];
         let facts = hunt_facts();
         let rows = with_hunt(&plan, &facts, |scene, hunt| {
-            texts(&probe_lines(
-                scene,
-                hunt,
-                &Tables::new(SizeClass::Wide, 100),
-                SizeClass::Wide,
-            ))
+            texts(
+                &probe_lines(
+                    scene,
+                    hunt,
+                    &Tables::new(SizeClass::Wide, 100),
+                    SizeClass::Wide,
+                ),
+                Colours::None,
+            )
         });
         assert_eq!(rows.len(), 4, "{rows:?}");
         assert!(
@@ -1268,13 +1313,16 @@ mod tests {
         let plan = hunt_plan(vec![locating], Vec::new());
         let facts = hunt_facts();
         let rows = with_hunt(&plan, &facts, |scene, hunt| {
-            texts(&hunt_lines(
-                scene,
-                hunt,
-                &Tables::new(SizeClass::Wide, 120),
-                120,
-                SizeClass::Wide,
-            ))
+            texts(
+                &hunt_lines(
+                    scene,
+                    hunt,
+                    &Tables::new(SizeClass::Wide, 120),
+                    120,
+                    SizeClass::Wide,
+                ),
+                Colours::None,
+            )
         });
         let at = rows
             .iter()
@@ -1302,12 +1350,10 @@ mod tests {
         let mut facts = hunt_facts();
         facts.group_signals = vec![(4, Signal::Crash)];
         let rows = with_hunt(&plan, &facts, |scene, hunt| {
-            texts(&group_lines(
-                scene,
-                hunt,
-                &Tables::new(SizeClass::Wide, 140),
-                140,
-            ))
+            texts(
+                &group_lines(scene, hunt, &Tables::new(SizeClass::Wide, 140), 140),
+                Colours::None,
+            )
         });
         assert_eq!(rows.len(), 3, "{rows:?}");
         assert!(rows[0].starts_with("parts"));
@@ -1327,12 +1373,10 @@ mod tests {
         let plan = hunt_plan(vec![carried], Vec::new());
         let facts = hunt_facts();
         let rows = with_hunt(&plan, &facts, |scene, hunt| {
-            texts(&group_lines(
-                scene,
-                hunt,
-                &Tables::new(SizeClass::Wide, 140),
-                140,
-            ))
+            texts(
+                &group_lines(scene, hunt, &Tables::new(SizeClass::Wide, 140), 140),
+                Colours::None,
+            )
         });
         assert!(
             rows[0].ends_with("passed · answered by existing evidence"),
@@ -1360,7 +1404,7 @@ mod tests {
         let mut facts = hunt_facts();
         let words = |facts: &crate::model::HuntFacts, compact| {
             with_hunt(&plan, facts, |scene, hunt| {
-                plain(&cause_line(scene, hunt, compact, usize::MAX))
+                plain(&cause_line(scene, hunt, compact, usize::MAX), Colours::None)
             })
         };
         assert_eq!(
@@ -1450,13 +1494,16 @@ mod tests {
             ],
         );
         with_hunt(&plan, facts, |scene, hunt| {
-            texts(&hunt_lines(
-                scene,
-                hunt,
-                &Tables::new(SizeClass::Medium, width),
-                width,
-                SizeClass::Medium,
-            ))
+            texts(
+                &hunt_lines(
+                    scene,
+                    hunt,
+                    &Tables::new(SizeClass::Medium, width),
+                    width,
+                    SizeClass::Medium,
+                ),
+                Colours::None,
+            )
         })
     }
 
@@ -1474,18 +1521,19 @@ mod tests {
         let room = MEDIUM_PANEL - 12;
         let legacy_cause = "wrong result in the rerun of R7 all-core on 00 01 · cycle 1 step 4, part 11, trial 2 of 5 · no core named";
         let legacy_evidence = "the last sample came 0:01 into the trial · not enough to attribute";
-        assert!(!cut_words(legacy_cause, room).contains("no core named"));
-        assert!(!cut_words(legacy_evidence, room).contains("attribute"));
+        assert!(!cut_words(legacy_cause, room, Colours::None).contains("no core named"));
+        assert!(!cut_words(legacy_evidence, room, Colours::None).contains("attribute"));
         let crash = medium_rows(&failure_facts(Signal::Crash, None, &[0, 1]), MEDIUM_PANEL);
         let cause = row_of(&crash, "cause");
         assert!(
-            cause.ends_with("no core named") && !cause.contains(CUT_MARKER),
+            cause.ends_with("no core named") && !cause.contains(cut_marker(Colours::None)),
             "{cause}"
         );
         assert!(cause.contains("crash in the rerun of R7 all-core on 00 01"));
         let evidence = row_of(&crash, "evidence");
         assert!(
-            evidence.ends_with("not enough to attribute") && !evidence.contains(CUT_MARKER),
+            evidence.ends_with("not enough to attribute")
+                && !evidence.contains(cut_marker(Colours::None)),
             "{evidence}"
         );
         assert!(evidence.contains("0:01"), "{evidence}");
@@ -1499,7 +1547,7 @@ mod tests {
         assert!(
             cause.starts_with("cause       wrong result in the rerun of R7 all-core")
                 && cause.ends_with("core 04 named")
-                && !cause.contains(CUT_MARKER),
+                && !cause.contains(cut_marker(Colours::None)),
             "{cause}"
         );
         assert!(!rows.iter().any(|row| row.starts_with("evidence")));
@@ -1512,12 +1560,13 @@ mod tests {
             let unnamed = medium_rows(&failure_facts(Signal::Crash, None, &cores), width);
             let cause = row_of(&unnamed, "cause");
             assert!(
-                cause.ends_with("no core named") && !cause.contains(CUT_MARKER),
+                cause.ends_with("no core named") && !cause.contains(cut_marker(Colours::None)),
                 "{width}: {cause}"
             );
             let evidence = row_of(&unnamed, "evidence");
             assert!(
-                evidence.ends_with("not enough to attribute") && !evidence.contains(CUT_MARKER),
+                evidence.ends_with("not enough to attribute")
+                    && !evidence.contains(cut_marker(Colours::None)),
                 "{width}: {evidence}"
             );
             let named = medium_rows(
@@ -1551,7 +1600,11 @@ mod tests {
     fn the_medium_hunt_prose_fits_without_a_cut() {
         let rows = medium_rows(&failure_facts(Signal::Crash, None, &[0, 1]), MEDIUM_PANEL);
         for row in &rows {
-            assert!(!row.contains(CUT_MARKER), "{row}\n{}", rows.join("\n"));
+            assert!(
+                !row.contains(cut_marker(Colours::None)),
+                "{row}\n{}",
+                rows.join("\n")
+            );
         }
         let all = rows.join("\n");
         for kept in [
@@ -1579,13 +1632,16 @@ mod tests {
         );
         let facts = hunt_facts();
         let rows = with_hunt(&plan, &facts, |scene, hunt| {
-            texts(&hunt_lines(
-                scene,
-                hunt,
-                &Tables::new(SizeClass::Compact, 80),
-                80,
-                SizeClass::Compact,
-            ))
+            texts(
+                &hunt_lines(
+                    scene,
+                    hunt,
+                    &Tables::new(SizeClass::Compact, 80),
+                    80,
+                    SizeClass::Compact,
+                ),
+                Colours::None,
+            )
         });
         assert!(
             rows[0].starts_with("HUNT 1") && rows[0].ends_with("00:16 · 16m40s"),
@@ -1631,13 +1687,16 @@ mod tests {
         });
         let zone = TimeZone::UTC;
         let scene = scene(&s, &zone);
-        let rows = texts(&then_lines(
-            &scene,
-            &hunt,
-            &Tables::new(SizeClass::Wide, 100),
-            100,
-            SizeClass::Wide,
-        ));
+        let rows = texts(
+            &then_lines(
+                &scene,
+                &hunt,
+                &Tables::new(SizeClass::Wide, 100),
+                100,
+                SizeClass::Wide,
+            ),
+            Colours::None,
+        );
         assert_eq!(rows.len(), 5, "{rows:?}");
         assert!(
             rows[0].starts_with("then")
@@ -1649,13 +1708,16 @@ mod tests {
             rows[3].contains("rerun R7 all-core on 00-02: 5 trials of 10m, its original length")
         );
         assert!(rows[4].contains("if the rerun passes, resume cycle 2"));
-        let compact = texts(&then_lines(
-            &scene,
-            &hunt,
-            &Tables::new(SizeClass::Compact, 80),
-            80,
-            SizeClass::Compact,
-        ));
+        let compact = texts(
+            &then_lines(
+                &scene,
+                &hunt,
+                &Tables::new(SizeClass::Compact, 80),
+                80,
+                SizeClass::Compact,
+            ),
+            Colours::None,
+        );
         assert_eq!(compact.len(), 3, "{compact:?}");
     }
 
@@ -1678,13 +1740,16 @@ mod tests {
         let mut facts = hunt_facts();
         facts.parking = Some(core03_parked_at(anchor));
         with_hunt(plan, &facts, |scene, hunt| {
-            texts(&hunt_lines(
-                scene,
-                hunt,
-                &Tables::new(SizeClass::Wide, 200),
-                200,
-                SizeClass::Wide,
-            ))
+            texts(
+                &hunt_lines(
+                    scene,
+                    hunt,
+                    &Tables::new(SizeClass::Wide, 200),
+                    200,
+                    SizeClass::Wide,
+                ),
+                Colours::None,
+            )
             .join("\n")
         })
     }
@@ -1869,11 +1934,14 @@ mod tests {
             facts: &facts,
         });
         let zone = TimeZone::UTC;
-        plain(&crate::frames::dash::stage_line(
-            &scene(&s, &zone),
-            crate::frames::layout::SizeClass::Wide,
-            false,
-        ))
+        plain(
+            &crate::frames::dash::stage_line(
+                &scene(&s, &zone),
+                crate::frames::layout::SizeClass::Wide,
+                false,
+            ),
+            Colours::None,
+        )
     }
 
     #[test]
@@ -1935,13 +2003,16 @@ mod tests {
         let mut facts = hunt_facts();
         facts.parking = Some(parking);
         with_hunt(&located_parts_plan(), &facts, |scene, hunt| {
-            texts(&part_lines(
-                scene,
-                hunt,
-                &Tables::new(SizeClass::Wide, 100),
-                100,
-                SizeClass::Wide,
-            ))
+            texts(
+                &part_lines(
+                    scene,
+                    hunt,
+                    &Tables::new(SizeClass::Wide, 100),
+                    100,
+                    SizeClass::Wide,
+                ),
+                Colours::None,
+            )
         })
     }
 
@@ -1983,13 +2054,16 @@ mod tests {
         let mut facts = hunt_facts();
         facts.parking = Some(parking);
         let panel = with_hunt(&located_parts_plan(), &facts, |scene, hunt| {
-            texts(&hunt_lines(
-                scene,
-                hunt,
-                &Tables::new(SizeClass::Wide, 100),
-                100,
-                SizeClass::Wide,
-            ))
+            texts(
+                &hunt_lines(
+                    scene,
+                    hunt,
+                    &Tables::new(SizeClass::Wide, 100),
+                    100,
+                    SizeClass::Wide,
+                ),
+                Colours::None,
+            )
         });
         assert!(panel.iter().any(held_kept_and_parked), "{panel:?}");
     }

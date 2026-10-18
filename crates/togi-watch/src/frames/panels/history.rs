@@ -41,6 +41,7 @@ pub(super) fn history(scene: &Scene<'_>, width: usize, height: usize) -> Vec<Lin
             &cell(scene, Paint::Grey, "WHAT HAPPENED"),
             &cell(scene, Paint::Grey, right),
             scene.style(Paint::Track),
+            scene.colours,
         ));
     }
     if header_rows > 1 {
@@ -76,6 +77,7 @@ fn row(scene: &Scene<'_>, entry: &Entry, width: usize) -> Line<'static> {
                 scene.paint(Paint::Text, after),
             ]),
             room,
+            scene.colours,
         )
     };
     spans.extend(sentence.spans);
@@ -97,15 +99,15 @@ fn verdict_sentence(scene: &Scene<'_>, failed: &Failed, room: usize) -> Line<'st
     let named = verdict
         .named
         .map(|named| Line::from(scene.paint(Paint::Text, named.words())));
-    let reserved: usize = line_width(&signal)
-        + named
-            .as_ref()
-            .map_or(0, |named| line_width(named) + line_width(&sep()));
-    let subject_room = room.saturating_sub(reserved + line_width(&sep()));
+    let reserved: usize = line_width(&signal, scene.colours)
+        + named.as_ref().map_or(0, |named| {
+            line_width(named, scene.colours) + line_width(&sep(), scene.colours)
+        });
+    let subject_room = room.saturating_sub(reserved + line_width(&sep(), scene.colours));
     let subject_text = Line::from(scene.paint(Paint::Text, failed.subject.clone()));
-    let subject_cut = cut_styled(&subject_text, subject_room);
+    let subject_cut = cut_styled(&subject_text, subject_room, scene.colours);
     let mut subject = vec![Form::new(subject_text, 1)];
-    subject.push(if line_width(&subject_cut) > 0 {
+    subject.push(if line_width(&subject_cut, scene.colours) > 0 {
         Form::new(subject_cut, 0)
     } else {
         Form::empty()
@@ -126,7 +128,7 @@ fn verdict_sentence(scene: &Scene<'_>, failed: &Failed, room: usize) -> Line<'st
     if let Some(named) = named {
         clauses.push(Clause::whole(sep(), named));
     }
-    fit_clauses(room, &clauses)
+    fit_clauses(room, &clauses, scene.colours)
 }
 
 #[cfg(test)]
@@ -214,11 +216,11 @@ mod tests {
     ) {
         let kept = entries(HISTORY_LIMIT);
         let dropped = 501;
-        let drawn = texts(&panel(&kept, dropped, 100, height));
+        let drawn = texts(&panel(&kept, dropped, 100, height), Colours::None);
         assert_budget("tiny and tall", &drawn, 100, height, rows, footer);
         if drawn.len() == rows && shown > 0 {
             for (i, entry) in kept[..shown].iter().enumerate() {
-                let want = cut_words(&entry.text(), 84);
+                let want = cut_words(&entry.text(), 84, Colours::None);
                 assert!(
                     drawn[2 + i].ends_with(&want),
                     "height {height}: entry {i} is {:?}, want suffix {want:?}",
@@ -240,7 +242,7 @@ mod tests {
     #[test_case(3, 2, ""; "three rows")]
     #[test_case(10, 2, ""; "ten rows")]
     fn an_empty_history_leaves_nothing_uncounted(height: usize, rows: usize, footer: &str) {
-        let drawn = texts(&panel(&[], 0, 100, height));
+        let drawn = texts(&panel(&[], 0, 100, height), Colours::None);
         assert_budget("empty", &drawn, 100, height, rows, footer);
     }
 
@@ -250,7 +252,7 @@ mod tests {
     #[test_case(3, 3, ""; "three rows")]
     #[test_case(10, 3, ""; "ten rows")]
     fn one_entry_leaves_nothing_uncounted(height: usize, rows: usize, footer: &str) {
-        let drawn = texts(&panel(&entries(1), 0, 100, height));
+        let drawn = texts(&panel(&entries(1), 0, 100, height), Colours::None);
         assert_budget("one entry", &drawn, 100, height, rows, footer);
     }
 
@@ -262,7 +264,7 @@ mod tests {
     #[test_case(5, 5, ""; "five rows")]
     #[test_case(10, 5, ""; "ten rows")]
     fn three_entries_leave_nothing_uncounted(height: usize, rows: usize, footer: &str) {
-        let drawn = texts(&panel(&entries(3), 0, 100, height));
+        let drawn = texts(&panel(&entries(3), 0, 100, height), Colours::None);
         assert_budget("three entries", &drawn, 100, height, rows, footer);
     }
 
@@ -272,7 +274,7 @@ mod tests {
     #[test_case(3, 3, "+7 more"; "three rows")]
     #[test_case(10, 3, "+7 more"; "ten rows")]
     fn only_dropped_entries_leave_nothing_uncounted(height: usize, rows: usize, footer: &str) {
-        let drawn = texts(&panel(&[], 7, 100, height));
+        let drawn = texts(&panel(&[], 7, 100, height), Colours::None);
         assert_budget("only dropped entries", &drawn, 100, height, rows, footer);
     }
 
@@ -289,7 +291,7 @@ mod tests {
         let total = s.history_dropped + s.history.len();
         assert!(total > 2 * HISTORY_LIMIT);
         let zone = TimeZone::UTC;
-        let drawn = texts(&history(&scene(&s, &zone), 100, height));
+        let drawn = texts(&history(&scene(&s, &zone), 100, height), Colours::None);
         assert_eq!(drawn.len(), rows);
         assert_eq!(drawn.last(), Some(&format!("+{} more", total - shown)));
     }
@@ -303,7 +305,7 @@ mod tests {
         let model = short.model();
         let s = model.snapshot();
         let zone = TimeZone::UTC;
-        let drawn = texts(&history(&scene_of(&s, &zone), 100, 40));
+        let drawn = texts(&history(&scene_of(&s, &zone), 100, 40), Colours::None);
         assert_eq!(drawn.len(), 2 + s.history.len());
         assert!(!drawn.last().expect("a row").contains("more"), "{drawn:?}");
     }
@@ -318,17 +320,17 @@ mod tests {
     #[test]
     fn a_row_is_the_local_minute_the_tag_and_the_sentence() {
         let kept = entries(1);
-        let rows = texts(&panel(&kept, 0, 100, 4));
+        let rows = texts(&panel(&kept, 0, 100, 4), Colours::None);
         assert_eq!(rows[2], "00:16  note     warning 000");
         assert!(
             rows[0].starts_with("WHAT HAPPENED")
                 && rows[0].ends_with("newest first · l: last 400 events")
         );
-        let narrow = texts(&panel(&kept, 0, 60, 4));
+        let narrow = texts(&panel(&kept, 0, 60, 4), Colours::None);
         assert!(narrow[0].ends_with("l: last 400"), "{}", narrow[0]);
-        let cut = texts(&panel(&kept, 0, 26, 4));
+        let cut = texts(&panel(&kept, 0, 26, 4), Colours::None);
         assert_eq!(cut[2], "00:16  note     warning...");
-        assert!(line_width(&panel(&kept, 0, 26, 4)[2]) <= 26);
+        assert!(line_width(&panel(&kept, 0, 26, 4)[2], Colours::None) <= 26);
     }
 
     #[test]
@@ -372,7 +374,10 @@ mod tests {
             .find(|span| span.content.starts_with("fail"))
             .expect("the tag span");
         assert_eq!(tag.style, Paint::Bad.style(Colours::Full));
-        assert_eq!(plain(row), "00:16  fail     core 03 · wrong result");
+        assert_eq!(
+            plain(row, Colours::None),
+            "00:16  fail     core 03 · wrong result"
+        );
     }
 
     #[test]
@@ -383,7 +388,7 @@ mod tests {
             "x\u{1b}[2Jy \u{9b}31m".to_owned(),
             Tone::Plain,
         )];
-        let rows = texts(&panel(&kept, 0, 100, 4));
+        let rows = texts(&panel(&kept, 0, 100, 4), Colours::None);
         assert_eq!(rows[2], "00:16  note     x\\x1b[2Jy \\u009b31m");
     }
 
@@ -415,6 +420,7 @@ mod tests {
         use super::super::PREFIX;
         use super::{cut_words, panel, texts};
         use crate::model::Count;
+        use crate::screen::Colours;
         use crate::tests::kit::{Hist, core, end_payload, intent, nz};
 
         const WIDTH: usize = 75;
@@ -509,7 +515,7 @@ mod tests {
         /// The sentence the pane draws for the newest entry at `width`.
         fn drawn(h: &Hist, width: usize) -> String {
             let (kept, _) = h.facts.history.recent();
-            let rows = texts(&panel(&kept, 0, width, 12));
+            let rows = texts(&panel(&kept, 0, width, 12), Colours::None);
             rows[2].chars().skip(PREFIX).collect()
         }
 
@@ -522,7 +528,7 @@ mod tests {
                 full.contains(signal) && full.ends_with(attribution),
                 "{full:?}"
             );
-            let blind = cut_words(&full, SENTENCE);
+            let blind = cut_words(&full, SENTENCE, Colours::None);
             assert!(
                 !blind.contains(attribution),
                 "a blind cut {blind:?} loses {attribution:?}, which is the defect"
@@ -614,7 +620,7 @@ mod tests {
             wrong(&mut h);
             parked(&mut h);
             let (kept, _) = h.facts.history.recent();
-            let rows = texts(&panel(&kept, 0, WIDTH, 12));
+            let rows = texts(&panel(&kept, 0, WIDTH, 12), Colours::None);
             let (_, expected) = include_str!("snapshots/history-attribution-75.snap")
                 .strip_prefix("---\n")
                 .and_then(|snapshot| snapshot.split_once("\n---\n"))

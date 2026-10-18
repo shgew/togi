@@ -1,0 +1,90 @@
+---
+source: crates/togi-watch/src/frames/snapshots.rs
+expression: body
+---
+legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Track h=Chip l=Lamp u=Current
+│  togi   09:48:31   tuning 9h48m   session 9h48m   31 failures · 7 crashes   last observed failure 07:34, 2h14m ago
+~  gggg   wwwwwwww   gggggggttttt   ggggggggttttt   ttggggggggggggtgggggggg   ggggggggggggggggggggggtttttggggggggggg
+│
+│  ■ SOLO LIMITS  16/16  ───  ► PHASE 1  ───  ○ PHASE 2  ───  CLEAN CYCLES 0  ───  ► CYCLE 1  step 1 of 18 · part 1 of 3 · trial 1 of 4  ───  1:20 left
+~  pptttttttttttgggggggttkkkttccwwwwwwwttkkkttgggggggggttkkkttggggggggggggggttkkkttccwwwwwwwtttttttttttttttttttttttttttttttttttttttttttttkkkttwwwwwwwww
+│
+│  █ READING THE SCREEN ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~  t wwwwwwwwwwwwwwwwww gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  █
+~  t
+│  █ ► 04  -28  AT LIMIT ▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆░░░░░░░▆                -36
+~  t wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwmmmmmmmf                fff
+│  █                     at its limit: it cannot go deeper
+~  t                     ggggggggggggggggggggggggggggggggg
+│  █
+~  t
+│  █ ► 00  -26  HAS ROOM ▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆·····▆                    -32
+~  t wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwgggggf                    fff
+│  █                     has room: backed off after a hunt, may deepen
+~  t                     ggggggggggggggggggggggggggggggggggggggggggggg
+│  █
+~  t
+│  █   09    0  PARKED   ···············································▆    -48
+~  t wwwwwwwwwwwwwwwwwwwwgggggggggggggggggggggggggggggggggggggggggggggggf    fff
+│  █                     parked at 0 by a hunt; returns to -47
+~  t                     ggggggggggggggggggggggggggggggggggggg
+│  █
+~  t
+│  █ ► 00  -26  PROBE    ▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆▆┆ ┆┆ ▆                    -32
+~  t wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwffffff                    fff
+│  █                     probe: the group failed with core 00 at -30, -29, -27
+~  t                     ggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  █
+~  t
+│  █ ►         the core carries load in this trial
+~  t w         ttttttttttttttttttttttttttttttttttt
+│  │ ▆▆▆       offset applied now, or saved after a stop restored the hardware; white when this trial judges the core
+~  g www       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ ?         no hardware offset has been read back for this core
+~  g w         ttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ grey ▆▆▆  the same depth, grey when the core is not judged
+~  g wwwwwwww  tttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ ···       depth it reached but does not use now: given back, parked, waiting
+~  g www       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ ░░░       depth a combination blocks now
+~  g www       tttttttttttttttttttttttttttttt
+│  │ red ▆     its failure point: the shallowest offset ruled out for this core, one count wide
+~  g wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ red ┆     a group trial failed with this core at that offset; dashed, not the solid red ▆ of the core's own failure point
+~  g wwwww     ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ cyan      running now
+~  g wwww      ttttttttttt
+│  │ amber     a hunt, and what it paused
+~  g wwwww     tttttttttttttttttttttttttt
+│  │ red       failures, past and present
+~  g www       tttttttttttttttttttttttttt
+│  │ green     passed, done
+~  g wwwww     tttttttttttt
+│  │ magenta   combinations
+~  g wwwwwww   tttttttttttt
+│  │ grey      idle, parked, still to come
+~  g wwww      ttttttttttttttttttttttttttt
+│  │
+~  g
+│  │
+~  g
+│  │ THE TOP LINE ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~  g wwwwwwwwwwww gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+│  │
+~  g
+│  │ failures       failure decisions, including trials skipped because they already failed
+~  g wwwwwwww       ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ crashes        boots that ended without a clean shutdown
+~  g wwwwwww        ttttttttttttttttttttttttttttttttttttttttt
+│  │ last observed  the last failure seen in this session that changed what togi does; skips do not count
+~  g wwwwwwwwwwwww  ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│  │ q              exit dashboard; tuning itself keeps running
+~  g w              ttttttttttttttttttttttttttttttttttttttttttt
+│  │
+~  g
+│  │
+~  g
+│
+│   ?  help    l  log    esc  back    q  exit dashboard
+~  uuu gggg   hhh ggg   hhhhh gggg   hhh gggggggggggggg

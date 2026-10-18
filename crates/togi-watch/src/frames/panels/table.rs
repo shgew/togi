@@ -9,15 +9,20 @@ use super::super::colours::Paint;
 use super::super::fit::{cut_styled, line_width, plain};
 use super::super::measure::{Column, Tables};
 use super::super::scene::Scene;
+use crate::screen::Colours;
 
 /// Each value in its column. A value runs on through the columns after it while they are empty, so a row that
 /// leaves a column blank can use its cells; a column of width 0 is skipped.
-pub(super) fn table_row(cols: &[Column], values: &[Line<'static>]) -> Line<'static> {
+pub(super) fn table_row(
+    cols: &[Column],
+    values: &[Line<'static>],
+    colours: Colours,
+) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut x = 0;
     for (i, col) in cols.iter().enumerate() {
         let Some(value) = values.get(i) else { break };
-        if col.w == 0 || line_width(value) == 0 || col.at < x {
+        if col.w == 0 || line_width(value, colours) == 0 || col.at < x {
             continue;
         }
         let mut width = col.w;
@@ -25,16 +30,19 @@ pub(super) fn table_row(cols: &[Column], values: &[Line<'static>]) -> Line<'stat
             if next.w == 0 {
                 continue;
             }
-            if values.get(j).is_some_and(|value| line_width(value) > 0) {
+            if values
+                .get(j)
+                .is_some_and(|value| line_width(value, colours) > 0)
+            {
                 break;
             }
             width = next.at + next.w - col.at;
         }
-        let value = cut_styled(value, width);
+        let value = cut_styled(value, width, colours);
         if col.at > x {
             spans.push(Span::raw(" ".repeat(col.at - x)));
         }
-        x = col.at + line_width(&value);
+        x = col.at + line_width(&value, colours);
         spans.extend(value.spans);
     }
     Line::from(spans)
@@ -55,7 +63,7 @@ pub(super) fn field_row(
     };
     let mut spans = vec![head];
     spans.extend(value.spans);
-    cut_styled(&Line::from(spans), width)
+    cut_styled(&Line::from(spans), width, scene.colours)
 }
 
 /// A stage marker: `■` done in green, `►` running, anything else on the track.
@@ -70,15 +78,19 @@ pub(super) fn stage_marker(scene: &Scene<'_>, mark: &'static str) -> Span<'stati
 
 /// `label` written over the start of a row that leaves those cells blank; a row without that gutter keeps its
 /// text.
-pub(super) fn overlay(label: Span<'static>, row: Line<'static>) -> Line<'static> {
+pub(super) fn overlay(label: Span<'static>, row: Line<'static>, colours: Colours) -> Line<'static> {
     let n = label.width();
     if n == 0 {
         return row;
     }
-    if line_width(&row) <= n {
+    if line_width(&row, colours) <= n {
         return Line::from(label);
     }
-    if !plain(&row).chars().take(n + 1).all(char::is_whitespace) {
+    if !plain(&row, colours)
+        .chars()
+        .take(n + 1)
+        .all(char::is_whitespace)
+    {
         return row;
     }
     let mut spans = vec![label];
@@ -131,8 +143,8 @@ pub(super) fn cell(
 }
 
 /// Whether a row shows nothing but blanks.
-pub(super) fn is_blank(line: &Line<'_>) -> bool {
-    plain(line).trim().is_empty()
+pub(super) fn is_blank(line: &Line<'_>, colours: Colours) -> bool {
+    plain(line, colours).trim().is_empty()
 }
 
 #[cfg(test)]
@@ -142,6 +154,7 @@ mod tests {
     use super::super::super::fit::plain;
     use super::super::super::measure::Column;
     use super::{number_ranges, overlay, table_row};
+    use crate::screen::Colours;
 
     fn col(at: usize, w: usize) -> Column {
         Column { at, w }
@@ -153,13 +166,15 @@ mod tests {
         let row = table_row(
             &cols,
             &[Line::from("a long value"), Line::default(), Line::from("x")],
+            Colours::None,
         );
-        assert_eq!(plain(&row), "a...    x");
+        assert_eq!(plain(&row, Colours::None), "a...    x");
         let row = table_row(
             &cols,
             &[Line::from("a long value"), Line::default(), Line::default()],
+            Colours::None,
         );
-        assert_eq!(plain(&row), "a long value");
+        assert_eq!(plain(&row, Colours::None), "a long value");
     }
 
     #[test]
@@ -168,27 +183,43 @@ mod tests {
         let row = table_row(
             &cols,
             &[Line::from("ab"), Line::from("hidden"), Line::from("cd")],
+            Colours::None,
         );
-        assert_eq!(plain(&row), "ab cd");
+        assert_eq!(plain(&row, Colours::None), "ab cd");
     }
 
     #[test]
     fn a_label_takes_a_blank_gutter_and_leaves_text_alone() {
         let row = Line::from("          group 1");
         assert_eq!(
-            plain(&overlay(Span::raw("parts"), row)),
+            plain(
+                &overlay(Span::raw("parts"), row, Colours::None),
+                Colours::None
+            ),
             "parts     group 1"
         );
         let full = Line::from("group 1 at -20");
         assert_eq!(
-            plain(&overlay(Span::raw("parts"), full.clone())),
-            plain(&full)
+            plain(
+                &overlay(Span::raw("parts"), full.clone(), Colours::None),
+                Colours::None
+            ),
+            plain(&full, Colours::None)
         );
         assert_eq!(
-            plain(&overlay(Span::raw("parts"), Line::from("ab"))),
+            plain(
+                &overlay(Span::raw("parts"), Line::from("ab"), Colours::None),
+                Colours::None
+            ),
             "parts"
         );
-        assert_eq!(plain(&overlay(Span::raw(""), full.clone())), plain(&full));
+        assert_eq!(
+            plain(
+                &overlay(Span::raw(""), full.clone(), Colours::None),
+                Colours::None
+            ),
+            plain(&full, Colours::None)
+        );
     }
 
     #[test]

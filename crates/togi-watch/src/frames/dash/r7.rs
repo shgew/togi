@@ -7,6 +7,7 @@ use crate::frames::fit::{Clause, Form, cut_words, display_width, fit_clauses, li
 use crate::frames::layout::SizeClass;
 use crate::frames::measure::Measure;
 use crate::frames::scene::Scene;
+use crate::screen::Colours;
 use crate::words::{core_ids, workload_display};
 
 const BY_OFFSET: &str = " by offset";
@@ -52,23 +53,28 @@ fn ids(cores: CoreSet) -> String {
 
 /// A workload's top requesters fitted to `width`. Offset proxies keep their label when either list is cut, and
 /// the measured list is cut first, so it never takes the offset label.
-pub(super) fn top_cell(measured: CoreSet, by_offset: CoreSet, width: usize) -> String {
+pub(super) fn top_cell(
+    measured: CoreSet,
+    by_offset: CoreSet,
+    width: usize,
+    colours: Colours,
+) -> String {
     let (m, o) = (ids(measured), ids(by_offset));
     if by_offset.is_empty() {
-        return cut_words(if m.is_empty() { "-" } else { &m }, width);
+        return cut_words(if m.is_empty() { "-" } else { &m }, width, colours);
     }
     if !measured.is_empty() {
         let both = format!("{m}; {o}{BY_OFFSET}");
-        if display_width(&both) <= width {
+        if display_width(&both, colours) <= width {
             return both;
         }
-        let room = width.saturating_sub(2 + display_width(&format!("{o}{BY_OFFSET}")));
-        let kept = cut_words(&m, room);
+        let room = width.saturating_sub(2 + display_width(&format!("{o}{BY_OFFSET}"), colours));
+        let kept = cut_words(&m, room, colours);
         if !kept.is_empty() {
             return format!("{kept}; {o}{BY_OFFSET}");
         }
     }
-    let kept = cut_words(&o, width.saturating_sub(BY_OFFSET.len()));
+    let kept = cut_words(&o, width.saturating_sub(BY_OFFSET.len()), colours);
     if !kept.is_empty() {
         return format!("{kept}{BY_OFFSET}");
     }
@@ -97,7 +103,7 @@ pub(super) fn r7_rule(scene: &Scene<'_>, width: usize, name: usize, top: usize) 
         Span::raw(" "),
         grey("self-sufficient"),
     ]);
-    let spare = width.saturating_sub(line_width(&line) + 1);
+    let spare = width.saturating_sub(line_width(&line, scene.colours) + 1);
     if spare >= NOTE.len() + 3 {
         line.spans.push(Span::raw(" "));
         line.spans.push(dashes(scene, spare - NOTE.len() - 1));
@@ -110,7 +116,7 @@ pub(super) fn r7_rule(scene: &Scene<'_>, width: usize, name: usize, top: usize) 
         line.spans.push(dashes(scene, spare));
         return line;
     }
-    if line_width(&line) <= width {
+    if line_width(&line, scene.colours) <= width {
         return line;
     }
     let mut fitted = fit_clauses(
@@ -130,8 +136,9 @@ pub(super) fn r7_rule(scene: &Scene<'_>, width: usize, name: usize, top: usize) 
                 vec![Form::new(grey("self-sufficient"), 1), Form::empty()],
             ),
         ],
+        scene.colours,
     );
-    let spare = width.saturating_sub(line_width(&fitted) + 1);
+    let spare = width.saturating_sub(line_width(&fitted, scene.colours) + 1);
     if spare > 0 {
         fitted.spans.push(Span::raw(" "));
         fitted.spans.push(dashes(scene, spare));
@@ -139,9 +146,9 @@ pub(super) fn r7_rule(scene: &Scene<'_>, width: usize, name: usize, top: usize) 
     fitted
 }
 
-fn ascii_cell(text: &str, width: usize) -> String {
-    let mut cell = cut_words(text, width);
-    let pad = width.saturating_sub(display_width(&cell));
+fn ascii_cell(text: &str, width: usize, colours: Colours) -> String {
+    let mut cell = cut_words(text, width, colours);
+    let pad = width.saturating_sub(display_width(&cell, colours));
     cell.extend(std::iter::repeat_n(' ', pad));
     cell
 }
@@ -176,7 +183,7 @@ pub(super) fn r7_rows(scene: &Scene<'_>, class: SizeClass, width: usize) -> Vec<
             continue;
         }
         let mut label = workload_display(id).to_owned();
-        if display_width(&label) > name.saturating_sub(1) {
+        if display_width(&label, scene.colours) > name.saturating_sub(1) {
             label = label
                 .split_whitespace()
                 .take(2)
@@ -190,7 +197,7 @@ pub(super) fn r7_rows(scene: &Scene<'_>, class: SizeClass, width: usize) -> Vec<
         } else {
             ids(own)
         };
-        if display_width(&sufficient) > width.saturating_sub(name + top + 2) {
+        if display_width(&sufficient, scene.colours) > width.saturating_sub(name + top + 2) {
             sufficient = format!("{} of {total} cores", own.len());
         }
         let paint = if current == Some(id) {
@@ -201,10 +208,18 @@ pub(super) fn r7_rows(scene: &Scene<'_>, class: SizeClass, width: usize) -> Vec<
         let line = fit_clauses(
             width,
             &[
-                Clause::whole("", ascii_cell(&label, name)),
-                Clause::whole(" ", ascii_cell(&top_cell(measured, by_offset, top), top)),
+                Clause::whole("", ascii_cell(&label, name, scene.colours)),
+                Clause::whole(
+                    " ",
+                    ascii_cell(
+                        &top_cell(measured, by_offset, top, scene.colours),
+                        top,
+                        scene.colours,
+                    ),
+                ),
                 Clause::new(" ", vec![Form::new(sufficient, 1), Form::empty()]),
             ],
+            scene.colours,
         );
         out.push(tint(line, scene.style(paint)));
     }

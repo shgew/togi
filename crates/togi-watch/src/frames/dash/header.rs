@@ -140,7 +140,7 @@ pub(crate) fn header(scene: &Scene<'_>, width: usize, compact: bool) -> Line<'st
             ],
         ));
     }
-    let line = fit_clauses(width, &clauses);
+    let line = fit_clauses(width, &clauses, scene.colours);
     #[cfg(test)]
     crate::corpus::line(
         "dash.header",
@@ -162,6 +162,7 @@ fn status_clauses(
             Clause::whole("", head),
             Clause::whole("", Paint::Grey.span(colours, format!("{GAP}{status}"))),
         ],
+        colours,
     )
 }
 

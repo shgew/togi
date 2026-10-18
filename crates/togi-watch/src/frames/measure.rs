@@ -12,7 +12,7 @@ use togi_machine::CcdId;
 use super::layout::{Layout, SizeClass};
 use super::scene::Scene;
 use super::story::resting_band;
-use crate::screen::Screen;
+use crate::screen::{Colours, Screen};
 
 /// A table column inside its panel: the cell it starts at and how many cells it may use. A column of width 0
 /// is not shown at this size.
@@ -140,6 +140,10 @@ impl Tables {
     }
 }
 
+/// The narrowest CCD table, in cells, that fits the rich profile's 50-cell gauge: the gauge from cell 20, a
+/// four-cell failure point from cell 71, and no per-core note.
+const RICH_DENSE_WIDTH: usize = 75;
+
 /// The columns of a CCD's core table, as cells from the table's left edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CoreColumns {
@@ -155,6 +159,8 @@ pub(crate) struct CoreColumns {
     pub(crate) cells: usize,
     /// The failure point.
     pub(crate) failure: usize,
+    /// The cells the failure point is right-aligned in.
+    pub(crate) failure_width: usize,
     /// The note.
     pub(crate) note: usize,
     /// The role sits beside the CCD name and notes are bare numbers.
@@ -247,6 +253,7 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
                 gauge: 21,
                 cells: 50,
                 failure: 73,
+                failure_width: 5,
                 note: 81,
                 brief: false,
             },
@@ -257,6 +264,7 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
                 gauge: 21,
                 cells: 25,
                 failure: 48,
+                failure_width: 5,
                 note: 56,
                 brief: false,
             },
@@ -267,6 +275,7 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
                 gauge: 21,
                 cells: 25,
                 failure: 48,
+                failure_width: 5,
                 note: 56,
                 brief: false,
             },
@@ -277,10 +286,24 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
                 gauge: 18,
                 cells: 25,
                 failure: 44,
+                failure_width: 5,
                 note: 50,
                 brief: true,
             },
         };
+        if scene.colours == Colours::Rich && class != SizeClass::Wide && w >= RICH_DENSE_WIDTH {
+            columns = CoreColumns {
+                id: 2,
+                offset: 6,
+                state: 11,
+                gauge: 20,
+                cells: 50,
+                failure: 71,
+                failure_width: 4,
+                note: w,
+                brief: true,
+            };
+        }
         columns.cells = columns.cells.min(w.saturating_sub(columns.gauge + 1));
         let x = u16::try_from(x).unwrap_or(u16::MAX);
         let top = u16::try_from(y).unwrap_or(u16::MAX);

@@ -3,9 +3,10 @@
 use jiff::tz::TimeZone;
 
 use super::{
-    ALL_SIZES, PROFILES, SIZES, VIEWS, draw_journal, main_screen, one_frame, some_time, text, words,
+    ALL_SIZES, PROFILES, SIZES, VIEWS, assert_glyphs_safe, draw_journal, main_screen, one_frame,
+    some_time, text, words,
 };
-use crate::frames::testing::{assert_glyphs_drawable, screen};
+use crate::frames::testing::screen;
 use crate::screen::{Hold, Journal, Screen};
 
 const REASON: &str = "journal line 1: invalid character 'g'";
@@ -30,7 +31,11 @@ fn a_journal_that_is_missing_starting_or_unreadable_stays_in_bounds_and_never_ho
                     for keys in [true, false] {
                         let sc = screen(view, width, height, colours, keys);
                         let (buf, drawn) = draw_journal(&journal, &sc, some_time(), &TimeZone::UTC);
-                        assert_glyphs_drawable(&buf, &format!("{journal:?} {width}x{height}"));
+                        assert_glyphs_safe(
+                            &buf,
+                            colours,
+                            &format!("{journal:?} {width}x{height} {colours:?}"),
+                        );
                         assert_eq!(drawn.hold, Hold::Never, "{journal:?} {width}x{height}");
                     }
                 }

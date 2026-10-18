@@ -203,7 +203,7 @@ impl Drop for RawMode<'_> {
 /// event log, the arrow and page keys scroll, and `q`, `Q`, Ctrl-C and Ctrl-D quit unless `quit` is
 /// [`Quit::Ignored`], where they do nothing on any page and the hints leave them out. Frames are drawn by
 /// [`frames::render`] in the system's time zone, in the colour profile [`frames::colours_for`] chooses for `out`,
-/// `NO_COLOR`, `JOURNAL_STREAM` and `TERM`.
+/// `NO_COLOR`, `JOURNAL_STREAM`, `TERM` and `COLORTERM`.
 ///
 /// It listens for SIGINT, SIGTERM, SIGHUP and SIGWINCH (which redraws) through tokio, whose listeners stay
 /// registered for the rest of the process: once it has run, these signals no longer take their default action, so
@@ -327,7 +327,11 @@ fn start(
         std::env::var_os("NO_COLOR").as_deref(),
         std::env::var_os("JOURNAL_STREAM").as_deref(),
     );
-    let colours = frames::colours_for(facts, std::env::var_os("TERM").as_deref());
+    let colours = frames::colours_for(
+        facts,
+        std::env::var_os("TERM").as_deref(),
+        std::env::var_os("COLORTERM").as_deref(),
+    );
     let backend = Tty::new(&out).map_err(|source| Error::Terminal {
         operation: "open terminal",
         source,
@@ -1107,7 +1111,12 @@ mod tests {
     #[test]
     fn the_console_palette_is_redefined_only_for_the_console_profile() {
         let state = MemoryJournal::new();
-        for colours in [Colours::Full, Colours::Console, Colours::None] {
+        for colours in [
+            Colours::Full,
+            Colours::Console,
+            Colours::Rich,
+            Colours::None,
+        ] {
             let recorder = Recorder::new(80, 12);
             let stop = Stop::new();
             stop.stop();

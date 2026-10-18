@@ -13,6 +13,7 @@ use crate::frames::measure::Measure;
 use crate::frames::scene::{Scene, between, clock};
 use crate::frames::story::{operation, resting_band, trial_where};
 use crate::model::TrialView;
+use crate::screen::Colours;
 use crate::words::{cores_text, load_words, workload_display};
 
 const DIGITS: [[&str; 3]; 11] = [
@@ -57,19 +58,36 @@ pub(super) fn filled(cells: usize, elapsed: Duration, total: Duration) -> usize 
     usize::try_from(done).unwrap_or(cells)
 }
 
+/// The leading edges of a cell filled by one to seven eighths, from the left.
+const EDGES: [char; 7] = ['▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+
 /// The elapsed fraction as `done` cells and the rest as `rest` cells, so the shape shows elapsed time without
-/// colour.
+/// colour. In the rich profile a `partial` bar ends in an eighth-block leading edge, the elapsed fraction rounded
+/// down to an eighth of a cell; a bar that is not `partial` (a half-height row, whose edge glyphs would reach
+/// below it) keeps whole cells.
 pub(super) fn progress_bar(
     scene: &Scene<'_>,
     cells: usize,
-    done_cells: usize,
-    done: &str,
-    rest: &str,
+    elapsed: Duration,
+    total: Duration,
+    (done, rest): (&str, &str),
+    partial: bool,
 ) -> Line<'static> {
-    let n = done_cells.min(cells);
+    let n = filled(cells, elapsed, total).min(cells);
+    let mut run = done.repeat(n);
+    let mut rest_cells = cells - n;
+    if partial && scene.colours == Colours::Rich && rest_cells > 0 && !total.is_zero() {
+        let eighths =
+            cells as u128 * 8 * elapsed.as_nanos().min(total.as_nanos()) / total.as_nanos();
+        let edge = usize::try_from(eighths % 8).unwrap_or(0);
+        if edge > 0 {
+            run.push(EDGES[edge - 1]);
+            rest_cells -= 1;
+        }
+    }
     Line::from(vec![
-        scene.paint(Paint::Running, done.repeat(n)),
-        scene.paint(Paint::Track, rest.repeat(cells - n)),
+        scene.paint(Paint::Running, run),
+        scene.paint(Paint::Track, rest.repeat(rest_cells)),
     ])
 }
 
@@ -117,9 +135,9 @@ fn draw_resting(buf: &mut Buffer, r: Rect, class: SizeClass, scene: &Scene<'_>) 
         if let Some(line) = band.lines.first() {
             first.extend(text(line).spans);
         }
-        put(buf, r, 0, 0, &Line::from(first));
+        put(buf, r, 0, 0, &Line::from(first), scene.colours);
         for (i, line) in band.lines.iter().enumerate().skip(1) {
-            put(buf, r, 0, at(i), &text(line));
+            put(buf, r, 0, at(i), &text(line), scene.colours);
         }
         return;
     }
@@ -128,10 +146,11 @@ fn draw_resting(buf: &mut Buffer, r: Rect, class: SizeClass, scene: &Scene<'_>) 
         &title,
         &Line::default(),
         scene.style(Paint::Track),
+        scene.colours,
     );
-    put(buf, r, 0, 0, &rule);
+    put(buf, r, 0, 0, &rule, scene.colours);
     for (i, line) in band.lines.iter().enumerate() {
-        put(buf, r, 0, at(i + 1), &text(line));
+        put(buf, r, 0, at(i + 1), &text(line), scene.colours);
     }
 }
 
@@ -201,6 +220,7 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
         _ => return draw_resting(buf, r, class, scene),
     };
     let width = usize::from(r.width);
+    let colours = scene.colours;
     let paint = |p: Paint, text: String| scene.paint(p, text);
     let op = operation(scene, trial);
     if class != SizeClass::Compact {
@@ -211,11 +231,12 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
             r,
             0,
             0,
-            &rule(width, &title, &right, scene.style(Paint::Track)),
+            &rule(width, &title, &right, scene.style(Paint::Track), colours),
+            colours,
         );
     }
     let desc_y = u16::from(class != SizeClass::Compact);
-    let op_width = line_width(&op);
+    let op_width = line_width(&op, colours);
     put(
         buf,
         r,
@@ -224,16 +245,32 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
         &fit_clauses(
             width.saturating_sub(op_width + 3),
             &description(scene, trial),
+            colours,
         ),
+        colours,
     );
-    put(buf, r, at(width.saturating_sub(op_width)), desc_y, &op);
+    put(
+        buf,
+        r,
+        at(width.saturating_sub(op_width)),
+        desc_y,
+        &op,
+        colours,
+    );
     let last = r.height.saturating_sub(1);
     let Some(started) = trial.started else {
         let planned = format!(
             "preparing · workload has not started yet · planned {}",
             clock(trial.duration)
         );
-        put(buf, r, 0, last, &Line::from(paint(Paint::Grey, planned)));
+        put(
+            buf,
+            r,
+            0,
+            last,
+            &Line::from(paint(Paint::Grey, planned)),
+            colours,
+        );
         return;
     };
     let quiet = scene.hold;
@@ -247,7 +284,6 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
     };
     if class == SizeClass::Wide {
         let cells = width.saturating_sub(23);
-        let n = filled(cells, done, trial.duration);
         let (mut digits, mut style, mut label) = (clock(remaining), Paint::White, "left");
         if !past.is_zero() {
             (digits, style, label) = (clock(past), Paint::Hunt, "past end");
@@ -256,55 +292,74 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
             (digits, style) = (scene.wall_minute(hold.planned_end), Paint::Grey);
         }
         for y in 3..=5 {
-            let (done_glyph, rest) = if y == 5 {
-                ("▀", "▀")
+            // The bottom row is half height: its edge stays on a whole cell, since an eighth-block glyph would
+            // reach below it.
+            let (glyphs, partial) = if y == 5 {
+                (("▀", "▀"), false)
             } else {
-                ("█", "░")
+                (("█", "░"), true)
             };
             put_cells(
                 buf,
                 r,
                 0,
                 y,
-                &progress_bar(scene, cells, n, done_glyph, rest),
+                &progress_bar(scene, cells, done, trial.duration, glyphs, partial),
+                colours,
             );
         }
         for (y, row) in big_digits(&digits).into_iter().enumerate() {
             let x = width.saturating_sub(row.chars().count());
-            put_cells(buf, r, at(x), 3 + at(y), &Line::from(paint(style, row)));
+            put_cells(
+                buf,
+                r,
+                at(x),
+                3 + at(y),
+                &Line::from(paint(style, row)),
+                colours,
+            );
         }
         if let Some(hold) = quiet {
             let msg = format!(
                 "  screen paused · planned end {digits}, so it cannot wake the idle cores  "
             );
             let x = cells.saturating_sub(msg.chars().count()) / 2;
-            put(buf, r, at(x), 4, &Line::from(paint(Paint::Text, msg)));
+            put(
+                buf,
+                r,
+                at(x),
+                4,
+                &Line::from(paint(Paint::Text, msg)),
+                colours,
+            );
             let begun = Line::from(vec![
                 paint(Paint::Grey, "started ".into()),
                 paint(Paint::Text, scene.wall_minute(hold.started)),
                 paint(Paint::Grey, format!(" · {}", clock(trial.duration))),
             ]);
-            put(buf, r, 0, 6, &begun);
+            put(buf, r, 0, 6, &begun, colours);
             put(
                 buf,
                 r,
                 at(width.saturating_sub(7)),
                 6,
                 &Line::from(paint(Paint::Grey, "ends at".into())),
+                colours,
             );
         } else {
             let progress = Line::from(vec![
                 paint(Paint::Text, clock(elapsed)),
                 paint(Paint::Grey, format!(" of {}", clock(trial.duration))),
             ]);
-            put(buf, r, 0, 6, &progress);
+            put(buf, r, 0, 6, &progress, colours);
             let trials = requirement_line(scene, trial, false);
             put(
                 buf,
                 r,
-                at(cells.saturating_sub(line_width(&trials))),
+                at(cells.saturating_sub(line_width(&trials, colours))),
                 6,
                 &trials,
+                colours,
             );
             put(
                 buf,
@@ -312,6 +367,7 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
                 at(width.saturating_sub(label.len())),
                 6,
                 &Line::from(paint(Paint::Grey, label.into())),
+                colours,
             );
         }
         return;
@@ -337,9 +393,9 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
         ];
     }
     let label = Line::from(label);
-    let cells = width.saturating_sub(line_width(&label) + 2);
-    let mut bar = progress_bar(scene, cells, filled(cells, done, trial.duration), "█", "░").spans;
+    let cells = width.saturating_sub(line_width(&label, colours) + 2);
+    let mut bar = progress_bar(scene, cells, done, trial.duration, ("█", "░"), true).spans;
     bar.push(Span::raw("  "));
     bar.extend(label.spans);
-    put_cells(buf, r, 0, last, &Line::from(bar));
+    put_cells(buf, r, 0, last, &Line::from(bar), colours);
 }
