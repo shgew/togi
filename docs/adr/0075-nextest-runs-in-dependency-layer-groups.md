@@ -2,7 +2,7 @@
 
 Status: see [the index](README.md).
 
-Amends [ADR 0074](0074-pull-request-ci-gates-landing-on-main.md)'s pull request job set ([#1146](https://github.com/shgew/togi/issues/1146)).
+Amends [ADR 0074](0074-pull-request-ci-gates-landing-on-main.md)'s pull request job set, [ADR 0047](0047-gate-before-every-push.md)'s gate contents and [ADR 0051](0051-light-checks-for-review-fixes.md)'s fix-push tests ([#1146](https://github.com/shgew/togi/issues/1146)).
 
 ## Context
 
@@ -18,6 +18,7 @@ The check was one derivation over every crate and test fixture. An edit to any c
 - Each check runs `cargo nextest run --profile ci -p …` for its crates on `nix/sources.nix`'s source with the group's crates whole, their dev closure as code, and only the fixtures from outside `crates/` that `crateFixtures` lists for them. A change outside a group's inputs leaves its output in Cachix, and evaluation skips it.
 - Narrowed sources stub every target path they leave out, discovered ones included, so `cargo metadata`, and with it nextest's filters such as the `binary(hardware)` override, matches the full workspace in every group.
 - Pull request mode selects every `nextest-*` check as its own matrix job. The release builds them all on the release commit.
+- `just gate` and `just push-fix` build the same `nextest-*` checks through `just check-one` instead of running `cargo nextest` on the workspace or on the changed crates. They prove what CI will build, a missing group entry or fixture included, and Nix reruns only the groups whose inputs changed; unchanged groups come from the local store or Cachix. `push-fix` thereby also reruns the tests of the crates that depend on a changed one, which its changed-crates list left out. `just test` and `just focus` stay `cargo nextest` for the edit loop.
 
 The groups together list the same 8,201 tests and 2 skipped as the single check, by binary, name, filter status and ignored flag.
 
@@ -33,5 +34,6 @@ The groups together list the same 8,201 tests and 2 skipped as the single check,
 - A change under every group runs the five on parallel runners; the modeled longest is `session`, about 153 s. A change to a leaf runs only its group: about 63 s for `repo`. Over the 78 merges the modeled mean is 146 s against 325 s. These are local measurements scaled to the runner; the pull request's own runs are the first CI measurements.
 - The groups compile shared libraries again: 548 CPU seconds of local compile against 366, and about 28% more runner time a pull request on average.
 - Pull request CI has at most ten jobs, up from six.
+- In the gate, unchanged groups cost an evaluation: 1.3 s against 13.0 s for a warm `cargo nextest run` of the workspace, measured on a 32-thread development host. A changed group compiles its crates from scratch, with no cargo incremental state: rebuilding all five took 49 s there.
 - `Cargo.lock`, the workspace manifests, the toolchain and nextest's profiles are inputs of every group, so a change to them runs all five. When `cargo-deps` is not yet in Cachix, each group builds it on its own runner.
 - A new crate names its group, and a test that reads a new file outside `crates/` names it in `crateFixtures`; a fixture left out fails that group's build.
