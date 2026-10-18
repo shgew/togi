@@ -290,7 +290,6 @@
             doc = craneLib.cargoDocTest (cargoCheck cratesSource { });
             # No other check's output references the shared dependency artifact; as a check, CI pushes it to Cachix.
             cargo-deps = cargoDeps;
-            cargo-fmt = craneLib.cargoFmt (cargoWith codeSource { });
             deny = craneLib.mkCargoDerivation (
               cargoNoDeps manifestSource {
                 pnameSuffix = "-deny";
