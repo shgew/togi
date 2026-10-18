@@ -234,9 +234,8 @@ fn shapes_without_colour(scenario: Scenario, buf: &Buffer) {
         Scenario::Checking => {
             let elapsed = bar('█');
             assert!(elapsed.trim_start_matches('█').starts_with('░'));
-            assert!(bar('▀').starts_with("▀▀▀▀"));
             let core = first_row_with(&rows, "HAS ROOM");
-            for glyph in ['▄', '·', '▬'] {
+            for glyph in ['▄', '·'] {
                 assert!(core.contains(glyph), "{glyph:?} missing from {core:?}");
             }
         }
@@ -305,6 +304,7 @@ fn main_views(scenario: Scenario, sizes: &[(u16, u16)]) {
 macro_rules! main_view_tests {
     ($($test:ident: $scenario:ident in $sizes:ident),* $(,)?) => {
         const LISTED: &[Scenario] = &[$(Scenario::$scenario),*];
+        const MAIN_CASES: &[(Scenario, &[(u16, u16)])] = &[$((Scenario::$scenario, &$sizes)),*];
 
         $(
             #[test]
@@ -589,27 +589,78 @@ fn rich_frames_preserve_their_glyphs_and_have_no_controls_or_attributes() {
     });
 }
 
-/// Regenerate rich fixtures explicitly, outside the ordinary in-memory tests:
-/// `TOGI_RICH_SNAPSHOTS="${TMPDIR:-/tmp}/togi-rich-snaps" cargo test -p togi-watch real_fs_generate_rich_snapshots -- --ignored`.
+/// Regenerate fixtures explicitly, outside the ordinary in-memory tests:
+/// `TOGI_SNAPSHOTS="${TMPDIR:-/tmp}/togi-snaps" cargo test -p togi-watch real_fs_generate_snapshots -- --ignored`.
 /// Review and copy the emitted `.snap` files into this module's `snapshots/` directory.
 #[test]
 #[ignore = "writes regenerated snapshot fixtures to an explicitly supplied temporary directory"]
-fn real_fs_generate_rich_snapshots() {
-    let directory = std::env::var_os("TOGI_RICH_SNAPSHOTS").expect("set TOGI_RICH_SNAPSHOTS");
+fn real_fs_generate_snapshots() {
+    let directory = std::env::var_os("TOGI_SNAPSHOTS").expect("set TOGI_SNAPSHOTS");
     let directory = std::path::Path::new(&directory);
     assert!(
         directory.starts_with(std::env::temp_dir()),
         "use a temporary directory"
     );
     std::fs::create_dir_all(directory).unwrap();
-    rich_frames(|name, buf| {
+    let emit = |name: &str, body: String| {
         std::fs::write(
             directory.join(format!("{name}.snap")),
-            format!(
-                "---\nsource: crates/togi-watch/src/frames/snapshots.rs\nexpression: body\n---\n{}",
-                styled_snapshot(buf, Colours::Rich)
-            ),
+            format!("---\nsource: crates/togi-watch/src/frames/snapshots.rs\nexpression: body\n---\n{body}"),
         )
         .unwrap();
-    });
+    };
+    rich_frames(|name, buf| emit(name, styled_snapshot(buf, Colours::Rich)));
+    for &(scenario, sizes) in MAIN_CASES {
+        let (model, now) = scenario_model(scenario);
+        for &size in sizes {
+            let sc = screen_of(View::Main, size, Colours::None, 0, false);
+            let (buf, _) = render_checked(&ready(&model), &sc, now);
+            emit(
+                &format!("main-{}-{}x{}", scenario.name(), size.0, size.1),
+                text_snapshot(&buf),
+            );
+        }
+    }
+    for scenario in [Scenario::Checking, Scenario::MemberProbe, Scenario::Idle] {
+        let (model, now) = scenario_model(scenario);
+        for (profile, colours) in [
+            ("full", Colours::Full),
+            ("console", Colours::Console),
+            ("none", Colours::None),
+        ] {
+            let sc = screen_of(View::Main, WIDE, colours, 0, false);
+            let (buf, _) = render_checked(&ready(&model), &sc, now);
+            emit(
+                &format!("main-{}-{}x{}-{profile}", scenario.name(), WIDE.0, WIDE.1),
+                styled_snapshot(&buf, colours),
+            );
+        }
+    }
+    let (model, now) = scenario_model(Scenario::Checking);
+    for size in VIEW_SIZES {
+        for (prefix, scroll) in [("help", 0), ("help-end", usize::MAX)] {
+            let sc = screen_of(View::Help, size, Colours::None, scroll, false);
+            let (buf, _) = render_checked(&ready(&model), &sc, now);
+            emit(
+                &format!("{prefix}-{}x{}", size.0, size.1),
+                text_snapshot(&buf),
+            );
+            if size == WIDE {
+                let sc = screen_of(View::Help, size, Colours::Full, scroll, false);
+                let (buf, _) = render_checked(&ready(&model), &sc, now);
+                emit(
+                    &format!("{prefix}-{}x{}-full", size.0, size.1),
+                    styled_snapshot(&buf, Colours::Full),
+                );
+            }
+        }
+    }
+    for size in [WIDE, (120, 33)] {
+        let sc = screen_of(View::Main, size, Colours::None, 0, true);
+        let (buf, _) = render_checked(&ready(&model), &sc, now);
+        emit(
+            &format!("one-frame-checking-{}x{}", size.0, size.1),
+            text_snapshot(&buf),
+        );
+    }
 }

@@ -23,8 +23,8 @@ struct Section<'a> {
 
 const SCREEN_TITLE: &str = "READING THE SCREEN";
 
-/// The rows of the reading legend. The rich profile draws the applied depth and the failure point with the same
-/// three-quarter-height bar, told apart by colour, and group failures with a dashed line.
+/// The rows of the reading legend. Applied depth and the failure point share the profile's bar glyph, told
+/// apart by colour; group failures have their own mark.
 fn screen_items(colours: Colours) -> Vec<(&'static str, &'static str)> {
     let rich = colours == Colours::Rich;
     let pick = |console, rich_| if rich { rich_ } else { console };
@@ -45,11 +45,8 @@ fn screen_items(colours: Colours) -> Vec<(&'static str, &'static str)> {
         ),
         ("░░░", "depth a combination blocks now"),
         (
-            pick("▬", "red ▆"),
-            pick(
-                "its failure point: the shallowest offset ruled out for this core",
-                "its failure point: the shallowest offset ruled out for this core, one count wide",
-            ),
+            pick("red ▄", "red ▆"),
+            "its failure point: the shallowest offset ruled out for this core, one count wide at Wide and Medium",
         ),
         (
             pick("▀", "red ┆"),
@@ -923,7 +920,7 @@ mod tests {
                 let fields: Vec<&str> = row.split_whitespace().collect();
                 for field in &fields {
                     assert!(
-                        field.trim_matches(['▄', '░', '·', '▬', '▀']).is_empty()
+                        field.trim_matches(['▄', '░', '·', '▀']).is_empty()
                             || tokens.contains(field),
                         "width {width} example {i}: text or value cut to {field:?}: {row:?}"
                     );
@@ -1085,7 +1082,7 @@ mod tests {
     }
 
     #[test_case(Colours::Rich, "▆▆▆", "red ▆", "red ┆"; "rich")]
-    #[test_case(Colours::Full, "▄▄▄", "▬", "▀"; "console")]
+    #[test_case(Colours::Full, "▄▄▄", "red ▄", "▀"; "console")]
     fn the_legend_names_the_profiles_own_gauge_glyphs(
         colours: Colours,
         applied: &str,
@@ -1106,31 +1103,38 @@ mod tests {
         let text = rows.join("\n");
         let rich = colours == Colours::Rich;
         assert_eq!(text.contains("dashed"), rich);
-        for glyph in ['▄', '▬', '▀'] {
+        assert!(!text.contains('▬'));
+        for glyph in ['▄', '▀'] {
             assert_eq!(text.contains(glyph), !rich, "{glyph:?}");
         }
     }
 
-    #[test]
-    fn rich_examples_draw_the_failure_and_group_marks_at_their_counts() {
-        let rich = Colours::Rich;
-        let lines = reading(100, rich);
+    #[test_case(Colours::Console; "console")]
+    #[test_case(Colours::Rich; "rich")]
+    fn examples_draw_the_failure_and_group_marks_at_their_counts(colours: Colours) {
+        let marks = super::marks(colours);
+        let lines = reading(100, colours);
         let gauge_of = |row: usize| {
-            let text = plain(&lines[row], rich);
-            let at = text.find(['▆', '·']).expect("a gauge");
+            let text = plain(&lines[row], colours);
+            let at = text.find([marks.applied, '·']).expect("a gauge");
             text[at..].chars().take(50).collect::<Vec<_>>()
         };
         let first = gauge_of(2);
-        assert!(first[..28].iter().all(|&c| c == '▆'));
+        assert!(first[..28].iter().all(|&c| c == marks.applied));
         assert!(first[28..35].iter().all(|&c| c == '░'));
-        assert_eq!(first[35], '▆', "-36 is the 36th cell");
+        assert_eq!(first[35], marks.failure, "-36 is the 36th cell");
         let mut at = 2;
-        while !plain(&lines[at], rich).contains("PROBE") {
+        while !plain(&lines[at], colours).contains("PROBE") {
             at += 1;
         }
         let probe: String = gauge_of(at).into_iter().collect();
         assert!(
-            probe.starts_with(&format!("{}┆ ┆┆ ▆", "▆".repeat(26))),
+            probe.starts_with(&format!(
+                "{}{g} {g}{g} {f}",
+                marks.applied.to_string().repeat(26),
+                g = marks.group,
+                f = marks.failure,
+            )),
             "{probe}"
         );
     }

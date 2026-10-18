@@ -828,15 +828,15 @@ fn a_gauge_shows_the_depth_a_combination_holds() {
     };
     assert_eq!(
         gauge_text(&core(-43, -44), -43),
-        format!("{}░▬", "▄".repeat(43))
+        format!("{}░▄", "▄".repeat(43))
     );
     assert_eq!(
         gauge_text(&core(-43, -44), 0),
-        format!("{}░▬", "·".repeat(43))
+        format!("{}░▄", "·".repeat(43))
     );
     assert_eq!(
         gauge_text(&core(-43, -43), -43),
-        format!("{} ▬", "▄".repeat(43))
+        format!("{} ▄", "▄".repeat(43))
     );
 }
 
@@ -853,14 +853,20 @@ fn a_failure_point_is_a_half_height_bar_in_both_cell_widths(cells: usize, colour
     let scene = scene(&model.snapshot(), Timestamp::UNIX_EPOCH, &zone, colours);
     let line = gauge(&scene, &core, Some(-4), cells);
     let text = plain(&line, Colours::None);
-    assert_eq!(text.matches('▬').count(), 1, "{cells} cells: {text:?}");
+    assert_eq!(text.chars().nth(cells * 8 / 50 - 1), Some('▄'));
     assert!(!text.contains('█'), "{cells} cells: {text:?}");
-    let bad = line
-        .spans
-        .iter()
-        .find(|span| span.content.contains('▬'))
-        .map(|span| span.style);
-    assert_eq!(bad, Some(Paint::Bad.style(colours)), "{cells} cells");
+    assert_eq!(text.matches('▄').count(), cells * 4 / 50 + 1);
+    if colours != Colours::None {
+        assert_eq!(
+            line.spans
+                .iter()
+                .filter(|span| span.style == Paint::Bad.style(colours))
+                .map(|span| span.content.as_ref())
+                .collect::<String>(),
+            "▄",
+            "one red failure segment, the same height as the applied bar"
+        );
+    }
 }
 
 #[test]
@@ -1346,14 +1352,7 @@ fn the_trial_bar_shows_elapsed_without_colour() {
     );
     let total = Duration::from_secs(120);
     let bar = |elapsed: u64| {
-        let line = progress_bar(
-            &scene,
-            20,
-            Duration::from_secs(elapsed),
-            total,
-            ("█", "░"),
-            true,
-        );
+        let line = progress_bar(&scene, 20, Duration::from_secs(elapsed), total);
         assert!(
             line.spans
                 .iter()
@@ -1373,19 +1372,12 @@ fn the_trial_bar_shows_elapsed_without_colour() {
         &zone,
         Colours::Full,
     );
-    let line = progress_bar(
-        &full,
-        4,
-        Duration::from_secs(30),
-        Duration::from_secs(120),
-        ("█", "░"),
-        true,
-    );
+    let line = progress_bar(&full, 4, Duration::from_secs(30), Duration::from_secs(120));
     assert_eq!(line.spans[0].style, Paint::Running.style(Colours::Full));
     assert_eq!(line.spans[1].style, Paint::Track.style(Colours::Full));
 }
 
-fn rich_bar(elapsed: u64, partial: bool, glyphs: (&str, &str)) -> Line<'static> {
+fn rich_bar(elapsed: u64) -> Line<'static> {
     let model = Model::new();
     let zone = TimeZone::UTC;
     let scene = scene(
@@ -1399,8 +1391,6 @@ fn rich_bar(elapsed: u64, partial: bool, glyphs: (&str, &str)) -> Line<'static> 
         20,
         Duration::from_secs(elapsed),
         Duration::from_secs(160),
-        glyphs,
-        partial,
     )
 }
 
@@ -1413,7 +1403,7 @@ fn rich_bar(elapsed: u64, partial: bool, glyphs: (&str, &str)) -> Line<'static> 
 #[test_case(159, "███████████████████▉"; "just short of the end")]
 #[test_case(160, "████████████████████"; "the end")]
 fn a_rich_bar_ends_in_an_eighth_block_leading_edge(elapsed: u64, filled: &str) {
-    let line = rich_bar(elapsed, true, ("█", "░"));
+    let line = rich_bar(elapsed);
     let cells = filled.chars().count();
     assert_eq!(
         plain(&line, Colours::Rich),
@@ -1428,20 +1418,6 @@ fn a_rich_bar_ends_in_an_eighth_block_leading_edge(elapsed: u64, filled: &str) {
     assert_eq!(line.spans[1].style, Paint::Track.style(Colours::Rich));
 }
 
-#[test_case(1, 0; "an eighth does not reach a whole cell")]
-#[test_case(7, 0; "seven eighths does not either")]
-#[test_case(13, 1; "a cell and five eighths keeps the cell")]
-fn a_half_height_rich_row_keeps_an_integer_edge(elapsed: u64, whole: usize) {
-    let line = rich_bar(elapsed, false, ("▀", "▀"));
-    assert_eq!(
-        plain(&line, Colours::Rich),
-        "▀".repeat(20),
-        "{whole} whole cells, the rest the track, and no eighth glyph below the row"
-    );
-    assert_eq!(line.spans[0].content.chars().count(), whole);
-    assert_eq!(line.spans[0].style, Paint::Running.style(Colours::Rich));
-}
-
 #[test_case(Colours::Full; "full colour")]
 #[test_case(Colours::Console; "console")]
 fn only_the_rich_profile_draws_an_eighth_block_edge(colours: Colours) {
@@ -1453,8 +1429,6 @@ fn only_the_rich_profile_draws_an_eighth_block_edge(colours: Colours) {
         20,
         Duration::from_secs(13),
         Duration::from_secs(160),
-        ("█", "░"),
-        true,
     );
     assert_eq!(
         plain(&line, colours),
@@ -1697,11 +1671,11 @@ fn a_rich_gauge_in_twenty_five_cells_keeps_the_console_scale_with_rich_shapes() 
         ..core_view(0, 0, CoreState::Probe)
     };
     assert_eq!(gauge_text_in(Colours::Rich, &core, -2, 25), "▆┆ ▆");
-    assert_eq!(gauge_text_in(Colours::Full, &core, -2, 25), "▄▀ ▬");
+    assert_eq!(gauge_text_in(Colours::Full, &core, -2, 25), "▄▀ ▄");
 }
 
-fn rich_frame(model: &Model, width: u16, height: u16, now: Timestamp) -> Buffer {
-    let sc = screen(View::Main, width, height, Colours::Rich, true);
+fn frame_in(model: &Model, width: u16, height: u16, now: Timestamp, colours: Colours) -> Buffer {
+    let sc = screen(View::Main, width, height, colours, true);
     let snapshot = model.snapshot();
     let journal = Journal::Ready {
         snapshot,
@@ -1721,15 +1695,19 @@ fn foreground(buf: &Buffer, x: usize, y: usize) -> ratatui::style::Color {
     buf[(u16::try_from(x).unwrap(), u16::try_from(y).unwrap())].fg
 }
 
-/// The rendered rich frame puts the failure point on its own count in the Wide and Medium tables: the gauge
-/// starts at cell 21 (Wide) or 20 (Medium) after the table's margin, one count to a cell.
-#[test_case(240, 67, 21, 75, 5, -27; "wide odd")]
-#[test_case(240, 67, 21, 75, 5, -28; "wide even")]
-#[test_case(160, 45, 20, 73, 4, -27; "medium odd")]
-#[test_case(160, 45, 20, 73, 4, -28; "medium even")]
-fn the_rendered_rich_frame_puts_each_failure_on_its_count(
+/// The failure point occupies its own count, touching a matching-height applied segment.
+#[test_case(240, 67, Colours::Rich, 21, 75, 5, -27; "wide rich odd")]
+#[test_case(240, 67, Colours::Rich, 21, 75, 5, -28; "wide rich even")]
+#[test_case(160, 45, Colours::Rich, 20, 73, 4, -27; "medium rich odd")]
+#[test_case(160, 45, Colours::Rich, 20, 73, 4, -28; "medium rich even")]
+#[test_case(240, 67, Colours::Console, 21, 75, 5, -27; "wide console odd")]
+#[test_case(240, 67, Colours::Console, 21, 75, 5, -28; "wide console even")]
+#[test_case(160, 45, Colours::Console, 20, 73, 4, -27; "medium console odd")]
+#[test_case(160, 45, Colours::Console, 20, 73, 4, -28; "medium console even")]
+fn the_rendered_frame_puts_each_failure_on_its_count(
     width: u16,
     height: u16,
+    colours: Colours,
     gauge_column: usize,
     fail_column: usize,
     field: usize,
@@ -1740,21 +1718,22 @@ fn the_rendered_rich_frame_puts_each_failure_on_its_count(
     script.append(readback(0, applied), &[]);
     let model = script.model();
     let now = script.events.last().expect("an event").time + SignedDuration::from_secs(40);
-    let buf = rich_frame(&model, width, height, now);
+    let buf = frame_in(&model, width, height, now, colours);
     let rows = rows_of(&buf);
     let heading = rows
         .iter()
         .position(|row| row.contains("CCD 0") && row.contains("fail"))
         .expect("the CCD 0 table");
-    let bad = Paint::Bad.style(Colours::Rich).fg.unwrap();
+    let bad = Paint::Bad.style(colours).fg.unwrap();
+    let glyph = super::ccd::marks(colours).applied.to_string();
     let y = heading + 1;
     let at = |depth: i64| 2 + gauge_column + usize::try_from(depth).unwrap() - 1;
     let mark = at(-fail);
-    assert_eq!(symbol(&buf, mark, y), "▆", "failure {fail}");
+    assert_eq!(symbol(&buf, mark, y), glyph, "failure {fail}");
     assert_eq!(foreground(&buf, mark, y), bad, "failure {fail} is red");
     assert_eq!(
         symbol(&buf, mark - 1, y),
-        "▆",
+        glyph,
         "applied {applied} touches it"
     );
     assert_ne!(foreground(&buf, mark - 1, y), bad, "applied is not red");
@@ -1763,18 +1742,20 @@ fn the_rendered_rich_frame_puts_each_failure_on_its_count(
         " ",
         "nothing deeper than the failure"
     );
-    assert_eq!(symbol(&buf, at(1), y), "▆");
+    assert_eq!(symbol(&buf, at(1), y), glyph);
     let text: String = rows[y].chars().skip(fail_column).take(field).collect();
     assert_eq!(text, format!("{fail:>field$}"), "failure point column");
 }
 
 #[test_case(240, 67, Colours::Rich, 21, 50, 73, 5; "wide rich")]
 #[test_case(160, 45, Colours::Rich, 20, 50, 71, 4; "medium rich")]
-#[test_case(160, 45, Colours::Full, 21, 25, 48, 5; "medium console")]
+#[test_case(240, 67, Colours::Console, 21, 50, 73, 5; "wide console")]
+#[test_case(160, 45, Colours::Console, 20, 50, 71, 4; "medium console")]
 #[test_case(80, 24, Colours::Rich, 20, 50, 71, 4; "compact rich where fifty cells fit")]
 #[test_case(70, 24, Colours::Rich, 21, 25, 48, 5; "compact rich where they do not")]
-#[test_case(80, 24, Colours::Full, 21, 25, 48, 5; "compact console")]
-fn rich_gauge_geometry_depends_on_the_room_for_fifty_cells(
+#[test_case(80, 24, Colours::Console, 20, 50, 71, 4; "compact console where fifty cells fit")]
+#[test_case(70, 24, Colours::Console, 21, 25, 48, 5; "compact console where they do not")]
+fn gauge_geometry_depends_on_the_room_for_fifty_cells(
     width: u16,
     height: u16,
     colours: Colours,
@@ -1816,7 +1797,7 @@ fn elapsed_for(total: Duration, cells: usize, eighths: usize) -> SignedDuration 
 #[test_case(4; "half a cell")]
 #[test_case(3; "three eighths")]
 #[test_case(7; "seven eighths")]
-fn the_rendered_wide_bar_has_an_edge_only_on_its_full_height_rows(extra: usize) {
+fn the_rendered_wide_bar_has_two_full_height_rows_and_no_underline(extra: usize) {
     let model = running_model();
     let snapshot = model.snapshot();
     let trial = snapshot.trial.expect("a running trial");
@@ -1829,7 +1810,7 @@ fn the_rendered_wide_bar_has_an_edge_only_on_its_full_height_rows(extra: usize) 
     let eighths = cells * 8 / 3 + extra;
     let (whole, edge) = (eighths / 8, eighths % 8);
     let at = started + elapsed_for(trial.duration, cells, eighths);
-    let buf = rich_frame(&model, 240, 67, at);
+    let buf = frame_in(&model, 240, 67, at, Colours::Rich);
     let rows = rows_of(&buf);
     let (x, top) = (usize::from(now_rect.x) + whole, usize::from(now_rect.y) + 3);
     let edges = ['▏', '▎', '▍', '▌', '▋', '▊', '▉'];
@@ -1852,17 +1833,50 @@ fn the_rendered_wide_bar_has_an_edge_only_on_its_full_height_rows(extra: usize) 
         .skip(usize::from(now_rect.x))
         .take(cells)
         .collect();
-    assert!(bottom.iter().all(|&c| c == '▀'), "{bottom:?}");
-    assert!(
-        rows[top + 2].chars().all(|c| !edges.contains(&c)),
-        "no eighth glyph reaches below the half-height row"
-    );
-    assert_eq!(
-        foreground(&buf, x - 1, top + 2),
-        Paint::Running.style(Colours::Rich).fg.unwrap()
-    );
-    assert_eq!(
-        foreground(&buf, x, top + 2),
-        Paint::Track.style(Colours::Rich).fg.unwrap()
-    );
+    assert!(bottom.iter().all(|&c| c == ' '), "{bottom:?}");
+}
+
+#[test_case(240, 67, Colours::Console; "wide console")]
+#[test_case(240, 67, Colours::Rich; "wide rich")]
+#[test_case(160, 45, Colours::Console; "medium console")]
+#[test_case(160, 45, Colours::Rich; "medium rich")]
+#[test_case(120, 33, Colours::Console; "compact console")]
+#[test_case(120, 33, Colours::Rich; "compact rich")]
+fn trial_bars_have_no_strip_under_their_track(width: u16, height: u16, colours: Colours) {
+    let model = running_model();
+    let snapshot = model.snapshot();
+    let trial = snapshot.trial.expect("a running trial");
+    let now = trial.started.expect("a started trial") + SignedDuration::from_secs(10);
+    let zone = TimeZone::UTC;
+    let scene = Scene::new(snapshot, now, &zone, colours);
+    let measured = measure(&scene, &screen(View::Main, width, height, colours, true));
+    let buf = frame_in(&model, width, height, now, colours);
+    let rows = rows_of(&buf);
+    let r = measured.now;
+    let (top, count, cells) = if measured.layout.class == SizeClass::Wide {
+        (r.y + 3, 2, r.width - 23)
+    } else {
+        let y = r.bottom() - 1;
+        let cells = rows[usize::from(y)]
+            .chars()
+            .skip(usize::from(r.x))
+            .take_while(|&c| c != ' ')
+            .count();
+        (y, 1, u16::try_from(cells).unwrap())
+    };
+    for y in top..top + count {
+        let bar: String = rows[usize::from(y)]
+            .chars()
+            .skip(usize::from(r.x))
+            .take(usize::from(cells))
+            .collect();
+        assert!(bar.contains('█') && bar.contains('░'), "{bar:?}");
+        assert!(!bar.contains('▀'), "{bar:?}");
+    }
+    let below: String = rows[usize::from(top + count)]
+        .chars()
+        .skip(usize::from(r.x))
+        .take(usize::from(cells))
+        .collect();
+    assert!(below.chars().all(|c| c == ' '), "{below:?}");
 }

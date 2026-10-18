@@ -17,15 +17,15 @@ expression: body
 │  if a core is named:  its failure point is recorded → it backs off; next trial: R1 light, core 08 alone at -5
 │  if inconclusive:     the same trial runs again
 │
-│  CCD 0               0  2 counts/cell       -50 fail pt  one loaded              CCD 1               0  2 counts/cell       -50 fail pt  waiting at 0
-│  ► 00   -5  SEARCH    ▄▄▄                                passed 0 · next -5        08    0  SEARCH                                       passed 0 · next -5
-│    01    0  SEARCH                                       passed 0 · next -5        09    0  SEARCH                                       passed 0 · next -5
-│    02    0  SEARCH                                       passed 0 · next -5        10    0  SEARCH                                       passed 0 · next -5
-│    03    0  SEARCH                                       passed 0 · next -5        11    0  SEARCH                                       passed 0 · next -5
-│    04    0  SEARCH                                       passed 0 · next -5        12    0  SEARCH                                       passed 0 · next -5
-│    05    0  SEARCH                                       passed 0 · next -5        13    0  SEARCH                                       passed 0 · next -5
-│    06    0  SEARCH                                       passed 0 · next -5        14    0  SEARCH                                       passed 0 · next -5
-│    07    0  SEARCH                                       passed 0 · next -5        15    0  SEARCH                                       passed 0 · next -5
+│  CCD 0 one loaded   0       -10       -20       -30       -40       -50 fail     CCD 1 waiting      0       -10       -20       -30       -40       -50 fail
+│  ► 00   -5  SEARCH   ▄▄▄▄▄                                                         08    0  SEARCH
+│    01    0  SEARCH                                                                 09    0  SEARCH
+│    02    0  SEARCH                                                                 10    0  SEARCH
+│    03    0  SEARCH                                                                 11    0  SEARCH
+│    04    0  SEARCH                                                                 12    0  SEARCH
+│    05    0  SEARCH                                                                 13    0  SEARCH
+│    06    0  SEARCH                                                                 14    0  SEARCH
+│    07    0  SEARCH                                                                 15    0  SEARCH
 │
 │  BIOS PROFILE ──────────────────────────────────────────────────────────────     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  none confirmed yet: phase 1 has not passed a full cycle

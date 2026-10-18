@@ -48,8 +48,8 @@ legend: t=Text g=Grey w=White c=Running a=Hunt p=Good f=Bad m=Combination k=Trac
 ~ g www       tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ │ ░░░       depth a combination blocks now
 ~ g www       tttttttttttttttttttttttttttttt
-│ │ red ▆     its failure point: the shallowest offset ruled out for this core, one count wide
-~ g wwwww     tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
+│ │ red ▆     its failure point: the shallowest offset ruled out for this core, one count wide at Wide and Medium
+~ g wwwww     ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ │ red ┆     a group trial failed with this core at that offset; dashed, not the solid red ▆ of the core's own failure
 ~ g wwwww     ttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt
 │ │           point

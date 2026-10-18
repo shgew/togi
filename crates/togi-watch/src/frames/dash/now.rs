@@ -61,22 +61,18 @@ pub(super) fn filled(cells: usize, elapsed: Duration, total: Duration) -> usize 
 /// The leading edges of a cell filled by one to seven eighths, from the left.
 const EDGES: [char; 7] = ['▏', '▎', '▍', '▌', '▋', '▊', '▉'];
 
-/// The elapsed fraction as `done` cells and the rest as `rest` cells, so the shape shows elapsed time without
-/// colour. In the rich profile a `partial` bar ends in an eighth-block leading edge, the elapsed fraction rounded
-/// down to an eighth of a cell; a bar that is not `partial` (a half-height row, whose edge glyphs would reach
-/// below it) keeps whole cells.
+/// The elapsed fraction in full-height cells and the rest as a shaded track, so the shape shows elapsed time
+/// without colour. The rich profile ends in an eighth-block leading edge, rounded down to an eighth of a cell.
 pub(super) fn progress_bar(
     scene: &Scene<'_>,
     cells: usize,
     elapsed: Duration,
     total: Duration,
-    (done, rest): (&str, &str),
-    partial: bool,
 ) -> Line<'static> {
     let n = filled(cells, elapsed, total).min(cells);
-    let mut run = done.repeat(n);
+    let mut run = "█".repeat(n);
     let mut rest_cells = cells - n;
-    if partial && scene.colours == Colours::Rich && rest_cells > 0 && !total.is_zero() {
+    if scene.colours == Colours::Rich && rest_cells > 0 && !total.is_zero() {
         let eighths =
             cells as u128 * 8 * elapsed.as_nanos().min(total.as_nanos()) / total.as_nanos();
         let edge = usize::try_from(eighths % 8).unwrap_or(0);
@@ -87,7 +83,7 @@ pub(super) fn progress_bar(
     }
     Line::from(vec![
         scene.paint(Paint::Running, run),
-        scene.paint(Paint::Track, rest.repeat(rest_cells)),
+        scene.paint(Paint::Track, "░".repeat(rest_cells)),
     ])
 }
 
@@ -291,20 +287,13 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
         if let Some(hold) = quiet {
             (digits, style) = (scene.wall_minute(hold.planned_end), Paint::Grey);
         }
-        for y in 3..=5 {
-            // The bottom row is half height: its edge stays on a whole cell, since an eighth-block glyph would
-            // reach below it.
-            let (glyphs, partial) = if y == 5 {
-                (("▀", "▀"), false)
-            } else {
-                (("█", "░"), true)
-            };
+        for y in 3..=4 {
             put_cells(
                 buf,
                 r,
                 0,
                 y,
-                &progress_bar(scene, cells, done, trial.duration, glyphs, partial),
+                &progress_bar(scene, cells, done, trial.duration),
                 colours,
             );
         }
@@ -394,7 +383,7 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
     }
     let label = Line::from(label);
     let cells = width.saturating_sub(line_width(&label, colours) + 2);
-    let mut bar = progress_bar(scene, cells, done, trial.duration, ("█", "░"), true).spans;
+    let mut bar = progress_bar(scene, cells, done, trial.duration).spans;
     bar.push(Span::raw("  "));
     bar.extend(label.spans);
     put_cells(buf, r, 0, last, &Line::from(bar), colours);

@@ -68,7 +68,7 @@ pub(crate) const fn marks(colours: Colours) -> Marks {
         },
         Colours::Full | Colours::Console | Colours::None => Marks {
             applied: '▄',
-            failure: '▬',
+            failure: '▄',
             group: '▀',
         },
     }

@@ -171,8 +171,9 @@ fn a_combination_wider_than_its_columns_names_the_omitted_cores_and_the_journal_
     }
 }
 
-#[test]
-fn medium_core_notes_keep_the_combination_and_the_solo_offset() {
+#[test_case::test_case(160, 45, false; "medium reserves the gauge")]
+#[test_case::test_case(240, 67, true; "wide retains the notes")]
+fn core_notes_use_only_the_room_beyond_the_gauge(width: u16, height: u16, notes: bool) {
     let mut at_limit = core_view(0, 0, CoreState::AtLimit);
     at_limit.profile = off(-26);
     at_limit.applied = Some(ObservedOffset(-26));
@@ -188,15 +189,16 @@ fn medium_core_notes_keep_the_combination_and_the_solo_offset() {
     let hand = Hand::new(vec![at_limit, gave_back], Vec::new());
     let (buf, _) = super::draw_journal(
         &hand.journal(),
-        &main_screen(160, 45),
+        &main_screen(width, height),
         some_time(),
         &TimeZone::UTC,
     );
     let shown = text(&buf);
     for note in ["C4 · solo -31", "C1 · solo -37"] {
-        assert!(
+        assert_eq!(
             shown.contains(note),
-            "a medium frame hid {note:?}:\n{shown}"
+            notes,
+            "{width}x{height}: {note:?}:\n{shown}"
         );
     }
 }

@@ -12,7 +12,7 @@ use togi_machine::CcdId;
 use super::layout::{Layout, SizeClass};
 use super::scene::Scene;
 use super::story::resting_band;
-use crate::screen::{Colours, Screen};
+use crate::screen::Screen;
 
 /// A table column inside its panel: the cell it starts at and how many cells it may use. A column of width 0
 /// is not shown at this size.
@@ -140,9 +140,9 @@ impl Tables {
     }
 }
 
-/// The narrowest CCD table, in cells, that fits the rich profile's 50-cell gauge: the gauge from cell 20, a
-/// four-cell failure point from cell 71, and no per-core note.
-const RICH_DENSE_WIDTH: usize = 75;
+/// The narrowest CCD table, in cells, that fits a 50-cell gauge: the gauge from cell 20, a four-cell failure
+/// point from cell 71, and no per-core note.
+const DENSE_WIDTH: usize = 75;
 
 /// The columns of a CCD's core table, as cells from the table's left edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -291,7 +291,7 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
                 brief: true,
             },
         };
-        if scene.colours == Colours::Rich && class != SizeClass::Wide && w >= RICH_DENSE_WIDTH {
+        if class != SizeClass::Wide && w >= DENSE_WIDTH {
             columns = CoreColumns {
                 id: 2,
                 offset: 6,

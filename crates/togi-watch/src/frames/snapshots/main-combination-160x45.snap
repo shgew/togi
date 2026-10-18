@@ -13,15 +13,15 @@ expression: body
 │  07:08:00 · requested clean cycles completed
 │  Rows show the saved profile, not applied now.
 │
-│  CCD 0               0  2 counts/cell       -50 fail pt  not under load          CCD 1               0  2 counts/cell       -50 fail pt  not under load
-│    00  -11  HAS ROOM  ▄▄▄▄▄▄                                                       08  -11  HAS ROOM  ▄▄▄▄▄▄
-│    01  -11  HAS ROOM  ▄▄▄▄▄▄                                                       09  -11  HAS ROOM  ▄▄▄▄▄▄
-│    02  -11  HAS ROOM  ▄▄▄▄▄▄                                                       10  -11  HAS ROOM  ▄▄▄▄▄▄
-│    03  -11  HAS ROOM  ▄▄▄▄▄▄                                                       11   -9  AT LIMIT  ▄▄▄▄▄░                             C1 · solo -11
-│    04  -11  HAS ROOM  ▄▄▄▄▄▄                                                       12  -11  HAS ROOM  ▄▄▄▄▄▄
-│    05  -11  HAS ROOM  ▄▄▄▄▄▄                                                       13  -11  HAS ROOM  ▄▄▄▄▄▄
-│    06  -11  HAS ROOM  ▄▄▄▄▄▄                                                       14  -11  HAS ROOM  ▄▄▄▄▄▄
-│    07  -11  HAS ROOM  ▄▄▄▄▄▄                                                       15  -11  HAS ROOM  ▄▄▄▄▄▄
+│  CCD 0 idle         0       -10       -20       -30       -40       -50 fail     CCD 1 idle         0       -10       -20       -30       -40       -50 fail
+│    00  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄                                                   08  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄
+│    01  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄                                                   09  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄
+│    02  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄                                                   10  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄
+│    03  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄                                                   11   -9  AT LIMIT ▄▄▄▄▄▄▄▄▄░░
+│    04  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄                                                   12  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄
+│    05  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄                                                   13  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄
+│    06  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄                                                   14  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄
+│    07  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄                                                   15  -11  HAS ROOM ▄▄▄▄▄▄▄▄▄▄▄
 │
 │  BIOS PROFILE ────────────────────────── confirmed by the cycle ending #5905     WHAT HAPPENED ───────────────────────────────────────────────── l: last 400
 │  slot      0    1    2    3    4    5    6    7
