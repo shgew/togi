@@ -77,7 +77,7 @@ gate: _dev-shell
     set -euo pipefail
     just check-one fmt
     just lint
-    just check-one module changes
+    just check-one module changes doc-links
     just board-test
     just sql-test
     names=$(just _nextest-checks)
@@ -117,12 +117,12 @@ _heavy-gate name:
     fi
     if ((${#checks[@]})); then just check-one "${checks[@]}"; fi
 
-# Run every flake check this host builds, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
+# Run every flake check this host builds, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one module`)
+# Build named flake checks, streaming their build logs: board-test, sql-test, doc-links, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one module`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -368,7 +368,7 @@ ship: (_push-ready "ship" "gate it with just gate and push the stack with gh sta
     just gate
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Push a review fix: format, lint, build the nextest-<group> checks, board and SQL views, the VM tests and sim shards on Linux (Nix rebuilds only what changed), then push as `just ship` does; the first push uses `just ship`
+# Push a review fix: format, lint, check doc links, build the nextest-<group> checks, board and SQL views, the VM tests and sim shards on Linux (Nix rebuilds only what changed), then push as `just ship` does; the first push uses `just ship`
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -379,6 +379,7 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
         exit 1
     }
     just lint
+    just check-one doc-links
     if ! git diff --quiet "$pushed" HEAD -- tools/board; then
         just board-test
     fi

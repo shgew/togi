@@ -374,6 +374,23 @@
                   HOME=$TMPDIR sql/test.sh
                   touch "$out"
                 '';
+            # Relative links and heading anchors in every Markdown file, offline: a link may name any file.
+            doc-links =
+              pkgs.runCommand "togi-doc-links"
+                {
+                  nativeBuildInputs = [ pkgs.lychee ];
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = ./.;
+                  };
+                  # lychee builds its HTTP client even offline, and the client needs a certificate store.
+                  SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+                }
+                ''
+                  cd "$src"
+                  HOME=$TMPDIR lychee --offline --include-fragments --no-progress --format compact './**/*.md'
+                  touch "$out"
+                '';
             clippy = craneLib.mkCargoDerivation (
               cargoCheck testSource {
                 pnameSuffix = "-clippy";
