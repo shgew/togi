@@ -1,7 +1,7 @@
-# Pull request CI gates landing on main: clippy, nextest, doc and one light job for fmt, changes, deny,
-# shear, module, board-test, sql-test and package. A workflow_dispatch runs every Linux flake check,
-# one job per check so the VM tests boot in parallel (ADR 0074). The release dispatches and waits for
-# this full run on the exact main head before making its release commit.
+# Pull request CI gates landing on main: clippy, doc and each `nextest-<group>` check in its own job, and one
+# light job for fmt, changes, deny, shear, module, board-test, sql-test and package. A workflow_dispatch runs
+# every Linux flake check, one job per check so the VM tests boot in parallel (ADR 0074, ADR 0075). The release
+# dispatches and waits for this full run on the exact main head before making its release commit.
 # No job runs on macOS (ADR 0061): `just lint` and `just gate` clippy the Rust workspace for
 # aarch64-apple-darwin from Linux, and a breakage found on a Mac is fixed as a bug.
 # eval skips outputs already in the public Cachix cache `togi`; build jobs substitute from it and push
@@ -42,7 +42,7 @@ jobs:
         run: |
           selected='builtins.attrNames checks'
           if [[ "$EVENT_NAME" == pull_request ]]; then
-            selected='[ "clippy" "nextest" "doc" "fmt" "changes" "deny" "shear" "module" "board-test" "sql-test" "package" ]'
+            selected='[ "clippy" "doc" "fmt" "changes" "deny" "shear" "module" "board-test" "sql-test" "package" ] ++ builtins.filter (name: builtins.substring 0 8 name == "nextest-") all'
           fi
           info=$(nix eval --json .#checks.x86_64-linux --apply "
             checks: let all = builtins.attrNames checks; in {
@@ -63,7 +63,7 @@ jobs:
               continue
             fi
             printf '%-24s %s\n' "$name" no
-            if [[ "$EVENT_NAME" == pull_request && "$name" != clippy && "$name" != nextest && "$name" != doc ]]; then
+            if [[ "$EVENT_NAME" == pull_request && "$name" != clippy && "$name" != doc && "$name" != nextest-* ]]; then
               light_checks+=("$name")
             else
               matrix_checks+=("$name")

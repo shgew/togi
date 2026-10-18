@@ -70,7 +70,7 @@ lint: _dev-shell
 fmt:
     nix fmt
 
-# Run the local checks cheapest first with a warm cargo cache, then build the VM tests and sim shards on Linux (Nix rebuilds only what changed); cargo-deny's advisory audit runs only in the deny flake check
+# Run the local checks cheapest first with a warm cargo cache and the nextest-<group> flake checks, then build the VM tests and sim shards on Linux (Nix rebuilds only what changed); cargo-deny's advisory audit runs only in the deny flake check
 [group('quality')]
 gate: _dev-shell
     #!/usr/bin/env bash
@@ -80,11 +80,17 @@ gate: _dev-shell
     just check-one module changes
     just board-test
     just sql-test
-    cargo nextest run --locked --profile ci
+    names=$(just _nextest-checks)
+    read -r -a nextest <<< "$names"
+    just check-one "${nextest[@]}"
     cargo test --locked --doc
     cargo deny --locked check bans licenses sources
     cargo shear
     just _heavy-gate gate
+
+# Print the nextest-<group> flake checks, space-separated
+_nextest-checks:
+    @nix eval --raw '.#checks.{{ system }}' --apply 'checks: builtins.concatStringsSep " " (builtins.filter (name: builtins.match "nextest-.*" name != null) (builtins.attrNames checks))'
 
 _heavy-checks:
     #!/usr/bin/env bash
@@ -111,12 +117,12 @@ _heavy-gate name:
     fi
     if ((${#checks[@]})); then just check-one "${checks[@]}"; fi
 
-# Run every flake check this host builds, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest, doc, cargo-deps, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
+# Run every flake check this host builds, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, deny, shear, package and, on Linux, trial-scope-tests, the sim-suite-* shards and the VM tests
 [group('nix')]
 check *args:
     nix flake check --print-build-logs "$@"
 
-# Build named flake checks, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest, doc, cargo-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one module`)
+# Build named flake checks, streaming their build logs: board-test, sql-test, fmt, changes, module, clippy, nextest-core, nextest-platform, nextest-session, nextest-tools, nextest-repo, doc, cargo-deps, deny, shear, package or, on Linux, trial-scope-tests, vm-recovery-tests, sim-suite-<i>, vm, vm-host-lock, vm-trial-scope, vm-restart-limit and vm-emergency-stop (`just check-one module`)
 [group('nix')]
 check-one +names:
     nix build --no-link --print-build-logs $(printf '.#checks.{{ system }}.%s ' "$@")
@@ -362,20 +368,7 @@ ship: (_push-ready "ship" "gate it with just gate and push the stack with gh sta
     just gate
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 
-# Print the crates changed between a pushed head and HEAD, one per line: `--workspace` when Cargo.toml, Cargo.lock, rust-toolchain.toml, clippy.toml, .config/nextest.toml or .cargo/config.toml changed, files every crate's build or tests read, else each crate with a changed file under crates/ that still has its Cargo.toml at HEAD
-_touched-crates pushed:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    files=$(git diff --name-only --no-renames "$1" HEAD)
-    if grep -qxE 'Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|clippy\.toml|\.config/nextest\.toml|\.cargo/config(\.toml)?' <<<"$files"; then
-        echo --workspace
-        exit
-    fi
-    { grep -oE '^crates/[^/]+/' <<<"$files" || true; } | sort -u | while IFS= read -r dir; do
-        git cat-file -e "HEAD:${dir}Cargo.toml" 2>/dev/null && basename "$dir"
-    done || true
-
-# Push a review fix: format, lint, test changed Rust crates, board and SQL views, build the VM tests and sim shards on Linux (Nix rebuilds only what changed), then push as `just ship` does; the first push uses `just ship`
+# Push a review fix: format, lint, build the nextest-<group> checks, board and SQL views, the VM tests and sim shards on Linux (Nix rebuilds only what changed), then push as `just ship` does; the first push uses `just ship`
 [group('github')]
 push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     #!/usr/bin/env bash
@@ -392,16 +385,9 @@ push-fix: (_push-ready "push-fix" "push the stack with gh stack push")
     if ! git diff --quiet "$pushed" HEAD -- tools/sql; then
         just sql-test
     fi
-    mapfile -t crates < <(just _touched-crates "$pushed")
-    if ((${#crates[@]} == 0)); then
-        echo "push-fix: no crate changed since $pushed; nothing to test" >&2
-    elif [[ "${crates[0]}" == --workspace ]]; then
-        just test --workspace
-    else
-        args=()
-        for crate in "${crates[@]}"; do args+=(-p "$crate"); done
-        just test "${args[@]}"
-    fi
+    names=$(just _nextest-checks)
+    read -r -a nextest <<< "$names"
+    just check-one "${nextest[@]}"
     just _heavy-gate push-fix
     git push --force-with-lease --force-if-includes --set-upstream origin "refs/heads/$branch:refs/heads/$branch"
 

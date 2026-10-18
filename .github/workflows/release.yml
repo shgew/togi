@@ -27,7 +27,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: nix develop --command cargo run --locked -p togi-tool-release -- -commit
       - name: Build the package and run its tests
-        run: nix build --no-link --print-build-logs .#packages.x86_64-linux.default .#checks.x86_64-linux.nextest
+        run: |
+          set -o pipefail
+          names=$(nix eval --json .#checks.x86_64-linux \
+            --apply 'c: builtins.filter (n: builtins.substring 0 8 n == "nextest-") (builtins.attrNames c)' |
+            jq -er '.[] | ".#checks.x86_64-linux.\(.)"')
+          mapfile -t nextest <<< "$names"
+          nix build --no-link --print-build-logs .#packages.x86_64-linux.default "${nextest[@]}"
       - name: Push to main
         env:
           RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
