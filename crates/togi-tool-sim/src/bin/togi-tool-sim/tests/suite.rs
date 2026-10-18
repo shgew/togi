@@ -175,7 +175,7 @@ fn a_shard_the_count_cannot_hold_is_refused_by_check(shard: &str) {
 fn a_session_that_dead_ends_fails_its_shard_and_is_recorded() {
     let mut host = host();
     let mut machine: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../../tools/bench/machines/flat-hazard.json"
+        "../../../../../../tools/bench/machines/flat-hazard.json"
     ))
     .unwrap();
     machine["core"][0]["alone"] = serde_json::json!([1, 1, 1, 1, 1]);
