@@ -170,7 +170,7 @@ Rationale: `top` shown for an offset proxy read as a measured request.
 | WORDS, parked | `a core a hunt holds shallower than its failing offset` | `a core a hunt holds no deeper than its failing offset, outside the selected group` |
 | WORDS, top requester | `the loaded core with the highest voltage request, setting the shared core voltage; marked top on the CCD tables` | `an R7 workload's highest-request group on each CCD, ties included; marked top on the CCD tables` |
 
-Rationale: a failure point can come from R7 voltage-targeted backoff, a hunt culprit or a carried failure, so it is a ruled-out depth, not always a failure on the core's own account; phase 1 ends at the first passed full cycle after every core left search, not at the first cycle; a parked offset can equal the failing offset; the CCD table marks per-CCD top groups, which can differ from the core that sets the shared rail ([GLOSSARY.md](../GLOSSARY.md#top-requester)).
+Rationale: a failure point can come from R7 voltage-targeted backoff, a hunt culprit or a carried failure, so it is a ruled-out depth, not always a failure on the core's own account; phase 1 ends at the first passed full cycle after every core left search, not at the first cycle; a parked offset can equal the failing offset; the CCD table marks per-CCD top groups, which can differ from the core that sets the shared rail ([GLOSSARY.md](../GLOSSARY.md), Top requester).
 
 ### BIOS panel (`panels/search.rs`)
 
