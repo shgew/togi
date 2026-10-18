@@ -277,7 +277,9 @@ fn real_process_a_campaign_starts_runs_an_evaluator_stops_and_reports() {
     );
     assert!(report.contains("Nothing was kept."), "{report}");
     assert!(
-        report.contains(&format!("`just fit --forward-only --facts {FACTS} --seal 1 --jobs 4`")),
+        report.contains(&format!(
+            "`just fit --forward-only --facts {FACTS} --seal 1 --jobs 4`"
+        )),
         "{report}"
     );
 
