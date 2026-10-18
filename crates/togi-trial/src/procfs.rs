@@ -811,59 +811,61 @@ mod tests {
         assert_eq!(found[0].pid, 20);
     }
 
-    #[test]
-    fn scope_scan_fails_when_the_cgroup_or_stat_is_not_a_readable_file() {
-        for broken in ["cgroup", "stat"] {
-            let (dir, proc) = fixture();
-            readable_sibling(&dir);
-            if broken == "stat" {
-                write(&dir, "30/cgroup", "0::/a/togi-trial-y.scope\n");
-            }
-            dir.mkdir(&format!("30/{broken}"));
-            let Err(ProcError::Read { path, source }) = proc.scope_processes() else {
-                panic!("a {broken} that is a directory must fail the scan");
-            };
-            assert!(path.ends_with(format!("30/{broken}")), "{}", path.display());
-            assert_eq!(source.kind(), io::ErrorKind::IsADirectory);
+    #[test_case::test_case("cgroup"; "cgroup")]
+    #[test_case::test_case("stat"; "stat")]
+    fn scope_scan_fails_when_the_cgroup_or_stat_is_not_a_readable_file(broken: &str) {
+        let (dir, proc) = fixture();
+        readable_sibling(&dir);
+        if broken == "stat" {
+            write(&dir, "30/cgroup", "0::/a/togi-trial-y.scope\n");
         }
+        dir.mkdir(&format!("30/{broken}"));
+        let Err(ProcError::Read { path, source }) = proc.scope_processes() else {
+            panic!("a {broken} that is a directory must fail the scan");
+        };
+        assert!(path.ends_with(format!("30/{broken}")), "{}", path.display());
+        assert_eq!(source.kind(), io::ErrorKind::IsADirectory);
     }
 
-    #[test]
-    fn real_fs_scope_scan_fails_on_permission_denied_but_not_on_a_vanished_file() {
+    #[test_case::test_case("cgroup"; "cgroup")]
+    #[test_case::test_case("stat"; "stat")]
+    fn real_fs_scope_scan_fails_on_permission_denied_but_not_on_a_vanished_file(denied: &str) {
         use std::os::unix::fs::PermissionsExt as _;
 
-        for denied in ["cgroup", "stat"] {
-            let (dir, proc) = disk_fixture();
-            disk_write(&dir, "20/cgroup", "0::/a/togi-trial-x.scope\n");
-            disk_write(&dir, "20/stat", &stat_line("w", 'S', &[(22, "777")]));
-            disk_write(&dir, "30/cgroup", "0::/a/togi-trial-y.scope\n");
-            disk_write(&dir, "30/stat", &stat_line("w", 'S', &[(22, "5")]));
-            let path = dir.path().join(format!("30/{denied}"));
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o0)).unwrap();
-            if fs::read(&path).is_ok() {
-                // Running as root: permissions do not apply, so denial cannot be staged.
-                return;
-            }
-            let Err(ProcError::Read { path, source }) = proc.scope_processes() else {
-                panic!("an unreadable {denied} must fail the scan");
-            };
-            assert!(path.ends_with(format!("30/{denied}")), "{}", path.display());
-            assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
-            fs::remove_file(&path).unwrap();
-            assert_eq!(proc.scope_processes().unwrap().len(), 1);
+        let (dir, proc) = disk_fixture();
+        disk_write(&dir, "20/cgroup", "0::/a/togi-trial-x.scope\n");
+        disk_write(&dir, "20/stat", &stat_line("w", 'S', &[(22, "777")]));
+        disk_write(&dir, "30/cgroup", "0::/a/togi-trial-y.scope\n");
+        disk_write(&dir, "30/stat", &stat_line("w", 'S', &[(22, "5")]));
+        let path = dir.path().join(format!("30/{denied}"));
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o0)).unwrap();
+        if fs::read(&path).is_ok() {
+            // Running as root: permissions do not apply, so denial cannot be staged.
+            return;
         }
+        let Err(ProcError::Read { path, source }) = proc.scope_processes() else {
+            panic!("an unreadable {denied} must fail the scan");
+        };
+        assert!(path.ends_with(format!("30/{denied}")), "{}", path.display());
+        assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
+        fs::remove_file(&path).unwrap();
+        assert_eq!(proc.scope_processes().unwrap().len(), 1);
     }
 
     #[test]
     fn only_a_missing_process_counts_as_gone_not_io_errors_or_denials() {
         assert!(disappeared(&io::Error::from(io::ErrorKind::NotFound)));
         assert!(disappeared(&io::Error::from_raw_os_error(3)));
-        for errno in [5, 13, 21] {
-            assert!(
-                !disappeared(&io::Error::from_raw_os_error(errno)),
-                "errno {errno} is a lost observation"
-            );
-        }
+    }
+
+    #[test_case::test_case(5; "io error")]
+    #[test_case::test_case(13; "permission denied")]
+    #[test_case::test_case(21; "directory")]
+    fn io_errors_or_denials_are_not_disappearances(errno: i32) {
+        assert!(
+            !disappeared(&io::Error::from_raw_os_error(errno)),
+            "errno {errno} is a lost observation"
+        );
     }
 
     #[test]
@@ -1010,21 +1012,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn each_numeric_stat_field_that_is_not_a_number_is_a_lost_observation_not_a_disappearance() {
+    #[test_case::test_case(60, 14; "user time")]
+    #[test_case::test_case(61, 15; "system time")]
+    #[test_case::test_case(62, 39; "processor")]
+    fn each_numeric_stat_field_that_is_not_a_number_is_a_lost_observation_not_a_disappearance(
+        pid: u32,
+        field: usize,
+    ) {
         let (dir, proc) = fixture();
-        for (pid, field) in [(60, 14), (61, 15), (62, 39)] {
-            write(
-                &dir,
-                &format!("{pid}/stat"),
-                &stat_line("w", 'R', &[(field, "bad")]),
-            );
-            assert_eq!(
-                stat_reason(&proc.usage(pid).unwrap_err()),
-                Some("non-numeric field"),
-                "field {field}"
-            );
-        }
+        write(
+            &dir,
+            &format!("{pid}/stat"),
+            &stat_line("w", 'R', &[(field, "bad")]),
+        );
+        assert_eq!(
+            stat_reason(&proc.usage(pid).unwrap_err()),
+            Some("non-numeric field"),
+            "field {field}"
+        );
     }
 
     #[test]
@@ -1060,18 +1065,17 @@ mod tests {
         assert_eq!(names, ["-1", "0", "bad"]);
     }
 
-    #[test]
-    fn a_scope_process_with_an_invalid_start_time_fails_the_scan() {
+    #[test_case::test_case("-1", "negative field"; "negative")]
+    #[test_case::test_case("bad", "non-numeric field"; "non numeric")]
+    fn a_scope_process_with_an_invalid_start_time_fails_the_scan(start: &str, reason: &str) {
         let (dir, proc) = fixture();
         write(&dir, "42/cgroup", "0::/togi-trial-1.scope\n");
-        for (start, reason) in [("-1", "negative field"), ("bad", "non-numeric field")] {
-            write(&dir, "42/stat", &stat_line("w", 'S', &[(22, start)]));
-            assert_eq!(
-                stat_reason(&proc.scope_processes().unwrap_err()),
-                Some(reason),
-                "{start}"
-            );
-        }
+        write(&dir, "42/stat", &stat_line("w", 'S', &[(22, start)]));
+        assert_eq!(
+            stat_reason(&proc.scope_processes().unwrap_err()),
+            Some(reason),
+            "{start}"
+        );
         let process = ScopeProcess {
             scope: scope("togi-trial-1"),
             pid: 42,
@@ -1079,7 +1083,7 @@ mod tests {
         };
         assert_eq!(
             stat_reason(&proc.alive(&process).unwrap_err()),
-            Some("non-numeric field")
+            Some(reason)
         );
     }
 }

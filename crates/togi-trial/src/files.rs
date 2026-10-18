@@ -1204,34 +1204,33 @@ mod tests {
         );
     }
 
-    #[test]
-    fn real_fs_both_retained_logs_survive_a_symlink_swap_of_their_paths() {
+    #[test_case("stdout.log", "out\n"; "stdout")]
+    #[test_case("stderr.log", "err\n"; "stderr")]
+    fn real_fs_both_retained_logs_survive_a_symlink_swap_of_their_paths(log: &str, text: &str) {
         let tmp = crate::testing::tempdir();
         let container = recreate(&tmp.path().join("trials"), &id("t1"), None).unwrap();
         let mut files = container
             .instance(&work(), &TestBackend::new("/bin/true"), &workload(), None)
             .unwrap();
-        for (log, text) in [("stdout.log", "out\n"), ("stderr.log", "err\n")] {
-            let victim = tmp.path().join(format!("victim-{log}"));
-            fs::write(&victim, "protected journal\n").unwrap();
-            fs::rename(
-                files.path.join(log),
-                files.path.join(format!("{log}.retained")),
-            )
-            .unwrap();
-            symlink(&victim, files.path.join(log)).unwrap();
-            let file = if log == "stdout.log" {
-                &mut files.stdout
-            } else {
-                &mut files.stderr
-            };
-            file.write_all(text.as_bytes()).unwrap();
-            assert_eq!(fs::read_to_string(&victim).unwrap(), "protected journal\n");
-            assert_eq!(
-                fs::read_to_string(files.path.join(format!("{log}.retained"))).unwrap(),
-                text
-            );
-        }
+        let victim = tmp.path().join(format!("victim-{log}"));
+        fs::write(&victim, "protected journal\n").unwrap();
+        fs::rename(
+            files.path.join(log),
+            files.path.join(format!("{log}.retained")),
+        )
+        .unwrap();
+        symlink(&victim, files.path.join(log)).unwrap();
+        let file = if log == "stdout.log" {
+            &mut files.stdout
+        } else {
+            &mut files.stderr
+        };
+        file.write_all(text.as_bytes()).unwrap();
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "protected journal\n");
+        assert_eq!(
+            fs::read_to_string(files.path.join(format!("{log}.retained"))).unwrap(),
+            text
+        );
     }
 
     #[test_case(false; "a work directory holding the symlinks")]

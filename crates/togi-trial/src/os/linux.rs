@@ -423,70 +423,69 @@ mod tests {
         Arc::default()
     }
 
-    #[test]
-    fn real_process_a_cancelled_scan_refuses_replacements_until_its_owner_finishes() {
-        for abort in [false, true] {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .max_blocking_threads(1)
-                .enable_all()
-                .build()
-                .unwrap();
-            let scans = scans();
-            let (release, blocked) = std::sync::mpsc::channel::<()>();
-            let (started, running) = tokio::sync::oneshot::channel();
-            runtime.block_on(async move {
-                let owner_scans = Arc::clone(&scans);
-                let awaiting = async move {
-                    owner_scans
-                        .run(Instant::now() + secs(60), move || {
-                            let _ = started.send(());
-                            blocked.recv().unwrap();
-                            Ok(())
-                        })
-                        .await
-                };
-                if abort {
-                    let owner = tokio::spawn(awaiting);
-                    running.await.unwrap();
-                    owner.abort();
-                    assert!(owner.await.unwrap_err().is_cancelled());
-                } else {
-                    let mut owner = Box::pin(awaiting);
-                    tokio::select! {
-                        () = async { running.await.unwrap() } => {}
-                        outcome = &mut owner => panic!("the owner was not blocked: {outcome:?}"),
-                    }
-                    drop(owner);
-                }
-                let ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
-                let flag = Arc::clone(&ran);
-                let mut replacement = Box::pin(scans.run(Instant::now() + secs(60), move || {
-                    flag.store(true, Ordering::SeqCst);
-                    Ok(())
-                }));
-                let refused = poll_fn(|cx| {
-                    Poll::Ready(match replacement.as_mut().poll(cx) {
-                        Poll::Ready(result) => Some(result),
-                        Poll::Pending => None,
+    #[test_case::test_case(false; "dropped future")]
+    #[test_case::test_case(true; "aborted task")]
+    fn real_process_a_cancelled_scan_refuses_replacements_until_its_owner_finishes(abort: bool) {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let scans = scans();
+        let (release, blocked) = std::sync::mpsc::channel::<()>();
+        let (started, running) = tokio::sync::oneshot::channel();
+        runtime.block_on(async move {
+            let owner_scans = Arc::clone(&scans);
+            let awaiting = async move {
+                owner_scans
+                    .run(Instant::now() + secs(60), move || {
+                        let _ = started.send(());
+                        blocked.recv().unwrap();
+                        Ok(())
                     })
+                    .await
+            };
+            if abort {
+                let owner = tokio::spawn(awaiting);
+                running.await.unwrap();
+                owner.abort();
+                assert!(owner.await.unwrap_err().is_cancelled());
+            } else {
+                let mut owner = Box::pin(awaiting);
+                tokio::select! {
+                    () = async { running.await.unwrap() } => {}
+                    outcome = &mut owner => panic!("the owner was not blocked: {outcome:?}"),
+                }
+                drop(owner);
+            }
+            let ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let flag = Arc::clone(&ran);
+            let mut replacement = Box::pin(scans.run(Instant::now() + secs(60), move || {
+                flag.store(true, Ordering::SeqCst);
+                Ok(())
+            }));
+            let refused = poll_fn(|cx| {
+                Poll::Ready(match replacement.as_mut().poll(cx) {
+                    Poll::Ready(result) => Some(result),
+                    Poll::Pending => None,
                 })
-                .await;
-                drop(replacement);
-                let abandoned = scans.abandoned.load(Ordering::Acquire);
-                release.send(()).unwrap();
-                tokio::task::spawn_blocking(|| {}).await.unwrap();
-                let finished = scans.abandoned.load(Ordering::Acquire);
-                let resumed = scans.run(Instant::now() + secs(60), || Ok(7)).await;
-                assert!(
-                    matches!(refused, Some(Err(ProcError::Stuck))),
-                    "abort: {abort}"
-                );
-                assert!(!ran.load(Ordering::SeqCst), "abort: {abort}");
-                assert_eq!(abandoned, 1, "abort: {abort}");
-                assert_eq!(finished, 0, "abort: {abort}");
-                assert!(matches!(resumed, Ok(7)), "abort: {abort}");
-            });
-        }
+            })
+            .await;
+            drop(replacement);
+            let abandoned = scans.abandoned.load(Ordering::Acquire);
+            release.send(()).unwrap();
+            tokio::task::spawn_blocking(|| {}).await.unwrap();
+            let finished = scans.abandoned.load(Ordering::Acquire);
+            let resumed = scans.run(Instant::now() + secs(60), || Ok(7)).await;
+            assert!(
+                matches!(refused, Some(Err(ProcError::Stuck))),
+                "abort: {abort}"
+            );
+            assert!(!ran.load(Ordering::SeqCst), "abort: {abort}");
+            assert_eq!(abandoned, 1, "abort: {abort}");
+            assert_eq!(finished, 0, "abort: {abort}");
+            assert!(matches!(resumed, Ok(7)), "abort: {abort}");
+        });
     }
 
     #[test]
