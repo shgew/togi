@@ -170,10 +170,7 @@ impl Run {
     /// Keeps an inconclusive trial to retry under the requirement it was scheduled for.
     pub(crate) fn save_retry(&mut self, open: &OpenTrial) {
         let intent = &open.intent;
-        let load = Load::recorded(
-            intent.core.filter(|_| intent.cores.is_empty()),
-            intent.cores,
-        );
+        let load = Load::recorded(intent.core, intent.cores);
         let (condition, activity, cause) = match open.requirement.context {
             TrialContext::ZeroRerun { failure } => (
                 Condition::Parked,

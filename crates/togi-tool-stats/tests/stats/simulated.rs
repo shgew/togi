@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_journal::Payload;
 use togi_tool_stats::{Journal, report};
 use togi_tuner::TrialContext;
@@ -448,4 +449,26 @@ fn a_simulated_hazard_sessions_backoffs_are_attributed_to_the_phase_they_were_de
         .into(),
         "the session fails R7 in each phase"
     );
+}
+
+#[test_case(false; "set load")]
+#[test_case(true; "named core takes precedence over set")]
+fn r7_backoff_records_use_the_normalized_load(mixed: bool) {
+    let mut events = chain_session();
+    let mut multi_core_trials = 0;
+    for event in &mut events {
+        if let Payload::TrialIntent(intent) = &mut event.payload
+            && intent.regime == togi_machine::Regime::R7
+            && intent.cores.len() > 1
+        {
+            multi_core_trials += 1;
+            if mixed {
+                intent.core = intent.cores.iter().next();
+            }
+        }
+    }
+    assert!(multi_core_trials > 0);
+    let journal = Journal::new(events).unwrap();
+    let records = togi_tool_stats::backoff_records(&journal, None).unwrap();
+    assert_eq!(records.is_empty(), mixed, "{records}");
 }

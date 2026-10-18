@@ -47,7 +47,7 @@ pub enum Load {
 
 impl Load {
     /// The recorded load shape, before checking it against a session's topology.
-    /// A named core takes precedence over the set; callers retain their wire-shape preconditions.
+    /// Writers emit one field; a named core takes precedence if both fields are recorded.
     pub fn recorded(core: Option<CoreId>, cores: CoreSet) -> Self {
         match core {
             Some(core) => Self::Single(core),

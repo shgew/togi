@@ -1,5 +1,6 @@
 use std::num::{NonZeroU8, NonZeroU32};
 
+use test_case::test_case;
 use togi_journal::{Activity, HuntGroup, HuntStage, HuntStart, Member, Outcome, Seq};
 use togi_machine::{Condition, Regime, workloads};
 
@@ -1456,6 +1457,53 @@ fn search_turns_keep_an_unfinished_second_regime_first_then_rotate_past_the_curs
     j.assert_resumes();
     decide_next(&mut j);
     assert_eq!(turns(&j), rotated);
+    j.assert_resumes();
+}
+
+#[test_case(0, false, &[0, 8, 1, 9], 0, Regime::R1; "initial alternating order")]
+#[test_case(1, false, &[0, 8, 1, 9], 0, Regime::R2; "current R2 priority")]
+#[test_case(2, false, &[8, 1, 9, 0], 8, Regime::R1; "completed turn rotates")]
+#[test_case(0, true, &[0, 8, 9], 0, Regime::R1; "skip checking core")]
+#[test_case(1, true, &[0, 8, 9], 0, Regime::R2; "R2 before other CCD")]
+#[test_case(2, true, &[8, 9, 0], 8, Regime::R1; "rotation skips checking core")]
+fn scheduler_and_projection_share_search_order(
+    completed: u8,
+    skip_one: bool,
+    expected: &[u8],
+    next_core: u8,
+    next_regime: Regime,
+) {
+    let mut starts = [Start::search(-20); 4];
+    if skip_one {
+        starts[1] = Start::has_room(-20);
+    }
+    let mut j = Journal::new(&[0, 1, 8, 9], &starts);
+    for _ in 0..completed {
+        let plan = j.next_trial();
+        j.trial(&plan, Outcome::Pass);
+    }
+    if completed == 2 {
+        decide_next(&mut j);
+    }
+    let turns = j.state.search_turns();
+    assert_eq!(
+        turns.iter().map(|turn| turn.core.get()).collect::<Vec<_>>(),
+        expected
+    );
+    let plan = j.next_trial();
+    assert_eq!(
+        (plan.load, plan.regime),
+        (Load::Single(core(next_core)), next_regime)
+    );
+    assert_eq!(turns[0].core, core(next_core));
+    assert_eq!(
+        turns[0].regimes,
+        if next_regime == Regime::R2 {
+            vec![Regime::R2]
+        } else {
+            vec![Regime::R1, Regime::R2]
+        }
+    );
     j.assert_resumes();
 }
 

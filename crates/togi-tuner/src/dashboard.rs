@@ -390,24 +390,8 @@ impl Run {
     }
 
     fn search_turns(&self) -> Vec<SearchTurn> {
-        let order = self.topo.order();
-        let cursor = self.search.cursor();
-        let current = cursor.and_then(|at| order.get(at).copied());
-        let second_only = |id: CoreId| {
-            self.searching(id)
-                .is_some_and(|core| core.phase.check().is_none())
-                && matches!(self.search.current(id, &self.evidence), (Some(_), None))
-        };
-        let mut ids: Vec<CoreId> = current.filter(|&id| second_only(id)).into_iter().collect();
-        let start = cursor.map_or(0, |at| at + 1);
-        for step in 0..order.len() {
-            let id = order[(start + step) % order.len()];
-            if self.searching(id).is_some() && !ids.contains(&id) {
-                ids.push(id);
-            }
-        }
-        ids.into_iter()
-            .map(|id| self.turn_view(id, second_only(id)))
+        self.search_order()
+            .map(|id| self.turn_view(id, self.search_second_only(id)))
             .collect()
     }
 

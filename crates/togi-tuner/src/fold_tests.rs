@@ -348,24 +348,31 @@ fn trial_intent(j: &Journal) -> (togi_journal::TrialIntent, TrialPlan) {
 #[test_case(None, &[0, 1], Load::Many(set(&[0, 1])); "multiple cores")]
 #[test_case(None, &[1], Load::Many(set(&[1])); "one core in a set")]
 #[test_case(Some(0), &[9], Load::Single(core(0)); "named core has precedence")]
+#[test_case(Some(0), &[0, 1], Load::Single(core(0)); "named core ignores nonempty set")]
 fn intent_load_decoding_preserves_the_recorded_shape(
     single: Option<u8>,
     many: &[u8],
     expected: Load,
 ) {
     let j = Journal::search_at(&[-10, -10]);
-    let (mut intent, _) = trial_intent(&j);
+    let (mut intent, mut plan) = trial_intent(&j);
     intent.core = single.map(core);
     intent.cores = set(many);
+    assert_eq!(Load::recorded(intent.core, intent.cores), expected);
     assert_eq!(
         Load::decode(&intent, &crate::tests::topology(&[0, 1])).unwrap(),
         expected
     );
+    plan.load = expected;
+    let canonical = plan.intent(intent.trial, 0);
+    assert!(canonical.core.is_none() || canonical.cores.is_empty());
+    assert_eq!(Load::recorded(canonical.core, canonical.cores), expected);
 }
 
 #[test_case(None, &[], None; "empty load")]
 #[test_case(Some(9), &[], Some(9); "foreign single core")]
 #[test_case(None, &[0, 9], Some(9); "foreign core in a set")]
+#[test_case(Some(9), &[0], Some(9); "foreign named core does not fall back to set")]
 fn intent_load_decoding_validates_single_and_multi_core_loads(
     single: Option<u8>,
     many: &[u8],

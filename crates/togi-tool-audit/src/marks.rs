@@ -33,11 +33,7 @@ struct Loaded {
 
 impl Loaded {
     fn of(intent: &TrialIntent) -> Self {
-        let cores = Load::recorded(
-            intent.core.filter(|_| intent.cores.is_empty()),
-            intent.cores,
-        )
-        .cores();
+        let cores = Load::recorded(intent.core, intent.cores).cores();
         Self {
             cores,
             regime: intent.regime,

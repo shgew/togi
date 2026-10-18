@@ -15,7 +15,7 @@ use togi_journal::{
 use togi_machine::{CoreId, CoreSet, PerCore, Regime, TargetOffset, WorkloadId};
 use togi_render::escape_text;
 use togi_requests::top;
-use togi_tuner::{PhaseNo, Requirement, State, TrialContext};
+use togi_tuner::{Load, PhaseNo, Requirement, State, TrialContext};
 
 use crate::evidence::event_at;
 use crate::project::{Class, Projection, core_list};
@@ -214,12 +214,8 @@ enum Key<'a> {
 /// A multi-core R7 failure as one of its events observes it.
 #[derive(Clone, Copy)]
 enum Source<'a> {
-    Trial(&'a TrialId, &'a TrialIntent),
+    Trial(&'a TrialId, &'a TrialIntent, CoreSet),
     Carried(&'a TrialCarried),
-}
-
-fn multi_core_r7(intent: &TrialIntent) -> bool {
-    intent.regime == Regime::R7 && intent.cores.len() > 1
 }
 
 struct Attribution<'a> {
@@ -240,11 +236,12 @@ impl<'a> Attribution<'a> {
     /// The multi-core R7 failure `event` observes, if any, whatever its outcome.
     fn source(&self, event: &'a Event) -> Option<Source<'a>> {
         let live = |trial: &'a TrialId| {
-            self.intents
-                .get(trial)
-                .copied()
-                .filter(|intent| multi_core_r7(intent))
-                .map(|intent| Source::Trial(trial, intent))
+            let intent = *self.intents.get(trial)?;
+            if intent.regime != Regime::R7 {
+                return None;
+            }
+            let cores = Load::recorded(intent.core, intent.cores).cores();
+            (cores.len() > 1).then_some(Source::Trial(trial, intent, cores))
         };
         if let Payload::Failure(f) = &event.payload {
             return f.trial.as_ref().and_then(live);
@@ -262,7 +259,7 @@ impl<'a> Attribution<'a> {
     /// The failure `source` observes at `event`, recorded there when this is its first event.
     fn failure(&mut self, source: Source<'a>, event: &'a Event, phase: Option<Phase>) -> usize {
         let key = match source {
-            Source::Trial(trial, _) => Key::Trial(trial),
+            Source::Trial(trial, _, _) => Key::Trial(trial),
             Source::Carried(_) => Key::Carried(event.seq),
         };
         if let Some(&at) = self.keys.get(&key) {
@@ -270,7 +267,7 @@ impl<'a> Attribution<'a> {
         }
         let hours = self.hours(event.time);
         let failure = match source {
-            Source::Trial(trial, intent) => R7Failure {
+            Source::Trial(trial, intent, cores) => R7Failure {
                 seq: event.seq,
                 time: event.time,
                 hours,
@@ -281,7 +278,7 @@ impl<'a> Attribution<'a> {
                     requirement: self.required.get(trial).copied(),
                 },
                 workload: Some(intent.workload),
-                cores: intent.cores,
+                cores,
                 duration_s: intent.duration_s,
                 rerun: intent.rerun,
                 backoffs: Vec::new(),
