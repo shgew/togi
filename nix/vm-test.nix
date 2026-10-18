@@ -299,13 +299,13 @@ in
 
       with subtest("three killed kmscon starts fall back to the Linux console"):
           for attempt in range(3):
-              pid = machine.succeed("systemctl show togi-kmscon.service -p MainPID --value").strip()
               machine.succeed("systemctl kill --kill-whom=main --signal=SIGKILL togi-kmscon.service")
               if attempt < 2:
                   machine.wait_until_succeeds(
-                      f"test $(systemctl show togi-kmscon.service -p MainPID --value) -ne 0 && "
-                      f"test $(systemctl show togi-kmscon.service -p MainPID --value) -ne {pid}"
+                      "systemctl is-active --quiet togi-kmscon.service && "
+                      f"test $(systemctl show togi-kmscon.service -p NRestarts --value) -eq {attempt + 1}"
                   )
+                  machine.fail("systemctl is-active --quiet togi-watch.service")
           machine.wait_until_succeeds(
               "test $(systemctl show togi-kmscon.service -p Result --value) = start-limit-hit"
           )
