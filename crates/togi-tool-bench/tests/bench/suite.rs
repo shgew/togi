@@ -26,136 +26,131 @@ fn plan(suite: &str, selection: Selection) -> Result<Vec<String>, Error> {
     plan_in(&dir, suite, selection)
 }
 
-#[test]
-fn an_invalid_suite_is_refused_with_the_reason() {
-    let cases = [
-        ("syntax", "[", "decode suite"),
-        ("unknown key", r#"{"extra":true}"#, "unknown field"),
-        (
+#[test_case::test_case(("syntax", "[", "decode suite"); "syntax")]
+#[test_case::test_case(("unknown key", r#"{"extra":true}"#, "unknown field"); "unknown key")]
+#[test_case::test_case((
             "unknown scenario key",
             r#"{"scenarios":[{"name":"x","dev":[1],"extra":1}]}"#,
             "unknown field",
-        ),
-        (
+        ); "unknown scenario key")]
+#[test_case::test_case((
             "positional suite",
             r#"[null,[{"name":"x","dev":[1]}]]"#,
             "decode suite",
-        ),
-        (
+        ); "positional suite")]
+#[test_case::test_case((
             "positional scenario",
             r#"{"scenarios":[["x"]]}"#,
             "decode suite",
-        ),
-        (
+        ); "positional scenario")]
+#[test_case::test_case((
             "empty name",
             r#"{"scenarios":[{"name":"","dev":[1]}]}"#,
             "invalid scenario name",
-        ),
-        (
+        ); "empty name")]
+#[test_case::test_case((
             "duplicate name",
             r#"{"scenarios":[{"name":"x","dev":[1]},{"name":"x","dev":[2]}]}"#,
             "duplicate scenario",
-        ),
-        (
+        ); "duplicate name")]
+#[test_case::test_case((
             "nested name",
             r#"{"scenarios":[{"name":"x/y","dev":[1]}]}"#,
             "invalid scenario name",
-        ),
-        (
+        ); "nested name")]
+#[test_case::test_case((
             "dot name",
             r#"{"scenarios":[{"name":".","dev":[1]}]}"#,
             "invalid scenario name",
-        ),
-        (
+        ); "dot name")]
+#[test_case::test_case((
             "parent name",
             r#"{"scenarios":[{"name":"..","dev":[1]}]}"#,
             "invalid scenario name",
-        ),
-        (
+        ); "parent name")]
+#[test_case::test_case((
             "conflicting machines",
             r#"{"scenarios":[{"name":"x","machine":"a.json","machines":["b.json"],"dev":[1]}]}"#,
             "mutually exclusive",
-        ),
-        (
+        ); "conflicting machines")]
+#[test_case::test_case((
             "an empty ensemble member",
             r#"{"scenarios":[{"name":"x","machines":[""],"dev":[1]}]}"#,
             "empty path",
-        ),
-        (
+        ); "an empty ensemble member")]
+#[test_case::test_case((
             "missing machine",
             r#"{"scenarios":[{"name":"x","machine":"missing.json","dev":[1]}]}"#,
             "load scenario x",
-        ),
-        (
+        ); "missing machine")]
+#[test_case::test_case((
             "replay without facts",
             r#"{"scenarios":[{"name":"x","machine":"a.json","replay":true,"dev":[1]}]}"#,
             "load scenario x",
-        ),
-        (
+        ); "replay without facts")]
+#[test_case::test_case((
             "replay without a machine",
             r#"{"scenarios":[{"name":"x","replay":true,"dev":[1]}]}"#,
             "replay needs a machine",
-        ),
-        (
+        ); "replay without a machine")]
+#[test_case::test_case((
             "repeated selected seed",
             r#"{"scenarios":[{"name":"x","dev":[1,1]}]}"#,
             "scenario x repeats seed 1",
-        ),
-        (
+        ); "repeated selected seed")]
+#[test_case::test_case((
             "repeated unselected seed",
             r#"{"scenarios":[{"name":"x","dev":[1],"holdout":[2,2]}]}"#,
             "scenario x repeats seed 2",
-        ),
-        (
+        ); "repeated unselected seed")]
+#[test_case::test_case((
             "overlapping splits",
             r#"{"scenarios":[{"name":"x","dev":[1],"holdout":[1]}]}"#,
             "scenario x repeats seed 1",
-        ),
-        (
+        ); "overlapping splits")]
+#[test_case::test_case((
             "smoke seed outside both splits",
             r#"{"scenarios":[{"name":"x","dev":[1],"smoke":[2]}]}"#,
             "smoke seed 2 is in neither dev nor holdout",
-        ),
-        (
+        ); "smoke seed outside both splits")]
+#[test_case::test_case((
             "no selected runs",
             r#"{"scenarios":[{"name":"x","holdout":[1]}]}"#,
             "suite has no selected runs",
-        ),
-    ];
-    for (name, suite, want) in cases {
-        let error = togi_machine::error_chain(&plan(suite, Selection::Dev).unwrap_err());
-        assert!(error.contains(want), "{name}: {error}");
-    }
+        ); "no selected runs")]
+fn an_invalid_suite_is_refused_with_the_reason(case: (&str, &str, &str)) {
+    let (name, suite, want) = case;
+
+    let error = togi_machine::error_chain(&plan(suite, Selection::Dev).unwrap_err());
+    assert!(error.contains(want), "{name}: {error}");
 }
 
-#[test]
-fn every_scenario_is_checked_whatever_the_selection() {
-    let cases = [
-        (
+#[test_case::test_case((
             "a holdout-only missing machine",
             r#"{"scenarios":[{"name":"x","dev":[1]},{"name":"y","machine":"missing.json","holdout":[1]}]}"#,
             "load scenario y",
-        ),
-        (
+        ); "a holdout-only missing machine")]
+#[test_case::test_case((
             "an ensemble member only holdout positions reach",
             r#"{"scenarios":[{"name":"x","machines":["a.json","missing.json"],"dev":[1],"holdout":[2]}]}"#,
             "load scenario x",
-        ),
-        (
+        ); "an ensemble member only holdout positions reach")]
+#[test_case::test_case((
             "a holdout-only replay without facts",
             r#"{"scenarios":[{"name":"x","dev":[1]},{"name":"y","machine":"a.json","replay":true,"holdout":[1]}]}"#,
             "load scenario y",
-        ),
-        (
+        ); "a holdout-only replay without facts")]
+#[test_case::test_case((
             "a holdout-only replay without a machine",
             r#"{"scenarios":[{"name":"x","dev":[1]},{"name":"y","replay":true,"holdout":[1]}]}"#,
             "replay needs a machine",
-        ),
-    ];
-    for (name, suite, want) in cases {
-        let error = togi_machine::error_chain(&plan(suite, Selection::Dev).unwrap_err());
-        assert!(error.contains(want), "{name}: {error}");
-    }
+        ); "a holdout-only replay without a machine")]
+fn every_scenario_is_checked_whatever_the_selection(case: (&str, &str, &str)) {
+    let (name, suite, want) = case;
+
+    let error = togi_machine::error_chain(&plan(suite, Selection::Dev).unwrap_err());
+    assert!(error.contains(want), "{name}: {error}");
+
     let parse = Suite::parse(
         br#"{"scenarios":[{"name":"y","replay":true,"dev":[1]}]}"#,
         PathBuf::new(),
@@ -259,8 +254,10 @@ fn a_machine_shared_by_runs_is_read_once() {
     );
 }
 
-#[test]
-fn the_registered_gates_notes_are_the_suites_notes() {
+#[test_case::test_case(r#"{"scenarios":[{"name":"x","dev":[1]}]}"#; "r scenarios name x dev 1")]
+#[test_case::test_case(r#"{"gate":{"id":"g"},"scenarios":[{"name":"x","dev":[1]}]}"#; "r gate id g scenarios name x dev 1")]
+fn the_registered_gates_notes_are_the_suites_notes(case: &str) {
+    let text = case;
     let dir = Tree::new();
     let with = Suite::parse(
         br#"{"gate":{"id":"g","notes":["first","second"]},"scenarios":[{"name":"x","dev":[1]}]}"#,
@@ -268,13 +265,9 @@ fn the_registered_gates_notes_are_the_suites_notes() {
     )
     .unwrap();
     assert_eq!(with.notes(), ["first", "second"]);
-    for text in [
-        r#"{"scenarios":[{"name":"x","dev":[1]}]}"#,
-        r#"{"gate":{"id":"g"},"scenarios":[{"name":"x","dev":[1]}]}"#,
-    ] {
-        let without = Suite::parse(text.as_bytes(), dir.path().to_path_buf()).unwrap();
-        assert!(without.notes().is_empty());
-    }
+
+    let without = Suite::parse(text.as_bytes(), dir.path().to_path_buf()).unwrap();
+    assert!(without.notes().is_empty());
 }
 
 #[test]
@@ -567,17 +560,25 @@ fn leaves_of(name: &str) -> BTreeMap<String, serde_json::Value> {
     out
 }
 
-#[test]
-fn the_anchor_overlays_differ_from_the_anchor_only_by_their_mechanism() {
+#[derive(Clone, Copy)]
+enum OverlayMechanism {
+    VfBoost,
+    RequestGap,
+}
+
+#[test_case::test_case(OverlayMechanism::VfBoost; "VfBoost")]
+#[test_case::test_case(OverlayMechanism::RequestGap; "RequestGap")]
+fn the_anchor_overlays_differ_from_the_anchor_only_by_their_mechanism(scenario: OverlayMechanism) {
     const AVX2: &str = "/shared_voltage/workload/mprime-avx2-36k-248k-allcore/core";
     const AVX512: &str = "/shared_voltage/workload/mprime-avx512-36k-248k-allcore/core";
     let anchor = leaves_of("target-shared-voltage.json");
-    let cases: [(&str, Vec<(String, f64)>); 2] = [
-        (
+
+    let (name, edits) = match scenario {
+        OverlayMechanism::VfBoost => (
             "target-r7-vf-boost.json",
             vec![(format!("{AVX2}/5/threshold_clock_v_per_100mhz"), 0.06)],
         ),
-        (
+        OverlayMechanism::RequestGap => (
             "target-r7-request-gap.json",
             [(9, 1.18), (10, 1.22), (11, 1.18)]
                 .into_iter()
@@ -592,33 +593,32 @@ fn the_anchor_overlays_differ_from_the_anchor_only_by_their_mechanism() {
                 })
                 .collect(),
         ),
-    ];
-    for (name, edits) in cases {
-        let overlay = leaves_of(name);
-        let mut expected = anchor.clone();
-        for (path, value) in &edits {
-            expected.insert(path.clone(), serde_json::json!(value));
-        }
-        let metadata = |path: &str| path == "/description" || path.starts_with("/notes/");
-        expected.retain(|path, _| !metadata(path));
-        let overlay_body: BTreeMap<_, _> = overlay
-            .into_iter()
-            .filter(|(path, _)| !metadata(path))
-            .collect();
-        assert_eq!(
-            overlay_body, expected,
-            "{name} is the anchor plus its mechanism"
-        );
-        assert_ne!(
-            overlay_body,
-            anchor
-                .iter()
-                .filter(|(p, _)| !metadata(p))
-                .map(|(p, v)| (p.clone(), v.clone()))
-                .collect(),
-            "{name}"
-        );
+    };
+
+    let overlay = leaves_of(name);
+    let mut expected = anchor.clone();
+    for (path, value) in &edits {
+        expected.insert(path.clone(), serde_json::json!(value));
     }
+    let metadata = |path: &str| path == "/description" || path.starts_with("/notes/");
+    expected.retain(|path, _| !metadata(path));
+    let overlay_body: BTreeMap<_, _> = overlay
+        .into_iter()
+        .filter(|(path, _)| !metadata(path))
+        .collect();
+    assert_eq!(
+        overlay_body, expected,
+        "{name} is the anchor plus its mechanism"
+    );
+    assert_ne!(
+        overlay_body,
+        anchor
+            .iter()
+            .filter(|(p, _)| !metadata(p))
+            .map(|(p, v)| (p.clone(), v.clone()))
+            .collect(),
+        "{name}"
+    );
 }
 
 #[test]
@@ -679,15 +679,13 @@ fn the_896_research_suite_runs_unreplayed_dev_seeds_from_201_on_committed_machin
     }
 }
 
-#[test]
-fn real_fs_deleted_scenario_files_are_absent_from_the_committed_tree() {
-    for deleted in [
-        "target-r4-limit",
-        "target-delayed-joint",
-        "target-flat-risk",
-        "target-flat-cost",
-    ] {
-        let file = bench_dir().join("machines").join(format!("{deleted}.json"));
-        assert!(!file.exists(), "{} is back", file.display());
-    }
+#[test_case::test_case("target-r4-limit"; "target r4 limit")]
+#[test_case::test_case("target-delayed-joint"; "target delayed joint")]
+#[test_case::test_case("target-flat-risk"; "target flat risk")]
+#[test_case::test_case("target-flat-cost"; "target flat cost")]
+fn real_fs_deleted_scenario_files_are_absent_from_the_committed_tree(case: &str) {
+    let deleted = case;
+
+    let file = bench_dir().join("machines").join(format!("{deleted}.json"));
+    assert!(!file.exists(), "{} is back", file.display());
 }

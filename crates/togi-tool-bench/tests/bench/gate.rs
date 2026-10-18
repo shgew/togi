@@ -142,29 +142,26 @@ fn text(gate: &Resolved, verdict: &Verdict) -> String {
     String::from_utf8(out).unwrap()
 }
 
-#[test]
-fn a_quantile_fails_only_when_its_interval_lies_above_zero() {
-    let gate = test_gate();
-    let cases: [(&str, Shift, bool, bool); 4] = [
-        ("unchanged", none, true, false),
-        (
+#[test_case::test_case(("unchanged", none, true, false); "unchanged")]
+#[test_case::test_case((
             "noise crossing zero",
             |i| if i % 2 == 0 { 1.0 } else { -1.0 },
             true,
             false,
-        ),
-        ("every seed worse", |_| 1.0, false, true),
-        ("every seed better", |_| -1.0, true, false),
-    ];
-    for (name, shift, pass, above) in cases {
-        let (candidate, baseline) = gate_runs(shift, same_hours);
-        let criteria = scored(gate.judge(&candidate, &baseline));
-        for kind in ["median", "p90"] {
-            let c = find(&criteria, kind, SCENARIO);
-            let (_, _, lo, hi) = quantile(&c);
-            assert_eq!(c.pass, pass, "{name} {kind}: interval [{lo}, {hi}]");
-            assert_eq!(lo > 0.0, above, "{name} {kind}: interval [{lo}, {hi}]");
-        }
+        ); "noise crossing zero")]
+#[test_case::test_case(("every seed worse", |_| 1.0, false, true); "every seed worse")]
+#[test_case::test_case(("every seed better", |_| -1.0, true, false); "every seed better")]
+fn a_quantile_fails_only_when_its_interval_lies_above_zero(case: (&str, Shift, bool, bool)) {
+    let (name, shift, pass, above) = case;
+    let gate = test_gate();
+
+    let (candidate, baseline) = gate_runs(shift, same_hours);
+    let criteria = scored(gate.judge(&candidate, &baseline));
+    for kind in ["median", "p90"] {
+        let c = find(&criteria, kind, SCENARIO);
+        let (_, _, lo, hi) = quantile(&c);
+        assert_eq!(c.pass, pass, "{name} {kind}: interval [{lo}, {hi}]");
+        assert_eq!(lo > 0.0, above, "{name} {kind}: interval [{lo}, {hi}]");
     }
 }
 
@@ -177,89 +174,84 @@ fn the_change_is_the_difference_of_quantiles_not_their_pairwise_quantile() {
     assert!((base - 12.5).abs() < 1e-12 && (cand - 12.5).abs() < 1e-12);
 }
 
-#[test]
-fn the_pooled_median_must_fall_strictly() {
+#[test_case::test_case(("equal", 0.0, false); "equal")]
+#[test_case::test_case(("higher", 1.0, false); "higher")]
+#[test_case::test_case(("lower", -1.0, true); "lower")]
+fn the_pooled_median_must_fall_strictly(case: (&str, f64, bool)) {
+    let (name, shift, pass) = case;
     let gate = test_gate();
-    for (name, shift, pass) in [
-        ("equal", 0.0, false),
-        ("higher", 1.0, false),
-        ("lower", -1.0, true),
-    ] {
-        let (candidate, baseline) = gate_runs(|_| shift, same_hours);
-        let criteria = scored(gate.judge(&candidate, &baseline));
-        assert_eq!(
-            find(&criteria, "pooled_median", SCENARIO).pass,
-            pass,
-            "{name}"
-        );
-    }
+
+    let (candidate, baseline) = gate_runs(|_| shift, same_hours);
+    let criteria = scored(gate.judge(&candidate, &baseline));
+    assert_eq!(
+        find(&criteria, "pooled_median", SCENARIO).pass,
+        pass,
+        "{name}"
+    );
 }
 
-#[test]
-fn a_lost_conclusion_fails_and_a_baseline_without_one_cannot_lose_it() {
-    let gate = test_gate();
-    let cases = [
-        (
+#[test_case::test_case((
             "lost seed",
             SCENARIO,
             3,
             Status::DeadEnd,
             Status::Concluded,
             false,
-        ),
-        (
+        ); "lost seed")]
+#[test_case::test_case((
             "lost hand-set seed",
             "hand",
             25,
             Status::Censored,
             Status::Concluded,
             false,
-        ),
-        (
+        ); "lost hand-set seed")]
+#[test_case::test_case((
             "baseline never concluded",
             SCENARIO,
             3,
             Status::DeadEnd,
             Status::DeadEnd,
             true,
-        ),
-        (
+        ); "baseline never concluded")]
+#[test_case::test_case((
             "newly concluded",
             SCENARIO,
             3,
             Status::Concluded,
             Status::DeadEnd,
             true,
-        ),
-    ];
-    for (name, scenario, index, candidate_status, baseline_status, pass) in cases {
-        let (mut candidate, mut baseline) = gate_runs(none, same_hours);
-        candidate[index].status = candidate_status;
-        baseline[index].status = baseline_status;
-        let criteria = scored(gate.judge(&candidate, &baseline));
-        let c = find(&criteria, "conclusion", scenario);
-        assert_eq!(c.pass, pass, "{name}: {c:?}");
-        if !pass {
-            let Measure::Conclusion { lost, .. } = c.measure else {
-                panic!("not a conclusion");
-            };
-            assert_eq!(lost, [candidate[index].seed], "{name}");
-        }
+        ); "newly concluded")]
+fn a_lost_conclusion_fails_and_a_baseline_without_one_cannot_lose_it(
+    case: (&str, &str, usize, Status, Status, bool),
+) {
+    let (name, scenario, index, candidate_status, baseline_status, pass) = case;
+    let gate = test_gate();
+
+    let (mut candidate, mut baseline) = gate_runs(none, same_hours);
+    candidate[index].status = candidate_status;
+    baseline[index].status = baseline_status;
+    let criteria = scored(gate.judge(&candidate, &baseline));
+    let c = find(&criteria, "conclusion", scenario);
+    assert_eq!(c.pass, pass, "{name}: {c:?}");
+    if !pass {
+        let Measure::Conclusion { lost, .. } = c.measure else {
+            panic!("not a conclusion");
+        };
+        assert_eq!(lost, [candidate[index].seed], "{name}");
     }
 }
 
-#[test]
-fn the_time_ratio_may_equal_but_not_exceed_its_bound() {
+#[test_case::test_case(("exactly twice", 20.0, true); "exactly twice")]
+#[test_case::test_case(("above twice", 20.0001, false); "above twice")]
+#[test_case::test_case(("faster", 5.0, true); "faster")]
+fn the_time_ratio_may_equal_but_not_exceed_its_bound(case: (&str, f64, bool)) {
+    let (name, hours, pass) = case;
     let gate = test_gate();
-    for (name, hours, pass) in [
-        ("exactly twice", 20.0, true),
-        ("above twice", 20.0001, false),
-        ("faster", 5.0, true),
-    ] {
-        let (candidate, baseline) = gate_runs(none, |_| (hours, 10.0));
-        let criteria = scored(gate.judge(&candidate, &baseline));
-        assert_eq!(find(&criteria, "time", SCENARIO).pass, pass, "{name}");
-    }
+
+    let (candidate, baseline) = gate_runs(none, |_| (hours, 10.0));
+    let criteria = scored(gate.judge(&candidate, &baseline));
+    assert_eq!(find(&criteria, "time", SCENARIO).pass, pass, "{name}");
 }
 
 #[test]
@@ -299,46 +291,43 @@ fn a_pair_that_did_not_conclude_on_both_sides_has_no_time_ratio() {
     );
 }
 
-#[test]
-fn the_gate_refuses_what_it_cannot_judge_and_scores_nothing() {
-    let gate = test_gate();
-    let cases: [(&str, Mutate, &str); 5] = [
-        (
+#[test_case::test_case((
             "candidate seed missing",
             |c, _| drop(c.remove(0)),
             "incomplete pairing: adv seed 1 has no candidate run",
-        ),
-        (
+        ); "candidate seed missing")]
+#[test_case::test_case((
             "baseline seed missing",
             |_, b| drop(b.remove(0)),
             "incomplete pairing: adv seed 1 has no baseline run",
-        ),
-        (
+        ); "baseline seed missing")]
+#[test_case::test_case((
             "hand-set seed missing",
             |c, _| drop(c.pop()),
             "incomplete pairing: hand seed 2",
-        ),
-        (
+        ); "hand-set seed missing")]
+#[test_case::test_case((
             "other baseline",
             |_, b| b[0].commit = "def".into(),
             "not ruleset 10 at abc",
-        ),
-        (
+        ); "other baseline")]
+#[test_case::test_case((
             "metric missing",
             |c, _| c[0].worst_r7_hazard_per_h = None,
             "adv seed 1 lacks worst_r7_hazard_per_h",
-        ),
-    ];
-    for (name, mutate, want) in cases {
-        let (mut candidate, mut baseline) = gate_runs(none, same_hours);
-        mutate(&mut candidate, &mut baseline);
-        let verdict = gate.judge(&candidate, &baseline);
-        let Verdict::Refused(reason) = &verdict else {
-            panic!("{name}: judged {verdict:?}");
-        };
-        assert!(reason.contains(want), "{name}: {reason}");
-        assert!(!verdict.pass(), "{name}");
-    }
+        ); "metric missing")]
+fn the_gate_refuses_what_it_cannot_judge_and_scores_nothing(case: (&str, Mutate, &str)) {
+    let (name, mutate, want) = case;
+    let gate = test_gate();
+
+    let (mut candidate, mut baseline) = gate_runs(none, same_hours);
+    mutate(&mut candidate, &mut baseline);
+    let verdict = gate.judge(&candidate, &baseline);
+    let Verdict::Refused(reason) = &verdict else {
+        panic!("{name}: judged {verdict:?}");
+    };
+    assert!(reason.contains(want), "{name}: {reason}");
+    assert!(!verdict.pass(), "{name}");
 }
 
 #[test]
@@ -356,26 +345,24 @@ fn a_missing_run_on_both_sides_is_named_as_both() {
     );
 }
 
-#[test]
-fn the_verdict_passes_only_when_every_criterion_does() {
-    let gate = test_gate();
-    for (name, shift, drop, pass, last) in [
-        ("pass", -1.0, 0, true, "gate test: PASS 6 criteria"),
-        ("fail", 1.0, 0, false, "gate test: FAIL 3 of 6 criteria"),
-        (
+#[test_case::test_case(("pass", -1.0, 0, true, "gate test: PASS 6 criteria"); "pass")]
+#[test_case::test_case(("fail", 1.0, 0, false, "gate test: FAIL 3 of 6 criteria"); "fail")]
+#[test_case::test_case((
             "refused",
             -1.0,
             1,
             false,
             "gate test: FAIL refused: incomplete pairing",
-        ),
-    ] {
-        let (candidate, baseline) = gate_runs(|_| shift, same_hours);
-        let verdict = gate.judge(&candidate[drop..], &baseline);
-        assert_eq!(verdict.pass(), pass, "{name}");
-        let report = text(&gate, &verdict);
-        assert!(report.contains(last), "{name}: {report}");
-    }
+        ); "refused")]
+fn the_verdict_passes_only_when_every_criterion_does(case: (&str, f64, usize, bool, &str)) {
+    let (name, shift, drop, pass, last) = case;
+    let gate = test_gate();
+
+    let (candidate, baseline) = gate_runs(|_| shift, same_hours);
+    let verdict = gate.judge(&candidate[drop..], &baseline);
+    assert_eq!(verdict.pass(), pass, "{name}");
+    let report = text(&gate, &verdict);
+    assert!(report.contains(last), "{name}: {report}");
 }
 
 #[test]
@@ -457,55 +444,43 @@ fn a_single_pair_has_a_point_interval_and_no_pairs_a_zero_one() {
     assert_eq!((none.lo, none.hi), (0.0, 0.0));
 }
 
-#[test]
-fn the_reports_of_a_passing_failing_and_refused_gate() {
+#[test_case::test_case((|_| -1.0, 0, Status::Concluded, include_str!("snapshots/gate__passing_report.snap")); "pass")]
+#[test_case::test_case((|i| num(i % 2) + 1.0, 0, Status::DeadEnd, include_str!("snapshots/gate__failing_report.snap")); "fail")]
+#[test_case::test_case((none, 1, Status::Concluded, include_str!("snapshots/gate__refused_report.snap")); "refused")]
+fn the_reports_of_a_passing_failing_and_refused_gate(
+    case: (fn(usize) -> f64, usize, Status, &str),
+) {
+    let (shift, drop, status, snapshot) = case;
     let gate = test_gate();
-    let mut out = String::new();
-    for (name, shift, drop) in [
-        ("pass", (|_| -1.0) as fn(usize) -> f64, 0),
-        ("fail", |i| num(i % 2) + 1.0, 0),
-        ("refused", none, 1),
-    ] {
-        let (mut candidate, baseline) = gate_runs(shift, same_hours);
-        candidate[5].status = if name == "fail" {
-            Status::DeadEnd
-        } else {
-            Status::Concluded
-        };
-        out += &text(&gate, &gate.judge(&candidate[drop..], &baseline));
-        out.push('\n');
-    }
-    common::assert_snapshot(
-        &out,
-        include_str!("snapshots/gate__the_reports_of_a_passing_failing_and_refused_gate.snap"),
-    );
+    let (mut candidate, baseline) = gate_runs(shift, same_hours);
+    candidate[5].status = status;
+    let out = text(&gate, &gate.judge(&candidate[drop..], &baseline));
+    common::assert_snapshot(&out, snapshot);
 }
 
-#[test]
-fn a_baseline_file_is_judged_exactly_as_the_full_records_are() {
+#[test_case::test_case(("pass", (|_| -1.0) as fn(usize) -> f64); "pass")]
+#[test_case::test_case(("fail", |i| num(i % 2) + 1.0); "fail")]
+fn a_baseline_file_is_judged_exactly_as_the_full_records_are(case: (&str, fn(usize) -> f64)) {
+    let (name, shift) = case;
     let gate = test_gate();
-    for (name, shift) in [
-        ("pass", (|_| -1.0) as fn(usize) -> f64),
-        ("fail", |i| num(i % 2) + 1.0),
-    ] {
-        let (candidate, mut full) = gate_runs(shift, same_hours);
-        for run in &mut full {
-            run.wall_s = Some(42.0);
-            run.model_check = Some(togi_tool_bench::ModelCheck {
-                eligible_groups: 2,
-                flagged_groups: 1,
-                idle_failures: 0,
-            });
-        }
-        let slim: Vec<Record> = full.iter().map(Record::baseline).collect();
-        let against_full = text(&gate, &gate.judge(&candidate, &full));
-        let against_slim = text(&gate, &gate.judge(&candidate, &slim));
-        assert!(
-            against_full.contains("gate test: "),
-            "{name}: {against_full}"
-        );
-        assert_eq!(against_slim, against_full, "{name}");
+
+    let (candidate, mut full) = gate_runs(shift, same_hours);
+    for run in &mut full {
+        run.wall_s = Some(42.0);
+        run.model_check = Some(togi_tool_bench::ModelCheck {
+            eligible_groups: 2,
+            flagged_groups: 1,
+            idle_failures: 0,
+        });
     }
+    let slim: Vec<Record> = full.iter().map(Record::baseline).collect();
+    let against_full = text(&gate, &gate.judge(&candidate, &full));
+    let against_slim = text(&gate, &gate.judge(&candidate, &slim));
+    assert!(
+        against_full.contains("gate test: "),
+        "{name}: {against_full}"
+    );
+    assert_eq!(against_slim, against_full, "{name}");
 }
 
 #[test]
@@ -554,153 +529,149 @@ fn a_suite_without_a_gate_registers_none() {
     assert!(gate::load(&suite).unwrap().is_none());
 }
 
-#[test]
-fn an_invalid_gate_is_refused_with_its_reason() {
-    type Edit = fn(&mut Value);
-    let cases: Vec<(&str, Edit, &str)> = vec![
-        (
+#[test_case::test_case((
             "unknown gate key",
             |g| g["extra"] = json!(1),
             "unknown field `extra`",
-        ),
-        (
+        ); "unknown gate key")]
+#[test_case::test_case((
             "unknown baseline key",
             |g| g["baseline"]["extra"] = json!(1),
             "unknown field `extra`",
-        ),
-        (
+        ); "unknown baseline key")]
+#[test_case::test_case((
             "unknown scenario",
             |g| {
                 g["gated"] = json!(["nope"]);
                 g["pooled"] = json!(["nope"]);
             },
             "unknown scenario \"nope\"",
-        ),
-        (
+        ); "unknown scenario")]
+#[test_case::test_case((
             "unknown concluded scenario",
             |g| g["conclude"] = json!(["nope"]),
             "unknown scenario \"nope\"",
-        ),
-        (
+        ); "unknown concluded scenario")]
+#[test_case::test_case((
             "pooled but not gated",
             |g| g["pooled"] = json!(["hand"]),
             "pooled scenario \"hand\" is not gated",
-        ),
-        (
+        ); "pooled but not gated")]
+#[test_case::test_case((
             "quantile of one",
             |g| g["quantiles"] = json!([1]),
             "quantile 1 outside",
-        ),
-        (
+        ); "quantile of one")]
+#[test_case::test_case((
             "quantile of zero",
             |g| g["quantiles"] = json!([0]),
             "quantile 0 outside",
-        ),
-        (
+        ); "quantile of zero")]
+#[test_case::test_case((
             "no quantiles",
             |g| g["quantiles"] = json!([]),
             "needs gated scenarios and quantiles",
-        ),
-        (
+        ); "no quantiles")]
+#[test_case::test_case((
             "no gated",
             |g| g["gated"] = json!([]),
             "needs gated scenarios and quantiles",
-        ),
-        (
+        ); "no gated")]
+#[test_case::test_case((
             "zero confidence",
             |g| g["confidence"] = json!(0.0),
             "needs confidence in (0, 1)",
-        ),
-        (
+        ); "zero confidence")]
+#[test_case::test_case((
             "unit confidence",
             |g| g["confidence"] = json!(1.0),
             "needs confidence in (0, 1)",
-        ),
-        (
+        ); "unit confidence")]
+#[test_case::test_case((
             "zero resamples",
             |g| g["resamples"] = json!(0),
             "resamples from 1 to",
-        ),
-        (
+        ); "zero resamples")]
+#[test_case::test_case((
             "too many resamples",
             |g| g["resamples"] = json!(10_000_001),
             "resamples from 1 to",
-        ),
-        (
+        ); "too many resamples")]
+#[test_case::test_case((
             "negative resamples",
             |g| g["resamples"] = json!(-1),
             "invalid value",
-        ),
-        (
+        ); "negative resamples")]
+#[test_case::test_case((
             "zero time ratio",
             |g| g["max_time_ratio"] = json!(0.0),
             "positive max_time_ratio",
-        ),
-        (
+        ); "zero time ratio")]
+#[test_case::test_case((
             "baseline as an array",
             |g| g["baseline"] = json!([10, ["abc"]]),
             "expected an object",
-        ),
-        (
+        ); "baseline as an array")]
+#[test_case::test_case((
             "repeated pooled",
             |g| g["pooled"] = json!([SCENARIO, SCENARIO]),
             "pooled scenario \"adv\" is listed twice",
-        ),
-        (
+        ); "repeated pooled")]
+#[test_case::test_case((
             "repeated concluded",
             |g| g["conclude"] = json!(["hand", "hand"]),
             "concluded scenario \"hand\" is listed twice",
-        ),
-        (
+        ); "repeated concluded")]
+#[test_case::test_case((
             "bad split",
             |g| g["split"] = json!("x"),
             "unknown variant `x`",
-        ),
-        (
+        ); "bad split")]
+#[test_case::test_case((
             "no baseline commits",
             |g| g["baseline"]["commits"] = json!([]),
             "needs an id and a baseline",
-        ),
-        (
+        ); "no baseline commits")]
+#[test_case::test_case((
             "empty commit",
             |g| g["baseline"]["commits"] = json!([""]),
             "needs an id and a baseline",
-        ),
-        (
+        ); "empty commit")]
+#[test_case::test_case((
             "no baseline ruleset",
             |g| g["baseline"]["ruleset"] = json!(0),
             "needs an id and a baseline",
-        ),
-        (
+        ); "no baseline ruleset")]
+#[test_case::test_case((
             "no id",
             |g| g["id"] = json!(""),
             "needs an id and a baseline",
-        ),
-        (
+        ); "no id")]
+#[test_case::test_case((
             "missing field",
             |g| drop(g.as_object_mut().unwrap().remove("max_time_ratio")),
             "missing field `max_time_ratio`",
-        ),
-        (
+        ); "missing field")]
+#[test_case::test_case((
             "repeated gated",
             |g| g["gated"] = json!([SCENARIO, SCENARIO]),
             "gated scenario \"adv\" is listed twice",
-        ),
-        (
+        ); "repeated gated")]
+#[test_case::test_case((
             "repeated quantile",
             |g| g["quantiles"] = json!([0.9, 0.9]),
             "quantile \"p90\" is listed twice",
-        ),
-        (
+        ); "repeated quantile")]
+#[test_case::test_case((
             "gated and concluded",
             |g| g["conclude"] = json!([SCENARIO]),
             "both gated and concluded",
-        ),
-    ];
-    for (name, edit, want) in cases {
-        let error = gate_error(edit);
-        assert!(error.contains(want), "{name}: {error}");
-    }
+        ); "gated and concluded")]
+fn an_invalid_gate_is_refused_with_its_reason(case: (&str, fn(&mut Value), &str)) {
+    let (name, edit, want) = case;
+
+    let error = gate_error(edit);
+    assert!(error.contains(want), "{name}: {error}");
 }
 
 #[test]
@@ -842,17 +813,19 @@ fn the_committed_baseline_covers_every_run_of_the_suite() {
     }
 }
 
-#[test]
-fn the_header_names_the_split_the_gate_is_judged_on() {
-    for split in ["dev", "holdout", "all"] {
-        let mut object = gate_object();
-        object["split"] = json!(split);
-        object["conclude"] = json!([]);
-        let gate = resolved(&object);
-        let report = text(&gate, &Verdict::Refused("x".to_owned()));
-        assert!(
-            report.contains(&format!("at abc on every {split} seed;")),
-            "{report}"
-        );
-    }
+#[test_case::test_case("dev"; "dev")]
+#[test_case::test_case("holdout"; "holdout")]
+#[test_case::test_case("all"; "all")]
+fn the_header_names_the_split_the_gate_is_judged_on(case: &str) {
+    let split = case;
+
+    let mut object = gate_object();
+    object["split"] = json!(split);
+    object["conclude"] = json!([]);
+    let gate = resolved(&object);
+    let report = text(&gate, &Verdict::Refused("x".to_owned()));
+    assert!(
+        report.contains(&format!("at abc on every {split} seed;")),
+        "{report}"
+    );
 }

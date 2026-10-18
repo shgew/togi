@@ -56,8 +56,29 @@ fn shared_voltage() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/bench/machines/shared-voltage.json")
 }
 
-#[test]
-fn real_process_a_registered_gate_judges_the_run_against_the_baseline_and_sets_the_exit() {
+#[derive(Clone, Copy)]
+enum GateOutcome {
+    Pass,
+    EqualPooled,
+    TooSlow,
+    MissingSeed,
+    WrongRuleset,
+    WrongCommit,
+    NoGateNeutral,
+    NoGateReject,
+}
+
+#[test_case::test_case(GateOutcome::Pass; "Pass")]
+#[test_case::test_case(GateOutcome::EqualPooled; "EqualPooled")]
+#[test_case::test_case(GateOutcome::TooSlow; "TooSlow")]
+#[test_case::test_case(GateOutcome::MissingSeed; "MissingSeed")]
+#[test_case::test_case(GateOutcome::WrongRuleset; "WrongRuleset")]
+#[test_case::test_case(GateOutcome::WrongCommit; "WrongCommit")]
+#[test_case::test_case(GateOutcome::NoGateNeutral; "NoGateNeutral")]
+#[test_case::test_case(GateOutcome::NoGateReject; "NoGateReject")]
+fn real_process_a_registered_gate_judges_the_run_against_the_baseline_and_sets_the_exit(
+    scenario: GateOutcome,
+) {
     let bench = Bench::new();
     let machine = shared_voltage();
     let definition = file::load(&machine).unwrap();
@@ -130,7 +151,7 @@ fn real_process_a_registered_gate_judges_the_run_against_the_baseline_and_sets_t
     let pass_criteria = criteria(&passing, on_time, "PASS");
     let equal_criteria = criteria(&original, on_time, "FAIL");
     let mut slow_criteria = criteria(&slow, on_time, "PASS");
-    slow_criteria[3] = "gate time tiny ratio=3.0000 timed=1 threshold=ratio<=2 FAIL".to_owned();
+    "gate time tiny ratio=3.0000 timed=1 threshold=ratio<=2 FAIL".clone_into(&mut slow_criteria[3]);
     let header = format!(
         "gate cli-integration: judged against ruleset {} at {} on every dev seed; quantiles of worst_r7_hazard_per_h fail only when the 95% interval of candidate minus baseline (10000 paired resamples, seed 1) lies above 0; time is the geometric mean ratio over pairs both concluded.",
         original.ruleset, original.commit
@@ -142,71 +163,70 @@ fn real_process_a_registered_gate_judges_the_run_against_the_baseline_and_sets_t
         )
     };
 
-    let cases = [
-        Case { name: "pass", baseline: vec![passing.clone()], gated: true, exit: 0, generic: "NEUTRAL", criteria: pass_criteria, result: "gate cli-integration: PASS 5 criteria".into() },
-        Case { name: "equality fails the pooled improvement", baseline: vec![original.clone()], gated: true, exit: 1, generic: "NEUTRAL", criteria: equal_criteria, result: "gate cli-integration: FAIL 1 of 5 criteria".into() },
-        Case { name: "time fails", baseline: vec![slow.clone()], gated: true, exit: 1, generic: "REJECT", criteria: slow_criteria, result: "gate cli-integration: FAIL 1 of 5 criteria".into() },
-        Case { name: "missing required seed refused", baseline: vec![], gated: true, exit: 1, generic: "NEUTRAL", criteria: vec![], result: "gate cli-integration: FAIL refused: incomplete pairing: tiny seed 1 has no baseline run; the gate needs every dev seed of its scenarios".into() },
-        Case { name: "wrong ruleset refused", baseline: vec![wrong_ruleset.clone()], gated: true, exit: 1, generic: "NEUTRAL", criteria: vec![], result: refused(&wrong_ruleset) },
-        Case { name: "wrong commit refused", baseline: vec![wrong_commit.clone()], gated: true, exit: 1, generic: "NEUTRAL", criteria: vec![], result: refused(&wrong_commit) },
-        Case { name: "no gate neutral", baseline: vec![original.clone()], gated: false, exit: 0, generic: "NEUTRAL", criteria: vec![], result: String::new() },
-        Case { name: "no gate reject remains diagnostic", baseline: vec![slow.clone()], gated: false, exit: 0, generic: "REJECT", criteria: vec![], result: String::new() },
-    ];
-    for case in cases {
-        let baseline = bench.path("baseline.jsonl");
-        write_records(&baseline, &case.baseline).unwrap();
-        let out = bench.path("candidate.jsonl");
-        let suite = if case.gated { &gated } else { &plain };
-        let invoked = invoke(&bench, suite, Some(&baseline), &out);
-        let name = case.name;
-        let stdout = &invoked.stdout;
-        assert_eq!(
-            invoked.code, case.exit,
-            "{name}\n{stdout}\n{}",
-            invoked.stderr
-        );
-        let want_err = if case.exit == 0 {
-            ""
-        } else {
-            "togi-tool-bench: gate failed\n"
-        };
-        assert_eq!(invoked.stderr, want_err, "{name}\n{stdout}");
-        let candidate = read_records(&out, "records").unwrap();
-        assert_eq!(candidate.len(), 1, "{name}");
-        assert_eq!(candidate[0].worst_r7_hazard_per_h, Some(hazard), "{name}");
-        let comparison = stdout
-            .find("\ncomparison:")
-            .unwrap_or_else(|| panic!("{name}: no comparison\n{stdout}"));
-        let generic = stdout
-            .find(&format!("\nverdict: {} ", case.generic))
-            .unwrap_or_else(|| panic!("{name}: no {} verdict\n{stdout}", case.generic));
-        assert!(generic > comparison, "{name}\n{stdout}");
-        if !case.gated {
-            assert!(
-                !stdout.contains("\ngate "),
-                "{name}: a suite without a gate printed one\n{stdout}"
-            );
-            continue;
-        }
-        let registered = stdout
-            .find(&format!("\n{header}\n"))
-            .unwrap_or_else(|| panic!("{name}: no header\n{stdout}"));
+    let case = match scenario {
+GateOutcome::Pass => Case { name: "pass", baseline: vec![passing.clone()], gated: true, exit: 0, generic: "NEUTRAL", criteria: pass_criteria, result: "gate cli-integration: PASS 5 criteria".into() },
+GateOutcome::EqualPooled => Case { name: "equality fails the pooled improvement", baseline: vec![original.clone()], gated: true, exit: 1, generic: "NEUTRAL", criteria: equal_criteria, result: "gate cli-integration: FAIL 1 of 5 criteria".into() },
+GateOutcome::TooSlow => Case { name: "time fails", baseline: vec![slow.clone()], gated: true, exit: 1, generic: "REJECT", criteria: slow_criteria, result: "gate cli-integration: FAIL 1 of 5 criteria".into() },
+GateOutcome::MissingSeed => Case { name: "missing required seed refused", baseline: vec![], gated: true, exit: 1, generic: "NEUTRAL", criteria: vec![], result: "gate cli-integration: FAIL refused: incomplete pairing: tiny seed 1 has no baseline run; the gate needs every dev seed of its scenarios".into() },
+GateOutcome::WrongRuleset => Case { name: "wrong ruleset refused", baseline: vec![wrong_ruleset.clone()], gated: true, exit: 1, generic: "NEUTRAL", criteria: vec![], result: refused(&wrong_ruleset) },
+GateOutcome::WrongCommit => Case { name: "wrong commit refused", baseline: vec![wrong_commit.clone()], gated: true, exit: 1, generic: "NEUTRAL", criteria: vec![], result: refused(&wrong_commit) },
+GateOutcome::NoGateNeutral => Case { name: "no gate neutral", baseline: vec![original.clone()], gated: false, exit: 0, generic: "NEUTRAL", criteria: vec![], result: String::new() },
+GateOutcome::NoGateReject => Case { name: "no gate reject remains diagnostic", baseline: vec![slow.clone()], gated: false, exit: 0, generic: "REJECT", criteria: vec![], result: String::new() },
+};
+
+    let baseline = bench.path("baseline.jsonl");
+    write_records(&baseline, &case.baseline).unwrap();
+    let out = bench.path("candidate.jsonl");
+    let suite = if case.gated { &gated } else { &plain };
+    let invoked = invoke(&bench, suite, Some(&baseline), &out);
+    let name = case.name;
+    let stdout = &invoked.stdout;
+    assert_eq!(
+        invoked.code, case.exit,
+        "{name}\n{stdout}\n{}",
+        invoked.stderr
+    );
+    let want_err = if case.exit == 0 {
+        ""
+    } else {
+        "togi-tool-bench: gate failed\n"
+    };
+    assert_eq!(invoked.stderr, want_err, "{name}\n{stdout}");
+    let candidate = read_records(&out, "records").unwrap();
+    assert_eq!(candidate.len(), 1, "{name}");
+    assert_eq!(candidate[0].worst_r7_hazard_per_h, Some(hazard), "{name}");
+    let comparison = stdout
+        .find("\ncomparison:")
+        .unwrap_or_else(|| panic!("{name}: no comparison\n{stdout}"));
+    let generic = stdout
+        .find(&format!("\nverdict: {} ", case.generic))
+        .unwrap_or_else(|| panic!("{name}: no {} verdict\n{stdout}", case.generic));
+    assert!(generic > comparison, "{name}\n{stdout}");
+    if !case.gated {
         assert!(
-            registered > generic,
-            "{name}: the gate follows the generic comparison\n{stdout}"
+            !stdout.contains("\ngate "),
+            "{name}: a suite without a gate printed one\n{stdout}"
         );
-        for line in case.criteria.iter().chain([&case.result]) {
-            assert!(
-                stdout.contains(&format!("\n{line}\n")),
-                "{name}: missing {line:?}\n{stdout}"
-            );
-        }
-        if case.criteria.is_empty() {
-            assert!(
-                !stdout.contains("\ngate conclusion "),
-                "{name}: a refused gate scored\n{stdout}"
-            );
-        }
+        return;
+    }
+    let registered = stdout
+        .find(&format!("\n{header}\n"))
+        .unwrap_or_else(|| panic!("{name}: no header\n{stdout}"));
+    assert!(
+        registered > generic,
+        "{name}: the gate follows the generic comparison\n{stdout}"
+    );
+    for line in case.criteria.iter().chain([&case.result]) {
+        assert!(
+            stdout.contains(&format!("\n{line}\n")),
+            "{name}: missing {line:?}\n{stdout}"
+        );
+    }
+    if case.criteria.is_empty() {
+        assert!(
+            !stdout.contains("\ngate conclusion "),
+            "{name}: a refused gate scored\n{stdout}"
+        );
     }
 }
 

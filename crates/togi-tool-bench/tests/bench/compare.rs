@@ -99,19 +99,16 @@ fn runs_pair_by_scenario_and_seed_in_scenario_then_seed_order() {
     );
 }
 
-#[test]
-fn the_verdict_follows_the_violations_and_the_time_interval() {
-    let edits: [Edit; 9] = [
-        ("equal", |_| {}, Verdict::Neutral, [0; 4]),
-        ("faster", |r| r.sim_hours = 8.0, Verdict::Accept, [0; 4]),
-        ("slower", |r| r.sim_hours = 12.0, Verdict::Reject, [0; 4]),
-        (
+#[test_case::test_case(("equal", |_| {}, Verdict::Neutral, [0; 4]); "equal")]
+#[test_case::test_case(("faster", |r| r.sim_hours = 8.0, Verdict::Accept, [0; 4]); "faster")]
+#[test_case::test_case(("slower", |r| r.sim_hours = 12.0, Verdict::Reject, [0; 4]); "slower")]
+#[test_case::test_case((
             "lost conclusion",
             |r| r.status = Status::DeadEnd,
             Verdict::Reject,
             [1, 0, 0, 0],
-        ),
-        (
+        ); "lost conclusion")]
+#[test_case::test_case((
             "censored",
             |r| {
                 r.status = Status::Censored;
@@ -119,40 +116,41 @@ fn the_verdict_follows_the_violations_and_the_time_interval() {
             },
             Verdict::Reject,
             [1, 0, 0, 0],
-        ),
-        (
+        ); "censored")]
+#[test_case::test_case((
             "hazard",
             |r| r.hazard_max_per_h = 0.111,
             Verdict::Reject,
             [0, 1, 0, 0],
-        ),
-        (
+        ); "hazard")]
+#[test_case::test_case((
             "mean depth",
             |r| r.depth = -18,
             Verdict::Reject,
             [0, 0, 1, 0],
-        ),
-        (
+        ); "mean depth")]
+#[test_case::test_case((
             "pair depth",
             |r| r.depth = -14,
             Verdict::Reject,
             [0, 0, 2, 0],
-        ),
-        (
+        ); "pair depth")]
+#[test_case::test_case((
             "depth boundary",
             |r| r.depth = -19,
             Verdict::Neutral,
             [0; 4],
-        ),
-    ];
+        ); "depth boundary")]
+fn the_verdict_follows_the_violations_and_the_time_interval(case: Edit) {
+    let (name, edit, verdict, expected) = case;
+
     let baseline = base();
-    for (name, edit, verdict, expected) in edits {
-        let mut candidate = base();
-        edit(&mut candidate);
-        let c = compare(&[pair(&candidate, &baseline)]);
-        assert_eq!(c.verdict(), verdict, "{name}");
-        assert_eq!(violations(&c), expected, "{name}");
-    }
+
+    let mut candidate = base();
+    edit(&mut candidate);
+    let c = compare(&[pair(&candidate, &baseline)]);
+    assert_eq!(c.verdict(), verdict, "{name}");
+    assert_eq!(violations(&c), expected, "{name}");
 }
 
 #[test]

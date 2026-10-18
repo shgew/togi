@@ -552,15 +552,21 @@ pub(crate) mod tests {
         assert_close(worst, hazard_per_h(&model, &profile, workload, &[6, 7]));
     }
 
-    fn worst_of(name: &str) -> (f64, f64) {
+    #[derive(Clone, Copy)]
+    enum WorstLoad {
+        SecondCcdPartial,
+        AllCorePressure,
+        LastWorkload,
+    }
+
+    fn worst_of(load: WorstLoad) -> (f64, f64) {
         let mut definition = rail::definition();
         let all = workloads(Regime::R7);
-        let selected = if name == "last workload" {
-            all[all.len() - 1].id
-        } else {
-            all[0].id
+        let (selected, pressure) = match load {
+            WorstLoad::SecondCcdPartial => (all[0].id, false),
+            WorstLoad::AllCorePressure => (all[0].id, true),
+            WorstLoad::LastWorkload => (all[all.len() - 1].id, false),
         };
-        let pressure = name == "all-core power pressure";
         rail::each_workload(&mut definition, |id, w| {
             for core in &mut w.core {
                 core.base_v = 1.472;
@@ -596,19 +602,19 @@ pub(crate) mod tests {
 
     #[test]
     fn the_worst_comes_from_a_partial_of_the_second_ccd() {
-        let (worst, want) = worst_of("second CCD partial");
+        let (worst, want) = worst_of(WorstLoad::SecondCcdPartial);
         assert_close(worst, want);
     }
 
     #[test]
     fn the_worst_comes_from_the_all_core_load_under_power_pressure() {
-        let (worst, want) = worst_of("all-core power pressure");
+        let (worst, want) = worst_of(WorstLoad::AllCorePressure);
         assert_close(worst, want);
     }
 
     #[test]
     fn the_worst_comes_from_the_last_r7_workload_alone() {
-        let (worst, want) = worst_of("last workload");
+        let (worst, want) = worst_of(WorstLoad::LastWorkload);
         assert_close(worst, want);
     }
 }

@@ -207,16 +207,18 @@ fn real_process_the_command_exits_zero_for_equal_trees_and_one_for_a_difference(
     assert!(text(&output.stderr).contains("kept the runs in"));
 }
 
-#[test]
-fn real_process_bench_flags_that_judge_a_run_are_usage_errors_with_same() {
-    for flag in ["--split=dev", "--baseline=b.jsonl", "--out=o.jsonl"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"))
-            .args(["same", ".", flag])
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2), "{flag}");
-        assert!(output.stdout.is_empty(), "{flag}");
-    }
+#[test_case::test_case("--split=dev"; "split dev")]
+#[test_case::test_case("--baseline=b.jsonl"; "baseline b jsonl")]
+#[test_case::test_case("--out=o.jsonl"; "out o jsonl")]
+fn real_process_bench_flags_that_judge_a_run_are_usage_errors_with_same(case: &str) {
+    let flag = case;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_togi-tool-bench"))
+        .args(["same", ".", flag])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{flag}");
+    assert!(output.stdout.is_empty(), "{flag}");
 }
 
 #[test]
@@ -228,34 +230,35 @@ fn real_process_a_missing_base_argument_is_a_usage_error() {
     assert_eq!(output.status.code(), Some(2));
 }
 
-#[test]
-fn real_process_a_full_run_leaves_no_run_directory_and_no_copy_of_a_simulator_behind() {
+#[test_case::test_case(false; "false")]
+#[test_case::test_case(true; "true")]
+fn real_process_a_full_run_leaves_no_run_directory_and_no_copy_of_a_simulator_behind(case: bool) {
+    let smoke = case;
     let trees = Trees::new(SUITE, SUITE);
     let journal = recorded(None);
     let base = trees.simulator("base-sim", &journal, 0);
     let head = trees.simulator("head-sim", &stamped_by_another_build(&journal), 0);
     let temporary = trees.path("tmp");
     fs::create_dir_all(&temporary).unwrap();
-    for smoke in [false, true] {
-        let mut run = command(&trees);
-        run.env("TMPDIR", &temporary)
-            .arg("--no-cache")
-            .arg("--base-sim")
-            .arg(&base)
-            .arg("--head-sim")
-            .arg(&head);
-        if smoke {
-            run.arg("--smoke");
-        }
-        let output = run.output().unwrap();
-        assert!(output.status.success(), "{}", text(&output.stderr));
-        let left: Vec<_> = fs::read_dir(&temporary)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect();
-        assert!(left.is_empty(), "smoke={smoke}: {left:?}");
-        assert!(!trees.path("cache/runs").exists(), "smoke={smoke}");
+
+    let mut run = command(&trees);
+    run.env("TMPDIR", &temporary)
+        .arg("--no-cache")
+        .arg("--base-sim")
+        .arg(&base)
+        .arg("--head-sim")
+        .arg(&head);
+    if smoke {
+        run.arg("--smoke");
     }
+    let output = run.output().unwrap();
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let left: Vec<_> = fs::read_dir(&temporary)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert!(left.is_empty(), "smoke={smoke}: {left:?}");
+    assert!(!trees.path("cache/runs").exists(), "smoke={smoke}");
 }
 
 #[test]

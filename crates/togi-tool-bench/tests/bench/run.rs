@@ -207,42 +207,54 @@ fn real_process_a_simulator_that_outlives_the_limit_is_a_harness_error_not_an_ou
     assert!(chain.contains("hang safety limit"), "{chain}");
 }
 
-#[test]
-fn real_process_a_missing_or_unrunnable_simulator_is_an_error() {
+#[derive(Clone, Copy)]
+enum UnrunnableProgram {
+    Plain,
+    PlainExecutable,
+    BlankInterpreter,
+    NotExecutable,
+}
+
+#[test_case::test_case(UnrunnableProgram::Plain; "Plain")]
+#[test_case::test_case(UnrunnableProgram::PlainExecutable; "PlainExecutable")]
+#[test_case::test_case(UnrunnableProgram::BlankInterpreter; "BlankInterpreter")]
+#[test_case::test_case(UnrunnableProgram::NotExecutable; "NotExecutable")]
+fn real_process_a_missing_or_unrunnable_simulator_is_an_error(scenario: UnrunnableProgram) {
     let bench = Bench::new();
     let error = execute(&bench.options(bench.path("missing")), &Fleet::new()).unwrap_err();
     assert!(error.to_string().contains("read the simulator"), "{error}");
     let ran = bench.path("ran.txt");
-    let cases = [
-        ("plain", "not a program".to_owned(), 0o644),
-        (
+
+    let (name, text, mode) = match scenario {
+        UnrunnableProgram::Plain => ("plain", "not a program".to_owned(), 0o644),
+        UnrunnableProgram::PlainExecutable => (
             "plain-executable",
             format!("echo ran > {}\n", ran.display()),
             0o755,
         ),
-        (
+        UnrunnableProgram::BlankInterpreter => (
             "script-with-a-blank-interpreter",
             format!("#!\necho ran > {}\n", ran.display()),
             0o755,
         ),
-        (
+        UnrunnableProgram::NotExecutable => (
             "script-without-the-execute-bit",
             format!("#!/bin/sh\necho ran > {}\n", ran.display()),
             0o644,
         ),
-    ];
-    for (name, text, mode) in cases {
-        let file = bench.path(name);
-        fs::write(&file, text).unwrap();
-        fs::set_permissions(&file, fs::Permissions::from_mode(mode)).unwrap();
-        let mut options = bench.options(file);
-        options.cache = None;
-        let error = execute(&options, &Fleet::new()).unwrap_err();
-        assert!(
-            error.to_string().contains("start the simulator"),
-            "{name}: {error}"
-        );
-    }
+    };
+
+    let file = bench.path(name);
+    fs::write(&file, text).unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(mode)).unwrap();
+    let mut options = bench.options(file);
+    options.cache = None;
+    let error = execute(&options, &Fleet::new()).unwrap_err();
+    assert!(
+        error.to_string().contains("start the simulator"),
+        "{name}: {error}"
+    );
+
     assert!(!ran.exists());
 }
 
