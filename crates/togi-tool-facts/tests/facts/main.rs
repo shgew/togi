@@ -1,6 +1,7 @@
 #![expect(
+    clippy::unwrap_used,
     clippy::disallowed_methods,
-    reason = "real_process test exercises the command parser"
+    reason = "real_process test exercises the command parser and panics on a broken fixture"
 )]
 
 use test_case::test_case;
