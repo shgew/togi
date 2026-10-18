@@ -324,15 +324,22 @@ fn a_reset_core_is_consumed_by_the_resumed_session_which_retunes_it_to_its_limit
     );
 }
 
+#[derive(Clone, Copy)]
+enum ReportedTime {
+    Elapsed(std::time::Duration),
+    EscapedOverflow,
+    CrashedSample(i64),
+}
+
 struct DurationTrials {
     inner: Box<dyn togi_machine::Trials>,
-    ran: std::time::Duration,
+    time: ReportedTime,
     cancel: CancellationToken,
 }
 
 struct DurationRunning {
     inner: Box<dyn togi_machine::Running>,
-    ran: std::time::Duration,
+    time: ReportedTime,
     cancel: CancellationToken,
 }
 
@@ -347,7 +354,23 @@ impl togi_machine::Running for DurationRunning {
         report: &mut dyn togi_machine::Reporter,
     ) -> Result<togi_machine::TrialResult, togi_machine::Partial<togi_machine::TrialResult>> {
         let mut result = self.inner.wait(cancel, report)?;
-        result.ran = self.ran;
+        match self.time {
+            ReportedTime::Elapsed(ran) => result.ran = ran,
+            ReportedTime::EscapedOverflow => {
+                result.ran = std::time::Duration::from_secs(u64::from(u32::MAX) + 1);
+                result.escaped.push(togi_machine::CpuId::from(63));
+            }
+            ReportedTime::CrashedSample(_) => {
+                result.failure = Some(togi_machine::TrialFailure {
+                    signal: togi_machine::Signal::ComputationError,
+                    core: core(0),
+                });
+                return Err(togi_machine::Partial {
+                    value: result,
+                    error: togi_machine::Error::Crashed,
+                });
+            }
+        }
         self.cancel.cancel();
         Ok(result)
     }
@@ -374,7 +397,7 @@ impl togi_machine::Trials for DurationTrials {
     {
         Ok(Box::new(DurationRunning {
             inner: self.inner.start(cancel, spec, ready)?,
-            ran: self.ran,
+            time: self.time,
             cancel: self.cancel.clone(),
         }))
     }
@@ -389,7 +412,14 @@ impl togi_machine::Trials for DurationTrials {
     ) -> Box<
         dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
     > {
-        self.inner.samples(id)
+        if let ReportedTime::CrashedSample(elapsed_ms) = self.time {
+            Box::new(std::iter::once(Ok(togi_machine::TrialConditions {
+                elapsed_ms,
+                ..togi_machine::TrialConditions::default()
+            })))
+        } else {
+            self.inner.samples(id)
+        }
     }
 }
 
@@ -402,7 +432,7 @@ fn trial_elapsed_seconds_are_checked(seconds: u64, refused: bool) {
     let mut input = input(&sim, &mem);
     input.machine.trials = Box::new(DurationTrials {
         inner: input.machine.trials,
-        ran: std::time::Duration::from_secs(seconds),
+        time: ReportedTime::Elapsed(std::time::Duration::from_secs(seconds)),
         cancel: input.cancel.clone(),
     });
     let ended = run(input);
@@ -469,7 +499,7 @@ fn trial_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
     });
     input.machine.trials = Box::new(DurationTrials {
         inner: input.machine.trials,
-        ran: std::time::Duration::from_secs(90),
+        time: ReportedTime::Elapsed(std::time::Duration::from_secs(90)),
         cancel: input.cancel.clone(),
     });
     let ended = run(input);
@@ -574,7 +604,7 @@ fn kernel_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
     });
     input.machine.trials = Box::new(DurationTrials {
         inner: input.machine.trials,
-        ran: std::time::Duration::from_secs(90),
+        time: ReportedTime::Elapsed(std::time::Duration::from_secs(90)),
         cancel: input.cancel.clone(),
     });
     let ended = run(input);
@@ -655,4 +685,79 @@ fn retry_waits_preserve_the_bounded_seconds_schedule() {
         })
         .collect();
     assert_eq!(waits, [(1, 60), (2, 300), (3, 1800)]);
+}
+
+#[test]
+fn an_overflowing_duration_keeps_the_containment_dead_end_durable() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        time: ReportedTime::EscapedOverflow,
+        cancel: input.cancel.clone(),
+    });
+    let ended = run(input);
+    assert!(
+        ended
+            .errors
+            .iter()
+            .any(|error| matches!(error, togi_session::SessionError::TrialDuration(_)))
+    );
+    assert!(ended.journal.events().iter().any(|event| matches!(
+        &event.payload,
+        Payload::DeadEnd(dead) if dead.condition == togi_journal::DeadEndCondition::Containment
+            && dead.detail.contains("escaped CPUs")
+    )));
+    assert!(
+        !ended
+            .journal
+            .events()
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::TrialEnd(_)))
+    );
+}
+
+#[test_case::test_case((i64::from(u32::MAX) - 1) * 1000, false; "below")]
+#[test_case::test_case(i64::from(u32::MAX) * 1000, false; "maximum")]
+#[test_case::test_case((i64::from(u32::MAX) + 1) * 1000, true; "overflow")]
+#[test_case::test_case(-1, true; "negative")]
+fn recovered_sample_elapsed_seconds_are_checked(elapsed_ms: i64, refused: bool) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        time: ReportedTime::CrashedSample(elapsed_ms),
+        cancel: input.cancel.clone(),
+    });
+    let ended = run(input);
+    let last = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end.last_sample_s)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(
+        last,
+        if refused {
+            None
+        } else {
+            Some(u32::try_from(elapsed_ms / 1000).unwrap())
+        }
+    );
+    let warning = ended.journal.events().iter().any(|event| {
+        matches!(
+            &event.payload,
+            Payload::SessionWarning(warning) if warning.operation == "read conditions samples"
+                && warning.error.contains("elapsed")
+        )
+    });
+    assert_eq!(warning, refused);
 }

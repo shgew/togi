@@ -555,14 +555,36 @@ impl Session<'_> {
             .filter(|error| !matches!(error, Error::Cancelled))
             .map(|error| format!("{what}: {}", togi_render::error_chain(error)));
         let missing = evidence::join_diagnostic(kernel_error.as_deref(), runner.as_deref());
-        let adjudication = evidence::adjudicate(&TrialEvidence {
+        let adjudication = match evidence::adjudicate(&TrialEvidence {
             result: &result,
             mces: &mces,
             reset: None,
             missing: missing.as_deref(),
             duration: Duration::from_secs(u64::from(trial.plan.duration.get())),
             containment,
-        })?;
+        }) {
+            Ok(adjudication) => adjudication,
+            Err(error) => {
+                if !result.escaped.is_empty() || containment.is_some() {
+                    let stop = self.dead_end(
+                        togi_journal::DeadEnd {
+                            condition: togi_journal::DeadEndCondition::Containment,
+                            core: None,
+                            detail: format!(
+                                "trial {}: escaped CPUs {:?}; unconfirmed cleanup: {}",
+                                trial.id,
+                                result.escaped,
+                                containment.unwrap_or("none")
+                            ),
+                            action: None,
+                        },
+                        &[trial.start],
+                    )?;
+                    self.record_shutdown(&stop);
+                }
+                return Err(error.into());
+            }
+        };
         let interrupted = token.is_cancelled();
         let reason = if interrupted {
             evidence::join_diagnostic(adjudication.reason.as_deref(), Some("stopped by signal"))

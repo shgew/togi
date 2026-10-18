@@ -431,7 +431,26 @@ pub(crate) fn trial_end(trial: TrialId, outcome: Outcome, duration_s: u32) -> Tr
 impl SampleSummary {
     /// Writes what the samples say into a trial's end: the requested voltage and request telemetry of every end, the
     /// stalled worker of a failure, and the last sample of a trial a crash cut short.
-    pub(crate) fn fill(&self, end: &mut TrialEnd, crashed: bool) {
+    pub(crate) fn fill(
+        &self,
+        end: &mut TrialEnd,
+        crashed: bool,
+    ) -> Result<(), togi_machine::SampleError> {
+        let stalled_ms = self
+            .stalled
+            .filter(|_| end.outcome == Outcome::Failure)
+            .map(|stall| u64::try_from(stall.since_ms))
+            .transpose()
+            .map_err(togi_machine::SampleError::ElapsedMillis)?;
+        let last_s = self
+            .last
+            .filter(|_| crashed)
+            .map(|last| {
+                let elapsed = u64::try_from(last.elapsed_ms)
+                    .map_err(togi_machine::SampleError::ElapsedMillis)?;
+                u32::try_from(elapsed / 1000).map_err(togi_machine::SampleError::ElapsedSeconds)
+            })
+            .transpose()?;
         if let Some(voltage) = self.voltage {
             end.voltage_request_median_v = Some(voltage.median_v);
             end.voltage_request_min_v = Some(voltage.min_v);
@@ -449,10 +468,10 @@ impl SampleSummary {
             && let Some(stall) = self.stalled
         {
             end.stalled_core = Some(stall.core);
-            end.worker_stalled_ms = u64::try_from(stall.since_ms).ok();
+            end.worker_stalled_ms = stalled_ms;
         }
         if crashed && let Some(last) = &self.last {
-            end.last_sample_s = u32::try_from(last.elapsed_ms / 1000).ok();
+            end.last_sample_s = last_s;
             end.last_sample_tctl_c = last.tctl_c.and_then(|tctl| i32::try_from(tctl).ok());
             let mhz = || {
                 last.core_mhz
@@ -462,6 +481,7 @@ impl SampleSummary {
             end.last_sample_min_mhz = mhz().min();
             end.last_sample_max_mhz = mhz().max();
         }
+        Ok(())
     }
 }
 

@@ -101,11 +101,9 @@ pub(crate) fn append_trial_end(
     crashed: bool,
     causes: &[Seq],
 ) -> Step<Seq> {
+    let samples = samples.and_then(|summary| summary.fill(&mut end, crashed));
     let sample_error = match samples {
-        Ok(summary) => {
-            summary.fill(&mut end, crashed);
-            None
-        }
+        Ok(()) => None,
         Err(error) => {
             end.tctl_max_c = None;
             Some(error)
