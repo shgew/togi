@@ -14,7 +14,9 @@ use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 
 use super::campaign::{self, Campaign, Halt, Refusal};
-use super::ledger::{End, Ledger, LedgerError, Outcome, Recipe, Record, Role, StopReason, end_torn_tail};
+use super::ledger::{
+    End, Ledger, LedgerError, Outcome, Recipe, Record, Role, StopReason, end_torn_tail,
+};
 use super::manifest::{Manifest, sha256};
 use super::report;
 use super::{GitWorkspace, WorkspaceError};
