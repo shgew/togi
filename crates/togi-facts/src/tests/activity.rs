@@ -44,7 +44,7 @@ fn evidence(kind: &str, id: &str, script: &mut Script) -> Seq {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ActivityState {
     Running,
     NotStarted,

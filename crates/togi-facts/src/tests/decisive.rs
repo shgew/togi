@@ -242,12 +242,12 @@ fn failure_keeps_attribution_and_telemetry() {
 }
 
 #[test_case(TrialEnd { voltage_requests_v: [(core(0), 1.0625)].into_iter().collect(), ..pass("t", 5) },
-    Telemetry { voltage_requests_v: [(core(0), 1.0625)].into_iter().collect(), top_requesters: set(&[]), ccd_mhz: BTreeMap::new() }; "voltage requests")]
+    &Telemetry { voltage_requests_v: [(core(0), 1.0625)].into_iter().collect(), top_requesters: set(&[]), ccd_mhz: BTreeMap::new() }; "voltage requests")]
 #[test_case(TrialEnd { top_requesters: set(&[0]), ..pass("t", 5) },
-    Telemetry { voltage_requests_v: togi_machine::PerCore::default(), top_requesters: set(&[0]), ccd_mhz: BTreeMap::new() }; "top requesters")]
+    &Telemetry { voltage_requests_v: togi_machine::PerCore::default(), top_requesters: set(&[0]), ccd_mhz: BTreeMap::new() }; "top requesters")]
 #[test_case(TrialEnd { ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4700)]), ..pass("t", 5) },
-    Telemetry { voltage_requests_v: togi_machine::PerCore::default(), top_requesters: set(&[]), ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4700)]) }; "ccd mhz")]
-fn telemetry_is_present_when_any_one_lane_is_populated(trial_end: TrialEnd, want: Telemetry) {
+    &Telemetry { voltage_requests_v: togi_machine::PerCore::default(), top_requesters: set(&[]), ccd_mhz: BTreeMap::from([(CcdId::new(0).unwrap(), 4700)]) }; "ccd mhz")]
+fn telemetry_is_present_when_any_one_lane_is_populated(trial_end: TrialEnd, want: &Telemetry) {
     let mut s = Script::begin(&[0]);
     s.add(alone("t", 0, -5, &[0]));
     s.add(trial_end);
@@ -255,7 +255,7 @@ fn telemetry_is_present_when_any_one_lane_is_populated(trial_end: TrialEnd, want
     let Observation::Trial { telemetry, .. } = &facts.facts[0].observation else {
         unreachable!()
     };
-    assert_eq!(telemetry.as_ref(), Some(&want));
+    assert_eq!(telemetry.as_ref(), Some(want));
 }
 
 #[test]
