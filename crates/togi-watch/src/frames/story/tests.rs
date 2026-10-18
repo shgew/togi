@@ -1811,6 +1811,30 @@ mod the_narrator {
     }
 
     #[test]
+    fn the_narrator_on_the_rich_profile_keeps_unicode_and_cuts_to_one_cell() {
+        let said = super::super::Story {
+            label: "RERUN".to_owned(),
+            lines: vec!["日本語 – ab".to_owned()],
+            brief: "日本語 – ab cd ef".to_owned(),
+            paint: Paint::Running,
+        };
+        let rows = |lines: Vec<ratatui::text::Line<'static>>| -> Vec<String> {
+            lines
+                .iter()
+                .map(|line| plain(line, Colours::Rich))
+                .collect()
+        };
+        assert_eq!(
+            rows(narrator_lines(&said, 17, 1, true, Colours::Rich)),
+            ["▌  日本語 – ab…"]
+        );
+        assert_eq!(
+            rows(narrator_lines(&said, 30, 1, false, Colours::Rich)),
+            ["▌  RERUN   日本語 – ab"]
+        );
+    }
+
+    #[test]
     fn the_bar_and_the_label_take_the_stories_paint() {
         let said = super::super::Story {
             label: "DEAD END".to_owned(),

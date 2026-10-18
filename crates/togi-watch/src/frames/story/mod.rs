@@ -773,18 +773,17 @@ pub(crate) fn narrator_lines(
         let mut spans = vec![bar(), Span::raw("  ")];
         spans.extend(
             cut_styled(
-                &Line::from(Span::styled(inert(text, Colours::None), text_style)),
+                &Line::from(Span::styled(inert(text, colours), text_style)),
                 width.saturating_sub(3),
-                Colours::None,
+                colours,
             )
             .spans,
         );
         return vec![Line::from(spans)];
     }
-    let indent = display_width(&story.label, Colours::None) + 3;
+    let indent = display_width(&story.label, colours) + 3;
     let room = width.saturating_sub(3 + indent).max(1);
-    let wrap =
-        |text: &str| wrap_styled(&inert(text, Colours::None), room, text_style, Colours::None);
+    let wrap = |text: &str| wrap_styled(&inert(text, colours), room, text_style, colours);
     let mut wrapped: Vec<Line<'static>> = story.lines.iter().flat_map(|line| wrap(line)).collect();
     if wrapped.len() > height {
         let brief = wrap(&story.brief);
@@ -796,9 +795,9 @@ pub(crate) fn narrator_lines(
                 .iter()
                 .map(|line| {
                     cut_styled(
-                        &Line::from(Span::styled(inert(line, Colours::None), text_style)),
+                        &Line::from(Span::styled(inert(line, colours), text_style)),
                         room,
-                        Colours::None,
+                        colours,
                     )
                 })
                 .collect()

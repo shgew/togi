@@ -4,9 +4,12 @@
 //! first: control characters become visible escapes
 //! ([`togi_render::escape_text`]). On the console profiles glyphs the console
 //! font cannot draw then become ASCII or a `\u` escape ([`console_text`]);
-//! [`Colours::Rich`] draws Unicode as it is. Widths are display cells of that
-//! escaped text (double-width characters take two), so a line never overflows
-//! because of what it escapes to.
+//! [`Colours::Rich`] draws Unicode as it is, except that characters joining or
+//! restyling a neighbour into one glyph (variation selectors, zero-width
+//! joiners, skin-tone modifiers, regional indicators, emoji tags) become a `\u`
+//! escape too, since terminals disagree on the width of such sequences. Widths
+//! are display cells of that escaped text (double-width characters take two),
+//! so a line never overflows because of what it escapes to.
 //!
 //! A line that does not fit never cuts inside a value or a word: it first
 //! shortens or leaves out whole clauses ([`fit_clauses`]), lowest priority
@@ -88,12 +91,39 @@ pub fn glyph_text(text: &str, colours: Colours) -> Cow<'_, str> {
     }
 }
 
+/// Whether `c` joins or restyles a neighbouring character into one glyph whose width terminals disagree on:
+/// variation selectors, the zero-width joiner, emoji skin-tone modifiers, regional indicators and emoji tags.
+const fn joins_graphemes(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200d}'
+            | '\u{fe00}'..='\u{fe0f}'
+            | '\u{1f1e6}'..='\u{1f1ff}'
+            | '\u{1f3fb}'..='\u{1f3ff}'
+            | '\u{e0020}'..='\u{e007f}'
+            | '\u{e0100}'..='\u{e01ef}'
+    )
+}
+
 /// `text` as the screen may show it: untrusted control characters escaped, then, on the console profiles, what the
-/// console cannot draw. Idempotent, so escaping twice changes nothing.
+/// console cannot draw, and on [`Colours::Rich`] the characters that join graphemes ([`joins_graphemes`]), so
+/// each character left takes the cells its own width says. Idempotent, so escaping twice changes nothing.
 #[must_use]
 pub fn inert(text: &str, colours: Colours) -> Cow<'_, str> {
     if rich(colours) {
-        return escape_text(text).into_cow();
+        let escaped = escape_text(text).into_cow();
+        if !escaped.chars().any(joins_graphemes) {
+            return escaped;
+        }
+        let mut out = String::with_capacity(escaped.len() + 8);
+        for c in escaped.chars() {
+            if joins_graphemes(c) {
+                let _ = write!(out, "\\u{:04x}", u32::from(c));
+            } else {
+                out.push(c);
+            }
+        }
+        return Cow::Owned(out);
     }
     if text
         .chars()
@@ -702,6 +732,48 @@ mod tests {
             inert("plain ascii", RICH),
             std::borrow::Cow::Borrowed(_)
         ));
+    }
+
+    #[test_case("⌨\u{fe0f}x", r"⌨\ufe0fx"; "emoji presentation selector")]
+    #[test_case("a\u{fe0e}b", r"a\ufe0eb"; "text presentation selector")]
+    #[test_case("a\u{e0100}b", r"a\ue0100b"; "supplementary variation selector")]
+    #[test_case("👨\u{200d}👩\u{200d}👧", r"👨\u200d👩\u200d👧"; "zero-width joiner family")]
+    #[test_case("👍\u{1f3fd}", r"👍\u1f3fd"; "skin-tone modifier")]
+    #[test_case("\u{1f1ef}\u{1f1f5}", r"\u1f1ef\u1f1f5"; "regional-indicator flag")]
+    #[test_case("🏴\u{e0067}\u{e007f}", r"🏴\ue0067\ue007f"; "emoji tag characters")]
+    #[test_case("e\u{301}", "e\u{301}"; "ordinary combining marks stay")]
+    fn rich_inert_escapes_grapheme_joining_characters(text: &str, want: &str) {
+        assert_eq!(inert(text, RICH), want);
+        assert_eq!(inert(want, RICH), want, "idempotent");
+    }
+
+    #[test]
+    fn rich_inert_borrows_text_with_nothing_to_escape() {
+        assert!(matches!(
+            inert("日本語 e\u{301} ✓", RICH),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn rich_width_of_a_variation_selector_sequence_is_what_is_drawn() {
+        // Every character left draws its own cells: the selector is visible text, so `x` is not covered.
+        assert_eq!(display_width("⌨\u{fe0f}x", RICH), 1 + 6 + 1);
+        assert_eq!(plain(&Line::from("⌨\u{fe0f}x"), RICH), r"⌨\ufe0fx");
+    }
+
+    #[test_case("ab ⌨\u{fe0f}x cd"; "variation selector")]
+    #[test_case("ab 👨\u{200d}👩\u{200d}👧 cd"; "joiner family")]
+    #[test_case("ab \u{1f1ef}\u{1f1f5} cd"; "flag")]
+    #[test_case("ab 👍\u{1f3fd} cd"; "skin tone")]
+    fn rich_cut_never_exceeds_the_room_with_joining_sequences(text: &str) {
+        for room in 0..=display_width(text, RICH) + 1 {
+            let got = cut_words(text, room, RICH);
+            assert!(
+                display_width(&got, RICH) <= room,
+                "cut_words({text:?}, {room}) = {got:?} is wider than {room}"
+            );
+        }
     }
 
     #[test]
