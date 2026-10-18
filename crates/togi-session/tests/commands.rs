@@ -599,3 +599,60 @@ fn kernel_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
         });
     assert_eq!(recorded, u64::try_from(mono.as_nanos()).ok());
 }
+
+struct SetupFailure(Box<dyn togi_machine::Trials>);
+
+impl togi_machine::Trials for SetupFailure {
+    fn sweep(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> Result<togi_machine::Swept, togi_machine::Error> {
+        self.0.sweep(cancel)
+    }
+
+    fn start(
+        &mut self,
+        _: &CancellationToken,
+        _: togi_machine::TrialSpec,
+        ready: togi_machine::Stopped,
+    ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
+    {
+        Err(togi_machine::Partial {
+            value: Some(ready),
+            error: togi_machine::Error::Other(Box::new(io::Error::other("setup unavailable"))),
+        })
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), togi_machine::Error> {
+        self.0.ended(id)
+    }
+
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<
+        dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
+    > {
+        self.0.samples(id)
+    }
+}
+
+#[test]
+fn retry_waits_preserve_the_bounded_seconds_schedule() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(SetupFailure(input.machine.trials));
+    let ended = run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let waits: Vec<_> = ended
+        .journal
+        .events()
+        .iter()
+        .filter_map(|event| match &event.payload {
+            Payload::BackendRetry(retry) => Some((retry.attempt, retry.wait_s)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(waits, [(1, 60), (2, 300), (3, 1800)]);
+}

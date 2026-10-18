@@ -74,6 +74,8 @@ pub(super) fn conclude(
             | SessionError::DeadEndUnrecorded(_)
             | SessionError::Prompt { .. }
             | SessionError::Panicked(_)
+            | SessionError::TrialDuration(_)
+            | SessionError::Monotonic(_)
             | SessionError::Profile(_) => Exit::Error,
         });
     }
