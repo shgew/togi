@@ -129,6 +129,15 @@ impl HostCfg {
     }
 }
 
+/// The decoded value of a plain `path = "..."` attribute, not one nested in `cfg_attr`.
+pub(crate) fn path_attribute(body: &str) -> Option<String> {
+    let tokens = tokens(body.as_bytes()).complete()?;
+    match tokens.as_slice() {
+        [Token::Ident(name), Token::Eq, Token::Str(path)] if name == "path" => Some(path.clone()),
+        _ => None,
+    }
+}
+
 /// One token of a cfg predicate.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Token {
