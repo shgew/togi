@@ -252,7 +252,7 @@ fn real_process_nushell_loads_the_script_without_warnings() {
     let nu = Command::new("nu").arg("--version").output();
     assert!(
         nu.is_ok(),
-        "nu is not on PATH: the dev shell and the nextest check provide it, and without it this test would pass without loading the script"
+        "nu is not on PATH: the dev shell and the nextest checks provide it, and without it this test would pass without loading the script"
     );
     let dir = tempfile::tempdir().unwrap();
     let script = dir.path().join("togi.nu");
@@ -286,7 +286,7 @@ fn real_process_nushell_loads_the_script_without_warnings() {
 }
 
 /// Needs bash with the `compgen` builtin: the stdenv bash of a nix build has none, so the dev shell
-/// and the nextest check add `bashInteractive`.
+/// and the nextest checks add `bashInteractive`.
 fn bash_complete(word: &str) -> Vec<String> {
     let probe = Command::new("bash")
         .args(["-c", "type compgen"])

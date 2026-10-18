@@ -43,18 +43,100 @@
           # Each derivation reads the narrowest source its build needs; see nix/sources.nix.
           cargoSources = import ./nix/sources.nix { inherit lib; };
           allCrates = cargoSources.members;
-          # The workspace's test fixtures that live outside `crates/`, which tests read in place.
-          testFixtures = [
-            ./.config
-            ./tools/bench/machines
-            ./tools/bench/facts
-            ./tools/bench/suite.json
-            ./tools/bench/baseline.jsonl
-            ./tools/bench/research/896/suite.json
-            ./tools/bench/gates
-            ./tools/bench/research/490/machines
-            ./tools/bench/research/490/suite.json
-          ];
+          # The test fixtures outside `crates/` that each crate's tests read in place.
+          crateFixtures =
+            let
+              bench = ./tools/bench;
+            in
+            {
+              togi = [ (bench + "/machines") ];
+              togi-sim = [ (bench + "/machines") ];
+              togi-simrun = [ (bench + "/machines") ];
+              togi-tool-bench = [
+                (bench + "/machines")
+                (bench + "/facts")
+                (bench + "/suite.json")
+                (bench + "/baseline.jsonl")
+                (bench + "/research/896/suite.json")
+                (bench + "/gates")
+                (bench + "/research/490/machines")
+                (bench + "/research/490/suite.json")
+              ];
+              togi-tool-fit = [ (bench + "/facts") ];
+              togi-tool-sim = [
+                (bench + "/machines")
+                (bench + "/suite.json")
+              ];
+              togi-tool-stats = [ (bench + "/machines") ];
+              togi-tool-trialfacts = [ (bench + "/facts") ];
+            };
+          # nextest's profiles, and the fixtures the named crates' tests read.
+          testFixtures = crates: [ ./.config ] ++ lib.concatMap (crate: crateFixtures.${crate} or [ ]) crates;
+          # Each group is one `nextest-<group>` check, so a change reruns only the groups whose tests build it.
+          # Every workspace member is in exactly one group.
+          nextestGroups = {
+            core = [
+              "togi-machine"
+              "togi-journal"
+              "togi-config"
+              "togi-requests"
+              "togi-tuner"
+              "togi-defect"
+              "togi-facts"
+              "togi-carry"
+              "togi-render"
+              "togi-tuningboot"
+              "togi-trialfiles"
+              "togi-version"
+              "togi-sim"
+              "togi-statecopy"
+            ];
+            platform = [
+              "togi-command"
+              "togi-hostlock"
+              "togi-backend"
+              "togi-mprime"
+              "togi-ycruncher"
+              "togi-smu"
+              "togi-detect"
+              "togi-trial"
+              "togi-hardware"
+            ];
+            session = [
+              "togi-session"
+              "togi-simrun"
+              "togi-watch"
+              "togi-watchtest"
+              "togi"
+            ];
+            tools = [
+              "togi-tool-audit"
+              "togi-tool-bench"
+              "togi-tool-forecast"
+              "togi-tool-modelcheck"
+              "togi-tool-trialfacts"
+              "togi-tool-copy-state"
+              "togi-tool-facts"
+              "togi-tool-fit"
+              "togi-tool-replay"
+              "togi-tool-sim"
+              "togi-tool-stats"
+            ];
+            repo = [
+              "togi-tool-reviews"
+              "togi-tool-release"
+              "togi-tool-cover"
+            ];
+          };
+          grouped = lib.concatLists (lib.attrValues nextestGroups);
+          ungrouped = lib.subtractLists grouped allCrates;
+          misgrouped = lib.filter (
+            crate: lib.count (c: c == crate) grouped > 1 || !lib.elem crate allCrates
+          ) (lib.unique grouped);
+          emptyGroups = lib.attrNames (lib.filterAttrs (_: crates: crates == [ ]) nextestGroups);
+          validGroups =
+            lib.assertMsg (ungrouped == [ ] && misgrouped == [ ] && emptyGroups == [ ])
+              "nextestGroups must name every workspace member exactly once and no group may be empty; in no group: ${toString ungrouped}; repeated or not a member: ${toString misgrouped}; empty: ${toString emptyGroups}";
           cliSource = cargoSources.source { code = cargoSources.closure [ "togi" ]; };
           simSource = cargoSources.source { code = cargoSources.closure [ "togi-tool-sim" ]; };
           trialSource = cargoSources.source {
@@ -68,10 +150,36 @@
           };
           # Documentation tests need crate-local fixtures, not external benchmark inputs.
           cratesSource = cargoSources.source { full = allCrates; };
+          # clippy compiles every crate's tests, which include some fixtures at compile time.
           testSource = cargoSources.source {
             full = allCrates;
-            files = testFixtures;
+            files = testFixtures allCrates;
           };
+          nextestChecks =
+            assert validGroups;
+            lib.mapAttrs' (
+              group: crates:
+              lib.nameValuePair "nextest-${group}" (
+                craneLib.cargoNextest (
+                  cargoCheck
+                    (cargoSources.source {
+                      code = cargoSources.closureWithDev crates;
+                      full = crates;
+                      files = testFixtures crates;
+                    })
+                    {
+                      pname = "togi-${group}";
+                      cargoExtraArgs = "--locked ${lib.concatMapStringsSep " " (crate: "-p ${crate}") crates}";
+                      cargoNextestExtraArgs = "--profile ci";
+                      nativeCheckInputs = [
+                        pkgs.gitMinimal
+                        pkgs.bashInteractive
+                        pkgs.nushell
+                      ];
+                    }
+                )
+              )
+            ) nextestGroups;
           # Tools that read code or manifests and no data.
           codeSource = cargoSources.source { rs = allCrates; };
           manifestSource = cargoSources.source { files = [ ./deny.toml ]; };
@@ -266,6 +374,23 @@
                   HOME=$TMPDIR sql/test.sh
                   touch "$out"
                 '';
+            # Relative links and heading anchors in every Markdown file, offline: a link may name any file.
+            doc-links =
+              pkgs.runCommand "togi-doc-links"
+                {
+                  nativeBuildInputs = [ pkgs.lychee ];
+                  src = lib.fileset.toSource {
+                    root = ./.;
+                    fileset = ./.;
+                  };
+                  # lychee builds its HTTP client even offline, and the client needs a certificate store.
+                  SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+                }
+                ''
+                  cd "$src"
+                  HOME=$TMPDIR lychee --offline --hidden --include-fragments --no-progress --format compact './**/*.md'
+                  touch "$out"
+                '';
             clippy = craneLib.mkCargoDerivation (
               cargoCheck testSource {
                 pnameSuffix = "-clippy";
@@ -276,16 +401,6 @@
                 '';
               }
               // crossCc
-            );
-            nextest = craneLib.cargoNextest (
-              cargoCheck testSource {
-                cargoNextestExtraArgs = "--profile ci";
-                nativeCheckInputs = [
-                  pkgs.gitMinimal
-                  pkgs.bashInteractive
-                  pkgs.nushell
-                ];
-              }
             );
             doc = craneLib.cargoDocTest (cargoCheck cratesSource { });
             # No other check's output references the shared dependency artifact; as a check, CI pushes it to Cachix.
@@ -364,6 +479,7 @@
               package = inputs.self.checks.x86_64-linux.package.package;
             };
           }
+          // nextestChecks
           // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
             let
               vm = import ./nix/vm-test.nix {

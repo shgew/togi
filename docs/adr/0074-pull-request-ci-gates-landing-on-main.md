@@ -4,6 +4,8 @@ Status: see [the index](README.md).
 
 Supersedes [ADR 0016](0016-every-pull-request-runs-every-check.md)'s check and release gates and [ADR 0061](0061-no-macos-ci.md)'s cancellation of superseded `main` check runs; amends [ADR 0047](0047-gate-before-every-push.md)'s gate contents and [ADR 0051](0051-light-checks-for-review-fixes.md)'s fix-push checks ([#1141](https://github.com/shgew/togi/issues/1141)).
 
+Amended by [ADR 0075](0075-nextest-runs-in-dependency-layer-groups.md) ([#1146](https://github.com/shgew/togi/issues/1146)): the single `nextest` check below is now five checks, `nextest-core`, `nextest-platform`, `nextest-session`, `nextest-tools` and `nextest-repo`, each its own pull request matrix job when uncached, so pull request CI has at most ten jobs rather than six.
+
 ## Context
 
 Pull requests wait much longer for CI than their checks take. Measurements in #1141 covered 150 `check` runs over roughly fifteen hours:
