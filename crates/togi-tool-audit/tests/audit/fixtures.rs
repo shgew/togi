@@ -269,15 +269,13 @@ pub(crate) fn case(
     }
 }
 
-pub(crate) fn run(cases: Vec<Case>) {
-    for case in cases {
-        assert_eq!(
-            found(&case.events, case.completion),
-            case.want,
-            "{}",
-            case.name
-        );
-    }
+pub(crate) fn run(case: Case) {
+    assert_eq!(
+        found(&case.events, case.completion),
+        case.want,
+        "{}",
+        case.name
+    );
 }
 
 #[expect(

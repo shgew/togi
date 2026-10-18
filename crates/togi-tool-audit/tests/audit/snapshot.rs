@@ -124,8 +124,19 @@ fn a_document_from_another_sequence_is_stale_and_not_compared() {
     assert_eq!(found(Some(ahead)), []);
 }
 
-#[test]
-fn a_document_not_shaped_as_this_build_writes_it_is_a_violation() {
+#[derive(Clone, Copy)]
+enum StateShape {
+    Unknown,
+    Missing,
+    Nested,
+    Positional,
+}
+
+#[test_case::test_case(StateShape::Unknown; "Unknown")]
+#[test_case::test_case(StateShape::Missing; "Missing")]
+#[test_case::test_case(StateShape::Nested; "Nested")]
+#[test_case::test_case(StateShape::Positional; "Positional")]
+fn a_document_not_shaped_as_this_build_writes_it_is_a_violation(scenario: StateShape) {
     let unknown = changed(|state| state["extra"] = json!(true));
     let missing = changed(|state| {
         state.as_object_mut().unwrap().remove("tuner");
@@ -135,13 +146,31 @@ fn a_document_not_shaped_as_this_build_writes_it_is_a_violation() {
     });
     let fresh = fresh(&events());
     let positional = json!([fresh["facts"], fresh["tuner"]]);
-    for state in [unknown, missing, nested, positional] {
-        assert_eq!(found(Some(state.clone())), [(2, Projection)], "{state}");
-    }
+    let state = match scenario {
+        StateShape::Unknown => unknown,
+        StateShape::Missing => missing,
+        StateShape::Nested => nested,
+        StateShape::Positional => positional,
+    };
+
+    assert_eq!(found(Some(state.clone())), [(2, Projection)], "{state}");
 }
 
-#[test]
-fn a_nested_key_this_build_does_not_write_or_leaves_out_is_a_violation() {
+#[derive(Clone, Copy)]
+enum NestedStateShape {
+    UnknownFacts,
+    UnknownTuner,
+    MissingFacts,
+    MissingTuner,
+    PositionalTuner,
+}
+
+#[test_case::test_case(NestedStateShape::UnknownFacts; "UnknownFacts")]
+#[test_case::test_case(NestedStateShape::UnknownTuner; "UnknownTuner")]
+#[test_case::test_case(NestedStateShape::MissingFacts; "MissingFacts")]
+#[test_case::test_case(NestedStateShape::MissingTuner; "MissingTuner")]
+#[test_case::test_case(NestedStateShape::PositionalTuner; "PositionalTuner")]
+fn a_nested_key_this_build_does_not_write_or_leaves_out_is_a_violation(scenario: NestedStateShape) {
     let fresh = fresh(&events());
     assert_eq!(fresh["facts"]["dead_end"], Value::Null);
     assert_eq!(fresh["tuner"]["deepening"], Value::Null);
@@ -177,19 +206,14 @@ fn a_nested_key_this_build_does_not_write_or_leaves_out_is_a_violation() {
             .map(|field| fresh["tuner"][field].clone())
             .collect();
     });
-    let cases = [
-        ("an unknown key in facts", unknown_fact),
-        ("an unknown key in tuner", unknown_tuner),
-        ("a missing None facts key", missing_fact),
-        ("a missing None tuner key", missing_tuner),
-        ("a positional tuner", positional_tuner),
-    ];
-    let undetected: Vec<&str> = cases
-        .into_iter()
-        .filter(|(_, state)| found(Some(state.clone())) != [(2, Projection)])
-        .map(|(name, _)| name)
-        .collect();
-    assert_eq!(undetected, Vec::<&str>::new());
+    let (name, state) = match scenario {
+        NestedStateShape::UnknownFacts => ("an unknown key in facts", unknown_fact),
+        NestedStateShape::UnknownTuner => ("an unknown key in tuner", unknown_tuner),
+        NestedStateShape::MissingFacts => ("a missing None facts key", missing_fact),
+        NestedStateShape::MissingTuner => ("a missing None tuner key", missing_tuner),
+        NestedStateShape::PositionalTuner => ("a positional tuner", positional_tuner),
+    };
+    assert_eq!(found(Some(state)), [(2, Projection)], "{name}");
 }
 
 #[test]
