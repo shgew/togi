@@ -130,7 +130,7 @@ pub(crate) struct RecoveredMce {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct MceKey {
     boot: BootId,
-    mono_ns: Option<u64>,
+    mono_ns: Option<Duration>,
     cpu: CpuId,
     bank: u16,
 }
@@ -139,7 +139,7 @@ impl MceKey {
     fn of(mce: &togi_machine::Mce, boot: &BootId) -> Self {
         Self {
             boot: boot.clone(),
-            mono_ns: Some(u64::try_from(mce.monotonic.as_nanos()).unwrap_or(u64::MAX)),
+            mono_ns: Some(mce.monotonic),
             cpu: mce.cpu,
             bank: mce.bank,
         }
@@ -699,7 +699,7 @@ impl RecoveryState {
         let boot = mce.from_boot.as_ref().unwrap_or(&event.boot);
         self.mce_keys.insert(MceKey {
             boot: boot.clone(),
-            mono_ns: mce.monotonic_ns,
+            mono_ns: mce.monotonic_ns.map(Duration::from_nanos),
             cpu: mce.cpu,
             bank: mce.bank,
         });

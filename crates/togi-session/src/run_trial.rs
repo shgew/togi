@@ -227,7 +227,7 @@ impl Session<'_> {
             let retry = BackendRetry {
                 backend: retry_target(backend),
                 attempt: due.attempt,
-                wait_s: u32::try_from(due.wait.as_secs()).unwrap_or(u32::MAX),
+                wait_s: due.wait_s,
                 reason,
             };
             self.appender.append(Payload::BackendRetry(retry), &[])?;
@@ -397,7 +397,9 @@ impl Session<'_> {
         let scheduled = started.schedule.is_some();
         let record = TrialStart {
             trial: trial.id.clone(),
-            window_start_ns: u64::try_from(trial.since.as_nanos()).ok(),
+            window_start_ns: Some(
+                u64::try_from(trial.since.as_nanos()).map_err(SessionError::Monotonic)?,
+            ),
             scope: started.scope,
             pid: started.pid,
             cpus: started.cpus,
@@ -560,7 +562,7 @@ impl Session<'_> {
             missing: missing.as_deref(),
             duration: Duration::from_secs(u64::from(trial.plan.duration.get())),
             containment,
-        });
+        })?;
         let interrupted = token.is_cancelled();
         let reason = if interrupted {
             evidence::join_diagnostic(adjudication.reason.as_deref(), Some("stopped by signal"))

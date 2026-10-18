@@ -323,7 +323,10 @@ impl Crashes<'_, '_> {
                 bank: mce.bank,
                 bank_type: mce.bank_type,
                 corrected: mce.corrected,
-                monotonic_ns: Some(u64::try_from(mce.monotonic.as_nanos()).unwrap_or(u64::MAX)),
+                monotonic_ns: Some(
+                    u64::try_from(mce.monotonic.as_nanos())
+                        .map_err(|error| Halt::Flow(SessionError::Monotonic(error).into()))?,
+                ),
                 from_boot: Some(from.clone()),
                 trial: None,
                 between_trials: between,
@@ -366,7 +369,7 @@ impl Crashes<'_, '_> {
                 .checked_sub(1)
                 .and_then(|recorded| RETRY_WAITS.get(recorded))
         {
-            self.wait(*wait)?;
+            self.wait(Duration::from_secs(u64::from(*wait)))?;
         }
         Ok(())
     }
@@ -386,7 +389,7 @@ impl Crashes<'_, '_> {
             Payload::BackendRetry(BackendRetry {
                 backend: RetryTarget::KernelLog,
                 attempt: due.attempt,
-                wait_s: u32::try_from(due.wait.as_secs()).unwrap_or(u32::MAX),
+                wait_s: due.wait_s,
                 reason: format!(
                     "read the kernel log of boot {boot}: {}",
                     togi_render::error_chain(error)
@@ -693,7 +696,7 @@ fn close_open_trial(recovery: &mut Recovery<'_, '_>) -> Step<()> {
         ..evidence::trial_end(
             trial.clone(),
             ruling.outcome,
-            u32::try_from(open.ran().as_secs()).unwrap_or(u32::MAX),
+            u32::try_from(open.ran().as_secs()).map_err(SessionError::TrialDuration)?,
         )
     };
     let loaded: CoreSet = if open.intent.cores.is_empty() {

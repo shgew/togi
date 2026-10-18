@@ -11,25 +11,23 @@ use togi_machine::{
 use togi_requests::Telemetry;
 
 /// The waits before the first, second and third retry of a backend or of the kernel log.
-pub(crate) const RETRY_WAITS: [Duration; 3] = [
-    Duration::from_mins(1),
-    Duration::from_mins(5),
-    Duration::from_mins(30),
-];
+pub(crate) const RETRY_WAITS: [u32; 3] = [60, 300, 1800];
 
 /// A retry that is due: its number, how long to wait, and whether `backend.retry` still has to record it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct RetryDue {
     pub attempt: u8,
     pub wait: Duration,
+    pub wait_s: u32,
     pub record: bool,
 }
 
 fn retry(attempt: usize) -> Option<RetryDue> {
-    let wait = *RETRY_WAITS.get(attempt.checked_sub(1)?)?;
+    let wait_s = *RETRY_WAITS.get(attempt.checked_sub(1)?)?;
     Some(RetryDue {
         attempt: u8::try_from(attempt).ok()?,
-        wait,
+        wait: Duration::from_secs(u64::from(wait_s)),
+        wait_s,
         record: true,
     })
 }
@@ -170,7 +168,9 @@ pub(crate) const fn machine_check_signal(any_corrected: bool) -> Signal {
 /// The outcome a trial's evidence adds up to. The first that holds wins: a worker outside its CPUs, containment
 /// that could not be confirmed, a backend signal, a machine check, the reset after a crash, a missing observation
 /// or an inconclusive diagnostic, a short run, and only then a pass.
-pub(crate) fn adjudicate(evidence: &TrialEvidence<'_>) -> Adjudication {
+pub(crate) fn adjudicate(
+    evidence: &TrialEvidence<'_>,
+) -> Result<Adjudication, crate::SessionError> {
     let result = evidence.result;
     let missing = present(evidence.missing);
     let mut end = Adjudication {
@@ -180,7 +180,8 @@ pub(crate) fn adjudicate(evidence: &TrialEvidence<'_>) -> Adjudication {
         reason: missing.map(str::to_owned),
         escaped: Vec::new(),
         containment_error: evidence.containment.map(str::to_owned),
-        duration_s: u32::try_from(result.ran.as_secs()).unwrap_or(u32::MAX),
+        duration_s: u32::try_from(result.ran.as_secs())
+            .map_err(crate::SessionError::TrialDuration)?,
         tctl_max_c: result.tctl_max_c,
     };
     if !result.escaped.is_empty() {
@@ -207,7 +208,7 @@ pub(crate) fn adjudicate(evidence: &TrialEvidence<'_>) -> Adjudication {
         end.outcome = Outcome::Inconclusive;
         end.reason = Some("trial ended before its full duration".to_owned());
     }
-    end
+    Ok(end)
 }
 
 /// The last sample of a trial, as much of it as a crash recovery or a trial end reports.

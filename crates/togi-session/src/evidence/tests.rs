@@ -51,6 +51,7 @@ impl Case {
             duration: MINUTE,
             containment: self.containment.as_deref(),
         })
+        .unwrap()
     }
 }
 

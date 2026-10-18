@@ -323,3 +323,279 @@ fn a_reset_core_is_consumed_by_the_resumed_session_which_retunes_it_to_its_limit
         "a clean full checking cycle ends after the reset"
     );
 }
+
+struct DurationTrials {
+    inner: Box<dyn togi_machine::Trials>,
+    ran: std::time::Duration,
+    cancel: CancellationToken,
+}
+
+struct DurationRunning {
+    inner: Box<dyn togi_machine::Running>,
+    ran: std::time::Duration,
+    cancel: CancellationToken,
+}
+
+impl togi_machine::Running for DurationRunning {
+    fn started(&self) -> togi_machine::Started {
+        self.inner.started()
+    }
+
+    fn wait(
+        &mut self,
+        cancel: &CancellationToken,
+        report: &mut dyn togi_machine::Reporter,
+    ) -> Result<togi_machine::TrialResult, togi_machine::Partial<togi_machine::TrialResult>> {
+        let mut result = self.inner.wait(cancel, report)?;
+        result.ran = self.ran;
+        self.cancel.cancel();
+        Ok(result)
+    }
+
+    fn stop(self: Box<Self>) -> Result<togi_machine::Stopped, togi_machine::Error> {
+        self.inner.stop()
+    }
+}
+
+impl togi_machine::Trials for DurationTrials {
+    fn sweep(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> Result<togi_machine::Swept, togi_machine::Error> {
+        self.inner.sweep(cancel)
+    }
+
+    fn start(
+        &mut self,
+        cancel: &CancellationToken,
+        spec: togi_machine::TrialSpec,
+        ready: togi_machine::Stopped,
+    ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
+    {
+        Ok(Box::new(DurationRunning {
+            inner: self.inner.start(cancel, spec, ready)?,
+            ran: self.ran,
+            cancel: self.cancel.clone(),
+        }))
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), togi_machine::Error> {
+        self.inner.ended(id)
+    }
+
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<
+        dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
+    > {
+        self.inner.samples(id)
+    }
+}
+
+#[test_case::test_case(u64::from(u32::MAX) - 1, false; "below")]
+#[test_case::test_case(u64::from(u32::MAX), false; "maximum")]
+#[test_case::test_case(u64::from(u32::MAX) + 1, true; "overflow")]
+fn trial_elapsed_seconds_are_checked(seconds: u64, refused: bool) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        ran: std::time::Duration::from_secs(seconds),
+        cancel: input.cancel.clone(),
+    });
+    let ended = run(input);
+    assert_eq!(
+        ended
+            .errors
+            .iter()
+            .any(|error| matches!(error, togi_session::SessionError::TrialDuration(_))),
+        refused,
+        "{:?}",
+        ended.errors
+    );
+    let duration = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::TrialEnd(end) => Some(end.duration_s),
+            _ => None,
+        });
+    assert_eq!(duration, u32::try_from(seconds).ok());
+}
+
+struct MonotonicClock {
+    inner: Box<dyn togi_machine::Clock>,
+    mono: std::time::Duration,
+}
+
+impl togi_machine::Clock for MonotonicClock {
+    fn now(&self) -> jiff::Timestamp {
+        self.inner.now()
+    }
+
+    fn monotonic(&self) -> std::time::Duration {
+        self.mono
+    }
+
+    fn sleep(
+        &mut self,
+        cancel: &CancellationToken,
+        duration: std::time::Duration,
+    ) -> Result<(), togi_machine::Error> {
+        self.inner.sleep(cancel, duration)
+    }
+}
+
+#[test_case::test_case(-1, false; "below")]
+#[test_case::test_case(0, false; "maximum")]
+#[test_case::test_case(1, true; "overflow")]
+fn trial_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    let max = std::time::Duration::from_nanos(u64::MAX);
+    let nano = std::time::Duration::from_nanos(1);
+    let mono = match delta {
+        -1 => max - nano,
+        0 => max,
+        1 => max + nano,
+        _ => unreachable!(),
+    };
+    input.machine.clock = Box::new(MonotonicClock {
+        inner: input.machine.clock,
+        mono,
+    });
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        ran: std::time::Duration::from_secs(90),
+        cancel: input.cancel.clone(),
+    });
+    let ended = run(input);
+    assert_eq!(
+        ended
+            .errors
+            .iter()
+            .any(|error| matches!(error, togi_session::SessionError::Monotonic(_))),
+        refused,
+        "{:?}",
+        ended.errors
+    );
+    let start = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::TrialStart(start) => start.window_start_ns,
+            _ => None,
+        });
+    assert_eq!(start, u64::try_from(mono.as_nanos()).ok());
+}
+
+struct MonotonicKernel {
+    inner: Box<dyn togi_machine::Kernel>,
+    mono: std::time::Duration,
+}
+
+impl MonotonicKernel {
+    fn mce(&self) -> togi_machine::Mce {
+        togi_machine::Mce {
+            cpu: togi_machine::CpuId::from(0),
+            core: Some(core(0)),
+            bank: 0,
+            bank_type: togi_machine::BankType::Unknown,
+            corrected: true,
+            time: jiff::Timestamp::UNIX_EPOCH,
+            monotonic: self.mono,
+            lines: vec!["machine check".into()],
+        }
+    }
+}
+
+impl togi_machine::Kernel for MonotonicKernel {
+    fn mces(
+        &mut self,
+        _: &togi_machine::BootId,
+        _: std::time::Duration,
+    ) -> Result<Vec<togi_machine::Mce>, togi_machine::Partial<Vec<togi_machine::Mce>>> {
+        Ok(vec![self.mce()])
+    }
+
+    fn read_mces(
+        &mut self,
+        boot: &togi_machine::BootId,
+        after: Option<&togi_machine::KernelCursor>,
+    ) -> Result<togi_machine::KernelRead, togi_machine::Partial<Vec<togi_machine::Mce>>> {
+        let mut read = self.inner.read_mces(boot, after)?;
+        read.mces.push(self.mce());
+        Ok(read)
+    }
+
+    fn reset_reason(
+        &mut self,
+        boot: &togi_machine::BootId,
+    ) -> Result<togi_machine::ResetReason, togi_machine::Error> {
+        self.inner.reset_reason(boot)
+    }
+
+    fn reset_reason_after(
+        &mut self,
+        boot: &togi_machine::BootId,
+    ) -> Result<togi_machine::ResetReason, togi_machine::Error> {
+        self.inner.reset_reason_after(boot)
+    }
+
+    fn saved_pstore(
+        &mut self,
+        boot: &togi_machine::BootId,
+    ) -> Result<Option<togi_machine::PstoreRecord>, togi_machine::Error> {
+        self.inner.saved_pstore(boot)
+    }
+}
+
+#[test_case::test_case(-1, false; "below")]
+#[test_case::test_case(0, false; "maximum")]
+#[test_case::test_case(1, true; "overflow")]
+fn kernel_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    let max = std::time::Duration::from_nanos(u64::MAX);
+    let nano = std::time::Duration::from_nanos(1);
+    let mono = match delta {
+        -1 => max - nano,
+        0 => max,
+        1 => max + nano,
+        _ => unreachable!(),
+    };
+    input.machine.kernel = Box::new(MonotonicKernel {
+        inner: input.machine.kernel,
+        mono,
+    });
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        ran: std::time::Duration::from_secs(90),
+        cancel: input.cancel.clone(),
+    });
+    let ended = run(input);
+    assert_eq!(
+        ended
+            .errors
+            .iter()
+            .any(|error| matches!(error, togi_session::SessionError::Monotonic(_))),
+        refused,
+        "{:?}",
+        ended.errors
+    );
+    let recorded = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::Mce(mce) => mce.monotonic_ns,
+            _ => None,
+        });
+    assert_eq!(recorded, u64::try_from(mono.as_nanos()).ok());
+}
