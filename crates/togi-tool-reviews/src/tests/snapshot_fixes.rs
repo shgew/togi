@@ -731,7 +731,7 @@ fn recreated() -> String {
 #[test_case(&recreated(), &f("@@ -30,0 +31 @@\n+b\n"), &f("@@ -30,0 +31 @@\n+b\n"), &f("@@ -0,0 +1,1 @@\n+b\n"); "deleted file back, one line lost")]
 #[test_case(&two(), BINARY_CHANGED, BINARY_CHANGED, &two(); "text reversal of a file now binary in both")]
 fn lost_effects_by_hunk(reversal: &str, base: &str, head: &str, want: &str) {
-    let got = lost_effects(&parse(reversal)[0], &parse(base), &parse(head));
+    let got = lost_effects(&parse(reversal)[0], &parse(base), &parse(head)).expect("valid diff numbers");
     let want = (!want.is_empty()).then(|| want.to_owned());
     assert_eq!(want, got.map(|lost| lossy(&lost.text)));
 }

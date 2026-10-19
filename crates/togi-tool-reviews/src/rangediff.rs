@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use regex::bytes::Regex as BytesRegex;
 
-use crate::diff::{FileDiff, Hunk, lines, number, parse_diff, same_changes, spans, trim_newline};
+use crate::diff::{FileDiff, Hunk, advance_line, lines, number, parse_diff, same_changes, spans, trim_newline};
 use crate::manifest::PatchStatus;
 use crate::text::{lossy, quote};
 use crate::{Error, Programs};
@@ -293,7 +293,7 @@ fn gone_effects(
                 .map_err(|error| Error::wrap(context(), error))?;
             sides.push(parse_diff(&out).map_err(|error| Error::wrap(context(), error))?);
         }
-        if let Some(lost) = lost_effects(f, &sides[0], &sides[1]) {
+        if let Some(lost) = lost_effects(f, &sides[0], &sides[1])? {
             kept.push(lost);
         }
     }
@@ -307,7 +307,7 @@ fn gone_effects(
 /// mode are traced on their own too: one a lower layer carries leaves the header, and the text then applies
 /// to the file as it stands now. `None` when nothing is lost. Anything it cannot tell apart counts as lost,
 /// so an effect is never dropped from the review wrongly.
-pub fn lost_effects(f: &FileDiff, base: &[FileDiff], head: &[FileDiff]) -> Option<FileDiff> {
+pub fn lost_effects(f: &FileDiff, base: &[FileDiff], head: &[FileDiff]) -> Result<Option<FileDiff>, Error> {
     let mut f = f.clone();
     f.changed.clear();
     let name = source_name(&f).to_owned();
@@ -320,7 +320,7 @@ pub fn lost_effects(f: &FileDiff, base: &[FileDiff], head: &[FileDiff]) -> Optio
     let mut body = Vec::new();
     let (mut offset, mut adds, mut dels, mut retained) = (0, 0, 0, false);
     for h in &f.hunks {
-        let (narrowed, hunk_adds, hunk_dels, partial) = narrow_hunk(h, &lost, offset);
+        let (narrowed, hunk_adds, hunk_dels, partial) = narrow_hunk(h, &lost, offset)?;
         retained = retained || partial;
         if narrowed.text.is_empty() {
             continue;
@@ -329,11 +329,11 @@ pub fn lost_effects(f: &FileDiff, base: &[FileDiff], head: &[FileDiff]) -> Optio
         hunks.push(narrowed);
         adds += hunk_adds;
         dels += hunk_dels;
-        offset += hunk_adds - hunk_dels;
+        offset = advance_line(offset, hunk_adds - hunk_dels)?;
     }
     let binary_lost = f.binary && !base.is_empty() && !head.is_empty();
     if hunks.is_empty() && !mode_lost && !op_lost && !binary_lost {
-        return None;
+        return Ok(None);
     }
     let survives = f.status != "modified" && !op_lost;
     let cur = if f.status == "renamed" || f.status == "copied" {
@@ -372,7 +372,7 @@ pub fn lost_effects(f: &FileDiff, base: &[FileDiff], head: &[FileDiff]) -> Optio
         .join(&b'\n');
     f.header = header;
     f.hunks = hunks;
-    Some(f)
+    Ok(Some(f))
 }
 
 /// The name of the file as the removed patch left it: the source of a reversal that renames or copies,
@@ -439,7 +439,7 @@ fn narrow_hunk(
     h: &Hunk,
     lost: &dyn Fn(u8, i64, &[u8]) -> bool,
     offset: i64,
-) -> (Hunk, i64, i64, bool) {
+) -> Result<(Hunk, i64, i64, bool), Error> {
     let hunk_lines: Vec<&[u8]> = lines(&h.text).collect();
     let header = trim_newline(hunk_lines.first().copied().unwrap_or_default());
     let Some(m) = FULL_HUNK_HEADER
@@ -447,12 +447,14 @@ fn narrow_hunk(
         .ok()
         .and_then(|pattern| pattern.captures(header))
     else {
-        return (h.clone(), 0, 0, false);
+        return Ok((h.clone(), 0, 0, false));
     };
-    let old_start = m.get(1).map_or(0, |d| number(d.as_bytes()));
-    let new_start = m.get(3).map_or(0, |d| number(d.as_bytes()));
+    let old_start = m.get(1).map(|d| number(d.as_bytes())).transpose()?.unwrap_or(0);
+    let new_start = m.get(3).map(|d| number(d.as_bytes())).transpose()?.unwrap_or(0);
+    m.get(2).map(|d| number(d.as_bytes())).transpose()?;
+    m.get(4).map(|d| number(d.as_bytes())).transpose()?;
     let context = m.get(5).map_or(&[][..], |g| g.as_bytes());
-    let mut old_no = old_start;
+    let mut old_no = i128::from(old_start);
     let mut body = Vec::new();
     let mut removed = Vec::new();
     let mut added = Vec::new();
@@ -466,13 +468,15 @@ fn narrow_hunk(
                 body.extend_from_slice(line);
                 old_count += 1;
                 new_count += 1;
+                crate::diff::line_number(old_no)?;
                 old_no += 1;
                 last_kept = true;
             }
             Some(b'-') => {
-                if lost(b'-', old_no, &text[1..]) {
+                let old = crate::diff::line_number(old_no)?;
+                if lost(b'-', old, &text[1..]) {
                     body.extend_from_slice(line);
-                    removed.push(old_no);
+                    removed.push(old);
                     dels += 1;
                     old_count += 1;
                 } else {
@@ -502,18 +506,18 @@ fn narrow_hunk(
         }
     }
     if adds + dels == 0 {
-        return (Hunk::default(), 0, 0, retained);
+        return Ok((Hunk::default(), 0, 0, retained));
     }
     let mut first = old_start;
     if old_count == 0 {
-        first += 1;
+        first = advance_line(first, 1)?;
     }
-    first += offset;
+    first = advance_line(first, offset)?;
     if new_count == 0 {
-        first -= 1;
+        first = advance_line(first, -1)?;
     }
     if !retained && first == new_start {
-        return (h.clone(), adds, dels, false);
+        return Ok((h.clone(), adds, dels, false));
     }
     let mut text = format!("@@ -{old_start},{old_count} +{first},{new_count} @@").into_bytes();
     text.extend_from_slice(context);
@@ -524,7 +528,7 @@ fn narrow_hunk(
         removals: spans(&removed),
         added,
     };
-    (hunk, adds, dels, retained)
+    Ok((hunk, adds, dels, retained))
 }
 
 /// The header of a narrowed reversal. Mode lines stay only when the mode change is lost. When the file
