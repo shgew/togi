@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use togi_journal::{Activity, Outcome, Seq, TrialIntent};
-use togi_machine::{Condition, CoreId, CoreSet};
+use togi_machine::{Condition, CoreId, CoreSet, PerCore};
 
 use super::respond::Failed;
 use crate::flight::OpenTrial;
@@ -29,7 +29,7 @@ struct Charge {
 /// deliberately do not clear this: an intermittent failure can ratchet a top requester too.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Probes {
-    charges: HashMap<(LoadKey, CoreId), Charge>,
+    charges: HashMap<LoadKey, PerCore<Option<Charge>>>,
 }
 
 impl Probes {
@@ -37,7 +37,9 @@ impl Probes {
         stalled_elsewhere
             || self
                 .charges
-                .get(&(load, core))
+                .get(&load)
+                .and_then(|cores| cores.get_ref(core))
+                .and_then(Option::as_ref)
                 .is_some_and(|charge| charge.previous.is_some())
     }
 
@@ -49,7 +51,11 @@ impl Probes {
         failure: Seq,
         stalled_elsewhere: bool,
     ) {
-        let charge = self.charges.entry(key).or_default();
+        let charge = self
+            .charges
+            .entry(key.0)
+            .or_default()
+            .get_or_insert_with(key.1, Charge::default);
         if charge.probe.is_some() {
             return;
         }
@@ -71,13 +77,13 @@ impl Probes {
     fn head(&self) -> Option<&Probe> {
         self.charges
             .values()
+            .flat_map(|cores| cores.iter_ref().filter_map(|(_, charge)| charge.as_ref()))
             .filter_map(|charge| charge.probe.as_ref())
             .min_by_key(|probe| probe.since)
     }
 
     pub(crate) fn reset_core(&mut self, core: CoreId) {
-        self.charges
-            .retain(|(load, _), _| !load.loaded.contains(core));
+        self.charges.retain(|load, _| !load.loaded.contains(core));
     }
 }
 
@@ -213,11 +219,17 @@ impl Run {
         };
         if done {
             let since = probe.since;
-            self.r7.probes.charges.retain(|_, charge| {
-                charge
-                    .probe
-                    .as_ref()
-                    .is_none_or(|probe| probe.since != since)
+            self.r7.probes.charges.retain(|_, cores| {
+                for (_, charge) in cores.iter_mut() {
+                    if charge
+                        .as_ref()
+                        .and_then(|charge| charge.probe.as_ref())
+                        .is_some_and(|probe| probe.since == since)
+                    {
+                        *charge = None;
+                    }
+                }
+                cores.iter_ref().any(|(_, charge)| charge.is_some())
             });
         }
     }

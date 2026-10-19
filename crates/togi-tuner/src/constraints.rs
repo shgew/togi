@@ -2,7 +2,7 @@ use std::fmt;
 use std::num::NonZeroU32;
 
 use serde::{Deserialize, Serialize};
-use togi_machine::{CoreId, CoreSet, PER_CORE_MAX, PerCore, TargetOffset};
+use togi_machine::{CoreId, CoreSet, PerCore, TargetOffset};
 
 use crate::optimum::solve;
 use crate::{Depth, Profile, Ranking, Topology, TopologyMismatch};
@@ -129,7 +129,7 @@ pub struct Constraints {
     cores: CoreSet,
     failure_points: PerCore<FailurePoint>,
     combinations: Vec<Combination>,
-    by_core: [Vec<usize>; PER_CORE_MAX],
+    by_core: PerCore<Option<Vec<usize>>>,
     recent: CoreSet,
 }
 
@@ -139,7 +139,7 @@ impl Constraints {
             cores: topology.all(),
             failure_points: PerCore::default(),
             combinations: Vec::new(),
-            by_core: Default::default(),
+            by_core: PerCore::default(),
             recent: CoreSet::default(),
         }
     }
@@ -161,8 +161,11 @@ impl Constraints {
 
     /// The combinations `core` is a member of, in insertion order.
     pub fn combinations_with(&self, core: CoreId) -> impl Iterator<Item = &Combination> {
-        self.by_core[core.index()]
-            .iter()
+        self.by_core
+            .get_ref(core)
+            .and_then(Option::as_ref)
+            .into_iter()
+            .flatten()
             .filter_map(|&index| self.combinations.get(index))
     }
 
@@ -244,7 +247,7 @@ impl Constraints {
         self.recent = members.iter().map(|(core, _)| core).collect();
         let index = self.combinations.len();
         for (core, _) in members.iter() {
-            self.by_core[core.index()].push(index);
+            self.by_core.get_or_insert_with(core, Vec::new).push(index);
         }
         self.combinations.push(Combination { id, members });
         Ok(Insertion::Added)
@@ -275,10 +278,12 @@ impl Constraints {
         }
         self.combinations
             .retain(|combination| !ids.contains(&combination.id));
-        self.by_core = Default::default();
+        self.by_core = PerCore::default();
         for (index, combination) in self.combinations.iter().enumerate() {
             for (member, _) in combination.members.iter() {
-                self.by_core[member.index()].push(index);
+                self.by_core
+                    .get_or_insert_with(member, Vec::new)
+                    .push(index);
             }
         }
     }

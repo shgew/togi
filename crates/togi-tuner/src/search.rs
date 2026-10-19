@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use togi_journal::{
     Activity, CorePhase, CoreTransition, DeadEnd, DeadEndCondition, Decision, Seq, TunerDecision,
 };
-use togi_machine::{Backend, Condition, CoreId, Regime, TargetOffset, WorkloadId, pick_workload};
+use togi_machine::{
+    Backend, Condition, CoreId, PerCore, Regime, TargetOffset, WorkloadId, pick_workload,
+};
 
 use crate::cores::Core;
 use crate::ledger::carried_clause;
@@ -51,7 +53,7 @@ struct Step {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Search {
     cursor: Option<usize>,
-    steps: BTreeMap<CoreId, Step>,
+    steps: PerCore<Option<Step>>,
 }
 
 impl Search {
@@ -60,7 +62,7 @@ impl Search {
     }
 
     pub(crate) fn clear(&mut self, core: CoreId) {
-        self.steps.remove(&core);
+        self.steps.set(core, None);
     }
 
     pub(crate) fn record_pass(
@@ -71,7 +73,7 @@ impl Search {
         id: BackendId,
         seq: Seq,
     ) {
-        let step = self.steps.entry(core).or_default();
+        let step = self.steps.get_or_insert_with(core, Step::default);
         let passes = match regime {
             SearchRegime::R1 => &mut step.r1,
             SearchRegime::R2 => &mut step.r2,
@@ -90,12 +92,15 @@ impl Search {
     /// The seqs of the core's first R1 and R2 passes that ran under the backend packages now in
     /// force.
     pub(crate) fn current(&self, core: CoreId, evidence: &Evidence) -> (Option<Seq>, Option<Seq>) {
-        self.steps.get(&core).map_or((None, None), |step| {
-            (
-                Self::first_valid(&step.r1, evidence),
-                Self::first_valid(&step.r2, evidence),
-            )
-        })
+        self.steps
+            .get_ref(core)
+            .and_then(Option::as_ref)
+            .map_or((None, None), |step| {
+                (
+                    Self::first_valid(&step.r1, evidence),
+                    Self::first_valid(&step.r2, evidence),
+                )
+            })
     }
 }
 

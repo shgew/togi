@@ -44,12 +44,31 @@ impl<T> PerCore<T> {
         })
     }
 
+    /// Mutably visits present cores in ascending order, retaining topology holes.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (CoreId, &mut T)> {
+        let present = self.present;
+        (0_u8..)
+            .zip(self.values.iter_mut())
+            .filter_map(move |(index, value)| {
+                let core = CoreId::from_index(index);
+                (present & (1 << core.get()) != 0).then_some((core, value))
+            })
+    }
+
     /// Counts present cores, including those holding `None` in sparse storage.
     pub const fn len(&self) -> usize {
         self.present.count_ones() as usize
     }
     pub const fn is_empty(&self) -> bool {
         self.present == 0
+    }
+}
+
+impl<T> PerCore<Option<T>> {
+    /// Initializes missing state without allocating or changing any other core.
+    pub fn get_or_insert_with(&mut self, core: CoreId, value: impl FnOnce() -> T) -> &mut T {
+        self.present |= 1 << core.get();
+        self.values[core.index()].get_or_insert_with(value)
     }
 }
 
@@ -135,6 +154,41 @@ mod tests {
         assert_eq!(
             values.into_iter_values().collect::<Vec<_>>(),
             vec![(low, Some(vec![2, 3])), (high, None)]
+        );
+    }
+
+    #[test]
+    fn sparse_initialization_is_lazy_and_preserves_other_cores() {
+        let low = CoreId::from_index(2);
+        let high = CoreId::from_index(15);
+        let mut values = PerCore::<Option<String>>::default();
+        values.get_or_insert_with(high, || "high".into()).push('!');
+        values.get_or_insert_with(high, || panic!("already initialized"));
+        assert_eq!(values.get_ref(low), None);
+        values.set(low, None);
+        assert_eq!(values.get_or_insert_with(low, || "low".into()), "low");
+        assert_eq!(
+            values.into_iter_values().collect::<Vec<_>>(),
+            vec![(low, Some("low".into())), (high, Some("high!".into()))]
+        );
+    }
+
+    #[test]
+    fn mutable_iteration_preserves_presence_and_order() {
+        let low = CoreId::from_index(2);
+        let high = CoreId::from_index(15);
+        let mut values: PerCore<Option<Vec<u8>>> =
+            [(high, Some(vec![1])), (low, None)].into_iter().collect();
+        let mut visited = Vec::new();
+        for (core, slot) in values.iter_mut() {
+            visited.push(core);
+            slot.get_or_insert_with(Vec::new).push(core.get());
+        }
+        assert_eq!(visited, [low, high]);
+        assert_eq!(values.get_ref(CoreId::from_index(7)), None);
+        assert_eq!(
+            values.into_iter_values().collect::<Vec<_>>(),
+            [(low, Some(vec![2])), (high, Some(vec![1, 15]))]
         );
     }
 
