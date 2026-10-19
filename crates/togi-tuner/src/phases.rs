@@ -10,7 +10,7 @@ use crate::state::Run;
 use crate::{Depth, FoldError, Profile};
 
 /// The origin of a core's unverified offset, retained when a yield retries that same offset.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Mark {
     pub(crate) round: NonZeroU32,
     pub(crate) seq: Seq,
@@ -18,7 +18,7 @@ pub(crate) struct Mark {
     pub(crate) attempt: NonZeroU32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Settled {
     phase1_end: Seq,
     first_confirmed: Profile,
@@ -27,7 +27,7 @@ struct Settled {
     blames: VecDeque<Blame>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 enum Stage {
     One,
     Rounds(Settled),
@@ -45,7 +45,7 @@ enum Stage {
 
 /// The two-phase method's lifecycle. Phase 1 ends at the first passed full cycle after every core
 /// left search; phase 2 is the rounds after it and the confirmation cycle that concludes it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Phases {
     stage: Stage,
 }

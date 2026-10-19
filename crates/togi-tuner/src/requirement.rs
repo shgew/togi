@@ -48,7 +48,7 @@ impl TrialContext {
 
 /// The inconclusive trial to repeat; its plan carries the requirement it was scheduled under.
 /// Only a builder selecting the same requirement serves it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Retry {
     pub(crate) plan: TrialPlan,
     pub(crate) workload: WorkloadId,

@@ -124,7 +124,7 @@ pub enum Insertion {
 
 /// The failure points and combinations recorded for a topology's cores. They accumulate until a
 /// core is cleared.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Constraints {
     cores: CoreSet,
     failure_points: PerCore<FailurePoint>,

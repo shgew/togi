@@ -12,10 +12,7 @@ fn events() -> Vec<Event> {
 }
 
 fn fresh(events: &[Event]) -> Value {
-    json!({
-        "facts": togi_journal::State::replay(events).unwrap(),
-        "tuner": togi_tuner::replay(events).unwrap().project(),
-    })
+    state_document(events)
 }
 
 fn found(state: Option<Value>) -> Vec<(u64, togi_tool_audit::Check)> {
@@ -229,4 +226,38 @@ fn a_finished_run_needs_a_state_document_at_its_last_event() {
     empty["facts"]["last_seq"] = Value::Null;
     assert_eq!(found_in(&events, Some(empty), Finished), [(2, Projection)]);
     assert_eq!(found_in(&events, None, InProgress), []);
+}
+
+#[test]
+fn a_resealed_full_reducer_mismatch_reports_a_projection_violation() {
+    let events = events();
+    let mut state = fresh(&events);
+    let prefix = serde_json::from_value(state["snapshot"]["prefix"].clone()).unwrap();
+    state.as_object_mut().unwrap().remove("snapshot");
+    state["recovery"]["trials"] = json!(999);
+    let state = togi_journal::snapshot::seal(prefix, &state).unwrap();
+    let fs = MemFs::new();
+    let journal = events
+        .iter()
+        .map(|event| event.encode().unwrap() + "\n")
+        .collect::<String>();
+    fs.put("/state/events.jsonl", journal.into_bytes());
+    fs.put("/state/state.json", serde_json::to_vec(&state).unwrap());
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the injected memory journal is the audit fixture"
+    )]
+    let dir = StateDir::simulated(fs).unwrap();
+    let violations: Vec<_> = audit_recordings(&dir, InProgress)
+        .unwrap()
+        .into_iter()
+        .flat_map(|audit| audit.violations)
+        .collect();
+    assert_eq!(violations.len(), 1);
+    assert_eq!(violations[0].seq, events.last().unwrap().seq);
+    assert_eq!(violations[0].check, Projection);
+    assert_eq!(
+        violations[0].reason,
+        "state.json full folded state differs: Different"
+    );
 }

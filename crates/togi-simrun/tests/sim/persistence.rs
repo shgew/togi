@@ -92,6 +92,44 @@ fn warm_and_cold_replays_leave_the_same_files(definition: &MachineDefinition, se
     assert_eq!(cold.state, warm.state, "state.json (left cold, right warm)");
 }
 
+#[test_case(1; "seed 1")]
+#[test_case(621; "seed 621")]
+fn copied_snapshot_resume_matches_full_replay(seed: u64) {
+    let definition = MachineDefinition::default();
+    let source = MemFs::new();
+    let mut first = input(
+        simulator(&definition, seed),
+        Persistence::Memory(source.clone()),
+    );
+    first.observer = Some(Box::new(|event| {
+        if event.kind() == EventKind::TrialEnd {
+            Observe::Stop
+        } else {
+            Observe::Continue
+        }
+    }));
+    simulate(first).unwrap();
+    let mut results = Vec::new();
+    for replay in [Replay::Warm, Replay::Cold] {
+        let copied = MemFs::new();
+        for name in ["events.jsonl", "state.json"] {
+            let path = format!("{STATE}/{name}");
+            copied.put(&path, source.contents(&path).unwrap());
+        }
+        run(
+            &definition,
+            seed,
+            Persistence::Memory(copied.clone()),
+            replay,
+        );
+        results.push((
+            copied.contents(format!("{STATE}/events.jsonl")).unwrap(),
+            copied.contents(format!("{STATE}/state.json")).unwrap(),
+        ));
+    }
+    assert_eq!(results[0], results[1]);
+}
+
 type Seen = Rc<RefCell<Vec<(BootId, Option<Vec<u8>>)>>>;
 
 /// Records, at every appended event, the in-memory `state.json` beside the event's boot; the observer answers `stop`.

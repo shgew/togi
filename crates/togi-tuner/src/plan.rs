@@ -39,7 +39,7 @@ ordinal!(
 );
 
 /// The cores a trial loads: one core, or a set of them.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Load {
     Single(CoreId),
     Many(CoreSet),
@@ -77,14 +77,14 @@ impl Load {
 }
 
 /// Which workload of its regime a trial runs: the next in the rotation, or one a decision froze.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum WorkloadChoice {
     Rotate,
     Frozen(WorkloadId),
 }
 
 /// The identity a scheduled trial's requirement belongs to, with the context its kind needs.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum TrialContext {
     Search {
         core: CoreId,
@@ -116,7 +116,7 @@ pub enum TrialContext {
 }
 
 /// The evidence obligation a trial was scheduled for, captured before its intent folds.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Requirement {
     pub context: TrialContext,
     pub class: ClassKey,
@@ -125,7 +125,7 @@ pub struct Requirement {
 }
 
 /// A trial the tuner asks for.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TrialPlan {
     pub regime: Regime,
     pub workload: WorkloadChoice,
@@ -193,7 +193,7 @@ impl TrialPlan {
 }
 
 /// A decision's journal payload, one of the kinds the tuner decides.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DecisionPayload {
     Failure(Failure),
     TunerWarning(TunerWarning),

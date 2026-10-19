@@ -8,7 +8,7 @@ use togi_journal::Seq;
 use crate::{BackendId, LoadKey, Profile};
 
 /// The request telemetry of one R7 trial: the profile it ran at and each loaded core's request.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Measurement {
     seq: Seq,
     profile: Profile,
@@ -44,9 +44,11 @@ type CcdClocks = BTreeMap<CcdId, (Seq, i64)>;
 /// newer ones arrive. The newest full part of a CCD is the measurement of the load that is the
 /// CCD's cores. The newest clock of each CCD is kept per load and backend identity, so a
 /// restored backend finds the clocks it last measured.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Measurements {
+    #[serde(with = "togi_machine::serde_pairs")]
     newest: HashMap<LoadKey, Measurement>,
+    #[serde(with = "togi_machine::serde_pairs")]
     clocks: HashMap<(LoadKey, BackendId), CcdClocks>,
 }
 

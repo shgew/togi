@@ -14,7 +14,7 @@ const NOT_CURVE_OPTIMIZER: &str = "the instability is not caused by Curve Optimi
 
 /// The all-zero rerun of a failure that would otherwise end the session at CO 0. A diagnostic
 /// not yet running is the one `at_zero` still asks for.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Diagnostic {
     Running { trial: TrialId },
     Passed { end: Seq },
@@ -22,7 +22,7 @@ pub(crate) enum Diagnostic {
 }
 
 /// The diagnostics by the failure they confirm, and the trial each running one is.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Zero {
     by_failure: BTreeMap<Seq, Diagnostic>,
     by_trial: HashMap<TrialId, Seq>,

@@ -5,11 +5,14 @@ use togi_machine::Backend;
 
 /// The evidence identity of one backend package: the backend and the store path it ran from,
 /// or no path when none was recorded. Restoring a path gives back the id it had.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub struct BackendId(usize);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct Backends {
+    #[serde(with = "togi_machine::serde_pairs")]
     ids: HashMap<(Backend, Option<PathBuf>), BackendId>,
     active: [BackendId; 2],
 }

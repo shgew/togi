@@ -18,6 +18,7 @@ mod reader;
 mod receipt;
 mod session_id;
 mod skipped;
+pub mod snapshot;
 mod state;
 #[cfg(test)]
 mod testing;

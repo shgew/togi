@@ -14,10 +14,23 @@ use crate::model::{
     HuntShape, Parking, RecoveryView, TrialView,
 };
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
 pub(crate) struct Derived {
-    pub(crate) projection: Projection,
     pub(crate) forecast: Forecast,
+    pub(crate) view: View,
+}
+
+impl std::ops::Deref for Derived {
+    type Target = View;
+
+    fn deref(&self) -> &View {
+        &self.view
+    }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+pub(crate) struct View {
+    pub(crate) projection: Projection,
     pub(crate) cores: Vec<CoreView>,
     pub(crate) combos: Vec<ComboView>,
     pub(crate) trial: Option<TrialView>,
@@ -32,8 +45,111 @@ pub(crate) struct Derived {
 impl Derived {
     pub(crate) fn empty() -> Self {
         Self {
-            projection: TunerState::new().project(),
+            view: View::empty(),
             forecast: Forecast::default(),
+        }
+    }
+
+    pub(crate) fn new(journal: &JournalState, tuner: &TunerState, facts: &Facts) -> Self {
+        Self {
+            view: View::new(journal, tuner, facts),
+            forecast: tuner.forecast(),
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+pub(crate) struct EndView {
+    pub(crate) cycle_plan: CyclePlan,
+    pub(crate) hunt_plan: Option<togi_tuner::HuntPlan>,
+    pub(crate) trial: Option<TrialView>,
+    pub(crate) hunt: Option<HuntFacts>,
+    pub(crate) step_hunts: Vec<Vec<u32>>,
+}
+
+impl EndView {
+    pub(crate) fn new(journal: &JournalState, tuner: &TunerState, facts: &Facts) -> Self {
+        let cycle_plan = tuner.cycle_plan();
+        let hunt_plan = tuner.hunt_plan();
+        let plan = &cycle_plan;
+        let trial = facts.current.as_ref().map(|current| {
+            let mut view = new_trial(&current.intent, facts, journal);
+            if let Some(requirement) = tuner.requirement() {
+                view.count = Count {
+                    passed: requirement.passed,
+                    index: requirement.trial,
+                    of: requirement.needed,
+                };
+            }
+            view.crashed = current.boot_ended;
+            place_in_cycle(plan, &mut view);
+            if let Some(hunt) = &hunt_plan {
+                fit_hunt(&mut view, hunt);
+                if let Some(shape) = facts
+                    .shapes
+                    .get(&hunt.number)
+                    .filter(|_| view.condition == togi_machine::Condition::Parked)
+                {
+                    for core in journal.cores.iter().map(|core| core.core) {
+                        let member = hunt
+                            .groups
+                            .iter()
+                            .rfind(|group| group.outcome == GroupState::Running)
+                            .is_some_and(|group| {
+                                group.cores.contains(core)
+                                    || group.probe.is_some_and(|probe| probe.core == core)
+                                    || group.held.iter().any(|member| member.core == core)
+                            });
+                        if !member
+                            && shape
+                                .parked
+                                .get(core)
+                                .is_some_and(|held| view.profile.get(core) == Some(held))
+                        {
+                            view.parked.insert(core);
+                        }
+                    }
+                }
+            }
+            view.idle = journal
+                .cores
+                .iter()
+                .map(|core| core.core)
+                .filter(|core| !view.cores.contains(*core) && !view.parked.contains(*core))
+                .collect();
+            view
+        });
+        let hunt = hunt_plan
+            .as_ref()
+            .map(|hunt| hunt_facts(hunt, plan, facts, journal));
+        let step_hunts = plan
+            .number
+            .map(|number| {
+                (1..=crate::numbers::saturating_ordinal(plan.steps.len()))
+                    .map(|step| {
+                        facts
+                            .check_hunts
+                            .get(&(number.get(), step))
+                            .cloned()
+                            .unwrap_or_default()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            cycle_plan,
+            hunt_plan,
+            trial,
+            hunt,
+            step_hunts,
+        }
+    }
+}
+
+impl View {
+    fn empty() -> Self {
+        Self {
+            projection: TunerState::new().project(),
             cores: Vec::new(),
             combos: Vec::new(),
             trial: None,
@@ -48,7 +164,6 @@ impl Derived {
 
     pub(crate) fn new(journal: &JournalState, tuner: &TunerState, facts: &Facts) -> Self {
         let projection = tuner.project();
-        let forecast = tuner.forecast();
         let plan = &projection.cycle_plan;
         let mut trial = facts.current.as_ref().map(|current| {
             let mut view = new_trial(&current.intent, facts, journal);
@@ -121,7 +236,6 @@ impl Derived {
         let order = journal.cores.iter().map(|core| core.core).collect();
         Self {
             projection,
-            forecast,
             cores,
             combos,
             trial,
@@ -324,16 +438,18 @@ pub(crate) fn hunt_facts(
         .shapes
         .get(&plan.number)
         .map(|shape| parking_of(shape, plan.candidates));
+    let mut group_signals: Vec<_> = facts
+        .group_signals
+        .iter()
+        .filter(|((hunt, _), _)| *hunt == plan.number)
+        .map(|((_, group), signal)| (*group, *signal))
+        .collect();
+    group_signals.sort_unstable_by_key(|(group, _)| *group);
     HuntFacts {
         started: facts.hunt_started.get(&plan.number).copied(),
         cause,
         parking,
-        group_signals: facts
-            .group_signals
-            .iter()
-            .filter(|((hunt, _), _)| *hunt == plan.number)
-            .map(|((_, group), signal)| (*group, *signal))
-            .collect(),
+        group_signals,
     }
 }
 

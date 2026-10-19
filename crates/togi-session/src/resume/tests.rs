@@ -49,6 +49,12 @@ fn capsule_of(events: &[Event], defects: &'static [Entry]) -> ResumeCapsule {
         last: last_seq(events),
         defects,
         folds: Folds::replay_with(defects, events).unwrap(),
+        prefix: togi_journal::snapshot::Prefix {
+            last_seq: last_seq(events),
+            bytes: 0,
+            sha256: "verification-only capsule".into(),
+        },
+        origin: Origin::Warm,
     }
 }
 
@@ -68,6 +74,16 @@ fn a_capsule_verifies_the_state_it_folded() {
     assert_eq!(ended.stop, Some(Stop::Cycles));
     let capsule = ended.capsule.as_ref().unwrap();
     capsule.verify(ended.journal.events()).unwrap();
+}
+
+#[test]
+fn a_persistent_snapshot_restores_a_covering_simulation_capsule() {
+    let bench = bench();
+    let ended = one_cycle(&bench, None);
+    let capsule = ResumeCapsule::read_snapshot(&ended.journal, togi_defect::KNOWN_DEFECTS).unwrap();
+    assert!(capsule.covers(&ended.journal, togi_defect::KNOWN_DEFECTS));
+    capsule.verify(ended.journal.events()).unwrap();
+    assert!(!capsule.is_warm());
 }
 
 #[test]
@@ -278,7 +294,7 @@ fn the_boot_after_a_crash_resumes_the_same_from_a_capsule_or_a_replay() {
     assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
     assert_eq!(resumed.stop, replayed.stop);
     assert_eq!(journal_text(&resumed), journal_text(&replayed));
-    let saved: crate::publication::StateDocument = resumed.journal.read_state().unwrap().unwrap();
+    let (_, saved): (_, StateDocument) = resumed.journal.dir().read_snapshot().unwrap().unwrap();
     let facts = togi_journal::State::replay(resumed.journal.events()).unwrap();
     assert_eq!(saved.facts, facts);
 }
@@ -291,12 +307,12 @@ fn a_crashed_runs_capsule_publishes_what_a_live_run_had_and_the_next_boot_rebuil
     let text = journal_text(&crashed);
     let mut dir = crashed.journal.close().unwrap();
     capsule.publish(&mut dir).unwrap();
-    let published: StateDocument = dir.read_state().unwrap().unwrap();
+    let (_, published): (_, StateDocument) = dir.read_snapshot().unwrap().unwrap();
     drop(dir);
 
     let live = bench();
     let live_crashed = crashed_publishing(&live, crate::PublicationPolicy::Live);
-    let had: StateDocument = live_crashed.journal.read_state().unwrap().unwrap();
+    let (_, had): (_, StateDocument) = live_crashed.journal.dir().read_snapshot().unwrap().unwrap();
     assert_eq!(published, had);
     assert_eq!(text, journal_text(&live_crashed));
 
@@ -342,7 +358,7 @@ fn the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_
         })
         .collect();
     assert_eq!(rebuilt, [vec!["state.json".to_string()]]);
-    let saved: StateDocument = resumed.journal.read_state().unwrap().unwrap();
+    let (_, saved): (_, StateDocument) = resumed.journal.dir().read_snapshot().unwrap().unwrap();
     assert_eq!(
         saved.facts,
         togi_journal::State::replay(resumed.journal.events()).unwrap()

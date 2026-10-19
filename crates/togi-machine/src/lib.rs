@@ -11,6 +11,7 @@ mod samples;
 mod scalars;
 mod seams;
 pub mod serde_object;
+pub mod serde_pairs;
 mod topology;
 mod vocab;
 mod workloads;

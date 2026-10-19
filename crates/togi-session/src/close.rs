@@ -234,11 +234,17 @@ impl Session<'_> {
                 .map(|failure| self.answer(&failure));
         }
         errors.extend(self.appender.take_log_failure().map(SessionError::Log));
-        let capsule = self
-            .appender
-            .failure()
-            .is_none()
-            .then(|| self.appender.capsule());
+        let capsule = if self.appender.failure().is_none() {
+            match self.appender.capsule() {
+                Ok(capsule) => Some(capsule),
+                Err(error) => {
+                    errors.push(error.into());
+                    None
+                }
+            }
+        } else {
+            None
+        };
         Ended {
             stop,
             errors,

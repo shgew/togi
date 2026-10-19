@@ -22,7 +22,7 @@ pub(crate) use bios::Confirmed;
 pub(crate) const WINDOW: u32 = 5;
 
 /// A passed full cycle: the event that ended it and its number.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct FullCycle {
     pub(crate) seq: Seq,
     pub(crate) cycle: NonZeroU32,
@@ -31,7 +31,7 @@ pub(crate) struct FullCycle {
 /// A held failure: the cores it counts against at the offsets the hold found them at, and the
 /// offsets the BIOS profile shows for them while the hold is valid. `ledger` is the id the
 /// evidence ledger knows the failure by.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Strike {
     pub(crate) failure: Seq,
     pub(crate) ledger: Seq,
@@ -51,7 +51,7 @@ impl Strike {
 /// counts against moves or its window passes, so there is at most one per core and cycle of the
 /// window. `held` keeps the ledger ids of held failures for the known-failure rule, after their
 /// strikes are gone.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Later {
     confirmed: Option<Confirmed>,
     moved_since: PerCore<Option<Seq>>,

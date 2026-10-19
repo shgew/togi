@@ -21,7 +21,7 @@ use togi_tuner::{DecisionPayload, GroupState};
 
 /// The tag of a line of what happened: one short word per kind of event, in a column of its own, so the eye finds
 /// a crash without reading the sentence beside it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Tag {
     /// The session started.
     Start,
@@ -109,7 +109,7 @@ impl Tag {
 }
 
 /// How a line of what happened is drawn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum Tone {
     /// Ordinary text.
     #[default]

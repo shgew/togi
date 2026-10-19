@@ -170,6 +170,24 @@ impl SessionRunner for MemoryRunner {
         if let Some(path) = &self.blocked {
             self.tree.write(path, "not a directory");
         }
+        let directory = root.join(spec.name());
+        let bytes: Vec<u8> = events
+            .iter()
+            .flat_map(|event| {
+                let mut line = event.encode().unwrap().into_bytes();
+                line.push(b'\n');
+                line
+            })
+            .collect();
+        let folded = togi_session::ReadState::replay(&events).unwrap();
+        let prefix =
+            togi_journal::snapshot::Prefix::of(&bytes, events.last().map(|event| event.seq));
+        let saved = togi_journal::snapshot::seal(prefix, &folded.document()).unwrap();
+        self.tree.fs.put(directory.join("events.jsonl"), bytes);
+        self.tree.fs.put(
+            directory.join("state.json"),
+            serde_json::to_vec(&saved).unwrap(),
+        );
         Ok(Session {
             dir: root.join(spec.name()),
             events,
@@ -198,6 +216,12 @@ impl SessionRunner for MemoryRunner {
             findings,
             skipped: Vec::new(),
         }
+    }
+    fn folded(
+        &self,
+        session: &Session,
+    ) -> Result<togi_session::ReadState, togi_session::FoldError> {
+        togi_session::ReadState::read_in(self.tree.fs.as_ref(), &session.dir, &session.events)
     }
     fn remove(&self, _: &Path) {}
 }

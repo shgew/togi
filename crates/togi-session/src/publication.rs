@@ -20,6 +20,10 @@ object_only! {
     pub(crate) struct StateDocument {
         pub facts: togi_journal::State,
         pub tuner: Projection,
+        pub recovery: crate::recovery::RecoveryState,
+        pub incremental: togi_tuner::State,
+        pub defects: togi_defect::DefectState,
+        pub presentation: togi_watch::model::Presentation,
     }
 }
 
@@ -28,6 +32,10 @@ impl StateDocument {
         Self {
             facts: folds.facts.clone(),
             tuner: folds.tuner.project(),
+            recovery: folds.recovery.clone(),
+            incremental: folds.tuner.clone(),
+            defects: folds.defects.clone(),
+            presentation: folds.presentation.clone(),
         }
     }
 }
@@ -36,6 +44,10 @@ impl StateDocument {
 pub(crate) struct StateDocumentRef<'a> {
     facts: &'a togi_journal::State,
     tuner: Projection,
+    recovery: &'a crate::recovery::RecoveryState,
+    incremental: &'a togi_tuner::State,
+    defects: &'a togi_defect::DefectState,
+    presentation: &'a togi_watch::model::Presentation,
 }
 
 impl<'a> StateDocumentRef<'a> {
@@ -43,13 +55,20 @@ impl<'a> StateDocumentRef<'a> {
         Self {
             facts: &folds.facts,
             tuner: folds.tuner.project(),
+            recovery: &folds.recovery,
+            incremental: &folds.tuner,
+            defects: &folds.defects,
+            presentation: &folds.presentation,
         }
     }
 }
 
 impl Appender<'_> {
     pub(crate) fn publish_state(&mut self) -> Result<bool, AppendFailure> {
-        match self.journal.write_state(&StateDocumentRef::of(&self.folds)) {
+        self.folds.materialize(self.journal.events())?;
+        let document =
+            togi_journal::snapshot::seal(self.journal.prefix(), &StateDocumentRef::of(&self.folds));
+        match document.and_then(|document| self.journal.write_state(&document)) {
             Ok(()) => Ok(true),
             Err(error) => {
                 self.publishing = true;
@@ -84,14 +103,37 @@ impl Session<'_> {
         if self.appender.journal().events().is_empty() {
             return Ok(());
         }
-        let fields = match self.appender.journal().read_state::<StateDocument>() {
-            Ok(Some(saved)) => {
-                let mut fields = differing_facts(&saved.facts, &self.appender.folds.facts);
-                if saved.tuner != self.appender.tuner().project() {
-                    fields.push("tuner".into());
+        let fields = match self.appender.journal().read_state::<serde_json::Value>() {
+            Ok(Some(saved)) => match togi_journal::snapshot::unseal::<StateDocument>(saved) {
+                Ok((prefix, saved)) => {
+                    let mut fields = differing_facts(&saved.facts, &self.appender.folds.facts);
+                    if saved.tuner != self.appender.tuner().project() {
+                        fields.push("tuner".into());
+                    }
+                    if saved.facts.last_seq == self.appender.folds.facts.last_seq {
+                        if saved.incremental != self.appender.folds.tuner {
+                            fields.push("incremental".into());
+                        }
+                        if saved.recovery != self.appender.folds.recovery {
+                            fields.push("recovery".into());
+                        }
+                        if saved.defects != self.appender.folds.defects {
+                            fields.push("defects".into());
+                        }
+                        if saved.presentation != self.appender.folds.presentation {
+                            fields.push("presentation".into());
+                        }
+                    }
+                    if prefix != self.appender.journal().prefix()
+                        && !fields.iter().any(|field| field == "last_seq")
+                    {
+                        fields.push("snapshot".into());
+                    }
+                    fields
                 }
-                fields
-            }
+                Err(togi_journal::snapshot::Rejected::Build) => vec!["build".into()],
+                Err(_) => vec!["state.json".into()],
+            },
             Ok(None) | Err(_) => vec!["state.json".into()],
         };
         if !fields.is_empty() && self.appender.publish_state()? {

@@ -43,21 +43,21 @@ fn part_passes(config: &TunerConfig, ccds: usize, role: R7PartRole) -> [(Secs, u
 /// The passes one trial class must have earned by this requirement; a class repeated in a step
 /// or an earlier step of the same workload adds to the later requirement and leaves the earlier
 /// at zero.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Quota {
     pub(crate) class: ClassKey,
     pub(crate) count: u32,
 }
 
 /// The trials of one loaded set within a step: a core, the whole machine, or one R7 part.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PartPlan {
     pub(crate) cores: CoreSet,
     pub(crate) ccd: Option<CcdId>,
     pub(crate) quotas: Vec<Quota>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct StepPlan {
     pub(crate) regime: Regime,
     pub(crate) workload: WorkloadId,

@@ -36,7 +36,7 @@ impl BackoffKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Strike {
     decision: Seq,
     failure: Seq,
@@ -96,7 +96,7 @@ impl fmt::Display for Escalation {
 /// The voltage-targeted backoffs of one load since its latest passing trial. A failure that backed
 /// off one core on each CCD counts once. A pending failure keeps the snapshot of its load as it
 /// folded.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Backoffs(Vec<Strike>);
 
 impl Backoffs {
@@ -151,8 +151,9 @@ impl Backoffs {
 }
 
 /// Per load, the voltage-targeted backoffs since the load's latest passing trial.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Strikes {
+    #[serde(with = "togi_machine::serde_pairs")]
     loads: HashMap<LoadKey, Backoffs>,
 }
 

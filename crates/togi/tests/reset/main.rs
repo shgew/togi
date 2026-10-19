@@ -475,10 +475,17 @@ fn failing_scenario() -> (Scenario, CoreId, i64) {
     panic!("no scenario records a failure point");
 }
 
-#[test_case(0, true; "at failure point")]
-#[test_case(-1, true; "below failure point")]
-#[test_case(1, false; "above failure point")]
-fn reset_all_warns_for_each_solo_limit_at_or_past_its_failure_point(delta: i64, warns: bool) {
+#[test_case(0, true, false; "at failure point replay")]
+#[test_case(-1, true, false; "below failure point replay")]
+#[test_case(1, false, false; "above failure point replay")]
+#[test_case(0, true, true; "at failure point snapshot")]
+#[test_case(-1, true, true; "below failure point snapshot")]
+#[test_case(1, false, true; "above failure point snapshot")]
+fn reset_all_warns_for_each_solo_limit_at_or_past_its_failure_point(
+    delta: i64,
+    warns: bool,
+    snapshot: bool,
+) {
     let (scenario, core, point) = failing_scenario();
     let core = core.get();
     assert!(point < 0, "this case pins the remedy that offers a limit");
@@ -498,6 +505,25 @@ fn reset_all_warns_for_each_solo_limit_at_or_past_its_failure_point(delta: i64, 
         return;
     }
     let session = Session::with_fs(host.fs.clone(), scenario);
+    if snapshot {
+        let events = scenario.events().unwrap();
+        let cut = events.len() / 2;
+        let folded = togi_session::ReadState::replay(&events[..cut]).unwrap();
+        let bytes: Vec<u8> = events[..cut]
+            .iter()
+            .flat_map(|event| {
+                let mut line = event.encode().unwrap().into_bytes();
+                line.push(b'\n');
+                line
+            })
+            .collect();
+        let prefix = togi_journal::snapshot::Prefix::of(&bytes, Some(events[cut - 1].seq));
+        let saved = togi_journal::snapshot::seal(prefix, &folded.document()).unwrap();
+        host.fs.put(
+            session.path().join("state.json"),
+            serde_json::to_vec(&saved).unwrap(),
+        );
+    }
     let path = write(limit);
     let ran = reset(
         &host,

@@ -39,11 +39,13 @@ impl ProcessBench {
             .iter()
             .map(|event| serde_json::to_string(event).unwrap() + "\n")
             .collect();
+        let folded = togi_session::ReadState::replay(events).unwrap();
+        let prefix = togi_journal::snapshot::Prefix::of(
+            lines.as_bytes(),
+            events.last().map(|event| event.seq),
+        );
+        let state = togi_journal::snapshot::seal(prefix, &folded.document()).unwrap();
         fs::write(self.path("journal.jsonl"), lines).unwrap();
-        let state = serde_json::json!({
-            "facts": togi_journal::State::replay(events).unwrap(),
-            "tuner": togi_tuner::replay(events).unwrap().project(),
-        });
         fs::write(self.path("state.json"), state.to_string()).unwrap();
     }
 

@@ -131,7 +131,10 @@ impl Source {
     ) -> Self {
         let mut source = Self::new(directory, since);
         let recording = Recording::read_in_lenient(fs, &source.path);
-        source.fold_recording(recording, false);
+        let saved = togi_journal::snapshot::read_in(fs, directory)
+            .ok()
+            .flatten();
+        source.fold_recording(recording, false, saved);
         source
     }
 
@@ -210,10 +213,35 @@ impl Source {
 
     fn load(&mut self, appended: bool) {
         let recording = self.recording();
-        self.fold_recording(recording, appended);
+        let saved = if appended
+            && matches!(&self.content, Content::Ready(model, ..) if model.problem().is_none())
+        {
+            None
+        } else {
+            self.saved_snapshot()
+        };
+        self.fold_recording(recording, appended, saved);
     }
 
-    fn fold_recording(&mut self, recording: Result<Recording, FileError>, appended: bool) {
+    fn saved_snapshot(
+        &self,
+    ) -> Option<(togi_journal::snapshot::Prefix, crate::model::PublishedView)> {
+        let directory = self.path.parent()?;
+        #[cfg(test)]
+        if let Some(memory) = &self.memory {
+            return togi_journal::snapshot::read_in(&memory.0.borrow().fs, directory)
+                .ok()
+                .flatten();
+        }
+        togi_journal::snapshot::read(directory).ok().flatten()
+    }
+
+    fn fold_recording(
+        &mut self,
+        recording: Result<Recording, FileError>,
+        appended: bool,
+        saved: Option<(togi_journal::snapshot::Prefix, crate::model::PublishedView)>,
+    ) {
         let recording = match recording {
             Ok(recording) => recording,
             Err(error) if is_not_found(&error) => {
@@ -234,6 +262,18 @@ impl Source {
             }
         };
         let events = recording.events();
+        if let Some(Event {
+            payload: Payload::SessionStart(start),
+            ..
+        }) = events.first()
+        {
+            if let Verdict::Refuse(refusal) =
+                shown_build().verdict(&start.build, Operation::Inspect)
+            {
+                self.content = Content::Problem(refusal.into());
+                return;
+            }
+        }
         let waiting = self
             .since
             .is_some_and(|since| events.last().is_none_or(|last| last.seq.get() <= since));
@@ -258,17 +298,23 @@ impl Source {
             }
             Content::Ready(..) if appended => {
                 self.held = None;
-                (Box::new(Model::new()), 0)
+                let (model, folded) = Model::from_snapshot(events, saved);
+                (Box::new(model), folded)
             }
             Content::Missing | Content::Starting | Content::Problem(_) | Content::Ready(..) => {
-                (Box::new(Model::new()), 0)
+                let (model, folded) = Model::from_snapshot(events, saved);
+                (Box::new(model), folded)
             }
         };
         let batch = &events[folded..];
-        let checked = model
-            .fold_batch(batch)
-            .err()
-            .map_or(batch, |error| &batch[..=error.index]);
+        let checked = match model.fold_batch(batch) {
+            Err(_) if folded != 0 => {
+                model = Box::new(crate::model::project(events));
+                events
+            }
+            Err(error) => &batch[..=error.index],
+            Ok(()) => batch,
+        };
         for event in checked {
             if let Payload::SessionStart(start) = &event.payload {
                 if let Verdict::Refuse(refusal) =

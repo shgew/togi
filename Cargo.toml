@@ -24,7 +24,7 @@ ratatui = { version = "0.30", default-features = false, features = ["std"] }
 rayon = "1"
 regex = "1"
 rustix = { version = "1", features = ["fs", "process"] }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 serde_path_to_error = "0.1"
 sha2 = "0.11"

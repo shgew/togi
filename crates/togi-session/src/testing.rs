@@ -214,6 +214,7 @@ impl Rig {
 pub(crate) fn assert_fold_consistent(appender: &Appender) {
     appender
         .capsule()
+        .unwrap()
         .verify(appender.journal().events())
         .unwrap();
 }

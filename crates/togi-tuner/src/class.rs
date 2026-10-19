@@ -4,7 +4,9 @@ use std::num::NonZeroU32;
 use togi_machine::{CoreSet, Regime, WorkloadId};
 
 /// A trial's intended duration in whole seconds.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub struct Secs(NonZeroU32);
 
 impl Secs {
@@ -21,7 +23,7 @@ impl Secs {
 
 /// A load whatever its duration: the workload and the loaded cores. R7 request measurements and
 /// escalation counts belong to a load.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LoadKey {
     pub workload: WorkloadId,
     pub loaded: CoreSet,
@@ -35,7 +37,7 @@ impl LoadKey {
 
 /// What makes two trials comparable evidence: the workload with its regime, the loaded cores
 /// and the intended duration.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ClassKey {
     workload: WorkloadId,
     loaded: CoreSet,

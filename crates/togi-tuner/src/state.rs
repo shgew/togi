@@ -23,13 +23,13 @@ use crate::{
 };
 
 /// The latest host ranking and the event that recorded it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Ranked {
     pub(crate) ranking: Ranking,
     pub(crate) seq: Seq,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Run {
     pub(crate) topo: Topology,
     pub(crate) cores: PerCore<Core>,
@@ -58,7 +58,7 @@ pub(crate) struct Run {
 
 /// The tuner's state: one fold of the journal, with a substate per rule group. `fold` takes each
 /// event once; the decision functions only read.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct State {
     run: Option<Run>,
     poisoned: bool,

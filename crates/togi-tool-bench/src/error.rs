@@ -190,6 +190,8 @@ pub enum MeasureError {
     Shape(togi_sim::ShapeError),
     #[error("replay the journal")]
     Replay(#[source] togi_journal::FoldError),
+    #[error("restore the folded state")]
+    Folded(#[source] togi_session::FoldError),
     #[error("extract the trial facts")]
     Facts(#[source] togi_facts::FactsError<std::convert::Infallible>),
 }

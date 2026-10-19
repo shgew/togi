@@ -17,7 +17,7 @@ use crate::{
 
 const STEPS: usize = 1000;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Premise {
     Pass,
     AllPass,
@@ -26,7 +26,7 @@ pub enum Premise {
     Inconclusive,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Uncertainty {
     NeedsRanking,
     NeedsHistory,
@@ -34,7 +34,7 @@ pub enum Uncertainty {
     Stopped { after: u16 },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum AllPass {
     Complete,
     Diverged { after: u32 },
@@ -45,7 +45,7 @@ pub enum AllPass {
     clippy::struct_excessive_bools,
     reason = "independent facts of one premise's outcome"
 )]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Branch {
     pub premise: Premise,
     pub passes: u32,
@@ -61,7 +61,7 @@ pub struct Branch {
     pub top_requester: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Between {
     pub decisions: Vec<DecisionPayload>,
     pub next: Option<TrialPlan>,
@@ -70,7 +70,7 @@ pub struct Between {
     pub uncertainty: Option<Uncertainty>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Forecast {
     pub branches: Vec<Branch>,
     pub between: Option<Between>,

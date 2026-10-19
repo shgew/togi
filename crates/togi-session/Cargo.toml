@@ -20,6 +20,7 @@ togi-render.workspace = true
 togi-requests.workspace = true
 togi-tuner.workspace = true
 togi-tuningboot.workspace = true
+togi-watch.workspace = true
 
 [dev-dependencies]
 flate2.workspace = true

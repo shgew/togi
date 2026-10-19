@@ -3,19 +3,19 @@ use togi_machine::{CoreId, CoreSet, PerCore, TargetOffset};
 
 use crate::{Constraints, Depth, Profile, Ranking};
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Stage {
     Part,
     Complement,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Duration {
     Short,
     Failed,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 enum FailedDuration {
     NoLonger,
     Longer,
@@ -32,7 +32,7 @@ pub(crate) enum GroupStage {
 
 /// How a settled group came out; a skipped group supplies no pass evidence but advances the plan
 /// like a passed one.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum GroupOutcome {
     Passed,
     Failed,
@@ -41,7 +41,7 @@ pub(crate) enum GroupOutcome {
 
 /// Where a plan finished. A combination still needs member probes unless the profile already
 /// breaks it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum End {
     Culprit(CoreId),
     Combination(CoreSet),
@@ -70,7 +70,7 @@ pub(crate) enum PlanError {
 
 /// A located hunt keeps the loaded cores at their failing offsets and narrows only the unloaded
 /// candidates.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Located {
     pub(crate) loaded_at_zero: bool,
 }
@@ -105,7 +105,7 @@ pub(crate) struct Group {
     pub(crate) any_failed: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 enum Step {
     Locate,
     Repeated(CoreId),
@@ -116,7 +116,7 @@ enum Step {
 
 /// The delta-debugging plan of one hunt as a value: `next_group` says what to run, `advance`
 /// takes the settled outcome.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Plan {
     candidates: CoreSet,
     loaded: CoreSet,

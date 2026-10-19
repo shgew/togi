@@ -15,7 +15,7 @@ pub enum TopologyError {
 }
 
 /// The cores of a machine, their CCDs and the order trials walk them in.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Topology {
     order: Vec<CoreId>,
     ccd: PerCore<Option<CcdId>>,
@@ -96,7 +96,7 @@ pub enum RankingError {
 }
 
 /// Every core of a topology exactly once, the best-ranked first.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Ranking(Vec<CoreId>);
 
 impl Ranking {

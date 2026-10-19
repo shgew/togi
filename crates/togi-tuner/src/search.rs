@@ -34,7 +34,7 @@ impl SearchRegime {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 struct StepPass {
     seq: Seq,
     backend: Backend,
@@ -42,7 +42,7 @@ struct StepPass {
 
 type StepEvidence = BTreeMap<BackendId, StepPass>;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Step {
     r1: StepEvidence,
     r2: StepEvidence,
@@ -50,7 +50,7 @@ struct Step {
 
 /// Where the search turn stands: the core that ran last, and for each core the first R1 and R2
 /// pass of its unfinished step under each backend package.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Search {
     cursor: Option<usize>,
     steps: PerCore<Option<Step>>,

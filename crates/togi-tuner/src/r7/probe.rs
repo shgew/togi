@@ -11,7 +11,7 @@ use crate::{
 };
 
 /// One unfinished experiment, not a claim that the idled group caused the parent failure.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Probe {
     class: ClassKey,
     since: Seq,
@@ -19,7 +19,7 @@ struct Probe {
     decisions: Vec<Seq>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Charge {
     previous: Option<Seq>,
     probe: Option<Probe>,
@@ -27,8 +27,9 @@ struct Charge {
 
 /// At most one previous charge and one pending probe per (load, charged core). Parent passes
 /// deliberately do not clear this: an intermittent failure can ratchet a top requester too.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Probes {
+    #[serde(with = "togi_machine::serde_pairs")]
     charges: HashMap<LoadKey, PerCore<Option<Charge>>>,
 }
 

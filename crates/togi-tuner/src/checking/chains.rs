@@ -8,7 +8,7 @@ use crate::Profile;
 
 /// One derived partial of a CCD's chain: the loaded set the predecessor's top group left, the
 /// profile it was derived at, and the event that recorded it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Node {
     pub(crate) part: NonZeroU32,
     pub(crate) link: Link,
@@ -17,7 +17,7 @@ pub(crate) struct Node {
 }
 
 /// What a chain node derives: the next partial's loaded cores, or the end of the chain.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Link {
     Partial(CoreSet),
     End,
@@ -44,7 +44,7 @@ impl Link {
 
 /// A CCD's chain as recorded, and how much of it stands at the checking profile: the prefix whose
 /// nodes were derived there.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Chain {
     nodes: Vec<Node>,
     current: usize,
@@ -88,7 +88,7 @@ impl Chain {
 
 /// An R7 occurrence of an open cycle that has started: its `checking.step` event and the chain of
 /// partials derived for each CCD.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct R7Step {
     pub(crate) start: Seq,
     chains: BTreeMap<CcdId, Chain>,

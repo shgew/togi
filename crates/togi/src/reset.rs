@@ -9,8 +9,8 @@ use clap::{Args as ClapArgs, ValueHint};
 use togi_config::{Config, InitialOverride};
 use togi_hostlock::Error as HostLockError;
 use togi_journal::{
-    ArchiveKind, Build, DirError, Event, Journal, LockError, Marker, OpenError, Operation,
-    SessionId, StateDir, Verdict,
+    ArchiveKind, Build, DirError, Journal, LockError, Marker, OpenError, Operation, SessionId,
+    StateDir, Verdict,
 };
 use togi_machine::{BootId, CoreId};
 use togi_render::escape_text;
@@ -311,7 +311,7 @@ fn reset_everything(ctx: &mut Context<'_>, args: &Args, mut dir: StateDir, boot:
             };
             log_torn(ctx, &journal);
             let opened = journal.events().len();
-            let warnings = solo_limit_warnings(journal.events(), &args.config, system);
+            let warnings = solo_limit_warnings(&journal, &args.config, system);
             match reset_all(&build, journal, &mut SystemClock(system)) {
                 Ok((session, _)) => {
                     log_recorded(ctx, Some(&session), opened);
@@ -438,7 +438,11 @@ fn sync_directory(path: &Path) -> std::io::Result<()> {
 
 /// A warning for each configured candidate solo limit at or deeper than its core's failure point
 /// in the session about to be archived.
-fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, system: &dyn System) -> Vec<String> {
+fn solo_limit_warnings(
+    journal: &togi_journal::Journal,
+    config: &ConfigArgs,
+    system: &dyn System,
+) -> Vec<String> {
     let config: Config = match config
         .load_with_source_read(system.config_path(), |path| system.read_config(path))
         .map(|(config, _)| config)
@@ -462,7 +466,7 @@ fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, system: &dyn Syste
     if limits.peek().is_none() {
         return Vec::new();
     }
-    let state = match togi_tuner::replay(events) {
+    let state = match togi_session::ReadState::in_dir(journal.dir(), journal.events()) {
         Ok(state) => state,
         Err(error) => {
             return vec![format!(
@@ -471,7 +475,7 @@ fn solo_limit_warnings(events: &[Event], config: &ConfigArgs, system: &dyn Syste
             )];
         }
     };
-    let Some(constraints) = state.constraints() else {
+    let Some(constraints) = state.tuner().constraints() else {
         return Vec::new();
     };
     limits
