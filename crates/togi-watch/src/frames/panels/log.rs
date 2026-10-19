@@ -351,7 +351,7 @@ mod tests {
         let later = Log { arrived, ..held };
         assert_eq!(
             rows(&later, 77, 10, 3),
-            (page.clone(), extent),
+            (page, extent),
             "arrived {arrived}"
         );
     }
