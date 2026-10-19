@@ -162,3 +162,25 @@ fn stanza_from_reader(path: &Path, input: impl Read) -> Result<Stanza, Error> {
     };
     Ok(Stanza::parse(&String::from_utf8_lossy(&read()?)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Files, Readers, read_limited};
+    use std::path::Path;
+    use std::sync::Arc;
+
+    #[test_case::test_case(0, 0; "zero limit")]
+    #[test_case::test_case(3, 3; "exact limit")]
+    #[test_case::test_case(4, 4; "one extra byte")]
+    #[test_case::test_case(u64::MAX, 4; "maximum limit")]
+    fn injected_and_system_readers_share_exact_limits(limit: u64, expected: usize) {
+        let files = Files::Readers(Arc::new(Readers {
+            cpu_names: Vec::new(),
+            read: Arc::new(|_| Ok(b"abcd".to_vec())),
+            write: Arc::new(|_, bytes| Ok(bytes.len())),
+        }));
+        let bytes = b"abcd"[..expected].to_vec();
+        assert_eq!(files.read(Path::new("fixture"), limit, 0).unwrap(), bytes);
+        assert_eq!(read_limited(&b"abcd"[..], limit, 0).unwrap(), bytes);
+    }
+}
