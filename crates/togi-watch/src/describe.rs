@@ -416,7 +416,7 @@ impl Facts {
                         .tuned
                         .get(core)
                         .flatten()
-                        .map_or(0, |tuned| tuned.get());
+                        .map_or(0, togi_machine::TargetOffset::get);
                     let verb = if offset.get() > tuned {
                         "yields"
                     } else {
