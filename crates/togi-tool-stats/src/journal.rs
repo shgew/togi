@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use jiff::{SignedDuration, Timestamp};
-use togi_machine::BootId;
+use std::collections::HashMap;
 use std::path::Path;
+use togi_machine::BootId;
 
 use togi_journal::{Event, Payload, Recording, Skipped};
 use togi_tuner::Topology;

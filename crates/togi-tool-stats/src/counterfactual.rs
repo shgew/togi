@@ -587,7 +587,11 @@ impl<'a> Ledger<'a> {
         let mut tuner_sets: HashMap<(WorkloadId, CoreSet), u32> = HashMap::new();
         let mut held_sets: HashMap<(WorkloadId, CoreSet), u32> = HashMap::new();
         // Journal construction checked the recorded cycle's step count before the tuner folded it.
-        for (step, number) in plan.steps.iter().zip((1..=u32::MAX).filter_map(NonZeroU32::new)) {
+        for (step, number) in plan
+            .steps
+            .iter()
+            .zip((1..=u32::MAX).filter_map(NonZeroU32::new))
+        {
             let mut held_parts = Vec::with_capacity(step.parts.len());
             for part in &step.parts {
                 if step.regime != Regime::R7 || !part.partial {
@@ -851,7 +855,11 @@ pub(crate) fn account<'a>(p: &Projection<'a>) -> Result<Accounting<'a>, Error> {
             ledger.close(*candidate, facts, None, &state);
         }
     }
-    let conclusion_s = match p.events.first().zip(conclusion.or_else(|| p.events.last().map(|event| event.time))) {
+    let conclusion_s = match p
+        .events
+        .first()
+        .zip(conclusion.or_else(|| p.events.last().map(|event| event.time)))
+    {
         Some((first, end)) => recorded_elapsed_seconds(end.duration_since(first.time))?,
         None => 0,
     };
