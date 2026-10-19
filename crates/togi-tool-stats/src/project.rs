@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use jiff::{SignedDuration, Timestamp};
+use jiff::Timestamp;
 use togi_journal::{
     Event, HuntEnd, HuntGroup, HuntStart, Outcome, Payload, Seq, ShutdownReason, TrialEnd, TrialId,
     TrialIntent,

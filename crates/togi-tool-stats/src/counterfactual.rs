@@ -586,6 +586,7 @@ impl<'a> Ledger<'a> {
         // its quota multiplies the same base by its own count of earlier parts holding its set.
         let mut tuner_sets: HashMap<(WorkloadId, CoreSet), u32> = HashMap::new();
         let mut held_sets: HashMap<(WorkloadId, CoreSet), u32> = HashMap::new();
+        // Journal construction checked the recorded cycle's step count before the tuner folded it.
         for (step, number) in plan.steps.iter().zip((1..=u32::MAX).filter_map(NonZeroU32::new)) {
             let mut held_parts = Vec::with_capacity(step.parts.len());
             for part in &step.parts {
@@ -789,6 +790,7 @@ pub(crate) fn account<'a>(p: &Projection<'a>) -> Result<Accounting<'a>, Error> {
             let last_r7_step = cycle
                 .steps
                 .iter()
+                // Journal construction guarantees every recorded step has a u32 ordinal.
                 .zip((1..=u32::MAX).filter_map(NonZeroU32::new))
                 .filter_map(|(&regime, ordinal)| (regime == Regime::R7).then_some(ordinal))
                 .last();
@@ -1026,6 +1028,7 @@ mod numeric_tests {
     use jiff::SignedDuration;
 
     #[test_case::test_case(SignedDuration::ZERO, Some(0); "zero")]
+    #[test_case::test_case(SignedDuration::MAX, Some(i64::MAX as u64); "largest signed duration")]
     #[test_case::test_case(SignedDuration::from_secs(1), Some(1); "positive second")]
     #[test_case::test_case(SignedDuration::from_nanos(1), Some(0); "positive fraction")]
     #[test_case::test_case(SignedDuration::from_secs(-1), None; "negative second")]
