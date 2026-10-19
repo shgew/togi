@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    reason = "integration test fixtures and assertions panic on invalid evidence"
+)]
+
 use std::num::NonZeroU32;
 use std::path::Path;
 
