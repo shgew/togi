@@ -237,3 +237,32 @@ proptest! {
         prop_assert!(gaps.iter().all(|&gap| summary.shortest <= gap && gap <= summary.longest));
     }
 }
+
+#[test_case(None, 0; "absent uptime")]
+#[test_case(Some(std::time::Duration::ZERO), 0; "zero uptime")]
+#[test_case(Some(std::time::Duration::from_secs(10)), 10; "exact uptime")]
+fn boot_projection_keeps_absence_distinct_from_exact_uptime(
+    mono: Option<std::time::Duration>, seconds: i64,
+) {
+    let mut log = Log::new(&[(0, 0)]);
+    log.events[0].mono = mono;
+    let event_time = log.events[0].time;
+    let boot = log.events[0].boot.clone();
+    let journal = crate::Journal::new(log.events).unwrap();
+    assert_eq!(journal.boot_start(&boot), event_time - jiff::SignedDuration::from_secs(seconds));
+}
+
+#[test]
+fn an_unrepresentable_recorded_boot_uptime_is_refused() {
+    let mut log = Log::new(&[(0, 0)]);
+    log.events[0].mono = Some(std::time::Duration::MAX);
+    assert!(matches!(crate::Journal::new(log.events), Err(crate::Error::BootDuration(_))));
+}
+
+#[test]
+fn a_boot_start_before_the_timestamp_range_is_refused() {
+    let mut log = Log::new(&[(0, 0)]);
+    log.events[0].time = jiff::Timestamp::MIN;
+    log.events[0].mono = Some(std::time::Duration::from_nanos(1));
+    assert!(matches!(crate::Journal::new(log.events), Err(crate::Error::BootStart(_))));
+}

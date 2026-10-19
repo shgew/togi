@@ -184,11 +184,11 @@ impl<'a> Projection<'a> {
             boots: HashMap::new(),
             next_boot: HashMap::new(),
         };
-        p.fold();
+        p.fold(journal);
         p
     }
 
-    fn fold(&mut self) {
+    fn fold(&mut self, journal: &Journal) {
         let mut active: Option<usize> = None;
         let mut by_seq: HashMap<Seq, usize> = HashMap::new();
         let mut hunt_ids: HashMap<u32, usize> = HashMap::new();
@@ -197,12 +197,7 @@ impl<'a> Projection<'a> {
         let mut previous_boot: Option<&BootId> = None;
         for event in self.events {
             if !self.boots.contains_key(&event.boot) {
-                let up = event
-                    .mono
-                    .and_then(|mono| SignedDuration::try_from(mono).ok());
-                let start = up
-                    .and_then(|up| event.time.checked_sub(up).ok())
-                    .unwrap_or(event.time);
+                let start = journal.boot_start(&event.boot);
                 self.boots.insert(
                     &event.boot,
                     BootTime {

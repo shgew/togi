@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use jiff::{SignedDuration, Timestamp};
+use togi_machine::BootId;
 use std::path::Path;
 
 use togi_journal::{Event, Payload, Recording, Skipped};
@@ -12,6 +15,7 @@ pub struct Journal {
     events: Vec<Event>,
     topology: Topology,
     skipped: Skipped,
+    boot_starts: HashMap<BootId, Timestamp>,
 }
 
 impl Journal {
@@ -35,10 +39,27 @@ impl Journal {
             return Err(Error::NotStarted);
         };
         let topology = Topology::new(&start.cores)?;
+        let mut boot_starts = HashMap::new();
+        for event in &events {
+            if let Payload::CheckingCycle(cycle) = &event.payload {
+                checking_steps(cycle.steps.len())?;
+            }
+            if !boot_starts.contains_key(&event.boot) {
+                let start = match event.mono {
+                    Some(mono) => {
+                        let up = SignedDuration::try_from(mono).map_err(Error::BootDuration)?;
+                        event.time.checked_sub(up).map_err(Error::BootStart)?
+                    }
+                    None => event.time,
+                };
+                boot_starts.insert(event.boot.clone(), start);
+            }
+        }
         Ok(Self {
             events,
             topology,
             skipped,
+            boot_starts,
         })
     }
 
@@ -53,5 +74,26 @@ impl Journal {
 
     pub(crate) fn topology(&self) -> &Topology {
         &self.topology
+    }
+
+    pub(crate) fn boot_start(&self, boot: &BootId) -> Timestamp {
+        self.boot_starts[boot]
+    }
+}
+
+fn checking_steps(count: usize) -> Result<u32, Error> {
+    u32::try_from(count).map_err(Error::CheckingSteps)
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::checking_steps;
+
+    #[test_case::test_case(0, Some(0); "empty steps")]
+    #[test_case::test_case(u32::MAX as usize, Some(u32::MAX); "last exact ordinal")]
+    #[test_case::test_case(u32::MAX as usize + 1, None; "overflowing ordinal")]
+    #[cfg(target_pointer_width = "64")]
+    fn checking_step_counts_are_checked(count: usize, expected: Option<u32>) {
+        assert_eq!(checking_steps(count).ok(), expected);
     }
 }

@@ -36,7 +36,7 @@ pub fn history_in(dir: &StateDir) -> Result<History, HistoryError> {
         }
     }
     Ok(History {
-        boots: u32::try_from(boots.len()).unwrap_or(u32::MAX),
+        boots: recorded_boot_count(boots.len())?,
         last_time,
         bios_context,
     })
@@ -63,4 +63,21 @@ pub fn recorded_config_in(dir: &StateDir, fresh: Config) -> Result<Config, Histo
         }
     }
     Ok(recorded)
+}
+
+fn recorded_boot_count(count: usize) -> Result<u32, HistoryError> {
+    u32::try_from(count).map_err(HistoryError::BootCount)
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::recorded_boot_count;
+
+    #[test_case::test_case(0, Some(0); "no boots")]
+    #[test_case::test_case(u32::MAX as usize, Some(u32::MAX); "largest exact boot count")]
+    #[test_case::test_case(u32::MAX as usize + 1, None; "first overflowing boot count")]
+    #[cfg(target_pointer_width = "64")]
+    fn history_boot_counts_are_exact(count: usize, expected: Option<u32>) {
+        assert_eq!(recorded_boot_count(count).ok(), expected);
+    }
 }

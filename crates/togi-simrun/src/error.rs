@@ -68,6 +68,8 @@ pub enum HistoryError {
     Read(#[from] LookupError),
     #[error("the configuration the journal recorded")]
     Config(#[from] togi_config::ConfigError),
+    #[error("reconstruct recorded boot count")]
+    BootCount(#[source] std::num::TryFromIntError),
 }
 
 fn listed(errors: &[SessionError]) -> String {
