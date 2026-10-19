@@ -875,19 +875,26 @@ fn a_refused_teardown_clock_keeps_the_containment_dead_end_durable() {
         starts: std::rc::Rc::default(),
     });
     let ended = run(input);
-    assert!(ended.errors.iter().any(|error| matches!(
-        error,
-        togi_session::SessionError::Machine(togi_machine::Error::InvalidMonotonic { .. })
-    )), "{:?}", ended.errors);
+    assert!(
+        ended.errors.iter().any(|error| matches!(
+            error,
+            togi_session::SessionError::Machine(togi_machine::Error::InvalidMonotonic { .. })
+        )),
+        "{:?}",
+        ended.errors
+    );
     assert!(ended.journal.events().iter().any(|event| matches!(
         &event.payload,
         Payload::DeadEnd(dead) if dead.condition == togi_journal::DeadEndCondition::Containment
             && dead.detail.contains("backend thread on cpu 63 outside allowed cpus")
     )));
-    assert!(!ended.journal.events().iter().any(|event| matches!(
-        &event.payload,
-        Payload::TrialEnd(_)
-    )));
+    assert!(
+        !ended
+            .journal
+            .events()
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::TrialEnd(_)))
+    );
 }
 
 struct TeardownKernel {
