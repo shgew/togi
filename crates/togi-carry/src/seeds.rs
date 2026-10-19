@@ -85,8 +85,15 @@ pub(crate) struct SourceSeeds {
 impl SourceSeeds {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.limits.iter().filter(|(_, value)| value.is_some()).count()
-            + self.points.iter().filter(|(_, value)| value.is_some()).count()
+        self.limits
+            .iter()
+            .filter(|(_, value)| value.is_some())
+            .count()
+            + self
+                .points
+                .iter()
+                .filter(|(_, value)| value.is_some())
+                .count()
     }
 }
 
