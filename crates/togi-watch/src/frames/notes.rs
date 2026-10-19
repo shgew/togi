@@ -386,51 +386,47 @@ mod tests {
         assert_eq!(offset_list(&[]), "-");
     }
 
-    #[test]
-    fn the_top_note_is_a_word_whole_or_nothing() {
-        for (text, width, want) in [
-            ("", 2, ""),
-            ("", 3, "top"),
-            ("", 12, "top"),
-            ("", 13, "top requester"),
-            ("-11", 5, "-11"),
-            ("-11", 9, "-11 · top"),
-        ] {
-            assert_eq!(
-                plain(
-                    &top_note(&Line::from(text), false, width, Colours::Full),
-                    Colours::None
-                ),
-                want,
-                "top_note({text:?}, {width})"
-            );
-        }
+    #[test_case::test_case("", 2, ""; "empty too narrow")]
+    #[test_case::test_case("", 3, "top"; "empty short")]
+    #[test_case::test_case("", 12, "top"; "empty before full")]
+    #[test_case::test_case("", 13, "top requester"; "empty full")]
+    #[test_case::test_case("-11", 5, "-11"; "offset only")]
+    #[test_case::test_case("-11", 9, "-11 · top"; "offset and top")]
+    fn the_top_note_is_a_word_whole_or_nothing(text: &'static str, width: usize, want: &str) {
+        assert_eq!(
+            plain(
+                &top_note(&Line::from(text), false, width, Colours::Full),
+                Colours::None
+            ),
+            want,
+            "top_note({text:?}, {width})"
+        );
     }
 
-    #[test]
-    fn an_offset_fallback_top_note_keeps_its_qualification_or_is_left_out() {
-        for (text, width, want) in [
-            ("", 13, "top by offset"),
-            ("", 12, "offset top"),
-            ("", 10, "offset top"),
-            ("", 9, ""),
-            ("", 3, ""),
-            ("-11", 20, "-11 · top by offset"),
-            ("-11", 16, "-11 · offset top"),
-            ("-11", 15, "-11"),
-            ("-11", 12, "-11"),
-            ("-11", 9, "-11"),
-            ("-11", 3, "-11"),
-        ] {
-            let got = plain(
-                &top_note(&Line::from(text), true, width, Colours::Full),
-                Colours::None,
-            );
-            assert_eq!(got, want, "top_note({text:?}, {width})");
-            assert!(
-                got != "top" && !got.ends_with(" top") || got.ends_with("offset top"),
-                "an offset fallback reads as a measured top: {got:?}"
-            );
-        }
+    #[test_case::test_case("", 13, "top by offset"; "empty full")]
+    #[test_case::test_case("", 12, "offset top"; "empty compact twelve")]
+    #[test_case::test_case("", 10, "offset top"; "empty compact ten")]
+    #[test_case::test_case("", 9, ""; "empty nine")]
+    #[test_case::test_case("", 3, ""; "empty three")]
+    #[test_case::test_case("-11", 20, "-11 · top by offset"; "offset full")]
+    #[test_case::test_case("-11", 16, "-11 · offset top"; "offset compact")]
+    #[test_case::test_case("-11", 15, "-11"; "offset fifteen")]
+    #[test_case::test_case("-11", 12, "-11"; "offset twelve")]
+    #[test_case::test_case("-11", 9, "-11"; "offset nine")]
+    #[test_case::test_case("-11", 3, "-11"; "offset three")]
+    fn an_offset_fallback_top_note_keeps_its_qualification_or_is_left_out(
+        text: &'static str,
+        width: usize,
+        want: &str,
+    ) {
+        let got = plain(
+            &top_note(&Line::from(text), true, width, Colours::Full),
+            Colours::None,
+        );
+        assert_eq!(got, want, "top_note({text:?}, {width})");
+        assert!(
+            got != "top" && !got.ends_with(" top") || got.ends_with("offset top"),
+            "an offset fallback reads as a measured top: {got:?}"
+        );
     }
 }

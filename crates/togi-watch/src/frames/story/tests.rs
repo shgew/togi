@@ -523,8 +523,10 @@ mod the_story {
         }
     }
 
-    #[test]
-    fn an_idle_trial_holds_the_story_until_its_end_is_recorded() {
+    #[test_case::test_case(1000 + 899; "before end")]
+    #[test_case::test_case(1000 + 900 + 42; "past end")]
+    #[test_case::test_case(1000 + 7200; "long past end")]
+    fn an_idle_trial_holds_the_story_until_its_end_is_recorded(at: i64) {
         let mut fx = Fx::new();
         let mut idle = in_cycle(trial(Regime::R6, Condition::Together, &[0, 1]), 1, 2, 1, 1);
         idle.duration = secs(900);
@@ -537,13 +539,11 @@ mod the_story {
             "{:?}",
             first.lines
         );
-        for at in [1000 + 899, 1000 + 900 + 42, 1000 + 7200] {
-            assert_eq!(
-                story(&fx.scene(ts(at))),
-                first,
-                "the idle story never moves with the clock"
-            );
-        }
+        assert_eq!(
+            story(&fx.scene(ts(at))),
+            first,
+            "the idle story never moves with the clock"
+        );
         assert!(
             first
                 .lines
@@ -585,87 +585,60 @@ mod the_story {
                 "Rows show the saved profile, not applied now.".to_owned()
             ]
         );
-        for (reason, saved, want) in [
-            (
-                ShutdownReason::FirstResult,
-                false,
-                "stopped at the first result as asked",
-            ),
-            (
-                ShutdownReason::Cycles,
-                false,
-                "The requested clean cycles are complete, so I've stopped",
-            ),
-            (
-                ShutdownReason::Signal,
-                true,
-                "I restored baseline or shallower offsets before stopping",
-            ),
-            (
-                ShutdownReason::Signal,
-                false,
-                "I've stopped. Everything I learned is in the journal",
-            ),
-        ] {
-            fx.stopped = Some(StopView {
-                at: ts(100),
-                reason,
-                saved,
-            });
-            assert!(said_of(&fx).contains(want), "{reason:?} {saved}");
-        }
+    }
+
+    #[test_case::test_case(ShutdownReason::FirstResult, false, "stopped at the first result as asked"; "first result")]
+    #[test_case::test_case(ShutdownReason::Cycles, false, "The requested clean cycles are complete, so I've stopped"; "cycles")]
+    #[test_case::test_case(ShutdownReason::Signal, true, "I restored baseline or shallower offsets before stopping"; "signal saved")]
+    #[test_case::test_case(ShutdownReason::Signal, false, "I've stopped. Everything I learned is in the journal"; "signal unsaved")]
+    fn a_stopped_session_preserves_its_reason(reason: ShutdownReason, saved: bool, want: &str) {
+        let mut fx = Fx::new();
+        fx.stopped = Some(StopView {
+            at: ts(100),
+            reason,
+            saved,
+        });
+        assert!(said_of(&fx).contains(want), "{reason:?} {saved}");
     }
 
     fn said_of(fx: &Fx) -> String {
         story(&fx.scene(ts(200))).lines.join(" ")
     }
 
+    #[test_case::test_case(DeadEndCondition::NoEvidence, "kernel log unreadable: permission denied", "installed"; "no evidence")]
+    #[test_case::test_case(DeadEndCondition::Containment, "termination unconfirmed", "termination confirmed"; "containment")]
+    #[test_case::test_case(DeadEndCondition::ThermalTrip, "firmware reported a thermal trip", "wrong result"; "thermal trip")]
+    #[test_case::test_case(DeadEndCondition::FailureAtZero, "core 03 failed at 0", "installed"; "failure at zero")]
+    fn a_dead_end_preserves_the_recorded_cause(
+        condition: DeadEndCondition,
+        detail: &str,
+        wrong: &str,
+    ) {
+        let mut fx = Fx::new();
+        fx.dead_end = Some(DeadEndView {
+            at: ts(10),
+            condition,
+            detail: detail.to_owned(),
+        });
+        let scene = fx.scene(ts(20));
+        let band = resting_band(&scene);
+        assert_eq!(band.title, "DEAD END");
+        assert_eq!(band.paint, Paint::Bad);
+        assert_eq!(
+            band.lines,
+            [format!(
+                "{}: {detail}",
+                condition.as_str().replace('_', " ")
+            )]
+        );
+        assert!(!band.lines[0].contains(wrong));
+        let said = story(&scene);
+        assert_eq!(said.label, "DEAD END");
+        assert_eq!(said.paint, Paint::Bad);
+    }
+
     #[test]
-    fn a_dead_end_preserves_the_recorded_cause() {
-        for (condition, detail, wrong) in [
-            (
-                DeadEndCondition::NoEvidence,
-                "kernel log unreadable: permission denied",
-                "installed",
-            ),
-            (
-                DeadEndCondition::Containment,
-                "termination unconfirmed",
-                "termination confirmed",
-            ),
-            (
-                DeadEndCondition::ThermalTrip,
-                "firmware reported a thermal trip",
-                "wrong result",
-            ),
-            (
-                DeadEndCondition::FailureAtZero,
-                "core 03 failed at 0",
-                "installed",
-            ),
-        ] {
-            let mut fx = Fx::new();
-            fx.dead_end = Some(DeadEndView {
-                at: ts(10),
-                condition,
-                detail: detail.to_owned(),
-            });
-            let scene = fx.scene(ts(20));
-            let band = resting_band(&scene);
-            assert_eq!(band.title, "DEAD END");
-            assert_eq!(band.paint, Paint::Bad);
-            assert_eq!(
-                band.lines,
-                [format!(
-                    "{}: {detail}",
-                    condition.as_str().replace('_', " ")
-                )]
-            );
-            assert!(!band.lines[0].contains(wrong));
-            let said = story(&scene);
-            assert_eq!(said.label, "DEAD END");
-            assert_eq!(said.paint, Paint::Bad);
-        }
+    fn a_dead_end_shows_the_saved_profile() {
         let mut fx = Fx::new();
         fx.dead_end = Some(DeadEndView {
             at: ts(1),
@@ -1036,27 +1009,23 @@ mod the_story {
         }
     }
 
-    #[test]
-    fn a_hunt_cause_brief_agrees_with_the_named_core() {
+    #[test_case::test_case(true, Signal::Crash; "trial crash")]
+    #[test_case::test_case(true, Signal::ComputationError; "trial wrong result")]
+    #[test_case::test_case(false, Signal::Crash; "idle crash")]
+    fn a_hunt_cause_brief_agrees_with_the_named_core(has_trial: bool, signal: Signal) {
         let mut crashed = trial(Regime::R7, Condition::Together, &[0, 1]);
         crashed.duration = secs(600);
-        for (trial, signal) in [
-            (Some(crashed.clone()), Some(Signal::Crash)),
-            (Some(crashed), Some(Signal::ComputationError)),
-            (None, Some(Signal::Crash)),
-        ] {
-            let mut c = cause();
-            c.trial = trial;
-            c.signal = signal;
-            c.core = Some(core(9));
-            let (_, named, brief) = super::super::hunt_cause_story(&c);
-            assert!(named.starts_with("Core 09 was named"), "{named}");
-            assert!(brief.ends_with("; core 09 named."), "{brief}");
-            c.core = None;
-            let (_, named, brief) = super::super::hunt_cause_story(&c);
-            assert!(named.starts_with("No core was named"), "{named}");
-            assert!(brief.ends_with("; no core named."), "{brief}");
-        }
+        let mut c = cause();
+        c.trial = has_trial.then_some(crashed);
+        c.signal = Some(signal);
+        c.core = Some(core(9));
+        let (_, named, brief) = super::super::hunt_cause_story(&c);
+        assert!(named.starts_with("Core 09 was named"), "{named}");
+        assert!(brief.ends_with("; core 09 named."), "{brief}");
+        c.core = None;
+        let (_, named, brief) = super::super::hunt_cause_story(&c);
+        assert!(named.starts_with("No core was named"), "{named}");
+        assert!(brief.ends_with("; no core named."), "{brief}");
     }
 
     #[test]
@@ -1324,49 +1293,45 @@ mod the_story {
         assert_eq!(said.brief, "Probing members of 00 02: core 02 at -12.");
     }
 
-    #[test]
-    fn a_probe_says_failed_unless_its_group_crashed() {
-        for (signal, verb) in [
-            (Signal::Crash, "crashed"),
-            (Signal::ComputationError, "failed"),
-        ] {
-            let mut fx = hunting(false, Vec::new());
-            let (plan, facts) = fx.hunt.as_mut().expect("a hunt");
-            plan.groups.push(HuntGroup {
-                number: 1,
-                cores: set(&[0, 2]),
-                profile: PerCore::default(),
-                stage: togi_journal::HuntStage::Part,
-                probe: None,
-                held: Vec::new(),
-                outcome: GroupState::Failed,
-                passed: 0,
-                needed: 5,
-                carried: false,
-                running: false,
-            });
-            facts.group_signals.push((1, signal));
-            facts.cause.signal = Some(Signal::Crash);
-            let mut probing = trial(Regime::R7, Condition::Together, &[0]);
-            probing.hunt = Some(HuntPlace {
-                hunt: 1,
-                group: 2,
-                part: None,
-                parts: 0,
-                cut: 0,
-                probe: Some(Member {
-                    core: core(2),
-                    offset: off(-12),
-                }),
-            });
-            fx.trial = Some(probing);
-            let said = story(&fx.scene(ts(1010)));
-            assert!(
-                said.lines[0].starts_with(&format!("00 02 {verb} together at their offsets")),
-                "{}",
-                said.lines[0]
-            );
-        }
+    #[test_case::test_case(Signal::Crash, "crashed"; "crash")]
+    #[test_case::test_case(Signal::ComputationError, "failed"; "wrong result")]
+    fn a_probe_says_failed_unless_its_group_crashed(signal: Signal, verb: &str) {
+        let mut fx = hunting(false, Vec::new());
+        let (plan, facts) = fx.hunt.as_mut().expect("a hunt");
+        plan.groups.push(HuntGroup {
+            number: 1,
+            cores: set(&[0, 2]),
+            profile: PerCore::default(),
+            stage: togi_journal::HuntStage::Part,
+            probe: None,
+            held: Vec::new(),
+            outcome: GroupState::Failed,
+            passed: 0,
+            needed: 5,
+            carried: false,
+            running: false,
+        });
+        facts.group_signals.push((1, signal));
+        facts.cause.signal = Some(Signal::Crash);
+        let mut probing = trial(Regime::R7, Condition::Together, &[0]);
+        probing.hunt = Some(HuntPlace {
+            hunt: 1,
+            group: 2,
+            part: None,
+            parts: 0,
+            cut: 0,
+            probe: Some(Member {
+                core: core(2),
+                offset: off(-12),
+            }),
+        });
+        fx.trial = Some(probing);
+        let said = story(&fx.scene(ts(1010)));
+        assert!(
+            said.lines[0].starts_with(&format!("00 02 {verb} together at their offsets")),
+            "{}",
+            said.lines[0]
+        );
     }
 
     fn probe_of(
@@ -1787,38 +1752,38 @@ mod the_narrator {
         );
     }
 
-    #[test]
-    fn a_narrated_frame_stays_inside_its_bounds() {
+    #[test_case::test_case(80, 24; "small")]
+    #[test_case::test_case(120, 33; "medium")]
+    #[test_case::test_case(20, 8; "tiny")]
+    fn a_narrated_frame_stays_inside_its_bounds(w: u16, h: u16) {
         let said = super::super::Story {
             label: "NO SESSION YET".to_owned(),
             lines: vec!["Nothing has been recorded yet. ".repeat(6)],
             brief: String::new(),
             paint: Paint::Running,
         };
-        for (w, h) in [(80, 24), (120, 33), (20, 8)] {
-            let sc = screen(View::Main, w, h, Colours::None, true);
-            let (buf, _) = draw_checked(&sc, |sc, buf| {
-                let layout = Layout::new(sc);
-                rows(
-                    buf,
-                    layout.body,
-                    narrator_lines(
-                        &said,
-                        usize::from(layout.body.width),
-                        usize::from(layout.body.height),
-                        false,
-                        sc.colours,
-                    ),
+        let sc = screen(View::Main, w, h, Colours::None, true);
+        let (buf, _) = draw_checked(&sc, |sc, buf| {
+            let layout = Layout::new(sc);
+            rows(
+                buf,
+                layout.body,
+                narrator_lines(
+                    &said,
+                    usize::from(layout.body.width),
+                    usize::from(layout.body.height),
+                    false,
                     sc.colours,
-                );
-                crate::screen::Drawn {
-                    scroll: 0,
-                    hold: crate::screen::Hold::Never,
-                }
-            });
-            assert_frame_bounds(&buf, &sc);
-            assert!(rows_of(&buf).iter().any(|row| row.contains('▌')), "{w}x{h}");
-        }
+                ),
+                sc.colours,
+            );
+            crate::screen::Drawn {
+                scroll: 0,
+                hold: crate::screen::Hold::Never,
+            }
+        });
+        assert_frame_bounds(&buf, &sc);
+        assert!(rows_of(&buf).iter().any(|row| row.contains('▌')), "{w}x{h}");
     }
 }
 
@@ -2746,20 +2711,20 @@ mod the_outcome_lines {
         assert_eq!(compact, ["pass → R1 core 01"]);
     }
 
+    #[test_case::test_case("→ R2 heavy vector"; "heavy vector")]
+    #[test_case::test_case("→ R6 idle + bursts"; "idle bursts")]
+    #[test_case::test_case("→ R2 heavy vector on no cores"; "no cores")]
+    #[test_case::test_case("→ step 3"; "step")]
+    #[test_case::test_case("→ part 2"; "part")]
+    #[test_case::test_case("→ group 4"; "group")]
+    #[test_case::test_case("→ rerun"; "rerun")]
+    #[test_case::test_case("→ no next trial projected"; "no next")]
+    fn tight_next_leaves_non_core_outcomes_unchanged(text: &str) {
+        assert_eq!(tight_next(text), text);
+    }
+
     #[test]
-    fn tight_next_leaves_non_core_outcomes_unchanged() {
-        for text in [
-            "→ R2 heavy vector",
-            "→ R6 idle + bursts",
-            "→ R2 heavy vector on no cores",
-            "→ step 3",
-            "→ part 2",
-            "→ group 4",
-            "→ rerun",
-            "→ no next trial projected",
-        ] {
-            assert_eq!(tight_next(text), text);
-        }
+    fn tight_next_keeps_the_projected_trial() {
         let mut fx = Fx::new();
         let next = plan(
             Regime::R2,
@@ -3403,8 +3368,14 @@ mod the_simulated_sessions {
         assert_eq!(story(&scene).label, "DEAD END");
     }
 
-    #[test]
-    fn a_running_checking_trial_has_a_story_and_outcome_rows_the_forecast_backs() {
+    #[test_case::test_case(80, false; "width 80 compact False")]
+    #[test_case::test_case(80, true; "width 80 compact True")]
+    #[test_case::test_case(120, false; "width 120 compact False")]
+    #[test_case::test_case(120, true; "width 120 compact True")]
+    fn a_running_checking_trial_has_a_story_and_outcome_rows_the_forecast_backs(
+        width: usize,
+        compact: bool,
+    ) {
         let (model, at) = model_of(Scenario::Checking);
         let scene = scene_of(&model, at + jiff::SignedDuration::from_secs(5));
         let said = story(&scene);
@@ -3420,13 +3391,9 @@ mod the_simulated_sessions {
         let trial = snapshot.trial.expect("a running trial");
         assert!(!plain(&operation(&scene, trial), Colours::None).is_empty());
         assert!(trial_where(&scene, trial).starts_with("on "));
-        for width in [80, 120] {
-            for compact in [false, true] {
-                for line in outcome_lines(&scene, width, compact) {
-                    let cells = crate::frames::fit::line_width(&line, Colours::None);
-                    assert!(cells <= width, "{cells} > {width}");
-                }
-            }
+        for line in outcome_lines(&scene, width, compact) {
+            let cells = crate::frames::fit::line_width(&line, Colours::None);
+            assert!(cells <= width, "{cells} > {width}");
         }
     }
 

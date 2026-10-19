@@ -175,30 +175,30 @@ mod tests {
             .to_owned()
     }
 
+    #[test_case::test_case(5, ""; "five")]
+    #[test_case::test_case(8, "00:16:40"; "eight")]
+    #[test_case::test_case(11, "00:16:40"; "eleven")]
+    #[test_case::test_case(14, "00:16:40"; "fourteen")]
+    #[test_case::test_case(15, "00:16:40  start"; "fifteen")]
+    #[test_case::test_case(26, "00:16:40  start"; "twenty six")]
+    #[test_case::test_case(31, "00:16:40  start"; "thirty one")]
+    #[test_case::test_case(32, "00:16:40  start"; "thirty two")]
+    #[test_case::test_case(41, "00:16:40  start"; "forty one")]
+    #[test_case::test_case(42, "00:16:40  start                 session..."; "forty two")]
+    #[test_case::test_case(52, "00:16:40  start                 session dashboard..."; "fifty two")]
+    #[test_case::test_case(58, "00:16:40  start                 session dashboard..."; "fifty eight")]
+    #[test_case::test_case(155, concat!("00:16:40  start                 ", "session dashboard started by a togi build from before version stamps (schema 0, ruleset 0, fixes 0, 3 cores)"); "full")]
+    fn a_row_keeps_whole_values_at_selected_widths(text: usize, want: &str) {
+        let entries = [entry(1, at(1000), "start", START)];
+        let (page, _) = rows(&log(&entries), text + 2, 20, 0);
+        assert_eq!(text_cells(&page[2]), want, "{text} text cells");
+    }
+
     #[test]
     fn a_row_keeps_whole_values_at_every_width() {
         let entries = [entry(1, at(1000), "start", START)];
         let log = log(&entries);
         let stamp = "00:16:40";
-        let pad = " ".repeat(20 - "start".len());
-        for (text, want) in [
-            (5, String::new()),
-            (8, stamp.to_owned()),
-            (11, stamp.to_owned()),
-            (14, stamp.to_owned()),
-            (15, format!("{stamp}  start")),
-            (26, format!("{stamp}  start")),
-            (31, format!("{stamp}  start")),
-            (32, format!("{stamp}  start")),
-            (41, format!("{stamp}  start")),
-            (42, format!("{stamp}  start{pad}  session...")),
-            (52, format!("{stamp}  start{pad}  session dashboard...")),
-            (58, format!("{stamp}  start{pad}  session dashboard...")),
-            (155, format!("{stamp}  start{pad}  {START}")),
-        ] {
-            let (page, _) = rows(&log, text + 2, 20, 0);
-            assert_eq!(text_cells(&page[2]), want, "{text} text cells");
-        }
         let words: Vec<&str> = START.split_whitespace().collect();
         for width in 6..=160 {
             let (page, _) = rows(&log, width, 20, 0);
@@ -231,20 +231,16 @@ mod tests {
         }
     }
 
-    #[test]
-    fn an_empty_journal_says_so_in_whole_words() {
+    #[test_case::test_case(3, ""; "three")]
+    #[test_case::test_case(5, "No..."; "five")]
+    #[test_case::test_case(15, "No journal..."; "fifteen")]
+    #[test_case::test_case(22, "No journal entries..."; "twenty two")]
+    #[test_case::test_case(23, "No journal entries yet."; "twenty three")]
+    #[test_case::test_case(115, "No journal entries yet."; "wide")]
+    fn an_empty_journal_says_so_in_whole_words(text: usize, want: &str) {
         let log = log(&[]);
-        for (text, want) in [
-            (3, ""),
-            (5, "No..."),
-            (15, "No journal..."),
-            (22, "No journal entries..."),
-            (23, "No journal entries yet."),
-            (115, "No journal entries yet."),
-        ] {
-            let (page, _) = rows(&log, text + 2, 20, 0);
-            assert_eq!(text_cells(&page[2]), want, "{text} text cells");
-        }
+        let (page, _) = rows(&log, text + 2, 20, 0);
+        assert_eq!(text_cells(&page[2]), want, "{text} text cells");
     }
 
     #[test]
@@ -329,30 +325,35 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_scroll_at_or_past_the_extent_shows_the_end() {
+    #[test_case::test_case(0; "at extent")]
+    #[test_case::test_case(1; "one past extent")]
+    #[test_case::test_case(100; "far past extent")]
+    fn a_scroll_at_or_past_the_extent_shows_the_end(extra: usize) {
         let entries = thirty(true);
         let (end, extent) = rows(&log(&entries), 77, 10, usize::MAX);
-        for scroll in [extent, extent + 1, extent + 100] {
-            assert_eq!(
-                rows(&log(&entries), 77, 10, scroll).0,
-                end,
-                "scroll {scroll}"
-            );
-        }
+        let scroll = extent + extra;
+        assert_eq!(
+            rows(&log(&entries), 77, 10, scroll).0,
+            end,
+            "scroll {scroll}"
+        );
         let (above, _) = rows(&log(&entries), 77, 10, extent - 1);
         assert_ne!(above, end);
     }
 
-    #[test]
-    fn arrivals_never_move_a_row() {
+    #[test_case::test_case(1; "one")]
+    #[test_case::test_case(8; "eight")]
+    #[test_case::test_case(123; "many")]
+    fn arrivals_never_move_a_row(arrived: usize) {
         let entries = thirty(false);
         let held = log(&entries);
         let (page, extent) = rows(&held, 77, 10, 3);
-        for arrived in [1, 8, 123] {
-            let later = Log { arrived, ..held };
-            assert_eq!(rows(&later, 77, 10, 3), (page.clone(), extent));
-        }
+        let later = Log { arrived, ..held };
+        assert_eq!(
+            rows(&later, 77, 10, 3),
+            (page.clone(), extent),
+            "arrived {arrived}"
+        );
     }
 
     #[test]
@@ -392,13 +393,145 @@ mod tests {
                         Colours::None
                     ),
                     Colours::None
-                ) <= width
+                ) <= width,
+                "width {width}"
             );
         }
     }
 
-    #[test]
-    fn log_bodies_fit_small_rectangles() {
+    #[test_case::test_case(0, 0, 0; "w0 h0 scroll0")]
+    #[test_case::test_case(0, 0, 7; "w0 h0 scroll1")]
+    #[test_case::test_case(0, 0, usize::MAX; "w0 h0 scroll2")]
+    #[test_case::test_case(0, 1, 0; "w0 h1 scroll0")]
+    #[test_case::test_case(0, 1, 7; "w0 h1 scroll1")]
+    #[test_case::test_case(0, 1, usize::MAX; "w0 h1 scroll2")]
+    #[test_case::test_case(0, 19, 0; "w0 h19 scroll0")]
+    #[test_case::test_case(0, 19, 7; "w0 h19 scroll1")]
+    #[test_case::test_case(0, 19, usize::MAX; "w0 h19 scroll2")]
+    #[test_case::test_case(0, 61, 0; "w0 h61 scroll0")]
+    #[test_case::test_case(0, 61, 7; "w0 h61 scroll1")]
+    #[test_case::test_case(0, 61, usize::MAX; "w0 h61 scroll2")]
+    #[test_case::test_case(1, 0, 0; "w1 h0 scroll0")]
+    #[test_case::test_case(1, 0, 7; "w1 h0 scroll1")]
+    #[test_case::test_case(1, 0, usize::MAX; "w1 h0 scroll2")]
+    #[test_case::test_case(1, 1, 0; "w1 h1 scroll0")]
+    #[test_case::test_case(1, 1, 7; "w1 h1 scroll1")]
+    #[test_case::test_case(1, 1, usize::MAX; "w1 h1 scroll2")]
+    #[test_case::test_case(1, 19, 0; "w1 h19 scroll0")]
+    #[test_case::test_case(1, 19, 7; "w1 h19 scroll1")]
+    #[test_case::test_case(1, 19, usize::MAX; "w1 h19 scroll2")]
+    #[test_case::test_case(1, 61, 0; "w1 h61 scroll0")]
+    #[test_case::test_case(1, 61, 7; "w1 h61 scroll1")]
+    #[test_case::test_case(1, 61, usize::MAX; "w1 h61 scroll2")]
+    #[test_case::test_case(2, 0, 0; "w2 h0 scroll0")]
+    #[test_case::test_case(2, 0, 7; "w2 h0 scroll1")]
+    #[test_case::test_case(2, 0, usize::MAX; "w2 h0 scroll2")]
+    #[test_case::test_case(2, 1, 0; "w2 h1 scroll0")]
+    #[test_case::test_case(2, 1, 7; "w2 h1 scroll1")]
+    #[test_case::test_case(2, 1, usize::MAX; "w2 h1 scroll2")]
+    #[test_case::test_case(2, 19, 0; "w2 h19 scroll0")]
+    #[test_case::test_case(2, 19, 7; "w2 h19 scroll1")]
+    #[test_case::test_case(2, 19, usize::MAX; "w2 h19 scroll2")]
+    #[test_case::test_case(2, 61, 0; "w2 h61 scroll0")]
+    #[test_case::test_case(2, 61, 7; "w2 h61 scroll1")]
+    #[test_case::test_case(2, 61, usize::MAX; "w2 h61 scroll2")]
+    #[test_case::test_case(10, 0, 0; "w10 h0 scroll0")]
+    #[test_case::test_case(10, 0, 7; "w10 h0 scroll1")]
+    #[test_case::test_case(10, 0, usize::MAX; "w10 h0 scroll2")]
+    #[test_case::test_case(10, 1, 0; "w10 h1 scroll0")]
+    #[test_case::test_case(10, 1, 7; "w10 h1 scroll1")]
+    #[test_case::test_case(10, 1, usize::MAX; "w10 h1 scroll2")]
+    #[test_case::test_case(10, 19, 0; "w10 h19 scroll0")]
+    #[test_case::test_case(10, 19, 7; "w10 h19 scroll1")]
+    #[test_case::test_case(10, 19, usize::MAX; "w10 h19 scroll2")]
+    #[test_case::test_case(10, 61, 0; "w10 h61 scroll0")]
+    #[test_case::test_case(10, 61, 7; "w10 h61 scroll1")]
+    #[test_case::test_case(10, 61, usize::MAX; "w10 h61 scroll2")]
+    #[test_case::test_case(77, 0, 0; "w77 h0 scroll0")]
+    #[test_case::test_case(77, 0, 7; "w77 h0 scroll1")]
+    #[test_case::test_case(77, 0, usize::MAX; "w77 h0 scroll2")]
+    #[test_case::test_case(77, 1, 0; "w77 h1 scroll0")]
+    #[test_case::test_case(77, 1, 7; "w77 h1 scroll1")]
+    #[test_case::test_case(77, 1, usize::MAX; "w77 h1 scroll2")]
+    #[test_case::test_case(77, 19, 0; "w77 h19 scroll0")]
+    #[test_case::test_case(77, 19, 7; "w77 h19 scroll1")]
+    #[test_case::test_case(77, 19, usize::MAX; "w77 h19 scroll2")]
+    #[test_case::test_case(77, 61, 0; "w77 h61 scroll0")]
+    #[test_case::test_case(77, 61, 7; "w77 h61 scroll1")]
+    #[test_case::test_case(77, 61, usize::MAX; "w77 h61 scroll2")]
+    #[test_case::test_case(155, 0, 0; "w155 h0 scroll0")]
+    #[test_case::test_case(155, 0, 7; "w155 h0 scroll1")]
+    #[test_case::test_case(155, 0, usize::MAX; "w155 h0 scroll2")]
+    #[test_case::test_case(155, 1, 0; "w155 h1 scroll0")]
+    #[test_case::test_case(155, 1, 7; "w155 h1 scroll1")]
+    #[test_case::test_case(155, 1, usize::MAX; "w155 h1 scroll2")]
+    #[test_case::test_case(155, 19, 0; "w155 h19 scroll0")]
+    #[test_case::test_case(155, 19, 7; "w155 h19 scroll1")]
+    #[test_case::test_case(155, 19, usize::MAX; "w155 h19 scroll2")]
+    #[test_case::test_case(155, 61, 0; "w155 h61 scroll0")]
+    #[test_case::test_case(155, 61, 7; "w155 h61 scroll1")]
+    #[test_case::test_case(155, 61, usize::MAX; "w155 h61 scroll2")]
+    #[test_case::test_case(194, 0, 0; "w194 h0 scroll0")]
+    #[test_case::test_case(194, 0, 7; "w194 h0 scroll1")]
+    #[test_case::test_case(194, 0, usize::MAX; "w194 h0 scroll2")]
+    #[test_case::test_case(194, 1, 0; "w194 h1 scroll0")]
+    #[test_case::test_case(194, 1, 7; "w194 h1 scroll1")]
+    #[test_case::test_case(194, 1, usize::MAX; "w194 h1 scroll2")]
+    #[test_case::test_case(194, 19, 0; "w194 h19 scroll0")]
+    #[test_case::test_case(194, 19, 7; "w194 h19 scroll1")]
+    #[test_case::test_case(194, 19, usize::MAX; "w194 h19 scroll2")]
+    #[test_case::test_case(194, 61, 0; "w194 h61 scroll0")]
+    #[test_case::test_case(194, 61, 7; "w194 h61 scroll1")]
+    #[test_case::test_case(194, 61, usize::MAX; "w194 h61 scroll2")]
+    #[test_case::test_case(195, 0, 0; "w195 h0 scroll0")]
+    #[test_case::test_case(195, 0, 7; "w195 h0 scroll1")]
+    #[test_case::test_case(195, 0, usize::MAX; "w195 h0 scroll2")]
+    #[test_case::test_case(195, 1, 0; "w195 h1 scroll0")]
+    #[test_case::test_case(195, 1, 7; "w195 h1 scroll1")]
+    #[test_case::test_case(195, 1, usize::MAX; "w195 h1 scroll2")]
+    #[test_case::test_case(195, 19, 0; "w195 h19 scroll0")]
+    #[test_case::test_case(195, 19, 7; "w195 h19 scroll1")]
+    #[test_case::test_case(195, 19, usize::MAX; "w195 h19 scroll2")]
+    #[test_case::test_case(195, 61, 0; "w195 h61 scroll0")]
+    #[test_case::test_case(195, 61, 7; "w195 h61 scroll1")]
+    #[test_case::test_case(195, 61, usize::MAX; "w195 h61 scroll2")]
+    #[test_case::test_case(196, 0, 0; "w196 h0 scroll0")]
+    #[test_case::test_case(196, 0, 7; "w196 h0 scroll1")]
+    #[test_case::test_case(196, 0, usize::MAX; "w196 h0 scroll2")]
+    #[test_case::test_case(196, 1, 0; "w196 h1 scroll0")]
+    #[test_case::test_case(196, 1, 7; "w196 h1 scroll1")]
+    #[test_case::test_case(196, 1, usize::MAX; "w196 h1 scroll2")]
+    #[test_case::test_case(196, 19, 0; "w196 h19 scroll0")]
+    #[test_case::test_case(196, 19, 7; "w196 h19 scroll1")]
+    #[test_case::test_case(196, 19, usize::MAX; "w196 h19 scroll2")]
+    #[test_case::test_case(196, 61, 0; "w196 h61 scroll0")]
+    #[test_case::test_case(196, 61, 7; "w196 h61 scroll1")]
+    #[test_case::test_case(196, 61, usize::MAX; "w196 h61 scroll2")]
+    #[test_case::test_case(197, 0, 0; "w197 h0 scroll0")]
+    #[test_case::test_case(197, 0, 7; "w197 h0 scroll1")]
+    #[test_case::test_case(197, 0, usize::MAX; "w197 h0 scroll2")]
+    #[test_case::test_case(197, 1, 0; "w197 h1 scroll0")]
+    #[test_case::test_case(197, 1, 7; "w197 h1 scroll1")]
+    #[test_case::test_case(197, 1, usize::MAX; "w197 h1 scroll2")]
+    #[test_case::test_case(197, 19, 0; "w197 h19 scroll0")]
+    #[test_case::test_case(197, 19, 7; "w197 h19 scroll1")]
+    #[test_case::test_case(197, 19, usize::MAX; "w197 h19 scroll2")]
+    #[test_case::test_case(197, 61, 0; "w197 h61 scroll0")]
+    #[test_case::test_case(197, 61, 7; "w197 h61 scroll1")]
+    #[test_case::test_case(197, 61, usize::MAX; "w197 h61 scroll2")]
+    #[test_case::test_case(235, 0, 0; "w235 h0 scroll0")]
+    #[test_case::test_case(235, 0, 7; "w235 h0 scroll1")]
+    #[test_case::test_case(235, 0, usize::MAX; "w235 h0 scroll2")]
+    #[test_case::test_case(235, 1, 0; "w235 h1 scroll0")]
+    #[test_case::test_case(235, 1, 7; "w235 h1 scroll1")]
+    #[test_case::test_case(235, 1, usize::MAX; "w235 h1 scroll2")]
+    #[test_case::test_case(235, 19, 0; "w235 h19 scroll0")]
+    #[test_case::test_case(235, 19, 7; "w235 h19 scroll1")]
+    #[test_case::test_case(235, 19, usize::MAX; "w235 h19 scroll2")]
+    #[test_case::test_case(235, 61, 0; "w235 h61 scroll0")]
+    #[test_case::test_case(235, 61, 7; "w235 h61 scroll1")]
+    #[test_case::test_case(235, 61, usize::MAX; "w235 h61 scroll2")]
+    fn log_bodies_fit_small_rectangles(width: usize, height: usize, scroll: usize) {
         let entries = [entry(
             1,
             at(0),
@@ -406,120 +539,124 @@ mod tests {
             &"long journal line ".repeat(20),
         )];
         let log = log(&entries);
-        for width in [0, 1, 2, 10, 77, 155, 194, 195, 196, 197, 235] {
-            for height in [0, 1, 19, 61] {
-                for scroll in [0, 7, usize::MAX] {
-                    let (page, _) =
-                        body(&log, width, height, scroll, &TimeZone::UTC, Colours::None);
-                    assert!(
-                        page.len() <= height,
-                        "{width}x{height}: {} rows",
-                        page.len()
-                    );
-                    for line in &page {
-                        assert!(
-                            line_width(line, Colours::None) <= width,
-                            "{width}x{height}: {:?}",
-                            plain(line, Colours::None)
-                        );
-                    }
-                }
-            }
+        let (page, _) = body(&log, width, height, scroll, &TimeZone::UTC, Colours::None);
+        assert!(
+            page.len() <= height,
+            "{width}x{height}: {} rows",
+            page.len()
+        );
+        for line in &page {
+            assert!(
+                line_width(line, Colours::None) <= width,
+                "{width}x{height}: {:?}",
+                plain(line, Colours::None)
+            );
         }
     }
 
-    #[test]
-    fn the_footer_counts_what_arrived_and_names_the_way_back() {
+    #[test_case::test_case(1, "1 new event"; "one")]
+    #[test_case::test_case(8, "8 new events"; "eight")]
+    fn the_footer_counts_what_arrived_and_names_the_way_back(arrived: usize, count: &str) {
         let none = Log {
             entries: &[],
             total: 0,
             arrived: 0,
         };
         assert!(arrivals(&none, Colours::None).is_empty());
-        for (arrived, count) in [(1, "1 new event"), (8, "8 new events")] {
-            let held = Log { arrived, ..none };
-            let clause = arrivals(&held, Colours::Full);
-            assert_eq!(clause.len(), 1);
-            let line = |width| plain(&fit_clauses(width, &clause, Colours::None), Colours::None);
-            assert_eq!(line(80), format!("{count} · End: latest"));
-            assert_eq!(line(count.len() + 4), count);
-            assert_eq!(line(count.len()), count);
-            assert_eq!(line(3), "");
-            assert_eq!(cut_words(&line(80), 80, Colours::None), line(80));
-        }
+        let held = Log { arrived, ..none };
+        let clause = arrivals(&held, Colours::Full);
+        assert_eq!(clause.len(), 1);
+        let line = |width| plain(&fit_clauses(width, &clause, Colours::None), Colours::None);
+        assert_eq!(line(80), format!("{count} · End: latest"));
+        assert_eq!(line(count.len() + 4), count);
+        assert_eq!(line(count.len()), count);
+        assert_eq!(line(3), "");
+        assert_eq!(cut_words(&line(80), 80, Colours::None), line(80));
     }
 
-    #[test]
-    fn the_arrival_count_keeps_the_keys_in_the_footer() {
+    #[test_case::test_case(1, 20; "arrived 1 width 20")]
+    #[test_case::test_case(1, 30; "arrived 1 width 30")]
+    #[test_case::test_case(1, 40; "arrived 1 width 40")]
+    #[test_case::test_case(1, 50; "arrived 1 width 50")]
+    #[test_case::test_case(1, 4; "arrived 1 width 4")]
+    #[test_case::test_case(1, 5; "arrived 1 width 5")]
+    #[test_case::test_case(1, 6; "arrived 1 width 6")]
+    #[test_case::test_case(1, 10; "arrived 1 width 10")]
+    #[test_case::test_case(8, 20; "arrived 8 width 20")]
+    #[test_case::test_case(8, 30; "arrived 8 width 30")]
+    #[test_case::test_case(8, 40; "arrived 8 width 40")]
+    #[test_case::test_case(8, 50; "arrived 8 width 50")]
+    #[test_case::test_case(8, 4; "arrived 8 width 4")]
+    #[test_case::test_case(8, 5; "arrived 8 width 5")]
+    #[test_case::test_case(8, 6; "arrived 8 width 6")]
+    #[test_case::test_case(8, 10; "arrived 8 width 10")]
+    fn the_arrival_count_keeps_the_keys_in_the_footer(arrived: usize, width: usize) {
         let keys = ["?", "l", "esc", "q"];
-        for arrived in [1, 8] {
-            let held = Log {
-                entries: &[],
-                total: 0,
-                arrived,
-            };
-            let count = if arrived == 1 {
-                "1 new event".to_owned()
-            } else {
-                format!("{arrived} new events")
-            };
-            let clause = arrivals(&held, Colours::Full);
-            let footer = |width| key_hints(View::Log, width, &clause, Colours::Full, Quit::Keys);
-            let wide = plain(&footer(120), Colours::None);
-            assert!(wide.contains(&format!("{count} · End: latest")), "{wide}");
-            let reference = footer(120);
-            for width in [20, 30, 40, 50] {
-                let line = footer(width);
-                let text = plain(&line, Colours::None);
-                let fields: Vec<&str> = text.split_whitespace().collect();
-                for key in keys {
-                    assert!(
-                        fields.contains(&key),
-                        "width {width} lost {key:?}: {text:?}"
-                    );
-                    let styled = |line: &Line<'_>| {
-                        line.spans
-                            .iter()
-                            .find(|span| span.content.trim() == key)
-                            .map(|span| span.style)
-                    };
-                    assert_eq!(
-                        styled(&line),
-                        styled(&reference),
-                        "width {width} key {key:?}"
-                    );
-                }
+        let held = Log {
+            entries: &[],
+            total: 0,
+            arrived,
+        };
+        let count = if arrived == 1 {
+            "1 new event".to_owned()
+        } else {
+            format!("{arrived} new events")
+        };
+        let clause = arrivals(&held, Colours::Full);
+        let footer = |width| key_hints(View::Log, width, &clause, Colours::Full, Quit::Keys);
+        let wide = plain(&footer(120), Colours::None);
+        assert!(wide.contains(&format!("{count} · End: latest")), "{wide}");
+        let reference = footer(120);
+        if width >= 20 {
+            let line = footer(width);
+            let text = plain(&line, Colours::None);
+            let fields: Vec<&str> = text.split_whitespace().collect();
+            for key in keys {
                 assert!(
-                    !text.contains(cut_marker(Colours::None)),
-                    "width {width} cut text: {text:?}"
+                    fields.contains(&key),
+                    "width {width} lost {key:?}: {text:?}"
                 );
+                let styled = |line: &Line<'_>| {
+                    line.spans
+                        .iter()
+                        .find(|span| span.content.trim() == key)
+                        .map(|span| span.style)
+                };
+                assert_eq!(
+                    styled(&line),
+                    styled(&reference),
+                    "width {width} key {key:?}"
+                );
+            }
+            assert!(
+                !text.contains(cut_marker(Colours::None)),
+                "width {width} cut text: {text:?}"
+            );
+            assert!(
+                !text.contains("new") || text.contains(&count),
+                "width {width}: {text:?}"
+            );
+            if width == 50 {
+                assert!(text.contains(&count), "{text:?}");
+            }
+            assert!(line_width(&line, Colours::None) <= width);
+        } else {
+            let text = plain(&footer(width), Colours::None);
+            let fields: Vec<&str> = text.split_whitespace().collect();
+            assert!(fields.contains(&"q"), "width {width}: {text:?}");
+            let words: Vec<&str> = count.split_whitespace().collect();
+            for field in fields {
                 assert!(
-                    !text.contains("new") || text.contains(&count),
-                    "width {width}: {text:?}"
+                    keys.contains(&field) || words.contains(&field),
+                    "width {width} cut a key or the notice: {text:?}"
                 );
-                if width == 50 {
-                    assert!(text.contains(&count), "{text:?}");
-                }
-                assert!(line_width(&line, Colours::None) <= width);
             }
-            for width in [4, 5, 6, 10] {
-                let text = plain(&footer(width), Colours::None);
-                let fields: Vec<&str> = text.split_whitespace().collect();
-                assert!(fields.contains(&"q"), "width {width}: {text:?}");
-                let words: Vec<&str> = count.split_whitespace().collect();
-                for field in fields {
-                    assert!(
-                        keys.contains(&field) || words.contains(&field),
-                        "width {width} cut a key or the notice: {text:?}"
-                    );
-                }
-            }
-            let amber = reference
-                .spans
-                .iter()
-                .find(|span| span.content.contains(&count))
-                .expect("the count span");
-            assert_eq!(amber.style, Paint::Hunt.style(Colours::Full));
         }
+        let amber = reference
+            .spans
+            .iter()
+            .find(|span| span.content.contains(&count))
+            .expect("the count span");
+        assert_eq!(amber.style, Paint::Hunt.style(Colours::Full));
     }
 }

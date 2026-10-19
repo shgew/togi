@@ -39,7 +39,7 @@ fn every_screen(fx: &Fixture, scenario: Scenario) {
     }
 }
 
-fn every_scroll(fx: &Fixture, scenario: Scenario) {
+fn every_scroll(fx: &Fixture, scenario: Scenario, sample: fn(usize) -> usize) {
     for view in [View::Help, View::Log] {
         for (width, height) in ALL_SIZES {
             let at = |scroll: usize| {
@@ -52,25 +52,17 @@ fn every_scroll(fx: &Fixture, scenario: Scenario) {
             let (top, drawn) = at(0);
             let extent = drawn.scroll;
             let (end, _) = at(usize::MAX);
-            for scroll in [1, 3, extent / 2, extent.saturating_sub(1), extent] {
-                let (buf, drawn) = at(scroll);
-                assert_eq!(
-                    drawn.scroll, extent,
-                    "{scenario} {view:?} {width}x{height} at {scroll}: the extent does not move"
-                );
-                assert_eq!(
-                    scroll >= extent,
-                    buf == end,
-                    "{scenario} {view:?} {width}x{height} at {scroll}: only the extent shows the end"
-                );
-            }
-            for scroll in [extent + 1, extent + 100_000] {
-                assert_eq!(
-                    at(scroll).0,
-                    end,
-                    "{scenario} {view:?} {width}x{height} at {scroll}: past the extent shows the end"
-                );
-            }
+            let scroll = sample(extent);
+            let (buf, drawn) = at(scroll);
+            assert_eq!(
+                drawn.scroll, extent,
+                "{scenario} {view:?} {width}x{height} at {scroll}: the extent does not move"
+            );
+            assert_eq!(
+                scroll >= extent,
+                buf == end,
+                "{scenario} {view:?} {width}x{height} at {scroll}: only the extent shows the end"
+            );
             assert_eq!(
                 extent > 0,
                 top != end,
@@ -82,12 +74,28 @@ fn every_scroll(fx: &Fixture, scenario: Scenario) {
 
 macro_rules! scenarios {
     ($($name:ident => $scenario:expr),+ $(,)?) => {$(
-        #[test]
-        fn $name() {
-            let scenario = $scenario;
-            let fx = Fixture::scenario(scenario);
-            every_screen(&fx, scenario);
-            every_scroll(&fx, scenario);
+        mod $name {
+            use super::*;
+
+            #[test]
+            fn screens() {
+                let scenario = $scenario;
+                let fx = Fixture::scenario(scenario);
+                every_screen(&fx, scenario);
+            }
+
+            #[test_case::test_case(|_| 1; "one")]
+            #[test_case::test_case(|_| 3; "three")]
+            #[test_case::test_case(|extent| extent / 2; "half")]
+            #[test_case::test_case(|extent| extent.saturating_sub(1); "before end")]
+            #[test_case::test_case(|extent| extent; "end")]
+            #[test_case::test_case(|extent| extent + 1; "one past end")]
+            #[test_case::test_case(|extent| extent + 100_000; "far past end")]
+            fn scrolling(sample: fn(usize) -> usize) {
+                let scenario = $scenario;
+                let fx = Fixture::scenario(scenario);
+                every_scroll(&fx, scenario, sample);
+            }
         }
     )+};
 }

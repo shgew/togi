@@ -68,29 +68,25 @@ fn header_text(s: &Snapshot<'_>, now: Timestamp, width: usize, compact: bool) ->
     )
 }
 
-#[test]
-fn header_counts_agree_in_number() {
+#[test_case::test_case(0, 0, "0 failures · 0 crashes"; "zero")]
+#[test_case::test_case(1, 1, "1 failure · 1 crash"; "singular")]
+#[test_case::test_case(2, 1, "2 failures · 1 crash"; "plural")]
+fn header_counts_agree_in_number(failures: u32, crashes: u32, want: &str) {
     let model = Model::new();
     let start = at("2026-10-12T10:00:00Z");
     let now = at("2026-10-12T10:01:00Z");
     let view = session(start);
-    for (failures, crashes, want) in [
-        (0, 0, "0 failures · 0 crashes"),
-        (1, 1, "1 failure · 1 crash"),
-        (2, 1, "2 failures · 1 crash"),
-    ] {
-        let mut s = model.snapshot();
-        s.session = Some(&view);
-        s.failures = failures;
-        s.crashes = crashes;
-        assert!(header_text(&s, now, 240, false).contains(want), "{want}");
-        let running = trial(Regime::R6, Some(at("2026-10-12T10:00:30Z")), 60);
-        s.trial = Some(&running);
-        let text = header_text(&s, now, 120, true);
-        assert!(text.contains("paused · planned end"), "{text}");
-        assert!(!text.contains("paused until"), "{text}");
-        assert!(text.contains(want), "{text}");
-    }
+    let mut s = model.snapshot();
+    s.session = Some(&view);
+    s.failures = failures;
+    s.crashes = crashes;
+    assert!(header_text(&s, now, 240, false).contains(want), "{want}");
+    let running = trial(Regime::R6, Some(at("2026-10-12T10:00:30Z")), 60);
+    s.trial = Some(&running);
+    let text = header_text(&s, now, 120, true);
+    assert!(text.contains("paused · planned end"), "{text}");
+    assert!(!text.contains("paused until"), "{text}");
+    assert!(text.contains(want), "{text}");
 }
 
 #[test]
@@ -187,8 +183,9 @@ fn tuning_over(runs: &[(&str, Option<&str>)]) -> TuningClock {
     clock
 }
 
-#[test]
-fn the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both() {
+#[test_case::test_case(160; "wide")]
+#[test_case::test_case(80; "medium")]
+fn the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both(width: usize) {
     let model = Model::new();
     let start = at("2026-10-12T10:00:00Z");
     let view = session(start);
@@ -203,12 +200,10 @@ fn the_header_shows_the_tuning_time_beside_the_session_age_and_freezes_both() {
     s.crashes = 1;
     s.last_failure = Some(at("2026-10-12T10:20:00Z"));
     let now = at("2026-10-12T12:20:00Z");
-    for width in [160, 80] {
-        let text = header_text(&s, now, width, false);
-        let tuning = text.find("tuning 1h20m");
-        let age = text.find("session 2h20m");
-        assert!(tuning.is_some() && tuning < age, "{width}: {text}");
-    }
+    let text = header_text(&s, now, width, false);
+    let tuning = text.find("tuning 1h20m");
+    let age = text.find("session 2h20m");
+    assert!(tuning.is_some() && tuning < age, "{width}: {text}");
     let wide = header_text(&s, now, 160, false);
     assert!(
         wide.contains("last observed failure 10:20, 2h00m ago"),
@@ -570,8 +565,9 @@ impl IntoLimit for CombinationId {
     }
 }
 
-#[test]
-fn medium_core_notes_retain_combination_and_solo_offsets() {
+#[test_case::test_case(false, "C4 · solo -31"; "at limit")]
+#[test_case::test_case(true, "C1 · solo -37"; "gave back")]
+fn medium_core_notes_retain_combination_and_solo_offsets(gave_back: bool, want: &str) {
     let model = Model::new();
     let s = model.snapshot();
     let zone = TimeZone::UTC;
@@ -582,10 +578,9 @@ fn medium_core_notes_retain_combination_and_solo_offsets() {
     let mut gave = core_view(8, 1, CoreState::HasRoom);
     gave.solo = Some(off(-37));
     gave.gave_back = Some(CombinationId::new(crate::tests::kit::nz(1)));
-    for (view, want) in [(&at_limit, "C4 · solo -31"), (&gave, "C1 · solo -37")] {
-        let note = plain(&note_line(&scene, view, 25), Colours::None);
-        assert!(note.ends_with(want), "{note}");
-    }
+    let view = if gave_back { &gave } else { &at_limit };
+    let note = plain(&note_line(&scene, view, 25), Colours::None);
+    assert!(note.ends_with(want), "{note}");
 }
 
 #[test]
@@ -1081,25 +1076,24 @@ fn r7_status(core_id: u8, top: bool, proxy: bool, own: bool) -> R7CoreStatus {
     }
 }
 
-#[test]
-fn r7_lines_name_top_requesters_and_self_sufficiency() {
+#[test_case::test_case(SizeClass::Wide, 115; "wide")]
+#[test_case::test_case(SizeClass::Compact, 57; "compact")]
+fn r7_lines_name_top_requesters_and_self_sufficiency(class: SizeClass, width: usize) {
     let statuses = [
         r7_status(3, true, false, true),
         r7_status(7, false, false, false),
     ];
-    for (class, width) in [(SizeClass::Wide, 115), (SizeClass::Compact, 57)] {
-        let lines = r7_fixture(&statuses, class, width, true);
-        assert_eq!(lines.len(), 2, "{lines:?}");
-        assert!(lines[0].contains("self-sufficient"), "{lines:?}");
-        assert!(lines[1].contains("mprime AVX2"), "{lines:?}");
-        assert_eq!(lines[1].matches("03").count(), 2, "{lines:?}");
-        assert!(!lines[1].contains("07"), "{lines:?}");
-        assert_eq!(
-            class == SizeClass::Wide,
-            lines[0].contains("not a guarantee"),
-            "{lines:?}"
-        );
-    }
+    let lines = r7_fixture(&statuses, class, width, true);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(lines[0].contains("self-sufficient"), "{lines:?}");
+    assert!(lines[1].contains("mprime AVX2"), "{lines:?}");
+    assert_eq!(lines[1].matches("03").count(), 2, "{lines:?}");
+    assert!(!lines[1].contains("07"), "{lines:?}");
+    assert_eq!(
+        class == SizeClass::Wide,
+        lines[0].contains("not a guarantee"),
+        "{lines:?}"
+    );
     let proxy = [r7_status(3, true, true, true)];
     let lines = r7_fixture(&proxy, SizeClass::Compact, 57, true);
     assert!(lines[1].contains("03 by offset"), "{lines:?}");
@@ -1109,33 +1103,33 @@ fn r7_lines_name_top_requesters_and_self_sufficiency() {
     assert!(narrow[1].is_ascii(), "{narrow:?}");
 }
 
-#[test]
-fn cut_top_requesters_keep_their_offset_label() {
+#[test_case::test_case(SizeClass::Wide, 115; "wide")]
+#[test_case::test_case(SizeClass::Medium, 80; "medium")]
+#[test_case::test_case(SizeClass::Compact, 57; "compact")]
+fn cut_top_requesters_keep_their_offset_label(class: SizeClass, width: usize) {
     let many: Vec<_> = (0..16)
         .map(|id| r7_status(id, id % 2 == 0, true, false))
         .collect();
-    for (class, width) in [
-        (SizeClass::Wide, 115),
-        (SizeClass::Medium, 80),
-        (SizeClass::Compact, 57),
-    ] {
-        let lines = r7_fixture(&many, class, width, true);
-        assert!(lines[1].contains("... by offset"), "{width}: {lines:?}");
-    }
+    let lines = r7_fixture(&many, class, width, true);
+    assert!(lines[1].contains("... by offset"), "{width}: {lines:?}");
+}
+
+#[test_case::test_case(SizeClass::Wide, 115; "wide")]
+#[test_case::test_case(SizeClass::Medium, 80; "medium")]
+#[test_case::test_case(SizeClass::Compact, 57; "compact")]
+fn mixed_top_requesters_keep_their_offset_label(class: SizeClass, width: usize) {
     let mixed: Vec<_> = (0..16)
         .map(|id| r7_status(id, (id % 2 == 0 && id < 8) || id == 8, id >= 8, false))
         .collect();
-    for (class, width) in [
-        (SizeClass::Wide, 115),
-        (SizeClass::Medium, 80),
-        (SizeClass::Compact, 57),
-    ] {
-        let row = &r7_fixture(&mixed, class, width, true)[1];
-        assert!(
-            row.contains("08 by offset") && !row.contains("06 by offset"),
-            "{row:?}"
-        );
-    }
+    let row = &r7_fixture(&mixed, class, width, true)[1];
+    assert!(
+        row.contains("08 by offset") && !row.contains("06 by offset"),
+        "{row:?}"
+    );
+}
+
+#[test]
+fn top_cells_keep_offset_provenance_with_no_measured_requesters() {
     assert_eq!(
         top_cell(
             crate::tests::kit::set(&[0]),
@@ -1203,42 +1197,51 @@ fn r7_values_stay_whole() {
     );
 }
 
-#[test]
-fn narrow_r7_rows_keep_offset_provenance_and_fit() {
+#[test_case::test_case(24; "width 24")]
+#[test_case::test_case(30; "width 30")]
+#[test_case::test_case(35; "width 35")]
+#[test_case::test_case(40; "width 40")]
+fn narrow_r7_rows_keep_offset_provenance_and_fit(width: usize) {
     let proxies: Vec<_> = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15]
         .into_iter()
         .map(|id| r7_status(id, true, true, false))
         .collect();
-    for width in [24, 30, 35, 40] {
-        let rows = r7_fixture(&proxies, SizeClass::Compact, width, true);
-        assert!(rows[1].contains("by offset"), "{width}: {:?}", rows[1]);
-        for cut in ["00-0...", "00-1...", "12-1..."] {
-            assert!(!rows[1].contains(cut), "{width}: {:?}", rows[1]);
-        }
-        for word in rows[0].split_whitespace() {
-            assert!(
-                word.trim_matches('─').is_empty()
-                    || ["R7", "top", "requesters", "self-sufficient"].contains(&word),
-                "{width}: {:?}",
-                rows[0]
-            );
-        }
-        for row in &rows {
-            assert!(
-                line_width(&Line::from(row.as_str()), Colours::None) <= width,
-                "{width}: {row:?}"
-            );
-        }
+    let rows = r7_fixture(&proxies, SizeClass::Compact, width, true);
+    assert!(rows[1].contains("by offset"), "{width}: {:?}", rows[1]);
+    for cut in ["00-0...", "00-1...", "12-1..."] {
+        assert!(!rows[1].contains(cut), "{width}: {:?}", rows[1]);
     }
-    for (width, want) in [(8, ""), (9, "by offset"), (10, "by offset")] {
-        let rows = r7_fixture(&proxies, SizeClass::Compact, width, true);
-        assert_eq!(rows[1].trim(), want, "{width}");
-        for row in &rows {
-            assert!(
-                line_width(&Line::from(row.as_str()), Colours::None) <= width,
-                "{width}: {row:?}"
-            );
-        }
+    for word in rows[0].split_whitespace() {
+        assert!(
+            word.trim_matches('─').is_empty()
+                || ["R7", "top", "requesters", "self-sufficient"].contains(&word),
+            "{width}: {:?}",
+            rows[0]
+        );
+    }
+    for row in &rows {
+        assert!(
+            line_width(&Line::from(row.as_str()), Colours::None) <= width,
+            "{width}: {row:?}"
+        );
+    }
+}
+
+#[test_case::test_case(8, ""; "eight")]
+#[test_case::test_case(9, "by offset"; "nine")]
+#[test_case::test_case(10, "by offset"; "ten")]
+fn tiny_r7_rows_keep_offset_provenance_or_leave_it_out(width: usize, want: &str) {
+    let proxies: Vec<_> = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15]
+        .into_iter()
+        .map(|id| r7_status(id, true, true, false))
+        .collect();
+    let rows = r7_fixture(&proxies, SizeClass::Compact, width, true);
+    assert_eq!(rows[1].trim(), want, "{width}");
+    for row in &rows {
+        assert!(
+            line_width(&Line::from(row.as_str()), Colours::None) <= width,
+            "{width}: {row:?}"
+        );
     }
 }
 
