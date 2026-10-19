@@ -153,7 +153,7 @@ fn warning(appender: &mut Appender) -> Result<togi_journal::Seq, AppendFailure> 
 fn resume(rig: Rig, handoff: BootHandoff) -> Appender<'static> {
     let sim = rig.sim.clone();
     let dir = rig.appender.into_journal().close().unwrap();
-    let journal = dir.open_at(rig.boot.clone(), sim.now()).unwrap();
+    let journal = dir.open_at(rig.boot, sim.now()).unwrap();
     Appender::resume(
         journal,
         sim.seams().clock,

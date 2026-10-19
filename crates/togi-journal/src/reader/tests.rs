@@ -817,54 +817,56 @@ fn without_newline(mut line: Vec<u8>) -> Vec<u8> {
     line
 }
 
-#[test_case(include_bytes!("../../testdata/20260927T221954Z-config.jsonl"); "a Go journal")]
-#[test_case(
-    include_str!("../../testdata/20260927T221954Z-config.jsonl").lines().next().unwrap().as_bytes();
-    "a Go first line without its newline"
-)]
-#[test_case(br#"{"seq":1,"kind":"sess"#; "a truncated first line")]
-#[test_case(b"garbage"; "garbage")]
-#[test_case(&line(1, "future.thing", "", "{}"); "an unknown first kind")]
-#[test_case(
-    &without_newline(line(1, "future.thing", "", "{}"));
-    "an unknown first kind without its newline"
-)]
+#[test_case(include_bytes!("../../testdata/20260927T221954Z-config.jsonl"), crate::event::Decoding::Strict; "Go strict")]
+#[test_case(include_bytes!("../../testdata/20260927T221954Z-config.jsonl"), crate::event::Decoding::Lenient; "Go lenient")]
+#[test_case(include_str!("../../testdata/20260927T221954Z-config.jsonl").lines().next().unwrap().as_bytes(), crate::event::Decoding::Strict; "Go no newline strict")]
+#[test_case(include_str!("../../testdata/20260927T221954Z-config.jsonl").lines().next().unwrap().as_bytes(), crate::event::Decoding::Lenient; "Go no newline lenient")]
+#[test_case(br#"{"seq":1,"kind":"sess"#, crate::event::Decoding::Strict; "truncated strict")]
+#[test_case(br#"{"seq":1,"kind":"sess"#, crate::event::Decoding::Lenient; "truncated lenient")]
+#[test_case(b"garbage", crate::event::Decoding::Strict; "garbage strict")]
+#[test_case(b"garbage", crate::event::Decoding::Lenient; "garbage lenient")]
+#[test_case(&line(1, "future.thing", "", "{}"), crate::event::Decoding::Strict; "unknown strict")]
+#[test_case(&line(1, "future.thing", "", "{}"), crate::event::Decoding::Lenient; "unknown lenient")]
+#[test_case(&without_newline(line(1, "future.thing", "", "{}")), crate::event::Decoding::Strict; "unknown no newline strict")]
+#[test_case(&without_newline(line(1, "future.thing", "", "{}")), crate::event::Decoding::Lenient; "unknown no newline lenient")]
 fn strict_and_lenient_alike_refuse_a_first_line_that_is_not_a_complete_journal_header_and_change_nothing(
     bytes: &[u8],
+    decoding: crate::event::Decoding,
 ) {
-    for decoding in [
-        crate::event::Decoding::Strict,
-        crate::event::Decoding::Lenient,
-    ] {
-        let mut reader = match decoding {
-            crate::event::Decoding::Strict => EventReader::new(bytes),
-            crate::event::Decoding::Lenient => EventReader::lenient(bytes),
-        };
-        assert!(
-            matches!(reader.next(), Some(Err(ReadError::Foreign))),
-            "{decoding:?}"
-        );
-        assert!(reader.next().is_none(), "{decoding:?}");
-        assert_eq!(reader.accepted(), 0, "{decoding:?}");
-        assert!(reader.torn().is_none(), "{decoding:?}");
-        assert!(reader.skipped().is_empty(), "{decoding:?}");
-        assert!(
-            matches!(
-                Recording::parse_with(bytes, decoding),
-                Err(ReadError::Foreign)
-            ),
-            "{decoding:?}"
-        );
-    }
+    let mut reader = match decoding {
+        crate::event::Decoding::Strict => EventReader::new(bytes),
+        crate::event::Decoding::Lenient => EventReader::lenient(bytes),
+    };
+    assert!(
+        matches!(reader.next(), Some(Err(ReadError::Foreign))),
+        "{decoding:?}"
+    );
+    assert!(reader.next().is_none(), "{decoding:?}");
+    assert_eq!(reader.accepted(), 0, "{decoding:?}");
+    assert!(reader.torn().is_none(), "{decoding:?}");
+    assert!(reader.skipped().is_empty(), "{decoding:?}");
+    assert!(
+        matches!(
+            Recording::parse_with(bytes, decoding),
+            Err(ReadError::Foreign)
+        ),
+        "{decoding:?}"
+    );
     let fs = MemFs::new();
     fs.put("/state/events.jsonl", bytes.to_vec());
     let mutations = fs.mutations();
     let path = Path::new("/state/events.jsonl");
-    for error in [
-        Recording::read_in(&fs, path).unwrap_err(),
-        Recording::read_in_lenient(&fs, path).unwrap_err(),
+    for (decoding, error) in [
+        (
+            crate::event::Decoding::Strict,
+            Recording::read_in(&fs, path).unwrap_err(),
+        ),
+        (
+            crate::event::Decoding::Lenient,
+            Recording::read_in_lenient(&fs, path).unwrap_err(),
+        ),
     ] {
-        assert!(matches!(error.source, ReadError::Foreign));
+        assert!(matches!(error.source, ReadError::Foreign), "{decoding:?}");
     }
     assert_eq!(fs.mutations(), mutations);
     assert_eq!(fs.contents("/state/events.jsonl").unwrap(), bytes);

@@ -43,13 +43,16 @@ fn drawn_limits_stay_within_their_documented_bounds() {
     let mut together = 0usize;
     let (mut lowest, mut highest) = (0, -50);
     for seed in 0..300 {
-        for limits in seeded(seed, 16).limits() {
+        for (core, limits) in seeded(seed, 16).limits().iter().enumerate() {
             let shallowest = *limits.alone.iter().max().expect("five limits");
             let deepest = *limits.alone.iter().min().expect("five limits");
-            assert!(deepest >= -40 && shallowest <= -3, "{limits:?}");
+            assert!(
+                deepest >= -40 && shallowest <= -3,
+                "seed {seed}, core {core}: {limits:?}"
+            );
             assert!(
                 shallowest - deepest <= 2,
-                "alone limits spread at most 2: {limits:?}"
+                "seed {seed}, core {core}: alone limits spread at most 2: {limits:?}"
             );
             lowest = lowest.min(deepest);
             highest = highest.max(shallowest);
@@ -61,16 +64,16 @@ fn drawn_limits_stay_within_their_documented_bounds() {
                 };
                 assert!(
                     (floor..=(floor + 3).min(0)).contains(&limit),
-                    "{index}: {limits:?}"
+                    "seed {seed}, core {core}, regime index {index}: {limits:?}"
                 );
                 together += 1;
                 zero_together += usize::from(limit == floor);
             }
             assert!(
                 limits.idle.is_none() && limits.workload.is_empty(),
-                "seed {seed}"
+                "seed {seed}, core {core}"
             );
-            assert_eq!(limits.flat, 0.0, "seed {seed}");
+            assert_eq!(limits.flat, 0.0, "seed {seed}, core {core}");
         }
     }
     assert!(
@@ -91,11 +94,11 @@ fn drawn_limits_stay_within_their_documented_bounds() {
 #[test]
 fn r6_and_r7_start_from_the_shallowest_alone_limit() {
     for seed in 0..50 {
-        for limits in seeded(seed, 4).limits() {
+        for (core, limits) in seeded(seed, 4).limits().iter().enumerate() {
             let shallowest = *limits.alone.iter().max().expect("five limits");
             assert!(
                 limits.together[5] >= shallowest && limits.together[6] >= shallowest,
-                "seed {seed}: {limits:?}"
+                "seed {seed}, core {core}: {limits:?}"
             );
         }
     }

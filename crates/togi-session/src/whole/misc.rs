@@ -625,7 +625,7 @@ fn every_startup_runs_preflight_then_the_sweep_before_its_first_smu_write(
         .host
         .preflight()
         .into_iter()
-        .map(|check| check.name.clone())
+        .map(|check| check.name)
         .collect();
     assert!(!expected_checks.is_empty());
     let (ended, touched) = watched_run(&bench, tuning_boot, sweep_fails);

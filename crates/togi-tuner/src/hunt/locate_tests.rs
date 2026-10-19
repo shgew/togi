@@ -402,55 +402,49 @@ fn located_hunt_retests_the_full_failing_profile_before_ending_loaded() {
     j.assert_resumes();
 }
 
-#[test]
-fn escalated_located_hunt_retests_the_full_failing_profile_at_the_failed_duration() {
-    type Fails = fn(&TrialPlan) -> Verdict;
-    let cases: [(&str, Fails, HuntOutcome, &[u8]); 2] = [
-        ("full profile passes", never, HuntOutcome::Loaded, &[0, 1]),
-        (
-            "full profile fails",
-            |plan| joint_failure(120)(plan),
-            HuntOutcome::Combination,
-            &[2, 3],
-        ),
-    ];
-    for (name, fails, result, cores) in cases {
-        let mut j = Journal::r7_session();
-        j.load(&config(
-            r#"{"durations":{"short_trial_s":60,"checking_all_core_s":480}}"#,
-        ));
-        j.loc_fail_escalated(&top0());
-        let located = j.loc_run_until(fails, full_group(120));
-        assert_full_failing_group(&located.action, 120);
-        let groups = &j.run().hunts.active.as_ref().unwrap().groups;
-        let stages: Vec<HuntStage> = groups.iter().map(|group| group.payload.stage).collect();
-        assert_eq!(
-            stages,
-            [
-                HuntStage::Locate,
-                HuntStage::Part,
-                HuntStage::Part,
-                HuntStage::Full,
-                HuntStage::Part,
-                HuntStage::Part,
-            ],
-            "{name}"
-        );
-        for group in groups {
-            if group.payload.stage == HuntStage::Full {
-                assert_eq!(group.payload.duration_s, 60, "{name}");
-            }
+#[test_case::test_case("full profile passes", never, HuntOutcome::Loaded, &[0, 1]; "full profile passes")]
+#[test_case::test_case("full profile fails", |plan| joint_failure(120)(plan), HuntOutcome::Combination, &[2, 3]; "full profile fails")]
+fn escalated_located_hunt_retests_the_full_failing_profile_at_the_failed_duration(
+    name: &str,
+    fails: fn(&TrialPlan) -> Verdict,
+    result: HuntOutcome,
+    cores: &[u8],
+) {
+    let mut j = Journal::r7_session();
+    j.load(&config(
+        r#"{"durations":{"short_trial_s":60,"checking_all_core_s":480}}"#,
+    ));
+    j.loc_fail_escalated(&top0());
+    let located = j.loc_run_until(fails, full_group(120));
+    assert_full_failing_group(&located.action, 120);
+    let groups = &j.run().hunts.active.as_ref().unwrap().groups;
+    let stages: Vec<HuntStage> = groups.iter().map(|group| group.payload.stage).collect();
+    assert_eq!(
+        stages,
+        [
+            HuntStage::Locate,
+            HuntStage::Part,
+            HuntStage::Part,
+            HuntStage::Full,
+            HuntStage::Part,
+            HuntStage::Part,
+        ],
+        "{name}"
+    );
+    for group in groups {
+        if group.payload.stage == HuntStage::Full {
+            assert_eq!(group.payload.duration_s, 60, "{name}");
         }
-        j.decide(decision(&located.action).clone());
-        let located = j.loc_run(fails);
-        let end = hunt_end(&located.action);
-        assert_eq!((end.result, end.cores), (result, set(cores)), "{name}");
-        j.decide(decision(&located.action).clone());
-        if result != HuntOutcome::Loaded {
-            j.loc_assert_loaded_kept();
-        }
-        j.assert_resumes();
     }
+    j.decide(decision(&located.action).clone());
+    let located = j.loc_run(fails);
+    let end = hunt_end(&located.action);
+    assert_eq!((end.result, end.cores), (result, set(cores)), "{name}");
+    j.decide(decision(&located.action).clone());
+    if result != HuntOutcome::Loaded {
+        j.loc_assert_loaded_kept();
+    }
+    j.assert_resumes();
 }
 
 #[test]
@@ -571,7 +565,7 @@ fn r7_escalated_failure_locates_with_idle_cores_at_zero() {
     assert_eq!(start.candidates, set(&[2, 3]));
     assert_eq!(start.trials, u32::from(j.run().config.needed.get()));
     assert_eq!(start.ranking, [core(0), core(1), core(2), core(3)].to_vec());
-    let reason = start.reason.clone().unwrap();
+    let reason = start.reason.unwrap();
     assert!(
         missing(
             &reason,
@@ -779,330 +773,306 @@ fn r7_failed_locate_keeps_the_voltage_targeted_backoff() {
     j.assert_resumes();
 }
 
-#[test]
-fn r7_located_group_failure_naming_a_core() {
-    let cases: [(&str, u8, HuntOutcome, &[u8]); 3] = [
-        ("loaded core", 0, HuntOutcome::Loaded, &[0, 1]),
-        (
-            "unloaded core at its failing offset",
-            2,
-            HuntOutcome::Direct,
-            &[2],
-        ),
-        ("unloaded core parked at 0", 3, HuntOutcome::Culprit, &[2]),
-    ];
-    for (name, named, result, cores) in cases {
-        let mut j = Journal::r7_session();
-        j.loc_fail_escalated(&top0());
-        let located = j.loc_run(|plan| fails_as(at(plan, 2) != 0, Verdict::Named(named)));
-        let end = hunt_end(&located.action);
-        assert_eq!((end.result, end.cores), (result, set(cores)), "{name}");
-        let direct = decision(&located.action).cause[0];
-        let ended = j.decide(decision(&located.action).clone());
-        if result == HuntOutcome::Direct {
-            let action = j.loc_act();
-            let move_ = backoff(&action);
-            assert_eq!(move_.activity, Activity::Hunt, "{name}");
-            assert_eq!(
-                (move_.core, move_.from_offset, move_.to_offset),
-                (core(2), off(-30), off(-29)),
-                "{name}"
-            );
-            assert_eq!(decision(&action).cause, [ended], "{name}");
-            j.decide(decision(&action).clone());
-            assert!(j.run().hunts.active.is_none(), "{name}");
-            assert_eq!(j.run().locate_due(), None, "{name}");
-            let rerun = j
-                .loc_drain_without_moves(name)
-                .unwrap_or_else(|| panic!("{name}: no rerun"));
-            assert!(
-                matches!(rerun.requirement.context, TrialContext::Rerun { .. }),
-                "{name}"
-            );
-            assert_eq!(rerun.cause, [direct], "{name}");
-            assert_eq!(rerun.load, Load::Many(set(&[0, 1])), "{name}");
-            assert_eq!(rerun.condition, Condition::Together, "{name}");
-            j.assert_resumes();
-            continue;
-        }
+#[test_case::test_case("loaded core", 0, HuntOutcome::Loaded, &[0, 1]; "loaded core")]
+#[test_case::test_case("unloaded core at its failing offset", 2, HuntOutcome::Direct, &[2]; "unloaded core at its failing offset")]
+#[test_case::test_case("unloaded core parked at 0", 3, HuntOutcome::Culprit, &[2]; "unloaded core parked at 0")]
+fn r7_located_group_failure_naming_a_core(
+    name: &str,
+    named: u8,
+    result: HuntOutcome,
+    cores: &[u8],
+) {
+    let mut j = Journal::r7_session();
+    j.loc_fail_escalated(&top0());
+    let located = j.loc_run(|plan| fails_as(at(plan, 2) != 0, Verdict::Named(named)));
+    let end = hunt_end(&located.action);
+    assert_eq!((end.result, end.cores), (result, set(cores)), "{name}");
+    let direct = decision(&located.action).cause[0];
+    let ended = j.decide(decision(&located.action).clone());
+    if result == HuntOutcome::Direct {
         let action = j.loc_act();
         let move_ = backoff(&action);
+        assert_eq!(move_.activity, Activity::Hunt, "{name}");
         assert_eq!(
-            (move_.core, move_.to_offset),
-            (
-                core(cores[0]),
-                off(if result == HuntOutcome::Culprit {
-                    0
-                } else {
-                    -29
-                }),
-            ),
+            (move_.core, move_.from_offset, move_.to_offset),
+            (core(2), off(-30), off(-29)),
             "{name}"
         );
+        assert_eq!(decision(&action).cause, [ended], "{name}");
         j.decide(decision(&action).clone());
-        assert_eq!(j.run().r7_decision(), None, "{name}");
-        j.assert_resumes();
-    }
-}
-
-#[test]
-fn r7_zero_loaded_ccd_dead_ends_only_after_failed_locate() {
-    for locate_fails in [true, false] {
-        let mut j = Journal::r7_session();
-        j.loc_set_core(0, 0);
-        j.loc_set_core(1, 0);
-        j.profile_change(&[0, 0, -30, -30]);
-        let (_, failure) = j.loc_fail_live(&top0());
-        assert_eq!(j.run().r7_decision(), None);
-        let located =
-            j.loc_run(|plan| fails_as(locate_fails || at(plan, 3) != 0, Verdict::Unnamed));
-        let end = hunt_end(&located.action);
-        if !locate_fails {
-            assert_eq!((end.result, end.cores), (HuntOutcome::Culprit, set(&[3])));
-            continue;
-        }
-        assert_eq!(end.result, HuntOutcome::Loaded, "{end:?}");
-        let locate = *located.failures.last().unwrap();
-        j.decide(decision(&located.action).clone());
-        let action = j.loc_act();
-        let dead = dead_end(&action);
-        assert_eq!(dead.condition, DeadEndCondition::FailureAtZero);
-        let cause = &decision(&action).cause;
+        assert!(j.run().hunts.active.is_none(), "{name}");
+        assert_eq!(j.run().locate_due(), None, "{name}");
+        let rerun = j
+            .loc_drain_without_moves(name)
+            .unwrap_or_else(|| panic!("{name}: no rerun"));
         assert!(
-            cause.contains(&failure) && cause.contains(&locate),
-            "{cause:?}"
+            matches!(rerun.requirement.context, TrialContext::Rerun { .. }),
+            "{name}"
         );
-        let gaps = missing(
-            &dead.detail,
-            &["CO 0".to_owned(), "hunt 1".to_owned(), format!("#{locate}")],
-        );
-        assert!(gaps.is_empty(), "{} lacks {gaps:?}", dead.detail);
+        assert_eq!(rerun.cause, [direct], "{name}");
+        assert_eq!(rerun.load, Load::Many(set(&[0, 1])), "{name}");
+        assert_eq!(rerun.condition, Condition::Together, "{name}");
         j.assert_resumes();
+        return;
     }
+    let action = j.loc_act();
+    let move_ = backoff(&action);
+    assert_eq!(
+        (move_.core, move_.to_offset),
+        (
+            core(cores[0]),
+            off(if result == HuntOutcome::Culprit {
+                0
+            } else {
+                -29
+            }),
+        ),
+        "{name}"
+    );
+    j.decide(decision(&action).clone());
+    assert_eq!(j.run().r7_decision(), None, "{name}");
+    j.assert_resumes();
 }
 
-#[test]
-fn r7_located_failure_naming_a_loaded_core_charges_that_core() {
-    type Fails = fn(&TrialPlan) -> bool;
-    let cases: [(&str, Fails, u32); 2] = [
-        ("locate", |_| true, 1),
+#[test_case::test_case(false; "not locate_fails")]
+#[test_case::test_case(true; "locate_fails")]
+fn r7_zero_loaded_ccd_dead_ends_only_after_failed_locate(locate_fails: bool) {
+    let mut j = Journal::r7_session();
+    j.loc_set_core(0, 0);
+    j.loc_set_core(1, 0);
+    j.profile_change(&[0, 0, -30, -30]);
+    let (_, failure) = j.loc_fail_live(&top0());
+    assert_eq!(j.run().r7_decision(), None);
+    let located = j.loc_run(|plan| fails_as(locate_fails || at(plan, 3) != 0, Verdict::Unnamed));
+    let end = hunt_end(&located.action);
+    if !locate_fails {
+        assert_eq!((end.result, end.cores), (HuntOutcome::Culprit, set(&[3])));
+        return;
+    }
+    assert_eq!(end.result, HuntOutcome::Loaded, "{end:?}");
+    let locate = *located.failures.last().unwrap();
+    j.decide(decision(&located.action).clone());
+    let action = j.loc_act();
+    let dead = dead_end(&action);
+    assert_eq!(dead.condition, DeadEndCondition::FailureAtZero);
+    let cause = &decision(&action).cause;
+    assert!(
+        cause.contains(&failure) && cause.contains(&locate),
+        "{cause:?}"
+    );
+    let gaps = missing(
+        &dead.detail,
+        &["CO 0".to_owned(), "hunt 1".to_owned(), format!("#{locate}")],
+    );
+    assert!(gaps.is_empty(), "{} lacks {gaps:?}", dead.detail);
+    j.assert_resumes();
+}
+
+#[test_case::test_case("locate", |_| true, 1; "locate")]
+#[test_case::test_case("narrowing group", |plan| at(plan, 2) != 0 || at(plan, 3) != 0, 2; "narrowing group")]
+fn r7_located_failure_naming_a_loaded_core_charges_that_core(
+    name: &str,
+    fails: fn(&TrialPlan) -> bool,
+    groups: u32,
+) {
+    let mut j = Journal::r7_session();
+    let (_, failure, _) = j.loc_fail_escalated(&top0());
+    let located = j.loc_run(|plan| fails_as(fails(plan), Verdict::Named(1)));
+    let named = *located.failures.last().unwrap();
+    let end = hunt_end(&located.action);
+    assert_eq!(
+        (end.result, end.cores, end.groups),
+        (HuntOutcome::Loaded, set(&[0, 1]), groups),
+        "{name}"
+    );
+    let ended = j.decide(decision(&located.action).clone());
+    let action = j.loc_act();
+    let move_ = backoff(&action).clone();
+    assert_eq!(
         (
-            "narrowing group",
-            |plan| at(plan, 2) != 0 || at(plan, 3) != 0,
-            2,
+            move_.core,
+            move_.from_offset,
+            move_.to_offset,
+            move_.failure_point
         ),
-    ];
-    for (name, fails, groups) in cases {
-        let mut j = Journal::r7_session();
-        let (_, failure, _) = j.loc_fail_escalated(&top0());
-        let located = j.loc_run(|plan| fails_as(fails(plan), Verdict::Named(1)));
-        let named = *located.failures.last().unwrap();
-        let end = hunt_end(&located.action);
-        assert_eq!(
-            (end.result, end.cores, end.groups),
-            (HuntOutcome::Loaded, set(&[0, 1]), groups),
-            "{name}"
+        (core(1), off(-30), off(-29), Some(off(-30))),
+        "{name}"
+    );
+    let cause = &decision(&action).cause;
+    assert_eq!(cause[0], failure, "{name}");
+    assert!(
+        cause.contains(&ended) && cause.contains(&named),
+        "{name}: {cause:?}"
+    );
+    let gaps = missing(
+        &move_.reason,
+        &[
+            "hunt 1".to_owned(),
+            "loaded core 01".to_owned(),
+            format!("#{named}"),
+            format!("#{failure}"),
+        ],
+    );
+    assert!(gaps.is_empty(), "{name}: {} lacks {gaps:?}", move_.reason);
+    j.decide(decision(&action).clone());
+    assert_eq!(j.run().r7_decision(), None, "{name}");
+    if let Some(next) = j.loc_drain_without_moves(name) {
+        assert!(at(&next, 1) > -30, "{name}: {next:?}");
+    }
+    assert_eq!(values(j.offsets()), [-30, -29, -30, -30], "{name}");
+    let constraints = &j.run().constraints;
+    assert!(
+        constraints.reaches(&j.offsets()).unwrap().is_none(),
+        "{name}"
+    );
+    assert!(
+        constraints
+            .reaches(&j.profile(&[-30, -30, -30, -30]))
+            .unwrap()
+            .is_some(),
+        "{name}"
+    );
+    j.assert_resumes();
+}
+
+#[test_case::test_case("no group fails", never, HuntOutcome::Fallback, &[2, 3]; "no group fails")]
+#[test_case::test_case("a group names a loaded core at 0", |plan| fails_as(at(plan, 3) != 0, Verdict::Named(0)), HuntOutcome::Culprit, &[3]; "a group names a loaded core at 0")]
+fn r7_passed_all_zero_locate_never_charges_loaded_cores_at_zero(
+    name: &str,
+    fails: fn(&TrialPlan) -> Verdict,
+    result: HuntOutcome,
+    cores: &[u8],
+) {
+    let mut j = Journal::r7_session();
+    j.loc_set_core(0, 0);
+    j.loc_set_core(1, 0);
+    j.profile_change(&[0, 0, -30, -30]);
+    j.loc_fail_live(&top0());
+    let located = j.loc_run(fails);
+    let end = hunt_end(&located.action);
+    assert_eq!((end.result, end.cores), (result, set(cores)), "{name}");
+    j.decide(decision(&located.action).clone());
+    while let Some(Action::Decide(decision)) = j.loc_poll() {
+        assert!(
+            !matches!(decision.payload, DecisionPayload::DeadEnd(_)),
+            "{name}: dead-ended after the all-zero locate passed: {decision:?}"
         );
-        let ended = j.decide(decision(&located.action).clone());
+        j.decide(decision.clone());
+    }
+    assert_eq!(values(j.offsets())[..2], [0, 0], "{name}");
+    j.assert_resumes();
+}
+
+#[test_case::test_case("top requester, rerun passes", 0, false; "top requester, rerun passes")]
+#[test_case::test_case("top requester, rerun fails", 0, true; "top requester, rerun fails")]
+#[test_case::test_case("not a top requester", 1, false; "not a top requester")]
+fn r7_locate_failure_naming_a_loaded_core_at_zero(name: &str, top: u8, rerun_fails: bool) {
+    let mut j = Journal::r7_session();
+    j.loc_set_core(0, 0);
+    j.profile_change(&[0, -30, -30, -30]);
+    let report = R7Report::default().top(&[top]);
+    let (_, failure, _) = j.loc_fail_escalated(&report);
+    let locate = loop {
         let action = j.loc_act();
+        match &action {
+            Action::Decide(decision)
+                if matches!(
+                    decision.payload,
+                    DecisionPayload::HuntStart(_) | DecisionPayload::HuntGroup(_)
+                ) =>
+            {
+                j.decide(decision.clone());
+            }
+            Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking => {
+                break trial(&action).clone();
+            }
+        }
+    };
+    assert_eq!(
+        locate.requirement.context,
+        TrialContext::Hunt {
+            hunt: std::num::NonZeroU32::MIN,
+            group: std::num::NonZeroU32::MIN,
+        },
+        "{name}"
+    );
+    assert_eq!(values(locate.profile), [0, -30, 0, 0], "{name}");
+    j.loc_finish(&locate, Outcome::Failure, &report.clone().named(0));
+    let attribution = j.next_decision();
+    let locate = j.decide(attribution);
+    let action = j.loc_act();
+    let end = hunt_end(&action);
+    assert_eq!(end.result, HuntOutcome::Loaded, "{name}");
+    assert!(
+        end.reason.contains("named loaded core 00"),
+        "{name}: {end:?}"
+    );
+    j.decide(decision(&action).clone());
+    let action = j.loc_act();
+    if top != 0 {
         let move_ = backoff(&action).clone();
-        assert_eq!(
-            (
-                move_.core,
-                move_.from_offset,
-                move_.to_offset,
-                move_.failure_point
-            ),
-            (core(1), off(-30), off(-29), Some(off(-30))),
-            "{name}"
-        );
+        assert_eq!((move_.core, move_.to_offset), (core(1), off(-29)), "{name}");
         let cause = &decision(&action).cause;
         assert_eq!(cause[0], failure, "{name}");
-        assert!(
-            cause.contains(&ended) && cause.contains(&named),
-            "{name}: {cause:?}"
-        );
+        assert!(cause.contains(&locate), "{name}: {cause:?}");
         let gaps = missing(
             &move_.reason,
             &[
-                "hunt 1".to_owned(),
-                "loaded core 01".to_owned(),
-                format!("#{named}"),
-                format!("#{failure}"),
+                "core 00".to_owned(),
+                "CO 0".to_owned(),
+                "top requester".to_owned(),
+                "CCD 0".to_owned(),
             ],
         );
         assert!(gaps.is_empty(), "{name}: {} lacks {gaps:?}", move_.reason);
         j.decide(decision(&action).clone());
         assert_eq!(j.run().r7_decision(), None, "{name}");
-        if let Some(next) = j.loc_drain_without_moves(name) {
-            assert!(at(&next, 1) > -30, "{name}: {next:?}");
-        }
-        assert_eq!(values(j.offsets()), [-30, -29, -30, -30], "{name}");
-        let constraints = &j.run().constraints;
-        assert!(
-            constraints.reaches(&j.offsets()).unwrap().is_none(),
-            "{name}"
-        );
-        assert!(
-            constraints
-                .reaches(&j.profile(&[-30, -30, -30, -30]))
-                .unwrap()
-                .is_some(),
-            "{name}"
-        );
         j.assert_resumes();
+        return;
     }
-}
-
-#[test]
-fn r7_passed_all_zero_locate_never_charges_loaded_cores_at_zero() {
-    type Fails = fn(&TrialPlan) -> Verdict;
-    let cases: [(&str, Fails, HuntOutcome, &[u8]); 2] = [
-        ("no group fails", never, HuntOutcome::Fallback, &[2, 3]),
-        (
-            "a group names a loaded core at 0",
-            |plan| fails_as(at(plan, 3) != 0, Verdict::Named(0)),
-            HuntOutcome::Culprit,
-            &[3],
-        ),
-    ];
-    for (name, fails, result, cores) in cases {
-        let mut j = Journal::r7_session();
-        j.loc_set_core(0, 0);
-        j.loc_set_core(1, 0);
-        j.profile_change(&[0, 0, -30, -30]);
-        j.loc_fail_live(&top0());
-        let located = j.loc_run(fails);
-        let end = hunt_end(&located.action);
-        assert_eq!((end.result, end.cores), (result, set(cores)), "{name}");
-        j.decide(decision(&located.action).clone());
-        while let Some(Action::Decide(decision)) = j.loc_poll() {
-            assert!(
-                !matches!(decision.payload, DecisionPayload::DeadEnd(_)),
-                "{name}: dead-ended after the all-zero locate passed: {decision:?}"
-            );
-            j.decide(decision.clone());
-        }
-        assert_eq!(values(j.offsets())[..2], [0, 0], "{name}");
-        j.assert_resumes();
-    }
-}
-
-#[test]
-fn r7_locate_failure_naming_a_loaded_core_at_zero() {
-    let cases: [(&str, u8, bool); 3] = [
-        ("top requester, rerun passes", 0, false),
-        ("top requester, rerun fails", 0, true),
-        ("not a top requester", 1, false),
-    ];
-    for (name, top, rerun_fails) in cases {
-        let mut j = Journal::r7_session();
-        j.loc_set_core(0, 0);
-        j.profile_change(&[0, -30, -30, -30]);
-        let report = R7Report::default().top(&[top]);
-        let (_, failure, _) = j.loc_fail_escalated(&report);
-        let locate = loop {
-            let action = j.loc_act();
-            match &action {
-                Action::Decide(decision)
-                    if matches!(
-                        decision.payload,
-                        DecisionPayload::HuntStart(_) | DecisionPayload::HuntGroup(_)
-                    ) =>
-                {
-                    j.decide(decision.clone());
-                }
-                Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking => {
-                    break trial(&action).clone();
-                }
-            }
-        };
-        assert_eq!(
-            locate.requirement.context,
-            TrialContext::Hunt {
-                hunt: std::num::NonZeroU32::MIN,
-                group: std::num::NonZeroU32::MIN,
-            },
-            "{name}"
-        );
-        assert_eq!(values(locate.profile), [0, -30, 0, 0], "{name}");
-        j.loc_finish(&locate, Outcome::Failure, &report.clone().named(0));
+    let rerun = trial(&action).clone();
+    assert!(
+        matches!(rerun.requirement.context, TrialContext::ZeroRerun { .. }),
+        "{name}: {rerun:?}"
+    );
+    assert_eq!(rerun.condition, Condition::Parked, "{name}");
+    assert_eq!(values(rerun.profile), [0, 0, 0, 0], "{name}");
+    assert_eq!(rerun.load, Load::Many(set(&[0, 1])), "{name}");
+    assert_eq!(rerun.cause, [locate], "{name}");
+    if rerun_fails {
+        let end = j.loc_finish(&rerun, Outcome::Failure, &R7Report::default());
         let attribution = j.next_decision();
-        let locate = j.decide(attribution);
+        j.decide(attribution);
         let action = j.loc_act();
-        let end = hunt_end(&action);
-        assert_eq!(end.result, HuntOutcome::Loaded, "{name}");
+        let dead = dead_end(&action);
+        assert_eq!(dead.condition, DeadEndCondition::FailureAtZero, "{name}");
+        let cause = &decision(&action).cause;
         assert!(
-            end.reason.contains("named loaded core 00"),
-            "{name}: {end:?}"
+            cause.contains(&locate) && cause.contains(&end),
+            "{name}: {cause:?}"
         );
-        j.decide(decision(&action).clone());
-        let action = j.loc_act();
-        if top != 0 {
-            let move_ = backoff(&action).clone();
-            assert_eq!((move_.core, move_.to_offset), (core(1), off(-29)), "{name}");
-            let cause = &decision(&action).cause;
-            assert_eq!(cause[0], failure, "{name}");
-            assert!(cause.contains(&locate), "{name}: {cause:?}");
-            let gaps = missing(
-                &move_.reason,
-                &[
-                    "core 00".to_owned(),
-                    "CO 0".to_owned(),
-                    "top requester".to_owned(),
-                    "CCD 0".to_owned(),
-                ],
-            );
-            assert!(gaps.is_empty(), "{name}: {} lacks {gaps:?}", move_.reason);
-            j.decide(decision(&action).clone());
-            assert_eq!(j.run().r7_decision(), None, "{name}");
-            j.assert_resumes();
-            continue;
-        }
-        let rerun = trial(&action).clone();
         assert!(
-            matches!(rerun.requirement.context, TrialContext::ZeroRerun { .. }),
-            "{name}: {rerun:?}"
+            dead.detail.contains(&format!("#{end}")),
+            "{name}: {}",
+            dead.detail
         );
-        assert_eq!(rerun.condition, Condition::Parked, "{name}");
-        assert_eq!(values(rerun.profile), [0, 0, 0, 0], "{name}");
-        assert_eq!(rerun.load, Load::Many(set(&[0, 1])), "{name}");
-        assert_eq!(rerun.cause, [locate], "{name}");
-        if rerun_fails {
-            let end = j.loc_finish(&rerun, Outcome::Failure, &R7Report::default());
-            let attribution = j.next_decision();
-            j.decide(attribution);
-            let action = j.loc_act();
-            let dead = dead_end(&action);
-            assert_eq!(dead.condition, DeadEndCondition::FailureAtZero, "{name}");
-            let cause = &decision(&action).cause;
-            assert!(
-                cause.contains(&locate) && cause.contains(&end),
-                "{name}: {cause:?}"
-            );
-            assert!(
-                dead.detail.contains(&format!("#{end}")),
-                "{name}: {}",
-                dead.detail
-            );
-            j.assert_resumes();
-            continue;
-        }
-        let end = j.loc_finish(&rerun, Outcome::Pass, &R7Report::default());
-        let action = j.loc_act();
-        let move_ = backoff(&action);
-        assert_eq!((move_.core, move_.to_offset), (core(1), off(-29)), "{name}");
-        for seq in [failure, locate, end] {
-            assert!(
-                decision(&action).cause.contains(&seq),
-                "{name}: {:?} omits #{seq}",
-                decision(&action).cause
-            );
-        }
-        j.decide(decision(&action).clone());
-        assert_eq!(j.run().r7_decision(), None, "{name}");
         j.assert_resumes();
+        return;
     }
+    let end = j.loc_finish(&rerun, Outcome::Pass, &R7Report::default());
+    let action = j.loc_act();
+    let move_ = backoff(&action);
+    assert_eq!((move_.core, move_.to_offset), (core(1), off(-29)), "{name}");
+    for seq in [failure, locate, end] {
+        assert!(
+            decision(&action).cause.contains(&seq),
+            "{name}: {:?} omits #{seq}",
+            decision(&action).cause
+        );
+    }
+    j.decide(decision(&action).clone());
+    assert_eq!(j.run().r7_decision(), None, "{name}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -1149,6 +1119,7 @@ fn loc_limit_session(count: u8, offset: i64) -> Journal {
 
 fn loc_config(backends: Option<(&str, &str)>) -> togi_config::Config {
     let durations = r#""durations":{"checking_idle_s":120}"#;
+
     match backends {
         None => config(&format!("{{{durations}}}")),
         Some((mprime, ycruncher)) => config(&format!(
@@ -1396,8 +1367,9 @@ fn hunt_retry_stays_with_its_group() {
     j.assert_resumes();
 }
 
-#[test]
-fn requirement_checks_hunt_identity() {
+#[test_case::test_case(1, 0; "different hunt")]
+#[test_case::test_case(0, 1; "different group")]
+fn requirement_checks_hunt_identity(hunt_delta: u32, group_delta: u32) {
     let mut j = loc_failed_hunt(4, 120);
     let plan = loc_first_hunt_trial(&mut j);
     let TrialContext::Hunt { hunt, group } = plan.requirement.context else {
@@ -1416,26 +1388,19 @@ fn requirement_checks_hunt_identity() {
     assert_eq!(j.requirement(), shown);
     assert_eq!(j.run().hunts.active.as_ref().unwrap().needed, needed);
 
-    for other in [
-        TrialContext::Hunt {
-            hunt: std::num::NonZeroU32::new(hunt.get() + 1).unwrap(),
-            group,
-        },
-        TrialContext::Hunt {
-            hunt,
-            group: std::num::NonZeroU32::new(group.get() + 1).unwrap(),
-        },
-    ] {
-        let mut j = loc_failed_hunt(4, 120);
-        let mut plan = loc_first_hunt_trial(&mut j);
-        plan.requirement.context = other;
-        let intent = plan.intent(togi_journal::TrialId::from("other".to_owned()), 0);
-        let error = j.try_append(intent.into(), &[]);
-        assert!(
-            matches!(error, Err(crate::FoldError::UnscheduledIntent(_))),
-            "{other:?}: {error:?}"
-        );
-    }
+    let other = TrialContext::Hunt {
+        hunt: std::num::NonZeroU32::new(hunt.get() + hunt_delta).unwrap(),
+        group: std::num::NonZeroU32::new(group.get() + group_delta).unwrap(),
+    };
+    let mut j = loc_failed_hunt(4, 120);
+    let mut plan = loc_first_hunt_trial(&mut j);
+    plan.requirement.context = other;
+    let intent = plan.intent(togi_journal::TrialId::from("other".to_owned()), 0);
+    let error = j.try_append(intent.into(), &[]);
+    assert!(
+        matches!(error, Err(crate::FoldError::UnscheduledIntent(_))),
+        "{other:?}: {error:?}"
+    );
 }
 
 fn loc_pair_session() -> Journal {
@@ -1479,57 +1444,61 @@ fn carried_failure_establishes_later_hunt_group() {
     j.assert_resumes();
 }
 
-#[test]
-fn a_carried_failure_is_admitted_to_a_group_past_a_newer_live_failure_before_the_hunt() {
-    for idle in [false, true] {
-        let mut j = loc_pair_session();
-        let duration = j.run().config.short_trial.get();
-        j.load(&config(&format!(
-            r#"{{"durations":{{"checking_idle_s":{duration}}}}}"#
-        )));
-        let carried = if idle {
-            j.carry_idle(SESSION, &[-9, 0])
-        } else {
-            j.carry(
-                SESSION,
-                (Regime::R6, 0, &[0, 1], duration),
-                Condition::Together,
-                &[-9, 0],
-                Outcome::Failure,
-            )
-        };
-        let live = |j: &mut Journal, profile: &[i64]| {
-            let plan = j.manual(
-                Regime::R6,
-                0,
-                Load::Many(set(&[0, 1])),
-                Condition::Together,
-                profile,
-                duration,
-            );
-            j.trial(&plan, Outcome::Failure);
-            let decision = j.next_decision();
-            assert!(matches!(decision.payload, DecisionPayload::Failure(_)));
-            j.decide(decision)
-        };
-        live(&mut j, &[-10, 0]);
-        let source = live(&mut j, &[-10, -10]);
-        loc_hand_start(&mut j, source, &[-10, -10], duration);
-        let run = j.run();
-        let hunt = run.hunts.active.as_ref().expect("the hunt is open");
-        let class = hunt.class_at(Secs::new(std::num::NonZeroU32::new(duration).unwrap()));
-        for stage in [HuntStage::Full, HuntStage::Probe] {
-            let since = run.hunt_since(stage, hunt.seq);
-            let answer = run.evidence_answer(hunt, class, &hunt.failing, since);
-            assert_eq!(
-                answer.outcome,
-                Some(super::plan::GroupOutcome::Failed),
-                "idle={idle} {stage:?}"
-            );
-            assert_eq!(answer.failure, Some(carried), "idle={idle} {stage:?}");
-        }
-        j.assert_resumes();
-    }
+#[test_case::test_case(false, HuntStage::Full; "not idle; HuntStage::Full")]
+#[test_case::test_case(false, HuntStage::Probe; "not idle; HuntStage::Probe")]
+#[test_case::test_case(true, HuntStage::Full; "idle; HuntStage::Full")]
+#[test_case::test_case(true, HuntStage::Probe; "idle; HuntStage::Probe")]
+fn a_carried_failure_is_admitted_to_a_group_past_a_newer_live_failure_before_the_hunt(
+    idle: bool,
+    stage: HuntStage,
+) {
+    let mut j = loc_pair_session();
+    let duration = j.run().config.short_trial.get();
+    j.load(&config(&format!(
+        r#"{{"durations":{{"checking_idle_s":{duration}}}}}"#
+    )));
+    let carried = if idle {
+        j.carry_idle(SESSION, &[-9, 0])
+    } else {
+        j.carry(
+            SESSION,
+            (Regime::R6, 0, &[0, 1], duration),
+            Condition::Together,
+            &[-9, 0],
+            Outcome::Failure,
+        )
+    };
+    let live = |j: &mut Journal, profile: &[i64]| {
+        let plan = j.manual(
+            Regime::R6,
+            0,
+            Load::Many(set(&[0, 1])),
+            Condition::Together,
+            profile,
+            duration,
+        );
+        j.trial(&plan, Outcome::Failure);
+        let decision = j.next_decision();
+        assert!(matches!(decision.payload, DecisionPayload::Failure(_)));
+        j.decide(decision)
+    };
+    live(&mut j, &[-10, 0]);
+    let source = live(&mut j, &[-10, -10]);
+    loc_hand_start(&mut j, source, &[-10, -10], duration);
+    let run = j.run();
+    let hunt = run.hunts.active.as_ref().expect("the hunt is open");
+    let class = hunt.class_at(Secs::new(std::num::NonZeroU32::new(duration).unwrap()));
+
+    let since = run.hunt_since(stage, hunt.seq);
+    let answer = run.evidence_answer(hunt, class, &hunt.failing, since);
+    assert_eq!(
+        answer.outcome,
+        Some(super::plan::GroupOutcome::Failed),
+        "idle={idle} {stage:?}"
+    );
+    assert_eq!(answer.failure, Some(carried), "idle={idle} {stage:?}");
+
+    j.assert_resumes();
 }
 
 #[test]
@@ -1628,8 +1597,9 @@ fn hunt_group_of(action: &Action) -> Option<&HuntGroup> {
     }
 }
 
-#[test]
-fn carried_evidence_before_the_hunt_establishes_a_member_probe() {
+#[test_case::test_case(false; "not passes")]
+#[test_case::test_case(true; "passes")]
+fn carried_evidence_before_the_hunt_establishes_a_member_probe(passes: bool) {
     let first = Member {
         core: core(0),
         offset: off(-29),
@@ -1638,174 +1608,171 @@ fn carried_evidence_before_the_hunt_establishes_a_member_probe() {
         let j = loc_limit_session(4, -30);
         usize::from(j.run().config.needed.get())
     };
-    for passes in [true, false] {
-        let carried = vec![
-            if passes {
-                Outcome::Pass
-            } else {
-                Outcome::Failure
-            };
-            if passes { needed } else { 1 }
-        ];
-        let (mut j, facts) = loc_hunt_before_member_probe(&carried);
-        let hunt_seq = j.run().hunts.active.as_ref().expect("the hunt is open").seq;
-        assert!(facts.iter().all(|&fact| fact < hunt_seq));
-        let planned = j.next();
-        let probe = hunt_group(&planned);
-        assert_eq!(probe.stage, HuntStage::Probe);
-        assert_eq!(probe.probe, Some(first));
-        let cause = &decision(&planned).cause;
-        assert_eq!(cause[0], hunt_seq);
-        for fact in &facts {
-            assert!(
-                cause.contains(fact),
-                "passes={passes}: #{fact} not cited in {cause:?}"
-            );
-        }
-        let reason = probe.reason.clone().unwrap();
-        assert!(reason.contains(SESSION), "{reason}");
-        let want = if passes {
-            togi_journal::Inference::Pass
-        } else {
-            togi_journal::Inference::Failure
-        };
-        assert_eq!(probe.inferred, Some(want), "passes={passes}: {probe:?}");
-        j.decide(decision(&planned).clone());
-        let view = j.run().hunt_groups().last().cloned().unwrap();
-        let want = if passes {
-            super::plan::GroupOutcome::Passed
-        } else {
-            super::plan::GroupOutcome::Failed
-        };
-        assert_eq!(view.probe, Some(first));
-        assert_eq!(view.outcome, Some(want), "passes={passes}");
-        assert!(view.carried, "passes={passes}: {view:?}");
+    let carried = vec![
         if passes {
-            assert_eq!(view.passed, u32::try_from(needed).unwrap());
-        }
-        let plan = j.state.hunt_plan().expect("the hunt is still active");
-        let ladder = plan
-            .probes
-            .iter()
-            .find(|probe| probe.member == first.core)
-            .expect("the probed member is on the plan");
-        if passes {
-            assert_eq!(ladder.passed_at, [first.offset], "{ladder:?}");
-            assert_eq!(ladder.carried, [first.offset], "{ladder:?}");
+            Outcome::Pass
         } else {
-            assert!(ladder.passed_at.is_empty(), "{ladder:?}");
-            assert!(ladder.carried.is_empty(), "{ladder:?}");
-            assert!(ladder.failed_at.contains(&first.offset), "{ladder:?}");
-        }
-        let next = j.next();
-        let following = hunt_group(&next);
-        assert_eq!(following.inferred, None, "passes={passes}: {following:?}");
-        let moved = following.probe.expect("the probes go on");
-        let (member, offset) = if passes { (1, -29) } else { (0, -28) };
-        assert_eq!((moved.core, moved.offset), (core(member), off(offset)));
-        j.assert_resumes();
+            Outcome::Failure
+        };
+        if passes { needed } else { 1 }
+    ];
+    let (mut j, facts) = loc_hunt_before_member_probe(&carried);
+    let hunt_seq = j.run().hunts.active.as_ref().expect("the hunt is open").seq;
+    assert!(facts.iter().all(|&fact| fact < hunt_seq));
+    let planned = j.next();
+    let probe = hunt_group(&planned);
+    assert_eq!(probe.stage, HuntStage::Probe);
+    assert_eq!(probe.probe, Some(first));
+    let cause = &decision(&planned).cause;
+    assert_eq!(cause[0], hunt_seq);
+    for fact in &facts {
+        assert!(
+            cause.contains(fact),
+            "passes={passes}: #{fact} not cited in {cause:?}"
+        );
     }
+    let reason = probe.reason.clone().unwrap();
+    assert!(reason.contains(SESSION), "{reason}");
+    let want = if passes {
+        togi_journal::Inference::Pass
+    } else {
+        togi_journal::Inference::Failure
+    };
+    assert_eq!(probe.inferred, Some(want), "passes={passes}: {probe:?}");
+    j.decide(decision(&planned).clone());
+    let view = j.run().hunt_groups().last().cloned().unwrap();
+    let want = if passes {
+        super::plan::GroupOutcome::Passed
+    } else {
+        super::plan::GroupOutcome::Failed
+    };
+    assert_eq!(view.probe, Some(first));
+    assert_eq!(view.outcome, Some(want), "passes={passes}");
+    assert!(view.carried, "passes={passes}: {view:?}");
+    if passes {
+        assert_eq!(view.passed, u32::try_from(needed).unwrap());
+    }
+    let plan = j.state.hunt_plan().expect("the hunt is still active");
+    let ladder = plan
+        .probes
+        .iter()
+        .find(|probe| probe.member == first.core)
+        .expect("the probed member is on the plan");
+    if passes {
+        assert_eq!(ladder.passed_at, [first.offset], "{ladder:?}");
+        assert_eq!(ladder.carried, [first.offset], "{ladder:?}");
+    } else {
+        assert!(ladder.passed_at.is_empty(), "{ladder:?}");
+        assert!(ladder.carried.is_empty(), "{ladder:?}");
+        assert!(ladder.failed_at.contains(&first.offset), "{ladder:?}");
+    }
+    let next = j.next();
+    let following = hunt_group(&next);
+    assert_eq!(following.inferred, None, "passes={passes}: {following:?}");
+    let moved = following.probe.expect("the probes go on");
+    let (member, offset) = if passes { (1, -29) } else { (0, -28) };
+    assert_eq!((moved.core, moved.offset), (core(member), off(offset)));
+    j.assert_resumes();
 }
 
-#[test]
-fn skipped_together_failure_makes_progress() {
-    for attributed in [false, true] {
-        let starts = [Start::at_limit(-20); 2];
-        let mut j = Journal::new(&[0, 1], &starts);
-        j.profile_change(&[-20, -20]);
-        j.ranking(&[0, 1]);
-        let duration = j.run().config.checking_idle.get();
-        let mut fact = j.carried_trial(
-            SESSION,
-            togi_journal::TrialClass {
-                regime: Regime::R6,
-                workload: togi_machine::WorkloadId::new(Regime::R6, 0),
-                cores: set(&[0, 1]),
-                duration_s: duration,
-            },
+#[test_case::test_case(false; "not attributed")]
+#[test_case::test_case(true; "attributed")]
+fn skipped_together_failure_makes_progress(attributed: bool) {
+    let starts = [Start::at_limit(-20); 2];
+    let mut j = Journal::new(&[0, 1], &starts);
+    j.profile_change(&[-20, -20]);
+    j.ranking(&[0, 1]);
+    let duration = j.run().config.checking_idle.get();
+    let mut fact = j.carried_trial(
+        SESSION,
+        togi_journal::TrialClass {
+            regime: Regime::R6,
+            workload: togi_machine::WorkloadId::new(Regime::R6, 0),
+            cores: set(&[0, 1]),
+            duration_s: duration,
+        },
+        Condition::Together,
+        &[-20, -20],
+        Outcome::Failure,
+        None,
+    );
+    fact.core = attributed.then(|| core(0));
+    let failure = j.append(fact.into(), &[]);
+    j.cycle_start(1, &[Regime::R6]);
+    if attributed {
+        let retry = j.manual(
+            Regime::R6,
+            0,
+            Load::Many(set(&[0, 1])),
             Condition::Together,
             &[-20, -20],
-            Outcome::Failure,
-            None,
+            duration,
         );
-        fact.core = attributed.then(|| core(0));
-        let failure = j.append(fact.into(), &[]);
-        j.cycle_start(1, &[Regime::R6]);
-        if attributed {
-            let retry = j.manual(
-                Regime::R6,
-                0,
-                Load::Many(set(&[0, 1])),
-                Condition::Together,
-                &[-20, -20],
-                duration,
+        j.trial(&retry, Outcome::Inconclusive);
+        let pending = j
+            .run()
+            .retry
+            .as_ref()
+            .expect("the inconclusive trial left a retry");
+        assert_eq!(pending.plan.profile, j.profile(&[-20, -20]));
+    }
+    let mut found = false;
+    for _ in 0..100 {
+        let action = j.loc_act();
+        assert!(
+            !matches!(action, Action::RunTrial(_)),
+            "together failure was rerun before its decision: {action:?}"
+        );
+        let Action::Decide(decision) = &action else {
+            unreachable!();
+        };
+        if let DecisionPayload::HuntStart(start) = &decision.payload {
+            assert!(!attributed, "{start:?}");
+            assert_eq!(start.failure, failure);
+            assert!(decision.cause.contains(&failure), "{:?}", decision.cause);
+            assert_eq!(start.failing, j.profile(&[-20, -20]).offsets());
+            assert_eq!(
+                (start.regime, start.workload, start.duration_s),
+                (Regime::R6, workloads(Regime::R6)[0].id(), duration)
             );
-            j.trial(&retry, Outcome::Inconclusive);
-            let pending = j
-                .run()
-                .retry
-                .as_ref()
-                .expect("the inconclusive trial left a retry");
-            assert_eq!(pending.plan.profile, j.profile(&[-20, -20]));
+            assert_eq!(start.cores, set(&[0, 1]));
+            found = true;
+        } else if let DecisionPayload::TunerDecision(moved) = &decision.payload
+            && moved.decision == Decision::Backoff
+        {
+            assert!(attributed, "{moved:?}");
+            assert_eq!(
+                (moved.core, moved.to_offset),
+                (core(0), off(-19)),
+                "{moved:?}"
+            );
+            assert!(decision.cause.contains(&failure), "{:?}", decision.cause);
+            found = true;
         }
-        let mut found = false;
-        for _ in 0..100 {
-            let action = j.loc_act();
-            assert!(
-                !matches!(action, Action::RunTrial(_)),
-                "together failure was rerun before its decision: {action:?}"
-            );
-            let Action::Decide(decision) = &action else {
-                unreachable!();
-            };
-            if let DecisionPayload::HuntStart(start) = &decision.payload {
-                assert!(!attributed, "{start:?}");
-                assert_eq!(start.failure, failure);
-                assert!(decision.cause.contains(&failure), "{:?}", decision.cause);
-                assert_eq!(start.failing, j.profile(&[-20, -20]).offsets());
-                assert_eq!(
-                    (start.regime, start.workload, start.duration_s),
-                    (Regime::R6, workloads(Regime::R6)[0].id(), duration)
-                );
-                assert_eq!(start.cores, set(&[0, 1]));
-                found = true;
-            } else if let DecisionPayload::TunerDecision(moved) = &decision.payload
-                && moved.decision == Decision::Backoff
-            {
-                assert!(attributed, "{moved:?}");
-                assert_eq!(
-                    (moved.core, moved.to_offset),
-                    (core(0), off(-19)),
-                    "{moved:?}"
-                );
-                assert!(decision.cause.contains(&failure), "{:?}", decision.cause);
-                found = true;
-            }
-            j.decide(decision.clone());
-            if found {
+        j.decide(decision.clone());
+        if found {
+            break;
+        }
+    }
+    assert!(
+        found,
+        "the skipped together step reached no hunt or backoff"
+    );
+    let mut live = false;
+    for _ in 0..200 {
+        match j.loc_act() {
+            Action::RunTrial(_) => {
+                live = true;
                 break;
             }
-        }
-        assert!(
-            found,
-            "the skipped together step reached no hunt or backoff"
-        );
-        let mut live = false;
-        for _ in 0..200 {
-            match j.loc_act() {
-                Action::RunTrial(_) => {
-                    live = true;
-                    break;
-                }
-                Action::Decide(decision) => {
-                    j.decide(decision);
-                }
-                Action::ReadRanking => unreachable!(),
+            Action::Decide(decision) => {
+                j.decide(decision);
             }
+            Action::ReadRanking => unreachable!(),
         }
-        assert!(live, "the skip loop prevented the next live trial");
-        j.assert_resumes();
     }
+    assert!(live, "the skip loop prevented the next live trial");
+    j.assert_resumes();
 }
 
 #[test]
@@ -1934,74 +1901,63 @@ fn loc_class_failure(offsets: &[i64], source: Source) -> (Journal, Seq) {
     (j, failure)
 }
 
-#[test]
-fn class_targets_preserve_hunt_and_rerun_lookup() {
-    let four: &[i64] = &[-10, -11, -12, -13];
-    let idle = 900;
-    let cases: [(&str, &[i64], Source, &[u8]); 5] = [
-        ("singleton before part in hunt", &[-10], Source::Idle, &[0]),
-        (
-            "single core",
-            four,
-            Source::Live(Regime::R1, &[1], 120),
-            &[1],
-        ),
-        ("CCD part", four, Source::Carried(&[0, 1]), &[0, 1]),
-        (
-            "all cores",
-            four,
-            Source::Live(Regime::R6, &[0, 1, 2, 3], idle),
-            &[0, 1, 2, 3],
-        ),
-        ("unknown target", four, Source::Carried(&[0, 2]), &[0, 2]),
-    ];
-    for (name, offsets, source, target) in cases {
-        let (j, _) = loc_class_failure(offsets, source);
-        let (start, _) = j.hunt_start_payload();
-        assert_eq!(start.cores, set(target), "{name}");
-        j.assert_resumes();
+#[test_case::test_case("singleton before part in hunt", &[-10], Source::Idle, &[0]; "singleton before part in hunt")]
+#[test_case::test_case("single core", &[-10, -11, -12, -13], Source::Live(Regime::R1, &[1], 120), &[1]; "single core")]
+#[test_case::test_case("CCD part", &[-10, -11, -12, -13], Source::Carried(&[0, 1]), &[0, 1]; "CCD part")]
+#[test_case::test_case("all cores", &[-10, -11, -12, -13], Source::Live(Regime::R6, &[0, 1, 2, 3], 900), &[0, 1, 2, 3]; "all cores")]
+#[test_case::test_case("unknown target", &[-10, -11, -12, -13], Source::Carried(&[0, 2]), &[0, 2]; "unknown target")]
+fn class_targets_preserve_hunt_and_rerun_lookup(
+    name: &str,
+    offsets: &[i64],
+    source: Source,
+    target: &[u8],
+) {
+    let (j, _) = loc_class_failure(offsets, source);
+    let (start, _) = j.hunt_start_payload();
+    assert_eq!(start.cores, set(target), "{name}");
+    j.assert_resumes();
 
-        let (mut j, failure) = loc_class_failure(offsets, source);
-        let backoff = TunerDecision {
-            core: core(0),
-            activity: Activity::Checking,
-            decision: Decision::Backoff,
-            from_offset: off(offsets[0]),
-            to_offset: off(offsets[0] + 1),
-            pass: None,
-            failure_point: Some(off(offsets[0])),
-            workloads: Vec::new(),
-            reason: "test".to_owned(),
-        };
-        j.append(backoff.into(), &[failure]);
-        let mut rerun = None;
-        for _ in 0..50 {
-            match j.loc_act() {
-                Action::RunTrial(plan) => {
-                    rerun = Some(plan);
-                    break;
-                }
-                Action::Decide(decision) => {
-                    assert!(
-                        !matches!(decision.payload, DecisionPayload::HuntStart(_)),
-                        "{name}: the answered failure was hunted: {decision:?}"
-                    );
-                    j.decide(decision);
-                }
-                Action::ReadRanking => unreachable!(),
+    let (mut j, failure) = loc_class_failure(offsets, source);
+    let backoff = TunerDecision {
+        core: core(0),
+        activity: Activity::Checking,
+        decision: Decision::Backoff,
+        from_offset: off(offsets[0]),
+        to_offset: off(offsets[0] + 1),
+        pass: None,
+        failure_point: Some(off(offsets[0])),
+        workloads: Vec::new(),
+        reason: "test".to_owned(),
+    };
+    j.append(backoff.into(), &[failure]);
+    let mut rerun = None;
+    for _ in 0..50 {
+        match j.loc_act() {
+            Action::RunTrial(plan) => {
+                rerun = Some(plan);
+                break;
             }
+            Action::Decide(decision) => {
+                assert!(
+                    !matches!(decision.payload, DecisionPayload::HuntStart(_)),
+                    "{name}: the answered failure was hunted: {decision:?}"
+                );
+                j.decide(decision);
+            }
+            Action::ReadRanking => unreachable!(),
         }
-        let rerun = rerun.unwrap_or_else(|| panic!("{name}: no rerun"));
-        assert_eq!(
-            rerun.requirement.context,
-            TrialContext::Rerun { failure },
-            "{name}"
-        );
-        assert_eq!(rerun.load.cores(), set(target), "{name}");
-        assert_eq!(rerun.duration, j.run().config.short_trial, "{name}");
-        assert_eq!(rerun.condition, Condition::Together, "{name}");
-        j.assert_resumes();
     }
+    let rerun = rerun.unwrap_or_else(|| panic!("{name}: no rerun"));
+    assert_eq!(
+        rerun.requirement.context,
+        TrialContext::Rerun { failure },
+        "{name}"
+    );
+    assert_eq!(rerun.load.cores(), set(target), "{name}");
+    assert_eq!(rerun.duration, j.run().config.short_trial, "{name}");
+    assert_eq!(rerun.condition, Condition::Together, "{name}");
+    j.assert_resumes();
+
     let mut empty = loc_limit_session(2, -10);
     let plan = empty.manual(
         Regime::R6,
@@ -2018,79 +1974,78 @@ fn class_targets_preserve_hunt_and_rerun_lookup() {
     ));
 }
 
-#[test]
-fn attribution_at_group_parked_offsets_and_already_shallower() {
-    for shallower in [false, true] {
-        let mut j = super::support::hunt_session(&[-10, -12]);
-        j.together_failure(Regime::R6, 0, &[-10, -12]);
-        j.start_hunt();
-        let planned = j.next_decision();
-        assert!(matches!(planned.payload, DecisionPayload::HuntGroup(_)));
-        j.decide(planned);
-        let plan = j.next_trial();
-        assert_eq!(plan.condition, Condition::Parked);
-        let (named, failing) = plan
-            .profile
-            .iter()
-            .find(|(_, offset)| offset.get() != 0)
-            .expect("the group holds a candidate at its failing offset");
-        let moved = off(failing.get() + 1);
-        if shallower {
-            j.core_phase(CoreTransition {
-                core: named,
-                from: Some(CorePhase::HasRoom),
-                to: CorePhase::HasRoom,
-                offset: moved,
-                pass: None,
-                failure_point: None,
-                check_solo_limit: false,
-                workloads: Vec::new(),
-                cleared_combination: Vec::new(),
-                reason: "test".to_owned(),
-            });
-        }
-        j.loc_finish(
-            &plan,
-            Outcome::Failure,
-            &R7Report::default().named(named.get()),
-        );
-        let attribution = j.next_decision();
-        let DecisionPayload::Failure(record) = &attribution.payload else {
-            panic!("expected the attribution, got {attribution:?}");
-        };
-        assert_eq!(record.attribution, Attribution::Attributed);
-        assert_eq!(record.core, Some(named));
-        assert_eq!(record.offset, Some(failing));
-        assert_eq!(record.condition, Some(Condition::Parked));
-        let failure = j.decide(attribution);
-        let action = j.next();
-        let end = hunt_end(&action);
-        assert_eq!(
-            (end.result, end.cores),
-            (HuntOutcome::Direct, std::iter::once(named).collect())
-        );
-        assert_eq!(decision(&action).cause, [failure]);
-        let ended = j.decide(decision(&action).clone());
-        let action = j.next();
-        let move_ = backoff(&action).clone();
-        assert_eq!(move_.activity, Activity::Hunt);
-        assert_eq!(move_.core, named);
-        assert_eq!(move_.failure_point, Some(failing));
-        assert_eq!(decision(&action).cause, [ended]);
-        let from = if shallower { moved } else { failing };
-        assert_eq!((move_.from_offset, move_.to_offset), (from, moved));
-        assert_eq!(move_.reason.contains("already shallower"), shallower);
-        j.decide(decision(&action).clone());
-        assert!(j.run().hunts.active.is_none());
-        assert_eq!(j.run().reruns.is_empty(), shallower);
-        if !shallower {
-            assert_eq!(
-                j.run().reruns.head().map(|head| head.failure),
-                Some(failure)
-            );
-        }
-        j.assert_resumes();
+#[test_case::test_case(false; "not shallower")]
+#[test_case::test_case(true; "shallower")]
+fn attribution_at_group_parked_offsets_and_already_shallower(shallower: bool) {
+    let mut j = super::support::hunt_session(&[-10, -12]);
+    j.together_failure(Regime::R6, 0, &[-10, -12]);
+    j.start_hunt();
+    let planned = j.next_decision();
+    assert!(matches!(planned.payload, DecisionPayload::HuntGroup(_)));
+    j.decide(planned);
+    let plan = j.next_trial();
+    assert_eq!(plan.condition, Condition::Parked);
+    let (named, failing) = plan
+        .profile
+        .iter()
+        .find(|(_, offset)| offset.get() != 0)
+        .expect("the group holds a candidate at its failing offset");
+    let moved = off(failing.get() + 1);
+    if shallower {
+        j.core_phase(CoreTransition {
+            core: named,
+            from: Some(CorePhase::HasRoom),
+            to: CorePhase::HasRoom,
+            offset: moved,
+            pass: None,
+            failure_point: None,
+            check_solo_limit: false,
+            workloads: Vec::new(),
+            cleared_combination: Vec::new(),
+            reason: "test".to_owned(),
+        });
     }
+    j.loc_finish(
+        &plan,
+        Outcome::Failure,
+        &R7Report::default().named(named.get()),
+    );
+    let attribution = j.next_decision();
+    let DecisionPayload::Failure(record) = &attribution.payload else {
+        panic!("expected the attribution, got {attribution:?}");
+    };
+    assert_eq!(record.attribution, Attribution::Attributed);
+    assert_eq!(record.core, Some(named));
+    assert_eq!(record.offset, Some(failing));
+    assert_eq!(record.condition, Some(Condition::Parked));
+    let failure = j.decide(attribution);
+    let action = j.next();
+    let end = hunt_end(&action);
+    assert_eq!(
+        (end.result, end.cores),
+        (HuntOutcome::Direct, std::iter::once(named).collect())
+    );
+    assert_eq!(decision(&action).cause, [failure]);
+    let ended = j.decide(decision(&action).clone());
+    let action = j.next();
+    let move_ = backoff(&action).clone();
+    assert_eq!(move_.activity, Activity::Hunt);
+    assert_eq!(move_.core, named);
+    assert_eq!(move_.failure_point, Some(failing));
+    assert_eq!(decision(&action).cause, [ended]);
+    let from = if shallower { moved } else { failing };
+    assert_eq!((move_.from_offset, move_.to_offset), (from, moved));
+    assert_eq!(move_.reason.contains("already shallower"), shallower);
+    j.decide(decision(&action).clone());
+    assert!(j.run().hunts.active.is_none());
+    assert_eq!(j.run().reruns.is_empty(), shallower);
+    if !shallower {
+        assert_eq!(
+            j.run().reruns.head().map(|head| head.failure),
+            Some(failure)
+        );
+    }
+    j.assert_resumes();
 }
 
 const RERUN_OFFSETS: [i64; 4] = [-10, -11, -12, -13];
@@ -2120,7 +2075,14 @@ fn loc_until_trial(j: &mut Journal) -> TrialPlan {
     panic!("no trial came");
 }
 
-fn loc_hunt_commitment(kind: &str) -> (Journal, TrialPlan, Seq) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Commitment {
+    Culprit,
+    Combination,
+    Direct,
+}
+
+fn loc_hunt_commitment(kind: Commitment) -> (Journal, TrialPlan, Seq) {
     let mut j = loc_rerun_session();
     let idle = j.manual(
         Regime::R6,
@@ -2133,7 +2095,7 @@ fn loc_hunt_commitment(kind: &str) -> (Journal, TrialPlan, Seq) {
     j.loc_finish(&idle, Outcome::Failure, &R7Report::default());
     let attribution = j.next_decision();
     let source = j.decide(attribution);
-    let source = if kind == "direct" {
+    let source = if kind == Commitment::Direct {
         let plan = loc_until_trial(&mut j);
         assert!(
             matches!(plan.requirement.context, TrialContext::Hunt { .. }),
@@ -2157,9 +2119,9 @@ fn loc_hunt_commitment(kind: &str) -> (Journal, TrialPlan, Seq) {
     let mut oracle = |plan: &TrialPlan| {
         let at = |id: u8| plan.profile.get(core(id)).unwrap().get();
         let fails = match kind {
-            "culprit" => at(0) <= -10,
-            "combination" => at(0) <= -10 && at(1) <= -11,
-            _ => false,
+            Commitment::Culprit => at(0) <= -10,
+            Commitment::Combination => at(0) <= -10 && at(1) <= -11,
+            Commitment::Direct => false,
         };
         if fails {
             Outcome::Failure
@@ -2171,103 +2133,101 @@ fn loc_hunt_commitment(kind: &str) -> (Journal, TrialPlan, Seq) {
         if let Action::Decide(decision) = j.step(&mut oracle) {
             if let DecisionPayload::HuntEnd(end) = &decision.payload {
                 let result = match kind {
-                    "culprit" => HuntOutcome::Culprit,
-                    "combination" => HuntOutcome::Combination,
-                    _ => HuntOutcome::Direct,
+                    Commitment::Culprit => HuntOutcome::Culprit,
+                    Commitment::Combination => HuntOutcome::Combination,
+                    Commitment::Direct => HuntOutcome::Direct,
                 };
-                assert_eq!(end.result, result, "{kind}: {end:?}");
+                assert_eq!(end.result, result, "{kind:?}: {end:?}");
             }
             if matches!(&decision.payload, DecisionPayload::TunerDecision(td) if td.activity == Activity::Hunt)
             {
-                assert!(j.run().hunts.active.is_none(), "{kind}");
+                assert!(j.run().hunts.active.is_none(), "{kind:?}");
                 return (j, idle, source);
             }
         }
     }
-    panic!("{kind}: the hunt never committed");
+    panic!("{kind:?}: the hunt never committed");
 }
 
-#[test]
-fn rerun_derived_hunt_commitments() {
-    for kind in ["culprit", "combination", "direct"] {
-        let (mut j, idle, source) = loc_hunt_commitment(kind);
-        j.assert_resumes();
-        let n = usize::from(j.run().config.needed.get());
-        let short = j.run().config.short_trial.get();
-        let mut durations = vec![short; n];
-        if kind != "direct" {
-            durations.push(idle.duration.get());
-        }
-        let mut done = Vec::new();
-        for _ in 0..100 {
-            match j.loc_poll() {
-                Some(Action::Decide(decision))
-                    if matches!(
-                        decision.payload,
-                        DecisionPayload::ProfileChange(_) | DecisionPayload::CorePhase(_)
-                    ) =>
-                {
-                    j.decide(decision);
-                }
-                Some(Action::RunTrial(plan))
-                    if matches!(plan.requirement.context, TrialContext::Rerun { .. }) =>
-                {
-                    j.loc_finish(&plan, Outcome::Pass, &R7Report::default());
-                    done.push(plan);
-                }
-                Some(Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking) | None => break,
+#[test_case::test_case(Commitment::Culprit; "culprit")]
+#[test_case::test_case(Commitment::Combination; "combination")]
+#[test_case::test_case(Commitment::Direct; "direct")]
+fn rerun_derived_hunt_commitments(kind: Commitment) {
+    let (mut j, idle, source) = loc_hunt_commitment(kind);
+    j.assert_resumes();
+    let n = usize::from(j.run().config.needed.get());
+    let short = j.run().config.short_trial.get();
+    let mut durations = vec![short; n];
+    if kind != Commitment::Direct {
+        durations.push(idle.duration.get());
+    }
+    let mut done = Vec::new();
+    for _ in 0..100 {
+        match j.loc_poll() {
+            Some(Action::Decide(decision))
+                if matches!(
+                    decision.payload,
+                    DecisionPayload::ProfileChange(_) | DecisionPayload::CorePhase(_)
+                ) =>
+            {
+                j.decide(decision);
             }
+            Some(Action::RunTrial(plan))
+                if matches!(plan.requirement.context, TrialContext::Rerun { .. }) =>
+            {
+                j.loc_finish(&plan, Outcome::Pass, &R7Report::default());
+                done.push(plan);
+            }
+            Some(Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking) | None => break,
         }
-        let got: Vec<u32> = done.iter().map(|plan| plan.duration.get()).collect();
-        assert_eq!(got, durations, "{kind}");
-        for plan in &done {
-            assert_eq!(plan.condition, Condition::Together, "{kind}");
-            assert_eq!(plan.regime, Regime::R6, "{kind}");
-            assert_eq!(plan.workload, idle.workload, "{kind}");
-            assert_eq!(plan.load, idle.load, "{kind}");
-            assert_eq!(plan.cause, [source], "{kind}");
-        }
-        assert!(j.run().reruns.is_empty(), "{kind}");
-        j.assert_resumes();
     }
+    let got: Vec<u32> = done.iter().map(|plan| plan.duration.get()).collect();
+    assert_eq!(got, durations, "{kind:?}");
+    for plan in &done {
+        assert_eq!(plan.condition, Condition::Together, "{kind:?}");
+        assert_eq!(plan.regime, Regime::R6, "{kind:?}");
+        assert_eq!(plan.workload, idle.workload, "{kind:?}");
+        assert_eq!(plan.load, idle.load, "{kind:?}");
+        assert_eq!(plan.cause, [source], "{kind:?}");
+    }
+    assert!(j.run().reruns.is_empty(), "{kind:?}");
+    j.assert_resumes();
 }
 
-#[test]
-fn resetting_a_loaded_core_discards_the_saved_located_group_rejection() {
-    for (reset, retained) in [(0, false), (2, true)] {
-        let mut j = Journal::r7_session();
-        j.loc_fail_escalated(&top0());
-        let located = j.loc_run(|_| Verdict::Named(1));
-        assert_eq!(hunt_end(&located.action).result, HuntOutcome::Loaded);
-        let saved = j.run().hunts.rejecting.clone().unwrap();
-        assert_eq!(saved.open.pending.fact.class.loaded(), set(&[0, 1]));
-        j.reset(reset);
-        assert_eq!(
-            j.run().hunts.rejecting.as_deref(),
-            retained.then_some(saved.as_ref()),
-            "reset core {reset}"
-        );
-        j.assert_resumes();
-    }
+#[test_case::test_case(0, false; "(0, false)")]
+#[test_case::test_case(2, true; "(2, true)")]
+fn resetting_a_loaded_core_discards_the_saved_located_group_rejection(reset: u8, retained: bool) {
+    let mut j = Journal::r7_session();
+    j.loc_fail_escalated(&top0());
+    let located = j.loc_run(|_| Verdict::Named(1));
+    assert_eq!(hunt_end(&located.action).result, HuntOutcome::Loaded);
+    let saved = j.run().hunts.rejecting.clone().unwrap();
+    assert_eq!(saved.open.pending.fact.class.loaded(), set(&[0, 1]));
+    j.reset(reset);
+    assert_eq!(
+        j.run().hunts.rejecting.as_deref(),
+        retained.then_some(saved.as_ref()),
+        "reset core {reset}"
+    );
+    j.assert_resumes();
 }
 
-#[test]
-fn a_skipped_or_inferred_locate_has_no_live_rejecting_failure() {
-    for inferred in [false, true] {
-        let mut j = Journal::r7_session();
-        j.loc_fail_escalated(&top0());
-        let located = j.loc_run_until(never, |_| true);
-        let mut group = hunt_group(&located.action).clone();
-        assert_eq!(group.stage, HuntStage::Locate);
-        group.skipped = !inferred;
-        group.inferred = inferred.then_some(togi_journal::Inference::Failure);
-        j.append(group.into(), &decision(&located.action).cause);
-        let active = j.run().hunts.active.as_ref().unwrap();
-        assert_eq!(j.run().rejecting_failure(active), None);
-        let action = j.run().hunt_next().unwrap();
-        assert_eq!(hunt_end(&action).result, HuntOutcome::Loaded);
-        j.assert_resumes();
-    }
+#[test_case::test_case(false; "not inferred")]
+#[test_case::test_case(true; "inferred")]
+fn a_skipped_or_inferred_locate_has_no_live_rejecting_failure(inferred: bool) {
+    let mut j = Journal::r7_session();
+    j.loc_fail_escalated(&top0());
+    let located = j.loc_run_until(never, |_| true);
+    let mut group = hunt_group(&located.action).clone();
+    assert_eq!(group.stage, HuntStage::Locate);
+    group.skipped = !inferred;
+    group.inferred = inferred.then_some(togi_journal::Inference::Failure);
+    j.append(group.into(), &decision(&located.action).cause);
+    let active = j.run().hunts.active.as_ref().unwrap();
+    assert_eq!(j.run().rejecting_failure(active), None);
+    let action = j.run().hunt_next().unwrap();
+    assert_eq!(hunt_end(&action).result, HuntOutcome::Loaded);
+    j.assert_resumes();
 }
 
 fn singleton_hunt(origin: i64, duration: u32) -> Journal {
@@ -2297,54 +2257,54 @@ fn singleton_hunt(origin: i64, duration: u32) -> Journal {
     j
 }
 
-#[test]
-fn singleton_probes_bracket_the_last_reproduced_failure_and_resume() {
-    for (origin, limit, expected) in [
-        (-30, -22, vec![-29, -28, -26, -22, -24, -23]),
-        (-30, -29, vec![-29]),
-        (-30, 0, vec![-29, -28, -26, -22, -14, -7, -4, -2, -1]),
-        (-1, 0, vec![]),
-    ] {
-        let mut j = singleton_hunt(origin, 120);
-        let mut probes = Vec::new();
-        let located = j.loc_run_until(
-            |plan| fails_as(at(plan, 2) < limit, Verdict::Unnamed),
-            |group| {
-                if let Some(probe) = group.probe {
-                    assert_eq!(probe.core, core(2));
-                    assert_eq!(group.set, set(&[2]));
-                    assert_eq!(group.held, []);
-                    assert!(!probes.contains(&probe.offset.get()));
-                    probes.push(probe.offset.get());
-                }
-                false
-            },
-        );
-        let end = hunt_end(&located.action);
-        assert_eq!(end.result, HuntOutcome::Culprit);
-        assert_eq!(probes, expected);
-        if origin != -1 {
-            assert_eq!(
-                end.members,
-                [Member {
-                    core: core(2),
-                    offset: off(limit - 1)
-                }]
-            );
-        }
-        j.assert_resumes();
-        j.decide(decision(&located.action).clone());
-        j.assert_resumes();
-        let commitment = j.loc_act();
-        let moved = backoff(&commitment);
+#[test_case::test_case(-30, -22, &[-29, -28, -26, -22, -24, -23]; "(-30, -22, vec![-29, -28, -26, -22, -24, -23])")]
+#[test_case::test_case(-30, -29, &[-29]; "(-30, -29, vec![-29])")]
+#[test_case::test_case(-30, 0, &[-29, -28, -26, -22, -14, -7, -4, -2, -1]; "(origin, limit, expected) scenario 3")]
+#[test_case::test_case(-1, 0, &[]; "(-1, 0, vec![])")]
+fn singleton_probes_bracket_the_last_reproduced_failure_and_resume(
+    origin: i64,
+    limit: i64,
+    expected: &[i64],
+) {
+    let mut j = singleton_hunt(origin, 120);
+    let mut probes = Vec::new();
+    let located = j.loc_run_until(
+        |plan| fails_as(at(plan, 2) < limit, Verdict::Unnamed),
+        |group| {
+            if let Some(probe) = group.probe {
+                assert_eq!(probe.core, core(2));
+                assert_eq!(group.set, set(&[2]));
+                assert_eq!(group.held, []);
+                assert!(!probes.contains(&probe.offset.get()));
+                probes.push(probe.offset.get());
+            }
+            false
+        },
+    );
+    let end = hunt_end(&located.action);
+    assert_eq!(end.result, HuntOutcome::Culprit);
+    assert_eq!(probes, expected);
+    if origin != -1 {
         assert_eq!(
-            (moved.core, moved.to_offset, moved.failure_point),
-            (core(2), off(limit), Some(off(limit - 1)))
+            end.members,
+            [Member {
+                core: core(2),
+                offset: off(limit - 1)
+            }]
         );
-        j.decide(decision(&commitment).clone());
-        assert_eq!(j.run().hunt_next(), None);
-        j.assert_resumes();
     }
+    j.assert_resumes();
+    j.decide(decision(&located.action).clone());
+    j.assert_resumes();
+    let commitment = j.loc_act();
+    let moved = backoff(&commitment);
+    assert_eq!(
+        (moved.core, moved.to_offset, moved.failure_point),
+        (core(2), off(limit), Some(off(limit - 1)))
+    );
+    j.decide(decision(&commitment).clone());
+    assert_eq!(j.run().hunt_next(), None);
+    j.assert_resumes();
 }
 
 #[test]
@@ -2398,129 +2358,129 @@ fn singleton_without_existing_same_class_anchor_tests_it_before_accelerating() {
     j.assert_resumes();
 }
 
-#[test]
-fn a_failed_singleton_anchor_never_creates_a_safe_bracket() {
-    for all_zero in [false, true] {
-        let mut j = singleton_hunt(-30, 600);
-        if all_zero {
-            // Supply an all-zero parked background in the recorded start, not a safe pass.
-            let active = j.run().hunts.active.as_ref().unwrap();
-            let mut start = active.start.clone();
-            start.parked = j.profile(&[0; 4]).offsets();
-            let cause = vec![active.seq];
-            j.append(start.into(), &cause);
-        }
-        let stopped = j.loc_run_until(
-            |plan| fails_as(at(plan, 2) < -22, Verdict::Unnamed),
-            |group| group.stage == HuntStage::Probe,
-        );
-        let anchor = hunt_group(&stopped.action);
-        assert_eq!(anchor.probe.unwrap().offset, off(0));
-        j.decide(decision(&stopped.action).clone());
-        let plan = j.next_trial();
-        j.loc_finish(&plan, Outcome::Failure, &R7Report::default());
-        let attribution = j.next_decision();
-        j.decide(attribution);
-        j.assert_resumes();
-        let action = j.loc_act();
-        if all_zero {
-            assert_eq!(dead_end(&action).condition, DeadEndCondition::FailureAtZero);
-        } else {
-            let end = hunt_end(&action);
-            assert_eq!(end.result, HuntOutcome::Culprit);
-            assert_eq!(
-                end.members,
-                [Member {
-                    core: core(2),
-                    offset: off(-30)
-                }]
-            );
-            j.decide(decision(&action).clone());
-            let commitment = j.loc_act();
-            assert_eq!(backoff(&commitment).to_offset, off(-29));
-        }
-        j.assert_resumes();
+#[test_case::test_case(false; "not all_zero")]
+#[test_case::test_case(true; "all_zero")]
+fn a_failed_singleton_anchor_never_creates_a_safe_bracket(all_zero: bool) {
+    let mut j = singleton_hunt(-30, 600);
+    if all_zero {
+        // Supply an all-zero parked background in the recorded start, not a safe pass.
+        let active = j.run().hunts.active.as_ref().unwrap();
+        let mut start = active.start.clone();
+        start.parked = j.profile(&[0; 4]).offsets();
+        let cause = vec![active.seq];
+        j.append(start.into(), &cause);
     }
-}
-
-#[test]
-fn singleton_anchor_evidence_keeps_the_exact_class_and_backend() {
-    for (workload, loaded, duration, changed_backend, expected_anchor) in [
-        (0, &[0, 1][..], 120, false, false),
-        (1, &[0, 1][..], 120, false, true),
-        (0, &[0, 2][..], 120, false, true),
-        (0, &[0, 1][..], 600, false, true),
-        (0, &[0, 1][..], 120, true, true),
-    ] {
-        let mut j = singleton_hunt(-30, 600);
-        j.load(&loc_config(Some((
-            crate::testkit::MPRIME_OLD,
-            crate::testkit::YCRUNCHER_OLD,
-        ))));
-        let backend = workloads(Regime::R7)[workload].backend;
-        let old = match backend {
-            togi_machine::Backend::Mprime => crate::testkit::MPRIME_OLD,
-            togi_machine::Backend::Ycruncher => crate::testkit::YCRUNCHER_OLD,
-        };
-        // These class variants need not be schedulable parts of the current cycle.
-        for _ in 0..5 {
-            j.carry_under(
-                SESSION,
-                (Regime::R7, workload, loaded, duration),
-                Condition::Together,
-                &[-30, -30, 0, 0],
-                Outcome::Pass,
-                Some((backend, old)),
-            );
-        }
-        if changed_backend {
-            j.load(&loc_config(Some((
-                crate::testkit::MPRIME_NEW,
-                crate::testkit::YCRUNCHER_NEW,
-            ))));
-        }
-        let stopped = j.loc_run_until(
-            |plan| fails_as(at(plan, 2) < -22, Verdict::Unnamed),
-            |group| group.stage == HuntStage::Probe,
-        );
+    let stopped = j.loc_run_until(
+        |plan| fails_as(at(plan, 2) < -22, Verdict::Unnamed),
+        |group| group.stage == HuntStage::Probe,
+    );
+    let anchor = hunt_group(&stopped.action);
+    assert_eq!(anchor.probe.unwrap().offset, off(0));
+    j.decide(decision(&stopped.action).clone());
+    let plan = j.next_trial();
+    j.loc_finish(&plan, Outcome::Failure, &R7Report::default());
+    let attribution = j.next_decision();
+    j.decide(attribution);
+    j.assert_resumes();
+    let action = j.loc_act();
+    if all_zero {
+        assert_eq!(dead_end(&action).condition, DeadEndCondition::FailureAtZero);
+    } else {
+        let end = hunt_end(&action);
+        assert_eq!(end.result, HuntOutcome::Culprit);
         assert_eq!(
-            hunt_group(&stopped.action).probe.unwrap().offset,
-            off(if expected_anchor { 0 } else { -29 })
+            end.members,
+            [Member {
+                core: core(2),
+                offset: off(-30)
+            }]
         );
-        j.assert_resumes();
+        j.decide(decision(&action).clone());
+        let commitment = j.loc_act();
+        assert_eq!(backoff(&commitment).to_offset, off(-29));
     }
+    j.assert_resumes();
 }
 
-#[test]
-fn reset_cancels_singleton_anchor_acquisition_and_interior_probes() {
-    for interior in [false, true] {
-        let mut j = singleton_hunt(-30, 600);
-        let stopped = j.loc_run_until(
-            |plan| fails_as(at(plan, 2) < -22, Verdict::Unnamed),
-            |group| group.stage == HuntStage::Probe,
+#[test_case::test_case(0, &[0, 1][..], 120, false, false; "(0, &[0, 1][..], 120, false, false)")]
+#[test_case::test_case(1, &[0, 1][..], 120, false, true; "(1, &[0, 1][..], 120, false, true)")]
+#[test_case::test_case(0, &[0, 2][..], 120, false, true; "(0, &[0, 2][..], 120, false, true)")]
+#[test_case::test_case(0, &[0, 1][..], 600, false, true; "(0, &[0, 1][..], 600, false, true)")]
+#[test_case::test_case(0, &[0, 1][..], 120, true, true; "(0, &[0, 1][..], 120, true, true)")]
+fn singleton_anchor_evidence_keeps_the_exact_class_and_backend(
+    workload: usize,
+    loaded: &[u8],
+    duration: u32,
+    changed_backend: bool,
+    expected_anchor: bool,
+) {
+    let mut j = singleton_hunt(-30, 600);
+    j.load(&loc_config(Some((
+        crate::testkit::MPRIME_OLD,
+        crate::testkit::YCRUNCHER_OLD,
+    ))));
+    let backend = workloads(Regime::R7)[workload].backend;
+    let old = match backend {
+        togi_machine::Backend::Mprime => crate::testkit::MPRIME_OLD,
+        togi_machine::Backend::Ycruncher => crate::testkit::YCRUNCHER_OLD,
+    };
+    // These class variants need not be schedulable parts of the current cycle.
+    for _ in 0..5 {
+        j.carry_under(
+            SESSION,
+            (Regime::R7, workload, loaded, duration),
+            Condition::Together,
+            &[-30, -30, 0, 0],
+            Outcome::Pass,
+            Some((backend, old)),
         );
-        j.decide(decision(&stopped.action).clone());
-        for _ in 0..if interior { 5 } else { 2 } {
-            let plan = j.next_trial();
-            j.loc_finish(&plan, Outcome::Pass, &R7Report::default());
-            j.assert_resumes();
-        }
-        if interior {
-            let next = j.loc_act();
-            assert_eq!(hunt_group(&next).probe.unwrap().offset, off(-29));
-            j.decide(decision(&next).clone());
-            let plan = j.next_trial();
-            j.loc_finish(&plan, Outcome::Inconclusive, &R7Report::default());
-            j.assert_resumes();
-        }
-        j.reset(2);
-        let cancel = j.loc_act();
-        assert_eq!(hunt_end(&cancel).result, HuntOutcome::Cancelled);
-        j.decide(decision(&cancel).clone());
-        assert_eq!(j.run().hunt_next(), None);
-        assert_eq!(at(&j.r7_plan(&[0, 1], &values(j.offsets())), 2), -30);
+    }
+    if changed_backend {
+        j.load(&loc_config(Some((
+            crate::testkit::MPRIME_NEW,
+            crate::testkit::YCRUNCHER_NEW,
+        ))));
+    }
+    let stopped = j.loc_run_until(
+        |plan| fails_as(at(plan, 2) < -22, Verdict::Unnamed),
+        |group| group.stage == HuntStage::Probe,
+    );
+    assert_eq!(
+        hunt_group(&stopped.action).probe.unwrap().offset,
+        off(if expected_anchor { 0 } else { -29 })
+    );
+    j.assert_resumes();
+}
+
+#[test_case::test_case(false; "not interior")]
+#[test_case::test_case(true; "interior")]
+fn reset_cancels_singleton_anchor_acquisition_and_interior_probes(interior: bool) {
+    let mut j = singleton_hunt(-30, 600);
+    let stopped = j.loc_run_until(
+        |plan| fails_as(at(plan, 2) < -22, Verdict::Unnamed),
+        |group| group.stage == HuntStage::Probe,
+    );
+    j.decide(decision(&stopped.action).clone());
+    for _ in 0..if interior { 5 } else { 2 } {
+        let plan = j.next_trial();
+        j.loc_finish(&plan, Outcome::Pass, &R7Report::default());
         j.assert_resumes();
     }
+    if interior {
+        let next = j.loc_act();
+        assert_eq!(hunt_group(&next).probe.unwrap().offset, off(-29));
+        j.decide(decision(&next).clone());
+        let plan = j.next_trial();
+        j.loc_finish(&plan, Outcome::Inconclusive, &R7Report::default());
+        j.assert_resumes();
+    }
+    j.reset(2);
+    let cancel = j.loc_act();
+    assert_eq!(hunt_end(&cancel).result, HuntOutcome::Cancelled);
+    j.decide(decision(&cancel).clone());
+    assert_eq!(j.run().hunt_next(), None);
+    assert_eq!(at(&j.r7_plan(&[0, 1], &values(j.offsets())), 2), -30);
+    j.assert_resumes();
 }
 
 #[test]

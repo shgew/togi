@@ -361,7 +361,7 @@ fn a_start_that_fails_to_launch_returns_an_incomplete_restoration_with_its_error
             let restored = retry_line(counts);
             assert!(
                 matches!(joined.errors(), [Error::Launch { .. }, Error::Output(output)]
-                if output.diagnostics() == [restored.clone()]),
+                if output.diagnostics() == [restored]),
                 "{:?}",
                 joined.errors()
             );

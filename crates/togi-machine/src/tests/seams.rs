@@ -18,14 +18,11 @@ fn waiter_on_descendant_wakes_when_an_ancestor_is_cancelled_after_intermediates_
     let parent = CancellationToken::new();
     let descendant = parent.child_token().child_token();
     let (started, ready) = std::sync::mpsc::channel();
-    let waiter = {
-        let descendant = descendant.clone();
-        std::thread::spawn(move || {
-            started.send(()).unwrap();
-            descendant.wait();
-            descendant.is_cancelled()
-        })
-    };
+    let waiter = std::thread::spawn(move || {
+        started.send(()).unwrap();
+        descendant.wait();
+        descendant.is_cancelled()
+    });
     ready.recv().unwrap();
     parent.cancel();
     assert!(waiter.join().unwrap());
@@ -292,10 +289,7 @@ fn dropping_a_guard_waits_for_a_callback_a_concurrent_cancel_already_claimed() {
         release_rx.recv().unwrap();
         work_done.store(true, Ordering::SeqCst);
     });
-    let canceller = {
-        let token = token.clone();
-        std::thread::spawn(move || token.cancel())
-    };
+    let canceller = std::thread::spawn(move || token.cancel());
     started_rx.recv().unwrap();
     let observed_done = Arc::clone(&finished);
     let (waiting_tx, waiting_rx) = std::sync::mpsc::channel();

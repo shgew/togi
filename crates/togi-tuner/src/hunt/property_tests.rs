@@ -518,27 +518,27 @@ fn probing(redundant: usize, settled_probes: usize) -> (Journal, u64, crate::Act
     (j, visits, action)
 }
 
-#[test]
-fn hunt_cost_distinct_probes() {
-    for settled_probes in [2, 3, 4] {
-        let (small, small_visits, small_next) = probing(3, settled_probes);
-        let (large, large_visits, large_next) = probing(300, settled_probes);
-        assert!(small_visits > 0);
-        assert_eq!(small_visits, large_visits, "{settled_probes} probes");
-        let probe_of = |action: &Action| {
-            let Action::Decide(DecisionAction {
-                payload: DecisionPayload::HuntGroup(group),
-                ..
-            }) = action
-            else {
-                panic!("expected the next probe group, got {action:?}");
-            };
-            (group.probe, group.profile)
+#[test_case::test_case(2; "2")]
+#[test_case::test_case(3; "3")]
+#[test_case::test_case(4; "4")]
+fn hunt_cost_distinct_probes(settled_probes: usize) {
+    let (small, small_visits, small_next) = probing(3, settled_probes);
+    let (large, large_visits, large_next) = probing(300, settled_probes);
+    assert!(small_visits > 0);
+    assert_eq!(small_visits, large_visits, "{settled_probes} probes");
+    let probe_of = |action: &Action| {
+        let Action::Decide(DecisionAction {
+            payload: DecisionPayload::HuntGroup(group),
+            ..
+        }) = action
+        else {
+            panic!("expected the next probe group, got {action:?}");
         };
-        assert_eq!(probe_of(&small_next), probe_of(&large_next));
-        assert_eq!(
-            small.run().hunt_groups().len(),
-            large.run().hunt_groups().len()
-        );
-    }
+        (group.probe, group.profile)
+    };
+    assert_eq!(probe_of(&small_next), probe_of(&large_next));
+    assert_eq!(
+        small.run().hunt_groups().len(),
+        large.run().hunt_groups().len()
+    );
 }

@@ -132,7 +132,7 @@ mod tests {
                 '\r' => "\\r".to_owned(),
                 _ => format!("\\x{value:02x}"),
             };
-            assert_eq!(text(&character.to_string()), expected);
+            assert_eq!(text(&character.to_string()), expected, "U+{value:04X}");
         }
         assert_eq!(text("\x7f"), "\\x7f");
     }
@@ -141,7 +141,11 @@ mod tests {
     fn every_c1_control_uses_four_digit_escapes() {
         for value in 0x80u32..=0x9f {
             let character = char::from_u32(value).unwrap();
-            assert_eq!(text(&character.to_string()), format!("\\u{value:04x}"));
+            assert_eq!(
+                text(&character.to_string()),
+                format!("\\u{value:04x}"),
+                "U+{value:04X}"
+            );
         }
     }
 

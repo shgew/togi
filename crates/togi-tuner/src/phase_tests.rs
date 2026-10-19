@@ -6,63 +6,52 @@ use crate::testkit::{Journal, Start};
 use crate::tests::{core, off};
 use crate::{Action, DecisionAction, DecisionPayload};
 
-#[test]
-fn search_exit_starts_one_count_shallower_than_the_solo_limit() {
-    let cases: [(&str, i64, Option<i64>, i64, &str); 4] = [
-        (
-            "interior",
-            -20,
-            Some(-21),
-            -19,
-            "one count shallower than the solo limit -20 (margin)",
-        ),
-        ("floor", -50, None, -49, "checking starts at -49"),
-        ("zero", 0, None, 0, "checking starts at 0"),
-        (
-            "failure point two counts deeper",
-            -20,
-            Some(-22),
-            -19,
-            "margin",
-        ),
-    ];
-    for (name, solo, fail, start, reason) in cases {
-        let mut begin = Start::search(solo).checking();
-        begin.fail = fail;
-        let mut j = Journal::new(&[0], &[begin]);
-        let seen = j.run_until(
-            200,
-            |_| Outcome::Pass,
-            |action| {
-                matches!(action, Action::Decide(DecisionAction {
+#[test_case::test_case("interior", -20, Some(-21), -19, "one count shallower than the solo limit -20 (margin)"; "interior")]
+#[test_case::test_case("floor", -50, None, -49, "checking starts at -49"; "floor")]
+#[test_case::test_case("zero", 0, None, 0, "checking starts at 0"; "zero")]
+#[test_case::test_case("failure point two counts deeper", -20, Some(-22), -19, "margin"; "failure point two counts deeper")]
+fn search_exit_starts_one_count_shallower_than_the_solo_limit(
+    name: &str,
+    solo: i64,
+    fail: Option<i64>,
+    start: i64,
+    reason: &str,
+) {
+    let mut begin = Start::search(solo).checking();
+    begin.fail = fail;
+    let mut j = Journal::new(&[0], &[begin]);
+    let seen = j.run_until(
+        200,
+        |_| Outcome::Pass,
+        |action| {
+            matches!(action, Action::Decide(DecisionAction {
                     payload: DecisionPayload::CorePhase(phase), ..
                 }) if phase.to != CorePhase::Search)
-            },
-        );
-        let Some(Action::Decide(DecisionAction {
-            payload: DecisionPayload::CorePhase(exit),
-            ..
-        })) = seen.last()
-        else {
-            panic!("{name}: the core never left search");
-        };
-        assert_eq!(exit.offset.get(), start, "{name}");
-        assert_eq!(
-            exit.pass.map(togi_machine::TargetOffset::get),
-            Some(solo),
-            "{name}"
-        );
-        assert_eq!(exit.to, CorePhase::HasRoom, "{name}");
-        assert!(exit.reason.contains(reason), "{name}: {}", exit.reason);
-        assert_eq!(
-            j.run()
-                .core(core(0))
-                .phase
-                .solo_limit()
-                .map(togi_machine::TargetOffset::get),
-            Some(solo)
-        );
-    }
+        },
+    );
+    let Some(Action::Decide(DecisionAction {
+        payload: DecisionPayload::CorePhase(exit),
+        ..
+    })) = seen.last()
+    else {
+        panic!("{name}: the core never left search");
+    };
+    assert_eq!(exit.offset.get(), start, "{name}");
+    assert_eq!(
+        exit.pass.map(togi_machine::TargetOffset::get),
+        Some(solo),
+        "{name}"
+    );
+    assert_eq!(exit.to, CorePhase::HasRoom, "{name}");
+    assert!(exit.reason.contains(reason), "{name}: {}", exit.reason);
+    assert_eq!(
+        j.run()
+            .core(core(0))
+            .phase
+            .solo_limit()
+            .map(togi_machine::TargetOffset::get),
+        Some(solo)
+    );
 }
 
 #[test]
@@ -184,87 +173,41 @@ fn a_cycle_cannot_pass_before_a_profile_change() {
     assert_eq!(j.state.next().ok(), None);
 }
 
-#[test]
-fn phase2_moves() {
-    struct Case {
-        name: &'static str,
-        starts: Vec<Start>,
-        combination: Option<Vec<(u8, i64)>>,
-        moved: Vec<u8>,
-        want: Vec<i64>,
-    }
-    let from_search = |offset: i64, pass: i64, fail: i64| Start {
+#[test_case::test_case("one count each toward the solo limit", &[Start::solo(-10, -13), Start::solo(-8, -9)], None, &[0, 1], &[-11, -9]; "one count each toward the solo limit")]
+#[test_case::test_case("a core at its solo limit stays", &[Start::solo(-10, -10), Start::solo(-8, -9)], None, &[1], &[-10, -9]; "a core at its solo limit stays")]
+#[test_case::test_case("a failure point at the next count blocks", &[Start {
         from: Some(CorePhase::Search),
-        ..Start::has_room(offset).pass(pass).fail(fail)
-    };
-    let cases = vec![
-        Case {
-            name: "one count each toward the solo limit",
-            starts: vec![Start::solo(-10, -13), Start::solo(-8, -9)],
-            combination: None,
-            moved: vec![0, 1],
-            want: vec![-11, -9],
-        },
-        Case {
-            name: "a core at its solo limit stays",
-            starts: vec![Start::solo(-10, -10), Start::solo(-8, -9)],
-            combination: None,
-            moved: vec![1],
-            want: vec![-10, -9],
-        },
-        Case {
-            name: "a failure point at the next count blocks",
-            starts: vec![from_search(-10, -12, -11), Start::solo(-8, -9)],
-            combination: None,
-            moved: vec![1],
-            want: vec![-10, -9],
-        },
-        Case {
-            name: "a combination blocks only the second member",
-            starts: vec![Start::solo(-10, -12), Start::solo(-10, -12)],
-            combination: Some(vec![(0, -11), (1, -11)]),
-            moved: vec![0],
-            want: vec![-11, -10],
-        },
-        Case {
-            name: "a core with no recorded solo limit is no candidate",
-            starts: vec![Start::has_room(-10).pass(-12)],
-            combination: None,
-            moved: vec![],
-            want: vec![-10],
-        },
-        Case {
-            name: "a multi-count gap moves one count toward its failure point plus one",
-            starts: vec![from_search(-5, -12, -13)],
-            combination: None,
-            moved: vec![0],
-            want: vec![-6],
-        },
-        Case {
-            name: "solo limit zero is no candidate",
-            starts: vec![Start::solo(0, 0)],
-            combination: None,
-            moved: vec![],
-            want: vec![0],
-        },
-    ];
-    for case in cases {
-        let ids: Vec<u8> = (0..case.starts.len())
-            .map(|id| u8::try_from(id).unwrap())
-            .collect();
-        let mut j = Journal::new(&ids, &case.starts);
-        if let Some(members) = &case.combination {
-            j.combination(1, members);
-        }
-        let run = j.run();
-        let moves = run
-            .phase2_moves(&run.offsets(), run.phases.passed())
-            .unwrap();
-        assert_eq!(moves.profile, j.profile(&case.want), "{}", case.name);
-        let moved: Vec<_> = case.moved.iter().map(|&id| core(id)).collect();
-        assert_eq!(moves.moved, moved, "{}", case.name);
-        assert!(moves.carried.is_empty(), "{}", case.name);
+        ..Start::has_room(-10).pass(-12).fail(-11)
+    }, Start::solo(-8, -9)], None, &[1], &[-10, -9]; "a failure point at the next count blocks")]
+#[test_case::test_case("a combination blocks only the second member", &[Start::solo(-10, -12), Start::solo(-10, -12)], Some(&[(0, -11), (1, -11)]), &[0], &[-11, -10]; "a combination blocks only the second member")]
+#[test_case::test_case("a core with no recorded solo limit is no candidate", &[Start::has_room(-10).pass(-12)], None, &[], &[-10]; "a core with no recorded solo limit is no candidate")]
+#[test_case::test_case("a multi-count gap moves one count toward its failure point plus one", &[Start {
+        from: Some(CorePhase::Search),
+        ..Start::has_room(-5).pass(-12).fail(-13)
+    }], None, &[0], &[-6]; "a multi-count gap moves one count toward its failure point plus one")]
+#[test_case::test_case("solo limit zero is no candidate", &[Start::solo(0, 0)], None, &[], &[0]; "solo limit zero is no candidate")]
+fn phase2_moves(
+    name: &'static str,
+    starts: &[Start],
+    combination: Option<&[(u8, i64)]>,
+    moved: &[u8],
+    want: &[i64],
+) {
+    let ids: Vec<u8> = (0..starts.len())
+        .map(|id| u8::try_from(id).unwrap())
+        .collect();
+    let mut j = Journal::new(&ids, starts);
+    if let Some(members) = combination {
+        j.combination(1, members);
     }
+    let run = j.run();
+    let moves = run
+        .phase2_moves(&run.offsets(), run.phases.passed())
+        .unwrap();
+    assert_eq!(moves.profile, j.profile(want), "{name}");
+    let moved: Vec<_> = moved.iter().map(|&id| core(id)).collect();
+    assert_eq!(moves.moved, moved, "{name}");
+    assert!(moves.carried.is_empty(), "{name}");
 }
 
 #[test]

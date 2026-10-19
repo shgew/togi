@@ -147,12 +147,16 @@ pub(crate) fn follow<R: Replay>(sessions: &[Session], anchor: &Anchor) -> Result
             status: scan.status,
             hours: scan.time.total.as_secs_f64() / 3600.0,
             crashes: scan.crashes,
-            hunts: u32::try_from(scan.hunts.len()).unwrap_or(u32::MAX),
+            hunts: saturating_hunt_count(scan.hunts.len()),
             profile,
             depth,
         },
         builds: scan.builds,
     })
+}
+
+fn saturating_hunt_count(count: usize) -> u32 {
+    u32::try_from(count).unwrap_or(u32::MAX)
 }
 
 fn baseline(state: &State) -> PerCore<ObservedOffset> {
@@ -468,5 +472,20 @@ impl RunTime {
         self.last = event.time;
         self.boot.clone_from(&event.boot);
         self.after = After::of(&event.payload);
+    }
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::saturating_hunt_count;
+    use test_case::test_case;
+
+    #[test_case(0, 0; "zero")]
+    #[test_case(1, 1; "one")]
+    #[test_case(u32::MAX as usize, u32::MAX; "largest exact count")]
+    #[cfg_attr(target_pointer_width = "64", test_case(u32::MAX as usize + 1, u32::MAX; "first saturated count"))]
+    #[test_case(usize::MAX, u32::MAX; "largest platform count")]
+    fn hunt_counts_saturate(count: usize, expected: u32) {
+        assert_eq!(saturating_hunt_count(count), expected);
     }
 }

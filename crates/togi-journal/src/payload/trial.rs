@@ -36,7 +36,7 @@ impl std::fmt::Display for TrialId {
 }
 
 object_only! {
-    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct TrialIntent {
         pub trial: TrialId,
@@ -197,7 +197,7 @@ object_only! {
 }
 
 object_only! {
-    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct Failure {
         pub signal: Signal,
@@ -334,7 +334,7 @@ object_only! {
 }
 
 object_only! {
-    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct FailureCarried {
         pub source: FactSource,

@@ -11,6 +11,14 @@ pub enum Error {
     NotStarted,
     #[error("the session's cores")]
     Topology(#[from] TopologyError),
+    #[error("convert recorded boot uptime")]
+    BootDuration(#[source] jiff::Error),
+    #[error("reconstruct recorded boot start")]
+    BootStart(#[source] jiff::Error),
+    #[error("convert recorded conclusion elapsed time")]
+    Elapsed(#[source] jiff::Error),
+    #[error("convert recorded checking-step count")]
+    CheckingSteps(#[source] std::num::TryFromIntError),
     #[error(transparent)]
     Forecast(#[from] togi_tool_forecast::Error),
     #[error("score forecast {path}")]

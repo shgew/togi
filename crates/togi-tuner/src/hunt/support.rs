@@ -203,85 +203,103 @@ impl ProjectionCase {
 }
 
 /// The scenarios the dashboard's hunt plan and the hunt's group view must both show.
-pub(crate) fn projection_cases() -> Vec<ProjectionCase> {
-    let base = || ProjectionCase {
-        name: "",
-        stage: HuntStage::Part,
-        prior: 0,
-        live: Vec::new(),
-        inferred: None,
-        skipped: false,
-        reset: false,
-        escalated: false,
-        probe: None,
-        held: Vec::new(),
-        passes: 0,
-        outcome: None,
-    };
-    vec![
-        ProjectionCase {
-            name: "running reuses earlier valid passes",
+impl ProjectionCase {
+    fn base(name: &'static str) -> Self {
+        Self {
+            name,
+            stage: HuntStage::Part,
+            prior: 0,
+            live: Vec::new(),
+            inferred: None,
+            skipped: false,
+            reset: false,
+            escalated: false,
+            probe: None,
+            held: Vec::new(),
+            passes: 0,
+            outcome: None,
+        }
+    }
+
+    pub(crate) fn running_reuses_passes() -> Self {
+        Self {
             prior: 2,
             live: vec![false],
             passes: 3,
-            ..base()
-        },
-        ProjectionCase {
-            name: "passing complement accumulates trials",
+            ..Self::base("running reuses earlier valid passes")
+        }
+    }
+
+    pub(crate) fn passing_complement() -> Self {
+        Self {
             stage: HuntStage::Complement,
             prior: 4,
             live: vec![false],
             passes: 5,
             outcome: Some(GroupOutcome::Passed),
-            ..base()
-        },
-        ProjectionCase {
-            name: "failure invalidates earlier passes",
+            ..Self::base("passing complement accumulates trials")
+        }
+    }
+
+    pub(crate) fn failure_invalidates_passes() -> Self {
+        Self {
             prior: 2,
             live: vec![true],
             outcome: Some(GroupOutcome::Failed),
-            ..base()
-        },
-        ProjectionCase {
-            name: "inferred pass",
+            ..Self::base("failure invalidates earlier passes")
+        }
+    }
+
+    pub(crate) fn inferred_pass() -> Self {
+        Self {
             prior: 5,
             inferred: Some(Inference::Pass),
             passes: 5,
             outcome: Some(GroupOutcome::Passed),
-            ..base()
-        },
-        ProjectionCase {
-            name: "inferred failure",
+            ..Self::base("inferred pass")
+        }
+    }
+
+    pub(crate) fn inferred_failure() -> Self {
+        Self {
             stage: HuntStage::Complement,
             inferred: Some(Inference::Failure),
             outcome: Some(GroupOutcome::Failed),
-            ..base()
-        },
-        ProjectionCase {
-            name: "skipped",
+            ..Self::base("inferred failure")
+        }
+    }
+
+    pub(crate) fn skipped() -> Self {
+        Self {
             skipped: true,
             outcome: Some(GroupOutcome::Skipped),
-            ..base()
-        },
-        ProjectionCase {
-            name: "reset excludes reused evidence",
+            ..Self::base("skipped")
+        }
+    }
+
+    pub(crate) fn reset_excludes_passes() -> Self {
+        Self {
             prior: 4,
             reset: true,
             live: vec![false],
             passes: 1,
-            ..base()
-        },
-        ProjectionCase {
-            name: "escalated full uses only new trials",
+            ..Self::base("reset excludes reused evidence")
+        }
+    }
+
+    pub(crate) fn escalated_full() -> Self {
+        Self {
             stage: HuntStage::Full,
             prior: 4,
             live: vec![false],
             escalated: true,
             passes: 1,
-            ..base()
-        },
-        ProjectionCase {
-            name: "member probe preserves held members",
+            ..Self::base("escalated full uses only new trials")
+        }
+    }
+
+    pub(crate) fn member_probe() -> Self {
+        Self {
             stage: HuntStage::Probe,
             prior: 4,
             live: vec![false],
@@ -291,9 +309,9 @@ pub(crate) fn projection_cases() -> Vec<ProjectionCase> {
             }),
             held: members_of(&[(1, -30)]),
             passes: 1,
-            ..base()
-        },
-    ]
+            ..Self::base("member probe preserves held members")
+        }
+    }
 }
 
 /// Appends hunt `hunt` for a `regime` failure loading `loaded` at `failing`.

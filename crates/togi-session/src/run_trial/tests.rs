@@ -1171,7 +1171,7 @@ fn unreadable_samples_warn_and_omit_all_sample_fields_without_changing_the_outco
     let mut rig = rigged(Bench::new(2));
     {
         let mut rigs = rig.rigs.borrow_mut();
-        rigs.samples_file = Some((bytes.clone(), compressed));
+        rigs.samples_file = Some((bytes, compressed));
         rigs.result = Some(TrialResult {
             ran: full_run(),
             tctl_max_c: Some(77),
@@ -1613,7 +1613,7 @@ fn whole(faults: Faults, rigging: impl FnOnce(&mut Rigging)) -> Whole {
     }
     {
         let mut rigs = rigs.borrow_mut();
-        let (mem, flag) = (bench.mem.clone(), armed.clone());
+        let (mem, flag) = (bench.mem.clone(), armed);
         rigs.on_start = Some(Rc::new(move || {
             flag.set(true);
             if let Some(nth) = faults.write_at_start {

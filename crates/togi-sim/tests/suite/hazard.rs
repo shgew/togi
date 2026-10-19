@@ -251,6 +251,20 @@ fn a_source_names_its_random_domain() {
     assert_eq!(source(SourceKind::Background).domain(), Domain::Background);
 }
 
+#[cfg(target_pointer_width = "64")]
+#[test_case(u64::from(u32::MAX) - 1; "below the old key limit")]
+#[test_case(u64::from(u32::MAX); "at the old key limit")]
+#[test_case(u64::from(u32::MAX) + 1; "above the old key limit")]
+#[test_case(u64::MAX; "largest platform index")]
+fn joint_domains_preserve_the_whole_index(index: u64) {
+    let source = HazardSource {
+        kind: SourceKind::Joint(usize::from_ne_bytes(index.to_ne_bytes())),
+        rate: 1.0,
+        after_s: 0.0,
+    };
+    assert_eq!(source.domain(), togi_sim::random::Domain::Joint(index));
+}
+
 #[test]
 fn sources_sum_to_the_steady_hazard_and_scale_to_the_probability() {
     let mut definition = machine(4, flat_cores(4, -30, -25));

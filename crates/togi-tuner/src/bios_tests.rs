@@ -120,37 +120,35 @@ const HOLDS: [HoldCase; 2] = [
     },
 ];
 
-#[test]
-fn bios_profile_shows_a_held_failure_stepped_back_at_once() {
-    for case in &HOLDS {
-        let mut j = later_session(case.offsets);
-        let confirmed = j.run().bios_profile().confirmed.unwrap().seq;
-        start_cycle(&mut j);
-        let hold = (case.hold)(&mut j);
-        assert_shown(&j, case.shown, confirmed, case.unconfirmed, Some(hold));
-        assert_eq!(
-            crate::later_tests::current(&j),
-            case.offsets,
-            "{}: a hold moved a core",
-            case.name
-        );
-        j.assert_resumes();
-    }
+#[test_case::test_case(&HOLDS[0]; "attributed")]
+#[test_case::test_case(&HOLDS[1]; "idle")]
+fn bios_profile_shows_a_held_failure_stepped_back_at_once(case: &HoldCase) {
+    let mut j = later_session(case.offsets);
+    let confirmed = j.run().bios_profile().confirmed.unwrap().seq;
+    start_cycle(&mut j);
+    let hold = (case.hold)(&mut j);
+    assert_shown(&j, case.shown, confirmed, case.unconfirmed, Some(hold));
+    assert_eq!(
+        crate::later_tests::current(&j),
+        case.offsets,
+        "{}: a hold moved a core",
+        case.name
+    );
+    j.assert_resumes();
 }
 
-#[test]
-fn bios_profile_returns_to_the_held_offset_when_the_hold_expires() {
-    for case in &HOLDS {
-        let mut j = later_session(case.offsets);
-        start_cycle(&mut j);
-        let hold = (case.hold)(&mut j);
-        end_cycle(&mut j);
-        let last = pass_cycles(&mut j, WINDOW - 1);
-        assert_shown(&j, case.shown, last, case.unconfirmed, Some(hold));
-        start_cycle(&mut j);
-        assert_shown(&j, case.offsets, last, &[], None);
-        j.assert_resumes();
-    }
+#[test_case::test_case(&HOLDS[0]; "attributed")]
+#[test_case::test_case(&HOLDS[1]; "idle")]
+fn bios_profile_returns_to_the_held_offset_when_the_hold_expires(case: &HoldCase) {
+    let mut j = later_session(case.offsets);
+    start_cycle(&mut j);
+    let hold = (case.hold)(&mut j);
+    end_cycle(&mut j);
+    let last = pass_cycles(&mut j, WINDOW - 1);
+    assert_shown(&j, case.shown, last, case.unconfirmed, Some(hold));
+    start_cycle(&mut j);
+    assert_shown(&j, case.offsets, last, &[], None);
+    j.assert_resumes();
 }
 
 #[test]
@@ -179,53 +177,51 @@ fn bios_profile_shows_a_multi_count_r7_hold_at_the_voltage_target() {
     j.assert_resumes();
 }
 
-#[test]
-fn bios_profile_follows_the_actual_step_back_at_a_second_failure() {
-    struct Case {
-        name: &'static str,
-        hold: fn(&mut Journal) -> Seq,
-        second: u8,
-        before: [i64; 2],
-        before_marked: &'static [u8],
-        after: [i64; 2],
-    }
-    for case in [
-        Case {
+#[derive(Clone, Copy)]
+struct SecondFailure {
+    name: &'static str,
+    hold: fn(&mut Journal) -> Seq,
+    second: u8,
+    before: [i64; 2],
+    before_marked: &'static [u8],
+    after: [i64; 2],
+}
+
+#[test_case::test_case(SecondFailure {
             name: "same core",
             hold: hold_attributed,
             second: 0,
             before: [-9, -12],
             before_marked: &[0],
             after: [-9, -12],
-        },
-        Case {
+        }; "same core")]
+#[test_case::test_case(SecondFailure {
             name: "attributed failure pairs with a held unattributed one",
             hold: hold_unattributed,
             second: 1,
             before: [-9, -11],
             before_marked: &[0, 1],
             after: [-10, -11],
-        },
-    ] {
-        let mut j = later_session(&[-10, -12]);
-        let confirmed = j.run().bios_profile().confirmed.unwrap().seq;
-        start_cycle(&mut j);
-        let hold = (case.hold)(&mut j);
-        fail_core(&mut j, case.second);
-        assert_shown(&j, &case.before, confirmed, case.before_marked, Some(hold));
-        let (step, _) = next(&j);
-        assert!(
-            !is_hold(&step)
-                && step.core == core(case.second)
-                && step.to_offset.get() > step.from_offset.get(),
-            "{}: {step:?}",
-            case.name
-        );
-        let action = j.next_decision();
-        let at = j.decide(action);
-        assert_shown(&j, &case.after, confirmed, &[case.second], Some(at));
-        j.assert_resumes();
-    }
+        }; "attributed failure pairs with a held unattributed one")]
+fn bios_profile_follows_the_actual_step_back_at_a_second_failure(case: SecondFailure) {
+    let mut j = later_session(&[-10, -12]);
+    let confirmed = j.run().bios_profile().confirmed.unwrap().seq;
+    start_cycle(&mut j);
+    let hold = (case.hold)(&mut j);
+    fail_core(&mut j, case.second);
+    assert_shown(&j, &case.before, confirmed, case.before_marked, Some(hold));
+    let (step, _) = next(&j);
+    assert!(
+        !is_hold(&step)
+            && step.core == core(case.second)
+            && step.to_offset.get() > step.from_offset.get(),
+        "{}: {step:?}",
+        case.name
+    );
+    let action = j.next_decision();
+    let at = j.decide(action);
+    assert_shown(&j, &case.after, confirmed, &[case.second], Some(at));
+    j.assert_resumes();
 }
 
 #[test]
@@ -477,54 +473,51 @@ fn a_paired_hunts_direct_backoff_shows_before_it_is_recorded() {
 /// A hunt end and the members it names failing together.
 type EndCase<'a> = (&'a str, HuntOutcome, &'a [(u8, i64)]);
 
-#[test]
-fn the_shown_profile_never_reaches_what_a_paired_hunt_found_failing_while_its_commitment_is_pending()
- {
-    let both = [(0, -10), (1, -12)];
-    let cases: [EndCase<'_>; 3] = [
-        ("culprit", HuntOutcome::Culprit, &[(0, -10)]),
-        (
+#[test_case::test_case(("culprit", HuntOutcome::Culprit, &[(0, -10)]); "culprit")]
+#[test_case::test_case((
             "combination with probed members",
             HuntOutcome::Combination,
             &[(0, -9), (1, -11)],
-        ),
-        ("fallback combination", HuntOutcome::Fallback, &both),
-    ];
-    for (name, result, failing) in cases {
-        let (mut j, _, start) = paired_hunt();
-        match result {
-            HuntOutcome::Culprit => {
-                hunt_end(&mut j, start, result, &[0]);
-            }
-            HuntOutcome::Fallback => {
-                hunt_end(&mut j, start, result, &[0, 1]);
-            }
-            HuntOutcome::Cancelled
-            | HuntOutcome::Direct
-            | HuntOutcome::Combination
-            | HuntOutcome::Loaded => {
-                let end = run_paired_hunt(&mut j, |p| p[0] <= -9 && p[1] <= -11);
-                assert_eq!(end.result, result, "{name}");
-            }
+        ); "combination with probed members")]
+#[test_case::test_case(("fallback combination", HuntOutcome::Fallback, &[(0, -10), (1, -12)]); "fallback combination")]
+fn the_shown_profile_never_reaches_what_a_paired_hunt_found_failing_while_its_commitment_is_pending(
+    (name, result, failing): EndCase<'_>,
+) {
+    let both = [(0, -10), (1, -12)];
+
+    let (mut j, _, start) = paired_hunt();
+    match result {
+        HuntOutcome::Culprit => {
+            hunt_end(&mut j, start, result, &[0]);
         }
-        assert_shown_avoids(&j, &format!("{name}: after hunt.end"), failing);
-        if result != HuntOutcome::Culprit {
-            let combination = j.next_decision();
-            assert!(
-                matches!(combination.payload, DecisionPayload::Combination(_)),
-                "{name}: {combination:?}"
-            );
-            j.decide(combination);
-            assert_shown_avoids(&j, &format!("{name}: after the combination"), failing);
+        HuntOutcome::Fallback => {
+            hunt_end(&mut j, start, result, &[0, 1]);
         }
-        let (back, cause) = next(&j);
-        assert_eq!(back.activity, Activity::Hunt, "{name}");
-        assert!(back.to_offset.shallower_than(back.from_offset), "{name}");
-        j.decide(crate::DecisionAction::new(back, cause));
-        assert!(j.run().hunts.active.is_none(), "{name}");
-        assert_shown_avoids(&j, &format!("{name}: after the commitment"), failing);
-        j.assert_resumes();
+        HuntOutcome::Cancelled
+        | HuntOutcome::Direct
+        | HuntOutcome::Combination
+        | HuntOutcome::Loaded => {
+            let end = run_paired_hunt(&mut j, |p| p[0] <= -9 && p[1] <= -11);
+            assert_eq!(end.result, result, "{name}");
+        }
     }
+    assert_shown_avoids(&j, &format!("{name}: after hunt.end"), failing);
+    if result != HuntOutcome::Culprit {
+        let combination = j.next_decision();
+        assert!(
+            matches!(combination.payload, DecisionPayload::Combination(_)),
+            "{name}: {combination:?}"
+        );
+        j.decide(combination);
+        assert_shown_avoids(&j, &format!("{name}: after the combination"), failing);
+    }
+    let (back, cause) = next(&j);
+    assert_eq!(back.activity, Activity::Hunt, "{name}");
+    assert!(back.to_offset.shallower_than(back.from_offset), "{name}");
+    j.decide(crate::DecisionAction::new(back, cause));
+    assert!(j.run().hunts.active.is_none(), "{name}");
+    assert_shown_avoids(&j, &format!("{name}: after the commitment"), failing);
+    j.assert_resumes();
 
     let (mut j, _, _) = paired_hunt();
     parked_failure(&mut j, 1, -11, &[-9, -11]);
@@ -727,22 +720,21 @@ fn an_observed_hunt_failure_steps_only_the_cores_it_held() {
     panic!("the hunt never ran its member probe");
 }
 
-#[test]
-fn a_direct_hunt_failure_previews_its_safe_backoff_before_hunt_end() {
-    for (failing, shown) in [(-11, [-9, -10]), (-15, [-9, -11])] {
-        let (mut j, hold, _) = paired_hunt();
-        let confirmed = confirmed_seq(&j);
-        parked_failure(&mut j, 1, failing, &[-9, failing]);
-        let before = j.state.clone();
-        let end = j.next_decision();
-        assert!(
-            matches!(&end.payload, DecisionPayload::HuntEnd(end) if end.result == HuntOutcome::Direct)
-        );
-        assert_shown(&j, &shown, confirmed, &[0, 1], Some(hold));
-        assert_eq!(current_of(&j.offsets()), [-10, -12]);
-        assert_eq!(j.state, before);
-        j.assert_resumes();
-    }
+#[test_case::test_case(-11, [-9, -10]; "(-11, [-9, -10])")]
+#[test_case::test_case(-15, [-9, -11]; "(-15, [-9, -11])")]
+fn a_direct_hunt_failure_previews_its_safe_backoff_before_hunt_end(failing: i64, shown: [i64; 2]) {
+    let (mut j, hold, _) = paired_hunt();
+    let confirmed = confirmed_seq(&j);
+    parked_failure(&mut j, 1, failing, &[-9, failing]);
+    let before = j.state.clone();
+    let end = j.next_decision();
+    assert!(
+        matches!(&end.payload, DecisionPayload::HuntEnd(end) if end.result == HuntOutcome::Direct)
+    );
+    assert_shown(&j, &shown, confirmed, &[0, 1], Some(hold));
+    assert_eq!(current_of(&j.offsets()), [-10, -12]);
+    assert_eq!(j.state, before);
+    j.assert_resumes();
 }
 
 #[derive(Clone, Copy, Debug)]

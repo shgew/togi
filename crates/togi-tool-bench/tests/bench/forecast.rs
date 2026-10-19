@@ -590,7 +590,7 @@ fn real_process_a_failed_forecast_keeps_only_the_failed_runs_and_says_where() {
         &Fleet::new(),
     )
     .unwrap_err();
-    let kept = failed.kept.clone().unwrap();
+    let kept = failed.kept.unwrap();
     assert_eq!(run_dirs(&kept), ["target/dev-2"]);
     fs::remove_dir_all(kept).unwrap();
 }

@@ -301,42 +301,44 @@ fn together_crash_names_sole_nonzero_core_by_id() {
     );
 }
 
-#[test]
-fn together_multiple_mce_cores_remain_unattributed() {
+#[test_case::test_case(|j, _, p| j.r7_plan(&[0, 1], p), &[0_u8, 1], None; "r7 multiple MCE cores")]
+#[test_case::test_case(r6, &[0, 1], None; "r6 multiple MCE cores")]
+#[test_case::test_case(r6, &[1], Some(core(1)); "r6 single MCE core")]
+fn together_multiple_mce_cores_remain_unattributed(
+    plan: fn(&Journal, &[u8], &[i64]) -> TrialPlan,
+    mces: &[u8],
+    named: Option<CoreId>,
+) {
     let ids = [0, 1, 2, 3];
     let mut j = Journal::on(&ids, pairs(&ids), &[Start::has_room(-12); 4]);
     let change = j.next_decision();
     j.decide(change);
-    for (plan, mces, named) in [
-        (j.r7_plan(&[0, 1], &[-12; 4]), vec![0_u8, 1], None),
-        (r6(&j, &ids, &[-12; 4]), vec![0, 1], None),
-        (r6(&j, &ids, &[-12; 4]), vec![1], Some(core(1))),
-    ] {
-        let (intent, trial) = j.intent(&plan);
-        let seqs: Vec<Seq> = mces
-            .iter()
-            .map(|&id| j.append(mce_of(&trial, id).into(), &[]))
-            .collect();
-        let mut cause = vec![intent];
-        cause.extend(seqs);
-        let end = Journal::end_payload(&trial, Outcome::Failure, Some(Signal::Crash));
-        j.append(end.into(), &cause);
-        let decision = j.next_decision();
-        let DecisionPayload::Failure(failure) = &decision.payload else {
-            panic!("expected a failure, got {decision:?}");
-        };
-        assert_eq!(failure.core, named);
-        assert_eq!(
-            failure.attribution,
-            if named.is_some() {
-                Attribution::Attributed
-            } else {
-                Attribution::Unattributed
-            }
-        );
-        j.decide(decision);
-        j.assert_resumes();
-    }
+
+    let plan = plan(&j, &ids, &[-12; 4]);
+    let (intent, trial) = j.intent(&plan);
+    let seqs: Vec<Seq> = mces
+        .iter()
+        .map(|&id| j.append(mce_of(&trial, id).into(), &[]))
+        .collect();
+    let mut cause = vec![intent];
+    cause.extend(seqs);
+    let end = Journal::end_payload(&trial, Outcome::Failure, Some(Signal::Crash));
+    j.append(end.into(), &cause);
+    let decision = j.next_decision();
+    let DecisionPayload::Failure(failure) = &decision.payload else {
+        panic!("expected a failure, got {decision:?}");
+    };
+    assert_eq!(failure.core, named);
+    assert_eq!(
+        failure.attribution,
+        if named.is_some() {
+            Attribution::Attributed
+        } else {
+            Attribution::Unattributed
+        }
+    );
+    j.decide(decision);
+    j.assert_resumes();
 }
 
 #[test]

@@ -35,7 +35,7 @@ fn cursor_reads_keep_empty_intervals_resumable() {
     let initial = lines(&[entry("first", OLD, "Linux version 6.16", 0)]);
     let status = lines(&[entry("mce", OLD, STATUS, 1_000_000)]);
     let last = lines(&[entry("last", OLD, "ordinary kernel message", 2_000_000)]);
-    let (anchor, mce, tail) = (initial.clone(), status, last.clone());
+    let (anchor, mce, tail) = (initial.clone(), status, last);
     let (mut kernel, calls) = kernel(&[(1, &[2])], move |args| {
         match args.last().map(String::as_str) {
             Some("--cursor=last") => ok(&tail),

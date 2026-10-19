@@ -157,7 +157,7 @@ fn recorded_passes_count_only_under_the_recorded_backends() {
         .collect();
     let core = intents(&events)[0].core;
 
-    let counted = first_action(&stopped.fork(&definition, 1), recorded.clone(), known);
+    let counted = first_action(&stopped.fork(&definition, 1), recorded, known);
     assert_eq!(
         counted,
         (

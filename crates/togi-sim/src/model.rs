@@ -49,7 +49,7 @@ pub struct Params {
     pub onset: Onset,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct JointMember {
     pub core: CoreId,
     pub offset: TargetOffset,
@@ -417,7 +417,7 @@ fn resolve_ccd(ccd: &CcdDef) -> Result<CcdDef, InvalidMachine> {
 }
 
 fn core_id(path: &Path<'_>, value: i64, cores: usize) -> Result<CoreId, InvalidMachine> {
-    let last = i64::try_from(cores).unwrap_or(i64::MAX) - 1;
+    let last = i64::try_from(cores).map_err(|_| path.error(Problem::Overflow))? - 1;
     path.within(value, 0, last)?;
     CoreId::new(value).map_err(|_| {
         path.error(Problem::OutOfRange {

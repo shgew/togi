@@ -1,7 +1,7 @@
 use std::fmt;
 
 /// A machine definition that [`Model::new`](crate::Model::new) refuses, with the field it refuses.
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("{path}: {problem}")]
 pub struct InvalidMachine {
     /// The field path as written in the machine file, such as `joint[2].members.3`.
@@ -9,7 +9,7 @@ pub struct InvalidMachine {
     pub problem: Problem,
 }
 
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Problem {
     #[error("must be finite")]
     NotFinite,

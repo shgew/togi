@@ -25,7 +25,9 @@ impl Files {
             Self::System => read_limited(File::open(path)?, limit, capacity),
             Self::Readers(readers) => {
                 let mut bytes = (readers.read)(path)?;
-                bytes.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+                if let Ok(limit) = usize::try_from(limit) {
+                    bytes.truncate(limit);
+                }
                 Ok(bytes)
             }
         }
@@ -60,7 +62,7 @@ pub(crate) fn read_lossy(files: &Files, path: &Path) -> Result<String, Error> {
     let bytes = files
         .read(path, TEXT_LIMIT + 1, 0)
         .map_err(|source| unreadable(path, source))?;
-    if u64::try_from(bytes.len()).is_ok_and(|len| len > TEXT_LIMIT) {
+    if bytes.len() as u64 > TEXT_LIMIT {
         return Err(too_large(path, TEXT_LIMIT));
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
@@ -148,7 +150,7 @@ fn stanza_from_reader(path: &Path, input: impl Read) -> Result<Stanza, Error> {
             let count = reader
                 .read_until(b'\n', &mut line)
                 .map_err(|source| unreadable(path, source))?;
-            consumed += u64::try_from(count).unwrap_or(u64::MAX);
+            consumed += count as u64;
             if consumed > STANZA_LIMIT {
                 return Err(too_large(path, STANZA_LIMIT));
             }
@@ -159,4 +161,26 @@ fn stanza_from_reader(path: &Path, input: impl Read) -> Result<Stanza, Error> {
         }
     };
     Ok(Stanza::parse(&String::from_utf8_lossy(&read()?)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Files, Readers, read_limited};
+    use std::path::Path;
+    use std::sync::Arc;
+
+    #[test_case::test_case(0, 0; "zero limit")]
+    #[test_case::test_case(3, 3; "exact limit")]
+    #[test_case::test_case(4, 4; "one extra byte")]
+    #[test_case::test_case(u64::MAX, 4; "maximum limit")]
+    fn injected_and_system_readers_share_exact_limits(limit: u64, expected: usize) {
+        let files = Files::Readers(Arc::new(Readers {
+            cpu_names: Vec::new(),
+            read: Arc::new(|_| Ok(b"abcd".to_vec())),
+            write: Arc::new(|_, bytes| Ok(bytes.len())),
+        }));
+        let bytes = b"abcd"[..expected].to_vec();
+        assert_eq!(files.read(Path::new("fixture"), limit, 0).unwrap(), bytes);
+        assert_eq!(read_limited(&b"abcd"[..], limit, 0).unwrap(), bytes);
+    }
 }
