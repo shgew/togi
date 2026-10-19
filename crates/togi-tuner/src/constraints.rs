@@ -139,7 +139,7 @@ impl Constraints {
             cores: topology.all(),
             failure_points: PerCore::default(),
             combinations: Vec::new(),
-            by_core: Default::default(),
+            by_core: PerCore::default(),
             recent: CoreSet::default(),
         }
     }
@@ -278,7 +278,7 @@ impl Constraints {
         }
         self.combinations
             .retain(|combination| !ids.contains(&combination.id));
-        self.by_core = Default::default();
+        self.by_core = PerCore::default();
         for (index, combination) in self.combinations.iter().enumerate() {
             for (member, _) in combination.members.iter() {
                 self.by_core
