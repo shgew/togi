@@ -440,7 +440,6 @@ impl Runtime {
             Signal::CorrectedMce => {
                 let pending = self.mce(rng.random(), failure.core, true);
                 let boot = self.boot_id().clone();
-                self.log_mce(&boot, pending, at)?;
                 if failure.replayed {
                     result.ran = failure.at;
                 }
@@ -449,6 +448,7 @@ impl Runtime {
                         .checked_add(result.ran)
                         .ok_or(ArithmeticError::ClockAdvance)?,
                 )?;
+                self.log_mce(&boot, pending, at)?;
                 count(spec, &mut result);
                 progress(spec, &result, events);
                 Ok(result)

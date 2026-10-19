@@ -887,3 +887,47 @@ fn trial_time_overflow_reaches_the_wait_caller() {
     ));
     assert_eq!(rig.sim.now(), before);
 }
+
+#[test]
+fn a_corrected_mce_trial_refused_at_its_end_leaves_no_future_kernel_event() {
+    let mut rig = Rig::with(
+        model(&machine(2, vec![])),
+        RunSettings {
+            history: History {
+                last_time: Some(jiff::Timestamp::MAX - SignedDuration::from_secs(91)),
+                ..History::default()
+            },
+            ..RunSettings::default()
+        },
+    );
+    rig.sim
+        .script_trial(
+            "0001",
+            togi_sim::model::Script {
+                signal: Some(Signal::CorrectedMce),
+                at_s: 0.5,
+                core: core(0),
+                reset: None,
+                then_crash: false,
+            },
+        )
+        .expect("a script");
+    let before = rig.sim.persisted();
+    let error = rig
+        .run(basic(Regime::R1, &[0], Duration::from_secs(2)))
+        .0
+        .expect_err("the trial end is outside the timestamp range")
+        .error;
+    let Error::Other(error) = error else {
+        panic!("expected an arithmetic error");
+    };
+    assert!(matches!(
+        error.downcast_ref::<togi_sim::ArithmeticError>(),
+        Some(togi_sim::ArithmeticError::WallElapsed(_))
+    ));
+    assert_eq!(
+        rig.sim.persisted(),
+        before,
+        "a refused trial leaves no MCE ahead of its clock"
+    );
+}
