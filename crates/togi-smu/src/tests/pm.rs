@@ -71,20 +71,21 @@ fn decode_refuses_any_other_size(len: usize) {
     assert_eq!(decode(&sized).unwrap_err(), DecodeError::Size { len });
 }
 
-#[test]
-fn decode_rejects_a_non_finite_lane_in_every_block() {
+#[test_case(f32::NAN, 0; "nan first core")]
+#[test_case(f32::NAN, 15; "nan last core")]
+#[test_case(f32::INFINITY, 0; "positive infinity first core")]
+#[test_case(f32::INFINITY, 15; "positive infinity last core")]
+#[test_case(f32::NEG_INFINITY, 0; "negative infinity first core")]
+#[test_case(f32::NEG_INFINITY, 15; "negative infinity last core")]
+fn decode_rejects_a_non_finite_lane_in_every_block(value: f32, core: usize) {
     for (index, lane) in BLOCKS {
-        for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
-            for core in [0, 15] {
-                let (mut raw, _) = synthetic();
-                put_lane(&mut raw, index + core, value);
-                assert_eq!(
-                    decode(&raw).unwrap_err(),
-                    DecodeError::NonFinite { lane, core },
-                    "{lane} {value}"
-                );
-            }
-        }
+        let (mut raw, _) = synthetic();
+        put_lane(&mut raw, index + core, value);
+        assert_eq!(
+            decode(&raw).unwrap_err(),
+            DecodeError::NonFinite { lane, core },
+            "{lane}, core {core}, value {value}"
+        );
     }
 }
 

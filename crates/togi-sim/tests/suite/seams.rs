@@ -109,27 +109,36 @@ fn an_old_kernel_reports_no_reset_reason_whatever_the_reset(kind: ResetKind) {
     );
 }
 
-#[test]
-fn only_identity_checks_block_smu_validation_and_the_watchdog_fails_separately() {
+#[test_case("cpu"; "cpu")]
+#[test_case("ryzen_smu"; "ryzen smu")]
+fn identity_checks_block_smu_validation(name: &str) {
     let mut rig = Rig::new(&two_cores(), 1);
-    for name in ["cpu", "ryzen_smu"] {
-        rig.sim.fail_check(name, "unsupported");
-        let Err(error) = rig.machine.host.validate_smu() else {
-            panic!("a failed {name} check was accepted");
-        };
-        assert_eq!(error.to_string(), format!("validate {name}: unsupported"));
-        rig.sim.fail_check(name, "");
-    }
+    rig.sim.fail_check(name, "unsupported");
+    let Err(error) = rig.machine.host.validate_smu() else {
+        panic!("a failed {name} check was accepted");
+    };
+    assert_eq!(error.to_string(), format!("validate {name}: unsupported"));
+    rig.sim.fail_check(name, "");
+    assert!(rig.machine.host.validate_smu().is_ok());
+}
+
+#[test]
+fn root_check_does_not_block_smu_validation() {
+    let mut rig = Rig::new(&two_cores(), 1);
     rig.sim.fail_check("root", "not root");
     assert!(rig.machine.host.validate_smu().is_ok());
-    for detail in ["not armed", ""] {
-        rig.sim.fail_check("watchdog", detail);
-        let check = rig.machine.host.watchdog();
-        assert_eq!(check.name, "watchdog", "{detail:?}");
-        assert_eq!(check.ok, detail.is_empty(), "{detail:?}");
-        if !detail.is_empty() {
-            assert_eq!(check.detail, detail);
-        }
+}
+
+#[test_case("not armed", false; "not armed")]
+#[test_case("", true; "armed")]
+fn watchdog_check_is_separate(detail: &str, ok: bool) {
+    let mut rig = Rig::new(&two_cores(), 1);
+    rig.sim.fail_check("watchdog", detail);
+    let check = rig.machine.host.watchdog();
+    assert_eq!(check.name, "watchdog");
+    assert_eq!(check.ok, ok);
+    if !detail.is_empty() {
+        assert_eq!(check.detail, detail);
     }
 }
 
@@ -455,23 +464,6 @@ fn unknown_boots_and_cursors_are_named_errors() {
         rig.machine.kernel.reset_reason(&missing),
         Err(Error::BootMissing)
     ));
-    for old in [&missing, &boot] {
-        let after = rig.machine.kernel.reset_reason_after(old);
-        assert!(matches!(after, Err(Error::BootMissing)), "{old}: {after:?}");
-    }
-    for suffix in ["no-number", "-1", "1"] {
-        let cursor = KernelCursor::from(format!("{boot}:{suffix}"));
-        assert!(
-            matches!(
-                rig.machine.kernel.read_mces(&boot, Some(&cursor)),
-                Err(Partial {
-                    error: Error::CursorMissing,
-                    ..
-                })
-            ),
-            "{suffix}"
-        );
-    }
     rig.sim.next_reset(ResetKind::ThermalTrip);
     rig.sim.crash();
     rig.sim.reboot();
@@ -483,6 +475,41 @@ fn unknown_boots_and_cursors_are_named_errors() {
         .reset_reason_after(&boot)
         .expect("a successor");
     assert_eq!(after.kind, Some(ResetKind::ThermalTrip));
+}
+
+#[test_case(false; "missing boot")]
+#[test_case(true; "current boot")]
+fn reset_reason_after_requires_a_successor(current: bool) {
+    let mut rig = Rig::new(&two_cores(), 1);
+    let boot = if current {
+        rig.boot()
+    } else {
+        BootId::from("missing".to_owned())
+    };
+    let after = rig.machine.kernel.reset_reason_after(&boot);
+    assert!(
+        matches!(after, Err(Error::BootMissing)),
+        "{boot}: {after:?}"
+    );
+}
+
+#[test_case("no-number"; "not a number")]
+#[test_case("-1"; "negative")]
+#[test_case("1"; "missing index")]
+fn unknown_kernel_cursors_are_named_errors(suffix: &str) {
+    let mut rig = Rig::new(&two_cores(), 1);
+    let boot = rig.boot();
+    let cursor = KernelCursor::from(format!("{boot}:{suffix}"));
+    assert!(
+        matches!(
+            rig.machine.kernel.read_mces(&boot, Some(&cursor)),
+            Err(Partial {
+                error: Error::CursorMissing,
+                ..
+            })
+        ),
+        "{suffix}"
+    );
 }
 
 #[test_case(ResetKind::Watchdog, Some("hardware watchdog timer expired"); "watchdog")]
