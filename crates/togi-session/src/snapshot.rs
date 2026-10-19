@@ -42,26 +42,7 @@ pub fn verify_snapshot(
     directory: &StateDir,
     events: &[Event],
 ) -> Result<SnapshotStatus, SnapshotError> {
-    let Some((prefix, saved)) = directory.read_snapshot::<StateDocument>()? else {
-        return Ok(SnapshotStatus::Missing);
-    };
-    if prefix.last_seq != saved.facts.last_seq {
-        return Ok(SnapshotStatus::Different);
-    }
-    let fresh = Folds::replay(events)?;
-    let restored = ReadState::restore(Some((prefix, saved.clone())), events)?;
-    if restored.folds != fresh {
-        return Ok(SnapshotStatus::Different);
-    }
-    if saved.facts.last_seq != events.last().map(|event| event.seq) {
-        return Ok(SnapshotStatus::Stale(saved.facts.last_seq));
-    }
-    let fresh = StateDocument::of(&fresh);
-    Ok(if saved == fresh {
-        SnapshotStatus::Matches
-    } else {
-        SnapshotStatus::Different
-    })
+    ReadState::replay(events)?.verify_snapshot(directory, events)
 }
 
 impl StateDocument {
@@ -77,6 +58,36 @@ impl StateDocument {
 }
 
 impl ReadState {
+    /// Checks a snapshot against this independently replayed journal state.
+    ///
+    /// # Errors
+    ///
+    /// Returns a rejected snapshot or a journal tail that cannot be folded.
+    pub fn verify_snapshot(
+        &self,
+        directory: &StateDir,
+        events: &[Event],
+    ) -> Result<SnapshotStatus, SnapshotError> {
+        let Some((prefix, saved)) = directory.read_snapshot::<StateDocument>()? else {
+            return Ok(SnapshotStatus::Missing);
+        };
+        if prefix.last_seq != saved.facts.last_seq {
+            return Ok(SnapshotStatus::Different);
+        }
+        let restored = Self::restore(Some((prefix, saved.clone())), events)?;
+        if restored.folds != self.folds {
+            return Ok(SnapshotStatus::Different);
+        }
+        if saved.facts.last_seq != events.last().map(|event| event.seq) {
+            return Ok(SnapshotStatus::Stale(saved.facts.last_seq));
+        }
+        Ok(if saved == StateDocument::of(&self.folds) {
+            SnapshotStatus::Matches
+        } else {
+            SnapshotStatus::Different
+        })
+    }
+
     /// Folds all events independently of any cache.
     ///
     /// # Errors
@@ -152,9 +163,10 @@ impl ReadState {
                 let tail = events.partition_point(|event| Some(event.seq) <= prefix.last_seq);
                 if events[tail..]
                     .iter()
-                    .try_for_each(|event| folds.apply(event))
+                    .try_for_each(|event| folds.apply_deferred(event))
                     .is_ok()
                 {
+                    folds.materialize(events)?;
                     return Ok(Self { folds });
                 }
             }

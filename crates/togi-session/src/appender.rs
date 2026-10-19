@@ -36,24 +36,23 @@ pub(crate) struct Folds {
 }
 
 impl Folds {
-    pub(crate) fn replay<'a>(
-        events: impl IntoIterator<Item = &'a Event>,
-    ) -> Result<Self, FoldError> {
+    pub(crate) fn replay(events: &[Event]) -> Result<Self, FoldError> {
         Self::replay_with(KNOWN_DEFECTS, events)
     }
 
     /// Replays with the defect state judging by `defects` instead of the defects this build knows.
-    pub(crate) fn replay_with<'a>(
+    pub(crate) fn replay_with(
         defects: &'static [Entry],
-        events: impl IntoIterator<Item = &'a Event>,
+        events: &[Event],
     ) -> Result<Self, FoldError> {
         let mut folds = Self {
             defects: DefectState::new(defects),
             ..Self::default()
         };
         for event in events {
-            folds.apply(event)?;
+            folds.apply_deferred(event)?;
         }
+        folds.materialize(events)?;
         Ok(folds)
     }
 
@@ -61,6 +60,30 @@ impl Folds {
     pub(crate) fn apply(&mut self, event: &Event) -> Result<(), FoldError> {
         self.presentation
             .before_event(event, &self.facts, &self.tuner);
+        self.apply_after_presentation(event)
+    }
+
+    pub(crate) fn apply_deferred(&mut self, event: &Event) -> Result<(), FoldError> {
+        self.presentation.defer_before_event(event);
+        self.apply_after_presentation(event)
+    }
+
+    pub(crate) fn materialize(&mut self, events: &[Event]) -> Result<(), FoldError> {
+        if let Some(seq) = self.presentation.deferred_end() {
+            let mut prefix = Self::default();
+            for event in events {
+                if event.seq == seq {
+                    prefix.apply(event)?;
+                    break;
+                }
+                prefix.apply_deferred(event)?;
+            }
+            self.presentation.materialize_end(prefix.presentation);
+        }
+        Ok(())
+    }
+
+    fn apply_after_presentation(&mut self, event: &Event) -> Result<(), FoldError> {
         self.recovery.apply(event)?;
         self.tuner.fold(event).map_err(|error| FoldError::Tuner {
             seq: event.seq,
@@ -152,8 +175,10 @@ impl<'machine> Appender<'machine> {
     }
 
     /// The capsule that lets the next run skip folding this appender's journal.
-    pub(crate) fn capsule(&self) -> ResumeCapsule {
-        ResumeCapsule::new(&self.journal, self.defects, self.folds.clone())
+    pub(crate) fn capsule(&self) -> Result<ResumeCapsule, FoldError> {
+        let mut folds = self.folds.clone();
+        folds.materialize(self.journal.events())?;
+        Ok(ResumeCapsule::new(&self.journal, self.defects, folds))
     }
 
     #[must_use]
@@ -313,7 +338,11 @@ impl<'machine> Appender<'machine> {
                 if let Some(hook) = self.on_append.as_mut() {
                     hook(event);
                 }
-                self.folds.apply(event)
+                if self.publication == Some(crate::PublicationPolicy::OnFinish) {
+                    self.folds.apply_deferred(event)
+                } else {
+                    self.folds.apply(event)
+                }
             }));
             match taken {
                 Ok(Ok(())) => {}

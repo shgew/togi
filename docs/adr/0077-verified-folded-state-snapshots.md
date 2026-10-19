@@ -10,6 +10,8 @@ Hardware runs continue to replay the entire journal on every boot and compare ev
 
 Retain only the last trial's pre-end trial, cycle and hunt presentation and tuner state, not the dashboard's core/combo tables, history, or an eagerly evaluated forecast after every trial. Read the tuner's specific cycle, hunt and requirement queries instead of its full dashboard projection. A reader evaluates that retained forecast once when it restores the presentation, so snapshot publication does not repeatedly build unused views or explore hypothetical outcomes that nobody reads.
 
+The retained end is observable only between trials and is discarded at the next trial intent, shutdown, or detected crash. An OnFinish writer records an explicit deferred end instead of cloning a tuner checkpoint per trial. If that end still matters at publication or capsule creation, reconstruct its pre-end checkpoint once from the journal; otherwise discard it without reconstruction. Deferred ends cannot be serialized, so every published snapshot and resume capsule contains the same complete presentation as live publication.
+
 Keep production's publication after every append and its existing atomic replacement and warning behavior. Simulator and benchmark publication remains deferred until the run finishes. The normative format and rejection rules belong to [the journal specification](../spec/journal.md#state-file).
 
 ## Alternatives

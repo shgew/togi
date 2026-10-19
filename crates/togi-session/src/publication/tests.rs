@@ -429,3 +429,45 @@ fn independent_snapshot_verification_reports_resealed_mismatches(
         crate::SnapshotStatus::Different
     );
 }
+
+#[test]
+fn on_finish_and_live_publish_identical_final_snapshots_and_journals() {
+    let run = |policy| {
+        let bench = Bench::new(2);
+        let mut input = bench.input();
+        input.publication = policy;
+        let cancel = input.cancel.clone();
+        input.on_append = Some(Box::new(move |event| {
+            if matches!(event.payload, Payload::TrialEnd(_)) {
+                cancel.cancel();
+            }
+        }));
+        let ended = crate::run(input);
+        assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+        let events = ended.journal.events().to_vec();
+        let mut deferred = Folds::default();
+        let mut live = Folds::default();
+        for (at, event) in events.iter().enumerate() {
+            deferred.apply_deferred(event).unwrap();
+            live.apply(event).unwrap();
+            if matches!(event.payload, Payload::TrialEnd(_)) {
+                assert_eq!(deferred.presentation.deferred_end(), Some(event.seq));
+                let mut published = deferred.clone();
+                published.materialize(&events[..=at]).unwrap();
+                assert_eq!(published, live);
+            }
+        }
+        assert_eq!(deferred.presentation.deferred_end(), None);
+        assert_eq!(deferred, live);
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event.payload, Payload::TrialEnd(_)))
+        );
+        (events, bench.mem.contents("/state/state.json").unwrap())
+    };
+    assert_eq!(
+        run(PublicationPolicy::OnFinish),
+        run(PublicationPolicy::Live)
+    );
+}

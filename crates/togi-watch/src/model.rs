@@ -38,6 +38,9 @@ pub enum FoldError {
     /// The tuner's state refused an event.
     #[error(transparent)]
     Tuner(#[from] togi_tuner::FoldError),
+    /// A writer handed a deferred presentation to a reader before materializing it.
+    #[error("trial-end presentation has not been materialized")]
+    DeferredPresentation,
 }
 
 /// The first event a batch could not fold.
@@ -747,7 +750,14 @@ impl<'a> Snapshot<'a> {
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Presentation {
     facts: Facts,
-    ended: Option<RetainedEnd>,
+    ended: Option<EndState>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+enum EndState {
+    Ready(Box<RetainedEnd>),
+    #[serde(skip)]
+    Deferred(togi_journal::Seq),
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -796,14 +806,48 @@ fn capture_end(
 impl Presentation {
     /// Retains the last trial's pre-end view before the shared reducers consume its result.
     pub fn before_event(&mut self, event: &Event, journal: &JournalState, tuner: &TunerState) {
-        if matches!(event.payload, Payload::SessionStart(_)) {
+        if matches!(
+            event.payload,
+            Payload::SessionStart(_)
+                | Payload::TrialIntent(_)
+                | Payload::Shutdown(_)
+                | Payload::CrashDetected(_)
+        ) {
             self.ended = None;
         } else if matches!(event.payload, Payload::TrialEnd(_)) && journal.session.is_some() {
-            self.ended = Some(RetainedEnd {
+            self.ended = Some(EndState::Ready(Box::new(RetainedEnd {
                 view: crate::derive::EndView::new(journal, tuner, &self.facts),
                 tuner: tuner.clone(),
-            });
+            })));
         }
+    }
+
+    /// Defers trial-end work until an `OnFinish` writer actually needs a snapshot.
+    pub fn defer_before_event(&mut self, event: &Event) {
+        if matches!(event.payload, Payload::TrialEnd(_)) {
+            self.ended = Some(EndState::Deferred(event.seq));
+        } else if matches!(
+            event.payload,
+            Payload::SessionStart(_)
+                | Payload::TrialIntent(_)
+                | Payload::Shutdown(_)
+                | Payload::CrashDetected(_)
+        ) {
+            self.ended = None;
+        }
+    }
+
+    /// The pre-end checkpoint a deferred writer still needs to reconstruct.
+    pub fn deferred_end(&self) -> Option<togi_journal::Seq> {
+        match self.ended {
+            Some(EndState::Deferred(seq)) => Some(seq),
+            _ => None,
+        }
+    }
+
+    /// Replaces only the retained end, preserving the writer's current presentation facts.
+    pub fn materialize_end(&mut self, ready: Self) {
+        self.ended = ready.ended;
     }
 
     /// Updates presentation facts after the shared reducers have consumed the event.
@@ -906,12 +950,17 @@ impl Model {
 
     /// Restores an independently verified snapshot without folding its prefix again.
     pub fn restored(journal: JournalState, tuner: TunerState, presentation: Presentation) -> Self {
+        let (ended, problem) = match presentation.ended {
+            Some(EndState::Ready(ended)) => (Some(ended.into_derived()), None),
+            Some(EndState::Deferred(_)) => (None, Some(FoldError::DeferredPresentation)),
+            None => (None, None),
+        };
         Self {
             journal,
             tuner,
             facts: presentation.facts,
-            ended: presentation.ended.map(RetainedEnd::into_derived),
-            problem: None,
+            ended,
+            problem,
             skipped: None,
             derived: OnceCell::new(),
         }

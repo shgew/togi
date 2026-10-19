@@ -61,7 +61,10 @@ pub(crate) fn audit(
             ))]);
         }
     };
-    let verification = togi_session::verify_snapshot(dir, events);
+    let fresh = togi_session::ReadState::replay(events);
+    let verification = fresh
+        .as_ref()
+        .map(|fresh| fresh.verify_snapshot(dir, events));
     if snapshot.facts.last_seq != Some(last) {
         return Ok(if finished {
             vec![violation(format!(
@@ -76,7 +79,11 @@ pub(crate) fn audit(
         });
     }
     let mut found = Vec::new();
-    match togi_journal::State::replay(events) {
+    let facts = fresh.as_ref().map_or_else(
+        |_| togi_journal::State::replay(events),
+        |fresh| Ok(fresh.facts().clone()),
+    );
+    match facts {
         Ok(facts) if facts != snapshot.facts => found.push(violation(
             "state.json facts differ from a fresh fold of the journal".to_owned(),
         )),
@@ -89,7 +96,11 @@ pub(crate) fn audit(
             togi_machine::error_chain(&error)
         ))),
     }
-    match togi_tuner::replay(events) {
+    let tuner = fresh.as_ref().map_or_else(
+        |_| togi_tuner::replay(events),
+        |fresh| Ok(fresh.tuner().clone()),
+    );
+    match tuner {
         Ok(tuner) if tuner.project() != snapshot.tuner => found.push(violation(
             "state.json tuner projection differs from a fresh replay of the journal".to_owned(),
         )),
@@ -104,13 +115,17 @@ pub(crate) fn audit(
     }
     if found.is_empty() {
         match verification {
-            Ok(togi_session::SnapshotStatus::Matches) => {}
-            Ok(status) => found.push(violation(format!(
+            Ok(Ok(togi_session::SnapshotStatus::Matches)) => {}
+            Ok(Ok(status)) => found.push(violation(format!(
                 "state.json full folded state differs: {status:?}"
             ))),
-            Err(error) => found.push(violation(format!(
+            Ok(Err(error)) => found.push(violation(format!(
                 "state.json is not a verified snapshot: {}",
                 togi_machine::error_chain(&error)
+            ))),
+            Err(error) => found.push(violation(format!(
+                "the full journal state does not fold: {}",
+                togi_machine::error_chain(error)
             ))),
         }
     }

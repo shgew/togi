@@ -65,6 +65,7 @@ impl<'a> StateDocumentRef<'a> {
 
 impl Appender<'_> {
     pub(crate) fn publish_state(&mut self) -> Result<bool, AppendFailure> {
+        self.folds.materialize(self.journal.events())?;
         let document =
             togi_journal::snapshot::seal(self.journal.prefix(), &StateDocumentRef::of(&self.folds));
         match document.and_then(|document| self.journal.write_state(&document)) {
