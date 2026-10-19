@@ -135,7 +135,10 @@ impl TrialPlan {
         })
     }
 
-    #[expect(clippy::cast_possible_truncation, reason = "validated unique cores bound instances to 16")]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "validated unique cores bound instances to 16"
+    )]
     pub(crate) fn instance_count(&self) -> u32 {
         self.instances.len() as u32
     }

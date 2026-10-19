@@ -284,10 +284,12 @@ impl Trials for Runner {
         }
         let instances = match crate::plan::checked_count(spec.cores.len()) {
             Ok(instances) => instances.max(1),
-            Err(error) => return Err(Partial {
-                value: Some(ready),
-                error: Error::Invalid(error).into(),
-            }),
+            Err(error) => {
+                return Err(Partial {
+                    value: Some(ready),
+                    error: Error::Invalid(error).into(),
+                });
+            }
         };
         if !self.timing.representable(spec.duration, instances) {
             return Err(Partial {

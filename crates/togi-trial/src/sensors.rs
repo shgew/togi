@@ -54,7 +54,10 @@ fn read_integer(inputs: &Inputs, path: &Path) -> Result<Option<i64>, SensorError
         return Ok(None);
     };
     let text = text.trim();
-    let digits = text.strip_prefix('-').or_else(|| text.strip_prefix('+')).unwrap_or(text);
+    let digits = text
+        .strip_prefix('-')
+        .or_else(|| text.strip_prefix('+'))
+        .unwrap_or(text);
     if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return Ok(None);
     }
@@ -147,7 +150,8 @@ impl Sensors {
         }
         let mut delta = current - previous;
         if delta < 0 {
-            let Some(limit) = read_integer(&self.inputs, &domain.join("max_energy_range_uj"))? else {
+            let Some(limit) = read_integer(&self.inputs, &domain.join("max_energy_range_uj"))?
+            else {
                 return Ok(None);
             };
             if limit <= previous {
@@ -160,7 +164,10 @@ impl Sensors {
 }
 
 /// The first hwmon directory named `k10temp` or `zenpower`; it is not skipped for lacking sensors.
-fn temperatures(inputs: &Inputs, root: &Path) -> Result<(Option<i64>, Option<BTreeMap<String, i64>>), SensorError> {
+fn temperatures(
+    inputs: &Inputs,
+    root: &Path,
+) -> Result<(Option<i64>, Option<BTreeMap<String, i64>>), SensorError> {
     let Ok(entries) = inputs.read_dir(root) else {
         return Ok((None, None));
     };
@@ -343,7 +350,10 @@ mod tests {
             fixture.write("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj", value);
         }
         assert_eq!(
-            sensors.read(start + Duration::from_secs(1)).unwrap().cores_power_w,
+            sensors
+                .read(start + Duration::from_secs(1))
+                .unwrap()
+                .cores_power_w,
             expected
         );
     }
@@ -394,13 +404,19 @@ mod tests {
         let mut sensors = fixture.sensors(&[], start);
         fixture.write("powercap/intel-rapl:0/energy_uj", "1000000\n");
         assert_eq!(
-            sensors.read(start + Duration::from_secs(1)).unwrap().package_power_w,
+            sensors
+                .read(start + Duration::from_secs(1))
+                .unwrap()
+                .package_power_w,
             Some(2.0)
         );
         fixture.write("powercap/intel-rapl:0/max_energy_range_uj", "500000\n");
         fixture.write("powercap/intel-rapl:0/energy_uj", "100000\n");
         assert_eq!(
-            sensors.read(start + Duration::from_secs(2)).unwrap().package_power_w,
+            sensors
+                .read(start + Duration::from_secs(2))
+                .unwrap()
+                .package_power_w,
             None
         );
     }
@@ -425,9 +441,15 @@ mod tests {
         };
         togi_journal::fs::Fs::remove_file(fixture.fs.as_ref(), &Path::new("/sensors").join(&path))
             .unwrap();
-        assert_eq!(power(sensors.read(start + Duration::from_secs(1)).unwrap()), None);
+        assert_eq!(
+            power(sensors.read(start + Duration::from_secs(1)).unwrap()),
+            None
+        );
         fixture.write(&path, "5000000\n");
-        assert_eq!(power(sensors.read(start + Duration::from_secs(2)).unwrap()), None);
+        assert_eq!(
+            power(sensors.read(start + Duration::from_secs(2)).unwrap()),
+            None
+        );
         fixture.write(&path, "7000000\n");
         assert_eq!(
             power(sensors.read(start + Duration::from_secs(3)).unwrap()),
@@ -457,7 +479,11 @@ mod tests {
         fixture.write("value", text);
         let error = read_integer(&fixture.inputs(), Path::new("/sensors/value")).unwrap_err();
         assert_eq!(error.path, Path::new("/sensors/value"));
-        assert!(std::error::Error::source(&error).unwrap().is::<std::num::ParseIntError>());
+        assert!(
+            std::error::Error::source(&error)
+                .unwrap()
+                .is::<std::num::ParseIntError>()
+        );
     }
 
     #[test_case::test_case("cpu/cpu0/cpufreq/scaling_cur_freq"; "frequency")]
@@ -486,9 +512,8 @@ mod tests {
     fn overflowing_energy_baselines_refuse_initialization(path: &str) {
         let fixture = Fixture::new();
         fixture.write(path, "9223372036854775808");
-        let error = Sensors::with_inputs(
-            &Fixture::roots(), &[], Instant::now(), fixture.inputs()
-        ).unwrap_err();
+        let error = Sensors::with_inputs(&Fixture::roots(), &[], Instant::now(), fixture.inputs())
+            .unwrap_err();
         assert_eq!(error.path, Path::new("/sensors").join(path));
     }
 }

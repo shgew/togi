@@ -662,7 +662,10 @@ fn trial_maximum_temperature_is_checked(value: i64, fits: bool) {
     if fits {
         assert_eq!(result.unwrap().tctl_max_c.map(i64::from), Some(value));
     } else {
-        assert!(matches!(result, Err(crate::SessionError::TrialTemperature(_))));
+        assert!(matches!(
+            result,
+            Err(crate::SessionError::TrialTemperature(_))
+        ));
     }
 }
 
@@ -694,7 +697,10 @@ fn last_sample_narrowing_is_exact_or_rejects_the_whole_summary(
         assert_eq!(end.last_sample_min_mhz.map(i64::from), clock);
         assert_eq!(end.last_sample_max_mhz.map(i64::from), clock);
     } else {
-        assert!(matches!(result, Err(togi_machine::SampleError::Temperature(_) | togi_machine::SampleError::Clock(_))));
+        assert!(matches!(
+            result,
+            Err(togi_machine::SampleError::Temperature(_) | togi_machine::SampleError::Clock(_))
+        ));
         assert_eq!(end, before);
     }
 }
@@ -708,13 +714,21 @@ fn ccd_frequency_narrowing_is_checked_before_filling_any_fields(clock: i64, fits
     });
     let summary = summarize_samples(samples.map(Ok), set(&[2]), Regime::R1, |_| {
         Some(CcdId::new(0).unwrap())
-    }).unwrap();
+    })
+    .unwrap();
     let mut end = trial_end("0001".to_owned().into(), Outcome::Pass, 30);
     let before = end.clone();
     let result = summary.fill(&mut end, false);
     if fits {
         result.unwrap();
-        assert_eq!(end.ccd_mhz.values().copied().map(i64::from).collect::<Vec<_>>(), [clock]);
+        assert_eq!(
+            end.ccd_mhz
+                .values()
+                .copied()
+                .map(i64::from)
+                .collect::<Vec<_>>(),
+            [clock]
+        );
     } else {
         assert!(matches!(result, Err(togi_machine::SampleError::Clock(_))));
         assert_eq!(end, before);

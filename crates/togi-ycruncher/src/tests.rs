@@ -664,7 +664,11 @@ fn overflowing_affinity_cpu_is_a_typed_observation_error(value: &str) {
         panic!("recognized overflowing CPU was not refused");
     };
     assert_eq!(error.value, value);
-    assert!(std::error::Error::source(&error).unwrap().is::<std::num::ParseIntError>());
+    assert!(
+        std::error::Error::source(&error)
+            .unwrap()
+            .is::<std::num::ParseIntError>()
+    );
 }
 
 #[test]

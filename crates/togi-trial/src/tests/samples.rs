@@ -141,10 +141,16 @@ fn overflowing_optional_sensor_is_a_runner_error_not_absent_telemetry() {
             write(&rig, "hwmon/hwmon0/temp1_input", "9223372036854775808\n");
             let handle = rig.start(spec(Regime::R1, &[2], secs(2))).await.unwrap();
             let run = finish(&handle).await;
-            assert!(run.finished.errors.iter().any(|error| matches!(error, Error::Sensor(_))));
+            assert!(
+                run.finished
+                    .errors
+                    .iter()
+                    .any(|error| matches!(error, Error::Sensor(_)))
+            );
             assert!(rig.samples().is_empty());
             assert!(run.finished.teardown.is_ok());
-        }).await;
+        })
+        .await;
     });
 }
 
@@ -153,11 +159,20 @@ fn overflowing_energy_baseline_rolls_back_the_launched_trial() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
             let rig = rig();
-            write(&rig, "powercap/intel-rapl:0/energy_uj", "9223372036854775808\n");
-            let failure = rig.start(spec(Regime::R1, &[2], secs(2))).await.unwrap_err();
+            write(
+                &rig,
+                "powercap/intel-rapl:0/energy_uj",
+                "9223372036854775808\n",
+            );
+            let failure = rig
+                .start(spec(Regime::R1, &[2], secs(2)))
+                .await
+                .err()
+                .unwrap();
             assert!(failure.value.is_some());
             assert!(togi_machine::error_chain(&failure.error).contains("read numeric sensor"));
-        }).await;
+        })
+        .await;
     });
 }
 
@@ -172,10 +187,22 @@ fn overflowing_cpu_milliseconds_is_sampling_loss_and_never_a_capped_sample() {
                 cpu: togi_machine::CpuId::from(2),
             });
             let run = finish(&handle).await;
-            assert!(run.finished.result.inconclusive.as_deref().unwrap().contains("cpu time"));
-            assert!(rig.samples().iter().all(|sample| sample.worker_cpu_ms.is_empty()));
+            assert!(
+                run.finished
+                    .result
+                    .inconclusive
+                    .as_deref()
+                    .unwrap()
+                    .contains("cpu time")
+            );
+            assert!(
+                rig.samples()
+                    .iter()
+                    .all(|sample| sample.worker_cpu_ms.is_empty())
+            );
             assert!(run.finished.teardown.is_ok());
-        }).await;
+        })
+        .await;
     });
 }
 

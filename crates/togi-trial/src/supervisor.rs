@@ -367,12 +367,15 @@ pub(crate) async fn start<O: Os>(
     }
 
     let started_at = Instant::now();
-    let sensors = match Sensors::with_inputs(&env.roots, &env.topology, started_at, env.inputs.clone()) {
-        Ok(sensors) => sensors,
-        Err(error) => {
-            return Err(roll_back(&env, live, judge, &mut inbound_rx, logs, error.into()).await);
-        }
-    };
+    let sensors =
+        match Sensors::with_inputs(&env.roots, &env.topology, started_at, env.inputs.clone()) {
+            Ok(sensors) => sensors,
+            Err(error) => {
+                return Err(
+                    roll_back(&env, live, judge, &mut inbound_rx, logs, error.into()).await,
+                );
+            }
+        };
     for instance in &mut live.instances {
         instance.observed.resumed = started_at;
         instance.observed.active = Duration::ZERO;
@@ -736,7 +739,10 @@ async fn roll_back<O: Os>(
             None,
         ),
     };
-    let mut later: Vec<Error> = invalid_affinity.into_iter().map(Error::AffinityObservation).collect();
+    let mut later: Vec<Error> = invalid_affinity
+        .into_iter()
+        .map(Error::AffinityObservation)
+        .collect();
     if let Some(what) = panic {
         later.push(Error::Panicked { what });
     }
@@ -1205,7 +1211,12 @@ impl<O: Os> Supervisor<O> {
             errors.push(Error::Storage(failure));
         }
         let late = settle_logs(&mut judge, logs);
-        errors.extend(judge.take_invalid_affinity().into_iter().map(Error::AffinityObservation));
+        errors.extend(
+            judge
+                .take_invalid_affinity()
+                .into_iter()
+                .map(Error::AffinityObservation),
+        );
         let mut verdict = judge.conclude();
         verdict.diagnostics.extend(late);
         if !verdict.diagnostics.is_empty() {

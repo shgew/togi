@@ -339,7 +339,10 @@ impl Selector {
             Line::InvalidAffinity(error) => {
                 self.instances[instance].setup_error = true;
                 self.weak_reason(|| togi_machine::error_chain(&error));
-                Decision { stop: true, reports: Vec::new() }
+                Decision {
+                    stop: true,
+                    reports: Vec::new(),
+                }
             }
             Line::AffinityError(cpu) => {
                 let cpu = cpu.unwrap_or(self.instances[instance].first_cpu);

@@ -483,6 +483,9 @@ mod numeric_tests {
             signal: "SIGKILL",
             source: std::io::Error::from_raw_os_error(3),
         };
-        assert_eq!(error.to_string(), format!("signal group {pgid} with SIGKILL"));
+        assert_eq!(
+            error.to_string(),
+            format!("signal group {pgid} with SIGKILL")
+        );
     }
 }
