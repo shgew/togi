@@ -253,7 +253,7 @@ async fn read_capped(
 ) -> Result<Vec<u8>, Error> {
     let limit = invocation.output_limit;
     let mut bytes = Vec::new();
-    pipe.take(u64::try_from(limit).unwrap_or(u64::MAX).saturating_add(1))
+    pipe.take((limit as u64).saturating_add(1))
         .read_to_end(&mut bytes)
         .await
         .map_err(|source| invocation.io_error(Operation::Read(stream), source))?;
@@ -265,6 +265,36 @@ async fn read_capped(
         });
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod read_tests {
+    use super::{Error, Invocation, Stream, read_capped};
+
+    #[test_case::test_case(0, 0; "empty output at zero limit")]
+    #[test_case::test_case(4, 4; "exact limit")]
+    #[test_case::test_case(4, usize::MAX; "maximum configured limit")]
+    #[tokio::test]
+    async fn bounded_output_accepts_representable_lengths(length: usize, limit: usize) {
+        let input = vec![b'x'; length];
+        let invocation = Invocation::new("fixture").output_limit(limit);
+        assert_eq!(
+            read_capped(input.as_slice(), Stream::Stdout, &invocation).await.unwrap(),
+            input
+        );
+    }
+
+    #[test_case::test_case(0; "zero limit")]
+    #[test_case::test_case(4; "nonzero limit")]
+    #[tokio::test]
+    async fn bounded_output_reads_the_extra_byte(limit: usize) {
+        let input = vec![b'x'; limit + 1];
+        let invocation = Invocation::new("fixture").output_limit(limit);
+        assert!(matches!(
+            read_capped(input.as_slice(), Stream::Stdout, &invocation).await,
+            Err(Error::OutputTooLarge { limit: actual, .. }) if actual == limit
+        ));
+    }
 }
 
 struct Started {

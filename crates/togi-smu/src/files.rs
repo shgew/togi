@@ -25,7 +25,9 @@ impl Files {
             Self::System => read_limited(File::open(path)?, limit, capacity),
             Self::Readers(readers) => {
                 let mut bytes = (readers.read)(path)?;
-                bytes.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+                if let Ok(limit) = usize::try_from(limit) {
+                    bytes.truncate(limit);
+                }
                 Ok(bytes)
             }
         }
@@ -60,7 +62,7 @@ pub(crate) fn read_lossy(files: &Files, path: &Path) -> Result<String, Error> {
     let bytes = files
         .read(path, TEXT_LIMIT + 1, 0)
         .map_err(|source| unreadable(path, source))?;
-    if u64::try_from(bytes.len()).is_ok_and(|len| len > TEXT_LIMIT) {
+    if bytes.len() as u64 > TEXT_LIMIT {
         return Err(too_large(path, TEXT_LIMIT));
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
@@ -148,7 +150,7 @@ fn stanza_from_reader(path: &Path, input: impl Read) -> Result<Stanza, Error> {
             let count = reader
                 .read_until(b'\n', &mut line)
                 .map_err(|source| unreadable(path, source))?;
-            consumed += u64::try_from(count).unwrap_or(u64::MAX);
+            consumed += count as u64;
             if consumed > STANZA_LIMIT {
                 return Err(too_large(path, STANZA_LIMIT));
             }
