@@ -164,14 +164,14 @@ fn real_process_a_registered_gate_judges_the_run_against_the_baseline_and_sets_t
     };
 
     let case = match scenario {
-GateOutcome::Pass => Case { name: "pass", baseline: vec![passing.clone()], gated: true, exit: 0, generic: "NEUTRAL", criteria: pass_criteria, result: "gate cli-integration: PASS 5 criteria".into() },
+GateOutcome::Pass => Case { name: "pass", baseline: vec![passing], gated: true, exit: 0, generic: "NEUTRAL", criteria: pass_criteria, result: "gate cli-integration: PASS 5 criteria".into() },
 GateOutcome::EqualPooled => Case { name: "equality fails the pooled improvement", baseline: vec![original.clone()], gated: true, exit: 1, generic: "NEUTRAL", criteria: equal_criteria, result: "gate cli-integration: FAIL 1 of 5 criteria".into() },
-GateOutcome::TooSlow => Case { name: "time fails", baseline: vec![slow.clone()], gated: true, exit: 1, generic: "REJECT", criteria: slow_criteria, result: "gate cli-integration: FAIL 1 of 5 criteria".into() },
+GateOutcome::TooSlow => Case { name: "time fails", baseline: vec![slow], gated: true, exit: 1, generic: "REJECT", criteria: slow_criteria, result: "gate cli-integration: FAIL 1 of 5 criteria".into() },
 GateOutcome::MissingSeed => Case { name: "missing required seed refused", baseline: vec![], gated: true, exit: 1, generic: "NEUTRAL", criteria: vec![], result: "gate cli-integration: FAIL refused: incomplete pairing: tiny seed 1 has no baseline run; the gate needs every dev seed of its scenarios".into() },
 GateOutcome::WrongRuleset => Case { name: "wrong ruleset refused", baseline: vec![wrong_ruleset.clone()], gated: true, exit: 1, generic: "NEUTRAL", criteria: vec![], result: refused(&wrong_ruleset) },
 GateOutcome::WrongCommit => Case { name: "wrong commit refused", baseline: vec![wrong_commit.clone()], gated: true, exit: 1, generic: "NEUTRAL", criteria: vec![], result: refused(&wrong_commit) },
 GateOutcome::NoGateNeutral => Case { name: "no gate neutral", baseline: vec![original.clone()], gated: false, exit: 0, generic: "NEUTRAL", criteria: vec![], result: String::new() },
-GateOutcome::NoGateReject => Case { name: "no gate reject remains diagnostic", baseline: vec![slow.clone()], gated: false, exit: 0, generic: "REJECT", criteria: vec![], result: String::new() },
+GateOutcome::NoGateReject => Case { name: "no gate reject remains diagnostic", baseline: vec![slow], gated: false, exit: 0, generic: "REJECT", criteria: vec![], result: String::new() },
 };
 
     let baseline = bench.path("baseline.jsonl");

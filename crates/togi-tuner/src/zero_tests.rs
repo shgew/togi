@@ -558,7 +558,7 @@ fn zero_diagnostic_ignores_known_failure_skips_and_stale_trials() {
     assert_eq!(
         j.diagnostic(failure),
         Some(&Diagnostic::Running {
-            trial: second.clone()
+            trial: second
         })
     );
 

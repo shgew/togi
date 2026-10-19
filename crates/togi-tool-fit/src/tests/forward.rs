@@ -56,7 +56,7 @@ fn a_held_out_session_is_scored_by_a_fit_of_the_sessions_before_it_only() {
     assert_eq!((check.pooled.counts.trials, check.pooled.matches), (6, 6));
     assert!((rows[0].constant - 0.25).abs() < f64::EPSILON);
 
-    let mut later = trials.clone();
+    let mut later = trials;
     for fact in later.iter_mut().filter(|f| f.session.to_string() == S3) {
         fact.outcome = crash();
     }

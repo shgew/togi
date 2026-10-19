@@ -487,11 +487,9 @@ fn real_process_helper() {
     match scenario.as_str() {
         "before_the_host_lock" => fake.panic_in_platform = true,
         "after_hardware_setup" => {
-            let order = order.clone();
             fake.wrap = Box::new(move |machine, _| panicking(machine, &order, Faults::default()));
         }
         "failed_restoration" => {
-            let order = order.clone();
             fake.wrap = Box::new(move |machine, _| {
                 let faults = Faults {
                     refuse_writes: true,
@@ -501,7 +499,6 @@ fn real_process_helper() {
             });
         }
         "unconfirmed_teardown" => {
-            let order = order.clone();
             fake.wrap = Box::new(move |machine, _| {
                 let faults = Faults {
                     unconfirmed_stop: true,
@@ -511,7 +508,6 @@ fn real_process_helper() {
             });
         }
         "lock_order" => {
-            let order = order.clone();
             let dir = dir.clone();
             fake.wrap = Box::new(move |machine, _| {
                 watch_the_locks(&dir, &order);
@@ -519,7 +515,6 @@ fn real_process_helper() {
             });
         }
         "contained_worker" => {
-            let order = order.clone();
             fake.wrap = Box::new(move |machine, _| {
                 let action: Box<dyn FnMut()> = Box::new(|| {
                     let worker = thread::Builder::new()
@@ -537,7 +532,6 @@ fn real_process_helper() {
             });
         }
         "tokio_task" => {
-            let order = order.clone();
             fake.wrap = Box::new(move |machine, _| {
                 let action: Box<dyn FnMut()> = Box::new(|| {
                     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -566,7 +560,6 @@ fn real_process_helper() {
         "dashboard" => {
             fake.interactive = true;
             fake.surface = Arc::new(PanicsAtOnce);
-            let order = order.clone();
             let dir = dir.clone();
             fake.wrap = Box::new(move |machine, _| {
                 let dir = dir.clone();
@@ -580,7 +573,6 @@ fn real_process_helper() {
         "journal_failure" => {
             fake.interactive = true;
             fake.surface = Arc::new(SaysWhenItStops);
-            let order = order.clone();
             let journal = dir.join("state/events.jsonl");
             fake.wrap = Box::new(move |machine, _| {
                 let journal = journal.clone();
@@ -593,7 +585,6 @@ fn real_process_helper() {
             let cue = Arc::new(AtomicBool::new(false));
             fake.interactive = true;
             fake.surface = Arc::new(FailsOnCue(Arc::clone(&cue)));
-            let order = order.clone();
             let dir = dir.clone();
             fake.wrap = Box::new(move |machine, _| {
                 let machine = logging(machine, &order, Some(Box::new(interrupt)));

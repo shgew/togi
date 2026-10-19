@@ -660,8 +660,8 @@ fn a_pending_boot_loop_survives_a_same_boot_preflight_that_fails_and_finishes_on
     assert_eq!(
         ended.stop,
         Some(Stop::DeadEnd {
-            dead_end: original.clone(),
-            causes: evidence.clone(),
+            dead_end: original,
+            causes: evidence,
             reboot: true,
         }),
         "{check}"

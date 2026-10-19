@@ -434,7 +434,7 @@ fn an_anchor_that_cannot_be_written_is_an_error_and_leaves_the_destination_alone
     let fixture = fixture(&anchor_records());
     let path = fixture.out.join("target-shared-voltage.json");
     let conflict = if directory {
-        path.clone()
+        path
     } else {
         fixture.out.clone()
     };

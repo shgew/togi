@@ -571,7 +571,7 @@ fn r7_escalated_failure_locates_with_idle_cores_at_zero() {
     assert_eq!(start.candidates, set(&[2, 3]));
     assert_eq!(start.trials, u32::from(j.run().config.needed.get()));
     assert_eq!(start.ranking, [core(0), core(1), core(2), core(3)].to_vec());
-    let reason = start.reason.clone().unwrap();
+    let reason = start.reason.unwrap();
     assert!(
         missing(
             &reason,

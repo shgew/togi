@@ -1043,7 +1043,7 @@ mod the_story {
         crashed.duration = secs(600);
         for (trial, signal) in [
             (Some(crashed.clone()), Some(Signal::Crash)),
-            (Some(crashed.clone()), Some(Signal::ComputationError)),
+            (Some(crashed), Some(Signal::ComputationError)),
             (None, Some(Signal::Crash)),
         ] {
             let mut c = cause();
@@ -1065,7 +1065,7 @@ mod the_story {
         let mut crashed = trial(Regime::R7, Condition::Together, &[0, 1]);
         crashed.duration = secs(600);
         let mut c = cause();
-        c.trial = Some(crashed.clone());
+        c.trial = Some(crashed);
         c.signal = Some(Signal::ComputationError);
         let (sentence, _, brief) = super::super::hunt_cause_story(&c);
         assert_eq!(
@@ -2073,7 +2073,7 @@ mod the_resting_band {
         let mut end = end_view(Outcome::Pass, None);
         end.tctl_max_c = Some(81);
         end.voltage_v = Some(1.1234);
-        fx.last = Some(end.clone());
+        fx.last = Some(end);
         let lines = last_lines(&fx.scene(ts(1)));
         assert_eq!(
             text(&lines),
@@ -3249,7 +3249,7 @@ mod the_outcome_lines {
         let labels: Vec<_> = fx.row_set().iter().map(|row| row.label.clone()).collect();
         assert_eq!(labels, ["if a core is named", "if none is named"]);
         let mut hunting = hunting_fx();
-        hunting.trial = fx.trial.clone();
+        hunting.trial = fx.trial;
         hunting.forecast.branches = vec![unnamed, named];
         let labels: Vec<_> = hunting
             .row_set()

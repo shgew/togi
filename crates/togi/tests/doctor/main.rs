@@ -281,7 +281,7 @@ fn the_recorded_context_reaches_the_checks_only_for_a_journal_run_would_continue
     let host = host_with(ready(), session.fs.clone());
     assert_eq!(doctor(&host, session.path(), &[]).exit, Exit::Ok);
     let seen = host.diagnoses.borrow();
-    assert_eq!(seen.as_slice(), [(Some(session.context.clone()), true)]);
+    assert_eq!(seen.as_slice(), [(Some(session.context), true)]);
     drop(seen);
 
     let older = Session::new();

@@ -139,7 +139,7 @@ fn samples_tick_each_second_strictly_before_the_end_and_a_stalled_culprit_stops_
     let mut rig = Rig::new(&scripted(signal, at, culprit), 1);
     let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
     if file_backed {
-        rig.sim.set_sample_storage(dir.clone());
+        rig.sim.set_sample_storage(dir);
     }
     run_scripted(&mut rig);
     rig.sim.reboot();
@@ -181,7 +181,7 @@ fn a_crashed_trials_serialized_samples_survive_recovery() {
     ];
     assert_eq!(collect(&mut rig, "0001"), want);
     let mut recovered = Rig::new(&definition, 1);
-    recovered.sim.set_sample_storage(dir.clone());
+    recovered.sim.set_sample_storage(dir);
     assert_eq!(collect(&mut recovered, "0001"), want);
 }
 

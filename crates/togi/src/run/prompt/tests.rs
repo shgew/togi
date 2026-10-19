@@ -123,14 +123,14 @@ fn the_question_names_every_core_and_a_no_or_end_of_input_is_no(line: Option<&'s
 fn a_run_stopped_while_the_question_is_open_ends_the_wait_without_an_answer() {
     let cancel = CancellationToken::new();
     cancel.cancel();
-    let out = Shared::default();
+    let mut out = Shared::default();
     let mut answers = Typed {
         out: out.clone(),
         line: None,
     };
     let decisions = [];
     let answer = ask(
-        &mut out.clone(),
+        &mut out,
         &mut answers,
         &cancel,
         &finding(&[3], &decisions),

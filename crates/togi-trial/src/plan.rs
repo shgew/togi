@@ -220,7 +220,7 @@ mod tests {
             TrialPlan::build(&bad_id, &topo),
             Err(InvalidTrial::Id(_))
         ));
-        let mut empty_id = bad_id.clone();
+        let mut empty_id = bad_id;
         empty_id.id = String::new();
         assert_eq!(
             TrialPlan::build(&empty_id, &topo).unwrap_err(),
