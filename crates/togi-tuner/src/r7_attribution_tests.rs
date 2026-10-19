@@ -581,12 +581,18 @@ fn r7_named_zero_attribution_uses_start_top(
         };
         assert_eq!(end.core, Some(core(0)));
     } else {
+        let (_, why) = j.at_r7_backoff();
+        assert_eq!(
+            why.notes,
+            [Note::NamedZeroNotTop {
+                core: core(0),
+                ccd: CcdId::new(0).unwrap(),
+            }]
+        );
         let (action, moved) = j.at_next_backoff();
         assert_eq!(moved, (1, -29));
         j.decide(action);
-        assert!(
-            !matches!(j.next(), Action::Decide(d) if matches!(d.payload, DecisionPayload::TunerDecision(_)))
-        );
+        assert_eq!(j.run().r7_decision(), None);
     }
     j.assert_resumes();
 }
