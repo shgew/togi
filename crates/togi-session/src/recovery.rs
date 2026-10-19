@@ -95,14 +95,13 @@ impl OpenTrial {
 
     /// How long the trial is known to have run: from its start to the last thing recorded of it. Nothing is
     /// recorded between events, so after a crash this is a lower bound.
-    pub(crate) fn ran(&self) -> Duration {
+    pub(crate) fn ran(&self) -> Result<Duration, jiff::Error> {
         let Some(started) = &self.started else {
-            return Duration::ZERO;
+            return Ok(Duration::ZERO);
         };
         match (started.mono, started.last_mono) {
-            (Some(start), Some(last)) if last >= start => last.saturating_sub(start),
-            _ => Duration::try_from(started.last_time.duration_since(started.time))
-                .unwrap_or(Duration::ZERO),
+            (Some(start), Some(last)) if last >= start => Ok(last.saturating_sub(start)),
+            _ => Duration::try_from(started.last_time.duration_since(started.time)),
         }
     }
 

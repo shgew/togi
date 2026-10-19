@@ -971,3 +971,63 @@ fn every_early_append_failure_respects_the_sweep_gate() {
         }
     });
 }
+
+#[test_case(-1, true; "inverted wall-clock interval")]
+#[test_case(0, false; "zero elapsed interval")]
+#[test_case(1, false; "positive elapsed interval")]
+fn recovery_refuses_an_unrepresentable_wall_elapsed_interval(seconds: i64, refused: bool) {
+    let reference_bench = bench();
+    let reference = drive(&reference_bench);
+    let events = reference.journal.events();
+    let start = events
+        .iter()
+        .position(|event| matches!(event.payload, Payload::TrialStart(_)))
+        .unwrap();
+    let mut prefix = events[..=start].to_vec();
+    let started = prefix.last_mut().unwrap();
+    started.mono = None;
+    let Payload::TrialStart(trial) = &started.payload else {
+        unreachable!()
+    };
+    let trial_id = trial.trial.clone();
+    let progress = Event::new(
+        Seq::new(started.seq.get() + 1).unwrap(),
+        togi_journal::Stamp {
+            time: started.time + jiff::SignedDuration::from_secs(seconds),
+            mono: None,
+        },
+        started.boot.clone(),
+        vec![started.seq],
+        Payload::TrialProgress(togi_journal::TrialProgress {
+            trial: trial.trial.clone(),
+            detail: "last recorded activity".into(),
+            signal: None,
+            core: None,
+        }),
+    );
+    prefix.push(progress);
+    let text = prefix
+        .iter()
+        .map(|event| format!("{}\n", event.encode().unwrap()))
+        .collect::<String>();
+    let resumed = bench();
+    resumed.mem.put("/state/events.jsonl", text);
+    let ended = one_cycle(&resumed).ended;
+    let elapsed_error = ended
+        .errors
+        .iter()
+        .any(|error| matches!(error, crate::SessionError::RecoveredElapsed(_)));
+    assert_eq!(elapsed_error, refused, "{:?}", ended.errors);
+    let recovered_duration = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::TrialEnd(end) if end.trial == trial_id => Some(end.duration_s),
+            _ => None,
+        });
+    assert_eq!(
+        recovered_duration,
+        (!refused).then(|| u32::try_from(seconds).unwrap())
+    );
+}

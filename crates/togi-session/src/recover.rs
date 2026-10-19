@@ -694,7 +694,12 @@ fn close_open_trial(recovery: &mut Recovery<'_, '_>) -> Step<()> {
         ..evidence::trial_end(
             trial.clone(),
             ruling.outcome,
-            u32::try_from(open.ran().as_secs()).map_err(SessionError::TrialDuration)?,
+            u32::try_from(
+                open.ran()
+                    .map_err(SessionError::RecoveredElapsed)?
+                    .as_secs(),
+            )
+            .map_err(SessionError::TrialDuration)?,
         )
     };
     let loaded = togi_tuner::Load::recorded(open.intent.core, open.intent.cores).cores();
