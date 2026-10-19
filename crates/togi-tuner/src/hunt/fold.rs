@@ -21,15 +21,9 @@ fn secs(value: u32) -> Result<Secs, FoldError> {
 }
 
 impl Run {
-    pub(crate) fn hunt_needed(trials: u32) -> NonZeroU16 {
-        u16::try_from(trials)
-            .ok()
-            .and_then(NonZeroU16::new)
-            .unwrap_or(if trials == 0 {
-                NonZeroU16::MIN
-            } else {
-                NonZeroU16::MAX
-            })
+    pub(crate) fn hunt_needed(trials: u32) -> Result<NonZeroU16, FoldError> {
+        let trials = u16::try_from(trials).map_err(FoldError::HuntTrials)?;
+        NonZeroU16::new(trials).ok_or(FoldError::ZeroTrials)
     }
 
     fn duration_prior(
@@ -115,7 +109,7 @@ impl Run {
         let duration = secs(start.duration_s)?;
         let short = secs(start.trial_s)?;
         let class = ClassKey::new(workload, loaded, duration);
-        let needed = Self::hunt_needed(start.trials);
+        let needed = Self::hunt_needed(start.trials)?;
         let recent = self.constraints.recent();
         let ranking = Ranking::new(&self.topo, start.ranking.clone())?;
         let located = start.regime == Regime::R7

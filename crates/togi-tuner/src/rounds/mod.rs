@@ -169,6 +169,19 @@ impl Run {
     }
 
     fn round_start(&mut self, seq: Seq, round: &DeepeningRound) -> Result<(), FoldError> {
+        let trials = match round.trials {
+            Some(trials) => {
+                let trials = u16::try_from(trials).map_err(FoldError::RoundTrials)?;
+                NonZeroU16::new(trials).ok_or(FoldError::ZeroTrials)?
+            }
+            None => self.config.needed,
+        };
+        let trial_s = match round.trial_s {
+            Some(seconds) => NonZeroU32::new(seconds)
+                .map(Secs::new)
+                .ok_or(FoldError::ZeroDuration)?,
+            None => self.config.short_trial,
+        };
         let profile = Profile::new(&self.topo, round.profile)?;
         let target = Profile::new(&self.topo, round.target)?;
         Profile::new(&self.topo, round.base)?;
@@ -193,15 +206,8 @@ impl Run {
         let mut started = Round {
             shape,
             target,
-            trials: round
-                .trials
-                .and_then(|trials| u16::try_from(trials).ok())
-                .and_then(NonZeroU16::new)
-                .unwrap_or(self.config.needed),
-            trial_s: round
-                .trial_s
-                .and_then(NonZeroU32::new)
-                .map_or(self.config.short_trial, Secs::new),
+            trials,
+            trial_s,
             checks: Vec::new(),
             sources: Vec::new(),
         };

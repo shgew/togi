@@ -48,6 +48,10 @@ pub enum FoldError {
     NoLoad(TrialId),
     #[error("a trial duration is zero")]
     ZeroDuration,
+    #[error("a trial requirement is zero")]
+    ZeroTrials,
+    #[error("convert hunt trial count")]
+    HuntTrials(#[source] std::num::TryFromIntError),
     #[error("a failed trial carries no signal")]
     MissingSignal,
     #[error("a failure belongs to no trial and is not an idle crash")]
@@ -60,6 +64,8 @@ pub enum FoldError {
     UnknownCcd(togi_machine::CcdId),
     #[error("hunt {0} has no candidate to narrow")]
     NoCandidates(std::num::NonZeroU32),
+    #[error("convert deepening round trial count")]
+    RoundTrials(#[source] std::num::TryFromIntError),
     #[error("config.loaded records a configuration this build refuses")]
     Config(#[source] std::sync::Arc<togi_config::ConfigError>),
 }

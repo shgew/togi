@@ -2108,20 +2108,18 @@ fn the_known_failure_gate_reads_the_threshold_frozen_at_the_hunt_start() {
     }
 }
 
-#[test]
-fn replayed_hunt_trials_clamp_to_the_nonzero_evidence_range() {
-    for (trials, needed) in [(0, 1), (1, 1), (65_535, 65_535), (65_536, 65_535)] {
-        let mut j = limit_session(3);
-        fail_all_together(&mut j, SHORT);
-        let (mut start, cause) = j.hunt_start_payload();
-        start.trials = trials;
-        j.append(start.into(), &cause);
-        assert_eq!(j.run().hunts.active.as_ref().unwrap().needed.get(), needed);
-        let group = j.next_decision();
-        j.decide(group);
-        assert_eq!(j.next_trial().requirement.needed.get(), needed);
-        j.assert_resumes();
-    }
+#[test_case::test_case(1; "minimum")]
+#[test_case::test_case(65_535; "maximum")]
+fn replayed_hunt_trials_keep_the_recorded_requirement(needed: u16) {
+    let mut j = limit_session(3);
+    fail_all_together(&mut j, SHORT);
+    let (mut start, cause) = j.hunt_start_payload();
+    start.trials = u32::from(needed);
+    j.append(start.into(), &cause);
+    let group = j.next_decision();
+    j.decide(group);
+    assert_eq!(j.next_trial().requirement.needed.get(), needed);
+    j.assert_resumes();
 }
 
 #[test]
