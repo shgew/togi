@@ -4,7 +4,6 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 
-use super::at;
 use crate::frames::colours::Paint;
 use crate::frames::draw::{put, put_cells};
 use crate::frames::fit::{Clause, Form, fit_clauses, line_width, rule};
@@ -13,6 +12,7 @@ use crate::frames::measure::Measure;
 use crate::frames::scene::{Scene, between, clock};
 use crate::frames::story::{operation, resting_band, trial_where};
 use crate::model::TrialView;
+use crate::numbers::saturating_cells;
 use crate::screen::Colours;
 use crate::words::{cores_text, load_words, workload_display};
 
@@ -33,10 +33,10 @@ const DIGITS: [[&str; 3]; 11] = [
 /// The three rows of `text` in large digits; characters other than digits and `:` are skipped.
 pub(super) fn big_digits(text: &str) -> [String; 3] {
     let mut rows = [String::new(), String::new(), String::new()];
-    for (i, c) in text.chars().enumerate() {
+    for (i, c) in text.bytes().enumerate() {
         let glyph = match c {
-            ':' => 10,
-            '0'..='9' => usize::from(u8::try_from(c).unwrap_or(b'0') - b'0'),
+            b':' => 10,
+            b'0'..=b'9' => usize::from(c - b'0'),
             _ => continue,
         };
         for (row, part) in rows.iter_mut().zip(DIGITS[glyph]) {
@@ -54,8 +54,9 @@ pub(super) fn filled(cells: usize, elapsed: Duration, total: Duration) -> usize 
     if total.is_zero() {
         return 0;
     }
+    let cells = usize::from(saturating_cells(cells));
     let done = cells as u128 * elapsed.as_nanos().min(total.as_nanos()) / total.as_nanos();
-    usize::try_from(done).unwrap_or(cells)
+    done as usize
 }
 
 /// The leading edges of a cell filled by one to seven eighths, from the left.
@@ -69,13 +70,14 @@ pub(super) fn progress_bar(
     elapsed: Duration,
     total: Duration,
 ) -> Line<'static> {
+    let cells = usize::from(saturating_cells(cells));
     let n = filled(cells, elapsed, total).min(cells);
     let mut run = "█".repeat(n);
     let mut rest_cells = cells - n;
     if scene.colours == Colours::Rich && rest_cells > 0 && !total.is_zero() {
         let eighths =
             cells as u128 * 8 * elapsed.as_nanos().min(total.as_nanos()) / total.as_nanos();
-        let edge = usize::try_from(eighths % 8).unwrap_or(0);
+        let edge = (eighths % 8) as usize;
         if edge > 0 {
             run.push(EDGES[edge - 1]);
             rest_cells -= 1;
@@ -133,7 +135,7 @@ fn draw_resting(buf: &mut Buffer, r: Rect, class: SizeClass, scene: &Scene<'_>) 
         }
         put(buf, r, 0, 0, &Line::from(first), scene.colours);
         for (i, line) in band.lines.iter().enumerate().skip(1) {
-            put(buf, r, 0, at(i), &text(line), scene.colours);
+            put(buf, r, 0, saturating_cells(i), &text(line), scene.colours);
         }
         return;
     }
@@ -146,7 +148,14 @@ fn draw_resting(buf: &mut Buffer, r: Rect, class: SizeClass, scene: &Scene<'_>) 
     );
     put(buf, r, 0, 0, &rule, scene.colours);
     for (i, line) in band.lines.iter().enumerate() {
-        put(buf, r, 0, at(i + 1), &text(line), scene.colours);
+        put(
+            buf,
+            r,
+            0,
+            saturating_cells(i + 1),
+            &text(line),
+            scene.colours,
+        );
     }
 }
 
@@ -248,7 +257,7 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
     put(
         buf,
         r,
-        at(width.saturating_sub(op_width)),
+        saturating_cells(width.saturating_sub(op_width)),
         desc_y,
         &op,
         colours,
@@ -302,8 +311,8 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
             put_cells(
                 buf,
                 r,
-                at(x),
-                3 + at(y),
+                saturating_cells(x),
+                3 + saturating_cells(y),
                 &Line::from(paint(style, row)),
                 colours,
             );
@@ -316,7 +325,7 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
             put(
                 buf,
                 r,
-                at(x),
+                saturating_cells(x),
                 4,
                 &Line::from(paint(Paint::Text, msg)),
                 colours,
@@ -330,7 +339,7 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
             put(
                 buf,
                 r,
-                at(width.saturating_sub(7)),
+                saturating_cells(width.saturating_sub(7)),
                 6,
                 &Line::from(paint(Paint::Grey, "ends at".into())),
                 colours,
@@ -345,7 +354,7 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
             put(
                 buf,
                 r,
-                at(cells.saturating_sub(line_width(&trials, colours))),
+                saturating_cells(cells.saturating_sub(line_width(&trials, colours))),
                 6,
                 &trials,
                 colours,
@@ -353,7 +362,7 @@ pub(crate) fn draw_now(buf: &mut Buffer, measure: &Measure, scene: &Scene<'_>) {
             put(
                 buf,
                 r,
-                at(width.saturating_sub(label.len())),
+                saturating_cells(width.saturating_sub(label.len())),
                 6,
                 &Line::from(paint(Paint::Grey, label.into())),
                 colours,

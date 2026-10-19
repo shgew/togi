@@ -107,7 +107,7 @@ impl Derived {
         let step_hunts = plan
             .number
             .map(|number| {
-                (1..=ord(plan.steps.len()))
+                (1..=crate::numbers::saturating_ordinal(plan.steps.len()))
                     .map(|step| {
                         facts
                             .check_hunts
@@ -206,9 +206,9 @@ pub(crate) fn place_in_cycle(plan: &CyclePlan, trial: &mut TrialView) {
         let of = part.trials();
         trial.cycle = Some(CyclePlace {
             cycle: place.cycle,
-            step: Some(ord(step) + 1),
-            part: Some(ord(index) + 1),
-            parts: ord(parts.len()),
+            step: Some(crate::numbers::saturating_ordinal(step.saturating_add(1))),
+            part: Some(crate::numbers::saturating_ordinal(index.saturating_add(1))),
+            parts: crate::numbers::saturating_ordinal(parts.len()),
         });
         trial.count = Count {
             passed: part.passed,
@@ -220,7 +220,9 @@ pub(crate) fn place_in_cycle(plan: &CyclePlan, trial: &mut TrialView) {
         for (j, part) in step.parts.iter().enumerate() {
             if part.running
                 && part.cores == trial.cores
-                && place.step.is_none_or(|s| s == ord(i) + 1)
+                && place
+                    .step
+                    .is_none_or(|s| s == crate::numbers::saturating_ordinal(i.saturating_add(1)))
             {
                 put(trial, i, j);
                 return;
@@ -247,11 +249,11 @@ pub(crate) fn fit_hunt(trial: &mut TrialView, plan: &togi_tuner::HuntPlan) {
     if place.hunt != plan.number {
         return;
     }
-    place.parts = ord(plan.parts.len());
+    place.parts = crate::numbers::saturating_ordinal(plan.parts.len());
     place.cut = plan.cut;
     for (i, part) in plan.parts.iter().enumerate() {
         if part.running {
-            place.part = Some(ord(i) + 1);
+            place.part = Some(crate::numbers::saturating_ordinal(i.saturating_add(1)));
         }
     }
     for group in &plan.groups {
@@ -513,10 +515,6 @@ fn combo_views(projection: &Projection, cores: &[CoreView], facts: &Facts) -> Ve
             view
         })
         .collect()
-}
-
-fn ord(n: usize) -> u32 {
-    u32::try_from(n).unwrap_or(u32::MAX)
 }
 
 /// The offsets at which a group trial of the running hunt failed with `core` loaded.

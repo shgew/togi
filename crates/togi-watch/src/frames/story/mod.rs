@@ -747,11 +747,12 @@ fn length_words(span: Duration) -> String {
 /// A trial's planned length as a count: `10 minutes`, `45 seconds`.
 fn minutes(span: Duration) -> String {
     let secs = span.as_secs();
-    if secs >= 60 && secs.is_multiple_of(60) {
-        plural(usize::try_from(secs / 60).unwrap_or(usize::MAX), "minute")
+    let (count, unit) = if secs >= 60 && secs.is_multiple_of(60) {
+        (secs / 60, "minute")
     } else {
-        plural(usize::try_from(secs).unwrap_or(usize::MAX), "second")
-    }
+        (secs, "second")
+    };
+    format!("{count} {unit}{}", if count == 1 { "" } else { "s" })
 }
 
 /// `story` as `▌  LABEL   text` in `width` cells and at most `height` rows, wrapped lines aligned under the text,
