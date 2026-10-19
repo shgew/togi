@@ -327,3 +327,502 @@ fn a_reset_core_is_consumed_by_the_resumed_session_which_retunes_it_to_its_limit
         "a clean full checking cycle ends after the reset"
     );
 }
+
+#[derive(Clone, Copy)]
+enum ReportedTime {
+    Elapsed(std::time::Duration),
+    EscapedOverflow,
+    CrashedSample(i64),
+}
+
+struct DurationTrials {
+    inner: Box<dyn togi_machine::Trials>,
+    time: ReportedTime,
+    cancel: CancellationToken,
+    starts: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+struct DurationRunning {
+    inner: Box<dyn togi_machine::Running>,
+    time: ReportedTime,
+    cancel: CancellationToken,
+}
+
+impl togi_machine::Running for DurationRunning {
+    fn started(&self) -> togi_machine::Started {
+        self.inner.started()
+    }
+
+    fn wait(
+        &mut self,
+        cancel: &CancellationToken,
+        report: &mut dyn togi_machine::Reporter,
+    ) -> Result<togi_machine::TrialResult, togi_machine::Partial<togi_machine::TrialResult>> {
+        let mut result = self.inner.wait(cancel, report)?;
+        match self.time {
+            ReportedTime::Elapsed(ran) => result.ran = ran,
+            ReportedTime::EscapedOverflow => {
+                result.ran = std::time::Duration::from_secs(u64::from(u32::MAX) + 1);
+                result.escaped.push(togi_machine::CpuId::from(63));
+            }
+            ReportedTime::CrashedSample(_) => {
+                result.failure = Some(togi_machine::TrialFailure {
+                    signal: togi_machine::Signal::ComputationError,
+                    core: core(0),
+                });
+                return Err(togi_machine::Partial {
+                    value: result,
+                    error: togi_machine::Error::Crashed,
+                });
+            }
+        }
+        self.cancel.cancel();
+        Ok(result)
+    }
+
+    fn stop(self: Box<Self>) -> Result<togi_machine::Stopped, togi_machine::Error> {
+        self.inner.stop()
+    }
+}
+
+impl togi_machine::Trials for DurationTrials {
+    fn sweep(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> Result<togi_machine::Swept, togi_machine::Error> {
+        self.inner.sweep(cancel)
+    }
+
+    fn start(
+        &mut self,
+        cancel: &CancellationToken,
+        spec: togi_machine::TrialSpec,
+        ready: togi_machine::Stopped,
+    ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
+    {
+        self.starts.set(self.starts.get() + 1);
+        Ok(Box::new(DurationRunning {
+            inner: self.inner.start(cancel, spec, ready)?,
+            time: self.time,
+            cancel: self.cancel.clone(),
+        }))
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), togi_machine::Error> {
+        self.inner.ended(id)
+    }
+
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<
+        dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
+    > {
+        if let ReportedTime::CrashedSample(elapsed_ms) = self.time {
+            Box::new(std::iter::once(Ok(togi_machine::TrialConditions {
+                elapsed_ms,
+                ..togi_machine::TrialConditions::default()
+            })))
+        } else {
+            self.inner.samples(id)
+        }
+    }
+}
+
+#[test_case::test_case(u64::from(u32::MAX) - 1, false; "below")]
+#[test_case::test_case(u64::from(u32::MAX), false; "maximum")]
+#[test_case::test_case(u64::from(u32::MAX) + 1, true; "overflow")]
+fn trial_elapsed_seconds_are_checked(seconds: u64, refused: bool) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        time: ReportedTime::Elapsed(std::time::Duration::from_secs(seconds)),
+        cancel: input.cancel.clone(),
+        starts: std::rc::Rc::default(),
+    });
+    let ended = run(input);
+    assert_eq!(
+        ended
+            .errors
+            .iter()
+            .any(|error| matches!(error, togi_session::SessionError::TrialDuration(_))),
+        refused,
+        "{:?}",
+        ended.errors
+    );
+    let duration = ended.journal.events().iter().find_map(|event| {
+        if let Payload::TrialEnd(end) = &event.payload {
+            Some(end.duration_s)
+        } else {
+            None
+        }
+    });
+    assert_eq!(duration, u32::try_from(seconds).ok());
+}
+
+struct MonotonicClock {
+    inner: Box<dyn togi_machine::Clock>,
+    mono: std::time::Duration,
+}
+
+impl togi_machine::Clock for MonotonicClock {
+    fn now(&self) -> jiff::Timestamp {
+        self.inner.now()
+    }
+
+    fn monotonic(&self) -> std::time::Duration {
+        self.mono
+    }
+
+    fn sleep(
+        &mut self,
+        cancel: &CancellationToken,
+        duration: std::time::Duration,
+    ) -> Result<(), togi_machine::Error> {
+        self.inner.sleep(cancel, duration)
+    }
+}
+
+#[test_case::test_case(-1, false; "below")]
+#[test_case::test_case(0, false; "maximum")]
+#[test_case::test_case(1, true; "overflow")]
+fn trial_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    let max = std::time::Duration::from_nanos(u64::MAX);
+    let nano = std::time::Duration::from_nanos(1);
+    let mono = match delta {
+        -1 => max.checked_sub(nano).unwrap(),
+        0 => max,
+        1 => max + nano,
+        _ => unreachable!(),
+    };
+    input.machine.clock = Box::new(MonotonicClock {
+        inner: input.machine.clock,
+        mono,
+    });
+    let starts = std::rc::Rc::new(std::cell::Cell::new(0));
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        time: ReportedTime::Elapsed(std::time::Duration::from_secs(90)),
+        cancel: input.cancel.clone(),
+        starts: std::rc::Rc::clone(&starts),
+    });
+    let ended = run(input);
+    assert_eq!(
+        ended
+            .errors
+            .iter()
+            .any(|error| matches!(error, togi_session::SessionError::Monotonic(_))),
+        refused,
+        "{:?}",
+        ended.errors
+    );
+    let start = ended.journal.events().iter().find_map(|event| {
+        if let Payload::TrialStart(start) = &event.payload {
+            start.window_start_ns
+        } else {
+            None
+        }
+    });
+    assert_eq!(start, u64::try_from(mono.as_nanos()).ok());
+    assert_eq!(starts.get(), usize::from(!refused));
+}
+
+struct MonotonicKernel {
+    inner: Box<dyn togi_machine::Kernel>,
+    mono: std::time::Duration,
+    visible: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+impl MonotonicKernel {
+    fn mce(&self) -> togi_machine::Mce {
+        togi_machine::Mce {
+            cpu: togi_machine::CpuId::from(0),
+            core: Some(core(0)),
+            bank: 0,
+            bank_type: togi_machine::BankType::Unknown,
+            corrected: true,
+            time: jiff::Timestamp::UNIX_EPOCH,
+            monotonic: self.mono,
+            lines: vec!["machine check".into()],
+        }
+    }
+}
+
+impl togi_machine::Kernel for MonotonicKernel {
+    fn mces(
+        &mut self,
+        _: &togi_machine::BootId,
+        _: std::time::Duration,
+    ) -> Result<Vec<togi_machine::Mce>, togi_machine::Partial<Vec<togi_machine::Mce>>> {
+        Ok(if self.visible.get() {
+            vec![self.mce()]
+        } else {
+            Vec::new()
+        })
+    }
+
+    fn read_mces(
+        &mut self,
+        boot: &togi_machine::BootId,
+        after: Option<&togi_machine::KernelCursor>,
+    ) -> Result<togi_machine::KernelRead, togi_machine::Partial<Vec<togi_machine::Mce>>> {
+        let mut read = self.inner.read_mces(boot, after)?;
+        if self.visible.get() {
+            read.mces.push(self.mce());
+        }
+        Ok(read)
+    }
+
+    fn reset_reason(
+        &mut self,
+        boot: &togi_machine::BootId,
+    ) -> Result<togi_machine::ResetReason, togi_machine::Error> {
+        self.inner.reset_reason(boot)
+    }
+
+    fn reset_reason_after(
+        &mut self,
+        boot: &togi_machine::BootId,
+    ) -> Result<togi_machine::ResetReason, togi_machine::Error> {
+        self.inner.reset_reason_after(boot)
+    }
+
+    fn saved_pstore(
+        &mut self,
+        boot: &togi_machine::BootId,
+    ) -> Result<Option<togi_machine::PstoreRecord>, togi_machine::Error> {
+        self.inner.saved_pstore(boot)
+    }
+}
+
+#[test_case::test_case(-1, false; "below")]
+#[test_case::test_case(0, false; "maximum")]
+#[test_case::test_case(1, true; "overflow")]
+fn kernel_monotonic_nanoseconds_are_checked(delta: i8, refused: bool) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    let max = std::time::Duration::from_nanos(u64::MAX);
+    let nano = std::time::Duration::from_nanos(1);
+    let mono = match delta {
+        -1 => max.checked_sub(nano).unwrap(),
+        0 => max,
+        1 => max + nano,
+        _ => unreachable!(),
+    };
+    input.machine.kernel = Box::new(MonotonicKernel {
+        inner: input.machine.kernel,
+        mono,
+        visible: std::rc::Rc::new(std::cell::Cell::new(true)),
+    });
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        time: ReportedTime::Elapsed(std::time::Duration::from_secs(90)),
+        cancel: input.cancel.clone(),
+        starts: std::rc::Rc::default(),
+    });
+    let ended = run(input);
+    assert_eq!(
+        ended
+            .errors
+            .iter()
+            .any(|error| matches!(error, togi_session::SessionError::Monotonic(_))),
+        refused,
+        "{:?}",
+        ended.errors
+    );
+    let recorded = ended.journal.events().iter().find_map(|event| {
+        if let Payload::Mce(mce) = &event.payload {
+            mce.monotonic_ns
+        } else {
+            None
+        }
+    });
+    assert_eq!(recorded, u64::try_from(mono.as_nanos()).ok());
+}
+
+struct SetupFailure(Box<dyn togi_machine::Trials>);
+
+impl togi_machine::Trials for SetupFailure {
+    fn sweep(
+        &mut self,
+        cancel: &CancellationToken,
+    ) -> Result<togi_machine::Swept, togi_machine::Error> {
+        self.0.sweep(cancel)
+    }
+
+    fn start(
+        &mut self,
+        _: &CancellationToken,
+        _: togi_machine::TrialSpec,
+        ready: togi_machine::Stopped,
+    ) -> Result<Box<dyn togi_machine::Running>, togi_machine::Partial<Option<togi_machine::Stopped>>>
+    {
+        Err(togi_machine::Partial {
+            value: Some(ready),
+            error: togi_machine::Error::Other(Box::new(io::Error::other("setup unavailable"))),
+        })
+    }
+
+    fn ended(&mut self, id: &str) -> Result<(), togi_machine::Error> {
+        self.0.ended(id)
+    }
+
+    fn samples<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<
+        dyn Iterator<Item = Result<togi_machine::TrialConditions, togi_machine::SampleError>> + 'a,
+    > {
+        self.0.samples(id)
+    }
+}
+
+#[test]
+fn retry_waits_preserve_the_bounded_seconds_schedule() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(SetupFailure(input.machine.trials));
+    let ended = run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let waits: Vec<_> = ended
+        .journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::BackendRetry(retry) = &event.payload {
+                Some((retry.attempt, retry.wait_s))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(waits, [(1, 60), (2, 300), (3, 1800)]);
+}
+
+#[test]
+fn an_overflowing_duration_keeps_the_containment_dead_end_durable() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        time: ReportedTime::EscapedOverflow,
+        cancel: input.cancel.clone(),
+        starts: std::rc::Rc::default(),
+    });
+    let ended = run(input);
+    assert!(
+        ended
+            .errors
+            .iter()
+            .any(|error| matches!(error, togi_session::SessionError::TrialDuration(_)))
+    );
+    assert!(ended.journal.events().iter().any(|event| matches!(
+        &event.payload,
+        Payload::DeadEnd(dead) if dead.condition == togi_journal::DeadEndCondition::Containment
+            && dead.detail.contains("backend thread on cpu 63 outside allowed cpus")
+    )));
+    assert!(
+        !ended
+            .journal
+            .events()
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::TrialEnd(_)))
+    );
+}
+
+#[test_case::test_case((i64::from(u32::MAX) - 1) * 1000, false; "below")]
+#[test_case::test_case(i64::from(u32::MAX) * 1000, false; "maximum")]
+#[test_case::test_case((i64::from(u32::MAX) + 1) * 1000, true; "overflow")]
+#[test_case::test_case(-1, true; "negative")]
+fn recovered_sample_elapsed_seconds_are_checked(elapsed_ms: i64, refused: bool) {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        time: ReportedTime::CrashedSample(elapsed_ms),
+        cancel: input.cancel.clone(),
+        starts: std::rc::Rc::default(),
+    });
+    let ended = run(input);
+    let last = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end.last_sample_s)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(
+        last,
+        if refused {
+            None
+        } else {
+            Some(u32::try_from(elapsed_ms / 1000).unwrap())
+        }
+    );
+    let warning = ended.journal.events().iter().any(|event| {
+        matches!(
+            &event.payload,
+            Payload::SessionWarning(warning) if warning.operation == "read conditions samples"
+                && warning.error.contains("elapsed")
+        )
+    });
+    assert_eq!(warning, refused);
+}
+
+#[test]
+fn an_overflowing_teardown_mce_keeps_the_containment_dead_end_durable() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    let started = std::rc::Rc::new(std::cell::Cell::new(false));
+    let visible = std::rc::Rc::clone(&started);
+    input.on_append = Some(Box::new(move |event| {
+        if matches!(&event.payload, Payload::TrialStart(_)) {
+            started.set(true);
+        }
+    }));
+    input.machine.kernel = Box::new(MonotonicKernel {
+        inner: input.machine.kernel,
+        mono: std::time::Duration::from_nanos(u64::MAX) + std::time::Duration::from_nanos(1),
+        visible,
+    });
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        time: ReportedTime::EscapedOverflow,
+        cancel: input.cancel.clone(),
+        starts: std::rc::Rc::default(),
+    });
+    let ended = run(input);
+    assert!(
+        ended
+            .errors
+            .iter()
+            .any(|error| matches!(error, togi_session::SessionError::Monotonic(_)))
+    );
+    assert!(ended.journal.events().iter().any(|event| matches!(
+        &event.payload,
+        Payload::DeadEnd(dead) if dead.condition == togi_journal::DeadEndCondition::Containment
+            && dead.detail.contains("backend thread on cpu 63 outside allowed cpus")
+    )));
+    assert!(
+        !ended
+            .journal
+            .events()
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::TrialEnd(_)))
+    );
+}
