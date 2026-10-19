@@ -108,8 +108,8 @@ impl Clock for SimClock {
         self.0.borrow().wall()
     }
 
-    fn monotonic(&self) -> Duration {
-        self.0.borrow().monotonic()
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
+        Ok(self.0.borrow().monotonic())
     }
 
     fn sleep(&mut self, cancel: &CancellationToken, duration: Duration) -> Result<(), Error> {

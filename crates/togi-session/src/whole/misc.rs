@@ -356,7 +356,7 @@ impl Clock for SignalledWhileWaiting {
         self.inner.now()
     }
 
-    fn monotonic(&self) -> Duration {
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
         self.inner.monotonic()
     }
 

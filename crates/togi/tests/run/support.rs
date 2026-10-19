@@ -521,7 +521,7 @@ impl System for Fake {
         true
     }
 
-    fn monotonic(&self) -> Duration {
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
         self.sim.seams().clock.monotonic()
     }
 

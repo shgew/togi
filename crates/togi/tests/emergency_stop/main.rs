@@ -270,23 +270,25 @@ fn a_failed_sweep_exits_1_and_leaves_every_offset_as_it_was() {
     rig.assert_untouched();
 }
 
-#[test]
-fn a_failed_validation_exits_1_before_the_sweep_and_leaves_every_offset_as_it_was() {
-    for (check, detail) in [("cpu", "not a Zen 5"), ("ryzen_smu", "driver not loaded")] {
-        let rig = Rig::new();
-        rig.sim.fail_check(check, detail);
-        let ran = rig.run();
-        assert_eq!(ran.exit, Exit::Error, "{check}");
-        assert_eq!(
-            ran.err,
-            format!(
-                "togi emergency-stop: validate the SMU interface: validate {check}: {detail}; offsets unchanged\n"
-            ),
-            "{check}"
-        );
-        assert_eq!(rig.ops(), Vec::<String>::new(), "{check}");
-        rig.assert_untouched();
-    }
+#[test_case::test_case("cpu", "not a Zen 5"; "cpu")]
+#[test_case::test_case("ryzen_smu", "driver not loaded"; "driver")]
+fn a_failed_validation_exits_1_before_the_sweep_and_leaves_every_offset_as_it_was(
+    check: &str,
+    detail: &str,
+) {
+    let rig = Rig::new();
+    rig.sim.fail_check(check, detail);
+    let ran = rig.run();
+    assert_eq!(ran.exit, Exit::Error, "{check}");
+    assert_eq!(
+        ran.err,
+        format!(
+            "togi emergency-stop: validate the SMU interface: validate {check}: {detail}; offsets unchanged\n"
+        ),
+        "{check}"
+    );
+    assert_eq!(rig.ops(), Vec::<String>::new(), "{check}");
+    rig.assert_untouched();
 }
 
 #[test]

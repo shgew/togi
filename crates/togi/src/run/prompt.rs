@@ -43,7 +43,7 @@ fn readable(fd: BorrowedFd<'_>) -> rustix::io::Result<bool> {
     let mut fds = [PollFd::new(&fd, PollFlags::IN)];
     let tick = Timespec {
         tv_sec: 0,
-        tv_nsec: i64::try_from(TICK.as_nanos()).unwrap_or(0),
+        tv_nsec: i64::from(TICK.subsec_nanos()),
     };
     Ok(poll(&mut fds, Some(&tick))? > 0)
 }

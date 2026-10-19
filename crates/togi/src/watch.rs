@@ -155,14 +155,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn the_tuning_boot_flag_takes_no_value() {
-        for args in [
-            &["--tuning-boot=true"][..],
-            &["--tuning-boot", "1"],
-            &["--tuning_boot"],
-        ] {
-            assert!(parse(args).is_err(), "{args:?}");
-        }
+    #[test_case::test_case(&["--tuning-boot=true"]; "equals value")]
+    #[test_case::test_case(&["--tuning-boot", "1"]; "positional value")]
+    #[test_case::test_case(&["--tuning_boot"]; "underscore")]
+    fn the_tuning_boot_flag_takes_no_value(args: &[&str]) {
+        assert!(parse(args).is_err(), "{args:?}");
     }
 }

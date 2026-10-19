@@ -68,7 +68,7 @@ fn mce_now(clock: &dyn Clock, corrected: bool, label: &str, ago: Duration) -> Mc
         bank_type: BankType::LoadStore,
         corrected,
         time: clock.now(),
-        monotonic: clock.monotonic().saturating_sub(ago),
+        monotonic: clock.monotonic().unwrap().saturating_sub(ago),
         lines: vec![label.to_owned()],
     }
 }
@@ -179,7 +179,7 @@ impl Clock for RetryClock {
         self.inner.now()
     }
 
-    fn monotonic(&self) -> Duration {
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
         self.inner.monotonic()
     }
 

@@ -26,6 +26,8 @@ pub enum CommandError {
     Close(#[from] CloseError),
     #[error(transparent)]
     Dir(#[from] DirError),
+    #[error("read the command event clock")]
+    Clock(#[from] togi_machine::Error),
 }
 
 /// Records `command.reset` for `core`, so a later run starts it over. Refuses a journal this build may not append
@@ -51,7 +53,7 @@ pub fn reset_core(
         target: ResetTarget::Core(core),
     };
     Ok(journal
-        .append(stamp(clock), Payload::CommandReset(payload), &[])?
+        .append(stamp(clock)?, Payload::CommandReset(payload), &[])?
         .seq)
 }
 
@@ -89,22 +91,22 @@ pub fn reset_all(
     }
     let reset = journal
         .append(
-            stamp(clock),
+            stamp(clock)?,
             Payload::CommandReset(CommandReset {
                 target: ResetTarget::All,
             }),
             &[],
         )?
         .seq;
-    let dir = journal.archive(stamp(clock), ArchiveKind::ResetAll, &[reset])?;
+    let dir = journal.archive(stamp(clock)?, ArchiveKind::ResetAll, &[reset])?;
     Ok((session, dir))
 }
 
-fn stamp(clock: &dyn Clock) -> Stamp {
-    Stamp {
+fn stamp(clock: &dyn Clock) -> Result<Stamp, CommandError> {
+    Ok(Stamp {
         time: clock.now(),
-        mono: Some(clock.monotonic()),
-    }
+        mono: Some(clock.monotonic()?),
+    })
 }
 
 #[cfg(test)]

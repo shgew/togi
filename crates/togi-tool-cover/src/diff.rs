@@ -26,11 +26,9 @@ impl LineRange {
         self.first.max(other.first) <= self.last.min(other.last)
     }
 
-    /// The zero-based indices of the range's lines in a file split at newlines, saturating at
-    /// `usize::MAX` where `usize` is narrower than `u32`.
+    /// The zero-based indices, exact on the supported 32-bit and 64-bit platforms.
     pub fn indices(self) -> Range<usize> {
-        let index = |line: u32| usize::try_from(line).unwrap_or(usize::MAX);
-        index(self.first - 1)..index(self.last)
+        (self.first - 1) as usize..self.last as usize
     }
 }
 
@@ -93,6 +91,9 @@ fn parse_hunk(line: &str) -> Result<Option<LineRange>, Error> {
     let count: u32 = count.parse().map_err(|_| malformed())?;
     if count == 0 {
         return Ok(None);
+    }
+    if first == 0 {
+        return Err(malformed());
     }
     let last = first.checked_add(count - 1).ok_or_else(malformed)?;
     Ok(Some(LineRange::new(first, last)))
