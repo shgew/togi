@@ -1,36 +1,37 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroU32;
-use std::path::Path;
 
 use jiff::Timestamp;
 use togi_journal::{Decision, Event, HuntStage, Inference, Outcome, Payload, Seq, WarningKind};
-use togi_machine::{Backend, TargetOffset};
-use togi_tuner::{ClassKey, Evidence, Observation, Profile, Secs, SessionRef, TopologyMismatch};
+use togi_machine::TargetOffset;
+use togi_tuner::{ClassKey, Secs, State};
 
 use crate::project::{Class, Projection, Trial};
-use crate::report::{hours, selected};
+use crate::report::{hours, optional, selected};
 use crate::table::{Table, row};
 
-/// Fold recorded observations once, asking the tuner at each requested historical boundary.
-/// Profiles are already checked against this projection's topology.
+/// Ask the tuner at each historical boundary, stopping its fold at the first refused event.
+/// Like the R7 analysis, subsequent queries are unknown rather than invented zeroes.
 pub(crate) fn pass_counts(
     p: &Projection<'_>,
     mut requests: Vec<(Seq, usize)>,
-) -> Result<BTreeMap<(Seq, usize), usize>, TopologyMismatch> {
+) -> BTreeMap<(Seq, usize), Option<usize>> {
     requests.sort_unstable();
     requests.dedup();
     let mut requests = requests.into_iter().peekable();
     let mut counts = BTreeMap::new();
-    let mut evidence = Evidence::new(p.topology.all());
-    let mut backends = HashMap::new();
+    let mut state = State::new();
+    let mut folding = true;
     for event in p.events {
         while let Some(&(before, at)) = requests.peek()
             && before <= event.seq
         {
             let trial = &p.trials[at];
-            let count = match (key(trial.class), trial.profile) {
-                (Some(class), Some(profile)) => evidence.passes_before(class, &profile, before)?,
-                _ => 0,
+            let count = match (state.evidence(), key(trial.class), trial.profile) {
+                (Some(evidence), Some(class), Some(profile)) => {
+                    evidence.passes_before(class, &profile, before).ok()
+                }
+                _ => None,
             };
             counts.insert((before, at), count);
             requests.next();
@@ -38,146 +39,9 @@ pub(crate) fn pass_counts(
         if requests.peek().is_none() {
             break;
         }
-        match &event.payload {
-            Payload::ConfigLoaded(loaded) => {
-                for (backend, path) in [
-                    (Backend::Mprime, &loaded.config.backends.mprime),
-                    (Backend::Ycruncher, &loaded.config.backends.ycruncher),
-                ] {
-                    evidence.set_backend(backend, path.as_deref().map(Path::new));
-                }
-            }
-            Payload::TrialIntent(intent) => {
-                backends.insert(
-                    &intent.trial,
-                    evidence.active_backend(intent.workload.backend()),
-                );
-            }
-            Payload::TrialEnd(end) => {
-                let Some(&at) = p.by_id.get(&end.trial) else {
-                    continue;
-                };
-                let trial = &p.trials[at];
-                let (Some(class), Some(profile)) = (key(trial.class), trial.profile) else {
-                    continue;
-                };
-                let obs = Observation {
-                    seq: event.seq,
-                    class,
-                    profile: &profile,
-                    condition: trial.intent.condition,
-                    named: end.core,
-                };
-                let backend = backends.remove(&end.trial);
-                match end.outcome {
-                    Outcome::Pass => {
-                        if let Some(backend) = backend {
-                            evidence.record_pass(obs, backend)?;
-                        }
-                    }
-                    Outcome::Failure => evidence.record_failure(obs)?,
-                    Outcome::Inconclusive => {}
-                }
-            }
-            Payload::TrialCarried(carried) => {
-                let workload = carried
-                    .class
-                    .workload
-                    .unwrap_or_else(|| togi_machine::workloads(carried.class.regime)[0].id());
-                let Some(duration) = NonZeroU32::new(carried.class.duration_s) else {
-                    continue;
-                };
-                let Ok(profile) = Profile::new(p.topology, carried.profile) else {
-                    continue;
-                };
-                let obs = Observation {
-                    seq: event.seq,
-                    class: ClassKey::new(workload, carried.class.cores, Secs::new(duration)),
-                    profile: &profile,
-                    condition: carried.condition,
-                    named: carried.core,
-                };
-                let source = SessionRef::new(carried.source.session.to_string());
-                match carried.outcome {
-                    Outcome::Pass => {
-                        let backend = match &carried.source.backend {
-                            Some(id) => evidence.backend_id(id.backend, Some(Path::new(&id.path))),
-                            None => evidence.backend_id(workload.backend(), None),
-                        };
-                        evidence.record_carried_pass(obs, backend, source)?;
-                    }
-                    Outcome::Failure => evidence.record_carried_failure(obs, source)?,
-                    Outcome::Inconclusive => {}
-                }
-            }
-            Payload::FailureCarried(carried) => {
-                if let Some(offsets) = carried.failure.profile
-                    && let Ok(profile) = Profile::new(p.topology, offsets)
-                {
-                    evidence.record_carried_idle_failure(
-                        event.seq,
-                        &profile,
-                        SessionRef::new(carried.source.session.to_string()),
-                    )?;
-                }
-            }
-            Payload::CommandReset(reset) => {
-                if let togi_journal::ResetTarget::Core(core) = reset.target {
-                    evidence.reset_core(core);
-                }
-            }
-            Payload::SessionStart(_)
-            | Payload::SessionContext(_)
-            | Payload::SessionBaseline(_)
-            | Payload::SessionNotice(_)
-            | Payload::SessionWarning(_)
-            | Payload::SessionArchived(_)
-            | Payload::SessionCarried(_)
-            | Payload::PreflightCheck(_)
-            | Payload::SmuIntent(_)
-            | Payload::SmuWrite(_)
-            | Payload::SmuReadback(_)
-            | Payload::SmuError(_)
-            | Payload::ProfileApplied(_)
-            | Payload::ProfileChange(_)
-            | Payload::ProfileRestored(_)
-            | Payload::TrialStart(_)
-            | Payload::TrialProgress(_)
-            | Payload::TrialSignal(_)
-            | Payload::TrialSample(_)
-            | Payload::Failure(_)
-            | Payload::Mce(_)
-            | Payload::CrashDetected(_)
-            | Payload::CorePhase(_)
-            | Payload::CheckingCycle(_)
-            | Payload::CheckingStep(_)
-            | Payload::CheckingChain(_)
-            | Payload::HostRanking(_)
-            | Payload::HuntStart(_)
-            | Payload::HuntGroup(_)
-            | Payload::HuntEnd(_)
-            | Payload::HuntSkipped(_)
-            | Payload::Combination(_)
-            | Payload::DeepeningRound(_)
-            | Payload::TunerWarning(_)
-            | Payload::TunerDecision(_)
-            | Payload::BackendRetry(_)
-            | Payload::DefectFound(_)
-            | Payload::DefectAnswered(_)
-            | Payload::DeadEnd(_)
-            | Payload::BootSavedEntry(_)
-            | Payload::BootLeaveReason(_)
-            | Payload::Shutdown(_)
-            | Payload::JournalTorn(_)
-            | Payload::StateRebuilt(_) => {}
-        }
-        if let Ok(at) = p.idle.binary_search_by_key(&event.seq, |idle| idle.seq)
-            && let Some(profile) = p.idle[at].profile
-        {
-            evidence.record_idle_failure(event.seq, &profile)?;
-        }
+        folding = folding && state.fold(event).is_ok();
     }
-    Ok(counts)
+    counts
 }
 
 fn key(class: Class) -> Option<ClassKey> {
@@ -194,18 +58,25 @@ pub(crate) struct GroupReuse {
     pub(crate) hunt: u32,
     pub(crate) group: u32,
     pub(crate) stage: HuntStage,
-    pub(crate) prior: usize,
+    pub(crate) prior: Option<usize>,
     pub(crate) required: u32,
-    pub(crate) established: bool,
     pub(crate) passes: u32,
     pub(crate) failures: u32,
     pub(crate) trials: usize,
     pub(crate) seconds: u32,
 }
 
+impl GroupReuse {
+    pub(crate) fn established(&self) -> Option<bool> {
+        self.prior
+            .map(|prior| prior >= usize::try_from(self.required).unwrap_or(usize::MAX))
+    }
+}
+
 #[derive(Debug, Default, Eq, PartialEq)]
 pub(crate) struct StageReuse {
     pub(crate) groups: u32,
+    pub(crate) unavailable: u32,
     pub(crate) established: u32,
     pub(crate) passed: u32,
     pub(crate) failed: u32,
@@ -217,6 +88,7 @@ pub(crate) struct StageReuse {
 pub(crate) struct EvidenceMetrics {
     pub(crate) warnings: BTreeMap<WarningKind, u32>,
     pub(crate) single_carried: u32,
+    pub(crate) unavailable: usize,
     pub(crate) contradictions: BTreeMap<Class, u32>,
     pub(crate) groups: Vec<GroupReuse>,
     pub(crate) stages: BTreeMap<(u32, HuntStage), StageReuse>,
@@ -241,9 +113,8 @@ pub(crate) fn compute(p: &Projection<'_>, since: Option<Timestamp>) -> EvidenceM
                 }),
         )
         .collect();
-    let counts = pass_counts(p, requests).unwrap_or_else(|error| {
-        unreachable!("projection profiles share the evidence topology: {error}")
-    });
+    let counts = pass_counts(p, requests);
+    m.unavailable = counts.values().filter(|count| count.is_none()).count();
     for event in p.events.iter().filter(|e| selected(e.time, since)) {
         if let Payload::TunerWarning(warning) = &event.payload {
             *m.warnings.entry(warning.warning).or_default() += 1;
@@ -255,7 +126,7 @@ pub(crate) fn compute(p: &Projection<'_>, since: Option<Timestamp>) -> EvidenceM
         .enumerate()
         .filter(|(_, t)| selected(t.time, since) && t.failed())
     {
-        if counts[&(t.seq, at)] > 0 {
+        if counts[&(t.seq, at)].is_some_and(|count| count > 0) {
             *m.contradictions.entry(t.class).or_default() += 1;
         }
     }
@@ -267,13 +138,11 @@ pub(crate) fn compute(p: &Projection<'_>, since: Option<Timestamp>) -> EvidenceM
                 stage: group.plan.stage,
                 prior: counts[&(hunt.seq, group.trials[0])],
                 required: hunt.start.trials,
-                established: false,
                 passes: 0,
                 failures: 0,
                 trials: group.trials.len(),
                 seconds: 0,
             };
-            g.established = g.prior >= usize::try_from(g.required).unwrap_or(usize::MAX);
             for &at in &group.trials {
                 let t = &p.trials[at];
                 g.seconds += t.seconds();
@@ -285,7 +154,10 @@ pub(crate) fn compute(p: &Projection<'_>, since: Option<Timestamp>) -> EvidenceM
             }
             let s = m.stages.entry((g.hunt, group.plan.stage)).or_default();
             s.groups += 1;
-            if g.established {
+            if g.prior.is_none() {
+                s.unavailable += 1;
+            }
+            if g.established() == Some(true) {
                 s.established += 1;
                 if g.failures > 0 {
                     s.failed += 1;
@@ -312,6 +184,9 @@ pub(crate) fn render(table: &mut Table, m: &EvidenceMetrics) {
         "decisions resting on a single carried failure",
         m.single_carried
     );
+    if m.unavailable > 0 {
+        row!(table, "prior evidence queries unavailable", m.unavailable);
+    }
     table.section(
         "Failures after prior passes",
         &["trial class", "failures with prior passes"],
@@ -340,9 +215,9 @@ pub(crate) fn render(table: &mut Table, m: &EvidenceMetrics) {
             g.hunt,
             g.group,
             g.stage,
-            g.prior,
+            optional(g.prior),
             g.required,
-            g.established,
+            optional(g.established()),
             g.passes,
             g.failures,
             g.trials,
@@ -368,11 +243,11 @@ pub(crate) fn render(table: &mut Table, m: &EvidenceMetrics) {
             hunt,
             stage,
             s.groups,
-            s.established,
-            s.passed,
-            s.failed,
-            s.trials,
-            hours(f64::from(s.seconds))
+            optional((s.unavailable == 0).then_some(s.established)),
+            optional((s.unavailable == 0).then_some(s.passed)),
+            optional((s.unavailable == 0).then_some(s.failed)),
+            optional((s.unavailable == 0).then_some(s.trials)),
+            optional((s.unavailable == 0).then(|| hours(f64::from(s.seconds))))
         );
     }
 }

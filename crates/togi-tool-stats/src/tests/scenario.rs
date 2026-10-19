@@ -121,9 +121,8 @@ fn the_review_boundary_scenario_keeps_the_evidence_a_cutoff_hides() {
         hunt: 2,
         group,
         stage: HuntStage::Part,
-        prior: 1,
+        prior: None,
         required: 1,
-        established: true,
         passes,
         failures,
         trials: 1,
@@ -140,11 +139,12 @@ fn the_review_boundary_scenario_keeps_the_evidence_a_cutoff_hides() {
                 &(2, HuntStage::Part),
                 &StageReuse {
                     groups: 3,
-                    established: 3,
-                    passed: 1,
-                    failed: 1,
-                    trials: 3,
-                    seconds: 180
+                    unavailable: 3,
+                    established: 0,
+                    passed: 0,
+                    failed: 0,
+                    trials: 0,
+                    seconds: 0
                 }
             )]
         );
