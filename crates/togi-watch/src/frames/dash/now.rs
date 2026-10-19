@@ -56,13 +56,7 @@ pub(super) fn filled(cells: usize, elapsed: Duration, total: Duration) -> usize 
     }
     let cells = usize::from(saturating_cells(cells));
     let done = cells as u128 * elapsed.as_nanos().min(total.as_nanos()) / total.as_nanos();
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "the filled count is at most the checked terminal cell count"
-    )]
-    {
-        done as usize
-    }
+    done as usize
 }
 
 /// The leading edges of a cell filled by one to seven eighths, from the left.
@@ -83,10 +77,6 @@ pub(super) fn progress_bar(
     if scene.colours == Colours::Rich && rest_cells > 0 && !total.is_zero() {
         let eighths =
             cells as u128 * 8 * elapsed.as_nanos().min(total.as_nanos()) / total.as_nanos();
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "the fractional-cell remainder is less than eight"
-        )]
         let edge = (eighths % 8) as usize;
         if edge > 0 {
             run.push(EDGES[edge - 1]);

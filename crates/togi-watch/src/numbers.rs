@@ -17,10 +17,6 @@ pub(crate) fn nonnegative_elapsed(nanos: i128) -> Duration {
     let Ok(seconds) = u64::try_from(seconds) else {
         return Duration::MAX;
     };
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "the nanosecond remainder is less than one billion"
-    )]
     Duration::new(seconds, (nanos % 1_000_000_000) as u32)
 }
 
