@@ -477,7 +477,7 @@ pub enum SingletonStage {
 }
 
 /// The checking cycle: the tuner's plan and the hunts each step started.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct CycleView<'a> {
     /// The tuner's plan.
     pub plan: &'a CyclePlan,
