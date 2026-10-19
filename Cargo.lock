@@ -1601,6 +1601,7 @@ name = "togi-carry"
 version = "0.0.0"
 dependencies = [
  "jiff",
+ "serde_json",
  "test-case",
  "thiserror",
  "togi-config",
