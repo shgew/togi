@@ -61,6 +61,15 @@ fn a_signal_the_cycles_and_the_first_result_exit_zero_in_silence(stop: &Stop) {
     assert_eq!(err, "");
 }
 
+#[test_case(SessionError::RecoveredElapsed(std::time::Duration::try_from(jiff::SignedDuration::from_secs(-1)).unwrap_err()); "inverted recovery interval")]
+#[test_case(SessionError::WorkloadRotation(u8::try_from(256).unwrap_err()); "unrepresentable workload rotation")]
+fn refused_recorded_numbers_exit_as_errors(error: SessionError) {
+    let (outcome, err) = conclusion(None, &[error]);
+    assert_eq!(outcome.exit, Exit::Error);
+    assert!(!outcome.reboot);
+    assert!(!err.is_empty());
+}
+
 #[test_case(DeadEndCondition::FailureAtZero, 10 ; "failure at zero")]
 #[test_case(DeadEndCondition::Smu, 11 ; "smu")]
 #[test_case(DeadEndCondition::NoEvidence, 12 ; "no evidence")]
