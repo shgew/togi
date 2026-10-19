@@ -21,6 +21,8 @@
 //! `togi_sim::Model::failure_probability` over intended, not measured, trial durations. Equal
 //! profile/class observations are aggregated without losing counts; bootstrap trials retain their
 //! request/clock telemetry and named-core evidence.
+//! Core counts come from checked profiles and simulator models. Statistical count-to-float
+//! conversion uses [`togi_sim::saturating_count`]; bootstrap seed indices are checked, not saturated.
 //!
 //! Bounded coordinate search fits alone/together limits, workload overrides, hazard shape, supported
 //! flat and idle mechanisms, and shared-voltage parameters. It finds a local optimum, not a guaranteed

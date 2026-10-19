@@ -146,9 +146,9 @@ pub(crate) fn bios_context_def(context: &BiosContext) -> BiosContextDef {
     }
 }
 
-pub(crate) fn core_def(id: usize) -> CoreDef {
+pub(crate) fn core_def(id: u8) -> CoreDef {
     CoreDef {
-        id: i64::try_from(id).unwrap_or(i64::MAX),
+        id: i64::from(id),
         alone: [DEEPEST; 5],
         together: [DEEPEST; 7],
         flat: 0.0,
@@ -160,11 +160,9 @@ pub(crate) fn core_def(id: usize) -> CoreDef {
 /// The machine a fit starts from: every limit at the deepest offset and the hazard shape's starting values,
 /// with no joint, no residual hazard and no shared-voltage model yet.
 pub(crate) fn initial_config(records: &[&TrialFact]) -> MachineDefinition {
-    let cores = records
-        .first()
-        .map_or(0, |fact| fact.profile.as_slice().len());
+    let cores = records.first().map_or(0, |fact| fact.profile.core_count());
     MachineDefinition {
-        cores: i64::try_from(cores).unwrap_or(i64::MAX),
+        cores: i64::from(cores),
         model: ModelDef {
             past_limit_rate: 0.015,
             growth: 2.0,

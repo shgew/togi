@@ -193,10 +193,7 @@ fn cycle_plan_dynamic_chain_requirements() {
     pass_part(&mut j, &[0, 1, 2, 3], &FULL_REQUESTS);
     let plan = j.state.cycle_plan();
     assert!(plan.steps[0].parts[0].done && !plan.steps[0].done);
-    assert!(
-        !plan.steps[0].chains_complete && plan.current == 0,
-        "{plan:?}"
-    );
+    assert_eq!((plan.steps[0].chains_complete, plan.current), (false, 0));
     decide_next(&mut j);
     let mut partial = part(&[0, 1, 3], Some(0), true, 120, (1, 300));
     assert_eq!(parts(&j, 0)[1], partial, "measured request order ignored");
@@ -206,7 +203,7 @@ fn cycle_plan_dynamic_chain_requirements() {
     let plan = j.state.cycle_plan();
     assert_eq!(plan.steps[0].parts[2], partial, "second partial missing");
     let passed = &plan.steps[0].parts[1];
-    assert!(passed.done && passed.passed == 4, "{passed:?}");
+    assert_eq!((passed.done, passed.passed), (true, 4));
     pass_part(&mut j, &[0, 3], &[(0, 1.2), (3, 1.1)]);
     decide_next(&mut j);
     pass_part(&mut j, &[4, 5, 6, 7], &[]);
@@ -219,7 +216,7 @@ fn cycle_plan_dynamic_chain_requirements() {
     assert_eq!(plan.steps[0].parts.len(), 5, "{plan:?}");
     pass_part(&mut j, &[0, 1, 2, 3, 4, 5, 6, 7], &[]);
     let plan = j.state.cycle_plan();
-    assert!(plan.steps[0].done && plan.current == 1, "{plan:?}");
+    assert_eq!((plan.steps[0].done, plan.current), (true, 1));
     cycle_plan_resumes(&j);
 }
 
@@ -234,7 +231,7 @@ fn cycle_plan_partial_failure_needs_passes() {
     let named = plan.load.cores().first().unwrap().get();
     run(&mut j, &plan, Outcome::Failure, &[], Some(named));
     let got = parts(&j, 0)[1].clone();
-    assert!(got.passed == 0 && got.failed == 1 && !got.done, "{got:?}");
+    assert_eq!((got.passed, got.failed, got.done), (0, 1, false));
     let failure = j.next_decision();
     assert!(matches!(failure.payload, DecisionPayload::Failure(_)));
     j.decide(failure);
@@ -340,7 +337,7 @@ fn cycle_plan_partial_evidence_windows() {
         }
         let want = if carried { 0 } else { 3 };
         let got = parts(&j, 0)[1].clone();
-        assert!(got.passed == want && !got.done, "{got:?}, want {want}");
+        assert_eq!((got.passed, got.done), (want, false));
         let long = cycle_plan_of(&j, 1, &[1, 2, 3], 300);
         j.intent(&long);
         assert_eq!(
@@ -375,7 +372,7 @@ fn cycle_plan_credits_each_quota_only_up_to_its_count() {
     );
     j.end(intent, &trial, Outcome::Pass);
     let got = parts(&j, 0)[1].clone();
-    assert!(got.passed == 4 && got.done, "{got:?}");
+    assert_eq!((got.passed, got.done), (4, true));
     cycle_plan_resumes(&j);
 }
 
@@ -1006,7 +1003,7 @@ fn carried_evidence_consumers() {
         assert!(guard < 50, "the live passes never finished the cycle");
     }
     let view = j.state.project().cycle_plan;
-    assert!(view.steps[0].done && view.current == 1, "{view:?}");
+    assert_eq!((view.steps[0].done, view.current), (true, 1));
     j.assert_resumes();
 }
 

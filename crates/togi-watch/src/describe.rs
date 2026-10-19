@@ -22,7 +22,9 @@ use crate::words::{
 };
 
 fn seconds_between(from: Timestamp, to: Timestamp) -> std::time::Duration {
-    std::time::Duration::from_secs(u64::try_from(to.as_second() - from.as_second()).unwrap_or(0))
+    crate::numbers::nonnegative_elapsed(
+        i128::from(to.as_second() - from.as_second()) * 1_000_000_000,
+    )
 }
 
 fn entry(at: Timestamp, tag: Tag, text: String, tone: Tone) -> Entry {
@@ -70,7 +72,7 @@ impl Facts {
                 at,
                 Tag::Start,
                 What::Session {
-                    cores: u32::try_from(start.cores.len()).unwrap_or(u32::MAX),
+                    cores: crate::numbers::saturating_ordinal(start.cores.len()),
                     carried: 0,
                 },
                 Tone::Plain,

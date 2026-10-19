@@ -118,7 +118,9 @@ fn write_ensemble<'a>(
             } else {
                 bootstrap(
                     trials,
-                    ensemble.seed.wrapping_add(u64::try_from(n).unwrap_or(0)),
+                    ensemble
+                        .seed
+                        .wrapping_add(u64::try_from(n).map_err(Error::BootstrapIndex)?),
                 )
             };
             let (definition, loss) = fit(&sample)?;

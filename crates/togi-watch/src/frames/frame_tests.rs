@@ -16,12 +16,9 @@ use jiff::{SignedDuration, Timestamp};
 use ratatui::buffer::Buffer;
 use togi_journal::{Event, Payload, Stamp};
 use togi_machine::BootId;
-use togi_watchtest::Scenario;
 
-use super::render;
-use super::testing::{assert_glyphs_drawable, draw_checked, rows_of, screen};
-use crate::model::{Model, project};
-use crate::screen::{Colours, Drawn, Journal, Screen, View};
+use super::testing::{Fixture, assert_glyphs_drawable, draw_journal, main_screen, rows_of};
+use crate::screen::{Colours, Screen, View};
 
 pub(super) const SIZES: [(u16, u16); 3] = [(240, 67), (160, 45), (120, 33)];
 pub(super) const ALL_SIZES: [(u16, u16); 4] = [(240, 67), (160, 45), (120, 33), (80, 24)];
@@ -59,45 +56,6 @@ pub(super) fn assert_glyphs_safe(buf: &Buffer, colours: Colours, what: &str) {
     }
 }
 
-pub(super) struct Fixture {
-    pub(super) model: Model,
-    pub(super) now: Timestamp,
-}
-
-impl Fixture {
-    pub(super) fn scenario(scenario: Scenario) -> Self {
-        Self::of(&scenario.events().expect("the scenario's journal"))
-    }
-
-    pub(super) fn of(events: &[Event]) -> Self {
-        let last = events.last().expect("an event").time;
-        Self {
-            model: project(events),
-            now: later(last, 40),
-        }
-    }
-
-    pub(super) fn journal(&self) -> Journal<'_> {
-        ready(&self.model)
-    }
-
-    pub(super) fn draw(&self, screen: &Screen, now: Timestamp) -> (Buffer, Drawn) {
-        draw_journal(&self.journal(), screen, now, &TimeZone::UTC)
-    }
-
-    pub(super) fn main(&self, width: u16, height: u16) -> (Buffer, Drawn) {
-        self.draw(&main_screen(width, height), self.now)
-    }
-}
-
-pub(super) fn ready(model: &Model) -> Journal<'_> {
-    let snapshot = model.snapshot();
-    Journal::Ready {
-        snapshot,
-        log: snapshot.log(),
-    }
-}
-
 pub(super) fn some_time() -> Timestamp {
     Timestamp::from_second(1_700_000_000).expect("a time")
 }
@@ -107,27 +65,12 @@ pub(super) fn later(time: Timestamp, secs: i64) -> Timestamp {
         .expect("a time")
 }
 
-pub(super) fn main_screen(width: u16, height: u16) -> Screen {
-    screen(View::Main, width, height, Colours::None, true)
-}
-
 pub(super) fn one_frame(width: u16, height: u16) -> Screen {
     Screen {
         one_frame: true,
         keys: false,
         ..main_screen(width, height)
     }
-}
-
-pub(super) fn draw_journal(
-    journal: &Journal<'_>,
-    screen: &Screen,
-    now: Timestamp,
-    zone: &TimeZone,
-) -> (Buffer, Drawn) {
-    draw_checked(screen, |screen, buf| {
-        render(journal, screen, now, zone, buf)
-    })
 }
 
 pub(super) fn text(buf: &Buffer) -> String {

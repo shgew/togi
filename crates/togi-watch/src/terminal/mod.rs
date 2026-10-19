@@ -619,8 +619,8 @@ mod tests {
     use super::source::MemoryJournal;
     use super::testing::{Faults, Recorder, lines, session_with_warnings};
     use super::{
-        Colours, Config, Drawn, Error, Event, Feed, ONE_FRAME_SIZE, Source, SourceError, Stop,
-        View, drive_with, one_frame_source, uses_palette,
+        Colours, Config, Drawn, Error, Event, Feed, Source, SourceError, Stop, View, drive_with,
+        one_frame_source, uses_palette,
     };
     use crate::screen::{Hold, Journal, Quit, Screen};
 
@@ -1151,7 +1151,7 @@ mod tests {
     fn the_frame_is_drawn_from_the_journal() {
         let state = MemoryJournal::new();
         state.write(&lines(&session_with_warnings(3)));
-        let recorder = Recorder::new(80, 12);
+        let recorder = Recorder::new(120, 33);
         let stop = Stop::new();
         stop.stop();
         let live = Config {
@@ -1161,22 +1161,24 @@ mod tests {
             terminating: false,
             quit: Quit::Keys,
         };
-        let mut seen = Vec::new();
         run_drive(
             &recorder,
             &live,
             Source::memory(&state, None),
             Colours::None,
             |journal, screen, now, buf| {
-                seen.push(match journal {
-                    Journal::Ready { log, .. } => log.total,
-                    Journal::Missing | Journal::Starting | Journal::Problem(_) => 0,
-                });
-                plain(journal, screen, now, buf)
+                crate::frames::render(journal, screen, now, &jiff::tz::TimeZone::UTC, buf)
             },
         )
         .unwrap();
-        assert_eq!(seen, [4]);
+        let frames = recorder.draws();
+        assert_eq!(frames.len(), 1);
+        let mut buffer = Buffer::empty(ratatui::layout::Rect::new(0, 0, 119, 32));
+        for (x, y, symbol) in &frames[0] {
+            buffer[(*x, *y)].set_symbol(symbol);
+        }
+        let shown = crate::frames::testing::rows_of(&buffer).join("\n");
+        assert!(shown.contains("write state projection: w4"), "{shown}");
     }
 
     /// A stand-in for the frames: says what the journal is, in the words the frames use for a missing one.
@@ -1242,17 +1244,14 @@ mod tests {
     }
 
     #[test]
-    fn one_frame_defaults_to_240_by_67() {
-        assert_eq!(ONE_FRAME_SIZE, (240, 67));
-    }
-
-    #[test]
     fn one_frame_of_a_journal_shows_its_session() {
         let state = MemoryJournal::new();
         state.write(&lines(&session_with_warnings(2)));
         let mut out = Vec::new();
-        one_frame_with(&state, 40, 6, &mut out, describe).unwrap();
-        assert!(String::from_utf8(out).unwrap().starts_with("3 events\n"));
+        one_frame(&state, 120, 33, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("write state projection: w3"), "{text}");
+        assert!(!text.contains("NO SESSION YET"), "{text}");
     }
 
     #[test]

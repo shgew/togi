@@ -146,7 +146,9 @@ pub(crate) fn refs(facts: &[TrialFact]) -> Vec<&TrialFact> {
 pub(crate) fn blank_machine(n: usize) -> MachineDefinition {
     MachineDefinition {
         cores: i64::try_from(n).unwrap(),
-        core: (0..n).map(crate::evidence::core_def).collect(),
+        core: (0..n)
+            .map(|id| crate::evidence::core_def(u8::try_from(id).unwrap()))
+            .collect(),
         ..MachineDefinition::default()
     }
 }

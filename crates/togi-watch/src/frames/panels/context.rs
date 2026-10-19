@@ -39,7 +39,7 @@ pub(super) fn context(scene: &Scene<'_>, measure: &Measure) -> Vec<Line<'static>
         out.extend(bounded_rows(panel, room, scene.colours));
     } else {
         let mut below = measure.clone();
-        below.context.height = u16::try_from(room).unwrap_or(u16::MAX);
+        below.context.height = crate::numbers::saturating_cells(room);
         out.extend(activity(scene, &below));
     }
     out

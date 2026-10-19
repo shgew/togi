@@ -622,27 +622,30 @@ fn a_covered_failure_cites_the_earliest_passes_of_the_current_needed_count() {
         r#"{{"evidence":{{"miss":{:e},"rate":0.5}}}}"#,
         0.5_f64.powf(f64::from(togi_config::TrialCount::MAX) - 0.5)
     );
-    let cases: [(&str, String, usize, std::cmp::Ordering); 3] = [
+    let cases: [(&str, String, usize, std::cmp::Ordering, Option<usize>); 3] = [
         (
             "a larger count",
             r#"{"evidence":{"miss":0.01,"rate":0.5}}"#.to_owned(),
             20,
             std::cmp::Ordering::Greater,
+            None,
         ),
         (
             "a smaller count",
             r#"{"evidence":{"miss":0.2,"rate":0.5}}"#.to_owned(),
             20,
             std::cmp::Ordering::Less,
+            None,
         ),
         (
             "the supported bound",
             at_bound,
             bound + 1,
             std::cmp::Ordering::Greater,
+            Some(bound),
         ),
     ];
-    for (name, config, count, want) in cases {
+    for (name, config, count, want, exact) in cases {
         let (mut j, passes, failure) = covered_failure(count);
         let before = usize::from(j.run().config.needed.get());
         pass_after_the_fold(&mut j, 3);
@@ -650,8 +653,8 @@ fn a_covered_failure_cites_the_earliest_passes_of_the_current_needed_count() {
         let after = usize::from(j.run().config.needed.get());
         assert_eq!(after.cmp(&before), want, "{name}");
         assert!(after <= passes.len() && after <= bound, "{name}");
-        if name == "the supported bound" {
-            assert_eq!(after, bound, "{name}");
+        if let Some(exact) = exact {
+            assert_eq!(after, exact, "{name}");
         }
         let (located, escalation, cause) = j.located();
         assert_eq!(located, failure, "{name}");
