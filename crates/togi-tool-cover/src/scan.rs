@@ -13,8 +13,12 @@ use crate::diff::LineRange;
 /// and are skipped.
 pub fn cfg_out(src: &[u8], cfg: &HostCfg) -> Vec<LineRange> {
     let mut out = Vec::new();
-    let line_of =
-        |i: usize| saturating_source_line(src[..i].iter().filter(|&&b| b == b'\n').count());
+    let line_of = |i: usize| {
+        src[..i]
+            .iter()
+            .filter(|&&b| b == b'\n')
+            .fold(1_u32, |line, _| saturating_source_line(line))
+    };
     let mut blocks: Vec<usize> = Vec::new();
     // The index of the last byte outside whitespace and comments.
     let mut last: Option<usize> = None;
@@ -347,10 +351,8 @@ fn item_end(src: &[u8], mut i: usize) -> usize {
 mod tests;
 
 /// The lexical coverage estimate clips source line ordinals at its u32 reporting ceiling.
-fn saturating_source_line(newlines: usize) -> u32 {
-    u32::try_from(newlines)
-        .unwrap_or(u32::MAX)
-        .saturating_add(1)
+fn saturating_source_line(line: u32) -> u32 {
+    line.saturating_add(1)
 }
 
 #[cfg(test)]
@@ -358,10 +360,9 @@ mod numeric_tests {
     use super::saturating_source_line;
 
     #[test_case::test_case(0, 1; "first line")]
-    #[test_case::test_case(u32::MAX as usize - 1, u32::MAX; "last exact line")]
-    #[test_case::test_case(u32::MAX as usize, u32::MAX; "first overflowing line")]
-    #[test_case::test_case(usize::MAX, u32::MAX; "largest byte slice")]
-    fn source_line_estimates_saturate(newlines: usize, expected: u32) {
-        assert_eq!(saturating_source_line(newlines), expected);
+    #[test_case::test_case(u32::MAX - 1, u32::MAX; "last exact line")]
+    #[test_case::test_case(u32::MAX, u32::MAX; "first overflowing line")]
+    fn source_line_estimates_saturate(line: u32, expected: u32) {
+        assert_eq!(saturating_source_line(line), expected);
     }
 }

@@ -44,10 +44,12 @@ impl Journal {
             if let Payload::CheckingCycle(cycle) = &event.payload {
                 checking_steps(cycle.steps.len())?;
             }
-            let requests = match &event.payload {
-                Payload::TrialEnd(end) => Some(&end.voltage_requests_v),
-                Payload::TrialCarried(carried) => Some(&carried.voltage_requests_v),
-                _ => None,
+            let requests = if let Payload::TrialEnd(end) = &event.payload {
+                Some(&end.voltage_requests_v)
+            } else if let Payload::TrialCarried(carried) = &event.payload {
+                Some(&carried.voltage_requests_v)
+            } else {
+                None
             };
             if let Some(requests) = requests {
                 for (_, request) in requests.iter() {
