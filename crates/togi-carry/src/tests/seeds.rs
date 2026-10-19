@@ -74,16 +74,24 @@ fn sparse_seed_reset_and_reinsert_preserve_order_and_wire_shape() {
     x.add(reset(ResetTarget::Core(super::core(7))));
     x.add(reset(ResetTarget::Core(super::core(15))));
     let solo = x.pass(15, -10, Condition::Alone);
-    let failure = x.fail(15, -11, Condition::Alone, Attribution::Attributed).failure;
+    let failure = x
+        .fail(15, -11, Condition::Alone, Attribution::Attributed)
+        .failure;
     let low = x.pass(0, -5, Condition::Alone);
 
     let (mut archive, chain) = chain_of(&[&x]);
     let got = pending(&mut archive, &chain, None, &[]);
-    assert_eq!(got.seeds(), [
-        seed(0, Some(limit(-5, x.id, low)), None),
-        seed(15, Some(limit(-10, x.id, solo)),
-            Some(point(-11, x.id, failure, Signal::UnexpectedExit))),
-    ]);
+    assert_eq!(
+        got.seeds(),
+        [
+            seed(0, Some(limit(-5, x.id, low)), None),
+            seed(
+                15,
+                Some(limit(-10, x.id, solo)),
+                Some(point(-11, x.id, failure, Signal::UnexpectedExit))
+            ),
+        ]
+    );
     assert_eq!(
         serde_json::to_value(resolve(&got, 1).session_carried(set(&[0, 7, 15])).carried).unwrap(),
         serde_json::json!([

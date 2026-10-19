@@ -154,13 +154,20 @@ fn merge_seeds(sources: &[Rc<SourceSummary>]) -> Vec<CarriedCore> {
     let mut merged = PerCore::<Option<CarriedCore>>::default();
     for source in sources {
         let seeds = source.seeds();
-        for (core, limit) in seeds.limits.iter().filter_map(|(core, limit)| limit.map(|limit| (core, limit))) {
+        for (core, limit) in seeds
+            .limits
+            .iter()
+            .filter_map(|(core, limit)| limit.map(|limit| (core, limit)))
+        {
             let Some(entry) = merged.get_mut(core).and_then(Option::as_mut) else {
-                merged.set(core, Some(CarriedCore {
+                merged.set(
                     core,
-                    candidate_solo_limit: Some(limit),
-                    failure_point: None,
-                }));
+                    Some(CarriedCore {
+                        core,
+                        candidate_solo_limit: Some(limit),
+                        failure_point: None,
+                    }),
+                );
                 continue;
             };
             if entry
@@ -170,13 +177,20 @@ fn merge_seeds(sources: &[Rc<SourceSummary>]) -> Vec<CarriedCore> {
                 entry.candidate_solo_limit = Some(limit);
             }
         }
-        for (core, point) in seeds.points.iter().filter_map(|(core, point)| point.map(|point| (core, point))) {
+        for (core, point) in seeds
+            .points
+            .iter()
+            .filter_map(|(core, point)| point.map(|point| (core, point)))
+        {
             let Some(entry) = merged.get_mut(core).and_then(Option::as_mut) else {
-                merged.set(core, Some(CarriedCore {
+                merged.set(
                     core,
-                    candidate_solo_limit: None,
-                    failure_point: Some(point),
-                }));
+                    Some(CarriedCore {
+                        core,
+                        candidate_solo_limit: None,
+                        failure_point: Some(point),
+                    }),
+                );
                 continue;
             };
             let merged = FailurePoint::new(point.offset).merge(
@@ -192,7 +206,10 @@ fn merge_seeds(sources: &[Rc<SourceSummary>]) -> Vec<CarriedCore> {
             }
         }
     }
-    merged.into_iter_values().filter_map(|(_, entry)| entry).collect()
+    merged
+        .into_iter_values()
+        .filter_map(|(_, entry)| entry)
+        .collect()
 }
 
 struct Walk<'a, A: Archives> {
