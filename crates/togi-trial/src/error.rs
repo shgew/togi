@@ -278,6 +278,9 @@ impl Error {
             | Self::Invalid(_)
             | Self::Identity(_)
             | Self::Backend(_)
+            | Self::Sensor(_)
+            | Self::SampleElapsed(_)
+            | Self::AffinityObservation(_)
             | Self::Prepare(_)
             | Self::Launch { .. }
             | Self::PipeSetup { .. }
@@ -464,5 +467,22 @@ impl StorageFailure {
 impl From<StorageError> for StorageFailure {
     fn from(error: StorageError) -> Self {
         Self(vec![error])
+    }
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::CleanupFailure;
+
+    #[test_case::test_case(0; "zero")]
+    #[test_case::test_case(i32::MAX.cast_unsigned(); "largest signed identifier")]
+    #[test_case::test_case(u32::MAX; "largest observed identifier")]
+    fn group_signal_diagnostics_preserve_the_exact_identifier(pgid: u32) {
+        let error = CleanupFailure::SignalGroup {
+            pgid,
+            signal: "SIGKILL",
+            source: std::io::Error::from_raw_os_error(3),
+        };
+        assert_eq!(error.to_string(), format!("signal group {pgid} with SIGKILL"));
     }
 }

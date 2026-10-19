@@ -149,6 +149,19 @@ fn overflowing_optional_sensor_is_a_runner_error_not_absent_telemetry() {
 }
 
 #[test]
+fn overflowing_energy_baseline_rolls_back_the_launched_trial() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let rig = rig();
+            write(&rig, "powercap/intel-rapl:0/energy_uj", "9223372036854775808\n");
+            let failure = rig.start(spec(Regime::R1, &[2], secs(2))).await.unwrap_err();
+            assert!(failure.value.is_some());
+            assert!(togi_machine::error_chain(&failure.error).contains("read numeric sensor"));
+        }).await;
+    });
+}
+
+#[test]
 fn overflowing_cpu_milliseconds_is_sampling_loss_and_never_a_capped_sample() {
     crate::testing::runtime(true).block_on(async move {
         local(async {

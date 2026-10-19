@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use togi_machine::{CoreId, CoreInfo, PerCore};
 use tokio::time::Instant;
 
+use crate::error::SensorError;
 use crate::procfs::Inputs;
 
 /// Where the sensors live; tests point these at fixtures.
@@ -48,20 +49,19 @@ pub(crate) struct Sensors {
     inputs: Inputs,
 }
 
-use crate::error::SensorError;
-
 fn read_integer(inputs: &Inputs, path: &Path) -> Result<Option<i64>, SensorError> {
     let Ok(text) = inputs.read_to_string(path) else {
         return Ok(None);
     };
-    match text.trim().parse() {
-        Ok(value) => Ok(Some(value)),
-        Err(source) if matches!(
-            source.kind(),
-            std::num::IntErrorKind::PosOverflow | std::num::IntErrorKind::NegOverflow
-        ) => Err(SensorError { path: path.to_path_buf(), source }),
-        Err(_) => Ok(None),
+    let text = text.trim();
+    let digits = text.strip_prefix('-').or_else(|| text.strip_prefix('+')).unwrap_or(text);
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Ok(None);
     }
+    text.parse().map(Some).map_err(|source| SensorError {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 impl Sensors {
@@ -438,6 +438,9 @@ mod tests {
     #[test_case::test_case("9223372036854775807", Some(i64::MAX); "largest integer")]
     #[test_case::test_case("-9223372036854775808", Some(i64::MIN); "smallest integer")]
     #[test_case::test_case("unknown", None; "unrecognized optional sensor")]
+    #[test_case::test_case("922337203685477580800unknown", None; "overflowing prefix is not an integer")]
+    #[test_case::test_case("-", None; "sign without digits")]
+    #[test_case::test_case("+1", Some(1); "explicit positive sign")]
     fn recognized_sensor_values_are_exact(text: &str, expected: Option<i64>) {
         let fixture = Fixture::new();
         fixture.write("value", text);

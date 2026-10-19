@@ -145,6 +145,8 @@ pub enum SessionError {
     TrialDuration(#[source] std::num::TryFromIntError),
     #[error("record trial maximum temperature")]
     TrialTemperature(#[source] std::num::TryFromIntError),
+    #[error("index workload rotation")]
+    WorkloadRotation(#[source] std::num::TryFromIntError),
     #[error("record monotonic nanoseconds")]
     Monotonic(#[source] std::num::TryFromIntError),
 }
