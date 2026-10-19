@@ -298,7 +298,11 @@ impl Session<'_> {
                 .ok_or(SessionError::NoSuchTrialCore { core })?;
             self.write_core(core, offset, &[intent])?;
         }
-        let since = self.appender.clock().monotonic();
+        let since = self
+            .appender
+            .clock()
+            .monotonic()
+            .map_err(SessionError::Machine)?;
         let window_start_ns = u64::try_from(since.as_nanos()).map_err(SessionError::Monotonic)?;
         let mut trial = Trial {
             plan,
@@ -530,7 +534,13 @@ impl Session<'_> {
                     error.get_or_insert(Error::Crashed);
                 }
                 Err(flow) => {
-                    if matches!(&flow, crate::error::Flow::Fatal(SessionError::Monotonic(_))) {
+                    if matches!(
+                        &flow,
+                        crate::error::Flow::Fatal(
+                            SessionError::Monotonic(_)
+                                | SessionError::Machine(Error::InvalidMonotonic { .. })
+                        )
+                    ) {
                         self.keep_containment(trial, &result, joined.uncontained())?;
                     }
                     return Err(flow);

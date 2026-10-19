@@ -472,8 +472,8 @@ impl togi_machine::Clock for MonotonicClock {
         self.inner.now()
     }
 
-    fn monotonic(&self) -> std::time::Duration {
-        self.mono
+    fn monotonic(&self) -> Result<std::time::Duration, togi_machine::Error> {
+        Ok(self.mono)
     }
 
     fn sleep(
@@ -825,4 +825,123 @@ fn an_overflowing_teardown_mce_keeps_the_containment_dead_end_durable() {
             .iter()
             .any(|event| matches!(&event.payload, Payload::TrialEnd(_)))
     );
+}
+
+struct TeardownClock {
+    inner: Box<dyn togi_machine::Clock>,
+    refuse: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+impl togi_machine::Clock for TeardownClock {
+    fn now(&self) -> jiff::Timestamp {
+        self.inner.now()
+    }
+
+    fn monotonic(&self) -> Result<std::time::Duration, togi_machine::Error> {
+        if self.refuse.replace(false) {
+            return togi_machine::monotonic_duration(-1, 0);
+        }
+        self.inner.monotonic()
+    }
+
+    fn sleep(
+        &mut self,
+        cancel: &CancellationToken,
+        duration: std::time::Duration,
+    ) -> Result<(), togi_machine::Error> {
+        self.inner.sleep(cancel, duration)
+    }
+}
+
+#[test]
+fn a_refused_teardown_clock_keeps_the_containment_dead_end_durable() {
+    let sim = simulator();
+    let mem = MemFs::new();
+    let mut input = input(&sim, &mem);
+    let refuse = std::rc::Rc::new(std::cell::Cell::new(false));
+    input.machine.kernel = Box::new(TeardownKernel {
+        inner: input.machine.kernel,
+        cancel: input.cancel.clone(),
+        refuse: std::rc::Rc::clone(&refuse),
+    });
+    input.machine.clock = Box::new(TeardownClock {
+        inner: input.machine.clock,
+        refuse: std::rc::Rc::clone(&refuse),
+    });
+    input.machine.trials = Box::new(DurationTrials {
+        inner: input.machine.trials,
+        time: ReportedTime::EscapedOverflow,
+        cancel: input.cancel.clone(),
+        starts: std::rc::Rc::default(),
+    });
+    let ended = run(input);
+    assert!(
+        ended.errors.iter().any(|error| matches!(
+            error,
+            togi_session::SessionError::Machine(togi_machine::Error::InvalidMonotonic { .. })
+        )),
+        "{:?}",
+        ended.errors
+    );
+    assert!(ended.journal.events().iter().any(|event| matches!(
+        &event.payload,
+        Payload::DeadEnd(dead) if dead.condition == togi_journal::DeadEndCondition::Containment
+            && dead.detail.contains("backend thread on cpu 63 outside allowed cpus")
+    )));
+    assert!(
+        !ended
+            .journal
+            .events()
+            .iter()
+            .any(|event| matches!(&event.payload, Payload::TrialEnd(_)))
+    );
+}
+
+struct TeardownKernel {
+    inner: Box<dyn togi_machine::Kernel>,
+    cancel: CancellationToken,
+    refuse: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+impl togi_machine::Kernel for TeardownKernel {
+    fn mces(
+        &mut self,
+        boot: &togi_machine::BootId,
+        since: std::time::Duration,
+    ) -> Result<Vec<togi_machine::Mce>, togi_machine::Partial<Vec<togi_machine::Mce>>> {
+        self.inner.mces(boot, since)
+    }
+
+    fn read_mces(
+        &mut self,
+        boot: &togi_machine::BootId,
+        after: Option<&togi_machine::KernelCursor>,
+    ) -> Result<togi_machine::KernelRead, togi_machine::Partial<Vec<togi_machine::Mce>>> {
+        let read = self.inner.read_mces(boot, after)?;
+        if self.cancel.is_cancelled() {
+            self.refuse.set(true);
+        }
+        Ok(read)
+    }
+
+    fn reset_reason(
+        &mut self,
+        boot: &togi_machine::BootId,
+    ) -> Result<togi_machine::ResetReason, togi_machine::Error> {
+        self.inner.reset_reason(boot)
+    }
+
+    fn reset_reason_after(
+        &mut self,
+        boot: &togi_machine::BootId,
+    ) -> Result<togi_machine::ResetReason, togi_machine::Error> {
+        self.inner.reset_reason_after(boot)
+    }
+
+    fn saved_pstore(
+        &mut self,
+        boot: &togi_machine::BootId,
+    ) -> Result<Option<togi_machine::PstoreRecord>, togi_machine::Error> {
+        self.inner.saved_pstore(boot)
+    }
 }

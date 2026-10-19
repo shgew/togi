@@ -831,7 +831,7 @@ impl Clock for PolledClock {
         self.inner.now()
     }
 
-    fn monotonic(&self) -> Duration {
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
         self.inner.monotonic()
     }
 
@@ -1175,7 +1175,7 @@ impl Clock for Waits {
         self.inner.now()
     }
 
-    fn monotonic(&self) -> Duration {
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
         self.inner.monotonic()
     }
 
