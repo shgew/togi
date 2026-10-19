@@ -167,12 +167,13 @@ pub fn run_snapshot(t: &mut Tools<'_>, args: &[String]) -> Result<(), Error> {
     let [target] = rest.as_slice() else {
         return Err(Error::new(SNAPSHOT_USAGE));
     };
-    let mut cover_text = String::new();
-    if !flags.cover.is_empty() {
+    let cover_text = if !flags.cover.is_empty() {
         let bytes = read_input(t.stdin, &flags.cover)
             .map_err(|error| Error::wrap("read cover output", error))?;
-        cover_text = String::from_utf8_lossy(&bytes).into_owned();
-    }
+        String::from_utf8_lossy(&bytes).into_owned()
+    } else {
+        String::new()
+    };
     let Ok(pr) = target.parse::<i64>() else {
         if flags.cover.is_empty() || !flags.previous.is_empty() || !flags.previous_base.is_empty() {
             return Err(Error::new(SNAPSHOT_USAGE));
@@ -227,7 +228,7 @@ pub fn create_snapshot(
         head_sha: before.head.clone(),
         base_sha: before.base.clone(),
         small: is_small(&pr_files),
-        pr_files: crate::count(pr_files.len()),
+        pr_files: crate::saturating_record_count(pr_files.len()),
         pr_lines: total_lines(&pr_files),
         ..Manifest::default()
     };
@@ -611,7 +612,7 @@ pub fn print_summary(w: &mut dyn Write, dir: &str, m: &Manifest) -> Result<(), E
         "files: {}, included {}, excluded {}",
         m.files.len(),
         m.included_files,
-        crate::count(m.files.len()) - m.included_files
+        crate::saturating_record_count(m.files.len()) - m.included_files
     );
     for f in &m.files {
         if f.exclusion.is_empty() {

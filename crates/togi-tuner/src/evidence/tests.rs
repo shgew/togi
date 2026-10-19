@@ -183,22 +183,21 @@ fn evidence_validity() {
     );
 }
 
-#[test]
-fn idle_failure_leaves_partial_r6_and_other_regimes_alone() {
+#[test_case::test_case(class(Regime::R6, 0, &[0], 120); "class(Regime::R6, 0, &[0], 120)")]
+#[test_case::test_case(class(Regime::R1, 0, &[0, 1], 120); "class(Regime::R1, 0, &[0, 1], 120)")]
+#[test_case::test_case(class(Regime::R7, 0, &[0, 1], 120); "class(Regime::R7, 0, &[0, 1], 120)")]
+fn idle_failure_leaves_partial_r6_and_other_regimes_alone(k: ClassKey) {
     let mut fx = Fx::new(&[0, 1]);
     let p = fx.p(&[-20, -10]);
     fx.idle(&p);
-    for k in [
-        class(Regime::R6, 0, &[0], 120),
-        class(Regime::R1, 0, &[0, 1], 120),
-        class(Regime::R7, 0, &[0, 1], 120),
-    ] {
-        assert_eq!(fx.ev.failing_seq(k, &p, None, needed(1)).unwrap(), None);
-    }
+
+    assert_eq!(fx.ev.failing_seq(k, &p, None, needed(1)).unwrap(), None);
 }
 
-#[test]
-fn failed_before_admits_idle_failures_for_r6_only() {
+#[test_case::test_case(Regime::R6, true; "(Regime::R6, true)")]
+#[test_case::test_case(Regime::R7, false; "(Regime::R7, false)")]
+#[test_case::test_case(Regime::R1, false; "(Regime::R1, false)")]
+fn failed_before_admits_idle_failures_for_r6_only(regime: Regime, want: bool) {
     let short = Secs::new(NonZeroU32::new(120).unwrap());
     let mut fx = Fx::new(&[0, 1]);
     let deep = fx.p(&[-40, -40]);
@@ -206,13 +205,13 @@ fn failed_before_admits_idle_failures_for_r6_only() {
     fx.carried_idle(&deep, "old");
     let after = fx.tick();
     let before = fx.tick();
-    for (regime, want) in [(Regime::R6, true), (Regime::R7, false), (Regime::R1, false)] {
-        assert_eq!(
-            fx.ev.failed_before(regime, short, None, before),
-            want,
-            "{regime:?}"
-        );
-    }
+
+    assert_eq!(
+        fx.ev.failed_before(regime, short, None, before),
+        want,
+        "{regime:?}"
+    );
+
     assert!(!fx.ev.failed_before(Regime::R6, short, None, live));
     assert!(fx.ev.failed_before(Regime::R6, short, Some(live), before));
     assert!(fx.ev.failed_before(Regime::R6, short, Some(after), before));
@@ -281,6 +280,7 @@ fn multi_core_r7_failures_contradict_nothing() {
     assert!(fx.ev.monotonicity(single, &p, needed(3)).unwrap().is_some());
 }
 
+#[derive(Clone, Copy)]
 struct IdleRow {
     name: &'static str,
     pass_profile: [i64; 2],
@@ -289,66 +289,61 @@ struct IdleRow {
     warn: bool,
 }
 
-#[test]
-fn idle_monotonicity_warning() {
-    let rows = [
-        IdleRow {
+#[test_case::test_case(IdleRow {
             name: "equal profile",
             pass_profile: [-10, -12],
             durations: &[120],
             cores: &[0, 1],
             warn: true,
-        },
-        IdleRow {
+        }; "equal profile")]
+#[test_case::test_case(IdleRow {
             name: "deeper passing profile",
             pass_profile: [-11, -13],
             durations: &[900],
             cores: &[0, 1],
             warn: true,
-        },
-        IdleRow {
+        }; "deeper passing profile")]
+#[test_case::test_case(IdleRow {
             name: "shallower passing profile",
             pass_profile: [-9, -11],
             durations: &[120],
             cores: &[0, 1],
             warn: false,
-        },
-        IdleRow {
+        }; "shallower passing profile")]
+#[test_case::test_case(IdleRow {
             name: "durations cannot pool",
             pass_profile: [-10, -12],
             durations: &[120, 900],
             cores: &[0, 1],
             warn: false,
-        },
-        IdleRow {
+        }; "durations cannot pool")]
+#[test_case::test_case(IdleRow {
             name: "partial load cannot establish the class",
             pass_profile: [-10, -12],
             durations: &[120],
             cores: &[0],
             warn: false,
-        },
-    ];
-    for row in rows {
-        let mut fx = Fx::new(&[0, 1]);
-        let pass_profile = fx.p(&row.pass_profile);
-        let mut seqs = Vec::new();
-        for i in 0..3 {
-            let k = class(
-                Regime::R6,
-                0,
-                row.cores,
-                row.durations[i % row.durations.len()],
-            );
-            seqs.push(fx.pass(k, &pass_profile));
-        }
-        let found = fx
-            .ev
-            .idle_monotonicity(&fx.p(&[-10, -12]), needed(3))
-            .unwrap();
-        assert_eq!(found.is_some(), row.warn, "{}", row.name);
-        if let Some(found) = found {
-            assert_eq!(found.passes, seqs, "{}", row.name);
-        }
+        }; "partial load cannot establish the class")]
+fn idle_monotonicity_warning(row: IdleRow) {
+    let mut fx = Fx::new(&[0, 1]);
+    let pass_profile = fx.p(&row.pass_profile);
+    let mut seqs = Vec::new();
+    for i in 0..3 {
+        let k = class(
+            Regime::R6,
+            0,
+            row.cores,
+            row.durations[i % row.durations.len()],
+        );
+        seqs.push(fx.pass(k, &pass_profile));
+    }
+    let found = fx
+        .ev
+        .idle_monotonicity(&fx.p(&[-10, -12]), needed(3))
+        .unwrap();
+    assert_eq!(found.is_some(), row.warn, "{}", row.name);
+    if let Some(found) = found {
+        assert_eq!(found.passes, seqs, "{}", row.name);
     }
 }
 
@@ -455,76 +450,74 @@ fn restoring_a_path_restores_its_backend_id() {
     let _: BackendId = none;
 }
 
-#[test]
-fn carried_failure_invalidation() {
-    for idle in [false, true] {
-        let mut fx = Fx::new(&[0]);
-        let regime = if idle { Regime::R6 } else { Regime::R1 };
-        let k = class(regime, 0, &[0], 60);
-        let p = fx.p(&[-20]);
-        let shallow = fx.p(&[-19]);
-        for _ in 0..3 {
-            fx.carried_pass(k, &p, "old");
-        }
-        let failure = if idle {
-            fx.carried_idle(&shallow, "old")
-        } else {
-            fx.carried_fail(k, &shallow, "old")
-        };
-        let boundary = fx.tick();
-        let window = Window::LiveOrCarried {
-            since: Some(boundary),
-        };
-        assert_eq!(fx.ev.count(k, &p, window, needed(3)).unwrap().valid, 0);
-        assert_eq!(
-            fx.ev.failing_seq(k, &p, Some(boundary), needed(3)).unwrap(),
-            Some(failure)
-        );
-        for done in 1..=3 {
-            fx.pass(k, &p);
-            let failing = fx
-                .ev
-                .failing_seq(k, &p, Some(boundary), needed(3))
-                .unwrap()
-                .is_some();
-            assert_eq!(failing, done < 3, "after {done} live passes");
-        }
-        assert_eq!(fx.ev.count(k, &p, window, needed(3)).unwrap().valid, 3);
+#[test_case::test_case(false; "not idle")]
+#[test_case::test_case(true; "idle")]
+fn carried_failure_invalidation(idle: bool) {
+    let mut fx = Fx::new(&[0]);
+    let regime = if idle { Regime::R6 } else { Regime::R1 };
+    let k = class(regime, 0, &[0], 60);
+    let p = fx.p(&[-20]);
+    let shallow = fx.p(&[-19]);
+    for _ in 0..3 {
+        fx.carried_pass(k, &p, "old");
     }
+    let failure = if idle {
+        fx.carried_idle(&shallow, "old")
+    } else {
+        fx.carried_fail(k, &shallow, "old")
+    };
+    let boundary = fx.tick();
+    let window = Window::LiveOrCarried {
+        since: Some(boundary),
+    };
+    assert_eq!(fx.ev.count(k, &p, window, needed(3)).unwrap().valid, 0);
+    assert_eq!(
+        fx.ev.failing_seq(k, &p, Some(boundary), needed(3)).unwrap(),
+        Some(failure)
+    );
+    for done in 1..=3 {
+        fx.pass(k, &p);
+        let failing = fx
+            .ev
+            .failing_seq(k, &p, Some(boundary), needed(3))
+            .unwrap()
+            .is_some();
+        assert_eq!(failing, done < 3, "after {done} live passes");
+    }
+    assert_eq!(fx.ev.count(k, &p, window, needed(3)).unwrap().valid, 3);
 }
 
-#[test]
-fn reset_clears_carried_core_evidence() {
-    for failure in [false, true] {
-        let mut fx = Fx::new(&[0, 1]);
-        let mut kept = Vec::new();
-        for id in [0_u8, 1] {
-            let k = class(Regime::R1, 0, &[id], 60);
-            let mut values = [0, 0];
-            values[usize::from(id)] = -20;
-            let p = fx.p(&values);
-            let seqs: Vec<Seq> = (0..3)
-                .map(|_| {
-                    if failure {
-                        fx.carried_fail(k, &p, "old")
-                    } else {
-                        fx.carried_pass(k, &p, "old")
-                    }
-                })
-                .collect();
-            kept.push((k, p, seqs));
-        }
-        fx.ev.reset_core(core(0));
-        for (id, (k, p, seqs)) in kept.iter().enumerate() {
-            let present = if failure {
-                fx.ev.failing_seq(*k, p, None, needed(3)).unwrap().is_some()
-            } else {
-                fx.valid(*k, p) > 0
-            };
-            assert_eq!(present, id == 1, "core {id} after resetting core 0");
-            for s in seqs {
-                assert_eq!(fx.ev.carried_source(*s).is_some(), id == 1);
-            }
+#[test_case::test_case(false; "not failure")]
+#[test_case::test_case(true; "failure")]
+fn reset_clears_carried_core_evidence(failure: bool) {
+    let mut fx = Fx::new(&[0, 1]);
+    let mut kept = Vec::new();
+    for id in [0_u8, 1] {
+        let k = class(Regime::R1, 0, &[id], 60);
+        let mut values = [0, 0];
+        values[usize::from(id)] = -20;
+        let p = fx.p(&values);
+        let seqs: Vec<Seq> = (0..3)
+            .map(|_| {
+                if failure {
+                    fx.carried_fail(k, &p, "old")
+                } else {
+                    fx.carried_pass(k, &p, "old")
+                }
+            })
+            .collect();
+        kept.push((k, p, seqs));
+    }
+    fx.ev.reset_core(core(0));
+    for (id, (k, p, seqs)) in kept.iter().enumerate() {
+        let present = if failure {
+            fx.ev.failing_seq(*k, p, None, needed(3)).unwrap().is_some()
+        } else {
+            fx.valid(*k, p) > 0
+        };
+        assert_eq!(present, id == 1, "core {id} after resetting core 0");
+        for s in seqs {
+            assert_eq!(fx.ev.carried_source(*s).is_some(), id == 1);
         }
     }
 }
@@ -598,23 +591,22 @@ fn reset_discards_multi_r7_facts_naming_the_core_even_when_unloaded() {
     assert_eq!(fx.valid(k, &p), 0, "loaded core 0 drops the whole class");
 }
 
-#[test]
-fn carried_passes_do_not_add_session_exposure() {
-    for condition in [Condition::Together, Condition::Parked] {
-        let mut fx = Fx::new(&[0]);
-        let k = class(Regime::R1, 0, &[0], 60);
-        let p = fx.p(&[-10]);
-        fx.carried_pass(k, &p, "old");
-        fx.ev.set_checking_profile(p).unwrap();
-        let boundary = fx.tick();
-        let window = Window::LiveOrCarried {
-            since: Some(boundary),
-        };
-        assert_eq!(fx.ev.count(k, &p, window, needed(1)).unwrap().valid, 1);
-        assert_eq!(fx.ev.exposures().count(), 0);
-        fx.pass_as(k, &p, condition);
-        assert_eq!(fx.ev.exposures().collect::<Vec<_>>(), [(k.workload(), 1)]);
-    }
+#[test_case::test_case(Condition::Together; "Condition::Together")]
+#[test_case::test_case(Condition::Parked; "Condition::Parked")]
+fn carried_passes_do_not_add_session_exposure(condition: Condition) {
+    let mut fx = Fx::new(&[0]);
+    let k = class(Regime::R1, 0, &[0], 60);
+    let p = fx.p(&[-10]);
+    fx.carried_pass(k, &p, "old");
+    fx.ev.set_checking_profile(p).unwrap();
+    let boundary = fx.tick();
+    let window = Window::LiveOrCarried {
+        since: Some(boundary),
+    };
+    assert_eq!(fx.ev.count(k, &p, window, needed(1)).unwrap().valid, 1);
+    assert_eq!(fx.ev.exposures().count(), 0);
+    fx.pass_as(k, &p, condition);
+    assert_eq!(fx.ev.exposures().collect::<Vec<_>>(), [(k.workload(), 1)]);
 }
 
 #[test]
@@ -665,39 +657,38 @@ fn idle_failure_resets_exposure_of_all_core_r6_classes() {
     assert_eq!(fx.ev.exposure(r1.workload()), 1);
 }
 
-#[test]
-fn carried_failure_survives_newer_pre_boundary_live_failure() {
-    for idle in [false, true] {
-        let mut fx = Fx::new(&[0, 1]);
-        let k = class(Regime::R6, 0, &[0, 1], 60);
-        let carried_at = fx.p(&[-9, -4]);
-        let carried = if idle {
-            fx.carried_idle(&carried_at, "old")
-        } else {
-            fx.carried_fail(k, &carried_at, "old")
-        };
-        fx.fail(k, &fx.p(&[-10, -5]));
-        fx.fail(k, &fx.p(&[-10, -10]));
-        let start = fx.tick();
-        let group = fx.p(&[-10, -5]);
+#[test_case::test_case(false; "not idle")]
+#[test_case::test_case(true; "idle")]
+fn carried_failure_survives_newer_pre_boundary_live_failure(idle: bool) {
+    let mut fx = Fx::new(&[0, 1]);
+    let k = class(Regime::R6, 0, &[0, 1], 60);
+    let carried_at = fx.p(&[-9, -4]);
+    let carried = if idle {
+        fx.carried_idle(&carried_at, "old")
+    } else {
+        fx.carried_fail(k, &carried_at, "old")
+    };
+    fx.fail(k, &fx.p(&[-10, -5]));
+    fx.fail(k, &fx.p(&[-10, -10]));
+    let start = fx.tick();
+    let group = fx.p(&[-10, -5]);
+    assert_eq!(
+        fx.ev
+            .failing_seq(k, &group, Some(start), needed(3))
+            .unwrap(),
+        Some(carried)
+    );
+    let live = fx.p(&[-10, -10]);
+    for done in 1..=3 {
+        fx.pass(k, &live);
+        let want = (done < 3).then_some(carried);
         assert_eq!(
             fx.ev
                 .failing_seq(k, &group, Some(start), needed(3))
                 .unwrap(),
-            Some(carried)
+            want,
+            "idle={idle} after {done} newer passes"
         );
-        let live = fx.p(&[-10, -10]);
-        for done in 1..=3 {
-            fx.pass(k, &live);
-            let want = (done < 3).then_some(carried);
-            assert_eq!(
-                fx.ev
-                    .failing_seq(k, &group, Some(start), needed(3))
-                    .unwrap(),
-                want,
-                "idle={idle} after {done} newer passes"
-            );
-        }
     }
 }
 

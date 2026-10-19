@@ -15,8 +15,10 @@ use super::{
 use crate::frames::testing::screen;
 use crate::screen::{Colours, Hold, Journal, Screen, View};
 
-#[test]
-fn an_idle_trial_freezes_every_view_until_its_end_is_recorded() {
+#[test_case::test_case(true, false; "live keys")]
+#[test_case::test_case(false, false; "live no keys")]
+#[test_case::test_case(false, true; "one frame")]
+fn an_idle_trial_freezes_every_view_until_its_end_is_recorded(keys: bool, one_frame: bool) {
     let fx = Fixture::scenario(Scenario::Idle);
     let hold = fx
         .model
@@ -34,47 +36,45 @@ fn an_idle_trial_freezes_every_view_until_its_end_is_recorded() {
     ];
     for view in VIEWS {
         for (width, height) in ALL_SIZES {
-            for (keys, one_frame) in [(true, false), (false, false), (false, true)] {
-                let sc = Screen {
-                    scroll: usize::MAX,
-                    one_frame,
-                    ..screen(view, width, height, Colours::Full, keys)
-                };
-                let (first, drawn) = fx.draw(&sc, first_at);
-                assert_eq!(drawn.hold, Hold::Frozen, "{view:?} {width}x{height}");
-                for at in times {
-                    let (later_frame, later_drawn) = fx.draw(&sc, at);
-                    assert_eq!(
-                        later_frame, first,
-                        "{view:?} {width}x{height} changes at {at} during the idle trial"
-                    );
-                    assert_eq!(later_drawn, drawn);
-                }
-                if view == View::Main {
-                    let shown = text(&first);
-                    for crash in ["crashed", "CRASHED", "togi run records the crash"] {
-                        assert!(
-                            !shown.contains(crash),
-                            "an idle trial is narrated as crashed ({crash:?}):\n{shown}"
-                        );
-                    }
+            let sc = Screen {
+                scroll: usize::MAX,
+                one_frame,
+                ..screen(view, width, height, Colours::Full, keys)
+            };
+            let (first, drawn) = fx.draw(&sc, first_at);
+            assert_eq!(drawn.hold, Hold::Frozen, "{view:?} {width}x{height}");
+            for at in times {
+                let (later_frame, later_drawn) = fx.draw(&sc, at);
+                assert_eq!(
+                    later_frame, first,
+                    "{view:?} {width}x{height} changes at {at} during the idle trial"
+                );
+                assert_eq!(later_drawn, drawn);
+            }
+            if view == View::Main {
+                let shown = text(&first);
+                for crash in ["crashed", "CRASHED", "togi run records the crash"] {
                     assert!(
-                        !shown.contains("left"),
-                        "an idle trial shows a changing countdown:\n{shown}"
-                    );
-                    assert!(
-                        !shown.contains("past"),
-                        "an idle trial is never past its end:\n{shown}"
-                    );
-                    assert!(
-                        shown.contains(&format!("planned end {planned_end}")),
-                        "the planned end is {planned_end}:\n{shown}"
-                    );
-                    assert!(
-                        !shown.contains("paused until"),
-                        "a planned end is not a release time:\n{shown}"
+                        !shown.contains(crash),
+                        "an idle trial is narrated as crashed ({crash:?}):\n{shown}"
                     );
                 }
+                assert!(
+                    !shown.contains("left"),
+                    "an idle trial shows a changing countdown:\n{shown}"
+                );
+                assert!(
+                    !shown.contains("past"),
+                    "an idle trial is never past its end:\n{shown}"
+                );
+                assert!(
+                    shown.contains(&format!("planned end {planned_end}")),
+                    "the planned end is {planned_end}:\n{shown}"
+                );
+                assert!(
+                    !shown.contains("paused until"),
+                    "a planned end is not a release time:\n{shown}"
+                );
             }
         }
     }
@@ -222,72 +222,65 @@ fn a_trial_intent_before_its_start_does_not_freeze() {
     }
 }
 
-#[test]
-fn every_other_frame_moves_with_the_clock() {
-    for scenario in [
-        Scenario::Search,
-        Scenario::Checking,
-        Scenario::Crashed,
-        Scenario::Recovering,
-        Scenario::Between,
-        Scenario::Deadend,
-        Scenario::Stopped,
-    ] {
-        let fx = Fixture::scenario(scenario);
-        for (width, height) in SIZES {
-            let (now, drawn) = fx.main(width, height);
-            assert_eq!(drawn.hold, Hold::Never, "{scenario} {width}x{height}");
-            let (later_frame, _) = fx.draw(&main_screen(width, height), later(fx.now, 61));
-            assert_ne!(
-                now, later_frame,
-                "{scenario} {width}x{height} shows the clock"
-            );
-        }
+#[test_case::test_case(Scenario::Search; "search")]
+#[test_case::test_case(Scenario::Checking; "checking")]
+#[test_case::test_case(Scenario::Crashed; "crashed")]
+#[test_case::test_case(Scenario::Recovering; "recovering")]
+#[test_case::test_case(Scenario::Between; "between")]
+#[test_case::test_case(Scenario::Deadend; "deadend")]
+#[test_case::test_case(Scenario::Stopped; "stopped")]
+fn every_other_frame_moves_with_the_clock(scenario: Scenario) {
+    let fx = Fixture::scenario(scenario);
+    for (width, height) in SIZES {
+        let (now, drawn) = fx.main(width, height);
+        assert_eq!(drawn.hold, Hold::Never, "{scenario} {width}x{height}");
+        let (later_frame, _) = fx.draw(&main_screen(width, height), later(fx.now, 61));
+        assert_ne!(
+            now, later_frame,
+            "{scenario} {width}x{height} shows the clock"
+        );
     }
 }
 
-#[test]
-fn a_one_frame_print_with_no_colour_styles_no_cell() {
-    let error = std::io::Error::other("read journal: permission denied");
-    let sessions: Vec<Fixture> = [
-        Scenario::Search,
-        Scenario::Checking,
-        Scenario::Hunt,
-        Scenario::Idle,
-        Scenario::Crashed,
-        Scenario::Between,
-        Scenario::Deadend,
-        Scenario::Stopped,
-    ]
-    .map(Fixture::scenario)
-    .into();
-    let mut journals: Vec<Journal<'_>> = sessions.iter().map(Fixture::journal).collect();
-    journals.extend([
-        Journal::Missing,
-        Journal::Starting,
-        Journal::Problem(&error),
-    ]);
-    for journal in journals {
-        for (width, height) in SIZES {
-            for view in VIEWS {
-                let sc = Screen {
-                    view,
-                    ..one_frame(width, height)
-                };
-                let at = sessions[0].now;
-                let (buf, _) = draw_journal(&journal, &sc, at, &TimeZone::UTC);
-                for (x, y, cell) in buf.content.iter().enumerate().map(|(i, cell)| {
-                    let width = usize::from(buf.area.width);
-                    (i % width, i / width, cell)
-                }) {
-                    assert!(
-                        cell.fg == Color::Reset
-                            && cell.bg == Color::Reset
-                            && cell.modifier.is_empty(),
-                        "{journal:?} {view:?} {width}x{height}: cell ({x}, {y}) {:?} is styled",
-                        cell.symbol()
-                    );
-                }
+#[test_case::test_case(Scenario::Search; "search")]
+#[test_case::test_case(Scenario::Checking; "checking")]
+#[test_case::test_case(Scenario::Hunt; "hunt")]
+#[test_case::test_case(Scenario::Idle; "idle")]
+#[test_case::test_case(Scenario::Crashed; "crashed")]
+#[test_case::test_case(Scenario::Between; "between")]
+#[test_case::test_case(Scenario::Deadend; "deadend")]
+#[test_case::test_case(Scenario::Stopped; "stopped")]
+fn a_one_frame_print_with_no_colour_styles_no_cell(scenario: Scenario) {
+    let fx = Fixture::scenario(scenario);
+    let at = Fixture::scenario(Scenario::Search).now;
+    assert_unstyled(&fx.journal(), at);
+}
+
+#[test_case::test_case(&Journal::Missing; "missing")]
+#[test_case::test_case(&Journal::Starting; "starting")]
+#[test_case::test_case(&Journal::Problem(&std::io::Error::other("read journal: permission denied")); "problem")]
+fn an_unavailable_journal_print_with_no_colour_styles_no_cell(journal: &Journal<'_>) {
+    let at = Fixture::scenario(Scenario::Search).now;
+    assert_unstyled(journal, at);
+}
+
+fn assert_unstyled(journal: &Journal<'_>, at: jiff::Timestamp) {
+    for (width, height) in SIZES {
+        for view in VIEWS {
+            let sc = Screen {
+                view,
+                ..one_frame(width, height)
+            };
+            let (buf, _) = draw_journal(journal, &sc, at, &TimeZone::UTC);
+            for (x, y, cell) in buf.content.iter().enumerate().map(|(i, cell)| {
+                let width = usize::from(buf.area.width);
+                (i % width, i / width, cell)
+            }) {
+                assert!(
+                    cell.fg == Color::Reset && cell.bg == Color::Reset && cell.modifier.is_empty(),
+                    "{journal:?} {view:?} {width}x{height}: cell ({x}, {y}) {:?} is styled",
+                    cell.symbol()
+                );
             }
         }
     }

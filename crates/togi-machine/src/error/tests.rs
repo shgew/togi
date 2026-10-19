@@ -49,3 +49,25 @@ fn partial_progress_keeps_the_machine_error_downcastable() {
     );
     assert!(error.source().unwrap().downcast_ref::<Error>().is_some());
 }
+
+#[test_case::test_case(0, 0, Some(std::time::Duration::ZERO); "zero")]
+#[test_case::test_case(i64::MAX, 999_999_999, Some(std::time::Duration::new(i64::MAX.cast_unsigned(), 999_999_999)); "largest kernel components")]
+#[test_case::test_case(-1, 0, None; "negative seconds")]
+#[test_case::test_case(0, -1, None; "negative nanoseconds")]
+#[test_case::test_case(0, 1_000_000_000, None; "nanoseconds must not normalize")]
+#[test_case::test_case(0, i64::MAX, None; "oversized nanoseconds")]
+fn kernel_monotonic_components_are_checked(
+    seconds: i64,
+    nanoseconds: i64,
+    expected: Option<std::time::Duration>,
+) {
+    let actual = crate::monotonic_duration(seconds, nanoseconds);
+    assert_eq!(actual.as_ref().ok().copied(), expected);
+    if expected.is_none() {
+        assert!(matches!(
+            actual,
+            Err(Error::InvalidMonotonic { seconds: s, nanoseconds: n })
+                if s == seconds && n == nanoseconds
+        ));
+    }
+}

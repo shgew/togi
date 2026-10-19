@@ -113,28 +113,57 @@ fn workload_regime_contracts(regime: Regime, count: usize, threads: u8, bases: &
     assert_eq!(catalog.len(), count);
     let mut ids = std::collections::BTreeSet::new();
     for (index, workload) in catalog.iter().enumerate() {
-        assert!(ids.insert(workload.id));
-        assert_eq!(workload.threads, threads);
-        assert_eq!(workload_by_id(workload.id), Some(workload));
+        assert!(
+            ids.insert(workload.id),
+            "{regime}, index {index}: {workload:?}"
+        );
+        assert_eq!(
+            workload.threads, threads,
+            "{regime}, index {index}: {workload:?}"
+        );
+        assert_eq!(
+            workload_by_id(workload.id),
+            Some(workload),
+            "{regime}, index {index}: {workload:?}"
+        );
         let base = workload_by_id(workload.base).unwrap();
-        assert_eq!(base.id, workload.base);
-        assert_eq!(base.id, base.base);
-        assert_eq!(base.backend, workload.backend);
+        assert_eq!(
+            base.id, workload.base,
+            "{regime}, index {index}: {workload:?}"
+        );
+        assert_eq!(base.id, base.base, "{regime}, index {index}: {workload:?}");
+        assert_eq!(
+            base.backend, workload.backend,
+            "{regime}, index {index}: {workload:?}"
+        );
         assert!(
             bases
                 .iter()
-                .any(|base_regime| workloads(*base_regime).contains(base))
+                .any(|base_regime| workloads(*base_regime).contains(base)),
+            "{regime}, index {index}: {workload:?}"
         );
         if regime == Regime::R4 {
-            assert!([25, 50, 75].contains(&workload.duty_pct.get()));
+            assert!(
+                [25, 50, 75].contains(&workload.duty_pct.get()),
+                "{regime}, index {index}: {workload:?}"
+            );
             assert_eq!(
                 workload.label,
-                format!("{} {}% duty", base.label, workload.duty_pct)
+                format!("{} {}% duty", base.label, workload.duty_pct),
+                "{regime}, index {index}: {workload:?}"
             );
         } else {
-            assert_eq!(workload.duty_pct.get(), 0);
+            assert_eq!(
+                workload.duty_pct.get(),
+                0,
+                "{regime}, index {index}: {workload:?}"
+            );
         }
-        assert_eq!(pick_workload(regime, index + count * 3), workload);
+        assert_eq!(
+            pick_workload(regime, index + count * 3),
+            workload,
+            "{regime}, index {index}: {workload:?}"
+        );
     }
 }
 
@@ -144,16 +173,44 @@ fn workload_ids_name_every_catalog_entry() {
     for regime in REGIMES {
         for (index, workload) in workloads(regime).iter().enumerate() {
             let id = workload.id();
-            assert_eq!(id, WorkloadId::new(regime, index).unwrap());
-            assert_eq!(id.regime(), regime);
-            assert_eq!(id.workload(), workload);
-            assert_eq!(id.as_str(), workload.id);
-            assert_eq!(id.to_string(), workload.id);
-            assert_eq!(workload.id.parse::<WorkloadId>().unwrap(), id);
+            assert_eq!(
+                id,
+                WorkloadId::new(regime, index).unwrap(),
+                "{regime}, index {index}: {workload:?}"
+            );
+            assert_eq!(id.regime(), regime, "{regime}, index {index}: {workload:?}");
+            assert_eq!(
+                id.workload(),
+                workload,
+                "{regime}, index {index}: {workload:?}"
+            );
+            assert_eq!(
+                id.as_str(),
+                workload.id,
+                "{regime}, index {index}: {workload:?}"
+            );
+            assert_eq!(
+                id.to_string(),
+                workload.id,
+                "{regime}, index {index}: {workload:?}"
+            );
+            assert_eq!(
+                workload.id.parse::<WorkloadId>().unwrap(),
+                id,
+                "{regime}, index {index}: {workload:?}"
+            );
             let json = serde_json::to_string(&id).unwrap();
-            assert_eq!(json, format!("\"{}\"", workload.id));
-            assert_eq!(serde_json::from_str::<WorkloadId>(&json).unwrap(), id);
-            assert!(seen.insert(id));
+            assert_eq!(
+                json,
+                format!("\"{}\"", workload.id),
+                "{regime}, index {index}: {workload:?}"
+            );
+            assert_eq!(
+                serde_json::from_str::<WorkloadId>(&json).unwrap(),
+                id,
+                "{regime}, index {index}: {workload:?}"
+            );
+            assert!(seen.insert(id), "{regime}, index {index}: {workload:?}");
         }
     }
     assert_eq!(seen.len(), 33);
@@ -363,11 +420,16 @@ fn vocabulary_serde_uses_wire_strings() {
     );
     for regime in REGIMES {
         let json = serde_json::to_string(&regime).unwrap();
-        assert_eq!(serde_json::from_str::<Regime>(&json).unwrap(), regime);
-        assert_eq!(json, format!("\"{regime}\""));
+        assert_eq!(
+            serde_json::from_str::<Regime>(&json).unwrap(),
+            regime,
+            "{regime}"
+        );
+        assert_eq!(json, format!("\"{regime}\""), "{regime}");
         assert_eq!(
             regime.instance_per_core(),
-            matches!(regime, Regime::R6 | Regime::R7)
+            matches!(regime, Regime::R6 | Regime::R7),
+            "{regime}"
         );
     }
     assert_eq!(
@@ -514,22 +576,25 @@ fn identities_refuse_values_outside_their_domain() {
     assert_eq!(CcdId::new(15).map(CcdId::get), Ok(15));
     assert_eq!(CcdId::new(16), Err(InvalidCcd(16)));
     assert_eq!(CcdId::new(-1), Err(InvalidCcd(-1)));
-    assert_eq!(CcdId::try_from(usize::MAX), Err(InvalidCcd(i64::MAX)));
+    assert_eq!(
+        CcdId::try_from(usize::MAX),
+        Err(InvalidCcd(usize::MAX as i128))
+    );
     assert_eq!(InvalidCcd(16).to_string(), "ccd 16 outside 0–15");
     assert_eq!(CpuId::new(65535).map(CpuId::get), Ok(u16::MAX));
     assert_eq!(CpuId::new(65536), Err(InvalidCpu(65536)));
     assert_eq!(CpuId::new(-1), Err(InvalidCpu(-1)));
     assert_eq!(CpuId::try_from(65536_u32), Err(InvalidCpu(65536)));
     assert_eq!(InvalidCpu(-1).to_string(), "cpu -1 outside 0–65535");
-    for json in [
-        r#"{"core":3,"ccd":16,"cpus":[]}"#,
-        r#"{"core":3,"ccd":-1,"cpus":[]}"#,
-        r#"{"core":3,"ccd":0,"cpus":[65536]}"#,
-        r#"{"core":3,"ccd":0,"cpus":[-1]}"#,
-    ] {
-        assert!(serde_json::from_str::<CoreInfo>(json).is_err(), "{json}");
-    }
     assert!(serde_json::from_str::<std::collections::BTreeMap<CcdId, u32>>(r#"{"16":1}"#).is_err());
+}
+
+#[test_case(r#"{"core":3,"ccd":16,"cpus":[]}"#; "ccd too large")]
+#[test_case(r#"{"core":3,"ccd":-1,"cpus":[]}"#; "negative ccd")]
+#[test_case(r#"{"core":3,"ccd":0,"cpus":[65536]}"#; "cpu too large")]
+#[test_case(r#"{"core":3,"ccd":0,"cpus":[-1]}"#; "negative cpu")]
+fn core_info_refuses_invalid_identities(json: &str) {
+    assert!(serde_json::from_str::<CoreInfo>(json).is_err(), "{json}");
 }
 
 #[test]
@@ -741,7 +806,10 @@ fn core_ids_convert_from_unsigned_integers() {
     assert_eq!(CoreId::try_from(15_usize).unwrap().index(), 15);
     assert_eq!(CoreId::try_from(16_u8), Err(InvalidCore(16)));
     assert_eq!(CoreId::try_from(16_usize), Err(InvalidCore(16)));
-    assert!(CoreId::try_from(usize::MAX).is_err());
+    assert_eq!(
+        CoreId::try_from(usize::MAX),
+        Err(InvalidCore(usize::MAX as i128))
+    );
 }
 
 #[test]
@@ -759,4 +827,37 @@ fn containment_keeps_its_cause_behind_a_fixed_message() {
 fn ccd_and_cpu_ids_display_as_numbers() {
     assert_eq!(CcdId::new(1).unwrap().to_string(), "1");
     assert_eq!(CpuId::from(23).to_string(), "23");
+}
+
+#[test_case::test_case(65536; "first unrepresentable cpu")]
+#[test_case::test_case(usize::MAX; "largest platform input")]
+fn unsigned_invalid_identity_diagnostics_preserve_the_input(value: usize) {
+    let core = CoreId::try_from(value).unwrap_err();
+    let ccd = CcdId::try_from(value).unwrap_err();
+    let cpu = CpuId::try_from(value).unwrap_err();
+    assert_eq!(core.0, value as i128);
+    assert_eq!(ccd.0, value as i128);
+    assert_eq!(cpu.0, value as i128);
+    assert!(core.to_string().contains(&value.to_string()));
+    assert!(ccd.to_string().contains(&value.to_string()));
+    assert!(cpu.to_string().contains(&value.to_string()));
+}
+
+#[test]
+fn every_core_set_mask_preserves_its_indices_and_count() {
+    for mask in 0..=u16::MAX {
+        let expected: Vec<_> = (0_u8..16)
+            .filter(|index| mask & (1_u16 << index) != 0)
+            .map(|index| CoreId::try_from(index).unwrap())
+            .collect();
+        let set: CoreSet = expected.iter().copied().collect();
+        assert_eq!(set.len(), expected.len(), "mask {mask}");
+        assert_eq!(set.iter().len(), expected.len(), "mask {mask}");
+        assert_eq!(set.iter().collect::<Vec<_>>(), expected, "mask {mask}");
+        assert_eq!(
+            set.iter().rev().collect::<Vec<_>>(),
+            expected.into_iter().rev().collect::<Vec<_>>(),
+            "mask {mask}"
+        );
+    }
 }

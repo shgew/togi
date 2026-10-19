@@ -586,14 +586,18 @@ mod tests {
             !rows[rows.len() - 1].trim().is_empty(),
             "wide help ends on a blank content row"
         );
-        for section in [&TOP, &TUNING, &LOAD] {
-            let lines = section_lines(section, 70, section.title == TUNING.title, C);
-            assert!(
-                !plain(&lines[lines.len() - 1], C).trim().is_empty(),
-                "wide column's final section {:?} ends on blank padding",
-                section.title
-            );
-        }
+    }
+
+    #[test_case::test_case(&TOP; "top")]
+    #[test_case::test_case(&TUNING; "tuning")]
+    #[test_case::test_case(&LOAD; "load")]
+    fn a_wide_help_section_has_no_trailing_padding(section: &Section<'_>) {
+        let lines = section_lines(section, 70, section.title == TUNING.title, C);
+        assert!(
+            !plain(&lines[lines.len() - 1], C).trim().is_empty(),
+            "wide column's final section {:?} ends on blank padding",
+            section.title
+        );
     }
 
     #[test_case(195; "195 columns")]
@@ -752,15 +756,16 @@ mod tests {
             scroll == 0 && !body.is_empty(),
             "{width} columns: full help was not rendered"
         );
-        let mut column = 0;
-        if width >= THREE_COLUMNS {
+        let column = if width >= THREE_COLUMNS {
             let first = plain(&body[0], C);
             let prefix = first
                 .split_once("WORDS")
                 .unwrap_or_else(|| panic!("wide help lost the words column: {first}"))
                 .0;
-            column = prefix.chars().count();
-        }
+            prefix.chars().count()
+        } else {
+            0
+        };
         let lines: Vec<String> = body
             .iter()
             .enumerate()
@@ -841,26 +846,151 @@ mod tests {
         }
     }
 
-    #[test]
-    fn help_bodies_fit_small_rectangles() {
-        for width in [0, 1, 2, 10, 77, 155, 194, 195, 196, 197, 235] {
-            for height in [0, 1, 19, 61] {
-                for scroll in [0, 7, usize::MAX] {
-                    let (body, _) = help_body(width, height, scroll, C, Quit::Keys);
-                    assert!(
-                        body.len() <= height,
-                        "{width}x{height}: body has {} rows",
-                        body.len()
-                    );
-                    for line in &body {
-                        assert!(
-                            line_width(line, C) <= width,
-                            "{width}x{height}: body writes beyond rectangle: {:?}",
-                            plain(line, C)
-                        );
-                    }
-                }
-            }
+    #[test_case::test_case(0, 0, 0; "w0 h0 scroll0")]
+    #[test_case::test_case(0, 0, 7; "w0 h0 scroll1")]
+    #[test_case::test_case(0, 0, usize::MAX; "w0 h0 scroll2")]
+    #[test_case::test_case(0, 1, 0; "w0 h1 scroll0")]
+    #[test_case::test_case(0, 1, 7; "w0 h1 scroll1")]
+    #[test_case::test_case(0, 1, usize::MAX; "w0 h1 scroll2")]
+    #[test_case::test_case(0, 19, 0; "w0 h19 scroll0")]
+    #[test_case::test_case(0, 19, 7; "w0 h19 scroll1")]
+    #[test_case::test_case(0, 19, usize::MAX; "w0 h19 scroll2")]
+    #[test_case::test_case(0, 61, 0; "w0 h61 scroll0")]
+    #[test_case::test_case(0, 61, 7; "w0 h61 scroll1")]
+    #[test_case::test_case(0, 61, usize::MAX; "w0 h61 scroll2")]
+    #[test_case::test_case(1, 0, 0; "w1 h0 scroll0")]
+    #[test_case::test_case(1, 0, 7; "w1 h0 scroll1")]
+    #[test_case::test_case(1, 0, usize::MAX; "w1 h0 scroll2")]
+    #[test_case::test_case(1, 1, 0; "w1 h1 scroll0")]
+    #[test_case::test_case(1, 1, 7; "w1 h1 scroll1")]
+    #[test_case::test_case(1, 1, usize::MAX; "w1 h1 scroll2")]
+    #[test_case::test_case(1, 19, 0; "w1 h19 scroll0")]
+    #[test_case::test_case(1, 19, 7; "w1 h19 scroll1")]
+    #[test_case::test_case(1, 19, usize::MAX; "w1 h19 scroll2")]
+    #[test_case::test_case(1, 61, 0; "w1 h61 scroll0")]
+    #[test_case::test_case(1, 61, 7; "w1 h61 scroll1")]
+    #[test_case::test_case(1, 61, usize::MAX; "w1 h61 scroll2")]
+    #[test_case::test_case(2, 0, 0; "w2 h0 scroll0")]
+    #[test_case::test_case(2, 0, 7; "w2 h0 scroll1")]
+    #[test_case::test_case(2, 0, usize::MAX; "w2 h0 scroll2")]
+    #[test_case::test_case(2, 1, 0; "w2 h1 scroll0")]
+    #[test_case::test_case(2, 1, 7; "w2 h1 scroll1")]
+    #[test_case::test_case(2, 1, usize::MAX; "w2 h1 scroll2")]
+    #[test_case::test_case(2, 19, 0; "w2 h19 scroll0")]
+    #[test_case::test_case(2, 19, 7; "w2 h19 scroll1")]
+    #[test_case::test_case(2, 19, usize::MAX; "w2 h19 scroll2")]
+    #[test_case::test_case(2, 61, 0; "w2 h61 scroll0")]
+    #[test_case::test_case(2, 61, 7; "w2 h61 scroll1")]
+    #[test_case::test_case(2, 61, usize::MAX; "w2 h61 scroll2")]
+    #[test_case::test_case(10, 0, 0; "w10 h0 scroll0")]
+    #[test_case::test_case(10, 0, 7; "w10 h0 scroll1")]
+    #[test_case::test_case(10, 0, usize::MAX; "w10 h0 scroll2")]
+    #[test_case::test_case(10, 1, 0; "w10 h1 scroll0")]
+    #[test_case::test_case(10, 1, 7; "w10 h1 scroll1")]
+    #[test_case::test_case(10, 1, usize::MAX; "w10 h1 scroll2")]
+    #[test_case::test_case(10, 19, 0; "w10 h19 scroll0")]
+    #[test_case::test_case(10, 19, 7; "w10 h19 scroll1")]
+    #[test_case::test_case(10, 19, usize::MAX; "w10 h19 scroll2")]
+    #[test_case::test_case(10, 61, 0; "w10 h61 scroll0")]
+    #[test_case::test_case(10, 61, 7; "w10 h61 scroll1")]
+    #[test_case::test_case(10, 61, usize::MAX; "w10 h61 scroll2")]
+    #[test_case::test_case(77, 0, 0; "w77 h0 scroll0")]
+    #[test_case::test_case(77, 0, 7; "w77 h0 scroll1")]
+    #[test_case::test_case(77, 0, usize::MAX; "w77 h0 scroll2")]
+    #[test_case::test_case(77, 1, 0; "w77 h1 scroll0")]
+    #[test_case::test_case(77, 1, 7; "w77 h1 scroll1")]
+    #[test_case::test_case(77, 1, usize::MAX; "w77 h1 scroll2")]
+    #[test_case::test_case(77, 19, 0; "w77 h19 scroll0")]
+    #[test_case::test_case(77, 19, 7; "w77 h19 scroll1")]
+    #[test_case::test_case(77, 19, usize::MAX; "w77 h19 scroll2")]
+    #[test_case::test_case(77, 61, 0; "w77 h61 scroll0")]
+    #[test_case::test_case(77, 61, 7; "w77 h61 scroll1")]
+    #[test_case::test_case(77, 61, usize::MAX; "w77 h61 scroll2")]
+    #[test_case::test_case(155, 0, 0; "w155 h0 scroll0")]
+    #[test_case::test_case(155, 0, 7; "w155 h0 scroll1")]
+    #[test_case::test_case(155, 0, usize::MAX; "w155 h0 scroll2")]
+    #[test_case::test_case(155, 1, 0; "w155 h1 scroll0")]
+    #[test_case::test_case(155, 1, 7; "w155 h1 scroll1")]
+    #[test_case::test_case(155, 1, usize::MAX; "w155 h1 scroll2")]
+    #[test_case::test_case(155, 19, 0; "w155 h19 scroll0")]
+    #[test_case::test_case(155, 19, 7; "w155 h19 scroll1")]
+    #[test_case::test_case(155, 19, usize::MAX; "w155 h19 scroll2")]
+    #[test_case::test_case(155, 61, 0; "w155 h61 scroll0")]
+    #[test_case::test_case(155, 61, 7; "w155 h61 scroll1")]
+    #[test_case::test_case(155, 61, usize::MAX; "w155 h61 scroll2")]
+    #[test_case::test_case(194, 0, 0; "w194 h0 scroll0")]
+    #[test_case::test_case(194, 0, 7; "w194 h0 scroll1")]
+    #[test_case::test_case(194, 0, usize::MAX; "w194 h0 scroll2")]
+    #[test_case::test_case(194, 1, 0; "w194 h1 scroll0")]
+    #[test_case::test_case(194, 1, 7; "w194 h1 scroll1")]
+    #[test_case::test_case(194, 1, usize::MAX; "w194 h1 scroll2")]
+    #[test_case::test_case(194, 19, 0; "w194 h19 scroll0")]
+    #[test_case::test_case(194, 19, 7; "w194 h19 scroll1")]
+    #[test_case::test_case(194, 19, usize::MAX; "w194 h19 scroll2")]
+    #[test_case::test_case(194, 61, 0; "w194 h61 scroll0")]
+    #[test_case::test_case(194, 61, 7; "w194 h61 scroll1")]
+    #[test_case::test_case(194, 61, usize::MAX; "w194 h61 scroll2")]
+    #[test_case::test_case(195, 0, 0; "w195 h0 scroll0")]
+    #[test_case::test_case(195, 0, 7; "w195 h0 scroll1")]
+    #[test_case::test_case(195, 0, usize::MAX; "w195 h0 scroll2")]
+    #[test_case::test_case(195, 1, 0; "w195 h1 scroll0")]
+    #[test_case::test_case(195, 1, 7; "w195 h1 scroll1")]
+    #[test_case::test_case(195, 1, usize::MAX; "w195 h1 scroll2")]
+    #[test_case::test_case(195, 19, 0; "w195 h19 scroll0")]
+    #[test_case::test_case(195, 19, 7; "w195 h19 scroll1")]
+    #[test_case::test_case(195, 19, usize::MAX; "w195 h19 scroll2")]
+    #[test_case::test_case(195, 61, 0; "w195 h61 scroll0")]
+    #[test_case::test_case(195, 61, 7; "w195 h61 scroll1")]
+    #[test_case::test_case(195, 61, usize::MAX; "w195 h61 scroll2")]
+    #[test_case::test_case(196, 0, 0; "w196 h0 scroll0")]
+    #[test_case::test_case(196, 0, 7; "w196 h0 scroll1")]
+    #[test_case::test_case(196, 0, usize::MAX; "w196 h0 scroll2")]
+    #[test_case::test_case(196, 1, 0; "w196 h1 scroll0")]
+    #[test_case::test_case(196, 1, 7; "w196 h1 scroll1")]
+    #[test_case::test_case(196, 1, usize::MAX; "w196 h1 scroll2")]
+    #[test_case::test_case(196, 19, 0; "w196 h19 scroll0")]
+    #[test_case::test_case(196, 19, 7; "w196 h19 scroll1")]
+    #[test_case::test_case(196, 19, usize::MAX; "w196 h19 scroll2")]
+    #[test_case::test_case(196, 61, 0; "w196 h61 scroll0")]
+    #[test_case::test_case(196, 61, 7; "w196 h61 scroll1")]
+    #[test_case::test_case(196, 61, usize::MAX; "w196 h61 scroll2")]
+    #[test_case::test_case(197, 0, 0; "w197 h0 scroll0")]
+    #[test_case::test_case(197, 0, 7; "w197 h0 scroll1")]
+    #[test_case::test_case(197, 0, usize::MAX; "w197 h0 scroll2")]
+    #[test_case::test_case(197, 1, 0; "w197 h1 scroll0")]
+    #[test_case::test_case(197, 1, 7; "w197 h1 scroll1")]
+    #[test_case::test_case(197, 1, usize::MAX; "w197 h1 scroll2")]
+    #[test_case::test_case(197, 19, 0; "w197 h19 scroll0")]
+    #[test_case::test_case(197, 19, 7; "w197 h19 scroll1")]
+    #[test_case::test_case(197, 19, usize::MAX; "w197 h19 scroll2")]
+    #[test_case::test_case(197, 61, 0; "w197 h61 scroll0")]
+    #[test_case::test_case(197, 61, 7; "w197 h61 scroll1")]
+    #[test_case::test_case(197, 61, usize::MAX; "w197 h61 scroll2")]
+    #[test_case::test_case(235, 0, 0; "w235 h0 scroll0")]
+    #[test_case::test_case(235, 0, 7; "w235 h0 scroll1")]
+    #[test_case::test_case(235, 0, usize::MAX; "w235 h0 scroll2")]
+    #[test_case::test_case(235, 1, 0; "w235 h1 scroll0")]
+    #[test_case::test_case(235, 1, 7; "w235 h1 scroll1")]
+    #[test_case::test_case(235, 1, usize::MAX; "w235 h1 scroll2")]
+    #[test_case::test_case(235, 19, 0; "w235 h19 scroll0")]
+    #[test_case::test_case(235, 19, 7; "w235 h19 scroll1")]
+    #[test_case::test_case(235, 19, usize::MAX; "w235 h19 scroll2")]
+    #[test_case::test_case(235, 61, 0; "w235 h61 scroll0")]
+    #[test_case::test_case(235, 61, 7; "w235 h61 scroll1")]
+    #[test_case::test_case(235, 61, usize::MAX; "w235 h61 scroll2")]
+    fn help_bodies_fit_small_rectangles(width: usize, height: usize, scroll: usize) {
+        let (body, _) = help_body(width, height, scroll, C, Quit::Keys);
+        assert!(
+            body.len() <= height,
+            "{width}x{height}: body has {} rows",
+            body.len()
+        );
+        for line in &body {
+            assert!(
+                line_width(line, C) <= width,
+                "{width}x{height}: body writes beyond rectangle: {:?}",
+                plain(line, C)
+            );
         }
     }
 
@@ -1018,30 +1148,46 @@ mod tests {
             boot.contains("last observed"),
             "the rest of the top line stays"
         );
-        for width in [77, 115, 235] {
-            for height in [19, 1000] {
-                let (body, _) = help_body(width, height, usize::MAX, C, Quit::Ignored);
-                assert!(body.len() <= height);
-            }
-        }
     }
 
-    #[test_case(80, 24)]
-    #[test_case(160, 45)]
-    #[test_case(240, 67)]
-    #[test_case(240, 30)]
-    fn a_scroll_at_or_past_the_extent_follows_the_end(width: u16, height: u16) {
+    #[test_case::test_case(77, 19; "77x19")]
+    #[test_case::test_case(77, 1000; "77x1000")]
+    #[test_case::test_case(115, 19; "115x19")]
+    #[test_case::test_case(115, 1000; "115x1000")]
+    #[test_case::test_case(235, 19; "235x19")]
+    #[test_case::test_case(235, 1000; "235x1000")]
+    fn tuning_boot_help_fits_its_body(width: usize, height: usize) {
+        let (body, _) = help_body(width, height, usize::MAX, C, Quit::Ignored);
+        assert!(body.len() <= height);
+    }
+
+    #[test_case::test_case(80, 24, |extent| extent; "80x24 at end")]
+    #[test_case::test_case(80, 24, |extent| extent + 1; "80x24 past end")]
+    #[test_case::test_case(80, 24, |_| 100_000; "80x24 far")]
+    #[test_case::test_case(160, 45, |extent| extent; "160x45 at end")]
+    #[test_case::test_case(160, 45, |extent| extent + 1; "160x45 past end")]
+    #[test_case::test_case(160, 45, |_| 100_000; "160x45 far")]
+    #[test_case::test_case(240, 67, |extent| extent; "240x67 at end")]
+    #[test_case::test_case(240, 67, |extent| extent + 1; "240x67 past end")]
+    #[test_case::test_case(240, 67, |_| 100_000; "240x67 far")]
+    #[test_case::test_case(240, 30, |extent| extent; "240x30 at end")]
+    #[test_case::test_case(240, 30, |extent| extent + 1; "240x30 past end")]
+    #[test_case::test_case(240, 30, |_| 100_000; "240x30 far")]
+    fn a_scroll_at_or_past_the_extent_follows_the_end(
+        width: u16,
+        height: u16,
+        sample: fn(usize) -> usize,
+    ) {
         let mut sc = screen(View::Help, width, height, C, true);
         sc.scroll = usize::MAX;
         let (end, drawn) = render_missing(&sc);
-        for scroll in [drawn.scroll, drawn.scroll + 1, 100_000] {
-            sc.scroll = scroll;
-            assert_eq!(
-                render_missing(&sc).0,
-                end,
-                "{width}x{height} scroll {scroll}"
-            );
-        }
+        let scroll = sample(drawn.scroll);
+        sc.scroll = scroll;
+        assert_eq!(
+            render_missing(&sc).0,
+            end,
+            "{width}x{height} scroll {scroll}"
+        );
         sc.scroll = drawn.scroll.saturating_sub(1);
         if drawn.scroll > 0 {
             assert_ne!(
@@ -1052,22 +1198,117 @@ mod tests {
         }
     }
 
-    #[test_case(240, 67)]
-    #[test_case(160, 45)]
-    #[test_case(120, 33)]
-    #[test_case(80, 24)]
-    fn help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size(width: u16, height: u16) {
-        for colours in [Colours::Full, Colours::Console, Colours::None] {
-            for scroll in [0, 3, usize::MAX, 100_000] {
-                for keys in [true, false] {
-                    let mut sc = screen(View::Help, width, height, colours, keys);
-                    sc.scroll = scroll;
-                    let (buf, _) = render_missing(&sc);
-                    assert_frame_bounds(&buf, &sc);
-                    assert_glyphs_drawable(&buf, &format!("help {width}x{height}"));
-                }
-            }
-        }
+    #[test_case::test_case(240, 67, Colours::Full, 0, true; "240x67 Full scroll 0 keys True")]
+    #[test_case::test_case(240, 67, Colours::Full, 0, false; "240x67 Full scroll 0 keys False")]
+    #[test_case::test_case(240, 67, Colours::Full, 3, true; "240x67 Full scroll 1 keys True")]
+    #[test_case::test_case(240, 67, Colours::Full, 3, false; "240x67 Full scroll 1 keys False")]
+    #[test_case::test_case(240, 67, Colours::Full, usize::MAX, true; "240x67 Full scroll 2 keys True")]
+    #[test_case::test_case(240, 67, Colours::Full, usize::MAX, false; "240x67 Full scroll 2 keys False")]
+    #[test_case::test_case(240, 67, Colours::Full, 100_000, true; "240x67 Full scroll 3 keys True")]
+    #[test_case::test_case(240, 67, Colours::Full, 100_000, false; "240x67 Full scroll 3 keys False")]
+    #[test_case::test_case(240, 67, Colours::Console, 0, true; "240x67 Console scroll 0 keys True")]
+    #[test_case::test_case(240, 67, Colours::Console, 0, false; "240x67 Console scroll 0 keys False")]
+    #[test_case::test_case(240, 67, Colours::Console, 3, true; "240x67 Console scroll 1 keys True")]
+    #[test_case::test_case(240, 67, Colours::Console, 3, false; "240x67 Console scroll 1 keys False")]
+    #[test_case::test_case(240, 67, Colours::Console, usize::MAX, true; "240x67 Console scroll 2 keys True")]
+    #[test_case::test_case(240, 67, Colours::Console, usize::MAX, false; "240x67 Console scroll 2 keys False")]
+    #[test_case::test_case(240, 67, Colours::Console, 100_000, true; "240x67 Console scroll 3 keys True")]
+    #[test_case::test_case(240, 67, Colours::Console, 100_000, false; "240x67 Console scroll 3 keys False")]
+    #[test_case::test_case(240, 67, Colours::None, 0, true; "240x67 None scroll 0 keys True")]
+    #[test_case::test_case(240, 67, Colours::None, 0, false; "240x67 None scroll 0 keys False")]
+    #[test_case::test_case(240, 67, Colours::None, 3, true; "240x67 None scroll 1 keys True")]
+    #[test_case::test_case(240, 67, Colours::None, 3, false; "240x67 None scroll 1 keys False")]
+    #[test_case::test_case(240, 67, Colours::None, usize::MAX, true; "240x67 None scroll 2 keys True")]
+    #[test_case::test_case(240, 67, Colours::None, usize::MAX, false; "240x67 None scroll 2 keys False")]
+    #[test_case::test_case(240, 67, Colours::None, 100_000, true; "240x67 None scroll 3 keys True")]
+    #[test_case::test_case(240, 67, Colours::None, 100_000, false; "240x67 None scroll 3 keys False")]
+    #[test_case::test_case(160, 45, Colours::Full, 0, true; "160x45 Full scroll 0 keys True")]
+    #[test_case::test_case(160, 45, Colours::Full, 0, false; "160x45 Full scroll 0 keys False")]
+    #[test_case::test_case(160, 45, Colours::Full, 3, true; "160x45 Full scroll 1 keys True")]
+    #[test_case::test_case(160, 45, Colours::Full, 3, false; "160x45 Full scroll 1 keys False")]
+    #[test_case::test_case(160, 45, Colours::Full, usize::MAX, true; "160x45 Full scroll 2 keys True")]
+    #[test_case::test_case(160, 45, Colours::Full, usize::MAX, false; "160x45 Full scroll 2 keys False")]
+    #[test_case::test_case(160, 45, Colours::Full, 100_000, true; "160x45 Full scroll 3 keys True")]
+    #[test_case::test_case(160, 45, Colours::Full, 100_000, false; "160x45 Full scroll 3 keys False")]
+    #[test_case::test_case(160, 45, Colours::Console, 0, true; "160x45 Console scroll 0 keys True")]
+    #[test_case::test_case(160, 45, Colours::Console, 0, false; "160x45 Console scroll 0 keys False")]
+    #[test_case::test_case(160, 45, Colours::Console, 3, true; "160x45 Console scroll 1 keys True")]
+    #[test_case::test_case(160, 45, Colours::Console, 3, false; "160x45 Console scroll 1 keys False")]
+    #[test_case::test_case(160, 45, Colours::Console, usize::MAX, true; "160x45 Console scroll 2 keys True")]
+    #[test_case::test_case(160, 45, Colours::Console, usize::MAX, false; "160x45 Console scroll 2 keys False")]
+    #[test_case::test_case(160, 45, Colours::Console, 100_000, true; "160x45 Console scroll 3 keys True")]
+    #[test_case::test_case(160, 45, Colours::Console, 100_000, false; "160x45 Console scroll 3 keys False")]
+    #[test_case::test_case(160, 45, Colours::None, 0, true; "160x45 None scroll 0 keys True")]
+    #[test_case::test_case(160, 45, Colours::None, 0, false; "160x45 None scroll 0 keys False")]
+    #[test_case::test_case(160, 45, Colours::None, 3, true; "160x45 None scroll 1 keys True")]
+    #[test_case::test_case(160, 45, Colours::None, 3, false; "160x45 None scroll 1 keys False")]
+    #[test_case::test_case(160, 45, Colours::None, usize::MAX, true; "160x45 None scroll 2 keys True")]
+    #[test_case::test_case(160, 45, Colours::None, usize::MAX, false; "160x45 None scroll 2 keys False")]
+    #[test_case::test_case(160, 45, Colours::None, 100_000, true; "160x45 None scroll 3 keys True")]
+    #[test_case::test_case(160, 45, Colours::None, 100_000, false; "160x45 None scroll 3 keys False")]
+    #[test_case::test_case(120, 33, Colours::Full, 0, true; "120x33 Full scroll 0 keys True")]
+    #[test_case::test_case(120, 33, Colours::Full, 0, false; "120x33 Full scroll 0 keys False")]
+    #[test_case::test_case(120, 33, Colours::Full, 3, true; "120x33 Full scroll 1 keys True")]
+    #[test_case::test_case(120, 33, Colours::Full, 3, false; "120x33 Full scroll 1 keys False")]
+    #[test_case::test_case(120, 33, Colours::Full, usize::MAX, true; "120x33 Full scroll 2 keys True")]
+    #[test_case::test_case(120, 33, Colours::Full, usize::MAX, false; "120x33 Full scroll 2 keys False")]
+    #[test_case::test_case(120, 33, Colours::Full, 100_000, true; "120x33 Full scroll 3 keys True")]
+    #[test_case::test_case(120, 33, Colours::Full, 100_000, false; "120x33 Full scroll 3 keys False")]
+    #[test_case::test_case(120, 33, Colours::Console, 0, true; "120x33 Console scroll 0 keys True")]
+    #[test_case::test_case(120, 33, Colours::Console, 0, false; "120x33 Console scroll 0 keys False")]
+    #[test_case::test_case(120, 33, Colours::Console, 3, true; "120x33 Console scroll 1 keys True")]
+    #[test_case::test_case(120, 33, Colours::Console, 3, false; "120x33 Console scroll 1 keys False")]
+    #[test_case::test_case(120, 33, Colours::Console, usize::MAX, true; "120x33 Console scroll 2 keys True")]
+    #[test_case::test_case(120, 33, Colours::Console, usize::MAX, false; "120x33 Console scroll 2 keys False")]
+    #[test_case::test_case(120, 33, Colours::Console, 100_000, true; "120x33 Console scroll 3 keys True")]
+    #[test_case::test_case(120, 33, Colours::Console, 100_000, false; "120x33 Console scroll 3 keys False")]
+    #[test_case::test_case(120, 33, Colours::None, 0, true; "120x33 None scroll 0 keys True")]
+    #[test_case::test_case(120, 33, Colours::None, 0, false; "120x33 None scroll 0 keys False")]
+    #[test_case::test_case(120, 33, Colours::None, 3, true; "120x33 None scroll 1 keys True")]
+    #[test_case::test_case(120, 33, Colours::None, 3, false; "120x33 None scroll 1 keys False")]
+    #[test_case::test_case(120, 33, Colours::None, usize::MAX, true; "120x33 None scroll 2 keys True")]
+    #[test_case::test_case(120, 33, Colours::None, usize::MAX, false; "120x33 None scroll 2 keys False")]
+    #[test_case::test_case(120, 33, Colours::None, 100_000, true; "120x33 None scroll 3 keys True")]
+    #[test_case::test_case(120, 33, Colours::None, 100_000, false; "120x33 None scroll 3 keys False")]
+    #[test_case::test_case(80, 24, Colours::Full, 0, true; "80x24 Full scroll 0 keys True")]
+    #[test_case::test_case(80, 24, Colours::Full, 0, false; "80x24 Full scroll 0 keys False")]
+    #[test_case::test_case(80, 24, Colours::Full, 3, true; "80x24 Full scroll 1 keys True")]
+    #[test_case::test_case(80, 24, Colours::Full, 3, false; "80x24 Full scroll 1 keys False")]
+    #[test_case::test_case(80, 24, Colours::Full, usize::MAX, true; "80x24 Full scroll 2 keys True")]
+    #[test_case::test_case(80, 24, Colours::Full, usize::MAX, false; "80x24 Full scroll 2 keys False")]
+    #[test_case::test_case(80, 24, Colours::Full, 100_000, true; "80x24 Full scroll 3 keys True")]
+    #[test_case::test_case(80, 24, Colours::Full, 100_000, false; "80x24 Full scroll 3 keys False")]
+    #[test_case::test_case(80, 24, Colours::Console, 0, true; "80x24 Console scroll 0 keys True")]
+    #[test_case::test_case(80, 24, Colours::Console, 0, false; "80x24 Console scroll 0 keys False")]
+    #[test_case::test_case(80, 24, Colours::Console, 3, true; "80x24 Console scroll 1 keys True")]
+    #[test_case::test_case(80, 24, Colours::Console, 3, false; "80x24 Console scroll 1 keys False")]
+    #[test_case::test_case(80, 24, Colours::Console, usize::MAX, true; "80x24 Console scroll 2 keys True")]
+    #[test_case::test_case(80, 24, Colours::Console, usize::MAX, false; "80x24 Console scroll 2 keys False")]
+    #[test_case::test_case(80, 24, Colours::Console, 100_000, true; "80x24 Console scroll 3 keys True")]
+    #[test_case::test_case(80, 24, Colours::Console, 100_000, false; "80x24 Console scroll 3 keys False")]
+    #[test_case::test_case(80, 24, Colours::None, 0, true; "80x24 None scroll 0 keys True")]
+    #[test_case::test_case(80, 24, Colours::None, 0, false; "80x24 None scroll 0 keys False")]
+    #[test_case::test_case(80, 24, Colours::None, 3, true; "80x24 None scroll 1 keys True")]
+    #[test_case::test_case(80, 24, Colours::None, 3, false; "80x24 None scroll 1 keys False")]
+    #[test_case::test_case(80, 24, Colours::None, usize::MAX, true; "80x24 None scroll 2 keys True")]
+    #[test_case::test_case(80, 24, Colours::None, usize::MAX, false; "80x24 None scroll 2 keys False")]
+    #[test_case::test_case(80, 24, Colours::None, 100_000, true; "80x24 None scroll 3 keys True")]
+    #[test_case::test_case(80, 24, Colours::None, 100_000, false; "80x24 None scroll 3 keys False")]
+    fn help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size(
+        width: u16,
+        height: u16,
+        colours: Colours,
+        scroll: usize,
+        keys: bool,
+    ) {
+        let mut sc = screen(View::Help, width, height, colours, keys);
+        sc.scroll = scroll;
+        let (buf, _) = render_missing(&sc);
+        assert_frame_bounds(&buf, &sc);
+        assert_glyphs_drawable(
+            &buf,
+            &format!("help {width}x{height} {colours:?} scroll {scroll} keys {keys}"),
+        );
     }
 
     #[test]

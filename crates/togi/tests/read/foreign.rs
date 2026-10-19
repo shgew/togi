@@ -13,13 +13,6 @@ use crate::fixture::{self, Snapshot};
 use crate::support::{Session, text, togi};
 use crate::watch::{BOUND, HIDE_CURSOR, Helper, contains, read_more};
 
-const COMMANDS: [(&str, &[&str]); 4] = [
-    ("status", &["status"]),
-    ("events", &["events"]),
-    ("events", &["events", "--kind", "session.start"]),
-    ("watch", &["watch", "--width", "100", "--height", "30"]),
-];
-
 /// A state directory holding the Go build's files, and what it held.
 fn go_state() -> (Session, Snapshot) {
     let dir = crate::support::Session::empty();
@@ -43,82 +36,92 @@ fn assert_untouched(state: &Session, before: &Snapshot) {
     assert_eq!(&fixture::snapshot(state.fs.as_ref(), state.path()), before);
 }
 
-#[test]
-fn each_read_command_refuses_the_go_journal_and_changes_no_file() {
-    for (command, args) in COMMANDS {
-        let (dir, before) = go_state();
-        let ran = togi(&dir, args);
-        assert_eq!(
-            ran.status.code(),
-            Some(1),
-            "{args:?}: {}",
-            text(&ran.stderr)
-        );
-        assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
-        fixture::assert_refusal(command, text(&ran.stderr), dir.path());
-        assert_untouched(&dir, &before);
-    }
+#[test_case::test_case("status", &["status"]; "status")]
+#[test_case::test_case("events", &["events"]; "events")]
+#[test_case::test_case("events", &["events", "--kind", "session.start"]; "filtered events")]
+#[test_case::test_case("watch", &["watch", "--width", "100", "--height", "30"]; "watch")]
+fn each_read_command_refuses_the_go_journal_and_changes_no_file(command: &str, args: &[&str]) {
+    let (dir, before) = go_state();
+    let ran = togi(&dir, args);
+    assert_eq!(
+        ran.status.code(),
+        Some(1),
+        "{args:?}: {}",
+        text(&ran.stderr)
+    );
+    assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
+    fixture::assert_refusal(command, text(&ran.stderr), dir.path());
+    assert_untouched(&dir, &before);
 }
 
-#[test]
-fn the_refusal_comes_from_the_first_line_alone_whatever_follows_it() {
-    for (command, args) in COMMANDS {
-        let dir = crate::support::Session::empty();
-        fixture::install(dir.fs.as_ref(), dir.path());
-        fixture::append_unreadable_line(dir.fs.as_ref(), dir.path());
-        let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
-        let ran = togi(&dir, args);
-        assert_eq!(ran.status.code(), Some(1), "{args:?}");
-        fixture::assert_refusal(command, text(&ran.stderr), dir.path());
-        let stderr = text(&ran.stderr);
-        assert!(!stderr.contains("unknown event kind"), "{stderr}");
-        assert!(!stderr.contains("line 13"), "{stderr}");
-        assert_untouched(&dir, &before);
-    }
+#[test_case::test_case("status", &["status"]; "status")]
+#[test_case::test_case("events", &["events"]; "events")]
+#[test_case::test_case("events", &["events", "--kind", "session.start"]; "filtered events")]
+#[test_case::test_case("watch", &["watch", "--width", "100", "--height", "30"]; "watch")]
+fn the_refusal_comes_from_the_first_line_alone_whatever_follows_it(command: &str, args: &[&str]) {
+    let dir = crate::support::Session::empty();
+    fixture::install(dir.fs.as_ref(), dir.path());
+    fixture::append_unreadable_line(dir.fs.as_ref(), dir.path());
+    let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
+    let ran = togi(&dir, args);
+    assert_eq!(ran.status.code(), Some(1), "{args:?}");
+    fixture::assert_refusal(command, text(&ran.stderr), dir.path());
+    let stderr = text(&ran.stderr);
+    assert!(!stderr.contains("unknown event kind"), "{stderr}");
+    assert!(!stderr.contains("line 13"), "{stderr}");
+    assert_untouched(&dir, &before);
 }
 
-#[test]
-fn a_first_line_without_its_newline_is_refused_all_the_same() {
-    for (command, args) in COMMANDS {
-        let dir = crate::support::Session::empty();
-        fixture::install(dir.fs.as_ref(), dir.path());
-        fixture::keep_only_the_unterminated_first_line(dir.fs.as_ref(), dir.path());
-        let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
-        let ran = togi(&dir, args);
-        assert_eq!(
-            ran.status.code(),
-            Some(1),
-            "{args:?}: {}",
-            text(&ran.stderr)
-        );
-        assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
-        fixture::assert_refusal(command, text(&ran.stderr), dir.path());
-        let stderr = text(&ran.stderr);
-        assert!(!stderr.contains("torn bytes"), "{stderr}");
-        assert_untouched(&dir, &before);
-    }
+#[test_case::test_case("status", &["status"]; "status")]
+#[test_case::test_case("events", &["events"]; "events")]
+#[test_case::test_case("events", &["events", "--kind", "session.start"]; "filtered events")]
+#[test_case::test_case("watch", &["watch", "--width", "100", "--height", "30"]; "watch")]
+fn a_first_line_without_its_newline_is_refused_all_the_same(command: &str, args: &[&str]) {
+    let dir = crate::support::Session::empty();
+    fixture::install(dir.fs.as_ref(), dir.path());
+    fixture::keep_only_the_unterminated_first_line(dir.fs.as_ref(), dir.path());
+    let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
+    let ran = togi(&dir, args);
+    assert_eq!(
+        ran.status.code(),
+        Some(1),
+        "{args:?}: {}",
+        text(&ran.stderr)
+    );
+    assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
+    fixture::assert_refusal(command, text(&ran.stderr), dir.path());
+    let stderr = text(&ran.stderr);
+    assert!(!stderr.contains("torn bytes"), "{stderr}");
+    assert_untouched(&dir, &before);
 }
 
-#[test]
-fn a_truncated_header_of_this_build_is_refused_in_the_same_words() {
-    for newline in [false, true] {
-        for (command, args) in COMMANDS {
-            let dir = crate::support::Session::empty();
-            fixture::keep_only_a_truncated_journal_header(dir.fs.as_ref(), dir.path(), newline);
-            let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
-            let ran = togi(&dir, args);
-            let stderr = text(&ran.stderr);
-            assert_eq!(
-                ran.status.code(),
-                Some(1),
-                "{args:?}, newline {newline}: {stderr}"
-            );
-            assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
-            fixture::assert_refusal(command, stderr, dir.path());
-            assert!(!stderr.contains("torn bytes"), "{stderr}");
-            assert_untouched(&dir, &before);
-        }
-    }
+#[test_case::test_case("status", &["status"], false; "status unterminated")]
+#[test_case::test_case("events", &["events"], false; "events unterminated")]
+#[test_case::test_case("events", &["events", "--kind", "session.start"], false; "filtered events unterminated")]
+#[test_case::test_case("watch", &["watch", "--width", "100", "--height", "30"], false; "watch unterminated")]
+#[test_case::test_case("status", &["status"], true; "status terminated")]
+#[test_case::test_case("events", &["events"], true; "events terminated")]
+#[test_case::test_case("events", &["events", "--kind", "session.start"], true; "filtered events terminated")]
+#[test_case::test_case("watch", &["watch", "--width", "100", "--height", "30"], true; "watch terminated")]
+fn a_truncated_header_of_this_build_is_refused_in_the_same_words(
+    command: &str,
+    args: &[&str],
+    newline: bool,
+) {
+    let dir = crate::support::Session::empty();
+    fixture::keep_only_a_truncated_journal_header(dir.fs.as_ref(), dir.path(), newline);
+    let before = fixture::snapshot(dir.fs.as_ref(), dir.path());
+    let ran = togi(&dir, args);
+    let stderr = text(&ran.stderr);
+    assert_eq!(
+        ran.status.code(),
+        Some(1),
+        "{args:?}, newline {newline}: {stderr}"
+    );
+    assert_eq!(text(&ran.stdout), "", "{args:?}: no frame, no output");
+    fixture::assert_refusal(command, stderr, dir.path());
+    assert!(!stderr.contains("torn bytes"), "{stderr}");
+    assert_untouched(&dir, &before);
 }
 
 #[test]

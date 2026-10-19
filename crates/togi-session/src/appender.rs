@@ -267,12 +267,16 @@ impl<'machine> Appender<'machine> {
         Ok(written)
     }
 
-    fn stamp(&self) -> Result<Stamp, JournalFailure> {
+    fn stamp(&mut self) -> Result<Stamp, JournalFailure> {
         match &self.latched {
             Some(failure) => Err(failure.clone()),
             None => Ok(Stamp {
                 time: self.clock.now(),
-                mono: Some(self.clock.monotonic()),
+                mono: Some(
+                    self.clock
+                        .monotonic()
+                        .map_err(|error| self.latch(JournalFailure::clock(error)))?,
+                ),
             }),
         }
     }

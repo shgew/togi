@@ -153,13 +153,22 @@ impl Session<'_> {
     }
 
     fn await_watchdog(&mut self, cancel: &CancellationToken) -> Outcome {
-        let started = self.appender.clock().monotonic();
+        let started = self
+            .appender
+            .clock()
+            .monotonic()
+            .map_err(SessionError::Machine)?;
         loop {
             if cancel.is_cancelled() {
                 return Ok(self.shut_down(Stop::Signal));
             }
             let check = self.host.watchdog();
-            let waited = self.appender.clock().monotonic().saturating_sub(started);
+            let waited = self
+                .appender
+                .clock()
+                .monotonic()
+                .map_err(SessionError::Machine)?
+                .saturating_sub(started);
             if check.ok || waited >= WATCHDOG_WAIT {
                 let detail = format!(
                     "{}; waited {}s for an armed hardware watchdog",
@@ -194,7 +203,7 @@ impl Session<'_> {
         match self.trials.sweep(&CancellationToken::new()) {
             Ok(swept) => {
                 self.lifecycle = Lifecycle::swept(SweepCleared::of(&swept), swept.stopped);
-                self.record_check("trial_scopes", swept.detail.clone(), true)?;
+                self.record_check("trial_scopes", swept.detail, true)?;
                 Ok(Control::Continue)
             }
             Err(Error::Crashed) => Err(Error::Crashed.into()),

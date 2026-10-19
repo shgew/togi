@@ -292,100 +292,99 @@ fn assert_deepening(j: &Journal, want: &DeepeningView) {
     assert_roundtrip(&projection);
 }
 
-#[test]
-fn active_deepening_projection() {
-    for cancelled in [false, true] {
-        let (mut j, mut want) = round_fixture();
+#[test_case::test_case(false; "not cancelled")]
+#[test_case::test_case(true; "cancelled")]
+fn active_deepening_projection(cancelled: bool) {
+    let (mut j, mut want) = round_fixture();
+    assert_deepening(&j, &want);
+    let opened = project(&j);
+    assert!(opened.cores.iter().all(|view| view.offset == off(-10)));
+    while let Some(action) = j.run().round_move_action() {
+        assert!(matches!(action.payload, DecisionPayload::TunerDecision(_)));
+        j.decide(action);
         assert_deepening(&j, &want);
-        let opened = project(&j);
-        assert!(opened.cores.iter().all(|view| view.offset == off(-10)));
-        while let Some(action) = j.run().round_move_action() {
-            assert!(matches!(action.payload, DecisionPayload::TunerDecision(_)));
-            j.decide(action);
+    }
+    let moved = project(&j);
+    assert_eq!(
+        moved
+            .cores
+            .iter()
+            .map(|view| view.offset)
+            .collect::<Vec<_>>(),
+        [off(-15), off(-9), off(-10), off(-10)]
+    );
+    assert_eq!(opened.cores[0].offset, off(-10));
+    j.profile_change(&[-15, -9, -10, -10]);
+    assert_deepening(&j, &want);
+    for index in 0..want.checks.len() {
+        for passed in 0..2 {
+            let Some(Action::RunTrial(plan)) = j.run().round_check_action() else {
+                panic!("the round omitted check {index}");
+            };
+            let expected = &want.checks[index];
+            assert_eq!(plan.regime, expected.regime);
+            assert_eq!(plan.workload_at(j.rotation(&plan)), expected.workload);
+            assert_eq!(plan.load.cores(), expected.cores);
+            assert_eq!(plan.profile, expected.profile);
+            assert_eq!(plan.condition, expected.condition);
+            assert_eq!(plan.activity, Activity::Deepening);
+            assert_eq!(plan.duration.get(), 120);
+            let (intent, trial) = j.intent(&plan);
+            want.checks[index].running = true;
             assert_deepening(&j, &want);
-        }
-        let moved = project(&j);
-        assert_eq!(
-            moved
-                .cores
-                .iter()
-                .map(|view| view.offset)
-                .collect::<Vec<_>>(),
-            [off(-15), off(-9), off(-10), off(-10)]
-        );
-        assert_eq!(opened.cores[0].offset, off(-10));
-        j.profile_change(&[-15, -9, -10, -10]);
-        assert_deepening(&j, &want);
-        for index in 0..want.checks.len() {
-            for passed in 0..2 {
-                let Some(Action::RunTrial(plan)) = j.run().round_check_action() else {
-                    panic!("the round omitted check {index}");
-                };
-                let expected = &want.checks[index];
-                assert_eq!(plan.regime, expected.regime);
-                assert_eq!(plan.workload_at(j.rotation(&plan)), expected.workload);
-                assert_eq!(plan.load.cores(), expected.cores);
-                assert_eq!(plan.profile, expected.profile);
-                assert_eq!(plan.condition, expected.condition);
-                assert_eq!(plan.activity, Activity::Deepening);
-                assert_eq!(plan.duration.get(), 120);
-                let (intent, trial) = j.intent(&plan);
-                want.checks[index].running = true;
-                assert_deepening(&j, &want);
-                assert_eq!(
-                    project(&j).requirement,
-                    Some(TrialRequirement {
-                        passed,
-                        failed: 0,
-                        trial: passed + 1,
-                        needed: 2,
-                    })
-                );
-                let mut end = Journal::end_payload(&trial, Outcome::Pass, None);
-                end.duration_s = 120;
-                j.append(end.into(), &[intent]);
-                want.checks[index].running = false;
-                want.checks[index].passed += 1;
-                assert_deepening(&j, &want);
-                let projection = project(&j);
-                assert_eq!(projection.requirement, None);
-                assert_eq!(
-                    projection.trial_history,
-                    Some(TrialHistory {
-                        passed,
-                        trial: passed + 1,
-                        needed: 2,
-                        step: None,
-                    })
-                );
-                if cancelled {
-                    j.round_end(2, want.seq);
-                    let closed = project(&j);
-                    assert_eq!(closed.deepening, None);
-                    assert_eq!(closed.phase_plan.unwrap().round, None);
-                    assert_eq!(opened.deepening.as_ref().unwrap().checks[0].passed, 0);
-                    break;
-                }
-            }
+            assert_eq!(
+                project(&j).requirement,
+                Some(TrialRequirement {
+                    passed,
+                    failed: 0,
+                    trial: passed + 1,
+                    needed: 2,
+                })
+            );
+            let mut end = Journal::end_payload(&trial, Outcome::Pass, None);
+            end.duration_s = 120;
+            j.append(end.into(), &[intent]);
+            want.checks[index].running = false;
+            want.checks[index].passed += 1;
+            assert_deepening(&j, &want);
+            let projection = project(&j);
+            assert_eq!(projection.requirement, None);
+            assert_eq!(
+                projection.trial_history,
+                Some(TrialHistory {
+                    passed,
+                    trial: passed + 1,
+                    needed: 2,
+                    step: None,
+                })
+            );
             if cancelled {
+                j.round_end(2, want.seq);
+                let closed = project(&j);
+                assert_eq!(closed.deepening, None);
+                assert_eq!(closed.phase_plan.unwrap().round, None);
+                assert_eq!(opened.deepening.as_ref().unwrap().checks[0].passed, 0);
                 break;
             }
         }
-        if !cancelled {
-            let Some(Action::Decide(end)) = j.run().round_check_action() else {
-                panic!("a fully checked round did not end");
-            };
-            assert!(
-                matches!(&end.payload, DecisionPayload::DeepeningRound(round)
-                if round.event == RoundEvent::End && round.passed)
-            );
-            assert_eq!(end.cause, [want.seq]);
-            j.decide(end);
-            let closed = project(&j);
-            assert_eq!(closed.deepening, None);
-            assert_eq!(closed.phase_plan.unwrap().round, None);
-            assert!(opened.deepening.is_some());
+        if cancelled {
+            break;
         }
+    }
+    if !cancelled {
+        let Some(Action::Decide(end)) = j.run().round_check_action() else {
+            panic!("a fully checked round did not end");
+        };
+        assert!(
+            matches!(&end.payload, DecisionPayload::DeepeningRound(round)
+                if round.event == RoundEvent::End && round.passed)
+        );
+        assert_eq!(end.cause, [want.seq]);
+        j.decide(end);
+        let closed = project(&j);
+        assert_eq!(closed.deepening, None);
+        assert_eq!(closed.phase_plan.unwrap().round, None);
+        assert!(opened.deepening.is_some());
     }
 }
 

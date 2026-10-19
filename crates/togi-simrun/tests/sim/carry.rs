@@ -1006,7 +1006,7 @@ fn a_transition_starts_a_hunt_from_a_carried_together_failure() {
             }
         })
         .expect("a checking failure together");
-    let trial = failure.trial.clone().expect("a failing trial");
+    let trial = failure.trial.expect("a failing trial");
     let intent = source_events
         .iter()
         .find_map(|event| {

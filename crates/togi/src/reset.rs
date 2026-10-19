@@ -186,6 +186,7 @@ fn reset_one(ctx: &mut Context<'_>, dir: StateDir, boot: BootId, core: u8) -> Ex
             | CommandError::Fold(_)
             | CommandError::Archive(_)
             | CommandError::Close(_)
+            | CommandError::Clock(_)
             | CommandError::Dir(_)) => command_failure(ctx, &error),
         };
     }
@@ -253,6 +254,7 @@ fn command_failure(ctx: &mut Context<'_>, error: &CommandError) -> Exit {
         | CommandError::Fold(_)
         | CommandError::Archive(_)
         | CommandError::Close(_)
+        | CommandError::Clock(_)
         | CommandError::Dir(_) => fail(ctx, COMMAND, togi_render::error_chain(error)),
     }
 }

@@ -244,145 +244,191 @@ mod tests {
         );
     }
 
-    #[test_case('?', View::Help; "question mark opens the help")]
-    #[test_case('h', View::Help; "h opens the help")]
-    #[test_case('H', View::Help; "capital h opens the help")]
-    #[test_case('l', View::Log; "l opens the log")]
-    #[test_case('L', View::Log; "capital l opens the log")]
-    fn a_shortcut_opens_its_view_and_returns_to_main_on_its_own_view(key: char, target: View) {
+    #[test_case::test_case('?', View::Help, 0; "question mark opens the help top")]
+    #[test_case::test_case('?', View::Help, 6; "question mark opens the help back")]
+    #[test_case::test_case('?', View::Help, FOLLOW; "question mark opens the help follow")]
+    #[test_case::test_case('h', View::Help, 0; "h opens the help top")]
+    #[test_case::test_case('h', View::Help, 6; "h opens the help back")]
+    #[test_case::test_case('h', View::Help, FOLLOW; "h opens the help follow")]
+    #[test_case::test_case('H', View::Help, 0; "capital h opens the help top")]
+    #[test_case::test_case('H', View::Help, 6; "capital h opens the help back")]
+    #[test_case::test_case('H', View::Help, FOLLOW; "capital h opens the help follow")]
+    #[test_case::test_case('l', View::Log, 0; "l opens the log top")]
+    #[test_case::test_case('l', View::Log, 6; "l opens the log back")]
+    #[test_case::test_case('l', View::Log, FOLLOW; "l opens the log follow")]
+    #[test_case::test_case('L', View::Log, 0; "capital l opens the log top")]
+    #[test_case::test_case('L', View::Log, 6; "capital l opens the log back")]
+    #[test_case::test_case('L', View::Log, FOLLOW; "capital l opens the log follow")]
+    fn a_shortcut_opens_its_view_and_returns_to_main_on_its_own_view(
+        key: char,
+        target: View,
+        scroll: usize,
+    ) {
         for view in VIEWS {
-            for scroll in [0, 6, FOLLOW] {
-                let from = screen(view, scroll, 24);
-                let (got, quit) = press(from, Key::Char(key), 40);
-                assert!(!quit);
-                let want = if view == target {
-                    (View::Main, 0)
-                } else {
-                    (target, opening(target))
-                };
-                assert_eq!(
-                    (got.view, got.scroll),
-                    want,
-                    "{key:?} on {view:?} at {scroll}"
-                );
-            }
+            let from = screen(view, scroll, 24);
+            let (got, quit) = press(from, Key::Char(key), 40);
+            assert!(!quit);
+            let want = if view == target {
+                (View::Main, 0)
+            } else {
+                (target, opening(target))
+            };
+            assert_eq!(
+                (got.view, got.scroll),
+                want,
+                "{key:?} on {view:?} at {scroll}"
+            );
         }
     }
 
-    #[test_case(Key::Esc; "escape")]
-    fn escape_returns_to_the_dashboard_at_its_top(key: Key) {
+    #[test_case::test_case(Key::Esc, 0; "escape top")]
+    #[test_case::test_case(Key::Esc, 6; "escape back")]
+    #[test_case::test_case(Key::Esc, FOLLOW; "escape follow")]
+    fn escape_returns_to_the_dashboard_at_its_top(key: Key, scroll: usize) {
         for view in VIEWS {
-            for scroll in [0, 6, FOLLOW] {
-                let from = screen(view, scroll, 24);
-                let (got, quit) = press(from, key, 40);
-                assert!(!quit);
-                assert_eq!(
-                    (got.view, got.scroll),
-                    (View::Main, 0),
-                    "{key:?} on {view:?} at {scroll}"
-                );
-            }
+            let from = screen(view, scroll, 24);
+            let (got, quit) = press(from, key, 40);
+            assert!(!quit);
+            assert_eq!(
+                (got.view, got.scroll),
+                (View::Main, 0),
+                "{key:?} on {view:?} at {scroll}"
+            );
         }
     }
 
     const EXTENT: usize = 400;
 
-    /// Presses `key` on every view at three sizes, checking that it stays on the view, and passes `check` the scroll
-    /// `key` reaches from a given scroll, the page step, the view's end and a label naming the case.
-    fn on_every_view(key: Key, check: impl Fn(&dyn Fn(usize) -> usize, usize, usize, &str)) {
+    fn on_every_view(
+        key: Key,
+        width: u16,
+        height: u16,
+        check: impl Fn(&dyn Fn(usize) -> usize, usize, usize, &str),
+    ) {
         for view in [View::Help, View::Log] {
-            for (width, height) in [(80, 24), (160, 45), (240, 67)] {
-                let base = Screen {
-                    width,
-                    ..screen(view, 0, height)
-                };
-                let after = |scroll| {
-                    let (got, quit) = press(Screen { scroll, ..base }, key, EXTENT);
-                    assert!(!quit);
-                    assert_eq!(got.view, view, "{key:?} changed the view");
-                    got.scroll
-                };
-                let last = if view == View::Log { FOLLOW } else { EXTENT };
-                check(
-                    &after,
-                    page(&base),
-                    last,
-                    &format!("{view:?} {key:?} {height}"),
-                );
-            }
+            let base = Screen {
+                width,
+                ..screen(view, 0, height)
+            };
+            let after = |scroll| {
+                let (got, quit) = press(Screen { scroll, ..base }, key, EXTENT);
+                assert!(!quit);
+                assert_eq!(got.view, view, "{key:?} changed the view");
+                got.scroll
+            };
+            let last = if view == View::Log { FOLLOW } else { EXTENT };
+            check(
+                &after,
+                page(&base),
+                last,
+                &format!("{view:?} {key:?} {height}"),
+            );
         }
     }
 
-    #[test_case(Key::Down; "down")]
-    #[test_case(Key::Char('j'); "j")]
-    fn a_line_down_key_scrolls_one_line_to_the_end(key: Key) {
-        on_every_view(key, |after, _, last, case| {
+    #[test_case::test_case(Key::Down, 80, 24; "down 80x24")]
+    #[test_case::test_case(Key::Down, 160, 45; "down 160x45")]
+    #[test_case::test_case(Key::Down, 240, 67; "down 240x67")]
+    #[test_case::test_case(Key::Char('j'), 80, 24; "j 80x24")]
+    #[test_case::test_case(Key::Char('j'), 160, 45; "j 160x45")]
+    #[test_case::test_case(Key::Char('j'), 240, 67; "j 240x67")]
+    fn a_line_down_key_scrolls_one_line_to_the_end(key: Key, width: u16, height: u16) {
+        on_every_view(key, width, height, |after, _, last, case| {
             assert_eq!(after(10), 11, "{case}");
             assert_eq!(after(EXTENT - 1), last, "{case} end");
         });
     }
 
-    #[test_case(Key::Up; "up")]
-    #[test_case(Key::Char('k'); "k")]
-    fn a_line_up_key_scrolls_one_line_to_the_top(key: Key) {
-        on_every_view(key, |after, _, _, case| {
+    #[test_case::test_case(Key::Up, 80, 24; "up 80x24")]
+    #[test_case::test_case(Key::Up, 160, 45; "up 160x45")]
+    #[test_case::test_case(Key::Up, 240, 67; "up 240x67")]
+    #[test_case::test_case(Key::Char('k'), 80, 24; "k 80x24")]
+    #[test_case::test_case(Key::Char('k'), 160, 45; "k 160x45")]
+    #[test_case::test_case(Key::Char('k'), 240, 67; "k 240x67")]
+    fn a_line_up_key_scrolls_one_line_to_the_top(key: Key, width: u16, height: u16) {
+        on_every_view(key, width, height, |after, _, _, case| {
             assert_eq!(after(10), 9, "{case}");
             assert_eq!(after(0), 0, "{case} top");
         });
     }
 
-    #[test_case(Key::PageDown; "page down")]
-    #[test_case(Key::Char(' '); "space")]
-    #[test_case(Key::Char('f'); "f")]
-    fn a_page_down_key_scrolls_one_page_to_the_end(key: Key) {
-        on_every_view(key, |after, page, last, case| {
+    #[test_case::test_case(Key::PageDown, 80, 24; "page down 80x24")]
+    #[test_case::test_case(Key::PageDown, 160, 45; "page down 160x45")]
+    #[test_case::test_case(Key::PageDown, 240, 67; "page down 240x67")]
+    #[test_case::test_case(Key::Char(' '), 80, 24; "space 80x24")]
+    #[test_case::test_case(Key::Char(' '), 160, 45; "space 160x45")]
+    #[test_case::test_case(Key::Char(' '), 240, 67; "space 240x67")]
+    #[test_case::test_case(Key::Char('f'), 80, 24; "f 80x24")]
+    #[test_case::test_case(Key::Char('f'), 160, 45; "f 160x45")]
+    #[test_case::test_case(Key::Char('f'), 240, 67; "f 240x67")]
+    fn a_page_down_key_scrolls_one_page_to_the_end(key: Key, width: u16, height: u16) {
+        on_every_view(key, width, height, |after, page, last, case| {
             assert_eq!(after(10), 10 + page, "{case}");
             assert_eq!(after(EXTENT - 1), last, "{case} end");
         });
     }
 
-    #[test_case(Key::PageUp; "page up")]
-    #[test_case(Key::Char('b'); "b")]
-    fn a_page_up_key_scrolls_one_page_to_the_top(key: Key) {
-        on_every_view(key, |after, page, _, case| {
+    #[test_case::test_case(Key::PageUp, 80, 24; "page up 80x24")]
+    #[test_case::test_case(Key::PageUp, 160, 45; "page up 160x45")]
+    #[test_case::test_case(Key::PageUp, 240, 67; "page up 240x67")]
+    #[test_case::test_case(Key::Char('b'), 80, 24; "b 80x24")]
+    #[test_case::test_case(Key::Char('b'), 160, 45; "b 160x45")]
+    #[test_case::test_case(Key::Char('b'), 240, 67; "b 240x67")]
+    fn a_page_up_key_scrolls_one_page_to_the_top(key: Key, width: u16, height: u16) {
+        on_every_view(key, width, height, |after, page, _, case| {
             assert_eq!(after(100), 100 - page, "{case}");
             assert_eq!(after(1), 0, "{case} top");
         });
     }
 
-    #[test_case(Key::Home; "home")]
-    #[test_case(Key::Char('g'); "g")]
-    fn a_home_key_goes_to_the_top(key: Key) {
-        on_every_view(key, |after, _, _, case| {
+    #[test_case::test_case(Key::Home, 80, 24; "home 80x24")]
+    #[test_case::test_case(Key::Home, 160, 45; "home 160x45")]
+    #[test_case::test_case(Key::Home, 240, 67; "home 240x67")]
+    #[test_case::test_case(Key::Char('g'), 80, 24; "g 80x24")]
+    #[test_case::test_case(Key::Char('g'), 160, 45; "g 160x45")]
+    #[test_case::test_case(Key::Char('g'), 240, 67; "g 240x67")]
+    fn a_home_key_goes_to_the_top(key: Key, width: u16, height: u16) {
+        on_every_view(key, width, height, |after, _, _, case| {
             assert_eq!(after(77), 0, "{case}");
             assert_eq!(after(FOLLOW), 0, "{case} from the end");
         });
     }
 
-    #[test_case(Key::End; "end")]
-    #[test_case(Key::Char('G'); "capital g")]
-    fn an_end_key_goes_to_the_end(key: Key) {
-        on_every_view(key, |after, _, last, case| {
+    #[test_case::test_case(Key::End, 80, 24; "end 80x24")]
+    #[test_case::test_case(Key::End, 160, 45; "end 160x45")]
+    #[test_case::test_case(Key::End, 240, 67; "end 240x67")]
+    #[test_case::test_case(Key::Char('G'), 80, 24; "capital g 80x24")]
+    #[test_case::test_case(Key::Char('G'), 160, 45; "capital g 160x45")]
+    #[test_case::test_case(Key::Char('G'), 240, 67; "capital g 240x67")]
+    fn an_end_key_goes_to_the_end(key: Key, width: u16, height: u16) {
+        on_every_view(key, width, height, |after, _, last, case| {
             assert_eq!(after(3), last, "{case}");
         });
     }
 
-    #[test]
-    fn a_page_key_moves_a_screen_less_eight_lines_and_at_least_one_line() {
+    #[test_case::test_case(0; "height 0")]
+    #[test_case::test_case(1; "height 1")]
+    #[test_case::test_case(2; "height 2")]
+    #[test_case::test_case(3; "height 3")]
+    #[test_case::test_case(12; "height 12")]
+    #[test_case::test_case(24; "height 24")]
+    #[test_case::test_case(29; "height 29")]
+    #[test_case::test_case(30; "height 30")]
+    #[test_case::test_case(45; "height 45")]
+    #[test_case::test_case(67; "height 67")]
+    fn a_page_key_moves_a_screen_less_eight_lines_and_at_least_one_line(height: u16) {
         for view in [View::Help, View::Log] {
-            for height in [0, 1, 2, 3, 12, 24, 29, 30, 45, 67] {
-                let from = screen(view, 5, height);
-                let moved = page(&from);
-                assert!(moved >= 1, "{view:?} {height}");
-                let down = press(from, Key::PageDown, 1000).0.scroll;
-                assert_eq!(down, 5 + moved, "{view:?} {height}");
-                let far = Screen {
-                    scroll: 500,
-                    ..from
-                };
-                let up = press(far, Key::PageUp, 1000).0.scroll;
-                assert_eq!(up, 500 - moved, "{view:?} {height}");
-            }
+            let from = screen(view, 5, height);
+            let moved = page(&from);
+            assert!(moved >= 1, "{view:?} {height}");
+            let down = press(from, Key::PageDown, 1000).0.scroll;
+            assert_eq!(down, 5 + moved, "{view:?} {height}");
+            let far = Screen {
+                scroll: 500,
+                ..from
+            };
+            let up = press(far, Key::PageUp, 1000).0.scroll;
+            assert_eq!(up, 500 - moved, "{view:?} {height}");
         }
         let tiny = screen(View::Log, 0, 1);
         assert_eq!(
@@ -392,20 +438,26 @@ mod tests {
         );
     }
 
-    #[test_case('+'; "plus")]
-    #[test_case('-'; "minus")]
-    #[test_case('='; "equals")]
-    #[test_case('_'; "underscore")]
-    fn zoom_keys_do_nothing_on_every_view(key: char) {
+    #[test_case::test_case('+', 0; "plus top")]
+    #[test_case::test_case('+', 4; "plus back")]
+    #[test_case::test_case('+', FOLLOW; "plus follow")]
+    #[test_case::test_case('-', 0; "minus top")]
+    #[test_case::test_case('-', 4; "minus back")]
+    #[test_case::test_case('-', FOLLOW; "minus follow")]
+    #[test_case::test_case('=', 0; "equals top")]
+    #[test_case::test_case('=', 4; "equals back")]
+    #[test_case::test_case('=', FOLLOW; "equals follow")]
+    #[test_case::test_case('_', 0; "underscore top")]
+    #[test_case::test_case('_', 4; "underscore back")]
+    #[test_case::test_case('_', FOLLOW; "underscore follow")]
+    fn zoom_keys_do_nothing_on_every_view(key: char, scroll: usize) {
         for view in VIEWS {
-            for scroll in [0, 4, FOLLOW] {
-                let from = screen(view, scroll, 30);
-                assert_eq!(
-                    press(from, Key::Char(key), 90),
-                    (from, false),
-                    "{key:?} on {view:?}"
-                );
-            }
+            let from = screen(view, scroll, 30);
+            assert_eq!(
+                press(from, Key::Char(key), 90),
+                (from, false),
+                "{key:?} on {view:?}"
+            );
         }
     }
 
@@ -422,24 +474,30 @@ mod tests {
         }
     }
 
-    #[test_case('q'; "q")]
-    #[test_case('Q'; "capital q")]
-    #[test_case('\x03'; "ctrl c")]
-    #[test_case('\x04'; "ctrl d")]
-    fn the_tuning_boot_ignores_a_quit_key_on_every_view_and_scroll(key: char) {
+    #[test_case::test_case('q', 0; "q top")]
+    #[test_case::test_case('q', 3; "q back")]
+    #[test_case::test_case('q', FOLLOW; "q follow")]
+    #[test_case::test_case('Q', 0; "capital q top")]
+    #[test_case::test_case('Q', 3; "capital q back")]
+    #[test_case::test_case('Q', FOLLOW; "capital q follow")]
+    #[test_case::test_case('\x03', 0; "ctrl c top")]
+    #[test_case::test_case('\x03', 3; "ctrl c back")]
+    #[test_case::test_case('\x03', FOLLOW; "ctrl c follow")]
+    #[test_case::test_case('\x04', 0; "ctrl d top")]
+    #[test_case::test_case('\x04', 3; "ctrl d back")]
+    #[test_case::test_case('\x04', FOLLOW; "ctrl d follow")]
+    fn the_tuning_boot_ignores_a_quit_key_on_every_view_and_scroll(key: char, scroll: usize) {
         for view in VIEWS {
-            for scroll in [0, 3, FOLLOW] {
-                let from = Screen {
-                    quit: Quit::Ignored,
-                    ..screen(view, scroll, 20)
-                };
-                let (got, quit) = press(from, Key::Char(key), 9);
-                assert!(!quit, "{view:?} scroll {scroll} {key:?} quit");
-                assert_eq!(
-                    got, from,
-                    "{view:?} scroll {scroll} {key:?} changed the screen"
-                );
-            }
+            let from = Screen {
+                quit: Quit::Ignored,
+                ..screen(view, scroll, 20)
+            };
+            let (got, quit) = press(from, Key::Char(key), 9);
+            assert!(!quit, "{view:?} scroll {scroll} {key:?} quit");
+            assert_eq!(
+                got, from,
+                "{view:?} scroll {scroll} {key:?} changed the screen"
+            );
         }
     }
 

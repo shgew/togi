@@ -302,7 +302,7 @@ pub fn summarize(pulls: &[Pull]) -> Result<Vec<Row>, Error> {
                 }
             };
             if row.records == 0 {
-                row.first_record = nanos_between(pull.opened, comment.created);
+                row.first_record = saturating_record_nanos(pull.opened, comment.created);
             }
             row.records += 1;
             let earlier = found.len();
@@ -331,7 +331,7 @@ pub fn summarize(pulls: &[Pull]) -> Result<Vec<Row>, Error> {
     Ok(rows)
 }
 
-fn nanos_between(from: Timestamp, to: Timestamp) -> i64 {
+fn saturating_record_nanos(from: Timestamp, to: Timestamp) -> i64 {
     let nanos = to.as_nanosecond() - from.as_nanosecond();
     i64::try_from(nanos).unwrap_or(if nanos < 0 { i64::MIN } else { i64::MAX })
 }
@@ -390,7 +390,7 @@ pub fn place(f: &Finding) -> Place {
 
 pub fn total(rows: &[Row]) -> Totals {
     let mut totals = Totals {
-        pulls: crate::count(rows.len()),
+        pulls: crate::saturating_record_count(rows.len()),
         ..Totals::default()
     };
     for row in rows {
@@ -617,3 +617,24 @@ fn write_lines(
 #[cfg(test)]
 #[path = "tests/report.rs"]
 mod tests;
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::saturating_record_nanos;
+    use jiff::Timestamp;
+    use test_case::test_case;
+
+    #[test_case(0, 0; "zero")]
+    #[test_case(i128::from(i64::MAX), i64::MAX; "largest exact positive")]
+    #[test_case(i128::from(i64::MAX) + 1, i64::MAX; "positive overflow")]
+    #[test_case(i128::from(i64::MIN), i64::MIN; "smallest exact negative")]
+    #[test_case(i128::from(i64::MIN) - 1, i64::MIN; "negative overflow")]
+    fn record_elapsed_saturates_both_signs(nanos: i128, expected: i64) {
+        assert_eq!(
+            Timestamp::from_nanosecond(nanos)
+                .map(|to| saturating_record_nanos(Timestamp::UNIX_EPOCH, to))
+                .ok(),
+            Some(expected)
+        );
+    }
+}

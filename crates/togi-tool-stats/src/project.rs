@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use jiff::{SignedDuration, Timestamp};
+use jiff::Timestamp;
 use togi_journal::{
     Event, HuntEnd, HuntGroup, HuntStart, Outcome, Payload, Seq, ShutdownReason, TrialEnd, TrialId,
     TrialIntent,
@@ -153,18 +153,12 @@ pub(crate) struct BootTime {
     pub(crate) first_event: Timestamp,
 }
 
-pub(crate) struct IdleFailure {
-    pub(crate) seq: Seq,
-    pub(crate) profile: Option<Profile>,
-}
-
 /// A journal's trials, runs, hunts and boots, joined by the events' own references.
 pub(crate) struct Projection<'a> {
     pub(crate) events: &'a [Event],
     pub(crate) topology: &'a Topology,
     pub(crate) trials: Vec<Trial<'a>>,
     pub(crate) by_id: HashMap<&'a TrialId, usize>,
-    pub(crate) idle: Vec<IdleFailure>,
     pub(crate) runs: Vec<Run>,
     pub(crate) hunts: Vec<Hunt<'a>>,
     pub(crate) boots: HashMap<&'a BootId, BootTime>,
@@ -178,17 +172,16 @@ impl<'a> Projection<'a> {
             topology: journal.topology(),
             trials: Vec::new(),
             by_id: HashMap::new(),
-            idle: Vec::new(),
             runs: Vec::new(),
             hunts: Vec::new(),
             boots: HashMap::new(),
             next_boot: HashMap::new(),
         };
-        p.fold();
+        p.fold(journal);
         p
     }
 
-    fn fold(&mut self) {
+    fn fold(&mut self, journal: &Journal) {
         let mut active: Option<usize> = None;
         let mut by_seq: HashMap<Seq, usize> = HashMap::new();
         let mut hunt_ids: HashMap<u32, usize> = HashMap::new();
@@ -197,12 +190,7 @@ impl<'a> Projection<'a> {
         let mut previous_boot: Option<&BootId> = None;
         for event in self.events {
             if !self.boots.contains_key(&event.boot) {
-                let up = event
-                    .mono
-                    .and_then(|mono| SignedDuration::try_from(mono).ok());
-                let start = up
-                    .and_then(|up| event.time.checked_sub(up).ok())
-                    .unwrap_or(event.time);
+                let start = journal.boot_start(&event.boot);
                 self.boots.insert(
                     &event.boot,
                     BootTime {
@@ -305,16 +293,6 @@ impl<'a> Projection<'a> {
                         self.trials[at].crashed = true;
                     }
                 }
-                Payload::Failure(failure) => {
-                    if failure.known_failure.is_none() && failure.trial.is_none() {
-                        self.idle.push(IdleFailure {
-                            seq: event.seq,
-                            profile: failure
-                                .profile
-                                .and_then(|offsets| Profile::new(self.topology, offsets).ok()),
-                        });
-                    }
-                }
                 Payload::HuntStart(start) => {
                     let id = start.hunt.get();
                     hunt_ids.insert(id, self.hunts.len());
@@ -383,6 +361,7 @@ impl<'a> Projection<'a> {
                 | Payload::ProfileRestored(_)
                 | Payload::TrialCarried(_)
                 | Payload::FailureCarried(_)
+                | Payload::Failure(_)
                 | Payload::Mce(_)
                 | Payload::TunerDecision(_)
                 | Payload::CorePhase(_)

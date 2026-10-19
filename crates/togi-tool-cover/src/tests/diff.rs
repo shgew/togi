@@ -64,10 +64,26 @@ fn added_content_resembling_a_header_is_content() {
 #[test_case("@@ -1 -2 @@" ; "new side without a plus")]
 #[test_case("@@ -1 +x,2 @@" ; "start not a number")]
 #[test_case("@@ -1 +1,y @@" ; "count not a number")]
+#[test_case("@@ -1 +0,1 @@" ; "nonempty zero start")]
+#[test_case("@@ -1 +4294967296 @@" ; "start overflow")]
+#[test_case("@@ -1 +1,4294967296 @@" ; "count overflow")]
+#[test_case("@@ -1 +4294967295,2 @@" ; "end overflow")]
 fn malformed_hunk_headers_are_refused(header: &str) {
     let diff = format!("diff --git a.rs a.rs\n--- a.rs\n+++ a.rs\n{header}\n");
     assert_eq!(
         chain(&parse_diff(diff.as_bytes()).unwrap_err()),
         format!("malformed hunk header {header:?}")
     );
+}
+
+#[test_case(1, 1 ; "first line")]
+#[test_case(u32::MAX, u32::MAX ; "last line")]
+#[test_case(1, u32::MAX ; "full range")]
+fn checked_spans_keep_exact_indices(first: u32, last: u32) {
+    let count = last - first + 1;
+    let diff = format!("diff --git a.rs a.rs\n--- a.rs\n+++ a.rs\n@@ -0,0 +{first},{count} @@\n");
+    let changed = parse_diff(diff.as_bytes()).unwrap();
+    let range = changed["a.rs"][0];
+    assert_eq!(range, LineRange::new(first, last));
+    assert_eq!(range.indices(), (first - 1) as usize..last as usize);
 }

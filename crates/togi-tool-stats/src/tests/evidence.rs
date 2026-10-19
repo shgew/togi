@@ -6,13 +6,12 @@ use togi_journal::{
     Outcome, Payload, Stamp, TrialCarried, TrialClass, TrialIntent, TunerWarning, WarningKind,
 };
 use togi_machine::{BootId, Condition, PerCore, Regime, Signal};
-use togi_tuner::Profile;
 
 use super::support::{
     EPOCH, Log, build, cycle, decision, failure, hunt_group, hunt_start, intent, nz, profile, seq,
     set, trial, workload,
 };
-use crate::evidence::{prior_passes, single_carried_failure_decisions};
+use crate::evidence::{pass_counts, single_carried_failure_decisions};
 use crate::project::Projection;
 use crate::report::compute;
 
@@ -26,6 +25,65 @@ type Past = (Vec<i64>, Outcome, fn(&mut TrialIntent));
 
 fn nothing(_: &mut TrialIntent) {}
 
+fn carry_trial(log: &mut Log, planned: &TrialIntent, outcome: Outcome) -> togi_journal::Seq {
+    let mut fact = carried(outcome);
+    fact.class = TrialClass {
+        regime: planned.regime,
+        workload: Some(planned.workload),
+        cores: crate::project::loaded(planned),
+        duration_s: planned.duration_s,
+    };
+    fact.profile = planned.profile;
+    fact.condition = planned.condition;
+    log.add(fact)
+}
+
+fn scheduled_trial(
+    log: &mut Log,
+    mut planned: TrialIntent,
+    outcome: Outcome,
+    blamed: Option<togi_machine::CoreId>,
+) -> togi_journal::Seq {
+    let hunt = u32::try_from(log.events.len() + 1).unwrap();
+    let loaded = crate::project::loaded(&planned);
+    let mut start = hunt_start(hunt, &planned.trial.to_string(), 1);
+    start.regime = planned.regime;
+    start.workload = planned.workload;
+    start.cores = loaded;
+    start.candidates = loaded;
+    start.failing = planned.profile;
+    start.parked = planned.profile;
+    start.duration_s = planned.duration_s;
+    start.trial_s = planned.duration_s;
+    start.ranking = planned.profile.iter().map(|(core, _)| core).collect();
+    log.add(start);
+    let mut group = hunt_group(hunt, 1, HuntStage::Part);
+    group.cores = loaded;
+    group.set = loaded;
+    group.profile = planned.profile;
+    group.duration_s = planned.duration_s;
+    log.add(group);
+    planned.hunt = Some(nz(hunt));
+    planned.group = Some(nz(1));
+    planned.condition = Condition::Parked;
+    planned.activity = Some(Activity::Hunt);
+    let mut attribution = failure(Some(&planned.trial.to_string()));
+    attribution.condition = Some(planned.condition);
+    attribution.regime = Some(planned.regime);
+    attribution.profile = Some(planned.profile);
+    attribution.core = blamed;
+    if let Some(core) = blamed {
+        attribution.attribution = togi_journal::Attribution::Attributed;
+        attribution.offset = planned.profile.get(core);
+    }
+    let ended = trial(log, planned, outcome);
+    if outcome == Outcome::Failure {
+        log.add(attribution);
+    }
+    togi_tuner::replay(&log.events).unwrap();
+    ended
+}
+
 fn prior(history: &[Past], before: Option<usize>) -> usize {
     let mut log = Log::new(&[(0, 0), (1, 0)]);
     let mut ends = Vec::new();
@@ -34,18 +92,14 @@ fn prior(history: &[Past], before: Option<usize>) -> usize {
         past.trial = format!("h{i}").into();
         past.profile = profile(offsets);
         modify(&mut past);
-        ends.push(trial(&mut log, past, *outcome));
+        ends.push(carry_trial(&mut log, &past, *outcome));
     }
-    let before = before.map_or_else(|| seq(log.events.len() as u64 + 1), |index| ends[index]);
+    let target = log.add(target_intent());
+    let before = before.map_or(target, |index| ends[index]);
     let journal = log.journal();
     let p = Projection::new(&journal);
-    let target = target_intent();
-    prior_passes(
-        &p,
-        &target,
-        Profile::new(p.topology, target.profile).ok(),
-        before,
-    )
+    let at = p.trials.len() - 1;
+    pass_counts(&p, vec![(before, at)])[&(before, at)].unwrap()
 }
 
 #[test_case(&[(vec![-10, -10], Outcome::Pass, nothing), (vec![-11, -10], Outcome::Pass, nothing)], None, 2; "equal and deeper count")]
@@ -61,7 +115,7 @@ fn prior(history: &[Past], before: Option<usize>) -> usize {
 ], None, 0; "class fields matter")]
 #[test_case(&[(vec![-10, -10], Outcome::Pass, nothing), (vec![-10, -10], Outcome::Pass, nothing)], Some(0), 0; "hunt boundary is excluded")]
 #[test_case(&[(vec![-10, -10], Outcome::Pass, nothing), (vec![-9, -9], Outcome::Inconclusive, nothing)], None, 1; "inconclusive does not invalidate")]
-fn prior_passes_count_what_is_as_deep_and_not_ruled_out_by_a_failure(
+fn passes_count_what_is_as_deep_and_not_ruled_out_by_a_failure(
     history: &[Past],
     before: Option<usize>,
     want: usize,
@@ -78,22 +132,29 @@ fn idle_crash(regime: Regime, loaded: &[i64], idle_profile: Option<&[i64]>) -> u
         planned.duration_s = 120;
         planned
     };
-    trial(&mut log, planned("pass", None), Outcome::Pass);
+    carry_trial(&mut log, &planned("pass", None), Outcome::Pass);
     let mut crash = failure(None);
     crash.signal = Signal::Crash;
+    crash.condition = Some(Condition::Together);
     crash.profile = idle_profile.map(profile);
     log.add(crash);
     log.add(hunt_start(1, "t", 1));
     log.add(hunt_group(1, 1, HuntStage::Part));
     trial(&mut log, planned("group", Some(1)), Outcome::Pass);
     let journal = log.journal();
-    compute(&Projection::new(&journal), None).evidence.groups[0].prior
+    compute(&Projection::new(&journal), None).evidence.groups[0]
+        .prior
+        .unwrap()
 }
 
 #[test]
 fn an_idle_crash_invalidates_the_passes_of_an_all_core_r6_target_it_is_no_deeper_than() {
     let r6 = Regime::R6;
-    assert_eq!(idle_crash(r6, &[0, 1], None), 1, "no recorded profile");
+    assert_eq!(
+        idle_crash(r6, &[0, 1], None),
+        0,
+        "tuner infers the applied profile"
+    );
     assert_eq!(idle_crash(r6, &[0, 1], Some(&[-10, -10])), 0, "equal");
     assert_eq!(idle_crash(r6, &[0, 1], Some(&[-9, -10])), 0, "shallower");
     assert_eq!(idle_crash(r6, &[0, 1], Some(&[-11, -10])), 1, "deeper");
@@ -116,7 +177,7 @@ fn a_known_failure_skip_does_not_recount_an_idle_failure_or_invalidate_a_later_p
     original.condition = Some(Condition::Together);
     original.profile = Some(profile(&[-9, -10]));
     let original_seq = log.add(original.clone());
-    trial(&mut log, planned("pass", None), Outcome::Pass);
+    carry_trial(&mut log, &planned("pass", None), Outcome::Pass);
     original.known_failure = Some(original_seq);
     log.add(original);
     log.add(hunt_start(1, "t", 1));
@@ -137,26 +198,29 @@ fn a_known_failure_skip_does_not_recount_an_idle_failure_or_invalidate_a_later_p
             1
         )]
     );
-    assert_eq!(m.evidence.groups[0].prior, 1);
+    assert_eq!(m.evidence.groups[0].prior, Some(1));
 }
 
 #[test]
 fn a_failure_after_a_prior_pass_is_listed_by_class() {
     let mut log = Log::new(&[(0, 0), (1, 0)]);
-    trial(
+    scheduled_trial(
         &mut log,
         intent("a", Regime::R6, &[0, 1], &[-10, -10]),
         Outcome::Pass,
+        None,
     );
-    trial(
+    scheduled_trial(
         &mut log,
         intent("b", Regime::R6, &[0, 1], &[-10, -10]),
         Outcome::Failure,
+        None,
     );
-    trial(
+    scheduled_trial(
         &mut log,
         intent("c", Regime::R6, &[0, 1], &[-11, -11]),
         Outcome::Failure,
+        None,
     );
     let journal = log.journal();
     let p = Projection::new(&journal);
@@ -169,6 +233,183 @@ fn a_failure_after_a_prior_pass_is_listed_by_class() {
             .collect::<Vec<_>>(),
         [("R6/mprime-sse-4k-21k-idle/00,01/120s".to_owned(), 1)]
     );
+}
+
+#[test]
+fn a_backend_change_excludes_old_passes_from_contradictions() {
+    let mut log = Log::new(&[(0, 0), (1, 0)]);
+    scheduled_trial(
+        &mut log,
+        intent("old", Regime::R6, &[0, 1], &[-10, -10]),
+        Outcome::Pass,
+        None,
+    );
+    let mut loaded = super::support::config_loaded(build("test", None));
+    loaded.config.backends.mprime = Some("/nix/store/new-mprime".into());
+    log.add(loaded);
+    scheduled_trial(
+        &mut log,
+        intent("new", Regime::R6, &[0, 1], &[-10, -10]),
+        Outcome::Failure,
+        None,
+    );
+    let journal = log.journal();
+    assert!(
+        compute(&Projection::new(&journal), None)
+            .evidence
+            .contradictions
+            .is_empty()
+    );
+}
+
+#[test_case(None, 1; "carried pass is admitted")]
+#[test_case(Some(Outcome::Failure), 0; "carried failure invalidates older pass")]
+#[test_case(Some(Outcome::Inconclusive), 1; "inconclusive carry does not invalidate")]
+fn carried_observations_use_the_tuners_admission(outcome: Option<Outcome>, expected: usize) {
+    let mut log = Log::new(&[(0, 0)]);
+    log.add(carried(Outcome::Pass));
+    if let Some(outcome) = outcome {
+        log.add(carried(outcome));
+    }
+    let mut planned = intent("target", Regime::R6, &[0], &[-10]);
+    planned.duration_s = 60;
+    let before = log.add(planned);
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    assert_eq!(
+        pass_counts(&p, vec![(before, 0)])[&(before, 0)],
+        Some(expected)
+    );
+}
+
+#[test]
+fn a_later_backend_change_does_not_rewrite_historical_counts() {
+    let mut log = Log::new(&[(0, 0)]);
+    let planned = |name| {
+        let mut planned = intent(name, Regime::R6, &[0], &[-10]);
+        planned.duration_s = 60;
+        planned
+    };
+    scheduled_trial(&mut log, planned("old"), Outcome::Pass, None);
+    let before = log.add(planned("target"));
+    let mut loaded = super::support::config_loaded(build("test", None));
+    loaded.config.backends.mprime = Some("/nix/store/new-mprime".into());
+    log.add(loaded);
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    assert_eq!(pass_counts(&p, vec![(before, 1)])[&(before, 1)], Some(1));
+}
+
+#[test_case(false, 0; "different carried backend is excluded")]
+#[test_case(true, 1; "matching carried backend is admitted")]
+fn carried_passes_keep_their_recorded_backend(matching: bool, expected: usize) {
+    let mut log = Log::new(&[(0, 0)]);
+    let mut pass = carried(Outcome::Pass);
+    pass.source.backend = Some(togi_journal::BackendIdentity {
+        backend: togi_machine::Backend::Mprime,
+        path: "/nix/store/carried-mprime".into(),
+    });
+    log.add(pass);
+    if matching {
+        let mut loaded = super::support::config_loaded(build("test", None));
+        loaded.config.backends.mprime = Some("/nix/store/carried-mprime".into());
+        log.add(loaded);
+    }
+    let mut planned = intent("target", Regime::R6, &[0], &[-10]);
+    planned.duration_s = 60;
+    let before = log.add(planned);
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    assert_eq!(
+        pass_counts(&p, vec![(before, 0)])[&(before, 0)],
+        Some(expected)
+    );
+}
+
+#[test]
+fn hunt_reuse_reports_admitted_carried_passes() {
+    let mut log = Log::new(&[(0, 0)]);
+    log.add(carried(Outcome::Pass));
+    let mut start = hunt_start(1, "source", 1);
+    start.regime = Regime::R6;
+    start.workload = workload(Regime::R6, 0);
+    start.duration_s = 60;
+    start.trial_s = 60;
+    log.add(start);
+    log.add(hunt_group(1, 1, HuntStage::Part));
+    let mut planned = intent("group", Regime::R6, &[0], &[-10]);
+    planned.duration_s = 60;
+    planned.hunt = Some(nz(1));
+    planned.group = Some(nz(1));
+    trial(&mut log, planned, Outcome::Pass);
+    let journal = log.journal();
+    let metrics = compute(&Projection::new(&journal), None).evidence;
+    assert_eq!(metrics.groups[0].prior, Some(1));
+    assert_eq!(metrics.groups[0].established(), Some(true));
+}
+
+#[test]
+fn a_since_cutoff_keeps_earlier_admitted_passes_for_later_hunts_and_failures() {
+    let mut log = Log::new(&[(0, 0), (1, 0)]);
+    carry_trial(&mut log, &target_intent(), Outcome::Pass);
+    scheduled_trial(log.at(100), target_intent(), Outcome::Failure, None);
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    let all = compute(&p, None).evidence;
+    let recent = compute(&p, Some(EPOCH + SignedDuration::from_secs(50))).evidence;
+    for metrics in [&all, &recent] {
+        assert_eq!(metrics.unavailable, 0);
+        assert_eq!(metrics.groups.len(), 1);
+        assert_eq!(metrics.groups[0].prior, Some(1));
+        assert_eq!(metrics.groups[0].established(), Some(true));
+        assert_eq!(metrics.contradictions.len(), 1);
+        assert_eq!(metrics.contradictions.values().next(), Some(&1));
+    }
+    assert_eq!(all.groups, recent.groups);
+    assert_eq!(all.stages, recent.stages);
+    assert_eq!(all.contradictions, recent.contradictions);
+}
+
+#[test]
+fn resetting_a_blamed_unloaded_core_revives_the_passes_the_tuner_keeps() {
+    let mut log = Log::new(&[(0, 0), (1, 0), (2, 0)]);
+    scheduled_trial(
+        &mut log,
+        intent("pass", Regime::R7, &[0, 1], &[-10, -10, 0]),
+        Outcome::Pass,
+        None,
+    );
+    scheduled_trial(
+        &mut log,
+        intent("failure", Regime::R7, &[0, 1], &[-9, -9, 0]),
+        Outcome::Failure,
+        Some(super::support::core(2)),
+    );
+    let before_reset = log.add(super::support::trial_start("boundary"));
+    log.add(togi_journal::CommandReset {
+        target: togi_journal::ResetTarget::Core(super::support::core(2)),
+    });
+    let after_reset = log.add(intent("target", Regime::R7, &[0, 1], &[-10, -10, 0]));
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    let at = p.trials.len() - 1;
+    let counts = pass_counts(&p, vec![(before_reset, at), (after_reset, at)]);
+    assert_eq!(counts[&(before_reset, at)], Some(0));
+    assert_eq!(counts[&(after_reset, at)], Some(1));
+}
+
+#[test]
+fn a_journal_the_tuner_refuses_reports_unavailable_evidence_not_zero() {
+    let mut log = Log::new(&[(0, 0), (1, 0)]);
+    trial(&mut log, target_intent(), Outcome::Pass);
+    let mut target = target_intent();
+    target.trial = "failed".to_owned().into();
+    trial(&mut log, target, Outcome::Failure);
+    let journal = log.journal();
+    let metrics = compute(&Projection::new(&journal), None).evidence;
+    assert_eq!(metrics.unavailable, 1);
+    assert!(metrics.contradictions.is_empty());
+    assert!(log.report().contains("prior evidence queries unavailable"));
 }
 
 #[test]
@@ -400,7 +641,7 @@ fn class_tables_list_workloads_in_catalog_order_and_durations_numerically() {
             let mut planned = intent(&format!("{tag}{n}"), Regime::R4, &[0, 1], &[-10, -10]);
             planned.workload = workload(Regime::R4, index);
             planned.duration_s = duration;
-            trial(&mut log, planned, outcome);
+            scheduled_trial(&mut log, planned, outcome, None);
         }
     }
     let journal = log.journal();

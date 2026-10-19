@@ -590,7 +590,7 @@ fn real_process_a_failed_forecast_keeps_only_the_failed_runs_and_says_where() {
         &Fleet::new(),
     )
     .unwrap_err();
-    let kept = failed.kept.clone().unwrap();
+    let kept = failed.kept.unwrap();
     assert_eq!(run_dirs(&kept), ["target/dev-2"]);
     fs::remove_dir_all(kept).unwrap();
 }
@@ -897,10 +897,12 @@ fn an_exit_code_that_disagrees_with_the_journal_names_both(case: (&str, bool, i3
     let (name, cut, exit, message) = case;
     let fixture = Fixture::new(false);
 
-    let mut sessions = fixture.sessions(SEEDS[0]);
-    if cut {
-        sessions = fixture.cut_sessions(SEEDS[0]);
-    }
+    let sessions = fixture.sessions(SEEDS[0]);
+    let sessions = if cut {
+        fixture.cut_sessions(SEEDS[0])
+    } else {
+        sessions
+    };
     let failed = outcome(&sessions, &fixture.anchor, exit, false).unwrap_err();
     assert!(failed.to_string().contains(message), "{name}: {failed}");
 }

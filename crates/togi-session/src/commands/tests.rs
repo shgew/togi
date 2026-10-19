@@ -146,7 +146,7 @@ fn unfoldable(bench: &Bench) -> Journal {
     };
     journal
         .append(
-            stamp(&*bench.sim.seams().clock),
+            stamp(&*bench.sim.seams().clock).unwrap(),
             Payload::CorePhase(transition),
             &[],
         )

@@ -240,20 +240,19 @@ mod tests {
         assert_eq!(buf[(3, 0)].fg, Color::Red);
     }
 
-    #[test]
-    fn untrusted_text_is_written_escaped() {
-        for colours in [Colours::Console, Colours::Rich] {
-            let mut buf = Buffer::empty(Rect::new(0, 0, 20, 1));
-            put(
-                &mut buf,
-                Rect::new(0, 0, 20, 1),
-                0,
-                0,
-                &Line::from("a\x1b[2Jb"),
-                colours,
-            );
-            assert_eq!(row(&buf, 0).trim_end(), r"a\x1b[2Jb", "{colours:?}");
-        }
+    #[test_case::test_case(Colours::Console; "console")]
+    #[test_case::test_case(Colours::Rich; "rich")]
+    fn untrusted_text_is_written_escaped(colours: Colours) {
+        let mut buf = Buffer::empty(Rect::new(0, 0, 20, 1));
+        put(
+            &mut buf,
+            Rect::new(0, 0, 20, 1),
+            0,
+            0,
+            &Line::from("a\x1b[2Jb"),
+            colours,
+        );
+        assert_eq!(row(&buf, 0).trim_end(), r"a\x1b[2Jb", "{colours:?}");
     }
 
     #[test]

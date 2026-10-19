@@ -10,9 +10,22 @@ use std::time::Duration;
 
 pub trait Clock {
     fn now(&self) -> Timestamp;
-    /// Time since boot.
-    fn monotonic(&self) -> Duration;
+    /// Time since boot; refuses malformed kernel clock components.
+    fn monotonic(&self) -> Result<Duration, Error>;
     fn sleep(&mut self, cancel: &CancellationToken, duration: Duration) -> Result<(), Error>;
+}
+
+/// Converts a kernel monotonic clock observation without normalizing malformed components.
+pub fn monotonic_duration(seconds: i64, nanoseconds: i64) -> Result<Duration, Error> {
+    match (u64::try_from(seconds), u32::try_from(nanoseconds)) {
+        (Ok(seconds), Ok(nanoseconds)) if nanoseconds < 1_000_000_000 => {
+            Ok(Duration::new(seconds, nanoseconds))
+        }
+        _ => Err(Error::InvalidMonotonic {
+            seconds,
+            nanoseconds,
+        }),
+    }
 }
 
 /// Proof that every trial workload stopped.

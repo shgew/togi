@@ -118,7 +118,7 @@ fn a_named_core_failure_pins_the_hazard_to_the_named_core() {
         second > first + 5.0,
         "named-core attribution did not constrain the named hazard: core0={first} core1={second}"
     );
-    let mut stalled = failing.clone();
+    let mut stalled = failing;
     stalled.outcome = Decisive::Failure {
         signal: togi_machine::Signal::Stall,
         core: None,

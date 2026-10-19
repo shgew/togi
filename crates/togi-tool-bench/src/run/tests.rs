@@ -391,7 +391,7 @@ fn a_status_follows_the_exit_status_and_the_log(case: (i32, &str, Status)) {
 fn the_records_do_not_depend_on_how_many_simulators_run_at_once() {
     let bench = Bench::new();
     let sim = bench.simulator("sim", 0, "", "");
-    let mut one = bench.options(sim.clone());
+    let mut one = bench.options(sim);
     one.jobs = NonZeroUsize::MIN;
     one.cache = None;
     let mut many = one.clone();

@@ -674,26 +674,25 @@ mod tests {
         )
     }
 
-    #[test]
-    fn combination_overflow_names_the_omitted_cores_and_the_journal_bound() {
-        for (members, omitted) in [
-            (vec![0, 1, 2, 3, 4, 5, 6, 7, 9], "09"),
-            (vec![0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 15], "09 11 15"),
-        ] {
-            let rows = combination_rows(&members, SizeClass::Wide);
-            assert_eq!(
-                rows[3],
-                format!(
-                    "columns show 8 of {} member cores; not shown: {omitted} · l: last 400 events",
-                    members.len()
-                )
-            );
-            for &id in &members[..8] {
-                assert!(rows[2].contains(&format!("{id:02}")), "{}", rows[2]);
-            }
-            for &id in &members[8..] {
-                assert!(!rows[2].contains(&format!("{id:02}")), "{}", rows[2]);
-            }
+    #[test_case::test_case(&[0, 1, 2, 3, 4, 5, 6, 7, 9], "09"; "one omitted")]
+    #[test_case::test_case(&[0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 15], "09 11 15"; "three omitted")]
+    fn combination_overflow_names_the_omitted_cores_and_the_journal_bound(
+        members: &[u8],
+        omitted: &str,
+    ) {
+        let rows = combination_rows(members, SizeClass::Wide);
+        assert_eq!(
+            rows[3],
+            format!(
+                "columns show 8 of {} member cores; not shown: {omitted} · l: last 400 events",
+                members.len()
+            )
+        );
+        for &id in &members[..8] {
+            assert!(rows[2].contains(&format!("{id:02}")), "{}", rows[2]);
+        }
+        for &id in &members[8..] {
+            assert!(!rows[2].contains(&format!("{id:02}")), "{}", rows[2]);
         }
     }
 

@@ -6,15 +6,15 @@ pub const MAX_OFFSET: i64 = 0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("core {0} outside 0–15")]
-pub struct InvalidCore(pub i64);
+pub struct InvalidCore(pub i128);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("ccd {0} outside 0–15")]
-pub struct InvalidCcd(pub i64);
+pub struct InvalidCcd(pub i128);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("cpu {0} outside 0–65535")]
-pub struct InvalidCpu(pub i64);
+pub struct InvalidCpu(pub i128);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(try_from = "i64")]
@@ -27,7 +27,7 @@ impl CoreId {
     pub fn new(value: i64) -> Result<Self, InvalidCore> {
         match u8::try_from(value) {
             Ok(value) if usize::from(value) < PER_CORE_MAX => Ok(Self(value)),
-            _ => Err(InvalidCore(value)),
+            _ => Err(InvalidCore(i128::from(value))),
         }
     }
 
@@ -52,7 +52,9 @@ impl TryFrom<u8> for CoreId {
 impl TryFrom<usize> for CoreId {
     type Error = InvalidCore;
     fn try_from(value: usize) -> Result<Self, InvalidCore> {
-        Self::new(i64::try_from(value).unwrap_or(i64::MAX))
+        i64::try_from(value)
+            .map_err(|_| InvalidCore(value as i128))
+            .and_then(Self::new)
     }
 }
 
@@ -91,7 +93,7 @@ impl CcdId {
     pub fn new(value: i64) -> Result<Self, InvalidCcd> {
         match u8::try_from(value) {
             Ok(value) if usize::from(value) < PER_CORE_MAX => Ok(Self(value)),
-            _ => Err(InvalidCcd(value)),
+            _ => Err(InvalidCcd(i128::from(value))),
         }
     }
 
@@ -121,7 +123,7 @@ impl TryFrom<usize> for CcdId {
     type Error = InvalidCcd;
     fn try_from(value: usize) -> Result<Self, InvalidCcd> {
         i64::try_from(value)
-            .map_err(|_| InvalidCcd(i64::MAX))
+            .map_err(|_| InvalidCcd(value as i128))
             .and_then(Self::new)
     }
 }
@@ -136,7 +138,7 @@ impl CpuId {
     pub fn new(value: i64) -> Result<Self, InvalidCpu> {
         u16::try_from(value)
             .map(Self)
-            .map_err(|_| InvalidCpu(value))
+            .map_err(|_| InvalidCpu(i128::from(value)))
     }
 
     pub const fn index(self) -> usize {
@@ -164,7 +166,7 @@ impl TryFrom<usize> for CpuId {
     type Error = InvalidCpu;
     fn try_from(value: usize) -> Result<Self, InvalidCpu> {
         i64::try_from(value)
-            .map_err(|_| InvalidCpu(i64::MAX))
+            .map_err(|_| InvalidCpu(value as i128))
             .and_then(Self::new)
     }
 }

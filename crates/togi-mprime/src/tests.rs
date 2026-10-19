@@ -286,10 +286,20 @@ fn every_catalog_workload_plans() {
                     executable,
                 )
                 .unwrap_or_else(|error| panic!("{regime}/{}: {error}", workload.id));
-            assert!(plan.program.is_absolute());
-            assert_eq!(plan.program, pkg.join("bin/mprime"));
-            assert_eq!(names(&plan), ["prime.txt", "local.txt"]);
-            assert_eq!(plan.watched.len(), 1);
+            assert!(plan.program.is_absolute(), "{regime}/{}", workload.id);
+            assert_eq!(
+                plan.program,
+                pkg.join("bin/mprime"),
+                "{regime}/{}",
+                workload.id
+            );
+            assert_eq!(
+                names(&plan),
+                ["prime.txt", "local.txt"],
+                "{regime}/{}",
+                workload.id
+            );
+            assert_eq!(plan.watched.len(), 1, "{regime}/{}", workload.id);
             planned.insert(workload.base);
         }
     }

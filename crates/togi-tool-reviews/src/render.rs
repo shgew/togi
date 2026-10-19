@@ -231,7 +231,7 @@ pub fn build_record(m: &Manifest, input: FindingsInput) -> Result<RecordModel, E
             ));
         }
         r.coverage = Some(RecordCoverage {
-            uncovered: crate::count(coverage.ranges.len()),
+            uncovered: crate::saturating_record_count(coverage.ranges.len()),
             judgment: input.coverage_judgment.clone(),
         });
     } else if !input.coverage_judgment.is_empty() {

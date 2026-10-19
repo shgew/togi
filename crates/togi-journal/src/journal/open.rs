@@ -84,10 +84,11 @@ impl StateDir {
         let complete = torn
             .as_ref()
             .map_or(bytes.len(), |tail| bytes.len() - tail.bytes.len());
-        let mut repaired = None;
-        if let Some(torn) = torn {
-            repaired = self.repair(&bytes, &mut events, &torn, &boot, now)?;
-        }
+        let repaired = if let Some(torn) = torn {
+            self.repair(&bytes, &mut events, &torn, &boot, now)?
+        } else {
+            None
+        };
         let archive = self.archive_dir();
         if self.kind_of(&archive)?.is_some() {
             self.sync_dir(&archive)?;

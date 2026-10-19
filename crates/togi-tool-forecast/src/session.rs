@@ -238,7 +238,11 @@ impl Session {
         let mut ends = Vec::new();
         while let Some(event) = reader.next() {
             events.push(event?);
-            ends.push(usize::try_from(reader.accepted()).unwrap_or(usize::MAX));
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "the reader's accepted offset is bounded by the input byte slice length"
+            )]
+            ends.push(reader.accepted() as usize);
         }
         let Some(first) = events.first() else {
             return Ok(None);

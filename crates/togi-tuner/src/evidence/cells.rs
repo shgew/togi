@@ -107,6 +107,20 @@ impl Run<'_> {
     pub(super) fn first(&self) -> Option<Seq> {
         self.get(0)
     }
+
+    pub(super) fn before(self, before: Option<Seq>) -> Self {
+        let Some(before) = before else {
+            return self;
+        };
+        Self {
+            head: &self.head[..self.head.partition_point(|&seq| seq < before)],
+            tail: &self.tail[..self.tail.partition_point(|&seq| seq < before)],
+        }
+    }
+
+    pub(super) fn last(&self) -> Option<Seq> {
+        self.tail.last().or_else(|| self.head.last()).copied()
+    }
 }
 
 impl PartialEq for Seqs {
@@ -244,10 +258,6 @@ impl Carried {
     pub(super) fn source(&self, seq: Seq) -> Option<&SessionRef> {
         let at = self.seqs.position(seq).ok()?;
         self.sources.get(at)
-    }
-
-    pub(super) fn last(&self) -> Option<Seq> {
-        self.seqs.last()
     }
 
     /// The seqs above `floor`.
@@ -541,7 +551,7 @@ mod cap_tests {
         let appended = 3 * TAIL_CAP as u64;
         for raw in 501..501 + appended {
             seqs.push(s(raw));
-            assert!(seqs.tail.len() <= TAIL_CAP);
+            assert!(seqs.tail.len() <= TAIL_CAP, "appended sequence {raw}");
         }
         assert_eq!(take_copied(), 500);
         assert_eq!(retained.last(), Some(s(500)));

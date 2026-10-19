@@ -28,175 +28,87 @@ enum Source {
     Trial,
 }
 
-#[test]
-fn skip_known_failure() {
-    struct Case {
-        name: &'static str,
-        source: Source,
-        profile: [i64; 2],
-        passes: i32,
-        change: fn(&mut TrialPlan),
-        skip: bool,
-    }
-    fn same(_: &mut TrialPlan) {}
-    let cases = [
-        Case {
-            name: "carried equal",
-            source: Source::Carried,
-            profile: [-20, -20],
-            passes: 0,
-            change: same,
-            skip: true,
-        },
-        Case {
-            name: "live equal",
-            source: Source::Trial,
-            profile: [-20, -20],
-            passes: 0,
-            change: same,
-            skip: true,
-        },
-        Case {
-            name: "idle equal",
-            source: Source::Idle,
-            profile: [-20, -20],
-            passes: 0,
-            change: same,
-            skip: true,
-        },
-        Case {
-            name: "shallower",
-            source: Source::Carried,
-            profile: [-19, -20],
-            passes: 0,
-            change: same,
-            skip: true,
-        },
-        Case {
-            name: "one fewer covering passes",
-            source: Source::Carried,
-            profile: [-20, -20],
-            passes: -1,
-            change: same,
-            skip: true,
-        },
-        Case {
-            name: "covered",
-            source: Source::Carried,
-            profile: [-20, -20],
-            passes: 1,
-            change: same,
-            skip: false,
-        },
-        Case {
-            name: "deeper",
-            source: Source::Carried,
-            profile: [-21, -20],
-            passes: 0,
-            change: same,
-            skip: false,
-        },
-        Case {
-            name: "incomparable",
-            source: Source::Carried,
-            profile: [-19, -21],
-            passes: 0,
-            change: same,
-            skip: false,
-        },
-        Case {
-            name: "regime",
-            source: Source::Carried,
-            profile: [-20, -20],
-            passes: 0,
-            change: |plan| {
+#[test_case::test_case("carried equal", Source::Carried, [-20, -20], 0, |_: &mut TrialPlan| {}, true; "carried equal")]
+#[test_case::test_case("live equal", Source::Trial, [-20, -20], 0, |_: &mut TrialPlan| {}, true; "live equal")]
+#[test_case::test_case("idle equal", Source::Idle, [-20, -20], 0, |_: &mut TrialPlan| {}, true; "idle equal")]
+#[test_case::test_case("shallower", Source::Carried, [-19, -20], 0, |_: &mut TrialPlan| {}, true; "shallower")]
+#[test_case::test_case("one fewer covering passes", Source::Carried, [-20, -20], -1, |_: &mut TrialPlan| {}, true; "one fewer covering passes")]
+#[test_case::test_case("covered", Source::Carried, [-20, -20], 1, |_: &mut TrialPlan| {}, false; "covered")]
+#[test_case::test_case("deeper", Source::Carried, [-21, -20], 0, |_: &mut TrialPlan| {}, false; "deeper")]
+#[test_case::test_case("incomparable", Source::Carried, [-19, -21], 0, |_: &mut TrialPlan| {}, false; "incomparable")]
+#[test_case::test_case("regime", Source::Carried, [-20, -20], 0, |plan| {
                 plan.regime = Regime::R1;
                 plan.workload =
                     crate::WorkloadChoice::Frozen(togi_machine::workloads(Regime::R1)[0].id());
-            },
-            skip: false,
-        },
-        Case {
-            name: "loaded cores",
-            source: Source::Carried,
-            profile: [-20, -20],
-            passes: 0,
-            change: |plan| plan.load = Load::Many(set(&[0])),
-            skip: false,
-        },
-        Case {
-            name: "duration",
-            source: Source::Carried,
-            profile: [-20, -20],
-            passes: 0,
-            change: |plan| {
+            }, false; "regime")]
+#[test_case::test_case("loaded cores", Source::Carried, [-20, -20], 0, |plan| plan.load = Load::Many(set(&[0])), false; "loaded cores")]
+#[test_case::test_case("duration", Source::Carried, [-20, -20], 0, |plan| {
                 plan.duration =
                     crate::Secs::new(std::num::NonZeroU32::new(plan.duration.get() + 1).unwrap());
-            },
-            skip: false,
-        },
-    ];
-    for case in cases {
-        let mut j = Journal::new(&[0, 1], &[Start::at_limit(-20), Start::at_limit(-20)]);
-        j.profile_change(&[-20, -20]);
-        let duration = j.run().config.checking_idle.get();
-        let mut plan = j.manual(
-            Regime::R6,
-            0,
-            Load::Many(set(&[1, 0])),
+            }, false; "duration")]
+fn skip_known_failure(
+    name: &'static str,
+    source: Source,
+    profile: [i64; 2],
+    passes: i32,
+    change: fn(&mut TrialPlan),
+    skip: bool,
+) {
+    let mut j = Journal::new(&[0, 1], &[Start::at_limit(-20), Start::at_limit(-20)]);
+    j.profile_change(&[-20, -20]);
+    let duration = j.run().config.checking_idle.get();
+    let mut plan = j.manual(
+        Regime::R6,
+        0,
+        Load::Many(set(&[1, 0])),
+        Condition::Together,
+        &[-20, -20],
+        duration,
+    );
+    let seq = match source {
+        Source::Trial => {
+            let mut old = plan.clone();
+            old.profile = j.profile(&profile);
+            let end = j.trial(&old, Outcome::Failure);
+            let attribution = j
+                .run()
+                .attribution()
+                .unwrap_or_else(|| panic!("{name}: the failed trial awaits attribution"));
+            assert_ne!(j.decide(attribution), end, "{name}");
+            end
+        }
+        Source::Idle => j.idle_failure(j.profile(&profile).offsets(), Condition::Together),
+        Source::Carried => j.carry(
+            SESSION,
+            (Regime::R6, 0, &[0, 1], duration),
             Condition::Together,
-            &[-20, -20],
-            duration,
-        );
-        let seq = match case.source {
-            Source::Trial => {
-                let mut old = plan.clone();
-                old.profile = j.profile(&case.profile);
-                let end = j.trial(&old, Outcome::Failure);
-                let attribution = j.run().attribution().unwrap_or_else(|| {
-                    panic!("{}: the failed trial awaits attribution", case.name)
-                });
-                assert_ne!(j.decide(attribution), end, "{}", case.name);
-                end
-            }
-            Source::Idle => j.idle_failure(j.profile(&case.profile).offsets(), Condition::Together),
-            Source::Carried => j.carry(
+            &profile,
+            Outcome::Failure,
+        ),
+    };
+    if passes != 0 {
+        let count = usize::from(j.run().config.needed.get()) - usize::from(passes < 0);
+        for _ in 0..count {
+            j.carry(
                 SESSION,
                 (Regime::R6, 0, &[0, 1], duration),
                 Condition::Together,
-                &case.profile,
-                Outcome::Failure,
-            ),
-        };
-        if case.passes != 0 {
-            let count = usize::from(j.run().config.needed.get()) - usize::from(case.passes < 0);
-            for _ in 0..count {
-                j.carry(
-                    SESSION,
-                    (Regime::R6, 0, &[0, 1], duration),
-                    Condition::Together,
-                    &[-20, -20],
-                    Outcome::Pass,
-                );
-            }
-        }
-        (case.change)(&mut plan);
-        let action = skipped(&j, &plan);
-        if !case.skip {
-            assert!(
-                matches!(action, Action::RunTrial(_)),
-                "{}: {action:?}",
-                case.name
+                &[-20, -20],
+                Outcome::Pass,
             );
-            continue;
         }
-        let (failure, cause) =
-            known_failure(&action).unwrap_or_else(|| panic!("{}: {action:?}", case.name));
-        assert_eq!(failure.known_failure, Some(seq), "{}", case.name);
-        assert_eq!(cause, [seq], "{}", case.name);
-        let text = Payload::from(DecisionPayload::Failure(failure)).message();
-        assert!(text.contains("skipped"), "{}: {text}", case.name);
     }
+    (change)(&mut plan);
+    let action = skipped(&j, &plan);
+    if !skip {
+        assert!(matches!(action, Action::RunTrial(_)), "{name}: {action:?}");
+        return;
+    }
+    let (failure, cause) = known_failure(&action).unwrap_or_else(|| panic!("{name}: {action:?}"));
+    assert_eq!(failure.known_failure, Some(seq), "{name}");
+    assert_eq!(cause, [seq], "{name}");
+    let text = Payload::from(DecisionPayload::Failure(failure)).message();
+    assert!(text.contains("skipped"), "{name}: {text}");
 }
 
 #[test]

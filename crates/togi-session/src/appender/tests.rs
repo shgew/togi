@@ -131,3 +131,48 @@ fn a_panic_taking_in_a_durable_event_latches_the_appender_and_still_unwinds() {
         "the event is durable, nothing after it"
     );
 }
+
+struct MalformedClock;
+
+impl togi_machine::Clock for MalformedClock {
+    fn now(&self) -> jiff::Timestamp {
+        jiff::Timestamp::UNIX_EPOCH
+    }
+
+    fn monotonic(&self) -> Result<std::time::Duration, togi_machine::Error> {
+        togi_machine::monotonic_duration(-1, 0)
+    }
+
+    fn sleep(
+        &mut self,
+        _: &togi_machine::CancellationToken,
+        _: std::time::Duration,
+    ) -> Result<(), togi_machine::Error> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_malformed_clock_latches_before_appending_and_cancels_the_trial() {
+    let mut rig = Rig::new(2);
+    rig.appender.clock = Box::new(MalformedClock);
+    let token = togi_machine::CancellationToken::new();
+    rig.appender.watch_trial(Some(token.clone()));
+    let before = rig.events().len();
+    assert!(matches!(
+        rig.appender.append(unscheduled(), &[]),
+        Err(AppendFailure::Journal(_))
+    ));
+    assert!(matches!(
+        rig.appender.failure().map(JournalFailure::cause),
+        Some(JournalCause::Clock(
+            togi_machine::Error::InvalidMonotonic { .. }
+        ))
+    ));
+    assert!(token.is_cancelled());
+    assert!(matches!(
+        rig.appender.append(unscheduled(), &[]),
+        Err(AppendFailure::Journal(_))
+    ));
+    assert_eq!(rig.events().len(), before);
+}

@@ -291,30 +291,29 @@ fn zero_movable_candidates_never_conclude_at_phase1_end() {
     );
 }
 
-#[test]
-fn active_deepening_projection() {
-    for close in ["passed", "cancelled"] {
-        let mut j = solo_cores(&[-10, -10, -10, -10], -11);
-        drive(&mut j, |j| j.run().phases.phase1_end().is_some());
-        let begin = j.round_start(2, &[-15, -9, -10, -10], &[0, 1], 2);
-        let plan = j.state.phase_plan().unwrap();
-        assert_eq!(plan.round, Some(2), "{close}");
-        let moving: Vec<_> = plan
-            .candidates
-            .iter()
-            .filter(|candidate| candidate.moving)
-            .map(|candidate| (candidate.core, candidate.offset))
-            .collect();
-        assert_eq!(moving, [(core(0), off(-10))], "{close}");
-        assert_eq!(fresh(&j.events).phase_plan(), Some(plan));
-        if close == "cancelled" {
-            j.round_end(2, begin);
-        } else {
-            drive(&mut j, |j| j.run().rounds.active().is_none());
-        }
-        assert_eq!(j.state.phase_plan().unwrap().round, None, "{close}");
-        assert_eq!(fresh(&j.events).phase_plan(), j.state.phase_plan());
+#[test_case::test_case(false; "passed")]
+#[test_case::test_case(true; "cancelled")]
+fn active_deepening_projection(cancelled: bool) {
+    let mut j = solo_cores(&[-10, -10, -10, -10], -11);
+    drive(&mut j, |j| j.run().phases.phase1_end().is_some());
+    let begin = j.round_start(2, &[-15, -9, -10, -10], &[0, 1], 2);
+    let plan = j.state.phase_plan().unwrap();
+    assert_eq!(plan.round, Some(2), "{cancelled}");
+    let moving: Vec<_> = plan
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.moving)
+        .map(|candidate| (candidate.core, candidate.offset))
+        .collect();
+    assert_eq!(moving, [(core(0), off(-10))], "{cancelled}");
+    assert_eq!(fresh(&j.events).phase_plan(), Some(plan));
+    if cancelled {
+        j.round_end(2, begin);
+    } else {
+        drive(&mut j, |j| j.run().rounds.active().is_none());
     }
+    assert_eq!(j.state.phase_plan().unwrap().round, None, "{cancelled}");
+    assert_eq!(fresh(&j.events).phase_plan(), j.state.phase_plan());
 }
 
 fn outcome(byte: u8) -> Outcome {

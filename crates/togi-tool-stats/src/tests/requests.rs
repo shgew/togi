@@ -1,5 +1,5 @@
 use jiff::SignedDuration;
-use togi_journal::{Outcome, TrialCarried, TrialClass};
+use togi_journal::{Outcome, TrialClass};
 use togi_machine::{Condition, PerCore, Regime};
 
 use super::evidence::carried;
@@ -140,7 +140,7 @@ fn carried_facts_count_once_per_source_and_only_with_both_request_fields() {
         duration_s: 120,
     };
     let fact = |session: &str, number: u64, outcome, telemetry: bool| {
-        let mut fact: TrialCarried = carried(outcome);
+        let mut fact = carried(outcome);
         fact.source.session = session.parse().unwrap();
         fact.source.seq = super::support::seq(number);
         fact.class = r7_class.clone();

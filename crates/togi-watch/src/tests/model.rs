@@ -218,64 +218,63 @@ fn trial_preparation_does_not_claim_load() {
     assert_eq!(first.applied, Some(ObservedOffset(-25)));
 }
 
-#[test]
-fn trial_start_selection() {
-    enum Start {
-        Before,
-        Latest,
-        Unrelated,
-        Epoch,
-    }
-    for (name, kind) in [
-        ("before intent", Start::Before),
-        ("latest matching start", Start::Latest),
-        ("only unrelated start", Start::Unrelated),
-        ("epoch timestamp", Start::Epoch),
-    ] {
-        let mut script = searching();
-        let id = TrialId::from("0001".to_owned());
-        let other = TrialId::from("other".to_owned());
-        let mut want = None;
-        if matches!(kind, Start::Before) {
+#[derive(Clone, Copy)]
+enum TrialStartSelection {
+    Before,
+    Latest,
+    Unrelated,
+    Epoch,
+}
+
+#[test_case::test_case(TrialStartSelection::Before; "before intent")]
+#[test_case::test_case(TrialStartSelection::Latest; "latest matching start")]
+#[test_case::test_case(TrialStartSelection::Unrelated; "only unrelated start")]
+#[test_case::test_case(TrialStartSelection::Epoch; "epoch timestamp")]
+fn trial_start_selection(kind: TrialStartSelection) {
+    let mut script = searching();
+    let id = TrialId::from("0001".to_owned());
+    let other = TrialId::from("other".to_owned());
+    let mut want = if matches!(kind, TrialStartSelection::Before) {
+        Some(at(script.start(&id)))
+    } else {
+        None
+    };
+    let plan = script.plan();
+    script.intent(&plan);
+    match kind {
+        TrialStartSelection::Before => {}
+        TrialStartSelection::Latest => {
+            script.start(&id);
             want = Some(at(script.start(&id)));
+            script.start(&other);
         }
-        let plan = script.plan();
-        script.intent(&plan);
-        match kind {
-            Start::Before => {}
-            Start::Latest => {
-                script.start(&id);
-                want = Some(at(script.start(&id)));
-                script.start(&other);
-            }
-            Start::Unrelated => {
-                script.start(&other);
-            }
-            Start::Epoch => {
-                let mut event = script.event(
-                    togi_journal::TrialStart {
-                        trial: id.clone(),
-                        window_start_ns: None,
-                        scope: String::new(),
-                        pid: 1,
-                        cpus: Vec::new(),
-                        argv: Vec::new(),
-                        files: Vec::new(),
-                        instances: Vec::new(),
-                    }
-                    .into(),
-                    &[],
-                );
-                event.time = Timestamp::UNIX_EPOCH;
-                script.shadow.fold(&event).unwrap();
-                script.events.push(event);
-                want = Some(Timestamp::UNIX_EPOCH);
-            }
+        TrialStartSelection::Unrelated => {
+            script.start(&other);
         }
-        let model = script.model();
-        let trial = model.snapshot().trial.expect("the open trial is projected");
-        assert_eq!(trial.started, want, "{name}");
+        TrialStartSelection::Epoch => {
+            let mut event = script.event(
+                togi_journal::TrialStart {
+                    trial: id.clone(),
+                    window_start_ns: None,
+                    scope: String::new(),
+                    pid: 1,
+                    cpus: Vec::new(),
+                    argv: Vec::new(),
+                    files: Vec::new(),
+                    instances: Vec::new(),
+                }
+                .into(),
+                &[],
+            );
+            event.time = Timestamp::UNIX_EPOCH;
+            script.shadow.fold(&event).unwrap();
+            script.events.push(event);
+            want = Some(Timestamp::UNIX_EPOCH);
+        }
     }
+    let model = script.model();
+    let trial = model.snapshot().trial.expect("the open trial is projected");
+    assert_eq!(trial.started, want);
 }
 
 #[test]
@@ -391,45 +390,40 @@ fn sparse_readbacks_do_not_fill_other_topology_cores() {
     );
 }
 
-#[test]
-fn crash_classification() {
-    for (name, stray, inconclusive) in [
-        ("offset-related crash", false, false),
-        ("power reset", false, true),
-        ("before offsets", true, false),
-    ] {
-        let mut script = searching();
-        let mut crashed = crash("boot", None);
-        crashed.stray = stray;
-        crashed.inconclusive = inconclusive;
-        script.append(crashed.into(), &[]);
-        let model = script.model();
-        let snap = model.snapshot();
-        assert_eq!(snap.crashes, 1, "{name}");
-        assert!(snap.recover.is_some(), "{name}");
-    }
+#[test_case::test_case(false, false; "offset related crash")]
+#[test_case::test_case(false, true; "power reset")]
+#[test_case::test_case(true, false; "before offsets")]
+fn crash_classification(stray: bool, inconclusive: bool) {
+    let mut script = searching();
+    let mut crashed = crash("boot", None);
+    crashed.stray = stray;
+    crashed.inconclusive = inconclusive;
+    script.append(crashed.into(), &[]);
+    let model = script.model();
+    let snap = model.snapshot();
+    assert_eq!(snap.crashes, 1);
+    assert!(snap.recover.is_some());
 }
 
-#[test]
-fn a_crash_ends_only_its_boot_trial() {
-    for previous in ["boot", "older"] {
-        let mut script = searching();
-        let plan = script.plan();
-        let (intent, trial) = script.intent(&plan);
-        script.start(&trial);
-        script.boot = "next".to_owned();
-        script.append(crash(previous, Some(intent)).into(), &[]);
-        let model = script.model();
-        let snap = model.snapshot();
-        let running = previous != "boot";
-        assert_eq!(snap.trial.is_some(), running, "boot {previous}");
-        assert_eq!(snap.cores[0].loaded, running, "boot {previous}");
-        if running {
-            assert!(snap.crashed_trial(), "a later boot outlived the trial");
-            assert!(snap.resting());
-        } else {
-            assert!(snap.recover.unwrap().trial.is_some());
-        }
+#[test_case::test_case("boot"; "same boot")]
+#[test_case::test_case("older"; "older boot")]
+fn a_crash_ends_only_its_boot_trial(previous: &str) {
+    let mut script = searching();
+    let plan = script.plan();
+    let (intent, trial) = script.intent(&plan);
+    script.start(&trial);
+    script.boot = "next".to_owned();
+    script.append(crash(previous, Some(intent)).into(), &[]);
+    let model = script.model();
+    let snap = model.snapshot();
+    let running = previous != "boot";
+    assert_eq!(snap.trial.is_some(), running, "boot {previous}");
+    assert_eq!(snap.cores[0].loaded, running, "boot {previous}");
+    if running {
+        assert!(snap.crashed_trial(), "a later boot outlived the trial");
+        assert!(snap.resting());
+    } else {
+        assert!(snap.recover.unwrap().trial.is_some());
     }
 }
 
@@ -532,51 +526,47 @@ fn the_log_counts_every_listed_event() {
     );
 }
 
-#[test]
-fn the_raw_log_keeps_the_newest_eligible_events_in_order() {
-    for count in [
-        0,
-        LOG_LIMIT - 1,
-        LOG_LIMIT,
-        LOG_LIMIT + 1,
-        3 * LOG_LIMIT + 5,
-    ] {
-        let mut script = searching();
-        for i in 0..count {
-            script.append(smu_intent(0, -20), &[]);
-            script.append(readback(0, -20), &[]);
-            script.append(preflight(), &[]);
-            script.append(warning(&format!("{i}\u{1b}[31m")), &[]);
-        }
-        let mut want: Vec<LogEntry> = script
-            .events
-            .iter()
-            .filter(|e| {
-                !matches!(
-                    e.payload,
-                    Payload::SmuIntent(_)
-                        | Payload::SmuWrite(_)
-                        | Payload::SmuReadback(_)
-                        | Payload::PreflightCheck(_)
-                )
-            })
-            .map(|e| LogEntry {
-                seq: e.seq,
-                at: e.time,
-                tag: crate::words::tag_word(&e.payload),
-                msg: e.msg.clone(),
-            })
-            .collect();
-        let total = want.len();
-        want.drain(..want.len().saturating_sub(LOG_LIMIT));
-        let model = script.model();
-        let snap = model.snapshot();
-        assert_eq!(
-            snap.log, want,
-            "{count}: the newest eligible events, raw, in journal order"
-        );
-        assert_eq!(snap.log_total, total);
+#[test_case::test_case(0; "zero")]
+#[test_case::test_case(LOG_LIMIT - 1; "below limit")]
+#[test_case::test_case(LOG_LIMIT; "at limit")]
+#[test_case::test_case(LOG_LIMIT + 1; "above limit")]
+#[test_case::test_case(3 * LOG_LIMIT + 5; "several limits")]
+fn the_raw_log_keeps_the_newest_eligible_events_in_order(count: usize) {
+    let mut script = searching();
+    for i in 0..count {
+        script.append(smu_intent(0, -20), &[]);
+        script.append(readback(0, -20), &[]);
+        script.append(preflight(), &[]);
+        script.append(warning(&format!("{i}\u{1b}[31m")), &[]);
     }
+    let mut want: Vec<LogEntry> = script
+        .events
+        .iter()
+        .filter(|e| {
+            !matches!(
+                e.payload,
+                Payload::SmuIntent(_)
+                    | Payload::SmuWrite(_)
+                    | Payload::SmuReadback(_)
+                    | Payload::PreflightCheck(_)
+            )
+        })
+        .map(|e| LogEntry {
+            seq: e.seq,
+            at: e.time,
+            tag: crate::words::tag_word(&e.payload),
+            msg: e.msg.clone(),
+        })
+        .collect();
+    let total = want.len();
+    want.drain(..want.len().saturating_sub(LOG_LIMIT));
+    let model = script.model();
+    let snap = model.snapshot();
+    assert_eq!(
+        snap.log, want,
+        "{count}: the newest eligible events, raw, in journal order"
+    );
+    assert_eq!(snap.log_total, total);
 }
 
 #[test]

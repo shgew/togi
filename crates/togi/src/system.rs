@@ -116,8 +116,8 @@ pub trait System {
     /// The wall clock.
     fn now(&self) -> Timestamp;
 
-    /// Time since boot.
-    fn monotonic(&self) -> Duration;
+    /// Time since boot; refuses malformed kernel clock components.
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error>;
 
     /// The zone event lines are shown in.
     fn zone(&self) -> TimeZone;
@@ -215,12 +215,9 @@ impl System for Real {
         Timestamp::now()
     }
 
-    fn monotonic(&self) -> Duration {
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
         let now = clock_gettime(ClockId::Monotonic);
-        Duration::new(
-            u64::try_from(now.tv_sec).unwrap_or_default(),
-            u32::try_from(now.tv_nsec).unwrap_or_default(),
-        )
+        togi_machine::monotonic_duration(now.tv_sec, now.tv_nsec)
     }
 
     fn zone(&self) -> TimeZone {
@@ -309,7 +306,7 @@ impl Clock for SystemClock<'_> {
         self.0.now()
     }
 
-    fn monotonic(&self) -> Duration {
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
         self.0.monotonic()
     }
 

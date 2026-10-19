@@ -599,7 +599,11 @@ impl<'machine> Session<'machine> {
             }
             Err(Partial { value, error }) => (value, Some(togi_render::error_chain(&error))),
         };
-        let until = self.appender.clock().monotonic();
+        let until = self
+            .appender
+            .clock()
+            .monotonic()
+            .map_err(SessionError::Machine)?;
         let crashed_boots = self
             .appender
             .recovery()

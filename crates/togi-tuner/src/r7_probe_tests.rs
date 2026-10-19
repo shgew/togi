@@ -162,22 +162,25 @@ fn a_probe_failure_without_a_name_uses_its_own_top_group() {
     assert_eq!(j.offsets().get(core(0)), Some(off(-28)));
 }
 
-#[test]
-fn a_stall_outside_the_charged_group_accelerates_a_probe_never_blame() {
-    for (stalled, wanted) in [(Some(1), true), (Some(0), false), (None, false)] {
-        let mut j = session(&[0, 1, 2], &[-30, -40, -45]);
-        let report = R7Report {
-            stalled,
-            ..R7Report::default().top(&[0])
-        };
-        fail(&mut j, &[0, 1, 2], &report);
-        let (_, moved) = apply(&mut j);
-        assert_eq!(moved.core, core(0), "stall is not attribution");
-        assert_eq!(j.run().r7_probe_action().is_some(), wanted, "{stalled:?}");
-        if wanted {
-            assert_eq!(probe(&j).load.cores(), set(&[1, 2]));
-            assert!(moved.reason.contains("chooses a probe, not a culprit"));
-        }
+#[test_case::test_case(Some(1), true; "(Some(1), true)")]
+#[test_case::test_case(Some(0), false; "(Some(0), false)")]
+#[test_case::test_case(None, false; "(None, false)")]
+fn a_stall_outside_the_charged_group_accelerates_a_probe_never_blame(
+    stalled: Option<u8>,
+    wanted: bool,
+) {
+    let mut j = session(&[0, 1, 2], &[-30, -40, -45]);
+    let report = R7Report {
+        stalled,
+        ..R7Report::default().top(&[0])
+    };
+    fail(&mut j, &[0, 1, 2], &report);
+    let (_, moved) = apply(&mut j);
+    assert_eq!(moved.core, core(0), "stall is not attribution");
+    assert_eq!(j.run().r7_probe_action().is_some(), wanted, "{stalled:?}");
+    if wanted {
+        assert_eq!(probe(&j).load.cores(), set(&[1, 2]));
+        assert!(moved.reason.contains("chooses a probe, not a culprit"));
     }
 }
 
@@ -205,30 +208,30 @@ fn all_core_loads_probe_each_charged_ccd_without_idling_the_other_ccd() {
     j.assert_resumes();
 }
 
-#[test]
-fn tied_requesters_idle_together_and_no_singleton_or_empty_part_runs() {
-    for (ids, top, expected) in [
-        (vec![0, 1, 2, 3], vec![0, 1], Some(vec![2, 3])),
-        (vec![0, 1, 2], vec![0, 1], None),
-        (vec![0, 1], vec![0], None),
-        (vec![0, 1], vec![0, 1], None),
-    ] {
-        let mut j = session(&ids, &vec![-30; ids.len()]);
-        let report = R7Report::default().top(&top);
-        for _ in 0..2 {
-            fail(&mut j, &ids, &report);
-            apply(&mut j);
-        }
-        assert_eq!(
-            j.run().r7_probe_action().map(|action| {
-                let Action::RunTrial(plan) = action else {
-                    panic!("not a trial: {action:?}");
-                };
-                plan.load.cores()
-            }),
-            expected.as_deref().map(set),
-        );
+#[test_case::test_case(&[0, 1, 2, 3], &[0, 1], Some(&[2, 3]); "(vec![0, 1, 2, 3], vec![0, 1], Some(vec![2, 3]))")]
+#[test_case::test_case(&[0, 1, 2], &[0, 1], None; "(vec![0, 1, 2], vec![0, 1], None)")]
+#[test_case::test_case(&[0, 1], &[0], None; "(vec![0, 1], vec![0], None)")]
+#[test_case::test_case(&[0, 1], &[0, 1], None; "(vec![0, 1], vec![0, 1], None)")]
+fn tied_requesters_idle_together_and_no_singleton_or_empty_part_runs(
+    ids: &[u8],
+    top: &[u8],
+    expected: Option<&[u8]>,
+) {
+    let mut j = session(ids, &vec![-30; ids.len()]);
+    let report = R7Report::default().top(top);
+    for _ in 0..2 {
+        fail(&mut j, ids, &report);
+        apply(&mut j);
     }
+    assert_eq!(
+        j.run().r7_probe_action().map(|action| {
+            let Action::RunTrial(plan) = action else {
+                panic!("not a trial: {action:?}");
+            };
+            plan.load.cores()
+        }),
+        expected.map(set),
+    );
 }
 
 #[test]

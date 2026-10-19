@@ -861,7 +861,7 @@ fn alone_checks_follow_the_topology_order_not_core_ids() {
         .filter(|check| check.condition == Condition::Alone)
         .map(|check| check.class.loaded().iter().next().unwrap())
         .collect();
-    let mut unique = alone.clone();
+    let mut unique = alone;
     unique.dedup();
     assert_eq!(unique, order);
     assert_ne!(order, [core(0), core(1), core(2), core(3)]);
@@ -1016,51 +1016,50 @@ fn every_prefix_of_a_round_blame_and_confirmation_resumes_identically() {
     drive(&mut j, 4000, |j| j.run().phases.concluded().is_some());
 }
 
-#[test]
-fn a_reset_closes_the_open_round_or_cycle_before_the_core_searches() {
-    for deepening in [false, true] {
-        let mut j = phase1_done(&[Start::solo(-10, -11)]);
-        j.baseline(&[(0, -7)]);
-        if deepening {
-            j.round_start(2, &[-30], &[0], 5);
-        } else {
-            j.cycle_start(4, &[Regime::R1]);
-        }
-        let reset = j.reset(0);
-        let end = j.next_decision();
-        assert_eq!(end.cause, [reset], "deepening {deepening}");
-        if let DecisionPayload::DeepeningRound(round) = &end.payload
-            && deepening
-        {
-            assert_eq!(
-                (round.round.get(), round.event, round.passed),
-                (2, RoundEvent::End, false)
-            );
-        } else if let DecisionPayload::CheckingCycle(cycle) = &end.payload
-            && !deepening
-        {
-            assert_eq!(cycle.cycle.get(), 4);
-            assert_eq!(cycle.event, togi_journal::CycleEvent::End);
-            assert!(!cycle.passed && !cycle.full);
-        } else {
-            panic!(
-                "deepening {deepening}: expected the close, got {:?}",
-                end.payload
-            );
-        }
-        j.decide(end);
-        let search = j.next_decision();
-        let DecisionPayload::CorePhase(phase) = &search.payload else {
-            panic!("expected the core to search, got {search:?}");
-        };
-        assert_eq!(phase.to, CorePhase::Search);
-        assert_eq!(phase.offset, off(-7));
-        assert_eq!((phase.pass, phase.failure_point), (None, None));
-        j.decide(search);
-        assert!(j.run().rounds.active().is_none());
-        assert_eq!(j.run().phases.phase1_end(), None);
-        j.assert_resumes();
+#[test_case::test_case(false; "not deepening")]
+#[test_case::test_case(true; "deepening")]
+fn a_reset_closes_the_open_round_or_cycle_before_the_core_searches(deepening: bool) {
+    let mut j = phase1_done(&[Start::solo(-10, -11)]);
+    j.baseline(&[(0, -7)]);
+    if deepening {
+        j.round_start(2, &[-30], &[0], 5);
+    } else {
+        j.cycle_start(4, &[Regime::R1]);
     }
+    let reset = j.reset(0);
+    let end = j.next_decision();
+    assert_eq!(end.cause, [reset], "deepening {deepening}");
+    if let DecisionPayload::DeepeningRound(round) = &end.payload
+        && deepening
+    {
+        assert_eq!(
+            (round.round.get(), round.event, round.passed),
+            (2, RoundEvent::End, false)
+        );
+    } else if let DecisionPayload::CheckingCycle(cycle) = &end.payload
+        && !deepening
+    {
+        assert_eq!(cycle.cycle.get(), 4);
+        assert_eq!(cycle.event, togi_journal::CycleEvent::End);
+        assert!(!cycle.passed && !cycle.full);
+    } else {
+        panic!(
+            "deepening {deepening}: expected the close, got {:?}",
+            end.payload
+        );
+    }
+    j.decide(end);
+    let search = j.next_decision();
+    let DecisionPayload::CorePhase(phase) = &search.payload else {
+        panic!("expected the core to search, got {search:?}");
+    };
+    assert_eq!(phase.to, CorePhase::Search);
+    assert_eq!(phase.offset, off(-7));
+    assert_eq!((phase.pass, phase.failure_point), (None, None));
+    j.decide(search);
+    assert!(j.run().rounds.active().is_none());
+    assert_eq!(j.run().phases.phase1_end(), None);
+    j.assert_resumes();
 }
 
 #[test]
@@ -1237,14 +1236,25 @@ fn a_round_intent_is_scheduled_only_for_the_open_rounds_own_checks() {
         &j,
         &TrialPlan {
             activity: Activity::Checking,
-            ..next.clone()
+            ..next
         },
     );
     j.assert_resumes();
 }
 
-#[test]
-fn a_round_intent_must_carry_the_checks_profile_and_target_offset() {
+#[test_case::test_case(|plan, trial, other| {
+    let mut intent = plan.intent(trial, 0);
+    intent.profile = plan.profile.with(other, off(plan.profile.get(other).unwrap().get() - 1)).offsets();
+    intent
+}; "another core profile")]
+#[test_case::test_case(|plan, trial, _| {
+    let mut intent = plan.intent(trial, 0);
+    intent.offset = intent.offset.map(|at| off(at.get() - 1));
+    intent
+}; "target offset")]
+fn a_round_intent_must_carry_the_checks_profile_and_target_offset(
+    make_intent: fn(&TrialPlan, togi_journal::TrialId, CoreId) -> togi_journal::TrialIntent,
+) {
     let mut j = solo_cores(&[-40, -40, -40, -40], -41);
     drive(&mut j, 4000, |j| j.run().phases.phase1_end().is_some());
     until_round_checks(&mut j, 4);
@@ -1258,26 +1268,16 @@ fn a_round_intent_must_carry_the_checks_profile_and_target_offset() {
         .iter()
         .find(|&core| core != own)
         .unwrap();
-    let mut cases = Vec::new();
-    let mut elsewhere = plan.intent(trial.clone(), 0);
-    elsewhere.profile = plan
-        .profile
-        .with(other, off(plan.profile.get(other).unwrap().get() - 1))
-        .offsets();
-    cases.push(elsewhere);
-    let mut offset = plan.intent(trial, 0);
-    offset.offset = offset.offset.map(|at| off(at.get() - 1));
-    cases.push(offset);
-    for intent in cases {
-        let trial = intent.trial.clone();
-        let event = j.event(intent.into(), &plan.cause);
-        let mut probe = j.state.clone();
-        assert!(matches!(
-            probe.fold(&event),
-            Err(crate::FoldError::UnscheduledIntent(found)) if found == trial
-        ));
-        assert_eq!(probe.run(), j.state.run());
-    }
+    let intent = make_intent(&plan, trial, other);
+    let trial = intent.trial.clone();
+    let event = j.event(intent.into(), &plan.cause);
+    let mut probe = j.state.clone();
+    assert!(matches!(
+        probe.fold(&event),
+        Err(crate::FoldError::UnscheduledIntent(found)) if found == trial
+    ));
+    assert_eq!(probe.run(), j.state.run());
+
     let (_, _) = j.intent(&plan);
     j.assert_resumes();
 }

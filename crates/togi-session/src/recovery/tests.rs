@@ -825,7 +825,7 @@ fn a_machine_check_is_the_same_by_boot_time_cpu_and_bank_not_by_its_text(
     assert!(state.has_recorded(&boot("b0"), &seen));
     assert!(!state.has_recorded(&boot("b1"), &seen));
 
-    let mut different = seen.clone();
+    let mut different = seen;
     change(&mut different);
     assert!(!state.has_recorded(&boot("b0"), &different));
 }

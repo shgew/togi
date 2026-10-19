@@ -157,65 +157,112 @@ fn detected_short_crash_with_a_preserved_backend_signal_takes_no_target() {
     assert_eq!(j.resumed().next_decision(), decision);
 }
 
-#[test]
-fn short_crash_duration_floor_applies_to_named_and_unattributed_failures() {
-    for named in [false, true] {
-        for duration in [0, 15, 32, 47, 59, 60, 65, 99, 117] {
-            for signal in [
-                togi_machine::Signal::ComputationError,
-                togi_machine::Signal::UnexpectedExit,
-                togi_machine::Signal::Crash,
-            ] {
-                let mut j = Journal::r7_session();
-                let n = needed(&j);
-                let passed = passes(
-                    &mut j,
-                    n,
-                    &[0, 1],
-                    &[-20, -30, -30, -30],
-                    &report(&[(0, 1.136), (1, 1.08)], &[0]).clocks(&[(0, 5000)]),
-                );
-                let mut failing = report(&[(0, 1.1), (1, 1.08)], &[0]).clocks(&[(0, 5000)]);
-                failing.named = named.then_some(0);
-                failing.duration_s = Some(duration);
-                failing.signal = Some(signal);
-                j.r7_failed(&[0, 1], &ALL_30, &failing);
-                let (decision, why) = r7_backoff(&j);
-                let short = signal == togi_machine::Signal::Crash && duration < 60;
-                let capped = named && signal != togi_machine::Signal::Crash;
-                let want = if short {
-                    -29
-                } else if capped {
-                    -27
-                } else {
-                    -20
-                };
-                assert_eq!(moved(&decision), (0, want));
-                if short {
-                    assert_eq!(
-                        why.basis,
-                        Basis::ShortCrash {
-                            request: 1.1,
-                            duration_s: duration,
-                        }
-                    );
-                    assert_eq!(why.counts, 1);
-                    assert!(passed.iter().all(|seq| !decision.cause.contains(seq)));
-                    let DecisionPayload::TunerDecision(td) = &decision.payload else {
-                        unreachable!()
-                    };
-                    assert!(
-                        td.reason
-                            .contains("below the 60 s floor, so no voltage target")
-                    );
-                } else {
-                    assert_toward(&why, 1.1, 1.136);
-                }
-                assert_eq!(j.next_decision(), decision);
-                assert_eq!(j.resumed().next_decision(), decision);
+#[test_case::test_case(false, 0, togi_machine::Signal::ComputationError; "unattributed 0s ComputationError")]
+#[test_case::test_case(false, 0, togi_machine::Signal::UnexpectedExit; "unattributed 0s UnexpectedExit")]
+#[test_case::test_case(false, 0, togi_machine::Signal::Crash; "unattributed 0s Crash")]
+#[test_case::test_case(false, 15, togi_machine::Signal::ComputationError; "unattributed 15s ComputationError")]
+#[test_case::test_case(false, 15, togi_machine::Signal::UnexpectedExit; "unattributed 15s UnexpectedExit")]
+#[test_case::test_case(false, 15, togi_machine::Signal::Crash; "unattributed 15s Crash")]
+#[test_case::test_case(false, 32, togi_machine::Signal::ComputationError; "unattributed 32s ComputationError")]
+#[test_case::test_case(false, 32, togi_machine::Signal::UnexpectedExit; "unattributed 32s UnexpectedExit")]
+#[test_case::test_case(false, 32, togi_machine::Signal::Crash; "unattributed 32s Crash")]
+#[test_case::test_case(false, 47, togi_machine::Signal::ComputationError; "unattributed 47s ComputationError")]
+#[test_case::test_case(false, 47, togi_machine::Signal::UnexpectedExit; "unattributed 47s UnexpectedExit")]
+#[test_case::test_case(false, 47, togi_machine::Signal::Crash; "unattributed 47s Crash")]
+#[test_case::test_case(false, 59, togi_machine::Signal::ComputationError; "unattributed 59s ComputationError")]
+#[test_case::test_case(false, 59, togi_machine::Signal::UnexpectedExit; "unattributed 59s UnexpectedExit")]
+#[test_case::test_case(false, 59, togi_machine::Signal::Crash; "unattributed 59s Crash")]
+#[test_case::test_case(false, 60, togi_machine::Signal::ComputationError; "unattributed 60s ComputationError")]
+#[test_case::test_case(false, 60, togi_machine::Signal::UnexpectedExit; "unattributed 60s UnexpectedExit")]
+#[test_case::test_case(false, 60, togi_machine::Signal::Crash; "unattributed 60s Crash")]
+#[test_case::test_case(false, 65, togi_machine::Signal::ComputationError; "unattributed 65s ComputationError")]
+#[test_case::test_case(false, 65, togi_machine::Signal::UnexpectedExit; "unattributed 65s UnexpectedExit")]
+#[test_case::test_case(false, 65, togi_machine::Signal::Crash; "unattributed 65s Crash")]
+#[test_case::test_case(false, 99, togi_machine::Signal::ComputationError; "unattributed 99s ComputationError")]
+#[test_case::test_case(false, 99, togi_machine::Signal::UnexpectedExit; "unattributed 99s UnexpectedExit")]
+#[test_case::test_case(false, 99, togi_machine::Signal::Crash; "unattributed 99s Crash")]
+#[test_case::test_case(false, 117, togi_machine::Signal::ComputationError; "unattributed 117s ComputationError")]
+#[test_case::test_case(false, 117, togi_machine::Signal::UnexpectedExit; "unattributed 117s UnexpectedExit")]
+#[test_case::test_case(false, 117, togi_machine::Signal::Crash; "unattributed 117s Crash")]
+#[test_case::test_case(true, 0, togi_machine::Signal::ComputationError; "named 0s ComputationError")]
+#[test_case::test_case(true, 0, togi_machine::Signal::UnexpectedExit; "named 0s UnexpectedExit")]
+#[test_case::test_case(true, 0, togi_machine::Signal::Crash; "named 0s Crash")]
+#[test_case::test_case(true, 15, togi_machine::Signal::ComputationError; "named 15s ComputationError")]
+#[test_case::test_case(true, 15, togi_machine::Signal::UnexpectedExit; "named 15s UnexpectedExit")]
+#[test_case::test_case(true, 15, togi_machine::Signal::Crash; "named 15s Crash")]
+#[test_case::test_case(true, 32, togi_machine::Signal::ComputationError; "named 32s ComputationError")]
+#[test_case::test_case(true, 32, togi_machine::Signal::UnexpectedExit; "named 32s UnexpectedExit")]
+#[test_case::test_case(true, 32, togi_machine::Signal::Crash; "named 32s Crash")]
+#[test_case::test_case(true, 47, togi_machine::Signal::ComputationError; "named 47s ComputationError")]
+#[test_case::test_case(true, 47, togi_machine::Signal::UnexpectedExit; "named 47s UnexpectedExit")]
+#[test_case::test_case(true, 47, togi_machine::Signal::Crash; "named 47s Crash")]
+#[test_case::test_case(true, 59, togi_machine::Signal::ComputationError; "named 59s ComputationError")]
+#[test_case::test_case(true, 59, togi_machine::Signal::UnexpectedExit; "named 59s UnexpectedExit")]
+#[test_case::test_case(true, 59, togi_machine::Signal::Crash; "named 59s Crash")]
+#[test_case::test_case(true, 60, togi_machine::Signal::ComputationError; "named 60s ComputationError")]
+#[test_case::test_case(true, 60, togi_machine::Signal::UnexpectedExit; "named 60s UnexpectedExit")]
+#[test_case::test_case(true, 60, togi_machine::Signal::Crash; "named 60s Crash")]
+#[test_case::test_case(true, 65, togi_machine::Signal::ComputationError; "named 65s ComputationError")]
+#[test_case::test_case(true, 65, togi_machine::Signal::UnexpectedExit; "named 65s UnexpectedExit")]
+#[test_case::test_case(true, 65, togi_machine::Signal::Crash; "named 65s Crash")]
+#[test_case::test_case(true, 99, togi_machine::Signal::ComputationError; "named 99s ComputationError")]
+#[test_case::test_case(true, 99, togi_machine::Signal::UnexpectedExit; "named 99s UnexpectedExit")]
+#[test_case::test_case(true, 99, togi_machine::Signal::Crash; "named 99s Crash")]
+#[test_case::test_case(true, 117, togi_machine::Signal::ComputationError; "named 117s ComputationError")]
+#[test_case::test_case(true, 117, togi_machine::Signal::UnexpectedExit; "named 117s UnexpectedExit")]
+#[test_case::test_case(true, 117, togi_machine::Signal::Crash; "named 117s Crash")]
+fn short_crash_duration_floor_applies_to_named_and_unattributed_failures(
+    named: bool,
+    duration: u32,
+    signal: togi_machine::Signal,
+) {
+    let mut j = Journal::r7_session();
+    let n = needed(&j);
+    let passed = passes(
+        &mut j,
+        n,
+        &[0, 1],
+        &[-20, -30, -30, -30],
+        &report(&[(0, 1.136), (1, 1.08)], &[0]).clocks(&[(0, 5000)]),
+    );
+    let mut failing = report(&[(0, 1.1), (1, 1.08)], &[0]).clocks(&[(0, 5000)]);
+    failing.named = named.then_some(0);
+    failing.duration_s = Some(duration);
+    failing.signal = Some(signal);
+    j.r7_failed(&[0, 1], &ALL_30, &failing);
+    let (decision, why) = r7_backoff(&j);
+    let short = signal == togi_machine::Signal::Crash && duration < 60;
+    let capped = named && signal != togi_machine::Signal::Crash;
+    let want = if short {
+        -29
+    } else if capped {
+        -27
+    } else {
+        -20
+    };
+    assert_eq!(moved(&decision), (0, want));
+    if short {
+        assert_eq!(
+            why.basis,
+            Basis::ShortCrash {
+                request: 1.1,
+                duration_s: duration,
             }
-        }
+        );
+        assert_eq!(why.counts, 1);
+        assert!(passed.iter().all(|seq| !decision.cause.contains(seq)));
+        let DecisionPayload::TunerDecision(td) = &decision.payload else {
+            unreachable!()
+        };
+        assert!(
+            td.reason
+                .contains("below the 60 s floor, so no voltage target")
+        );
+    } else {
+        assert_toward(&why, 1.1, 1.136);
     }
+    assert_eq!(j.next_decision(), decision);
+    assert_eq!(j.resumed().next_decision(), decision);
 }
 
 #[test]
@@ -262,56 +309,54 @@ fn short_crash_without_requests_keeps_the_offset_proxy_fallback() {
     assert_eq!(j.resumed().next_decision(), decision);
 }
 
-#[test]
-fn a_carried_failure_takes_no_voltage_target() {
-    for carried in [false, true] {
-        let mut j = Journal::r7_session();
-        let n = needed(&j);
-        let pass = report(&[(0, 1.1539), (1, 1.08)], &[0]);
-        passes(&mut j, n, &[0, 1], &[-20, -30, -30, -30], &pass);
-        let failing = report(&[(0, 1.09447), (1, 1.08)], &[0]);
-        if carried {
-            j.r7_fact(false, &[0, 1], &ALL_30, &failing);
-        } else {
-            j.r7_failed(&[0, 1], &ALL_30, &failing);
-        }
-        let (decision, why) = r7_backoff(&j);
-        if carried {
-            assert_eq!(why.basis, Basis::Carried { request: 1.09447 });
-            assert_eq!(moved(&decision), (0, -29));
-        } else {
-            assert_toward(&why, 1.09447, 1.1539);
-            assert_eq!(moved(&decision), (0, -13));
-        }
-        assert_eq!(j.next_decision(), decision, "carried {carried}");
+#[test_case::test_case(false; "not carried")]
+#[test_case::test_case(true; "carried")]
+fn a_carried_failure_takes_no_voltage_target(carried: bool) {
+    let mut j = Journal::r7_session();
+    let n = needed(&j);
+    let pass = report(&[(0, 1.1539), (1, 1.08)], &[0]);
+    passes(&mut j, n, &[0, 1], &[-20, -30, -30, -30], &pass);
+    let failing = report(&[(0, 1.09447), (1, 1.08)], &[0]);
+    if carried {
+        j.r7_fact(false, &[0, 1], &ALL_30, &failing);
+    } else {
+        j.r7_failed(&[0, 1], &ALL_30, &failing);
     }
+    let (decision, why) = r7_backoff(&j);
+    if carried {
+        assert_eq!(why.basis, Basis::Carried { request: 1.09447 });
+        assert_eq!(moved(&decision), (0, -29));
+    } else {
+        assert_toward(&why, 1.09447, 1.1539);
+        assert_eq!(moved(&decision), (0, -13));
+    }
+    assert_eq!(j.next_decision(), decision, "carried {carried}");
 }
 
-#[test]
-fn r7_voltage_target_clock_filter() {
-    type Case<'a> = (&'a str, &'a [(u8, u32)], i64, Option<f64>);
-    let cases: [Case<'_>; 3] = [
-        ("equal clock", &[(0, 5000)], -27, Some(1.136)),
-        ("lower clock", &[(0, 4900)], -29, None),
-        ("missing pass clock", &[], -29, None),
-    ];
-    for (name, clocks, want, target) in cases {
-        let mut j = Journal::r7_session();
-        let pass = report(&[(0, 1.136), (1, 1.08)], &[0]).clocks(clocks);
-        let n = needed(&j);
-        passes(&mut j, n, &[0, 1], &[-20, -30, -30, -30], &pass);
-        let failing = report(&[(0, 1.1), (1, 1.08)], &[0])
-            .named(0)
-            .clocks(&[(0, 5000)]);
-        j.r7_failed(&[0, 1], &ALL_30, &failing);
-        let (decision, why) = r7_backoff(&j);
-        assert_eq!(moved(&decision), (0, want), "{name}");
-        match target {
-            Some(target) => assert_toward(&why, 1.1, target),
-            None => assert_no_pass(&why, 1.1),
-        }
-        assert_eq!(j.next_decision(), decision, "{name}");
+#[test_case::test_case("equal clock", &[(0, 5000)], -27, Some(1.136); "equal clock")]
+#[test_case::test_case("lower clock", &[(0, 4900)], -29, None; "lower clock")]
+#[test_case::test_case("missing pass clock", &[], -29, None; "missing pass clock")]
+fn r7_voltage_target_clock_filter(
+    name: &'static str,
+    clocks: &'static [(u8, u32)],
+    want: i64,
+    target: Option<f64>,
+) {
+    let mut j = Journal::r7_session();
+    let pass = report(&[(0, 1.136), (1, 1.08)], &[0]).clocks(clocks);
+    let n = needed(&j);
+    passes(&mut j, n, &[0, 1], &[-20, -30, -30, -30], &pass);
+    let failing = report(&[(0, 1.1), (1, 1.08)], &[0])
+        .named(0)
+        .clocks(&[(0, 5000)]);
+    j.r7_failed(&[0, 1], &ALL_30, &failing);
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(moved(&decision), (0, want), "{name}");
+    match target {
+        Some(target) => assert_toward(&why, 1.1, target),
+        None => assert_no_pass(&why, 1.1),
     }
+    assert_eq!(j.next_decision(), decision, "{name}");
 }
 
 #[test]
@@ -362,28 +407,27 @@ fn r7_unattributed_voltage_target() {
     assert_eq!(why.counts, 5);
 }
 
-#[test]
-fn r7_tied_top_target_must_beat_the_ccd_maximum() {
-    for (pass_top, admitted) in [(1.1, false), (1.104, true)] {
-        let mut j = Journal::r7_session();
-        let n = needed(&j);
-        passes(
-            &mut j,
-            n,
-            &[0, 1],
-            &[-26, -30, -30, -30],
-            &report(&[(0, pass_top), (1, 1.08)], &[0]),
-        );
-        j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.0991)], &[0, 1]));
-        let (decision, why) = r7_backoff(&j);
-        assert_eq!(why.core, core(1), "{pass_top}");
-        if admitted {
-            assert_toward(&why, 1.0991, pass_top);
-            assert_eq!(moved(&decision), (1, -28));
-        } else {
-            assert_no_pass(&why, 1.0991);
-            assert_eq!(moved(&decision), (1, -29));
-        }
+#[test_case::test_case(1.1, false; "(1.1, false)")]
+#[test_case::test_case(1.104, true; "(1.104, true)")]
+fn r7_tied_top_target_must_beat_the_ccd_maximum(pass_top: f64, admitted: bool) {
+    let mut j = Journal::r7_session();
+    let n = needed(&j);
+    passes(
+        &mut j,
+        n,
+        &[0, 1],
+        &[-26, -30, -30, -30],
+        &report(&[(0, pass_top), (1, 1.08)], &[0]),
+    );
+    j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.0991)], &[0, 1]));
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(why.core, core(1), "{pass_top}");
+    if admitted {
+        assert_toward(&why, 1.0991, pass_top);
+        assert_eq!(moved(&decision), (1, -28));
+    } else {
+        assert_no_pass(&why, 1.0991);
+        assert_eq!(moved(&decision), (1, -29));
     }
 }
 
@@ -417,103 +461,107 @@ fn r7_named_target_transfers_within_ccd_using_latest_load_clock() {
     j.assert_resumes();
 }
 
-#[test]
-fn named_missing_clock_uses_latest_same_load_not_another_load_or_later_measurement() {
-    for (last_clock, expected) in [(None, None), (Some(5000), Some(1.136)), (Some(5100), None)] {
-        let mut j = Journal::r7_session();
-        let n = needed(&j);
-        passes(
-            &mut j,
-            n,
-            &[0, 1],
-            &[-20, -30, -30, -30],
-            &report(&[(0, 1.136), (1, 1.08)], &[0]).clocks(&[(0, 5000)]),
-        );
-        // The failing load differs from the target load. Its newest reading is independent.
-        if let Some(clock) = last_clock {
-            j.r7_fact(
-                true,
-                &[0, 1, 2, 3],
-                &ALL_30,
-                &report(&[(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.1)], &[0, 2])
-                    .clocks(&[(0, clock), (1, 4900)]),
-            );
-        }
-        j.r7_failed(
-            &[0, 1, 2, 3],
-            &ALL_30,
-            &report(&[(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.1)], &[0, 2]).named(0),
-        );
+#[test_case::test_case(None, None; "(None, None)")]
+#[test_case::test_case(Some(5000), Some(1.136); "(Some(5000), Some(1.136))")]
+#[test_case::test_case(Some(5100), None; "(Some(5100), None)")]
+fn named_missing_clock_uses_latest_same_load_not_another_load_or_later_measurement(
+    last_clock: Option<u32>,
+    expected: Option<f64>,
+) {
+    let mut j = Journal::r7_session();
+    let n = needed(&j);
+    passes(
+        &mut j,
+        n,
+        &[0, 1],
+        &[-20, -30, -30, -30],
+        &report(&[(0, 1.136), (1, 1.08)], &[0]).clocks(&[(0, 5000)]),
+    );
+    // The failing load differs from the target load. Its newest reading is independent.
+    if let Some(clock) = last_clock {
         j.r7_fact(
             true,
             &[0, 1, 2, 3],
             &ALL_30,
-            &report(&[(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.1)], &[0, 2]).clocks(&[(0, 5000)]),
+            &report(&[(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.1)], &[0, 2])
+                .clocks(&[(0, clock), (1, 4900)]),
         );
-        let (_, why) = r7_backoff(&j);
-        match expected {
-            Some(target) => assert_toward(&why, 1.1, target),
-            None => assert_no_pass(&why, 1.1),
-        }
-        j.assert_resumes();
     }
+    j.r7_failed(
+        &[0, 1, 2, 3],
+        &ALL_30,
+        &report(&[(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.1)], &[0, 2]).named(0),
+    );
+    j.r7_fact(
+        true,
+        &[0, 1, 2, 3],
+        &ALL_30,
+        &report(&[(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.1)], &[0, 2]).clocks(&[(0, 5000)]),
+    );
+    let (_, why) = r7_backoff(&j);
+    match expected {
+        Some(target) => assert_toward(&why, 1.1, target),
+        None => assert_no_pass(&why, 1.1),
+    }
+    j.assert_resumes();
 }
 
-#[test]
-fn named_missing_clock_uses_the_restored_backends_own_latest_load_clock() {
+#[test_case::test_case(Some(5000), 5100, Some(1.136); "(Some(5000), 5100, Some(1.136))")]
+#[test_case::test_case(Some(5100), 5000, None; "(Some(5100), 5000, None)")]
+#[test_case::test_case(None, 5000, None; "(None, 5000, None)")]
+fn named_missing_clock_uses_the_restored_backends_own_latest_load_clock(
+    a_clock: Option<u32>,
+    b_clock: u32,
+    expected: Option<f64>,
+) {
+    let name = format!("A {a_clock:?}, B {b_clock}");
     let wide = [0, 1, 2, 3];
     let lanes = [(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.1)];
     let (a, b) = (
         backends(MPRIME_OLD, YCRUNCHER_OLD),
         backends(MPRIME_NEW, YCRUNCHER_OLD),
     );
-    for (a_clock, b_clock, expected) in [
-        (Some(5000), 5100, Some(1.136)),
-        (Some(5100), 5000, None),
-        (None, 5000, None),
-    ] {
-        let name = format!("A {a_clock:?}, B {b_clock}");
-        let mut j = Journal::r7_session();
-        j.load(&a);
-        for _ in 0..needed(&j) {
-            j.r7_trial(
-                &[0, 1],
-                &[-20, -30, -30, -30],
-                Outcome::Pass,
-                &report(&[(0, 1.136), (1, 1.08)], &[0]).clocks(&[(0, 5000)]),
-            );
-        }
-        let a_source = a_clock.map(|clock| {
-            j.r7_trial(
-                &wide,
-                &ALL_30,
-                Outcome::Pass,
-                &report(&lanes, &[0, 2]).clocks(&[(0, clock), (1, 4900)]),
-            )
-        });
-        j.load(&b);
-        let b_source = j.r7_trial(
+
+    let mut j = Journal::r7_session();
+    j.load(&a);
+    for _ in 0..needed(&j) {
+        j.r7_trial(
+            &[0, 1],
+            &[-20, -30, -30, -30],
+            Outcome::Pass,
+            &report(&[(0, 1.136), (1, 1.08)], &[0]).clocks(&[(0, 5000)]),
+        );
+    }
+    let a_source = a_clock.map(|clock| {
+        j.r7_trial(
             &wide,
             &ALL_30,
             Outcome::Pass,
-            &report(&lanes, &[0, 2]).clocks(&[(0, b_clock), (1, 4900)]),
-        );
-        j.load(&a);
-        j.r7_failed(&wide, &ALL_30, &report(&lanes, &[0, 2]).named(0));
-        let (decision, why) = r7_backoff(&j);
-        match expected {
-            Some(target) => assert_toward(&why, 1.1, target),
-            None => assert_no_pass(&why, 1.1),
-        }
-        assert_eq!(
-            a_source.is_some_and(|source| decision.cause.contains(&source)),
-            a_clock.is_some(),
-            "{name}: A's frozen clock source is cited whenever A supplied one"
-        );
-        assert!(!decision.cause.contains(&b_source), "{name}: B's clock");
-        assert_eq!(j.next_decision(), decision, "{name}");
-        j.assert_resumes();
+            &report(&lanes, &[0, 2]).clocks(&[(0, clock), (1, 4900)]),
+        )
+    });
+    j.load(&b);
+    let b_source = j.r7_trial(
+        &wide,
+        &ALL_30,
+        Outcome::Pass,
+        &report(&lanes, &[0, 2]).clocks(&[(0, b_clock), (1, 4900)]),
+    );
+    j.load(&a);
+    j.r7_failed(&wide, &ALL_30, &report(&lanes, &[0, 2]).named(0));
+    let (decision, why) = r7_backoff(&j);
+    match expected {
+        Some(target) => assert_toward(&why, 1.1, target),
+        None => assert_no_pass(&why, 1.1),
     }
+    assert_eq!(
+        a_source.is_some_and(|source| decision.cause.contains(&source)),
+        a_clock.is_some(),
+        "{name}: A's frozen clock source is cited whenever A supplied one"
+    );
+    assert!(!decision.cause.contains(&b_source), "{name}: B's clock");
+    assert_eq!(j.next_decision(), decision, "{name}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -617,136 +665,106 @@ fn r7_backoff_counts_each_carried_fact_once() {
     );
 }
 
-#[test]
-fn r7_offset_stand_in_moves_one_count() {
-    struct Case {
-        name: &'static str,
-        earlier: Option<&'static [(u8, f64)]>,
-        cores: &'static [u8],
-        top: &'static [u8],
-        stalled: Option<u8>,
-        pass_profile: [i64; 4],
-        passes: &'static [(u8, f64)],
-        core: u8,
-    }
-    let cases = [
-        Case {
-            name: "no measurement as of the failure",
-            earlier: None,
-            cores: &[0, 1],
-            top: &[0],
-            stalled: None,
-            pass_profile: [-26, -30, -30, -30],
-            passes: &[(0, 1.115), (1, 1.08)],
-            core: 0,
+type OffsetStandInCase = (
+    &'static str,
+    Option<&'static [(u8, f64)]>,
+    &'static [u8],
+    &'static [u8],
+    Option<u8>,
+    [i64; 4],
+    &'static [(u8, f64)],
+    u8,
+);
+
+#[test_case::test_case(("no measurement as of the failure", None, &[0, 1], &[0], None, [-26, -30, -30, -30], &[(0, 1.115), (1, 1.08)], 0); "no measurement as of the failure")]
+#[test_case::test_case(("measured CCD beside an unmeasured one", Some(&[(0, 1.2), (1, 1.15)]), &[0, 1, 2, 3], &[], Some(3), [-30, -30, -26, -26], &[(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.19)], 3); "measured CCD beside an unmeasured one")]
+fn r7_offset_stand_in_moves_one_count(
+    (name, earlier, cores, top, stalled, pass_profile, pass_lanes, core): OffsetStandInCase,
+) {
+    let mut j = Journal::r7_session();
+    let earlier =
+        earlier.map(|requests| j.r7_fact(true, &[0, 1], &ALL_30, &report(requests, &[0])));
+    let mut failing = R7Report::default().top(top);
+    failing.stalled = stalled;
+    j.r7_fact(false, cores, &ALL_30, &failing);
+    let n = needed(&j);
+    let passed = passes(&mut j, n, cores, &pass_profile, &report(pass_lanes, &[]));
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(moved(&decision), (core, -29), "{name}");
+    assert_eq!(why.counts, 1, "{name}");
+    let want = match earlier {
+        None => Basis::NoTelemetry { offset: -30 },
+        Some(source) => Basis::Uncovered {
+            offset: -30,
+            sources: vec![source],
         },
-        Case {
-            name: "measured CCD beside an unmeasured one",
-            earlier: Some(&[(0, 1.2), (1, 1.15)]),
-            cores: &[0, 1, 2, 3],
-            top: &[],
-            stalled: Some(3),
-            pass_profile: [-30, -30, -26, -26],
-            passes: &[(0, 1.1), (1, 1.08), (2, 1.2), (3, 1.19)],
-            core: 3,
-        },
-    ];
-    for case in cases {
-        let mut j = Journal::r7_session();
-        let earlier = case
-            .earlier
-            .map(|requests| j.r7_fact(true, &[0, 1], &ALL_30, &report(requests, &[0])));
-        let mut failing = R7Report::default().top(case.top);
-        failing.stalled = case.stalled;
-        j.r7_fact(false, case.cores, &ALL_30, &failing);
-        let n = needed(&j);
-        let passed = passes(
-            &mut j,
-            n,
-            case.cores,
-            &case.pass_profile,
-            &report(case.passes, &[]),
-        );
-        let (decision, why) = r7_backoff(&j);
-        assert_eq!(moved(&decision), (case.core, -29), "{}", case.name);
-        assert_eq!(why.counts, 1, "{}", case.name);
-        let want = match earlier {
-            None => Basis::NoTelemetry { offset: -30 },
-            Some(source) => Basis::Uncovered {
-                offset: -30,
-                sources: vec![source],
-            },
-        };
-        assert_eq!(why.basis, want, "{}", case.name);
-        assert!(
-            !decision.cause.iter().any(|seq| passed.contains(seq)),
-            "{}",
-            case.name
-        );
-    }
+    };
+    assert_eq!(why.basis, want, "{name}");
+    assert!(
+        !decision.cause.iter().any(|seq| passed.contains(seq)),
+        "{name}"
+    );
 }
 
-#[test]
-fn r7_unloaded_named_reset_keeps_measurement() {
-    for (reset, kept) in [(3, true), (0, false)] {
-        let mut j = Journal::r7_session();
-        let source = j.r7_fact(
-            true,
-            &[0, 1],
-            &ALL_30,
-            &report(&[(0, 1.08), (1, 1.1)], &[1]),
-        );
-        j.r7_failed(&[0, 1], &ALL_30, &R7Report::default().named(3));
-        let (decision, why) = r7_backoff(&j);
-        assert_eq!(why.core, core(3));
-        j.decide(decision);
-        j.reset(reset);
-        let failure = j.r7_failed(&[0, 1], &ALL_30, &R7Report::default());
-        let order = &j.run().r7.open.get(&failure).unwrap().r7.order;
-        let (decision, why) = r7_backoff(&j);
-        assert_eq!(moved(&decision), (1, -29), "reset {reset}");
-        if kept {
-            assert_eq!(order.sources(), [source]);
-            assert_no_pass(&why, 1.1);
-            assert!(decision.cause.contains(&source));
-        } else {
-            assert!(order.is_offset_only());
-            assert_eq!(why.basis, Basis::NoTelemetry { offset: -30 });
-            assert!(!decision.cause.contains(&source));
-        }
-        j.assert_resumes();
+#[test_case::test_case(3, true; "(3, true)")]
+#[test_case::test_case(0, false; "(0, false)")]
+fn r7_unloaded_named_reset_keeps_measurement(reset: u8, kept: bool) {
+    let mut j = Journal::r7_session();
+    let source = j.r7_fact(
+        true,
+        &[0, 1],
+        &ALL_30,
+        &report(&[(0, 1.08), (1, 1.1)], &[1]),
+    );
+    j.r7_failed(&[0, 1], &ALL_30, &R7Report::default().named(3));
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(why.core, core(3));
+    j.decide(decision);
+    j.reset(reset);
+    let failure = j.r7_failed(&[0, 1], &ALL_30, &R7Report::default());
+    let order = &j.run().r7.open.get(&failure).unwrap().r7.order;
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(moved(&decision), (1, -29), "reset {reset}");
+    if kept {
+        assert_eq!(order.sources(), [source]);
+        assert_no_pass(&why, 1.1);
+        assert!(decision.cause.contains(&source));
+    } else {
+        assert!(order.is_offset_only());
+        assert_eq!(why.basis, Basis::NoTelemetry { offset: -30 });
+        assert!(!decision.cause.contains(&source));
     }
+    j.assert_resumes();
 }
 
-#[test]
-fn r7_target_tie_earliest_profile() {
+#[test_case::test_case(false; "not second_leads")]
+#[test_case::test_case(true; "second_leads")]
+fn r7_target_tie_earliest_profile(second_leads: bool) {
     let first = [-26, -30, -30, -30];
     let second = [-30, -26, -30, -30];
     let at_first = report(&[(0, 1.115), (1, 1.08)], &[0]);
     let at_second = report(&[(0, 1.08), (1, 1.115)], &[1]);
-    for second_leads in [false, true] {
-        let mut j = Journal::r7_session();
-        let n = needed(&j);
-        let (lead, lead_report, follow, follow_report) = if second_leads {
-            (second, &at_second, first, &at_first)
-        } else {
-            (first, &at_first, second, &at_second)
-        };
-        let mut leading = vec![j.r7_fact(true, &[0, 1], &lead, lead_report)];
-        let followed = passes(&mut j, n, &[0, 1], &follow, follow_report);
-        leading.extend(passes(&mut j, n - 1, &[0, 1], &lead, lead_report));
-        j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.08)], &[0]));
-        let (decision, why) = r7_backoff(&j);
-        assert_eq!(moved(&decision), (0, -25), "second leads {second_leads}");
-        assert_toward(&why, 1.1, 1.115);
-        let cited: Vec<Seq> = decision
-            .cause
-            .iter()
-            .copied()
-            .filter(|seq| leading.contains(seq) || followed.contains(seq))
-            .collect();
-        assert_eq!(cited, leading, "second leads {second_leads}");
-    }
+    let mut j = Journal::r7_session();
+    let n = needed(&j);
+    let (lead, lead_report, follow, follow_report) = if second_leads {
+        (second, &at_second, first, &at_first)
+    } else {
+        (first, &at_first, second, &at_second)
+    };
+    let mut leading = vec![j.r7_fact(true, &[0, 1], &lead, lead_report)];
+    let followed = passes(&mut j, n, &[0, 1], &follow, follow_report);
+    leading.extend(passes(&mut j, n - 1, &[0, 1], &lead, lead_report));
+    j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.08)], &[0]));
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(moved(&decision), (0, -25), "second leads {second_leads}");
+    assert_toward(&why, 1.1, 1.115);
+    let cited: Vec<Seq> = decision
+        .cause
+        .iter()
+        .copied()
+        .filter(|seq| leading.contains(seq) || followed.contains(seq))
+        .collect();
+    assert_eq!(cited, leading, "second leads {second_leads}");
 }
 
 #[test]
@@ -843,29 +861,32 @@ fn v_star_ignores_an_invalidated_pass() {
     j.assert_resumes();
 }
 
-#[test]
-fn v_star_returns_with_a_failure_the_reset_of_its_named_core_drops() {
+#[test_case::test_case(Some(3), true; "(Some(3), true)")]
+#[test_case::test_case(None, false; "(None, false)")]
+fn v_star_returns_with_a_failure_the_reset_of_its_named_core_drops(
+    named: Option<u8>,
+    restored: bool,
+) {
     let q = [-26, -30, -30, -30];
-    for (named, restored) in [(Some(3), true), (None, false)] {
-        let mut j = Journal::r7_session();
-        let n = needed(&j);
-        let at_q = report(&[(0, 1.115), (1, 1.08)], &[0]);
-        let old = passes(&mut j, n, &[0, 1], &q, &at_q);
-        let failing = report(&[(0, 1.1), (1, 1.08)], &[0]);
-        let failing = named.map_or(failing.clone(), |core| failing.named(core));
-        j.r7_failed(&[0, 1], &q, &failing);
-        j.reset(3);
-        j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.08)], &[0]));
-        let (decision, why) = r7_backoff(&j);
-        assert_eq!(moved(&decision).0, 0, "{named:?}");
-        if restored {
-            assert_toward(&why, 1.1, 1.115);
-            assert!(old.iter().all(|seq| decision.cause.contains(seq)));
-        } else {
-            assert_no_pass(&why, 1.1);
-        }
-        j.assert_resumes();
+
+    let mut j = Journal::r7_session();
+    let n = needed(&j);
+    let at_q = report(&[(0, 1.115), (1, 1.08)], &[0]);
+    let old = passes(&mut j, n, &[0, 1], &q, &at_q);
+    let failing = report(&[(0, 1.1), (1, 1.08)], &[0]);
+    let failing = named.map_or(failing.clone(), |core| failing.named(core));
+    j.r7_failed(&[0, 1], &q, &failing);
+    j.reset(3);
+    j.r7_failed(&[0, 1], &ALL_30, &report(&[(0, 1.1), (1, 1.08)], &[0]));
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(moved(&decision).0, 0, "{named:?}");
+    if restored {
+        assert_toward(&why, 1.1, 1.115);
+        assert!(old.iter().all(|seq| decision.cause.contains(seq)));
+    } else {
+        assert_no_pass(&why, 1.1);
     }
+    j.assert_resumes();
 }
 
 #[test]
@@ -1015,76 +1036,78 @@ fn named_cap_failure(j: &mut Journal, signal: Signal, named: Option<u8>, crashed
     j.decide(attribution);
 }
 
-#[test]
-fn named_non_crash_cap_keeps_exact_three_count_boundary_and_target_citations() {
-    for (gap, uncapped, want) in [
-        (1.0, 1, 1),
-        (2.0, 2, 2),
-        (3.0 - 0.0001, 3, 3),
-        (3.0, 3, 3),
-        (3.0 + 0.0001, 4, 3),
-        (18.0, 18, 3),
-    ] {
-        let mut j = Journal::r7_session();
-        let target = 1.1 + gap * togi_requests::VOLTS_PER_COUNT;
-        let cited = named_cap_passes(&mut j, target);
-        named_cap_failure(&mut j, Signal::ComputationError, Some(0), false);
-        j.assert_resumes();
-        let (decision, why) = r7_backoff(&j);
-        assert_eq!(why.counts, want, "gap {gap}");
-        assert_eq!(moved(&decision), (0, -30 + want), "gap {gap}");
-        assert_toward(&why, 1.1, target);
-        assert!(cited.iter().all(|seq| decision.cause.contains(seq)));
-        let cap: Vec<_> = why
-            .notes
-            .iter()
-            .filter(|note| matches!(note, Note::NamedNonCrashCap { .. }))
-            .collect();
-        if uncapped > 3 {
-            assert_eq!(cap, [&Note::NamedNonCrashCap { uncapped, limit: 3 }]);
-            assert!(why.to_string().contains("capped at 3 counts"));
-        } else {
-            assert_eq!(cap, Vec::<&Note>::new());
-        }
-        let DecisionPayload::TunerDecision(td) = &decision.payload else {
-            unreachable!()
-        };
-        assert_eq!(
-            td.failure_point.map(togi_machine::TargetOffset::get),
-            Some(-30)
-        );
-        assert_eq!(j.next_decision(), decision);
-        j.decide(decision);
-        j.assert_resumes();
+#[test_case::test_case(1.0, 1, 1; "(1.0, 1, 1)")]
+#[test_case::test_case(2.0, 2, 2; "(2.0, 2, 2)")]
+#[test_case::test_case(3.0 - 0.0001, 3, 3; "(3.0 - 0.0001, 3, 3)")]
+#[test_case::test_case(3.0, 3, 3; "(3.0, 3, 3)")]
+#[test_case::test_case(3.0 + 0.0001, 4, 3; "(3.0 + 0.0001, 4, 3)")]
+#[test_case::test_case(18.0, 18, 3; "(18.0, 18, 3)")]
+fn named_non_crash_cap_keeps_exact_three_count_boundary_and_target_citations(
+    gap: f64,
+    uncapped: i64,
+    want: i64,
+) {
+    let mut j = Journal::r7_session();
+    let target = 1.1 + gap * togi_requests::VOLTS_PER_COUNT;
+    let cited = named_cap_passes(&mut j, target);
+    named_cap_failure(&mut j, Signal::ComputationError, Some(0), false);
+    j.assert_resumes();
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(why.counts, want, "gap {gap}");
+    assert_eq!(moved(&decision), (0, -30 + want), "gap {gap}");
+    assert_toward(&why, 1.1, target);
+    assert!(cited.iter().all(|seq| decision.cause.contains(seq)));
+    let cap: Vec<_> = why
+        .notes
+        .iter()
+        .filter(|note| matches!(note, Note::NamedNonCrashCap { .. }))
+        .collect();
+    if uncapped > 3 {
+        assert_eq!(cap, [&Note::NamedNonCrashCap { uncapped, limit: 3 }]);
+        assert!(why.to_string().contains("capped at 3 counts"));
+    } else {
+        assert_eq!(cap, Vec::<&Note>::new());
     }
+    let DecisionPayload::TunerDecision(td) = &decision.payload else {
+        unreachable!()
+    };
+    assert_eq!(
+        td.failure_point.map(togi_machine::TargetOffset::get),
+        Some(-30)
+    );
+    assert_eq!(j.next_decision(), decision);
+    j.decide(decision);
+    j.assert_resumes();
 }
 
-#[test]
-fn named_non_crash_cap_qualifies_signals_and_excludes_recovered_backend_failures() {
-    for signal in [
-        Signal::ComputationError,
-        Signal::UnexpectedExit,
-        Signal::Stall,
-        Signal::CorrectedMce,
-        Signal::UncorrectedMce,
-        Signal::Crash,
-    ] {
-        for crashed in [false, true] {
-            let mut j = Journal::r7_session();
-            named_cap_passes(&mut j, 1.136);
-            named_cap_failure(&mut j, signal, Some(0), crashed);
-            let (decision, why) = r7_backoff(&j);
-            let capped =
-                !crashed && matches!(signal, Signal::ComputationError | Signal::UnexpectedExit);
-            assert_eq!(
-                why.counts,
-                if capped { 3 } else { 10 },
-                "{signal:?}/{crashed}"
-            );
-            assert_eq!(moved(&decision), (0, if capped { -27 } else { -20 }));
-            j.assert_resumes();
-        }
-    }
+#[test_case::test_case(Signal::ComputationError, false; "Signal::ComputationError; false")]
+#[test_case::test_case(Signal::ComputationError, true; "Signal::ComputationError; true")]
+#[test_case::test_case(Signal::UnexpectedExit, false; "Signal::UnexpectedExit; false")]
+#[test_case::test_case(Signal::UnexpectedExit, true; "Signal::UnexpectedExit; true")]
+#[test_case::test_case(Signal::Stall, false; "Signal::Stall; false")]
+#[test_case::test_case(Signal::Stall, true; "Signal::Stall; true")]
+#[test_case::test_case(Signal::CorrectedMce, false; "Signal::CorrectedMce; false")]
+#[test_case::test_case(Signal::CorrectedMce, true; "Signal::CorrectedMce; true")]
+#[test_case::test_case(Signal::UncorrectedMce, false; "Signal::UncorrectedMce; false")]
+#[test_case::test_case(Signal::UncorrectedMce, true; "Signal::UncorrectedMce; true")]
+#[test_case::test_case(Signal::Crash, false; "Signal::Crash; false")]
+#[test_case::test_case(Signal::Crash, true; "Signal::Crash; true")]
+fn named_non_crash_cap_qualifies_signals_and_excludes_recovered_backend_failures(
+    signal: Signal,
+    crashed: bool,
+) {
+    let mut j = Journal::r7_session();
+    named_cap_passes(&mut j, 1.136);
+    named_cap_failure(&mut j, signal, Some(0), crashed);
+    let (decision, why) = r7_backoff(&j);
+    let capped = !crashed && matches!(signal, Signal::ComputationError | Signal::UnexpectedExit);
+    assert_eq!(
+        why.counts,
+        if capped { 3 } else { 10 },
+        "{signal:?}/{crashed}"
+    );
+    assert_eq!(moved(&decision), (0, if capped { -27 } else { -20 }));
+    j.assert_resumes();
 }
 
 #[test]
@@ -1142,45 +1165,45 @@ fn an_mce_named_crash_keeps_its_full_target() {
     j.assert_resumes();
 }
 
-#[test]
-fn named_non_crash_without_a_target_and_carried_failure_still_move_one_count() {
-    for carried in [false, true] {
-        let mut j = Journal::r7_session();
-        if carried {
-            named_cap_passes(&mut j, 1.136);
-            j.r7_fact(
-                false,
-                &[0, 1],
-                &ALL_30,
-                &report(&[(0, 1.1), (1, 1.08)], &[0]).named(0),
-            );
-        } else {
-            named_cap_failure(&mut j, Signal::UnexpectedExit, Some(0), false);
-        }
-        let (decision, why) = r7_backoff(&j);
-        assert_eq!(why.counts, 1);
-        assert_eq!(moved(&decision), (0, -29));
-        assert_eq!(why.notes, Vec::<Note>::new());
-        j.assert_resumes();
+#[test_case::test_case(false; "not carried")]
+#[test_case::test_case(true; "carried")]
+fn named_non_crash_without_a_target_and_carried_failure_still_move_one_count(carried: bool) {
+    let mut j = Journal::r7_session();
+    if carried {
+        named_cap_passes(&mut j, 1.136);
+        j.r7_fact(
+            false,
+            &[0, 1],
+            &ALL_30,
+            &report(&[(0, 1.1), (1, 1.08)], &[0]).named(0),
+        );
+    } else {
+        named_cap_failure(&mut j, Signal::UnexpectedExit, Some(0), false);
     }
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(why.counts, 1);
+    assert_eq!(moved(&decision), (0, -29));
+    assert_eq!(why.notes, Vec::<Note>::new());
+    j.assert_resumes();
 }
 
-#[test]
-fn named_non_crash_cap_respects_offset_bounds() {
-    for (applied, want) in [(-50, -47), (-3, 0), (-2, 0), (-1, 0)] {
-        let ids = [0, 1, 2, 3];
-        let mut starts = [crate::testkit::Start::has_room(-30); 4];
-        starts[0] = crate::testkit::Start::has_room(applied);
-        let mut j = Journal::on(&ids, crate::testkit::pairs(&ids), &starts);
-        j.profile_change(&[applied, -30, -30, -30]);
-        named_cap_passes(&mut j, 1.136);
-        named_cap_failure(&mut j, Signal::UnexpectedExit, Some(0), false);
-        let (decision, why) = r7_backoff(&j);
-        assert_eq!(why.counts, 3);
-        assert_eq!(moved(&decision), (0, want));
-        j.decide(decision);
-        j.assert_resumes();
-    }
+#[test_case::test_case(-50, -47; "(-50, -47)")]
+#[test_case::test_case(-3, 0; "(-3, 0)")]
+#[test_case::test_case(-2, 0; "(-2, 0)")]
+#[test_case::test_case(-1, 0; "(-1, 0)")]
+fn named_non_crash_cap_respects_offset_bounds(applied: i64, want: i64) {
+    let ids = [0, 1, 2, 3];
+    let mut starts = [crate::testkit::Start::has_room(-30); 4];
+    starts[0] = crate::testkit::Start::has_room(applied);
+    let mut j = Journal::on(&ids, crate::testkit::pairs(&ids), &starts);
+    j.profile_change(&[applied, -30, -30, -30]);
+    named_cap_passes(&mut j, 1.136);
+    named_cap_failure(&mut j, Signal::UnexpectedExit, Some(0), false);
+    let (decision, why) = r7_backoff(&j);
+    assert_eq!(why.counts, 3);
+    assert_eq!(moved(&decision), (0, want));
+    j.decide(decision);
+    j.assert_resumes();
 }
 
 #[test]
@@ -1228,60 +1251,57 @@ fn named_zero_top_requester_still_requires_an_all_zero_rerun() {
     j.assert_resumes();
 }
 
-#[test]
-fn single_core_r7_and_other_regimes_keep_ordinary_one_count_backoff() {
-    for regime in [Regime::R7, Regime::R2] {
-        let mut j = Journal::has_room(&[-30]);
-        j.load(&crate::testkit::config(
-            r#"{"checking":{"cycle":["R7","R2"]},"durations":{"checking_trial_s":120}}"#,
-        ));
-        j.profile_change(&[-30]);
-        j.ranking(&[0]);
-        let n = needed(&j);
-        passes(
-            &mut j,
-            n,
-            &[0],
-            &[-20],
-            &report(&[(0, 1.136)], &[0]).clocks(&[(0, 5000)]),
-        );
-        let plan = j.manual(
-            regime,
-            0,
-            crate::Load::Single(core(0)),
-            Condition::Together,
-            &[-30],
-            120,
-        );
-        let (intent, trial) = j.intent(&plan);
-        let mut end =
-            Journal::end_payload(&trial, Outcome::Failure, Some(Signal::ComputationError));
-        end.core = Some(core(0));
-        end.voltage_requests_v = [(core(0), 1.1)].into_iter().collect();
-        j.append(end.into(), &[intent]);
-        let attribution = j.next_decision();
-        j.decide(attribution);
-        assert_eq!(j.run().r7_decision(), None);
-        let decision = j.next_decision();
-        assert_eq!(moved(&decision), (0, -29));
-        j.decide(decision);
-        j.assert_resumes();
-    }
+#[test_case::test_case(Regime::R7; "Regime::R7")]
+#[test_case::test_case(Regime::R2; "Regime::R2")]
+fn single_core_r7_and_other_regimes_keep_ordinary_one_count_backoff(regime: Regime) {
+    let mut j = Journal::has_room(&[-30]);
+    j.load(&crate::testkit::config(
+        r#"{"checking":{"cycle":["R7","R2"]},"durations":{"checking_trial_s":120}}"#,
+    ));
+    j.profile_change(&[-30]);
+    j.ranking(&[0]);
+    let n = needed(&j);
+    passes(
+        &mut j,
+        n,
+        &[0],
+        &[-20],
+        &report(&[(0, 1.136)], &[0]).clocks(&[(0, 5000)]),
+    );
+    let plan = j.manual(
+        regime,
+        0,
+        crate::Load::Single(core(0)),
+        Condition::Together,
+        &[-30],
+        120,
+    );
+    let (intent, trial) = j.intent(&plan);
+    let mut end = Journal::end_payload(&trial, Outcome::Failure, Some(Signal::ComputationError));
+    end.core = Some(core(0));
+    end.voltage_requests_v = [(core(0), 1.1)].into_iter().collect();
+    j.append(end.into(), &[intent]);
+    let attribution = j.next_decision();
+    j.decide(attribution);
+    assert_eq!(j.run().r7_decision(), None);
+    let decision = j.next_decision();
+    assert_eq!(moved(&decision), (0, -29));
+    j.decide(decision);
+    j.assert_resumes();
 }
 
-#[test]
-fn a_recorded_failure_point_takes_precedence_over_the_three_count_cap() {
+#[test_case::test_case(None, -27; "(None, -27)")]
+#[test_case::test_case(Some(-29), -27; "(Some(-29), -27)")]
+#[test_case::test_case(Some(-24), -23; "(Some(-24), -23)")]
+#[test_case::test_case(Some(-1), 0; "(Some(-1), 0)")]
+fn a_recorded_failure_point_takes_precedence_over_the_three_count_cap(
+    prior: Option<i64>,
+    want: i64,
+) {
     use crate::r7::target::backoff_move;
     use crate::tests::off;
 
-    for (prior, want) in [
-        (None, -27),
-        (Some(-29), -27),
-        (Some(-24), -23),
-        (Some(-1), 0),
-    ] {
-        let moved = backoff_move(off(-30), prior.map(off), 3);
-        assert_eq!(moved.to, off(want));
-        assert_eq!(moved.failure_point, off(prior.unwrap_or(-30)));
-    }
+    let moved = backoff_move(off(-30), prior.map(off), 3);
+    assert_eq!(moved.to, off(want));
+    assert_eq!(moved.failure_point, off(prior.unwrap_or(-30)));
 }

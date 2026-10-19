@@ -138,7 +138,8 @@ fn real_process_helper() {
                 smu.offset(togi_machine::CoreId::new(core).unwrap())
                     .unwrap()
                     .0,
-                -5
+                -5,
+                "core {core}",
             );
         }
     }
