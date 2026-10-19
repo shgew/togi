@@ -490,15 +490,16 @@ impl State {
                 None
             };
             let mut passes = u32::from(premise == Premise::Pass);
-            let mut all_pass = None;
-            if premise == Premise::AllPass {
+            let all_pass = if premise == Premise::AllPass {
                 passes = 1;
                 let result = sim.pass_remaining(open, remaining, &mut settled, &mut passes);
                 if matches!(result, AllPass::Diverged { .. }) {
                     continue;
                 }
-                all_pass = Some(result);
-            }
+                Some(result)
+            } else {
+                None
+            };
             let named = if let Premise::Named(core) = premise {
                 Some(core)
             } else {

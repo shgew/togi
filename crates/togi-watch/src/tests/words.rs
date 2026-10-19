@@ -704,7 +704,7 @@ fn core_phases_have_phrases() {
 
 #[test]
 fn a_phrase_applies_only_to_its_own_kind() {
-    let other: Payload = warning("x");
+    let other = warning("x");
     for kind in [
         EventKind::TunerDecision,
         EventKind::CorePhase,

@@ -4,7 +4,7 @@ use togi_machine::{CcdId, CoreId, CoreSet, PerCore, Regime, WorkloadId, workload
 
 use super::order::{Lane, RequestOrder};
 use crate::state::Run;
-use crate::{LoadKey, Profile, State};
+use crate::{LoadKey, State};
 
 /// The request order a chain derivation reads for one load on one CCD at the checking profile
 /// (`docs/spec/tuner.md`, R7 request order and attribution).
@@ -64,7 +64,7 @@ impl Run {
     /// Per R7 workload, CCD and core in that order, the self-sufficiency under the current
     /// backend identity, with the request order of each CCD's full part at the current offsets.
     pub(crate) fn r7_status(&self) -> Vec<R7CoreStatus> {
-        let offsets: Profile = self.offsets();
+        let offsets = self.offsets();
         let mut out = Vec::new();
         for workload in workloads(Regime::R7) {
             let id = workload.id();

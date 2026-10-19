@@ -342,7 +342,7 @@ fn a_build_without_a_revision_or_a_dirty_one_is_never_the_forecasts_commit() {
         "abc1234",
         vec![run(Status::Concluded, 0.0, 0, 0, &[-10, -20])],
     );
-    let mut bare: Build = build("abc1234");
+    let mut bare = build("abc1234");
     bare.rev = None;
     let score = record
         .score(&[extend(&base, 3, [config_loaded_by(bare)])])

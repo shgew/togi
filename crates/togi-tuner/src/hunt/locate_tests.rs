@@ -2132,8 +2132,8 @@ fn loc_hunt_commitment(kind: &str) -> (Journal, TrialPlan, Seq) {
     );
     j.loc_finish(&idle, Outcome::Failure, &R7Report::default());
     let attribution = j.next_decision();
-    let mut source = j.decide(attribution);
-    if kind == "direct" {
+    let source = j.decide(attribution);
+    let source = if kind == "direct" {
         let plan = loc_until_trial(&mut j);
         assert!(
             matches!(plan.requirement.context, TrialContext::Hunt { .. }),
@@ -2150,8 +2150,10 @@ fn loc_hunt_commitment(kind: &str) -> (Journal, TrialPlan, Seq) {
             &R7Report::default().named(named.get()),
         );
         let attribution = j.next_decision();
-        source = j.decide(attribution);
-    }
+        j.decide(attribution)
+    } else {
+        source
+    };
     let mut oracle = |plan: &TrialPlan| {
         let at = |id: u8| plan.profile.get(core(id)).unwrap().get();
         let fails = match kind {

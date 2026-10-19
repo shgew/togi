@@ -817,7 +817,7 @@ fn without_newline(mut line: Vec<u8>) -> Vec<u8> {
     line
 }
 
-#[test_case(include_str!("../../testdata/20260927T221954Z-config.jsonl").as_bytes(); "a Go journal")]
+#[test_case(include_bytes!("../../testdata/20260927T221954Z-config.jsonl"); "a Go journal")]
 #[test_case(
     include_str!("../../testdata/20260927T221954Z-config.jsonl").lines().next().unwrap().as_bytes();
     "a Go first line without its newline"

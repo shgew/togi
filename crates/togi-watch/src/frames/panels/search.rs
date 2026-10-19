@@ -162,16 +162,7 @@ pub(super) fn bios_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> V
         ];
     };
     let confirmed = bios.confirmed.map_or(0, |confirmed| confirmed.seq.get());
-    let mut right = if compact {
-        cell(scene, Paint::Grey, format!("confirmed #{confirmed}"))
-    } else {
-        cell(
-            scene,
-            Paint::Grey,
-            format!("confirmed by the cycle ending #{confirmed}"),
-        )
-    };
-    if !bios.unconfirmed.is_empty() {
+    let right = if !bios.unconfirmed.is_empty() {
         let since = bios.since().map_or(0, Seq::get);
         let text = if compact {
             format!("UNCONFIRMED since #{since}")
@@ -181,8 +172,16 @@ pub(super) fn bios_lines(scene: &Scene<'_>, width: usize, class: SizeClass) -> V
                 core_ids(bios.unconfirmed.iter().map(|mark| mark.core))
             )
         };
-        right = cell(scene, Paint::Hunt, text);
-    }
+        cell(scene, Paint::Hunt, text)
+    } else if compact {
+        cell(scene, Paint::Grey, format!("confirmed #{confirmed}"))
+    } else {
+        cell(
+            scene,
+            Paint::Grey,
+            format!("confirmed by the cycle ending #{confirmed}"),
+        )
+    };
     let mut out = vec![rule(
         width,
         &cell(scene, Paint::Grey, "BIOS PROFILE"),

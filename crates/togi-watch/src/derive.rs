@@ -4,7 +4,7 @@
 use togi_journal::{Member, State as JournalState};
 use togi_machine::{CoreId, CoreSet, Regime, TargetOffset};
 use togi_tuner::{
-    CombinationId, CyclePlan, Forecast, GroupState, Limit, Projection, Reached,
+    CyclePlan, Forecast, GroupState, Limit, Projection, Reached,
     State as TunerState, TurnKind,
 };
 
@@ -481,7 +481,7 @@ fn combo_views(projection: &Projection, cores: &[CoreView], facts: &Facts) -> Ve
         .combinations
         .iter()
         .map(|combination| {
-            let id: CombinationId = combination.id();
+            let id = combination.id();
             let recorded = facts.combos.get(&id);
             let members: Vec<Member> = combination
                 .members()

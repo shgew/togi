@@ -708,7 +708,7 @@ fn load_reads_content() {
     assert_eq!(
         Config::load_with(path, |requested| {
             assert_eq!(requested, path);
-            Ok(r#"{"backend_user":"togi-trial"}"#.as_bytes())
+            Ok(br#"{"backend_user":"togi-trial"}"#)
         })
         .unwrap()
         .backend_user(),
@@ -741,7 +741,7 @@ fn load_of_a_missing_file_stays_inspectable() {
 #[test]
 fn load_names_the_file_of_an_invalid_config() {
     let path = std::path::Path::new("/config/config.json");
-    let err = Config::load_with(path, |_| Ok(r#"{"bogus":1}"#.as_bytes())).unwrap_err();
+    let err = Config::load_with(path, |_| Ok(br#"{"bogus":1}"#)).unwrap_err();
     assert!(matches!(&err, LoadError::Parse { path: named, .. } if named == path));
     let text = togi_machine::error_chain(&err);
     assert!(text.contains("unknown field"), "{text}");
