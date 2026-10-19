@@ -227,7 +227,7 @@ pub fn create_snapshot(
         head_sha: before.head.clone(),
         base_sha: before.base.clone(),
         small: is_small(&pr_files),
-        pr_files: crate::count(pr_files.len()),
+        pr_files: crate::saturating_record_count(pr_files.len()),
         pr_lines: total_lines(&pr_files),
         ..Manifest::default()
     };
@@ -611,7 +611,7 @@ pub fn print_summary(w: &mut dyn Write, dir: &str, m: &Manifest) -> Result<(), E
         "files: {}, included {}, excluded {}",
         m.files.len(),
         m.included_files,
-        crate::count(m.files.len()) - m.included_files
+        crate::saturating_record_count(m.files.len()) - m.included_files
     );
     for f in &m.files {
         if f.exclusion.is_empty() {

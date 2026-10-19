@@ -95,7 +95,7 @@ pub fn intersect_cover(
         merged.push(r);
     }
     Coverage {
-        reported: crate::count(ranges.len()),
+        reported: crate::saturating_record_count(ranges.len()),
         ranges: merged,
         not_built: unbuilt
             .iter()
