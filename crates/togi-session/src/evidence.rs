@@ -11,25 +11,23 @@ use togi_machine::{
 use togi_requests::Telemetry;
 
 /// The waits before the first, second and third retry of a backend or of the kernel log.
-pub(crate) const RETRY_WAITS: [Duration; 3] = [
-    Duration::from_mins(1),
-    Duration::from_mins(5),
-    Duration::from_mins(30),
-];
+pub(crate) const RETRY_WAITS: [u32; 3] = [60, 300, 1800];
 
 /// A retry that is due: its number, how long to wait, and whether `backend.retry` still has to record it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct RetryDue {
     pub attempt: u8,
     pub wait: Duration,
+    pub wait_s: u32,
     pub record: bool,
 }
 
 fn retry(attempt: usize) -> Option<RetryDue> {
-    let wait = *RETRY_WAITS.get(attempt.checked_sub(1)?)?;
+    let wait_s = *RETRY_WAITS.get(attempt.checked_sub(1)?)?;
     Some(RetryDue {
         attempt: u8::try_from(attempt).ok()?,
-        wait,
+        wait: Duration::from_secs(u64::from(wait_s)),
+        wait_s,
         record: true,
     })
 }
@@ -170,7 +168,9 @@ pub(crate) const fn machine_check_signal(any_corrected: bool) -> Signal {
 /// The outcome a trial's evidence adds up to. The first that holds wins: a worker outside its CPUs, containment
 /// that could not be confirmed, a backend signal, a machine check, the reset after a crash, a missing observation
 /// or an inconclusive diagnostic, a short run, and only then a pass.
-pub(crate) fn adjudicate(evidence: &TrialEvidence<'_>) -> Adjudication {
+pub(crate) fn adjudicate(
+    evidence: &TrialEvidence<'_>,
+) -> Result<Adjudication, crate::SessionError> {
     let result = evidence.result;
     let missing = present(evidence.missing);
     let mut end = Adjudication {
@@ -180,7 +180,8 @@ pub(crate) fn adjudicate(evidence: &TrialEvidence<'_>) -> Adjudication {
         reason: missing.map(str::to_owned),
         escaped: Vec::new(),
         containment_error: evidence.containment.map(str::to_owned),
-        duration_s: u32::try_from(result.ran.as_secs()).unwrap_or(u32::MAX),
+        duration_s: u32::try_from(result.ran.as_secs())
+            .map_err(crate::SessionError::TrialDuration)?,
         tctl_max_c: result.tctl_max_c,
     };
     if !result.escaped.is_empty() {
@@ -207,7 +208,7 @@ pub(crate) fn adjudicate(evidence: &TrialEvidence<'_>) -> Adjudication {
         end.outcome = Outcome::Inconclusive;
         end.reason = Some("trial ended before its full duration".to_owned());
     }
-    end
+    Ok(end)
 }
 
 /// The last sample of a trial, as much of it as a crash recovery or a trial end reports.
@@ -430,7 +431,26 @@ pub(crate) fn trial_end(trial: TrialId, outcome: Outcome, duration_s: u32) -> Tr
 impl SampleSummary {
     /// Writes what the samples say into a trial's end: the requested voltage and request telemetry of every end, the
     /// stalled worker of a failure, and the last sample of a trial a crash cut short.
-    pub(crate) fn fill(&self, end: &mut TrialEnd, crashed: bool) {
+    pub(crate) fn fill(
+        &self,
+        end: &mut TrialEnd,
+        crashed: bool,
+    ) -> Result<(), togi_machine::SampleError> {
+        let stalled_ms = self
+            .stalled
+            .filter(|_| end.outcome == Outcome::Failure)
+            .map(|stall| u64::try_from(stall.since_ms))
+            .transpose()
+            .map_err(togi_machine::SampleError::ElapsedMillis)?;
+        let last_s = self
+            .last
+            .filter(|_| crashed)
+            .map(|last| {
+                let elapsed = u64::try_from(last.elapsed_ms)
+                    .map_err(togi_machine::SampleError::ElapsedMillis)?;
+                u32::try_from(elapsed / 1000).map_err(togi_machine::SampleError::ElapsedSeconds)
+            })
+            .transpose()?;
         if let Some(voltage) = self.voltage {
             end.voltage_request_median_v = Some(voltage.median_v);
             end.voltage_request_min_v = Some(voltage.min_v);
@@ -448,10 +468,10 @@ impl SampleSummary {
             && let Some(stall) = self.stalled
         {
             end.stalled_core = Some(stall.core);
-            end.worker_stalled_ms = u64::try_from(stall.since_ms).ok();
+            end.worker_stalled_ms = stalled_ms;
         }
         if crashed && let Some(last) = &self.last {
-            end.last_sample_s = u32::try_from(last.elapsed_ms / 1000).ok();
+            end.last_sample_s = last_s;
             end.last_sample_tctl_c = last.tctl_c.and_then(|tctl| i32::try_from(tctl).ok());
             let mhz = || {
                 last.core_mhz
@@ -461,6 +481,7 @@ impl SampleSummary {
             end.last_sample_min_mhz = mhz().min();
             end.last_sample_max_mhz = mhz().max();
         }
+        Ok(())
     }
 }
 

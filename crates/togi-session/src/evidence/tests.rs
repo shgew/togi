@@ -52,6 +52,7 @@ impl Case {
             duration: MINUTE,
             containment: self.containment.as_deref(),
         })
+        .unwrap()
     }
 }
 
@@ -591,7 +592,7 @@ fn a_summary_fills_an_end_with_the_stall_of_a_failure_and_the_last_sample_of_a_c
     .unwrap();
     let end = |outcome, crashed| {
         let mut end = trial_end(togi_journal::TrialId::from("0001".to_owned()), outcome, 3);
-        summary.fill(&mut end, crashed);
+        summary.fill(&mut end, crashed).unwrap();
         end
     };
 

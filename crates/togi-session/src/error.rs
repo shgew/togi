@@ -141,6 +141,10 @@ pub enum SessionError {
     /// A profile the run built is one it may not put on the machine, or not one of this machine.
     #[error("put a profile on the machine")]
     Profile(#[source] ProfileFailure),
+    #[error("record trial elapsed seconds")]
+    TrialDuration(#[source] std::num::TryFromIntError),
+    #[error("record monotonic nanoseconds")]
+    Monotonic(#[source] std::num::TryFromIntError),
 }
 
 impl SessionError {

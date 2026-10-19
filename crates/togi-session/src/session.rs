@@ -627,7 +627,9 @@ impl<'machine> Session<'machine> {
                 bank: mce.bank,
                 bank_type: mce.bank_type,
                 corrected: mce.corrected,
-                monotonic_ns: u64::try_from(mce.monotonic.as_nanos()).ok(),
+                monotonic_ns: Some(
+                    u64::try_from(mce.monotonic.as_nanos()).map_err(SessionError::Monotonic)?,
+                ),
                 from_boot: (placement == Placement::FromBoot).then(|| self.boot.clone()),
                 trial: window
                     .filter(|_| placement == Placement::Trial)

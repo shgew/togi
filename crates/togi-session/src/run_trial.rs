@@ -227,7 +227,7 @@ impl Session<'_> {
             let retry = BackendRetry {
                 backend: retry_target(backend),
                 attempt: due.attempt,
-                wait_s: u32::try_from(due.wait.as_secs()).unwrap_or(u32::MAX),
+                wait_s: due.wait_s,
                 reason,
             };
             self.appender.append(Payload::BackendRetry(retry), &[])?;
@@ -298,10 +298,12 @@ impl Session<'_> {
                 .ok_or(SessionError::NoSuchTrialCore { core })?;
             self.write_core(core, offset, &[intent])?;
         }
+        let since = self.appender.clock().monotonic();
+        let window_start_ns = u64::try_from(since.as_nanos()).map_err(SessionError::Monotonic)?;
         let mut trial = Trial {
             plan,
             id,
-            since: self.appender.clock().monotonic(),
+            since,
             start: intent,
             alone,
         };
@@ -356,7 +358,7 @@ impl Session<'_> {
         self.appender.watch_trial(Some(token.clone()));
         let mut running = running;
         let window = catch_unwind(AssertUnwindSafe(|| {
-            self.watch_started(&mut *running, &mut trial, &token, &cites)
+            self.watch_started(&mut *running, &mut trial, &token, &cites, window_start_ns)
         }));
         let (scheduled, waiting) = match window {
             Ok(Ok(window)) => window,
@@ -392,12 +394,13 @@ impl Session<'_> {
         trial: &mut Trial<'_>,
         token: &CancellationToken,
         cites: &[Seq],
+        window_start_ns: u64,
     ) -> Step<(bool, Waiting)> {
         let started = running.started();
         let scheduled = started.schedule.is_some();
         let record = TrialStart {
             trial: trial.id.clone(),
-            window_start_ns: u64::try_from(trial.since.as_nanos()).ok(),
+            window_start_ns: Some(window_start_ns),
             scope: started.scope,
             pid: started.pid,
             cpus: started.cpus,
@@ -526,7 +529,12 @@ impl Session<'_> {
                     joined = Joined::Crashed { uncontained: None };
                     error.get_or_insert(Error::Crashed);
                 }
-                Err(flow) => return Err(flow),
+                Err(flow) => {
+                    if matches!(&flow, crate::error::Flow::Fatal(SessionError::Monotonic(_))) {
+                        self.keep_containment(trial, &result, joined.uncontained())?;
+                    }
+                    return Err(flow);
+                }
             }
         }
         let crashed = joined.crashed();
@@ -553,14 +561,20 @@ impl Session<'_> {
             .filter(|error| !matches!(error, Error::Cancelled))
             .map(|error| format!("{what}: {}", togi_render::error_chain(error)));
         let missing = evidence::join_diagnostic(kernel_error.as_deref(), runner.as_deref());
-        let adjudication = evidence::adjudicate(&TrialEvidence {
+        let adjudication = match evidence::adjudicate(&TrialEvidence {
             result: &result,
             mces: &mces,
             reset: None,
             missing: missing.as_deref(),
             duration: Duration::from_secs(u64::from(trial.plan.duration.get())),
             containment,
-        });
+        }) {
+            Ok(adjudication) => adjudication,
+            Err(error) => {
+                self.keep_containment(trial, &result, containment)?;
+                return Err(error.into());
+            }
+        };
         let interrupted = token.is_cancelled();
         let reason = if interrupted {
             evidence::join_diagnostic(adjudication.reason.as_deref(), Some("stopped by signal"))
@@ -608,6 +622,42 @@ impl Session<'_> {
         if crashed {
             return Err(SessionError::Machine(Error::Crashed).into());
         }
+        Ok(())
+    }
+
+    fn keep_containment(
+        &mut self,
+        trial: &Trial<'_>,
+        result: &TrialResult,
+        uncontained: Option<&str>,
+    ) -> Result<(), SessionError> {
+        let allowed = self
+            .appender
+            .journal()
+            .event(trial.start)
+            .and_then(|event| {
+                if let Payload::TrialStart(start) = &event.payload {
+                    Some(start.cpus.as_slice())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        let Some(detail) =
+            crate::recovery::containment_detail(&result.escaped, allowed, uncontained)
+        else {
+            return Ok(());
+        };
+        let stop = self.dead_end(
+            togi_journal::DeadEnd {
+                condition: togi_journal::DeadEndCondition::Containment,
+                core: None,
+                detail,
+                action: None,
+            },
+            &[trial.start],
+        )?;
+        self.record_shutdown(&stop);
         Ok(())
     }
 
