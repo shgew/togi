@@ -1006,10 +1006,11 @@ fn recovery_refuses_an_unrepresentable_wall_elapsed_interval(seconds: i64, refus
         }),
     );
     prefix.push(progress);
-    let text = prefix
-        .iter()
-        .map(|event| format!("{}\n", event.encode().unwrap()))
-        .collect::<String>();
+    let mut text = String::new();
+    for event in &prefix {
+        text.push_str(&event.encode().unwrap());
+        text.push('\n');
+    }
     let resumed = bench();
     resumed.mem.put("/state/events.jsonl", text);
     let ended = one_cycle(&resumed).ended;
@@ -1018,14 +1019,13 @@ fn recovery_refuses_an_unrepresentable_wall_elapsed_interval(seconds: i64, refus
         .iter()
         .any(|error| matches!(error, crate::SessionError::RecoveredElapsed(_)));
     assert_eq!(elapsed_error, refused, "{:?}", ended.errors);
-    let recovered_duration = ended
-        .journal
-        .events()
-        .iter()
-        .find_map(|event| match &event.payload {
-            Payload::TrialEnd(end) if end.trial == trial_id => Some(end.duration_s),
-            _ => None,
-        });
+    let recovered_duration = ended.journal.events().iter().find_map(|event| {
+        if let Payload::TrialEnd(end) = &event.payload {
+            (end.trial == trial_id).then_some(end.duration_s)
+        } else {
+            None
+        }
+    });
     assert_eq!(
         recovered_duration,
         (!refused).then(|| u32::try_from(seconds).unwrap())
