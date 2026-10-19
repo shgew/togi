@@ -1,6 +1,5 @@
 //! What a trial's evidence amounts to. Pure: no journal, no hardware, no clock.
 
-use std::collections::BTreeMap;
 use std::time::Duration;
 use togi_config::DeadEndThreshold;
 
@@ -375,9 +374,9 @@ pub(crate) fn summarize_samples(
             }
         })
         .inspect(|sample| observer.observe(sample));
-    let placed: Option<BTreeMap<CoreId, CcdId>> = loaded
+    let placed: Option<PerCore<Option<CcdId>>> = loaded
         .iter()
-        .map(|core| ccd_of(core).map(|ccd| (core, ccd)))
+        .map(|core| ccd_of(core).map(|ccd| (core, Some(ccd))))
         .collect();
     let telemetry = if let Some(placed) = placed.filter(|placed| !placed.is_empty()) {
         togi_requests::summarize(observed, &placed)

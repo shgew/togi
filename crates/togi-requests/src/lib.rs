@@ -34,9 +34,10 @@ pub struct Telemetry {
 /// returns `None` when fewer than [`MIN_SAMPLES`] remain.
 pub fn summarize(
     samples: impl IntoIterator<Item = TrialConditions>,
-    cores: &BTreeMap<CoreId, CcdId>,
+    cores: &PerCore<Option<CcdId>>,
 ) -> Option<Telemetry> {
-    if cores.is_empty() {
+    let cores = || cores.iter().filter_map(|(core, ccd)| Some((core, ccd?)));
+    if cores().next().is_none() {
         return None;
     }
     let mut requests: [Vec<f64>; PER_CORE_MAX] = Default::default();
@@ -50,16 +51,13 @@ pub fn summarize(
         let Some(table) = &sample.pm_table else {
             continue;
         };
-        if !cores
-            .keys()
-            .all(|core| table.voltage_request_v[core.index()].is_finite())
-        {
+        if !cores().all(|(core, _)| table.voltage_request_v[core.index()].is_finite()) {
             continue;
         }
         for mhz in per_ccd.values_mut() {
             mhz.clear();
         }
-        for (&core, &ccd) in cores {
+        for (core, ccd) in cores() {
             requests[core.index()].push(f64::from(table.voltage_request_v[core.index()]));
             if let Some(mhz) = sample.core_mhz.get(core) {
                 per_ccd.entry(ccd).or_default().push(to_f64(mhz));
@@ -77,7 +75,7 @@ pub fn summarize(
     }
     let mut telemetry = Telemetry::default();
     let mut by_ccd: BTreeMap<CcdId, PerCore<f64>> = BTreeMap::new();
-    for (&core, &ccd) in cores {
+    for (core, ccd) in cores() {
         let value = median(&mut requests[core.index()]);
         telemetry.requests.set(core, value);
         by_ccd.entry(ccd).or_default().set(core, value);

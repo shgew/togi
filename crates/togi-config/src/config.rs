@@ -1,10 +1,10 @@
-use std::{collections::BTreeMap, fs::File, io, path::Path, path::PathBuf};
+use std::{fs::File, io, path::Path, path::PathBuf};
 
 use serde::Deserialize;
 use togi_journal::{
     ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
 };
-use togi_machine::{CoreId, Regime, serde_object::Object};
+use togi_machine::{CoreId, PerCore, Regime, serde_object::Object};
 
 use crate::{
     error::{ConfigError, LoadError},
@@ -19,7 +19,7 @@ pub const DEFAULT_PATH: &str = "/etc/togi/config.json";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
-    overrides: BTreeMap<CoreId, InitialOverride>,
+    overrides: PerCore<Option<InitialOverride>>,
     search_trial: TrialSeconds,
     short_trial: TrialSeconds,
     checking_trial: TrialSeconds,
@@ -107,11 +107,13 @@ impl Config {
     }
 
     pub fn override_for(&self, core: CoreId) -> Option<InitialOverride> {
-        self.overrides.get(&core).copied()
+        self.overrides.get(core).flatten()
     }
 
     pub fn overrides(&self) -> impl Iterator<Item = (CoreId, InitialOverride)> + '_ {
-        self.overrides.iter().map(|(core, value)| (*core, *value))
+        self.overrides
+            .iter()
+            .filter_map(|(core, value)| Some((core, value?)))
     }
 
     pub const fn search_trial(&self) -> TrialSeconds {
@@ -158,7 +160,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            overrides: BTreeMap::new(),
+            overrides: PerCore::default(),
             search_trial: TrialSeconds::literal(90),
             short_trial: TrialSeconds::literal(120),
             checking_trial: TrialSeconds::literal(120),

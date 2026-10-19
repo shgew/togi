@@ -944,6 +944,60 @@ fn trial_ids_and_workload_rotation_advance_on_conclusive_trials_only() {
 }
 
 #[test]
+fn workload_rotation_keeps_sparse_cores_and_regimes_independent() {
+    let mut log = Log::on(&[(3, 0), (15, 1)]);
+    log.trial_intent("0001", Some(15), Regime::R1);
+    log.ended("0001", Outcome::Pass, &[]);
+    log.trial_intent("0002", Some(3), Regime::R1);
+    log.ended("0002", Outcome::Failure, &[]);
+    log.trial_intent("0003", Some(15), Regime::R2);
+    log.ended("0003", Outcome::Pass, &[]);
+    log.trial_intent("0004", Some(15), Regime::R1);
+    log.ended("0004", Outcome::Pass, &[]);
+    let state = log.state();
+    assert_eq!(state.rotation(Some(core(15)), Regime::R1), 2);
+    assert_eq!(state.rotation(Some(core(3)), Regime::R1), 1);
+    assert_eq!(state.rotation(Some(core(15)), Regime::R2), 1);
+    assert_eq!(state.rotation(Some(core(3)), Regime::R2), 0);
+    assert_eq!(state.rotation(Some(core(0)), Regime::R1), 0);
+    assert_eq!(state.rotation(None, Regime::R1), 0);
+}
+
+#[test]
+fn carried_cores_preserve_holes_and_core_order() {
+    let mut log = Log::on(&[(3, 0), (15, 1)]);
+    let seed = |id| CarriedCore {
+        core: core(id),
+        candidate_solo_limit: Some(togi_journal::CarriedLimit {
+            offset: target(-id),
+            from: togi_journal::Provenance {
+                session: "20260101T000000Z".parse().unwrap(),
+                seq: seq(1),
+            },
+        }),
+        failure_point: None,
+    };
+    log.add(
+        Payload::SessionCarried(SessionCarried {
+            sources: Vec::new(),
+            failure_points: false,
+            detail: None,
+            carried: vec![seed(15), seed(3)],
+        }),
+        &[],
+    );
+    let state = log.state();
+    let (_, cores) = state.carried().unwrap();
+    assert_eq!(cores.get_ref(core(0)), None);
+    assert_eq!(cores.get_ref(core(8)), None);
+    assert_eq!(
+        cores.iter_ref().map(|(core, _)| core).collect::<Vec<_>>(),
+        [core(3), core(15)]
+    );
+    assert_eq!(cores.get_ref(core(15)).unwrap().as_ref(), Some(&seed(15)));
+}
+
+#[test]
 fn inconclusive_trials_streak_unless_interrupted_and_a_conclusive_one_ends_it() {
     let mut log = Log::new();
     log.baseline(&[(0, 0), (8, 0)]);
@@ -1354,8 +1408,8 @@ fn baseline_phases_notices_and_carry_are_kept_for_startup() {
     );
     assert_eq!(state.topology().len(), 2);
     assert_eq!(
-        state.topology().get(&core(8)),
-        Some(&CcdId::new(1).unwrap())
+        state.topology().get(core(8)).flatten(),
+        Some(CcdId::new(1).unwrap())
     );
     assert!(!state.noticed());
 }
@@ -1598,9 +1652,16 @@ fn a_sparse_machine_is_keyed_by_core_id_not_by_position() {
     let log = Log::on(&[(3, 0), (12, 1)]);
     let state = log.state();
     assert_eq!(
-        state.topology().keys().copied().collect::<Vec<_>>(),
+        state
+            .topology()
+            .iter()
+            .map(|(core, _)| core)
+            .collect::<Vec<_>>(),
         [core(3), core(12)]
     );
+    assert_eq!(state.topology().get(core(0)), None);
+    assert_eq!(state.topology().get(core(15)), None);
+    assert_eq!(state.phase(core(0)), None);
 }
 
 #[test]

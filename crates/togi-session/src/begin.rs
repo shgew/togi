@@ -135,7 +135,7 @@ impl Session<'_> {
                 return Ok(());
             };
             let carried = recovery.carried();
-            let seed = carried.and_then(|(_, seeds)| seeds.get(&core));
+            let seed = carried.and_then(|(_, seeds)| seeds.get_ref(core)?.as_ref());
             let observed = baseline.get(core).map_or(0, |offset| offset.0);
             let mut causes = vec![baseline_seq];
             causes.extend(carried.filter(|_| seed.is_some()).map(|(seq, _)| seq));
