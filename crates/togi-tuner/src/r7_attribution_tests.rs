@@ -544,8 +544,8 @@ fn r7_named_zero_attribution_uses_start_top(
     let profile = [0, -30, -30, -30];
     let mut j = Journal::r7_session();
     j.profile_change(&profile);
-    let previous = (!previous.is_empty())
-        .then(|| j.r7_fact(true, &[0, 1], &profile, &requests(previous)));
+    let previous =
+        (!previous.is_empty()).then(|| j.r7_fact(true, &[0, 1], &profile, &requests(previous)));
     j.r7_fact(
         false,
         &[0, 1],
@@ -553,22 +553,23 @@ fn r7_named_zero_attribution_uses_start_top(
         &requests(measured).top(top).named(0),
     );
     if let Some(later_requests) = later_requests {
-        j.r7_fact(
-            true,
-            &[0, 1],
-            &profile,
-            &requests(later_requests).top(&[1]),
-        );
+        j.r7_fact(true, &[0, 1], &profile, &requests(later_requests).top(&[1]));
     }
     if dead {
         let plan = j.next_trial();
-        assert!(matches!(plan.requirement.context, TrialContext::ZeroRerun { .. }), "{plan:?}");
+        assert!(
+            matches!(plan.requirement.context, TrialContext::ZeroRerun { .. }),
+            "{plan:?}"
+        );
         assert_eq!(plan.condition, Condition::Parked);
         assert!(plan.profile.is_zero(), "{plan:?}");
         assert_eq!(plan.load.cores(), set(&[0, 1]));
         let rerun = j.trial(&plan, Outcome::Failure);
         let attribution = j.next_decision();
-        assert!(matches!(attribution.payload, DecisionPayload::Failure(_)), "{attribution:?}");
+        assert!(
+            matches!(attribution.payload, DecisionPayload::Failure(_)),
+            "{attribution:?}"
+        );
         j.decide(attribution);
         let dead = j.at_next_dead_end();
         assert!(dead.cause.contains(&rerun), "{:?}", dead.cause);
@@ -583,7 +584,9 @@ fn r7_named_zero_attribution_uses_start_top(
         let (action, moved) = j.at_next_backoff();
         assert_eq!(moved, (1, -29));
         j.decide(action);
-        assert!(!matches!(j.next(), Action::Decide(d) if matches!(d.payload, DecisionPayload::TunerDecision(_))));
+        assert!(
+            !matches!(j.next(), Action::Decide(d) if matches!(d.payload, DecisionPayload::TunerDecision(_)))
+        );
     }
     j.assert_resumes();
 }

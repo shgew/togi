@@ -763,13 +763,19 @@ fn a_paired_hunt_shows_no_move_while_a_zero_failure_awaits_its_diagnostic_or_dea
     let action = j.next();
     match (&action, response) {
         (Action::RunTrial(plan), ZeroFailureResponse::Diagnostic) => {
-            assert!(matches!(
-                plan.requirement.context,
-                crate::TrialContext::ZeroRerun { .. }
-            ), "{plan:?}");
+            assert!(
+                matches!(
+                    plan.requirement.context,
+                    crate::TrialContext::ZeroRerun { .. }
+                ),
+                "{plan:?}"
+            );
         }
         (Action::Decide(decision), ZeroFailureResponse::DeadEnd) => {
-            assert!(matches!(decision.payload, DecisionPayload::DeadEnd(_)), "{decision:?}");
+            assert!(
+                matches!(decision.payload, DecisionPayload::DeadEnd(_)),
+                "{decision:?}"
+            );
         }
         other => panic!("{other:?}"),
     }

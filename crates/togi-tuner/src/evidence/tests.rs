@@ -1,8 +1,8 @@
 use std::num::{NonZeroU16, NonZeroU32};
 use std::path::Path;
 
-use test_case::test_case;
 use proptest::prelude::*;
+use test_case::test_case;
 use togi_journal::Seq;
 use togi_machine::{Backend, Condition, CoreId, CoreSet, REGIMES, Regime, WorkloadId, workloads};
 

@@ -190,7 +190,6 @@ fn repeated_decisions_are_equal_and_leave_the_state_alone() {
     let _ = (Decision::Hold, Action::ReadRanking);
 }
 
-
 fn poisoned(j: &Journal, state: &mut State) {
     let next = j.event(
         togi_journal::SessionNotice {
