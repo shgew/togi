@@ -417,7 +417,7 @@ fn sparse_core_indexes_preserve_order_reset_and_optimum() {
     assert_eq!(
         constraints
             .combinations_with(core(15))
-            .map(|c| c.id())
+            .map(crate::Combination::id)
             .collect::<Vec<_>>(),
         [cid(1), cid(2)]
     );
@@ -425,7 +425,7 @@ fn sparse_core_indexes_preserve_order_reset_and_optimum() {
     assert_eq!(
         constraints
             .combinations_with(core(15))
-            .map(|c| c.id())
+            .map(crate::Combination::id)
             .collect::<Vec<_>>(),
         [cid(2)]
     );
