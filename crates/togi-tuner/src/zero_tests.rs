@@ -666,7 +666,7 @@ fn a_single_core_zero_rerun_rejects_equivalent_many_and_ambiguous_load_shapes(
     let intent = TrialIntent {
         core,
         cores: set(&[0]),
-        ..valid.clone()
+        ..valid
     };
     let event = j.event(intent.into(), &[failure]);
     let mut probe = j.state.clone();
