@@ -162,6 +162,27 @@ fn latest_reset_per_core_wins() {
 }
 
 #[test]
+fn sparse_cutoffs_keep_highest_core_and_missing_cores_independent() {
+    let mut s = Script::begin(&[0, 7, 15]);
+    let high = s.add(CommandReset {
+        target: ResetTarget::Core(core(15)),
+    });
+    let all = s.add(CommandReset {
+        target: ResetTarget::All,
+    });
+    let low = s.add(CommandReset {
+        target: ResetTarget::Core(core(0)),
+    });
+    let facts = s.extract();
+    assert_eq!(facts.cutoffs.core(core(0)), Some(low));
+    assert_eq!(facts.cutoffs.core(core(15)), Some(high));
+    assert_eq!(facts.cutoffs.core(core(7)), None);
+    assert_eq!(facts.cutoffs.core(core(8)), None);
+    assert_eq!(facts.cutoffs.all(), Some(all));
+    assert_eq!(facts.cores, super::set(&[0, 7, 15]));
+}
+
+#[test]
 fn archive_without_a_cause_still_applies_the_all_reset() {
     let mut s = Script::begin(&[0]);
     s.add(CommandReset {

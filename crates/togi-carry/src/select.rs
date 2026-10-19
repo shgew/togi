@@ -4,7 +4,7 @@ use std::rc::Rc;
 use togi_defect::Entry;
 use togi_facts::{Fact, SessionFacts};
 use togi_journal::{CarriedCore, CarriedSource, Event, Payload, ResetTarget, SessionId};
-use togi_machine::{BiosContext, CoreSet};
+use togi_machine::{BiosContext, CoreSet, PerCore};
 use togi_tuner::FailurePoint;
 
 use crate::archives::{Archives, CarryError};
@@ -151,15 +151,18 @@ fn carried_source(facts: &SessionFacts) -> CarriedSource {
 }
 
 fn merge_seeds(sources: &[Rc<SourceSummary>]) -> Vec<CarriedCore> {
-    let mut merged: BTreeMap<_, CarriedCore> = BTreeMap::new();
+    let mut merged = PerCore::<Option<CarriedCore>>::default();
     for source in sources {
         let seeds = source.seeds();
-        for (&core, &limit) in &seeds.limits {
-            let entry = merged.entry(core).or_insert_with(|| CarriedCore {
-                core,
-                candidate_solo_limit: None,
-                failure_point: None,
-            });
+        for (core, limit) in seeds.limits.iter().filter_map(|(core, limit)| limit.map(|limit| (core, limit))) {
+            let Some(entry) = merged.get_mut(core).and_then(Option::as_mut) else {
+                merged.set(core, Some(CarriedCore {
+                    core,
+                    candidate_solo_limit: Some(limit),
+                    failure_point: None,
+                }));
+                continue;
+            };
             if entry
                 .candidate_solo_limit
                 .is_none_or(|held| limit.offset < held.offset)
@@ -167,12 +170,15 @@ fn merge_seeds(sources: &[Rc<SourceSummary>]) -> Vec<CarriedCore> {
                 entry.candidate_solo_limit = Some(limit);
             }
         }
-        for (&core, &point) in &seeds.points {
-            let entry = merged.entry(core).or_insert_with(|| CarriedCore {
-                core,
-                candidate_solo_limit: None,
-                failure_point: None,
-            });
+        for (core, point) in seeds.points.iter().filter_map(|(core, point)| point.map(|point| (core, point))) {
+            let Some(entry) = merged.get_mut(core).and_then(Option::as_mut) else {
+                merged.set(core, Some(CarriedCore {
+                    core,
+                    candidate_solo_limit: None,
+                    failure_point: Some(point),
+                }));
+                continue;
+            };
             let merged = FailurePoint::new(point.offset).merge(
                 entry
                     .failure_point
@@ -186,7 +192,7 @@ fn merge_seeds(sources: &[Rc<SourceSummary>]) -> Vec<CarriedCore> {
             }
         }
     }
-    merged.into_values().collect()
+    merged.into_iter_values().filter_map(|(_, entry)| entry).collect()
 }
 
 struct Walk<'a, A: Archives> {
