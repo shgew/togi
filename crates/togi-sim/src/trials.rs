@@ -334,7 +334,7 @@ impl Runtime {
                 regime_index(spec.regime) as u64,
                 condition_index(spec.condition),
                 self.regs[core.index()].get().cast_unsigned(),
-                u64::try_from(spec.index).unwrap_or(u64::MAX),
+                spec.index as u64,
                 0,
             ],
             len: 5,
@@ -549,9 +549,9 @@ impl Runtime {
                 self.seed,
                 Domain::Replay,
                 &[
-                    u64::try_from(spec.index).unwrap_or(u64::MAX),
+                    spec.index as u64,
                     regime_index(spec.regime) as u64,
-                    u64::try_from(spec.duration.as_nanos()).unwrap_or(u64::MAX),
+                    saturating_key_nanos(spec.duration),
                     text_part(spec.workload.as_str()),
                 ],
             );
@@ -722,6 +722,16 @@ fn loaded_mask(loaded: CoreSet) -> u64 {
     loaded.iter().fold(0, |mask, core| mask | 1 << core.get())
 }
 
+/// Synthetic replay keys retain the largest nanosecond word for longer durations.
+fn saturating_key_nanos(duration: Duration) -> u64 {
+    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+}
+
+/// Synthetic instruction counters saturate at their recorded field's range.
+fn saturating_trial_count(count: usize) -> u32 {
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+
 /// Stops and continues the trial's schedule has sent by `result.ran`; R6 counts its own bursts.
 fn count(spec: &TrialSpec, result: &mut TrialResult) {
     if let Some(schedule) = LoadSchedule::for_spec(spec) {
@@ -730,7 +740,7 @@ fn count(spec: &TrialSpec, result: &mut TrialResult) {
         result.conts = toggles.conts;
     }
     if spec.regime == Regime::R6 && !result.ran.is_zero() {
-        result.stops = u32::try_from(spec.cores.len()).unwrap_or(u32::MAX);
+        result.stops = saturating_trial_count(spec.cores.len());
         result.conts = 0;
         let mut at = spec.duration / 2;
         while at < result.ran && at < spec.duration {
@@ -757,4 +767,26 @@ fn progress(spec: &TrialSpec, result: &TrialResult, events: &mut Vec<Event>) {
         "bursts: {} continues, {} stops",
         result.conts, result.stops
     )));
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::{saturating_key_nanos, saturating_trial_count};
+    use std::time::Duration;
+    use test_case::test_case;
+
+    #[test_case(Duration::ZERO, 0; "zero")]
+    #[test_case(Duration::from_nanos(u64::MAX), u64::MAX; "largest exact key")]
+    #[test_case(Duration::from_nanos(u64::MAX) + Duration::from_nanos(1), u64::MAX; "first saturated key")]
+    #[test_case(Duration::MAX, u64::MAX; "largest duration")]
+    fn replay_key_nanoseconds_saturate(at: Duration, expected: u64) {
+        assert_eq!(saturating_key_nanos(at), expected);
+    }
+
+    #[test_case(0, 0; "zero")]
+    #[test_case(usize::from(u16::MAX), u32::from(u16::MAX); "exact count")]
+    #[test_case(usize::MAX, u32::MAX; "largest platform count")]
+    fn instruction_counts_saturate(count: usize, expected: u32) {
+        assert_eq!(saturating_trial_count(count), expected);
+    }
 }

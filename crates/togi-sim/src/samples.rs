@@ -16,6 +16,11 @@ const TICK: Duration = Duration::from_secs(1);
 const STALL_LEAD: Duration = Duration::from_secs(2);
 const CCD_SIZE: usize = 8;
 
+/// Synthetic elapsed and worker CPU milliseconds saturate at the sample field's range.
+fn saturating_sample_millis(at: Duration) -> i64 {
+    i64::try_from(at.as_millis()).unwrap_or(i64::MAX)
+}
+
 /// Storage for serialized simulation samples. The simulator itself never requests durability.
 pub trait SampleStorage {
     fn write(
@@ -79,7 +84,7 @@ impl LastTrial {
         } else {
             at
         };
-        i64::try_from(at.as_millis()).unwrap_or(i64::MAX) * i64::from(self.threads)
+        saturating_sample_millis(at).saturating_mul(i64::from(self.threads))
     }
 
     /// Writes the samples as JSON lines to `dir/<id>/samples.jsonl`, without holding the series.
@@ -124,7 +129,7 @@ impl Iterator for Conditions {
         let at = self.at;
         self.at += TICK;
         Some(TrialConditions {
-            elapsed_ms: i64::try_from(at.as_millis()).unwrap_or(i64::MAX),
+            elapsed_ms: saturating_sample_millis(at),
             worker_cpu_ms: self
                 .trial
                 .cores
@@ -145,6 +150,30 @@ mod tests {
     use test_case::test_case;
 
     const SAMPLE_LINE: &str = "{\"elapsed_ms\":1000}\n";
+
+    #[test_case(Duration::ZERO, 0; "zero")]
+    #[test_case(Duration::from_millis(1), 1; "one millisecond")]
+    #[test_case(Duration::from_millis(i64::MAX.cast_unsigned()), i64::MAX; "largest exact sample")]
+    #[test_case(Duration::from_millis(i64::MAX.cast_unsigned() + 1), i64::MAX; "first saturated sample")]
+    #[test_case(Duration::MAX, i64::MAX; "largest duration")]
+    fn sample_milliseconds_have_one_saturation_policy(at: Duration, expected: i64) {
+        assert_eq!(saturating_sample_millis(at), expected);
+    }
+
+    #[test_case(0, 0; "no workers")]
+    #[test_case(1, i64::MAX; "one worker")]
+    #[test_case(2, i64::MAX; "multiplication would overflow")]
+    #[test_case(u8::MAX, i64::MAX; "largest worker count")]
+    fn worker_cpu_saturates_after_thread_scaling(threads: u8, expected: i64) {
+        let trial = LastTrial {
+            threads,
+            ..LastTrial::default()
+        };
+        assert_eq!(
+            trial.worker_cpu_ms(CoreId::new(0).unwrap(), Duration::MAX),
+            expected
+        );
+    }
 
     fn gzip(content: &str) -> Vec<u8> {
         let mut writer = GzEncoder::new(Vec::new(), Compression::default());
