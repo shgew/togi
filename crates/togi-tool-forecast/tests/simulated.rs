@@ -64,7 +64,8 @@ fn simulate(cycles: u32) -> Simulated {
             seed: 1,
             ..RunSettings::default()
         },
-    );
+    )
+    .unwrap();
     let mem = MemFs::new();
     let mut machine = sim.seams();
     let boot = machine.host.boot_id().unwrap();
@@ -271,7 +272,8 @@ fn endless_after_the_cycles_one_run(seed: u64) -> Endless {
             seed: HISTORY_SEED,
             ..RunSettings::default()
         },
-    );
+    )
+    .unwrap();
     let crashed: Observer = Box::new(|event| {
         if matches!(event.payload, Payload::CrashDetected(_)) {
             Observe::Stop

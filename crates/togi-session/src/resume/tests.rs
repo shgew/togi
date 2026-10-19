@@ -262,7 +262,7 @@ fn a_crash_leaves_the_state_unwritten_and_the_capsule_holding_what_the_boot_fold
 fn the_boot_after_a_crash_resumes_the_same_from_a_capsule_or_a_replay() {
     let warm = bench();
     let capsule = crashed(&warm).capsule.unwrap();
-    warm.sim.reboot();
+    warm.sim.reboot().unwrap();
     let resumed = one_cycle(&warm, Some(capsule));
 
     let cold = bench();
@@ -272,7 +272,7 @@ fn the_boot_after_a_crash_resumes_the_same_from_a_capsule_or_a_replay() {
     let mut dir = journal.close().unwrap();
     capsule.unwrap().publish(&mut dir).unwrap();
     drop(dir);
-    cold.sim.reboot();
+    cold.sim.reboot().unwrap();
     let replayed = one_cycle(&cold, None);
 
     assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
@@ -300,7 +300,7 @@ fn a_crashed_runs_capsule_publishes_what_a_live_run_had_and_the_next_boot_rebuil
     assert_eq!(published, had);
     assert_eq!(text, journal_text(&live_crashed));
 
-    deferred.sim.reboot();
+    deferred.sim.reboot().unwrap();
     let resumed = one_cycle(&deferred, None);
     assert!(
         resumed
@@ -325,7 +325,7 @@ fn the_state_a_crashed_run_left_unwritten_is_published_by_the_next_boot_when_no_
             .is_none()
     );
     drop(ended);
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let resumed = one_cycle(&bench, None);
     assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
     assert!(capsule.adopt(&resumed.journal, &[]).is_none());
@@ -378,7 +378,7 @@ fn a_run_that_adopts_a_capsule_neither_reads_nor_rebuilds_the_state_a_crash_left
     bench.mem.record_history();
     let capsule = crashed(&bench).capsule.unwrap();
     assert_eq!(state_publications(&bench), 0);
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let resumed = one_cycle(&bench, Some(capsule));
     assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
     assert_eq!(state_reads(&bench), 0);
@@ -397,7 +397,7 @@ fn a_run_that_cannot_adopt_a_capsule_reads_the_state_and_rebuilds_what_a_crash_l
     let bench = bench();
     bench.mem.record_history();
     let capsule = crashed(&bench).capsule.unwrap();
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let resumed = one_cycle(&bench, None);
     assert!(capsule.adopt(&resumed.journal, &[]).is_none());
     assert!(state_reads(&bench) > 0);

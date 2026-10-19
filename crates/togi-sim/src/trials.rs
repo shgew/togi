@@ -14,7 +14,7 @@ use togi_machine::{
 use crate::hazard::{HazardSource, Load, SourceKind};
 use crate::random::{Domain, stream, text_part};
 use crate::replay::ReplayOutcome;
-use crate::runtime::{PendingMce, Runtime, Shared};
+use crate::runtime::{ArithmeticError, PendingMce, Runtime, Shared};
 use crate::samples::LastTrial;
 use crate::vocab::regime_index;
 
@@ -212,7 +212,7 @@ impl Running for SimRunning {
             .shared
             .borrow_mut()
             .run(&self.spec, self.escape)
-            .map_err(|error| fail(Error::Other(Box::new(error))))?;
+            .map_err(fail)?;
         for event in outcome.events {
             match event {
                 Event::Progress(detail) => report.progress(&detail),
@@ -346,9 +346,11 @@ impl Runtime {
         key
     }
 
-    fn run(&mut self, spec: &TrialSpec, escape: bool) -> Result<Outcome, crate::ShapeError> {
+    fn run(&mut self, spec: &TrialSpec, escape: bool) -> Result<Outcome, Error> {
         let load = load_of(spec);
-        let planned = self.plan(spec, &load, &self.regs)?;
+        let planned = self
+            .plan(spec, &load, &self.regs)
+            .map_err(|error| Error::Other(Box::new(error)))?;
         let start = self.clock();
         let mut result = TrialResult {
             ran: spec.duration,
@@ -365,7 +367,7 @@ impl Runtime {
         }
         let mut events = Vec::new();
         let mut stalled = None;
-        let finished = self.conclude(spec, planned, start, result, &mut events, &mut stalled);
+        let finished = self.conclude(spec, planned, start, result, &mut events, &mut stalled)?;
         let persisted = self.record_samples(spec, &load, start, stalled);
         Ok(Outcome {
             result: finished,
@@ -382,12 +384,12 @@ impl Runtime {
         mut result: TrialResult,
         events: &mut Vec<Event>,
         stalled: &mut Option<CoreId>,
-    ) -> Result<TrialResult, TrialResult> {
+    ) -> Result<Result<TrialResult, TrialResult>, ArithmeticError> {
         let Some(failure) = planned else {
-            self.set_clock(start + spec.duration);
+            self.advance(spec.duration)?;
             count(spec, &mut result);
             progress(spec, &result, events);
-            return Ok(result);
+            return Ok(Ok(result));
         };
         let mut rng = stream(
             self.seed,
@@ -396,11 +398,13 @@ impl Runtime {
         );
         let drawn = self.model.signal_mix(spec.regime).pick(rng.random());
         let signal = failure.signal.unwrap_or(drawn);
-        let at = start + failure.at;
+        let at = start
+            .checked_add(failure.at)
+            .ok_or(ArithmeticError::ClockAdvance)?;
         let detail = |what: &str| format!("simulated {what} on core {}", failure.core);
         if failure.then_crash {
             *stalled = Some(failure.core);
-            self.set_clock(at);
+            self.set_clock(at)?;
             if signal != Signal::Crash {
                 events.push(Event::Signal(failure.core, signal, detail(signal.as_str())));
             }
@@ -411,11 +415,11 @@ impl Runtime {
             count(spec, &mut result);
             progress(spec, &result, events);
             self.crash();
-            return Err(result);
+            return Ok(Err(result));
         }
-        match signal {
+        Ok(match signal {
             Signal::ComputationError | Signal::Stall | Signal::UnexpectedExit => {
-                self.set_clock(at);
+                self.set_clock(at)?;
                 result.ran = failure.at;
                 result.failure = Some(TrialFailure {
                     signal,
@@ -435,11 +439,15 @@ impl Runtime {
             Signal::CorrectedMce => {
                 let pending = self.mce(rng.random(), failure.core, true);
                 let boot = self.boot_id().clone();
-                self.log_mce(&boot, pending, at);
                 if failure.replayed {
                     result.ran = failure.at;
                 }
-                self.set_clock(start + result.ran);
+                self.set_clock(
+                    start
+                        .checked_add(result.ran)
+                        .ok_or(ArithmeticError::ClockAdvance)?,
+                )?;
+                self.log_mce(&boot, pending, at)?;
                 count(spec, &mut result);
                 progress(spec, &result, events);
                 Ok(result)
@@ -448,7 +456,7 @@ impl Runtime {
                 if !failure.background {
                     *stalled = Some(failure.core);
                 }
-                self.set_clock(at);
+                self.set_clock(at)?;
                 if failure.replayed {
                     self.set_next_reset(ResetKind::Watchdog);
                     events.push(Event::Progress(
@@ -470,7 +478,7 @@ impl Runtime {
                 Err(result)
             }
             Signal::UncorrectedMce => {
-                self.set_clock(at);
+                self.set_clock(at)?;
                 if failure.replayed {
                     events.push(Event::Signal(
                         failure.core,
@@ -486,7 +494,7 @@ impl Runtime {
                 count(spec, &mut result);
                 Err(result)
             }
-        }
+        })
     }
 
     fn queue_crash_mce(&mut self, rng: &mut StdRng, core: CoreId, evidence: Evidence) {

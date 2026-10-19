@@ -64,14 +64,14 @@ fn transcript(seed: u64) -> Vec<String> {
                     rig.sim.now()
                 ));
                 if crashed(&waited) {
-                    rig.sim.reboot();
+                    rig.sim.reboot().expect("a representable reboot");
                 }
             }
         }
     }
     let first = rig.boot();
     rig.sim.crash();
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let second = rig.boot();
     for boot in [boot, first, second] {
         out.push(format!("boot {boot} mces {:?}", rig.mces(&boot)));
@@ -148,7 +148,7 @@ fn each_signal_has_its_result_shape() {
             Signal::Crash => {
                 assert!(crashed(&waited), "{signal}: {waited:?}");
                 assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
-                rig.sim.reboot();
+                rig.sim.reboot().expect("a representable reboot");
                 let next = rig.boot();
                 let mces = rig.mces(&next);
                 assert_eq!(mces.len(), 1, "{signal}: {mces:?}");
@@ -319,7 +319,7 @@ fn a_crash_before_apply_takes_the_first_write_of_the_boot() {
     rig.sim.crash_before_apply(1);
     rig.read(0).expect("a read before the first write");
     assert!(matches!(rig.set_all(0), Err(Error::Crashed)));
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     rig.set_all(0).expect("the first write of the next boot");
 }
 
@@ -353,7 +353,7 @@ fn a_reboot_restores_the_bios_offsets_and_takes_ninety_seconds() {
         .start(basic(Regime::R1, &[0], Duration::from_secs(60)))
         .unwrap_or_else(|error| panic!("{error}"));
     rig.sim.crash();
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let waited = running.wait(
         &CancellationToken::new(),
         &mut crate::common::Recorder::default(),
@@ -530,7 +530,8 @@ fn the_simulator_continues_after_its_history() {
 
 #[test]
 fn a_simulator_can_be_built_without_run_settings() {
-    let simulator = Simulator::new(model(&machine(2, vec![])), RunSettings::default());
+    let simulator = Simulator::new(model(&machine(2, vec![])), RunSettings::default())
+        .expect("a representable machine");
     let mut machine = simulator.seams();
     assert!(machine.host.boot_id().is_ok());
 }
@@ -554,7 +555,7 @@ fn a_restored_machine_reports_what_the_crashed_one_left_for_its_next_boot() {
     assert_eq!(restored.persisted(), rig.sim.persisted());
 
     let next_boot = |sim: &Simulator| {
-        sim.reboot();
+        sim.reboot().expect("a representable reboot");
         let mut machine = sim.seams();
         let boot = machine.host.boot_id().expect("a booted machine");
         let reason = machine.kernel.reset_reason(&boot).expect("a reason");
@@ -584,13 +585,13 @@ fn a_persisted_machine_for_other_cores_is_refused() {
     let error = Simulator::restore(model(&machine(4, vec![])), None, rig.sim.persisted())
         .err()
         .expect("a refusal");
-    assert_eq!(
+    assert!(matches!(
         error,
         togi_sim::RestoreError::Cores {
             persisted: 2,
             model: 4
         }
-    );
+    ));
 }
 
 #[test]
@@ -608,7 +609,7 @@ fn a_persisted_machine_without_boots_is_refused() {
     let error = Simulator::restore(model(&definition), None, persisted)
         .err()
         .expect("a refusal");
-    assert_eq!(error, togi_sim::RestoreError::NoBoot);
+    assert!(matches!(error, togi_sim::RestoreError::NoBoot));
 }
 
 fn positional(object: &serde_json::Value, fields: &[&str]) -> serde_json::Value {
@@ -689,7 +690,7 @@ fn a_persisted_machine_decodes_only_from_objects() {
         &["requests", "clocks", "rail", "rates"],
     );
 
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let rebooted = serde_json::to_value(rig.sim.persisted()).expect("an encoded machine");
     let last = rebooted["boots"].as_array().expect("boots").len() - 1;
     refuses_positional(
@@ -705,5 +706,228 @@ fn a_persisted_machine_decodes_only_from_objects() {
             "monotonic",
             "lines",
         ],
+    );
+}
+
+#[test_case(jiff::Timestamp::MAX, SignedDuration::from_secs(1); "upper limit")]
+#[test_case(jiff::Timestamp::MIN, SignedDuration::from_secs(-1); "lower limit")]
+fn restoring_an_unrepresentable_wall_time_is_refused(
+    epoch: jiff::Timestamp,
+    offset: SignedDuration,
+) {
+    let definition = machine(2, vec![]);
+    let rig = Rig::new(&definition, 1);
+    let mut value = serde_json::to_value(rig.sim.persisted()).expect("a persisted machine");
+    value["epoch"] = serde_json::to_value(epoch).expect("an epoch");
+    value["wall_offset"] = serde_json::to_value(offset).expect("an offset");
+    let persisted = serde_json::from_value(value).expect("a decoded machine");
+    assert!(
+        Simulator::restore(model(&definition), None, persisted).is_err(),
+        "an unrepresentable wall clock must not become the epoch"
+    );
+}
+
+#[test]
+fn sleep_refuses_advancing_past_the_timestamp_limit() {
+    let settings = RunSettings {
+        history: History {
+            last_time: Some(jiff::Timestamp::MAX - SignedDuration::from_secs(90)),
+            ..History::default()
+        },
+        ..RunSettings::default()
+    };
+    let mut rig = Rig::with(model(&machine(2, vec![])), settings);
+    let before = rig.sim.persisted();
+    assert!(
+        rig.machine
+            .clock
+            .sleep(&CancellationToken::new(), Duration::from_nanos(1))
+            .is_err(),
+        "an unrepresentable advance must be refused"
+    );
+    assert_eq!(rig.sim.persisted(), before, "a refusal preserves the clock");
+}
+
+#[test]
+fn allocating_a_boot_after_the_last_recorded_number_is_refused() {
+    let result = Simulator::new(
+        model(&machine(2, vec![])),
+        RunSettings {
+            history: History {
+                boots: u32::MAX,
+                ..History::default()
+            },
+            ..RunSettings::default()
+        },
+    );
+    assert!(matches!(result, Err(togi_sim::ArithmeticError::BootNumber)));
+}
+
+#[test]
+fn rebooting_after_the_last_boot_number_is_refused() {
+    let rig = Rig::with(
+        model(&machine(2, vec![])),
+        RunSettings {
+            history: History {
+                boots: u32::MAX - 1,
+                ..History::default()
+            },
+            ..RunSettings::default()
+        },
+    );
+    let before = rig.sim.persisted();
+    assert!(matches!(
+        rig.sim.reboot(),
+        Err(togi_sim::ArithmeticError::BootNumber)
+    ));
+    assert_eq!(
+        rig.sim.persisted(),
+        before,
+        "a refusal preserves the machine"
+    );
+}
+
+#[test]
+fn reboot_refuses_an_unrepresentable_wall_time() {
+    let rig = Rig::with(
+        model(&machine(2, vec![])),
+        RunSettings {
+            history: History {
+                last_time: Some(jiff::Timestamp::MAX - SignedDuration::from_secs(90)),
+                ..History::default()
+            },
+            ..RunSettings::default()
+        },
+    );
+    let before = rig.sim.persisted();
+    assert!(matches!(
+        rig.sim.reboot(),
+        Err(togi_sim::ArithmeticError::WallElapsed(_))
+    ));
+    assert_eq!(
+        rig.sim.persisted(),
+        before,
+        "a refused reboot preserves the machine"
+    );
+}
+
+#[test_case(jiff::Timestamp::MIN, true; "lower limit")]
+#[test_case(jiff::Timestamp::MAX - SignedDuration::from_secs(90), true; "last resumable timestamp")]
+#[test_case(jiff::Timestamp::MAX - SignedDuration::from_secs(90) + SignedDuration::from_nanos(1), false; "first overflowing reboot timestamp")]
+#[test_case(jiff::Timestamp::MAX, false; "upper limit")]
+fn recorded_time_requires_a_representable_reboot(last: jiff::Timestamp, accepted: bool) {
+    let result = Simulator::new(
+        model(&machine(2, vec![])),
+        RunSettings {
+            history: History {
+                last_time: Some(last),
+                ..History::default()
+            },
+            ..RunSettings::default()
+        },
+    );
+    match result {
+        Ok(sim) => {
+            assert!(accepted);
+            assert_eq!(sim.now(), last + SignedDuration::from_secs(90));
+        }
+        Err(error) => {
+            assert!(!accepted);
+            assert!(matches!(error, togi_sim::ArithmeticError::ResumeTime(_)));
+        }
+    }
+}
+
+#[test_case(jiff::Timestamp::MIN, SignedDuration::from_nanos(-1); "lower limit")]
+#[test_case(jiff::Timestamp::MAX, SignedDuration::from_nanos(1); "upper limit")]
+fn wall_clock_jumps_refuse_timestamp_overflow(epoch: jiff::Timestamp, by: SignedDuration) {
+    let definition = machine(2, vec![]);
+    let rig = Rig::new(&definition, 1);
+    let mut value = serde_json::to_value(rig.sim.persisted()).expect("a persisted machine");
+    value["epoch"] = serde_json::to_value(epoch).expect("an epoch");
+    let sim = Simulator::restore(
+        model(&definition),
+        None,
+        serde_json::from_value(value).expect("a machine"),
+    )
+    .expect("a timestamp at the limit is valid");
+    let before = sim.persisted();
+    assert!(matches!(
+        sim.jump_wall(by),
+        Err(togi_sim::ArithmeticError::WallOffset(_))
+    ));
+    assert_eq!(sim.persisted(), before);
+    assert_eq!(sim.now(), epoch);
+}
+
+#[test]
+fn trial_time_overflow_reaches_the_wait_caller() {
+    let mut rig = Rig::with(
+        model(&machine(2, vec![])),
+        RunSettings {
+            history: History {
+                last_time: Some(jiff::Timestamp::MAX - SignedDuration::from_secs(90)),
+                ..History::default()
+            },
+            ..RunSettings::default()
+        },
+    );
+    let before = rig.sim.now();
+    let error = rig
+        .run(basic(Regime::R1, &[0], Duration::from_secs(1)))
+        .0
+        .expect_err("a trial cannot advance past the timestamp limit")
+        .error;
+    let Error::Other(error) = error else {
+        panic!("expected an arithmetic error");
+    };
+    assert!(matches!(
+        error.downcast_ref::<togi_sim::ArithmeticError>(),
+        Some(togi_sim::ArithmeticError::WallElapsed(_))
+    ));
+    assert_eq!(rig.sim.now(), before);
+}
+
+#[test]
+fn a_corrected_mce_trial_refused_at_its_end_leaves_no_future_kernel_event() {
+    let mut rig = Rig::with(
+        model(&machine(2, vec![])),
+        RunSettings {
+            history: History {
+                last_time: Some(jiff::Timestamp::MAX - SignedDuration::from_secs(91)),
+                ..History::default()
+            },
+            ..RunSettings::default()
+        },
+    );
+    rig.sim
+        .script_trial(
+            "0001",
+            togi_sim::model::Script {
+                signal: Some(Signal::CorrectedMce),
+                at_s: 0.5,
+                core: core(0),
+                reset: None,
+                then_crash: false,
+            },
+        )
+        .expect("a script");
+    let before = rig.sim.persisted();
+    let error = rig
+        .run(basic(Regime::R1, &[0], Duration::from_secs(2)))
+        .0
+        .expect_err("the trial end is outside the timestamp range")
+        .error;
+    let Error::Other(error) = error else {
+        panic!("expected an arithmetic error");
+    };
+    assert!(matches!(
+        error.downcast_ref::<togi_sim::ArithmeticError>(),
+        Some(togi_sim::ArithmeticError::WallElapsed(_))
+    ));
+    assert_eq!(
+        rig.sim.persisted(),
+        before,
+        "a refused trial leaves no MCE ahead of its clock"
     );
 }

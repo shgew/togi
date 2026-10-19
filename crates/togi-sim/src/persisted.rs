@@ -39,12 +39,14 @@ object_only! {
 }
 
 /// A machine that cannot continue from a [`Persisted`] state.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum RestoreError {
     #[error("the persisted machine has {persisted} cores, the machine file {model}")]
     Cores { persisted: usize, model: usize },
     #[error("the persisted machine has no boot")]
     NoBoot,
+    #[error("restore the simulated clock")]
+    Clock(#[from] crate::ArithmeticError),
 }
 
 object_only! {

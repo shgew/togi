@@ -7,6 +7,12 @@ use togi_session::{Divergence, PrepareError, SessionError};
 pub enum SimError {
     #[error("lock the state directory")]
     Lock(#[from] LockError),
+    #[error("reboot the simulated machine after boot {boot}")]
+    Reboot {
+        boot: u32,
+        #[source]
+        source: togi_sim::ArithmeticError,
+    },
     #[error("prepare the journal for boot {boot}")]
     Prepare {
         boot: u32,

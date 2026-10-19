@@ -411,7 +411,7 @@ impl Rig {
     }
 
     pub(crate) fn with(model: Model, settings: RunSettings) -> Self {
-        let sim = Simulator::new(model, settings);
+        let sim = Simulator::new(model, settings).expect("a representable machine");
         let machine = sim.seams();
         Self { sim, machine }
     }

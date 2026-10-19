@@ -100,7 +100,7 @@ fn drive(bench: &Bench) -> Ended {
             return end.ended;
         }
         assert!(end.ended.crashed(), "a run ended in {:?}", end.ended.errors);
-        bench.sim.reboot();
+        bench.sim.reboot().unwrap();
     }
     panic!("no stop after {BOOTS} boots");
 }
@@ -133,7 +133,7 @@ fn interrupted(bench: &Bench, after: usize, fate: Fate) -> Ended {
             assert_eq!(durable_lines(bench), after);
             if matches!(fate, Fate::Crashed) {
                 bench.sim.crash();
-                bench.sim.reboot();
+                bench.sim.reboot().unwrap();
             }
             continue;
         }
@@ -146,7 +146,7 @@ fn interrupted(bench: &Bench, after: usize, fate: Fate) -> Ended {
             return end.ended;
         }
         assert!(end.ended.crashed(), "a run ended in {:?}", end.ended.errors);
-        bench.sim.reboot();
+        bench.sim.reboot().unwrap();
     }
     panic!("no stop after {BOOTS} boots");
 }
@@ -705,7 +705,7 @@ fn a_partial_crash_recovers_into_the_named_or_loaded_core_backoff_through_run(
     let crashed = run(before);
     assert!(crashed.crashed(), "{:?}", crashed.errors);
     drop(crashed);
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
 
     let mut resumed = bench.input();
     resumed.policy.cycles = Some(NonZeroU32::MIN);

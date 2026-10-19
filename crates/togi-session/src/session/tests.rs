@@ -212,7 +212,7 @@ fn a_dead_end_pending_from_another_boot_is_finished_first() {
         .append(Payload::DeadEnd(dead_end.clone()), &[])
         .unwrap();
     drop(session);
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let mut session = bench.open();
     let Control::Stop(stop) = session.start().unwrap() else {
         panic!("continued");
@@ -491,7 +491,7 @@ fn a_changed_topology_is_refused_before_finishing_a_prior_boots_dead_end() {
         )
         .unwrap();
     drop(first);
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let mut input = bench.input();
     let host = input.machine.host;
     input.machine.host = Box::new(Cores(host, with_core_five));
@@ -770,7 +770,7 @@ fn a_reopened_session_resumes_its_own_boots_cursor_and_files_the_tail_between_tr
         .expect("the trial recorded the kernel cursor");
     drop(first);
     if reboot {
-        bench.sim.reboot();
+        bench.sim.reboot().unwrap();
     }
     let tail = machine_check(bench.sim.monotonic(), 3, "after the last trial");
     let resumed = KernelCursor::from("resumed".to_owned());

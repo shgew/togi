@@ -914,7 +914,7 @@ fn a_crash_at_the_restoration_intent_is_classified_by_the_condition_applied_befo
     assert!(!kinds(events).contains(&"profile.restored"));
     drop(ended);
 
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let input = bench.input();
     input.cancel.cancel();
     let resumed = crate::run(input);
@@ -1124,7 +1124,7 @@ fn stopped_at(edge: Edge) -> (Bench, Ended) {
         }));
         let ended = crate::run(input);
         if ended.crashed() {
-            bench.sim.reboot();
+            bench.sim.reboot().unwrap();
             continue;
         }
         assert!(hit.get(), "{edge:?} was never reached: {:?}", ended.errors);

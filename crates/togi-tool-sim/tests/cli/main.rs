@@ -107,7 +107,8 @@ fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples(write_sample
                 seed: 1,
                 ..RunSettings::default()
             },
-        ),
+        )
+        .unwrap(),
         persistence: persistence.clone(),
         replay: Replay::Warm,
         verify_every: None,
@@ -156,4 +157,44 @@ fn real_fs_a_persisted_trial_publishes_state_and_compressed_samples(write_sample
                 .starts_with(&[0x1f, 0x8b])
         );
     }
+}
+
+#[test_case("boot_number", serde_json::json!(u32::MAX), "allocate the next simulated boot number"; "boot exhaustion")]
+#[test_case("clock", serde_json::json!({"secs": u64::MAX, "nanos": 0}), "add elapsed time to the simulated epoch"; "elapsed overflow")]
+#[test_case("wall_offset", serde_json::to_value(jiff::SignedDuration::from_secs(-1)).unwrap(), "apply the simulated wall-clock offset"; "lower timestamp overflow")]
+fn real_process_simulator_arithmetic_errors_are_reported(
+    field: &str,
+    value: serde_json::Value,
+    operation: &str,
+) {
+    let definition = togi_sim::MachineDefinition::default();
+    let sim = Simulator::new(
+        Model::new(&definition, 1).unwrap(),
+        RunSettings {
+            seed: 1,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut persisted = serde_json::to_value(sim.persisted()).unwrap();
+    persisted[field] = value;
+    if field == "wall_offset" {
+        persisted["epoch"] = serde_json::to_value(jiff::Timestamp::MIN).unwrap();
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("machine.json"),
+        serde_json::to_vec(&persisted).unwrap(),
+    )
+    .unwrap();
+    let output = command()
+        .arg("--state-dir")
+        .arg(tmp.path())
+        .args(["--max-boots", "1"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains(operation), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
 }

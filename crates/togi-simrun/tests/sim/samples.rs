@@ -77,7 +77,7 @@ fn a_new_session_after_an_earlier_one(
         microcode: "0x2".into(),
         boost_limit_mhz: 5500,
     });
-    sim.reboot();
+    sim.reboot().unwrap();
     sim.crash_before_apply(1);
     run(&sim, None);
 

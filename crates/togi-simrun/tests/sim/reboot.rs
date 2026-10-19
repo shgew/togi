@@ -116,3 +116,43 @@ fn an_ordinary_simulation_counts_operations_but_keeps_no_history() {
         "the simulation recorded a history"
     );
 }
+
+#[test_case::test_case(Replay::Warm, 2; "warm reboot")]
+#[test_case::test_case(Replay::Cold, 2; "cold reboot")]
+#[test_case::test_case(Replay::Warm, 1; "boot cap")]
+fn boot_exhaustion_reaches_the_runner_and_publishes_pending_state(replay: Replay, max_boots: u32) {
+    let fs = MemFs::new();
+    let persistence = Persistence::Memory(fs.clone());
+    let definition = MachineDefinition::default();
+    let sim = togi_sim::Simulator::new(
+        togi_sim::Model::new(&definition, 1).unwrap(),
+        togi_sim::RunSettings {
+            seed: 1,
+            history: togi_sim::History {
+                boots: u32::MAX - 1,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let boot = sim.seams().host.boot_id().unwrap();
+    sim.crash_before_apply(1);
+    let mut run = input(sim, persistence.clone());
+    run.replay = replay;
+    run.max_boots = nz(max_boots);
+    assert!(matches!(
+        simulate(run),
+        Err(togi_simrun::SimError::Reboot {
+            boot: 1,
+            source: togi_sim::ArithmeticError::BootNumber
+        })
+    ));
+    assert!(
+        crate::common::state_json(&fs).is_some(),
+        "the crashed boot's pending state is published"
+    );
+    let recorded = events(&persistence).unwrap();
+    assert!(!recorded.is_empty());
+    assert!(recorded.iter().all(|event| event.boot == boot));
+}

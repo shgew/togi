@@ -78,6 +78,7 @@ pub(crate) fn simulator(definition: &MachineDefinition, seed: u64) -> Simulator 
             ..RunSettings::default()
         },
     )
+    .unwrap()
 }
 
 pub(crate) fn nz(n: u32) -> NonZeroU32 {
@@ -146,7 +147,8 @@ impl Bench {
                     history,
                     replay: None,
                 },
-            ),
+            )
+            .unwrap(),
             fs: self.fs.clone(),
         }
     }
