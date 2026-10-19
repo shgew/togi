@@ -13,9 +13,9 @@ fn cores(ids: &[i64]) -> CoreSet {
     ids.iter().map(|&id| core(id)).collect()
 }
 
-fn placed(ids: &[i64]) -> BTreeMap<CoreId, CcdId> {
+fn placed(ids: &[i64]) -> PerCore<Option<CcdId>> {
     ids.iter()
-        .map(|&id| (core(id), CcdId::new(id / 8).unwrap()))
+        .map(|&id| (core(id), Some(CcdId::new(id / 8).unwrap())))
         .collect()
 }
 
@@ -134,7 +134,18 @@ fn summarize_skips_samples_without_lanes() {
 #[test]
 fn summarize_without_cores_is_none() {
     let seq = samples(WARMUP_MS, 30000, |_| (vec![(0, 1.1)], vec![(0, 5000)]));
-    assert!(summarize(seq, &BTreeMap::new()).is_none());
+    assert!(summarize(seq, &PerCore::default()).is_none());
+}
+
+#[test]
+fn summarize_ignores_cleared_sparse_core_entries() {
+    let seq = samples(WARMUP_MS, 30000, |_| (vec![(3, 1.1)], vec![(3, 5000)]));
+    let mut cores = placed(&[3]);
+    let expected = summarize(seq.clone(), &cores);
+    cores.set(core(15), None);
+    assert_eq!(summarize(seq, &cores), expected);
+    cores.set(core(3), None);
+    assert_eq!(summarize([], &cores), None);
 }
 
 #[test]
