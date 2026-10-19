@@ -908,11 +908,10 @@ impl togi_cli::dashboard::Surface for Records {
     }
 }
 
-#[test]
-fn real_process_sighup_and_sigterm_stop_a_run_cleanly_like_sigint() {
-    for signal in [rustix::process::Signal::HUP, rustix::process::Signal::TERM] {
-        crate::pty::stopped_by_signal(signal);
-    }
+#[test_case::test_case(rustix::process::Signal::HUP; "sighup")]
+#[test_case::test_case(rustix::process::Signal::TERM; "sigterm")]
+fn real_process_sighup_and_sigterm_stop_a_run_cleanly_like_sigint(signal: rustix::process::Signal) {
+    crate::pty::stopped_by_signal(signal);
 }
 
 fn position(events: &[togi_journal::Event], wanted: impl Fn(&Payload) -> bool) -> Option<usize> {
@@ -1002,13 +1001,14 @@ fn the_host_lock_is_taken_before_the_boot_id_is_read_and_the_hardware_opened() {
     );
 }
 
-#[test]
-fn an_explicit_config_that_is_missing_is_a_usage_error_wherever_the_flag_is_written() {
+#[test_case::test_case(true; "leading")]
+#[test_case::test_case(false; "trailing")]
+fn an_explicit_config_that_is_missing_is_a_usage_error_wherever_the_flag_is_written(leading: bool) {
     let fake = Fake::new();
     let missing = fake.dir.join("missing.json");
     let missing = missing.to_str().unwrap();
     let state = fake.state_dir();
-    for args in [
+    let args = if leading {
         [
             "togi",
             "--config",
@@ -1016,7 +1016,8 @@ fn an_explicit_config_that_is_missing_is_a_usage_error_wherever_the_flag_is_writ
             "--state-dir",
             state.to_str().unwrap(),
             "run",
-        ],
+        ]
+    } else {
         [
             "togi",
             "--state-dir",
@@ -1024,49 +1025,50 @@ fn an_explicit_config_that_is_missing_is_a_usage_error_wherever_the_flag_is_writ
             "run",
             "--config",
             missing,
-        ],
-    ] {
-        let (mut out, mut err) = (Vec::new(), Vec::new());
-        let exit = togi_cli::run_with(args, &mut out, &mut err, &fake);
-        let err = String::from_utf8(err).unwrap();
-        assert_eq!(exit, Exit::Usage, "{args:?}: {err}");
-        assert!(err.contains("cannot read config"), "{err}");
-    }
+        ]
+    };
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let exit = togi_cli::run_with(args, &mut out, &mut err, &fake);
+    let err = String::from_utf8(err).unwrap();
+    assert_eq!(exit, Exit::Usage, "{args:?}: {err}");
+    assert!(err.contains("cannot read config"), "{err}");
     assert_eq!(fake.opened.get(), 0);
     assert!(fake.events().is_empty());
 }
 
-#[test]
-fn an_unknown_kind_in_an_older_journal_does_not_refuse_the_run_before_the_config_is_read() {
-    for field in ["ruleset", "schema", "evidence"] {
-        let mut fake = Fake::new();
-        first_run(&mut fake);
-        let path = fake.state_dir().join("events.jsonl");
-        let text = fake.read_to_string(&path).unwrap();
-        let (first, rest) = text.split_once('\n').unwrap();
-        let marker = format!(r#""{field}":"#);
-        let at = first
-            .find(&marker)
-            .unwrap_or_else(|| panic!("{field} in {first}"))
-            + marker.len();
-        let digits = first[at..].bytes().take_while(u8::is_ascii_digit).count();
-        let value: u32 = first[at..at + digits].parse().unwrap();
-        let older = value
-            .checked_sub(1)
-            .unwrap_or_else(|| panic!("{field} {value} has no older stamp"));
-        fake.write(
-            &path,
-            format!("{}{older}{}\n{rest}", &first[..at], &first[at + digits..]),
-        )
-        .unwrap();
-        let before = append_future_kind(&fake);
-        let missing = fake.dir.join("missing.json");
-        let (exit, _, err) = fake.run(&["run", "--config", missing.to_str().unwrap()]);
-        assert_eq!(exit, Exit::Usage, "older {field}: {err}");
-        assert!(err.contains("cannot read config"), "older {field}: {err}");
-        assert!(!err.contains("unknown kind"), "older {field}: {err}");
-        assert_eq!(fake.read(&path).unwrap(), before, "older {field}");
-    }
+#[test_case::test_case("ruleset"; "ruleset")]
+#[test_case::test_case("schema"; "schema")]
+#[test_case::test_case("evidence"; "evidence")]
+fn an_unknown_kind_in_an_older_journal_does_not_refuse_the_run_before_the_config_is_read(
+    field: &str,
+) {
+    let mut fake = Fake::new();
+    first_run(&mut fake);
+    let path = fake.state_dir().join("events.jsonl");
+    let text = fake.read_to_string(&path).unwrap();
+    let (first, rest) = text.split_once('\n').unwrap();
+    let marker = format!(r#""{field}":"#);
+    let at = first
+        .find(&marker)
+        .unwrap_or_else(|| panic!("{field} in {first}"))
+        + marker.len();
+    let digits = first[at..].bytes().take_while(u8::is_ascii_digit).count();
+    let value: u32 = first[at..at + digits].parse().unwrap();
+    let older = value
+        .checked_sub(1)
+        .unwrap_or_else(|| panic!("{field} {value} has no older stamp"));
+    fake.write(
+        &path,
+        format!("{}{older}{}\n{rest}", &first[..at], &first[at + digits..]),
+    )
+    .unwrap();
+    let before = append_future_kind(&fake);
+    let missing = fake.dir.join("missing.json");
+    let (exit, _, err) = fake.run(&["run", "--config", missing.to_str().unwrap()]);
+    assert_eq!(exit, Exit::Usage, "older {field}: {err}");
+    assert!(err.contains("cannot read config"), "older {field}: {err}");
+    assert!(!err.contains("unknown kind"), "older {field}: {err}");
+    assert_eq!(fake.read(&path).unwrap(), before, "older {field}");
 }
 
 struct Finishes(std::sync::Arc<std::sync::atomic::AtomicBool>);

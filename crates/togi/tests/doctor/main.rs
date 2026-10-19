@@ -217,62 +217,32 @@ fn without_root_it_takes_no_lock_and_says_what_it_skipped() {
     );
 }
 
-#[test]
-fn the_failed_style_follows_the_terminal_and_the_environment() {
+#[test_case::test_case(OutputFacts::default(), "togi doctor: not ready: cpu\n"; "plain")]
+#[test_case::test_case(OutputFacts { is_terminal: true, ..OutputFacts::default() }, "\x1b[1;31mtogi doctor: not ready: cpu\x1b[0m\n"; "terminal")]
+#[test_case::test_case(OutputFacts { is_terminal: true, no_color: true, journald: false }, "togi doctor: not ready: cpu\n"; "no colour")]
+#[test_case::test_case(OutputFacts { is_terminal: false, no_color: false, journald: true }, "<3>\x1b[1;31mtogi doctor: not ready: cpu\x1b[0m\n"; "journald")]
+fn the_failed_style_follows_the_terminal_and_the_environment(facts: OutputFacts, want: &str) {
+    let name = format!("{facts:?}");
     let mut diagnosis = ready();
     diagnosis.ran[0].ok = false;
-    for (name, facts, want) in [
-        (
-            "plain",
-            OutputFacts::default(),
-            "togi doctor: not ready: cpu\n",
-        ),
-        (
-            "terminal",
-            OutputFacts {
-                is_terminal: true,
-                ..OutputFacts::default()
-            },
-            "\x1b[1;31mtogi doctor: not ready: cpu\x1b[0m\n",
-        ),
-        (
-            "no colour",
-            OutputFacts {
-                is_terminal: true,
-                no_color: true,
-                journald: false,
-            },
-            "togi doctor: not ready: cpu\n",
-        ),
-        (
-            "journald",
-            OutputFacts {
-                is_terminal: false,
-                no_color: false,
-                journald: true,
-            },
-            "<3>\x1b[1;31mtogi doctor: not ready: cpu\x1b[0m\n",
-        ),
-    ] {
-        let session = Session::new();
-        let mut host = host_with(
-            Diagnosis {
-                ran: diagnosis.ran.clone(),
-                skipped: Vec::new(),
-                bios_context_error: None,
-            },
-            session.fs.clone(),
-        );
-        host.facts = facts;
-        let ran = doctor(&host, session.path(), &[]);
-        assert_eq!(ran.exit, Exit::Preflight, "{name}");
-        assert_eq!(ran.err, want, "{name}");
-        assert!(ran.out.ends_with("not ready: cpu\n"), "{name}");
-        assert!(
-            !ran.out.contains('\x1b'),
-            "{name}: stdout is never coloured"
-        );
-    }
+    let session = Session::new();
+    let mut host = host_with(
+        Diagnosis {
+            ran: diagnosis.ran.clone(),
+            skipped: Vec::new(),
+            bios_context_error: None,
+        },
+        session.fs.clone(),
+    );
+    host.facts = facts;
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Preflight, "{name}");
+    assert_eq!(ran.err, want, "{name}");
+    assert!(ran.out.ends_with("not ready: cpu\n"), "{name}");
+    assert!(
+        !ran.out.contains('\x1b'),
+        "{name}: stdout is never coloured"
+    );
 }
 
 #[test]
@@ -300,94 +270,77 @@ fn the_recorded_context_reaches_the_checks_only_for_a_journal_run_would_continue
     assert!(!host.exists(&absent), "doctor created the state directory");
 }
 
-#[test]
-fn a_journal_run_would_refuse_exits_16_before_any_lock_or_check() {
-    let current = format!("\"ruleset\":{RULESET}");
-    for (name, from, to, written, uses) in [
-        (
-            "newer schema",
-            "\"schema\":1",
-            "\"schema\":99",
-            format!("(schema 99, ruleset {RULESET})"),
-            "uses schema 1.".to_owned(),
-        ),
-        (
-            "newer ruleset",
-            current.as_str(),
-            "\"ruleset\":99",
-            "(schema 1, ruleset 99)".to_owned(),
-            format!("uses ruleset {RULESET}."),
-        ),
-        (
-            "newer evidence",
-            "\"evidence\":1}",
-            "\"evidence\":99}",
-            format!("(schema 1, ruleset {RULESET}, evidence epoch 99)"),
-            "uses evidence epoch 1.".to_owned(),
-        ),
-    ] {
-        let session = Session::new();
-        session.rewrite_first_line(from, to);
-        session.rewrite_first_line(
-            "\"version\":\"0.0.0\"",
-            "\"version\":\"0.0.0\",\"rev\":\"abc1234\"",
-        );
-        let before = (files(&session.fs, session.path()), session.text());
-        let host = host_with(ready(), session.fs.clone());
-        let ran = doctor(&host, session.path(), &[]);
-        assert_eq!(ran.exit, Exit::Incompatible, "{name}: {}", ran.err);
-        assert_eq!(ran.out, "", "{name}");
-        assert!(
+#[test_case::test_case("\"schema\":1", "\"schema\":99", &format!("(schema 99, ruleset {RULESET})"), "uses schema 1."; "newer schema")]
+#[test_case::test_case(&format!("\"ruleset\":{RULESET}"), "\"ruleset\":99", "(schema 1, ruleset 99)", &format!("uses ruleset {RULESET}."); "newer ruleset")]
+#[test_case::test_case("\"evidence\":1}", "\"evidence\":99}", &format!("(schema 1, ruleset {RULESET}, evidence epoch 99)"), "uses evidence epoch 1."; "newer evidence")]
+fn a_journal_run_would_refuse_exits_16_before_any_lock_or_check(
+    from: &str,
+    to: &str,
+    written: &str,
+    uses: &str,
+) {
+    let name = from;
+    let session = Session::new();
+    session.rewrite_first_line(from, to);
+    session.rewrite_first_line(
+        "\"version\":\"0.0.0\"",
+        "\"version\":\"0.0.0\",\"rev\":\"abc1234\"",
+    );
+    let before = (files(&session.fs, session.path()), session.text());
+    let host = host_with(ready(), session.fs.clone());
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Incompatible, "{name}: {}", ran.err);
+    assert_eq!(ran.out, "", "{name}");
+    assert!(
             ran.err.starts_with(&format!(
                 "togi doctor: this journal was written by togi 0.0.0+abc1234 {written}; this build, togi "
             )),
             "{name}: {}",
             ran.err
         );
-        assert!(
+    assert!(
             ran.err.ends_with(&format!(
                 "{uses} Install togi 0.0.0 to continue this session, or run togi reset --all to archive it and start over.\n"
             )),
             "{name}: {}",
             ran.err
         );
-        assert_eq!(
-            (files(&session.fs, session.path()), session.text()),
-            before,
-            "{name}"
-        );
-        assert_eq!(host.calls.get(), 0, "{name}");
-        assert_eq!(host.lock_acquisitions.get(), 0, "{name}");
-    }
+    assert_eq!(
+        (files(&session.fs, session.path()), session.text()),
+        before,
+        "{name}"
+    );
+    assert_eq!(host.calls.get(), 0, "{name}");
+    assert_eq!(host.lock_acquisitions.get(), 0, "{name}");
 }
 
-#[test]
-fn an_unreadable_journal_exits_1() {
-    for (name, rewrite) in [("not json", true), ("malformed later event", false)] {
-        let session = Session::new();
-        if rewrite {
-            session.fs.put(session.journal(), b"not json\n".to_vec());
-        } else {
-            let mut text = session.text();
-            text.push_str("{\"seq\":\n");
-            let at = text.find("\"kind\":\"config.loaded\"").unwrap();
-            text.replace_range(at..at + 4, "\"kidn\"");
-            session.fs.put(session.journal(), text.into_bytes());
-        }
-        let before = (files(&session.fs, session.path()), session.text());
-        let host = host_with(ready(), session.fs.clone());
-        let ran = doctor(&host, session.path(), &[]);
-        assert_eq!(ran.exit, Exit::Error, "{name}: {}", ran.err);
-        assert_eq!(ran.out, "", "{name}");
-        assert_eq!(host.calls.get(), 0, "{name}");
-        assert_eq!(
-            (files(&session.fs, session.path()), session.text()),
-            before,
-            "{name}"
-        );
-        let causes = ran.err.matches("expected").count();
-        assert!(causes <= 1, "{name}: a cause is repeated: {}", ran.err);
+#[test_case::test_case(true; "not json")]
+#[test_case::test_case(false; "malformed later event")]
+fn an_unreadable_journal_exits_1(rewrite: bool) {
+    let name = format!("rewrite={rewrite}");
+    let session = Session::new();
+    if rewrite {
+        session.fs.put(session.journal(), b"not json\n".to_vec());
+    } else {
+        let mut text = session.text();
+        text.push_str("{\"seq\":\n");
+        let at = text.find("\"kind\":\"config.loaded\"").unwrap();
+        text.replace_range(at..at + 4, "\"kidn\"");
+        session.fs.put(session.journal(), text.into_bytes());
     }
+    let before = (files(&session.fs, session.path()), session.text());
+    let host = host_with(ready(), session.fs.clone());
+    let ran = doctor(&host, session.path(), &[]);
+    assert_eq!(ran.exit, Exit::Error, "{name}: {}", ran.err);
+    assert_eq!(ran.out, "", "{name}");
+    assert_eq!(host.calls.get(), 0, "{name}");
+    assert_eq!(
+        (files(&session.fs, session.path()), session.text()),
+        before,
+        "{name}"
+    );
+    let causes = ran.err.matches("expected").count();
+    assert!(causes <= 1, "{name}: a cause is repeated: {}", ran.err);
 }
 
 #[test]
@@ -404,38 +357,39 @@ fn the_default_config_comes_from_the_host() {
     );
 }
 
-#[test]
-fn a_configuration_error_exits_2() {
+#[test_case::test_case(true; "malformed")]
+#[test_case::test_case(false; "missing")]
+fn a_configuration_error_exits_2(malformed: bool) {
     let cfg = support::MemoryDir::new();
     let bad = cfg.path().join("bad.json");
     let fixture = Host::new();
     fixture.write(&bad, "{").unwrap();
     let missing = cfg.path().join("missing.json");
-    for path in [&bad, &missing] {
-        let session = Session::with_fs(fixture.fs.clone(), togi_watchtest::Scenario::Confirm);
-        let host = host_with(ready(), fixture.fs.clone());
-        let ran = doctor(&host, session.path(), &["--config", path.to_str().unwrap()]);
-        assert_eq!(ran.exit, Exit::Usage, "{}", ran.err);
-        assert!(ran.err.contains(path.to_str().unwrap()), "{}", ran.err);
-        assert_eq!(host.calls.get(), 0);
-    }
+    let path = if malformed { &bad } else { &missing };
+    let session = Session::with_fs(fixture.fs.clone(), togi_watchtest::Scenario::Confirm);
+    let host = host_with(ready(), fixture.fs.clone());
+    let ran = doctor(&host, session.path(), &["--config", path.to_str().unwrap()]);
+    assert_eq!(ran.exit, Exit::Usage, "{}", ran.err);
+    assert!(ran.err.contains(path.to_str().unwrap()), "{}", ran.err);
+    assert_eq!(host.calls.get(), 0);
 }
 
-#[test]
-fn config_is_accepted_before_and_after_the_command() {
+#[test_case::test_case(false; "trailing")]
+#[test_case::test_case(true; "leading")]
+fn config_is_accepted_before_and_after_the_command(leading: bool) {
     let cfg = support::MemoryDir::new();
     let missing = cfg.path().join("missing.json");
     let missing = missing.to_str().unwrap();
-    for args in [
-        &["doctor", "--config", missing][..],
-        &["--config", missing, "doctor"],
-    ] {
-        let session = Session::new();
-        let host = host_with(ready(), session.fs.clone());
-        let ran = host.run(session.path(), args);
-        assert_eq!(ran.exit, Exit::Usage, "{args:?}");
-        assert!(ran.err.contains("missing.json"), "{args:?}: {}", ran.err);
-    }
+    let args = if leading {
+        ["--config", missing, "doctor"]
+    } else {
+        ["doctor", "--config", missing]
+    };
+    let session = Session::new();
+    let host = host_with(ready(), session.fs.clone());
+    let ran = host.run(session.path(), &args);
+    assert_eq!(ran.exit, Exit::Usage, "{args:?}");
+    assert!(ran.err.contains("missing.json"), "{args:?}: {}", ran.err);
 }
 
 #[test]
@@ -521,29 +475,27 @@ fn a_bios_context_that_cannot_be_read_follows_the_table_with_exit_1() {
     );
 }
 
-#[test]
-fn another_platform_stops_before_the_journal_the_lock_and_every_check() {
+#[test_case::test_case(false; "incompatible journal")]
+#[test_case::test_case(true; "absent directory")]
+fn another_platform_stops_before_the_journal_the_lock_and_every_check(missing: bool) {
     let session = Session::new();
     session.rewrite_first_line("\"schema\":1", "\"schema\":99");
     let (_keep, absent) = missing_state();
-    for (name, state) in [
-        ("a journal run would refuse", session.path()),
-        ("no state directory", &absent),
-    ] {
-        let mut host = host_with(ready(), session.fs.clone());
-        host.linux = false;
-        let held = host.locks.acquire(&host.lock).unwrap();
-        let cfg = state.join("no-such-config.json");
-        let ran = doctor(&host, state, &["--config", cfg.to_str().unwrap()]);
-        drop(held);
-        assert_eq!(ran.exit, Exit::Error, "{name}: {}", ran.err);
-        assert_eq!(ran.out, "", "{name}");
-        assert_eq!(
-            ran.err, "togi doctor: hardware runs need Linux: unsupported operation\n",
-            "{name}"
-        );
-        assert_eq!(host.calls.get(), 0, "{name}");
-    }
+    let name = format!("missing={missing}");
+    let state = if missing { &absent } else { session.path() };
+    let mut host = host_with(ready(), session.fs.clone());
+    host.linux = false;
+    let held = host.locks.acquire(&host.lock).unwrap();
+    let cfg = state.join("no-such-config.json");
+    let ran = doctor(&host, state, &["--config", cfg.to_str().unwrap()]);
+    drop(held);
+    assert_eq!(ran.exit, Exit::Error, "{name}: {}", ran.err);
+    assert_eq!(ran.out, "", "{name}");
+    assert_eq!(
+        ran.err, "togi doctor: hardware runs need Linux: unsupported operation\n",
+        "{name}"
+    );
+    assert_eq!(host.calls.get(), 0, "{name}");
     assert!(
         !session.host().exists(&absent),
         "doctor created the state directory"
