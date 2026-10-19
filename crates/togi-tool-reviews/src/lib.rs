@@ -82,8 +82,8 @@ mod numeric_tests {
 
     #[cfg(target_pointer_width = "64")]
     #[test_case(0, 0; "zero")]
-    #[test_case(i64::MAX as usize, i64::MAX; "largest exact count")]
-    #[test_case(i64::MAX as usize + 1, i64::MAX; "first saturated count")]
+    #[test_case(usize::try_from(i64::MAX).unwrap(), i64::MAX; "largest exact count")]
+    #[test_case(usize::try_from(i64::MAX).unwrap() + 1, i64::MAX; "first saturated count")]
     #[test_case(usize::MAX, i64::MAX; "largest platform count")]
     fn record_counts_saturate(len: usize, expected: i64) {
         assert_eq!(saturating_record_count(len), expected);

@@ -242,8 +242,8 @@ mod numeric_tests {
 
     #[test_case(0, 0; "zero")]
     #[test_case(1, 1; "one")]
-    #[test_case(i64::MAX as usize, i64::MAX; "largest exact count")]
-    #[test_case(i64::MAX as usize + 1, i64::MAX; "first saturated count")]
+    #[test_case(usize::try_from(i64::MAX).unwrap(), i64::MAX; "largest exact count")]
+    #[test_case(usize::try_from(i64::MAX).unwrap() + 1, i64::MAX; "first saturated count")]
     #[test_case(usize::MAX, i64::MAX; "largest platform count")]
     #[cfg(target_pointer_width = "64")]
     fn summary_counts_saturate(count: usize, expected: i64) {
