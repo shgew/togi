@@ -30,7 +30,7 @@ fn carry_trial(log: &mut Log, planned: &TrialIntent, outcome: Outcome) -> togi_j
     fact.class = TrialClass {
         regime: planned.regime,
         workload: Some(planned.workload),
-        cores: crate::project::loaded(&planned),
+        cores: crate::project::loaded(planned),
         duration_s: planned.duration_s,
     };
     fact.profile = planned.profile;
