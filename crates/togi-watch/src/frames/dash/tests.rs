@@ -1451,6 +1451,19 @@ fn large_digits_are_three_rows_and_a_colon() {
     );
 }
 
+#[test_case(0, Duration::MAX, Duration::MAX, 0; "empty track")]
+#[test_case(65_535, Duration::MAX, Duration::MAX, 65_535; "largest terminal track")]
+#[test_case(usize::MAX, Duration::MAX, Duration::MAX, 65_535; "oversized track clips")]
+#[test_case(65_535, Duration::ZERO, Duration::MAX, 0; "long duration starts empty")]
+fn progress_arithmetic_keeps_its_terminal_bound(
+    cells: usize,
+    elapsed: Duration,
+    total: Duration,
+    expected: usize,
+) {
+    assert_eq!(filled(cells, elapsed, total), expected);
+}
+
 #[test]
 fn the_requirement_line_counts_passes_and_marks_the_running_trial() {
     let model = Model::new();

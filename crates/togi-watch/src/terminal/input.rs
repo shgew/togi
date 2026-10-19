@@ -81,7 +81,7 @@ impl<'a> FdSource<'a> {
 impl Source for FdSource<'_> {
     fn wait(&mut self, timeout: Option<Duration>) -> io::Result<Ready> {
         let timeout = timeout.map(|timeout| Timespec {
-            tv_sec: i64::try_from(timeout.as_secs()).unwrap_or(i64::MAX),
+            tv_sec: crate::numbers::saturating_timeout_seconds(timeout.as_secs()),
             tv_nsec: i64::from(timeout.subsec_nanos()),
         });
         loop {

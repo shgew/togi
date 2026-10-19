@@ -304,9 +304,11 @@ impl TrialView {
         }
         let past =
             now.as_nanosecond() - started.as_nanosecond() - self.duration.as_nanos().cast_signed();
-        match u64::try_from(past) {
-            Ok(nanos) if nanos >= 1_000_000_000 => Duration::from_nanos(nanos),
-            _ => Duration::ZERO,
+        let past = crate::numbers::nonnegative_elapsed(past);
+        if past.as_secs() == 0 {
+            Duration::ZERO
+        } else {
+            past
         }
     }
 
