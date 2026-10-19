@@ -1,5 +1,6 @@
 //! What the fold remembers beside the journal's and the tuner's states: the facts only the event stream says,
 //! such as when a trial started, how a group failed, which backoff cleared which combination.
+//! Per-core facts use dense optional slots; trial, cycle, group and combination keys remain dynamic.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::time::Duration;
@@ -9,7 +10,9 @@ use togi_journal::{
     Event, HuntStart, Outcome, Payload, ResetTarget, Seq, State as JournalState, TrialEnd, TrialId,
     TrialIntent,
 };
-use togi_machine::{BootId, CoreId, CoreSet, ObservedOffset, Regime, Signal, TargetOffset};
+use togi_machine::{
+    BootId, CoreId, CoreSet, ObservedOffset, PerCore, Regime, Signal, TargetOffset,
+};
 use togi_tuner::{CombinationId, Load, State as TunerState, TrialHistory};
 
 use crate::history::{History, LOG_LIMIT, LogEntry};
@@ -62,14 +65,14 @@ pub(crate) struct Facts {
     pub(crate) starts: HashMap<TrialId, Timestamp>,
     pub(crate) ends: HashMap<TrialId, TrialEndView>,
     pub(crate) group_signals: HashMap<(u32, u32), Signal>,
-    pub(crate) applied: BTreeMap<CoreId, ObservedOffset>,
-    pub(crate) tuned: BTreeMap<CoreId, TargetOffset>,
+    pub(crate) applied: PerCore<Option<ObservedOffset>>,
+    pub(crate) tuned: PerCore<Option<TargetOffset>>,
     pub(crate) current: Option<Current>,
     pub(crate) steps: HashMap<TrialId, u32>,
     pub(crate) counts: HashMap<TrialId, Count>,
     pub(crate) failed: HashMap<TrialId, TrialHistory>,
     pub(crate) by_failure: HashMap<Seq, FailureFacts>,
-    pub(crate) backs: BTreeMap<CoreId, Option<CombinationId>>,
+    pub(crate) backs: PerCore<Option<CombinationId>>,
     pub(crate) sources: HashMap<Seq, CombinationId>,
     pub(crate) combination_seqs: HashMap<Seq, CombinationId>,
     pub(crate) combos: BTreeMap<CombinationId, ComboFacts>,
@@ -85,7 +88,7 @@ pub(crate) struct Facts {
     pub(crate) carried: BTreeSet<Seq>,
     pub(crate) shapes: BTreeMap<u32, HuntShape>,
     pub(crate) hunt_started: BTreeMap<u32, Timestamp>,
-    pub(crate) queued: BTreeMap<CoreId, Seq>,
+    pub(crate) queued: PerCore<Option<Seq>>,
     pub(crate) failures: u32,
     pub(crate) crashes: u32,
     pub(crate) last_failure: Option<Timestamp>,
@@ -139,12 +142,12 @@ impl Facts {
             }
             Payload::SmuIntent(_) => self.restored = false,
             Payload::SmuReadback(readback) => {
-                self.applied.insert(readback.core, readback.offset);
+                self.applied.set(readback.core, Some(readback.offset));
             }
             Payload::ProfileRestored(restored) => {
                 self.restored = true;
                 for (core, offset) in restored.offsets.iter() {
-                    self.applied.insert(core, offset.observed());
+                    self.applied.set(core, Some(offset.observed()));
                 }
             }
             Payload::TrialIntent(intent) => {
@@ -163,20 +166,20 @@ impl Facts {
             }
             Payload::TrialEnd(end) => self.trial_end(event, end, tuner),
             Payload::CorePhase(transition) => {
-                self.tuned.insert(transition.core, transition.offset);
-                self.queued.remove(&transition.core);
+                self.tuned.set(transition.core, Some(transition.offset));
+                self.queued.set(transition.core, None);
             }
             Payload::TunerDecision(decision) => {
-                self.tuned.insert(decision.core, decision.to_offset);
+                self.tuned.set(decision.core, Some(decision.to_offset));
                 self.set_activity(Some(decision.activity));
                 if decision.decision == togi_journal::Decision::Backoff {
                     self.backs
-                        .insert(decision.core, self.sources.get(&event.seq).copied());
+                        .set(decision.core, self.sources.get(&event.seq).copied());
                 }
             }
             Payload::ProfileChange(change) => {
                 for (core, offset) in change.to.iter() {
-                    self.tuned.insert(core, offset);
+                    self.tuned.set(core, Some(offset));
                 }
             }
             Payload::Failure(failure) => {
@@ -276,7 +279,7 @@ impl Facts {
             }
             Payload::CommandReset(reset) => {
                 if let ResetTarget::Core(core) = reset.target {
-                    self.queued.insert(core, event.seq);
+                    self.queued.set(core, Some(event.seq));
                 }
             }
             Payload::SessionContext(_)
