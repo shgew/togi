@@ -78,9 +78,19 @@ fn read_extract(fs: &MemFs, path: &Path) -> Result<Vec<TrialFact>, ReadError> {
     decode(bytes.as_slice())
 }
 
-#[test_case(false; "relative to the machine")]
-#[test_case(true; "absolute")]
-fn only_decisive_trials_with_a_context_answer_trials(absolute: bool) {
+#[test_case(false, -10, true; "relative decisive")]
+#[test_case(false, -20, false; "relative inconclusive")]
+#[test_case(false, -30, false; "relative no context")]
+#[test_case(false, -40, false; "relative other context")]
+#[test_case(true, -10, true; "absolute decisive")]
+#[test_case(true, -20, false; "absolute inconclusive")]
+#[test_case(true, -30, false; "absolute no context")]
+#[test_case(true, -40, false; "absolute other context")]
+fn only_decisive_trials_with_a_context_answer_trials(
+    absolute: bool,
+    first_offset: i64,
+    want: bool,
+) {
     let fs = MemFs::new();
     let path = extract_in(&fs, Path::new("/fixtures"));
     let machine_path = Path::new("/fixtures/machine.json");
@@ -95,13 +105,11 @@ fn only_decisive_trials_with_a_context_answer_trials(absolute: bool) {
         })
         .unwrap();
     assert_eq!(replay.len(), 2);
-    for first_offset in [-10, -20, -30, -40] {
-        assert_eq!(
-            answered(&replay, "fixture", first_offset),
-            first_offset == -10,
-            "{first_offset}"
-        );
-    }
+    assert_eq!(
+        answered(&replay, "fixture", first_offset),
+        want,
+        "{first_offset}"
+    );
     assert!(answered(&replay, "other", -40));
     assert!(!answered(&replay, "other", -10));
 }

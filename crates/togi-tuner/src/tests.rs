@@ -446,63 +446,27 @@ fn together_crash_names_the_sole_nonzero_core_by_id() {
     assert_eq!(profile(&three, &[0, 0, 0]).sole_nonzero(), None);
 }
 
-#[test]
-fn optimum() {
-    struct Case {
-        name: &'static str,
-        pairs: &'static [(u8, u8)],
-        hi: &'static [i64],
-        ranking: &'static [u8],
-        want: &'static [i64],
-    }
-    let cases = [
-        Case {
-            name: "two individually legal deepenings form a combination",
-            pairs: &[(0, 1)],
-            hi: &[0, 0],
-            ranking: &[0, 1],
-            want: &[-50, -49],
-        },
-        Case {
-            name: "three-core backoff counterexample",
-            pairs: &[(0, 1), (0, 2)],
-            hi: &[-49, -49, -50],
-            ranking: &[0, 1, 2],
-            want: &[-49, -50, -50],
-        },
-        Case {
-            name: "four-core cycle global",
-            pairs: &[(0, 1), (1, 2), (2, 3), (3, 0), (1, 3)],
-            hi: &[0, 0, 0, 0],
-            ranking: &[0, 1, 2, 3],
-            want: &[-50, -49, -50, -49],
-        },
-        Case {
-            name: "better-ranked equal-sum later",
-            pairs: &[(0, 1)],
-            hi: &[0, 0],
-            ranking: &[1, 0],
-            want: &[-49, -50],
-        },
-    ];
-    for case in cases {
-        let ids: Vec<u8> = (0..u8::try_from(case.hi.len()).unwrap()).collect();
-        let topology = topology(&ids);
-        let combinations: Vec<[(u8, i64); 2]> = case
-            .pairs
-            .iter()
-            .map(|&(a, b)| [(a, -50), (b, -50)])
-            .collect();
-        let refs: Vec<&[(u8, i64)]> = combinations.iter().map(<[_; 2]>::as_slice).collect();
-        let constraints = constraints(&topology, &[], &refs);
-        let got = constraints
-            .optimum(
-                &profile(&topology, case.hi),
-                &ranking(&topology, case.ranking),
-            )
-            .unwrap();
-        assert_eq!(got, Some(profile(&topology, case.want)), "{}", case.name);
-    }
+#[test_case::test_case("two individually legal deepenings form a combination", &[(0, 1)], &[0, 0], &[0, 1], &[-50, -49]; "two individually legal deepenings form a combination")]
+#[test_case::test_case("three-core backoff counterexample", &[(0, 1), (0, 2)], &[-49, -49, -50], &[0, 1, 2], &[-49, -50, -50]; "three-core backoff counterexample")]
+#[test_case::test_case("four-core cycle global", &[(0, 1), (1, 2), (2, 3), (3, 0), (1, 3)], &[0, 0, 0, 0], &[0, 1, 2, 3], &[-50, -49, -50, -49]; "four-core cycle global")]
+#[test_case::test_case("better-ranked equal-sum later", &[(0, 1)], &[0, 0], &[1, 0], &[-49, -50]; "better-ranked equal-sum later")]
+fn optimum(
+    name: &'static str,
+    pairs: &'static [(u8, u8)],
+    hi: &'static [i64],
+    order: &'static [u8],
+    want: &'static [i64],
+) {
+    let ids: Vec<u8> = (0..u8::try_from(hi.len()).unwrap()).collect();
+    let topology = topology(&ids);
+    let combinations: Vec<[(u8, i64); 2]> =
+        pairs.iter().map(|&(a, b)| [(a, -50), (b, -50)]).collect();
+    let refs: Vec<&[(u8, i64)]> = combinations.iter().map(<[_; 2]>::as_slice).collect();
+    let constraints = constraints(&topology, &[], &refs);
+    let got = constraints
+        .optimum(&profile(&topology, hi), &ranking(&topology, order))
+        .unwrap();
+    assert_eq!(got, Some(profile(&topology, want)), "{name}");
 }
 
 #[test]
@@ -524,8 +488,9 @@ fn optimum_with_staircase_combinations() {
     assert_eq!(constraints.optimum(&hi, &ranking).unwrap(), want);
 }
 
-#[test]
-fn four_core_cycle_needs_global_yield() {
+#[test_case::test_case([-49, -49, -49, -50]; "[-49, -49, -49, -50]")]
+#[test_case::test_case([-49, -50, -49, -49]; "[-49, -50, -49, -49]")]
+fn four_core_cycle_needs_global_yield(bounded: [i64; 4]) {
     let topology = topology(&[0, 1, 2, 3]);
     let pairs: Vec<[(u8, i64); 2]> = [(0, 1), (1, 2), (2, 3), (3, 0), (1, 3)]
         .iter()
@@ -539,26 +504,25 @@ fn four_core_cycle_needs_global_yield() {
         .unwrap()
         .unwrap();
     assert_eq!(global.total(), -198);
-    for bounded in [[-49, -49, -49, -50], [-49, -50, -49, -49]] {
-        let target = constraints
-            .optimum(&profile(&topology, &bounded), &ascending)
-            .unwrap()
-            .unwrap();
-        assert_eq!(target.total(), -197, "{bounded:?} yields {target:?}");
-    }
+
+    let target = constraints
+        .optimum(&profile(&topology, &bounded), &ascending)
+        .unwrap()
+        .unwrap();
+    assert_eq!(target.total(), -197, "{bounded:?} yields {target:?}");
 }
 
-#[test]
-fn optimum_keeps_failure_point_outside_safe_bounds() {
+#[test_case::test_case(-10; "-10")]
+#[test_case::test_case(0; "0")]
+fn optimum_keeps_failure_point_outside_safe_bounds(hi: i64) {
     let topology = topology(&[0]);
     let constraints = constraints(&topology, &[(0, -11)], &[]);
     let ranking = ranking(&topology, &[0]);
-    for hi in [-10, 0] {
-        assert_eq!(
-            constraints.optimum(&profile(&topology, &[hi]), &ranking),
-            Ok(Some(profile(&topology, &[-10])))
-        );
-    }
+
+    assert_eq!(
+        constraints.optimum(&profile(&topology, &[hi]), &ranking),
+        Ok(Some(profile(&topology, &[-10])))
+    );
 }
 
 #[test]
@@ -588,22 +552,23 @@ fn optimum_is_none_when_the_floor_passes_the_ceiling_or_a_combination_cannot_bre
     );
 }
 
-#[test]
-fn constraints_reject_a_profile_of_other_cores() {
+#[test_case::test_case(Profile::zero(&self::topology(&[4, 5])); "Profile::zero(&other)")]
+#[test_case::test_case(Profile::zero(&self::topology(&[0])); "Profile::zero(&smaller)")]
+fn constraints_reject_a_profile_of_other_cores(foreign: Profile) {
     let topology = topology(&[0, 1]);
     let other = self::topology(&[4, 5]);
-    let smaller = self::topology(&[0]);
+
     let constraints = constraints(&topology, &[(0, -50)], &[&[(0, -50), (1, -50)]]);
     let ranking = Ranking::ascending(&topology);
-    for foreign in [Profile::zero(&other), Profile::zero(&smaller)] {
-        let mismatch = TopologyMismatch {
-            expected: topology.all(),
-            found: foreign.cores(),
-        };
-        assert_eq!(constraints.reaches(&foreign), Err(mismatch));
-        assert_eq!(constraints.at_limit(core(0), &foreign), Err(mismatch));
-        assert_eq!(constraints.optimum(&foreign, &ranking), Err(mismatch));
-    }
+
+    let mismatch = TopologyMismatch {
+        expected: topology.all(),
+        found: foreign.cores(),
+    };
+    assert_eq!(constraints.reaches(&foreign), Err(mismatch));
+    assert_eq!(constraints.at_limit(core(0), &foreign), Err(mismatch));
+    assert_eq!(constraints.optimum(&foreign, &ranking), Err(mismatch));
+
     let foreign_ranking = Ranking::ascending(&other);
     assert!(
         constraints
@@ -653,128 +618,75 @@ fn nothing(reason: ResetReason) -> CrashFacts {
     }
 }
 
-#[test]
-fn classify_crash_cases() {
-    let none = reason(None, false);
-    let thermal = reason(Some(ResetKind::ThermalTrip), true);
-    let button = reason(Some(ResetKind::PowerButton), true);
-    let supported = reason(None, true);
-    let cases = [
-        (
-            "trial",
-            CrashFacts {
+#[test_case::test_case("trial", &CrashFacts {
                 in_trial: true,
-                ..nothing(none.clone())
-            },
-            CrashKind::InTrial,
-        ),
-        (
-            "idle",
-            CrashFacts {
+                ..nothing(reason(None, false).clone())
+            }, CrashKind::InTrial; "trial")]
+#[test_case::test_case("idle", &CrashFacts {
                 applied: true,
-                ..nothing(none.clone())
-            },
-            CrashKind::Idle,
-        ),
-        ("stray", nothing(none.clone()), CrashKind::Stray),
-        (
-            "evidence before thermal",
-            CrashFacts {
+                ..nothing(reason(None, false).clone())
+            }, CrashKind::Idle; "idle")]
+#[test_case::test_case("stray", &nothing(reason(None, false).clone()), CrashKind::Stray; "stray")]
+#[test_case::test_case("evidence before thermal", &CrashFacts {
                 applied: true,
                 evidence: true,
-                ..nothing(thermal.clone())
-            },
-            CrashKind::Idle,
-        ),
-        (
-            "thermal",
-            CrashFacts {
+                ..nothing(reason(Some(ResetKind::ThermalTrip), true).clone())
+            }, CrashKind::Idle; "evidence before thermal")]
+#[test_case::test_case("thermal", &CrashFacts {
                 in_trial: true,
-                ..nothing(thermal)
-            },
-            CrashKind::Thermal,
-        ),
-        (
-            "power button trial",
-            CrashFacts {
+                ..nothing(reason(Some(ResetKind::ThermalTrip), true))
+            }, CrashKind::Thermal; "thermal")]
+#[test_case::test_case("power button trial", &CrashFacts {
                 in_trial: true,
-                ..nothing(button.clone())
-            },
-            CrashKind::InTrial,
-        ),
-        (
-            "power button idle",
-            CrashFacts {
+                ..nothing(reason(Some(ResetKind::PowerButton), true).clone())
+            }, CrashKind::InTrial; "power button trial")]
+#[test_case::test_case("power button idle", &CrashFacts {
                 applied: true,
-                ..nothing(button)
-            },
-            CrashKind::Inconclusive,
-        ),
-        (
-            "confirmed absent reason",
-            CrashFacts {
+                ..nothing(reason(Some(ResetKind::PowerButton), true))
+            }, CrashKind::Inconclusive; "power button idle")]
+#[test_case::test_case("confirmed absent reason", &CrashFacts {
                 applied: true,
                 confirmed: true,
-                ..nothing(supported.clone())
-            },
-            CrashKind::Inconclusive,
-        ),
-        (
-            "unsupported absent reason",
-            CrashFacts {
+                ..nothing(reason(None, true).clone())
+            }, CrashKind::Inconclusive; "confirmed absent reason")]
+#[test_case::test_case("unsupported absent reason", &CrashFacts {
                 applied: true,
                 confirmed: true,
-                ..nothing(none)
-            },
-            CrashKind::Idle,
-        ),
-        (
-            "unconfirmed absent reason",
-            CrashFacts {
+                ..nothing(reason(None, false))
+            }, CrashKind::Idle; "unsupported absent reason")]
+#[test_case::test_case("unconfirmed absent reason", &CrashFacts {
                 applied: true,
-                ..nothing(supported)
-            },
-            CrashKind::Idle,
-        ),
-        (
-            "unknown",
-            nothing(reason(Some(ResetKind::Unknown), true)),
-            CrashKind::Stray,
-        ),
-    ];
-    for (name, facts, want) in cases {
-        assert_eq!(classify(&facts), want, "{name}");
-    }
+                ..nothing(reason(None, true))
+            }, CrashKind::Idle; "unconfirmed absent reason")]
+#[test_case::test_case("unknown", &nothing(reason(Some(ResetKind::Unknown), true)), CrashKind::Stray; "unknown")]
+fn classify_crash_cases(name: &str, facts: &CrashFacts, want: CrashKind) {
+    assert_eq!(classify(facts), want, "{name}");
 }
 
-#[test]
-fn other_reset_kinds_classify_by_what_was_applied() {
-    for kind in [
-        ResetKind::Watchdog,
-        ResetKind::SyncFlood,
-        ResetKind::CpuShutdown,
-        ResetKind::PowerLoss,
-    ] {
-        let confirmed = CrashFacts {
-            confirmed: true,
-            ..nothing(reason(Some(kind), true))
-        };
-        assert_eq!(
-            classify(&CrashFacts {
-                in_trial: true,
-                ..confirmed.clone()
-            }),
-            CrashKind::InTrial
-        );
-        assert_eq!(
-            classify(&CrashFacts {
-                applied: true,
-                ..confirmed.clone()
-            }),
-            CrashKind::Idle
-        );
-        assert_eq!(classify(&confirmed), CrashKind::Stray);
-    }
+#[test_case::test_case(ResetKind::Watchdog; "ResetKind::Watchdog")]
+#[test_case::test_case(ResetKind::SyncFlood; "ResetKind::SyncFlood")]
+#[test_case::test_case(ResetKind::CpuShutdown; "ResetKind::CpuShutdown")]
+#[test_case::test_case(ResetKind::PowerLoss; "ResetKind::PowerLoss")]
+fn other_reset_kinds_classify_by_what_was_applied(kind: ResetKind) {
+    let confirmed = CrashFacts {
+        confirmed: true,
+        ..nothing(reason(Some(kind), true))
+    };
+    assert_eq!(
+        classify(&CrashFacts {
+            in_trial: true,
+            ..confirmed.clone()
+        }),
+        CrashKind::InTrial
+    );
+    assert_eq!(
+        classify(&CrashFacts {
+            applied: true,
+            ..confirmed.clone()
+        }),
+        CrashKind::Idle
+    );
+    assert_eq!(classify(&confirmed), CrashKind::Stray);
 }
 
 #[test]

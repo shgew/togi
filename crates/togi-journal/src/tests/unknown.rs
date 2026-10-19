@@ -165,7 +165,7 @@ fn an_unknown_field_in_a_struct_inside_a_tagged_variant_is_located() {
     shape["leaves"] = json!([leaf, marked]);
     let (found, left) = strip(&compact(&holder(shape.clone())));
     assert_eq!(found, ["shape.leaves[1].extra"]);
-    shape["leaves"][1] = leaf.clone();
+    shape["leaves"][1] = leaf;
     assert_eq!(left, compact(&holder(shape)));
 }
 

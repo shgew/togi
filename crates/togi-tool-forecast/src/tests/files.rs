@@ -243,6 +243,31 @@ fn the_hash_covers_the_lines_as_the_file_holds_them() {
 }
 
 #[test]
+fn decoded_prefix_offsets_count_original_bytes_and_exclude_a_torn_tail() {
+    let mut original = events(1, start(A, "abc1234"));
+    original.extend(events(original.len() as u64 + 1, [crash()]));
+    let mut bytes = Vec::new();
+    let mut expected = Vec::new();
+    for event in &mut original {
+        event.msg = "évent 🦀".to_owned();
+        serde_json::to_writer(&mut bytes, event).unwrap();
+        bytes.extend_from_slice(b"\r\n");
+        expected.push(Sha256::digest(&bytes));
+    }
+    bytes.extend_from_slice(b"{\"seq\":");
+    let session = Session::decode(std::path::Path::new("events.jsonl"), &bytes)
+        .unwrap()
+        .unwrap();
+    for (event, digest) in original.iter().zip(expected) {
+        let digest = digest.iter().fold(String::new(), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        });
+        assert_eq!(session.anchor_at(event.seq).unwrap().sha256, digest);
+    }
+}
+
+#[test]
 fn an_appended_event_changes_no_prefix_hash_but_an_edited_one_changes_every_later_hash() {
     let short = Session::from_events(events(1, start(A, "abc1234"))).unwrap();
     let mut longer = start(A, "abc1234");

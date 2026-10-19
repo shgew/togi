@@ -182,7 +182,7 @@ fn a_simulated_state_directory_reads_back_as_the_sessions_it_holds() {
     assert_eq!(anchor.seq, last);
     assert_eq!(
         stopped.session().anchor_at(last),
-        Some(anchor.clone()),
+        Some(anchor),
         "the journal's lines are the events' own encodings"
     );
     let first = Seq::new(2).unwrap();

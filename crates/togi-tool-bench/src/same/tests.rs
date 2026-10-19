@@ -1063,7 +1063,7 @@ fn a_session_s_inputs_change_with_its_identity_and_replay(scenario: SessionInput
     let base = spec("s", Split::Dev, 1);
     let want = super::digests::inputs(&base);
     assert_eq!(want, super::digests::inputs(&spec("s", Split::Dev, 1)));
-    let mut replaying = base.clone();
+    let mut replaying = base;
     replaying.replay = Some(Arc::new(Replay::default()));
     let (what, other) = match scenario {
         SessionInput::Seed => ("seed", spec("s", Split::Dev, 2)),
@@ -1180,7 +1180,7 @@ fn two_trees_that_build_the_same_simulator_from_the_same_inputs_run_nothing(case
     changed[0].inputs[1].push_str("changed");
     assert!(!super::same_inputs(&keys, &changed));
 
-    let mut options = options.clone();
+    let mut options = options;
     options.no_cache = no_cache;
     options.keep = keep.then(|| PathBuf::from("/kept"));
     assert!(super::identical_report(&options, 4, true, super::Timings::default()).is_none());

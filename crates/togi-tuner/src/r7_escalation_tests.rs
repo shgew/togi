@@ -225,75 +225,49 @@ fn ordinal(why: &R7Reason) -> u32 {
         .expect("an ordinal note")
 }
 
-#[test]
-fn escalation_boundaries() {
-    type Case = (&'static str, &'static str, Option<&'static [usize]>, u32);
-    let cases: [Case; 11] = [
-        ("first failure of a load backs off", "A", None, 1),
-        ("one backoff is not enough", "AA", None, 2),
-        (
-            "two backoffs escalate the next failure",
-            "AAA",
-            Some(&[0, 1]),
-            0,
-        ),
-        ("a pass resets the count", "AAaA", None, 1),
-        (
-            "a pass resets it again after two more backoffs",
-            "AAaAA",
-            None,
-            2,
-        ),
-        (
-            "two backoffs after a pass escalate",
-            "AAaAAA",
-            Some(&[2, 3]),
-            0,
-        ),
-        ("another workload counts separately", "AAB", None, 1),
-        ("other loaded cores count separately", "AAC", None, 1),
-        (
-            "alternating loads keep separate counts",
-            "ABABA",
-            Some(&[0, 2]),
-            0,
-        ),
-        ("alternating loads stay below the count", "ABAB", None, 2),
-        (
-            "a pass of another load does not reset",
-            "AAbA",
-            Some(&[0, 1]),
-            0,
-        ),
-    ];
-    for (name, ops, cited, count) in cases {
-        let mut j = Journal::r7_session();
-        let played = j.play(ops);
-        if let Some(cited) = cited {
-            let (failure, escalation, cause) = j.located();
-            assert_eq!(failure, played.last_failure(), "{name}");
-            let decisions: Vec<Seq> = cited.iter().map(|&at| played.backoffs[at]).collect();
-            assert_eq!(
-                escalation,
-                Escalation::Backoffs {
-                    failures: ESCALATE_AFTER,
-                    decisions: decisions.clone(),
-                },
-                "{name}"
-            );
-            assert_eq!(cause, decisions, "{name}");
-        } else {
-            let why = j.r7_backoff();
-            assert_eq!(why.failure, played.last_failure(), "{name}");
-            let last = ops.chars().last().unwrap();
-            assert_eq!(why.core, core(escalation_load(last).top), "{name}");
-            assert_eq!(ordinal(&why), count, "{name}");
-        }
-        let resumed = j.resumed();
-        assert_eq!(resumed.run().r7_decision(), j.run().r7_decision(), "{name}");
-        assert_eq!(resumed.run().locate_due(), j.run().locate_due(), "{name}");
-        j.assert_resumes();
+#[test_case::test_case("first failure of a load backs off", "A", None, 1; "first failure of a load backs off")]
+#[test_case::test_case("one backoff is not enough", "AA", None, 2; "one backoff is not enough")]
+#[test_case::test_case("two backoffs escalate the next failure", "AAA", Some(&[0, 1]), 0; "two backoffs escalate the next failure")]
+#[test_case::test_case("a pass resets the count", "AAaA", None, 1; "a pass resets the count")]
+#[test_case::test_case("a pass resets it again after two more backoffs", "AAaAA", None, 2; "a pass resets it again after two more backoffs")]
+#[test_case::test_case("two backoffs after a pass escalate", "AAaAAA", Some(&[2, 3]), 0; "two backoffs after a pass escalate")]
+#[test_case::test_case("another workload counts separately", "AAB", None, 1; "another workload counts separately")]
+#[test_case::test_case("other loaded cores count separately", "AAC", None, 1; "other loaded cores count separately")]
+#[test_case::test_case("alternating loads keep separate counts", "ABABA", Some(&[0, 2]), 0; "alternating loads keep separate counts")]
+#[test_case::test_case("alternating loads stay below the count", "ABAB", None, 2; "alternating loads stay below the count")]
+#[test_case::test_case("a pass of another load does not reset", "AAbA", Some(&[0, 1]), 0; "a pass of another load does not reset")]
+fn escalation_boundaries(
+    name: &'static str,
+    ops: &'static str,
+    cited: Option<&'static [usize]>,
+    count: u32,
+) {
+    let mut j = Journal::r7_session();
+    let played = j.play(ops);
+    if let Some(cited) = cited {
+        let (failure, escalation, cause) = j.located();
+        assert_eq!(failure, played.last_failure(), "{name}");
+        let decisions: Vec<Seq> = cited.iter().map(|&at| played.backoffs[at]).collect();
+        assert_eq!(
+            escalation,
+            Escalation::Backoffs {
+                failures: ESCALATE_AFTER,
+                decisions: decisions.clone(),
+            },
+            "{name}"
+        );
+        assert_eq!(cause, decisions, "{name}");
+    } else {
+        let why = j.r7_backoff();
+        assert_eq!(why.failure, played.last_failure(), "{name}");
+        let last = ops.chars().last().unwrap();
+        assert_eq!(why.core, core(escalation_load(last).top), "{name}");
+        assert_eq!(ordinal(&why), count, "{name}");
     }
+    let resumed = j.resumed();
+    assert_eq!(resumed.run().r7_decision(), j.run().r7_decision(), "{name}");
+    assert_eq!(resumed.run().locate_due(), j.run().locate_due(), "{name}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -331,39 +305,38 @@ fn escalation_count_survives_resume() {
     );
 }
 
-#[test]
-fn an_escalated_failure_reads_the_ranking_before_it_is_located() {
-    for chosen_shallower in [false, true] {
-        let ids = [0, 1, 2, 3];
-        let mut j = Journal::on(&ids, pairs(&ids), &[Start::has_room(-30); 4]);
-        j.profile_change(&[-30, -30, -30, -30]);
-        j.play("AA");
-        j.apply_backoff();
-        let failed = j.values();
-        j.load_trial_topped(escalation_load('a'), Outcome::Failure, &[0, 1]);
-        let Some(Action::Decide(attribution)) = j.skip_phases() else {
-            panic!("expected the attribution");
-        };
-        let failure = j.decide(attribution);
-        assert_eq!(j.skip_phases(), Some(Action::ReadRanking));
-        assert_eq!(j.run().r7_decision(), Some(R7Response::ReadRanking));
+#[test_case::test_case(false; "not chosen_shallower")]
+#[test_case::test_case(true; "chosen_shallower")]
+fn an_escalated_failure_reads_the_ranking_before_it_is_located(chosen_shallower: bool) {
+    let ids = [0, 1, 2, 3];
+    let mut j = Journal::on(&ids, pairs(&ids), &[Start::has_room(-30); 4]);
+    j.profile_change(&[-30, -30, -30, -30]);
+    j.play("AA");
+    j.apply_backoff();
+    let failed = j.values();
+    j.load_trial_topped(escalation_load('a'), Outcome::Failure, &[0, 1]);
+    let Some(Action::Decide(attribution)) = j.skip_phases() else {
+        panic!("expected the attribution");
+    };
+    let failure = j.decide(attribution);
+    assert_eq!(j.skip_phases(), Some(Action::ReadRanking));
+    assert_eq!(j.run().r7_decision(), Some(R7Response::ReadRanking));
+    assert_eq!(j.run().locate_due(), None);
+    j.ranking(&[0, 1, 2, 3]);
+    if chosen_shallower {
+        j.place(1, failed[1] + 1);
+        assert_eq!(j.run().r7_decision(), None);
         assert_eq!(j.run().locate_due(), None);
-        j.ranking(&[0, 1, 2, 3]);
-        if chosen_shallower {
-            j.place(1, failed[1] + 1);
-            assert_eq!(j.run().r7_decision(), None);
-            assert_eq!(j.run().locate_due(), None);
-            assert!(j.run().r7.open.contains_key(&failure));
-            j.place(1, failed[1]);
-        }
-        let (located, escalation, _) = j.located();
-        assert_eq!(located, failure, "{chosen_shallower}");
-        assert!(matches!(
-            escalation,
-            Escalation::Backoffs { failures: 2, .. }
-        ));
-        j.assert_resumes();
+        assert!(j.run().r7.open.contains_key(&failure));
+        j.place(1, failed[1]);
     }
+    let (located, escalation, _) = j.located();
+    assert_eq!(located, failure, "{chosen_shallower}");
+    assert!(matches!(
+        escalation,
+        Escalation::Backoffs { failures: 2, .. }
+    ));
+    j.assert_resumes();
 }
 
 #[test]
@@ -416,45 +389,41 @@ fn escalation_when_loaded_cores_cannot_back_off() {
     );
 }
 
-#[test]
-fn escalation_reset_drops_discarded_backoffs() {
-    for (name, reset, hunt) in [
-        ("reset of a loaded core restarts the count", 0u8, false),
-        ("reset of a core outside the load keeps the count", 3, true),
-    ] {
-        let mut j = Journal::r7_session();
-        j.play("AA");
-        j.apply_backoff();
-        let offsets = j.values();
-        j.reset(reset);
-        for _ in 0..4 {
-            match j.state.next().ok() {
-                Some(Action::Decide(decision))
-                    if matches!(decision.payload, DecisionPayload::CorePhase(_)) =>
-                {
-                    j.decide(decision);
-                }
-                Some(Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking) | None => break,
+#[test_case::test_case("reset of a loaded core restarts the count", 0u8, false; "reset of a loaded core restarts the count")]
+#[test_case::test_case("reset of a core outside the load keeps the count", 3, true; "reset of a core outside the load keeps the count")]
+fn escalation_reset_drops_discarded_backoffs(name: &str, reset: u8, hunt: bool) {
+    let mut j = Journal::r7_session();
+    j.play("AA");
+    j.apply_backoff();
+    let offsets = j.values();
+    j.reset(reset);
+    for _ in 0..4 {
+        match j.state.next().ok() {
+            Some(Action::Decide(decision))
+                if matches!(decision.payload, DecisionPayload::CorePhase(_)) =>
+            {
+                j.decide(decision);
             }
+            Some(Action::Decide(_) | Action::RunTrial(_) | Action::ReadRanking) | None => break,
         }
-        j.place(reset, offsets[usize::from(reset)]);
-        j.profile_change(&offsets);
-        j.play("A");
-        if hunt {
-            let (_, escalation, _) = j.located();
-            assert!(
-                matches!(escalation, Escalation::Backoffs { failures: 2, .. }),
-                "{name}"
-            );
-        } else {
-            assert_eq!(j.strikes('a'), 0, "{name}");
-            assert_eq!(ordinal(&j.r7_backoff()), 1, "{name}");
-        }
-        let resumed = j.resumed();
-        assert_eq!(resumed.run().r7_decision(), j.run().r7_decision(), "{name}");
-        assert_eq!(resumed.run().locate_due(), j.run().locate_due(), "{name}");
-        j.assert_resumes();
     }
+    j.place(reset, offsets[usize::from(reset)]);
+    j.profile_change(&offsets);
+    j.play("A");
+    if hunt {
+        let (_, escalation, _) = j.located();
+        assert!(
+            matches!(escalation, Escalation::Backoffs { failures: 2, .. }),
+            "{name}"
+        );
+    } else {
+        assert_eq!(j.strikes('a'), 0, "{name}");
+        assert_eq!(ordinal(&j.r7_backoff()), 1, "{name}");
+    }
+    let resumed = j.resumed();
+    assert_eq!(resumed.run().r7_decision(), j.run().r7_decision(), "{name}");
+    assert_eq!(resumed.run().locate_due(), j.run().locate_due(), "{name}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -509,70 +478,46 @@ fn escalation_snapshot_is_frozen_when_the_failure_folds() {
     j.assert_resumes();
 }
 
-#[test]
-fn a_load_that_passed_with_its_loaded_cores_as_deep_locates_its_failure_at_once() {
-    type Case = (&'static str, char, [i64; 4], usize, bool);
-    let cases: [Case; 6] = [
-        (
-            "an unloaded core shallower",
-            'a',
-            [-30, -30, -20, -30],
-            0,
-            true,
-        ),
-        (
-            "loaded cores deeper too",
-            'a',
-            [-32, -31, -30, -10],
-            0,
-            true,
-        ),
-        (
-            "a loaded core shallower",
-            'a',
-            [-30, -29, -20, -30],
-            0,
-            false,
-        ),
-        ("the profile it failed at", 'a', [-30; 4], 0, false),
-        ("one pass short", 'a', [-30, -30, -20, -30], 1, false),
-        (
-            "another workload's passes",
-            'b',
-            [-30, -30, -20, -30],
-            0,
-            false,
-        ),
-    ];
-    for (name, op, passed, short, located) in cases {
-        let mut j = Journal::r7_session();
-        for (id, offset) in (0..).zip(passed) {
-            j.place(id, offset);
-        }
-        let n = usize::from(j.run().config.needed.get());
-        let passes: Vec<Seq> = (0..n - short)
-            .map(|_| j.load_trial(escalation_load(op), Outcome::Pass))
-            .collect();
-        for id in 0..4 {
-            j.place(id, -30);
-        }
-        let played = j.play("A");
-        if located {
-            let (failure, escalation, cause) = j.located();
-            assert_eq!(failure, played.last_failure(), "{name}");
-            assert_eq!(
-                escalation,
-                Escalation::Covered {
-                    passes: passes.clone()
-                },
-                "{name}"
-            );
-            assert_eq!(cause, passes, "{name}");
-        } else {
-            assert_eq!(j.r7_backoff().failure, played.last_failure(), "{name}");
-        }
-        j.assert_resumes();
+#[test_case::test_case("an unloaded core shallower", 'a', [-30, -30, -20, -30], 0, true; "an unloaded core shallower")]
+#[test_case::test_case("loaded cores deeper too", 'a', [-32, -31, -30, -10], 0, true; "loaded cores deeper too")]
+#[test_case::test_case("a loaded core shallower", 'a', [-30, -29, -20, -30], 0, false; "a loaded core shallower")]
+#[test_case::test_case("the profile it failed at", 'a', [-30; 4], 0, false; "the profile it failed at")]
+#[test_case::test_case("one pass short", 'a', [-30, -30, -20, -30], 1, false; "one pass short")]
+#[test_case::test_case("another workload's passes", 'b', [-30, -30, -20, -30], 0, false; "another workload's passes")]
+fn a_load_that_passed_with_its_loaded_cores_as_deep_locates_its_failure_at_once(
+    name: &str,
+    op: char,
+    passed: [i64; 4],
+    short: usize,
+    located: bool,
+) {
+    let mut j = Journal::r7_session();
+    for (id, offset) in (0..).zip(passed) {
+        j.place(id, offset);
     }
+    let n = usize::from(j.run().config.needed.get());
+    let passes: Vec<Seq> = (0..n - short)
+        .map(|_| j.load_trial(escalation_load(op), Outcome::Pass))
+        .collect();
+    for id in 0..4 {
+        j.place(id, -30);
+    }
+    let played = j.play("A");
+    if located {
+        let (failure, escalation, cause) = j.located();
+        assert_eq!(failure, played.last_failure(), "{name}");
+        assert_eq!(
+            escalation,
+            Escalation::Covered {
+                passes: passes.clone()
+            },
+            "{name}"
+        );
+        assert_eq!(cause, passes, "{name}");
+    } else {
+        assert_eq!(j.r7_backoff().failure, played.last_failure(), "{name}");
+    }
+    j.assert_resumes();
 }
 
 #[test]
@@ -615,59 +560,42 @@ fn pass_after_the_fold(j: &mut Journal, count: usize) {
     j.place(2, -30);
 }
 
-#[test]
-fn a_covered_failure_cites_the_earliest_passes_of_the_current_needed_count() {
-    let bound = usize::from(togi_config::TrialCount::MAX);
-    let at_bound = format!(
+#[test_case::test_case("a larger count", r#"{"evidence":{"miss":0.01,"rate":0.5}}"#, 20, std::cmp::Ordering::Greater, None; "a larger count")]
+#[test_case::test_case("a smaller count", r#"{"evidence":{"miss":0.2,"rate":0.5}}"#, 20, std::cmp::Ordering::Less, None; "a smaller count")]
+#[test_case::test_case("the supported bound", &format!(
         r#"{{"evidence":{{"miss":{:e},"rate":0.5}}}}"#,
         0.5_f64.powf(f64::from(togi_config::TrialCount::MAX) - 0.5)
-    );
-    let cases: [(&str, String, usize, std::cmp::Ordering, Option<usize>); 3] = [
-        (
-            "a larger count",
-            r#"{"evidence":{"miss":0.01,"rate":0.5}}"#.to_owned(),
-            20,
-            std::cmp::Ordering::Greater,
-            None,
-        ),
-        (
-            "a smaller count",
-            r#"{"evidence":{"miss":0.2,"rate":0.5}}"#.to_owned(),
-            20,
-            std::cmp::Ordering::Less,
-            None,
-        ),
-        (
-            "the supported bound",
-            at_bound,
-            bound + 1,
-            std::cmp::Ordering::Greater,
-            Some(bound),
-        ),
-    ];
-    for (name, config, count, want, exact) in cases {
-        let (mut j, passes, failure) = covered_failure(count);
-        let before = usize::from(j.run().config.needed.get());
-        pass_after_the_fold(&mut j, 3);
-        j.load(&crate::testkit::config(&config));
-        let after = usize::from(j.run().config.needed.get());
-        assert_eq!(after.cmp(&before), want, "{name}");
-        assert!(after <= passes.len() && after <= bound, "{name}");
-        if let Some(exact) = exact {
-            assert_eq!(after, exact, "{name}");
-        }
-        let (located, escalation, cause) = j.located();
-        assert_eq!(located, failure, "{name}");
-        assert_eq!(
-            escalation,
-            Escalation::Covered {
-                passes: passes[..after].to_vec()
-            },
-            "{name}"
-        );
-        assert_eq!(cause, passes[..after], "{name}");
-        j.assert_resumes();
+    ), usize::from(togi_config::TrialCount::MAX) + 1, std::cmp::Ordering::Greater, Some(usize::from(togi_config::TrialCount::MAX)); "the supported bound")]
+fn a_covered_failure_cites_the_earliest_passes_of_the_current_needed_count(
+    name: &str,
+    config: &str,
+    count: usize,
+    want: std::cmp::Ordering,
+    exact: Option<usize>,
+) {
+    let bound = usize::from(togi_config::TrialCount::MAX);
+
+    let (mut j, passes, failure) = covered_failure(count);
+    let before = usize::from(j.run().config.needed.get());
+    pass_after_the_fold(&mut j, 3);
+    j.load(&crate::testkit::config(config));
+    let after = usize::from(j.run().config.needed.get());
+    assert_eq!(after.cmp(&before), want, "{name}");
+    assert!(after <= passes.len() && after <= bound, "{name}");
+    if let Some(exact) = exact {
+        assert_eq!(after, exact, "{name}");
     }
+    let (located, escalation, cause) = j.located();
+    assert_eq!(located, failure, "{name}");
+    assert_eq!(
+        escalation,
+        Escalation::Covered {
+            passes: passes[..after].to_vec()
+        },
+        "{name}"
+    );
+    assert_eq!(cause, passes[..after], "{name}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -689,46 +617,42 @@ fn passes_after_the_fold_never_lift_a_covered_failure_over_a_larger_count() {
     j.assert_resumes();
 }
 
-#[test]
-fn a_carried_failure_its_loaded_cores_passed_as_deep_needs_no_move() {
-    for covered in [true, false] {
-        let mut j = Journal::r7_session();
-        let n = usize::from(j.run().config.needed.get());
-        let top = R7Report::default().top(&[0]);
-        if covered {
-            for _ in 0..n {
-                j.r7_fact(true, &[0, 1], &[-30, -30, -20, -30], &top);
-            }
+#[test_case::test_case(false; "not covered")]
+#[test_case::test_case(true; "covered")]
+fn a_carried_failure_its_loaded_cores_passed_as_deep_needs_no_move(covered: bool) {
+    let mut j = Journal::r7_session();
+    let n = usize::from(j.run().config.needed.get());
+    let top = R7Report::default().top(&[0]);
+    if covered {
+        for _ in 0..n {
+            j.r7_fact(true, &[0, 1], &[-30, -30, -20, -30], &top);
         }
-        let failure = j.r7_fact(false, &[0, 1], &[-30; 4], &top);
-        if covered {
-            assert_eq!(j.run().r7_decision(), None);
-            assert_eq!(j.run().locate_due(), None);
-            assert!(j.run().r7.open.contains_key(&failure));
-        } else {
-            assert_eq!(j.r7_backoff().failure, failure);
-        }
-        j.assert_resumes();
     }
+    let failure = j.r7_fact(false, &[0, 1], &[-30; 4], &top);
+    if covered {
+        assert_eq!(j.run().r7_decision(), None);
+        assert_eq!(j.run().locate_due(), None);
+        assert!(j.run().r7.open.contains_key(&failure));
+    } else {
+        assert_eq!(j.r7_backoff().failure, failure);
+    }
+    j.assert_resumes();
 }
 
-#[test]
-fn deepening_hold_and_named_backoffs_are_never_counted() {
+#[test_case::test_case(BackoffKind::Unattributed; "BackoffKind::Unattributed")]
+#[test_case::test_case(BackoffKind::Named; "BackoffKind::Named")]
+#[test_case::test_case(BackoffKind::LocatedNamed; "BackoffKind::LocatedNamed")]
+#[test_case::test_case(BackoffKind::Deepening; "BackoffKind::Deepening")]
+#[test_case::test_case(BackoffKind::Hold; "BackoffKind::Hold")]
+fn deepening_hold_and_named_backoffs_are_never_counted(kind: BackoffKind) {
     let load = load_key('a');
     let (decision, failure) = (Seq::new(2).unwrap(), Seq::new(1).unwrap());
-    for kind in [
-        BackoffKind::Unattributed,
-        BackoffKind::Named,
-        BackoffKind::LocatedNamed,
-        BackoffKind::Deepening,
-        BackoffKind::Hold,
-    ] {
-        let mut strikes = Strikes::default();
-        strikes.backoff(load, kind, decision, failure);
-        let counted = kind == BackoffKind::Unattributed;
-        assert_eq!(kind.counts(), counted, "{kind:?}");
-        assert_eq!(strikes.failures(load), u32::from(counted), "{kind:?}");
-    }
+
+    let mut strikes = Strikes::default();
+    strikes.backoff(load, kind, decision, failure);
+    let counted = kind == BackoffKind::Unattributed;
+    assert_eq!(kind.counts(), counted, "{kind:?}");
+    assert_eq!(strikes.failures(load), u32::from(counted), "{kind:?}");
 
     let mut j = Journal::r7_session();
     for _ in 0..2 {
@@ -794,27 +718,26 @@ fn r7_status_separates_workloads_offsets_and_top_requesters() {
     }
 }
 
-#[test]
-fn r7_status_ignores_failed_starts_as_top_requester() {
-    for carried in [false, true] {
-        let mut j = Journal::r7_session();
-        let values = j.values();
-        let report = R7Report::default().top(&[0]);
-        if carried {
-            j.r7_fact(
-                false,
-                &[0, 1],
-                &values,
-                &report.requests(&[(0, 1.1), (1, 1.08)]),
-            );
-        } else {
-            j.r7_trial(&[0, 1], &values, Outcome::Failure, &report);
-        }
-        for status in j.state.r7_status() {
-            if status.workload == r7_workload(0) && status.core == core(0) {
-                assert_eq!(status.passes, 0, "carried {carried}: {status:?}");
-                assert!(!status.self_sufficient, "carried {carried}: {status:?}");
-            }
+#[test_case::test_case(false; "not carried")]
+#[test_case::test_case(true; "carried")]
+fn r7_status_ignores_failed_starts_as_top_requester(carried: bool) {
+    let mut j = Journal::r7_session();
+    let values = j.values();
+    let report = R7Report::default().top(&[0]);
+    if carried {
+        j.r7_fact(
+            false,
+            &[0, 1],
+            &values,
+            &report.requests(&[(0, 1.1), (1, 1.08)]),
+        );
+    } else {
+        j.r7_trial(&[0, 1], &values, Outcome::Failure, &report);
+    }
+    for status in j.state.r7_status() {
+        if status.workload == r7_workload(0) && status.core == core(0) {
+            assert_eq!(status.passes, 0, "carried {carried}: {status:?}");
+            assert!(!status.self_sufficient, "carried {carried}: {status:?}");
         }
     }
 }

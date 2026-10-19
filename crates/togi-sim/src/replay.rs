@@ -8,7 +8,7 @@ use togi_machine::{BiosContext, CoreSet, Regime, Signal, TargetOffset};
 
 use crate::hazard::Load;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplayOutcome {
     Pass,
     /// A failure after `exposure` of the intended duration, which can be zero.
@@ -19,7 +19,7 @@ pub enum ReplayOutcome {
 }
 
 /// One recorded trial: what ran, under which BIOS, with which offsets applied, and what came of it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayFact {
     pub context: BiosContext,
     pub regime: Regime,
@@ -32,14 +32,14 @@ pub struct ReplayFact {
     pub outcome: ReplayOutcome,
 }
 
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("replay fact {index}: {problem}")]
 pub struct InvalidFact {
     pub index: usize,
     pub problem: FactProblem,
 }
 
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum FactProblem {
     #[error("the BIOS context is empty")]
     NoContext,

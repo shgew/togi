@@ -256,6 +256,10 @@ fn trial_plan_intent_rotation() {
     let catalog = workloads(Regime::R1);
     for index in 0..2 * catalog.len() {
         let intent = next.intent(TrialId::from("probe".to_owned()), index);
-        assert_eq!(intent.workload, catalog[index % catalog.len()].id());
+        assert_eq!(
+            intent.workload,
+            catalog[index % catalog.len()].id(),
+            "rotation index {index}"
+        );
     }
 }

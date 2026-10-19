@@ -29,7 +29,8 @@ pub const REBOOT_TIME: Duration = Duration::from_secs(90);
 /// 2026-01-01T00:00:00Z, the start of a machine with no history.
 const EPOCH: Timestamp = Timestamp::constant(1_767_225_600, 0);
 
-const BANKS: [BankType; 9] = [
+const BANK_COUNT: u8 = 9;
+const BANKS: [BankType; BANK_COUNT as usize] = [
     BankType::LoadStore,
     BankType::InstructionFetch,
     BankType::L2Cache,
@@ -40,7 +41,7 @@ const BANKS: [BankType; 9] = [
     BankType::MemoryController,
     BankType::DataFabric,
 ];
-const CORE_LOCAL_BANKS: usize = 6;
+const CORE_LOCAL_BANKS: u8 = 6;
 
 /// What earlier invocations of a simulation left behind, so a resumed machine continues after them.
 #[derive(Clone, Debug, Default)]
@@ -347,15 +348,15 @@ impl Runtime {
         } else {
             (
                 CORE_LOCAL_BANKS,
-                BANKS.len() - CORE_LOCAL_BANKS,
+                BANK_COUNT - CORE_LOCAL_BANKS,
                 (x - local) / (1.0 - local),
             )
         };
         let bank = first + bank_offset(x, count);
         PendingMce {
             core,
-            bank: u16::try_from(bank).unwrap_or(0),
-            bank_type: BANKS[bank],
+            bank: u16::from(bank),
+            bank_type: BANKS[usize::from(bank)],
             corrected,
         }
     }
@@ -370,9 +371,8 @@ impl Runtime {
     clippy::cast_sign_loss,
     reason = "x is in [0, 1], so the product is a small nonnegative whole number"
 )]
-fn bank_offset(x: f64, count: usize) -> usize {
-    let count = u8::try_from(count).unwrap_or(u8::MAX);
-    ((x * f64::from(count)) as usize).min(usize::from(count) - 1)
+fn bank_offset(x: f64, count: u8) -> u8 {
+    ((x * f64::from(count)) as u8).min(count - 1)
 }
 
 fn boot_id(seed: u64, number: u32) -> BootId {
@@ -418,5 +418,19 @@ fn reset_reason(kind: Option<ResetKind>, supported: bool) -> ResetReason {
             .into_iter()
             .collect(),
         supported: true,
+    }
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::bank_offset;
+    use test_case::test_case;
+
+    #[test_case(0.0, 3, 0; "first shared bank")]
+    #[test_case(1.0, 3, 2; "last shared bank")]
+    #[test_case(0.0, 6, 0; "first core-local bank")]
+    #[test_case(1.0, 6, 5; "last core-local bank")]
+    fn bank_draws_stay_inside_the_catalogue(draw: f64, count: u8, expected: u8) {
+        assert_eq!(bank_offset(draw, count), expected);
     }
 }

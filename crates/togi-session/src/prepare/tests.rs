@@ -490,7 +490,7 @@ fn scenario(kind: ScenarioKind) -> (Bench, Build, Option<BiosContext>) {
         ScenarioKind::PlainResume => {
             let plain = bench();
             let (_, context) = finished(&plain);
-            (plain, build(), Some(context.clone()))
+            (plain, build(), Some(context))
         }
         ScenarioKind::ContextChange => {
             let transition = bench();

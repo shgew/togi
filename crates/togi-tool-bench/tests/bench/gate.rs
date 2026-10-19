@@ -5,6 +5,7 @@ use std::thread;
 use crate::common::{self, record};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use test_case::test_case;
 use togi_tool_bench::gate::{self, Criterion, Measure, Resolved, Verdict, quantile_change};
 use togi_tool_bench::{Record, Selection, Status, Suite, read_records_from};
 
@@ -764,21 +765,15 @@ fn the_archived_go_gate_is_kept_unchanged_and_never_re_scored() {
         gate::load(&suite).unwrap_err().to_string(),
         "gate: bootstrap_seed is a pair, the seed of the Go bench's PCG; archived Go gates are kept as records and are not re-scored"
     );
-    for (name, bytes) in [
-        (
-            "baseline.jsonl",
-            include_bytes!("../../../../tools/bench/gates/ruleset-11/baseline.jsonl").as_slice(),
-        ),
-        (
-            "candidate.jsonl",
-            include_bytes!("../../../../tools/bench/gates/ruleset-11/candidate.jsonl").as_slice(),
-        ),
-    ] {
-        let error = read_records_from(bytes, Path::new(name), "records")
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("line 1"), "{name}: {error}");
-    }
+}
+
+#[test_case("baseline.jsonl", include_bytes!("../../../../tools/bench/gates/ruleset-11/baseline.jsonl").as_slice(); "baseline")]
+#[test_case("candidate.jsonl", include_bytes!("../../../../tools/bench/gates/ruleset-11/candidate.jsonl").as_slice(); "candidate")]
+fn archived_go_records_are_not_accepted(name: &str, bytes: &[u8]) {
+    let error = read_records_from(bytes, Path::new(name), "records")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("line 1"), "{name}: {error}");
 }
 
 #[test]

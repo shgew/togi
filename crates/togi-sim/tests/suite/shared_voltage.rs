@@ -173,8 +173,11 @@ fn core_eleven_needs_a_supporting_core_to_keep_its_rail(supporter: i64) {
     );
 }
 
-#[test]
-fn core_eleven_keeps_its_rail_with_its_whole_ccd_and_fails_by_computation_error() {
+#[test_case(0.0; "zero")]
+#[test_case(0.25; "quarter")]
+#[test_case(0.5; "half")]
+#[test_case(0.999; "near one")]
+fn core_eleven_keeps_its_rail_with_its_whole_ccd_and_fails_by_computation_error(x: f64) {
     let (rail, _, threshold) = core_eleven_rail(&[8, 9, 10, 11, 12, 13, 14, 15]);
     assert!(rail > threshold, "{rail} <= {threshold}");
     let model = voltage_model();
@@ -186,9 +189,7 @@ fn core_eleven_keeps_its_rail_with_its_whole_ccd_and_fails_by_computation_error(
         .signals
         .as_ref()
         .expect("core 11 names its signals");
-    for x in [0.0, 0.25, 0.5, 0.999] {
-        assert_eq!(mix.pick(x), Signal::ComputationError, "{x}");
-    }
+    assert_eq!(mix.pick(x), Signal::ComputationError, "{x}");
 }
 
 #[test]

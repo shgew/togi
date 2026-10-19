@@ -7,6 +7,7 @@
 mod support;
 
 use std::path::Path;
+use test_case::test_case;
 
 use support::{Host, Ran, Session, files};
 use togi_cli::Exit;
@@ -57,117 +58,110 @@ fn reset_core_queues_one_command_in_the_current_boot() {
     assert_eq!(event["boot"], host.boot.as_str());
 }
 
-#[test]
-fn reset_core_of_a_core_the_session_lacks_exits_2_and_changes_nothing() {
+#[test_case("16"; "core 16")]
+#[test_case("99"; "core 99")]
+fn reset_core_of_a_core_the_session_lacks_exits_2_and_changes_nothing(core: &str) {
     let host = Host::new();
     let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
     let before = session.text();
-    for core in ["16", "99"] {
-        let ran = reset(&host, session.path(), &["--core", core]);
-        assert_eq!(ran.exit, Exit::Usage, "{core}: {}", ran.err);
-        assert_eq!(ran.out, "");
-        assert_eq!(
-            ran.err,
-            format!("togi reset: reset core {core}: no such core\n")
-        );
-        assert_eq!(session.text(), before, "{core}");
-    }
+    let ran = reset(&host, session.path(), &["--core", core]);
+    assert_eq!(ran.exit, Exit::Usage, "{core}: {}", ran.err);
+    assert_eq!(ran.out, "");
+    assert_eq!(
+        ran.err,
+        format!("togi reset: reset core {core}: no such core\n")
+    );
+    assert_eq!(session.text(), before, "{core}");
 }
 
-#[test]
-fn exactly_one_of_core_and_all_and_a_core_number() {
-    for args in [
-        &[][..],
-        &["--core", "1", "--all"],
-        &["--core", "x"],
-        &["--core", "-1"],
-        &["--core", "300"],
-    ] {
-        let host = Host::new();
-        let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
-        let before = files(&host.fs, session.path());
-        let ran = reset(&host, session.path(), args);
-        assert_eq!(ran.exit, Exit::Usage, "{args:?}: {}", ran.err);
-        assert_eq!(ran.out, "", "{args:?}");
-        assert_eq!(files(&host.fs, session.path()), before, "{args:?}");
-        assert_eq!(
-            host.lock_acquisitions.get(),
-            0,
-            "{args:?}: the host lock was taken"
-        );
-    }
+#[test_case(&[]; "no target")]
+#[test_case(&["--core", "1", "--all"]; "both targets")]
+#[test_case(&["--core", "x"]; "not numeric")]
+#[test_case(&["--core", "-1"]; "negative")]
+#[test_case(&["--core", "300"]; "out of range")]
+fn exactly_one_of_core_and_all_and_a_core_number(args: &[&str]) {
+    let host = Host::new();
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    let before = files(&host.fs, session.path());
+    let ran = reset(&host, session.path(), args);
+    assert_eq!(ran.exit, Exit::Usage, "{args:?}: {}", ran.err);
+    assert_eq!(ran.out, "", "{args:?}");
+    assert_eq!(files(&host.fs, session.path()), before, "{args:?}");
+    assert_eq!(
+        host.lock_acquisitions.get(),
+        0,
+        "{args:?}: the host lock was taken"
+    );
 }
 
-#[test]
-fn no_journal_or_no_session_exits_1_without_creating_state() {
-    for args in [&["--core", "0"][..], &["--all"]] {
-        let host = Host::new();
-        let state = support::MemoryDir::new();
-        let ran = reset(&host, state.path(), args);
-        assert_eq!(ran.exit, Exit::Error, "{args:?}");
-        assert!(ran.err.contains("no journal at"), "{}", ran.err);
-        assert_eq!(
-            files(&host.fs, state.path()),
-            Vec::<String>::new(),
-            "{args:?}"
-        );
+#[test_case(&["--core", "0"]; "core")]
+#[test_case(&["--all"]; "all")]
+fn no_journal_or_no_session_exits_1_without_creating_state(args: &[&str]) {
+    let host = Host::new();
+    let state = support::MemoryDir::new();
+    let ran = reset(&host, state.path(), args);
+    assert_eq!(ran.exit, Exit::Error, "{args:?}");
+    assert!(ran.err.contains("no journal at"), "{}", ran.err);
+    assert_eq!(
+        files(&host.fs, state.path()),
+        Vec::<String>::new(),
+        "{args:?}"
+    );
 
-        let content = "";
-        host.write(state.path().join("events.jsonl"), content)
-            .unwrap();
-        let before = files(&host.fs, state.path());
-        let ran = reset(&host, state.path(), args);
-        assert_eq!(ran.exit, Exit::Error, "{args:?}");
-        assert_eq!(
-            ran.err,
-            format!("togi reset: no session in {}\n", state.path().display())
-        );
-        assert_eq!(
-            files(&host.fs, state.path()),
-            before,
-            "{args:?}: {content:?}"
-        );
-        assert_eq!(
-            host.read_to_string(state.path().join("events.jsonl"))
-                .unwrap(),
-            content,
-            "{args:?}"
-        );
-    }
+    let content = "";
+    host.write(state.path().join("events.jsonl"), content)
+        .unwrap();
+    let before = files(&host.fs, state.path());
+    let ran = reset(&host, state.path(), args);
+    assert_eq!(ran.exit, Exit::Error, "{args:?}");
+    assert_eq!(
+        ran.err,
+        format!("togi reset: no session in {}\n", state.path().display())
+    );
+    assert_eq!(
+        files(&host.fs, state.path()),
+        before,
+        "{args:?}: {content:?}"
+    );
+    assert_eq!(
+        host.read_to_string(state.path().join("events.jsonl"))
+            .unwrap(),
+        content,
+        "{args:?}"
+    );
 }
 
-#[test]
-fn a_malformed_first_line_is_refused_as_ambiguous_without_changing_state() {
-    for args in [&["--core", "0"][..], &["--all"]] {
-        let host = Host::new();
-        let state = support::MemoryDir::new();
-        let content = "{\"seq\":";
-        host.write(state.path().join("events.jsonl"), content)
-            .unwrap();
-        let before = files(&host.fs, state.path());
-        let ran = reset(&host, state.path(), args);
-        assert_eq!(ran.exit, Exit::Error, "{args:?}");
-        assert_eq!(ran.out, "", "{args:?}");
-        assert_eq!(
-            ran.err,
-            format!(
-                "togi reset: {}: first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover\n",
-                state.path().join("events.jsonl").display()
-            ),
-            "{args:?}"
-        );
-        assert_eq!(
-            files(&host.fs, state.path()),
-            before,
-            "{args:?}: no lock file"
-        );
-        assert_eq!(
-            host.read_to_string(state.path().join("events.jsonl"))
-                .unwrap(),
-            content,
-            "{args:?}"
-        );
-    }
+#[test_case(&["--core", "0"]; "core")]
+#[test_case(&["--all"]; "all")]
+fn a_malformed_first_line_is_refused_as_ambiguous_without_changing_state(args: &[&str]) {
+    let host = Host::new();
+    let state = support::MemoryDir::new();
+    let content = "{\"seq\":";
+    host.write(state.path().join("events.jsonl"), content)
+        .unwrap();
+    let before = files(&host.fs, state.path());
+    let ran = reset(&host, state.path(), args);
+    assert_eq!(ran.exit, Exit::Error, "{args:?}");
+    assert_eq!(ran.out, "", "{args:?}");
+    assert_eq!(
+        ran.err,
+        format!(
+            "togi reset: {}: first line is not a complete header of this build; either another build's journal or a header torn by a crash; see docs/howto.md#go-to-rust-cutover\n",
+            state.path().join("events.jsonl").display()
+        ),
+        "{args:?}"
+    );
+    assert_eq!(
+        files(&host.fs, state.path()),
+        before,
+        "{args:?}: no lock file"
+    );
+    assert_eq!(
+        host.read_to_string(state.path().join("events.jsonl"))
+            .unwrap(),
+        content,
+        "{args:?}"
+    );
 }
 
 #[test]
@@ -251,121 +245,106 @@ fn reset_all_of_another_ruleset_archives_it_normally() {
     assert!(archived.contains("\"kind\":\"command.reset\""));
 }
 
-#[test]
-fn reset_core_refuses_every_stamp_mismatch_with_exit_16_and_appends_nothing() {
+#[test_case(Some(99), None, None, true; "newer schema")]
+#[test_case(Some(0), None, None, false; "older schema")]
+#[test_case(None, Some(99), None, true; "newer ruleset")]
+#[test_case(None, None, Some(99), true; "newer evidence")]
+#[test_case(None, Some(0), None, false; "older ruleset")]
+#[test_case(None, Some(0), Some(99), true; "older ruleset with newer evidence")]
+fn reset_core_refuses_every_stamp_mismatch_with_exit_16_and_appends_nothing(
+    schema: Option<u32>,
+    ruleset: Option<u32>,
+    evidence: Option<u32>,
+    install_required: bool,
+) {
     let archives = "togi run archives it and starts a new session that carries its candidate solo limits and failure points; togi reset --all archives it and starts over.";
     let install = "Install togi 0.0.0 to continue this session, or run togi reset --all to archive it and start over.";
-    let current = format!("\"ruleset\":{RULESET}");
-    for (name, rewrites, written, uses, advice) in [
+    let advice = if install_required { install } else { archives };
+    let (written, uses) = if let Some(schema) = schema {
         (
-            "newer schema",
-            &[("\"schema\":1", "\"schema\":99")][..],
-            format!("(schema 99, ruleset {RULESET})"),
+            format!("(schema {schema}, ruleset {RULESET})"),
             "schema 1".to_owned(),
-            install,
-        ),
+        )
+    } else if let Some(ruleset) = ruleset {
         (
-            "older schema",
-            &[("\"schema\":1", "\"schema\":0")],
-            format!("(schema 0, ruleset {RULESET})"),
-            "schema 1".to_owned(),
-            archives,
-        ),
-        (
-            "newer ruleset",
-            &[(current.as_str(), "\"ruleset\":99")],
-            "(schema 1, ruleset 99)".to_owned(),
+            format!("(schema 1, ruleset {ruleset})"),
             format!("ruleset {RULESET}"),
-            install,
-        ),
+        )
+    } else {
         (
-            "newer evidence",
-            &[("\"evidence\":1}", "\"evidence\":99}")],
             format!("(schema 1, ruleset {RULESET}, evidence epoch 99)"),
             "evidence epoch 1".to_owned(),
-            install,
-        ),
-        (
-            "older ruleset",
-            &[(current.as_str(), "\"ruleset\":0")],
-            "(schema 1, ruleset 0)".to_owned(),
-            format!("ruleset {RULESET}"),
-            archives,
-        ),
-        (
-            "older ruleset with a newer evidence epoch",
-            &[
-                (current.as_str(), "\"ruleset\":0"),
-                ("\"evidence\":1}", "\"evidence\":99}"),
-            ],
-            "(schema 1, ruleset 0)".to_owned(),
-            format!("ruleset {RULESET}"),
-            install,
-        ),
-    ] {
-        let host = Host::new();
-        let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
-        for (from, to) in rewrites {
-            session.rewrite_first_line(from, to);
-        }
+        )
+    };
+    let host = Host::new();
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    if let Some(schema) = schema {
+        session.rewrite_first_line("\"schema\":1", &format!("\"schema\":{schema}"));
+    }
+    if let Some(ruleset) = ruleset {
         session.rewrite_first_line(
-            "\"version\":\"0.0.0\"",
-            "\"version\":\"0.0.0\",\"rev\":\"abc1234\"",
+            &format!("\"ruleset\":{RULESET}"),
+            &format!("\"ruleset\":{ruleset}"),
         );
-        let before = session.text();
-        let ran = reset(&host, session.path(), &["--core", "0"]);
-        assert_eq!(ran.exit, Exit::Incompatible, "{name}: {}", ran.err);
-        assert_eq!(ran.out, "", "{name}");
-        assert!(
+    }
+    if let Some(evidence) = evidence {
+        session.rewrite_first_line("\"evidence\":1}", &format!("\"evidence\":{evidence}}}"));
+    }
+    session.rewrite_first_line(
+        "\"version\":\"0.0.0\"",
+        "\"version\":\"0.0.0\",\"rev\":\"abc1234\"",
+    );
+    let before = session.text();
+    let ran = reset(&host, session.path(), &["--core", "0"]);
+    assert_eq!(ran.exit, Exit::Incompatible, "{}", ran.err);
+    assert_eq!(ran.out, "");
+    assert!(
             ran.err.starts_with(&format!(
                 "togi reset: this journal was written by togi 0.0.0+abc1234 {written}; this build, togi "
             )),
-            "{name}: {}",
+            "{}",
             ran.err
         );
-        assert!(
-            ran.err.ends_with(&format!(", uses {uses}. {advice}\n")),
-            "{name}: {}",
-            ran.err
-        );
-        assert_eq!(session.text(), before, "{name}");
-    }
+    assert!(
+        ran.err.ends_with(&format!(", uses {uses}. {advice}\n")),
+        "{}",
+        ran.err
+    );
+    assert_eq!(session.text(), before);
 }
 
-#[test]
-fn an_unreadable_journal_exits_1() {
-    for args in [&["--core", "0"][..], &["--all"]] {
-        let host = Host::new();
-        let state = support::MemoryDir::new();
-        host.write(state.path().join("events.jsonl"), "not json\n")
-            .unwrap();
-        let ran = reset(&host, state.path(), args);
-        assert_eq!(ran.exit, Exit::Error, "{args:?}: {}", ran.err);
-        assert_eq!(ran.out, "");
-    }
+#[test_case(&["--core", "0"]; "core")]
+#[test_case(&["--all"]; "all")]
+fn an_unreadable_journal_exits_1(args: &[&str]) {
+    let host = Host::new();
+    let state = support::MemoryDir::new();
+    host.write(state.path().join("events.jsonl"), "not json\n")
+        .unwrap();
+    let ran = reset(&host, state.path(), args);
+    assert_eq!(ran.exit, Exit::Error, "{args:?}: {}", ran.err);
+    assert_eq!(ran.out, "");
 }
 
-#[test]
-fn a_busy_host_lock_exits_3_naming_it_before_anything_changes() {
-    for args in [&["--core", "0"][..], &["--all"]] {
-        let host = Host::new();
-        let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
-        let before = files(&host.fs, session.path());
-        let text = session.text();
-        let _held = host.locks.acquire(&host.lock).unwrap();
-        let ran = reset(&host, session.path(), args);
-        assert_eq!(ran.exit, Exit::Locked, "{args:?}: {}", ran.err);
-        assert_eq!(ran.out, "");
-        assert_eq!(
-            ran.err,
-            format!(
-                "togi reset: acquire host lock {}: another togi process holds the host lock\n",
-                host.lock.display()
-            )
-        );
-        assert_eq!(files(&host.fs, session.path()), before);
-        assert_eq!(session.text(), text);
-    }
+#[test_case(&["--core", "0"]; "core")]
+#[test_case(&["--all"]; "all")]
+fn a_busy_host_lock_exits_3_naming_it_before_anything_changes(args: &[&str]) {
+    let host = Host::new();
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    let before = files(&host.fs, session.path());
+    let text = session.text();
+    let _held = host.locks.acquire(&host.lock).unwrap();
+    let ran = reset(&host, session.path(), args);
+    assert_eq!(ran.exit, Exit::Locked, "{args:?}: {}", ran.err);
+    assert_eq!(ran.out, "");
+    assert_eq!(
+        ran.err,
+        format!(
+            "togi reset: acquire host lock {}: another togi process holds the host lock\n",
+            host.lock.display()
+        )
+    );
+    assert_eq!(files(&host.fs, session.path()), before);
+    assert_eq!(session.text(), text);
 }
 
 #[test]
@@ -391,23 +370,22 @@ fn a_host_lock_that_cannot_be_taken_exits_1_with_its_cause_before_anything_chang
     assert_eq!(files(&host.fs, session.path()), before);
 }
 
-#[test]
-fn a_held_state_directory_lock_exits_3_and_changes_nothing() {
-    for args in [&["--core", "0"][..], &["--all"]] {
-        let host = Host::new();
-        let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
-        let text = session.text();
-        let held = host.lock_state_dir(session.path()).unwrap();
-        let ran = reset(&host, session.path(), args);
-        assert_eq!(ran.exit, Exit::Locked, "{args:?}: {}", ran.err);
-        assert_eq!(ran.out, "");
-        assert_eq!(
-            ran.err,
-            "togi reset: another togi process holds the journal lock\n"
-        );
-        drop(held);
-        assert_eq!(session.text(), text);
-    }
+#[test_case(&["--core", "0"]; "core")]
+#[test_case(&["--all"]; "all")]
+fn a_held_state_directory_lock_exits_3_and_changes_nothing(args: &[&str]) {
+    let host = Host::new();
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    let text = session.text();
+    let held = host.lock_state_dir(session.path()).unwrap();
+    let ran = reset(&host, session.path(), args);
+    assert_eq!(ran.exit, Exit::Locked, "{args:?}: {}", ran.err);
+    assert_eq!(ran.out, "");
+    assert_eq!(
+        ran.err,
+        "togi reset: another togi process holds the journal lock\n"
+    );
+    drop(held);
+    assert_eq!(session.text(), text);
 }
 
 #[test]
@@ -497,8 +475,10 @@ fn failing_scenario() -> (Scenario, CoreId, i64) {
     panic!("no scenario records a failure point");
 }
 
-#[test]
-fn reset_all_warns_for_each_solo_limit_at_or_past_its_failure_point() {
+#[test_case(0, true; "at failure point")]
+#[test_case(-1, true; "below failure point")]
+#[test_case(1, false; "above failure point")]
+fn reset_all_warns_for_each_solo_limit_at_or_past_its_failure_point(delta: i64, warns: bool) {
     let (scenario, core, point) = failing_scenario();
     let core = core.get();
     assert!(point < 0, "this case pins the remedy that offers a limit");
@@ -513,60 +493,58 @@ fn reset_all_warns_for_each_solo_limit_at_or_past_its_failure_point() {
         .unwrap();
         path
     };
-    let cases = [(point, true), (point - 1, true), (point + 1, false)];
-    for (limit, warns) in cases {
-        if !(-50..=0).contains(&limit) {
-            continue;
-        }
-        let session = Session::with_fs(host.fs.clone(), scenario);
-        let path = write(limit);
-        let ran = reset(
-            &host,
-            session.path(),
-            &["--all", "--config", path.to_str().unwrap()],
+    let limit = point + delta;
+    if !(-50..=0).contains(&limit) {
+        return;
+    }
+    let session = Session::with_fs(host.fs.clone(), scenario);
+    let path = write(limit);
+    let ran = reset(
+        &host,
+        session.path(),
+        &["--all", "--config", path.to_str().unwrap()],
+    );
+    assert_eq!(ran.exit, Exit::Ok, "{limit}: {}", ran.err);
+    let want = format!(
+        "warning: candidate solo limit {limit} for core {core:02} is at or deeper than its failure point {point} in the archived session; "
+    );
+    assert_eq!(ran.err.contains(&want), warns, "{limit}: {}", ran.err);
+    if warns {
+        let remedy = format!(
+            "use {}, the failure point plus one, or remove it",
+            point + 1
         );
-        assert_eq!(ran.exit, Exit::Ok, "{limit}: {}", ran.err);
-        let want = format!(
-            "warning: candidate solo limit {limit} for core {core:02} is at or deeper than its failure point {point} in the archived session; "
+        assert!(
+            ran.err.contains(&format!("{want}{remedy}\n")),
+            "{}",
+            ran.err
         );
-        assert_eq!(ran.err.contains(&want), warns, "{limit}: {}", ran.err);
-        if warns {
-            let remedy = format!(
-                "use {}, the failure point plus one, or remove it",
-                point + 1
-            );
-            assert!(
-                ran.err.contains(&format!("{want}{remedy}\n")),
-                "{}",
-                ran.err
-            );
-        }
     }
 }
 
-#[test]
-fn an_invalid_or_missing_config_never_stops_the_archive() {
+#[test_case(true; "malformed")]
+#[test_case(false; "missing")]
+fn an_invalid_or_missing_config_never_stops_the_archive(malformed: bool) {
     let host = Host::new();
     let cfg = support::MemoryDir::new();
     let bad = cfg.path().join("bad.json");
     host.write(&bad, "{").unwrap();
     let missing = cfg.path().join("missing.json");
-    for path in [&bad, &missing] {
-        let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
-        let ran = reset(
-            &host,
-            session.path(),
-            &["--all", "--config", path.to_str().unwrap()],
-        );
-        assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
-        assert!(
-            ran.err
-                .contains("warning: cannot check candidate solo limits: "),
-            "{}",
-            ran.err
-        );
-        assert!(!host.exists(session.journal()));
-    }
+    let path = if malformed { &bad } else { &missing };
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    let ran = reset(
+        &host,
+        session.path(),
+        &["--all", "--config", path.to_str().unwrap()],
+    );
+    assert_eq!(ran.exit, Exit::Ok, "{}", ran.err);
+    assert!(
+        ran.err
+            .contains("warning: cannot check candidate solo limits: "),
+        "{}",
+        ran.err
+    );
+    assert!(!host.exists(session.journal()));
 }
 
 #[test]
@@ -587,25 +565,26 @@ fn an_invalid_explicit_config_warning_keeps_the_parser_cause() {
     assert!(!host.exists(session.journal()));
 }
 
-#[test]
-fn config_is_accepted_before_and_after_the_command() {
+#[test_case(true; "config first")]
+#[test_case(false; "config last")]
+fn config_is_accepted_before_and_after_the_command(config_first: bool) {
     let host = Host::new();
     let cfg = support::MemoryDir::new();
     let missing = cfg.path().join("missing.json");
     let missing = missing.to_str().unwrap();
-    for args in [
-        &["reset", "--all", "--config", missing][..],
-        &["--config", missing, "reset", "--all"],
-    ] {
-        let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
-        let ran = host.run(session.path(), args);
-        assert_eq!(ran.exit, Exit::Ok, "{args:?}: {}", ran.err);
-        assert!(
-            ran.err.contains("cannot check candidate solo limits"),
-            "{args:?}: {}",
-            ran.err
-        );
-    }
+    let args = if config_first {
+        &["--config", missing, "reset", "--all"][..]
+    } else {
+        &["reset", "--all", "--config", missing][..]
+    };
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    let ran = host.run(session.path(), args);
+    assert_eq!(ran.exit, Exit::Ok, "{args:?}: {}", ran.err);
+    assert!(
+        ran.err.contains("cannot check candidate solo limits"),
+        "{args:?}: {}",
+        ran.err
+    );
 }
 
 #[test]
@@ -707,37 +686,36 @@ fn a_journal_that_already_records_its_archive_is_only_moved() {
     assert!(host.exists(archive(session.path(), &format!("{SESSION}-reset-all"))));
 }
 
-#[test]
-fn a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone() {
-    for args in [&["--core", "0"][..], &["--all"]] {
-        let host = Host::new();
-        let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
-        let mut text = session.text();
-        text = format!(
-            "{text}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"future.fact\",\"msg\":\"x\",\"data\":{{}}}}\n",
-            session.kinds().len() + 1
-        );
-        host.write(session.journal(), &text).unwrap();
-        let ran = reset(&host, session.path(), args);
-        assert_eq!(ran.exit, Exit::Incompatible, "{args:?}: {}", ran.err);
-        assert!(
+#[test_case(&["--core", "0"]; "core")]
+#[test_case(&["--all"]; "all")]
+fn a_current_journal_with_an_unknown_kind_exits_16_and_is_left_alone(args: &[&str]) {
+    let host = Host::new();
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    let mut text = session.text();
+    text = format!(
+        "{text}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"future.fact\",\"msg\":\"x\",\"data\":{{}}}}\n",
+        session.kinds().len() + 1
+    );
+    host.write(session.journal(), &text).unwrap();
+    let ran = reset(&host, session.path(), args);
+    assert_eq!(ran.exit, Exit::Incompatible, "{args:?}: {}", ran.err);
+    assert!(
             ran.err.starts_with(&format!(
                 "togi reset: unknown kind \"future.fact\" in journal written by togi 0.0.0 (schema 1, ruleset {RULESET}); this build, togi "
             )),
             "{args:?}: {}",
             ran.err
         );
-        assert!(
+    assert!(
             ran.err.ends_with(&format!(
                 " (schema 1, ruleset {RULESET}), cannot safely modify it; install the build that wrote it\n"
             )),
             "{args:?}: {}",
             ran.err
         );
-        assert!(!ran.err.contains("reset --all"), "{args:?}: {}", ran.err);
-        assert_eq!(session.text(), text, "{args:?}");
-        assert!(!host.exists(session.path().join("archive")), "{args:?}");
-    }
+    assert!(!ran.err.contains("reset --all"), "{args:?}: {}", ran.err);
+    assert_eq!(session.text(), text, "{args:?}");
+    assert!(!host.exists(session.path().join("archive")), "{args:?}");
 }
 
 #[test]
@@ -773,36 +751,35 @@ fn a_hostile_unknown_kind_is_escaped_in_the_refusal_and_the_journal_is_left_alon
     assert!(!host.exists(session.path().join("archive")));
 }
 
-#[test]
-fn a_current_journal_with_an_unknown_field_exits_16_and_is_left_alone() {
-    for args in [&["--core", "0"][..], &["--all"]] {
-        let host = Host::new();
-        let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
-        let mut text = session.text();
-        text = format!(
-            "{text}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"session.warning\",\"msg\":\"x\",\"data\":{{\"operation\":\"x\",\"error\":\"y\",\"future_field\":1}}}}\n",
-            session.kinds().len() + 1
-        );
-        host.write(session.journal(), &text).unwrap();
-        let ran = reset(&host, session.path(), args);
-        assert_eq!(ran.exit, Exit::Incompatible, "{args:?}: {}", ran.err);
-        assert!(
+#[test_case(&["--core", "0"]; "core")]
+#[test_case(&["--all"]; "all")]
+fn a_current_journal_with_an_unknown_field_exits_16_and_is_left_alone(args: &[&str]) {
+    let host = Host::new();
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    let mut text = session.text();
+    text = format!(
+        "{text}{{\"seq\":{},\"time\":\"2026-01-01T00:00:00Z\",\"boot\":\"b1a8cebe-21d1-14db-3741-5b5df946de05\",\"kind\":\"session.warning\",\"msg\":\"x\",\"data\":{{\"operation\":\"x\",\"error\":\"y\",\"future_field\":1}}}}\n",
+        session.kinds().len() + 1
+    );
+    host.write(session.journal(), &text).unwrap();
+    let ran = reset(&host, session.path(), args);
+    assert_eq!(ran.exit, Exit::Incompatible, "{args:?}: {}", ran.err);
+    assert!(
             ran.err.starts_with(&format!(
                 "togi reset: unknown field \"data.future_field\" of a session.warning event in journal written by togi 0.0.0 (schema 1, ruleset {RULESET}); this build, togi "
             )),
             "{args:?}: {}",
             ran.err
         );
-        assert!(
+    assert!(
             ran.err.ends_with(&format!(
                 " (schema 1, ruleset {RULESET}), cannot safely modify it; install the build that wrote it\n"
             )),
             "{args:?}: {}",
             ran.err
         );
-        assert_eq!(session.text(), text, "{args:?}");
-        assert!(!host.exists(session.path().join("archive")), "{args:?}");
-    }
+    assert_eq!(session.text(), text, "{args:?}");
+    assert!(!host.exists(session.path().join("archive")), "{args:?}");
 }
 
 #[test]
@@ -954,15 +931,14 @@ fn a_core_that_failed_at_zero_warns_with_the_remove_it_remedy() {
     );
 }
 
-#[test]
-fn a_closed_stdout_is_an_error() {
-    for args in [&["reset", "--core", "1"][..], &["reset", "--all"]] {
-        let host = Host::new();
-        let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
-        let ran = host.run_to_closed_stdout(session.path(), args);
-        assert_eq!(ran.exit, Exit::Error, "{args:?}: {}", ran.err);
-        assert!(ran.err.contains("write output"), "{args:?}: {}", ran.err);
-    }
+#[test_case(&["reset", "--core", "1"]; "core")]
+#[test_case(&["reset", "--all"]; "all")]
+fn a_closed_stdout_is_an_error(args: &[&str]) {
+    let host = Host::new();
+    let session = Session::with_fs(host.fs.clone(), Scenario::Confirm);
+    let ran = host.run_to_closed_stdout(session.path(), args);
+    assert_eq!(ran.exit, Exit::Error, "{args:?}: {}", ran.err);
+    assert!(ran.err.contains("write output"), "{args:?}: {}", ran.err);
 }
 
 #[test]
@@ -1194,8 +1170,13 @@ fn interrupted_archive() -> (Host, support::MemoryDir) {
     (host, state)
 }
 
-#[test]
-fn interrupted_archive_removes_before_sync_and_reports_each_failed_step() {
+#[test_case(0, "remove", false; "remove failure")]
+#[test_case(1, "sync", true; "sync failure")]
+fn interrupted_archive_removes_before_sync_and_reports_each_failed_step(
+    delta: usize,
+    step: &str,
+    removed_after_fault: bool,
+) {
     let (host, state) = interrupted_archive();
     host.fs.record_history();
     let ran = reset(&host, state.path(), &["--all"]);
@@ -1209,25 +1190,24 @@ fn interrupted_archive_removes_before_sync_and_reports_each_failed_step() {
     assert_eq!(log[removed + 1], (Op::SyncDir, state.path().to_path_buf()));
     assert!(!host.exists(&journal));
 
-    for (index, step, removed) in [(removed, "remove", false), (removed + 1, "sync", true)] {
-        let (op, path) = &log[index];
-        let nth = log[..=index]
-            .iter()
-            .filter(|(candidate, candidate_path)| {
-                candidate == op && candidate_path.file_name() == path.file_name()
-            })
-            .count() as u64;
-        let (host, state) = interrupted_archive();
-        host.fs
-            .inject(Fault::before(*op, nth).named(path.file_name().unwrap()));
-        let ran = reset(&host, state.path(), &["--all"]);
-        assert_eq!(ran.exit, Exit::Error, "{step}: {}", ran.err);
-        assert!(
-            ran.err.starts_with(&format!("togi reset: {step} ")),
-            "{}",
-            ran.err
-        );
-        assert_eq!(!host.exists(&journal), removed, "{step}");
-        assert!(host.exists(archive(state.path(), &format!("{SESSION}-reset-all"))));
-    }
+    let index = removed + delta;
+    let (op, path) = &log[index];
+    let nth = log[..=index]
+        .iter()
+        .filter(|(candidate, candidate_path)| {
+            candidate == op && candidate_path.file_name() == path.file_name()
+        })
+        .count() as u64;
+    let (host, state) = interrupted_archive();
+    host.fs
+        .inject(Fault::before(*op, nth).named(path.file_name().unwrap()));
+    let ran = reset(&host, state.path(), &["--all"]);
+    assert_eq!(ran.exit, Exit::Error, "{step}: {}", ran.err);
+    assert!(
+        ran.err.starts_with(&format!("togi reset: {step} ")),
+        "{}",
+        ran.err
+    );
+    assert_eq!(!host.exists(&journal), removed_after_fault, "{step}");
+    assert!(host.exists(archive(state.path(), &format!("{SESSION}-reset-all"))));
 }

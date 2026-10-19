@@ -159,7 +159,7 @@ const ENVIRONMENT: &[&str] = &["Cargo.lock", "flake.lock", "rust-toolchain.toml"
 
 object_only! {
     /// The launch manifest of one campaign, as the owner writes it.
-    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct Manifest {
         pub issue: u32,
@@ -182,14 +182,14 @@ object_only! {
         pub confirmations: u32,
     }
 
-    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct Hypothesis {
         pub id: String,
         pub statement: String,
     }
 
-    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct Input {
         pub path: String,
@@ -200,7 +200,7 @@ object_only! {
     }
 
     /// The suite whose hashed file fixes the scenarios and seeds, and the split a bench run selects.
-    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct SuiteSelection {
         pub path: String,

@@ -383,7 +383,7 @@ fn encoded_records_fit_and_round_trip_for_hostile_reasons(text: &str) {
     let id = ReasonId::try_from("a".repeat(64)).unwrap();
     let reason = ReasonText::sanitize(text).unwrap();
     let record = LeaveReason {
-        id: id.clone(),
+        id,
         count: count(3),
         reason: reason.clone(),
     };

@@ -105,7 +105,7 @@ impl Role {
 }
 
 object_only! {
-    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct Started {
         pub seq: u32,
@@ -123,7 +123,7 @@ object_only! {
         pub stderr: String,
     }
 
-    #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     pub struct Ended {
         pub seq: u32,

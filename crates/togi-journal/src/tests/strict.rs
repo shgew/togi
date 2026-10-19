@@ -188,8 +188,12 @@ fn unknown_payload_field_names_the_kind() {
         let DecodeError::UnknownField { kind: named, field } = &error else {
             panic!("{kind}: {error}");
         };
-        assert_eq!((*named, field.as_str()), (kind, "data.bogus_field"));
-        assert!(error.to_string().contains(kind.as_str()), "{error}");
+        assert_eq!(
+            (*named, field.as_str()),
+            (kind, "data.bogus_field"),
+            "{kind}"
+        );
+        assert!(error.to_string().contains(kind.as_str()), "{kind}: {error}");
     }
 }
 
@@ -216,7 +220,7 @@ fn mono_and_cause_are_omitted_when_empty() {
     let line: Value = serde_json::from_str(&bare.encode().unwrap()).unwrap();
     assert!(line.get("mono_ms").is_none());
     assert!(line.get("cause").is_none());
-    let mut zero = bare.clone();
+    let mut zero = bare;
     zero.mono = Some(std::time::Duration::ZERO);
     let line: Value = serde_json::from_str(&zero.encode().unwrap()).unwrap();
     assert_eq!(line["mono_ms"], json!(0));

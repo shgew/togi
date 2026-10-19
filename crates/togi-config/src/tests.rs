@@ -354,23 +354,50 @@ fn trial_count_bounds() {
     assert_eq!(trials(1.0 - f64::EPSILON / 2.0, 0.5), Ok(1));
 }
 
-#[test]
-fn extreme_probabilities_never_yield_a_zero_or_unbounded_count() {
-    let extremes = [
-        f64::MIN_POSITIVE,
-        f64::from_bits(1),
-        1e-300,
-        1e-17,
-        0.5,
-        1.0 - f64::EPSILON / 2.0,
-    ];
-    for miss in extremes {
-        for rate in extremes {
-            if let Ok(count) = trials(miss, rate) {
-                assert!((1..=1000).contains(&count), "{miss} {rate}");
-            }
-        }
+#[test_case(f64::MIN_POSITIVE, f64::MIN_POSITIVE; "normal normal")]
+#[test_case(f64::MIN_POSITIVE, f64::from_bits(1); "normal subnormal")]
+#[test_case(f64::MIN_POSITIVE, 1e-300; "normal tiny")]
+#[test_case(f64::MIN_POSITIVE, 1e-17; "normal small")]
+#[test_case(f64::MIN_POSITIVE, 0.5; "normal half")]
+#[test_case(f64::MIN_POSITIVE, 1.0 - f64::EPSILON / 2.0; "normal near one")]
+#[test_case(f64::from_bits(1), f64::MIN_POSITIVE; "subnormal normal")]
+#[test_case(f64::from_bits(1), f64::from_bits(1); "subnormal subnormal")]
+#[test_case(f64::from_bits(1), 1e-300; "subnormal tiny")]
+#[test_case(f64::from_bits(1), 1e-17; "subnormal small")]
+#[test_case(f64::from_bits(1), 0.5; "subnormal half")]
+#[test_case(f64::from_bits(1), 1.0 - f64::EPSILON / 2.0; "subnormal near one")]
+#[test_case(1e-300, f64::MIN_POSITIVE; "tiny normal")]
+#[test_case(1e-300, f64::from_bits(1); "tiny subnormal")]
+#[test_case(1e-300, 1e-300; "tiny tiny")]
+#[test_case(1e-300, 1e-17; "tiny small")]
+#[test_case(1e-300, 0.5; "tiny half")]
+#[test_case(1e-300, 1.0 - f64::EPSILON / 2.0; "tiny near one")]
+#[test_case(1e-17, f64::MIN_POSITIVE; "small normal")]
+#[test_case(1e-17, f64::from_bits(1); "small subnormal")]
+#[test_case(1e-17, 1e-300; "small tiny")]
+#[test_case(1e-17, 1e-17; "small small")]
+#[test_case(1e-17, 0.5; "small half")]
+#[test_case(1e-17, 1.0 - f64::EPSILON / 2.0; "small near one")]
+#[test_case(0.5, f64::MIN_POSITIVE; "half normal")]
+#[test_case(0.5, f64::from_bits(1); "half subnormal")]
+#[test_case(0.5, 1e-300; "half tiny")]
+#[test_case(0.5, 1e-17; "half small")]
+#[test_case(0.5, 0.5; "half half")]
+#[test_case(0.5, 1.0 - f64::EPSILON / 2.0; "half near one")]
+#[test_case(1.0 - f64::EPSILON / 2.0, f64::MIN_POSITIVE; "near one normal")]
+#[test_case(1.0 - f64::EPSILON / 2.0, f64::from_bits(1); "near one subnormal")]
+#[test_case(1.0 - f64::EPSILON / 2.0, 1e-300; "near one tiny")]
+#[test_case(1.0 - f64::EPSILON / 2.0, 1e-17; "near one small")]
+#[test_case(1.0 - f64::EPSILON / 2.0, 0.5; "near one half")]
+#[test_case(1.0 - f64::EPSILON / 2.0, 1.0 - f64::EPSILON / 2.0; "near one near one")]
+fn extreme_probabilities_never_yield_a_zero_or_unbounded_count(miss: f64, rate: f64) {
+    if let Ok(count) = trials(miss, rate) {
+        assert!((1..=1000).contains(&count), "{miss} {rate}");
     }
+}
+
+#[test]
+fn subnormal_rates_refuse_unbounded_trial_counts() {
     assert!(trials(f64::from_bits(1), f64::from_bits(1)).is_err());
     assert!(trials(0.05, f64::from_bits(1)).is_err());
 }

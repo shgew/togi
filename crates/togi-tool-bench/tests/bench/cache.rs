@@ -378,7 +378,7 @@ fn costs_round_trip_through_their_file_and_a_damaged_file_is_empty(case: (&str, 
 
     dir.write(&path, text);
     assert_eq!(
-        Costs::with_fs(path.clone(), dir.fs.clone()).get("a", "x/dev-1"),
+        Costs::with_fs(path, dir.fs).get("a", "x/dev-1"),
         None,
         "{name}"
     );

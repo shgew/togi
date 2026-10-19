@@ -627,94 +627,94 @@ fn crashed_application(j: &mut Journal, id: u8) {
     });
 }
 
-#[test]
-fn hunt_keeps_one_part_order_when_recent_moves_mid_hunt() {
-    for crash_at in [1u32, 2, 3] {
-        let mut j = limit_session();
-        let plan = j.manual(
-            Regime::R6,
-            0,
-            Load::Many(set(&ALL)),
-            Condition::Together,
-            &[-30; 4],
-            120,
+#[test_case::test_case(1u32; "1u32")]
+#[test_case::test_case(2; "2")]
+#[test_case::test_case(3; "3")]
+fn hunt_keeps_one_part_order_when_recent_moves_mid_hunt(crash_at: u32) {
+    let mut j = limit_session();
+    let plan = j.manual(
+        Regime::R6,
+        0,
+        Load::Many(set(&ALL)),
+        Condition::Together,
+        &[-30; 4],
+        120,
+    );
+    j.trial(&plan, Outcome::Failure);
+    let attribution = j.next_decision();
+    j.decide(attribution);
+    let (_, start) = j.start_hunt();
+    assert_eq!(start.candidates, set(&ALL));
+    assert_eq!(j.run().constraints.recent(), set(&[3]));
+    let mut crashed = false;
+    let mut planned: Vec<HuntGroup> = Vec::new();
+    let mut oracle = |_: &TrialPlan| Outcome::Pass;
+    let mut finished = false;
+    for _ in 0..400 {
+        let prefix = fresh(&j.events);
+        assert_eq!(
+            prefix.next().ok(),
+            j.state.next().ok(),
+            "resume at event prefix"
         );
-        j.trial(&plan, Outcome::Failure);
-        let attribution = j.next_decision();
-        j.decide(attribution);
-        let (_, start) = j.start_hunt();
-        assert_eq!(start.candidates, set(&ALL));
-        assert_eq!(j.run().constraints.recent(), set(&[3]));
-        let mut crashed = false;
-        let mut planned: Vec<HuntGroup> = Vec::new();
-        let mut oracle = |_: &TrialPlan| Outcome::Pass;
-        let mut finished = false;
-        for _ in 0..400 {
-            let prefix = fresh(&j.events);
-            assert_eq!(
-                prefix.next().ok(),
-                j.state.next().ok(),
-                "resume at event prefix"
-            );
-            assert_fixed_plan("live", &j.state);
-            assert_fixed_plan("replay", &prefix);
-            let action = j.step(&mut oracle);
-            let Action::Decide(decision) = action else {
-                continue;
-            };
-            match decision.payload {
-                DecisionPayload::HuntGroup(group) => {
-                    assert_fixed_group("planned", &group);
-                    if !crashed
-                        && group.stage == HuntStage::Part
-                        && group.granularity == 4
-                        && group.index == crash_at
-                        && !group.skipped
-                    {
-                        crashed = true;
-                        let id = group.cores.first().unwrap().get();
-                        crashed_application(&mut j, id);
-                        let run = j.run();
-                        assert!(run.hunts.active.as_ref().unwrap().end.is_none());
-                        assert_eq!(run.constraints.recent(), set(&[id]));
-                    }
-                    planned.push(group);
+        assert_fixed_plan("live", &j.state);
+        assert_fixed_plan("replay", &prefix);
+        let action = j.step(&mut oracle);
+        let Action::Decide(decision) = action else {
+            continue;
+        };
+        match decision.payload {
+            DecisionPayload::HuntGroup(group) => {
+                assert_fixed_group("planned", &group);
+                if !crashed
+                    && group.stage == HuntStage::Part
+                    && group.granularity == 4
+                    && group.index == crash_at
+                    && !group.skipped
+                {
+                    crashed = true;
+                    let id = group.cores.first().unwrap().get();
+                    crashed_application(&mut j, id);
+                    let run = j.run();
+                    assert!(run.hunts.active.as_ref().unwrap().end.is_none());
+                    assert_eq!(run.constraints.recent(), set(&[id]));
                 }
-                DecisionPayload::HuntEnd(_) => {
-                    assert!(crashed, "the hunt ended before the crash");
-                    finished = true;
-                    break;
-                }
-                DecisionPayload::Failure(_)
-                | DecisionPayload::TunerWarning(_)
-                | DecisionPayload::DeadEnd(_)
-                | DecisionPayload::CorePhase(_)
-                | DecisionPayload::TunerDecision(_)
-                | DecisionPayload::ProfileChange(_)
-                | DecisionPayload::CheckingCycle(_)
-                | DecisionPayload::CheckingStep(_)
-                | DecisionPayload::CheckingChain(_)
-                | DecisionPayload::HuntStart(_)
-                | DecisionPayload::HuntSkipped(_)
-                | DecisionPayload::Combination(_)
-                | DecisionPayload::DeepeningRound(_) => {}
+                planned.push(group);
             }
+            DecisionPayload::HuntEnd(_) => {
+                assert!(crashed, "the hunt ended before the crash");
+                finished = true;
+                break;
+            }
+            DecisionPayload::Failure(_)
+            | DecisionPayload::TunerWarning(_)
+            | DecisionPayload::DeadEnd(_)
+            | DecisionPayload::CorePhase(_)
+            | DecisionPayload::TunerDecision(_)
+            | DecisionPayload::ProfileChange(_)
+            | DecisionPayload::CheckingCycle(_)
+            | DecisionPayload::CheckingStep(_)
+            | DecisionPayload::CheckingChain(_)
+            | DecisionPayload::HuntStart(_)
+            | DecisionPayload::HuntSkipped(_)
+            | DecisionPayload::Combination(_)
+            | DecisionPayload::DeepeningRound(_) => {}
         }
-        assert!(
-            finished,
-            "the hunt never ended (crash during part {crash_at})"
-        );
-        let got: Vec<Vec<u8>> = planned
-            .iter()
-            .filter(|group| group.granularity == 4)
-            .map(|group| group.cores.iter().map(togi_machine::CoreId::get).collect())
-            .collect();
-        let want: Vec<Vec<u8>> = [
-            part_order(HuntStage::Part, 4),
-            part_order(HuntStage::Complement, 4),
-        ]
-        .concat();
-        assert_eq!(got, want, "crash during part {crash_at}");
-        j.assert_resumes();
     }
+    assert!(
+        finished,
+        "the hunt never ended (crash during part {crash_at})"
+    );
+    let got: Vec<Vec<u8>> = planned
+        .iter()
+        .filter(|group| group.granularity == 4)
+        .map(|group| group.cores.iter().map(togi_machine::CoreId::get).collect())
+        .collect();
+    let want: Vec<Vec<u8>> = [
+        part_order(HuntStage::Part, 4),
+        part_order(HuntStage::Complement, 4),
+    ]
+    .concat();
+    assert_eq!(got, want, "crash during part {crash_at}");
+    j.assert_resumes();
 }

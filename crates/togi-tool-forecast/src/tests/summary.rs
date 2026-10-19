@@ -208,7 +208,7 @@ proptest! {
         for rank in [got.min, got.p10, got.p90, got.max] {
             prop_assert!(floats.contains(&rank));
         }
-        let mut shuffled = floats.clone();
+        let mut shuffled = floats;
         shuffled.reverse();
         prop_assert_eq!(metric_of(&shuffled).range.unwrap(), got);
     }
