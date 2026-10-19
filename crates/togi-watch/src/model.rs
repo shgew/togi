@@ -52,7 +52,7 @@ pub struct BatchFoldError {
 }
 
 /// Where a core stands on the dashboard.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CoreState {
     /// At 0, waiting for its first search turn.
     Waiting,
@@ -77,7 +77,7 @@ pub enum CoreState {
 }
 
 /// The passes of a candidate solo limit being confirmed: light then heavy, each needing `needed` in a row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Confirm {
     /// The candidate offset.
     pub offset: TargetOffset,
@@ -90,7 +90,7 @@ pub struct Confirm {
 }
 
 /// One core as a frame shows it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CoreView {
     /// The core.
     pub id: CoreId,
@@ -130,7 +130,7 @@ pub struct CoreView {
 }
 
 /// What a hunt sets each core to: its failing offsets and the offsets it parks the rest at.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HuntShape {
     /// The failing profile.
     pub failing: PerCore<TargetOffset>,
@@ -139,7 +139,7 @@ pub struct HuntShape {
 }
 
 /// What a hunt's parked profile does to each core, against its failing profile and its candidates.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Parking {
     /// Cores that are not candidates and run at their failing offsets in every group, the loaded cores of a
     /// located hunt among them.
@@ -182,7 +182,7 @@ impl HuntFacts {
 }
 
 /// A recorded combination: offsets at which these cores failed together.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ComboView {
     /// Its id.
     pub id: CombinationId,
@@ -201,7 +201,7 @@ pub struct ComboView {
 }
 
 /// Where a checking trial stands in its cycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CyclePlace {
     /// The cycle.
     pub cycle: u32,
@@ -214,7 +214,7 @@ pub struct CyclePlace {
 }
 
 /// Where a hunt trial stands in its hunt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HuntPlace {
     /// The hunt.
     pub hunt: u32,
@@ -231,7 +231,7 @@ pub struct HuntPlace {
 }
 
 /// Which trial of its part or requirement a trial is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct Count {
     /// Passes so far.
     pub passed: u32,
@@ -246,7 +246,7 @@ pub struct Count {
     clippy::struct_excessive_bools,
     reason = "independent facts of one trial"
 )]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TrialView {
     /// Its id.
     pub id: TrialId,
@@ -319,7 +319,7 @@ impl TrialView {
 }
 
 /// How a trial ended.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TrialEndView {
     /// The trial.
     pub id: TrialId,
@@ -350,7 +350,7 @@ pub struct TrialEndView {
 }
 
 /// Why a hunt began.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HuntCause {
     /// When the failure was recorded.
     pub at: Option<Timestamp>,
@@ -375,7 +375,7 @@ pub struct HuntCause {
 }
 
 /// What is recorded about a hunt beside the tuner's plan of it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HuntFacts {
     /// When it started.
     pub started: Option<Timestamp>,
@@ -388,7 +388,7 @@ pub struct HuntFacts {
 }
 
 /// The running hunt: the tuner's plan and what the journal says about it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HuntView<'a> {
     /// The tuner's plan.
     pub plan: &'a HuntPlan,
@@ -474,7 +474,7 @@ pub enum SingletonStage {
 }
 
 /// The checking cycle: the tuner's plan and the hunts each step started.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CycleView<'a> {
     /// The tuner's plan.
     pub plan: &'a CyclePlan,
@@ -500,7 +500,7 @@ impl CycleView<'_> {
 }
 
 /// A crash detected on this boot, with no trial started since.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RecoveryView {
     /// When the crash was detected.
     pub crash_at: Timestamp,
@@ -513,7 +513,7 @@ pub struct RecoveryView {
 }
 
 /// The session stopped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StopView {
     /// When.
     pub at: Timestamp,
@@ -524,7 +524,7 @@ pub struct StopView {
 }
 
 /// The session ended at a dead end.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DeadEndView {
     /// When.
     pub at: Timestamp,
@@ -535,7 +535,7 @@ pub struct DeadEndView {
 }
 
 /// The session the journal records.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SessionView {
     /// When it started.
     pub start: Timestamp,
@@ -545,7 +545,7 @@ pub struct SessionView {
 
 /// Everything one frame shows, lent by the model. Empty when the journal has no session or the model is in a
 /// problem state.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Snapshot<'a> {
     /// The session, once started.
     pub session: Option<&'a SessionView>,
@@ -611,7 +611,7 @@ pub struct Snapshot<'a> {
 }
 
 /// The trial that just ended, with the forecast and plans the frame showed while it ran.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EndedTrial<'a> {
     /// The trial, before its end.
     pub trial: &'a TrialView,
@@ -743,6 +743,58 @@ impl<'a> Snapshot<'a> {
     }
 }
 
+/// Presentation reducers that readers restore alongside journal facts and incremental tuner state.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Presentation {
+    facts: Facts,
+    ended: Option<Derived>,
+}
+
+fn capture_end(
+    event: &Event,
+    journal: &JournalState,
+    tuner: &TunerState,
+    facts: &Facts,
+    ended: &mut Option<Derived>,
+    cached: Option<Derived>,
+    keep: bool,
+) {
+    if matches!(event.payload, Payload::SessionStart(_)) {
+        *ended = None;
+    } else if matches!(event.payload, Payload::TrialEnd(_)) {
+        *ended = (keep && journal.session.is_some())
+            .then(|| cached.unwrap_or_else(|| Derived::new(journal, tuner, facts)));
+    }
+}
+
+impl Presentation {
+    /// Retains the last trial's pre-end view before the shared reducers consume its result.
+    pub fn before_event(&mut self, event: &Event, journal: &JournalState, tuner: &TunerState) {
+        capture_end(
+            event,
+            journal,
+            tuner,
+            &self.facts,
+            &mut self.ended,
+            None,
+            true,
+        );
+    }
+
+    /// Updates presentation facts after the shared reducers have consumed the event.
+    pub fn after_event(&mut self, event: &Event, journal: &JournalState, tuner: &TunerState) {
+        self.facts.fold(event, journal, tuner);
+    }
+}
+
+/// The reader-owned part of the published full-state document.
+#[derive(serde::Deserialize)]
+pub struct PublishedView {
+    facts: JournalState,
+    incremental: TunerState,
+    presentation: Presentation,
+}
+
 /// The journal folded into facts.
 #[derive(Debug, Default)]
 pub struct Model {
@@ -756,6 +808,87 @@ pub struct Model {
 }
 
 impl Model {
+    /// Restores a verified prefix, leaving the tail for the caller's batch fold.
+    pub fn from_snapshot(
+        events: &[Event],
+        saved: Option<(togi_journal::snapshot::Prefix, PublishedView)>,
+    ) -> (Self, usize) {
+        if let Some((prefix, saved)) = saved {
+            let same_session = saved.facts.session.as_ref().map(|session| session.id)
+                == events.first().and_then(|event| match &event.payload {
+                    Payload::SessionStart(start) => Some(start.session),
+                    _ => None,
+                });
+            if same_session
+                && saved.facts.last_seq == prefix.last_seq
+                && prefix.last_seq <= events.last().map(|event| event.seq)
+            {
+                let folded = events.partition_point(|event| Some(event.seq) <= prefix.last_seq);
+                return (
+                    Self::restored(saved.facts, saved.incremental, saved.presentation),
+                    folded,
+                );
+            }
+        }
+        (Self::new(), 0)
+    }
+
+    /// Loads the optional disk cache and folds only its tail.
+    pub fn read(directory: &std::path::Path, events: &[Event]) -> Self {
+        Self::read_saved(
+            events,
+            togi_journal::snapshot::read(directory).ok().flatten(),
+        )
+    }
+
+    /// Loads through an explicit read-only filesystem.
+    pub fn read_in(
+        fs: &dyn togi_journal::fs::Fs,
+        directory: &std::path::Path,
+        events: &[Event],
+    ) -> Self {
+        Self::read_saved(
+            events,
+            togi_journal::snapshot::read_in(fs, directory)
+                .ok()
+                .flatten(),
+        )
+    }
+
+    fn read_saved(
+        events: &[Event],
+        saved: Option<(togi_journal::snapshot::Prefix, PublishedView)>,
+    ) -> Self {
+        let (mut model, folded) = Self::from_snapshot(events, saved);
+        if model.fold_batch(&events[folded..]).is_err() && folded != 0 {
+            return project(events);
+        }
+        model
+    }
+
+    /// The shared journal fold used by this model.
+    pub const fn journal_state(&self) -> &JournalState {
+        &self.journal
+    }
+
+    /// The incremental tuner fold used by this model.
+    pub const fn tuner_state(&self) -> &TunerState {
+        &self.tuner
+    }
+
+    /// Restores an independently verified snapshot without folding its prefix again.
+    pub fn restored(journal: JournalState, tuner: TunerState, presentation: Presentation) -> Self {
+        Self {
+            journal,
+            tuner,
+            facts: presentation.facts,
+            ended: presentation.ended,
+            problem: None,
+            skipped: None,
+            derived: OnceCell::new(),
+        }
+    }
+
     /// A model of a journal with no events.
     pub fn new() -> Self {
         Self::default()
@@ -792,13 +925,15 @@ impl Model {
             return Err(problem.clone());
         }
         let before = self.derived.take();
-        if matches!(event.payload, Payload::SessionStart(_)) {
-            self.ended = None;
-        } else if matches!(event.payload, Payload::TrialEnd(_)) {
-            self.ended = (keep_outcomes && self.journal.session.is_some()).then(|| {
-                before.unwrap_or_else(|| Derived::new(&self.journal, &self.tuner, &self.facts))
-            });
-        }
+        capture_end(
+            event,
+            &self.journal,
+            &self.tuner,
+            &self.facts,
+            &mut self.ended,
+            before,
+            keep_outcomes,
+        );
         let folded = self
             .journal
             .apply(event)

@@ -9,7 +9,7 @@ use crate::{FoldError, Secs};
 
 /// What the tuner reads from the operator configuration: the trial durations, the checking
 /// cycle, the pass count and the backend packages.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TunerConfig {
     pub(crate) search_trial: Secs,
     pub(crate) short_trial: Secs,

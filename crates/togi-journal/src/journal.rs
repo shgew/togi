@@ -164,6 +164,7 @@ pub struct Journal {
     session: Option<SessionId>,
     poison: Option<Arc<WriteFailure>>,
     dir: StateDir,
+    prefix: crate::snapshot::PrefixHash,
 }
 
 pub(crate) fn encode(event: &Event) -> Result<Vec<u8>, serde_json::Error> {
@@ -183,6 +184,12 @@ impl Journal {
 
     pub fn events(&self) -> &[Event] {
         &self.events
+    }
+
+    /// The exact raw-byte prefix accepted by this writer, including its buffered events.
+    pub fn prefix(&self) -> crate::snapshot::Prefix {
+        self.prefix
+            .prefix(self.events.last().map(|event| event.seq))
     }
 
     pub fn event(&self, seq: Seq) -> Option<&Event> {
@@ -315,6 +322,7 @@ impl Journal {
             self.poison = Some(Arc::clone(&failure));
             return Err(AppendError::Failed(failure));
         }
+        self.prefix.append(&line);
         self.session = self.session.or(session);
         self.events.push(decoded);
         Ok(&self.events[self.events.len() - 1])

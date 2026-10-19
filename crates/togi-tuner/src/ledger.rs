@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// A monotonicity warning the tuner has yet to record, with the events it cites.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PendingWarning {
     pub(crate) warning: TunerWarning,
     pub(crate) cause: Vec<Seq>,

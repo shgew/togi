@@ -17,13 +17,14 @@ use crate::state::Run;
 /// The R7 substate: what request measurements, voltage targets, escalation strikes and
 /// self-sufficiency each trial folded, and the multi-core R7 failures still owed a response with
 /// the cores already answered.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct R7 {
     pub(crate) measurements: Measurements,
     pub(crate) targets: R7Targets,
     pub(crate) strikes: Strikes,
     pub(crate) status: SelfSufficiency,
     pub(crate) probes: Probes,
+    #[serde(with = "togi_machine::serde_pairs")]
     pub(crate) loaded: HashMap<crate::LoadKey, (Seq, crate::Profile)>,
     pub(crate) open: BTreeMap<Seq, OpenFailure>,
     pub(crate) named: BTreeMap<Seq, CoreId>,

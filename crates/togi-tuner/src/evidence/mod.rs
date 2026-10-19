@@ -26,7 +26,9 @@ use cells::{ClassCells, FailureCells, Run, Seqs};
 pub(crate) use cells::{TAIL_CAP, take_copied};
 
 /// The session a carried fact came from.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub struct SessionRef(Box<str>);
 
 impl SessionRef {
@@ -40,7 +42,7 @@ impl SessionRef {
 }
 
 /// Which passes a count admits. Passes at or below the newest covering failure never count.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Window {
     /// Live passes above `since`; carried passes do not count.
     Live { since: Option<Seq> },
@@ -48,7 +50,7 @@ pub enum Window {
     LiveOrCarried { since: Option<Seq> },
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Count {
     pub valid: u32,
     /// The first `needed` valid passes, oldest first.
@@ -87,9 +89,10 @@ impl PartialEq for Visits {
 #[cfg(test)]
 impl Eq for Visits {}
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Evidence {
     all: CoreSet,
+    #[serde(with = "togi_machine::serde_pairs")]
     classes: BTreeMap<ClassKey, ClassCells>,
     idle: FailureCells,
     all_core_r6: Vec<ClassKey>,
@@ -101,6 +104,7 @@ pub struct Evidence {
     last: Option<Seq>,
     speculative: bool,
     #[cfg(test)]
+    #[serde(skip)]
     visits: Visits,
 }
 

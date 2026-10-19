@@ -59,7 +59,7 @@ pub(crate) fn effective_top(recorded: CoreSet, order: &RequestOrder) -> CoreSet 
 /// A failed multi-core R7 trial as it ended: what attribution reads, frozen when the trial's
 /// failure folds so that a later measurement, a later pass or a later reset never reinterprets
 /// it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct FailedTrial {
     pub(crate) end: Seq,
     pub(crate) crash_duration_s: Option<u32>,
@@ -159,7 +159,7 @@ impl FailedTrial {
 }
 
 /// A multi-core R7 failure the tuner still owes a response, with the cores already answered.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OpenFailure {
     pub(crate) seq: Seq,
     pub(crate) pending: Pending,

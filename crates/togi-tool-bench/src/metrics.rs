@@ -49,8 +49,33 @@ pub fn measure(
     model: &Model,
     replay: Option<&Replay>,
 ) -> Result<Measured, RunError> {
+    measure_with(events, model, replay, None)
+}
+
+/// Measures a persisted run using its verified snapshot and only folding its uncovered tail.
+///
+/// # Errors
+///
+/// Returns the journal fold or measurement failure.
+pub(crate) fn measure_in(
+    directory: &std::path::Path,
+    events: &[Event],
+    model: &Model,
+    replay: Option<&Replay>,
+) -> Result<Measured, RunError> {
+    let state = togi_session::ReadState::read(directory, events)
+        .map_err(|error| RunError::Measure(MeasureError::Folded(error)))?;
+    measure_with(events, model, replay, Some(state.facts()))
+}
+
+fn measure_with(
+    events: &[Event],
+    model: &Model,
+    replay: Option<&Replay>,
+    facts: Option<&togi_journal::State>,
+) -> Result<Measured, RunError> {
     let cores = model.cores();
-    let final_profile = final_profile(events, cores)?;
+    let final_profile = final_profile(events, cores, facts)?;
     let depth = final_profile.iter().map(|(_, offset)| offset.0).sum();
     let profile = targets(&final_profile, cores);
     let mut measured = Measured {
@@ -170,7 +195,11 @@ fn count_events(events: &[Event], measured: &mut Measured) {
     }
 }
 
-fn final_profile(events: &[Event], cores: usize) -> Result<PerCore<ObservedOffset>, RunError> {
+fn final_profile(
+    events: &[Event],
+    cores: usize,
+    facts: Option<&togi_journal::State>,
+) -> Result<PerCore<ObservedOffset>, RunError> {
     let checking = events.iter().rev().find_map(|event| {
         if let Payload::ProfileChange(change) = &event.payload {
             Some(change.to)
@@ -180,6 +209,9 @@ fn final_profile(events: &[Event], cores: usize) -> Result<PerCore<ObservedOffse
     });
     let baseline = match checking {
         Some(_) => None,
+        None if facts.is_some() => {
+            facts.and_then(|facts| facts.session.as_ref().map(|session| session.baseline))
+        }
         None => togi_journal::State::replay(events)
             .map_err(|error| RunError::Measure(MeasureError::Replay(error)))?
             .session
@@ -618,3 +650,7 @@ pub(crate) mod tests {
         assert_close(worst, want);
     }
 }
+
+#[cfg(test)]
+#[path = "snapshot_tests.rs"]
+mod snapshot_tests;

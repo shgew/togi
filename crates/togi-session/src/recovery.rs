@@ -20,20 +20,20 @@ use crate::error::FoldError;
 use crate::evidence::{self, RetryDue};
 
 /// An observation that stands as dead-end evidence until a dead end of its condition is recorded.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Cited {
     pub seq: Seq,
     pub detail: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum IntentKind {
     Smu,
     Trial(TrialId),
 }
 
 /// An intent that no write, error or end has answered yet.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OpenIntent {
     pub seq: Seq,
     pub boot: BootId,
@@ -41,7 +41,7 @@ pub(crate) struct OpenIntent {
 }
 
 /// A trial's start and the last time anything of it was recorded.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Started {
     pub seq: Seq,
     pub cpus: Vec<CpuId>,
@@ -52,7 +52,7 @@ pub(crate) struct Started {
 }
 
 /// How far the write of the target a trial alone sets before its start got.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum TargetWrite {
     /// The intent to write the target, citing the trial's intent.
     Intended(Seq),
@@ -61,7 +61,7 @@ pub(crate) enum TargetWrite {
 }
 
 /// The trial that has an intent and no end.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OpenTrial {
     pub seq: Seq,
     pub intent: TrialIntent,
@@ -116,7 +116,7 @@ impl OpenTrial {
 }
 
 /// A machine check recorded from another boot, for a crash to claim.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RecoveredMce {
     pub seq: Seq,
     pub from_boot: BootId,
@@ -127,7 +127,7 @@ pub(crate) struct RecoveredMce {
 }
 
 /// A machine check is the same one when its boot, monotonic time, CPU and bank are.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
 struct MceKey {
     boot: BootId,
     mono_ns: Option<Duration>,
@@ -148,7 +148,7 @@ impl MceKey {
 
 /// The registers of one boot as far as the journal proves them: the baseline, lowered to every target an intent
 /// asked for, and uncertain until a readback.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Registers {
     offsets: PerCore<ObservedOffset>,
     uncertain: CoreSet,
@@ -186,7 +186,7 @@ impl Registers {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 struct BootRecord {
     last_kind: EventKind,
     applied: Option<(Seq, Condition)>,
@@ -207,7 +207,7 @@ impl BootRecord {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 struct BackendState {
     retry: Option<(u8, u32)>,
     followed: bool,
@@ -216,7 +216,7 @@ struct BackendState {
 }
 
 /// The latest dead end and what has followed it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PendingDeadEnd {
     pub seq: Seq,
     pub dead_end: DeadEnd,
@@ -239,7 +239,7 @@ impl PendingDeadEnd {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RecoveryState {
     started: bool,
     build: Option<Build>,
@@ -258,6 +258,7 @@ pub(crate) struct RecoveryState {
     hunt_group: bool,
     unmatched: Vec<OpenIntent>,
     open: Option<OpenTrial>,
+    #[serde(serialize_with = "togi_machine::serde_pairs::serialize_set")]
     mce_keys: HashSet<MceKey>,
     recovered: Vec<RecoveredMce>,
     pending_idle: Vec<Seq>,

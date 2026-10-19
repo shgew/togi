@@ -81,6 +81,9 @@ impl StateDir {
             }
             (events, torn)
         };
+        let complete = torn
+            .as_ref()
+            .map_or(bytes.len(), |tail| bytes.len() - tail.bytes.len());
         let mut repaired = None;
         if let Some(torn) = torn {
             repaired = self.repair(&bytes, &mut events, &torn, &boot, now)?;
@@ -96,6 +99,15 @@ impl StateDir {
         file.sync().map_err(io_at("sync journal", &path))?;
         self.sync_dir(self.path())?;
         let session = started_session(&events);
+        let mut prefix = crate::snapshot::PrefixHash::default();
+        if !events.is_empty() {
+            prefix.append(&bytes[..complete]);
+            if repaired.is_some() {
+                if let Some(event) = events.last() {
+                    prefix.append(&encode(event).map_err(OpenError::Encode)?);
+                }
+            }
+        }
         let writer = Writer {
             file,
             buffer: Vec::new(),
@@ -109,6 +121,7 @@ impl StateDir {
             repaired,
             session,
             poison: None,
+            prefix,
             dir: self,
         })
     }

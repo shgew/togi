@@ -63,7 +63,11 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
         Err(exit) => return exit,
     };
     let events = recording.events();
-    let text = match render(events) {
+    let model = match ctx.system.journal_fs() {
+        Some(fs) => togi_watch::model::Model::read_in(&*fs, ctx.state_dir, events),
+        None => togi_watch::model::Model::read(ctx.state_dir, events),
+    };
+    let text = match render_model(events, &model) {
         Ok(text) => text,
         Err(Problem::NoSession) => {
             let message = format!("no session in {}", ctx.state_dir.display());
@@ -212,16 +216,17 @@ impl<'a> Scan<'a> {
     }
 }
 
+#[cfg(test)]
 fn render(events: &[Event]) -> Result<String, Problem> {
-    let model = togi_watch::model::project(events);
+    render_model(events, &togi_watch::model::project(events))
+}
+
+fn render_model(events: &[Event], model: &togi_watch::model::Model) -> Result<String, Problem> {
     if let Some(problem) = model.problem() {
         return Err(Problem::Replay(problem.clone()));
     }
-    let journal =
-        JournalState::replay(events).map_err(|error| Problem::Replay(FoldError::Journal(error)))?;
-    let tuner =
-        togi_tuner::replay(events).map_err(|error| Problem::Replay(FoldError::Tuner(error)))?;
-    let projection = tuner.project();
+    let journal = model.journal_state();
+    let projection = model.tuner_state().project();
     if journal.session.is_none() {
         return Err(Problem::NoSession);
     }
@@ -229,7 +234,7 @@ fn render(events: &[Event]) -> Result<String, Problem> {
     let mut out = String::new();
     Status {
         out: &mut out,
-        journal: &journal,
+        journal,
         projection: &projection,
         snap: model.snapshot(),
         scan: &scan,

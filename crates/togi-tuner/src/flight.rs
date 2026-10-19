@@ -26,7 +26,7 @@ pub struct TrialHistory {
     pub step: Option<StepNo>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OpenTrial {
     pub(crate) trial: TrialId,
     pub(crate) seq: Seq,
@@ -40,7 +40,7 @@ pub(crate) struct OpenTrial {
 }
 
 /// A failed trial the tuner has yet to attribute.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Awaiting {
     pub(crate) intent: TrialIntent,
     pub(crate) profile: Profile,
@@ -54,7 +54,7 @@ pub(crate) struct Awaiting {
     pub(crate) zero: Option<Seq>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ClosedTrial {
     pub(crate) trial: TrialId,
     pub(crate) history: TrialHistory,
@@ -65,7 +65,7 @@ pub(crate) struct ClosedTrial {
     clippy::large_enum_variant,
     reason = "a run holds one, stored inline like the rest of its state"
 )]
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum InFlight {
     #[default]
     Idle,
@@ -74,7 +74,7 @@ pub(crate) enum InFlight {
 }
 
 /// The current trial and the last trial closed.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Flight {
     pub(crate) current: InFlight,
     pub(crate) last_closed: Option<ClosedTrial>,

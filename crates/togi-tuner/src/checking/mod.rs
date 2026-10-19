@@ -25,13 +25,14 @@ pub use schedule::{R7PartRole, r7_part_passes};
 
 /// A cycle that is open: the schedule its start captured, the R7 occurrences that began, and for
 /// each class of the schedule the live passes since the start that cover the checking profile.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OpenCycle {
     pub(crate) number: NonZeroU32,
     pub(crate) start: Seq,
     steps: Box<[Regime]>,
     r7: BTreeMap<usize, R7Step>,
     plan: Vec<StepPlan>,
+    #[serde(with = "togi_machine::serde_pairs")]
     valid: BTreeMap<ClassKey, u32>,
     done: usize,
 }
@@ -75,14 +76,14 @@ impl OpenCycle {
 }
 
 /// The cycle that ended last as it stood when it ended, and how many of its steps were finished.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Closed {
     pub(crate) cycle: OpenCycle,
     pub(crate) steps_done: usize,
 }
 
 /// The hottest passing together trial since the checking profile changed, the earliest at a tie.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Peak {
     pub(crate) celsius: i32,
     pub(crate) seq: Seq,
@@ -90,7 +91,7 @@ pub(crate) struct Peak {
 
 /// The part a cycle trial in flight runs as its intent stored it, kept when the schedule is
 /// rebuilt under it so the dashboard shows what the trial's requirement says.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Pinned {
     trial: TrialId,
     pub(crate) step: usize,
@@ -99,7 +100,7 @@ pub(crate) struct Pinned {
 }
 
 /// The checking profile the last `profile.change` set, and the cycle checking is in.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Checking {
     profile: Option<Profile>,
     seq: Option<Seq>,

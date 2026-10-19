@@ -7,6 +7,7 @@ publish.workspace = true
 description = "Known since-fixed defects: which recorded decisions they touched, which failures carry must exclude, and which findings await an answer"
 
 [dependencies]
+serde.workspace = true
 togi-journal.workspace = true
 togi-machine.workspace = true
 

@@ -12,10 +12,7 @@ fn events() -> Vec<Event> {
 }
 
 fn fresh(events: &[Event]) -> Value {
-    json!({
-        "facts": togi_journal::State::replay(events).unwrap(),
-        "tuner": togi_tuner::replay(events).unwrap().project(),
-    })
+    state_document(events)
 }
 
 fn found(state: Option<Value>) -> Vec<(u64, togi_tool_audit::Check)> {

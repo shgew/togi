@@ -16,6 +16,14 @@ pub struct ResumeCapsule {
     last: Option<Seq>,
     defects: &'static [Entry],
     folds: Folds,
+    prefix: togi_journal::snapshot::Prefix,
+    origin: Origin,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Origin {
+    Warm,
+    Snapshot,
 }
 
 /// The part of a capsule that is not what folding the journal's events gives.
@@ -60,7 +68,26 @@ impl ResumeCapsule {
             last: last_seq(journal.events()),
             defects,
             folds,
+            prefix: journal.prefix(),
+            origin: Origin::Warm,
         }
+    }
+
+    /// Restores a simulation from a verified persistent snapshot plus its journal tail.
+    /// Hardware callers do not use this: they must replay the entire log independently.
+    pub fn read_snapshot(journal: &Journal, defects: &'static [Entry]) -> Option<Self> {
+        if !std::ptr::eq(defects, togi_defect::KNOWN_DEFECTS) {
+            return None;
+        }
+        let saved = journal.dir().read_snapshot().ok().flatten()?;
+        let state = crate::snapshot::ReadState::restore(Some(saved), journal.events()).ok()?;
+        let mut capsule = Self::new(journal, defects, state.into_folds());
+        capsule.origin = Origin::Snapshot;
+        Some(capsule)
+    }
+
+    pub(crate) fn is_warm(&self) -> bool {
+        self.origin == Origin::Warm
     }
 
     /// Whether this capsule was made from exactly `journal` and judged by the same `defects`.
@@ -68,6 +95,7 @@ impl ResumeCapsule {
     pub fn covers(&self, journal: &Journal, defects: &'static [Entry]) -> bool {
         self.session == journal.session()
             && self.last == last_seq(journal.events())
+            && self.prefix == journal.prefix()
             && std::ptr::eq(self.defects, defects)
     }
 
@@ -82,7 +110,9 @@ impl ResumeCapsule {
     ///
     /// The state file write error.
     pub fn publish(&self, dir: &mut StateDir) -> Result<(), StateError> {
-        dir.write_state(&StateDocumentRef::of(&self.folds))
+        let document =
+            togi_journal::snapshot::seal(self.prefix.clone(), &StateDocumentRef::of(&self.folds))?;
+        dir.write_state(&document)
     }
 
     /// Checks every part against the fold of `events` from nothing, naming the first part that differs.

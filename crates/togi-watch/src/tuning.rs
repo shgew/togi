@@ -27,7 +27,7 @@ fn between(from: Timestamp, to: Timestamp) -> Duration {
 }
 
 /// The run that has started and not ended.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 struct OpenRun {
     /// The boot of the run's latest `config.loaded`: one on a later boot continues the run.
     boot: BootId,
@@ -44,7 +44,7 @@ struct OpenRun {
 /// the run's own boot is treated as the startup of a restart and takes the chain's silence back, which also
 /// drops a stop-time `mce`'s time when the run was killed before its `shutdown` and restarted in the same boot.
 /// Any other event confirms the chain.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 struct Startup {
     /// The counted time before the chain.
     counted: Duration,
@@ -55,14 +55,14 @@ struct Startup {
 }
 
 /// The tuning time as of the latest `trial.start`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 struct TrialStart {
     at: Timestamp,
     tuning: Duration,
 }
 
 /// The time spent inside runs, from the events folded so far.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct TuningClock {
     /// The length of the runs and recoveries that ended or whose events are all folded.
     counted: Duration,

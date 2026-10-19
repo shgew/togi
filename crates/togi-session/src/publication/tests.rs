@@ -161,12 +161,7 @@ fn deferred_state_is_written_before_the_journal_leaves_the_run() {
     input.publication = PublicationPolicy::OnFinish;
     let ended = crate::run(input);
     assert!(ended.errors.is_empty());
-    let expected = StateDocument {
-        facts: togi_journal::State::replay(ended.journal.events()).unwrap(),
-        tuner: togi_tuner::replay(ended.journal.events())
-            .unwrap()
-            .project(),
-    };
+    let expected = StateDocument::of(&Folds::replay(ended.journal.events()).unwrap());
     let saved: StateDocument = ended.journal.read_state().unwrap().unwrap();
     assert_eq!(saved, expected);
     let bytes = serde_json::to_vec(&saved).unwrap();
@@ -289,11 +284,54 @@ fn rebuilt_after_tampering(tamper: impl FnOnce(&mut serde_json::Value)) -> Vec<S
     rebuilt.fields.clone()
 }
 
+fn reseal(state: &mut serde_json::Value) {
+    let prefix = serde_json::from_value(state["snapshot"]["prefix"].clone()).unwrap();
+    state.as_object_mut().unwrap().remove("snapshot");
+    *state = togi_journal::snapshot::seal(prefix, state).unwrap();
+}
+
+#[test_case("/recovery/trials", serde_json::json!(999), "recovery"; "run recovery")]
+#[test_case("/incremental/poisoned", serde_json::json!(true), "incremental"; "incremental tuner")]
+#[test_case("/defects/excluded", serde_json::json!([1]), "defects"; "defect index")]
+#[test_case("/presentation/facts/stopped", serde_json::json!(true), "presentation"; "watch end view")]
+fn boot_replays_independently_even_when_a_wrong_full_fold_has_a_valid_checksum(
+    pointer: &str,
+    value: serde_json::Value,
+    expected: &str,
+) {
+    let fields = rebuilt_after_tampering(|state| {
+        *state.pointer_mut(pointer).unwrap() = value;
+        reseal(state);
+    });
+    assert_eq!(fields, [expected]);
+}
+
+#[test]
+fn a_changed_payload_without_a_new_checksum_is_rebuilt() {
+    assert_eq!(
+        rebuilt_after_tampering(|state| {
+            state["recovery"]["trials"] = serde_json::json!(999);
+        }),
+        ["state.json"]
+    );
+}
+
+#[test]
+fn another_build_is_discarded_and_recorded() {
+    assert_eq!(
+        rebuilt_after_tampering(|state| {
+            state["snapshot"]["build"] = serde_json::json!("another-build");
+        }),
+        ["build"]
+    );
+}
+
 #[test]
 fn every_differing_facts_key_is_named_in_journal_order() {
     let fields = rebuilt_after_tampering(|state| {
         state["facts"]["cores"] = serde_json::json!([]);
         state["facts"]["last_seq"] = serde_json::json!(1);
+        reseal(state);
     });
     assert_eq!(fields, ["cores", "last_seq"]);
 }
@@ -303,6 +341,7 @@ fn a_disagreeing_tuner_projection_is_named_apart_from_facts() {
     let fields = rebuilt_after_tampering(|state| {
         state["tuner"]["clean_cycles"] = serde_json::json!(7);
         state["facts"]["last_seq"] = serde_json::json!(1);
+        reseal(state);
     });
     assert_eq!(fields, ["last_seq", "tuner"]);
 }

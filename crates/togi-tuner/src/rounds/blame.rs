@@ -13,7 +13,7 @@ mod tests;
 
 /// The deepened core a phase-2 failure is charged to: the round it belongs to, or none for a
 /// failure of the confirmation cycle, and the offset the core returns to.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Blame {
     failure: Seq,
     round: Option<Shape>,

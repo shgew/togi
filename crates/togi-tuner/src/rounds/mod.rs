@@ -24,7 +24,7 @@ pub(crate) fn shallowest(a: TargetOffset, b: TargetOffset) -> TargetOffset {
 
 /// What a round was: where it began, the cores it moved, the offsets they stood at and the
 /// profile it proposed. A core is deepened when its proposed offset is deeper than its baseline.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Shape {
     id: NonZeroU32,
     start: Seq,
@@ -64,7 +64,7 @@ impl Shape {
 }
 
 /// One check the round needs: `needed` passes of `class` on `profile` since `since`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Check {
     pub(crate) class: ClassKey,
     pub(crate) condition: Condition,
@@ -73,7 +73,7 @@ pub(crate) struct Check {
 }
 
 /// The round in progress.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Round {
     shape: Shape,
     target: Profile,
@@ -127,7 +127,7 @@ impl Round {
 }
 
 /// The round in progress, the last one that ended and the round ids used so far.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Rounds {
     active: Option<Round>,
     last: Option<Shape>,

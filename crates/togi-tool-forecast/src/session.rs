@@ -93,6 +93,7 @@ pub struct Session {
     prefixes: Vec<[u8; 32]>,
     refusal: Option<Refusal>,
     skipped: Skipped,
+    snapshot: Option<(togi_journal::snapshot::Prefix, Folded)>,
 }
 
 /// How a journal is decoded: strictly, or leniently as `journal.md` describes for read-only consumers.
@@ -100,6 +101,12 @@ pub struct Session {
 enum Reading {
     Strict,
     Lenient,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub(crate) struct Folded {
+    pub facts: togi_journal::State,
+    pub incremental: togi_tuner::State,
 }
 
 impl Session {
@@ -114,6 +121,21 @@ impl Session {
 
     pub fn events(&self) -> &[Event] {
         &self.events
+    }
+
+    pub(crate) fn snapshot(
+        &self,
+        through: Seq,
+    ) -> Option<(&togi_journal::snapshot::Prefix, &Folded)> {
+        let (prefix, folded) = self.snapshot.as_ref()?;
+        (prefix.last_seq.is_some_and(|last| last <= through)
+            && folded.facts.last_seq == prefix.last_seq
+            && folded
+                .facts
+                .session
+                .as_ref()
+                .is_some_and(|session| session.id == self.id))
+        .then_some((prefix, folded))
     }
 
     /// What a lenient read of the journal skipped or ignored; empty after a strict one.
@@ -178,7 +200,18 @@ impl Session {
             path: path.to_path_buf(),
             source,
         })?;
-        Self::decode_with(path, &bytes, reading)
+        let mut session = Self::decode_with(path, &bytes, reading)?;
+        if path.file_name().is_some_and(|name| name == LIVE_JOURNAL) {
+            if let (Some(session), Some(directory)) = (session.as_mut(), path.parent()) {
+                session.snapshot = match fs {
+                    Some(fs) => togi_journal::snapshot::read_in(fs, directory)
+                        .ok()
+                        .flatten(),
+                    None => togi_journal::snapshot::read(directory).ok().flatten(),
+                };
+            }
+        }
+        Ok(session)
     }
 
     /// Decodes a journal's original bytes, retaining their exact prefix hashes.
@@ -250,6 +283,7 @@ impl Session {
             prefixes,
             refusal,
             skipped,
+            snapshot: None,
         })
     }
 

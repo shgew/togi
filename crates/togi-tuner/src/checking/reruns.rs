@@ -10,7 +10,7 @@ use crate::{Action, ClassKey, Requirement, TrialContext, TrialPlan, Window, Work
 
 /// A failed class the checking profile has to pass again before checking goes on: the class of
 /// the failure an offset-changing decision answered, and that failure.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Obligation {
     pub(crate) class: ClassKey,
     pub(crate) failure: Seq,
@@ -18,7 +18,7 @@ pub(crate) struct Obligation {
 
 /// The reruns owed, oldest first, and the carried facts that answered reruns since the last
 /// cycle or round decision cited them.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Reruns {
     fifo: VecDeque<Obligation>,
     citations: Vec<Seq>,

@@ -26,12 +26,13 @@ pub(crate) struct Unresumed {
 
 /// Every reducer the run keeps over its journal, each fed every event once and in order: the recovery fold first,
 /// then the tuner state, then the defect state.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Folds {
     pub recovery: RecoveryState,
     pub tuner: togi_tuner::State,
     pub defects: DefectState,
     pub facts: togi_journal::State,
+    pub presentation: togi_watch::model::Presentation,
 }
 
 impl Folds {
@@ -58,6 +59,8 @@ impl Folds {
 
     /// Folds one event. A tuner state that cannot take it in stays poisoned: the journal is corrupt.
     pub(crate) fn apply(&mut self, event: &Event) -> Result<(), FoldError> {
+        self.presentation
+            .before_event(event, &self.facts, &self.tuner);
         self.recovery.apply(event)?;
         self.tuner.fold(event).map_err(|error| FoldError::Tuner {
             seq: event.seq,
@@ -65,6 +68,8 @@ impl Folds {
         })?;
         self.defects.fold(event);
         self.facts.apply(event)?;
+        self.presentation
+            .after_event(event, &self.facts, &self.tuner);
         Ok(())
     }
 }
@@ -117,8 +122,9 @@ impl<'machine> Appender<'machine> {
         defects: &'static [Entry],
         capsule: Option<ResumeCapsule>,
     ) -> Result<Self, Box<Unresumed>> {
+        let warm = capsule.as_ref().is_some_and(ResumeCapsule::is_warm);
         let adopted = capsule.and_then(|capsule| capsule.adopt(&journal, defects));
-        let was_adopted = adopted.is_some();
+        let was_adopted = warm && adopted.is_some();
         let folds = match adopted {
             Some(folds) => folds,
             None => match Folds::replay_with(defects, journal.events()) {

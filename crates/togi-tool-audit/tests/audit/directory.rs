@@ -28,10 +28,7 @@ fn live(fs: &MemFs, body: Vec<Event>) {
     let mut events = vec![header()];
     events.extend(body);
     fs.put("/state/events.jsonl", bytes(&events));
-    let document = serde_json::json!({
-        "facts": togi_journal::State::replay(&events).unwrap(),
-        "tuner": togi_tuner::replay(&events).unwrap().project(),
-    });
+    let document = state_document(&events);
     fs.put("/state/state.json", serde_json::to_vec(&document).unwrap());
 }
 

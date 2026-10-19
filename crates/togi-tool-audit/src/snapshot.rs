@@ -9,7 +9,6 @@ use crate::violation::{Check, Completion, Violation};
 
 object_only! {
     #[derive(Debug, Serialize)]
-    #[serde(deny_unknown_fields)]
     struct Snapshot {
         facts: togi_journal::State,
         tuner: Projection,
@@ -101,6 +100,18 @@ pub(crate) fn audit(
             "the tuner does not replay the journal: {}",
             togi_machine::error_chain(&error)
         ))),
+    }
+    if found.is_empty() {
+        match togi_session::verify_snapshot(dir, events) {
+            Ok(togi_session::SnapshotStatus::Matches) => {}
+            Ok(status) => found.push(violation(format!(
+                "state.json full folded state differs: {status:?}"
+            ))),
+            Err(error) => found.push(violation(format!(
+                "state.json is not a verified snapshot: {}",
+                togi_machine::error_chain(&error)
+            ))),
+        }
     }
     Ok(found)
 }

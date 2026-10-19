@@ -20,14 +20,14 @@ use crate::model::{Count, DeadEndView, HuntShape, SessionView, StopView, TrialEn
 use crate::tuning::TuningClock;
 use crate::words::{tag_word, words};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub(crate) struct Current {
     pub(crate) intent: TrialIntent,
     pub(crate) boot: BootId,
     pub(crate) boot_ended: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub(crate) struct FailureFacts {
     pub(crate) at: Option<Timestamp>,
     pub(crate) signal: Option<Signal>,
@@ -37,20 +37,20 @@ pub(crate) struct FailureFacts {
     pub(crate) regime: Option<Regime>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub(crate) struct HuntStartFacts {
     pub(crate) at: Timestamp,
     pub(crate) named: bool,
     pub(crate) live: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq)]
 pub(crate) struct ComboFacts {
     pub(crate) hunt: u32,
     pub(crate) fallback: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub(crate) struct RecoverFacts {
     pub(crate) crash_at: Timestamp,
     pub(crate) reset: Option<togi_machine::ResetKind>,
@@ -58,12 +58,13 @@ pub(crate) struct RecoverFacts {
     pub(crate) end: Option<TrialEndView>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
 pub(crate) struct Facts {
     pub(crate) session: Option<SessionView>,
     pub(crate) intents: HashMap<TrialId, TrialIntent>,
     pub(crate) starts: HashMap<TrialId, Timestamp>,
     pub(crate) ends: HashMap<TrialId, TrialEndView>,
+    #[serde(with = "togi_machine::serde_pairs")]
     pub(crate) group_signals: HashMap<(u32, u32), Signal>,
     pub(crate) applied: PerCore<Option<ObservedOffset>>,
     pub(crate) tuned: PerCore<Option<TargetOffset>>,
@@ -76,14 +77,17 @@ pub(crate) struct Facts {
     pub(crate) sources: HashMap<Seq, CombinationId>,
     pub(crate) combination_seqs: HashMap<Seq, CombinationId>,
     pub(crate) combos: BTreeMap<CombinationId, ComboFacts>,
+    #[serde(serialize_with = "togi_machine::serde_pairs::serialize_set")]
     pub(crate) probes: HashSet<u32>,
     pub(crate) stopped: bool,
     pub(crate) restored: bool,
     pub(crate) configs: u32,
     pub(crate) carrying: bool,
+    #[serde(with = "togi_machine::serde_pairs")]
     pub(crate) check_hunts: HashMap<(u32, u32), Vec<u32>>,
     pub(crate) cycle_steps: HashMap<u32, Vec<Regime>>,
     pub(crate) hunt_starts: HashMap<u32, HuntStartFacts>,
+    #[serde(with = "togi_machine::serde_pairs")]
     pub(crate) groups: HashMap<(u32, u32), togi_journal::HuntGroup>,
     pub(crate) carried: BTreeSet<Seq>,
     pub(crate) shapes: BTreeMap<u32, HuntShape>,

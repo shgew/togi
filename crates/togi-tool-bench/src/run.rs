@@ -393,7 +393,12 @@ fn record_of(
         hazard_per_h,
         hazard_max_per_h,
         worst_r7_hazard_per_h,
-    } = metrics::measure(&session.events, &model, spec.replay.as_deref())?;
+    } = metrics::measure_in(
+        &session.dir,
+        &session.events,
+        &model,
+        spec.replay.as_deref(),
+    )?;
     Ok(Record {
         scenario: spec.scenario.clone(),
         machine: spec.machine.as_ref().map(|machine| machine.name.clone()),

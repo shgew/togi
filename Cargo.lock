@@ -1640,6 +1640,7 @@ name = "togi-defect"
 version = "0.0.0"
 dependencies = [
  "jiff",
+ "serde",
  "test-case",
  "togi-config",
  "togi-journal",
@@ -1719,6 +1720,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_path_to_error",
+ "sha2",
  "tempfile",
  "test-case",
  "thiserror",
@@ -1792,6 +1794,7 @@ dependencies = [
  "togi-sim",
  "togi-tuner",
  "togi-tuningboot",
+ "togi-watch",
 ]
 
 [[package]]
@@ -1866,6 +1869,7 @@ dependencies = [
  "thiserror",
  "togi-journal",
  "togi-machine",
+ "togi-session",
  "togi-tuner",
  "togi-version",
 ]
@@ -1903,6 +1907,7 @@ dependencies = [
  "togi-tool-trialfacts",
  "togi-tuner",
  "togi-version",
+ "togi-watch",
 ]
 
 [[package]]
@@ -2192,6 +2197,7 @@ dependencies = [
  "jiff",
  "ratatui",
  "rustix",
+ "serde",
  "serde_json",
  "tempfile",
  "test-case",

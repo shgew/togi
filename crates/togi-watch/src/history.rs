@@ -17,7 +17,7 @@ pub const LOG_LIMIT: usize = 400;
 
 /// The checking step a line belongs to: its place, the regime the cycle's plan gives it when known, and the workload
 /// its trials run once one names it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StepAt {
     /// The cycle.
     pub cycle: u32,
@@ -44,7 +44,7 @@ impl StepAt {
 }
 
 /// A run of neighbouring groups of one hunt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Groups {
     /// The hunt.
     pub hunt: u32,
@@ -71,7 +71,7 @@ impl Groups {
 }
 
 /// Where passed trials ran, when it decides what they merge with.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PassedIn {
     /// A checking step outside any hunt; passes of different steps never merge.
     Step(StepAt),
@@ -85,7 +85,7 @@ pub enum PassedIn {
 }
 
 /// Passed trials of one requirement or part.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Passes {
     /// What the trials loaded, raw untrusted text in it; passes merge only with passes of the same subject.
     pub subject: String,
@@ -166,7 +166,7 @@ impl Passes {
 }
 
 /// Whom a failed trial's evidence names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Named {
     /// The trial names this core.
     Core(CoreId),
@@ -186,7 +186,7 @@ impl Named {
 
 /// How a trial ended, kept in parts so the history panel can reserve what attributes the failure before it fits
 /// the context. The journal's own message and the log view never pass through here.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Verdict {
     /// The signal the trial ended with, when the journal names one.
     pub signal: Option<Signal>,
@@ -222,7 +222,7 @@ impl Verdict {
 }
 
 /// A failed trial.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Failed {
     /// What the trial loaded, raw untrusted text in it.
     pub subject: String,
@@ -235,7 +235,7 @@ pub struct Failed {
 }
 
 /// The hunt a known failure was answered with, and the cores it hunts among.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Located {
     /// The hunt.
     pub hunt: u32,
@@ -244,7 +244,7 @@ pub struct Located {
 }
 
 /// A trial skipped because it already failed at these offsets.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct KnownFailure {
     /// The regime of the failed trial, when the journal names it.
     pub regime: Option<Regime>,
@@ -278,7 +278,7 @@ impl KnownFailure {
 }
 
 /// How a hunt's first group loads its candidates, once the hunt names it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum FirstGroup {
     /// The candidates are located at offset 0.
     Locate,
@@ -287,7 +287,7 @@ pub enum FirstGroup {
 }
 
 /// The start of a hunt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HuntStart {
     /// The hunt.
     pub hunt: u32,
@@ -315,7 +315,7 @@ impl HuntStart {
 }
 
 /// What an entry says, with the fields its sentence is built from.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum What {
     /// A sentence kept as it was written, raw untrusted text in it.
     Said(String),
@@ -377,7 +377,7 @@ pub enum What {
 }
 
 /// One line of what happened, in plain words or merged from several events.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Entry {
     /// When it happened; a merged entry shows its last event.
     pub at: Timestamp,
@@ -390,7 +390,7 @@ pub struct Entry {
 }
 
 /// One raw line of the journal, as the log view lists it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LogEntry {
     /// The event's sequence number.
     pub seq: Seq,
@@ -661,7 +661,7 @@ pub(crate) fn merge_probe_passes(history: Vec<Entry>) -> Vec<Entry> {
 }
 
 /// The kept history: entries in the order they happened, and how many older ones were let go.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub(crate) struct History {
     pub(crate) entries: Vec<Entry>,
     pub(crate) dropped: usize,

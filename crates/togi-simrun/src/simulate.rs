@@ -153,6 +153,9 @@ fn simulate_with_dump(
             user.borrow_mut().write_event(renderer, event, &zone);
         }
         let run_cancel = cancel.child_token();
+        if resume.is_none() && replay == Replay::Warm {
+            resume = ResumeCapsule::read_snapshot(&journal, defects);
+        }
         let mut ended = togi_session::run(RunInput {
             config: config.clone(),
             source: source.clone(),

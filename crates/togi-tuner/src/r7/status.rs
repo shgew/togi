@@ -12,6 +12,42 @@ const BUCKETS: usize = 51;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Depths([u32; BUCKETS]);
 
+impl serde::Serialize for Depths {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(self.0.as_slice(), serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Depths {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = Depths;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(formatter, "exactly {BUCKETS} depth counters")
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut sequence: A,
+            ) -> Result<Depths, A::Error> {
+                let mut depths = [0; BUCKETS];
+                for (index, depth) in depths.iter_mut().enumerate() {
+                    *depth = sequence
+                        .next_element()?
+                        .ok_or_else(|| serde::de::Error::invalid_length(index, &self))?;
+                }
+                if sequence.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                    return Err(serde::de::Error::invalid_length(BUCKETS + 1, &self));
+                }
+                Ok(Depths(depths))
+            }
+        }
+        deserializer.deserialize_seq(Visitor)
+    }
+}
+
 impl Default for Depths {
     fn default() -> Self {
         Self([0; BUCKETS])
@@ -45,9 +81,10 @@ impl Depths {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct Cell {
     total: Depths,
+    #[serde(with = "togi_machine::serde_pairs")]
     by_load: HashMap<CoreSet, Depths>,
 }
 
@@ -56,8 +93,9 @@ struct Cell {
 /// for a workload once one pass was at an offset equal to or deeper than its current one.
 /// Failures never enter, and no later failure invalidates a pass. A reset of a core removes
 /// every pass whose load includes it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SelfSufficiency {
+    #[serde(with = "togi_machine::serde_pairs")]
     cells: HashMap<(BackendId, WorkloadId), PerCore<Option<Cell>>>,
 }
 

@@ -11,7 +11,7 @@ use crate::{ClassKey, DecisionAction, FoldError, Load, Profile};
 /// A failure, its class and the profile it failed under: what the known-failure rule copies to
 /// a skipped trial and what a decision answering it reads. A failure that is both witnessed and
 /// pending shares one.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct FailureFact {
     pub(crate) failure: Failure,
     pub(crate) class: ClassKey,
@@ -28,7 +28,7 @@ pub(crate) fn load_of(class: ClassKey) -> Load {
 }
 
 /// A failure no decision has answered yet.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Pending {
     pub(crate) fact: Arc<FailureFact>,
     pub(crate) carried: bool,
@@ -48,11 +48,12 @@ impl Pending {
 /// newest failure of each class, profile and origin, which a later trial can be known to repeat.
 /// A decision that answers a failure retires its record; a witness stays until the evidence it
 /// stands for is discarded.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Failures {
     pending: BTreeMap<Seq, Pending>,
     queue: VecDeque<Seq>,
     witnesses: BTreeMap<Seq, Arc<FailureFact>>,
+    #[serde(with = "togi_machine::serde_pairs")]
     newest: HashMap<(ClassKey, Profile, bool), Seq>,
 }
 

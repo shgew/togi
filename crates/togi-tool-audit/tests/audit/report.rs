@@ -23,11 +23,7 @@ fn memory(events: &[Event]) -> MemFs {
     fs.put("/state/events.jsonl", journal.into_bytes());
     fs.put(
         "/state/state.json",
-        serde_json::to_vec(&serde_json::json!({
-            "facts": togi_journal::State::replay(events).unwrap(),
-            "tuner": togi_tuner::replay(events).unwrap().project(),
-        }))
-        .unwrap(),
+        serde_json::to_vec(&state_document(events)).unwrap(),
     );
     fs
 }

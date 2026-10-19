@@ -71,9 +71,16 @@ pub(crate) trait Replay: Default {
     fn fold(&mut self, event: &Event) -> Result<(), togi_tuner::FoldError>;
     fn clean_cycles(&self) -> u32;
     fn profile(&self) -> Option<PerCore<ObservedOffset>>;
+    fn restore(_state: &togi_tuner::State) -> Option<Self> {
+        None
+    }
 }
 
 impl Replay for togi_tuner::State {
+    fn restore(state: &togi_tuner::State) -> Option<Self> {
+        Some(state.clone())
+    }
+
     fn fold(&mut self, event: &Event) -> Result<(), togi_tuner::FoldError> {
         togi_tuner::State::fold(self, event)
     }
@@ -107,6 +114,20 @@ pub(crate) fn follow<R: Replay>(sessions: &[Session], anchor: &Anchor) -> Result
         let start = if i == 0 { at + 1 } else { 0 };
         held = (session, R::default(), State::default());
         let (_, tuner, state) = &mut held;
+        let restored = if i == 0 {
+            session
+                .snapshot(anchor.seq)
+                .and_then(|(prefix, saved)| {
+                    R::restore(&saved.incremental).map(|restored| {
+                        *tuner = restored;
+                        *state = saved.facts.clone();
+                        prefix.last_seq
+                    })
+                })
+                .flatten()
+        } else {
+            None
+        };
         let mut in_effect: Option<&Build> = None;
         for (j, event) in session.events().iter().enumerate() {
             let (mut end, mut fold) = (false, true);
@@ -118,7 +139,7 @@ pub(crate) fn follow<R: Replay>(sessions: &[Session], anchor: &Anchor) -> Result
                 scan.stamp(event, in_effect.take());
                 (end, fold) = scan.event(session, event, tuner);
             }
-            if fold && session.replayable() {
+            if fold && session.replayable() && Some(event.seq) > restored {
                 state.apply(event).map_err(|source| Error::JournalFold {
                     session: session.id(),
                     source,

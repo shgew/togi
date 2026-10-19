@@ -47,6 +47,32 @@ pub(super) struct Seqs {
     tail: Vec<Seq>,
 }
 
+impl serde::Serialize for Seqs {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq as _;
+        let mut sequence = serializer.serialize_seq(Some(self.shared.len() + self.tail.len()))?;
+        for seq in self.shared.iter().chain(&self.tail) {
+            sequence.serialize_element(seq)?;
+        }
+        sequence.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Seqs {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let seqs = <Vec<Seq> as serde::Deserialize>::deserialize(deserializer)?;
+        if seqs.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(serde::de::Error::custom(
+                "snapshot sequences are not strictly ascending",
+            ));
+        }
+        Ok(Self {
+            shared: Arc::new(seqs),
+            tail: Vec::new(),
+        })
+    }
+}
+
 impl Clone for Seqs {
     fn clone(&self) -> Self {
         #[cfg(test)]
@@ -190,7 +216,7 @@ impl Seqs {
 
 /// Carried seqs in ascending order, each with the session it came from. The provenance lives in
 /// the cell, so discarding the cell discards it too.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct Carried {
     seqs: Seqs,
     sources: Arc<Vec<SessionRef>>,
@@ -231,7 +257,7 @@ impl Carried {
 }
 
 /// The failures of one class at one profile, under one named core for multi-core R7.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct FailureCell {
     pub(super) named: Option<CoreId>,
     pub(super) profile: Profile,
@@ -240,7 +266,7 @@ pub(super) struct FailureCell {
 }
 
 /// The passes of one class at one profile under one backend package and named core.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct PassCell {
     pub(super) backend: BackendId,
     pub(super) named: Option<CoreId>,
@@ -277,9 +303,14 @@ impl Cell for PassCell {
 }
 
 /// Cells in the order they were first filled, with a point lookup by key.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(bound(
+    serialize = "C: serde::Serialize, C::Key: serde::Serialize",
+    deserialize = "C: serde::Deserialize<'de>, C::Key: serde::Deserialize<'de>"
+))]
 pub(super) struct Cells<C: Cell> {
     cells: Vec<C>,
+    #[serde(with = "togi_machine::serde_pairs")]
     index: HashMap<C::Key, usize>,
 }
 
@@ -356,7 +387,7 @@ impl PassCells {
 
 /// A class's cells, the exposure its live passes add, and `reach`: per core, the deepest offset of
 /// any of its pass cells, so that no pass cell covers a profile `reach` does not cover.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct ClassCells {
     pub(super) failures: FailureCells,
     pub(super) passes: PassCells,

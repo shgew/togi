@@ -7,7 +7,7 @@ use togi_journal::Seq;
 use crate::{Depth, LoadKey, Profile, Ranking, Topology};
 
 /// Where one loaded core's request came from.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Lane {
     /// No measurement covers the core: its offset orders it, shallowest first, and stands in for
     /// a request it must never be reported as.
@@ -19,7 +19,7 @@ pub(crate) enum Lane {
 }
 
 /// The request groups of the loaded cores on one CCD, highest first.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct CcdOrder {
     ccd: CcdId,
     loaded: CoreSet,
@@ -95,7 +95,7 @@ impl CcdOrder {
 /// [`RequestOrder::measured`], which takes precedence; any other uses [`RequestOrder::derive`],
 /// which sees only the measurements folded so far, the ones available as of that trial. The
 /// result is stored in the pending failure, and nothing re-derives it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RequestOrder {
     values: PerCore<f64>,
     lanes: PerCore<Lane>,

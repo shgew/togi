@@ -5,7 +5,7 @@ use crate::state::Run;
 use crate::{CombinationId, FailurePoint, FoldError};
 
 /// The R1 and R2 workloads a candidate solo limit froze, and the event that began its check.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Check {
     pub(crate) r1: WorkloadId,
     pub(crate) r2: WorkloadId,
@@ -33,7 +33,7 @@ impl Check {
 
 /// Where a core stands in the search, with what only that phase has: a searching core's
 /// candidate check, and the solo limit a core that left the search with a pass keeps.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Phase {
     #[default]
     Unstarted,
@@ -91,7 +91,7 @@ const fn slot(regime: Regime) -> usize {
 
 /// How many conclusive trials of each regime have ended; the next workload of the regime's list
 /// is the one at this count.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Rotation([u32; 7]);
 
 impl Rotation {
@@ -105,7 +105,7 @@ impl Rotation {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Core {
     pub(crate) phase: Phase,
     pub(crate) offset: TargetOffset,

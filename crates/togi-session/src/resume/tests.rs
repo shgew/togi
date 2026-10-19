@@ -49,6 +49,12 @@ fn capsule_of(events: &[Event], defects: &'static [Entry]) -> ResumeCapsule {
         last: last_seq(events),
         defects,
         folds: Folds::replay_with(defects, events).unwrap(),
+        prefix: togi_journal::snapshot::Prefix {
+            last_seq: last_seq(events),
+            bytes: 0,
+            sha256: "verification-only capsule".into(),
+        },
+        origin: Origin::Warm,
     }
 }
 

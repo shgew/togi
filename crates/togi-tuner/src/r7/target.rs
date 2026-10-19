@@ -64,7 +64,7 @@ fn failure_floor(evidence: &Evidence, class: ClassKey, profile: &Profile) -> Opt
 
 /// Counts passes at one failure floor and retains the earliest witnesses up to the supported
 /// evidence threshold, so a changed configuration can cite earlier passes without a ledger scan.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Segment {
     floor: Option<Seq>,
     count: u32,
@@ -72,7 +72,7 @@ struct Segment {
 }
 
 /// The passes one request and clock summary stands for, oldest segment first.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Entry {
     segments: Vec<Segment>,
 }
@@ -119,12 +119,14 @@ type GroupId = u32;
 
 /// The passes of one class, backend and profile, reduced to each CCD's highest request,
 /// without clocks for unattributed targets and with clocks for named targets.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct Group {
     class: ClassKey,
     backend: BackendId,
     profile: Profile,
+    #[serde(with = "togi_machine::serde_pairs")]
     ccd_top: BTreeMap<Key, Entry>,
+    #[serde(with = "togi_machine::serde_pairs")]
     load_top: BTreeMap<Key, Entry>,
 }
 
@@ -170,14 +172,17 @@ impl Candidate {
 /// ledger's newest live failure, so a failure the ledger drops (a reset of the core it named)
 /// gives its passes back. A reset of a loaded core discards the groups of the loads it is in.
 /// Passes that carry no request lane never enter.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct R7Targets {
     next: GroupId,
     groups: BTreeMap<GroupId, Group>,
+    #[serde(with = "togi_machine::serde_pairs")]
     shapes: HashMap<(ClassKey, BackendId, Profile), GroupId>,
+    #[serde(with = "togi_machine::serde_pairs")]
     by_load: HashMap<LoadKey, BTreeSet<GroupId>>,
     by_core: HashMap<WorkloadId, PerCore<Option<BTreeSet<GroupId>>>>,
     #[cfg(test)]
+    #[serde(skip)]
     visits: crate::evidence::Visits,
 }
 

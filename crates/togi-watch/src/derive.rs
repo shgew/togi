@@ -15,7 +15,7 @@ use crate::model::{
     HuntShape, Parking, RecoveryView, TrialView,
 };
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
 pub(crate) struct Derived {
     pub(crate) projection: Projection,
     pub(crate) forecast: Forecast,

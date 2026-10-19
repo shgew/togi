@@ -12,7 +12,7 @@ use crate::{ClassKey, CombinationId, Profile, Ranking, Secs};
 /// What established a group's outcome at some moment: the outcome (none while the group runs),
 /// the newest admitted failure that rejected it and the carried passes among the first `needed`
 /// that cover it.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Answer {
     pub(crate) outcome: Option<GroupOutcome>,
     pub(crate) failure: Option<Seq>,
@@ -26,7 +26,7 @@ impl Answer {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct GroupRecord {
     pub(crate) seq: Seq,
     pub(crate) payload: HuntGroup,
@@ -47,20 +47,20 @@ impl GroupRecord {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Repeated {
     pub(crate) core: CoreId,
     pub(crate) failures: [Seq; 2],
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Recorded {
     pub(crate) seq: Seq,
     pub(crate) id: CombinationId,
     pub(crate) members: PerCore<TargetOffset>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Ended {
     pub(crate) seq: Seq,
     pub(crate) payload: HuntEnd,
@@ -68,13 +68,13 @@ pub(crate) struct Ended {
     pub(crate) combination: Option<Recorded>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Cut {
     pub(crate) count: u32,
     pub(crate) signature: Option<(CoreSet, u32, u32)>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Active {
     pub(crate) id: NonZeroU32,
     pub(crate) seq: Seq,
@@ -139,7 +139,7 @@ impl Active {
 
 /// How a located hunt that kept the failure on the loaded cores ended: its `hunt.end`, whether
 /// every loaded core failed at CO 0, and the failure that rejected its last group.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct LoadedEnd {
     pub(crate) seq: Seq,
     pub(crate) all_zero: bool,
@@ -154,13 +154,13 @@ impl LoadedEnd {
 
 /// The failure that rejected a located hunt's last group, and the loaded core it named with the
 /// failed trial the charge reads.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Rejected {
     pub(crate) failure: Seq,
     pub(crate) named: Option<Named>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Named {
     pub(crate) core: CoreId,
     pub(crate) failure: Box<OpenFailure>,
@@ -168,7 +168,7 @@ pub(crate) struct Named {
 
 /// Where a located hunt stands: running, consumed by any end but `loaded`, or charged to the
 /// loaded cores after a `loaded` end.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum LocatedEnd {
     Open,
     Consumed,
@@ -176,20 +176,20 @@ pub(crate) enum LocatedEnd {
 }
 
 /// A multi-core R7 failure answered by a located hunt.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Located {
     pub(crate) hunt: NonZeroU32,
     pub(crate) source: Seq,
     pub(crate) end: LocatedEnd,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Rejecting {
     pub(crate) ledger: Seq,
     pub(crate) open: OpenFailure,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ParkedFailure {
     pub(crate) seq: Seq,
     pub(crate) core: CoreId,
@@ -197,7 +197,7 @@ pub(crate) struct ParkedFailure {
     pub(crate) carried: bool,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Parked {
     failures: Vec<ParkedFailure>,
 }
@@ -233,7 +233,7 @@ impl Parked {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Hunts {
     pub(crate) active: Option<Box<Active>>,
     pub(crate) next_id: u32,
@@ -241,6 +241,7 @@ pub(crate) struct Hunts {
     pub(crate) reset: Option<Seq>,
     pub(crate) located: BTreeMap<Seq, Located>,
     pub(crate) passed_full: Vec<(Seq, Profile)>,
+    #[serde(with = "togi_machine::serde_pairs")]
     pub(crate) parked_failures: HashMap<ClassKey, Parked>,
     pub(crate) rejecting: Option<Box<Rejecting>>,
 }
