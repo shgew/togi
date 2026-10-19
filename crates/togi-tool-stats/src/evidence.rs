@@ -67,9 +67,10 @@ pub(crate) struct GroupReuse {
 }
 
 impl GroupReuse {
+    /// Compare exact counts without narrowing either the journal requirement or the observed count.
     pub(crate) fn established(&self) -> Option<bool> {
         self.prior
-            .map(|prior| prior >= usize::try_from(self.required).unwrap_or(usize::MAX))
+            .map(|prior| prior as u128 >= u128::from(self.required))
     }
 }
 

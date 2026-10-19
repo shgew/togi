@@ -26,7 +26,7 @@ pub struct Telemetry {
     pub requests: PerCore<f64>,
     /// Each CCD's highest-requesting cores, ties included.
     pub top_requesters: CoreSet,
-    /// Each loaded CCD's median over samples of its loaded cores' median clock.
+    /// Each loaded CCD's approximate median clock in whole MHz, clamped at the i64 endpoints.
     pub ccd_mhz: BTreeMap<CcdId, i64>,
 }
 
@@ -58,7 +58,10 @@ pub fn summarize(
         for (core, ccd) in cores() {
             requests[core.index()].push(f64::from(table.voltage_request_v[core.index()]));
             if let Some(mhz) = sample.core_mhz.get(core) {
-                per_ccd.entry(ccd).or_default().push(to_f64(mhz));
+                per_ccd
+                    .entry(ccd)
+                    .or_default()
+                    .push(approximate_clock_mhz(mhz));
             }
         }
         for (&ccd, mhz) in &mut per_ccd {
@@ -87,7 +90,7 @@ pub fn summarize(
         if mhz.len() >= MIN_SAMPLES {
             telemetry
                 .ccd_mhz
-                .insert(ccd, to_i64(median(&mut mhz).round()));
+                .insert(ccd, rounded_clock_mhz(median(&mut mhz)));
         }
     }
     Some(telemetry)
@@ -114,10 +117,15 @@ pub fn groups(requests: &PerCore<f64>) -> Vec<CoreSet> {
 }
 
 /// The counts shallower that raise a request from `v` to at least `target`, and at least one.
-/// Both must be finite.
+/// Both must be finite. Computed counts deliberately saturate at `i64::MAX`.
 pub fn counts(v: f64, target: f64) -> i64 {
     debug_assert!(v.is_finite() && target.is_finite());
-    to_i64(((target - v) / VOLTS_PER_COUNT - COUNT_ROUNDING_TOLERANCE).ceil()).max(1)
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "voltage counts deliberately saturate at i64::MAX and floor at one"
+    )]
+    let count = ((target - v) / VOLTS_PER_COUNT - COUNT_ROUNDING_TOLERANCE).ceil() as i64;
+    count.max(1)
 }
 
 /// The highest request. Every request must be finite.
@@ -128,18 +136,19 @@ pub fn top(requests: &PerCore<f64>) -> Option<f64> {
 
 #[expect(
     clippy::cast_precision_loss,
-    reason = "clock readings in MHz are far below 2^53"
+    reason = "clock medians are approximate telemetry, including readings above 2^53"
 )]
-const fn to_f64(value: i64) -> f64 {
+const fn approximate_clock_mhz(value: i64) -> f64 {
     value as f64
 }
 
+/// Median inputs are finite approximations of i64 readings; rounding at either endpoint stays there.
 #[expect(
     clippy::cast_possible_truncation,
-    reason = "`as` saturates out-of-range values and maps NaN to 0, which suits whole MHz and counts"
+    reason = "approximate clock medians round to whole MHz and clamp rounding at the i64 endpoints"
 )]
-const fn to_i64(value: f64) -> i64 {
-    value as i64
+fn rounded_clock_mhz(value: f64) -> i64 {
+    value.round() as i64
 }
 
 fn median(values: &mut [f64]) -> f64 {

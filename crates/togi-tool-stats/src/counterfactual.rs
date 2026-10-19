@@ -616,8 +616,10 @@ impl<'a> Ledger<'a> {
                 };
                 held_parts.push(cores);
                 let earlier = |sets: &HashMap<(WorkloadId, CoreSet), u32>, cores| {
-                    NonZeroU32::MIN
-                        .saturating_add(sets.get(&(step.workload, cores)).copied().unwrap_or(0))
+                    NonZeroU32::new(saturating_counterfactual_count(
+                        u64::from(sets.get(&(step.workload, cores)).copied().unwrap_or(0)) + 1,
+                    ))
+                    .unwrap_or(NonZeroU32::MIN)
                 };
                 let tuner = earlier(&tuner_sets, part.cores);
                 let own = earlier(&held_sets, cores);
@@ -641,14 +643,16 @@ impl<'a> Ledger<'a> {
                     });
                     // A later part's quota already includes the earlier parts' passes of its class, and
                     // the tuner checks each quota on its own, so the class needs the largest.
-                    let quota = (count / tuner).saturating_mul(own.get());
+                    let quota = saturating_counterfactual_count(
+                        u64::from(count / tuner) * u64::from(own.get()),
+                    );
                     coverage.needed = coverage.needed.max(quota);
                 }
             }
             for (part, cores) in step.parts.iter().zip(held_parts) {
                 for (sets, cores) in [(&mut tuner_sets, part.cores), (&mut held_sets, cores)] {
                     let seen = sets.entry((step.workload, cores)).or_insert(0);
-                    *seen = seen.saturating_add(1);
+                    *seen = saturating_counterfactual_count(u64::from(*seen) + 1);
                 }
             }
         }
@@ -1030,9 +1034,15 @@ fn recorded_elapsed_seconds(elapsed: jiff::SignedDuration) -> Result<u64, Error>
         .map_err(Error::Elapsed)
 }
 
+/// Internal counterfactual quotas and occurrence counts share the journal count ceiling.
+fn saturating_counterfactual_count(count: u64) -> u32 {
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+
 #[cfg(test)]
 mod numeric_tests {
     use super::recorded_elapsed_seconds;
+    use super::saturating_counterfactual_count;
     use jiff::SignedDuration;
 
     #[test_case::test_case(SignedDuration::ZERO, Some(0); "zero")]
@@ -1043,5 +1053,13 @@ mod numeric_tests {
     #[test_case::test_case(SignedDuration::from_nanos(-1), None; "negative fraction")]
     fn recorded_elapsed_is_not_a_zero_fallback(elapsed: SignedDuration, expected: Option<u64>) {
         assert_eq!(recorded_elapsed_seconds(elapsed).ok(), expected);
+    }
+
+    #[test_case::test_case(0, 0; "zero")]
+    #[test_case::test_case(u64::from(u32::MAX), u32::MAX; "largest exact count")]
+    #[test_case::test_case(u64::from(u32::MAX) + 1, u32::MAX; "first overflow")]
+    #[test_case::test_case(u64::MAX, u32::MAX; "largest accumulator")]
+    fn counterfactual_counts_saturate(count: u64, expected: u32) {
+        assert_eq!(saturating_counterfactual_count(count), expected);
     }
 }

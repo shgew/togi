@@ -281,7 +281,7 @@ impl Runtime {
     }
 
     pub(crate) fn jump_wall(&mut self, by: SignedDuration) {
-        self.wall_offset = self.wall_offset.saturating_add(by);
+        self.wall_offset = saturating_wall_offset(self.wall_offset, by);
     }
 
     fn wall_at(&self, clock: Duration) -> Timestamp {
@@ -366,6 +366,11 @@ impl Runtime {
     }
 }
 
+/// Injected wall-clock corrections retain the closest representable signed offset.
+fn saturating_wall_offset(offset: SignedDuration, by: SignedDuration) -> SignedDuration {
+    offset.saturating_add(by)
+}
+
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -424,6 +429,8 @@ fn reset_reason(kind: Option<ResetKind>, supported: bool) -> ResetReason {
 #[cfg(test)]
 mod numeric_tests {
     use super::bank_offset;
+    use super::saturating_wall_offset;
+    use jiff::SignedDuration;
     use test_case::test_case;
 
     #[test_case(0.0, 3, 0; "first shared bank")]
@@ -432,5 +439,16 @@ mod numeric_tests {
     #[test_case(1.0, 6, 5; "last core-local bank")]
     fn bank_draws_stay_inside_the_catalogue(draw: f64, count: u8, expected: u8) {
         assert_eq!(bank_offset(draw, count), expected);
+    }
+
+    #[test_case(SignedDuration::ZERO, SignedDuration::ZERO, SignedDuration::ZERO; "zero")]
+    #[test_case(SignedDuration::MAX, SignedDuration::from_nanos(1), SignedDuration::MAX; "positive overflow")]
+    #[test_case(SignedDuration::MIN, SignedDuration::from_nanos(-1), SignedDuration::MIN; "negative overflow")]
+    fn wall_corrections_saturate_at_both_signed_limits(
+        offset: SignedDuration,
+        by: SignedDuration,
+        expected: SignedDuration,
+    ) {
+        assert_eq!(saturating_wall_offset(offset, by), expected);
     }
 }
