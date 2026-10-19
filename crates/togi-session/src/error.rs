@@ -153,6 +153,8 @@ pub enum SessionError {
     Profile(#[source] ProfileFailure),
     #[error("record trial elapsed seconds")]
     TrialDuration(#[source] std::num::TryFromIntError),
+    #[error("record trial maximum temperature")]
+    TrialTemperature(#[source] std::num::TryFromIntError),
     #[error("record monotonic nanoseconds")]
     Monotonic(#[source] std::num::TryFromIntError),
 }

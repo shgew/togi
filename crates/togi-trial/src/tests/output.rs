@@ -1102,3 +1102,50 @@ fn rejecting_a_fifo_watched_file_without_backlog_is_an_ordinary_diagnostic() {
         .await;
     });
 }
+
+#[test_case("AFFINITY:65536\n", None, None; "overflow alone")]
+#[test_case("AFFINITY:65536\nCOMPUTE ERROR\n", Some(Signal::ComputationError), None; "overflow before computation")]
+#[test_case("COMPUTE ERROR\nAFFINITY:65536\n", Some(Signal::ComputationError), None; "overflow after computation")]
+#[test_case("AFFINITY:65536\nAFFINITY:3\n", None, Some(CpuId::from(3)); "overflow before escape")]
+#[test_case("AFFINITY:3\nAFFINITY:65536\n", None, Some(CpuId::from(3)); "overflow after escape")]
+fn overflowing_affinity_observations_reach_the_caller_without_replacing_stronger_evidence(
+    text: &'static str,
+    failure: Option<Signal>,
+    escaped: Option<CpuId>,
+) {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let rig = rig_with(TestBackend::new("/bin/true"), Timing::default());
+            rig.fake.on_launch(move |_, _| {
+                Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                    ctx.eprint(text).await;
+                    ctx.until_killed_ignoring_term().await;
+                }))
+            });
+            let handle = rig.start(spec(Regime::R1, &[0], secs(60))).await.unwrap();
+            let run = finish(&handle).await;
+            assert!(run.finished.teardown.is_ok());
+            assert_eq!(
+                run.finished.result.failure.map(|failure| failure.signal),
+                failure
+            );
+            assert_eq!(
+                run.finished.result.escaped,
+                escaped.into_iter().collect::<Vec<_>>()
+            );
+            assert_eq!(
+                run.finished.result.inconclusive.is_some(),
+                failure.is_none() && escaped.is_none()
+            );
+            assert!(
+                matches!(
+                    run.finished.errors.as_slice(),
+                    [Error::AffinityObservation(error)] if error.value == "65536"
+                ),
+                "{:?}",
+                run.finished.errors
+            );
+        })
+        .await;
+    });
+}

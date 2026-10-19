@@ -191,7 +191,10 @@ fn open_and_read(
         dev: stat.st_dev,
         ino: stat.st_ino,
     };
-    let size = u64::try_from(stat.st_size).unwrap_or(0);
+    let size = match observed_size(stat.st_size) {
+        Ok(size) => size,
+        Err(error) => return Outcome::Failed(error),
+    };
     read_snapshot(id, size, resume, buffer, |buffer, offset| {
         pread(&fd, buffer, offset)
     })
@@ -210,7 +213,9 @@ fn read_snapshot(
         Some(known) if known.backlog => return Outcome::Replaced,
         Some(_) | None => 0,
     };
-    let want = usize::try_from(size.saturating_sub(start).min(POLL_LIMIT as u64)).unwrap_or(0);
+    let Ok(want) = usize::try_from(size.saturating_sub(start).min(POLL_LIMIT as u64)) else {
+        return Outcome::Failed(Errno::OVERFLOW);
+    };
     buffer.resize(want, 0);
     let mut got = 0;
     let mut error = None;
@@ -488,7 +493,7 @@ impl MemoryRead {
             snapshot.1 = self.memory.fs.read(&self.path).map_err(|_| Errno::IO)?;
             snapshot.0 = file.revision;
         }
-        let start = usize::try_from(offset).unwrap_or(usize::MAX);
+        let start = usize::try_from(offset).map_err(|_| Errno::OVERFLOW)?;
         let bytes = snapshot.1.get(start..).unwrap_or_default();
         let count = bytes.len().min(buffer.len());
         buffer[..count].copy_from_slice(&bytes[..count]);
@@ -1509,5 +1514,21 @@ mod tests {
             .unwrap();
             assert!(matches!(f.poll().await.0, Poll::Failed(WatchError::Lost)));
         });
+    }
+}
+
+fn observed_size(size: i64) -> Result<u64, Errno> {
+    u64::try_from(size).map_err(|_| Errno::OVERFLOW)
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::{Errno, observed_size};
+
+    #[test_case::test_case(-1, Err(Errno::OVERFLOW); "negative kernel size")]
+    #[test_case::test_case(0, Ok(0); "empty file")]
+    #[test_case::test_case(i64::MAX, Ok(i64::MAX.cast_unsigned()); "largest kernel size")]
+    fn kernel_file_sizes_are_exact(size: i64, expected: Result<u64, Errno>) {
+        assert_eq!(observed_size(size), expected);
     }
 }

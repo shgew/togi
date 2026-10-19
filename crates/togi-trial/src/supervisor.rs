@@ -280,7 +280,7 @@ pub(crate) async fn start<O: Os>(
         Ok(plan) => plan,
         Err(error) => return Err(early(error.into(), ready)),
     };
-    let instances = u32::try_from(plan.instances.len()).unwrap_or(u32::MAX);
+    let instances = plan.instance_count();
     if !env.timing.representable(plan.duration, instances) {
         return Err(early(InvalidTrial::UnrepresentableDuration.into(), ready));
     }
@@ -367,6 +367,15 @@ pub(crate) async fn start<O: Os>(
     }
 
     let started_at = Instant::now();
+    let sensors =
+        match Sensors::with_inputs(&env.roots, &env.topology, started_at, env.inputs.clone()) {
+            Ok(sensors) => sensors,
+            Err(error) => {
+                return Err(
+                    roll_back(&env, live, judge, &mut inbound_rx, logs, error.into()).await,
+                );
+            }
+        };
     for instance in &mut live.instances {
         instance.observed.resumed = started_at;
         instance.observed.active = Duration::ZERO;
@@ -398,7 +407,7 @@ pub(crate) async fn start<O: Os>(
         ));
     }
     let supervisor = Supervisor {
-        sensors: Sensors::with_inputs(&env.roots, &env.topology, started_at, env.inputs.clone()),
+        sensors,
         timeline: timeline(&plan.load, plan.duration).peekable(),
         env: Rc::clone(&env),
         plan,
@@ -608,7 +617,7 @@ async fn launch_all<O: Os>(
                 [Reader::absent(), Reader::absent()]
             }
         };
-        let cpus = u32::try_from(instance.cpus.len()).unwrap_or(u32::MAX);
+        let cpus = instance.cpu_count;
         live.instances.push(LiveInstance {
             index,
             plan: instance.clone(),
@@ -714,6 +723,7 @@ async fn roll_back<O: Os>(
         .await;
     let mut diagnostics = settle_logs(&mut judge, logs.finish(env.timing.writer_join).await);
     let panic = judge.take_panic();
+    let invalid_affinity = judge.take_invalid_affinity();
     diagnostics.splice(0..0, judge.conclude().diagnostics);
     let (first, proof) = match ended.proof {
         Ok(stopped) => {
@@ -729,7 +739,10 @@ async fn roll_back<O: Os>(
             None,
         ),
     };
-    let mut later = Vec::new();
+    let mut later: Vec<Error> = invalid_affinity
+        .into_iter()
+        .map(Error::AffinityObservation)
+        .collect();
     if let Some(what) = panic {
         later.push(Error::Panicked { what });
     }
@@ -1047,10 +1060,16 @@ impl<O: Os> Supervisor<O> {
         }
         match env.os.usage(pid) {
             Ok(usage) => {
-                workers.set(
-                    instance.plan.core,
-                    i64::try_from(usage.cpu_time.as_millis()).unwrap_or(i64::MAX),
-                );
+                if let Ok(milliseconds) = sample_millis(usage.cpu_time) {
+                    workers.set(instance.plan.core, milliseconds);
+                } else {
+                    let error = ProcError::CpuTimeOverflow { pid };
+                    self.judge.observe(Observation::SamplingLoss {
+                        instance: index,
+                        what: format!("usage sampling lost: {}", error_chain(&error)),
+                    });
+                    return stop;
+                }
                 let active = instance.observed.active_at(now);
                 if let Some(stalled) = instance.observed.stall.observe(active, usage.cpu_time) {
                     stop |= self.judge.observe(Observation::Stall {
@@ -1074,13 +1093,25 @@ impl<O: Os> Supervisor<O> {
 
     /// Hands one conditions sample to the writer without waiting for storage.
     fn record(&mut self, now: Instant, workers: &PerCore<i64>) {
-        let readings = self.sensors.read(now);
+        let readings = match self.sensors.read(now) {
+            Ok(readings) => readings,
+            Err(error) => {
+                self.errors.push(error.into());
+                return;
+            }
+        };
+        let elapsed_ms = match sample_millis(now.saturating_duration_since(self.started)) {
+            Ok(elapsed_ms) => elapsed_ms,
+            Err(error) => {
+                self.errors.push(Error::SampleElapsed(error));
+                return;
+            }
+        };
         if let Some(tctl) = readings.tctl_c {
             self.tctl_max = Some(self.tctl_max.map_or(tctl, |max| max.max(tctl)));
         }
         let sample = TrialConditions {
-            elapsed_ms: i64::try_from(now.saturating_duration_since(self.started).as_millis())
-                .unwrap_or(i64::MAX),
+            elapsed_ms,
             tctl_c: readings.tctl_c,
             tccd_c: readings.tccd_c,
             core_mhz: readings.core_mhz,
@@ -1180,6 +1211,12 @@ impl<O: Os> Supervisor<O> {
             errors.push(Error::Storage(failure));
         }
         let late = settle_logs(&mut judge, logs);
+        errors.extend(
+            judge
+                .take_invalid_affinity()
+                .into_iter()
+                .map(Error::AffinityObservation),
+        );
         let mut verdict = judge.conclude();
         verdict.diagnostics.extend(late);
         if !verdict.diagnostics.is_empty() {
@@ -1282,4 +1319,22 @@ fn announce(message: &str) {
 #[cfg(test)]
 fn announce(message: &str) {
     ABANDON_REPORTS.with_borrow_mut(|reports| reports.push(message.to_owned()));
+}
+
+fn sample_millis(duration: Duration) -> Result<i64, std::num::TryFromIntError> {
+    i64::try_from(duration.as_millis())
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::sample_millis;
+    use std::time::Duration;
+
+    #[test_case::test_case(Duration::ZERO, Some(0); "zero")]
+    #[test_case::test_case(Duration::from_millis(i64::MAX.cast_unsigned()), Some(i64::MAX); "largest exact milliseconds")]
+    #[test_case::test_case(Duration::from_millis(i64::MAX.cast_unsigned() + 1), None; "first overflowing milliseconds")]
+    #[test_case::test_case(Duration::MAX, None; "largest duration")]
+    fn sampled_milliseconds_refuse_overflow(duration: Duration, expected: Option<i64>) {
+        assert_eq!(sample_millis(duration).ok(), expected);
+    }
 }
