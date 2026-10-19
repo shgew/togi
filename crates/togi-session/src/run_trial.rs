@@ -534,7 +534,13 @@ impl Session<'_> {
                     error.get_or_insert(Error::Crashed);
                 }
                 Err(flow) => {
-                    if matches!(&flow, crate::error::Flow::Fatal(SessionError::Monotonic(_))) {
+                    if matches!(
+                        &flow,
+                        crate::error::Flow::Fatal(
+                            SessionError::Monotonic(_)
+                                | SessionError::Machine(Error::InvalidMonotonic { .. })
+                        )
+                    ) {
                         self.keep_containment(trial, &result, joined.uncontained())?;
                     }
                     return Err(flow);
