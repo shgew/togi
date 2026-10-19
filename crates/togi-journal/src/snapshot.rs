@@ -126,13 +126,17 @@ pub fn unseal<T: DeserializeOwned>(mut value: Value) -> Result<(Prefix, T), Reje
 /// # Errors
 ///
 /// Returns an I/O failure or a mismatched prefix.
+#[expect(
+    clippy::naive_bytecount,
+    reason = "counting prefix line boundaries needs no extra dependency"
+)]
 pub fn verify_prefix(fs: &dyn Fs, journal: &Path, prefix: &Prefix) -> Result<(), Rejected> {
     let mut file = fs.open_read(journal)?.take(prefix.bytes);
     let mut digest = Sha256::new();
     let mut bytes = 0_u64;
     let mut lines = 0_u64;
     let mut last = None;
-    let mut buffer = [0; 64 * 1024];
+    let mut buffer = [0; 16 * 1024];
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {

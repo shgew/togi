@@ -815,9 +815,12 @@ impl Model {
     ) -> (Self, usize) {
         if let Some((prefix, saved)) = saved {
             let same_session = saved.facts.session.as_ref().map(|session| session.id)
-                == events.first().and_then(|event| match &event.payload {
-                    Payload::SessionStart(start) => Some(start.session),
-                    _ => None,
+                == events.first().and_then(|event| {
+                    if let Payload::SessionStart(start) = &event.payload {
+                        Some(start.session)
+                    } else {
+                        None
+                    }
                 });
             if same_session
                 && saved.facts.last_seq == prefix.last_seq

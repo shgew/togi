@@ -77,6 +77,16 @@ fn a_capsule_verifies_the_state_it_folded() {
 }
 
 #[test]
+fn a_persistent_snapshot_restores_a_covering_simulation_capsule() {
+    let bench = bench();
+    let ended = one_cycle(&bench, None);
+    let capsule = ResumeCapsule::read_snapshot(&ended.journal, togi_defect::KNOWN_DEFECTS).unwrap();
+    assert!(capsule.covers(&ended.journal, togi_defect::KNOWN_DEFECTS));
+    capsule.verify(ended.journal.events()).unwrap();
+    assert!(!capsule.is_warm());
+}
+
+#[test]
 fn verify_names_the_part_that_differs() {
     let bench = bench();
     let ended = one_cycle(&bench, None);

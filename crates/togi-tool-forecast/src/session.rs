@@ -93,7 +93,7 @@ pub struct Session {
     prefixes: Vec<[u8; 32]>,
     refusal: Option<Refusal>,
     skipped: Skipped,
-    snapshot: Option<(togi_journal::snapshot::Prefix, Folded)>,
+    snapshot: Option<(togi_journal::snapshot::Prefix, Box<Folded>)>,
 }
 
 /// How a journal is decoded: strictly, or leniently as `journal.md` describes for read-only consumers.
@@ -135,7 +135,7 @@ impl Session {
                 .session
                 .as_ref()
                 .is_some_and(|session| session.id == self.id))
-        .then_some((prefix, folded))
+        .then_some((prefix, folded.as_ref()))
     }
 
     /// What a lenient read of the journal skipped or ignored; empty after a strict one.
