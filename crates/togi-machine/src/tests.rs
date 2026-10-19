@@ -514,7 +514,10 @@ fn identities_refuse_values_outside_their_domain() {
     assert_eq!(CcdId::new(15).map(CcdId::get), Ok(15));
     assert_eq!(CcdId::new(16), Err(InvalidCcd(16)));
     assert_eq!(CcdId::new(-1), Err(InvalidCcd(-1)));
-    assert_eq!(CcdId::try_from(usize::MAX), Err(InvalidCcd(i64::MAX)));
+    assert_eq!(
+        CcdId::try_from(usize::MAX),
+        Err(InvalidCcd(usize::MAX as i128))
+    );
     assert_eq!(InvalidCcd(16).to_string(), "ccd 16 outside 0–15");
     assert_eq!(CpuId::new(65535).map(CpuId::get), Ok(u16::MAX));
     assert_eq!(CpuId::new(65536), Err(InvalidCpu(65536)));
@@ -741,7 +744,10 @@ fn core_ids_convert_from_unsigned_integers() {
     assert_eq!(CoreId::try_from(15_usize).unwrap().index(), 15);
     assert_eq!(CoreId::try_from(16_u8), Err(InvalidCore(16)));
     assert_eq!(CoreId::try_from(16_usize), Err(InvalidCore(16)));
-    assert!(CoreId::try_from(usize::MAX).is_err());
+    assert_eq!(
+        CoreId::try_from(usize::MAX),
+        Err(InvalidCore(usize::MAX as i128))
+    );
 }
 
 #[test]
@@ -759,4 +765,37 @@ fn containment_keeps_its_cause_behind_a_fixed_message() {
 fn ccd_and_cpu_ids_display_as_numbers() {
     assert_eq!(CcdId::new(1).unwrap().to_string(), "1");
     assert_eq!(CpuId::from(23).to_string(), "23");
+}
+
+#[test_case::test_case(65536; "first unrepresentable cpu")]
+#[test_case::test_case(usize::MAX; "largest platform input")]
+fn unsigned_invalid_identity_diagnostics_preserve_the_input(value: usize) {
+    let core = CoreId::try_from(value).unwrap_err();
+    let ccd = CcdId::try_from(value).unwrap_err();
+    let cpu = CpuId::try_from(value).unwrap_err();
+    assert_eq!(core.0, value as i128);
+    assert_eq!(ccd.0, value as i128);
+    assert_eq!(cpu.0, value as i128);
+    assert!(core.to_string().contains(&value.to_string()));
+    assert!(ccd.to_string().contains(&value.to_string()));
+    assert!(cpu.to_string().contains(&value.to_string()));
+}
+
+#[test]
+fn every_core_set_mask_preserves_its_indices_and_count() {
+    for mask in 0..=u16::MAX {
+        let expected: Vec<_> = (0_u8..16)
+            .filter(|index| mask & (1_u16 << index) != 0)
+            .map(|index| CoreId::try_from(index).unwrap())
+            .collect();
+        let set: CoreSet = expected.iter().copied().collect();
+        assert_eq!(set.len(), expected.len(), "mask {mask}");
+        assert_eq!(set.iter().len(), expected.len(), "mask {mask}");
+        assert_eq!(set.iter().collect::<Vec<_>>(), expected, "mask {mask}");
+        assert_eq!(
+            set.iter().rev().collect::<Vec<_>>(),
+            expected.into_iter().rev().collect::<Vec<_>>(),
+            "mask {mask}"
+        );
+    }
 }
