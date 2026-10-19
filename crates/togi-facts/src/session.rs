@@ -43,7 +43,7 @@ impl ResetCutoffs {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TrialActivity {
     pub seq: Seq,
     pub time: Timestamp,

@@ -26,6 +26,23 @@ let
   # Files outside its directory that a crate reads when it compiles.
   compileInputs = {
     togi-version = [ ../version.txt ];
+    togi-journal = [
+      ../version.txt
+      ../crates/togi-journal/build.rs
+    ] ++ lib.concatMap (name: [
+      (dir name + "/src")
+      (dir name + "/Cargo.toml")
+    ]) [
+      "togi-machine"
+      "togi-journal"
+      "togi-config"
+      "togi-requests"
+      "togi-tuner"
+      "togi-defect"
+      "togi-render"
+      "togi-watch"
+      "togi-session"
+    ];
   };
 
   memberDeps =

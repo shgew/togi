@@ -34,14 +34,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         "togi-session",
     ] {
         let directory = root.join("crates").join(name);
-        if directory.is_dir() {
-            sources(&directory, &mut files)?;
-        }
+        sources(&directory.join("src"), &mut files)?;
+        files.push(directory.join("Cargo.toml"));
     }
     for name in [
         "Cargo.toml",
         "Cargo.lock",
         "rust-toolchain.toml",
+        "crates/togi-journal/build.rs",
         "version.txt",
     ] {
         files.push(root.join(name));
