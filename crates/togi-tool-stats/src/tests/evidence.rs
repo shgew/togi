@@ -6,13 +6,12 @@ use togi_journal::{
     Outcome, Payload, Stamp, TrialCarried, TrialClass, TrialIntent, TunerWarning, WarningKind,
 };
 use togi_machine::{BootId, Condition, PerCore, Regime, Signal};
-use togi_tuner::Profile;
 
 use super::support::{
     EPOCH, Log, build, cycle, decision, failure, hunt_group, hunt_start, intent, nz, profile, seq,
     set, trial, workload,
 };
-use crate::evidence::{prior_passes, single_carried_failure_decisions};
+use crate::evidence::{pass_counts, single_carried_failure_decisions};
 use crate::project::Projection;
 use crate::report::compute;
 
@@ -36,16 +35,12 @@ fn prior(history: &[Past], before: Option<usize>) -> usize {
         modify(&mut past);
         ends.push(trial(&mut log, past, *outcome));
     }
-    let before = before.map_or_else(|| seq(log.events.len() as u64 + 1), |index| ends[index]);
+    let target = log.add(target_intent());
+    let before = before.map_or(target, |index| ends[index]);
     let journal = log.journal();
     let p = Projection::new(&journal);
-    let target = target_intent();
-    prior_passes(
-        &p,
-        &target,
-        Profile::new(p.topology, target.profile).ok(),
-        before,
-    )
+    let at = p.trials.len() - 1;
+    pass_counts(&p, vec![(before, at)]).unwrap()[&(before, at)]
 }
 
 #[test_case(&[(vec![-10, -10], Outcome::Pass, nothing), (vec![-11, -10], Outcome::Pass, nothing)], None, 2; "equal and deeper count")]
@@ -61,7 +56,7 @@ fn prior(history: &[Past], before: Option<usize>) -> usize {
 ], None, 0; "class fields matter")]
 #[test_case(&[(vec![-10, -10], Outcome::Pass, nothing), (vec![-10, -10], Outcome::Pass, nothing)], Some(0), 0; "hunt boundary is excluded")]
 #[test_case(&[(vec![-10, -10], Outcome::Pass, nothing), (vec![-9, -9], Outcome::Inconclusive, nothing)], None, 1; "inconclusive does not invalidate")]
-fn prior_passes_count_what_is_as_deep_and_not_ruled_out_by_a_failure(
+fn passes_count_what_is_as_deep_and_not_ruled_out_by_a_failure(
     history: &[Past],
     before: Option<usize>,
     want: usize,
@@ -169,6 +164,117 @@ fn a_failure_after_a_prior_pass_is_listed_by_class() {
             .collect::<Vec<_>>(),
         [("R6/mprime-sse-4k-21k-idle/00,01/120s".to_owned(), 1)]
     );
+}
+
+#[test]
+fn a_backend_change_excludes_old_passes_from_contradictions() {
+    let mut log = Log::new(&[(0, 0), (1, 0)]);
+    trial(
+        &mut log,
+        intent("old", Regime::R6, &[0, 1], &[-10, -10]),
+        Outcome::Pass,
+    );
+    let mut loaded = super::support::config_loaded(build("test", None));
+    loaded.config.backends.mprime = Some("/nix/store/new-mprime".into());
+    log.add(loaded);
+    trial(
+        &mut log,
+        intent("new", Regime::R6, &[0, 1], &[-10, -10]),
+        Outcome::Failure,
+    );
+    let journal = log.journal();
+    assert!(
+        compute(&Projection::new(&journal), None)
+            .evidence
+            .contradictions
+            .is_empty()
+    );
+}
+
+#[test_case(None, 1; "carried pass is admitted")]
+#[test_case(Some(Outcome::Failure), 0; "carried failure invalidates older pass")]
+#[test_case(Some(Outcome::Inconclusive), 1; "inconclusive carry does not invalidate")]
+fn carried_observations_use_the_tuners_admission(outcome: Option<Outcome>, expected: usize) {
+    let mut log = Log::new(&[(0, 0)]);
+    log.add(carried(Outcome::Pass));
+    if let Some(outcome) = outcome {
+        log.add(carried(outcome));
+    }
+    let mut planned = intent("target", Regime::R6, &[0], &[-10]);
+    planned.duration_s = 60;
+    let before = log.add(planned);
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    assert_eq!(
+        pass_counts(&p, vec![(before, 0)]).unwrap()[&(before, 0)],
+        expected
+    );
+}
+
+#[test]
+fn a_later_backend_change_does_not_rewrite_historical_counts() {
+    let mut log = Log::new(&[(0, 0)]);
+    let planned = |name| {
+        let mut planned = intent(name, Regime::R6, &[0], &[-10]);
+        planned.duration_s = 60;
+        planned
+    };
+    trial(&mut log, planned("old"), Outcome::Pass);
+    let before = log.add(planned("target"));
+    let mut loaded = super::support::config_loaded(build("test", None));
+    loaded.config.backends.mprime = Some("/nix/store/new-mprime".into());
+    log.add(loaded);
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    assert_eq!(pass_counts(&p, vec![(before, 1)]).unwrap()[&(before, 1)], 1);
+}
+
+#[test_case(false, 0; "different carried backend is excluded")]
+#[test_case(true, 1; "matching carried backend is admitted")]
+fn carried_passes_keep_their_recorded_backend(matching: bool, expected: usize) {
+    let mut log = Log::new(&[(0, 0)]);
+    let mut pass = carried(Outcome::Pass);
+    pass.source.backend = Some(togi_journal::BackendIdentity {
+        backend: togi_machine::Backend::Mprime,
+        path: "/nix/store/carried-mprime".into(),
+    });
+    log.add(pass);
+    if matching {
+        let mut loaded = super::support::config_loaded(build("test", None));
+        loaded.config.backends.mprime = Some("/nix/store/carried-mprime".into());
+        log.add(loaded);
+    }
+    let mut planned = intent("target", Regime::R6, &[0], &[-10]);
+    planned.duration_s = 60;
+    let before = log.add(planned);
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    assert_eq!(
+        pass_counts(&p, vec![(before, 0)]).unwrap()[&(before, 0)],
+        expected
+    );
+}
+
+#[test]
+fn hunt_reuse_reports_admitted_carried_passes() {
+    let mut log = Log::new(&[(0, 0)]);
+    log.add(carried(Outcome::Pass));
+    let mut start = hunt_start(1, "source", 1);
+    start.regime = Regime::R6;
+    start.workload = workload(Regime::R6, 0);
+    start.duration_s = 60;
+    start.trial_s = 60;
+    log.add(start);
+    log.add(hunt_group(1, 1, HuntStage::Part));
+    let mut planned = intent("group", Regime::R6, &[0], &[-10]);
+    planned.duration_s = 60;
+    planned.hunt = Some(nz(1));
+    planned.group = Some(nz(1));
+    trial(&mut log, planned, Outcome::Pass);
+    let journal = log.journal();
+    let metrics = compute(&Projection::new(&journal), None).evidence;
+    assert_eq!(metrics.groups[0].prior, 1);
+    assert!(metrics.groups[0].established);
 }
 
 #[test]
