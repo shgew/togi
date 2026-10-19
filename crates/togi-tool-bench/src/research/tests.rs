@@ -732,6 +732,29 @@ fn wall_limit_stops_the_campaign() {
 }
 
 #[test]
+fn a_backwards_campaign_time_is_refused_without_resetting_its_budget() {
+    let fake = fake(&sessions());
+    let live = Live::start(&model_manifest(&fake), 427, &fake);
+    let before = live.campaign.ledger.records.len();
+    let halt = live
+        .campaign
+        .guard(&fake, at(0) - SignedDuration::from_nanos(1))
+        .unwrap_err();
+    assert!(matches!(halt, Halt::Refuse(Refusal::Elapsed(_))), "{halt}");
+    assert_eq!(live.campaign.ledger.records.len(), before);
+    assert_eq!(
+        live.campaign.guard(&fake, at(0)).unwrap(),
+        std::time::Duration::from_hours(8),
+    );
+    assert_eq!(
+        live.campaign
+            .guard(&fake, at(0) + SignedDuration::from_nanos(1))
+            .unwrap(),
+        std::time::Duration::from_hours(8) - std::time::Duration::from_nanos(1),
+    );
+}
+
+#[test]
 fn run_stopped_at_the_wall_limit_stops_the_campaign() {
     let fake = fake(&sessions());
     let mut live = Live::start(&model_manifest(&fake), 427, &fake);

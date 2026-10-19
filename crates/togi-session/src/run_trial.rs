@@ -100,7 +100,7 @@ impl Session<'_> {
             Load::Many(_) => None,
         };
         let rotation = self.appender.recovery().rotation(core, plan.regime);
-        let rotation = usize::try_from(rotation).unwrap_or(usize::MAX);
+        let rotation = usize::try_from(rotation).map_err(SessionError::WorkloadRotation)?;
         let workload = plan.workload_at(rotation);
         if let stop @ Control::Stop(_) = self.wait_for_backend(workload.backend())? {
             return Ok(stop);
