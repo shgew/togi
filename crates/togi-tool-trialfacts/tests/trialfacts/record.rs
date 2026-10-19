@@ -30,6 +30,8 @@ fn a_profile_holds_one_to_sixteen_offsets() {
     );
     let sixteen = vec![TargetOffset::ZERO; 16];
     assert_eq!(Profile::new(&sixteen).unwrap().as_slice(), sixteen);
+    assert_eq!(Profile::new(&sixteen).unwrap().core_count(), 16);
+    assert_eq!(Profile::new(&[TargetOffset::ZERO]).unwrap().core_count(), 1);
     assert_eq!(
         Profile::new(&offsets(&[-10, 0])).unwrap().as_slice(),
         offsets(&[-10, 0])

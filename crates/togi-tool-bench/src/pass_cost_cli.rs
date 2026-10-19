@@ -197,3 +197,19 @@ fn machine(config: &Config, path: &Path, args: &PassCostArgs) -> Result<Vec<Bloc
     };
     machine_blocks(config, &model, &query).map_err(PassCostError::Evaluate)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::horizon_seconds;
+
+    #[test_case::test_case("0.0002777777777777778", Some(1); "one second")]
+    #[test_case::test_case("1193046.4708333334", Some(u32::MAX); "largest whole second")]
+    #[test_case::test_case("1193046.4711111111", None; "one second beyond the integer domain")]
+    #[test_case::test_case("0", None; "zero")]
+    #[test_case::test_case("-1", None; "negative")]
+    #[test_case::test_case("NaN", None; "not a number")]
+    #[test_case::test_case("inf", None; "infinite")]
+    fn horizon_seconds_refuses_out_of_range_input(text: &str, expected: Option<u32>) {
+        assert_eq!(horizon_seconds(text).ok(), expected);
+    }
+}

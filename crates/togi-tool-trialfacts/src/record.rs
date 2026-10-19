@@ -66,6 +66,11 @@ impl Profile {
         Self::new(&offsets)
     }
 
+    /// The number of offsets, bounded by the profile's checked constructor.
+    pub const fn core_count(&self) -> u8 {
+        self.len
+    }
+
     pub fn as_slice(&self) -> &[TargetOffset] {
         &self.offsets[..usize::from(self.len)]
     }
