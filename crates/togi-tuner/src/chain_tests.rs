@@ -761,54 +761,53 @@ fn r7_chain_retests_reordered_part_after_backoff() {
     j.assert_resumes();
 }
 
-#[test]
-fn partial_passes_are_ordinary_evidence() {
-    for carried in [false, true] {
-        let mut j = chain_journal();
-        pass_part(&mut j, &[0, 1, 2, 3], &[]);
-        let chain = j.next();
-        assert_eq!(chain_of(&chain).cores, set(&[1, 2, 3]));
-        j.decide(decided(chain));
-        let plan = j.next_trial();
-        let class = plan.requirement.class;
-        assert_eq!(class, r7_class(&[1, 2, 3], SHORT));
-        let n = j.run().config.needed;
-        for _ in 0..n.get() {
-            if carried {
-                j.carry(
-                    "20230101T000000Z",
-                    (Regime::R7, 0, &[1, 2, 3], SHORT),
-                    Condition::Together,
-                    &values(&j),
-                    Outcome::Pass,
-                );
-            } else {
-                j.trial(&plan, Outcome::Pass);
-            }
+#[test_case::test_case(false; "not carried")]
+#[test_case::test_case(true; "carried")]
+fn partial_passes_are_ordinary_evidence(carried: bool) {
+    let mut j = chain_journal();
+    pass_part(&mut j, &[0, 1, 2, 3], &[]);
+    let chain = j.next();
+    assert_eq!(chain_of(&chain).cores, set(&[1, 2, 3]));
+    j.decide(decided(chain));
+    let plan = j.next_trial();
+    let class = plan.requirement.class;
+    assert_eq!(class, r7_class(&[1, 2, 3], SHORT));
+    let n = j.run().config.needed;
+    for _ in 0..n.get() {
+        if carried {
+            j.carry(
+                "20230101T000000Z",
+                (Regime::R7, 0, &[1, 2, 3], SHORT),
+                Condition::Together,
+                &values(&j),
+                Outcome::Pass,
+            );
+        } else {
+            j.trial(&plan, Outcome::Pass);
         }
-        let start = j.run().checking.open().unwrap().start;
-        let profile = j.run().checking.profile().unwrap();
-        let count = |window| {
-            j.run()
-                .evidence
-                .count(class, &profile, window, n)
-                .unwrap()
-                .valid
-        };
-        let all = u32::from(n.get());
-        assert_eq!(count(Window::LiveOrCarried { since: None }), all);
-        let cycle = if carried { 0 } else { all };
-        assert_eq!(
-            count(Window::Live { since: Some(start) }),
-            cycle,
-            "carried {carried}"
-        );
-        let next = j.next_trial();
-        assert_eq!(next.load, plan.load);
-        let want = if carried { SHORT } else { 300 };
-        assert_eq!(next.duration.get(), want, "carried {carried}");
-        j.assert_resumes();
     }
+    let start = j.run().checking.open().unwrap().start;
+    let profile = j.run().checking.profile().unwrap();
+    let count = |window| {
+        j.run()
+            .evidence
+            .count(class, &profile, window, n)
+            .unwrap()
+            .valid
+    };
+    let all = u32::from(n.get());
+    assert_eq!(count(Window::LiveOrCarried { since: None }), all);
+    let cycle = if carried { 0 } else { all };
+    assert_eq!(
+        count(Window::Live { since: Some(start) }),
+        cycle,
+        "carried {carried}"
+    );
+    let next = j.next_trial();
+    assert_eq!(next.load, plan.load);
+    let want = if carried { SHORT } else { 300 };
+    assert_eq!(next.duration.get(), want, "carried {carried}");
+    j.assert_resumes();
 }
 
 #[test]

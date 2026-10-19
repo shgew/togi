@@ -13,7 +13,7 @@ use crate::dashboard::{
 };
 use crate::hunt::plan::GroupOutcome;
 use crate::hunt::support::{
-    at, attribute, cancel_hunt, group_of, hunt_of, ids, limit_session, projection_cases,
+    ProjectionCase, at, attribute, cancel_hunt, group_of, hunt_of, ids, limit_session,
     repeated_core_oracle, repeated_session, start_hunt_at,
 };
 use crate::testkit::{Journal, Start, config, fresh, set};
@@ -131,13 +131,9 @@ type Case = (
     Option<Limit>,
 );
 
-#[test]
-fn core_limit_holders() {
-    let combination = |first: i64, second: i64| vec![(0, first), (1, second)];
-    let cases: Vec<Case> = vec![
-        ("room", -20, None, None, None),
-        ("floor", -50, None, None, Some(Limit::Floor)),
-        (
+#[test_case::test_case(("room", -20, None, None, None); "room")]
+#[test_case::test_case(("floor", -50, None, None, Some(Limit::Floor)); "floor")]
+#[test_case::test_case((
             "failure",
             -20,
             Some(-21),
@@ -146,37 +142,35 @@ fn core_limit_holders() {
                 core: core(0),
                 point: FailurePoint::new(off(-21)),
             })),
-        ),
-        (
+        ); "failure")]
+#[test_case::test_case((
             "combination",
             -20,
             None,
-            Some(combination(-21, -10)),
+            Some(vec![(0, -21), (1, -10)]),
             Some(Limit::Reached(Reached::Combination(CombinationId::new(
                 NonZeroU32::new(7).unwrap(),
             )))),
-        ),
-        (
+        ); "combination")]
+#[test_case::test_case((
             "clear combination",
             -20,
             None,
-            Some(combination(-21, -11)),
+            Some(vec![(0, -21), (1, -11)]),
             None,
-        ),
-    ];
-    for (name, offset, fail, members, want) in cases {
-        let mut start = Start::at_limit(offset);
-        if let Some(fail) = fail {
-            start = start.fail(fail);
-        }
-        let mut j = Journal::new(&[0, 1], &[start, Start::has_room(-10)]);
-        if let Some(members) = members {
-            j.combination(7, &members);
-        }
-        assert_eq!(j.state.core_limit(core(0)), want, "{name}");
-        assert_eq!(fresh(&j.events).core_limit(core(0)), want, "{name}");
-        assert_eq!(j.state.core_limit(core(9)), None, "{name}");
+        ); "clear combination")]
+fn core_limit_holders((name, offset, fail, members, want): Case) {
+    let mut start = Start::at_limit(offset);
+    if let Some(fail) = fail {
+        start = start.fail(fail);
     }
+    let mut j = Journal::new(&[0, 1], &[start, Start::has_room(-10)]);
+    if let Some(members) = members {
+        j.combination(7, &members);
+    }
+    assert_eq!(j.state.core_limit(core(0)), want, "{name}");
+    assert_eq!(fresh(&j.events).core_limit(core(0)), want, "{name}");
+    assert_eq!(j.state.core_limit(core(9)), None, "{name}");
 }
 
 #[test]
@@ -253,23 +247,22 @@ fn cycle_plan_partial_failure_needs_passes() {
     j.assert_resumes();
 }
 
-#[test]
-fn cycle_plan_partial_profile_changes() {
-    for started in [false, true] {
-        let mut j = chain_journal();
-        pass_part(&mut j, &[0, 1, 2, 3], &FULL_REQUESTS);
-        decide_next(&mut j);
-        if started {
-            let plan = j.next_trial();
-            j.trial(&plan, Outcome::Inconclusive);
-        }
-        shallower(&mut j, 0, 10);
-        let plan = j.state.cycle_plan();
-        assert_eq!(plan.steps[0].parts.len(), 3, "stale partial projected");
-        decide_next(&mut j);
-        assert_eq!(parts(&j, 0)[1].cores, set(&[1, 2, 3]), "started {started}");
-        cycle_plan_resumes(&j);
+#[test_case::test_case(false; "not started")]
+#[test_case::test_case(true; "started")]
+fn cycle_plan_partial_profile_changes(started: bool) {
+    let mut j = chain_journal();
+    pass_part(&mut j, &[0, 1, 2, 3], &FULL_REQUESTS);
+    decide_next(&mut j);
+    if started {
+        let plan = j.next_trial();
+        j.trial(&plan, Outcome::Inconclusive);
     }
+    shallower(&mut j, 0, 10);
+    let plan = j.state.cycle_plan();
+    assert_eq!(plan.steps[0].parts.len(), 3, "stale partial projected");
+    decide_next(&mut j);
+    assert_eq!(parts(&j, 0)[1].cores, set(&[1, 2, 3]), "started {started}");
+    cycle_plan_resumes(&j);
 }
 
 #[test]
@@ -313,45 +306,44 @@ fn cycle_plan_repeated_partial_requirements() {
     cycle_plan_resumes(&j);
 }
 
-#[test]
-fn cycle_plan_partial_evidence_windows() {
-    for carried in [false, true] {
-        let mut j = chain_journal();
-        pass_part(&mut j, &[0, 1, 2, 3], &[]);
-        decide_next(&mut j);
-        let plan = j.next_trial();
-        assert_eq!(plan.load, Load::Many(set(&[1, 2, 3])));
-        let profile: Vec<i64> = j.offsets().offsets().iter().map(|(_, o)| o.get()).collect();
-        for _ in 0..3 {
-            if carried {
-                j.carry(
-                    "20230101T000000Z",
-                    (Regime::R7, 0, &[1, 2, 3], SHORT),
-                    Condition::Together,
-                    &profile,
-                    Outcome::Pass,
-                );
-            } else {
-                j.trial(&plan, Outcome::Pass);
-            }
+#[test_case::test_case(false; "not carried")]
+#[test_case::test_case(true; "carried")]
+fn cycle_plan_partial_evidence_windows(carried: bool) {
+    let mut j = chain_journal();
+    pass_part(&mut j, &[0, 1, 2, 3], &[]);
+    decide_next(&mut j);
+    let plan = j.next_trial();
+    assert_eq!(plan.load, Load::Many(set(&[1, 2, 3])));
+    let profile: Vec<i64> = j.offsets().offsets().iter().map(|(_, o)| o.get()).collect();
+    for _ in 0..3 {
+        if carried {
+            j.carry(
+                "20230101T000000Z",
+                (Regime::R7, 0, &[1, 2, 3], SHORT),
+                Condition::Together,
+                &profile,
+                Outcome::Pass,
+            );
+        } else {
+            j.trial(&plan, Outcome::Pass);
         }
-        let want = if carried { 0 } else { 3 };
-        let got = parts(&j, 0)[1].clone();
-        assert_eq!((got.passed, got.done), (want, false));
-        let long = cycle_plan_of(&j, 1, &[1, 2, 3], 300);
-        j.intent(&long);
-        assert_eq!(
-            j.state.requirement(),
-            Some(TrialRequirement {
-                passed: 0,
-                failed: 0,
-                trial: 1,
-                needed: 1,
-            }),
-            "short partial evidence leaked into the long class (carried {carried})"
-        );
-        cycle_plan_resumes(&j);
     }
+    let want = if carried { 0 } else { 3 };
+    let got = parts(&j, 0)[1].clone();
+    assert_eq!((got.passed, got.done), (want, false));
+    let long = cycle_plan_of(&j, 1, &[1, 2, 3], 300);
+    j.intent(&long);
+    assert_eq!(
+        j.state.requirement(),
+        Some(TrialRequirement {
+            passed: 0,
+            failed: 0,
+            trial: 1,
+            needed: 1,
+        }),
+        "short partial evidence leaked into the long class (carried {carried})"
+    );
+    cycle_plan_resumes(&j);
 }
 
 #[test]
@@ -583,62 +575,47 @@ fn group_payload(
 
 type Cut<'a> = (HuntStage, &'a [u8], u32, u32, u32, u32);
 
-#[test]
-fn hunt_cut_counts_splits_across_the_hunt() {
-    let all: &[u8] = &[0, 1, 2, 3];
-    let sequences: [(&str, Vec<Cut<'_>>); 3] = [
-        (
-            "first split, its complements included, then a finer cut",
-            vec![
-                (HuntStage::Part, all, 2, 0, 60, 1),
-                (HuntStage::Part, all, 2, 1, 60, 1),
-                (HuntStage::Complement, all, 2, 0, 60, 1),
+#[test_case::test_case("first split, its complements included, then a finer cut", &[
+                (HuntStage::Part, &[0, 1, 2, 3], 2, 0, 60, 1),
+                (HuntStage::Part, &[0, 1, 2, 3], 2, 1, 60, 1),
+                (HuntStage::Complement, &[0, 1, 2, 3], 2, 0, 60, 1),
                 (HuntStage::Part, &[0, 1], 2, 0, 60, 2),
-                (HuntStage::Full, all, 0, 0, 60, 0),
-            ],
-        ),
-        (
-            "a split recurring after other cuts is a new cut",
-            vec![
-                (HuntStage::Part, all, 4, 0, 60, 1),
-                (HuntStage::Part, all, 2, 0, 60, 2),
-                (HuntStage::Part, all, 2, 1, 60, 2),
-                (HuntStage::Part, all, 4, 0, 60, 3),
-                (HuntStage::Part, all, 4, 1, 60, 3),
-            ],
-        ),
-        (
-            "the same set and granularity at another trial length is a new cut",
-            vec![
-                (HuntStage::Part, all, 2, 0, 60, 1),
-                (HuntStage::Part, all, 2, 1, 60, 1),
-                (HuntStage::Complement, all, 2, 0, 60, 1),
-                (HuntStage::Part, all, 2, 0, 120, 2),
-                (HuntStage::Part, all, 2, 1, 120, 2),
-            ],
-        ),
-    ];
-    for (name, groups) in sequences {
-        let mut j = limit_session(4);
-        start_hunt_at(&mut j, 1, &[0, 1, 2, 3], &[-30; 4]);
-        for (at, (stage, set_of, granularity, index, duration, want)) in groups.iter().enumerate() {
-            let mut payload = group_payload(
-                1,
-                u32::try_from(at + 1).unwrap(),
-                *stage,
-                set_of,
-                *granularity,
-                *index,
-                *duration,
-            );
-            payload.profile = j.profile(&[-30; 4]).offsets();
-            j.append(payload.into(), &[]);
-            let live = j.state.hunt_plan().unwrap().cut;
-            let replayed = fresh(&j.events).hunt_plan().unwrap().cut;
-            assert_eq!((live, replayed), (*want, *want), "{name}: group {}", at + 1);
-        }
-        j.assert_resumes();
+                (HuntStage::Full, &[0, 1, 2, 3], 0, 0, 60, 0),
+            ]; "first split, its complements included, then a finer cut")]
+#[test_case::test_case("a split recurring after other cuts is a new cut", &[
+                (HuntStage::Part, &[0, 1, 2, 3], 4, 0, 60, 1),
+                (HuntStage::Part, &[0, 1, 2, 3], 2, 0, 60, 2),
+                (HuntStage::Part, &[0, 1, 2, 3], 2, 1, 60, 2),
+                (HuntStage::Part, &[0, 1, 2, 3], 4, 0, 60, 3),
+                (HuntStage::Part, &[0, 1, 2, 3], 4, 1, 60, 3),
+            ]; "a split recurring after other cuts is a new cut")]
+#[test_case::test_case("the same set and granularity at another trial length is a new cut", &[
+                (HuntStage::Part, &[0, 1, 2, 3], 2, 0, 60, 1),
+                (HuntStage::Part, &[0, 1, 2, 3], 2, 1, 60, 1),
+                (HuntStage::Complement, &[0, 1, 2, 3], 2, 0, 60, 1),
+                (HuntStage::Part, &[0, 1, 2, 3], 2, 0, 120, 2),
+                (HuntStage::Part, &[0, 1, 2, 3], 2, 1, 120, 2),
+            ]; "the same set and granularity at another trial length is a new cut")]
+fn hunt_cut_counts_splits_across_the_hunt(name: &str, groups: &[Cut<'_>]) {
+    let mut j = limit_session(4);
+    start_hunt_at(&mut j, 1, &[0, 1, 2, 3], &[-30; 4]);
+    for (at, (stage, set_of, granularity, index, duration, want)) in groups.iter().enumerate() {
+        let mut payload = group_payload(
+            1,
+            u32::try_from(at + 1).unwrap(),
+            *stage,
+            set_of,
+            *granularity,
+            *index,
+            *duration,
+        );
+        payload.profile = j.profile(&[-30; 4]).offsets();
+        j.append(payload.into(), &[]);
+        let live = j.state.hunt_plan().unwrap().cut;
+        let replayed = fresh(&j.events).hunt_plan().unwrap().cut;
+        assert_eq!((live, replayed), (*want, *want), "{name}: group {}", at + 1);
     }
+    j.assert_resumes();
 }
 
 #[test]
@@ -905,38 +882,44 @@ fn hunt_probe_without_recorded_checking_profile() {
     j.assert_resumes();
 }
 
-#[test]
-fn active_hunt_projection() {
-    for case in projection_cases() {
-        let (mut j, _) = case.journal();
-        let outcome = match case.outcome {
-            None => GroupState::Running,
-            Some(GroupOutcome::Passed) => GroupState::Passed,
-            Some(GroupOutcome::Failed) => GroupState::Failed,
-            Some(GroupOutcome::Skipped) => GroupState::Skipped,
-        };
-        let plan = j
-            .state
-            .hunt_plan()
-            .unwrap_or_else(|| panic!("{}", case.name));
-        assert_eq!(plan.number, 2, "{}", case.name);
-        assert_eq!(plan.candidates, set(&ids(4)), "{}", case.name);
-        assert_eq!(plan.groups.len(), 1, "{}", case.name);
-        let view = &plan.groups[0];
-        assert_eq!(view.number, 1, "{}", case.name);
-        assert_eq!(view.cores, set(&[0, 1]), "{}", case.name);
-        assert_eq!(view.stage, case.stage, "{}", case.name);
-        assert_eq!(view.probe, case.probe, "{}", case.name);
-        assert_eq!(view.held, case.held, "{}", case.name);
-        assert_eq!(view.needed, 5, "{}", case.name);
-        assert_eq!(view.passed, case.passes, "{}", case.name);
-        assert_eq!(view.outcome, outcome, "{}", case.name);
-        assert!(!view.carried, "{}", case.name);
-        j.assert_resumes();
-        cancel_hunt(&mut j, 2);
-        assert_eq!(j.state.hunt_plan(), None, "{}", case.name);
-        j.assert_resumes();
-    }
+#[test_case::test_case(&ProjectionCase::running_reuses_passes(); "running reuses earlier valid passes")]
+#[test_case::test_case(&ProjectionCase::passing_complement(); "passing complement accumulates trials")]
+#[test_case::test_case(&ProjectionCase::failure_invalidates_passes(); "failure invalidates earlier passes")]
+#[test_case::test_case(&ProjectionCase::inferred_pass(); "inferred pass")]
+#[test_case::test_case(&ProjectionCase::inferred_failure(); "inferred failure")]
+#[test_case::test_case(&ProjectionCase::skipped(); "skipped")]
+#[test_case::test_case(&ProjectionCase::reset_excludes_passes(); "reset excludes reused evidence")]
+#[test_case::test_case(&ProjectionCase::escalated_full(); "escalated full uses only new trials")]
+#[test_case::test_case(&ProjectionCase::member_probe(); "member probe preserves held members")]
+fn active_hunt_projection(case: &ProjectionCase) {
+    let (mut j, _) = case.journal();
+    let outcome = match case.outcome {
+        None => GroupState::Running,
+        Some(GroupOutcome::Passed) => GroupState::Passed,
+        Some(GroupOutcome::Failed) => GroupState::Failed,
+        Some(GroupOutcome::Skipped) => GroupState::Skipped,
+    };
+    let plan = j
+        .state
+        .hunt_plan()
+        .unwrap_or_else(|| panic!("{}", case.name));
+    assert_eq!(plan.number, 2, "{}", case.name);
+    assert_eq!(plan.candidates, set(&ids(4)), "{}", case.name);
+    assert_eq!(plan.groups.len(), 1, "{}", case.name);
+    let view = &plan.groups[0];
+    assert_eq!(view.number, 1, "{}", case.name);
+    assert_eq!(view.cores, set(&[0, 1]), "{}", case.name);
+    assert_eq!(view.stage, case.stage, "{}", case.name);
+    assert_eq!(view.probe, case.probe, "{}", case.name);
+    assert_eq!(view.held, case.held, "{}", case.name);
+    assert_eq!(view.needed, 5, "{}", case.name);
+    assert_eq!(view.passed, case.passes, "{}", case.name);
+    assert_eq!(view.outcome, outcome, "{}", case.name);
+    assert!(!view.carried, "{}", case.name);
+    j.assert_resumes();
+    cancel_hunt(&mut j, 2);
+    assert_eq!(j.state.hunt_plan(), None, "{}", case.name);
+    j.assert_resumes();
 }
 
 fn reach_group(j: &mut Journal) -> DecisionAction {
@@ -1178,25 +1161,20 @@ fn dashboard_views_serialize_roundtrip() {
     }));
 }
 
-#[test]
-fn dashboard_views_are_read_only() {
-    let journals = vec![
-        chain_journal(),
-        Journal::new(&[0], &[Start::search(-20).checking()]),
-        hunt_of(4, SHORT),
-    ];
-    for j in journals {
-        let before = j.state.clone();
-        for _ in 0..2 {
-            let _ = j.state.cycle_plan();
-            let _ = j.state.search_turns();
-            let _ = j.state.requirement();
-            let _ = j.state.trial_history();
-            let _ = j.state.hunt_plan();
-            let _ = j.state.core_limit(core(0));
-        }
-        assert_eq!(before, j.state);
+#[test_case::test_case(&chain_journal(); "cycle")]
+#[test_case::test_case(&Journal::new(&[0], &[Start::search(-20).checking()]); "search checking")]
+#[test_case::test_case(&hunt_of(4, SHORT); "hunt")]
+fn dashboard_views_are_read_only(j: &Journal) {
+    let before = j.state.clone();
+    for _ in 0..2 {
+        let _ = j.state.cycle_plan();
+        let _ = j.state.search_turns();
+        let _ = j.state.requirement();
+        let _ = j.state.trial_history();
+        let _ = j.state.hunt_plan();
+        let _ = j.state.core_limit(core(0));
     }
+    assert_eq!(before, j.state);
 }
 
 #[test]

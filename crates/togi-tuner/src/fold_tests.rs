@@ -244,44 +244,39 @@ fn nothing_is_decided_before_every_core_has_a_phase_or_while_one_searches() {
     assert!(j.run().profile_decision().is_some());
 }
 
-#[test]
-fn a_candidate_check_needs_its_r1_and_r2_workloads() {
-    let bad: [Vec<_>; 3] = [
-        Vec::new(),
-        vec![workloads(Regime::R2)[0].id(), workloads(Regime::R1)[0].id()],
-        vec![workloads(Regime::R1)[0].id()],
-    ];
-    for workloads in bad {
-        let mut j = Journal::search_at(&[-20]);
-        let transition = CoreTransition {
-            check_solo_limit: true,
-            workloads: workloads.clone(),
-            ..transition(0, CorePhase::Search, -20)
-        };
-        assert!(
-            matches!(
-                j.try_append(transition.into(), &[]),
-                Err(FoldError::BadCandidate(found)) if found == core(0)
-            ),
-            "{workloads:?}"
-        );
-        let mut j = Journal::search_at(&[-20]);
-        let decision = TunerDecision {
-            core: core(0),
-            activity: Activity::Search,
-            decision: Decision::CheckSoloLimit,
-            from_offset: off(-20),
-            to_offset: off(-20),
-            pass: None,
-            failure_point: None,
-            workloads,
-            reason: "test".to_owned(),
-        };
-        assert!(matches!(
-            j.try_append(decision.into(), &[]),
+#[test_case::test_case(Vec::new(); "no workloads")]
+#[test_case::test_case(vec![workloads(Regime::R2)[0].id(), workloads(Regime::R1)[0].id()]; "reversed workload regimes")]
+#[test_case::test_case(vec![workloads(Regime::R1)[0].id()]; "missing R2 workload")]
+fn a_candidate_check_needs_its_r1_and_r2_workloads(workloads: Vec<togi_machine::WorkloadId>) {
+    let mut j = Journal::search_at(&[-20]);
+    let transition = CoreTransition {
+        check_solo_limit: true,
+        workloads: workloads.clone(),
+        ..transition(0, CorePhase::Search, -20)
+    };
+    assert!(
+        matches!(
+            j.try_append(transition.into(), &[]),
             Err(FoldError::BadCandidate(found)) if found == core(0)
-        ));
-    }
+        ),
+        "{workloads:?}"
+    );
+    let mut j = Journal::search_at(&[-20]);
+    let decision = TunerDecision {
+        core: core(0),
+        activity: Activity::Search,
+        decision: Decision::CheckSoloLimit,
+        from_offset: off(-20),
+        to_offset: off(-20),
+        pass: None,
+        failure_point: None,
+        workloads,
+        reason: "test".to_owned(),
+    };
+    assert!(matches!(
+        j.try_append(decision.into(), &[]),
+        Err(FoldError::BadCandidate(found)) if found == core(0)
+    ));
 }
 
 #[test]
@@ -313,7 +308,7 @@ fn rotation_counts_each_regime_apart_and_all_loads_apart_from_one_core() {
         }
     }
     for (n, regime) in togi_machine::REGIMES.into_iter().enumerate() {
-        assert_eq!(rotation.get(regime), n + 1);
+        assert_eq!(rotation.get(regime), n + 1, "regime {regime:?}");
     }
     let mut j = Journal::has_room(&[-10, -10]);
     let checking = j.run().config.checking_trial.get();
@@ -391,47 +386,28 @@ fn intent_load_decoding_validates_single_and_multi_core_loads(
     }
 }
 
-#[test]
-fn an_intent_naming_another_regimes_workload_a_missing_load_or_a_foreign_core_is_refused() {
-    type Change = fn(&mut togi_journal::TrialIntent);
-    type Expected = fn(&FoldError) -> bool;
-    let cases: [(&str, Change, Expected); 4] = [
-        (
-            "workload of another regime",
-            |intent| intent.workload = workloads(Regime::R2)[0].id(),
-            |error| {
+#[test_case::test_case("workload of another regime", |intent| intent.workload = workloads(Regime::R2)[0].id(), |error| {
                 matches!(error, FoldError::WorkloadRegime { regime: Regime::R1, workload }
                     if *workload == workloads(Regime::R2)[0].id())
-            },
-        ),
-        (
-            "no loaded core",
-            |intent| intent.core = None,
-            |error| matches!(error, FoldError::NoLoad(trial) if *trial == TrialId::from("0001".to_owned())),
-        ),
-        (
-            "loaded cores outside the topology",
-            |intent| {
+            }; "workload of another regime")]
+#[test_case::test_case("no loaded core", |intent| intent.core = None, |error| matches!(error, FoldError::NoLoad(trial) if *trial == TrialId::from("0001".to_owned())); "no loaded core")]
+#[test_case::test_case("loaded cores outside the topology", |intent| {
                 intent.core = None;
                 intent.cores = set(&[9]);
-            },
-            |error| matches!(error, FoldError::UnknownCore(found) if *found == core(9)),
-        ),
-        (
-            "core outside the topology",
-            |intent| intent.core = Some(core(9)),
-            |error| matches!(error, FoldError::UnknownCore(found) if *found == core(9)),
-        ),
-    ];
-    for (name, change, expected) in cases {
-        let mut j = Journal::search_at(&[-10]);
-        let (mut intent, _) = trial_intent(&j);
-        change(&mut intent);
-        assert!(
-            matches!(j.try_append(intent.into(), &[]), Err(error) if expected(&error)),
-            "{name}"
-        );
-    }
+            }, |error| matches!(error, FoldError::UnknownCore(found) if *found == core(9)); "loaded cores outside the topology")]
+#[test_case::test_case("core outside the topology", |intent| intent.core = Some(core(9)), |error| matches!(error, FoldError::UnknownCore(found) if *found == core(9)); "core outside the topology")]
+fn an_intent_naming_another_regimes_workload_a_missing_load_or_a_foreign_core_is_refused(
+    name: &str,
+    change: fn(&mut togi_journal::TrialIntent),
+    expected: fn(&FoldError) -> bool,
+) {
+    let mut j = Journal::search_at(&[-10]);
+    let (mut intent, _) = trial_intent(&j);
+    change(&mut intent);
+    assert!(
+        matches!(j.try_append(intent.into(), &[]), Err(error) if expected(&error)),
+        "{name}"
+    );
 }
 
 #[test]
@@ -859,8 +835,19 @@ fn a_baseline_for_a_foreign_core_is_refused() {
     ));
 }
 
-#[test]
-fn only_a_failure_at_zero_naming_a_core_sets_a_failure_point() {
+#[test_case::test_case(DeadEnd {
+        condition: DeadEndCondition::Smu,
+        core: Some(core(0)),
+        detail: String::new(),
+        action: None,
+    }; "dead_end(DeadEndCondition::Smu, Some(0))")]
+#[test_case::test_case(DeadEnd {
+        condition: DeadEndCondition::FailureAtZero,
+        core: None,
+        detail: String::new(),
+        action: None,
+    }; "dead_end(DeadEndCondition::FailureAtZero, None)")]
+fn only_a_failure_at_zero_naming_a_core_sets_a_failure_point(case: DeadEnd) {
     let dead_end = |condition, core_id: Option<u8>| DeadEnd {
         condition,
         core: core_id.map(core),
@@ -868,13 +855,40 @@ fn only_a_failure_at_zero_naming_a_core_sets_a_failure_point() {
         action: None,
     };
     let mut j = Journal::search_at(&[-10]);
-    for case in [
-        dead_end(DeadEndCondition::Smu, Some(0)),
-        dead_end(DeadEndCondition::FailureAtZero, None),
-    ] {
-        j.append(case.into(), &[]);
-        assert_eq!(j.run().failure_point(core(0)), None);
-    }
+
+    j.append(case.into(), &[]);
+    assert_eq!(j.run().failure_point(core(0)), None);
+
+    let seq = j.append(
+        dead_end(DeadEndCondition::FailureAtZero, Some(0)).into(),
+        &[],
+    );
+    assert_eq!(j.run().failure_point(core(0)), Some(off(0)));
+    assert_eq!(j.run().core(core(0)).zero_seq, Some(seq));
+    assert!(matches!(
+        j.try_append(
+            dead_end(DeadEndCondition::FailureAtZero, Some(9)).into(),
+            &[]
+        ),
+        Err(FoldError::UnknownCore(found)) if found == core(9)
+    ));
+}
+
+#[test]
+fn a_named_zero_failure_after_smu_and_unnamed_stops_sets_the_failure_point() {
+    let dead_end = |condition, core_id: Option<u8>| DeadEnd {
+        condition,
+        core: core_id.map(core),
+        detail: String::new(),
+        action: None,
+    };
+    let mut j = Journal::search_at(&[-10]);
+
+    j.append(dead_end(DeadEndCondition::Smu, Some(0)).into(), &[]);
+    assert_eq!(j.run().failure_point(core(0)), None);
+    j.append(dead_end(DeadEndCondition::FailureAtZero, None).into(), &[]);
+    assert_eq!(j.run().failure_point(core(0)), None);
+
     let seq = j.append(
         dead_end(DeadEndCondition::FailureAtZero, Some(0)).into(),
         &[],
@@ -919,29 +933,65 @@ fn a_profile_change_naming_a_foreign_profile_is_refused() {
     ));
 }
 
-#[test]
-fn kinds_later_groups_own_change_no_tuner_state() {
-    let mut j = Journal::search_at(&[-10]);
-    let before = (j.run().core(core(0)), j.state.next().ok());
-    let notice = togi_journal::SessionNotice {
+#[test_case::test_case(Payload::from(togi_journal::SessionNotice {
         notice: Notice::NonzeroBaseline,
         cores: CoreSet::default(),
-    };
-    let ranking = togi_journal::HostRanking {
+    }); "Payload::from(notice)")]
+#[test_case::test_case(togi_journal::HostRanking {
         ranking: vec![core(0)],
         values: PerCore::default(),
         detail: None,
-    };
-    let shutdown = togi_journal::Shutdown {
+    }.into(); "ranking.into()")]
+#[test_case::test_case(togi_journal::Shutdown {
         reason: togi_journal::ShutdownReason::Command,
         kernel_cursor: None,
         kernel_error: None,
         cycles: None,
-    };
-    for payload in [Payload::from(notice), ranking.into(), shutdown.into()] {
-        j.append(payload, &[]);
-        assert_eq!((j.run().core(core(0)), j.state.next().ok()), before);
-    }
+    }.into(); "shutdown.into()")]
+fn kinds_later_groups_own_change_no_tuner_state(payload: Payload) {
+    let mut j = Journal::search_at(&[-10]);
+    let before = (j.run().core(core(0)), j.state.next().ok());
+
+    j.append(payload, &[]);
+    assert_eq!((j.run().core(core(0)), j.state.next().ok()), before);
+
+    j.assert_resumes();
+}
+
+#[test]
+fn notice_ranking_and_shutdown_leave_tuning_state_and_replay_unchanged() {
+    let mut j = Journal::search_at(&[-10]);
+    let before = (j.run().core(core(0)), j.state.next().ok());
+    j.append(
+        togi_journal::SessionNotice {
+            notice: Notice::NonzeroBaseline,
+            cores: CoreSet::default(),
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!((j.run().core(core(0)), j.state.next().ok()), before);
+    j.append(
+        togi_journal::HostRanking {
+            ranking: vec![core(0)],
+            values: PerCore::default(),
+            detail: None,
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!((j.run().core(core(0)), j.state.next().ok()), before);
+    j.append(
+        togi_journal::Shutdown {
+            reason: togi_journal::ShutdownReason::Command,
+            kernel_cursor: None,
+            kernel_error: None,
+            cycles: None,
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!((j.run().core(core(0)), j.state.next().ok()), before);
     j.assert_resumes();
 }
 
@@ -985,39 +1035,30 @@ fn crash_detected(intent: Seq) -> Payload {
     .into()
 }
 
-#[test]
-fn an_inconclusive_end_after_a_config_change_keeps_no_stale_retry() {
-    let cases: Vec<(&str, Journal, &str)> = vec![
-        (
-            "search_trial_s",
-            Journal::search_at(&[-10]),
-            r#"{"durations":{"search_trial_s":60}}"#,
-        ),
-        (
-            "evidence count",
-            Journal::new(&[0], &[Start::search(-20).checking()]),
-            r#"{"evidence":{"miss":0.001}}"#,
-        ),
-    ];
-    for (name, mut j, json) in cases {
-        let plan = j.next_trial();
-        let (intent, trial) = j.intent(&plan);
-        j.append(crash_detected(intent), &[]);
-        j.load(&crate::testkit::config(json));
-        j.end(intent, &trial, Outcome::Inconclusive);
-        assert!(j.run().retry.is_none(), "{name}");
-        let next = j.next_trial();
-        assert!(!next.retry, "{name}");
-        assert_eq!(next.duration, j.run().config.search_trial, "{name}");
-        let intent = next.intent(TrialId::from("0002".to_owned()), j.rotation(&next));
-        assert!(j.try_append(intent.into(), &next.cause).is_ok(), "{name}");
-        assert_eq!(
-            j.requirement().needed,
-            u32::from(next.requirement.needed.get()),
-            "{name}"
-        );
-        j.assert_resumes();
-    }
+#[test_case::test_case("search_trial_s", Journal::search_at(&[-10]), r#"{"durations":{"search_trial_s":60}}"#; "search_trial_s")]
+#[test_case::test_case("evidence count", Journal::new(&[0], &[Start::search(-20).checking()]), r#"{"evidence":{"miss":0.001}}"#; "evidence count")]
+fn an_inconclusive_end_after_a_config_change_keeps_no_stale_retry(
+    name: &str,
+    mut j: Journal,
+    json: &str,
+) {
+    let plan = j.next_trial();
+    let (intent, trial) = j.intent(&plan);
+    j.append(crash_detected(intent), &[]);
+    j.load(&crate::testkit::config(json));
+    j.end(intent, &trial, Outcome::Inconclusive);
+    assert!(j.run().retry.is_none(), "{name}");
+    let next = j.next_trial();
+    assert!(!next.retry, "{name}");
+    assert_eq!(next.duration, j.run().config.search_trial, "{name}");
+    let intent = next.intent(TrialId::from("0002".to_owned()), j.rotation(&next));
+    assert!(j.try_append(intent.into(), &next.cause).is_ok(), "{name}");
+    assert_eq!(
+        j.requirement().needed,
+        u32::from(next.requirement.needed.get()),
+        "{name}"
+    );
+    j.assert_resumes();
 }
 
 #[test]
