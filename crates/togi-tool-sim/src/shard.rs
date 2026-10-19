@@ -23,7 +23,7 @@ pub fn partition(runs: &[Run], count: NonZeroUsize, cost: impl Fn(&Run) -> u64) 
             .enumerate()
             .min_by_key(|&(index, &load)| (load, index))
             .map_or(0, |(index, _)| index);
-        loads[lightest] = loads[lightest].saturating_add(cost(&runs[position]));
+        loads[lightest] = saturating_shard_load(loads[lightest], cost(&runs[position]));
         assigned[lightest].push(position);
     }
     assigned
@@ -44,4 +44,21 @@ pub fn shard(runs: &[Run], count: NonZeroUsize, index: usize) -> Result<Vec<Run>
         .into_iter()
         .nth(index)
         .ok_or(ShardError { index, count })
+}
+
+/// Approximate shard costs cap at u64::MAX; saturated ties retain the lowest-index tie-break.
+fn saturating_shard_load(load: u64, cost: u64) -> u64 {
+    load.saturating_add(cost)
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::saturating_shard_load;
+
+    #[test_case::test_case(0, 0, 0; "empty load")]
+    #[test_case::test_case(u64::MAX - 1, 1, u64::MAX; "last exact load")]
+    #[test_case::test_case(u64::MAX, 1, u64::MAX; "first overflowing load")]
+    fn shard_loads_saturate(load: u64, cost: u64, expected: u64) {
+        assert_eq!(saturating_shard_load(load, cost), expected);
+    }
 }

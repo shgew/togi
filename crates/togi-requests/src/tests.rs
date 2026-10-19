@@ -179,6 +179,10 @@ fn groups_orders_by_request(requests: PerCore<f64>, want: &[&[i64]]) {
 #[test_case(1.100, 1.100 + VOLTS_PER_COUNT, 1; "target one count above")]
 #[test_case(1.100, 1.100 + VOLTS_PER_COUNT + 0.0001, 2; "target just over one count above")]
 #[test_case(1.0322, 1.0443, 4; "several counts above")]
+#[test_case(-f64::MAX, f64::MAX, i64::MAX; "positive difference overflows")]
+#[test_case(0.0, f64::MAX, i64::MAX; "positive count overflows")]
+#[test_case(f64::MAX, -f64::MAX, 1; "negative difference overflows")]
+#[test_case(f64::MAX, f64::MAX, 1; "equal extreme requests")]
 fn counts_raises_a_request_by_whole_counts(v: f64, target: f64, want: i64) {
     assert_eq!(counts(v, target), want);
 }
@@ -207,4 +211,13 @@ fn summarize_skips_samples_with_a_non_finite_lane() {
     assert!(got.requests.iter().all(|(_, request)| request.is_finite()));
     let unloaded = broken(WARMUP_MS, f32::NAN);
     assert!(summarize(finite_only(min).chain([unloaded]), &placed(&[0])).is_some());
+}
+
+#[test_case(i64::MIN, i64::MIN; "minimum reading")]
+#[test_case(i64::MAX, i64::MAX; "maximum reading")]
+#[test_case(9_007_199_254_740_993, 9_007_199_254_740_992; "approximate beyond float integer precision")]
+fn summarize_clock_endpoint_rounding_is_approximate(mhz: i64, expected: i64) {
+    let seq = samples(WARMUP_MS, 30000, |_| (vec![(0, 1.1)], vec![(0, mhz)]));
+    let got = summarize(seq, &placed(&[0])).unwrap();
+    assert_eq!(got.ccd_mhz[&CcdId::new(0).unwrap()], expected);
 }

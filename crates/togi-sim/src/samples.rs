@@ -17,8 +17,10 @@ const STALL_LEAD: Duration = Duration::from_secs(2);
 const CCD_SIZE: usize = 8;
 
 /// Synthetic elapsed and worker CPU milliseconds saturate at the sample field's range.
-fn saturating_sample_millis(at: Duration) -> i64 {
-    i64::try_from(at.as_millis()).unwrap_or(i64::MAX)
+fn saturating_sample_millis(at: Duration, threads: u8) -> i64 {
+    i64::try_from(at.as_millis())
+        .unwrap_or(i64::MAX)
+        .saturating_mul(i64::from(threads))
 }
 
 /// Storage for serialized simulation samples. The simulator itself never requests durability.
@@ -84,7 +86,7 @@ impl LastTrial {
         } else {
             at
         };
-        saturating_sample_millis(at).saturating_mul(i64::from(self.threads))
+        saturating_sample_millis(at, self.threads)
     }
 
     /// Writes the samples as JSON lines to `dir/<id>/samples.jsonl`, without holding the series.
@@ -129,7 +131,7 @@ impl Iterator for Conditions {
         let at = self.at;
         self.at += TICK;
         Some(TrialConditions {
-            elapsed_ms: saturating_sample_millis(at),
+            elapsed_ms: saturating_sample_millis(at, 1),
             worker_cpu_ms: self
                 .trial
                 .cores
@@ -157,7 +159,7 @@ mod tests {
     #[test_case(Duration::from_millis(i64::MAX.cast_unsigned() + 1), i64::MAX; "first saturated sample")]
     #[test_case(Duration::MAX, i64::MAX; "largest duration")]
     fn sample_milliseconds_have_one_saturation_policy(at: Duration, expected: i64) {
-        assert_eq!(saturating_sample_millis(at), expected);
+        assert_eq!(saturating_sample_millis(at, 1), expected);
     }
 
     #[test_case(0, 0; "no workers")]
