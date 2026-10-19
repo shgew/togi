@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use togi_machine::{CoreId, CoreSet, TargetOffset};
+use togi_machine::{CoreId, CoreSet, PerCore, TargetOffset};
 
 use togi_machine::WorkloadId;
 
@@ -58,7 +58,7 @@ struct Cell {
 /// every pass whose load includes it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SelfSufficiency {
-    cells: HashMap<(BackendId, WorkloadId, CoreId), Cell>,
+    cells: HashMap<(BackendId, WorkloadId), PerCore<Option<Cell>>>,
 }
 
 impl SelfSufficiency {
@@ -74,7 +74,11 @@ impl SelfSufficiency {
     ) {
         for (core, offset) in profile.among(top) {
             let at = bucket(offset);
-            let cell = self.cells.entry((backend, workload, core)).or_default();
+            let cell = self
+                .cells
+                .entry((backend, workload))
+                .or_default()
+                .get_or_insert_with(core, Cell::default);
             cell.total.add(at);
             cell.by_load.entry(loaded).or_default().add(at);
         }
@@ -90,7 +94,9 @@ impl SelfSufficiency {
         current: TargetOffset,
     ) -> u32 {
         self.cells
-            .get(&(backend, workload, core))
+            .get(&(backend, workload))
+            .and_then(|cores| cores.get_ref(core))
+            .and_then(Option::as_ref)
             .map_or(0, |cell| cell.total.at_least(bucket(current)))
     }
 
@@ -107,19 +113,25 @@ impl SelfSufficiency {
 
     /// Removes the passes whose load includes `core`, from every core's count.
     pub(crate) fn reset_core(&mut self, core: CoreId) {
-        self.cells.retain(|_, cell| {
-            let doomed: Vec<CoreSet> = cell
-                .by_load
-                .keys()
-                .copied()
-                .filter(|loaded| loaded.contains(core))
-                .collect();
-            for loaded in doomed {
-                if let Some(depths) = cell.by_load.remove(&loaded) {
-                    cell.total.subtract(&depths);
+        self.cells.retain(|_, cores| {
+            for (_, slot) in cores.iter_mut() {
+                let Some(cell) = slot.as_mut() else { continue };
+                let doomed: Vec<CoreSet> = cell
+                    .by_load
+                    .keys()
+                    .copied()
+                    .filter(|loaded| loaded.contains(core))
+                    .collect();
+                for loaded in doomed {
+                    if let Some(depths) = cell.by_load.remove(&loaded) {
+                        cell.total.subtract(&depths);
+                    }
+                }
+                if cell.total.is_empty() {
+                    *slot = None;
                 }
             }
-            !cell.total.is_empty()
+            cores.iter_ref().any(|(_, cell)| cell.is_some())
         });
     }
 }

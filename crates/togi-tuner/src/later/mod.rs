@@ -56,7 +56,7 @@ pub(crate) struct Later {
     confirmed: Option<Confirmed>,
     moved_since: PerCore<Option<Seq>>,
     strikes: BTreeMap<Seq, Strike>,
-    by_core: BTreeMap<CoreId, BTreeSet<Seq>>,
+    by_core: PerCore<Option<BTreeSet<Seq>>>,
     held: BTreeSet<Seq>,
     last_full: Option<FullCycle>,
 }
@@ -68,7 +68,7 @@ impl Later {
         self.confirmed = None;
         self.moved_since = PerCore::default();
         self.strikes.clear();
-        self.by_core.clear();
+        self.by_core = PerCore::default();
         self.held.clear();
     }
 
@@ -92,7 +92,9 @@ impl Later {
 
     fn insert(&mut self, strike: &Strike) {
         for core in strike.struck() {
-            self.by_core.entry(core).or_default().insert(strike.hold);
+            self.by_core
+                .get_or_insert_with(core, BTreeSet::new)
+                .insert(strike.hold);
         }
         self.held.insert(strike.ledger);
         self.strikes.insert(strike.hold, *strike);
@@ -101,10 +103,10 @@ impl Later {
     fn remove(&mut self, hold: Seq) -> Option<Strike> {
         let strike = self.strikes.remove(&hold)?;
         for core in strike.struck() {
-            if let Some(holds) = self.by_core.get_mut(&core) {
+            if let Some(holds) = self.by_core.get_mut(core).and_then(Option::as_mut) {
                 holds.remove(&hold);
                 if holds.is_empty() {
-                    self.by_core.remove(&core);
+                    self.by_core.set(core, None);
                 }
             }
         }
@@ -112,7 +114,12 @@ impl Later {
     }
 
     fn drop_core(&mut self, core: CoreId) {
-        let holds = self.by_core.get(&core).cloned().unwrap_or_default();
+        let holds = self
+            .by_core
+            .get_ref(core)
+            .and_then(Option::as_ref)
+            .cloned()
+            .unwrap_or_default();
         for hold in holds {
             self.remove(hold);
         }
@@ -121,7 +128,7 @@ impl Later {
     fn holds_on(&self, cores: CoreSet) -> BTreeSet<Seq> {
         cores
             .iter()
-            .filter_map(|core| self.by_core.get(&core))
+            .filter_map(|core| self.by_core.get_ref(core).and_then(Option::as_ref))
             .flatten()
             .copied()
             .collect()

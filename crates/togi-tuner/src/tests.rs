@@ -400,6 +400,42 @@ fn clear_core_drops_its_point_and_combinations_and_keeps_the_rest() {
 }
 
 #[test]
+fn sparse_core_indexes_preserve_order_reset_and_optimum() {
+    let topology = topology(&[2, 9, 15]);
+    let mut constraints = constraints(
+        &topology,
+        &[(2, -4), (9, -4), (15, -4)],
+        &[&[(15, -3), (2, -3)], &[(9, -3), (15, -2)]],
+    );
+    let hi = profile(&topology, &[-1, -1, -1]);
+    let ranking = ranking(&topology, &[15, 2, 9]);
+    assert_eq!(
+        constraints.optimum(&hi, &ranking).unwrap(),
+        exhaustive(&constraints, &hi, &ranking)
+    );
+    assert_eq!(constraints.combinations_with(core(7)).count(), 0);
+    assert_eq!(
+        constraints
+            .combinations_with(core(15))
+            .map(crate::Combination::id)
+            .collect::<Vec<_>>(),
+        [cid(1), cid(2)]
+    );
+    assert_eq!(constraints.clear_core(core(2)), [cid(1)]);
+    assert_eq!(
+        constraints
+            .combinations_with(core(15))
+            .map(crate::Combination::id)
+            .collect::<Vec<_>>(),
+        [cid(2)]
+    );
+    assert_eq!(
+        constraints.optimum(&hi, &ranking).unwrap(),
+        exhaustive(&constraints, &hi, &ranking)
+    );
+}
+
+#[test]
 fn together_crash_names_the_sole_nonzero_core_by_id() {
     let topology = topology(&[0, 8]);
     let applied = profile(&topology, &[0, -12]);

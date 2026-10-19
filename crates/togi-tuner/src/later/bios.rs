@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 use togi_journal::{Decision, Seq};
 use togi_machine::{CoreId, PerCore, TargetOffset};
@@ -57,7 +55,7 @@ impl Run {
             };
         };
         let mut shown = current;
-        let mut since: BTreeMap<CoreId, Seq> = BTreeMap::new();
+        let mut since = PerCore::<Option<Seq>>::default();
         for (core, at) in current.iter() {
             let Some(base) = confirmed.profile.get(core) else {
                 continue;
@@ -69,7 +67,7 @@ impl Run {
                     .later
                     .moved_since(core)
                     .or(self.core(core).last_decision);
-                since.insert(core, moved.unwrap_or(confirmed.seq));
+                since.set(core, Some(moved.unwrap_or(confirmed.seq)));
             }
         }
         let paired = self
@@ -92,10 +90,8 @@ impl Run {
                 if shown.get(core).is_some_and(|at| target.shallower_than(at)) {
                     shown = shown.with(core, target);
                 }
-                since
-                    .entry(core)
-                    .and_modify(|at| *at = (*at).min(strike.hold))
-                    .or_insert(strike.hold);
+                let prior = since.get(core).flatten().unwrap_or(strike.hold);
+                since.set(core, Some(prior.min(strike.hold)));
             }
         }
         if let Some(hunt) = paired {
@@ -109,13 +105,13 @@ impl Run {
                 if past {
                     shown = shown.with(core, to);
                     let end = hunt.end.as_ref().map_or(hunt.seq, |end| end.seq);
-                    since.entry(core).or_insert(end.max(hunt.seq));
+                    since.get_or_insert_with(core, || end.max(hunt.seq));
                 }
             }
         }
         let unconfirmed: Vec<Unconfirmed> = since
-            .into_iter()
-            .map(|(core, since)| Unconfirmed { core, since })
+            .iter()
+            .filter_map(|(core, since)| since.map(|since| Unconfirmed { core, since }))
             .collect();
         BiosProfile {
             confirmed: Some(confirmed),
@@ -140,7 +136,7 @@ impl Run {
         &self,
         hunt: &Active,
         shown: &mut Profile,
-        since: &mut BTreeMap<CoreId, Seq>,
+        since: &mut PerCore<Option<Seq>>,
     ) {
         let failed: Vec<(Seq, &Profile)> = hunt
             .groups
@@ -167,10 +163,8 @@ impl Run {
                     }
                     *shown = shown.with(core, failing.shallower_by(1));
                     changed = true;
-                    since
-                        .entry(core)
-                        .and_modify(|at| *at = (*at).min(seq))
-                        .or_insert(seq);
+                    let prior = since.get(core).flatten().unwrap_or(seq);
+                    since.set(core, Some(prior.min(seq)));
                 }
             }
         }
