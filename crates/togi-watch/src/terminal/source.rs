@@ -212,7 +212,9 @@ impl Source {
 
     fn load(&mut self, appended: bool) {
         let recording = self.recording();
-        let saved = if appended && matches!(&self.content, Content::Ready(model, ..) if model.problem().is_none()) {
+        let saved = if appended
+            && matches!(&self.content, Content::Ready(model, ..) if model.problem().is_none())
+        {
             None
         } else {
             self.saved_snapshot()

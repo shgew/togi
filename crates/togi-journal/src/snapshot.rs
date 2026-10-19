@@ -170,9 +170,9 @@ pub fn read_in<T: DeserializeOwned>(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.into()),
     };
-    let (prefix, state) = unseal(serde_json::from_slice(&bytes)?)?;
+    let (prefix, state) = unseal::<Value>(serde_json::from_slice(&bytes)?)?;
     verify_prefix(fs, &directory.join("events.jsonl"), &prefix)?;
-    Ok(Some((prefix, state)))
+    Ok(Some((prefix, serde_json::from_value(state)?)))
 }
 
 /// The disk counterpart of [`read_in`], with the same read-only contract.

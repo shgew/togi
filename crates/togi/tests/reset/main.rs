@@ -524,14 +524,20 @@ fn reset_all_warns_for_each_solo_limit_at_or_past_its_failure_point(snapshot: bo
             let events = scenario.events().unwrap();
             let cut = events.len() / 2;
             let folded = togi_session::ReadState::replay(&events[..cut]).unwrap();
-            let bytes: Vec<u8> = events[..cut].iter().flat_map(|event| {
-                let mut line = event.encode().unwrap().into_bytes();
-                line.push(b'\n');
-                line
-            }).collect();
+            let bytes: Vec<u8> = events[..cut]
+                .iter()
+                .flat_map(|event| {
+                    let mut line = event.encode().unwrap().into_bytes();
+                    line.push(b'\n');
+                    line
+                })
+                .collect();
             let prefix = togi_journal::snapshot::Prefix::of(&bytes, Some(events[cut - 1].seq));
             let saved = togi_journal::snapshot::seal(prefix, &folded.document()).unwrap();
-            host.fs.put(session.path().join("state.json"), serde_json::to_vec(&saved).unwrap());
+            host.fs.put(
+                session.path().join("state.json"),
+                serde_json::to_vec(&saved).unwrap(),
+            );
         }
         let path = write(limit);
         let ran = reset(

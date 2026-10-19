@@ -33,19 +33,40 @@ fn snapshot_plus_tail_renders_the_same_status_without_writes() {
         let expected = togi(&dir, &["status"]);
         for cut in [1, events.len() / 2, events.len()] {
             let state = togi_session::ReadState::replay(&events[..cut]).unwrap();
-            let bytes: Vec<u8> = events[..cut].iter().flat_map(|event| {
-                let mut bytes = event.encode().unwrap().into_bytes();
-                bytes.push(b'\n');
-                bytes
-            }).collect();
+            let bytes: Vec<u8> = events[..cut]
+                .iter()
+                .flat_map(|event| {
+                    let mut bytes = event.encode().unwrap().into_bytes();
+                    bytes.push(b'\n');
+                    bytes
+                })
+                .collect();
             let prefix = togi_journal::snapshot::Prefix::of(&bytes, Some(events[cut - 1].seq));
             let saved = togi_journal::snapshot::seal(prefix, &state.document()).unwrap();
-            dir.fs.put(dir.path().join("state.json"), serde_json::to_vec(&saved).unwrap());
+            dir.fs.put(
+                dir.path().join("state.json"),
+                serde_json::to_vec(&saved).unwrap(),
+            );
             let mutations = dir.fs.mutations();
             let actual = togi(&dir, &["status"]);
-            assert_eq!(actual.status, expected.status, "{} at {cut}", scenario.name());
-            assert_eq!(actual.stdout, expected.stdout, "{} at {cut}", scenario.name());
-            assert_eq!(actual.stderr, expected.stderr, "{} at {cut}", scenario.name());
+            assert_eq!(
+                actual.status,
+                expected.status,
+                "{} at {cut}",
+                scenario.name()
+            );
+            assert_eq!(
+                actual.stdout,
+                expected.stdout,
+                "{} at {cut}",
+                scenario.name()
+            );
+            assert_eq!(
+                actual.stderr,
+                expected.stderr,
+                "{} at {cut}",
+                scenario.name()
+            );
             assert_eq!(dir.fs.mutations(), mutations);
         }
     }

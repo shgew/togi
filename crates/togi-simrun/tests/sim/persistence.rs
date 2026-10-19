@@ -97,9 +97,16 @@ fn warm_and_cold_replays_leave_the_same_files(definition: &MachineDefinition, se
 fn copied_snapshot_resume_matches_full_replay(seed: u64) {
     let definition = MachineDefinition::default();
     let source = MemFs::new();
-    let mut first = input(simulator(&definition, seed), Persistence::Memory(source.clone()));
+    let mut first = input(
+        simulator(&definition, seed),
+        Persistence::Memory(source.clone()),
+    );
     first.observer = Some(Box::new(|event| {
-        if event.kind() == EventKind::TrialEnd { Observe::Stop } else { Observe::Continue }
+        if event.kind() == EventKind::TrialEnd {
+            Observe::Stop
+        } else {
+            Observe::Continue
+        }
     }));
     simulate(first).unwrap();
     let mut results = Vec::new();
@@ -109,7 +116,12 @@ fn copied_snapshot_resume_matches_full_replay(seed: u64) {
             let path = format!("{STATE}/{name}");
             copied.put(&path, source.contents(&path).unwrap());
         }
-        run(&definition, seed, Persistence::Memory(copied.clone()), replay);
+        run(
+            &definition,
+            seed,
+            Persistence::Memory(copied.clone()),
+            replay,
+        );
         results.push((
             copied.contents(format!("{STATE}/events.jsonl")).unwrap(),
             copied.contents(format!("{STATE}/state.json")).unwrap(),
