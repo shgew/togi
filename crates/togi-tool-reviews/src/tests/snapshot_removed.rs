@@ -248,7 +248,8 @@ fn lost_effects_operations(
     old: &str,
     status: &str,
 ) {
-    let got = lost_effects(&parse(reversal)[0], &parse(base), &parse(head)).expect("valid diff numbers");
+    let got =
+        lost_effects(&parse(reversal)[0], &parse(base), &parse(head)).expect("valid diff numbers");
     let got = got.map(|lost| (lossy(&lost.text), lost.path, lost.old_path, lost.status));
     let want = (!text.is_empty()).then(|| {
         (
