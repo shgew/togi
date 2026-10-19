@@ -296,19 +296,27 @@ fn execute_loaded(
             };
         }
     };
+    let simulator = match Simulator::new(
+        model,
+        RunSettings {
+            seed: run.seed,
+            history: togi_sim::History::default(),
+            replay,
+        },
+    ) {
+        Ok(simulator) => simulator,
+        Err(error) => {
+            return Outcome::Failed {
+                detail: togi_machine::error_chain(&error),
+            };
+        }
+    };
     let persistence = Persistence::Memory(fs.clone());
     let simulated = togi_simrun::simulate(SimInput {
         config: Config::default(),
         source: ConfigSource::default(),
         build: build(),
-        simulator: Simulator::new(
-            model,
-            RunSettings {
-                seed: run.seed,
-                history: togi_sim::History::default(),
-                replay,
-            },
-        ),
+        simulator,
         persistence: persistence.clone(),
         replay: Replay::Warm,
         verify_every: NonZeroU32::new(1),

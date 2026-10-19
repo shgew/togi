@@ -23,6 +23,8 @@ pub enum Error {
     Capped(NonZeroU32),
     #[error("build the simulated machine")]
     Machine(#[from] InvalidMachine),
+    #[error("construct the simulated machine")]
+    Construct(#[from] togi_sim::ArithmeticError),
     #[error("script a trial")]
     Script(#[from] ScriptError),
     #[error("configuration")]

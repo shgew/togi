@@ -148,7 +148,8 @@ fn record(fs: MemFs, config: Config) {
                 seed: 1,
                 ..RunSettings::default()
             },
-        ),
+        )
+        .unwrap(),
         persistence: Persistence::Memory(fs),
         replay: Replay::Warm,
         verify_every: None,

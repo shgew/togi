@@ -34,6 +34,8 @@ pub enum ResumeError {
     },
     #[error("restore the simulated machine")]
     Restore(#[from] RestoreError),
+    #[error("construct the simulated machine from recorded history")]
+    Construct(#[from] togi_sim::ArithmeticError),
 }
 
 /// The simulator a later process continues a simulation in `persistence` with: the machine a capped simulation
@@ -69,7 +71,7 @@ pub fn resume_simulator(
                 history: history_in(&dir)?,
                 replay: facts,
             },
-        )),
+        )?),
     }
 }
 

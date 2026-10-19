@@ -142,7 +142,7 @@ fn samples_tick_each_second_strictly_before_the_end_and_a_stalled_culprit_stops_
         rig.sim.set_sample_storage(dir);
     }
     run_scripted(&mut rig);
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     assert_eq!(collect(&mut rig, "0001"), want);
     assert_eq!(collect(&mut rig, "0001"), want, "collected again");
     assert!(collect(&mut rig, "missing").is_empty(), "an unknown trial");
@@ -171,7 +171,7 @@ fn a_crashed_trials_serialized_samples_survive_recovery() {
         ))
         .0;
     assert!(crate::common::crashed(&waited));
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let want = vec![
         tick(1000, &[(0, 1000), (1, 1000)]),
         tick(2000, &[(0, 2000), (1, 2000)]),
@@ -316,7 +316,7 @@ fn a_shared_voltage_machine_samples_its_lanes_the_same_lazily_and_in_serialized_
             &[0, 1, 7],
             Duration::from_secs(30),
         ));
-        rig.sim.reboot();
+        rig.sim.reboot().expect("a representable reboot");
         let samples = collect(&mut rig, "0001");
         let storage = if file_backed { "file" } else { "memory" };
         assert_eq!(samples.len(), 29, "{storage}");

@@ -47,6 +47,7 @@ pub(crate) fn biased(seed: u64, bios: i64) -> Simulator {
             ..RunSettings::default()
         },
     )
+    .unwrap()
 }
 
 /// What a fake writes to stderr, readable by the test.

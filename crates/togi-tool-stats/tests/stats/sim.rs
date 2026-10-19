@@ -134,7 +134,8 @@ fn session(definition: &MachineDefinition, seed: u64, cycles: u32, config: Confi
             seed,
             ..RunSettings::default()
         },
-    );
+    )
+    .unwrap();
     let fs = MemFs::new();
     let outcome = simulate(SimInput {
         config,

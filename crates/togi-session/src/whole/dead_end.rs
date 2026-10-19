@@ -131,7 +131,7 @@ fn started_lower(bench: &Bench) -> crate::RunInput<'static> {
 fn drive_with(bench: &Bench, grub: Option<&SharedGrub>, cancelled: bool) -> Ended {
     for _ in 0..100 {
         if bench.sim.seams().host.boot_id().is_err() {
-            bench.sim.reboot();
+            bench.sim.reboot().unwrap();
         }
         let input = input(bench, grub);
         if cancelled {
@@ -399,7 +399,7 @@ fn a_crash_then_a_failing_preflight_records_the_crash_before_the_dead_end_and_ne
     let crashed = run(started_lower(&bench));
     assert!(crashed.crashed(), "{:?}", crashed.errors);
     drop(crashed);
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     bench.sim.fail_check("root", "uid 1000");
 
     let blocked = run(started_lower(&bench));
@@ -520,7 +520,7 @@ fn a_signal_stop_is_a_clean_stop_so_the_next_boot_is_no_crash_and_tuning_resumes
     let stopped_events = stopped.journal.events().len();
     drop(stopped);
 
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let resumed = run(input(&bench, None));
     assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
     assert_eq!(resumed.stop, Some(Stop::Cycles));

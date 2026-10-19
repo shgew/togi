@@ -45,6 +45,7 @@ fn simulator() -> Simulator {
             ..RunSettings::default()
         },
     )
+    .unwrap()
 }
 
 fn core(number: u8) -> CoreId {

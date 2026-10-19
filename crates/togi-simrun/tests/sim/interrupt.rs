@@ -481,7 +481,7 @@ impl Case {
             "{label}: cleanup wrote the SMU after power was lost"
         );
         if !rebooted {
-            bench.sim.reboot();
+            bench.sim.reboot().unwrap();
         }
     }
 
@@ -520,12 +520,13 @@ impl Case {
                 },
                 replay: None,
             },
-        );
+        )
+        .unwrap();
         for next in boots.iter().skip(1).map(Some).chain([None]) {
             if let Some(&kind) = next.and_then(|boot| resets.get(boot)) {
                 sim.next_reset(kind);
             }
-            sim.reboot();
+            sim.reboot().unwrap();
         }
         Bench { sim, ..probe }
     }

@@ -411,7 +411,7 @@ fn kill_after_durable(fixture: &SameBoot, nth: usize) {
 #[test_case(true; "true")]
 fn a_different_boot_never_reconciles_what_the_same_boot_left(pending: bool) {
     let fixture = SameBoot::new(pending);
-    fixture.bench.sim.reboot();
+    fixture.bench.sim.reboot().unwrap();
     let ended = fixture.resume();
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
     assert_eq!(fixture.offsets(), BIOS);
@@ -537,7 +537,7 @@ fn a_pending_zero_dead_end_finishes_on_the_same_boot_and_every_later_run_stops_a
 #[test]
 fn a_pending_zero_dead_end_from_another_boot_finishes_without_refusal_and_leaves_zero() {
     let fixture = zero_failure(true);
-    fixture.bench.sim.reboot();
+    fixture.bench.sim.reboot().unwrap();
     let ended = fixture.resume();
     assert_zero_dead_end_finished(&fixture, &ended);
 }
@@ -1016,7 +1016,7 @@ fn zeroed_after_a_journal_failure(at: Option<usize>) -> (Vec<SmuOperation>, Vec<
     bench.mem.clear_faults();
     bench.sim.next_reset(togi_machine::ResetKind::PowerLoss);
     bench.sim.crash();
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let resumed = run(one_cycle(&bench));
     assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
     assert_eq!(resumed.stop, Some(Stop::Cycles));
@@ -1119,7 +1119,7 @@ fn a_restoration_after_a_combination_hunt_never_reaches_the_combination() {
         }));
         let ended = run(input);
         if ended.crashed() {
-            bench.sim.reboot();
+            bench.sim.reboot().unwrap();
             continue;
         }
         finished = Some(ended);
@@ -1325,7 +1325,7 @@ fn run_through_the_parked_deaths(bench: &Bench, crash_after_the_hunt: bool) -> E
         let ended = run(input);
         if ended.crashed() {
             if !killed.replace(false) {
-                bench.sim.reboot();
+                bench.sim.reboot().unwrap();
             }
             continue;
         }

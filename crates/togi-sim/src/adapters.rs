@@ -118,7 +118,7 @@ impl Clock for SimClock {
         }
         let mut runtime = self.0.borrow_mut();
         runtime.alive()?;
-        runtime.advance(duration);
+        runtime.advance(duration)?;
         Ok(())
     }
 }

@@ -12,7 +12,7 @@ use crate::faults::SmuHook;
 use crate::model::{Model, Script, failure_signal};
 use crate::persisted::{Persisted, RestoreError};
 use crate::replay::Replay;
-use crate::runtime::{RunSettings, Runtime, Shared};
+use crate::runtime::{ArithmeticError, RunSettings, Runtime, Shared};
 use crate::trials::SimTrials;
 
 /// A script refused by [`Simulator::script_trial`].
@@ -38,10 +38,15 @@ pub struct Simulator {
 }
 
 impl Simulator {
-    pub fn new(model: Model, settings: RunSettings) -> Self {
-        Self {
-            shared: Rc::new(RefCell::new(Runtime::new(model, settings))),
-        }
+    /// Starts the machine one reboot after its recorded history.
+    ///
+    /// # Errors
+    ///
+    /// The next boot number or resumed timestamp cannot be represented.
+    pub fn new(model: Model, settings: RunSettings) -> Result<Self, ArithmeticError> {
+        Ok(Self {
+            shared: Rc::new(RefCell::new(Runtime::new(model, settings)?)),
+        })
     }
 
     /// The seams of this machine. They may be taken any number of times; all act on the same machine.
@@ -70,8 +75,12 @@ impl Simulator {
     }
 
     /// Moves the wall clock without moving the boot-local monotonic clock.
-    pub fn jump_wall(&self, by: SignedDuration) {
-        self.shared.borrow_mut().jump_wall(by);
+    ///
+    /// # Errors
+    ///
+    /// The accumulated offset or resulting timestamp cannot be represented. The clock is unchanged.
+    pub fn jump_wall(&self, by: SignedDuration) -> Result<(), ArithmeticError> {
+        self.shared.borrow_mut().jump_wall(by)
     }
 
     /// Crashes the machine; its next reset is a watchdog reset unless one is set.
@@ -96,8 +105,12 @@ impl Simulator {
 
     /// Boots again after [`crate::REBOOT_TIME`]: a new boot ID, the BIOS offsets restored, and the machine
     /// checks queued by the crash logged at the new boot's monotonic zero.
-    pub fn reboot(&self) {
-        self.shared.borrow_mut().reboot();
+    ///
+    /// # Errors
+    ///
+    /// The next boot number, elapsed time or wall timestamp cannot be represented. The machine is unchanged.
+    pub fn reboot(&self) -> Result<(), ArithmeticError> {
+        self.shared.borrow_mut().reboot()
     }
 
     /// Explanations of every trial that ran alone while another core had a nonzero offset.
@@ -227,7 +240,7 @@ impl Simulator {
     ///
     /// # Errors
     ///
-    /// A persisted state for another number of cores, or one without a boot.
+    /// A persisted state for another number of cores, one without a boot, or an unrepresentable wall clock.
     pub fn restore(
         model: Model,
         replay: Option<Replay>,

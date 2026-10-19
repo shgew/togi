@@ -259,7 +259,7 @@ fn a_crash_of_an_unloaded_joint_or_idle_core_leaves_no_machine_check(
 ) {
     let mut rig = Rig::new(&definition(), 1);
     assert!(crashed(&rig.run(basic(Regime::R1, &[0], SECOND)).0));
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
     assert!(rig.mces(&boot).is_empty());
 }
@@ -352,7 +352,7 @@ fn a_joint_names_a_machine_check_core_only_when_it_is_told_to(
     );
     let mut rig = Rig::new(&definition, 1);
     assert!(crashed(&rig.run(basic(Regime::R7, &[1, 0], SECOND)).0));
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
     let mces = rig.mces(&boot);
     if !expects {
@@ -423,7 +423,7 @@ fn a_misleading_machine_check_core_can_be_a_nonmember_that_is_not_loaded(named: 
         .0;
     assert!(crashed(&waited));
     assert!(matches!(rig.machine.host.boot_id(), Err(Error::Crashed)));
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
     assert_ne!(boot, crashed_boot);
     assert!(rig.mces(&crashed_boot).is_empty());
@@ -474,7 +474,9 @@ fn scripts_drive_outcomes_and_the_wall_and_monotonic_clocks_apart() {
     let mut rig = Rig::new(&definition, 1);
     let epoch = rig.sim.now();
     let boot = rig.boot();
-    rig.sim.jump_wall(SignedDuration::from_hours(-1));
+    rig.sim
+        .jump_wall(SignedDuration::from_hours(-1))
+        .expect("a representable wall clock");
     let result = rig.pass(basic(Regime::R1, &[0], Duration::from_secs(10)));
     assert!(result.failure.is_none());
     let mces = rig
@@ -522,7 +524,7 @@ fn scripts_drive_outcomes_and_the_wall_and_monotonic_clocks_apart() {
     assert_eq!(partial.value.ran, Duration::from_secs(3));
     assert_eq!(rig.sim.monotonic(), Duration::from_secs(18));
     assert_eq!(recorder.signals, [(core(1), Signal::ComputationError)]);
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
     let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
     assert_eq!(reason.kind, Some(ResetKind::ThermalTrip));
@@ -604,7 +606,7 @@ fn a_replayed_uncorrected_machine_check_names_a_bank_by_the_models_probability(
         );
         let (waited, _) = rig.run(spec("1", Regime::R7, work, &[0, 1], MINUTE));
         assert!(crashed(&waited), "seed {seed}: {waited:?}");
-        rig.sim.reboot();
+        rig.sim.reboot().expect("a representable reboot");
         let boot = rig.boot();
         let mces = rig.mces(&boot);
         assert_eq!(mces.len(), 1, "seed {seed}: {mces:?}");
@@ -642,7 +644,7 @@ fn a_scripted_backend_failure_reports_and_a_scripted_crash_picks_its_reset() {
     let mut second = basic(Regime::R1, &[0], MINUTE);
     second.id = "0002".to_owned();
     assert!(crashed(&rig.run(second).0));
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
     let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
     assert_eq!(reason.kind, Some(ResetKind::CpuShutdown));
@@ -731,7 +733,7 @@ fn a_crash_draws_its_reset_from_the_model() {
     );
     let mut rig = Rig::new(&definition, 1);
     assert!(crashed(&rig.run(basic(Regime::R1, &[0], SECOND)).0));
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
     let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
     assert_eq!(reason.kind, Some(ResetKind::SyncFlood));
@@ -803,7 +805,7 @@ fn a_replayed_crash_or_uncorrected_machine_check_happens_at_its_recorded_exposur
         assert_eq!(recorder.signals, [(core(0), Signal::UncorrectedMce)]);
     }
     assert_eq!(rig.sim.monotonic(), Duration::from_secs(7));
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
     let want = usize::from(signal == Signal::UncorrectedMce);
     assert_eq!(rig.mces(&boot).len(), want);
@@ -823,7 +825,7 @@ fn a_replayed_crash_resets_by_watchdog_whatever_the_models_reset_mix() {
     let (mut rig, waited, _) = replayed_by(definition, Signal::Crash);
     assert!(crashed(&waited));
     assert_eq!(rig.sim.monotonic(), Duration::from_secs(7));
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
     let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
     assert_eq!(reason.kind, Some(ResetKind::Watchdog));
