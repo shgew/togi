@@ -176,7 +176,7 @@ pub(crate) struct R7Targets {
     groups: BTreeMap<GroupId, Group>,
     shapes: HashMap<(ClassKey, BackendId, Profile), GroupId>,
     by_load: HashMap<LoadKey, BTreeSet<GroupId>>,
-    by_core: HashMap<(WorkloadId, CoreId), BTreeSet<GroupId>>,
+    by_core: HashMap<WorkloadId, PerCore<Option<BTreeSet<GroupId>>>>,
     #[cfg(test)]
     visits: crate::evidence::Visits,
 }
@@ -322,8 +322,9 @@ impl R7Targets {
         self.by_load.entry(load).or_default().insert(id);
         for core in load.loaded {
             self.by_core
-                .entry((load.workload, core))
+                .entry(load.workload)
                 .or_default()
+                .get_or_insert_with(core, BTreeSet::new)
                 .insert(id);
         }
         self.shapes
@@ -355,11 +356,12 @@ impl R7Targets {
             }
         }
         for core in load.loaded {
-            let key = (load.workload, core);
-            if let Some(ids) = self.by_core.get_mut(&key) {
+            if let Some(cores) = self.by_core.get_mut(&load.workload)
+                && let Some(ids) = cores.get_mut(core).and_then(Option::as_mut)
+            {
                 ids.remove(&id);
                 if ids.is_empty() {
-                    self.by_core.remove(&key);
+                    cores.set(core, None);
                 }
             }
         }
@@ -480,7 +482,7 @@ impl R7Targets {
         failing_mhz: Option<i64>,
     ) -> Option<Target> {
         let ccd = ask.topology.ccd_of(core)?;
-        let ids = self.by_core.get(&(workload, core))?;
+        let ids = self.by_core.get(&workload)?.get_ref(core)?.as_ref()?;
         self.query(ask, ids, ccd, Basis::Named { failing_mhz }, |group| {
             &group.load_top
         })

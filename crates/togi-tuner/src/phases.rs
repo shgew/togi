@@ -1,8 +1,8 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::num::NonZeroU32;
 
 use togi_journal::Seq;
-use togi_machine::{CoreId, TargetOffset};
+use togi_machine::{CoreId, PerCore, TargetOffset};
 
 use crate::cores::Phase;
 use crate::rounds::{Blame, Shape};
@@ -23,7 +23,7 @@ struct Settled {
     phase1_end: Seq,
     first_confirmed: Profile,
     passed: Profile,
-    moved: BTreeMap<CoreId, Mark>,
+    moved: PerCore<Option<Mark>>,
     blames: VecDeque<Blame>,
 }
 
@@ -98,7 +98,7 @@ impl Phases {
 
     pub(crate) fn mark(&self, core: CoreId) -> Option<Mark> {
         self.settled()
-            .and_then(|settled| settled.moved.get(&core).copied())
+            .and_then(|settled| settled.moved.get(core).flatten())
     }
 
     /// The oldest phase-2 failure still owed a blame.
@@ -130,17 +130,17 @@ impl Phases {
                 let Some(offset) = round.profile().get(core) else {
                     continue;
                 };
-                match settled.moved.get_mut(&core) {
+                match settled.moved.get_mut(core).and_then(Option::as_mut) {
                     Some(mark) if mark.offset == offset => mark.attempt = round.id(),
                     _ => {
-                        settled.moved.insert(
+                        settled.moved.set(
                             core,
-                            Mark {
+                            Some(Mark {
                                 round: round.id(),
                                 seq: round.start(),
                                 offset,
                                 attempt: round.id(),
-                            },
+                            }),
                         );
                     }
                 }
@@ -157,7 +157,7 @@ impl Phases {
             if let Some(offset) = round.profile().get(core) {
                 settled.passed = settled.passed.with(core, offset);
             }
-            settled.moved.remove(&core);
+            settled.moved.set(core, None);
         }
     }
 
@@ -215,7 +215,7 @@ impl Phases {
                     phase1_end: seq,
                     first_confirmed: profile,
                     passed: profile,
-                    moved: BTreeMap::new(),
+                    moved: PerCore::default(),
                     blames: VecDeque::new(),
                 });
             }

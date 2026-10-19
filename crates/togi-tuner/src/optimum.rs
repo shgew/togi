@@ -3,12 +3,11 @@ use togi_machine::{CoreId, CoreSet, PER_CORE_MAX, PerCore, TargetOffset};
 use crate::constraints::{Combination, FailurePoint};
 use crate::{Depth, Profile, Ranking};
 
-type Depths = [i32; PER_CORE_MAX];
-type Needs = [Option<i32>; PER_CORE_MAX];
+type Depths = PerCore<i32>;
+type Needs = PerCore<Option<i32>>;
 
 /// Every core ends at its floor or at a count that breaks some combination still reached, so the
-/// search branches only over which member breaks each such combination. Cores are indexed by
-/// `CoreId::index`, which the type keeps below `PER_CORE_MAX`.
+/// search branches only over which member breaks each such combination.
 pub(crate) fn solve(
     cores: CoreSet,
     failure_points: &PerCore<FailurePoint>,
@@ -17,8 +16,8 @@ pub(crate) fn solve(
     ranking: &Ranking,
 ) -> Option<Profile> {
     let floor_limit = TargetOffset::clamped(i64::MIN).signed();
-    let mut p = [0; PER_CORE_MAX];
-    let mut top = [0; PER_CORE_MAX];
+    let mut p = Depths::default();
+    let mut top = Depths::default();
     let mut total = 0;
     for core in cores {
         let floor = failure_points.get(core).map_or(floor_limit, |point| {
@@ -28,8 +27,8 @@ pub(crate) fn solve(
         if floor > ceiling {
             return None;
         }
-        p[core.index()] = floor;
-        top[core.index()] = ceiling;
+        p.set(core, floor);
+        top.set(core, ceiling);
         total += floor;
     }
     let needs = break_thresholds(combinations, &p, &top)?;
@@ -43,7 +42,7 @@ pub(crate) fn solve(
     search.visit();
     search.best.map(|(best, _)| {
         Profile::over(cores, |core| {
-            TargetOffset::clamped(i64::from(best[core.index()]))
+            TargetOffset::clamped(i64::from(best.get(core).unwrap_or_default()))
         })
     })
 }
@@ -54,18 +53,17 @@ pub(crate) fn solve(
 fn break_thresholds(combinations: &[Combination], p: &Depths, top: &Depths) -> Option<Vec<Needs>> {
     let mut needs: Vec<Needs> = Vec::new();
     for combination in combinations {
-        let mut need: Needs = [None; PER_CORE_MAX];
+        let mut need = Needs::default();
         let mut reached = true;
         let mut breakable = false;
         for (member, offset) in combination.members().iter() {
             let at = offset.signed() + 1;
-            let index = member.index();
-            if p[index] > offset.signed() {
+            if p.get(member).unwrap_or_default() > offset.signed() {
                 reached = false;
                 break;
             }
-            if at <= top[index] {
-                need[index] = Some(at);
+            if at <= top.get(member).unwrap_or_default() {
+                need.set(member, Some(at));
                 breakable = true;
             }
         }
@@ -94,11 +92,12 @@ fn break_thresholds(combinations: &[Combination], p: &Depths, top: &Depths) -> O
 /// Whether breaking `b` already breaks `a`: wherever `a` can be broken, `b` breaks at no deeper an
 /// offset.
 fn implies(a: &Needs, b: &Needs) -> bool {
-    a.iter().zip(b).all(|(a, b)| match (a, b) {
-        (Some(a), Some(b)) => b <= a,
-        (Some(_), None) => false,
-        (None, _) => true,
-    })
+    a.iter()
+        .all(|(core, at)| match (at, b.get(core).flatten()) {
+            (Some(a), Some(b)) => b <= a,
+            (Some(_), None) => false,
+            (None, _) => true,
+        })
 }
 
 fn tie_order(cores: CoreSet, ranking: &Ranking) -> Vec<CoreId> {
@@ -143,8 +142,9 @@ impl Search {
         for (k, need) in self.needs.iter().enumerate() {
             let mut cheapest = i32::MAX;
             let mut count = 0;
-            for (at, &current) in need.iter().zip(&self.p) {
-                let Some(at) = *at else { continue };
+            for (core, at) in need.iter() {
+                let Some(at) = at else { continue };
+                let current = self.p.get(core).unwrap_or_default();
                 if current >= at {
                     count = 0;
                     break;
@@ -174,20 +174,20 @@ impl Search {
         let mut options = [(CoreId::FIRST, 0); PER_CORE_MAX];
         let mut len = 0;
         for &core in &self.order {
-            if let Some(at) = need[core.index()] {
+            if let Some(at) = need.get(core).flatten() {
                 options[len] = (core, at);
                 len += 1;
             }
         }
         let p = self.p;
-        options[..len].sort_by_key(|&(core, at)| at - p[core.index()]);
+        options[..len].sort_by_key(|&(core, at)| at - p.get(core).unwrap_or_default());
         for &(core, at) in &options[..len] {
-            let prior = self.p[core.index()];
-            self.p[core.index()] = at;
+            let prior = self.p.get(core).unwrap_or_default();
+            self.p.set(core, at);
             self.total += at - prior;
             self.visit();
             self.total -= at - prior;
-            self.p[core.index()] = prior;
+            self.p.set(core, prior);
         }
     }
 
@@ -206,8 +206,8 @@ impl Search {
     fn deeper_on_tie(&self, best: &Depths) -> bool {
         self.order
             .iter()
-            .map(|core| core.index())
-            .find(|&index| self.p[index] != best[index])
-            .is_some_and(|index| self.p[index] < best[index])
+            .copied()
+            .find(|&core| self.p.get(core) != best.get(core))
+            .is_some_and(|core| self.p.get(core) < best.get(core))
     }
 }

@@ -14,7 +14,7 @@ use std::num::NonZeroU16;
 use std::path::Path;
 
 use togi_journal::Seq;
-use togi_machine::{Backend, Condition, CoreId, CoreSet, Regime, WorkloadId};
+use togi_machine::{Backend, Condition, CoreId, CoreSet, PerCore, Regime, WorkloadId};
 
 use crate::{ClassKey, Depth, LoadKey, Profile, Secs, TopologyMismatch};
 
@@ -93,8 +93,8 @@ pub struct Evidence {
     classes: BTreeMap<ClassKey, ClassCells>,
     idle: FailureCells,
     all_core_r6: Vec<ClassKey>,
-    by_core: BTreeMap<CoreId, Vec<ClassKey>>,
-    named: BTreeMap<CoreId, BTreeSet<ClassKey>>,
+    by_core: PerCore<Option<Vec<ClassKey>>>,
+    named: PerCore<Option<BTreeSet<ClassKey>>>,
     backends: Backends,
     checking: Option<Profile>,
     exposure: BTreeMap<WorkloadId, u32>,
@@ -138,8 +138,8 @@ impl Evidence {
             classes: BTreeMap::new(),
             idle: FailureCells::default(),
             all_core_r6: Vec::new(),
-            by_core: BTreeMap::new(),
-            named: BTreeMap::new(),
+            by_core: PerCore::default(),
+            named: PerCore::default(),
             backends: Backends::new(),
             checking: None,
             exposure: BTreeMap::new(),
@@ -297,7 +297,7 @@ impl Evidence {
         if let Entry::Vacant(slot) = self.classes.entry(key) {
             slot.insert(ClassCells::default());
             for core in key.loaded() {
-                self.by_core.entry(core).or_default().push(key);
+                self.by_core.get_or_insert_with(core, Vec::new).push(key);
             }
             if self.is_all_core_r6(key) {
                 self.all_core_r6.push(key);
@@ -311,7 +311,9 @@ impl Evidence {
 
     fn note_named(&mut self, class: ClassKey, named: Option<CoreId>) {
         if let Some(core) = named {
-            self.named.entry(core).or_default().insert(class);
+            self.named
+                .get_or_insert_with(core, BTreeSet::new)
+                .insert(class);
         }
     }
 
@@ -791,17 +793,27 @@ impl Evidence {
     /// it, and the carried provenance of what goes. Whole cells go; no fact is looked up one by
     /// one.
     pub fn reset_core(&mut self, core: CoreId) {
-        for key in self.by_core.remove(&core).unwrap_or_default() {
+        for key in self
+            .by_core
+            .get_mut(core)
+            .and_then(Option::take)
+            .unwrap_or_default()
+        {
             self.visit();
             self.classes.remove(&key);
             self.all_core_r6.retain(|&other| other != key);
             for other in key.loaded() {
-                if let Some(keys) = self.by_core.get_mut(&other) {
+                if let Some(keys) = self.by_core.get_mut(other).and_then(Option::as_mut) {
                     keys.retain(|&listed| listed != key);
                 }
             }
         }
-        for key in self.named.remove(&core).unwrap_or_default() {
+        for key in self
+            .named
+            .get_mut(core)
+            .and_then(Option::take)
+            .unwrap_or_default()
+        {
             self.visit();
             let Some(cells) = self.classes.get_mut(&key) else {
                 continue;
