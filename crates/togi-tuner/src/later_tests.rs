@@ -333,7 +333,8 @@ fn failures_on_different_cores_hold_separately() {
     j.decide(action);
     fail_core(&mut j, 1);
     let (second, _) = next(&j);
-    assert!(is_hold(&second) && second.core == core(1), "{second:?}");
+    assert!(is_hold(&second), "{second:?}");
+    assert_eq!(second.core, core(1));
     let action = j.next_decision();
     j.decide(action);
     assert_eq!(strikes(&j), 2);
@@ -408,7 +409,8 @@ fn strike_is_invalid_when_its_core_moved_for_another_reason() {
     start_cycle(&mut j);
     fail_core(&mut j, 0);
     let (after, _) = next(&j);
-    assert!(is_hold(&after) && after.from_offset == off(-9), "{after:?}");
+    assert!(is_hold(&after), "{after:?}");
+    assert_eq!(after.from_offset, off(-9));
     j.assert_resumes();
 }
 
@@ -770,7 +772,8 @@ fn a_held_unattributed_failure_pairs_with_an_attributed_one_on_a_loaded_core() {
     j.decide(action);
     let second = fail_core(&mut j, 1);
     let (step, cause) = next(&j);
-    assert!(!is_hold(&step) && step.core == core(1), "{step:?}");
+    assert!(!is_hold(&step), "{step:?}");
+    assert_eq!(step.core, core(1));
     assert_eq!(cause, [second, first]);
     tokens(&step.reason, &[&format!("#{first}")]);
     let action = j.next_decision();
