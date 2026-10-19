@@ -212,7 +212,11 @@ impl Source {
 
     fn load(&mut self, appended: bool) {
         let recording = self.recording();
-        let saved = self.saved_snapshot();
+        let saved = if appended && matches!(&self.content, Content::Ready(model, ..) if model.problem().is_none()) {
+            None
+        } else {
+            self.saved_snapshot()
+        };
         self.fold_recording(recording, appended, saved);
     }
 
@@ -300,10 +304,14 @@ impl Source {
             }
         };
         let batch = &events[folded..];
-        let checked = model
-            .fold_batch(batch)
-            .err()
-            .map_or(batch, |error| &batch[..=error.index]);
+        let checked = match model.fold_batch(batch) {
+            Err(_) if folded != 0 => {
+                model = Box::new(crate::model::project(events));
+                events
+            }
+            Err(error) => &batch[..=error.index],
+            Ok(()) => batch,
+        };
         for event in checked {
             if let Payload::SessionStart(start) = &event.payload {
                 if let Verdict::Refuse(refusal) =

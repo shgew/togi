@@ -90,14 +90,7 @@ pub struct Confirm {
 }
 
 /// One core as a frame shows it.
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CoreView {
     /// The core.
     pub id: CoreId,
@@ -137,14 +130,7 @@ pub struct CoreView {
 }
 
 /// What a hunt sets each core to: its failing offsets and the offsets it parks the rest at.
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HuntShape {
     /// The failing profile.
     pub failing: PerCore<TargetOffset>,
@@ -153,14 +139,7 @@ pub struct HuntShape {
 }
 
 /// What a hunt's parked profile does to each core, against its failing profile and its candidates.
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Parking {
     /// Cores that are not candidates and run at their failing offsets in every group, the loaded cores of a
     /// located hunt among them.
@@ -203,14 +182,7 @@ impl HuntFacts {
 }
 
 /// A recorded combination: offsets at which these cores failed together.
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ComboView {
     /// Its id.
     pub id: CombinationId,
@@ -274,14 +246,7 @@ pub struct Count {
     clippy::struct_excessive_bools,
     reason = "independent facts of one trial"
 )]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TrialView {
     /// Its id.
     pub id: TrialId,
@@ -559,14 +524,7 @@ pub struct StopView {
 }
 
 /// The session ended at a dead end.
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
- #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DeadEndView {
     /// When.
     pub at: Timestamp,
