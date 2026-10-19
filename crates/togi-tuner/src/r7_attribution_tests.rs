@@ -526,108 +526,66 @@ fn r7_zero_affected_ccd_dead_ends_after_its_all_zero_rerun() {
     }
 }
 
-#[test]
-fn r7_named_zero_attribution_uses_start_top() {
-    struct Case {
-        name: &'static str,
-        top: &'static [u8],
-        requests: &'static [(u8, f64)],
-        previous: &'static [(u8, f64)],
-        dead: bool,
-    }
-    let cases = [
-        Case {
-            name: "measured top",
-            top: &[0],
-            requests: &[(0, 1.2), (1, 1.1)],
-            previous: &[],
-            dead: true,
-        },
-        Case {
-            name: "measured tied top",
-            top: &[0, 1],
-            requests: &[(0, 1.2), (1, 1.2005)],
-            previous: &[],
-            dead: true,
-        },
-        Case {
-            name: "measured not top",
-            top: &[1],
-            requests: &[(0, 1.1), (1, 1.2)],
-            previous: &[],
-            dead: false,
-        },
-        Case {
-            name: "derived top",
-            top: &[],
-            requests: &[],
-            previous: &[(0, 1.2), (1, 1.1)],
-            dead: true,
-        },
-        Case {
-            name: "derived not top",
-            top: &[],
-            requests: &[],
-            previous: &[(0, 1.1), (1, 1.2)],
-            dead: false,
-        },
-        Case {
-            name: "offset fallback top",
-            top: &[],
-            requests: &[],
-            previous: &[],
-            dead: true,
-        },
-    ];
+#[test_case::test_case(&[0], &[(0, 1.2), (1, 1.1)], &[], None, true; "measured top")]
+#[test_case::test_case(&[0, 1], &[(0, 1.2), (1, 1.2005)], &[], None, true; "measured tied top")]
+#[test_case::test_case(&[1], &[(0, 1.1), (1, 1.2)], &[], None, false; "measured not top")]
+#[test_case::test_case(
+    &[], &[], &[(0, 1.2), (1, 1.1)], Some(&[(0, 1.1), (1, 1.2)][..]), true; "derived top"
+)]
+#[test_case::test_case(&[], &[], &[(0, 1.1), (1, 1.2)], None, false; "derived not top")]
+#[test_case::test_case(&[], &[], &[], None, true; "offset fallback top")]
+fn r7_named_zero_attribution_uses_start_top(
+    top: &[u8],
+    measured: &[(u8, f64)],
+    previous: &[(u8, f64)],
+    later_requests: Option<&[(u8, f64)]>,
+    dead: bool,
+) {
     let profile = [0, -30, -30, -30];
-    for case in cases {
-        let name = case.name;
-        let mut j = Journal::r7_session();
-        j.profile_change(&profile);
-        let previous = (!case.previous.is_empty())
-            .then(|| j.r7_fact(true, &[0, 1], &profile, &requests(case.previous)));
+    let mut j = Journal::r7_session();
+    j.profile_change(&profile);
+    let previous = (!previous.is_empty())
+        .then(|| j.r7_fact(true, &[0, 1], &profile, &requests(previous)));
+    j.r7_fact(
+        false,
+        &[0, 1],
+        &profile,
+        &requests(measured).top(top).named(0),
+    );
+    if let Some(later_requests) = later_requests {
         j.r7_fact(
-            false,
+            true,
             &[0, 1],
             &profile,
-            &requests(case.requests).top(case.top).named(0),
+            &requests(later_requests).top(&[1]),
         );
-        if name == "derived top" {
-            j.r7_fact(
-                true,
-                &[0, 1],
-                &profile,
-                &requests(&[(0, 1.1), (1, 1.2)]).top(&[1]),
-            );
-        }
-        if case.dead {
-            let rerun = j.at_run_zero_rerun(&[0, 1], true);
-            let dead = j.at_next_dead_end();
-            assert!(dead.cause.contains(&rerun), "{name}: {:?}", dead.cause);
-            if let Some(previous) = previous {
-                assert!(dead.cause.contains(&previous), "{name}: {:?}", dead.cause);
-            }
-            let DecisionPayload::DeadEnd(end) = &dead.payload else {
-                unreachable!()
-            };
-            assert_eq!(end.core, Some(core(0)), "{name}");
-        } else {
-            let (_, why) = j.at_r7_backoff();
-            assert_eq!(
-                why.notes,
-                [Note::NamedZeroNotTop {
-                    core: core(0),
-                    ccd: CcdId::new(0).unwrap()
-                }],
-                "{name}"
-            );
-            let (action, moved) = j.at_next_backoff();
-            assert_eq!(moved, (1, -29), "{name}");
-            j.decide(action);
-            assert_eq!(j.run().r7_decision(), None, "{name}");
-        }
-        j.assert_resumes();
     }
+    if dead {
+        let plan = j.next_trial();
+        assert!(matches!(plan.requirement.context, TrialContext::ZeroRerun { .. }), "{plan:?}");
+        assert_eq!(plan.condition, Condition::Parked);
+        assert!(plan.profile.is_zero(), "{plan:?}");
+        assert_eq!(plan.load.cores(), set(&[0, 1]));
+        let rerun = j.trial(&plan, Outcome::Failure);
+        let attribution = j.next_decision();
+        assert!(matches!(attribution.payload, DecisionPayload::Failure(_)), "{attribution:?}");
+        j.decide(attribution);
+        let dead = j.at_next_dead_end();
+        assert!(dead.cause.contains(&rerun), "{:?}", dead.cause);
+        if let Some(previous) = previous {
+            assert!(dead.cause.contains(&previous), "{:?}", dead.cause);
+        }
+        let DecisionPayload::DeadEnd(end) = &dead.payload else {
+            unreachable!()
+        };
+        assert_eq!(end.core, Some(core(0)));
+    } else {
+        let (action, moved) = j.at_next_backoff();
+        assert_eq!(moved, (1, -29));
+        j.decide(action);
+        assert!(!matches!(j.next(), Action::Decide(d) if matches!(d.payload, DecisionPayload::TunerDecision(_))));
+    }
+    j.assert_resumes();
 }
 
 #[test]

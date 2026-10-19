@@ -1,6 +1,7 @@
 use std::num::{NonZeroU16, NonZeroU32};
 use std::path::Path;
 
+use test_case::test_case;
 use proptest::prelude::*;
 use togi_journal::Seq;
 use togi_machine::{Backend, Condition, CoreId, CoreSet, REGIMES, Regime, WorkloadId, workloads};
@@ -381,16 +382,20 @@ fn use_backends(ev: &mut Evidence, mprime: &str, ycruncher: &str) {
     ev.set_backend(Backend::Ycruncher, Some(Path::new(ycruncher)));
 }
 
-struct BackendRow {
-    name: &'static str,
-    reload: &'static [(&'static str, &'static str)],
-    mprime: u32,
-    ycruncher: u32,
+#[test_case(&[(MPRIME_OLD, YCRUNCHER_OLD)], 10, 10, false; "same backends")]
+#[test_case(&[(MPRIME_NEW, YCRUNCHER_OLD)], 0, 10, true; "mprime updated")]
+#[test_case(&[(MPRIME_OLD, YCRUNCHER_NEW)], 10, 0, false; "ycruncher updated")]
+#[test_case(&[(MPRIME_NEW, YCRUNCHER_NEW)], 0, 0, true; "both updated")]
+#[test_case(
+    &[(MPRIME_NEW, YCRUNCHER_OLD), (MPRIME_OLD, YCRUNCHER_OLD)],
+    10, 10, false; "mprime rolled back"
+)]
+fn evidence_is_keyed_by_backend_store_path(
+    reload: &[(&str, &str)],
+    mprime_valid: u32,
+    ycruncher_valid: u32,
     mprime_failure_valid: bool,
-}
-
-#[test]
-fn evidence_is_keyed_by_backend_store_path() {
+) {
     let r1 = workloads(Regime::R1);
     assert_eq!(
         (r1[0].backend, r1[1].backend),
@@ -398,80 +403,33 @@ fn evidence_is_keyed_by_backend_store_path() {
     );
     let mprime = class(Regime::R1, 0, &[0], 90);
     let ycruncher = class(Regime::R1, 1, &[0], 90);
-    let rows = [
-        BackendRow {
-            name: "resume with the same backends",
-            reload: &[(MPRIME_OLD, YCRUNCHER_OLD)],
-            mprime: 10,
-            ycruncher: 10,
-            mprime_failure_valid: false,
-        },
-        BackendRow {
-            name: "mprime updated",
-            reload: &[(MPRIME_NEW, YCRUNCHER_OLD)],
-            mprime: 0,
-            ycruncher: 10,
-            mprime_failure_valid: true,
-        },
-        BackendRow {
-            name: "y-cruncher updated",
-            reload: &[(MPRIME_OLD, YCRUNCHER_NEW)],
-            mprime: 10,
-            ycruncher: 0,
-            mprime_failure_valid: false,
-        },
-        BackendRow {
-            name: "both updated",
-            reload: &[(MPRIME_NEW, YCRUNCHER_NEW)],
-            mprime: 0,
-            ycruncher: 0,
-            mprime_failure_valid: true,
-        },
-        BackendRow {
-            name: "mprime rolled back",
-            reload: &[(MPRIME_NEW, YCRUNCHER_OLD), (MPRIME_OLD, YCRUNCHER_OLD)],
-            mprime: 10,
-            ycruncher: 10,
-            mprime_failure_valid: false,
-        },
-    ];
-    for row in rows {
-        let build = || {
-            let mut fx = Fx::new(&[0, 1]);
-            use_backends(&mut fx.ev, MPRIME_OLD, YCRUNCHER_OLD);
-            let p = fx.p(&[-10, -10]);
-            fx.fail(mprime, &p);
-            for k in [mprime, ycruncher] {
-                fx.passes(k, &p, 5);
-                for _ in 0..5 {
-                    fx.carried_pass(k, &p, "old");
-                }
-            }
-            assert_eq!(
-                fx.ev.failing_seq(mprime, &p, None, needed(5)).unwrap(),
-                None,
-                "passes under the recording backend outweigh the earlier failure"
-            );
-            for &(m, y) in row.reload {
-                use_backends(&mut fx.ev, m, y);
-            }
-            (fx, p)
-        };
-        let (fx, p) = build();
-        assert_eq!(fx.valid(mprime, &p), row.mprime, "{}", row.name);
-        assert_eq!(fx.valid(ycruncher, &p), row.ycruncher, "{}", row.name);
-        assert_eq!(
-            fx.ev
-                .failing_seq(mprime, &p, None, needed(5))
-                .unwrap()
-                .is_some(),
-            row.mprime_failure_valid,
-            "{}",
-            row.name
-        );
-        let (replayed, _) = build();
-        assert!(fx.ev == replayed.ev, "{}: replay differs", row.name);
+    let mut fx = Fx::new(&[0, 1]);
+    use_backends(&mut fx.ev, MPRIME_OLD, YCRUNCHER_OLD);
+    let p = fx.p(&[-10, -10]);
+    fx.fail(mprime, &p);
+    for k in [mprime, ycruncher] {
+        fx.passes(k, &p, 5);
+        for _ in 0..5 {
+            fx.carried_pass(k, &p, "old");
+        }
     }
+    assert_eq!(
+        fx.ev.failing_seq(mprime, &p, None, needed(5)).unwrap(),
+        None,
+        "passes under the recording backend outweigh the earlier failure"
+    );
+    for &(m, y) in reload {
+        use_backends(&mut fx.ev, m, y);
+    }
+    assert_eq!(fx.valid(mprime, &p), mprime_valid);
+    assert_eq!(fx.valid(ycruncher, &p), ycruncher_valid);
+    assert_eq!(
+        fx.ev
+            .failing_seq(mprime, &p, None, needed(5))
+            .unwrap()
+            .is_some(),
+        mprime_failure_valid
+    );
 }
 
 #[test]

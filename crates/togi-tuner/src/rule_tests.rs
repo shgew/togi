@@ -1,3 +1,5 @@
+use test_case::test_case;
+
 use togi_journal::{
     Attribution, CrashDetected, DeadEndCondition, Decision, Mce, Outcome, Payload, Seq, TrialId,
 };
@@ -188,8 +190,6 @@ fn repeated_decisions_are_equal_and_leave_the_state_alone() {
     let _ = (Decision::Hold, Action::ReadRanking);
 }
 
-type Case = Box<dyn Fn(&TrialId, Seq) -> (Payload, Box<dyn Fn(&FoldError) -> bool>)>;
-type MakePayload = Box<dyn Fn(&TrialId) -> Payload>;
 
 fn poisoned(j: &Journal, state: &mut State) {
     let next = j.event(
@@ -302,94 +302,76 @@ fn events_before_the_start_are_refused() {
     poisoned(&j, &mut state);
 }
 
-#[test]
-fn a_fold_error_poisons_the_state() {
-    let other = togi_journal::TrialId::from("elsewhere".to_owned());
+#[derive(Clone, Copy, Debug)]
+enum InvalidEvent {
+    UnknownTransitionCore,
+    UnopenedTrial,
+    MissingSignal,
+    UnawaitedTrial,
+    UnknownFailure,
+    UnknownResetCore,
+}
+
+#[test_case(InvalidEvent::UnknownTransitionCore; "transition outside topology")]
+#[test_case(InvalidEvent::UnopenedTrial; "end without its intent")]
+#[test_case(InvalidEvent::MissingSignal; "failed end without signal")]
+#[test_case(InvalidEvent::UnawaitedTrial; "failure without a failed end")]
+#[test_case(InvalidEvent::UnknownFailure; "failure cites unknown failure")]
+#[test_case(InvalidEvent::UnknownResetCore; "reset outside topology")]
+fn a_fold_error_poisons_the_state(case: InvalidEvent) {
+    let mut j = Journal::search_at(&[-10, -10]);
+    let plan = j.next_trial();
+    let (intent, trial) = j.intent(&plan);
+    let other = TrialId::from("elsewhere".to_owned());
     let outside = core(9);
-    let failure =
-        |trial: Option<&togi_journal::TrialId>, known: Option<Seq>| togi_journal::Failure {
-            signal: Signal::Crash,
-            attribution: Attribution::Unattributed,
-            core: None,
-            offset: None,
-            trial: trial.cloned(),
-            regime: None,
-            condition: Some(Condition::Together),
-            profile: None,
-            known_failure: known,
-            reason: None,
-            round: None,
-        };
-    let cases: Vec<Case> = vec![
-        Box::new(move |_, _| {
-            (
-                transition(9, togi_journal::CorePhase::Search, 0).into(),
-                Box::new(
-                    move |error| matches!(error, FoldError::UnknownCore(found) if *found == outside),
-                ),
-            )
-        }),
-        Box::new({
-            let other = other.clone();
-            move |_, _| {
-                let expected = other.clone();
-                (
-                    Journal::end_payload(&other, Outcome::Pass, None).into(),
-                    Box::new(
-                        move |error| matches!(error, FoldError::NoOpenTrial(found) if *found == expected),
-                    ),
-                )
-            }
-        }),
-        Box::new(|trial, _| {
-            (
-                Journal::end_payload(trial, Outcome::Failure, None).into(),
-                Box::new(|error| matches!(error, FoldError::MissingSignal)),
-            )
-        }),
-        Box::new({
-            let other = other.clone();
-            move |_, _| {
-                let expected = other.clone();
-                (
-                    failure(Some(&other), None).into(),
-                    Box::new(
-                        move |error| matches!(error, FoldError::NotAwaiting(found) if *found == expected),
-                    ),
-                )
-            }
-        }),
-        Box::new({
-            move |_, intent| {
-                (
-                    failure(None, Some(intent)).into(),
-                    Box::new(
-                        move |error| matches!(error, FoldError::UnknownFailure(found) if *found == intent),
-                    ),
-                )
-            }
-        }),
-        Box::new(move |_, _| {
-            (
-                togi_journal::CommandReset {
-                    target: togi_journal::ResetTarget::Core(outside),
-                }
-                .into(),
-                Box::new(
-                    move |error| matches!(error, FoldError::UnknownCore(found) if *found == outside),
-                ),
-            )
-        }),
-    ];
-    for case in cases {
-        let mut j = Journal::search_at(&[-10, -10]);
-        let plan = j.next_trial();
-        let (intent, trial) = j.intent(&plan);
-        let (payload, expected) = case(&trial, intent);
-        assert!(matches!(j.try_append(payload, &[]), Err(error) if expected(&error)));
-        let mut state = j.state.clone();
-        poisoned(&j, &mut state);
+    let failure = |trial: Option<&TrialId>, known| togi_journal::Failure {
+        signal: Signal::Crash,
+        attribution: Attribution::Unattributed,
+        core: None,
+        offset: None,
+        trial: trial.cloned(),
+        regime: None,
+        condition: Some(Condition::Together),
+        profile: None,
+        known_failure: known,
+        reason: None,
+        round: None,
+    };
+    let payload = match case {
+        InvalidEvent::UnknownTransitionCore => {
+            transition(9, togi_journal::CorePhase::Search, 0).into()
+        }
+        InvalidEvent::UnopenedTrial => Journal::end_payload(&other, Outcome::Pass, None).into(),
+        InvalidEvent::MissingSignal => Journal::end_payload(&trial, Outcome::Failure, None).into(),
+        InvalidEvent::UnawaitedTrial => failure(Some(&other), None).into(),
+        InvalidEvent::UnknownFailure => failure(None, Some(intent)).into(),
+        InvalidEvent::UnknownResetCore => togi_journal::CommandReset {
+            target: togi_journal::ResetTarget::Core(outside),
+        }
+        .into(),
+    };
+    let error = j.try_append(payload, &[]).unwrap_err();
+    match (case, &error) {
+        (
+            InvalidEvent::UnknownTransitionCore | InvalidEvent::UnknownResetCore,
+            FoldError::UnknownCore(found),
+        ) => assert_eq!(*found, outside),
+        (InvalidEvent::UnopenedTrial, FoldError::NoOpenTrial(found))
+        | (InvalidEvent::UnawaitedTrial, FoldError::NotAwaiting(found)) => {
+            assert_eq!(*found, other);
+        }
+        (InvalidEvent::MissingSignal, FoldError::MissingSignal) => {}
+        (InvalidEvent::UnknownFailure, FoldError::UnknownFailure(found)) => {
+            assert_eq!(*found, intent);
+        }
+        _ => panic!("{case:?}: unexpected error {error:?}"),
     }
+    let mut state = j.state.clone();
+    poisoned(&j, &mut state);
+}
+
+#[test]
+fn an_out_of_order_event_poisons_the_state() {
     let mut j = Journal::search_at(&[-10, -10]);
     let plan = j.next_trial();
     let (intent, trial) = j.intent(&plan);
@@ -406,68 +388,42 @@ fn a_fold_error_poisons_the_state() {
     poisoned(&j, &mut state);
 }
 
-#[test]
-fn every_core_a_payload_names_must_be_in_the_topology() {
-    let outside = core(9);
-    let cases: Vec<(&str, MakePayload)> = vec![
-        (
-            "end core",
-            Box::new(move |trial| {
-                let mut end = Journal::end_payload(trial, Outcome::Pass, None);
-                end.core = Some(outside);
-                end.into()
-            }),
-        ),
-        (
-            "end stalled core",
-            Box::new(move |trial| {
-                let mut end = Journal::end_payload(trial, Outcome::Pass, None);
-                end.stalled_core = Some(outside);
-                end.into()
-            }),
-        ),
-        (
-            "end top requesters",
-            Box::new(move |trial| {
-                let mut end = Journal::end_payload(trial, Outcome::Pass, None);
-                end.top_requesters = set(&[9]);
-                end.into()
-            }),
-        ),
-        (
-            "end request lanes",
-            Box::new(move |trial| {
-                let mut end = Journal::end_payload(trial, Outcome::Pass, None);
-                end.voltage_requests_v = [(outside, 1.0)].into_iter().collect();
-                end.into()
-            }),
-        ),
-        ("mce core", Box::new(move |trial| mce_on(trial, 9).into())),
-        (
-            "progress core",
-            Box::new(move |trial| {
-                togi_journal::TrialProgress {
-                    trial: trial.clone(),
-                    detail: String::new(),
-                    signal: None,
-                    core: Some(outside),
-                }
-                .into()
-            }),
-        ),
-    ];
-    for (name, make) in cases {
-        let mut j = Journal::search_at(&[-10]);
-        let plan = j.next_trial();
-        let (_, trial) = j.intent(&plan);
-        assert!(
-            matches!(
-                j.try_append(make(&trial), &[]),
-                Err(FoldError::UnknownCore(found)) if found == outside
-            ),
-            "{name}"
-        );
-    }
+#[test_case(|trial| {
+    let mut end = Journal::end_payload(trial, Outcome::Pass, None);
+    end.core = Some(core(9));
+    end.into()
+}; "end core")]
+#[test_case(|trial| {
+    let mut end = Journal::end_payload(trial, Outcome::Pass, None);
+    end.stalled_core = Some(core(9));
+    end.into()
+}; "end stalled core")]
+#[test_case(|trial| {
+    let mut end = Journal::end_payload(trial, Outcome::Pass, None);
+    end.top_requesters = set(&[9]);
+    end.into()
+}; "end top requesters")]
+#[test_case(|trial| {
+    let mut end = Journal::end_payload(trial, Outcome::Pass, None);
+    end.voltage_requests_v = [(core(9), 1.0)].into_iter().collect();
+    end.into()
+}; "end request lanes")]
+#[test_case(|trial| mce_on(trial, 9).into(); "mce core")]
+#[test_case(|trial| togi_journal::TrialProgress {
+    trial: trial.clone(),
+    detail: String::new(),
+    signal: None,
+    core: Some(core(9)),
+}.into(); "progress core")]
+fn every_core_a_payload_names_must_be_in_the_topology(make: fn(&TrialId) -> Payload) {
+    let mut j = Journal::search_at(&[-10]);
+    let plan = j.next_trial();
+    let (_, trial) = j.intent(&plan);
+    let error = j.try_append(make(&trial), &[]).unwrap_err();
+    let FoldError::UnknownCore(found) = error else {
+        panic!("expected unknown core, got {error:?}");
+    };
+    assert_eq!(found, core(9));
 }
 
 #[test]
