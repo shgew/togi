@@ -13,9 +13,8 @@ use crate::diff::LineRange;
 /// and are skipped.
 pub fn cfg_out(src: &[u8], cfg: &HostCfg) -> Vec<LineRange> {
     let mut out = Vec::new();
-    let line_of = |i: usize| {
-        saturating_source_line(src[..i].iter().filter(|&&b| b == b'\n').count())
-    };
+    let line_of =
+        |i: usize| saturating_source_line(src[..i].iter().filter(|&&b| b == b'\n').count());
     let mut blocks: Vec<usize> = Vec::new();
     // The index of the last byte outside whitespace and comments.
     let mut last: Option<usize> = None;
@@ -349,7 +348,9 @@ mod tests;
 
 /// The lexical coverage estimate clips source line ordinals at its u32 reporting ceiling.
 fn saturating_source_line(newlines: usize) -> u32 {
-    u32::try_from(newlines).unwrap_or(u32::MAX).saturating_add(1)
+    u32::try_from(newlines)
+        .unwrap_or(u32::MAX)
+        .saturating_add(1)
 }
 
 #[cfg(test)]

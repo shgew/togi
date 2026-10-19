@@ -58,7 +58,10 @@ pub fn summarize(
         for (core, ccd) in cores() {
             requests[core.index()].push(f64::from(table.voltage_request_v[core.index()]));
             if let Some(mhz) = sample.core_mhz.get(core) {
-                per_ccd.entry(ccd).or_default().push(approximate_clock_mhz(mhz));
+                per_ccd
+                    .entry(ccd)
+                    .or_default()
+                    .push(approximate_clock_mhz(mhz));
             }
         }
         for (&ccd, mhz) in &mut per_ccd {

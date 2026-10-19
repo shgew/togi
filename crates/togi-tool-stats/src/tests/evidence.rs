@@ -696,7 +696,11 @@ fn r7_request_tables_list_durations_numerically() {
 #[test_case(Some(u32::MAX as usize - 1), u32::MAX, Some(false); "just below largest requirement")]
 #[test_case(Some(u32::MAX as usize), u32::MAX, Some(true); "largest requirement")]
 #[test_case(Some(usize::MAX), u32::MAX, Some(true); "largest observed count")]
-fn establishment_compares_exact_counts(prior: Option<usize>, required: u32, expected: Option<bool>) {
+fn establishment_compares_exact_counts(
+    prior: Option<usize>,
+    required: u32,
+    expected: Option<bool>,
+) {
     let group = crate::evidence::GroupReuse {
         hunt: 1,
         group: 1,

@@ -643,7 +643,10 @@ fn a_journal_refuses_unrepresentable_voltage_bins(volts: f64, carried: bool) {
         ended.voltage_requests_v = requests;
         log.add(ended);
     }
-    assert!(matches!(Journal::new(log.events), Err(Error::VoltageBin(_))));
+    assert!(matches!(
+        Journal::new(log.events),
+        Err(Error::VoltageBin(_))
+    ));
 }
 
 #[test_case::test_case(0.0, Some(0); "zero bin")]
