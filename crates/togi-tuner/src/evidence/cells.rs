@@ -23,9 +23,8 @@ pub(crate) fn take_copied() -> u64 {
 pub(crate) fn unique<T: Clone>(shared: &mut Arc<Vec<T>>) -> &mut Vec<T> {
     #[cfg(test)]
     if Arc::strong_count(shared) > 1 {
-        let length = match u64::try_from(shared.len()) {
-            Ok(length) => length,
-            Err(_) => unreachable!("togi supports at most a 64-bit address space"),
+        let Ok(length) = u64::try_from(shared.len()) else {
+            unreachable!("togi supports at most a 64-bit address space");
         };
         COPIED.with(|copied| copied.set(copied.get() + length));
     }
