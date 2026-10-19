@@ -49,11 +49,25 @@ impl Folds {
             defects: DefectState::new(defects),
             ..Self::default()
         };
-        for event in events {
-            folds.apply_deferred(event)?;
-        }
-        folds.materialize(events)?;
+        folds.apply_batch(events)?;
         Ok(folds)
+    }
+
+    pub(crate) fn apply_batch(&mut self, events: &[Event]) -> Result<(), FoldError> {
+        let retained = events
+            .iter()
+            .rev()
+            .take_while(|event| !togi_watch::model::clears_retained_end(event))
+            .find(|event| matches!(event.payload, Payload::TrialEnd(_)))
+            .map(|event| event.seq);
+        for event in events {
+            if Some(event.seq) == retained {
+                self.apply(event)?;
+            } else {
+                self.apply_deferred(event)?;
+            }
+        }
+        Ok(())
     }
 
     /// Folds one event. A tuner state that cannot take it in stays poisoned: the journal is corrupt.

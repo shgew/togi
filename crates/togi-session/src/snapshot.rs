@@ -161,12 +161,7 @@ impl ReadState {
             {
                 let mut folds = saved.into_folds();
                 let tail = events.partition_point(|event| Some(event.seq) <= prefix.last_seq);
-                if events[tail..]
-                    .iter()
-                    .try_for_each(|event| folds.apply_deferred(event))
-                    .is_ok()
-                {
-                    folds.materialize(events)?;
+                if folds.apply_batch(&events[tail..]).is_ok() {
                     return Ok(Self { folds });
                 }
             }

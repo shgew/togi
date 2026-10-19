@@ -781,6 +781,17 @@ struct EndDerived {
     forecast: Forecast,
 }
 
+/// Whether an event makes the previous trial's between-trial outcome unobservable.
+pub fn clears_retained_end(event: &Event) -> bool {
+    matches!(
+        event.payload,
+        Payload::SessionStart(_)
+            | Payload::TrialIntent(_)
+            | Payload::Shutdown(_)
+            | Payload::CrashDetected(_)
+    )
+}
+
 fn capture_end(
     event: &Event,
     journal: &JournalState,
@@ -790,7 +801,7 @@ fn capture_end(
     cached: Option<Derived>,
     keep: bool,
 ) {
-    if matches!(event.payload, Payload::SessionStart(_)) {
+    if clears_retained_end(event) {
         *ended = None;
     } else if matches!(event.payload, Payload::TrialEnd(_)) {
         *ended = (keep && journal.session.is_some()).then(|| {
@@ -806,13 +817,7 @@ fn capture_end(
 impl Presentation {
     /// Retains the last trial's pre-end view before the shared reducers consume its result.
     pub fn before_event(&mut self, event: &Event, journal: &JournalState, tuner: &TunerState) {
-        if matches!(
-            event.payload,
-            Payload::SessionStart(_)
-                | Payload::TrialIntent(_)
-                | Payload::Shutdown(_)
-                | Payload::CrashDetected(_)
-        ) {
+        if clears_retained_end(event) {
             self.ended = None;
         } else if matches!(event.payload, Payload::TrialEnd(_)) && journal.session.is_some() {
             self.ended = Some(EndState::Ready(Box::new(RetainedEnd {
@@ -826,13 +831,7 @@ impl Presentation {
     pub fn defer_before_event(&mut self, event: &Event) {
         if matches!(event.payload, Payload::TrialEnd(_)) {
             self.ended = Some(EndState::Deferred(event.seq));
-        } else if matches!(
-            event.payload,
-            Payload::SessionStart(_)
-                | Payload::TrialIntent(_)
-                | Payload::Shutdown(_)
-                | Payload::CrashDetected(_)
-        ) {
+        } else if clears_retained_end(event) {
             self.ended = None;
         }
     }

@@ -135,3 +135,47 @@ proptest! {
         }
     }
 }
+
+#[test_case::test_case(false; "shutdown")]
+#[test_case::test_case(true; "detected crash")]
+fn snapshot_then_config_reload_has_the_same_cleared_trial_end_as_full_replay(crash: bool) {
+    let (events, _) = generated(1, 2);
+    let cut = events
+        .iter()
+        .rposition(|event| {
+            if crash {
+                matches!(event.payload, togi_journal::Payload::CrashDetected(_))
+            } else {
+                matches!(event.payload, togi_journal::Payload::Shutdown(_))
+            }
+        })
+        .unwrap()
+        + 1;
+    let config = events
+        .iter()
+        .find_map(|event| {
+            matches!(event.payload, togi_journal::Payload::ConfigLoaded(_))
+                .then(|| event.payload.clone())
+        })
+        .unwrap();
+    let mut events = events[..cut].to_vec();
+    let last = events.last().unwrap();
+    let reload = Event::new(
+        last.seq.next().unwrap(),
+        togi_journal::Stamp {
+            time: last.time,
+            mono: None,
+        },
+        last.boot.clone(),
+        Vec::new(),
+        config,
+    );
+    events.push(reload);
+    let fs = MemFs::new();
+    fs.put("/state/events.jsonl", lines(&events));
+    publish(&fs, &events, cut);
+    let full = togi_watch::model::project(&events);
+    let restored = Watch::read_in(&fs, Path::new("/state"), &events);
+    assert!(full.snapshot().ended.is_none());
+    assert_eq!(restored.snapshot(), full.snapshot());
+}
