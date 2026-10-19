@@ -325,16 +325,18 @@ pub(crate) fn hunt_facts(
         .shapes
         .get(&plan.number)
         .map(|shape| parking_of(shape, plan.candidates));
+    let mut group_signals: Vec<_> = facts
+        .group_signals
+        .iter()
+        .filter(|((hunt, _), _)| *hunt == plan.number)
+        .map(|((_, group), signal)| (*group, *signal))
+        .collect();
+    group_signals.sort_unstable_by_key(|(group, _)| *group);
     HuntFacts {
         started: facts.hunt_started.get(&plan.number).copied(),
         cause,
         parking,
-        group_signals: facts
-            .group_signals
-            .iter()
-            .filter(|((hunt, _), _)| *hunt == plan.number)
-            .map(|((_, group), signal)| (*group, *signal))
-            .collect(),
+        group_signals,
     }
 }
 

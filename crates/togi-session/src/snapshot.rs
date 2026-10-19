@@ -48,10 +48,15 @@ pub fn verify_snapshot(
     if prefix.last_seq != saved.facts.last_seq {
         return Ok(SnapshotStatus::Different);
     }
+    let fresh = Folds::replay(events)?;
+    let restored = ReadState::restore(Some((prefix, saved.clone())), events)?;
+    if restored.folds != fresh {
+        return Ok(SnapshotStatus::Different);
+    }
     if saved.facts.last_seq != events.last().map(|event| event.seq) {
         return Ok(SnapshotStatus::Stale(saved.facts.last_seq));
     }
-    let fresh = StateDocument::of(&Folds::replay(events)?);
+    let fresh = StateDocument::of(&fresh);
     Ok(if saved == fresh {
         SnapshotStatus::Matches
     } else {

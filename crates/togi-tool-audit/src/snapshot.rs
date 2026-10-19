@@ -61,6 +61,7 @@ pub(crate) fn audit(
             ))]);
         }
     };
+    let verification = togi_session::verify_snapshot(dir, events);
     if snapshot.facts.last_seq != Some(last) {
         return Ok(if finished {
             vec![violation(format!(
@@ -102,7 +103,7 @@ pub(crate) fn audit(
         ))),
     }
     if found.is_empty() {
-        match togi_session::verify_snapshot(dir, events) {
+        match verification {
             Ok(togi_session::SnapshotStatus::Matches) => {}
             Ok(status) => found.push(violation(format!(
                 "state.json full folded state differs: {status:?}"
