@@ -34,3 +34,10 @@ select expect(
            '20260102T000000Z 0002 0 -5 4800 -', '20260102T000000Z 0002 1 -7 4900 -'],
     'core samples join each loaded core to its offset in its own session'
 );
+
+select expect(
+    (select cores_power_w from samples where not archived and trial = '0002') = 50.0
+        and (select core_mhz[15] from samples where not archived and trial = '0002') = 1000
+        and (select count(*) from samples where cores_power_w is null) = 5,
+    'samples retain idle-core clocks and aggregate core power while older samples omit power'
+);

@@ -295,7 +295,11 @@ impl Observer {
         self.last = Some(LastSample {
             elapsed_ms: sample.elapsed_ms,
             tctl_c: sample.tctl_c,
-            core_mhz: sample.core_mhz,
+            core_mhz: self
+                .loaded
+                .iter()
+                .filter_map(|&core| sample.core_mhz.get(core).map(|mhz| (core, mhz)))
+                .collect(),
         });
         self.count += 1;
     }

@@ -49,6 +49,11 @@ fn each_tick_persists_a_conditions_sample_with_sensors_workers_and_power() {
             write(&rig, "cpu/cpu2/cpufreq/scaling_cur_freq", "4500000\n");
             write(&rig, "cpu/cpu3/cpufreq/scaling_cur_freq", "1000000\n");
             write(&rig, "powercap/intel-rapl:0/energy_uj", "0\n");
+            write(
+                &rig,
+                "powercap/intel-rapl:0/intel-rapl:0:0/energy_uj",
+                "0\n",
+            );
             let handle = rig.start(spec(Regime::R1, &[2], secs(3))).await.unwrap();
             for (at, cpu_ms) in [(900_u64, 1000_u64), (1900, 2000)] {
                 let process = rig.fake.process(0);
@@ -69,6 +74,13 @@ fn each_tick_persists_a_conditions_sample_with_sensors_workers_and_power() {
                     memory
                         .write_file(dir.join("powercap/intel-rapl:0/energy_uj"), energy, None)
                         .unwrap();
+                    memory
+                        .write_file(
+                            dir.join("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj"),
+                            energy,
+                            None,
+                        )
+                        .unwrap();
                 });
             }
             let run = finish(&handle).await;
@@ -85,8 +97,10 @@ fn each_tick_persists_a_conditions_sample_with_sensors_workers_and_power() {
                     Some(&58)
                 );
                 assert_eq!(sample.core_mhz.get(core(2)), Some(4500));
-                assert_eq!(sample.core_mhz.len(), 1);
+                assert_eq!(sample.core_mhz.get(core(3)), Some(1000));
+                assert_eq!(sample.core_mhz.len(), 2);
                 assert_eq!(sample.package_power_w, Some(10.0));
+                assert_eq!(sample.cores_power_w, Some(10.0));
                 assert_eq!(
                     sample.worker_cpu_ms.get(core(2)),
                     Some(1000 * (i64::try_from(index).unwrap() + 1))
@@ -111,6 +125,7 @@ fn missing_sensors_are_omitted_not_zeroed() {
             let sample = &samples[0];
             assert!(sample.tctl_c.is_none() && sample.tccd_c.is_none());
             assert!(sample.core_mhz.is_empty() && sample.package_power_w.is_none());
+            assert!(sample.cores_power_w.is_none());
         })
         .await;
     });

@@ -572,13 +572,21 @@ fn trial_conditions_round_trip_and_omit_empty_sensors() {
         serde_json::from_str::<TrialConditions>(r#"{"elapsed_ms":1000,"future":true}"#).unwrap(),
         minimal
     );
+    let legacy = serde_json::from_str::<TrialConditions>(
+        r#"{"elapsed_ms":1000,"core_mhz":{"0":5500},"package_power_w":142.5}"#,
+    )
+    .unwrap();
+    assert_eq!(legacy.core_mhz.get(core(0)), Some(5500));
+    assert_eq!(legacy.package_power_w, Some(142.5));
+    assert_eq!(legacy.cores_power_w, None);
     let full = TrialConditions {
         elapsed_ms: 5000,
         tctl_c: Some(0),
         tccd_c: Some([("Tccd1".to_owned(), 60)].into()),
-        core_mhz: [(core(0), 5500)].into_iter().collect(),
+        core_mhz: (0..16).map(|id| (core(id), 5500)).collect(),
         worker_cpu_ms: [(core(0), 0), (core(7), 4000)].into_iter().collect(),
         package_power_w: Some(142.5),
+        cores_power_w: Some(100.0),
         pm_table: Some(PmTable {
             power_w: [1.5; 16],
             voltage_request_v: [1.25; 16],

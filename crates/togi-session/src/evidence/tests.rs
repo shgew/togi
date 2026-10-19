@@ -573,11 +573,35 @@ fn request_telemetry_needs_twenty_samples_after_the_warmup_and_every_loaded_core
 }
 
 #[test]
+fn idle_core_clocks_and_core_power_do_not_change_loaded_core_summaries() {
+    let samples = telemetry_samples(20);
+    let loaded = set(&[2, 7]);
+    let ccd = |core: CoreId| CcdId::try_from(core.get() / 4).ok();
+    let before =
+        summarize_samples(samples.iter().cloned().map(Ok), loaded, Regime::R7, ccd).unwrap();
+    let extended = samples.into_iter().map(|mut sample| {
+        sample.core_mhz.set(core(0), 100);
+        sample.core_mhz.set(core(4), 6000);
+        sample.cores_power_w = Some(50.0);
+        Ok(sample)
+    });
+    let after = summarize_samples(extended, loaded, Regime::R7, ccd).unwrap();
+    assert_eq!(after, before);
+}
+
+#[test]
 fn a_summary_fills_an_end_with_the_stall_of_a_failure_and_the_last_sample_of_a_crash() {
     let samples = [(1, 1000), (2, 1000), (3, 1000)].map(|(second, cpu)| TrialConditions {
         elapsed_ms: second * 1000,
         tctl_c: Some(70 + second),
-        core_mhz: [(core(2), 4400), (core(7), 4200)].into_iter().collect(),
+        core_mhz: [
+            (core(2), 4400),
+            (core(7), 4200),
+            (core(0), 100),
+            (core(15), 6000),
+        ]
+        .into_iter()
+        .collect(),
         worker_cpu_ms: [(core(2), second * 100), (core(7), cpu)]
             .into_iter()
             .collect(),
