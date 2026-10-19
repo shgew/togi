@@ -493,7 +493,11 @@
               trial-scope-tests = craneLib.mkCargoDerivation (
                 cargoCheck trialSource {
                   pnameSuffix = "-trial-scope-tests";
-                  nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
+                  nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [
+                    pkgs.jq
+                    craneLib.removeReferencesToRustToolchainHook
+                    craneLib.removeReferencesToVendoredSourcesHook
+                  ];
                   buildPhaseCargoCommand = ''
                     cargoWithProfile test --locked -p togi-trial --features hardware --test hardware --test cached_errors \
                       --no-run --message-format json-render-diagnostics > cargo-messages.json
@@ -515,7 +519,11 @@
               vm-recovery-tests = craneLib.mkCargoDerivation (
                 cargoCheck recoverySource {
                   pnameSuffix = "-vm-recovery-tests";
-                  nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [ pkgs.jq ];
+                  nativeBuildInputs = cargoArgs.nativeBuildInputs ++ [
+                    pkgs.jq
+                    craneLib.removeReferencesToRustToolchainHook
+                    craneLib.removeReferencesToVendoredSourcesHook
+                  ];
                   buildPhaseCargoCommand = ''
                     cargoWithProfile test --locked -p togi --test vm_recovery --no-run \
                       --message-format json-render-diagnostics > cargo-messages.json
