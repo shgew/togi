@@ -217,15 +217,16 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
     );
     let mut now_height = usize::from(rows.now_height);
     let mut outcomes_height = usize::from(rows.outcomes_height);
-    let mut ccd_y = usize::from(rows.ccd);
-    if scene.s.resting() && !scene.s.between_trials() {
+    let ccd_y = if scene.s.resting() && !scene.s.between_trials() {
         now_height = resting_band(scene).lines.len();
         if class != SizeClass::Compact {
             now_height += 1;
         }
         outcomes_height = 0;
-        ccd_y = usize::from(rows.now) + now_height + 1;
-    }
+        usize::from(rows.now) + now_height + 1
+    } else {
+        usize::from(rows.ccd)
+    };
     let mut ids: Vec<CcdId> = scene.s.cores.iter().map(|core| core.ccd).collect();
     ids.sort_unstable();
     ids.dedup();
@@ -246,6 +247,17 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
             height = height.min(share);
         }
         let mut columns = match class {
+            SizeClass::Medium | SizeClass::Compact if w >= DENSE_WIDTH => CoreColumns {
+                id: 2,
+                offset: 6,
+                state: 11,
+                gauge: 20,
+                cells: 50,
+                failure: 71,
+                failure_width: 4,
+                note: w,
+                brief: true,
+            },
             SizeClass::Wide => CoreColumns {
                 id: 2,
                 offset: 6,
@@ -291,19 +303,6 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
                 brief: true,
             },
         };
-        if class != SizeClass::Wide && w >= DENSE_WIDTH {
-            columns = CoreColumns {
-                id: 2,
-                offset: 6,
-                state: 11,
-                gauge: 20,
-                cells: 50,
-                failure: 71,
-                failure_width: 4,
-                note: w,
-                brief: true,
-            };
-        }
         columns.cells = columns.cells.min(w.saturating_sub(columns.gauge + 1));
         let x = crate::numbers::saturating_cells(x);
         let top = crate::numbers::saturating_cells(y);

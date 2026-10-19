@@ -152,8 +152,7 @@ impl Source {
             Err(source) => return self.unavailable(source),
         };
         self.stat_error = None;
-        let mut appended = false;
-        if let Some(before) = self.identity {
+        let appended = if let Some(before) = self.identity {
             let same = before.same_file(now);
             if same && now.size == before.size && now.modified == before.modified {
                 return false;
@@ -161,8 +160,10 @@ impl Source {
             if !same || now.size < before.size {
                 self.held = None;
             }
-            appended = same && now.size > before.size;
-        }
+            same && now.size > before.size
+        } else {
+            false
+        };
         self.identity = Some(now);
         self.load(appended);
         if !matches!(&self.content, Content::Ready(model, ..) if model.problem().is_none()) {

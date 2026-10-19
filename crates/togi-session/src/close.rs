@@ -48,13 +48,14 @@ impl Session<'_> {
         for error in std::mem::take(&mut self.unconfirmed) {
             errors.push(self.keep(SessionError::Machine(error)));
         }
-        let mut panic = None;
-        if self.lifecycle.fault().is_none() && self.appender.failure().is_none() {
+        let panic = if self.lifecycle.fault().is_none() && self.appender.failure().is_none() {
             let cleanup = self.clean_up(stop);
             stop = cleanup.stop;
             errors.extend(cleanup.errors);
-            panic = cleanup.panic;
-        }
+            cleanup.panic
+        } else {
+            None
+        };
         let emergency = self
             .appender
             .failure()

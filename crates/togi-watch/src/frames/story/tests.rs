@@ -8,9 +8,8 @@ use std::time::Duration;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use togi_journal::{
-    Activity, CheckingChain, CheckingStep, Combination, CycleEvent, DeadEnd, DeadEndCondition,
-    Decision, Failure, HuntEnd, HuntOutcome, HuntStart, Member, Outcome, ShutdownReason,
-    TunerDecision,
+    Activity, CheckingChain, CheckingStep, CycleEvent, DeadEnd, DeadEndCondition, Decision,
+    Failure, HuntOutcome, Member, Outcome, ShutdownReason, TunerDecision,
 };
 use togi_machine::{CcdId, Condition, CoreId, PerCore, Regime, ResetKind, Signal, workloads};
 use togi_tuner::{
@@ -3211,21 +3210,24 @@ mod the_outcome_lines {
         let (mut fx, next) = r7_fx();
         let mut pass = branch(Premise::Pass);
         pass.decisions = vec![
-            DecisionPayload::HuntStart(HuntStart {
-                ..crate::tests::kit::hunt_start(4, &[0, 1])
-            }),
-            DecisionPayload::Combination(Combination {
-                ..crate::tests::kit::combination(2, 4, &[(0, -10), (1, -20)], false)
-            }),
+            DecisionPayload::HuntStart(crate::tests::kit::hunt_start(4, &[0, 1])),
+            DecisionPayload::Combination(crate::tests::kit::combination(
+                2,
+                4,
+                &[(0, -10), (1, -20)],
+                false,
+            )),
         ];
         pass.next = Some(next);
         fx.forecast.branches = vec![pass];
         let rows = fx.row_set();
         assert_eq!(rows[0].compact, "→ hunt 4");
         let mut hunt_end = branch(Premise::Unnamed);
-        hunt_end.decisions = vec![DecisionPayload::HuntEnd(HuntEnd {
-            ..crate::tests::kit::hunt_end(4, HuntOutcome::Direct, &[1])
-        })];
+        hunt_end.decisions = vec![DecisionPayload::HuntEnd(crate::tests::kit::hunt_end(
+            4,
+            HuntOutcome::Direct,
+            &[1],
+        ))];
         fx.forecast.branches = vec![hunt_end];
         assert_eq!(fx.row_set()[0].compact, "→ hunt ends");
     }

@@ -5,7 +5,7 @@ use crate::files::{read_attribute, read_attribute_from};
 #[test]
 fn reads_a_small_regular_file() {
     assert_eq!(
-        read_attribute_from(Ok("active\n".as_bytes())).unwrap(),
+        read_attribute_from(Ok(b"active\n".as_slice())).unwrap(),
         "active\n"
     );
 }

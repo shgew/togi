@@ -13,7 +13,7 @@ use ratatui::backend::{Backend, CrosstermBackend};
 use ratatui::buffer::Buffer;
 use togi_journal::Event;
 use togi_watch::frames::{frame_area, render};
-use togi_watch::model::{Model, project};
+use togi_watch::model::project;
 use togi_watch::screen::{Colours, Journal, Quit, Screen, View};
 use togi_watchtest::Scenario;
 
@@ -35,7 +35,7 @@ fn events(scenario: Scenario) -> Vec<Event> {
 }
 
 fn frame(c: &mut Criterion, name: &str, events: &[Event]) {
-    let model: Model = project(events);
+    let model = project(events);
     let snapshot = model.snapshot();
     let journal = Journal::Ready {
         snapshot,

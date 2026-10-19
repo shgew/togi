@@ -354,7 +354,7 @@ fn the_coupled_shift_moves_workload_limits_and_leaves_unsupported_ones() {
 fn an_initial_machine_seeds_no_joint_whatever_failed_below_zero() {
     let mut records = vec![fact(&[-30; 8], Regime::R7, &[0, 1], 60, crash())];
     records.push(fact(&[-25; 8], Regime::R7, &[0, 1], 60, crash()));
-    let cfg: MachineDefinition = initial_config(&refs(&records));
+    let cfg = initial_config(&refs(&records));
     assert!(cfg.joint.is_empty() && cfg.ccd.is_none() && cfg.shared_voltage.is_none());
     assert_eq!(cfg.core.len(), 16);
     assert_eq!(cfg.core[3], core_def(3));
