@@ -515,9 +515,7 @@ fn zero_diagnostic_ignores_known_failure_skips_and_stale_trials() {
     assert!(j.try_append(late.into(), &[first_intent]).is_err());
     assert_eq!(
         j.diagnostic(failure),
-        Some(&Diagnostic::Running {
-            trial: second.clone()
-        })
+        Some(&Diagnostic::Running { trial: second })
     );
 
     let mut zero = Zero::default();

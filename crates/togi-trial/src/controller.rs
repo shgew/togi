@@ -660,7 +660,7 @@ mod tests {
     #[test]
     fn a_stable_process_takes_two_passes_and_reports_complete() {
         let fake = Fake::with(&[(1, &[0, 1]), (2, &[0, 1]), (3, &[1])]);
-        let moved = Threads::over(fake.clone()).confine(&cpus(&[1])).unwrap();
+        let moved = Threads::over(fake).confine(&cpus(&[1])).unwrap();
         assert!(moved.complete(), "{moved:?}");
         assert_eq!(moved.threads, 3);
     }

@@ -216,7 +216,7 @@ fn mono_and_cause_are_omitted_when_empty() {
     let line: Value = serde_json::from_str(&bare.encode().unwrap()).unwrap();
     assert!(line.get("mono_ms").is_none());
     assert!(line.get("cause").is_none());
-    let mut zero = bare.clone();
+    let mut zero = bare;
     zero.mono = Some(std::time::Duration::ZERO);
     let line: Value = serde_json::from_str(&zero.encode().unwrap()).unwrap();
     assert_eq!(line["mono_ms"], json!(0));

@@ -788,7 +788,7 @@ mod tests {
             stat_reason(&proc.scope_processes().unwrap_err()),
             Some("no closing parenthesis")
         );
-        let missing = Proc::with_inputs(Fixture::path().join("nowhere"), 100, proc.inputs.clone());
+        let missing = Proc::with_inputs(Fixture::path().join("nowhere"), 100, proc.inputs);
         assert!(matches!(
             missing.scope_processes(),
             Err(ProcError::List { source, .. }) if source.kind() == io::ErrorKind::NotFound

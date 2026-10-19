@@ -255,7 +255,7 @@ fn the_same_seed_draws_the_same_failures_and_telemetry_changes_none() {
         let dir = std::rc::Rc::new(crate::common::MemorySamples::default());
         let mut rig = rig_with_seed(&model, seed);
         if with_samples {
-            rig.sim.set_sample_storage(dir.clone());
+            rig.sim.set_sample_storage(dir);
         }
         let mut out = Vec::new();
         let mut failures = 0usize;

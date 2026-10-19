@@ -861,7 +861,7 @@ fn alone_checks_follow_the_topology_order_not_core_ids() {
         .filter(|check| check.condition == Condition::Alone)
         .map(|check| check.class.loaded().iter().next().unwrap())
         .collect();
-    let mut unique = alone.clone();
+    let mut unique = alone;
     unique.dedup();
     assert_eq!(unique, order);
     assert_ne!(order, [core(0), core(1), core(2), core(3)]);
@@ -1236,7 +1236,7 @@ fn a_round_intent_is_scheduled_only_for_the_open_rounds_own_checks() {
         &j,
         &TrialPlan {
             activity: Activity::Checking,
-            ..next.clone()
+            ..next
         },
     );
     j.assert_resumes();

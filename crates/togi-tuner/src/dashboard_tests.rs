@@ -181,7 +181,7 @@ fn cycle_plan_dynamic_chain_requirements() {
     let whole = part(&[0, 1, 2, 3, 4, 5, 6, 7], None, false, 120, (1, 600));
     assert_eq!(
         parts(&j, 0),
-        [first.clone(), second.clone(), whole.clone()],
+        [first, second, whole],
         "invented a partial before its predecessor passed"
     );
     pass_part(&mut j, &[0, 1, 2, 3], &FULL_REQUESTS);
@@ -1426,7 +1426,7 @@ fn search_turns_keep_an_unfinished_second_regime_first_then_rotate_past_the_curs
     let rotated = [
         (1, both.clone(), false),
         (2, both.clone(), false),
-        (0, both.clone(), false),
+        (0, both, false),
     ];
     assert_eq!(turns(&j), rotated);
     j.assert_resumes();
