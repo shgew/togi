@@ -213,9 +213,8 @@ fn read_snapshot(
         Some(known) if known.backlog => return Outcome::Replaced,
         Some(_) | None => 0,
     };
-    let want = match usize::try_from(size.saturating_sub(start).min(POLL_LIMIT as u64)) {
-        Ok(want) => want,
-        Err(_) => return Outcome::Failed(Errno::OVERFLOW),
+    let Ok(want) = usize::try_from(size.saturating_sub(start).min(POLL_LIMIT as u64)) else {
+        return Outcome::Failed(Errno::OVERFLOW);
     };
     buffer.resize(want, 0);
     let mut got = 0;

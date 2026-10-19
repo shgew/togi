@@ -163,11 +163,10 @@ impl Sensors {
     }
 }
 
+type Temperatures = (Option<i64>, Option<BTreeMap<String, i64>>);
+
 /// The first hwmon directory named `k10temp` or `zenpower`; it is not skipped for lacking sensors.
-fn temperatures(
-    inputs: &Inputs,
-    root: &Path,
-) -> Result<(Option<i64>, Option<BTreeMap<String, i64>>), SensorError> {
+fn temperatures(inputs: &Inputs, root: &Path) -> Result<Temperatures, SensorError> {
     let Ok(entries) = inputs.read_dir(root) else {
         return Ok((None, None));
     };

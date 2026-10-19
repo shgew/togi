@@ -1060,15 +1060,14 @@ impl<O: Os> Supervisor<O> {
         }
         match env.os.usage(pid) {
             Ok(usage) => {
-                match sample_millis(usage.cpu_time) {
-                    Ok(milliseconds) => workers.set(instance.plan.core, milliseconds),
-                    Err(_) => {
-                        let error = ProcError::CpuTimeOverflow { pid };
-                        self.judge.observe(Observation::SamplingLoss {
-                            instance: index,
-                            what: format!("usage sampling lost: {}", error_chain(&error)),
-                        });
-                    }
+                if let Ok(milliseconds) = sample_millis(usage.cpu_time) {
+                    workers.set(instance.plan.core, milliseconds);
+                } else {
+                    let error = ProcError::CpuTimeOverflow { pid };
+                    self.judge.observe(Observation::SamplingLoss {
+                        instance: index,
+                        what: format!("usage sampling lost: {}", error_chain(&error)),
+                    });
                 }
                 let active = instance.observed.active_at(now);
                 if let Some(stalled) = instance.observed.stall.observe(active, usage.cpu_time) {
