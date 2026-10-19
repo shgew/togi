@@ -6,9 +6,9 @@ use togi_machine::{Condition, Regime, workloads};
 
 use super::plan::GroupOutcome;
 use super::support::{
-    SHORT, at, attribute, cancel_hunt, ended, group_of, hunt_of, ids, limit_session, members_of,
-    passed_cycle, projection_cases, ran_group, reach, repeated_core_oracle, repeated_session,
-    restore_has_room, run_group, start_hunt_at, start_regime_hunt,
+    ProjectionCase, SHORT, at, attribute, cancel_hunt, ended, group_of, hunt_of, ids,
+    limit_session, members_of, passed_cycle, ran_group, reach, repeated_core_oracle,
+    repeated_session, restore_has_room, run_group, start_hunt_at, start_regime_hunt,
 };
 use crate::later_tests::{pass_cycles, start_cycle, strikes};
 use crate::testkit::{Journal, Start, config, set};
@@ -1448,28 +1448,34 @@ fn hunt_escalation_and_inferred_group() {
     panic!("the escalated hunt did not finish");
 }
 
-#[test]
-fn active_hunt_projection() {
-    for case in projection_cases() {
-        let (mut j, seq) = case.journal();
-        let view = j.run().hunt_groups();
-        assert_eq!(view.len(), 1, "{}", case.name);
-        let group = &view[0];
-        assert_eq!(group.number, 1, "{}", case.name);
-        assert_eq!(group.seq, seq, "{}", case.name);
-        assert_eq!(core_ids(group.cores), [0, 1], "{}", case.name);
-        assert_eq!(group.stage, case.stage, "{}", case.name);
-        assert_eq!(group.probe, case.probe, "{}", case.name);
-        assert_eq!(group.held, case.held, "{}", case.name);
-        assert_eq!(group.needed, 5, "{}", case.name);
-        assert_eq!(group.passed, case.passes, "{}", case.name);
-        assert_eq!(group.outcome, case.outcome, "{}", case.name);
-        assert!(!group.carried, "{}", case.name);
-        j.assert_resumes();
-        cancel_hunt(&mut j, 2);
-        assert!(j.run().hunt_groups().is_empty(), "{}", case.name);
-        j.assert_resumes();
-    }
+#[test_case::test_case(&ProjectionCase::running_reuses_passes(); "running reuses earlier valid passes")]
+#[test_case::test_case(&ProjectionCase::passing_complement(); "passing complement accumulates trials")]
+#[test_case::test_case(&ProjectionCase::failure_invalidates_passes(); "failure invalidates earlier passes")]
+#[test_case::test_case(&ProjectionCase::inferred_pass(); "inferred pass")]
+#[test_case::test_case(&ProjectionCase::inferred_failure(); "inferred failure")]
+#[test_case::test_case(&ProjectionCase::skipped(); "skipped")]
+#[test_case::test_case(&ProjectionCase::reset_excludes_passes(); "reset excludes reused evidence")]
+#[test_case::test_case(&ProjectionCase::escalated_full(); "escalated full uses only new trials")]
+#[test_case::test_case(&ProjectionCase::member_probe(); "member probe preserves held members")]
+fn active_hunt_projection(case: &ProjectionCase) {
+    let (mut j, seq) = case.journal();
+    let view = j.run().hunt_groups();
+    assert_eq!(view.len(), 1, "{}", case.name);
+    let group = &view[0];
+    assert_eq!(group.number, 1, "{}", case.name);
+    assert_eq!(group.seq, seq, "{}", case.name);
+    assert_eq!(core_ids(group.cores), [0, 1], "{}", case.name);
+    assert_eq!(group.stage, case.stage, "{}", case.name);
+    assert_eq!(group.probe, case.probe, "{}", case.name);
+    assert_eq!(group.held, case.held, "{}", case.name);
+    assert_eq!(group.needed, 5, "{}", case.name);
+    assert_eq!(group.passed, case.passes, "{}", case.name);
+    assert_eq!(group.outcome, case.outcome, "{}", case.name);
+    assert!(!group.carried, "{}", case.name);
+    j.assert_resumes();
+    cancel_hunt(&mut j, 2);
+    assert!(j.run().hunt_groups().is_empty(), "{}", case.name);
+    j.assert_resumes();
 }
 
 #[test]

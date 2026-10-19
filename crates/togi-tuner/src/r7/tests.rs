@@ -530,8 +530,7 @@ fn named_target_clock_tolerance_has_an_inclusive_25_mhz_boundary(gap: i64, admit
     assert_eq!(fx.named(workload(0), 0, Some(5397)).is_some(), admitted);
 }
 
-#[test]
-fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
+fn reconstructed_ccd1_evidence() -> (Fx, Vec<CoreInfo>) {
     // Decision-input reconstruction of session 20261010T230611Z: carried seqs 929–934,
     // and failures 0106–0119. The Go wire journal cannot be decoded by the Rust reader.
     let infos: Vec<CoreInfo> = (0..16_u8)
@@ -598,22 +597,30 @@ fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
             &[(1, mhz)],
         ));
     }
-    for (trial, clock) in [
-        ("0106", 5040),
-        ("0107", 5040),
-        ("0108", 5040),
-        ("0109", 5036),
-        ("0111", 5036),
-        ("0115", 5017),
-        ("0119", 5034),
-    ] {
-        let target = fx.named(workload(0), 11, Some(clock)).unwrap();
-        assert_eq!(target.volts, 1.046_082_615_852_356, "{trial}");
-        assert_eq!(
-            target.cited,
-            vec![seq(929), seq(930), seq(931), seq(932), seq(933)]
-        );
-    }
+    (fx, infos)
+}
+
+#[test_case::test_case("0106", 5040; "trial 0106 at 5040 MHz")]
+#[test_case::test_case("0107", 5040; "trial 0107 at 5040 MHz")]
+#[test_case::test_case("0108", 5040; "trial 0108 at 5040 MHz")]
+#[test_case::test_case("0109", 5036; "trial 0109 at 5036 MHz")]
+#[test_case::test_case("0111", 5036; "trial 0111 at 5036 MHz")]
+#[test_case::test_case("0115", 5017; "trial 0115 at 5017 MHz")]
+#[test_case::test_case("0119", 5034; "trial 0119 at 5034 MHz")]
+fn reconstructed_ccd1_target_matches_each_recorded_trial(trial: &str, clock: i64) {
+    let (fx, _) = reconstructed_ccd1_evidence();
+    let target = fx.named(workload(0), 11, Some(clock)).unwrap();
+    assert_eq!(target.volts, 1.046_082_615_852_356, "{trial}");
+    assert_eq!(
+        target.cited,
+        vec![seq(929), seq(930), seq(931), seq(932), seq(933)]
+    );
+}
+
+#[test]
+fn reconstructed_0106_to_0119_uses_the_recorded_ccd1_target() {
+    let (fx, infos) = reconstructed_ccd1_evidence();
+    let ccd1 = [8, 9, 10, 11, 12, 13, 14, 15];
     let target = fx.named(workload(0), 11, Some(5040)).unwrap();
     assert_eq!(
         backoff_counts(

@@ -875,6 +875,36 @@ fn only_a_failure_at_zero_naming_a_core_sets_a_failure_point(case: DeadEnd) {
 }
 
 #[test]
+fn a_named_zero_failure_after_smu_and_unnamed_stops_sets_the_failure_point() {
+    let dead_end = |condition, core_id: Option<u8>| DeadEnd {
+        condition,
+        core: core_id.map(core),
+        detail: String::new(),
+        action: None,
+    };
+    let mut j = Journal::search_at(&[-10]);
+
+    j.append(dead_end(DeadEndCondition::Smu, Some(0)).into(), &[]);
+    assert_eq!(j.run().failure_point(core(0)), None);
+    j.append(dead_end(DeadEndCondition::FailureAtZero, None).into(), &[]);
+    assert_eq!(j.run().failure_point(core(0)), None);
+
+    let seq = j.append(
+        dead_end(DeadEndCondition::FailureAtZero, Some(0)).into(),
+        &[],
+    );
+    assert_eq!(j.run().failure_point(core(0)), Some(off(0)));
+    assert_eq!(j.run().core(core(0)).zero_seq, Some(seq));
+    assert!(matches!(
+        j.try_append(
+            dead_end(DeadEndCondition::FailureAtZero, Some(9)).into(),
+            &[]
+        ),
+        Err(FoldError::UnknownCore(found)) if found == core(9)
+    ));
+}
+
+#[test]
 fn a_reset_of_every_core_is_the_journals_business() {
     let mut j = Journal::search_at(&[-10]);
     let before = j.run().core(core(0));
@@ -925,6 +955,43 @@ fn kinds_later_groups_own_change_no_tuner_state(payload: Payload) {
     j.append(payload, &[]);
     assert_eq!((j.run().core(core(0)), j.state.next().ok()), before);
 
+    j.assert_resumes();
+}
+
+#[test]
+fn notice_ranking_and_shutdown_leave_tuning_state_and_replay_unchanged() {
+    let mut j = Journal::search_at(&[-10]);
+    let before = (j.run().core(core(0)), j.state.next().ok());
+    j.append(
+        togi_journal::SessionNotice {
+            notice: Notice::NonzeroBaseline,
+            cores: CoreSet::default(),
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!((j.run().core(core(0)), j.state.next().ok()), before);
+    j.append(
+        togi_journal::HostRanking {
+            ranking: vec![core(0)],
+            values: PerCore::default(),
+            detail: None,
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!((j.run().core(core(0)), j.state.next().ok()), before);
+    j.append(
+        togi_journal::Shutdown {
+            reason: togi_journal::ShutdownReason::Command,
+            kernel_cursor: None,
+            kernel_error: None,
+            cycles: None,
+        }
+        .into(),
+        &[],
+    );
+    assert_eq!((j.run().core(core(0)), j.state.next().ok()), before);
     j.assert_resumes();
 }
 

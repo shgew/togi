@@ -13,7 +13,7 @@ use crate::dashboard::{
 };
 use crate::hunt::plan::GroupOutcome;
 use crate::hunt::support::{
-    at, attribute, cancel_hunt, group_of, hunt_of, ids, limit_session, projection_cases,
+    ProjectionCase, at, attribute, cancel_hunt, group_of, hunt_of, ids, limit_session,
     repeated_core_oracle, repeated_session, start_hunt_at,
 };
 use crate::testkit::{Journal, Start, config, fresh, set};
@@ -882,38 +882,44 @@ fn hunt_probe_without_recorded_checking_profile() {
     j.assert_resumes();
 }
 
-#[test]
-fn active_hunt_projection() {
-    for case in projection_cases() {
-        let (mut j, _) = case.journal();
-        let outcome = match case.outcome {
-            None => GroupState::Running,
-            Some(GroupOutcome::Passed) => GroupState::Passed,
-            Some(GroupOutcome::Failed) => GroupState::Failed,
-            Some(GroupOutcome::Skipped) => GroupState::Skipped,
-        };
-        let plan = j
-            .state
-            .hunt_plan()
-            .unwrap_or_else(|| panic!("{}", case.name));
-        assert_eq!(plan.number, 2, "{}", case.name);
-        assert_eq!(plan.candidates, set(&ids(4)), "{}", case.name);
-        assert_eq!(plan.groups.len(), 1, "{}", case.name);
-        let view = &plan.groups[0];
-        assert_eq!(view.number, 1, "{}", case.name);
-        assert_eq!(view.cores, set(&[0, 1]), "{}", case.name);
-        assert_eq!(view.stage, case.stage, "{}", case.name);
-        assert_eq!(view.probe, case.probe, "{}", case.name);
-        assert_eq!(view.held, case.held, "{}", case.name);
-        assert_eq!(view.needed, 5, "{}", case.name);
-        assert_eq!(view.passed, case.passes, "{}", case.name);
-        assert_eq!(view.outcome, outcome, "{}", case.name);
-        assert!(!view.carried, "{}", case.name);
-        j.assert_resumes();
-        cancel_hunt(&mut j, 2);
-        assert_eq!(j.state.hunt_plan(), None, "{}", case.name);
-        j.assert_resumes();
-    }
+#[test_case::test_case(&ProjectionCase::running_reuses_passes(); "running reuses earlier valid passes")]
+#[test_case::test_case(&ProjectionCase::passing_complement(); "passing complement accumulates trials")]
+#[test_case::test_case(&ProjectionCase::failure_invalidates_passes(); "failure invalidates earlier passes")]
+#[test_case::test_case(&ProjectionCase::inferred_pass(); "inferred pass")]
+#[test_case::test_case(&ProjectionCase::inferred_failure(); "inferred failure")]
+#[test_case::test_case(&ProjectionCase::skipped(); "skipped")]
+#[test_case::test_case(&ProjectionCase::reset_excludes_passes(); "reset excludes reused evidence")]
+#[test_case::test_case(&ProjectionCase::escalated_full(); "escalated full uses only new trials")]
+#[test_case::test_case(&ProjectionCase::member_probe(); "member probe preserves held members")]
+fn active_hunt_projection(case: &ProjectionCase) {
+    let (mut j, _) = case.journal();
+    let outcome = match case.outcome {
+        None => GroupState::Running,
+        Some(GroupOutcome::Passed) => GroupState::Passed,
+        Some(GroupOutcome::Failed) => GroupState::Failed,
+        Some(GroupOutcome::Skipped) => GroupState::Skipped,
+    };
+    let plan = j
+        .state
+        .hunt_plan()
+        .unwrap_or_else(|| panic!("{}", case.name));
+    assert_eq!(plan.number, 2, "{}", case.name);
+    assert_eq!(plan.candidates, set(&ids(4)), "{}", case.name);
+    assert_eq!(plan.groups.len(), 1, "{}", case.name);
+    let view = &plan.groups[0];
+    assert_eq!(view.number, 1, "{}", case.name);
+    assert_eq!(view.cores, set(&[0, 1]), "{}", case.name);
+    assert_eq!(view.stage, case.stage, "{}", case.name);
+    assert_eq!(view.probe, case.probe, "{}", case.name);
+    assert_eq!(view.held, case.held, "{}", case.name);
+    assert_eq!(view.needed, 5, "{}", case.name);
+    assert_eq!(view.passed, case.passes, "{}", case.name);
+    assert_eq!(view.outcome, outcome, "{}", case.name);
+    assert!(!view.carried, "{}", case.name);
+    j.assert_resumes();
+    cancel_hunt(&mut j, 2);
+    assert_eq!(j.state.hunt_plan(), None, "{}", case.name);
+    j.assert_resumes();
 }
 
 fn reach_group(j: &mut Journal) -> DecisionAction {
@@ -1155,25 +1161,20 @@ fn dashboard_views_serialize_roundtrip() {
     }));
 }
 
-#[test]
-fn dashboard_views_are_read_only() {
-    let journals = vec![
-        chain_journal(),
-        Journal::new(&[0], &[Start::search(-20).checking()]),
-        hunt_of(4, SHORT),
-    ];
-    for j in journals {
-        let before = j.state.clone();
-        for _ in 0..2 {
-            let _ = j.state.cycle_plan();
-            let _ = j.state.search_turns();
-            let _ = j.state.requirement();
-            let _ = j.state.trial_history();
-            let _ = j.state.hunt_plan();
-            let _ = j.state.core_limit(core(0));
-        }
-        assert_eq!(before, j.state);
+#[test_case::test_case(&chain_journal(); "cycle")]
+#[test_case::test_case(&Journal::new(&[0], &[Start::search(-20).checking()]); "search checking")]
+#[test_case::test_case(&hunt_of(4, SHORT); "hunt")]
+fn dashboard_views_are_read_only(j: &Journal) {
+    let before = j.state.clone();
+    for _ in 0..2 {
+        let _ = j.state.cycle_plan();
+        let _ = j.state.search_turns();
+        let _ = j.state.requirement();
+        let _ = j.state.trial_history();
+        let _ = j.state.hunt_plan();
+        let _ = j.state.core_limit(core(0));
     }
+    assert_eq!(before, j.state);
 }
 
 #[test]
