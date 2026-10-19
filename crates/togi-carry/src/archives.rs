@@ -1,3 +1,8 @@
+#![expect(
+    clippy::trait_duplication_in_bounds,
+    reason = "thiserror repeats CarryError's error bound in generated impls outside the enum's lint scope"
+)]
+
 use std::error::Error;
 
 use togi_facts::FactsError;
