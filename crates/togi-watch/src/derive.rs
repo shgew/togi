@@ -58,6 +58,94 @@ impl Derived {
     }
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+pub(crate) struct EndView {
+    pub(crate) cycle_plan: CyclePlan,
+    pub(crate) hunt_plan: Option<togi_tuner::HuntPlan>,
+    pub(crate) trial: Option<TrialView>,
+    pub(crate) hunt: Option<HuntFacts>,
+    pub(crate) step_hunts: Vec<Vec<u32>>,
+}
+
+impl EndView {
+    pub(crate) fn new(journal: &JournalState, tuner: &TunerState, facts: &Facts) -> Self {
+        let cycle_plan = tuner.cycle_plan();
+        let hunt_plan = tuner.hunt_plan();
+        let plan = &cycle_plan;
+        let trial = facts.current.as_ref().map(|current| {
+            let mut view = new_trial(&current.intent, facts, journal);
+            if let Some(requirement) = tuner.requirement() {
+                view.count = Count {
+                    passed: requirement.passed,
+                    index: requirement.trial,
+                    of: requirement.needed,
+                };
+            }
+            view.crashed = current.boot_ended;
+            place_in_cycle(plan, &mut view);
+            if let Some(hunt) = &hunt_plan {
+                fit_hunt(&mut view, hunt);
+                if let Some(shape) = facts
+                    .shapes
+                    .get(&hunt.number)
+                    .filter(|_| view.condition == togi_machine::Condition::Parked)
+                {
+                    for core in journal.cores.iter().map(|core| core.core) {
+                        let member = hunt
+                            .groups
+                            .iter()
+                            .rfind(|group| group.outcome == GroupState::Running)
+                            .is_some_and(|group| {
+                                group.cores.contains(core)
+                                    || group.probe.is_some_and(|probe| probe.core == core)
+                                    || group.held.iter().any(|member| member.core == core)
+                            });
+                        if !member
+                            && shape
+                                .parked
+                                .get(core)
+                                .is_some_and(|held| view.profile.get(core) == Some(held))
+                        {
+                            view.parked.insert(core);
+                        }
+                    }
+                }
+            }
+            view.idle = journal
+                .cores
+                .iter()
+                .map(|core| core.core)
+                .filter(|core| !view.cores.contains(*core) && !view.parked.contains(*core))
+                .collect();
+            view
+        });
+        let hunt = hunt_plan
+            .as_ref()
+            .map(|hunt| hunt_facts(hunt, plan, facts, journal));
+        let step_hunts = plan
+            .number
+            .map(|number| {
+                (1..=crate::numbers::saturating_ordinal(plan.steps.len()))
+                    .map(|step| {
+                        facts
+                            .check_hunts
+                            .get(&(number.get(), step))
+                            .cloned()
+                            .unwrap_or_default()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self {
+            cycle_plan,
+            hunt_plan,
+            trial,
+            hunt,
+            step_hunts,
+        }
+    }
+}
+
 impl View {
     fn empty() -> Self {
         Self {

@@ -8,7 +8,7 @@ Persist the run's recovery fold, shared journal facts, tuner incremental state a
 
 Hardware runs continue to replay the entire journal on every boot and compare every saved fold with the fresh result. A rejected or differing snapshot is rewritten and recorded with the existing `state.rebuilt` event. This checks caches without allowing them to authorize hardware decisions. Another build rebuilds instead of migrating a snapshot; neither the journal schema nor the ruleset changes.
 
-Retain the last trial's pre-end presentation and tuner state, not an eagerly evaluated forecast after every trial. A reader evaluates that retained forecast once when it restores the presentation, so snapshot publication does not repeatedly explore hypothetical outcomes that nobody reads.
+Retain only the last trial's pre-end trial, cycle and hunt presentation and tuner state, not the dashboard's core/combo tables, history, or an eagerly evaluated forecast after every trial. Read the tuner's specific cycle, hunt and requirement queries instead of its full dashboard projection. A reader evaluates that retained forecast once when it restores the presentation, so snapshot publication does not repeatedly build unused views or explore hypothetical outcomes that nobody reads.
 
 Keep production's publication after every append and its existing atomic replacement and warning behavior. Simulator and benchmark publication remains deferred until the run finishes. The normative format and rejection rules belong to [the journal specification](../spec/journal.md#state-file).
 

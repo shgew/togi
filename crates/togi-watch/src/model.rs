@@ -623,15 +623,17 @@ pub struct EndedTrial<'a> {
     pub hunt: Option<HuntView<'a>>,
 }
 
-fn cycle_view(derived: &Derived) -> Option<CycleView<'_>> {
-    let plan = &derived.projection.cycle_plan;
+fn cycle_view<'a>(
+    plan: &'a togi_tuner::CyclePlan,
+    step_hunts: &'a [Vec<u32>],
+    forecast: &Forecast,
+) -> Option<CycleView<'a>> {
     (plan.number.is_some() || !plan.steps.is_empty()).then(|| CycleView {
         plan,
-        step_hunts: &derived.step_hunts,
-        resume: match &derived.forecast.between {
+        step_hunts,
+        resume: match &forecast.between {
             Some(between) => between.resume,
-            None => derived
-                .forecast
+            None => forecast
                 .branches
                 .iter()
                 .find(|branch| branch.premise == togi_tuner::Premise::Pass)
@@ -640,13 +642,11 @@ fn cycle_view(derived: &Derived) -> Option<CycleView<'_>> {
     })
 }
 
-fn hunt_view(derived: &Derived) -> Option<HuntView<'_>> {
-    derived
-        .projection
-        .hunt_plan
-        .as_ref()
-        .zip(derived.hunt.as_ref())
-        .map(|(plan, facts)| HuntView { plan, facts })
+fn hunt_view<'a>(
+    plan: Option<&'a togi_tuner::HuntPlan>,
+    hunt: Option<&'a HuntFacts>,
+) -> Option<HuntView<'a>> {
+    plan.zip(hunt).map(|(plan, facts)| HuntView { plan, facts })
 }
 
 /// A started idle trial: nothing on the screen may change with the clock until its end is recorded, so drawing
@@ -752,17 +752,23 @@ pub struct Presentation {
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct RetainedEnd {
-    view: crate::derive::View,
+    view: crate::derive::EndView,
     tuner: TunerState,
 }
 
 impl RetainedEnd {
-    fn into_derived(self) -> Derived {
-        Derived {
+    fn into_derived(self) -> EndDerived {
+        EndDerived {
             view: self.view,
             forecast: self.tuner.forecast(),
         }
     }
+}
+
+#[derive(Debug)]
+struct EndDerived {
+    view: crate::derive::EndView,
+    forecast: Forecast,
 }
 
 fn capture_end(
@@ -770,15 +776,20 @@ fn capture_end(
     journal: &JournalState,
     tuner: &TunerState,
     facts: &Facts,
-    ended: &mut Option<Derived>,
+    ended: &mut Option<EndDerived>,
     cached: Option<Derived>,
     keep: bool,
 ) {
     if matches!(event.payload, Payload::SessionStart(_)) {
         *ended = None;
     } else if matches!(event.payload, Payload::TrialEnd(_)) {
-        *ended = (keep && journal.session.is_some())
-            .then(|| cached.unwrap_or_else(|| Derived::new(journal, tuner, facts)));
+        *ended = (keep && journal.session.is_some()).then(|| {
+            let forecast = cached.map_or_else(|| tuner.forecast(), |cached| cached.forecast);
+            EndDerived {
+                view: crate::derive::EndView::new(journal, tuner, facts),
+                forecast,
+            }
+        });
     }
 }
 
@@ -789,7 +800,7 @@ impl Presentation {
             self.ended = None;
         } else if matches!(event.payload, Payload::TrialEnd(_)) && journal.session.is_some() {
             self.ended = Some(RetainedEnd {
-                view: crate::derive::View::new(journal, tuner, &self.facts),
+                view: crate::derive::EndView::new(journal, tuner, &self.facts),
                 tuner: tuner.clone(),
             });
         }
@@ -818,7 +829,7 @@ pub struct Model {
     problem: Option<FoldError>,
     skipped: Option<String>,
     derived: OnceCell<Derived>,
-    ended: Option<Derived>,
+    ended: Option<EndDerived>,
 }
 
 impl Model {
@@ -1001,8 +1012,12 @@ impl Model {
             trial: derived.trial.as_ref(),
             last: facts.last.as_ref(),
             forecast: &derived.forecast,
-            cycle: cycle_view(derived),
-            hunt: hunt_view(derived),
+            cycle: cycle_view(
+                &derived.projection.cycle_plan,
+                &derived.step_hunts,
+                &derived.forecast,
+            ),
+            hunt: hunt_view(derived.projection.hunt_plan.as_ref(), derived.hunt.as_ref()),
             turns: &projection.search_turns,
             phases: projection.phase_plan.as_ref(),
             deepening: projection.deepening.as_ref(),
@@ -1027,13 +1042,17 @@ impl Model {
             ended: None,
         };
         snapshot.ended = self.ended.as_ref().and_then(|ended| {
-            let trial = ended.trial.as_ref()?;
+            let trial = ended.view.trial.as_ref()?;
             (snapshot.between_trials() && snapshot.last.is_some_and(|last| last.id == trial.id))
                 .then(|| EndedTrial {
                     trial,
                     forecast: &ended.forecast,
-                    cycle: cycle_view(ended),
-                    hunt: hunt_view(ended),
+                    cycle: cycle_view(
+                        &ended.view.cycle_plan,
+                        &ended.view.step_hunts,
+                        &ended.forecast,
+                    ),
+                    hunt: hunt_view(ended.view.hunt_plan.as_ref(), ended.view.hunt.as_ref()),
                 })
         });
         snapshot

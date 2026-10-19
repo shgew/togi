@@ -390,3 +390,42 @@ fn a_snapshot_one_event_behind_is_rebuilt_naming_last_seq() {
         })
     );
 }
+
+#[test]
+fn a_resealed_prefix_stamp_mismatch_is_rebuilt_and_named() {
+    assert_eq!(
+        rebuilt_after_tampering(|state| {
+            state["snapshot"]["prefix"]["sha256"] = serde_json::json!("wrong-prefix");
+            reseal(state);
+        }),
+        ["snapshot"]
+    );
+}
+
+#[test_case("/facts/last_seq", serde_json::json!(1); "prefix sequence and facts disagree")]
+#[test_case("/recovery/trials", serde_json::json!(999); "restored fold differs")]
+#[test_case("/tuner/clean_cycles", serde_json::json!(999); "published projection differs")]
+fn independent_snapshot_verification_reports_resealed_mismatches(
+    pointer: &str,
+    value: serde_json::Value,
+) {
+    let bench = Bench::new(2);
+    let mut session = swept(&bench);
+    session.begin().unwrap();
+    assert!(session.appender.publish_state().unwrap());
+    let mut state: serde_json::Value =
+        serde_json::from_slice(&bench.mem.contents("/state/state.json").unwrap()).unwrap();
+    *state.pointer_mut(pointer).unwrap() = value;
+    reseal(&mut state);
+    bench
+        .mem
+        .put("/state/state.json", serde_json::to_vec(&state).unwrap());
+    assert_eq!(
+        crate::verify_snapshot(
+            session.appender.journal().dir(),
+            session.appender.journal().events()
+        )
+        .unwrap(),
+        crate::SnapshotStatus::Different
+    );
+}
