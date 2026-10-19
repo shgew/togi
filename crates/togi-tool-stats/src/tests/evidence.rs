@@ -25,7 +25,7 @@ type Past = (Vec<i64>, Outcome, fn(&mut TrialIntent));
 
 fn nothing(_: &mut TrialIntent) {}
 
-fn carry_trial(log: &mut Log, planned: TrialIntent, outcome: Outcome) -> togi_journal::Seq {
+fn carry_trial(log: &mut Log, planned: &TrialIntent, outcome: Outcome) -> togi_journal::Seq {
     let mut fact = carried(outcome);
     fact.class = TrialClass {
         regime: planned.regime,
@@ -92,7 +92,7 @@ fn prior(history: &[Past], before: Option<usize>) -> usize {
         past.trial = format!("h{i}").into();
         past.profile = profile(offsets);
         modify(&mut past);
-        ends.push(carry_trial(&mut log, past, *outcome));
+        ends.push(carry_trial(&mut log, &past, *outcome));
     }
     let target = log.add(target_intent());
     let before = before.map_or(target, |index| ends[index]);
@@ -132,7 +132,7 @@ fn idle_crash(regime: Regime, loaded: &[i64], idle_profile: Option<&[i64]>) -> u
         planned.duration_s = 120;
         planned
     };
-    carry_trial(&mut log, planned("pass", None), Outcome::Pass);
+    carry_trial(&mut log, &planned("pass", None), Outcome::Pass);
     let mut crash = failure(None);
     crash.signal = Signal::Crash;
     crash.condition = Some(Condition::Together);
@@ -177,7 +177,7 @@ fn a_known_failure_skip_does_not_recount_an_idle_failure_or_invalidate_a_later_p
     original.condition = Some(Condition::Together);
     original.profile = Some(profile(&[-9, -10]));
     let original_seq = log.add(original.clone());
-    carry_trial(&mut log, planned("pass", None), Outcome::Pass);
+    carry_trial(&mut log, &planned("pass", None), Outcome::Pass);
     original.known_failure = Some(original_seq);
     log.add(original);
     log.add(hunt_start(1, "t", 1));
