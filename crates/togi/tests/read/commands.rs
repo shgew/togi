@@ -202,7 +202,7 @@ fn the_read_only_commands_succeed_while_the_host_lock_is_held_and_never_take_it(
     let host = session.host();
     {
         let _held = host.locks.acquire(&host.lock).unwrap();
-        let ran = host.run(session.path(), &args);
+        let ran = host.run(session.path(), args);
         assert_eq!(
             ran.exit,
             togi_cli::Exit::Ok,
@@ -213,7 +213,7 @@ fn the_read_only_commands_succeed_while_the_host_lock_is_held_and_never_take_it(
         assert!(!ran.out.is_empty(), "{command}");
         assert_eq!(state_files(&session), before, "{command} while held");
     }
-    let ran = host.run(session.path(), &args);
+    let ran = host.run(session.path(), args);
     assert_eq!(ran.exit, togi_cli::Exit::Ok, "{command}: {}", ran.err);
     assert_eq!(
         host.lock_acquisitions.get(),

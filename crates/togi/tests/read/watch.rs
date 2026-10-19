@@ -235,7 +235,7 @@ fn real_process_q_ends_a_standalone_live_watch_with_the_terminal_restored() {
 #[test_case::test_case(b"Q"; "uppercase q")]
 #[test_case::test_case(b"\x03"; "control c")]
 #[test_case::test_case(b"\x04"; "control d")]
-fn real_process_every_quit_key_ends_a_standalone_live_watch(key: &[u8]) {
+fn real_process_every_quit_key_ends_a_standalone_live_watch(key: &'static [u8]) {
     a_live_watch_ends_with_the_terminal_restored(false, Ending::Keys(key));
 }
 

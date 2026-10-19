@@ -235,7 +235,7 @@ fn a_different_ruleset_warns_and_still_renders(args: &[&str]) {
     rewrite_first_line(&dir, |event| {
         event["data"]["build"]["ruleset"] = 7.into();
     });
-    let ran = togi(&dir, &args);
+    let ran = togi(&dir, args);
     assert_eq!(ran.status.code(), Some(0), "{args:?}");
     assert!(
         text(&ran.stderr).contains("ruleset is 7"),
