@@ -25,7 +25,7 @@ impl Speed {
     }
 
     fn scale(self, elapsed: Duration) -> Duration {
-        Duration::try_from_secs_f64(elapsed.as_secs_f64() * self.0).unwrap_or(Duration::MAX)
+        saturating_playback_elapsed(elapsed.as_secs_f64() * self.0)
     }
 }
 
@@ -35,6 +35,15 @@ impl FromStr for Speed {
     fn from_str(text: &str) -> Result<Self, SpeedError> {
         text.parse().map_err(|_| SpeedError).and_then(Self::new)
     }
+}
+
+/// Playback continues at the largest displayable elapsed time when scaling overflows.
+fn saturating_playback_elapsed(seconds: f64) -> Duration {
+    Duration::try_from_secs_f64(seconds).unwrap_or(Duration::MAX)
+}
+
+fn saturating_display_elapsed(elapsed: Duration) -> SignedDuration {
+    SignedDuration::try_from(elapsed).unwrap_or(SignedDuration::MAX)
 }
 
 /// How many events come at or before `seq`, and at least one.
@@ -111,7 +120,28 @@ impl<'a> Playback<'a> {
             self.schedule();
         }
         let since = simulated.saturating_sub(self.at);
-        let since = SignedDuration::try_from(since).unwrap_or(SignedDuration::MAX);
+        let since = saturating_display_elapsed(since);
         (self.shown, offset(self.events[self.shown - 1].time, since))
+    }
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::*;
+    use test_case::test_case;
+
+    #[test_case(0.0, Duration::ZERO; "zero")]
+    #[test_case(1.0, Duration::from_secs(1); "exact second")]
+    #[test_case(f64::MAX, Duration::MAX; "finite overflow")]
+    #[test_case(f64::INFINITY, Duration::MAX; "scaling overflow")]
+    fn playback_elapsed_saturates(seconds: f64, expected: Duration) {
+        assert_eq!(saturating_playback_elapsed(seconds), expected);
+    }
+
+    #[test_case(Duration::ZERO, SignedDuration::ZERO; "zero")]
+    #[test_case(Duration::from_secs(i64::MAX.cast_unsigned()), SignedDuration::from_secs(i64::MAX); "largest exact seconds")]
+    #[test_case(Duration::MAX, SignedDuration::MAX; "display overflow")]
+    fn display_elapsed_saturates(elapsed: Duration, expected: SignedDuration) {
+        assert_eq!(saturating_display_elapsed(elapsed), expected);
     }
 }

@@ -52,7 +52,7 @@ pub(crate) const fn float(value: i64) -> f64 {
     value as f64
 }
 
-fn count(n: usize) -> i64 {
+fn saturating_summary_count(n: usize) -> i64 {
     i64::try_from(n).unwrap_or(i64::MAX)
 }
 
@@ -133,8 +133,8 @@ impl Metric {
                 .filter(|&&x| x.total_cmp(&value).is_eq())
                 .count()
         };
-        let share = float(count(less)) + float(count(equal)) / 2.0;
-        Some(100.0 * share / float(count(self.values.len())))
+        let share = float(saturating_summary_count(less)) + float(saturating_summary_count(equal)) / 2.0;
+        Some(100.0 * share / float(saturating_summary_count(self.values.len())))
     }
 }
 
@@ -232,4 +232,20 @@ pub fn summarize(runs: &[Run]) -> Result<Summary, Error> {
         depth,
         cores,
     })
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::saturating_summary_count;
+    use test_case::test_case;
+
+    #[test_case(0, 0; "zero")]
+    #[test_case(1, 1; "one")]
+    #[test_case(i64::MAX as usize, i64::MAX; "largest exact count")]
+    #[test_case(i64::MAX as usize + 1, i64::MAX; "first saturated count")]
+    #[test_case(usize::MAX, i64::MAX; "largest platform count")]
+    #[cfg(target_pointer_width = "64")]
+    fn summary_counts_saturate(count: usize, expected: i64) {
+        assert_eq!(saturating_summary_count(count), expected);
+    }
 }

@@ -37,7 +37,7 @@ pub const ROBOTOGI_BOT_LOGIN: &str = "robotogi[bot]";
 
 /// A length as the manifest's and record's integer counts hold it, saturating at `i64::MAX`, which no
 /// list in memory reaches.
-pub fn count(len: usize) -> i64 {
+pub fn saturating_record_count(len: usize) -> i64 {
     i64::try_from(len).unwrap_or(i64::MAX)
 }
 
@@ -72,5 +72,20 @@ pub fn dispatch(t: &mut Tools<'_>, args: &[String]) -> Result<(), Error> {
             "unknown subcommand {}: want report, snapshot, render or publish",
             text::quote(command)
         ))),
+    }
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::saturating_record_count;
+    use test_case::test_case;
+
+    #[cfg(target_pointer_width = "64")]
+    #[test_case(0, 0; "zero")]
+    #[test_case(i64::MAX as usize, i64::MAX; "largest exact count")]
+    #[test_case(i64::MAX as usize + 1, i64::MAX; "first saturated count")]
+    #[test_case(usize::MAX, i64::MAX; "largest platform count")]
+    fn record_counts_saturate(len: usize, expected: i64) {
+        assert_eq!(saturating_record_count(len), expected);
     }
 }
