@@ -222,9 +222,15 @@ mod tests {
         for colours in [Colours::Full, Colours::Console] {
             for tone in Paint::ALL {
                 let style = tone.style(colours);
-                assert!(slot(style.fg).is_some(), "{tone:?} has a foreground");
+                assert!(
+                    slot(style.fg).is_some(),
+                    "{colours:?} {tone:?} has a foreground"
+                );
                 if let Some(bg) = slot(style.bg) {
-                    assert!(bg < 8, "{tone:?} background slot {bg} is a bright one");
+                    assert!(
+                        bg < 8,
+                        "{colours:?} {tone:?} background slot {bg} is a bright one"
+                    );
                 }
             }
         }

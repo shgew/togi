@@ -280,7 +280,7 @@ fn every_regime_has_load_words() {
         } else {
             regime_words(regime)
         };
-        assert_eq!(load_words(regime), expected);
+        assert_eq!(load_words(regime), expected, "{regime:?}");
     }
 }
 
@@ -365,11 +365,13 @@ fn a_variant_workload_shows_its_base() {
     for regime in togi_machine::REGIMES {
         for entry in togi_machine::workloads(regime) {
             let shown = workload_display(entry.id());
-            assert!(!shown.is_empty());
+            assert!(!shown.is_empty(), "{regime:?} workload {:?}", entry.id());
             if !entry.base.is_empty() {
                 assert_eq!(
                     shown,
-                    togi_machine::workload_by_id(entry.base).unwrap().label
+                    togi_machine::workload_by_id(entry.base).unwrap().label,
+                    "{regime:?} workload {:?}",
+                    entry.id()
                 );
             }
         }

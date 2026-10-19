@@ -1160,22 +1160,33 @@ mod tests {
         assert!(body.len() <= height);
     }
 
-    #[test_case(80, 24)]
-    #[test_case(160, 45)]
-    #[test_case(240, 67)]
-    #[test_case(240, 30)]
-    fn a_scroll_at_or_past_the_extent_follows_the_end(width: u16, height: u16) {
+    #[test_case::test_case(80, 24, |extent| extent; "80x24 at end")]
+    #[test_case::test_case(80, 24, |extent| extent + 1; "80x24 past end")]
+    #[test_case::test_case(80, 24, |_| 100_000; "80x24 far")]
+    #[test_case::test_case(160, 45, |extent| extent; "160x45 at end")]
+    #[test_case::test_case(160, 45, |extent| extent + 1; "160x45 past end")]
+    #[test_case::test_case(160, 45, |_| 100_000; "160x45 far")]
+    #[test_case::test_case(240, 67, |extent| extent; "240x67 at end")]
+    #[test_case::test_case(240, 67, |extent| extent + 1; "240x67 past end")]
+    #[test_case::test_case(240, 67, |_| 100_000; "240x67 far")]
+    #[test_case::test_case(240, 30, |extent| extent; "240x30 at end")]
+    #[test_case::test_case(240, 30, |extent| extent + 1; "240x30 past end")]
+    #[test_case::test_case(240, 30, |_| 100_000; "240x30 far")]
+    fn a_scroll_at_or_past_the_extent_follows_the_end(
+        width: u16,
+        height: u16,
+        sample: fn(usize) -> usize,
+    ) {
         let mut sc = screen(View::Help, width, height, C, true);
         sc.scroll = usize::MAX;
         let (end, drawn) = render_missing(&sc);
-        for scroll in [drawn.scroll, drawn.scroll + 1, 100_000] {
-            sc.scroll = scroll;
-            assert_eq!(
-                render_missing(&sc).0,
-                end,
-                "{width}x{height} scroll {scroll}"
-            );
-        }
+        let scroll = sample(drawn.scroll);
+        sc.scroll = scroll;
+        assert_eq!(
+            render_missing(&sc).0,
+            end,
+            "{width}x{height} scroll {scroll}"
+        );
         sc.scroll = drawn.scroll.saturating_sub(1);
         if drawn.scroll > 0 {
             assert_ne!(
@@ -1186,22 +1197,117 @@ mod tests {
         }
     }
 
-    #[test_case(240, 67)]
-    #[test_case(160, 45)]
-    #[test_case(120, 33)]
-    #[test_case(80, 24)]
-    fn help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size(width: u16, height: u16) {
-        for colours in [Colours::Full, Colours::Console, Colours::None] {
-            for scroll in [0, 3, usize::MAX, 100_000] {
-                for keys in [true, false] {
-                    let mut sc = screen(View::Help, width, height, colours, keys);
-                    sc.scroll = scroll;
-                    let (buf, _) = render_missing(&sc);
-                    assert_frame_bounds(&buf, &sc);
-                    assert_glyphs_drawable(&buf, &format!("help {width}x{height}"));
-                }
-            }
-        }
+    #[test_case::test_case(240, 67, Colours::Full, 0, true; "240x67 Full scroll 0 keys True")]
+    #[test_case::test_case(240, 67, Colours::Full, 0, false; "240x67 Full scroll 0 keys False")]
+    #[test_case::test_case(240, 67, Colours::Full, 3, true; "240x67 Full scroll 1 keys True")]
+    #[test_case::test_case(240, 67, Colours::Full, 3, false; "240x67 Full scroll 1 keys False")]
+    #[test_case::test_case(240, 67, Colours::Full, usize::MAX, true; "240x67 Full scroll 2 keys True")]
+    #[test_case::test_case(240, 67, Colours::Full, usize::MAX, false; "240x67 Full scroll 2 keys False")]
+    #[test_case::test_case(240, 67, Colours::Full, 100_000, true; "240x67 Full scroll 3 keys True")]
+    #[test_case::test_case(240, 67, Colours::Full, 100_000, false; "240x67 Full scroll 3 keys False")]
+    #[test_case::test_case(240, 67, Colours::Console, 0, true; "240x67 Console scroll 0 keys True")]
+    #[test_case::test_case(240, 67, Colours::Console, 0, false; "240x67 Console scroll 0 keys False")]
+    #[test_case::test_case(240, 67, Colours::Console, 3, true; "240x67 Console scroll 1 keys True")]
+    #[test_case::test_case(240, 67, Colours::Console, 3, false; "240x67 Console scroll 1 keys False")]
+    #[test_case::test_case(240, 67, Colours::Console, usize::MAX, true; "240x67 Console scroll 2 keys True")]
+    #[test_case::test_case(240, 67, Colours::Console, usize::MAX, false; "240x67 Console scroll 2 keys False")]
+    #[test_case::test_case(240, 67, Colours::Console, 100_000, true; "240x67 Console scroll 3 keys True")]
+    #[test_case::test_case(240, 67, Colours::Console, 100_000, false; "240x67 Console scroll 3 keys False")]
+    #[test_case::test_case(240, 67, Colours::None, 0, true; "240x67 None scroll 0 keys True")]
+    #[test_case::test_case(240, 67, Colours::None, 0, false; "240x67 None scroll 0 keys False")]
+    #[test_case::test_case(240, 67, Colours::None, 3, true; "240x67 None scroll 1 keys True")]
+    #[test_case::test_case(240, 67, Colours::None, 3, false; "240x67 None scroll 1 keys False")]
+    #[test_case::test_case(240, 67, Colours::None, usize::MAX, true; "240x67 None scroll 2 keys True")]
+    #[test_case::test_case(240, 67, Colours::None, usize::MAX, false; "240x67 None scroll 2 keys False")]
+    #[test_case::test_case(240, 67, Colours::None, 100_000, true; "240x67 None scroll 3 keys True")]
+    #[test_case::test_case(240, 67, Colours::None, 100_000, false; "240x67 None scroll 3 keys False")]
+    #[test_case::test_case(160, 45, Colours::Full, 0, true; "160x45 Full scroll 0 keys True")]
+    #[test_case::test_case(160, 45, Colours::Full, 0, false; "160x45 Full scroll 0 keys False")]
+    #[test_case::test_case(160, 45, Colours::Full, 3, true; "160x45 Full scroll 1 keys True")]
+    #[test_case::test_case(160, 45, Colours::Full, 3, false; "160x45 Full scroll 1 keys False")]
+    #[test_case::test_case(160, 45, Colours::Full, usize::MAX, true; "160x45 Full scroll 2 keys True")]
+    #[test_case::test_case(160, 45, Colours::Full, usize::MAX, false; "160x45 Full scroll 2 keys False")]
+    #[test_case::test_case(160, 45, Colours::Full, 100_000, true; "160x45 Full scroll 3 keys True")]
+    #[test_case::test_case(160, 45, Colours::Full, 100_000, false; "160x45 Full scroll 3 keys False")]
+    #[test_case::test_case(160, 45, Colours::Console, 0, true; "160x45 Console scroll 0 keys True")]
+    #[test_case::test_case(160, 45, Colours::Console, 0, false; "160x45 Console scroll 0 keys False")]
+    #[test_case::test_case(160, 45, Colours::Console, 3, true; "160x45 Console scroll 1 keys True")]
+    #[test_case::test_case(160, 45, Colours::Console, 3, false; "160x45 Console scroll 1 keys False")]
+    #[test_case::test_case(160, 45, Colours::Console, usize::MAX, true; "160x45 Console scroll 2 keys True")]
+    #[test_case::test_case(160, 45, Colours::Console, usize::MAX, false; "160x45 Console scroll 2 keys False")]
+    #[test_case::test_case(160, 45, Colours::Console, 100_000, true; "160x45 Console scroll 3 keys True")]
+    #[test_case::test_case(160, 45, Colours::Console, 100_000, false; "160x45 Console scroll 3 keys False")]
+    #[test_case::test_case(160, 45, Colours::None, 0, true; "160x45 None scroll 0 keys True")]
+    #[test_case::test_case(160, 45, Colours::None, 0, false; "160x45 None scroll 0 keys False")]
+    #[test_case::test_case(160, 45, Colours::None, 3, true; "160x45 None scroll 1 keys True")]
+    #[test_case::test_case(160, 45, Colours::None, 3, false; "160x45 None scroll 1 keys False")]
+    #[test_case::test_case(160, 45, Colours::None, usize::MAX, true; "160x45 None scroll 2 keys True")]
+    #[test_case::test_case(160, 45, Colours::None, usize::MAX, false; "160x45 None scroll 2 keys False")]
+    #[test_case::test_case(160, 45, Colours::None, 100_000, true; "160x45 None scroll 3 keys True")]
+    #[test_case::test_case(160, 45, Colours::None, 100_000, false; "160x45 None scroll 3 keys False")]
+    #[test_case::test_case(120, 33, Colours::Full, 0, true; "120x33 Full scroll 0 keys True")]
+    #[test_case::test_case(120, 33, Colours::Full, 0, false; "120x33 Full scroll 0 keys False")]
+    #[test_case::test_case(120, 33, Colours::Full, 3, true; "120x33 Full scroll 1 keys True")]
+    #[test_case::test_case(120, 33, Colours::Full, 3, false; "120x33 Full scroll 1 keys False")]
+    #[test_case::test_case(120, 33, Colours::Full, usize::MAX, true; "120x33 Full scroll 2 keys True")]
+    #[test_case::test_case(120, 33, Colours::Full, usize::MAX, false; "120x33 Full scroll 2 keys False")]
+    #[test_case::test_case(120, 33, Colours::Full, 100_000, true; "120x33 Full scroll 3 keys True")]
+    #[test_case::test_case(120, 33, Colours::Full, 100_000, false; "120x33 Full scroll 3 keys False")]
+    #[test_case::test_case(120, 33, Colours::Console, 0, true; "120x33 Console scroll 0 keys True")]
+    #[test_case::test_case(120, 33, Colours::Console, 0, false; "120x33 Console scroll 0 keys False")]
+    #[test_case::test_case(120, 33, Colours::Console, 3, true; "120x33 Console scroll 1 keys True")]
+    #[test_case::test_case(120, 33, Colours::Console, 3, false; "120x33 Console scroll 1 keys False")]
+    #[test_case::test_case(120, 33, Colours::Console, usize::MAX, true; "120x33 Console scroll 2 keys True")]
+    #[test_case::test_case(120, 33, Colours::Console, usize::MAX, false; "120x33 Console scroll 2 keys False")]
+    #[test_case::test_case(120, 33, Colours::Console, 100_000, true; "120x33 Console scroll 3 keys True")]
+    #[test_case::test_case(120, 33, Colours::Console, 100_000, false; "120x33 Console scroll 3 keys False")]
+    #[test_case::test_case(120, 33, Colours::None, 0, true; "120x33 None scroll 0 keys True")]
+    #[test_case::test_case(120, 33, Colours::None, 0, false; "120x33 None scroll 0 keys False")]
+    #[test_case::test_case(120, 33, Colours::None, 3, true; "120x33 None scroll 1 keys True")]
+    #[test_case::test_case(120, 33, Colours::None, 3, false; "120x33 None scroll 1 keys False")]
+    #[test_case::test_case(120, 33, Colours::None, usize::MAX, true; "120x33 None scroll 2 keys True")]
+    #[test_case::test_case(120, 33, Colours::None, usize::MAX, false; "120x33 None scroll 2 keys False")]
+    #[test_case::test_case(120, 33, Colours::None, 100_000, true; "120x33 None scroll 3 keys True")]
+    #[test_case::test_case(120, 33, Colours::None, 100_000, false; "120x33 None scroll 3 keys False")]
+    #[test_case::test_case(80, 24, Colours::Full, 0, true; "80x24 Full scroll 0 keys True")]
+    #[test_case::test_case(80, 24, Colours::Full, 0, false; "80x24 Full scroll 0 keys False")]
+    #[test_case::test_case(80, 24, Colours::Full, 3, true; "80x24 Full scroll 1 keys True")]
+    #[test_case::test_case(80, 24, Colours::Full, 3, false; "80x24 Full scroll 1 keys False")]
+    #[test_case::test_case(80, 24, Colours::Full, usize::MAX, true; "80x24 Full scroll 2 keys True")]
+    #[test_case::test_case(80, 24, Colours::Full, usize::MAX, false; "80x24 Full scroll 2 keys False")]
+    #[test_case::test_case(80, 24, Colours::Full, 100_000, true; "80x24 Full scroll 3 keys True")]
+    #[test_case::test_case(80, 24, Colours::Full, 100_000, false; "80x24 Full scroll 3 keys False")]
+    #[test_case::test_case(80, 24, Colours::Console, 0, true; "80x24 Console scroll 0 keys True")]
+    #[test_case::test_case(80, 24, Colours::Console, 0, false; "80x24 Console scroll 0 keys False")]
+    #[test_case::test_case(80, 24, Colours::Console, 3, true; "80x24 Console scroll 1 keys True")]
+    #[test_case::test_case(80, 24, Colours::Console, 3, false; "80x24 Console scroll 1 keys False")]
+    #[test_case::test_case(80, 24, Colours::Console, usize::MAX, true; "80x24 Console scroll 2 keys True")]
+    #[test_case::test_case(80, 24, Colours::Console, usize::MAX, false; "80x24 Console scroll 2 keys False")]
+    #[test_case::test_case(80, 24, Colours::Console, 100_000, true; "80x24 Console scroll 3 keys True")]
+    #[test_case::test_case(80, 24, Colours::Console, 100_000, false; "80x24 Console scroll 3 keys False")]
+    #[test_case::test_case(80, 24, Colours::None, 0, true; "80x24 None scroll 0 keys True")]
+    #[test_case::test_case(80, 24, Colours::None, 0, false; "80x24 None scroll 0 keys False")]
+    #[test_case::test_case(80, 24, Colours::None, 3, true; "80x24 None scroll 1 keys True")]
+    #[test_case::test_case(80, 24, Colours::None, 3, false; "80x24 None scroll 1 keys False")]
+    #[test_case::test_case(80, 24, Colours::None, usize::MAX, true; "80x24 None scroll 2 keys True")]
+    #[test_case::test_case(80, 24, Colours::None, usize::MAX, false; "80x24 None scroll 2 keys False")]
+    #[test_case::test_case(80, 24, Colours::None, 100_000, true; "80x24 None scroll 3 keys True")]
+    #[test_case::test_case(80, 24, Colours::None, 100_000, false; "80x24 None scroll 3 keys False")]
+    fn help_stays_in_bounds_and_draws_only_console_glyphs_at_every_size(
+        width: u16,
+        height: u16,
+        colours: Colours,
+        scroll: usize,
+        keys: bool,
+    ) {
+        let mut sc = screen(View::Help, width, height, colours, keys);
+        sc.scroll = scroll;
+        let (buf, _) = render_missing(&sc);
+        assert_frame_bounds(&buf, &sc);
+        assert_glyphs_drawable(
+            &buf,
+            &format!("help {width}x{height} {colours:?} scroll {scroll} keys {keys}"),
+        );
     }
 
     #[test]
