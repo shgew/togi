@@ -129,12 +129,7 @@ fn a_run_stopped_while_the_question_is_open_ends_the_wait_without_an_answer() {
         line: None,
     };
     let decisions = [];
-    let answer = ask(
-        &mut out,
-        &mut answers,
-        &cancel,
-        &finding(&[3], &decisions),
-    );
+    let answer = ask(&mut out, &mut answers, &cancel, &finding(&[3], &decisions));
     assert!(matches!(answer, Err(PromptError::Cancelled)));
 }
 
