@@ -403,44 +403,43 @@ fn rerun_fifo_and_shared_duration() {
     j.assert_resumes();
 }
 
-#[test]
-fn rerun_derived_commitments() {
-    for kind in ["attributed", "idle"] {
-        let mut j = session(&[-10, -11, -12, -13], r#"{"checking":{"cycle":["R6"]}}"#);
-        let n = usize::from(needed(&j));
-        let idle = until_trial(&mut j);
-        assert_eq!(idle.duration, secs(900));
-        let source = if kind == "attributed" {
-            commit(&mut j, &idle, 0)
-        } else {
-            let source = j.idle_failure(checking(&j).offsets(), Condition::Together);
-            j.append(
-                moved(0, -10, -9, Activity::Checking, Decision::Backoff).into(),
-                &[source],
-            );
-            let change = j.next_decision();
-            assert!(
-                matches!(change.payload, DecisionPayload::ProfileChange(_)),
-                "{kind}: {change:?}"
-            );
-            j.decide(change);
-            source
-        };
-        j.assert_resumes();
-        let done = pass_reruns(&mut j);
-        assert_eq!(done.len(), n + 1, "{kind}: {done:?}");
-        for (at, plan) in done.iter().enumerate() {
-            let duration = if at == n { 900 } else { 120 };
-            assert_eq!(plan.condition, Condition::Together, "{kind} {at}");
-            assert_eq!(plan.regime, Regime::R6, "{kind} {at}");
-            assert_eq!(plan.workload, idle.workload, "{kind} {at}");
-            assert_eq!(plan.load, idle.load, "{kind} {at}");
-            assert_eq!(plan.duration, secs(duration), "{kind} {at}");
-            assert_eq!(plan.cause, vec![source], "{kind} {at}");
-        }
-        assert!(j.run().reruns.is_empty(), "{kind}");
-        j.assert_resumes();
+#[test_case::test_case(true; "attributed")]
+#[test_case::test_case(false; "idle")]
+fn rerun_derived_commitments(attributed: bool) {
+    let mut j = session(&[-10, -11, -12, -13], r#"{"checking":{"cycle":["R6"]}}"#);
+    let n = usize::from(needed(&j));
+    let idle = until_trial(&mut j);
+    assert_eq!(idle.duration, secs(900));
+    let source = if attributed {
+        commit(&mut j, &idle, 0)
+    } else {
+        let source = j.idle_failure(checking(&j).offsets(), Condition::Together);
+        j.append(
+            moved(0, -10, -9, Activity::Checking, Decision::Backoff).into(),
+            &[source],
+        );
+        let change = j.next_decision();
+        assert!(
+            matches!(change.payload, DecisionPayload::ProfileChange(_)),
+            "{attributed}: {change:?}"
+        );
+        j.decide(change);
+        source
+    };
+    j.assert_resumes();
+    let done = pass_reruns(&mut j);
+    assert_eq!(done.len(), n + 1, "{attributed}: {done:?}");
+    for (at, plan) in done.iter().enumerate() {
+        let duration = if at == n { 900 } else { 120 };
+        assert_eq!(plan.condition, Condition::Together, "{attributed} {at}");
+        assert_eq!(plan.regime, Regime::R6, "{attributed} {at}");
+        assert_eq!(plan.workload, idle.workload, "{attributed} {at}");
+        assert_eq!(plan.load, idle.load, "{attributed} {at}");
+        assert_eq!(plan.duration, secs(duration), "{attributed} {at}");
+        assert_eq!(plan.cause, vec![source], "{attributed} {at}");
     }
+    assert!(j.run().reruns.is_empty(), "{attributed}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -682,121 +681,127 @@ fn skipped_deepening_and_rerun_failures() {
     j.assert_resumes();
 }
 
-#[test]
-fn carried_rerun_citation_replay() {
-    for reload in [false, true] {
-        let cycle = r#"{"checking":{"cycle":["R1"]}}"#;
-        let mut j = session(&[-10], cycle).resuming_every(1);
-        let n = needed(&j);
-        let profile = checking(&j);
-        let long = ClassKey::new(pick_workload(Regime::R1, 0).id(), set(&[0]), secs(900));
-        let failure = carry(&mut j, long, &profile, Outcome::Failure, None);
-        let count = if reload { n - 1 } else { n };
-        let mut facts: Vec<Seq> = (0..count)
-            .map(|_| {
-                carry(
-                    &mut j,
-                    long.with_duration(secs(120)),
-                    &profile,
-                    Outcome::Pass,
-                    None,
-                )
-            })
-            .collect();
-        facts.push(carry(&mut j, long, &profile, Outcome::Pass, None));
-        j.append(
-            moved(0, -10, -9, Activity::Checking, Decision::Backoff).into(),
-            &[failure],
-        );
-        assert_eq!(j.run().reruns.is_empty(), !reload, "reload {reload}");
-        let change = j.next_decision();
-        assert!(
-            matches!(change.payload, DecisionPayload::ProfileChange(_)),
-            "{change:?}"
-        );
-        j.decide(change);
-        if reload {
-            j.load(&testkit::config(
-                r#"{"checking":{"cycle":["R1"]},"evidence":{"miss":0.1}}"#,
-            ));
-            assert!(needed(&j) < n, "n did not drop");
-        }
-        assert!(j.run().reruns.is_empty(), "reload {reload}");
-        let mut cited = j.run().reruns.citations().to_vec();
-        cited.sort_unstable();
-        assert_eq!(cited, facts, "reload {reload}");
+#[test_case::test_case(false; "not reload")]
+#[test_case::test_case(true; "reload")]
+fn carried_rerun_citation_replay(reload: bool) {
+    let cycle = r#"{"checking":{"cycle":["R1"]}}"#;
+    let mut j = session(&[-10], cycle).resuming_every(1);
+    let n = needed(&j);
+    let profile = checking(&j);
+    let long = ClassKey::new(pick_workload(Regime::R1, 0).id(), set(&[0]), secs(900));
+    let failure = carry(&mut j, long, &profile, Outcome::Failure, None);
+    let count = if reload { n - 1 } else { n };
+    let mut facts: Vec<Seq> = (0..count)
+        .map(|_| {
+            carry(
+                &mut j,
+                long.with_duration(secs(120)),
+                &profile,
+                Outcome::Pass,
+                None,
+            )
+        })
+        .collect();
+    facts.push(carry(&mut j, long, &profile, Outcome::Pass, None));
+    j.append(
+        moved(0, -10, -9, Activity::Checking, Decision::Backoff).into(),
+        &[failure],
+    );
+    assert_eq!(j.run().reruns.is_empty(), !reload, "reload {reload}");
+    let change = j.next_decision();
+    assert!(
+        matches!(change.payload, DecisionPayload::ProfileChange(_)),
+        "{change:?}"
+    );
+    j.decide(change);
+    if reload {
+        j.load(&testkit::config(
+            r#"{"checking":{"cycle":["R1"]},"evidence":{"miss":0.1}}"#,
+        ));
+        assert!(needed(&j) < n, "n did not drop");
+    }
+    assert!(j.run().reruns.is_empty(), "reload {reload}");
+    let mut cited = j.run().reruns.citations().to_vec();
+    cited.sort_unstable();
+    assert_eq!(cited, facts, "reload {reload}");
 
-        let start = j.next_decision();
-        let DecisionPayload::CheckingCycle(opened) = &start.payload else {
-            panic!("the reruns did not lead to a cycle start: {start:?}");
-        };
-        assert_eq!(opened.event, CycleEvent::Start);
-        let reason = opened.reason.clone().unwrap_or_default();
-        assert!(reason.contains("rerun checks passed"), "{reason}");
-        assert!(reason.contains(SESSION), "{reason}");
-        for seq in &facts {
-            assert!(start.cause.contains(seq), "#{seq} not cited: {start:?}");
-        }
-        j.decide(start);
-        assert!(j.run().reruns.citations().is_empty());
+    let start = j.next_decision();
+    let DecisionPayload::CheckingCycle(opened) = &start.payload else {
+        panic!("the reruns did not lead to a cycle start: {start:?}");
+    };
+    assert_eq!(opened.event, CycleEvent::Start);
+    let reason = opened.reason.clone().unwrap_or_default();
+    assert!(reason.contains("rerun checks passed"), "{reason}");
+    assert!(reason.contains(SESSION), "{reason}");
+    for seq in &facts {
+        assert!(start.cause.contains(seq), "#{seq} not cited: {start:?}");
+    }
+    j.decide(start);
+    assert!(j.run().reruns.citations().is_empty());
 
-        let live = j.next_trial();
-        assert!(
-            matches!(live.requirement.context, TrialContext::Cycle { .. }),
-            "{live:?}"
-        );
-        assert_eq!(live.regime, Regime::R1);
-        pass(&mut j, &live);
-        let want = j.state.next().ok();
-        assert_eq!(fresh(&j.events).next().ok(), want);
-        let Some(Action::Decide(next)) = want else {
-            panic!("expected the next decision, got {want:?}");
-        };
-        if let DecisionPayload::CheckingCycle(cycle) = &next.payload {
-            let reason = cycle.reason.clone().unwrap_or_default();
-            assert!(!reason.contains("rerun checks passed"), "{reason}");
-        }
-        for seq in &facts {
-            assert!(!next.cause.contains(seq), "#{seq} cited again: {next:?}");
-        }
+    let live = j.next_trial();
+    assert!(
+        matches!(live.requirement.context, TrialContext::Cycle { .. }),
+        "{live:?}"
+    );
+    assert_eq!(live.regime, Regime::R1);
+    pass(&mut j, &live);
+    let want = j.state.next().ok();
+    assert_eq!(fresh(&j.events).next().ok(), want);
+    let Some(Action::Decide(next)) = want else {
+        panic!("expected the next decision, got {want:?}");
+    };
+    if let DecisionPayload::CheckingCycle(cycle) = &next.payload {
+        let reason = cycle.reason.clone().unwrap_or_default();
+        assert!(!reason.contains("rerun checks passed"), "{reason}");
+    }
+    for seq in &facts {
+        assert!(!next.cause.contains(seq), "#{seq} cited again: {next:?}");
     }
 }
 
-#[test]
-fn rerun_window_includes_passes_between_the_failure_and_the_backoff() {
-    for (checking_trial, live) in [(120, true), (120, false), (300, false)] {
-        let json = format!(
-            r#"{{"checking":{{"cycle":["R1"]}},"durations":{{"checking_trial_s":{checking_trial}}}}}"#
-        );
-        for fewer in [1, 0] {
-            let label = format!("checking {checking_trial} s, live {live}, {fewer} fewer");
-            let mut j = session(&[-10, -11], &json);
-            let n = needed(&j);
-            let plan = until_trial(&mut j);
-            let failure = fail(&mut j, &plan, Some(0));
-            let failing = checking(&j);
-            let short = plan.requirement.class.with_duration(secs(120));
-            let equal = failing.with(core(0), off(-9));
-            for at in 0..n - fewer {
-                if live {
-                    pass(&mut j, &plan);
-                } else {
-                    let profile = if at == 0 { &equal } else { &failing };
-                    carry(&mut j, short, profile, Outcome::Pass, None);
-                }
-            }
-            back_off(&mut j, failure);
-            let done = pass_reruns(&mut j);
-            let durations: Vec<Secs> = done.iter().map(|plan| plan.duration).collect();
-            let mut want = vec![secs(120); usize::from(fewer)];
-            if checking_trial != 120 {
-                want.push(secs(checking_trial));
-            }
-            assert_eq!(durations, want, "{label}");
-            assert!(j.run().reruns.is_empty(), "{label}");
-            j.assert_resumes();
+#[test_case::test_case(120, true, 1; "(120, true); 1")]
+#[test_case::test_case(120, true, 0; "(120, true); 0")]
+#[test_case::test_case(120, false, 1; "(120, false); 1")]
+#[test_case::test_case(120, false, 0; "(120, false); 0")]
+#[test_case::test_case(300, false, 1; "(300, false); 1")]
+#[test_case::test_case(300, false, 0; "(300, false); 0")]
+fn rerun_window_includes_passes_between_the_failure_and_the_backoff(
+    checking_trial: u32,
+    live: bool,
+    fewer: u16,
+) {
+    let label = format!("checking {checking_trial} s, live {live}, {fewer} fewer");
+
+    let json = format!(
+        r#"{{"checking":{{"cycle":["R1"]}},"durations":{{"checking_trial_s":{checking_trial}}}}}"#
+    );
+
+    let mut j = session(&[-10, -11], &json);
+    let n = needed(&j);
+    let plan = until_trial(&mut j);
+    let failure = fail(&mut j, &plan, Some(0));
+    let failing = checking(&j);
+    let short = plan.requirement.class.with_duration(secs(120));
+    let equal = failing.with(core(0), off(-9));
+    for at in 0..n - fewer {
+        if live {
+            pass(&mut j, &plan);
+        } else {
+            let profile = if at == 0 { &equal } else { &failing };
+            carry(&mut j, short, profile, Outcome::Pass, None);
         }
     }
+    back_off(&mut j, failure);
+    let done = pass_reruns(&mut j);
+    let durations: Vec<Secs> = done.iter().map(|plan| plan.duration).collect();
+    let mut want = vec![secs(120); usize::from(fewer)];
+    if checking_trial != 120 {
+        want.push(secs(checking_trial));
+    }
+    assert_eq!(durations, want, "{label}");
+    assert!(j.run().reruns.is_empty(), "{label}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -815,36 +820,35 @@ fn rerun_window_starts_at_the_failure_it_answers() {
     j.assert_resumes();
 }
 
-#[test]
-fn a_failure_of_the_class_after_the_passes_invalidates_them_for_the_rerun() {
-    for failed in [false, true] {
-        let mut j = session(&[-10, -11], r#"{"checking":{"cycle":["R1"]}}"#);
-        let n = usize::from(needed(&j));
-        let plan = until_trial(&mut j);
-        let class = plan.requirement.class;
-        let first = commit(&mut j, &plan, 0);
-        let at = checking(&j);
-        for _ in 1..n {
-            carry(&mut j, class, &at, Outcome::Pass, None);
-        }
-        if failed {
-            carry(&mut j, class, &at, Outcome::Failure, Some(0));
-        }
-        let Some(Action::RunTrial(rerun)) = j.run().rerun_action() else {
-            panic!("no rerun owed");
-        };
-        assert_eq!(
-            rerun.requirement.context,
-            TrialContext::Rerun { failure: first }
-        );
-        pass(&mut j, &rerun);
-        assert_eq!(
-            j.run().reruns.is_empty(),
-            !failed,
-            "the failure after the passes did not decide whether one more pass answers"
-        );
-        j.assert_resumes();
+#[test_case::test_case(false; "not failed")]
+#[test_case::test_case(true; "failed")]
+fn a_failure_of_the_class_after_the_passes_invalidates_them_for_the_rerun(failed: bool) {
+    let mut j = session(&[-10, -11], r#"{"checking":{"cycle":["R1"]}}"#);
+    let n = usize::from(needed(&j));
+    let plan = until_trial(&mut j);
+    let class = plan.requirement.class;
+    let first = commit(&mut j, &plan, 0);
+    let at = checking(&j);
+    for _ in 1..n {
+        carry(&mut j, class, &at, Outcome::Pass, None);
     }
+    if failed {
+        carry(&mut j, class, &at, Outcome::Failure, Some(0));
+    }
+    let Some(Action::RunTrial(rerun)) = j.run().rerun_action() else {
+        panic!("no rerun owed");
+    };
+    assert_eq!(
+        rerun.requirement.context,
+        TrialContext::Rerun { failure: first }
+    );
+    pass(&mut j, &rerun);
+    assert_eq!(
+        j.run().reruns.is_empty(),
+        !failed,
+        "the failure after the passes did not decide whether one more pass answers"
+    );
+    j.assert_resumes();
 }
 
 #[test]
@@ -1052,116 +1056,115 @@ fn back_off_in_round(j: &mut Journal, failure: Seq, from: i64, to: i64) {
     );
 }
 
-#[test]
-fn carried_rerun_citation_replay_ends_a_deepening_round() {
-    for reload in [false, true] {
-        let mut j = deepening_rerun_session(-10).resuming_every(1);
-        let n = needed(&j);
-        let profile = checking(&j);
-        let long = ClassKey::new(pick_workload(Regime::R1, 0).id(), set(&[0]), secs(900));
-        let failure = carry(&mut j, long, &profile, Outcome::Failure, None);
-        let count = if reload { n - 1 } else { n };
-        let mut facts: Vec<Seq> = (0..count)
-            .map(|_| {
-                carry(
-                    &mut j,
-                    long.with_duration(secs(120)),
-                    &profile,
-                    Outcome::Pass,
-                    None,
-                )
-            })
-            .collect();
-        facts.push(carry(&mut j, long, &profile, Outcome::Pass, None));
-        j.round_start(1, &[-9], &[0], u32::from(n));
-        back_off_in_round(&mut j, failure, -10, -9);
-        if reload {
-            j.load(&testkit::config(
-                r#"{"checking":{"cycle":["R1"]},"evidence":{"miss":0.1}}"#,
-            ));
-            assert!(needed(&j) < n, "n did not drop");
-        }
-        let action = j.next_decision();
-        let DecisionPayload::DeepeningRound(end) = &action.payload else {
-            panic!("the rerun did not finish the round: {action:?}");
-        };
-        assert!(end.passed, "reload {reload}");
+#[test_case::test_case(false; "not reload")]
+#[test_case::test_case(true; "reload")]
+fn carried_rerun_citation_replay_ends_a_deepening_round(reload: bool) {
+    let mut j = deepening_rerun_session(-10).resuming_every(1);
+    let n = needed(&j);
+    let profile = checking(&j);
+    let long = ClassKey::new(pick_workload(Regime::R1, 0).id(), set(&[0]), secs(900));
+    let failure = carry(&mut j, long, &profile, Outcome::Failure, None);
+    let count = if reload { n - 1 } else { n };
+    let mut facts: Vec<Seq> = (0..count)
+        .map(|_| {
+            carry(
+                &mut j,
+                long.with_duration(secs(120)),
+                &profile,
+                Outcome::Pass,
+                None,
+            )
+        })
+        .collect();
+    facts.push(carry(&mut j, long, &profile, Outcome::Pass, None));
+    j.round_start(1, &[-9], &[0], u32::from(n));
+    back_off_in_round(&mut j, failure, -10, -9);
+    if reload {
+        j.load(&testkit::config(
+            r#"{"checking":{"cycle":["R1"]},"evidence":{"miss":0.1}}"#,
+        ));
+        assert!(needed(&j) < n, "n did not drop");
+    }
+    let action = j.next_decision();
+    let DecisionPayload::DeepeningRound(end) = &action.payload else {
+        panic!("the rerun did not finish the round: {action:?}");
+    };
+    assert!(end.passed, "reload {reload}");
+    for seq in &facts {
+        assert!(action.cause.contains(seq), "#{seq} not cited: {action:?}");
+    }
+    assert!(
+        end.reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("rerun checks passed"),
+        "{end:?}"
+    );
+    j.decide(action);
+    let want = j.state.next().ok();
+    assert_eq!(fresh(&j.events).next().ok(), want);
+    if let Some(Action::Decide(next)) = &want {
         for seq in &facts {
-            assert!(action.cause.contains(seq), "#{seq} not cited: {action:?}");
-        }
-        assert!(
-            end.reason
-                .as_deref()
-                .unwrap_or_default()
-                .contains("rerun checks passed"),
-            "{end:?}"
-        );
-        j.decide(action);
-        let want = j.state.next().ok();
-        assert_eq!(fresh(&j.events).next().ok(), want);
-        if let Some(Action::Decide(next)) = &want {
-            for seq in &facts {
-                assert!(!next.cause.contains(seq), "#{seq} cited again: {next:?}");
-            }
+            assert!(!next.cause.contains(seq), "#{seq} cited again: {next:?}");
         }
     }
 }
 
-#[test]
-fn a_carried_rerun_boundary_preserves_the_pending_checks() {
-    for deepening in [false, true] {
-        for missing_long in [false, true] {
-            let label = format!("deepening {deepening}, missing long {missing_long}");
-            let mut j = deepening_rerun_session(-10);
-            let n = needed(&j);
-            let profile = checking(&j);
-            let long = ClassKey::new(pick_workload(Regime::R1, 0).id(), set(&[0]), secs(900));
-            let failure = carry(&mut j, long, &profile, Outcome::Failure, None);
-            let (count, duration) = if missing_long { (n, 900) } else { (n - 1, 120) };
-            for _ in 0..count {
-                carry(
-                    &mut j,
-                    long.with_duration(secs(120)),
-                    &profile,
-                    Outcome::Pass,
-                    None,
-                );
-            }
-            back_off_in_round(&mut j, failure, -10, -9);
-            if deepening {
-                j.round_start(1, &[-9], &[0], u32::from(n));
-                let round = std::num::NonZeroU32::MIN;
-                let end = togi_journal::DeepeningRound {
-                    round,
-                    event: togi_journal::RoundEvent::End,
-                    base: PerCore::default(),
-                    base_seq: None,
-                    target: PerCore::default(),
-                    profile: PerCore::default(),
-                    cores: CoreSet::default(),
-                    ranking: Vec::new(),
-                    trials: None,
-                    trial_s: None,
-                    passed: false,
-                    reason: Some("test".to_owned()),
-                };
-                j.append(end.into(), &[]);
-            } else {
-                j.cycle_start(1, &[Regime::R1]);
-            }
-            let want = j.state.next().ok();
-            assert_eq!(fresh(&j.events).next().ok(), want, "{label}");
-            let Some(Action::RunTrial(plan)) = want else {
-                panic!("{label}: the boundary lost the pending rerun: {want:?}");
-            };
-            assert!(
-                matches!(plan.requirement.context, TrialContext::Rerun { .. }),
-                "{label}"
-            );
-            assert_eq!(plan.duration, secs(duration), "{label}");
-            assert_eq!(plan.cause, [failure], "{label}");
-        }
+#[test_case::test_case(false, false; "not deepening and not missing_long")]
+#[test_case::test_case(false, true; "not deepening and missing_long")]
+#[test_case::test_case(true, false; "deepening and not missing_long")]
+#[test_case::test_case(true, true; "deepening and missing_long")]
+fn a_carried_rerun_boundary_preserves_the_pending_checks(deepening: bool, missing_long: bool) {
+    let label = format!("deepening {deepening}, missing long {missing_long}");
+
+    let mut j = deepening_rerun_session(-10);
+    let n = needed(&j);
+    let profile = checking(&j);
+    let long = ClassKey::new(pick_workload(Regime::R1, 0).id(), set(&[0]), secs(900));
+    let failure = carry(&mut j, long, &profile, Outcome::Failure, None);
+    let (count, duration) = if missing_long { (n, 900) } else { (n - 1, 120) };
+    for _ in 0..count {
+        carry(
+            &mut j,
+            long.with_duration(secs(120)),
+            &profile,
+            Outcome::Pass,
+            None,
+        );
     }
+    back_off_in_round(&mut j, failure, -10, -9);
+    if deepening {
+        j.round_start(1, &[-9], &[0], u32::from(n));
+        let round = std::num::NonZeroU32::MIN;
+        let end = togi_journal::DeepeningRound {
+            round,
+            event: togi_journal::RoundEvent::End,
+            base: PerCore::default(),
+            base_seq: None,
+            target: PerCore::default(),
+            profile: PerCore::default(),
+            cores: CoreSet::default(),
+            ranking: Vec::new(),
+            trials: None,
+            trial_s: None,
+            passed: false,
+            reason: Some("test".to_owned()),
+        };
+        j.append(end.into(), &[]);
+    } else {
+        j.cycle_start(1, &[Regime::R1]);
+    }
+    let want = j.state.next().ok();
+    assert_eq!(fresh(&j.events).next().ok(), want, "{label}");
+    let Some(Action::RunTrial(plan)) = want else {
+        panic!("{label}: the boundary lost the pending rerun: {want:?}");
+    };
+    assert!(
+        matches!(plan.requirement.context, TrialContext::Rerun { .. }),
+        "{label}"
+    );
+    assert_eq!(plan.duration, secs(duration), "{label}");
+    assert_eq!(plan.cause, [failure], "{label}");
 }
 
 #[test]
@@ -1238,74 +1241,58 @@ fn scheduled(plan: &TrialPlan) -> Shown {
     (u32::from(plan.requirement.needed.get()), running)
 }
 
-#[test]
-fn resumed_short_trial_change_drops_a_rerun_retry() {
+#[test_case::test_case("unchanged", r#"{"checking":{"cycle":["R1"]}}"#, true, 120; "unchanged")]
+#[test_case::test_case("short_trial_s", r#"{"checking":{"cycle":["R1"]},"durations":{"short_trial_s":100}}"#, false, 100; "short_trial_s")]
+fn resumed_short_trial_change_drops_a_rerun_retry(
+    name: &str,
+    json: &str,
+    retry: bool,
+    duration: u32,
+) {
     let cycle = r#"{"checking":{"cycle":["R1"]}}"#;
-    let cases = [
-        ("unchanged", cycle, true, 120),
-        (
-            "short_trial_s",
-            r#"{"checking":{"cycle":["R1"]},"durations":{"short_trial_s":100}}"#,
-            false,
-            100,
-        ),
-    ];
-    for (name, json, retry, duration) in cases {
-        let mut j = session(&[-10], cycle);
-        let template = until_trial(&mut j);
-        let failure = commit(&mut j, &template, 0);
-        let first = rerun(&j);
-        assert_eq!(first.duration, secs(120), "{name}");
-        ended(&mut j, &first, Outcome::Inconclusive, None);
-        j.load(&testkit::config(json));
-        assert_eq!(j.run().retry.is_some(), retry, "{name}");
-        let next = rerun(&j);
-        assert_eq!(
-            (next.retry, next.duration, next.load, next.cause.clone()),
-            (retry, secs(duration), Load::Single(core(0)), vec![failure]),
-            "{name}"
-        );
-        j.intent(&next);
-        assert_eq!(shown(&j), scheduled(&next), "{name}");
-        j.assert_resumes();
-    }
+
+    let mut j = session(&[-10], cycle);
+    let template = until_trial(&mut j);
+    let failure = commit(&mut j, &template, 0);
+    let first = rerun(&j);
+    assert_eq!(first.duration, secs(120), "{name}");
+    ended(&mut j, &first, Outcome::Inconclusive, None);
+    j.load(&testkit::config(json));
+    assert_eq!(j.run().retry.is_some(), retry, "{name}");
+    let next = rerun(&j);
+    assert_eq!(
+        (next.retry, next.duration, next.load, next.cause.clone()),
+        (retry, secs(duration), Load::Single(core(0)), vec![failure]),
+        "{name}"
+    );
+    j.intent(&next);
+    assert_eq!(shown(&j), scheduled(&next), "{name}");
+    j.assert_resumes();
 }
 
-#[test]
-fn cycle_retries_attach_the_requirement_the_fold_stores() {
-    let r1 = r#"{"checking":{"cycle":["R1"]}}"#;
-    let r7 = r#"{"checking":{"cycle":["R7"]}}"#;
-    let cases = [
-        ("same shape cycle", r1, r1, true),
-        (
-            "stale cycle duration",
-            r1,
-            r#"{"checking":{"cycle":["R1"]},"durations":{"checking_trial_s":100}}"#,
-            false,
-        ),
-        ("same shape R7 part", r7, r7, true),
-        (
-            "stale R7 part duration",
-            r7,
-            r#"{"checking":{"cycle":["R7"]},"durations":{"short_trial_s":100}}"#,
-            false,
-        ),
-    ];
-    for (name, before, after, retry) in cases {
-        let mut j = session(&[-10, -11, -12, -13], before);
-        let first = until_trial(&mut j);
-        assert_eq!(ordinals(&first.requirement), Some((1, 1)), "{name}");
-        ended(&mut j, &first, Outcome::Inconclusive, None);
-        j.load(&testkit::config(after));
-        assert_eq!(j.run().retry.is_some(), retry, "{name}");
-        let next = until_trial(&mut j);
-        assert_eq!(next.retry, retry, "{name}: {next:?}");
-        let duration = if retry { first.duration } else { secs(100) };
-        assert_eq!(next.duration, duration, "{name}");
-        j.intent(&next);
-        assert_eq!(shown(&j), scheduled(&next), "{name}");
-        j.assert_resumes();
-    }
+#[test_case::test_case("same shape cycle", r#"{"checking":{"cycle":["R1"]}}"#, r#"{"checking":{"cycle":["R1"]}}"#, true; "same shape cycle")]
+#[test_case::test_case("stale cycle duration", r#"{"checking":{"cycle":["R1"]}}"#, r#"{"checking":{"cycle":["R1"]},"durations":{"checking_trial_s":100}}"#, false; "stale cycle duration")]
+#[test_case::test_case("same shape R7 part", r#"{"checking":{"cycle":["R7"]}}"#, r#"{"checking":{"cycle":["R7"]}}"#, true; "same shape R7 part")]
+#[test_case::test_case("stale R7 part duration", r#"{"checking":{"cycle":["R7"]}}"#, r#"{"checking":{"cycle":["R7"]},"durations":{"short_trial_s":100}}"#, false; "stale R7 part duration")]
+fn cycle_retries_attach_the_requirement_the_fold_stores(
+    name: &str,
+    before: &str,
+    after: &str,
+    retry: bool,
+) {
+    let mut j = session(&[-10, -11, -12, -13], before);
+    let first = until_trial(&mut j);
+    assert_eq!(ordinals(&first.requirement), Some((1, 1)), "{name}");
+    ended(&mut j, &first, Outcome::Inconclusive, None);
+    j.load(&testkit::config(after));
+    assert_eq!(j.run().retry.is_some(), retry, "{name}");
+    let next = until_trial(&mut j);
+    assert_eq!(next.retry, retry, "{name}: {next:?}");
+    let duration = if retry { first.duration } else { secs(100) };
+    assert_eq!(next.duration, duration, "{name}");
+    j.intent(&next);
+    assert_eq!(shown(&j), scheduled(&next), "{name}");
+    j.assert_resumes();
 }
 
 #[test]

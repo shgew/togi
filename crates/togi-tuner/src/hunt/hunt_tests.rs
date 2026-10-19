@@ -107,70 +107,28 @@ fn group_in(decision: &crate::DecisionAction) -> &HuntGroup {
     group
 }
 
-#[test]
-fn hunt_parked_offsets_raises_the_passed_full_cycle_profile() {
-    struct Case {
-        name: &'static str,
-        passed: [i64; 4],
-        failing: [i64; 4],
-        parked: [i64; 4],
-        from_cycle: bool,
-        candidates: &'static [u8],
-    }
-    let cases = [
-        Case {
-            name: "shallower everywhere",
-            passed: [-10, -10, -10, -10],
-            failing: [-12, -10, -10, -10],
-            parked: [-10, -10, -10, -10],
-            from_cycle: true,
-            candidates: &[0],
-        },
-        Case {
-            name: "a yielded core takes its failing offset",
-            passed: [-10, -10, -10, -10],
-            failing: [-12, -8, -10, -10],
-            parked: [-10, -8, -10, -10],
-            from_cycle: true,
-            candidates: &[0],
-        },
-        Case {
-            name: "deeper everywhere falls back to all-zero",
-            passed: [-12, -12, -12, -12],
-            failing: [-10, -10, -10, -10],
-            parked: [0, 0, 0, 0],
-            from_cycle: false,
-            candidates: &[0, 1, 2, 3],
-        },
-    ];
-    for case in cases {
-        let starts: Vec<Start> = case.failing.iter().map(|&o| Start::has_room(o)).collect();
-        let mut j = Journal::new(&ids(4), &starts);
-        j.ranking(&ids(4));
-        let cycle = passed_cycle(&mut j, &case.passed, &case.failing);
-        fail_together(&mut j, &[0, 1, 2, 3], &case.failing, SHORT);
-        let (start, cause) = j.hunt_start_payload();
-        assert_eq!(
-            start.parked,
-            j.profile(&case.parked).offsets(),
-            "{}",
-            case.name
-        );
-        assert_eq!(
-            start.parked_seq,
-            case.from_cycle.then_some(cycle),
-            "{}",
-            case.name
-        );
-        assert_eq!(core_ids(start.candidates), case.candidates, "{}", case.name);
-        assert_eq!(
-            cause.len(),
-            1 + usize::from(case.from_cycle),
-            "{}",
-            case.name
-        );
-        j.assert_resumes();
-    }
+#[test_case::test_case("shallower everywhere", [-10, -10, -10, -10], [-12, -10, -10, -10], [-10, -10, -10, -10], true, &[0]; "shallower everywhere")]
+#[test_case::test_case("a yielded core takes its failing offset", [-10, -10, -10, -10], [-12, -8, -10, -10], [-10, -8, -10, -10], true, &[0]; "a yielded core takes its failing offset")]
+#[test_case::test_case("deeper everywhere falls back to all-zero", [-12, -12, -12, -12], [-10, -10, -10, -10], [0, 0, 0, 0], false, &[0, 1, 2, 3]; "deeper everywhere falls back to all-zero")]
+fn hunt_parked_offsets_raises_the_passed_full_cycle_profile(
+    name: &'static str,
+    passed: [i64; 4],
+    failing: [i64; 4],
+    parked: [i64; 4],
+    from_cycle: bool,
+    candidates: &'static [u8],
+) {
+    let starts: Vec<Start> = failing.iter().map(|&o| Start::has_room(o)).collect();
+    let mut j = Journal::new(&ids(4), &starts);
+    j.ranking(&ids(4));
+    let cycle = passed_cycle(&mut j, &passed, &failing);
+    fail_together(&mut j, &[0, 1, 2, 3], &failing, SHORT);
+    let (start, cause) = j.hunt_start_payload();
+    assert_eq!(start.parked, j.profile(&parked).offsets(), "{name}");
+    assert_eq!(start.parked_seq, from_cycle.then_some(cycle), "{name}");
+    assert_eq!(core_ids(start.candidates), candidates, "{name}");
+    assert_eq!(cause.len(), 1 + usize::from(from_cycle), "{name}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -453,91 +411,87 @@ fn next_hunt_reuses_established_part_groups() {
     j.assert_resumes();
 }
 
-#[test]
-fn hunt_group_reuse_after_reset() {
-    for stage in [HuntStage::Part, HuntStage::Complement] {
-        for (name, pass, after_reset, inferred) in [
-            ("old failure", false, false, None),
-            ("old pass", true, false, None),
-            ("new failure", false, true, Some(Inference::Failure)),
-            ("new pass", true, true, Some(Inference::Pass)),
-        ] {
-            let mut j = reuse_session();
-            let (outcome, trials) = if pass {
-                (Outcome::Pass, 5)
-            } else {
-                (Outcome::Failure, 1)
-            };
-            if after_reset {
-                reset_core_zero(&mut j);
-            }
-            ran_group(&mut j, 1, &REUSE_LOADED, &[-30; 3], stage, outcome, trials);
-            if !after_reset {
-                reset_core_zero(&mut j);
-            }
-            start_hunt_at(&mut j, 2, &REUSE_LOADED, &[-30; 3]);
-            let decision = reach(&mut j, stage);
-            let group = group_in(&decision);
-            assert_eq!(group.inferred, inferred, "{stage:?} {name}");
-            assert!(!group.skipped, "{stage:?} {name}");
-            j.assert_resumes();
-        }
+#[test_case::test_case(HuntStage::Part, ("old failure", false, false, None); "HuntStage::Part; old failure")]
+#[test_case::test_case(HuntStage::Part, ("old pass", true, false, None); "HuntStage::Part; old pass")]
+#[test_case::test_case(HuntStage::Part, ("new failure", false, true, Some(Inference::Failure)); "HuntStage::Part; new failure")]
+#[test_case::test_case(HuntStage::Part, ("new pass", true, true, Some(Inference::Pass)); "HuntStage::Part; new pass")]
+#[test_case::test_case(HuntStage::Complement, ("old failure", false, false, None); "HuntStage::Complement; old failure")]
+#[test_case::test_case(HuntStage::Complement, ("old pass", true, false, None); "HuntStage::Complement; old pass")]
+#[test_case::test_case(HuntStage::Complement, ("new failure", false, true, Some(Inference::Failure)); "HuntStage::Complement; new failure")]
+#[test_case::test_case(HuntStage::Complement, ("new pass", true, true, Some(Inference::Pass)); "HuntStage::Complement; new pass")]
+fn hunt_group_reuse_after_reset(
+    stage: HuntStage,
+    (name, pass, after_reset, inferred): (&str, bool, bool, Option<Inference>),
+) {
+    let mut j = reuse_session();
+    let (outcome, trials) = if pass {
+        (Outcome::Pass, 5)
+    } else {
+        (Outcome::Failure, 1)
+    };
+    if after_reset {
+        reset_core_zero(&mut j);
     }
+    ran_group(&mut j, 1, &REUSE_LOADED, &[-30; 3], stage, outcome, trials);
+    if !after_reset {
+        reset_core_zero(&mut j);
+    }
+    start_hunt_at(&mut j, 2, &REUSE_LOADED, &[-30; 3]);
+    let decision = reach(&mut j, stage);
+    let group = group_in(&decision);
+    assert_eq!(group.inferred, inferred, "{stage:?} {name}");
+    assert!(!group.skipped, "{stage:?} {name}");
+    j.assert_resumes();
 }
 
-#[test]
-fn running_hunt_group_reuses_earlier_passes() {
-    for stage in [HuntStage::Part, HuntStage::Complement] {
-        let mut j = reuse_session();
-        ran_group(&mut j, 1, &REUSE_LOADED, &[-30; 3], stage, Outcome::Pass, 4);
-        start_hunt_at(&mut j, 2, &REUSE_LOADED, &[-30; 3]);
-        let decision = reach(&mut j, stage);
-        assert_eq!(group_in(&decision).inferred, None, "{stage:?}");
-        j.decide(decision);
-        let view = j.run().hunt_groups();
-        let running = view.last().unwrap();
-        assert_eq!((running.passed, running.outcome), (4, None), "{stage:?}");
-        assert!(matches!(j.next(), Action::RunTrial(_)), "{stage:?}");
+#[test_case::test_case(HuntStage::Part; "HuntStage::Part")]
+#[test_case::test_case(HuntStage::Complement; "HuntStage::Complement")]
+fn running_hunt_group_reuses_earlier_passes(stage: HuntStage) {
+    let mut j = reuse_session();
+    ran_group(&mut j, 1, &REUSE_LOADED, &[-30; 3], stage, Outcome::Pass, 4);
+    start_hunt_at(&mut j, 2, &REUSE_LOADED, &[-30; 3]);
+    let decision = reach(&mut j, stage);
+    assert_eq!(group_in(&decision).inferred, None, "{stage:?}");
+    j.decide(decision);
+    let view = j.run().hunt_groups();
+    let running = view.last().unwrap();
+    assert_eq!((running.passed, running.outcome), (4, None), "{stage:?}");
+    assert!(matches!(j.next(), Action::RunTrial(_)), "{stage:?}");
 
-        run_group(&mut j, false);
-        let view = j.run().hunt_groups();
-        let settled = view.last().unwrap();
-        assert_eq!(
-            (settled.passed, settled.outcome),
-            (5, Some(GroupOutcome::Passed)),
-            "{stage:?}"
-        );
-        assert!(matches!(j.next(), Action::Decide(_)), "{stage:?}");
-        j.assert_resumes();
-    }
+    run_group(&mut j, false);
+    let view = j.run().hunt_groups();
+    let settled = view.last().unwrap();
+    assert_eq!(
+        (settled.passed, settled.outcome),
+        (5, Some(GroupOutcome::Passed)),
+        "{stage:?}"
+    );
+    assert!(matches!(j.next(), Action::Decide(_)), "{stage:?}");
+    j.assert_resumes();
 }
 
-#[test]
-fn hunt_group_does_not_reuse_shallower_or_incomparable_passes() {
-    for (name, failing) in [
-        ("shallower", [-30, -29, -30]),
-        ("incomparable", [-30, -31, -29]),
-    ] {
-        let mut j = reuse_session();
-        ran_group(
-            &mut j,
-            1,
-            &REUSE_LOADED,
-            &failing,
-            HuntStage::Part,
-            Outcome::Pass,
-            5,
-        );
-        start_hunt_at(&mut j, 2, &REUSE_LOADED, &[-30; 3]);
-        let decision = reach(&mut j, HuntStage::Part);
-        assert_eq!(group_in(&decision).inferred, None, "{name}");
-        j.decide(decision);
-        let view = j.run().hunt_groups();
-        let group = view.last().unwrap();
-        assert_eq!((group.passed, group.outcome), (0, None), "{name}");
-        assert!(matches!(j.next(), Action::RunTrial(_)), "{name}");
-        j.assert_resumes();
-    }
+#[test_case::test_case("shallower", [-30, -29, -30]; "shallower")]
+#[test_case::test_case("incomparable", [-30, -31, -29]; "incomparable")]
+fn hunt_group_does_not_reuse_shallower_or_incomparable_passes(name: &str, failing: [i64; 3]) {
+    let mut j = reuse_session();
+    ran_group(
+        &mut j,
+        1,
+        &REUSE_LOADED,
+        &failing,
+        HuntStage::Part,
+        Outcome::Pass,
+        5,
+    );
+    start_hunt_at(&mut j, 2, &REUSE_LOADED, &[-30; 3]);
+    let decision = reach(&mut j, HuntStage::Part);
+    assert_eq!(group_in(&decision).inferred, None, "{name}");
+    j.decide(decision);
+    let view = j.run().hunt_groups();
+    let group = view.last().unwrap();
+    assert_eq!((group.passed, group.outcome), (0, None), "{name}");
+    assert!(matches!(j.next(), Action::RunTrial(_)), "{name}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -711,8 +665,106 @@ fn carry_parked_failure(j: &mut Journal, shape: &Parked) -> Seq {
     j.append(payload.into(), &[])
 }
 
-#[test]
-fn repeated_parked_core_probe_requires_matching_adjacent_failures_since_reset() {
+#[test_case::test_case("matching adjacent failures", true, false, &Parked {
+        workload: 0,
+        duration: SHORT,
+        loaded: vec![0, 1, 2, 3],
+        condition: Condition::Parked,
+        profile: vec![0, -9, 0, 0],
+        named: Some(1),
+    }; "matching adjacent failures")]
+#[test_case::test_case("different workload", false, false, &Parked {
+                workload: 1,
+                ..Parked {
+        workload: 0,
+        duration: SHORT,
+        loaded: vec![0, 1, 2, 3],
+        condition: Condition::Parked,
+        profile: vec![0, -9, 0, 0],
+        named: Some(1),
+    }
+            }; "different workload")]
+#[test_case::test_case("different duration", false, false, &Parked {
+                duration: 600,
+                ..Parked {
+        workload: 0,
+        duration: SHORT,
+        loaded: vec![0, 1, 2, 3],
+        condition: Condition::Parked,
+        profile: vec![0, -9, 0, 0],
+        named: Some(1),
+    }
+            }; "different duration")]
+#[test_case::test_case("different loaded cores", false, false, &Parked {
+                loaded: vec![0, 1],
+                ..Parked {
+        workload: 0,
+        duration: SHORT,
+        loaded: vec![0, 1, 2, 3],
+        condition: Condition::Parked,
+        profile: vec![0, -9, 0, 0],
+        named: Some(1),
+    }
+            }; "different loaded cores")]
+#[test_case::test_case("together failure", false, false, &Parked {
+                condition: Condition::Together,
+                ..Parked {
+        workload: 0,
+        duration: SHORT,
+        loaded: vec![0, 1, 2, 3],
+        condition: Condition::Parked,
+        profile: vec![0, -9, 0, 0],
+        named: Some(1),
+    }
+            }; "together failure")]
+#[test_case::test_case("unattributed failure", false, false, &Parked {
+                named: None,
+                ..Parked {
+        workload: 0,
+        duration: SHORT,
+        loaded: vec![0, 1, 2, 3],
+        condition: Condition::Parked,
+        profile: vec![0, -9, 0, 0],
+        named: Some(1),
+    }
+            }; "unattributed failure")]
+#[test_case::test_case("different culprit", false, false, &Parked {
+                profile: vec![-9, 0, 0, 0],
+                named: Some(0),
+                ..Parked {
+        workload: 0,
+        duration: SHORT,
+        loaded: vec![0, 1, 2, 3],
+        condition: Condition::Parked,
+        profile: vec![0, -9, 0, 0],
+        named: Some(1),
+    }
+            }; "different culprit")]
+#[test_case::test_case("nonadjacent offsets", false, false, &Parked {
+                profile: vec![0, -8, 0, 0],
+                ..Parked {
+        workload: 0,
+        duration: SHORT,
+        loaded: vec![0, 1, 2, 3],
+        condition: Condition::Parked,
+        profile: vec![0, -9, 0, 0],
+        named: Some(1),
+    }
+            }; "nonadjacent offsets")]
+#[test_case::test_case("reset between failures", false, true, &Parked {
+        workload: 0,
+        duration: SHORT,
+        loaded: vec![0, 1, 2, 3],
+        condition: Condition::Parked,
+        profile: vec![0, -9, 0, 0],
+        named: Some(1),
+    }; "reset between failures")]
+fn repeated_parked_core_probe_requires_matching_adjacent_failures_since_reset(
+    name: &str,
+    probe: bool,
+    reset: bool,
+    second: &Parked,
+) {
     let base = || Parked {
         workload: 0,
         duration: SHORT,
@@ -721,115 +773,46 @@ fn repeated_parked_core_probe_requires_matching_adjacent_failures_since_reset() 
         profile: vec![0, -9, 0, 0],
         named: Some(1),
     };
-    let cases: Vec<(&str, bool, bool, Parked)> = vec![
-        ("matching adjacent failures", true, false, base()),
-        (
-            "different workload",
-            false,
-            false,
-            Parked {
-                workload: 1,
-                ..base()
-            },
-        ),
-        (
-            "different duration",
-            false,
-            false,
-            Parked {
-                duration: 600,
-                ..base()
-            },
-        ),
-        (
-            "different loaded cores",
-            false,
-            false,
-            Parked {
-                loaded: vec![0, 1],
-                ..base()
-            },
-        ),
-        (
-            "together failure",
-            false,
-            false,
-            Parked {
-                condition: Condition::Together,
-                ..base()
-            },
-        ),
-        (
-            "unattributed failure",
-            false,
-            false,
-            Parked {
-                named: None,
-                ..base()
-            },
-        ),
-        (
-            "different culprit",
-            false,
-            false,
-            Parked {
-                profile: vec![-9, 0, 0, 0],
-                named: Some(0),
-                ..base()
-            },
-        ),
-        (
-            "nonadjacent offsets",
-            false,
-            false,
-            Parked {
-                profile: vec![0, -8, 0, 0],
-                ..base()
-            },
-        ),
-        ("reset between failures", false, true, base()),
-    ];
-    for (name, probe, reset, second) in cases {
-        let starts = [-20, -8, -20, -20].map(Start::has_room);
-        let mut j = Journal::new(&ids(4), &starts);
-        j.profile_change(&[-20, -8, -20, -20]);
-        j.ranking(&ids(4));
-        let older = carry_parked_failure(
-            &mut j,
-            &Parked {
-                profile: vec![0, -10, 0, 0],
-                ..base()
-            },
-        );
-        if reset {
-            j.reset(1);
-            let transition = j.next_decision();
-            j.decide(transition);
-        }
-        let newer = carry_parked_failure(&mut j, &second);
-        j.core_phase(CoreTransition {
-            core: core(1),
-            from: None,
-            to: CorePhase::AtLimit,
-            offset: off(-8),
-            pass: None,
-            failure_point: Some(off(-9)),
-            check_solo_limit: false,
-            workloads: Vec::new(),
-            cleared_combination: Vec::new(),
-            reason: "test".to_owned(),
-        });
-        let failure = fail_together(&mut j, &[0, 1, 2, 3], &[-20, -8, -20, -20], SHORT);
-        let (hunt, start) = j.start_hunt();
-        assert_eq!(start.failure, failure, "{name}");
-        let (group, cause) = j.group_plan();
-        let expected: &[u8] = if probe { &[1] } else { &[0, 1] };
-        assert_eq!(core_ids(group.cores), expected, "{name}");
-        if probe {
-            assert_eq!(cause, [hunt, older, newer], "{name}");
-        }
-        j.assert_resumes();
+
+    let starts = [-20, -8, -20, -20].map(Start::has_room);
+    let mut j = Journal::new(&ids(4), &starts);
+    j.profile_change(&[-20, -8, -20, -20]);
+    j.ranking(&ids(4));
+    let older = carry_parked_failure(
+        &mut j,
+        &Parked {
+            profile: vec![0, -10, 0, 0],
+            ..base()
+        },
+    );
+    if reset {
+        j.reset(1);
+        let transition = j.next_decision();
+        j.decide(transition);
     }
+    let newer = carry_parked_failure(&mut j, second);
+    j.core_phase(CoreTransition {
+        core: core(1),
+        from: None,
+        to: CorePhase::AtLimit,
+        offset: off(-8),
+        pass: None,
+        failure_point: Some(off(-9)),
+        check_solo_limit: false,
+        workloads: Vec::new(),
+        cleared_combination: Vec::new(),
+        reason: "test".to_owned(),
+    });
+    let failure = fail_together(&mut j, &[0, 1, 2, 3], &[-20, -8, -20, -20], SHORT);
+    let (hunt, start) = j.start_hunt();
+    assert_eq!(start.failure, failure, "{name}");
+    let (group, cause) = j.group_plan();
+    let expected: &[u8] = if probe { &[1] } else { &[0, 1] };
+    assert_eq!(core_ids(group.cores), expected, "{name}");
+    if probe {
+        assert_eq!(cause, [hunt, older, newer], "{name}");
+    }
+    j.assert_resumes();
 }
 
 fn is_hunt_end(action: &Action, result: HuntOutcome) -> bool {
@@ -1038,69 +1021,50 @@ fn combination_backoff_moves_to_a_tested_probe() {
     j.assert_resumes();
 }
 
-#[test]
-fn hunt_fallback_and_full_check() {
-    struct Case {
-        name: &'static str,
-        duration: u32,
-        full_fails: bool,
-        result: HuntOutcome,
-        reason: &'static [&'static str],
-    }
-    let cases = [
-        Case {
-            name: "fallback",
-            duration: 120,
-            full_fails: false,
-            result: HuntOutcome::Fallback,
-            reason: &["unresolved", "combination"],
-        },
-        Case {
-            name: "full failure",
-            duration: 600,
-            full_fails: true,
-            result: HuntOutcome::Combination,
-            reason: &[
+#[test_case::test_case("fallback", 120, false, HuntOutcome::Fallback, &["unresolved", "combination"]; "fallback")]
+#[test_case::test_case("full failure", 600, true, HuntOutcome::Combination, &[
                 "member probes",
                 "core 00 -30",
                 "core 01 -30",
                 "a count shallower",
-            ],
-        },
-    ];
-    for case in cases {
-        let mut j = hunt_of(2, case.duration);
-        let mut full = 0;
-        let end = loop {
-            let action = j.next();
-            if group_of(&action).is_some_and(|g| g.stage == HuntStage::Full) {
-                full += 1;
-            }
-            if let Some(end) = end_of(&action) {
-                break end.clone();
-            }
-            j.step(&mut |plan| {
-                if case.full_fails && at(plan, 0) == -30 && at(plan, 1) == -30 {
-                    Outcome::Failure
-                } else {
-                    Outcome::Pass
-                }
-            });
-        };
-        assert_eq!(end.result, case.result, "{}: {}", case.name, end.reason);
-        for token in case.reason {
-            assert!(
-                end.reason.contains(token),
-                "{}: {:?} lacks {token}",
-                case.name,
-                end.reason
-            );
+            ]; "full failure")]
+fn hunt_fallback_and_full_check(
+    name: &'static str,
+    duration: u32,
+    full_fails: bool,
+    result: HuntOutcome,
+    reason: &'static [&'static str],
+) {
+    let mut j = hunt_of(2, duration);
+    let mut full = 0;
+    let end = loop {
+        let action = j.next();
+        if group_of(&action).is_some_and(|g| g.stage == HuntStage::Full) {
+            full += 1;
         }
-        if case.full_fails {
-            assert_eq!(full, 1, "{}", case.name);
+        if let Some(end) = end_of(&action) {
+            break end.clone();
         }
-        j.assert_resumes();
+        j.step(&mut |plan| {
+            if full_fails && at(plan, 0) == -30 && at(plan, 1) == -30 {
+                Outcome::Failure
+            } else {
+                Outcome::Pass
+            }
+        });
+    };
+    assert_eq!(end.result, result, "{name}: {}", end.reason);
+    for token in reason {
+        assert!(
+            end.reason.contains(token),
+            "{name}: {:?} lacks {token}",
+            end.reason
+        );
     }
+    if full_fails {
+        assert_eq!(full, 1, "{name}");
+    }
+    j.assert_resumes();
 }
 
 fn limited(offsets: [i64; 2]) -> Journal {
@@ -1160,55 +1124,53 @@ fn hunt_culprit_discards_contradicted_pass() {
     j.assert_resumes();
 }
 
-#[test]
-fn sixteen_core_culprit_and_pair() {
-    for (name, members, result) in [
-        ("single core", vec![13u8], HuntOutcome::Direct),
-        ("combination pair", vec![3, 11], HuntOutcome::Combination),
-    ] {
-        let mut j = hunt_of(16, SHORT);
-        let mut oracle = |plan: &TrialPlan| {
-            if members.iter().all(|&member| at(plan, member) == -30) {
-                Outcome::Failure
-            } else {
-                Outcome::Pass
-            }
-        };
-        let mut groups = 0;
-        let mut end = None;
-        for _ in 0..2500 {
-            let action = j.step(&mut oracle);
-            if let Some(group) = group_of(&action) {
-                groups = groups.max(group.group.get());
-            }
-            if let Some(found) = end_of(&action) {
-                end = Some(found.clone());
-                break;
-            }
+#[test_case::test_case("single core", &[13u8], HuntOutcome::Direct; "single core")]
+#[test_case::test_case("combination pair", &[3, 11], HuntOutcome::Combination; "combination pair")]
+fn sixteen_core_culprit_and_pair(name: &str, members: &[u8], result: HuntOutcome) {
+    let mut j = hunt_of(16, SHORT);
+    let mut oracle = |plan: &TrialPlan| {
+        if members.iter().all(|&member| at(plan, member) == -30) {
+            Outcome::Failure
+        } else {
+            Outcome::Pass
         }
-        let end = end.unwrap_or_else(|| panic!("{name}: the hunt did not terminate"));
-        assert_eq!(end.result, result, "{name}: {end:?}");
-        assert_eq!(core_ids(end.cores), members, "{name}");
-        assert!(
-            groups <= 194,
-            "{name}: {groups} groups exceed the progress bound"
-        );
-        j.assert_resumes();
+    };
+    let mut groups = 0;
+    let mut end = None;
+    for _ in 0..2500 {
+        let action = j.step(&mut oracle);
+        if let Some(group) = group_of(&action) {
+            groups = groups.max(group.group.get());
+        }
+        if let Some(found) = end_of(&action) {
+            end = Some(found.clone());
+            break;
+        }
     }
+    let end = end.unwrap_or_else(|| panic!("{name}: the hunt did not terminate"));
+    assert_eq!(end.result, result, "{name}: {end:?}");
+    assert_eq!(core_ids(end.cores), members, "{name}");
+    assert!(
+        groups <= 194,
+        "{name}: {groups} groups exceed the progress bound"
+    );
+    j.assert_resumes();
 }
 
-#[test]
-fn hunt_duration_prior_respects_evidence_and_short_failures() {
-    struct Case {
-        name: &'static str,
-        count: usize,
-        workload: usize,
-        profile: [i64; 2],
-        short_failed: bool,
-        reset: bool,
-        want: u32,
-    }
-    let base = Case {
+#[derive(Clone, Copy)]
+struct DurationCase {
+    name: &'static str,
+    count: usize,
+    workload: usize,
+    profile: [i64; 2],
+    short_failed: bool,
+    reset: bool,
+    want: u32,
+}
+
+#[test_case::test_case(DurationCase {
+            name: "valid deeper passes",
+            ..DurationCase {
         name: "",
         count: 5,
         workload: 0,
@@ -1216,208 +1178,238 @@ fn hunt_duration_prior_respects_evidence_and_short_failures() {
         short_failed: false,
         reset: false,
         want: 600,
-    };
-    let cases = [
-        Case {
-            name: "valid deeper passes",
-            ..base
-        },
-        Case {
+    }
+        }; "valid deeper passes")]
+#[test_case::test_case(DurationCase {
             name: "short failure in another workload",
             short_failed: true,
             want: 120,
-            ..base
-        },
-        Case {
+            ..DurationCase {
+        name: "",
+        count: 5,
+        workload: 0,
+        profile: [-32, -32],
+        short_failed: false,
+        reset: false,
+        want: 600,
+    }
+        }; "short failure in another workload")]
+#[test_case::test_case(DurationCase {
             name: "insufficient trials",
             count: 4,
             want: 120,
-            ..base
-        },
-        Case {
+            ..DurationCase {
+        name: "",
+        count: 5,
+        workload: 0,
+        profile: [-32, -32],
+        short_failed: false,
+        reset: false,
+        want: 600,
+    }
+        }; "insufficient trials")]
+#[test_case::test_case(DurationCase {
             name: "different workload",
             workload: 1,
             want: 120,
-            ..base
-        },
-        Case {
+            ..DurationCase {
+        name: "",
+        count: 5,
+        workload: 0,
+        profile: [-32, -32],
+        short_failed: false,
+        reset: false,
+        want: 600,
+    }
+        }; "different workload")]
+#[test_case::test_case(DurationCase {
             name: "incomparable profile",
             profile: [-32, -29],
             want: 120,
-            ..base
-        },
-        Case {
+            ..DurationCase {
+        name: "",
+        count: 5,
+        workload: 0,
+        profile: [-32, -32],
+        short_failed: false,
+        reset: false,
+        want: 600,
+    }
+        }; "incomparable profile")]
+#[test_case::test_case(DurationCase {
             name: "reset evidence boundary",
             reset: true,
             want: 120,
-            ..base
-        },
-    ];
-    for case in cases {
-        let mut j = Journal::new(&[0, 1], &[Start::has_room(-30); 2]);
-        j.profile_change(&[-30, -30]);
-        j.ranking(&[0, 1]);
-        if case.short_failed {
+            ..DurationCase {
+        name: "",
+        count: 5,
+        workload: 0,
+        profile: [-32, -32],
+        short_failed: false,
+        reset: false,
+        want: 600,
+    }
+        }; "reset evidence boundary")]
+fn hunt_duration_prior_respects_evidence_and_short_failures(case: DurationCase) {
+    let mut j = Journal::new(&[0, 1], &[Start::has_room(-30); 2]);
+    j.profile_change(&[-30, -30]);
+    j.ranking(&[0, 1]);
+    if case.short_failed {
+        j.carry(
+            "20230101T000000Z",
+            (Regime::R6, 1, &[0, 1], SHORT),
+            Condition::Parked,
+            &[-40, 0],
+            Outcome::Failure,
+        );
+    }
+    let passes: Vec<Seq> = (0..case.count)
+        .map(|_| {
             j.carry(
                 "20230101T000000Z",
-                (Regime::R6, 1, &[0, 1], SHORT),
+                (Regime::R6, case.workload, &[0, 1], SHORT),
                 Condition::Parked,
-                &[-40, 0],
-                Outcome::Failure,
-            );
-        }
-        let passes: Vec<Seq> = (0..case.count)
-            .map(|_| {
-                j.carry(
-                    "20230101T000000Z",
-                    (Regime::R6, case.workload, &[0, 1], SHORT),
-                    Condition::Parked,
-                    &case.profile,
-                    Outcome::Pass,
-                )
-            })
-            .collect();
-        if case.reset {
-            j.reset(0);
-            let transition = j.next_decision();
-            j.decide(transition);
-            restore_has_room(&mut j, 0, -30);
-        }
-        fail_together(&mut j, &[0, 1], &[-30, -30], 600);
-        let (hunt, _) = j.start_hunt();
-        let (group, cause) = j.group_plan();
-        assert_eq!(group.duration_s, case.want, "{}", case.name);
-        if case.want == 600 {
-            let mut cited = vec![hunt];
-            cited.extend(&passes);
-            assert_eq!(cause, cited, "{}", case.name);
-        }
-        let Action::Decide(planned) = j.next() else {
-            unreachable!();
-        };
-        j.decide(planned);
-        let next = j.next();
-        assert_eq!(j.resumed().next(), next, "{}", case.name);
-        if group.inferred.is_none() {
-            let Action::RunTrial(plan) = &next else {
-                panic!("{}: expected the group's trial, got {next:?}", case.name);
-            };
-            assert_eq!(plan.duration.get(), case.want, "{}", case.name);
-        }
-        j.assert_resumes();
+                &case.profile,
+                Outcome::Pass,
+            )
+        })
+        .collect();
+    if case.reset {
+        j.reset(0);
+        let transition = j.next_decision();
+        j.decide(transition);
+        restore_has_room(&mut j, 0, -30);
     }
+    fail_together(&mut j, &[0, 1], &[-30, -30], 600);
+    let (hunt, _) = j.start_hunt();
+    let (group, cause) = j.group_plan();
+    assert_eq!(group.duration_s, case.want, "{}", case.name);
+    if case.want == 600 {
+        let mut cited = vec![hunt];
+        cited.extend(&passes);
+        assert_eq!(cause, cited, "{}", case.name);
+    }
+    let Action::Decide(planned) = j.next() else {
+        unreachable!();
+    };
+    j.decide(planned);
+    let next = j.next();
+    assert_eq!(j.resumed().next(), next, "{}", case.name);
+    if group.inferred.is_none() {
+        let Action::RunTrial(plan) = &next else {
+            panic!("{}: expected the group's trial, got {next:?}", case.name);
+        };
+        assert_eq!(plan.duration.get(), case.want, "{}", case.name);
+    }
+    j.assert_resumes();
 }
 
-#[test]
-fn hunt_duration_prior_is_vetoed_by_an_earlier_idle_failure() {
+#[test_case::test_case("no idle failure", None, 600; "no idle failure")]
+#[test_case::test_case("live idle failure", Some(false), 120; "live idle failure")]
+#[test_case::test_case("carried idle failure", Some(true), 120; "carried idle failure")]
+fn hunt_duration_prior_is_vetoed_by_an_earlier_idle_failure(
+    name: &str,
+    idle: Option<bool>,
+    want: u32,
+) {
     let session = "20230101T000000Z";
-    for (name, idle, want) in [
-        ("no idle failure", None, 600),
-        ("live idle failure", Some(false), 120),
-        ("carried idle failure", Some(true), 120),
-    ] {
-        let mut j = Journal::new(&[0, 1], &[Start::has_room(-30); 2]);
-        j.profile_change(&[-30, -30]);
-        j.ranking(&[0, 1]);
-        let passes: Vec<Seq> = (0..5)
-            .map(|_| {
-                j.carry(
-                    session,
-                    (Regime::R6, 0, &[0, 1], SHORT),
-                    Condition::Parked,
-                    &[-32, -32],
-                    Outcome::Pass,
-                )
-            })
-            .collect();
-        match idle {
-            Some(false) => {
-                let deep = j.profile(&[-40, -40]).offsets();
-                j.idle_failure(deep, Condition::Together);
-            }
-            Some(true) => {
-                j.carry_idle(session, &[-40, -40]);
-            }
-            None => {}
+
+    let mut j = Journal::new(&[0, 1], &[Start::has_room(-30); 2]);
+    j.profile_change(&[-30, -30]);
+    j.ranking(&[0, 1]);
+    let passes: Vec<Seq> = (0..5)
+        .map(|_| {
+            j.carry(
+                session,
+                (Regime::R6, 0, &[0, 1], SHORT),
+                Condition::Parked,
+                &[-32, -32],
+                Outcome::Pass,
+            )
+        })
+        .collect();
+    match idle {
+        Some(false) => {
+            let deep = j.profile(&[-40, -40]).offsets();
+            j.idle_failure(deep, Condition::Together);
         }
-        let failure = j.next_seq();
-        let start = HuntStart {
-            hunt: std::num::NonZeroU32::MIN,
-            failure,
-            trial: Some(togi_journal::TrialId::from("0001".to_owned())),
-            regime: Regime::R6,
-            workload: workloads(Regime::R6)[0].id(),
-            cores: set(&[0, 1]),
-            duration_s: 600,
-            failing: j.profile(&[-30, -30]).offsets(),
-            parked: j.profile(&[0, 0]).offsets(),
-            parked_seq: None,
-            candidates: set(&[0, 1]),
-            trials: 5,
-            trial_s: SHORT,
-            miss: 0.0,
-            rate: 0.0,
-            ranking: vec![core(0), core(1)],
-            reason: None,
-        };
-        let hunt = j.append(start.into(), &[]);
-        let (group, cause) = j.group_plan();
-        assert_eq!(group.duration_s, want, "{name}");
-        if want == 600 {
-            let mut cited = vec![hunt];
-            cited.extend(&passes);
-            assert_eq!(cause, cited, "{name}");
+        Some(true) => {
+            j.carry_idle(session, &[-40, -40]);
         }
-        j.assert_resumes();
+        None => {}
     }
+    let failure = j.next_seq();
+    let start = HuntStart {
+        hunt: std::num::NonZeroU32::MIN,
+        failure,
+        trial: Some(togi_journal::TrialId::from("0001".to_owned())),
+        regime: Regime::R6,
+        workload: workloads(Regime::R6)[0].id(),
+        cores: set(&[0, 1]),
+        duration_s: 600,
+        failing: j.profile(&[-30, -30]).offsets(),
+        parked: j.profile(&[0, 0]).offsets(),
+        parked_seq: None,
+        candidates: set(&[0, 1]),
+        trials: 5,
+        trial_s: SHORT,
+        miss: 0.0,
+        rate: 0.0,
+        ranking: vec![core(0), core(1)],
+        reason: None,
+    };
+    let hunt = j.append(start.into(), &[]);
+    let (group, cause) = j.group_plan();
+    assert_eq!(group.duration_s, want, "{name}");
+    if want == 600 {
+        let mut cited = vec![hunt];
+        cited.extend(&passes);
+        assert_eq!(cause, cited, "{name}");
+    }
+    j.assert_resumes();
 }
 
-#[test]
-fn hunt_duration_escalation_only_for_longer_failure() {
-    let part = |duration| (HuntStage::Part, duration, false);
-    for (name, duration, expected) in [
-        ("shorter", 90, vec![part(120), part(120)]),
-        ("equal", 120, vec![part(120), part(120)]),
-        (
-            "longer",
-            600,
-            vec![
-                part(120),
-                part(120),
+#[test_case::test_case("shorter", 90, &[(HuntStage::Part, 120, false), (HuntStage::Part, 120, false)]; "shorter")]
+#[test_case::test_case("equal", 120, &[(HuntStage::Part, 120, false), (HuntStage::Part, 120, false)]; "equal")]
+#[test_case::test_case("longer", 600, &[
+                (HuntStage::Part, 120, false),
+                (HuntStage::Part, 120, false),
                 (HuntStage::Full, 120, false),
                 (HuntStage::Part, 600, true),
                 (HuntStage::Part, 600, true),
-            ],
-        ),
-    ] {
-        let mut j = hunt_of(2, duration);
-        let mut groups = Vec::new();
-        let mut trials = 0;
-        loop {
-            let action = j.next();
-            match &action {
-                Action::Decide(decision) => {
-                    if let DecisionPayload::HuntGroup(group) = &decision.payload {
-                        groups.push((group.stage, group.duration_s, group.escalated));
-                    } else if let DecisionPayload::HuntEnd(end) = &decision.payload {
-                        assert_eq!(end.result, HuntOutcome::Fallback, "{name}");
-                        assert_eq!(j.resumed().next(), action, "{name}");
-                        break;
-                    }
+            ]; "longer")]
+fn hunt_duration_escalation_only_for_longer_failure(
+    name: &str,
+    duration: u32,
+    expected: &[(HuntStage, u32, bool)],
+) {
+    let mut j = hunt_of(2, duration);
+    let mut groups = Vec::new();
+    let mut trials = 0;
+    loop {
+        let action = j.next();
+        match &action {
+            Action::Decide(decision) => {
+                if let DecisionPayload::HuntGroup(group) = &decision.payload {
+                    groups.push((group.stage, group.duration_s, group.escalated));
+                } else if let DecisionPayload::HuntEnd(end) = &decision.payload {
+                    assert_eq!(end.result, HuntOutcome::Fallback, "{name}");
+                    assert_eq!(j.resumed().next(), action, "{name}");
+                    break;
                 }
-                Action::RunTrial(plan) => {
-                    let latest = j.run().hunts.active.as_ref().unwrap().latest().unwrap();
-                    assert_eq!(plan.duration.get(), latest.payload.duration_s, "{name}");
-                    trials += 1;
-                }
-                Action::ReadRanking => panic!("{name}: unexpected {action:?}"),
             }
-            j.step(&mut pass_all);
+            Action::RunTrial(plan) => {
+                let latest = j.run().hunts.active.as_ref().unwrap().latest().unwrap();
+                assert_eq!(plan.duration.get(), latest.payload.duration_s, "{name}");
+                trials += 1;
+            }
+            Action::ReadRanking => panic!("{name}: unexpected {action:?}"),
         }
-        assert_eq!(groups, expected, "{name}");
-        assert_eq!(trials, expected.len() * 5, "{name}");
-        j.assert_resumes();
+        j.step(&mut pass_all);
     }
+    assert_eq!(groups, expected, "{name}");
+    assert_eq!(trials, expected.len() * 5, "{name}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -1632,112 +1624,110 @@ fn named_failure(j: &mut Journal, plan: &TrialPlan, named: u8) -> Seq {
     j.append(end.into(), &[intent])
 }
 
-#[test]
-fn parked_failure_naming_a_core_at_zero_reruns_all_zero() {
-    for rerun_fails in [false, true] {
-        let mut j = hunt_of(4, SHORT);
-        let planned = j.next_decision();
-        let group = group_in(&planned).clone();
-        j.decide(planned);
-        let parked = ids(4)
-            .into_iter()
-            .find(|&id| !group.cores.contains(core(id)))
-            .unwrap();
-        let plan = j.next_trial();
-        named_failure(&mut j, &plan, parked);
-        let attribution = j.next_decision();
-        let DecisionPayload::Failure(record) = &attribution.payload else {
-            panic!("expected the attribution, got {attribution:?}");
-        };
-        assert_eq!(record.core, Some(core(parked)));
-        assert_eq!(record.offset, Some(off(0)));
-        let failure = j.decide(attribution);
-        let rerun = j.next_trial();
-        assert_eq!(
-            rerun.requirement.context,
-            TrialContext::ZeroRerun { failure }
-        );
-        assert_eq!(rerun.condition, Condition::Parked);
-        assert_eq!(rerun.activity, Activity::Hunt);
-        assert_eq!(rerun.duration.get(), SHORT);
-        assert_eq!(rerun.cause, [failure]);
-        assert_eq!(rerun.requirement.needed.get(), 1);
-        assert!(rerun.profile.is_zero());
-        assert_eq!(rerun.load, Load::Many(set(&ids(4))));
-        if !rerun_fails {
-            j.trial(&rerun, Outcome::Pass);
-            let next = j.next();
-            let planned = group_of(&next).expect("the failure goes to the group's members");
-            assert!(!planned.cores.is_empty());
-            assert!(planned.cores.iter().all(|c| group.cores.contains(c)));
-            j.assert_resumes();
-            continue;
-        }
-        let rerun_end = j.trial(&rerun, Outcome::Failure);
-        let after = j.next_decision();
-        j.decide(after);
-        let action = j.next();
-        let decision = expect_decision(action);
-        let DecisionPayload::DeadEnd(dead) = &decision.payload else {
-            panic!("expected the dead end, got {decision:?}");
-        };
-        assert_eq!(
-            dead.condition,
-            togi_journal::DeadEndCondition::FailureAtZero
-        );
-        assert_eq!(decision.cause, [failure, rerun_end]);
-        assert_eq!(
-            dead.detail,
-            format!(
-                "core {parked:02} failed at CO 0; the rerun with every core at CO 0 failed too (#{rerun_end}), so the instability is not caused by Curve Optimizer"
-            )
-        );
+#[test_case::test_case(false; "not rerun_fails")]
+#[test_case::test_case(true; "rerun_fails")]
+fn parked_failure_naming_a_core_at_zero_reruns_all_zero(rerun_fails: bool) {
+    let mut j = hunt_of(4, SHORT);
+    let planned = j.next_decision();
+    let group = group_in(&planned).clone();
+    j.decide(planned);
+    let parked = ids(4)
+        .into_iter()
+        .find(|&id| !group.cores.contains(core(id)))
+        .unwrap();
+    let plan = j.next_trial();
+    named_failure(&mut j, &plan, parked);
+    let attribution = j.next_decision();
+    let DecisionPayload::Failure(record) = &attribution.payload else {
+        panic!("expected the attribution, got {attribution:?}");
+    };
+    assert_eq!(record.core, Some(core(parked)));
+    assert_eq!(record.offset, Some(off(0)));
+    let failure = j.decide(attribution);
+    let rerun = j.next_trial();
+    assert_eq!(
+        rerun.requirement.context,
+        TrialContext::ZeroRerun { failure }
+    );
+    assert_eq!(rerun.condition, Condition::Parked);
+    assert_eq!(rerun.activity, Activity::Hunt);
+    assert_eq!(rerun.duration.get(), SHORT);
+    assert_eq!(rerun.cause, [failure]);
+    assert_eq!(rerun.requirement.needed.get(), 1);
+    assert!(rerun.profile.is_zero());
+    assert_eq!(rerun.load, Load::Many(set(&ids(4))));
+    if !rerun_fails {
+        j.trial(&rerun, Outcome::Pass);
+        let next = j.next();
+        let planned = group_of(&next).expect("the failure goes to the group's members");
+        assert!(!planned.cores.is_empty());
+        assert!(planned.cores.iter().all(|c| group.cores.contains(c)));
         j.assert_resumes();
+        return;
     }
+    let rerun_end = j.trial(&rerun, Outcome::Failure);
+    let after = j.next_decision();
+    j.decide(after);
+    let action = j.next();
+    let decision = expect_decision(action);
+    let DecisionPayload::DeadEnd(dead) = &decision.payload else {
+        panic!("expected the dead end, got {decision:?}");
+    };
+    assert_eq!(
+        dead.condition,
+        togi_journal::DeadEndCondition::FailureAtZero
+    );
+    assert_eq!(decision.cause, [failure, rerun_end]);
+    assert_eq!(
+        dead.detail,
+        format!(
+            "core {parked:02} failed at CO 0; the rerun with every core at CO 0 failed too (#{rerun_end}), so the instability is not caused by Curve Optimizer"
+        )
+    );
+    j.assert_resumes();
 }
 
-#[test]
-fn together_failure_naming_a_core_at_zero_is_hunted_after_a_passed_rerun() {
-    for gate_open in [false, true] {
-        let mut j = Journal::new(&[0, 1], &[Start::has_room(0), Start::has_room(-10)]);
-        j.profile_change(&[0, -10]);
-        j.ranking(&[0, 1]);
-        if gate_open {
-            pass_cycles(&mut j, 3);
-            start_cycle(&mut j);
-            assert!(
-                j.run().later_gate().is_some(),
-                "the later-failure gate is closed"
-            );
-        }
-        let plan = together_plan(&mut j, &[0, 1], &[0, -10], SHORT);
-        named_failure(&mut j, &plan, 0);
-        let attribution = j.next_decision();
-        let failure = j.decide(attribution);
-        let rerun = j.next_trial();
-        assert_eq!(
-            rerun.requirement.context,
-            TrialContext::ZeroRerun { failure }
+#[test_case::test_case(false; "not gate_open")]
+#[test_case::test_case(true; "gate_open")]
+fn together_failure_naming_a_core_at_zero_is_hunted_after_a_passed_rerun(gate_open: bool) {
+    let mut j = Journal::new(&[0, 1], &[Start::has_room(0), Start::has_room(-10)]);
+    j.profile_change(&[0, -10]);
+    j.ranking(&[0, 1]);
+    if gate_open {
+        pass_cycles(&mut j, 3);
+        start_cycle(&mut j);
+        assert!(
+            j.run().later_gate().is_some(),
+            "the later-failure gate is closed"
         );
-        j.trial(&rerun, Outcome::Pass);
-        let action = j.next();
-        let decision = expect_decision(action.clone());
-        let DecisionPayload::HuntStart(start) = &decision.payload else {
-            panic!("the failure was not hunted among the nonzero cores: {decision:?}");
-        };
-        assert_eq!(start.failure, failure);
-        assert_eq!(core_ids(start.candidates), [1]);
-        assert_eq!(strikes(&j), 0, "a failure at CO 0 was held");
-        assert_eq!(j.resumed().next(), action);
-        j.decide(decision);
-        let end = expect_decision(j.next());
-        let DecisionPayload::HuntEnd(end) = &end.payload else {
-            panic!("expected the hunt end, got {end:?}");
-        };
-        assert_eq!(end.result, HuntOutcome::Culprit);
-        assert_eq!(core_ids(end.cores), [1]);
-        j.assert_resumes();
     }
+    let plan = together_plan(&mut j, &[0, 1], &[0, -10], SHORT);
+    named_failure(&mut j, &plan, 0);
+    let attribution = j.next_decision();
+    let failure = j.decide(attribution);
+    let rerun = j.next_trial();
+    assert_eq!(
+        rerun.requirement.context,
+        TrialContext::ZeroRerun { failure }
+    );
+    j.trial(&rerun, Outcome::Pass);
+    let action = j.next();
+    let decision = expect_decision(action.clone());
+    let DecisionPayload::HuntStart(start) = &decision.payload else {
+        panic!("the failure was not hunted among the nonzero cores: {decision:?}");
+    };
+    assert_eq!(start.failure, failure);
+    assert_eq!(core_ids(start.candidates), [1]);
+    assert_eq!(strikes(&j), 0, "a failure at CO 0 was held");
+    assert_eq!(j.resumed().next(), action);
+    j.decide(decision);
+    let end = expect_decision(j.next());
+    let DecisionPayload::HuntEnd(end) = &end.payload else {
+        panic!("expected the hunt end, got {end:?}");
+    };
+    assert_eq!(end.result, HuntOutcome::Culprit);
+    assert_eq!(core_ids(end.cores), [1]);
+    j.assert_resumes();
 }
 
 fn group_event(
@@ -1999,28 +1989,29 @@ fn hunt_plan_keeps_a_carried_failure_answer_after_later_live_failures() {
     j.assert_resumes();
 }
 
-#[test]
-fn a_hunt_start_with_a_malformed_ranking_is_rejected_and_leaves_the_state() {
-    use crate::{FoldError, RankingError};
+#[test_case::test_case("duplicate", vec![0, 1, 1], crate::RankingError::Duplicate(core(1)); "duplicate")]
+#[test_case::test_case("missing", vec![0, 1], crate::RankingError::Missing(core(2)); "missing")]
+#[test_case::test_case("unknown", vec![0, 1, 2, 9], crate::RankingError::Unknown(core(9)); "unknown")]
+fn a_hunt_start_with_a_malformed_ranking_is_rejected_and_leaves_the_state(
+    name: &str,
+    order: Vec<u8>,
+    error: crate::RankingError,
+) {
+    use crate::FoldError;
     let mut j = limit_session(3);
     fail_all_together(&mut j, SHORT);
     let (start, cause) = j.hunt_start_payload();
-    let cases: [(&str, Vec<u8>, RankingError); 3] = [
-        ("duplicate", vec![0, 1, 1], RankingError::Duplicate(core(1))),
-        ("missing", vec![0, 1], RankingError::Missing(core(2))),
-        ("unknown", vec![0, 1, 2, 9], RankingError::Unknown(core(9))),
-    ];
-    for (name, order, error) in cases {
-        let mut malformed = start.clone();
-        malformed.ranking = order.into_iter().map(core).collect();
-        let event = j.event(malformed.into(), &cause);
-        let mut folded = j.state.clone();
-        assert!(
-            matches!(folded.fold(&event), Err(FoldError::Ranking(found)) if found == error),
-            "{name}"
-        );
-        assert_eq!(folded.run(), j.state.run(), "{name}");
-    }
+
+    let mut malformed = start.clone();
+    malformed.ranking = order.into_iter().map(core).collect();
+    let event = j.event(malformed.into(), &cause);
+    let mut folded = j.state.clone();
+    assert!(
+        matches!(folded.fold(&event), Err(FoldError::Ranking(found)) if found == error),
+        "{name}"
+    );
+    assert_eq!(folded.run(), j.state.run(), "{name}");
+
     j.append(start.into(), &cause);
     assert!(j.run().hunts.active.is_some());
     j.assert_resumes();
@@ -2072,40 +2063,38 @@ fn known_failure_hunt(passes_after: usize, config_after_start: &str) -> (Journal
     (j, known, group_seq)
 }
 
-#[test]
-fn the_known_failure_gate_reads_the_threshold_frozen_at_the_hunt_start() {
-    let lower = r#"{"evidence":{"miss":0.9,"rate":0.5}}"#;
-    let higher = r#"{"evidence":{"miss":0.001,"rate":0.5}}"#;
-    for (config_text, passes, replaced) in [
-        (lower, 3, true),
-        (higher, 7, false),
-        (lower, 5, false),
-        (higher, 4, true),
-    ] {
-        let (j, known, group_seq) = known_failure_hunt(passes, config_text);
-        let hunt = j.run().hunts.active.as_ref().unwrap().needed.get();
-        let configured = j.run().config.needed.get();
-        assert_eq!(hunt, 5);
-        assert_ne!(configured, hunt, "{config_text}");
-        let action = j.next();
-        if replaced {
-            let decision = expect_decision(action.clone());
-            let group = group_in(&decision);
-            assert_eq!(
-                group.inferred,
-                Some(Inference::Failure),
-                "{config_text} {passes}"
-            );
-            assert_eq!(decision.cause, [group_seq, known]);
-        } else {
-            assert!(
-                matches!(action, Action::RunTrial(_)),
-                "{config_text} {passes}: {action:?}"
-            );
-        }
-        assert_eq!(j.resumed().next(), action);
-        j.assert_resumes();
+#[test_case::test_case(r#"{"evidence":{"miss":0.9,"rate":0.5}}"#, 3, true; "(lower, 3, true)")]
+#[test_case::test_case(r#"{"evidence":{"miss":0.001,"rate":0.5}}"#, 7, false; "(higher, 7, false)")]
+#[test_case::test_case(r#"{"evidence":{"miss":0.9,"rate":0.5}}"#, 5, false; "(lower, 5, false)")]
+#[test_case::test_case(r#"{"evidence":{"miss":0.001,"rate":0.5}}"#, 4, true; "(higher, 4, true)")]
+fn the_known_failure_gate_reads_the_threshold_frozen_at_the_hunt_start(
+    config_text: &str,
+    passes: usize,
+    replaced: bool,
+) {
+    let (j, known, group_seq) = known_failure_hunt(passes, config_text);
+    let hunt = j.run().hunts.active.as_ref().unwrap().needed.get();
+    let configured = j.run().config.needed.get();
+    assert_eq!(hunt, 5);
+    assert_ne!(configured, hunt, "{config_text}");
+    let action = j.next();
+    if replaced {
+        let decision = expect_decision(action.clone());
+        let group = group_in(&decision);
+        assert_eq!(
+            group.inferred,
+            Some(Inference::Failure),
+            "{config_text} {passes}"
+        );
+        assert_eq!(decision.cause, [group_seq, known]);
+    } else {
+        assert!(
+            matches!(action, Action::RunTrial(_)),
+            "{config_text} {passes}: {action:?}"
+        );
     }
+    assert_eq!(j.resumed().next(), action);
+    j.assert_resumes();
 }
 
 #[test_case::test_case(1; "minimum")]
@@ -2156,29 +2145,28 @@ fn an_empty_hunt_load_replays_as_all_topology_cores() {
     j.assert_resumes();
 }
 
-#[test]
-fn groups_and_ends_for_another_hunt_do_not_change_the_active_hunt() {
-    for active in [false, true] {
-        let mut j = limit_session(3);
-        if active {
-            fail_all_together(&mut j, SHORT);
-            j.start_hunt();
-        }
-        let before = j.run().hunts.clone();
-        let group = group_event(1, 2, &[0], j.profile(&[-30, 0, 0]), HuntStage::Part);
-        j.append(group.into(), &[]);
-        let end = HuntEnd {
-            hunt: std::num::NonZeroU32::new(2).unwrap(),
-            result: HuntOutcome::Culprit,
-            cores: set(&[0]),
-            members: Vec::new(),
-            groups: 1,
-            reason: "test".to_owned(),
-        };
-        j.append(end.into(), &[]);
-        assert_eq!(j.run().hunts, before, "active {active}");
-        j.assert_resumes();
+#[test_case::test_case(false; "not active")]
+#[test_case::test_case(true; "active")]
+fn groups_and_ends_for_another_hunt_do_not_change_the_active_hunt(active: bool) {
+    let mut j = limit_session(3);
+    if active {
+        fail_all_together(&mut j, SHORT);
+        j.start_hunt();
     }
+    let before = j.run().hunts.clone();
+    let group = group_event(1, 2, &[0], j.profile(&[-30, 0, 0]), HuntStage::Part);
+    j.append(group.into(), &[]);
+    let end = HuntEnd {
+        hunt: std::num::NonZeroU32::new(2).unwrap(),
+        result: HuntOutcome::Culprit,
+        cores: set(&[0]),
+        members: Vec::new(),
+        groups: 1,
+        reason: "test".to_owned(),
+    };
+    j.append(end.into(), &[]);
+    assert_eq!(j.run().hunts, before, "active {active}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -2324,45 +2312,41 @@ fn a_paired_hunt_preserves_the_second_failures_nonempty_reason() {
     j.assert_resumes();
 }
 
-#[test]
-fn a_warned_idle_failure_still_opens_its_hunt() {
-    for (name, pass_profile, warns) in [
-        ("equal profile", [-10, -12], true),
-        ("deeper passing profile", [-11, -13], true),
-        ("shallower passing profile", [-9, -11], false),
-    ] {
-        let mut j = super::support::hunt_session(&[-10, -12]);
-        let passes: Vec<Seq> = (0..j.run().config.needed.get())
-            .map(|_| {
-                j.carry(
-                    CARRIED_SESSION,
-                    (Regime::R6, 0, &[0, 1], SHORT),
-                    Condition::Together,
-                    &pass_profile,
-                    Outcome::Pass,
-                )
-            })
-            .collect();
-        let profile = j.profile(&[-10, -12]).offsets();
-        let failure = j.idle_failure(profile, Condition::Together);
-        let mut warned = false;
-        let mut started = None;
-        for _ in 0..20 {
-            let action = j.next_decision();
-            if let DecisionPayload::TunerWarning(warning) = &action.payload {
-                assert_eq!(warning.passes, passes, "{name}");
-                assert_eq!(action.cause[0], failure, "{name}");
-                warned = true;
-            } else if let DecisionPayload::HuntStart(start) = &action.payload {
-                started = Some(start.failure);
-                break;
-            }
-            j.decide(action);
+#[test_case::test_case("equal profile", [-10, -12], true; "equal profile")]
+#[test_case::test_case("deeper passing profile", [-11, -13], true; "deeper passing profile")]
+#[test_case::test_case("shallower passing profile", [-9, -11], false; "shallower passing profile")]
+fn a_warned_idle_failure_still_opens_its_hunt(name: &str, pass_profile: [i64; 2], warns: bool) {
+    let mut j = super::support::hunt_session(&[-10, -12]);
+    let passes: Vec<Seq> = (0..j.run().config.needed.get())
+        .map(|_| {
+            j.carry(
+                CARRIED_SESSION,
+                (Regime::R6, 0, &[0, 1], SHORT),
+                Condition::Together,
+                &pass_profile,
+                Outcome::Pass,
+            )
+        })
+        .collect();
+    let profile = j.profile(&[-10, -12]).offsets();
+    let failure = j.idle_failure(profile, Condition::Together);
+    let mut warned = false;
+    let mut started = None;
+    for _ in 0..20 {
+        let action = j.next_decision();
+        if let DecisionPayload::TunerWarning(warning) = &action.payload {
+            assert_eq!(warning.passes, passes, "{name}");
+            assert_eq!(action.cause[0], failure, "{name}");
+            warned = true;
+        } else if let DecisionPayload::HuntStart(start) = &action.payload {
+            started = Some(start.failure);
+            break;
         }
-        assert_eq!(warned, warns, "{name}");
-        assert_eq!(started, Some(failure), "{name}");
-        j.assert_resumes();
+        j.decide(action);
     }
+    assert_eq!(warned, warns, "{name}");
+    assert_eq!(started, Some(failure), "{name}");
+    j.assert_resumes();
 }
 
 fn before_first_member_probe() -> Journal {

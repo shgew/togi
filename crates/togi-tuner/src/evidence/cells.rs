@@ -510,7 +510,7 @@ mod cap_tests {
         let appended = 3 * TAIL_CAP as u64;
         for raw in 501..501 + appended {
             seqs.push(s(raw));
-            assert!(seqs.tail.len() <= TAIL_CAP);
+            assert!(seqs.tail.len() <= TAIL_CAP, "appended sequence {raw}");
         }
         assert_eq!(take_copied(), 500);
         assert_eq!(retained.last(), Some(s(500)));

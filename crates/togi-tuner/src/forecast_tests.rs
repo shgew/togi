@@ -192,33 +192,32 @@ fn forecast_single_loaded_together_may_be_unattributed() {
     ));
 }
 
-#[test]
-fn forecast_inconclusive_retains_trial() {
-    for partial in [false, true] {
-        let mut j = if partial {
-            partial_in_flight()
-        } else {
-            Journal::search_at(&[-20])
-        };
-        let plan = start(&mut j);
-        let forecast = forecast_unchanged(&j.state);
-        let inconclusive = branch(&forecast, Premise::Inconclusive);
-        assert!(inconclusive.decisions.is_empty(), "{inconclusive:?}");
-        let mut want = plan.clone();
-        want.retry = true;
-        want.workload = crate::WorkloadChoice::Frozen(plan.workload_at(j.rotation(&plan)));
-        let next = inconclusive.next.as_ref().expect("the trial is retained");
-        assert_eq!(next.retry, want.retry);
-        assert_eq!(next.workload, want.workload);
-        assert_eq!(next.requirement, want.requirement);
-        assert_eq!(next.requirement.context, want.requirement.context);
-        assert_eq!(next.profile, want.profile);
-        assert_eq!(next.duration, want.duration);
-        assert_eq!(next.load, want.load);
-        assert_eq!(next.condition, want.condition);
-        assert_eq!(next.regime, want.regime);
-        assert_eq!(next.activity, want.activity);
-    }
+#[test_case::test_case(false; "not partial")]
+#[test_case::test_case(true; "partial")]
+fn forecast_inconclusive_retains_trial(partial: bool) {
+    let mut j = if partial {
+        partial_in_flight()
+    } else {
+        Journal::search_at(&[-20])
+    };
+    let plan = start(&mut j);
+    let forecast = forecast_unchanged(&j.state);
+    let inconclusive = branch(&forecast, Premise::Inconclusive);
+    assert!(inconclusive.decisions.is_empty(), "{inconclusive:?}");
+    let mut want = plan.clone();
+    want.retry = true;
+    want.workload = crate::WorkloadChoice::Frozen(plan.workload_at(j.rotation(&plan)));
+    let next = inconclusive.next.as_ref().expect("the trial is retained");
+    assert_eq!(next.retry, want.retry);
+    assert_eq!(next.workload, want.workload);
+    assert_eq!(next.requirement, want.requirement);
+    assert_eq!(next.requirement.context, want.requirement.context);
+    assert_eq!(next.profile, want.profile);
+    assert_eq!(next.duration, want.duration);
+    assert_eq!(next.load, want.load);
+    assert_eq!(next.condition, want.condition);
+    assert_eq!(next.regime, want.regime);
+    assert_eq!(next.activity, want.activity);
 }
 
 #[test]
@@ -698,31 +697,26 @@ fn warning() -> Payload {
     .into()
 }
 
-#[test]
-fn forecast_is_empty_after_shutdown_and_deadend_despite_trailing_warning() {
-    let stops: [Payload; 2] = [
-        Shutdown {
+#[test_case::test_case(Shutdown {
             reason: ShutdownReason::Signal,
             kernel_cursor: None,
             kernel_error: None,
             cycles: None,
         }
-        .into(),
-        DeadEnd {
+        .into(); "shutdown")]
+#[test_case::test_case(DeadEnd {
             condition: DeadEndCondition::FailureAtZero,
             core: None,
             detail: String::new(),
             action: None,
         }
-        .into(),
-    ];
-    for stop in stops {
-        let mut j = stopped_journal(stop);
-        assert_eq!(forecast_unchanged(&j.state), Forecast::default());
-        j.append(warning(), &[]);
-        assert_eq!(forecast_unchanged(&j.state), Forecast::default());
-        assert_eq!(forecast_unchanged(&fresh(&j.events)), Forecast::default());
-    }
+        .into(); "dead end")]
+fn forecast_is_empty_after_shutdown_and_deadend_despite_trailing_warning(stop: Payload) {
+    let mut j = stopped_journal(stop);
+    assert_eq!(forecast_unchanged(&j.state), Forecast::default());
+    j.append(warning(), &[]);
+    assert_eq!(forecast_unchanged(&j.state), Forecast::default());
+    assert_eq!(forecast_unchanged(&fresh(&j.events)), Forecast::default());
 }
 
 #[test]

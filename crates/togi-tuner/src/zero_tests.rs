@@ -273,123 +273,81 @@ fn single_core_zero_rerun_keeps_its_shape() {
     j.assert_resumes();
 }
 
-#[test]
-fn direct_failure_at_zero() {
-    struct Case {
-        name: &'static str,
-        starts: [Start; 2],
-        profile: [i64; 2],
-        trial: Option<(Regime, Condition)>,
-        named: Option<u8>,
-        rerun: bool,
-    }
-    let cases = [
-        Case {
-            name: "alone search",
-            starts: [Start::search(0), Start::has_room(0)],
-            profile: [0, 0],
-            trial: Some((Regime::R1, Condition::Alone)),
-            named: Some(0),
-            rerun: false,
-        },
-        Case {
-            name: "attributed together",
-            starts: [Start::has_room(0), Start::has_room(-10)],
-            profile: [0, -10],
-            trial: Some((Regime::R6, Condition::Together)),
-            named: Some(0),
-            rerun: true,
-        },
-        Case {
-            name: "attributed all zero",
-            starts: [Start::has_room(0), Start::has_room(0)],
-            profile: [0, 0],
-            trial: Some((Regime::R6, Condition::Together)),
-            named: Some(0),
-            rerun: false,
-        },
-        Case {
-            name: "unattributed together",
-            starts: [Start::has_room(0), Start::has_room(0)],
-            profile: [0, 0],
-            trial: Some((Regime::R6, Condition::Together)),
-            named: None,
-            rerun: false,
-        },
-        Case {
-            name: "unattributed idle",
-            starts: [Start::has_room(0), Start::has_room(0)],
-            profile: [0, 0],
-            trial: None,
-            named: None,
-            rerun: false,
-        },
-    ];
-    for case in cases {
-        let name = case.name;
-        let mut j = Journal::new(&[0, 1], &case.starts);
-        let failure = if let Some((regime, condition)) = case.trial {
-            let load = if condition == Condition::Alone {
-                Load::Single(core(0))
-            } else {
-                Load::Many(set(&[0, 1]))
-            };
-            let plan = if condition == Condition::Alone {
-                j.next_trial()
-            } else {
-                j.manual(regime, 0, load, condition, &case.profile, duration(regime))
-            };
-            let failure = j.failed(&plan, case.named);
-            let record = &j.run().failures.pending(failure).unwrap().fact.failure;
-            assert_eq!(record.core, case.named.map(core), "{name}");
-            failure
+#[test_case::test_case("alone search", [Start::search(0), Start::has_room(0)], [0, 0], Some((Regime::R1, Condition::Alone)), Some(0), false; "alone search")]
+#[test_case::test_case("attributed together", [Start::has_room(0), Start::has_room(-10)], [0, -10], Some((Regime::R6, Condition::Together)), Some(0), true; "attributed together")]
+#[test_case::test_case("attributed all zero", [Start::has_room(0), Start::has_room(0)], [0, 0], Some((Regime::R6, Condition::Together)), Some(0), false; "attributed all zero")]
+#[test_case::test_case("unattributed together", [Start::has_room(0), Start::has_room(0)], [0, 0], Some((Regime::R6, Condition::Together)), None, false; "unattributed together")]
+#[test_case::test_case("unattributed idle", [Start::has_room(0), Start::has_room(0)], [0, 0], None, None, false; "unattributed idle")]
+fn direct_failure_at_zero(
+    name: &'static str,
+    starts: [Start; 2],
+    profile: [i64; 2],
+    trial: Option<(Regime, Condition)>,
+    named: Option<u8>,
+    rerun: bool,
+) {
+    let mut j = Journal::new(&[0, 1], &starts);
+    let failure = if let Some((regime, condition)) = trial {
+        let load = if condition == Condition::Alone {
+            Load::Single(core(0))
         } else {
-            let profile = j.profile(&case.profile).offsets();
-            j.idle_failure(profile, Condition::Together)
+            Load::Many(set(&[0, 1]))
         };
-        let mut cause = vec![failure];
-        if case.rerun {
-            let rerun = j.zero_rerun(failure);
-            assert_eq!(
-                rerun,
-                expected_rerun(
-                    &j,
-                    Regime::R6,
-                    Load::Many(set(&[0, 1])),
-                    Activity::Checking,
-                    failure
-                ),
-                "{name}"
-            );
-            let (_, _, end) = j.run_named(&rerun, Outcome::Failure, None);
-            let attribution = j.next_decision();
-            j.decide(attribution);
-            assert_eq!(
-                j.diagnostic(failure),
-                Some(&Diagnostic::Failed { end }),
-                "{name}"
-            );
-            cause.push(end);
-        }
+        let plan = if condition == Condition::Alone {
+            j.next_trial()
+        } else {
+            j.manual(regime, 0, load, condition, &profile, duration(regime))
+        };
+        let failure = j.failed(&plan, named);
+        let record = &j.run().failures.pending(failure).unwrap().fact.failure;
+        assert_eq!(record.core, named.map(core), "{name}");
+        failure
+    } else {
+        let profile = j.profile(&profile).offsets();
+        j.idle_failure(profile, Condition::Together)
+    };
+    let mut cause = vec![failure];
+    if rerun {
+        let rerun = j.zero_rerun(failure);
+        assert_eq!(
+            rerun,
+            expected_rerun(
+                &j,
+                Regime::R6,
+                Load::Many(set(&[0, 1])),
+                Activity::Checking,
+                failure
+            ),
+            "{name}"
+        );
+        let (_, _, end) = j.run_named(&rerun, Outcome::Failure, None);
+        let attribution = j.next_decision();
+        j.decide(attribution);
+        assert_eq!(
+            j.diagnostic(failure),
+            Some(&Diagnostic::Failed { end }),
+            "{name}"
+        );
+        cause.push(end);
+    }
+    let action = j.next();
+    let (stop, stop_cause) = dead_end(&action);
+    assert_eq!(stop.condition, DeadEndCondition::FailureAtZero, "{name}");
+    assert_eq!(stop.core, named.map(core), "{name}");
+    assert_eq!(stop_cause, cause.as_slice(), "{name}");
+    let Action::Decide(decision) = action.clone() else {
+        unreachable!()
+    };
+    let checking = j.run().checking.profile();
+    let offsets = j.offsets();
+    j.decide(decision);
+    j.assert_resumes();
+    for _ in 0..if named.is_some() { 3 } else { 0 } {
         let action = j.next();
-        let (stop, stop_cause) = dead_end(&action);
+        let (stop, _) = dead_end(&action);
         assert_eq!(stop.condition, DeadEndCondition::FailureAtZero, "{name}");
-        assert_eq!(stop.core, case.named.map(core), "{name}");
-        assert_eq!(stop_cause, cause.as_slice(), "{name}");
-        let Action::Decide(decision) = action.clone() else {
-            unreachable!()
-        };
-        let checking = j.run().checking.profile();
-        let offsets = j.offsets();
-        j.decide(decision);
-        j.assert_resumes();
-        for _ in 0..if case.named.is_some() { 3 } else { 0 } {
-            let action = j.next();
-            let (stop, _) = dead_end(&action);
-            assert_eq!(stop.condition, DeadEndCondition::FailureAtZero, "{name}");
-            assert_eq!(j.run().checking.profile(), checking, "{name}");
-            assert_eq!(j.offsets(), offsets, "{name}");
-        }
+        assert_eq!(j.run().checking.profile(), checking, "{name}");
+        assert_eq!(j.offsets(), offsets, "{name}");
     }
 }
 
@@ -580,96 +538,75 @@ fn zero_diagnostic_ignores_known_failure_skips_and_stale_trials() {
     assert_eq!(zero.get(seq(5)), Some(&Diagnostic::Passed { end: seq(10) }));
 }
 
-#[test]
-fn zero_diagnostic_lifecycle() {
-    for outcome in [Outcome::Pass, Outcome::Failure] {
-        let mut j = Journal::has_room(&[0, -20]);
-        let plan = together(&j, Regime::R6, &[0, 1], &[0, -20]);
-        let failure = j.failed(&plan, Some(0));
-        let rerun = j.zero_rerun(failure);
-        assert_eq!(j.diagnostic(failure), None);
+#[test_case::test_case(Outcome::Pass; "Outcome::Pass")]
+#[test_case::test_case(Outcome::Failure; "Outcome::Failure")]
+fn zero_diagnostic_lifecycle(outcome: Outcome) {
+    let mut j = Journal::has_room(&[0, -20]);
+    let plan = together(&j, Regime::R6, &[0, 1], &[0, -20]);
+    let failure = j.failed(&plan, Some(0));
+    let rerun = j.zero_rerun(failure);
+    assert_eq!(j.diagnostic(failure), None);
 
-        let (intent, trial) = j.intent(&rerun);
-        let running = Diagnostic::Running {
-            trial: trial.clone(),
-        };
-        assert_eq!(j.diagnostic(failure), Some(&running));
-        j.end(intent, &trial, Outcome::Inconclusive);
-        assert_eq!(j.diagnostic(failure), Some(&running));
+    let (intent, trial) = j.intent(&rerun);
+    let running = Diagnostic::Running {
+        trial: trial.clone(),
+    };
+    assert_eq!(j.diagnostic(failure), Some(&running));
+    j.end(intent, &trial, Outcome::Inconclusive);
+    assert_eq!(j.diagnostic(failure), Some(&running));
 
-        let retry = j.zero_rerun(failure);
-        assert!(retry.retry);
-        assert_eq!(retry.requirement, rerun.requirement);
-        assert_eq!(
-            (retry.load, retry.profile, retry.condition),
-            (rerun.load, rerun.profile, rerun.condition)
-        );
-        assert_eq!(retry.cause, vec![failure]);
+    let retry = j.zero_rerun(failure);
+    assert!(retry.retry);
+    assert_eq!(retry.requirement, rerun.requirement);
+    assert_eq!(
+        (retry.load, retry.profile, retry.condition),
+        (rerun.load, rerun.profile, rerun.condition)
+    );
+    assert_eq!(retry.cause, vec![failure]);
 
-        let (intent, trial) = j.intent(&retry);
-        assert_eq!(
-            j.diagnostic(failure),
-            Some(&Diagnostic::Running {
-                trial: trial.clone()
-            })
-        );
-        let end = j.end(intent, &trial, outcome);
-        let want = match outcome {
-            Outcome::Pass => Diagnostic::Passed { end },
-            Outcome::Failure => Diagnostic::Failed { end },
-            Outcome::Inconclusive => unreachable!("the lifecycle ends only in a pass or a failure"),
-        };
-        assert_eq!(j.diagnostic(failure), Some(&want), "{outcome:?}");
-        j.assert_resumes();
-    }
+    let (intent, trial) = j.intent(&retry);
+    assert_eq!(
+        j.diagnostic(failure),
+        Some(&Diagnostic::Running {
+            trial: trial.clone()
+        })
+    );
+    let end = j.end(intent, &trial, outcome);
+    let want = match outcome {
+        Outcome::Pass => Diagnostic::Passed { end },
+        Outcome::Failure => Diagnostic::Failed { end },
+        Outcome::Inconclusive => unreachable!("the lifecycle ends only in a pass or a failure"),
+    };
+    assert_eq!(j.diagnostic(failure), Some(&want), "{outcome:?}");
+    j.assert_resumes();
 }
 
-#[test]
-fn zero_release_after_a_passed_rerun_outside_multi_r7() {
-    type Case = (
-        &'static str,
-        Regime,
-        &'static [u8],
-        Condition,
-        Activity,
-        bool,
+#[test_case::test_case("together", Regime::R6, &[0, 1], Condition::Together, Activity::Checking, true; "together")]
+#[test_case::test_case("single core", Regime::R5, &[0], Condition::Together, Activity::Checking, true; "single core")]
+fn zero_release_after_a_passed_rerun_outside_multi_r7(
+    name: &'static str,
+    regime: Regime,
+    cores: &'static [u8],
+    condition: Condition,
+    activity: Activity,
+    queued: bool,
+) {
+    let mut j = Journal::has_room(&[0, -20]);
+    let mut plan = together(&j, regime, cores, &[0, -20]);
+    plan.condition = condition;
+    let failure = j.failed(&plan, Some(0));
+    assert_eq!(j.run().core(core(0)).pending, Some(failure), "{name}");
+    let rerun = j.zero_rerun(failure);
+    assert_eq!(rerun.activity, activity, "{name}");
+    let (_, _, end) = j.run_named(&rerun, Outcome::Pass, None);
+    assert_eq!(
+        j.diagnostic(failure),
+        Some(&Diagnostic::Passed { end }),
+        "{name}"
     );
-    let cases: [Case; 2] = [
-        (
-            "together",
-            Regime::R6,
-            &[0, 1],
-            Condition::Together,
-            Activity::Checking,
-            true,
-        ),
-        (
-            "single core",
-            Regime::R5,
-            &[0],
-            Condition::Together,
-            Activity::Checking,
-            true,
-        ),
-    ];
-    for (name, regime, cores, condition, activity, queued) in cases {
-        let mut j = Journal::has_room(&[0, -20]);
-        let mut plan = together(&j, regime, cores, &[0, -20]);
-        plan.condition = condition;
-        let failure = j.failed(&plan, Some(0));
-        assert_eq!(j.run().core(core(0)).pending, Some(failure), "{name}");
-        let rerun = j.zero_rerun(failure);
-        assert_eq!(rerun.activity, activity, "{name}");
-        let (_, _, end) = j.run_named(&rerun, Outcome::Pass, None);
-        assert_eq!(
-            j.diagnostic(failure),
-            Some(&Diagnostic::Passed { end }),
-            "{name}"
-        );
-        assert_eq!(j.run().core(core(0)).pending, None, "{name}");
-        assert_eq!(j.queued(failure), queued, "{name}");
-        j.assert_resumes();
-    }
+    assert_eq!(j.run().core(core(0)).pending, None, "{name}");
+    assert_eq!(j.queued(failure), queued, "{name}");
+    j.assert_resumes();
 
     let ids = [0, 1, 2, 3];
     let starts = [
@@ -711,8 +648,11 @@ fn a_passed_zero_diagnostic_releases_the_original_obligation() {
     j.assert_resumes();
 }
 
-#[test]
-fn a_single_core_zero_rerun_rejects_equivalent_many_and_ambiguous_load_shapes() {
+#[test_case::test_case(None; "None")]
+#[test_case::test_case(Some(core(0)); "Some(core(0))")]
+fn a_single_core_zero_rerun_rejects_equivalent_many_and_ambiguous_load_shapes(
+    core: Option<togi_machine::CoreId>,
+) {
     let mut j = Journal::has_room(&[0, -20]);
     let plan = together(&j, Regime::R5, &[0], &[0, -20]);
     let failure = j.failed(&plan, Some(0));
@@ -724,20 +664,20 @@ fn a_single_core_zero_rerun_rejects_equivalent_many_and_ambiguous_load_shapes() 
         j.run().zero_context(&valid, class, &[failure]),
         Some(rerun.requirement)
     );
-    for core in [None, Some(core(0))] {
-        let intent = TrialIntent {
-            core,
-            cores: set(&[0]),
-            ..valid.clone()
-        };
-        let event = j.event(intent.into(), &[failure]);
-        let mut probe = j.state.clone();
-        assert!(matches!(
-            probe.fold(&event),
-            Err(crate::FoldError::UnscheduledIntent(found)) if found == trial
-        ));
-        assert_eq!(probe.run(), j.state.run());
-    }
+
+    let intent = TrialIntent {
+        core,
+        cores: set(&[0]),
+        ..valid.clone()
+    };
+    let event = j.event(intent.into(), &[failure]);
+    let mut probe = j.state.clone();
+    assert!(matches!(
+        probe.fold(&event),
+        Err(crate::FoldError::UnscheduledIntent(found)) if found == trial
+    ));
+    assert_eq!(probe.run(), j.state.run());
+
     j.assert_resumes();
 }
 

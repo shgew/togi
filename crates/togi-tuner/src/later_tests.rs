@@ -161,33 +161,29 @@ fn tokens(reason: &str, wanted: &[&str]) {
     assert!(missing.is_empty(), "{reason:?} lacks {missing:?}");
 }
 
-#[test]
-fn gate_closed_steps_back_at_once() {
-    for (name, cycles) in [
-        ("before phase 1 ends", 0),
-        ("in the confirmation", 1),
-        ("first cycle after the conclusion", 2),
-    ] {
-        let mut j = session(&[-10, -12]);
-        if cycles > 0 {
-            pass_cycles(&mut j, cycles);
-        }
-        start_cycle(&mut j);
-        let failure = fail_core(&mut j, 0);
-        let (step, cause) = next(&j);
-        assert_eq!(
-            (step.from_offset.get(), step.to_offset.get()),
-            (-10, -9),
-            "{name}"
-        );
-        assert_eq!(step.decision, Decision::Backoff, "{name}");
-        assert!(!step.reason.contains("second failure"), "{name}");
-        assert_eq!(cause, [failure], "{name}");
-        let action = j.next_decision();
-        j.decide(action);
-        assert_eq!(strikes(&j), 0, "{name}");
-        j.assert_resumes();
+#[test_case::test_case("before phase 1 ends", 0; "before phase 1 ends")]
+#[test_case::test_case("in the confirmation", 1; "in the confirmation")]
+#[test_case::test_case("first cycle after the conclusion", 2; "first cycle after the conclusion")]
+fn gate_closed_steps_back_at_once(name: &str, cycles: u32) {
+    let mut j = session(&[-10, -12]);
+    if cycles > 0 {
+        pass_cycles(&mut j, cycles);
     }
+    start_cycle(&mut j);
+    let failure = fail_core(&mut j, 0);
+    let (step, cause) = next(&j);
+    assert_eq!(
+        (step.from_offset.get(), step.to_offset.get()),
+        (-10, -9),
+        "{name}"
+    );
+    assert_eq!(step.decision, Decision::Backoff, "{name}");
+    assert!(!step.reason.contains("second failure"), "{name}");
+    assert_eq!(cause, [failure], "{name}");
+    let action = j.next_decision();
+    j.decide(action);
+    assert_eq!(strikes(&j), 0, "{name}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -349,40 +345,36 @@ fn failures_on_different_cores_hold_separately() {
     j.assert_resumes();
 }
 
-#[test]
-fn window_pairs_within_k_cycles_and_expires_at_k() {
-    for (name, gap, pair) in [
-        ("same cycle", 0, true),
-        ("last cycle of the window", WINDOW - 1, true),
-        ("one past the window", WINDOW, false),
-        ("long after", WINDOW + 4, false),
-    ] {
-        let mut j = later_session(&[-10, -12]);
-        start_cycle(&mut j);
-        let first = fail_core(&mut j, 0);
-        let action = j.next_decision();
-        j.decide(action);
-        if gap > 0 {
-            end_cycle(&mut j);
-            pass_cycles(&mut j, gap - 1);
-            assert_eq!(start_cycle(&mut j), 4 + gap, "{name}");
-        }
-        fail_core(&mut j, 0);
-        let (step, cause) = next(&j);
-        if pair {
-            assert!(!is_hold(&step), "{name}: {step:?}");
-            assert_eq!(step.to_offset, off(-9), "{name}");
-            assert_eq!(cause.last(), Some(&first), "{name}");
-            continue;
-        }
-        assert!(is_hold(&step), "{name}: {step:?}");
-        let action = j.next_decision();
-        j.decide(action);
-        let held = held(&j);
-        assert_eq!(held.len(), 1, "{name}");
-        assert_ne!(held[0], first, "{name}");
-        j.assert_resumes();
+#[test_case::test_case("same cycle", 0, true; "same cycle")]
+#[test_case::test_case("last cycle of the window", WINDOW - 1, true; "last cycle of the window")]
+#[test_case::test_case("one past the window", WINDOW, false; "one past the window")]
+#[test_case::test_case("long after", WINDOW + 4, false; "long after")]
+fn window_pairs_within_k_cycles_and_expires_at_k(name: &str, gap: u32, pair: bool) {
+    let mut j = later_session(&[-10, -12]);
+    start_cycle(&mut j);
+    let first = fail_core(&mut j, 0);
+    let action = j.next_decision();
+    j.decide(action);
+    if gap > 0 {
+        end_cycle(&mut j);
+        pass_cycles(&mut j, gap - 1);
+        assert_eq!(start_cycle(&mut j), 4 + gap, "{name}");
     }
+    fail_core(&mut j, 0);
+    let (step, cause) = next(&j);
+    if pair {
+        assert!(!is_hold(&step), "{name}: {step:?}");
+        assert_eq!(step.to_offset, off(-9), "{name}");
+        assert_eq!(cause.last(), Some(&first), "{name}");
+        return;
+    }
+    assert!(is_hold(&step), "{name}: {step:?}");
+    let action = j.next_decision();
+    j.decide(action);
+    let held = held(&j);
+    assert_eq!(held.len(), 1, "{name}");
+    assert_ne!(held[0], first, "{name}");
+    j.assert_resumes();
 }
 
 #[test]
@@ -865,36 +857,35 @@ proptest! {
     }
 }
 
-#[test]
-fn a_failure_before_the_latest_full_cycle_is_not_held() {
-    for attributed in [false, true] {
-        let mut j = later_session(&[-10, -12]);
-        start_cycle(&mut j);
-        let failure = if attributed {
-            fail_core(&mut j, 0)
-        } else {
-            idle_failure(&mut j)
+#[test_case::test_case(false; "not attributed")]
+#[test_case::test_case(true; "attributed")]
+fn a_failure_before_the_latest_full_cycle_is_not_held(attributed: bool) {
+    let mut j = later_session(&[-10, -12]);
+    start_cycle(&mut j);
+    let failure = if attributed {
+        fail_core(&mut j, 0)
+    } else {
+        idle_failure(&mut j)
+    };
+    let full = end_cycle(&mut j);
+    assert!(full > failure);
+    assert!(j.run().later_gate().is_some());
+    if attributed {
+        let action = j.run().ordinary_decision().unwrap();
+        let answered = j.run().later_decision(action.clone());
+        assert_eq!(answered, action);
+        let Action::Decide(action) = answered else {
+            panic!("expected the pending backoff");
         };
-        let full = end_cycle(&mut j);
-        assert!(full > failure);
-        assert!(j.run().later_gate().is_some());
-        if attributed {
-            let action = j.run().ordinary_decision().unwrap();
-            let answered = j.run().later_decision(action.clone());
-            assert_eq!(answered, action);
-            let Action::Decide(action) = answered else {
-                panic!("expected the pending backoff");
-            };
-            assert_eq!(decision(&action).decision, Decision::Backoff);
-            assert_eq!(decision(&action).to_offset, off(-9));
-            assert_eq!(action.cause, [failure]);
-        } else {
-            assert!(j.run().later_hunt_hold().is_none());
-            assert_eq!(j.run().failures.queue().next(), Some(failure));
-        }
-        assert_eq!(strikes(&j), 0);
-        j.assert_resumes();
+        assert_eq!(decision(&action).decision, Decision::Backoff);
+        assert_eq!(decision(&action).to_offset, off(-9));
+        assert_eq!(action.cause, [failure]);
+    } else {
+        assert!(j.run().later_hunt_hold().is_none());
+        assert_eq!(j.run().failures.queue().next(), Some(failure));
     }
+    assert_eq!(strikes(&j), 0);
+    j.assert_resumes();
 }
 
 #[test]

@@ -88,39 +88,23 @@ fn a_plan_needs_candidates() {
     assert_eq!(Plan::new(start(&[])).unwrap_err(), PlanError::NoCandidates);
 }
 
-#[test]
-fn parked_profile_raises_the_passed_full_cycle_profile() {
+#[test_case::test_case([-10, -10, -10, -10], [-12, -10, -10, -10], [-10, -10, -10, -10], Some(7), &[0]; "failure raises the passed-cycle profile")]
+#[test_case::test_case([-10, -10, -10, -10], [-12, -8, -10, -10], [-10, -8, -10, -10], Some(7), &[0]; "shallower unloaded core is retained")]
+#[test_case::test_case([-12, -12, -12, -12], [-10, -10, -10, -10], [0, 0, 0, 0], None, &[0, 1, 2, 3]; "failure shallower than passed cycle zeros parked profile")]
+fn parked_profile_raises_the_passed_full_cycle_profile(
+    passed: [i64; 4],
+    failing: [i64; 4],
+    parked: [i64; 4],
+    source: Option<u64>,
+    candidates: &[u8],
+) {
     let topology = topology(&[0, 1, 2, 3]);
-    let cases = [
-        (
-            [-10, -10, -10, -10],
-            [-12, -10, -10, -10],
-            [-10, -10, -10, -10],
-            Some(7),
-            vec![0],
-        ),
-        (
-            [-10, -10, -10, -10],
-            [-12, -8, -10, -10],
-            [-10, -8, -10, -10],
-            Some(7),
-            vec![0],
-        ),
-        (
-            [-12, -12, -12, -12],
-            [-10, -10, -10, -10],
-            [0, 0, 0, 0],
-            None,
-            vec![0, 1, 2, 3],
-        ),
-    ];
-    for (passed, failing, parked, source, candidates) in cases {
-        let passed = profile(&topology, &passed);
-        let got = park(&profile(&topology, &failing), [(seq(7), &passed)]);
-        assert_eq!(got.profile, profile(&topology, &parked));
-        assert_eq!(got.source, source.map(seq));
-        assert_eq!(ids(got.candidates), candidates);
-    }
+
+    let passed = profile(&topology, &passed);
+    let got = park(&profile(&topology, &failing), [(seq(7), &passed)]);
+    assert_eq!(got.profile, profile(&topology, &parked));
+    assert_eq!(got.source, source.map(seq));
+    assert_eq!(ids(got.candidates), candidates);
 }
 
 #[test]
@@ -372,38 +356,37 @@ fn a_skipped_group_advances_like_a_passed_one() {
     assert_eq!(end, End::Fallback(set(&[0, 1, 2, 3])));
 }
 
-#[test]
-fn the_duration_escalates_only_for_a_longer_failure() {
+#[test_case::test_case(false; "not longer")]
+#[test_case::test_case(true; "longer")]
+fn the_duration_escalates_only_for_a_longer_failure(longer: bool) {
     let short = (GroupStage::Part, Duration::Short, false);
     let expected_short = [short, short];
-    for longer in [false, true] {
-        let (groups, end) = run(
-            Start {
-                longer_failure: longer,
-                ..start(&[0, 1])
-            },
-            passing,
+    let (groups, end) = run(
+        Start {
+            longer_failure: longer,
+            ..start(&[0, 1])
+        },
+        passing,
+    );
+    let got: Vec<_> = groups
+        .iter()
+        .map(|g| (g.stage, g.duration, g.escalated))
+        .collect();
+    if longer {
+        assert_eq!(
+            got,
+            [
+                short,
+                short,
+                (GroupStage::Full, Duration::Short, false),
+                (GroupStage::Part, Duration::Failed, true),
+                (GroupStage::Part, Duration::Failed, true),
+            ]
         );
-        let got: Vec<_> = groups
-            .iter()
-            .map(|g| (g.stage, g.duration, g.escalated))
-            .collect();
-        if longer {
-            assert_eq!(
-                got,
-                [
-                    short,
-                    short,
-                    (GroupStage::Full, Duration::Short, false),
-                    (GroupStage::Part, Duration::Failed, true),
-                    (GroupStage::Part, Duration::Failed, true),
-                ]
-            );
-        } else {
-            assert_eq!(got, expected_short);
-        }
-        assert_eq!(end, End::Fallback(set(&[0, 1])));
+    } else {
+        assert_eq!(got, expected_short);
     }
+    assert_eq!(end, End::Fallback(set(&[0, 1])));
 }
 
 #[test]
@@ -605,15 +588,14 @@ fn a_located_hunt_runs_the_empty_locate_group_first_at_the_failed_duration() {
     assert_eq!(locate.set, set(&[2, 3]));
 }
 
-#[test]
-fn a_failed_or_skipped_locate_ends_the_hunt_loaded() {
-    for outcome in [GroupOutcome::Failed, GroupOutcome::Skipped] {
-        let mut plan = Plan::new(located(&[2, 3], &[0, 1], false)).unwrap();
-        plan.advance(outcome);
-        assert_eq!(plan.next_group(), None);
-        assert_eq!(plan.end(), Some(End::Loaded));
-        assert_eq!(plan.end().unwrap().outcome(), HuntOutcome::Loaded);
-    }
+#[test_case::test_case(GroupOutcome::Failed; "GroupOutcome::Failed")]
+#[test_case::test_case(GroupOutcome::Skipped; "GroupOutcome::Skipped")]
+fn a_failed_or_skipped_locate_ends_the_hunt_loaded(outcome: GroupOutcome) {
+    let mut plan = Plan::new(located(&[2, 3], &[0, 1], false)).unwrap();
+    plan.advance(outcome);
+    assert_eq!(plan.next_group(), None);
+    assert_eq!(plan.end(), Some(End::Loaded));
+    assert_eq!(plan.end().unwrap().outcome(), HuntOutcome::Loaded);
 }
 
 #[test]

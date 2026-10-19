@@ -13,6 +13,8 @@ use super::escalation::{
 };
 use super::measurements::{Measurement, Measurements};
 use super::order::{Lane, RequestOrder, lowest_ranked};
+use super::reason::{Basis, R7Reason};
+use super::respond::LocateReason;
 use super::status::SelfSufficiency;
 use super::target::{
     Ask, OwnRequest, PassRecord, R7Targets, Target, backoff_counts, backoff_move, counts_above,
@@ -510,20 +512,22 @@ fn named_targets_do_not_pool_loads_or_profiles_but_do_pool_durations() {
     assert_eq!(fx.named(workload(0), 0, Some(5000)), None);
 }
 
-#[test]
-fn named_target_clock_tolerance_has_an_inclusive_25_mhz_boundary() {
-    for (gap, admitted) in [(0, true), (2, true), (23, true), (25, true), (26, false)] {
-        let mut fx = Fx::new(1);
-        let p = fx.profile(&[-20, -30, -30, -30]);
-        fx.pass(&record(
-            1,
-            class(0, &[0, 1], 120),
-            p,
-            &[(0, 1.14)],
-            &[(0, 5397 - gap)],
-        ));
-        assert_eq!(fx.named(workload(0), 0, Some(5397)).is_some(), admitted);
-    }
+#[test_case::test_case(0, true; "(0, true)")]
+#[test_case::test_case(2, true; "(2, true)")]
+#[test_case::test_case(23, true; "(23, true)")]
+#[test_case::test_case(25, true; "(25, true)")]
+#[test_case::test_case(26, false; "(26, false)")]
+fn named_target_clock_tolerance_has_an_inclusive_25_mhz_boundary(gap: i64, admitted: bool) {
+    let mut fx = Fx::new(1);
+    let p = fx.profile(&[-20, -30, -30, -30]);
+    fx.pass(&record(
+        1,
+        class(0, &[0, 1], 120),
+        p,
+        &[(0, 1.14)],
+        &[(0, 5397 - gap)],
+    ));
+    assert_eq!(fx.named(workload(0), 0, Some(5397)).is_some(), admitted);
 }
 
 #[test]
@@ -931,29 +935,25 @@ mod target {
         );
     }
 
-    #[test]
-    fn a_named_target_filters_on_the_failing_trials_clock() {
-        for (name, mhz, want) in [
-            ("equal clock", Some(5000), -20),
-            ("lower clock", Some(4900), -29),
-            ("missing pass clock", None, -29),
-        ] {
-            let mut fx = Fx::new(3);
-            let p = fx.profile(&[-20, -30, -30, -30]);
-            let clocks: Vec<(u8, i64)> = mhz.map(|m| (0, m)).into_iter().collect();
-            for at in 1..=3 {
-                fx.pass(&record(
-                    at,
-                    class(0, &[0, 1], 120),
-                    p,
-                    &[(0, 1.136), (1, 1.08)],
-                    &clocks,
-                ));
-            }
-            let target = fx.named(workload(0), 0, Some(5000));
-            let to = move_to(-30, None, OwnRequest::Measured(1.1), target.as_ref(), None);
-            assert_eq!(to, want, "{name}");
+    #[test_case::test_case("equal clock", Some(5000), -20; "equal clock")]
+    #[test_case::test_case("lower clock", Some(4900), -29; "lower clock")]
+    #[test_case::test_case("missing pass clock", None, -29; "missing pass clock")]
+    fn a_named_target_filters_on_the_failing_trials_clock(name: &str, mhz: Option<i64>, want: i64) {
+        let mut fx = Fx::new(3);
+        let p = fx.profile(&[-20, -30, -30, -30]);
+        let clocks: Vec<(u8, i64)> = mhz.map(|m| (0, m)).into_iter().collect();
+        for at in 1..=3 {
+            fx.pass(&record(
+                at,
+                class(0, &[0, 1], 120),
+                p,
+                &[(0, 1.136), (1, 1.08)],
+                &clocks,
+            ));
         }
+        let target = fx.named(workload(0), 0, Some(5000));
+        let to = move_to(-30, None, OwnRequest::Measured(1.1), target.as_ref(), None);
+        assert_eq!(to, want, "{name}");
     }
 
     #[test]
@@ -1009,28 +1009,27 @@ mod target {
         [(0, top), (1, 1.0)]
     }
 
-    #[test]
-    fn a_profile_needs_n_passes_and_the_lowest_voltage_among_those_wins() {
-        for (n, want) in [(3, Some(1.2)), (6, None)] {
-            let mut fx = Fx::new(n);
-            let low = fx.profile(&[-20, -30, -30, -30]);
-            let high = fx.profile(&[-10, -30, -30, -30]);
-            let tops = [(1, low, 1.15), (2, low, 1.15)];
-            let more = [(3, high, 1.2), (4, high, 1.2), (5, high, 1.2)];
-            for (at, profile, top) in tops.into_iter().chain(more) {
-                fx.pass(&record(
-                    at,
-                    class(0, &[0, 1], 120),
-                    profile,
-                    &lane(top),
-                    &[],
-                ));
-            }
-            let found = fx.unattributed(load(0, &[0, 1]), 0, 1.1);
-            assert_eq!(found.as_ref().map(|t| t.volts), want, "n {n}");
-            if let Some(target) = found {
-                assert_eq!(target.cited, [seq(3), seq(4), seq(5)]);
-            }
+    #[test_case::test_case(3, Some(1.2); "(3, Some(1.2))")]
+    #[test_case::test_case(6, None; "(6, None)")]
+    fn a_profile_needs_n_passes_and_the_lowest_voltage_among_those_wins(n: u16, want: Option<f64>) {
+        let mut fx = Fx::new(n);
+        let low = fx.profile(&[-20, -30, -30, -30]);
+        let high = fx.profile(&[-10, -30, -30, -30]);
+        let tops = [(1, low, 1.15), (2, low, 1.15)];
+        let more = [(3, high, 1.2), (4, high, 1.2), (5, high, 1.2)];
+        for (at, profile, top) in tops.into_iter().chain(more) {
+            fx.pass(&record(
+                at,
+                class(0, &[0, 1], 120),
+                profile,
+                &lane(top),
+                &[],
+            ));
+        }
+        let found = fx.unattributed(load(0, &[0, 1]), 0, 1.1);
+        assert_eq!(found.as_ref().map(|t| t.volts), want, "n {n}");
+        if let Some(target) = found {
+            assert_eq!(target.cited, [seq(3), seq(4), seq(5)]);
         }
     }
 
@@ -1106,22 +1105,21 @@ mod target {
         assert!(ask(&fx).is_none());
     }
 
-    #[test]
-    fn a_failure_the_ledger_drops_gives_its_passes_back() {
-        for (named, restored) in [(Some(3), true), (None, false)] {
-            let mut fx = Fx::new(2);
-            let p = fx.profile(&[-26, -30, -30, -30]);
-            let here = class(0, &[0, 1], 120);
-            fx.pass(&record(1, here, p, &lane(1.115), &[]));
-            fx.pass(&record(2, here, p, &lane(1.115), &[]));
-            fx.fail(3, here, p, named);
-            assert!(fx.unattributed(load(0, &[0, 1]), 0, 1.1).is_none());
-            fx.reset(3);
-            let target = fx.unattributed(load(0, &[0, 1]), 0, 1.1);
-            assert_eq!(target.is_some(), restored, "named {named:?}");
-            if let Some(target) = target {
-                assert_eq!(target.cited, [seq(1), seq(2)]);
-            }
+    #[test_case::test_case(Some(3), true; "(Some(3), true)")]
+    #[test_case::test_case(None, false; "(None, false)")]
+    fn a_failure_the_ledger_drops_gives_its_passes_back(named: Option<u8>, restored: bool) {
+        let mut fx = Fx::new(2);
+        let p = fx.profile(&[-26, -30, -30, -30]);
+        let here = class(0, &[0, 1], 120);
+        fx.pass(&record(1, here, p, &lane(1.115), &[]));
+        fx.pass(&record(2, here, p, &lane(1.115), &[]));
+        fx.fail(3, here, p, named);
+        assert!(fx.unattributed(load(0, &[0, 1]), 0, 1.1).is_none());
+        fx.reset(3);
+        let target = fx.unattributed(load(0, &[0, 1]), 0, 1.1);
+        assert_eq!(target.is_some(), restored, "named {named:?}");
+        if let Some(target) = target {
+            assert_eq!(target.cited, [seq(1), seq(2)]);
         }
     }
 
@@ -1418,7 +1416,7 @@ mod escalation {
         load(index, ids)
     }
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Clone, Copy, Debug, PartialEq)]
     enum Answer {
         Backoff(u32),
         Locate(Option<u32>),
@@ -1455,55 +1453,24 @@ mod escalation {
         last
     }
 
-    #[test]
-    fn counts_since_the_loads_latest_pass_and_escalates_the_next_failure() {
-        for (name, ops, want) in [
-            ("first failure of a load backs off", "A", Answer::Backoff(1)),
-            ("one backoff is not enough", "AA", Answer::Backoff(2)),
-            (
-                "two backoffs escalate the next failure",
-                "AAA",
-                Answer::Locate(Some(2)),
-            ),
-            ("a pass resets the count", "AAaA", Answer::Backoff(1)),
-            (
-                "a pass resets it again after two more",
-                "AAaAA",
-                Answer::Backoff(2),
-            ),
-            (
-                "two backoffs after a pass escalate",
-                "AAaAAA",
-                Answer::Locate(Some(2)),
-            ),
-            (
-                "another workload counts separately",
-                "AAB",
-                Answer::Backoff(1),
-            ),
-            (
-                "other loaded cores count separately",
-                "AAC",
-                Answer::Backoff(1),
-            ),
-            (
-                "alternating loads keep separate counts",
-                "ABABA",
-                Answer::Locate(Some(2)),
-            ),
-            (
-                "alternating loads stay below the count",
-                "ABAB",
-                Answer::Backoff(2),
-            ),
-            (
-                "a pass of another load does not reset",
-                "AAbA",
-                Answer::Locate(Some(2)),
-            ),
-        ] {
-            assert_eq!(play(ops), want, "{name}");
-        }
+    #[test_case::test_case("first failure of a load backs off", "A", Answer::Backoff(1); "first failure of a load backs off")]
+    #[test_case::test_case("one backoff is not enough", "AA", Answer::Backoff(2); "one backoff is not enough")]
+    #[test_case::test_case("two backoffs escalate the next failure", "AAA", Answer::Locate(Some(2)); "two backoffs escalate the next failure")]
+    #[test_case::test_case("a pass resets the count", "AAaA", Answer::Backoff(1); "a pass resets the count")]
+    #[test_case::test_case("a pass resets it again after two more", "AAaAA", Answer::Backoff(2); "a pass resets it again after two more")]
+    #[test_case::test_case("two backoffs after a pass escalate", "AAaAAA", Answer::Locate(Some(2)); "two backoffs after a pass escalate")]
+    #[test_case::test_case("another workload counts separately", "AAB", Answer::Backoff(1); "another workload counts separately")]
+    #[test_case::test_case("other loaded cores count separately", "AAC", Answer::Backoff(1); "other loaded cores count separately")]
+    #[test_case::test_case("alternating loads keep separate counts", "ABABA", Answer::Locate(Some(2)); "alternating loads keep separate counts")]
+    #[test_case::test_case("alternating loads stay below the count", "ABAB", Answer::Backoff(2); "alternating loads stay below the count")]
+    #[test_case::test_case("a pass of another load does not reset", "AAbA", Answer::Locate(Some(2)); "a pass of another load does not reset")]
+    fn counts_since_the_loads_latest_pass_and_escalates_the_next_failure(
+        name: &str,
+        ops: &str,
+        want: Answer,
+    ) {
+        assert_eq!(play(ops), want, "{name}");
+
         assert_eq!(ESCALATE_AFTER, 2);
     }
 
@@ -1518,23 +1485,17 @@ mod escalation {
         assert_eq!(strikes.failures(all), 2);
     }
 
-    #[test]
-    fn only_unattributed_backoffs_count() {
+    #[test_case::test_case(0, BackoffKind::Named; "named")]
+    #[test_case::test_case(1, BackoffKind::LocatedNamed; "located named")]
+    #[test_case::test_case(2, BackoffKind::Deepening; "deepening")]
+    #[test_case::test_case(3, BackoffKind::Hold; "hold")]
+    fn only_unattributed_backoffs_count(at: u64, kind: BackoffKind) {
         let mut strikes = Strikes::default();
         let key = load(0, &[0, 1]);
-        for (at, kind) in [
-            BackoffKind::Named,
-            BackoffKind::LocatedNamed,
-            BackoffKind::Deepening,
-            BackoffKind::Hold,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let at = u64::try_from(at).unwrap();
-            assert!(!kind.counts());
-            strikes.backoff(key, kind, seq(10 + at), seq(1 + at));
-        }
+
+        assert!(!kind.counts());
+        strikes.backoff(key, kind, seq(10 + at), seq(1 + at));
+
         assert_eq!(strikes.failures(key), 0);
         assert!(BackoffKind::Unattributed.counts());
     }
@@ -2028,6 +1989,7 @@ mod props {
                         prop_assert_eq!(
                             found.map(|t| (t.volts.to_bits(), t.cited)),
                             expected.map(|(volts, _, cited)| (volts.to_bits(), cited)),
+                            "load {:?}, moved core {}, failing request {}", set, moved, failing,
                         );
                     }
                 }
@@ -2050,39 +2012,43 @@ mod props {
                     prop_assert_eq!(
                         found.map(|t| (t.volts.to_bits(), t.cited)),
                         expected.map(|(volts, _, cited)| (volts.to_bits(), cited)),
+                        "moved core {}, failing clock {:?}", moved, failing,
                     );
                 }
             }
         }
     }
 
-    #[test]
-    fn the_target_offset_type_bounds_every_move() {
-        for applied in [-50, -30, 0] {
-            for counts in [1, 5, 60, i64::MAX] {
-                let to = backoff_move(TargetOffset::new(applied).unwrap(), None, counts).to;
-                assert!((-50..=0).contains(&to.get()));
-                assert!(!to.deeper_than(TargetOffset::new(applied).unwrap()));
-            }
-        }
+    #[test_case::test_case(-50, 1; "-50; 1")]
+    #[test_case::test_case(-50, 5; "-50; 5")]
+    #[test_case::test_case(-50, 60; "-50; 60")]
+    #[test_case::test_case(-50, i64::MAX; "-50; i64::MAX")]
+    #[test_case::test_case(-30, 1; "-30; 1")]
+    #[test_case::test_case(-30, 5; "-30; 5")]
+    #[test_case::test_case(-30, 60; "-30; 60")]
+    #[test_case::test_case(-30, i64::MAX; "-30; i64::MAX")]
+    #[test_case::test_case(0, 1; "0; 1")]
+    #[test_case::test_case(0, 5; "0; 5")]
+    #[test_case::test_case(0, 60; "0; 60")]
+    #[test_case::test_case(0, i64::MAX; "0; i64::MAX")]
+    fn the_target_offset_type_bounds_every_move(applied: i64, counts: i64) {
+        let to = backoff_move(TargetOffset::new(applied).unwrap(), None, counts).to;
+        assert!((-50..=0).contains(&to.get()));
+        assert!(!to.deeper_than(TargetOffset::new(applied).unwrap()));
     }
 }
 
 mod counts_above_tests {
     use super::*;
 
-    #[test]
-    fn lifts_a_request_strictly_over_the_top() {
-        for (v, top, want) in [
-            (1.100, 1.100, 1),
-            (1.100, 1.050, 1),
-            (1.100, 1.100 + VOLTS_PER_COUNT - 0.0001, 1),
-            (1.100, 1.100 + VOLTS_PER_COUNT, 2),
-            (1.100, 1.100 + 2.0 * VOLTS_PER_COUNT + 0.0001, 3),
-            (1.15, 1.2, 14),
-        ] {
-            assert_eq!(counts_above(v, top), want, "counts_above({v}, {top})");
-        }
+    #[test_case::test_case(1.100, 1.100, 1; "(1.100, 1.100, 1)")]
+    #[test_case::test_case(1.100, 1.050, 1; "(1.100, 1.050, 1)")]
+    #[test_case::test_case(1.100, 1.100 + VOLTS_PER_COUNT - 0.0001, 1; "(1.100, 1.100 + VOLTS_PER_COUNT - 0.0001, 1)")]
+    #[test_case::test_case(1.100, 1.100 + VOLTS_PER_COUNT, 2; "(1.100, 1.100 + VOLTS_PER_COUNT, 2)")]
+    #[test_case::test_case(1.100, 1.100 + 2.0 * VOLTS_PER_COUNT + 0.0001, 3; "(v, top, want) scenario 5")]
+    #[test_case::test_case(1.15, 1.2, 14; "(1.15, 1.2, 14)")]
+    fn lifts_a_request_strictly_over_the_top(v: f64, top: f64, want: i64) {
+        assert_eq!(counts_above(v, top), want, "counts_above({v}, {top})");
     }
 
     #[test]
@@ -2106,85 +2072,75 @@ mod counts_above_tests {
     }
 }
 
-#[test]
-fn r7_reasons_render_each_voltage_basis_and_locate_provenance() {
-    use crate::r7::reason::{Basis, R7Reason};
-    use crate::r7::respond::LocateReason;
-
-    for (basis, text) in [
-        (Basis::NoTelemetry { offset: -30 }, "no request telemetry"),
-        (
-            Basis::Uncovered {
+#[test_case::test_case(Basis::NoTelemetry { offset: -30 }, "no request telemetry"; "no telemetry")]
+#[test_case::test_case(Basis::Uncovered {
                 offset: -30,
                 sources: vec![seq(3)],
-            },
-            "request measurements [3] do not cover it",
-        ),
-        (Basis::NoPass { request: 1.1 }, "no qualifying pass"),
-        (
-            Basis::Met {
+            }, "request measurements [3] do not cover it"; "uncovered telemetry")]
+#[test_case::test_case(Basis::NoPass { request: 1.1 }, "no qualifying pass"; "no passing target")]
+#[test_case::test_case(Basis::Met {
                 request: 1.2,
                 target: 1.1,
-            },
-            "already met the passed target 1.100 V",
-        ),
-        (
-            Basis::Toward {
+            }, "already met the passed target 1.100 V"; "target already met")]
+#[test_case::test_case(Basis::Toward {
                 request: 1.1,
                 target: 1.2,
-            },
-            "request 1.100 V to 1.200 V",
-        ),
-    ] {
-        let reason = R7Reason {
-            failure: seq(10),
-            core: core(0),
-            basis,
-            counts: 1,
-            notes: Vec::new(),
-            rail: None,
-        }
-        .to_string();
-        assert!(reason.contains("after failure #10: core 00"));
-        assert!(reason.contains(text), "{reason}");
-        assert!(reason.contains("1 count"));
+            }, "request 1.100 V to 1.200 V"; "toward passing target")]
+fn r7_reasons_render_each_voltage_basis(basis: Basis, text: &str) {
+    let reason = R7Reason {
+        failure: seq(10),
+        core: core(0),
+        basis,
+        counts: 1,
+        notes: Vec::new(),
+        rail: None,
     }
-    for rerun_passed in [None, Some(seq(19))] {
-        let reason = LocateReason {
-            rerun_passed,
-            escalation: Some(Escalation::Backoffs {
-                failures: 2,
-                decisions: vec![seq(12), seq(30)],
-            }),
-        };
-        let mut expected = rerun_passed.into_iter().collect::<Vec<_>>();
-        expected.extend([seq(12), seq(30)]);
-        assert_eq!(reason.cause(), expected);
-        let text = reason.to_string();
-        assert!(text.contains("located on the unloaded cores"));
-        assert!(text.contains("#12, #30"));
-        assert_eq!(text.contains("CO 0 passed (#19)"), rerun_passed.is_some());
-    }
-    for rerun_passed in [None, Some(seq(19))] {
-        let reason = LocateReason {
-            rerun_passed,
-            escalation: Some(Escalation::Covered {
-                passes: vec![seq(12), seq(30)],
-            }),
-        };
-        let mut expected = rerun_passed.into_iter().collect::<Vec<_>>();
-        expected.extend([seq(12), seq(30)]);
-        assert_eq!(reason.cause(), expected);
-        let text = reason.to_string();
-        assert!(text.contains("located on the unloaded cores"), "{text}");
-        assert!(
-            text.ends_with(
-                "; the load already passed with every loaded core as deep or deeper and an \
+    .to_string();
+    assert!(reason.contains("after failure #10: core 00"));
+    assert!(reason.contains(text), "{reason}");
+    assert!(reason.contains("1 count"));
+}
+
+#[test_case::test_case(None; "no zero rerun")]
+#[test_case::test_case(Some(seq(19)); "zero rerun passed")]
+fn located_backoff_reasons_render_rerun_provenance(rerun_passed: Option<Seq>) {
+    let reason = LocateReason {
+        rerun_passed,
+        escalation: Some(Escalation::Backoffs {
+            failures: 2,
+            decisions: vec![seq(12), seq(30)],
+        }),
+    };
+    let mut expected = rerun_passed.into_iter().collect::<Vec<_>>();
+    expected.extend([seq(12), seq(30)]);
+    assert_eq!(reason.cause(), expected);
+    let text = reason.to_string();
+    assert!(text.contains("located on the unloaded cores"));
+    assert!(text.contains("#12, #30"));
+    assert_eq!(text.contains("CO 0 passed (#19)"), rerun_passed.is_some());
+}
+
+#[test_case::test_case(None; "no zero rerun")]
+#[test_case::test_case(Some(seq(19)); "zero rerun passed")]
+fn located_covered_reasons_render_rerun_provenance(rerun_passed: Option<Seq>) {
+    let reason = LocateReason {
+        rerun_passed,
+        escalation: Some(Escalation::Covered {
+            passes: vec![seq(12), seq(30)],
+        }),
+    };
+    let mut expected = rerun_passed.into_iter().collect::<Vec<_>>();
+    expected.extend([seq(12), seq(30)]);
+    assert_eq!(reason.cause(), expected);
+    let text = reason.to_string();
+    assert!(text.contains("located on the unloaded cores"), "{text}");
+    assert!(
+        text.ends_with(
+            "; the load already passed with every loaded core as deep or deeper and an \
                  unloaded core shallower (#12, #30), so its loaded cores pass on their own and \
                  stepping one back cannot be what it needs"
-            ),
-            "{text}"
-        );
-        assert_eq!(text.contains("CO 0 passed (#19)"), rerun_passed.is_some());
-    }
+        ),
+        "{text}"
+    );
+    assert_eq!(text.contains("CO 0 passed (#19)"), rerun_passed.is_some());
 }
