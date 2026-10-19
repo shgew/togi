@@ -371,6 +371,27 @@ fn sparse_core_ids() {
 }
 
 #[test]
+fn sparse_readbacks_do_not_fill_other_topology_cores() {
+    let mut script = Script::new(&[(0, 0), (8, 1)], &[Start::search(-5), Start::search(-9)]);
+    script.append(
+        ProfileRestored {
+            offsets: [(core(8), off(-9))].into_iter().collect(),
+        }
+        .into(),
+        &[],
+    );
+    let model = script.model();
+    let snap = model.snapshot();
+    assert_eq!(
+        snap.cores
+            .iter()
+            .map(|core| (core.id, core.applied))
+            .collect::<Vec<_>>(),
+        [(core(0), None), (core(8), Some(ObservedOffset(-9)))]
+    );
+}
+
+#[test]
 fn crash_classification() {
     for (name, stray, inconclusive) in [
         ("offset-related crash", false, false),

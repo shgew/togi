@@ -560,7 +560,19 @@ fn r7_workload_and_top_requesters() {
         .filter(|s| s.workload == snap.r7_workload().unwrap() && s.top_requester)
         .map(|s| (s.core, s.offset_proxy))
         .collect();
-    assert_eq!(snap.r7_top(), want);
+    let top = snap.r7_top();
+    assert_eq!(
+        top.iter()
+            .filter_map(|(core, value)| value.map(|value| (core, value)))
+            .collect::<Vec<_>>(),
+        want.iter()
+            .map(|(&core, &value)| (core, value))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        serde_json::to_value(top).unwrap(),
+        serde_json::to_value(&want).unwrap()
+    );
     assert!(!want.is_empty(), "some core tops the request order");
     let _ = (TargetOffset::ZERO, PerCore::<TargetOffset>::default());
 }

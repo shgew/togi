@@ -444,7 +444,7 @@ pub(crate) fn draw_ccd(buf: &mut Buffer, ccd: &Ccd, scene: &Scene<'_>) {
         if let Some(top) = &top {
             let room = width - col.note;
             let mut note = note_line(scene, core, room);
-            if let Some(&by_offset) = top.get(&core.id) {
+            if let Some(by_offset) = top.get(core.id).flatten() {
                 note = top_note(&note, by_offset, room, colours);
             }
             put(buf, r, at(col.note), y, &note, colours);
