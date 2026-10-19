@@ -270,18 +270,18 @@ fn the_recorded_context_reaches_the_checks_only_for_a_journal_run_would_continue
     assert!(!host.exists(&absent), "doctor created the state directory");
 }
 
-#[test_case::test_case("\"schema\":1".to_owned(), "\"schema\":99", format!("(schema 99, ruleset {RULESET})"), "uses schema 1.".to_owned(); "newer schema")]
-#[test_case::test_case(format!("\"ruleset\":{RULESET}"), "\"ruleset\":99", "(schema 1, ruleset 99)".to_owned(), format!("uses ruleset {RULESET}."); "newer ruleset")]
-#[test_case::test_case("\"evidence\":1}".to_owned(), "\"evidence\":99}", format!("(schema 1, ruleset {RULESET}, evidence epoch 99)"), "uses evidence epoch 1.".to_owned(); "newer evidence")]
+#[test_case::test_case("\"schema\":1", "\"schema\":99", &format!("(schema 99, ruleset {RULESET})"), "uses schema 1."; "newer schema")]
+#[test_case::test_case(&format!("\"ruleset\":{RULESET}"), "\"ruleset\":99", "(schema 1, ruleset 99)", &format!("uses ruleset {RULESET}."); "newer ruleset")]
+#[test_case::test_case("\"evidence\":1}", "\"evidence\":99}", &format!("(schema 1, ruleset {RULESET}, evidence epoch 99)"), "uses evidence epoch 1."; "newer evidence")]
 fn a_journal_run_would_refuse_exits_16_before_any_lock_or_check(
-    from: String,
+    from: &str,
     to: &str,
-    written: String,
-    uses: String,
+    written: &str,
+    uses: &str,
 ) {
-    let name = &from;
+    let name = from;
     let session = Session::new();
-    session.rewrite_first_line(&from, to);
+    session.rewrite_first_line(from, to);
     session.rewrite_first_line(
         "\"version\":\"0.0.0\"",
         "\"version\":\"0.0.0\",\"rev\":\"abc1234\"",
