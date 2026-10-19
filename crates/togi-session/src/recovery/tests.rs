@@ -596,7 +596,10 @@ fn an_open_trial_ran_from_its_start_to_its_last_record_by_the_monotonic_clock_wh
     let start = log
         .mono(10_000)
         .started("0001", Some(10_000_000_000), intent);
-    assert_eq!(log.state().open_trial().unwrap().ran(), Duration::ZERO);
+    assert_eq!(
+        log.state().open_trial().unwrap().ran().unwrap(),
+        Duration::ZERO
+    );
     log.mono(95_000).wall(-3_600);
     log.add(
         Payload::TrialProgress(TrialProgress {
@@ -608,7 +611,7 @@ fn an_open_trial_ran_from_its_start_to_its_last_record_by_the_monotonic_clock_wh
         &[start],
     );
     assert_eq!(
-        log.state().open_trial().unwrap().ran(),
+        log.state().open_trial().unwrap().ran().unwrap(),
         Duration::from_secs(85)
     );
 }
@@ -632,12 +635,12 @@ fn a_sample_of_the_open_trial_is_its_last_activity_and_another_trials_sample_is_
     };
     log.mono(40_000).add(sample("0001"), &[start]);
     assert_eq!(
-        log.state().open_trial().unwrap().ran(),
+        log.state().open_trial().unwrap().ran().unwrap(),
         Duration::from_secs(30)
     );
     log.mono(90_000).add(sample("0002"), &[start]);
     assert_eq!(
-        log.state().open_trial().unwrap().ran(),
+        log.state().open_trial().unwrap().ran().unwrap(),
         Duration::from_secs(30)
     );
 }
@@ -661,7 +664,7 @@ fn without_monotonic_times_the_wall_clock_gives_the_duration() {
         &[start],
     );
     assert_eq!(
-        log.state().open_trial().unwrap().ran(),
+        log.state().open_trial().unwrap().ran().unwrap(),
         Duration::from_secs(60)
     );
 }
@@ -684,7 +687,7 @@ fn a_progress_record_of_another_trial_is_not_this_trials_activity_or_failure() {
     let state = log.state();
     let open = state.open_trial().unwrap();
     assert_eq!(open.failure, None);
-    assert_eq!(open.ran(), Duration::ZERO);
+    assert_eq!(open.ran().unwrap(), Duration::ZERO);
 }
 
 #[test]
