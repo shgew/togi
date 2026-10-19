@@ -44,6 +44,16 @@ impl Journal {
             if let Payload::CheckingCycle(cycle) = &event.payload {
                 checking_steps(cycle.steps.len())?;
             }
+            let requests = match &event.payload {
+                Payload::TrialEnd(end) => Some(&end.voltage_requests_v),
+                Payload::TrialCarried(carried) => Some(&carried.voltage_requests_v),
+                _ => None,
+            };
+            if let Some(requests) = requests {
+                for (_, request) in requests.iter() {
+                    crate::r7::checked_bin(request)?;
+                }
+            }
             if !boot_starts.contains_key(&event.boot) {
                 let start = match event.mono {
                     Some(mono) => {

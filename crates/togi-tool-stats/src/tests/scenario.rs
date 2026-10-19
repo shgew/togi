@@ -626,3 +626,33 @@ fn an_inconclusive_trial_without_a_reason_shows_a_dash() {
         "{text}"
     );
 }
+
+#[test_case::test_case(f64::MAX, false; "positive bin overflow")]
+#[test_case::test_case(-f64::MAX, false; "negative bin overflow")]
+#[test_case::test_case(f64::MAX, true; "carried positive bin overflow")]
+#[test_case::test_case(-f64::MAX, true; "carried negative bin overflow")]
+fn a_journal_refuses_unrepresentable_voltage_bins(volts: f64, carried: bool) {
+    let mut log = Log::new(&[(0, 0)]);
+    let requests = set(&[0]).iter().map(|core| (core, volts)).collect();
+    if carried {
+        let mut fact = super::evidence::carried(Outcome::Pass);
+        fact.voltage_requests_v = requests;
+        log.add(fact);
+    } else {
+        let mut ended = end("t", Outcome::Pass);
+        ended.voltage_requests_v = requests;
+        log.add(ended);
+    }
+    assert!(matches!(Journal::new(log.events), Err(Error::VoltageBin(_))));
+}
+
+#[test_case::test_case(0.0, Some(0); "zero bin")]
+#[test_case::test_case(0.004, Some(1); "one bin")]
+#[test_case::test_case(-0.004, Some(-1); "negative bin")]
+#[test_case::test_case(2.0_f64.powi(63) / 250.0, None; "first positive overflow")]
+#[test_case::test_case(-2.0_f64.powi(63) / 250.0, Some(i64::MIN); "exact negative limit")]
+#[test_case::test_case(f64::MAX, None; "positive multiplication overflow")]
+#[test_case::test_case(-f64::MAX, None; "negative multiplication overflow")]
+fn voltage_bins_are_checked_at_signed_boundaries(volts: f64, expected: Option<i64>) {
+    assert_eq!(crate::r7::checked_bin(volts).ok(), expected);
+}

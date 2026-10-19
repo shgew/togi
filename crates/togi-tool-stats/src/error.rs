@@ -19,6 +19,8 @@ pub enum Error {
     Elapsed(#[source] jiff::Error),
     #[error("convert recorded checking-step count")]
     CheckingSteps(#[source] std::num::TryFromIntError),
+    #[error("recorded voltage request {0} cannot be represented as a 4 mV bin")]
+    VoltageBin(f64),
     #[error(transparent)]
     Forecast(#[from] togi_tool_forecast::Error),
     #[error("score forecast {path}")]
