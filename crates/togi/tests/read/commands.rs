@@ -18,49 +18,46 @@ fn one_frame_watch<'a>(extra: &[&'a str]) -> Vec<&'a str> {
     args
 }
 
-#[test]
-fn config_is_a_usage_error_before_or_after_the_command_name() {
+#[test_case::test_case(&["status", "--config", "x"]; "status trailing")]
+#[test_case::test_case(&["--config", "x", "status"]; "status leading")]
+#[test_case::test_case(&["status", "--config", "x", "--help"]; "status trailing help")]
+#[test_case::test_case(&["--config", "x", "status", "--help"]; "status leading help")]
+#[test_case::test_case(&["events", "--config", "x"]; "events trailing")]
+#[test_case::test_case(&["--config", "x", "events"]; "events leading")]
+#[test_case::test_case(&["events", "--config", "x", "--help"]; "events trailing help")]
+#[test_case::test_case(&["--config", "x", "events", "--help"]; "events leading help")]
+#[test_case::test_case(&["watch", "--config", "x"]; "watch trailing")]
+#[test_case::test_case(&["--config", "x", "watch"]; "watch leading")]
+#[test_case::test_case(&["watch", "--config", "x", "--help"]; "watch trailing help")]
+#[test_case::test_case(&["--config", "x", "watch", "--help"]; "watch leading help")]
+fn config_is_a_usage_error_before_or_after_the_command_name(args: &[&str]) {
     let dir = session(Scenario::Search);
-    for command in ["status", "events", "watch"] {
-        for help in [&[][..], &["--help"]] {
-            let mut written = vec![command, "--config", "x"];
-            written.extend(help);
-            let mut leading = vec!["--config", "x", command];
-            leading.extend(help);
-            for args in [written, leading] {
-                let ran = togi(&dir, &args);
-                assert_eq!(ran.status.code(), Some(2), "{args:?}");
-                assert_eq!(text(&ran.stdout), "", "{args:?}");
-                assert_eq!(
-                    text(&ran.stderr).lines().next(),
-                    Some(SCOPE),
-                    "{args:?}: {}",
-                    text(&ran.stderr)
-                );
-            }
-        }
-    }
+    let ran = togi(&dir, args);
+    assert_eq!(ran.status.code(), Some(2), "{args:?}");
+    assert_eq!(text(&ran.stdout), "", "{args:?}");
+    assert_eq!(
+        text(&ran.stderr).lines().next(),
+        Some(SCOPE),
+        "{args:?}: {}",
+        text(&ran.stderr)
+    );
 }
 
-#[test]
-fn the_config_error_comes_before_the_arguments_of_the_command() {
+#[test_case::test_case(&["--config", "x", "events", "--kind", "unknown"]; "events leading")]
+#[test_case::test_case(&["events", "--kind", "unknown", "--config", "x"]; "events trailing")]
+#[test_case::test_case(&["--config", "x", "watch", "--width", "0"]; "watch leading")]
+#[test_case::test_case(&["watch", "--width", "0", "--config", "x"]; "watch trailing")]
+fn the_config_error_comes_before_the_arguments_of_the_command(args: &[&str]) {
     let dir = session(Scenario::Search);
-    for args in [
-        &["--config", "x", "events", "--kind", "unknown"][..],
-        &["events", "--kind", "unknown", "--config", "x"],
-        &["--config", "x", "watch", "--width", "0"],
-        &["watch", "--width", "0", "--config", "x"],
-    ] {
-        let ran = togi(&dir, args);
-        assert_eq!(ran.status.code(), Some(2), "{args:?}");
-        assert_eq!(text(&ran.stdout), "", "{args:?}");
-        assert_eq!(
-            text(&ran.stderr).lines().next(),
-            Some(SCOPE),
-            "{args:?}: {}",
-            text(&ran.stderr)
-        );
-    }
+    let ran = togi(&dir, args);
+    assert_eq!(ran.status.code(), Some(2), "{args:?}");
+    assert_eq!(text(&ran.stdout), "", "{args:?}");
+    assert_eq!(
+        text(&ran.stderr).lines().next(),
+        Some(SCOPE),
+        "{args:?}: {}",
+        text(&ran.stderr)
+    );
 }
 
 /// The kind of the hostile event: ESC, a bidi override and a newline, as JSON escapes write them.
@@ -116,118 +113,114 @@ fn the_read_only_commands_skip_an_unknown_kind_and_ignore_an_unknown_field_and_s
     assert_eq!(state_files(&dir), before, "the journal is left as it was");
 }
 
-#[test]
-fn an_unknown_kind_that_is_hostile_is_escaped_in_what_the_read_only_commands_say() {
+#[test_case::test_case("status", &["status"], false; "status")]
+#[test_case::test_case("events", &["events"], false; "events")]
+#[test_case::test_case("watch", &WIDE_WATCH, true; "watch")]
+fn an_unknown_kind_that_is_hostile_is_escaped_in_what_the_read_only_commands_say(
+    command: &str,
+    args: &[&str],
+    dashboard: bool,
+) {
     let dir = session(Scenario::Search);
     let line = append_unknown_kind(&dir, HOSTILE_KIND);
-    let commands: [(&str, Vec<&str>); 3] = [
-        ("status", vec!["status"]),
-        ("events", vec!["events"]),
-        ("watch", WIDE_WATCH.to_vec()),
-    ];
-    for (command, args) in commands {
-        let ran = togi(&dir, &args);
-        assert_eq!(ran.status.code(), Some(0), "{command}");
-        let said = format!(
-            "skipped 1 event of a kind this build does not know ({HOSTILE_KIND:?} at line {line})"
-        );
-        if command == "watch" {
-            assert_eq!(text(&ran.stderr), "", "{command}");
-            assert!(text(&ran.stdout).contains(&said), "{command}");
-        } else {
-            assert_eq!(text(&ran.stderr), format!("togi {command}: {said}\n"));
-        }
-        for stream in [&ran.stdout, &ran.stderr] {
-            assert!(
-                !stream
-                    .iter()
-                    .any(|byte| byte.is_ascii_control() && *byte != b'\n'),
-                "{command}"
-            );
-        }
-        assert!(!ran.stderr.trim_ascii_end().contains(&b'\n'), "{command}");
+    let ran = togi(&dir, args);
+    assert_eq!(ran.status.code(), Some(0), "{command}");
+    let said = format!(
+        "skipped 1 event of a kind this build does not know ({HOSTILE_KIND:?} at line {line})"
+    );
+    if dashboard {
+        assert_eq!(text(&ran.stderr), "", "{command}");
+        assert!(text(&ran.stdout).contains(&said), "{command}");
+    } else {
+        assert_eq!(text(&ran.stderr), format!("togi {command}: {said}\n"));
     }
+    for stream in [&ran.stdout, &ran.stderr] {
+        assert!(
+            !stream
+                .iter()
+                .any(|byte| byte.is_ascii_control() && *byte != b'\n'),
+            "{command}"
+        );
+    }
+    assert!(!ran.stderr.trim_ascii_end().contains(&b'\n'), "{command}");
 }
 
-#[test]
-fn an_unknown_kind_as_the_first_event_is_never_skipped() {
+#[test_case::test_case("status"; "status")]
+#[test_case::test_case("events"; "events")]
+#[test_case::test_case("watch"; "watch")]
+fn an_unknown_kind_as_the_first_event_is_never_skipped(command: &str) {
     let dir = session(Scenario::Search);
     crate::support::rewrite_first_line(&dir, |event| {
         event["kind"] = UNKNOWN_KIND.into();
     });
     let before = crate::fixture::snapshot(dir.fs.as_ref(), dir.path());
-    for command in ["status", "events", "watch"] {
-        let args = if command == "watch" {
-            one_frame_watch(&[])
-        } else {
-            vec![command]
-        };
-        let ran = togi(&dir, &args);
-        assert_eq!(ran.status.code(), Some(1), "{command}");
-        assert_eq!(text(&ran.stdout), "", "{command}");
-        // The first line is not a header of this build, whatever its kind: the refusal does not say which build.
-        crate::fixture::assert_refusal(command, text(&ran.stderr), dir.path());
-        assert_eq!(
-            crate::fixture::snapshot(dir.fs.as_ref(), dir.path()),
-            before,
-            "{command}"
-        );
-    }
+    let args = if command == "watch" {
+        one_frame_watch(&[])
+    } else {
+        vec![command]
+    };
+    let ran = togi(&dir, &args);
+    assert_eq!(ran.status.code(), Some(1), "{command}");
+    assert_eq!(text(&ran.stdout), "", "{command}");
+    // The first line is not a header of this build, whatever its kind: the refusal does not say which build.
+    crate::fixture::assert_refusal(command, text(&ran.stderr), dir.path());
+    assert_eq!(
+        crate::fixture::snapshot(dir.fs.as_ref(), dir.path()),
+        before,
+        "{command}"
+    );
 }
 
-#[test]
-fn a_schema_refusal_is_red_bold_priority_3_when_stderr_is_the_system_journal() {
+#[test_case::test_case("status"; "status")]
+#[test_case::test_case("events"; "events")]
+fn a_schema_refusal_is_red_bold_priority_3_when_stderr_is_the_system_journal(command: &str) {
     let dir = session(Scenario::Search);
     crate::support::rewrite_first_line(&dir, |event| {
         event["data"]["build"]["schema"] = 99.into();
     });
-    for command in ["status", "events"] {
-        let ran = togi_in_journal(&dir, &[command], Journald::Stderr);
-        assert_eq!(ran.status.code(), Some(1), "{command}");
-        assert_eq!(text(&ran.stdout), "", "{command}");
-        let err = text(&ran.stderr);
-        assert!(
-            err.starts_with(&format!("<3>\x1b[1;31mtogi {command}: ")),
-            "{command}: {err:?}"
-        );
-        assert!(err.ends_with("\x1b[0m\n"), "{command}: {err:?}");
-        assert!(err.contains("schema 99"), "{command}: {err:?}");
-    }
+    let ran = togi_in_journal(&dir, &[command], Journald::Stderr);
+    assert_eq!(ran.status.code(), Some(1), "{command}");
+    assert_eq!(text(&ran.stdout), "", "{command}");
+    let err = text(&ran.stderr);
+    assert!(
+        err.starts_with(&format!("<3>\x1b[1;31mtogi {command}: ")),
+        "{command}: {err:?}"
+    );
+    assert!(err.ends_with("\x1b[0m\n"), "{command}: {err:?}");
+    assert!(err.contains("schema 99"), "{command}: {err:?}");
 }
 
-#[test]
-fn the_read_only_commands_succeed_while_the_host_lock_is_held_and_never_take_it() {
+#[test_case::test_case("status", &["status"]; "status")]
+#[test_case::test_case("events", &["events"]; "events")]
+#[test_case::test_case("watch", &WATCH_FRAME; "watch")]
+fn the_read_only_commands_succeed_while_the_host_lock_is_held_and_never_take_it(
+    command: &str,
+    args: &[&str],
+) {
     let session = session(Scenario::Search);
     let before = state_files(&session);
-    let commands: [(&str, Vec<&str>); 3] = [
-        ("status", vec!["status"]),
-        ("events", vec!["events"]),
-        ("watch", one_frame_watch(&[])),
-    ];
-    for (command, args) in commands {
-        let host = session.host();
-        {
-            let _held = host.locks.acquire(&host.lock).unwrap();
-            let ran = host.run(session.path(), &args);
-            assert_eq!(
-                ran.exit,
-                togi_cli::Exit::Ok,
-                "{command} while held: {}",
-                ran.err
-            );
-            assert_eq!(ran.err, "", "{command}");
-            assert!(!ran.out.is_empty(), "{command}");
-            assert_eq!(state_files(&session), before, "{command} while held");
-        }
+    let host = session.host();
+    {
+        let _held = host.locks.acquire(&host.lock).unwrap();
         let ran = host.run(session.path(), &args);
-        assert_eq!(ran.exit, togi_cli::Exit::Ok, "{command}: {}", ran.err);
         assert_eq!(
-            host.lock_acquisitions.get(),
-            0,
-            "{command} took the host lock"
+            ran.exit,
+            togi_cli::Exit::Ok,
+            "{command} while held: {}",
+            ran.err
         );
-        assert_eq!(state_files(&session), before, "{command} without lock");
+        assert_eq!(ran.err, "", "{command}");
+        assert!(!ran.out.is_empty(), "{command}");
+        assert_eq!(state_files(&session), before, "{command} while held");
     }
+    let ran = host.run(session.path(), &args);
+    assert_eq!(ran.exit, togi_cli::Exit::Ok, "{command}: {}", ran.err);
+    assert_eq!(
+        host.lock_acquisitions.get(),
+        0,
+        "{command} took the host lock"
+    );
+    assert_eq!(state_files(&session), before, "{command} without lock");
 }
 
 fn state_files(dir: &crate::support::Session) -> crate::fixture::Snapshot {

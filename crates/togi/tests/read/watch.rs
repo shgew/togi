@@ -144,19 +144,15 @@ fn a_between_trial_mce_shows_in_the_frame() {
     assert!(!text(&ran.stdout).contains('\u{1b}'));
 }
 
-#[test]
-fn the_frame_size_must_be_at_least_one() {
+#[test_case::test_case(["watch", "--width", "0"]; "zero width")]
+#[test_case::test_case(["watch", "--height", "0"]; "zero height")]
+#[test_case::test_case(["watch", "--width", "1001"]; "excess width")]
+#[test_case::test_case(["watch", "--height", "1001"]; "excess height")]
+fn the_frame_size_must_be_at_least_one(args: [&str; 3]) {
     let dir = crate::support::Session::empty();
-    for args in [
-        ["watch", "--width", "0"],
-        ["watch", "--height", "0"],
-        ["watch", "--width", "1001"],
-        ["watch", "--height", "1001"],
-    ] {
-        let ran = togi(&dir, &args);
-        assert_eq!(ran.status.code(), Some(2), "{args:?}");
-        assert_eq!(text(&ran.stdout), "");
-    }
+    let ran = togi(&dir, &args);
+    assert_eq!(ran.status.code(), Some(2), "{args:?}");
+    assert_eq!(text(&ran.stdout), "");
 }
 
 #[test]
@@ -236,11 +232,11 @@ fn real_process_q_ends_a_standalone_live_watch_with_the_terminal_restored() {
     a_live_watch_ends_with_the_terminal_restored(false, Ending::Keys(b"q"));
 }
 
-#[test]
-fn real_process_every_quit_key_ends_a_standalone_live_watch() {
-    for key in [&b"Q"[..], b"\x03", b"\x04"] {
-        a_live_watch_ends_with_the_terminal_restored(false, Ending::Keys(key));
-    }
+#[test_case::test_case(b"Q"; "uppercase q")]
+#[test_case::test_case(b"\x03"; "control c")]
+#[test_case::test_case(b"\x04"; "control d")]
+fn real_process_every_quit_key_ends_a_standalone_live_watch(key: &[u8]) {
+    a_live_watch_ends_with_the_terminal_restored(false, Ending::Keys(key));
 }
 
 #[test]
