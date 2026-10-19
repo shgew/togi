@@ -41,10 +41,14 @@ pub fn parse_cover(text: &str) -> Result<(Vec<CoverRange>, Vec<NotBuilt>), Error
         let Some(m) = range_line.captures(line) else {
             continue;
         };
-        let first = number(m[2].as_bytes())?;
+        let parse = |digits: &str| {
+            number(digits.as_bytes())
+                .map_err(|error| Error::wrap(format!("parse cover range {}", quote(line)), error))
+        };
+        let first = parse(&m[2])?;
         let last = m
             .get(3)
-            .map(|d| number(d.as_str().as_bytes()))
+            .map(|d| parse(d.as_str()))
             .transpose()?
             .unwrap_or(first);
         if last < first {
@@ -148,6 +152,10 @@ mod numeric_tests {
     fn coverage_line_overflow_is_refused(text: &str) {
         let error = parse_cover(text).unwrap_err();
         assert!(error.find::<std::num::ParseIntError>().is_some());
+        assert_eq!(
+            error.to_string(),
+            format!("parse cover range {}", quote(text))
+        );
     }
 
     #[test_case("f:9223372036854775807", i64::MAX ; "single")]

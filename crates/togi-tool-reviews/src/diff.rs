@@ -565,13 +565,26 @@ mod numeric_tests {
     }
 
     #[test]
-    fn range_diff_propagates_shift_overflow() {
+    fn range_diff_keeps_representable_shift_after_adjustments() {
         let diff = format!(
             "diff --git a/f b/f\n@@ -0,0 +1 @@\n+x\n@@ -{0} +{0} @@\n-y\n",
             i64::MAX
         );
         let reversal = parse_diff(diff.as_bytes()).unwrap();
+        let narrowed = lost_effects(&reversal[0], &reversal, &reversal)
+            .unwrap()
+            .unwrap();
+        assert_eq!(narrowed.hunks[1].text, reversal[0].hunks[1].text);
+    }
+
+    #[test]
+    fn range_diff_propagates_final_shift_overflow() {
+        let diff = format!(
+            "diff --git a/f b/f\n@@ -0,0 +1 @@\n+x\n@@ -{0} +{0} @@\n-y\n+z\n",
+            i64::MAX
+        );
+        let reversal = parse_diff(diff.as_bytes()).unwrap();
         let error = lost_effects(&reversal[0], &reversal, &reversal).unwrap_err();
-        assert!(error.find::<LineOverflow>().is_some());
+        assert!(error.find::<std::num::TryFromIntError>().is_some());
     }
 }

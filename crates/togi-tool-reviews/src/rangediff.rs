@@ -522,14 +522,10 @@ fn narrow_hunk(
     if adds + dels == 0 {
         return Ok((Hunk::default(), 0, 0, retained));
     }
-    let mut first = old_start;
-    if old_count == 0 {
-        first = advance_line(first, 1)?;
-    }
-    first = advance_line(first, offset)?;
-    if new_count == 0 {
-        first = advance_line(first, -1)?;
-    }
+    let first = crate::diff::line_number(
+        i128::from(old_start) + i128::from(old_count == 0) + i128::from(offset)
+            - i128::from(new_count == 0),
+    )?;
     if !retained && first == new_start {
         return Ok((h.clone(), adds, dels, false));
     }
