@@ -5,6 +5,7 @@ use togi_journal::{Activity, HuntStage, Member, Seq, TrialId};
 use togi_machine::{CoreId, CoreSet, PerCore, Regime, TargetOffset, WorkloadId};
 
 use crate::hunt::plan::GroupOutcome;
+use crate::search::SearchRegime;
 use crate::state::Run;
 use crate::{Limit, Profile, Requirement, State, TrialContext, TrialHistory, Window};
 
@@ -391,11 +392,11 @@ impl Run {
 
     fn search_turns(&self) -> Vec<SearchTurn> {
         self.search_order()
-            .map(|id| self.turn_view(id, self.search_second_only(id)))
+            .map(|id| self.turn_view(id, self.search_regime(id)))
             .collect()
     }
 
-    fn turn_view(&self, id: CoreId, second_only: bool) -> SearchTurn {
+    fn turn_view(&self, id: CoreId, search_regime: SearchRegime) -> SearchTurn {
         let core = self.core(id);
         let needed = self.config.needed;
         let (light, heavy, regime, frozen) = match core.phase.check() {
@@ -412,13 +413,12 @@ impl Run {
                 let light = valid(check.r1);
                 let heavy = valid(check.r2);
                 if light >= u32::from(needed.get()) {
-                    (light, heavy, Regime::R2, Some(check.r2))
+                    (light, heavy, SearchRegime::R2, Some(check.r2))
                 } else {
-                    (light, heavy, Regime::R1, Some(check.r1))
+                    (light, heavy, SearchRegime::R1, Some(check.r1))
                 }
             }
-            None if second_only => (0, 0, Regime::R2, None),
-            None => (0, 0, Regime::R1, None),
+            None => (0, 0, search_regime, None),
         };
         let kind = if core.phase.check().is_some() {
             TurnKind::Confirm
@@ -431,10 +431,11 @@ impl Run {
                 step: NonZeroU8::MIN.saturating_add(4),
             }
         };
-        let regimes = if core.phase.check().is_none() && second_only {
-            vec![Regime::R2]
-        } else {
-            vec![Regime::R1, Regime::R2]
+        let regimes = match (core.phase.check(), search_regime) {
+            (None, SearchRegime::R2) => vec![Regime::R2],
+            (None, SearchRegime::R1) | (Some(_), SearchRegime::R1 | SearchRegime::R2) => {
+                vec![Regime::R1, Regime::R2]
+            }
         };
         let plan = self.search_trial(id, regime, frozen);
         SearchTurn {

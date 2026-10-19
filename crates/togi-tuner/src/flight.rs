@@ -5,6 +5,7 @@ use togi_journal::{Event, Mce, Outcome, Seq, TrialEnd, TrialId, TrialIntent, Tri
 use togi_machine::{Condition, CoreId, CoreSet, Regime, Signal};
 
 use crate::r7::failed::FailedTrial;
+use crate::search::SearchRegime;
 use crate::state::Run;
 use crate::{BackendId, ClassKey, FoldError, Profile, Requirement, StepNo, TrialContext};
 
@@ -293,12 +294,17 @@ impl Run {
         let Some(turn) = open.requirement.context.turn() else {
             return;
         };
+        let regime = match turn.regime {
+            Regime::R1 => SearchRegime::R1,
+            Regime::R2 => SearchRegime::R2,
+            Regime::R3 | Regime::R4 | Regime::R5 | Regime::R6 | Regime::R7 => return,
+        };
         let state = self.core(turn.core);
         let current = state.phase.searching() && turn.offset == Some(state.offset);
         if current {
             self.search.record_pass(
                 turn.core,
-                turn.regime == Regime::R1,
+                regime,
                 open.intent.workload.backend(),
                 open.backend,
                 seq,
