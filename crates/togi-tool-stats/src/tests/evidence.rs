@@ -349,6 +349,28 @@ fn hunt_reuse_reports_admitted_carried_passes() {
 }
 
 #[test]
+fn a_since_cutoff_keeps_earlier_admitted_passes_for_later_hunts_and_failures() {
+    let mut log = Log::new(&[(0, 0), (1, 0)]);
+    carry_trial(&mut log, &target_intent(), Outcome::Pass);
+    scheduled_trial(log.at(100), target_intent(), Outcome::Failure, None);
+    let journal = log.journal();
+    let p = Projection::new(&journal);
+    let all = compute(&p, None).evidence;
+    let recent = compute(&p, Some(EPOCH + SignedDuration::from_secs(50))).evidence;
+    for metrics in [&all, &recent] {
+        assert_eq!(metrics.unavailable, 0);
+        assert_eq!(metrics.groups.len(), 1);
+        assert_eq!(metrics.groups[0].prior, Some(1));
+        assert_eq!(metrics.groups[0].established(), Some(true));
+        assert_eq!(metrics.contradictions.len(), 1);
+        assert_eq!(metrics.contradictions.values().next(), Some(&1));
+    }
+    assert_eq!(all.groups, recent.groups);
+    assert_eq!(all.stages, recent.stages);
+    assert_eq!(all.contradictions, recent.contradictions);
+}
+
+#[test]
 fn resetting_a_blamed_unloaded_core_revives_the_passes_the_tuner_keeps() {
     let mut log = Log::new(&[(0, 0), (1, 0), (2, 0)]);
     scheduled_trial(

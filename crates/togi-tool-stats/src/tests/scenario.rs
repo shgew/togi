@@ -111,7 +111,7 @@ fn review_boundary() -> (Log, jiff::Timestamp) {
 }
 
 #[test]
-fn the_review_boundary_scenario_keeps_the_evidence_a_cutoff_hides() {
+fn the_review_boundary_scenario_keeps_other_reports_when_evidence_is_unavailable() {
     let (log, cutoff) = review_boundary();
     let journal = log.journal();
     let p = Projection::new(&journal);
