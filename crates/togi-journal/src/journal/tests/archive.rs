@@ -528,7 +528,10 @@ fn an_undecodable_journal_archive_retries_through_its_own_markers() {
             for fault in [Fault::any_before(nth), Fault::any_after(nth)] {
                 let fs = MemFs::new();
                 let original = undecodable_fixture(&fs);
-                assert!(simulated(&fs).open(boot(2)).is_err());
+                assert!(
+                    simulated(&fs).open(boot(2)).is_err(),
+                    "{kind:?}, fault {fault:?}"
+                );
                 let mut dir = simulated(&fs);
                 fs.inject(fault.clone());
                 let _ = dir.archive_unreadable(kind);
