@@ -106,7 +106,16 @@ impl Backend for TestBackend {
         } else if line.starts_with("PIN FAILED") {
             Line::SetupError
         } else if let Some(cpu) = line.strip_prefix("AFFINITY:") {
-            Line::AffinityError(cpu.parse::<u16>().ok().map(CpuId::from))
+            match cpu.parse::<u16>() {
+                Ok(cpu) => Line::AffinityError(Some(CpuId::from(cpu))),
+                Err(source) if source.kind() == &std::num::IntErrorKind::PosOverflow => {
+                    Line::InvalidAffinity(togi_backend::InvalidAffinityCpu {
+                        value: cpu.to_owned(),
+                        source,
+                    })
+                }
+                Err(_) => Line::AffinityError(None),
+            }
         } else if line.starts_with("ok") {
             Line::Progress(line.to_owned())
         } else {
