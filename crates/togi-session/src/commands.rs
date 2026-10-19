@@ -44,7 +44,7 @@ pub fn reset_core(
         return Err(refusal.into());
     }
     let folds = Folds::replay(journal.events())?;
-    if !folds.recovery.topology().contains_key(&core) {
+    if folds.recovery.topology().get(core).flatten().is_none() {
         return Err(CommandError::NoSuchCore { core });
     }
     let payload = CommandReset {

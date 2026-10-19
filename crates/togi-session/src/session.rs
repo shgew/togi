@@ -470,7 +470,7 @@ impl<'machine> Session<'machine> {
         let cores: CoreSet = self.topology.iter().map(|info| info.core).collect();
         let recorded = self.appender.recovery();
         if recorded.started() {
-            let known: CoreSet = recorded.topology().keys().copied().collect();
+            let known: CoreSet = recorded.topology().iter().map(|(core, _)| core).collect();
             if known != cores {
                 return Err(SessionError::TopologyChanged {
                     added: cores.iter().filter(|&core| !known.contains(core)).collect(),

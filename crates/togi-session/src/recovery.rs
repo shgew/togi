@@ -244,11 +244,11 @@ pub(crate) struct RecoveryState {
     started: bool,
     build: Option<Build>,
     context: Option<BiosContext>,
-    topology: BTreeMap<CoreId, CcdId>,
+    topology: PerCore<Option<CcdId>>,
     baseline: Option<(Seq, PerCore<ObservedOffset>)>,
     noticed: bool,
-    phases: BTreeMap<CoreId, CorePhase>,
-    carried: Option<(Seq, BTreeMap<CoreId, CarriedCore>)>,
+    phases: PerCore<Option<CorePhase>>,
+    carried: Option<(Seq, PerCore<Option<CarriedCore>>)>,
     boots: Vec<BootId>,
     records: BTreeMap<BootId, BootRecord>,
     crashes: BTreeMap<BootId, (Seq, CrashDetected)>,
@@ -267,7 +267,7 @@ pub(crate) struct RecoveryState {
     thermal: Option<Cited>,
     stray: Vec<Seq>,
     trials: u32,
-    index: BTreeMap<(CoreId, Regime), u32>,
+    index: BTreeMap<Regime, PerCore<Option<u32>>>,
     all_index: BTreeMap<Regime, u32>,
     dead_end: Option<PendingDeadEnd>,
 }
@@ -310,7 +310,7 @@ impl RecoveryState {
                 self.topology = start
                     .cores
                     .iter()
-                    .map(|info| (info.core, info.ccd))
+                    .map(|info| (info.core, Some(info.ccd)))
                     .collect();
             }
             Payload::ConfigLoaded(loaded) => {
@@ -348,12 +348,12 @@ impl RecoveryState {
                     carried
                         .carried
                         .iter()
-                        .map(|core| (core.core, core.clone()))
+                        .map(|core| (core.core, Some(core.clone())))
                         .collect(),
                 ));
             }
             Payload::CorePhase(transition) => {
-                self.phases.insert(transition.core, transition.to);
+                self.phases.set(transition.core, Some(transition.to));
             }
             Payload::HuntGroup(_) => self.hunt_group = true,
             Payload::HuntEnd(_) | Payload::ProfileChange(_) => self.hunt_group = false,
@@ -601,7 +601,7 @@ impl RecoveryState {
         let baseline = self.baseline.as_ref().map(|(_, offsets)| *offsets);
         let baseline_seq = self.baseline.as_ref().map(|(seq, _)| *seq);
         let open_trial = self.open.is_some();
-        let cores: Vec<CoreId> = self.topology.keys().copied().collect();
+        let cores: Vec<CoreId> = self.topology.iter().map(|(core, _)| core).collect();
         let record = self.record(event);
         let registers = record.registers.get_or_insert_with(|| Registers {
             offsets: baseline.unwrap_or_default(),
@@ -649,7 +649,7 @@ impl RecoveryState {
                 ),
             });
         }
-        let known = self.topology.contains_key(&readback.core);
+        let known = self.topology.get(readback.core).flatten().is_some();
         if known && let Some(registers) = &mut self.record(event).registers {
             registers.read(readback.core, readback.offset);
         }
@@ -797,7 +797,10 @@ impl RecoveryState {
             Outcome::Pass | Outcome::Failure => {
                 self.backend(backend).streak.clear();
                 match core {
-                    Some(core) => *self.index.entry((core, regime)).or_default() += 1,
+                    Some(core) => {
+                        let counts = self.index.entry(regime).or_default();
+                        counts.set(core, Some(counts.get(core).flatten().unwrap_or(0) + 1));
+                    }
                     None => *self.all_index.entry(regime).or_default() += 1,
                 }
             }
@@ -905,7 +908,7 @@ impl RecoveryState {
         self.context.as_ref()
     }
 
-    pub(crate) fn topology(&self) -> &BTreeMap<CoreId, CcdId> {
+    pub(crate) fn topology(&self) -> &PerCore<Option<CcdId>> {
         &self.topology
     }
 
@@ -918,10 +921,10 @@ impl RecoveryState {
     }
 
     pub(crate) fn phase(&self, core: CoreId) -> Option<CorePhase> {
-        self.phases.get(&core).copied()
+        self.phases.get(core).flatten()
     }
 
-    pub(crate) fn carried(&self) -> Option<(Seq, &BTreeMap<CoreId, CarriedCore>)> {
+    pub(crate) fn carried(&self) -> Option<(Seq, &PerCore<Option<CarriedCore>>)> {
         self.carried.as_ref().map(|(seq, cores)| (*seq, cores))
     }
 
@@ -1001,7 +1004,12 @@ impl RecoveryState {
     /// workload rotates with it.
     pub(crate) fn rotation(&self, core: Option<CoreId>, regime: Regime) -> u32 {
         match core {
-            Some(core) => self.index.get(&(core, regime)).copied().unwrap_or(0),
+            Some(core) => self
+                .index
+                .get(&regime)
+                .and_then(|counts| counts.get(core))
+                .flatten()
+                .unwrap_or(0),
             None => self.all_index.get(&regime).copied().unwrap_or(0),
         }
     }

@@ -454,8 +454,8 @@ fn idle_failure(state: &RecoveryState, detected: &CrashDetected) -> Failure {
     let profile: Option<PerCore<TargetOffset>> = registers.and_then(|registers| {
         state
             .topology()
-            .keys()
-            .map(|&core| Some((core, TargetOffset::clamped(registers.offset(core)?.0))))
+            .iter()
+            .map(|(core, _)| Some((core, TargetOffset::clamped(registers.offset(core)?.0))))
             .collect()
     });
     let sole = profile
@@ -703,7 +703,7 @@ fn close_open_trial(recovery: &mut Recovery<'_, '_>) -> Step<()> {
         recovery.trials.samples(trial.as_str()),
         loaded,
         open.intent.regime,
-        |core| topology.get(&core).copied(),
+        |core| topology.get(core).flatten(),
     );
     append_trial_end(
         recovery.appender,

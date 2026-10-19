@@ -1508,6 +1508,31 @@ fn scheduler_and_projection_share_search_order(
 }
 
 #[test]
+fn sparse_search_keeps_holes_and_the_unfinished_second_regime() {
+    let mut j = Journal::new(&[2, 15], &[Start::search(-20); 2]);
+    let first = j.next_trial();
+    assert_eq!(
+        (first.load, first.regime),
+        (Load::Single(core(2)), Regime::R1)
+    );
+    j.trial(&first, Outcome::Pass);
+    let second = j.next_trial();
+    assert_eq!(
+        (second.load, second.regime),
+        (Load::Single(core(2)), Regime::R2)
+    );
+    assert_eq!(
+        j.state
+            .search_turns()
+            .iter()
+            .map(|turn| turn.core)
+            .collect::<Vec<_>>(),
+        [core(2), core(15)]
+    );
+    j.assert_resumes();
+}
+
+#[test]
 fn absent_lengths_and_confirmation_turns_keep_their_flat_state_shape() {
     let short_only = part(&[0, 1], Some(0), true, 600, (0, 0));
     let json = serde_json::to_value(&short_only).unwrap();
