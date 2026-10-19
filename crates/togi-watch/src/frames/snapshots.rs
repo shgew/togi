@@ -13,7 +13,7 @@ use togi_watchtest::Scenario;
 
 use super::colours::colours_for;
 use super::testing::{
-    FIXED_NOW, assert_glyphs_drawable, ready, render_checked, rows_of, scenario_model, screen,
+    FIXED_NOW, Fixture, assert_glyphs_drawable, ready, render_checked, rows_of, screen,
     styled_snapshot, text_snapshot,
 };
 use crate::screen::{Colours, Journal, Screen, View};
@@ -285,7 +285,7 @@ fn shapes_without_colour(scenario: Scenario, buf: &Buffer) {
 }
 
 fn main_views(scenario: Scenario, sizes: &[(u16, u16)]) {
-    let (model, now) = scenario_model(scenario);
+    let Fixture { model, now } = Fixture::scenario(scenario);
     let journal = ready(&model);
     for &size in sizes {
         let name = format!("main-{}-{}x{}", scenario.name(), size.0, size.1);
@@ -361,7 +361,7 @@ fn every_scenario_has_a_main_view_snapshot() {
 #[test_case::test_case(Colours::Rich; "rich")]
 fn every_scenario_fits_the_frame_at_every_main_size(colours: Colours) {
     for scenario in Scenario::ALL {
-        let (model, now) = scenario_model(scenario);
+        let Fixture { model, now } = Fixture::scenario(scenario);
         let journal = ready(&model);
         for size in MAIN_SIZES {
             let sc = screen_of(View::Main, size, colours, 0, false);
@@ -412,7 +412,7 @@ fn profiles(scenario: Scenario) {
         journald: true,
         ..terminal()
     };
-    let (model, now) = scenario_model(scenario);
+    let Fixture { model, now } = Fixture::scenario(scenario);
     let journal = ready(&model);
     let full = colours_for(terminal(), xterm, None);
     let console = colours_for(terminal(), linux, None);
@@ -482,7 +482,7 @@ fn journal_states_at_the_main_sizes() {
 
 #[test]
 fn help_at_the_view_sizes() {
-    let (model, now) = scenario_model(Scenario::Checking);
+    let Fixture { model, now } = Fixture::scenario(Scenario::Checking);
     let journal = ready(&model);
     for size in VIEW_SIZES {
         let (width, height) = size;
@@ -508,7 +508,7 @@ fn help_at_the_view_sizes() {
 
 #[test]
 fn the_journal_view_at_the_view_sizes() {
-    let (model, now) = scenario_model(Scenario::Stopped);
+    let Fixture { model, now } = Fixture::scenario(Scenario::Stopped);
     let journal = ready(&model);
     for size in VIEW_SIZES {
         let (width, height) = size;
@@ -536,7 +536,7 @@ fn the_journal_view_at_the_view_sizes() {
 
 #[test]
 fn one_frame_prints_the_live_text_without_the_key_footer() {
-    let (model, now) = scenario_model(Scenario::Checking);
+    let Fixture { model, now } = Fixture::scenario(Scenario::Checking);
     let journal = ready(&model);
     for size in [WIDE, (120, 33)] {
         let (width, height) = size;
@@ -568,7 +568,7 @@ fn rich_frames(mut visit: impl FnMut(&str, &Buffer)) {
         (Scenario::MemberProbe, View::Main, "main-member-probe"),
         (Scenario::Checking, View::Help, "help"),
     ] {
-        let (model, now) = scenario_model(scenario);
+        let Fixture { model, now } = Fixture::scenario(scenario);
         for size in MAIN_SIZES {
             let sc = screen_of(view, size, Colours::Rich, 0, false);
             let (buf, _) = render_checked(&ready(&model), &sc, now);
@@ -611,7 +611,7 @@ fn real_fs_generate_snapshots() {
     };
     rich_frames(|name, buf| emit(name, styled_snapshot(buf, Colours::Rich)));
     for &(scenario, sizes) in MAIN_CASES {
-        let (model, now) = scenario_model(scenario);
+        let Fixture { model, now } = Fixture::scenario(scenario);
         for &size in sizes {
             let sc = screen_of(View::Main, size, Colours::None, 0, false);
             let (buf, _) = render_checked(&ready(&model), &sc, now);
@@ -622,7 +622,7 @@ fn real_fs_generate_snapshots() {
         }
     }
     for scenario in [Scenario::Checking, Scenario::MemberProbe, Scenario::Idle] {
-        let (model, now) = scenario_model(scenario);
+        let Fixture { model, now } = Fixture::scenario(scenario);
         for (profile, colours) in [
             ("full", Colours::Full),
             ("console", Colours::Console),
@@ -636,7 +636,7 @@ fn real_fs_generate_snapshots() {
             );
         }
     }
-    let (model, now) = scenario_model(Scenario::Checking);
+    let Fixture { model, now } = Fixture::scenario(Scenario::Checking);
     for size in VIEW_SIZES {
         for (prefix, scroll) in [("help", 0), ("help-end", usize::MAX)] {
             let sc = screen_of(View::Help, size, Colours::None, scroll, false);

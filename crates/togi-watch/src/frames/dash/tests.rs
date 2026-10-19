@@ -7,12 +7,9 @@ use ratatui::layout::Rect;
 use ratatui::text::Line;
 use test_case::test_case;
 use togi_journal::{DeadEndCondition, Event, Shutdown, ShutdownReason, Stamp};
-use togi_machine::{
-    BootId, CcdId, Condition, CoreSet, ObservedOffset, PerCore, Regime, WorkloadId,
-};
+use togi_machine::{BootId, CcdId, CoreSet, ObservedOffset, Regime, WorkloadId};
 use togi_tuner::{
-    CombinationId, CyclePlan, CycleStep, HuntPlan, Limit, PhaseNo, PhasePlan, R7CoreStatus,
-    Reached, RerunPlan,
+    CombinationId, CyclePlan, CycleStep, HuntPlan, Limit, PhaseNo, PhasePlan, R7CoreStatus, Reached,
 };
 
 use super::ccd::{ccd_role, gauge, note_line, state_word};
@@ -29,10 +26,11 @@ use crate::frames::render;
 use crate::frames::scene::Scene;
 use crate::frames::testing::{draw_checked, rows_of, screen};
 use crate::model::{
-    CoreState, CoreView, Count, CycleView, DeadEndView, HuntCause, HuntFacts, HuntView, IdleHold,
-    Model, RecoveryView, SessionView, Snapshot, StopView, TrialView,
+    CoreState, CoreView, Count, CycleView, DeadEndView, HuntFacts, HuntView, IdleHold, Model,
+    RecoveryView, SessionView, Snapshot, StopView, TrialView,
 };
 use crate::screen::{Colours, Journal, View};
+use crate::tests::fixtures::{core_view, trial_view};
 use crate::tests::kit::{Script, Start, config_loaded, core, off, readback, seq};
 use crate::tuning::TuningClock;
 
@@ -40,51 +38,11 @@ fn at(text: &str) -> Timestamp {
     text.parse().expect("a timestamp")
 }
 
-fn core_view(id: u8, ccd: u8, state: CoreState) -> CoreView {
-    CoreView {
-        id: core(id),
-        ccd: CcdId::try_from(ccd).unwrap(),
-        state,
-        queued: None,
-        applied: Some(ObservedOffset(0)),
-        profile: off(0),
-        solo: None,
-        pass: None,
-        next: None,
-        fail: None,
-        holder: None,
-        gave_back: None,
-        group_fails: Vec::new(),
-        returns_to: None,
-        confirm: None,
-        loaded: false,
-        judged: false,
-    }
-}
-
 fn trial(regime: Regime, started: Option<Timestamp>, duration: u64) -> TrialView {
     TrialView {
-        id: togi_journal::TrialId::from("t1".to_owned()),
-        regime,
-        workload: WorkloadId::new(regime, 0).expect("a workload"),
-        cores: CoreSet::default(),
-        parked: CoreSet::default(),
-        idle: CoreSet::default(),
-        condition: Condition::Together,
-        activity: None,
-        profile: PerCore::default(),
         started,
-        crashed: false,
         duration: Duration::from_secs(duration),
-        partial: false,
-        rerun: false,
-        retry: false,
-        cycle: None,
-        hunt: None,
-        core: None,
-        offset: None,
-        round: None,
-        count: Count::default(),
+        ..trial_view(regime)
     }
 }
 
@@ -467,45 +425,13 @@ fn cycle_step(done: bool) -> CycleStep {
 }
 
 fn hunt_plan() -> HuntPlan {
-    HuntPlan {
-        number: 1,
-        regime: Regime::R7,
-        failure: seq(1),
-        trial: None,
-        candidates: CoreSet::default(),
-        cut: 0,
-        parts: Vec::new(),
-        groups: Vec::new(),
-        probes: Vec::new(),
-        rerun: RerunPlan {
-            regime: Regime::R7,
-            cores: CoreSet::default(),
-            lengths: togi_tuner::Lengths {
-                short: togi_tuner::Quota { count: 1, secs: 1 },
-                long: None,
-            },
-        },
-    }
+    let mut plan = crate::tests::fixtures::hunt_plan(&[]);
+    plan.rerun.lengths.short.secs = 1;
+    plan
 }
 
 fn hunt_facts() -> HuntFacts {
-    HuntFacts {
-        started: None,
-        cause: HuntCause {
-            at: None,
-            trial: None,
-            end: None,
-            signal: None,
-            core: None,
-            known: false,
-            carried: false,
-            regime: None,
-            rerun_of: false,
-            trial_number: 0,
-        },
-        parking: None,
-        group_signals: Vec::new(),
-    }
+    crate::tests::fixtures::hunt_facts(None)
 }
 
 fn cycle_stage_line(plan: &CyclePlan, class: SizeClass) -> String {

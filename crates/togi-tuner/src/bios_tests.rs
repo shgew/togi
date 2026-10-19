@@ -171,7 +171,8 @@ fn bios_profile_shows_a_multi_count_r7_hold_at_the_voltage_target() {
         .top(&[0]);
     j.r7_failed(&[0, 1], &values, &failing);
     let (hold, _) = next(&j);
-    assert!(is_hold(&hold) && hold.core == core(0), "{hold:?}");
+    assert!(is_hold(&hold), "{hold:?}");
+    assert_eq!(hold.core, core(0));
     let action = j.next_decision();
     let at = j.decide(action);
     assert_shown(&j, &[-13, -30, -30, -30], confirmed, &[0], Some(at));
@@ -286,12 +287,14 @@ fn a_hold_target_stops_showing_for_a_core_that_stepped_back_and_was_confirmed() 
     assert_shown(&j, &[-9, -11], confirmed, &[0, 1], Some(hold));
     fail_core(&mut j, 1);
     let (own, _) = next(&j);
-    assert!(is_hold(&own) && own.core == core(1), "{own:?}");
+    assert!(is_hold(&own), "{own:?}");
+    assert_eq!(own.core, core(1));
     let action = j.next_decision();
     j.decide(action);
     fail_core(&mut j, 1);
     let (step, _) = next(&j);
-    assert!(!is_hold(&step) && step.to_offset == off(-11), "{step:?}");
+    assert!(!is_hold(&step), "{step:?}");
+    assert_eq!(step.to_offset, off(-11));
     let action = j.next_decision();
     j.decide(action);
     settle(&mut j);
@@ -742,26 +745,40 @@ fn a_direct_hunt_failure_previews_its_safe_backoff_before_hunt_end() {
     }
 }
 
-#[test]
-fn a_paired_hunt_shows_no_move_while_a_zero_failure_awaits_its_diagnostic_or_dead_end() {
-    for (profile, name) in [([-9, 0], "diagnostic"), ([0, 0], "dead end")] {
-        let (mut j, hold, _) = paired_hunt();
-        let confirmed = confirmed_seq(&j);
-        parked_failure(&mut j, 1, 0, &profile);
-        let action = j.next();
-        match (&action, name) {
-            (Action::RunTrial(plan), "diagnostic") => {
-                assert!(matches!(
+#[derive(Clone, Copy, Debug)]
+enum ZeroFailureResponse {
+    Diagnostic,
+    DeadEnd,
+}
+
+#[test_case::test_case([-9, 0], ZeroFailureResponse::Diagnostic; "diagnostic")]
+#[test_case::test_case([0, 0], ZeroFailureResponse::DeadEnd; "dead end")]
+fn a_paired_hunt_shows_no_move_while_a_zero_failure_awaits_its_diagnostic_or_dead_end(
+    profile: [i64; 2],
+    response: ZeroFailureResponse,
+) {
+    let (mut j, hold, _) = paired_hunt();
+    let confirmed = confirmed_seq(&j);
+    parked_failure(&mut j, 1, 0, &profile);
+    let action = j.next();
+    match (&action, response) {
+        (Action::RunTrial(plan), ZeroFailureResponse::Diagnostic) => {
+            assert!(
+                matches!(
                     plan.requirement.context,
                     crate::TrialContext::ZeroRerun { .. }
-                ));
-            }
-            (Action::Decide(decision), "dead end") => {
-                assert!(matches!(decision.payload, DecisionPayload::DeadEnd(_)));
-            }
-            other => panic!("{name}: {other:?}"),
+                ),
+                "{plan:?}"
+            );
         }
-        assert_shown(&j, &[-9, -11], confirmed, &[0, 1], Some(hold));
-        j.assert_resumes();
+        (Action::Decide(decision), ZeroFailureResponse::DeadEnd) => {
+            assert!(
+                matches!(decision.payload, DecisionPayload::DeadEnd(_)),
+                "{decision:?}"
+            );
+        }
+        other => panic!("{other:?}"),
     }
+    assert_shown(&j, &[-9, -11], confirmed, &[0, 1], Some(hold));
+    j.assert_resumes();
 }
