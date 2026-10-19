@@ -16,6 +16,7 @@ use crate::{
 /// How many counts shallower than its solo limit a core starts checking.
 const MARGIN: u8 = 1;
 
+/// The two regimes used by search steps and candidate solo-limit checks.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SearchRegime {
     R1,
