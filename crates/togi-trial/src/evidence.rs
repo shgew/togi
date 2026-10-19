@@ -336,6 +336,11 @@ impl Selector {
                     reports: Vec::new(),
                 }
             }
+            Line::InvalidAffinity(error) => {
+                self.instances[instance].setup_error = true;
+                self.weak_reason(|| togi_machine::error_chain(&error));
+                Decision { stop: true, reports: Vec::new() }
+            }
             Line::AffinityError(cpu) => {
                 let cpu = cpu.unwrap_or(self.instances[instance].first_cpu);
                 self.escape(cpu, "backend could not set affinity", pid, pid)
@@ -612,6 +617,24 @@ mod tests {
             "AFFINITY:x",
         ));
         assert_eq!(conclude(s).escaped, [CpuId::from(3)]);
+    }
+
+    #[test]
+    fn an_overflowing_affinity_cpu_never_names_the_instances_cpu() {
+        let mut s = selector();
+        let error = "65536".parse::<u16>().unwrap_err();
+        let decision = s.observe(line(
+            Stream::Stderr,
+            Line::InvalidAffinity(togi_backend::InvalidAffinityCpu {
+                value: "65536".to_owned(),
+                source: error,
+            }),
+            "AFFINITY:65536",
+        ));
+        assert!(decision.stop);
+        let verdict = conclude(s);
+        assert!(verdict.escaped.is_empty());
+        assert!(verdict.inconclusive.is_some());
     }
 
     #[test_case::test_case([too_long(), compute()]; "cap first")]

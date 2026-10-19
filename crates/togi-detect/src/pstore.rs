@@ -223,7 +223,7 @@ impl ReadAt for OwnedFd {
     }
 
     fn size(&self) -> Result<u64, Errno> {
-        Ok(u64::try_from(fstat(self)?.st_size).unwrap_or(0))
+        observed_size(fstat(self)?.st_size)
     }
 }
 
@@ -349,7 +349,7 @@ impl<F: ReadAt> Dump<F> {
         let fail = |errno| PstoreError::io(Access::ReadTail, &self.path, errno);
         let size = self.file.size().map_err(fail)?;
         let length = size.min(TAIL_BYTES);
-        let mut window = vec![0; usize::try_from(length).unwrap_or(0)];
+        let mut window = vec![0; usize::try_from(length).map_err(|_| fail(Errno::OVERFLOW))?];
         let read = read_at(&self.file, &mut window, size - length, false).map_err(fail)?;
         window.truncate(read);
         Ok(tail_lines(&window, size > length))
@@ -459,4 +459,20 @@ fn open_dump(suffix_dir: &OwnedFd, suffix_path: &Path) -> Result<Option<Dump>, P
         return Ok(Some(Dump::from_reader(path, file)));
     };
     Err(PstoreError::Unsafe { path, reason })
+}
+
+fn observed_size(size: i64) -> Result<u64, Errno> {
+    u64::try_from(size).map_err(|_| Errno::OVERFLOW)
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::{Errno, observed_size};
+
+    #[test_case::test_case(-1, Err(Errno::OVERFLOW); "negative kernel size")]
+    #[test_case::test_case(0, Ok(0); "empty file")]
+    #[test_case::test_case(i64::MAX, Ok(i64::MAX.cast_unsigned()); "largest kernel size")]
+    fn kernel_file_sizes_are_exact(size: i64, expected: Result<u64, Errno>) {
+        assert_eq!(observed_size(size), expected);
+    }
 }

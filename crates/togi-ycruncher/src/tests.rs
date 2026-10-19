@@ -648,14 +648,23 @@ fn classify(line: &str) -> Line {
 #[test_case("failed to set core affinity to core:3", Some(3); "lower case without space")]
 #[test_case("FAILED TO SET CORE AFFINITY TO CORE: 17", Some(17); "upper case")]
 #[test_case("Failed to set core affinity to core: \x1b[1;31m65535", Some(65535); "coloured largest cpu")]
-#[test_case("Failed to set core affinity to core: 65536", None; "cpu past u16")]
-#[test_case("Failed to set core affinity to core: 99999999999999999999999", None; "cpu past u64")]
 fn affinity_cpu_is_parsed_after_stripping_colour(line: &str, want: Option<u16>) {
     assert_eq!(
         classify(line),
         Line::AffinityError(want.map(CpuId::from)),
         "{line:?}"
     );
+}
+
+#[test_case("65536"; "cpu past u16")]
+#[test_case("99999999999999999999999"; "cpu past u64")]
+fn overflowing_affinity_cpu_is_a_typed_observation_error(value: &str) {
+    let line = format!("Failed to set core affinity to core: {value}");
+    let Line::InvalidAffinity(error) = classify(&line) else {
+        panic!("recognized overflowing CPU was not refused");
+    };
+    assert_eq!(error.value, value);
+    assert!(std::error::Error::source(&error).unwrap().is::<std::num::ParseIntError>());
 }
 
 #[test]

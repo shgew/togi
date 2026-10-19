@@ -29,6 +29,7 @@ pub(crate) struct InstancePlan {
     pub(crate) core: CoreId,
     /// The logical CPUs the instance may run on; never empty.
     pub(crate) cpus: Vec<CpuId>,
+    pub(crate) cpu_count: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -88,6 +89,7 @@ impl TrialPlan {
                     name: InstanceName::Core(info.core),
                     core: info.core,
                     cpus: vec![first],
+                    cpu_count: 1,
                 });
             }
             let derived: Vec<CpuId> = instances.iter().map(|i| i.cpus[0]).collect();
@@ -103,10 +105,12 @@ impl TrialPlan {
             if let Some(&foreign) = spec.cpus.iter().find(|cpu| !assigned.cpus.contains(cpu)) {
                 return Err(InvalidTrial::ForeignCpu(foreign));
             }
+            let cpu_count = checked_count(spec.cpus.len())?;
             vec![InstancePlan {
                 name: InstanceName::Work,
                 core: spec.cores[0],
                 cpus: spec.cpus.clone(),
+                cpu_count,
             }]
         };
         let load = match (LoadSchedule::for_spec(spec), spec.regime) {
@@ -131,9 +135,18 @@ impl TrialPlan {
         })
     }
 
+    #[expect(clippy::cast_possible_truncation, reason = "validated unique cores bound instances to 16")]
+    pub(crate) fn instance_count(&self) -> u32 {
+        self.instances.len() as u32
+    }
+
     pub(crate) fn per_core(&self) -> bool {
         self.regime.instance_per_core()
     }
+}
+
+pub(crate) fn checked_count(count: usize) -> Result<u32, InvalidTrial> {
+    u32::try_from(count).map_err(InvalidTrial::Count)
 }
 
 #[cfg(test)]
@@ -276,5 +289,19 @@ mod tests {
             TrialPlan::build(&spec(Regime::R7, &[0], &[0]), &without_cpu).unwrap_err(),
             InvalidTrial::CoreWithoutCpu(core(0))
         );
+    }
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::checked_count;
+
+    #[test_case::test_case(0, Some(0); "zero")]
+    #[test_case::test_case(16, Some(16); "physical core bound")]
+    #[test_case::test_case(u32::MAX as usize, Some(u32::MAX); "largest exact count")]
+    #[test_case::test_case(u32::MAX as usize + 1, None; "first overflow")]
+    #[cfg(target_pointer_width = "64")]
+    fn trial_counts_refuse_overflow(count: usize, expected: Option<u32>) {
+        assert_eq!(checked_count(count).ok(), expected);
     }
 }

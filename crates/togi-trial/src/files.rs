@@ -689,6 +689,7 @@ mod tests {
             name: InstanceName::Work,
             core: CoreId::new(0).unwrap(),
             cpus: vec![CpuId::from(0)],
+            cpu_count: 1,
         }
     }
 

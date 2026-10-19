@@ -24,6 +24,12 @@ pub enum Error {
     Identity(#[from] IdentityError),
     #[error("backend")]
     Backend(#[from] togi_backend::Error),
+    #[error("observe numeric sensors")]
+    Sensor(#[from] SensorError),
+    #[error("record sample elapsed milliseconds")]
+    SampleElapsed(#[source] std::num::TryFromIntError),
+    #[error("classify backend affinity observation")]
+    AffinityObservation(#[source] togi_backend::InvalidAffinityCpu),
     #[error("the trial runtime did not answer {operation} within {bound:?}")]
     Stuck {
         operation: &'static str,
@@ -69,6 +75,14 @@ pub enum Error {
     Unsupported { operation: &'static str },
     #[error(transparent)]
     Joined(Joined),
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("read numeric sensor {path}")]
+pub struct SensorError {
+    pub(crate) path: PathBuf,
+    #[source]
+    pub(crate) source: std::num::ParseIntError,
 }
 
 impl Error {
@@ -137,7 +151,7 @@ pub enum CleanupFailure {
     Start(#[source] Box<Error>),
     #[error("signal group {pgid} with {signal}")]
     SignalGroup {
-        pgid: i32,
+        pgid: u32,
         signal: &'static str,
         #[source]
         source: io::Error,
@@ -368,6 +382,8 @@ pub enum InvalidTrial {
     CoresForOneInstance,
     #[error("the trial duration cannot be represented as a deadline")]
     UnrepresentableDuration,
+    #[error("the trial count does not fit")]
+    Count(#[source] std::num::TryFromIntError),
 }
 
 #[derive(Debug, thiserror::Error)]

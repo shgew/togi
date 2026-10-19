@@ -278,7 +278,13 @@ impl Backend for Ycruncher {
         let patterns = &self.patterns;
         let line = patterns.sgr.replace_all(line, "");
         if let Some(cpu) = patterns.affinity.captures(&line).and_then(|c| c.get(1)) {
-            Line::AffinityError(cpu.as_str().parse::<u16>().ok().map(CpuId::from))
+            match cpu.as_str().parse::<u16>() {
+                Ok(cpu) => Line::AffinityError(Some(CpuId::from(cpu))),
+                Err(source) => Line::InvalidAffinity(togi_backend::InvalidAffinityCpu {
+                    value: cpu.as_str().to_owned(),
+                    source,
+                }),
+            }
         } else if patterns.computation.is_match(&line) {
             Line::ComputationError
         } else if patterns.setup.is_match(&line) {

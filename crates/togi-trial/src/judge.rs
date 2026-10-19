@@ -15,6 +15,7 @@ pub(crate) struct Judge {
     backend: Arc<dyn Backend>,
     events: Sender<Event>,
     panic: Option<String>,
+    invalid_affinity: Vec<togi_backend::InvalidAffinityCpu>,
 }
 
 impl Judge {
@@ -28,12 +29,17 @@ impl Judge {
             backend,
             events,
             panic: None,
+            invalid_affinity: Vec::new(),
         }
     }
 
     /// The first panic the backend's classifier raised, once.
     pub(crate) fn take_panic(&mut self) -> Option<String> {
         self.panic.take()
+    }
+
+    pub(crate) fn take_invalid_affinity(&mut self) -> Vec<togi_backend::InvalidAffinityCpu> {
+        std::mem::take(&mut self.invalid_affinity)
     }
 
     /// Returns whether the evidence says the trial must end.
@@ -52,6 +58,9 @@ impl Judge {
                 (Line::Other, true)
             }
         };
+        if let Line::InvalidAffinity(error) = &line {
+            self.invalid_affinity.push(error.clone());
+        }
         let stop = self.observe(Observation::Line {
             instance,
             pid,

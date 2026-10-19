@@ -236,7 +236,7 @@ impl<'a, O: Os> Teardown<'a, O, Running> {
                 Err(SignalError::Gone) => scoped && scope_confirmed,
                 Err(SignalError::Failed(source)) => {
                     self.failures.record(CleanupFailure::SignalGroup {
-                        pgid: i32::try_from(instance.pid).unwrap_or(i32::MAX),
+                        pgid: instance.pid,
                         signal: GroupSignal::Kill.name(),
                         source,
                     });

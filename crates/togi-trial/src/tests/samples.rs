@@ -131,6 +131,41 @@ fn missing_sensors_are_omitted_not_zeroed() {
     });
 }
 
+#[test]
+fn overflowing_optional_sensor_is_a_runner_error_not_absent_telemetry() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let rig = rig();
+            write(&rig, "hwmon/hwmon0/name", "k10temp\n");
+            write(&rig, "hwmon/hwmon0/temp1_label", "Tctl\n");
+            write(&rig, "hwmon/hwmon0/temp1_input", "9223372036854775808\n");
+            let handle = rig.start(spec(Regime::R1, &[2], secs(2))).await.unwrap();
+            let run = finish(&handle).await;
+            assert!(run.finished.errors.iter().any(|error| matches!(error, Error::Sensor(_))));
+            assert!(rig.samples().is_empty());
+            assert!(run.finished.teardown.is_ok());
+        }).await;
+    });
+}
+
+#[test]
+fn overflowing_cpu_milliseconds_is_sampling_loss_and_never_a_capped_sample() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let rig = rig();
+            let handle = rig.start(spec(Regime::R1, &[2], secs(2))).await.unwrap();
+            *rig.fake.process(0).usage.borrow_mut() = Ok(crate::procfs::Usage {
+                cpu_time: Duration::from_millis(i64::MAX.cast_unsigned() + 1),
+                cpu: togi_machine::CpuId::from(2),
+            });
+            let run = finish(&handle).await;
+            assert!(run.finished.result.inconclusive.as_deref().unwrap().contains("cpu time"));
+            assert!(rig.samples().iter().all(|sample| sample.worker_cpu_ms.is_empty()));
+            assert!(run.finished.teardown.is_ok());
+        }).await;
+    });
+}
+
 struct Blocking {
     gate: std::sync::mpsc::Receiver<()>,
     lines: Arc<Mutex<usize>>,

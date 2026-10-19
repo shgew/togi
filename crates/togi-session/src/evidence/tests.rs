@@ -643,3 +643,80 @@ fn a_summary_fills_an_end_with_the_stall_of_a_failure_and_the_last_sample_of_a_c
     );
     assert_eq!(passed.last_sample_s, None);
 }
+
+#[test_case(i64::from(i32::MIN), true; "minimum temperature")]
+#[test_case(i64::from(i32::MAX), true; "maximum temperature")]
+#[test_case(i64::from(i32::MIN) - 1, false; "negative temperature overflow")]
+#[test_case(i64::from(i32::MAX) + 1, false; "positive temperature overflow")]
+fn trial_maximum_temperature_is_checked(value: i64, fits: bool) {
+    let mut case = Case::new();
+    case.result.tctl_max_c = Some(value);
+    let result = adjudicate(&TrialEvidence {
+        result: &case.result,
+        mces: &[],
+        reset: None,
+        missing: None,
+        duration: MINUTE,
+        containment: None,
+    });
+    if fits {
+        assert_eq!(result.unwrap().tctl_max_c.map(i64::from), Some(value));
+    } else {
+        assert!(matches!(result, Err(crate::SessionError::TrialTemperature(_))));
+    }
+}
+
+#[test_case(Some(i64::from(i32::MIN)), Some(0), true; "minimum fields")]
+#[test_case(Some(i64::from(i32::MAX)), Some(i64::from(u32::MAX)), true; "maximum fields")]
+#[test_case(None, None, true; "absent fields")]
+#[test_case(Some(i64::from(i32::MIN) - 1), Some(4000), false; "temperature below minimum")]
+#[test_case(Some(i64::from(i32::MAX) + 1), Some(4000), false; "temperature above maximum")]
+#[test_case(Some(70), Some(-1), false; "negative frequency")]
+#[test_case(Some(70), Some(i64::from(u32::MAX) + 1), false; "frequency above maximum")]
+fn last_sample_narrowing_is_exact_or_rejects_the_whole_summary(
+    temperature: Option<i64>,
+    clock: Option<i64>,
+    fits: bool,
+) {
+    let sample = TrialConditions {
+        elapsed_ms: 1000,
+        tctl_c: temperature,
+        core_mhz: clock.map(|mhz| (core(2), mhz)).into_iter().collect(),
+        ..voltage_sample(1.0, 1.0)
+    };
+    let summary = summarize_samples([Ok(sample)], set(&[2]), Regime::R1, |_| None).unwrap();
+    let mut end = trial_end("0001".to_owned().into(), Outcome::Failure, 1);
+    let before = end.clone();
+    let result = summary.fill(&mut end, true);
+    if fits {
+        result.unwrap();
+        assert_eq!(end.last_sample_tctl_c.map(i64::from), temperature);
+        assert_eq!(end.last_sample_min_mhz.map(i64::from), clock);
+        assert_eq!(end.last_sample_max_mhz.map(i64::from), clock);
+    } else {
+        assert!(matches!(result, Err(togi_machine::SampleError::Temperature(_) | togi_machine::SampleError::Clock(_))));
+        assert_eq!(end, before);
+    }
+}
+
+#[test_case(i64::from(u32::MAX), true; "largest ccd frequency")]
+#[test_case(i64::from(u32::MAX) + 1, false; "overflowing ccd frequency")]
+fn ccd_frequency_narrowing_is_checked_before_filling_any_fields(clock: i64, fits: bool) {
+    let samples = telemetry_samples(20).into_iter().map(|mut sample| {
+        sample.core_mhz.set(core(2), clock);
+        sample
+    });
+    let summary = summarize_samples(samples.map(Ok), set(&[2]), Regime::R1, |_| {
+        Some(CcdId::new(0).unwrap())
+    }).unwrap();
+    let mut end = trial_end("0001".to_owned().into(), Outcome::Pass, 30);
+    let before = end.clone();
+    let result = summary.fill(&mut end, false);
+    if fits {
+        result.unwrap();
+        assert_eq!(end.ccd_mhz.values().copied().map(i64::from).collect::<Vec<_>>(), [clock]);
+    } else {
+        assert!(matches!(result, Err(togi_machine::SampleError::Clock(_))));
+        assert_eq!(end, before);
+    }
+}
