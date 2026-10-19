@@ -234,10 +234,11 @@ fn trial_start_selection(kind: TrialStartSelection) {
     let mut script = searching();
     let id = TrialId::from("0001".to_owned());
     let other = TrialId::from("other".to_owned());
-    let mut want = None;
-    if matches!(kind, TrialStartSelection::Before) {
-        want = Some(at(script.start(&id)));
-    }
+    let mut want = if matches!(kind, TrialStartSelection::Before) {
+        Some(at(script.start(&id)))
+    } else {
+        None
+    };
     let plan = script.plan();
     script.intent(&plan);
     match kind {

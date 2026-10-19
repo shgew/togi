@@ -97,12 +97,9 @@ impl Clock for SystemClock {
         Timestamp::now()
     }
 
-    fn monotonic(&self) -> Duration {
+    fn monotonic(&self) -> Result<Duration, Error> {
         let now = clock_gettime(ClockId::Monotonic);
-        Duration::new(
-            u64::try_from(now.tv_sec).unwrap_or_default(),
-            u32::try_from(now.tv_nsec).unwrap_or_default(),
-        )
+        togi_machine::monotonic_duration(now.tv_sec, now.tv_nsec)
     }
 
     fn sleep(&mut self, cancel: &CancellationToken, duration: Duration) -> Result<(), Error> {

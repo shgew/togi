@@ -78,13 +78,12 @@ pub(super) fn activity_under(
         height.saturating_sub(r7.len() + 1)
     };
     let build = |rows: usize| {
-        let mut out = Vec::new();
-        let mut focus = None;
-        if let Some(cycle) = &scene.s.cycle {
+        let (mut out, focus) = if let Some(cycle) = &scene.s.cycle {
             let cycle_rows = cycle_lines(scene, cycle, t, width, class, rows);
-            out = cycle_rows.lines;
-            focus = cycle_rows.focus;
-        }
+            (cycle_rows.lines, cycle_rows.focus)
+        } else {
+            (Vec::new(), None)
+        };
         if !scene.s.combos.is_empty() {
             if !out.is_empty() {
                 out.push(Line::default());

@@ -83,6 +83,7 @@ fn a_status_becomes_the_process_exit_code() {
         assert_eq!(
             format!("{:?}", std::process::ExitCode::from(exit)),
             format!("{:?}", std::process::ExitCode::from(exit.code())),
+            "{exit:?}",
         );
     }
 }

@@ -104,22 +104,21 @@ fn a_first_line_without_its_newline_is_refused_all_the_same() {
     assert_stopped_after_the_platform_check(&fake, &before);
 }
 
-#[test]
-fn a_truncated_header_of_this_build_is_refused_in_the_same_words() {
-    for newline in [false, true] {
-        let fake = Fake::new();
-        let bad = fake.dir.join("invalid.json");
-        fake.write(&bad, "{ not a configuration").unwrap();
-        fake.create_dir(fake.state_dir()).unwrap();
-        fixture::keep_only_a_truncated_journal_header(&*fake.fs, &fake.state_dir(), newline);
-        let before = fixture::snapshot(&*fake.fs, &fake.dir);
-        let (exit, out, err) = fake.run(&["run", "--no-tui", "--config", bad.to_str().unwrap()]);
-        assert_eq!(exit, Exit::Error, "newline {newline}: {err}");
-        assert_eq!(out, "");
-        fixture::assert_refusal("run", &err, &fake.state_dir());
-        assert!(!err.contains("torn bytes"), "{err}");
-        assert_stopped_after_the_platform_check(&fake, &before);
-    }
+#[test_case::test_case(false; "unterminated")]
+#[test_case::test_case(true; "terminated")]
+fn a_truncated_header_of_this_build_is_refused_in_the_same_words(newline: bool) {
+    let fake = Fake::new();
+    let bad = fake.dir.join("invalid.json");
+    fake.write(&bad, "{ not a configuration").unwrap();
+    fake.create_dir(fake.state_dir()).unwrap();
+    fixture::keep_only_a_truncated_journal_header(&*fake.fs, &fake.state_dir(), newline);
+    let before = fixture::snapshot(&*fake.fs, &fake.dir);
+    let (exit, out, err) = fake.run(&["run", "--no-tui", "--config", bad.to_str().unwrap()]);
+    assert_eq!(exit, Exit::Error, "newline {newline}: {err}");
+    assert_eq!(out, "");
+    fixture::assert_refusal("run", &err, &fake.state_dir());
+    assert!(!err.contains("torn bytes"), "{err}");
+    assert_stopped_after_the_platform_check(&fake, &before);
 }
 
 #[test]

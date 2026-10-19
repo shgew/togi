@@ -29,7 +29,7 @@ pub use scalars::{
 pub use seams::{
     Check, Clock, CoreRank, Host, Instance, Kernel, KernelRead, Machine, Mce, PstoreRecord,
     Reporter, ResetReason, Running, Sample, Smu, SmuValidated, Started, Stopped, Swept,
-    TrialFailure, TrialResult, TrialSpec, Trials,
+    TrialFailure, TrialResult, TrialSpec, Trials, monotonic_duration,
 };
 pub use topology::{BiosContext, ContextField, ContextMismatch, CoreInfo, order};
 pub use vocab::{Backend, BankType, Condition, REGIMES, Regime, ResetKind, Signal};

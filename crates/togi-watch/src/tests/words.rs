@@ -684,7 +684,7 @@ fn core_phases_have_tags(from: Option<CorePhase>, to: CorePhase, pass: Option<i6
 #[test_case::test_case(EventKind::DeadEnd; "DeadEnd")]
 #[test_case::test_case(EventKind::Mce; "Mce")]
 fn a_phrase_applies_only_to_its_own_kind(kind: EventKind) {
-    let other: Payload = warning("x");
+    let other = warning("x");
     let table = words(kind);
     if let Phrase::Of(of) = table.detailed {
         assert_eq!(of(&other), None, "{kind}");
@@ -703,7 +703,7 @@ fn a_phrase_applies_only_to_its_own_kind(kind: EventKind) {
 #[test_case::test_case(EventKind::HuntGroup; "HuntGroup")]
 #[test_case::test_case(EventKind::CorePhase; "CorePhase")]
 fn a_tag_applies_only_to_its_own_kind(kind: EventKind) {
-    let other: Payload = warning("x");
+    let other = warning("x");
     let Tagging::By(of) = words(kind).tag else {
         panic!("{kind} is tagged by its payload");
     };

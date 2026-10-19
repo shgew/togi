@@ -17,6 +17,8 @@ pub enum JournalCause {
     Append(#[source] AppendError),
     #[error("an event is durable but the run's state does not take it in")]
     Fold(#[source] FoldError),
+    #[error("read the journal event clock")]
+    Clock(#[source] togi_machine::Error),
     /// A panic unwound while a durable event was being logged and folded, so the run's state may lack it.
     #[error("an event is durable but a panic interrupted the run taking it in: {0}")]
     Interrupted(String),
@@ -34,6 +36,10 @@ impl JournalFailure {
 
     pub(crate) fn fold(error: FoldError) -> Self {
         Self(Arc::new(JournalCause::Fold(error)))
+    }
+
+    pub(crate) fn clock(error: togi_machine::Error) -> Self {
+        Self(Arc::new(JournalCause::Clock(error)))
     }
 
     pub(crate) fn interrupted(message: &str) -> Self {

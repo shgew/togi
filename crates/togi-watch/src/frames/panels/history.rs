@@ -19,10 +19,11 @@ pub(super) fn history(scene: &Scene<'_>, width: usize, height: usize) -> Vec<Lin
     }
     let entries = scene.s.history;
     let room = height.saturating_sub(2);
-    let mut shown = entries.len().min(room);
-    if scene.s.history_dropped > 0 || entries.len() > room {
-        shown = entries.len().min(room.saturating_sub(1));
-    }
+    let shown = if scene.s.history_dropped > 0 || entries.len() > room {
+        entries.len().min(room.saturating_sub(1))
+    } else {
+        entries.len().min(room)
+    };
     let hidden = scene.s.history_dropped + entries.len() - shown;
     let header_rows = if hidden > 0 {
         (height - 1).min(2)

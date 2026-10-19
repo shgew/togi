@@ -817,8 +817,8 @@ fn without_newline(mut line: Vec<u8>) -> Vec<u8> {
     line
 }
 
-#[test_case(include_str!("../../testdata/20260927T221954Z-config.jsonl").as_bytes(), crate::event::Decoding::Strict; "Go strict")]
-#[test_case(include_str!("../../testdata/20260927T221954Z-config.jsonl").as_bytes(), crate::event::Decoding::Lenient; "Go lenient")]
+#[test_case(include_bytes!("../../testdata/20260927T221954Z-config.jsonl"), crate::event::Decoding::Strict; "Go strict")]
+#[test_case(include_bytes!("../../testdata/20260927T221954Z-config.jsonl"), crate::event::Decoding::Lenient; "Go lenient")]
 #[test_case(include_str!("../../testdata/20260927T221954Z-config.jsonl").lines().next().unwrap().as_bytes(), crate::event::Decoding::Strict; "Go no newline strict")]
 #[test_case(include_str!("../../testdata/20260927T221954Z-config.jsonl").lines().next().unwrap().as_bytes(), crate::event::Decoding::Lenient; "Go no newline lenient")]
 #[test_case(br#"{"seq":1,"kind":"sess"#, crate::event::Decoding::Strict; "truncated strict")]

@@ -756,15 +756,16 @@ mod tests {
             scroll == 0 && !body.is_empty(),
             "{width} columns: full help was not rendered"
         );
-        let mut column = 0;
-        if width >= THREE_COLUMNS {
+        let column = if width >= THREE_COLUMNS {
             let first = plain(&body[0], C);
             let prefix = first
                 .split_once("WORDS")
                 .unwrap_or_else(|| panic!("wide help lost the words column: {first}"))
                 .0;
-            column = prefix.chars().count();
-        }
+            prefix.chars().count()
+        } else {
+            0
+        };
         let lines: Vec<String> = body
             .iter()
             .enumerate()

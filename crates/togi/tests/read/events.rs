@@ -16,35 +16,23 @@ fn json_prints_the_journal_lines_unchanged() {
     assert_eq!(printed, lines(&dir));
 }
 
-#[test]
-fn filters_narrow_the_readable_lines() {
+#[test_case::test_case(&[], true, "trial"; "trial")]
+#[test_case::test_case(&["--core", "3", "--kind", "tuner.decision,core.phase"], false, "core"; "core")]
+#[test_case::test_case(&["--kind", "session.start, session.baseline,"], false, "kinds"; "kinds")]
+#[test_case::test_case(&["--kind", "session.start", "--kind", "session.baseline"], false, "kinds"; "repeated")]
+#[test_case::test_case(&["--kind", "session", "--until", "2026-01-01T00:00:00.5Z"], false, "group"; "group")]
+fn filters_narrow_the_readable_lines(extra: &[&str], select_trial: bool, golden: &str) {
     let dir = session(Scenario::Search);
     let trial = first_trial(&dir);
-    let cases: [(&str, Vec<&str>); 5] = [
-        ("trial", vec!["--trial", &trial]),
-        (
-            "core",
-            vec!["--core", "3", "--kind", "tuner.decision,core.phase"],
-        ),
-        ("kinds", vec!["--kind", "session.start, session.baseline,"]),
-        (
-            "repeated",
-            vec!["--kind", "session.start", "--kind", "session.baseline"],
-        ),
-        (
-            "group",
-            vec!["--kind", "session", "--until", "2026-01-01T00:00:00.5Z"],
-        ),
-    ];
-    for (name, extra) in cases {
-        let mut args = vec!["events"];
-        args.extend(extra);
-        let ran = togi(&dir, &args);
-        assert_eq!(ran.status.code(), Some(0), "{name}");
-        assert_eq!(text(&ran.stderr), "", "{name}");
-        let golden = if name == "repeated" { "kinds" } else { name };
-        crate::support::snapshot(&format!("events__events_{golden}"), text(&ran.stdout));
+    let mut args = vec!["events"];
+    args.extend_from_slice(extra);
+    if select_trial {
+        args.extend(["--trial", &trial]);
     }
+    let ran = togi(&dir, &args);
+    assert_eq!(ran.status.code(), Some(0));
+    assert_eq!(text(&ran.stderr), "");
+    crate::support::snapshot(&format!("events__events_{golden}"), text(&ran.stdout));
 }
 
 #[test]
@@ -138,53 +126,47 @@ fn a_time_window_is_inclusive_since_and_exclusive_until() {
     );
 }
 
-#[test]
-fn a_valid_filter_with_no_match_prints_nothing_and_exits_zero() {
+#[test_case::test_case(&["events", "--trial", "no-such-trial"]; "trial")]
+#[test_case::test_case(&["events", "--kind", "combination"]; "combination")]
+#[test_case::test_case(&["events", "--kind", "trial", "--trial", "absent"]; "absent trial")]
+fn a_valid_filter_with_no_match_prints_nothing_and_exits_zero(args: &[&str]) {
     let dir = session(Scenario::Search);
-    for args in [
-        &["events", "--trial", "no-such-trial"][..],
-        &["events", "--kind", "combination"],
-        &["events", "--kind", "trial", "--trial", "absent"],
-    ] {
-        let ran = togi(&dir, args);
-        assert_eq!(ran.status.code(), Some(0), "{args:?}");
-        assert_eq!(text(&ran.stdout), "", "{args:?}");
-        assert_eq!(text(&ran.stderr), "", "{args:?}");
-    }
+    let ran = togi(&dir, args);
+    assert_eq!(ran.status.code(), Some(0), "{args:?}");
+    assert_eq!(text(&ran.stdout), "", "{args:?}");
+    assert_eq!(text(&ran.stderr), "", "{args:?}");
 }
 
-#[test]
-fn kind_errors_are_usage_errors_before_the_journal_is_read() {
+#[test_case::test_case("no.such"; "unknown name")]
+#[test_case::test_case("nosuchgroup"; "unknown group")]
+#[test_case::test_case(","; "comma")]
+#[test_case::test_case(" "; "whitespace")]
+#[test_case::test_case(""; "empty")]
+fn kind_errors_are_usage_errors_before_the_journal_is_read(kind: &str) {
     let empty = crate::support::Session::empty();
-    for kind in ["no.such", "nosuchgroup", ",", " ", ""] {
-        let ran = togi(&empty, &["events", "--kind", kind]);
-        assert_eq!(ran.status.code(), Some(2), "{kind:?}");
-        assert_eq!(text(&ran.stdout), "", "{kind:?}");
-        assert!(
-            text(&ran.stderr).contains("valid names:"),
-            "{kind:?}: {}",
-            text(&ran.stderr)
-        );
-        assert!(text(&ran.stderr).contains("trial.intent"), "{kind:?}");
-    }
+    let ran = togi(&empty, &["events", "--kind", kind]);
+    assert_eq!(ran.status.code(), Some(2), "{kind:?}");
+    assert_eq!(text(&ran.stdout), "", "{kind:?}");
+    assert!(
+        text(&ran.stderr).contains("valid names:"),
+        "{kind:?}: {}",
+        text(&ran.stderr)
+    );
+    assert!(text(&ran.stderr).contains("trial.intent"), "{kind:?}");
     let ran = togi(&empty, &["events", "--kind", "trial", "--kind", ","]);
     assert_eq!(ran.status.code(), Some(2));
 }
 
-#[test]
-fn flag_value_errors_are_usage_errors() {
+#[test_case::test_case(&["events", "--since", "yesterday"]; "since")]
+#[test_case::test_case(&["events", "--until", "2026-01-01"]; "until")]
+#[test_case::test_case(&["events", "--core", "x"]; "core text")]
+#[test_case::test_case(&["events", "--core", "999"]; "core range")]
+#[test_case::test_case(&["events", "extra"]; "positional")]
+fn flag_value_errors_are_usage_errors(args: &[&str]) {
     let empty = crate::support::Session::empty();
-    for args in [
-        &["events", "--since", "yesterday"][..],
-        &["events", "--until", "2026-01-01"],
-        &["events", "--core", "x"],
-        &["events", "--core", "999"],
-        &["events", "extra"],
-    ] {
-        let ran = togi(&empty, args);
-        assert_eq!(ran.status.code(), Some(2), "{args:?}");
-        assert_eq!(text(&ran.stdout), "");
-    }
+    let ran = togi(&empty, args);
+    assert_eq!(ran.status.code(), Some(2), "{args:?}");
+    assert_eq!(text(&ran.stdout), "");
 }
 
 #[test]
@@ -215,20 +197,19 @@ fn a_file_that_is_not_a_journal_is_an_error() {
     );
 }
 
-#[test]
-fn a_newer_schema_is_refused_with_advice() {
+#[test_case::test_case("events"; "events")]
+#[test_case::test_case("status"; "status")]
+fn a_newer_schema_is_refused_with_advice(command: &str) {
     let dir = session(Scenario::Search);
     rewrite_first_line(&dir, |event| {
         event["data"]["build"]["schema"] = 99.into();
     });
-    for command in ["events", "status"] {
-        let ran = togi(&dir, &[command]);
-        assert_eq!(ran.status.code(), Some(1), "{command}");
-        assert_eq!(text(&ran.stdout), "", "{command}");
-        let err = text(&ran.stderr);
-        assert!(err.contains("schema 99"), "{err}");
-        assert!(err.contains("togi reset --all"), "{err}");
-    }
+    let ran = togi(&dir, &[command]);
+    assert_eq!(ran.status.code(), Some(1), "{command}");
+    assert_eq!(text(&ran.stdout), "", "{command}");
+    let err = text(&ran.stderr);
+    assert!(err.contains("schema 99"), "{err}");
+    assert!(err.contains("togi reset --all"), "{err}");
 }
 
 #[test]
@@ -246,45 +227,39 @@ fn an_older_schema_is_refused_too() {
     );
 }
 
-#[test]
-fn a_different_ruleset_warns_and_still_renders() {
+#[test_case::test_case(&["events", "--json"]; "json")]
+#[test_case::test_case(&["events", "--kind=session"]; "session")]
+#[test_case::test_case(&["status"]; "status")]
+fn a_different_ruleset_warns_and_still_renders(args: &[&str]) {
     let dir = session(Scenario::Search);
     rewrite_first_line(&dir, |event| {
         event["data"]["build"]["ruleset"] = 7.into();
     });
-    for args in [
-        ["events", "--json"],
-        ["events", "--kind=session"],
-        ["status", ""],
-    ] {
-        let args: Vec<&str> = args.into_iter().filter(|a| !a.is_empty()).collect();
-        let ran = togi(&dir, &args);
-        assert_eq!(ran.status.code(), Some(0), "{args:?}");
-        assert!(
-            text(&ran.stderr).contains("ruleset is 7"),
-            "{}",
-            text(&ran.stderr)
-        );
-        assert!(!text(&ran.stdout).is_empty());
-    }
+    let ran = togi(&dir, args);
+    assert_eq!(ran.status.code(), Some(0), "{args:?}");
+    assert!(
+        text(&ran.stderr).contains("ruleset is 7"),
+        "{}",
+        text(&ran.stderr)
+    );
+    assert!(!text(&ran.stdout).is_empty());
 }
 
-#[test]
-fn a_torn_tail_is_reported_after_the_events() {
+#[test_case::test_case("events"; "events")]
+#[test_case::test_case("status"; "status")]
+fn a_torn_tail_is_reported_after_the_events(command: &str) {
     let dir = session(Scenario::Search);
     let whole = lines(&dir).len();
     crate::support::append_bytes(&dir, b"{\"seq\":");
-    for command in ["events", "status"] {
-        let ran = togi(&dir, &[command]);
-        assert_eq!(ran.status.code(), Some(0), "{command}");
-        assert!(
-            text(&ran.stderr).contains("journal ends with 7 torn bytes"),
-            "{}",
-            text(&ran.stderr)
-        );
-        if command == "events" {
-            assert_eq!(text(&ran.stdout).lines().count(), whole);
-        }
+    let ran = togi(&dir, &[command]);
+    assert_eq!(ran.status.code(), Some(0), "{command}");
+    assert!(
+        text(&ran.stderr).contains("journal ends with 7 torn bytes"),
+        "{}",
+        text(&ran.stderr)
+    );
+    if command == "events" {
+        assert_eq!(text(&ran.stdout).lines().count(), whole);
     }
     assert_eq!(
         lines(&dir).len(),
