@@ -38,7 +38,7 @@ fn every_kind_round_trips_through_the_wire() {
         assert!(!message.is_empty(), "{kind} has no message");
         assert_eq!(event.msg, message, "{kind} stores its generated message");
         let line = event.encode().unwrap();
-        assert!(!line.contains('\n'));
+        assert!(!line.contains('\n'), "{kind}");
         let decoded =
             Event::decode(&line).unwrap_or_else(|error| panic!("{kind}: {error}\n{line}"));
         assert_eq!(decoded, event, "{kind}");
@@ -67,10 +67,14 @@ fn every_kind_matches_its_golden() {
 #[test]
 fn kind_names_round_trip() {
     for kind in EventKind::ALL {
-        assert_eq!(kind.as_str().parse::<EventKind>().unwrap(), *kind);
+        assert_eq!(kind.as_str().parse::<EventKind>().unwrap(), *kind, "{kind}");
         let wire = serde_json::to_value(kind).unwrap();
-        assert_eq!(wire, serde_json::json!(kind.as_str()));
-        assert_eq!(serde_json::from_value::<EventKind>(wire).unwrap(), *kind);
+        assert_eq!(wire, serde_json::json!(kind.as_str()), "{kind}");
+        assert_eq!(
+            serde_json::from_value::<EventKind>(wire).unwrap(),
+            *kind,
+            "{kind}"
+        );
     }
     assert!("trial.nope".parse::<EventKind>().is_err());
     assert!(serde_json::from_str::<EventKind>(r#""trial.nope""#).is_err());

@@ -188,8 +188,12 @@ fn unknown_payload_field_names_the_kind() {
         let DecodeError::UnknownField { kind: named, field } = &error else {
             panic!("{kind}: {error}");
         };
-        assert_eq!((*named, field.as_str()), (kind, "data.bogus_field"));
-        assert!(error.to_string().contains(kind.as_str()), "{error}");
+        assert_eq!(
+            (*named, field.as_str()),
+            (kind, "data.bogus_field"),
+            "{kind}"
+        );
+        assert!(error.to_string().contains(kind.as_str()), "{kind}: {error}");
     }
 }
 

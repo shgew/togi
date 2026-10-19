@@ -151,10 +151,10 @@ fn the_shared_rail_fails_as_its_probability_says_and_names_no_machine_check() {
             let boot = rig.boot();
             assert!(
                 rig.mces(&boot).is_empty(),
-                "a rail crash fabricated machine-check evidence"
+                "seed {seed}: a rail crash fabricated machine-check evidence"
             );
         } else {
-            assert!(waited.expect("a pass").failure.is_none());
+            assert!(waited.expect("a pass").failure.is_none(), "seed {seed}");
         }
     }
     within(f64::from(failures) / f64::from(trials), p, trials);
@@ -203,7 +203,7 @@ fn background_failures_are_unattributed_crashes_and_match_their_probability() {
                     assert_eq!(
                         last.worker_cpu_ms.get(core),
                         Some(last.elapsed_ms),
-                        "no worker stalls on a platform failure"
+                        "seed {seed}, core {core}: no worker stalls on a platform failure"
                     );
                 }
             }
@@ -211,7 +211,7 @@ fn background_failures_are_unattributed_crashes_and_match_their_probability() {
             let boot = rig.boot();
             assert!(
                 rig.mces(&boot).is_empty(),
-                "the background fabricated an MCE"
+                "seed {seed}: the background fabricated an MCE"
             );
         }
     }

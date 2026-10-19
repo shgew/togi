@@ -262,30 +262,39 @@ fn every_smu_access_window_of_the_same_boot_restoration_converges(pending: bool)
         .count();
     assert!(reads >= 4 && accesses.len() > 2 * reads, "{accesses:?}");
     for (index, &access) in accesses.iter().enumerate() {
+        let context = format!("pending {pending}, access #{index} {access:?}");
         let fixture = SameBoot::new(pending);
         let boot = fixture.boot();
         let fired = kill_at(&fixture, index + 1, Some(access));
         let killed = fixture.resume();
-        assert!(fired.get() && killed.crashed(), "{:?}", killed.errors);
+        assert!(
+            fired.get() && killed.crashed(),
+            "{context}: {:?}",
+            killed.errors
+        );
         drop(killed);
         for _ in 0..2 {
             let fired = kill_at(&fixture, 8, None);
             let killed = fixture.resume();
-            assert!(fired.get() && killed.crashed(), "{:?}", killed.errors);
-            assert_eq!(fixture.boot(), boot);
+            assert!(
+                fired.get() && killed.crashed(),
+                "{context}: {:?}",
+                killed.errors
+            );
+            assert_eq!(fixture.boot(), boot, "{context}");
         }
         fixture.bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
         let resumed = fixture.resume();
-        assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
-        assert_eq!(resumed.stop, ended.stop);
+        assert!(resumed.errors.is_empty(), "{context}: {:?}", resumed.errors);
+        assert_eq!(resumed.stop, ended.stop, "{context}");
         assert_eq!(
             fixture.offsets(),
             want,
             "pending {pending}, access #{} {access:?}",
             index + 1
         );
-        assert!(fixture.bench.sim.violations().is_empty());
-        assert!(fixture.clears() <= 1);
+        assert!(fixture.bench.sim.violations().is_empty(), "{context}");
+        assert!(fixture.clears() <= 1, "{context}");
     }
 }
 
@@ -314,6 +323,7 @@ fn a_kill_after_every_durable_restoration_event_of_the_same_boot_converges(pendi
     }
     let mut mixed = false;
     for (index, kind) in boundaries {
+        let context = format!("pending {pending}, {kind:?} at {index}");
         let fixture = SameBoot::new(pending);
         let boot = fixture.boot();
         let durable_events = fixture.left + index + 1;
@@ -322,8 +332,12 @@ fn a_kill_after_every_durable_restoration_event_of_the_same_boot_converges(pendi
         fixture.bench.mem.clear_faults();
         assert!(killed.capsule.is_none(), "{kind:?} at {index}");
         drop(killed);
-        assert_eq!(fixture.durable().len(), durable_events);
-        assert_eq!(fixture.durable()[durable_events - 1].kind(), kind);
+        assert_eq!(fixture.durable().len(), durable_events, "{context}");
+        assert_eq!(
+            fixture.durable()[durable_events - 1].kind(),
+            kind,
+            "{context}"
+        );
         let partial = fixture.offsets();
         mixed |= partial != LEFT && partial != HELD;
         for (n, &offset) in partial.iter().enumerate() {
@@ -333,30 +347,34 @@ fn a_kill_after_every_durable_restoration_event_of_the_same_boot_converges(pendi
             );
         }
         if kind == EventKind::ProfileRestored {
-            assert_eq!(partial, HELD);
+            assert_eq!(partial, HELD, "{context}");
         }
         for _ in 0..2 {
             let fired = kill_at(&fixture, 8, None);
             let killed = fixture.resume();
-            assert!(fired.get() && killed.crashed(), "{:?}", killed.errors);
-            assert_eq!(fixture.boot(), boot);
+            assert!(
+                fired.get() && killed.crashed(),
+                "{context}: {:?}",
+                killed.errors
+            );
+            assert_eq!(fixture.boot(), boot, "{context}");
         }
         fixture.bench.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
         let resumed = fixture.resume();
-        assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
+        assert!(resumed.errors.is_empty(), "{context}: {:?}", resumed.errors);
         assert_eq!(
             resumed.journal.events()[fixture.left + index].kind(),
             kind,
-            "the killed event stayed durable, pending {pending}"
+            "the killed event stayed durable, {context}"
         );
-        assert_eq!(resumed.stop, ended.stop);
+        assert_eq!(resumed.stop, ended.stop, "{context}");
         assert_eq!(
             fixture.offsets(),
             HELD,
             "pending {pending}, {kind:?} at {index}"
         );
-        assert!(fixture.bench.sim.violations().is_empty());
-        assert!(fixture.clears() <= 1);
+        assert!(fixture.bench.sim.violations().is_empty(), "{context}");
+        assert!(fixture.clears() <= 1, "{context}");
     }
     assert!(
         mixed,
