@@ -138,7 +138,7 @@ fn boot_exhaustion_reaches_the_runner_and_publishes_pending_state(replay: Replay
     .unwrap();
     let boot = sim.seams().host.boot_id().unwrap();
     sim.crash_before_apply(1);
-    let mut run = input(sim.clone(), persistence.clone());
+    let mut run = input(sim, persistence.clone());
     run.replay = replay;
     run.max_boots = nz(max_boots);
     assert!(matches!(
