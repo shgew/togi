@@ -341,8 +341,8 @@ impl System for Host {
         "2026-01-01T00:00:00Z".parse().unwrap()
     }
 
-    fn monotonic(&self) -> Duration {
-        Duration::from_secs(1)
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
+        Ok(Duration::from_secs(1))
     }
 
     fn zone(&self) -> TimeZone {

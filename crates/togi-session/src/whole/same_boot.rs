@@ -784,7 +784,7 @@ impl Trials for DieAtStart {
 fn tick(sim: &Simulator, by: Duration) -> Duration {
     let mut clock = sim.seams().clock;
     clock.sleep(&CancellationToken::new(), by).unwrap();
-    clock.monotonic()
+    clock.monotonic().unwrap()
 }
 
 fn machine_check(sim: &Simulator, monotonic: Duration) -> togi_machine::Mce {

@@ -43,8 +43,8 @@ impl Clock for TestClock {
         Timestamp::from_second(1_800_000_000).unwrap()
     }
 
-    fn monotonic(&self) -> Duration {
-        Duration::from_secs(1)
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
+        Ok(Duration::from_secs(1))
     }
 
     fn sleep(&mut self, cancel: &CancellationToken, duration: Duration) -> Result<(), Error> {

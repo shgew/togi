@@ -352,7 +352,10 @@ fn the_clock_seam_follows_sleeps_wall_jumps_and_reboots_from_a_fresh_or_resumed_
     let mut rig = Rig::with(model(&two_cores()), settings);
     let cancel = CancellationToken::new();
     assert_eq!(rig.machine.clock.now(), start);
-    assert_eq!(rig.machine.clock.monotonic(), Duration::ZERO);
+    assert_eq!(
+        rig.machine.clock.monotonic().expect("clock"),
+        Duration::ZERO
+    );
     rig.machine
         .clock
         .sleep(&cancel, Duration::from_secs(5))
@@ -361,13 +364,19 @@ fn the_clock_seam_follows_sleeps_wall_jumps_and_reboots_from_a_fresh_or_resumed_
         rig.machine.clock.now(),
         start + SignedDuration::from_secs(5)
     );
-    assert_eq!(rig.machine.clock.monotonic(), Duration::from_secs(5));
+    assert_eq!(
+        rig.machine.clock.monotonic().expect("clock"),
+        Duration::from_secs(5)
+    );
     rig.sim.jump_wall(SignedDuration::from_hours(1));
     assert_eq!(
         rig.machine.clock.now(),
         start + SignedDuration::from_secs(5) + SignedDuration::from_hours(1)
     );
-    assert_eq!(rig.machine.clock.monotonic(), Duration::from_secs(5));
+    assert_eq!(
+        rig.machine.clock.monotonic().expect("clock"),
+        Duration::from_secs(5)
+    );
     let before = rig.machine.clock.now();
     rig.sim.crash();
     rig.sim.reboot();
@@ -375,7 +384,10 @@ fn the_clock_seam_follows_sleeps_wall_jumps_and_reboots_from_a_fresh_or_resumed_
         rig.machine.clock.now(),
         before + SignedDuration::from_secs(90)
     );
-    assert_eq!(rig.machine.clock.monotonic(), Duration::ZERO);
+    assert_eq!(
+        rig.machine.clock.monotonic().expect("clock"),
+        Duration::ZERO
+    );
     assert_eq!(rig.machine.clock.now(), rig.sim.now());
 }
 

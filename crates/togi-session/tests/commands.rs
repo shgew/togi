@@ -472,8 +472,8 @@ impl togi_machine::Clock for MonotonicClock {
         self.inner.now()
     }
 
-    fn monotonic(&self) -> std::time::Duration {
-        self.mono
+    fn monotonic(&self) -> Result<std::time::Duration, togi_machine::Error> {
+        Ok(self.mono)
     }
 
     fn sleep(

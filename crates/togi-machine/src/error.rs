@@ -15,6 +15,8 @@ pub enum Error {
     CursorMissing,
     #[error("cancelled")]
     Cancelled,
+    #[error("kernel monotonic clock components are invalid ({seconds}s, {nanoseconds}ns)")]
+    InvalidMonotonic { seconds: i64, nanoseconds: i64 },
     #[error(transparent)]
     Other(#[from] Box<dyn std::error::Error + Send + Sync>),
 }

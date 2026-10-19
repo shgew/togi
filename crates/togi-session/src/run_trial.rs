@@ -298,7 +298,11 @@ impl Session<'_> {
                 .ok_or(SessionError::NoSuchTrialCore { core })?;
             self.write_core(core, offset, &[intent])?;
         }
-        let since = self.appender.clock().monotonic();
+        let since = self
+            .appender
+            .clock()
+            .monotonic()
+            .map_err(SessionError::Machine)?;
         let window_start_ns = u64::try_from(since.as_nanos()).map_err(SessionError::Monotonic)?;
         let mut trial = Trial {
             plan,

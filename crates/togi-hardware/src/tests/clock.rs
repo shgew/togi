@@ -34,15 +34,15 @@ fn cancelling_during_a_sleep_wakes_it() {
 fn an_uncancelled_sleep_lasts_its_duration() {
     let cancel = CancellationToken::new();
     let sleep = Duration::from_millis(40);
-    let begun = SystemClock.monotonic();
+    let begun = SystemClock.monotonic().unwrap();
     SystemClock.sleep(&cancel, sleep).unwrap();
-    assert!(SystemClock.monotonic().checked_sub(begun).unwrap() >= sleep);
+    assert!(SystemClock.monotonic().unwrap().checked_sub(begun).unwrap() >= sleep);
 }
 
 #[test]
 fn the_monotonic_clock_counts_time_since_boot() {
-    let first = SystemClock.monotonic();
-    let second = SystemClock.monotonic();
+    let first = SystemClock.monotonic().unwrap();
+    let second = SystemClock.monotonic().unwrap();
     assert!(first > Duration::ZERO);
     assert!(second >= first);
 }
