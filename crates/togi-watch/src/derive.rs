@@ -4,8 +4,7 @@
 use togi_journal::{Member, State as JournalState};
 use togi_machine::{CoreId, CoreSet, Regime, TargetOffset};
 use togi_tuner::{
-    CyclePlan, Forecast, GroupState, Limit, Projection, Reached,
-    State as TunerState, TurnKind,
+    CyclePlan, Forecast, GroupState, Limit, Projection, Reached, State as TunerState, TurnKind,
 };
 
 use crate::facts::{Facts, secs, trial_cores};
