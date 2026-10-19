@@ -133,7 +133,8 @@ impl Metric {
                 .filter(|&&x| x.total_cmp(&value).is_eq())
                 .count()
         };
-        let share = float(saturating_summary_count(less)) + float(saturating_summary_count(equal)) / 2.0;
+        let share =
+            float(saturating_summary_count(less)) + float(saturating_summary_count(equal)) / 2.0;
         Some(100.0 * share / float(saturating_summary_count(self.values.len())))
     }
 }
