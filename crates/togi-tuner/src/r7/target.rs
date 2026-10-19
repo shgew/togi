@@ -553,7 +553,7 @@ pub(crate) fn backoff_move(
     let failure_point = FailurePoint::new(applied)
         .merge(prior_failure_point.map(FailurePoint::new))
         .offset();
-    let counts = u8::try_from(counts.clamp(0, i64::from(u8::MAX))).unwrap_or(u8::MAX);
+    let counts = saturating_backoff_counts(counts);
     let by_counts = applied.shallower_by(counts);
     let past_failure = failure_point.shallower_by(1);
     Move {
@@ -563,5 +563,12 @@ pub(crate) fn backoff_move(
         } else {
             by_counts
         },
+    }
+}
+
+fn saturating_backoff_counts(counts: i64) -> u8 {
+    match u8::try_from(counts.clamp(0, i64::from(u8::MAX))) {
+        Ok(counts) => counts,
+        Err(_) => unreachable!("backoff counts were clamped to the u8 range"),
     }
 }

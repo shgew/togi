@@ -77,9 +77,7 @@ fn long_duration(config: &TunerConfig, ccds: usize, role: R7PartRole) -> Secs {
         (0 | 1, _) => whole,
         (_, R7PartRole::Ccd | R7PartRole::Partial) => quarter,
         (_, R7PartRole::AllCore) => whole.saturating_sub(
-            u32::try_from(ccds)
-                .unwrap_or(u32::MAX)
-                .saturating_mul(quarter),
+            crate::numbers::saturating_checking_count(ccds).saturating_mul(quarter),
         ),
     };
     std::num::NonZeroU32::new(secs).map_or(Secs::MIN, Secs::new)
@@ -212,7 +210,7 @@ fn step_plan(
                         .count()
                 })
                 .sum();
-            let earlier = u32::try_from(earlier).unwrap_or(u32::MAX);
+            let earlier = crate::numbers::saturating_checking_count(earlier);
             quota.count = quota
                 .count
                 .saturating_add(quota.count.saturating_mul(earlier));

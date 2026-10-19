@@ -121,7 +121,7 @@ impl Run {
     }
 
     fn check_pair(view: View) -> [WorkloadId; 2] {
-        let k = usize::try_from(view.checks).unwrap_or(usize::MAX);
+        let k = crate::numbers::index(view.checks);
         [
             pick_workload(Regime::R1, k).id(),
             pick_workload(Regime::R2, k).id(),

@@ -465,6 +465,100 @@ fn a_recorded_configuration_this_build_refuses_is_not_folded() {
     );
 }
 
+#[test_case(0; "zero")]
+#[test_case(65_536; "one beyond u16")]
+#[test_case(u32::MAX; "largest journal count")]
+fn out_of_range_hunt_trial_counts_are_refused(trials: u32) {
+    let mut j = Journal::has_room(&[-10]);
+    let start = numeric_hunt_start(&j, trials);
+    let error = j.try_append(start.into(), &[]).unwrap_err();
+    if trials == 0 {
+        assert!(matches!(error, FoldError::ZeroTrials));
+    } else {
+        assert!(matches!(error, FoldError::HuntTrials(_)));
+        assert!(std::error::Error::source(&error).is_some());
+    }
+}
+
+fn numeric_hunt_start(j: &Journal, trials: u32) -> togi_journal::HuntStart {
+    togi_journal::HuntStart {
+        hunt: NonZeroU32::MIN,
+        failure: Seq::new(1).unwrap(),
+        trial: None,
+        regime: Regime::R6,
+        workload: workloads(Regime::R6)[0].id(),
+        cores: set(&[0]),
+        duration_s: 120,
+        failing: j.profile(&[-10]).offsets(),
+        parked: j.profile(&[0]).offsets(),
+        parked_seq: None,
+        candidates: set(&[0]),
+        trials,
+        trial_s: 120,
+        miss: 0.0,
+        rate: 0.0,
+        ranking: vec![core(0)],
+        reason: None,
+    }
+}
+
+#[test_case(Some(0); "zero")]
+#[test_case(Some(65_536); "one beyond u16")]
+#[test_case(Some(u32::MAX); "largest journal count")]
+fn out_of_range_round_trial_counts_are_refused(trials: Option<u32>) {
+    let mut j = Journal::has_room(&[-10]);
+    let round = numeric_round(&j, trials, Some(120));
+    let error = j.try_append(round.into(), &[]).unwrap_err();
+    if trials == Some(0) {
+        assert!(matches!(error, FoldError::ZeroTrials));
+    } else {
+        assert!(matches!(error, FoldError::RoundTrials(_)));
+        assert!(std::error::Error::source(&error).is_some());
+    }
+}
+
+#[test_case(None; "absent count uses config")]
+#[test_case(Some(1); "minimum count")]
+#[test_case(Some(65_535); "maximum count")]
+fn representable_round_trial_counts_remain_exact(trials: Option<u32>) {
+    let mut j = Journal::has_room(&[-10]);
+    let round = numeric_round(&j, trials, None);
+    j.try_append(round.into(), &[]).unwrap();
+    let view = j.state.project().deepening.unwrap();
+    assert_eq!(view.checks[0].needed, trials.unwrap_or(5));
+}
+
+#[test]
+fn a_zero_recorded_round_duration_is_refused() {
+    let mut j = Journal::has_room(&[-10]);
+    let round = numeric_round(&j, Some(5), Some(0));
+    assert!(matches!(
+        j.try_append(round.into(), &[]),
+        Err(FoldError::ZeroDuration)
+    ));
+}
+
+fn numeric_round(
+    j: &Journal,
+    trials: Option<u32>,
+    trial_s: Option<u32>,
+) -> togi_journal::DeepeningRound {
+    togi_journal::DeepeningRound {
+        round: NonZeroU32::MIN,
+        event: togi_journal::RoundEvent::Start,
+        base: j.profile(&[-10]).offsets(),
+        base_seq: None,
+        target: j.profile(&[-11]).offsets(),
+        profile: j.profile(&[-11]).offsets(),
+        cores: set(&[0]),
+        ranking: vec![core(0)],
+        trials,
+        trial_s,
+        passed: false,
+        reason: None,
+    }
+}
+
 #[test]
 fn a_plan_records_its_context_in_its_intent() {
     let j = Journal::has_room(&[-10, -10]);

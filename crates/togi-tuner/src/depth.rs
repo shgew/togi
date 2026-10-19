@@ -44,6 +44,9 @@ impl Depth for TargetOffset {
     }
 
     fn signed(self) -> i32 {
-        i32::try_from(self.get()).unwrap_or(i32::MIN)
+        match i32::try_from(self.get()) {
+            Ok(offset) => offset,
+            Err(_) => unreachable!("TargetOffset is bounded to -50 through zero"),
+        }
     }
 }

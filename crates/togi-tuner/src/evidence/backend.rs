@@ -6,7 +6,7 @@ use togi_machine::Backend;
 /// The evidence identity of one backend package: the backend and the store path it ran from,
 /// or no path when none was recorded. Restoring a path gives back the id it had.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct BackendId(u32);
+pub struct BackendId(usize);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Backends {
@@ -35,7 +35,7 @@ impl Backends {
     }
 
     pub(super) fn intern(&mut self, backend: Backend, path: Option<&Path>) -> BackendId {
-        let next = BackendId(u32::try_from(self.ids.len()).unwrap_or(u32::MAX));
+        let next = BackendId(self.ids.len());
         *self
             .ids
             .entry((backend, path.map(Path::to_path_buf)))

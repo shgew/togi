@@ -1,4 +1,4 @@
-use std::num::{NonZeroU16, NonZeroU32};
+use std::num::NonZeroU32;
 
 use togi_journal::{
     Activity, CheckingChain, CheckingCycle, CheckingStep, CycleEvent, Rederived, Seq, TrialIntent,
@@ -16,8 +16,7 @@ use crate::{
 };
 
 fn ordinal(index: usize) -> NonZeroU32 {
-    NonZeroU32::new(u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1))
-        .unwrap_or(NonZeroU32::MAX)
+    crate::numbers::checking_ordinal(index)
 }
 
 fn joined(parts: impl IntoIterator<Item = String>) -> Option<String> {
@@ -62,8 +61,7 @@ impl Run {
             window: Window::Live {
                 since: Some(open.start),
             },
-            needed: NonZeroU16::new(u16::try_from(quota.count).unwrap_or(u16::MAX))
-                .unwrap_or(NonZeroU16::MIN),
+            needed: crate::numbers::saturating_checking_requirement(quota.count),
         }
     }
 
@@ -88,7 +86,7 @@ impl Run {
         class: ClassKey,
     ) -> Option<Requirement> {
         let open = self.checking.open()?;
-        let step = usize::try_from(intent.step?.get() - 1).ok()?;
+        let step = crate::numbers::index(intent.step?.get() - 1);
         let matches = intent.cycle == Some(open.number)
             && !intent.rerun
             && Self::together_shape(intent, class);
@@ -107,7 +105,7 @@ impl Run {
             return None;
         };
         let class = ClassKey::new(workload, plan.load.cores(), plan.duration);
-        let step = usize::try_from(step.get().get() - 1).ok()?;
+        let step = crate::numbers::index(step.get().get() - 1);
         let (part, quota) = Self::quota_in_step(open, step, class)?;
         Some(Self::cycle_requirement(open, step, part, quota))
     }

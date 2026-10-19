@@ -108,7 +108,7 @@ impl Backoffs {
                 seen.push(strike.failure);
             }
         }
-        u32::try_from(seen.len()).unwrap_or(u32::MAX)
+        crate::numbers::saturating_evidence_count(seen.len())
     }
 
     pub(crate) fn decisions(&self) -> Vec<Seq> {

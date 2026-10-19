@@ -579,7 +579,7 @@ impl Evidence {
         } else {
             0
         };
-        Ok(u32::try_from(own + idle).unwrap_or(u32::MAX))
+        Ok(crate::numbers::saturating_evidence_count(own + idle))
     }
 
     /// The valid passes supporting `profile` in `window`, with the first `needed` of them.
@@ -628,7 +628,7 @@ impl Evidence {
             }
         }
         Count {
-            valid: u32::try_from(valid).unwrap_or(u32::MAX),
+            valid: crate::numbers::saturating_evidence_count(valid),
             witnesses: merge(&runs, usize::from(needed.get())),
         }
     }
@@ -703,7 +703,7 @@ impl Evidence {
         }
         let retained = valid.min(usize::from(togi_config::TrialCount::MAX));
         Ok(Count {
-            valid: u32::try_from(valid).unwrap_or(u32::MAX),
+            valid: crate::numbers::saturating_evidence_count(valid),
             witnesses: merge(&runs, retained),
         })
     }
@@ -826,7 +826,7 @@ impl Evidence {
                 total += cell.live_non_alone.after(floor).len();
             }
         }
-        u32::try_from(total).unwrap_or(u32::MAX)
+        crate::numbers::saturating_evidence_count(total)
     }
 
     /// Every class's exposure, and the sum per workload, computed from the cells alone.

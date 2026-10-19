@@ -91,7 +91,7 @@ struct Sim {
 }
 
 fn after(decisions: usize) -> u16 {
-    u16::try_from(decisions).unwrap_or(u16::MAX)
+    crate::numbers::saturating_forecast_count(decisions)
 }
 
 impl Sim {
