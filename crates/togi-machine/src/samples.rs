@@ -42,6 +42,10 @@ pub enum SampleError {
     Read(#[source] std::io::Error),
     #[error("decode conditions sample")]
     Decode(#[source] serde_json::Error),
+    #[error("read conditions sample elapsed milliseconds")]
+    ElapsedMillis(#[source] std::num::TryFromIntError),
+    #[error("record conditions sample elapsed seconds")]
+    ElapsedSeconds(#[source] std::num::TryFromIntError),
 }
 
 pub struct ReadSamples<R: Read> {
