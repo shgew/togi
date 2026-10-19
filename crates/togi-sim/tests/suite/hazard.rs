@@ -256,13 +256,9 @@ fn a_source_names_its_random_domain() {
 #[test_case(u64::from(u32::MAX); "at the old key limit")]
 #[test_case(u64::from(u32::MAX) + 1; "above the old key limit")]
 #[test_case(u64::MAX; "largest platform index")]
-#[expect(
-    clippy::unwrap_used,
-    reason = "a 64-bit platform represents every u64 index"
-)]
 fn joint_domains_preserve_the_whole_index(index: u64) {
     let source = HazardSource {
-        kind: SourceKind::Joint(usize::try_from(index).unwrap()),
+        kind: SourceKind::Joint(usize::from_ne_bytes(index.to_ne_bytes())),
         rate: 1.0,
         after_s: 0.0,
     };
