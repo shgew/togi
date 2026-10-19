@@ -562,10 +562,17 @@ fn r7_workload_and_top_requesters() {
         .collect();
     let top = snap.r7_top();
     assert_eq!(
-        top.iter().filter_map(|(core, value)| value.map(|value| (core, value))).collect::<Vec<_>>(),
-        want.iter().map(|(&core, &value)| (core, value)).collect::<Vec<_>>()
+        top.iter()
+            .filter_map(|(core, value)| value.map(|value| (core, value)))
+            .collect::<Vec<_>>(),
+        want.iter()
+            .map(|(&core, &value)| (core, value))
+            .collect::<Vec<_>>()
     );
-    assert_eq!(serde_json::to_value(top).unwrap(), serde_json::to_value(&want).unwrap());
+    assert_eq!(
+        serde_json::to_value(top).unwrap(),
+        serde_json::to_value(&want).unwrap()
+    );
     assert!(!want.is_empty(), "some core tops the request order");
     let _ = (TargetOffset::ZERO, PerCore::<TargetOffset>::default());
 }

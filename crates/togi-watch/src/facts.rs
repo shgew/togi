@@ -10,7 +10,9 @@ use togi_journal::{
     Event, HuntStart, Outcome, Payload, ResetTarget, Seq, State as JournalState, TrialEnd, TrialId,
     TrialIntent,
 };
-use togi_machine::{BootId, CoreId, CoreSet, ObservedOffset, PerCore, Regime, Signal, TargetOffset};
+use togi_machine::{
+    BootId, CoreId, CoreSet, ObservedOffset, PerCore, Regime, Signal, TargetOffset,
+};
 use togi_tuner::{CombinationId, Load, State as TunerState, TrialHistory};
 
 use crate::history::{History, LOG_LIMIT, LogEntry};

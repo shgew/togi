@@ -412,7 +412,11 @@ impl Facts {
                 .iter()
                 .filter_map(|core| {
                     let offset = d.profile.get(core)?;
-                    let tuned = self.tuned.get(core).flatten().map_or(0, |tuned| tuned.get());
+                    let tuned = self
+                        .tuned
+                        .get(core)
+                        .flatten()
+                        .map_or(0, |tuned| tuned.get());
                     let verb = if offset.get() > tuned {
                         "yields"
                     } else {

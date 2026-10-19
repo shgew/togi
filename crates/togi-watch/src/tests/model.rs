@@ -383,7 +383,10 @@ fn sparse_readbacks_do_not_fill_other_topology_cores() {
     let model = script.model();
     let snap = model.snapshot();
     assert_eq!(
-        snap.cores.iter().map(|core| (core.id, core.applied)).collect::<Vec<_>>(),
+        snap.cores
+            .iter()
+            .map(|core| (core.id, core.applied))
+            .collect::<Vec<_>>(),
         [(core(0), None), (core(8), Some(ObservedOffset(-9)))]
     );
 }
