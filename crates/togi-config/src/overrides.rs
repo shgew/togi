@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt};
+use std::fmt;
 
 use serde::{
     Deserialize, Deserializer,
@@ -69,8 +69,8 @@ fn core_from_key(table: &'static str, key: &str) -> Result<CoreId, ConfigError> 
 fn offsets(
     table: &'static str,
     raw: Option<RawCoreMap>,
-) -> Result<BTreeMap<CoreId, TargetOffset>, ConfigError> {
-    let mut resolved = BTreeMap::new();
+) -> Result<PerCore<Option<TargetOffset>>, ConfigError> {
+    let mut resolved = PerCore::default();
     for (key, value) in raw.into_iter().flat_map(|raw| raw.0) {
         let core = core_from_key(table, &key)?;
         let offset = TargetOffset::new(value).map_err(|source| ConfigError::Offset {
@@ -78,9 +78,10 @@ fn offsets(
             core,
             source,
         })?;
-        if resolved.insert(core, offset).is_some() {
+        if resolved.get(core).flatten().is_some() {
             return Err(ConfigError::DuplicateCore { table, core });
         }
+        resolved.set(core, Some(offset));
     }
     Ok(resolved)
 }
@@ -88,29 +89,27 @@ fn offsets(
 pub(crate) fn resolve(
     start_offsets: Option<RawCoreMap>,
     candidate_solo_limits: Option<RawCoreMap>,
-) -> Result<BTreeMap<CoreId, InitialOverride>, ConfigError> {
-    let mut resolved: BTreeMap<CoreId, InitialOverride> = offsets(START_OFFSETS, start_offsets)?
-        .into_iter()
-        .map(|(core, offset)| (core, InitialOverride::Start(offset)))
+) -> Result<PerCore<Option<InitialOverride>>, ConfigError> {
+    let mut resolved: PerCore<Option<InitialOverride>> = offsets(START_OFFSETS, start_offsets)?
+        .iter()
+        .map(|(core, offset)| (core, offset.map(InitialOverride::Start)))
         .collect();
-    for (core, offset) in offsets(CANDIDATE_SOLO_LIMITS, candidate_solo_limits)? {
-        if resolved
-            .insert(core, InitialOverride::CandidateSoloLimit(offset))
-            .is_some()
-        {
+    for (core, offset) in offsets(CANDIDATE_SOLO_LIMITS, candidate_solo_limits)?.iter() {
+        if resolved.get(core).flatten().is_some() {
             return Err(ConfigError::CoreConflict(core));
         }
+        resolved.set(core, offset.map(InitialOverride::CandidateSoloLimit));
     }
     Ok(resolved)
 }
 
 pub(crate) fn table(
-    overrides: &BTreeMap<CoreId, InitialOverride>,
+    overrides: &PerCore<Option<InitialOverride>>,
     select: fn(InitialOverride) -> Option<TargetOffset>,
 ) -> PerCore<TargetOffset> {
     overrides
         .iter()
-        .filter_map(|(core, value)| Some((*core, select(*value)?)))
+        .filter_map(|(core, value)| Some((core, select(value?)?)))
         .collect()
 }
 

@@ -607,7 +607,7 @@ impl Session<'_> {
             self.trials.samples(trial.id.as_str()),
             trial.plan.load.cores(),
             trial.plan.regime,
-            |core| topology.get(&core).copied(),
+            |core| topology.get(core).flatten(),
         );
         let mut causes = vec![trial.start];
         causes.extend(machine_checks);
