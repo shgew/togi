@@ -349,11 +349,7 @@ mod tests {
         let held = log(&entries);
         let (page, extent) = rows(&held, 77, 10, 3);
         let later = Log { arrived, ..held };
-        assert_eq!(
-            rows(&later, 77, 10, 3),
-            (page, extent),
-            "arrived {arrived}"
-        );
+        assert_eq!(rows(&later, 77, 10, 3), (page, extent), "arrived {arrived}");
     }
 
     #[test]
