@@ -72,3 +72,11 @@ impl From<Error> for togi_machine::Error {
         }
     }
 }
+
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("parse backend affinity CPU {value}")]
+pub struct InvalidAffinityCpu {
+    pub value: String,
+    #[source]
+    pub source: std::num::ParseIntError,
+}

@@ -149,7 +149,7 @@ pub(crate) struct Adjudication {
     pub escaped: Vec<CpuId>,
     pub containment_error: Option<String>,
     pub duration_s: u32,
-    pub tctl_max_c: Option<i64>,
+    pub tctl_max_c: Option<i32>,
 }
 
 pub(crate) fn mce_signal(mces: &[RecordedMce]) -> Signal {
@@ -181,7 +181,11 @@ pub(crate) fn adjudicate(
         containment_error: evidence.containment.map(str::to_owned),
         duration_s: u32::try_from(result.ran.as_secs())
             .map_err(crate::SessionError::TrialDuration)?,
-        tctl_max_c: result.tctl_max_c,
+        tctl_max_c: result
+            .tctl_max_c
+            .map(i32::try_from)
+            .transpose()
+            .map_err(crate::SessionError::TrialTemperature)?,
     };
     if !result.escaped.is_empty() {
         end.outcome = Outcome::Inconclusive;
@@ -454,6 +458,44 @@ impl SampleSummary {
                 u32::try_from(elapsed / 1000).map_err(togi_machine::SampleError::ElapsedSeconds)
             })
             .transpose()?;
+        let ccd_mhz = self
+            .telemetry
+            .as_ref()
+            .map(|telemetry| {
+                telemetry
+                    .ccd_mhz
+                    .iter()
+                    .map(|(&ccd, &mhz)| {
+                        u32::try_from(mhz)
+                            .map(|mhz| (ccd, mhz))
+                            .map_err(togi_machine::SampleError::Clock)
+                    })
+                    .collect::<Result<_, _>>()
+            })
+            .transpose()?;
+        let last = self
+            .last
+            .as_ref()
+            .filter(|_| crashed)
+            .map(|last| {
+                let temperature = last
+                    .tctl_c
+                    .map(i32::try_from)
+                    .transpose()
+                    .map_err(togi_machine::SampleError::Temperature)?;
+                let (min_mhz, max_mhz) = last.core_mhz.iter().try_fold(
+                    (None::<u32>, None::<u32>),
+                    |(min, max), (_, mhz)| {
+                        let mhz = u32::try_from(mhz).map_err(togi_machine::SampleError::Clock)?;
+                        Ok::<_, togi_machine::SampleError>((
+                            Some(min.map_or(mhz, |min| min.min(mhz))),
+                            Some(max.map_or(mhz, |max| max.max(mhz))),
+                        ))
+                    },
+                )?;
+                Ok::<_, togi_machine::SampleError>((temperature, min_mhz, max_mhz))
+            })
+            .transpose()?;
         if let Some(voltage) = self.voltage {
             end.voltage_request_median_v = Some(voltage.median_v);
             end.voltage_request_min_v = Some(voltage.min_v);
@@ -461,11 +503,9 @@ impl SampleSummary {
         if let Some(telemetry) = &self.telemetry {
             end.voltage_requests_v = telemetry.requests;
             end.top_requesters = telemetry.top_requesters;
-            end.ccd_mhz = telemetry
-                .ccd_mhz
-                .iter()
-                .filter_map(|(&ccd, &mhz)| Some((ccd, u32::try_from(mhz).ok()?)))
-                .collect();
+            if let Some(ccd_mhz) = ccd_mhz {
+                end.ccd_mhz = ccd_mhz;
+            }
         }
         if end.outcome == Outcome::Failure
             && let Some(stall) = self.stalled
@@ -473,16 +513,11 @@ impl SampleSummary {
             end.stalled_core = Some(stall.core);
             end.worker_stalled_ms = stalled_ms;
         }
-        if crashed && let Some(last) = &self.last {
+        if let Some((temperature, min_mhz, max_mhz)) = last {
             end.last_sample_s = last_s;
-            end.last_sample_tctl_c = last.tctl_c.and_then(|tctl| i32::try_from(tctl).ok());
-            let mhz = || {
-                last.core_mhz
-                    .iter()
-                    .filter_map(|(_, mhz)| u32::try_from(mhz).ok())
-            };
-            end.last_sample_min_mhz = mhz().min();
-            end.last_sample_max_mhz = mhz().max();
+            end.last_sample_tctl_c = temperature;
+            end.last_sample_min_mhz = min_mhz;
+            end.last_sample_max_mhz = max_mhz;
         }
         Ok(())
     }

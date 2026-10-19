@@ -9,7 +9,7 @@ use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-pub use error::Error;
+pub use error::{Error, InvalidAffinityCpu};
 pub use file_name::{FileName, InvalidFileName};
 use togi_machine::{CpuId, Workload};
 
@@ -21,8 +21,9 @@ pub enum Line {
     Progress(String),
     ComputationError,
     SetupError,
-    /// The program could not pin itself to a CPU; the CPU is unknown when its number does not parse.
+    /// The program could not pin itself; `None` means the message supplied no recognizable CPU.
     AffinityError(Option<CpuId>),
+    InvalidAffinity(InvalidAffinityCpu),
 }
 
 /// What a passing `Backend::check` shows in preflight.

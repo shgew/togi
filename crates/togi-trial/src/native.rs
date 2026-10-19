@@ -282,7 +282,15 @@ impl Trials for Runner {
                 error: error.into(),
             });
         }
-        let instances = u32::try_from(spec.cores.len()).unwrap_or(u32::MAX).max(1);
+        let instances = match crate::plan::checked_count(spec.cores.len()) {
+            Ok(instances) => instances.max(1),
+            Err(error) => {
+                return Err(Partial {
+                    value: Some(ready),
+                    error: Error::Invalid(error).into(),
+                });
+            }
+        };
         if !self.timing.representable(spec.duration, instances) {
             return Err(Partial {
                 value: Some(ready),

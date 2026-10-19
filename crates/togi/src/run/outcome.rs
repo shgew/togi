@@ -75,6 +75,7 @@ pub(super) fn conclude(
             | SessionError::Prompt { .. }
             | SessionError::Panicked(_)
             | SessionError::TrialDuration(_)
+            | SessionError::TrialTemperature(_)
             | SessionError::RecoveredElapsed(_)
             | SessionError::WorkloadRotation(_)
             | SessionError::Monotonic(_)

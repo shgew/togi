@@ -48,6 +48,10 @@ pub enum SampleError {
     ElapsedMillis(#[source] std::num::TryFromIntError),
     #[error("record conditions sample elapsed seconds")]
     ElapsedSeconds(#[source] std::num::TryFromIntError),
+    #[error("record conditions sample temperature")]
+    Temperature(#[source] std::num::TryFromIntError),
+    #[error("record conditions sample clock")]
+    Clock(#[source] std::num::TryFromIntError),
 }
 
 pub struct ReadSamples<R: Read> {

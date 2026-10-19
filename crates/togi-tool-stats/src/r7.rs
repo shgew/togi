@@ -636,12 +636,23 @@ pub(crate) fn requests(p: &Projection<'_>, since: Option<Timestamp>) -> RequestM
     m
 }
 
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "a request of a few volts is a few hundred bins"
-)]
+pub(crate) fn checked_bin(top: f64) -> Result<i64, crate::Error> {
+    let bin = (top * BINS_PER_VOLT + BIN_ROUNDING_TOLERANCE).floor();
+    if !bin.is_finite() || !(-(2.0_f64.powi(63))..2.0_f64.powi(63)).contains(&bin) {
+        return Err(crate::Error::VoltageBin(top));
+    }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the finite integral bin was checked against the exact signed 64-bit bounds"
+    )]
+    Ok(bin as i64)
+}
+
 fn bin(top: f64) -> i64 {
-    (top * BINS_PER_VOLT + BIN_ROUNDING_TOLERANCE).floor() as i64
+    match checked_bin(top) {
+        Ok(bin) => bin,
+        Err(_) => unreachable!("Journal construction validates recorded voltage bins"),
+    }
 }
 
 #[expect(

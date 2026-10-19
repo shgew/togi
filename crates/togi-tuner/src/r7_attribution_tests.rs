@@ -178,7 +178,7 @@ fn r7_live_named_and_mce_attribution(local_mce: bool) {
             corrected: false,
             monotonic_ns: None,
             from_boot: None,
-            trial: Some(trial.clone()),
+            trial: Some(trial),
             between_trials: false,
             lines: Vec::new(),
         };

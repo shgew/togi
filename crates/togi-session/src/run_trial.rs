@@ -598,9 +598,7 @@ impl Session<'_> {
             core: adjudication
                 .core
                 .filter(|_| trial.plan.condition != Condition::Alone),
-            tctl_max_c: adjudication
-                .tctl_max_c
-                .and_then(|tctl| i32::try_from(tctl).ok()),
+            tctl_max_c: adjudication.tctl_max_c,
             reason,
             interrupted: interrupted || crashed,
             escaped: adjudication.escaped,

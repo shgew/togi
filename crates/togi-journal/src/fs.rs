@@ -1230,6 +1230,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::redundant_clone,
+        reason = "a cloned MemFs must share lock exclusivity with the original handle"
+    )]
     fn locks_are_exclusive_until_dropped() {
         let fs = MemFs::new();
         dir(&fs, "/s");

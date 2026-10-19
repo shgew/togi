@@ -17,7 +17,7 @@ pub fn cfg_out(src: &[u8], cfg: &HostCfg) -> Vec<LineRange> {
         src[..i]
             .iter()
             .filter(|&&b| b == b'\n')
-            .fold(1_u32, |line, _| line.saturating_add(1))
+            .fold(1_u32, |line, _| saturating_source_line(line))
     };
     let mut blocks: Vec<usize> = Vec::new();
     // The index of the last byte outside whitespace and comments.
@@ -349,3 +349,20 @@ fn item_end(src: &[u8], mut i: usize) -> usize {
 #[cfg(test)]
 #[path = "tests/scan.rs"]
 mod tests;
+
+/// The lexical coverage estimate clips source line ordinals at its u32 reporting ceiling.
+fn saturating_source_line(line: u32) -> u32 {
+    line.saturating_add(1)
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::saturating_source_line;
+
+    #[test_case::test_case(0, 1; "first line")]
+    #[test_case::test_case(u32::MAX - 1, u32::MAX; "last exact line")]
+    #[test_case::test_case(u32::MAX, u32::MAX; "first overflowing line")]
+    fn source_line_estimates_saturate(line: u32, expected: u32) {
+        assert_eq!(saturating_source_line(line), expected);
+    }
+}

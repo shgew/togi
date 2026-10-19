@@ -620,17 +620,17 @@ fn nothing(reason: ResetReason) -> CrashFacts {
 
 #[test_case::test_case("trial", &CrashFacts {
                 in_trial: true,
-                ..nothing(reason(None, false).clone())
+                ..nothing(reason(None, false))
             }, CrashKind::InTrial; "trial")]
 #[test_case::test_case("idle", &CrashFacts {
                 applied: true,
-                ..nothing(reason(None, false).clone())
+                ..nothing(reason(None, false))
             }, CrashKind::Idle; "idle")]
-#[test_case::test_case("stray", &nothing(reason(None, false).clone()), CrashKind::Stray; "stray")]
+#[test_case::test_case("stray", &nothing(reason(None, false)), CrashKind::Stray; "stray")]
 #[test_case::test_case("evidence before thermal", &CrashFacts {
                 applied: true,
                 evidence: true,
-                ..nothing(reason(Some(ResetKind::ThermalTrip), true).clone())
+                ..nothing(reason(Some(ResetKind::ThermalTrip), true))
             }, CrashKind::Idle; "evidence before thermal")]
 #[test_case::test_case("thermal", &CrashFacts {
                 in_trial: true,
@@ -638,7 +638,7 @@ fn nothing(reason: ResetReason) -> CrashFacts {
             }, CrashKind::Thermal; "thermal")]
 #[test_case::test_case("power button trial", &CrashFacts {
                 in_trial: true,
-                ..nothing(reason(Some(ResetKind::PowerButton), true).clone())
+                ..nothing(reason(Some(ResetKind::PowerButton), true))
             }, CrashKind::InTrial; "power button trial")]
 #[test_case::test_case("power button idle", &CrashFacts {
                 applied: true,
@@ -647,7 +647,7 @@ fn nothing(reason: ResetReason) -> CrashFacts {
 #[test_case::test_case("confirmed absent reason", &CrashFacts {
                 applied: true,
                 confirmed: true,
-                ..nothing(reason(None, true).clone())
+                ..nothing(reason(None, true))
             }, CrashKind::Inconclusive; "confirmed absent reason")]
 #[test_case::test_case("unsupported absent reason", &CrashFacts {
                 applied: true,

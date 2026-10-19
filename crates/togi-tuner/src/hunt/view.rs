@@ -207,7 +207,7 @@ impl Run {
         if hunt.cut.signature == Some(signature) {
             count
         } else {
-            count.saturating_add(1)
+            crate::numbers::saturating_hunt_count(u64::from(count) + 1)
         }
     }
 

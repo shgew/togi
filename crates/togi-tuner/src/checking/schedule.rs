@@ -211,9 +211,9 @@ fn step_plan(
                 })
                 .sum();
             let earlier = crate::numbers::saturating_checking_count(earlier);
-            quota.count = quota
-                .count
-                .saturating_add(quota.count.saturating_mul(earlier));
+            quota.count = crate::numbers::saturating_checking_count(
+                u64::from(quota.count) + u64::from(quota.count) * u64::from(earlier),
+            );
         }
     }
     let mut last: BTreeMap<ClassKey, (usize, usize)> = BTreeMap::new();
@@ -222,7 +222,9 @@ fn step_plan(
             let class = parts[at].quotas[slot].class;
             if let Some((p, q)) = last.insert(class, (at, slot)) {
                 let carried = std::mem::take(&mut parts[p].quotas[q].count);
-                parts[at].quotas[slot].count = parts[at].quotas[slot].count.saturating_add(carried);
+                parts[at].quotas[slot].count = crate::numbers::saturating_checking_count(
+                    u64::from(parts[at].quotas[slot].count) + u64::from(carried),
+                );
             }
         }
     }

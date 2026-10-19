@@ -99,6 +99,13 @@ allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
 undocumented_unsafe_blocks = "deny"
 wildcard_enum_match_arm = "warn"
+redundant_clone = "deny"
+useless_let_if_seq = "deny"
+derive_partial_eq_without_eq = "deny"
+unnecessary_struct_initialization = "deny"
+redundant_type_annotations = "deny"
+trait_duplication_in_bounds = "deny"
+string_lit_as_bytes = "deny"
 
 [profile.dev]
 opt-level = 1

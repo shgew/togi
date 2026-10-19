@@ -937,6 +937,43 @@ fn a_classifier_panic_during_rollback_is_joined_after_the_launch_cause() {
 }
 
 #[test]
+fn an_overflowing_affinity_cpu_during_rollback_keeps_its_typed_error_after_the_launch_cause() {
+    crate::testing::runtime(true).block_on(async move {
+        local(async {
+            let rig = rig();
+            rig.fake.on_launch(|n, _| {
+                if n == 0 {
+                    Launch::Run(script(|mut ctx: ProcCtx| async move {
+                        ctx.until_killed_ignoring_term().await;
+                        ctx.eprint("AFFINITY:65536\n").await;
+                    }))
+                } else {
+                    Launch::Fail(std::io::Error::other("systemd-run missing"))
+                }
+            });
+            let partial = rig
+                .start(spec(Regime::R7, &[0, 1], secs(60)))
+                .await
+                .err()
+                .unwrap();
+            assert!(partial.value.is_some(), "the stop is still proven");
+            let Some(Error::Joined(joined)) = crate_error(&partial.error) else {
+                panic!("{:?}", partial.error);
+            };
+            assert!(
+                matches!(
+                    joined.errors(),
+                    [Error::Launch { instance, .. }, Error::AffinityObservation(error)]
+                        if instance == "c01" && error.value == "65536"
+                ),
+                "{joined:?}"
+            );
+        })
+        .await;
+    });
+}
+
+#[test]
 fn a_watched_append_after_the_last_drain_poll_is_classified_before_the_proof() {
     crate::testing::runtime(true).block_on(async move {
         local(async {

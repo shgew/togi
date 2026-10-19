@@ -81,7 +81,7 @@ impl Entry {
     fn add(&mut self, seq: Seq, floor: Option<Seq>) {
         match self.segments.last_mut() {
             Some(last) if last.floor == floor => {
-                last.count = last.count.saturating_add(1);
+                last.count = crate::numbers::saturating_evidence_count(u64::from(last.count) + 1);
                 if last.first.len() < usize::from(togi_config::TrialCount::MAX) {
                     crate::evidence::unique(&mut last.first).push(seq);
                 }
