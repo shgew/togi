@@ -18,7 +18,7 @@ pub struct FactId {
     pub seq: Seq,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FactSource {
     pub session: SessionId,
     pub seq: Seq,

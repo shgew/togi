@@ -49,7 +49,7 @@ pub struct Params {
     pub onset: Onset,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct JointMember {
     pub core: CoreId,
     pub offset: TargetOffset,

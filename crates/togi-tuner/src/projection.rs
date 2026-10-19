@@ -10,7 +10,7 @@ use crate::{
     BiosProfile, Combination, FailurePoint, Profile, R7CoreStatus, State, TrialHistory, Window,
 };
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CoreView {
     pub core: CoreId,
     pub phase: Option<CorePhase>,
@@ -26,7 +26,7 @@ pub struct TemperaturePeak {
     pub seq: Seq,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CheckingView {
     pub profile: Option<Profile>,
     pub profile_seq: Option<Seq>,
@@ -35,13 +35,13 @@ pub struct CheckingView {
     pub exposure: Vec<(WorkloadId, u32)>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ConstraintView {
     pub failure_points: PerCore<FailurePoint>,
     pub combinations: Vec<Combination>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DeepeningCheck {
     pub regime: Regime,
     pub workload: WorkloadId,
@@ -54,7 +54,7 @@ pub struct DeepeningCheck {
     pub running: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DeepeningView {
     pub round: NonZeroU32,
     pub seq: Seq,
@@ -64,7 +64,7 @@ pub struct DeepeningView {
     pub checks: Vec<DeepeningCheck>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Projection {
     pub cores: Vec<CoreView>,
     pub constraints: Option<ConstraintView>,
