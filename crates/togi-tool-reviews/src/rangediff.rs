@@ -6,7 +6,9 @@ use std::sync::LazyLock;
 use regex::Regex;
 use regex::bytes::Regex as BytesRegex;
 
-use crate::diff::{FileDiff, Hunk, advance_line, lines, number, parse_diff, same_changes, spans, trim_newline};
+use crate::diff::{
+    FileDiff, Hunk, advance_line, lines, number, parse_diff, same_changes, spans, trim_newline,
+};
 use crate::manifest::PatchStatus;
 use crate::text::{lossy, quote};
 use crate::{Error, Programs};
@@ -307,7 +309,11 @@ fn gone_effects(
 /// mode are traced on their own too: one a lower layer carries leaves the header, and the text then applies
 /// to the file as it stands now. `None` when nothing is lost. Anything it cannot tell apart counts as lost,
 /// so an effect is never dropped from the review wrongly.
-pub fn lost_effects(f: &FileDiff, base: &[FileDiff], head: &[FileDiff]) -> Result<Option<FileDiff>, Error> {
+pub fn lost_effects(
+    f: &FileDiff,
+    base: &[FileDiff],
+    head: &[FileDiff],
+) -> Result<Option<FileDiff>, Error> {
     let mut f = f.clone();
     f.changed.clear();
     let name = source_name(&f).to_owned();
@@ -449,8 +455,16 @@ fn narrow_hunk(
     else {
         return Ok((h.clone(), 0, 0, false));
     };
-    let old_start = m.get(1).map(|d| number(d.as_bytes())).transpose()?.unwrap_or(0);
-    let new_start = m.get(3).map(|d| number(d.as_bytes())).transpose()?.unwrap_or(0);
+    let old_start = m
+        .get(1)
+        .map(|d| number(d.as_bytes()))
+        .transpose()?
+        .unwrap_or(0);
+    let new_start = m
+        .get(3)
+        .map(|d| number(d.as_bytes()))
+        .transpose()?
+        .unwrap_or(0);
     m.get(2).map(|d| number(d.as_bytes())).transpose()?;
     m.get(4).map(|d| number(d.as_bytes())).transpose()?;
     let context = m.get(5).map_or(&[][..], |g| g.as_bytes());

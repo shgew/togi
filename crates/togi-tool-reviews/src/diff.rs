@@ -83,8 +83,11 @@ pub fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 /// A number the pattern matched as digits, represented exactly or refused.
 pub fn number(digits: &[u8]) -> Result<i64, Error> {
-    let digits = std::str::from_utf8(digits).map_err(|error| Error::wrap("decode diff line number", error))?;
-    digits.parse().map_err(|error: std::num::ParseIntError| Error::wrap("parse diff line number", error))
+    let digits = std::str::from_utf8(digits)
+        .map_err(|error| Error::wrap("decode diff line number", error))?;
+    digits
+        .parse()
+        .map_err(|error: std::num::ParseIntError| Error::wrap("parse diff line number", error))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -92,7 +95,8 @@ pub fn number(digits: &[u8]) -> Result<i64, Error> {
 pub struct LineOverflow;
 
 pub fn advance_line(line: i64, by: i64) -> Result<i64, Error> {
-    line.checked_add(by).ok_or_else(|| Error::cause(LineOverflow))
+    line.checked_add(by)
+        .ok_or_else(|| Error::cause(LineOverflow))
 }
 
 pub fn line_number(line: i128) -> Result<i64, Error> {
@@ -216,8 +220,18 @@ fn parse_section(section: &[u8]) -> Result<FileDiff, Error> {
                 ..Hunk::default()
             });
             hunk_removed.clear();
-            old = i128::from(m.get(1).map(|d| number(d.as_bytes())).transpose()?.unwrap_or(0));
-            next = i128::from(m.get(3).map(|d| number(d.as_bytes())).transpose()?.unwrap_or(0));
+            old = i128::from(
+                m.get(1)
+                    .map(|d| number(d.as_bytes()))
+                    .transpose()?
+                    .unwrap_or(0),
+            );
+            next = i128::from(
+                m.get(3)
+                    .map(|d| number(d.as_bytes()))
+                    .transpose()?
+                    .unwrap_or(0),
+            );
             m.get(2).map(|d| number(d.as_bytes())).transpose()?;
             m.get(4).map(|d| number(d.as_bytes())).transpose()?;
             continue;
@@ -500,7 +514,10 @@ mod numeric_tests {
         let error = parse_diff(diff.as_bytes()).unwrap_err();
         assert!(error.find::<std::num::ParseIntError>().is_some());
         let file = FileDiff {
-            hunks: vec![Hunk { text: format!("{header}\n").into_bytes(), ..Hunk::default() }],
+            hunks: vec![Hunk {
+                text: format!("{header}\n").into_bytes(),
+                ..Hunk::default()
+            }],
             ..FileDiff::default()
         };
         let error = lost_effects(&file, &[], &[]).unwrap_err();
@@ -512,9 +529,25 @@ mod numeric_tests {
     fn last_representable_line_is_exact(body: &str, added: bool) {
         let diff = format!("diff --git a/f b/f\n@@ -{0} +{0} @@\n{body}", i64::MAX);
         let files = parse_diff(diff.as_bytes()).unwrap();
-        let expected = vec![Span { first: i64::MAX, last: i64::MAX }];
-        assert_eq!(if added { &files[0].changed } else { &files[0].removals }, &expected);
-        assert_eq!(spans(&[i64::MAX - 1, i64::MAX]), vec![Span { first: i64::MAX - 1, last: i64::MAX }]);
+        let expected = vec![Span {
+            first: i64::MAX,
+            last: i64::MAX,
+        }];
+        assert_eq!(
+            if added {
+                &files[0].changed
+            } else {
+                &files[0].removals
+            },
+            &expected
+        );
+        assert_eq!(
+            spans(&[i64::MAX - 1, i64::MAX]),
+            vec![Span {
+                first: i64::MAX - 1,
+                last: i64::MAX
+            }]
+        );
         let diff = format!("{diff}{body}");
         let error = parse_diff(diff.as_bytes()).unwrap_err();
         assert!(error.find::<std::num::TryFromIntError>().is_some());
@@ -523,12 +556,20 @@ mod numeric_tests {
     #[test_case(i64::MAX, 1 ; "positive")]
     #[test_case(i64::MIN, -1 ; "negative")]
     fn line_arithmetic_refuses_overflow(line: i64, by: i64) {
-        assert!(advance_line(line, by).unwrap_err().find::<LineOverflow>().is_some());
+        assert!(
+            advance_line(line, by)
+                .unwrap_err()
+                .find::<LineOverflow>()
+                .is_some()
+        );
     }
 
     #[test]
     fn range_diff_propagates_shift_overflow() {
-        let diff = format!("diff --git a/f b/f\n@@ -0,0 +1 @@\n+x\n@@ -{0} +{0} @@\n-y\n", i64::MAX);
+        let diff = format!(
+            "diff --git a/f b/f\n@@ -0,0 +1 @@\n+x\n@@ -{0} +{0} @@\n-y\n",
+            i64::MAX
+        );
         let reversal = parse_diff(diff.as_bytes()).unwrap();
         let error = lost_effects(&reversal[0], &reversal, &reversal).unwrap_err();
         assert!(error.find::<LineOverflow>().is_some());
