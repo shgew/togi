@@ -126,81 +126,50 @@ pub(super) fn decision(kind: Decision, from: i64, to: i64) -> TunerDecision {
     }
 }
 
+#[test_case::test_case(Decision::StepDeeper, Tag::Step, Tone::Plain, "core 03 passed -10; searches -15 on its next turn", "core 03 searches -15 on its next turn"; "StepDeeper")]
+#[test_case::test_case(Decision::CheckSoloLimit, Tag::Confirm, Tone::Plain, "core 03 confirming -15 as its solo limit", "core 03 starts confirming -15 as its solo limit"; "CheckSoloLimit")]
+#[test_case::test_case(Decision::Deepen, Tag::Room, Tone::Good, "core 03 -10 → -15", "core 03 deepens -10 → -15"; "Deepen")]
+#[test_case::test_case(Decision::Yield, Tag::Room, Tone::Plain, "core 03 yields -10 → -15, back to its round baseline", "core 03 yields -10 → -15, back to its round baseline"; "Yield")]
+#[test_case::test_case(Decision::Hold, Tag::Hold, Tone::Warn, "core 03 failure held; tuning stays at -10", "core 03 failure held at -10; no tuning move"; "Hold")]
+#[test_case::test_case(Decision::Backoff, Tag::Backoff, Tone::Warn, "core 03 -10 → -15", "core 03 -10 → -15"; "Backoff")]
+fn each_decision_has_its_tag_tone_and_phrases(
+    kind: Decision,
+    tag: Tag,
+    tone: Tone,
+    line: &str,
+    phrase: &str,
+) {
+    let d = decision(kind, -10, -15);
+    let said = decision_line(&d);
+    assert_eq!(
+        (said.tag, said.tone, said.text.as_str()),
+        (tag, tone, line),
+        "{kind}"
+    );
+    assert_eq!(decision_phrase(&d, None), phrase, "{kind}");
+    let payload = Payload::from(d);
+    assert_decision_words(&payload);
+    let table = words(EventKind::TunerDecision);
+    let Tagging::By(of) = table.tag else {
+        panic!("a decision is tagged by its payload");
+    };
+    assert_eq!(of(&payload), tag);
+    let Phrase::Of(of) = table.detailed else {
+        panic!("a decision has a phrase");
+    };
+    assert_eq!(of(&payload).as_deref(), Some(phrase));
+    let Brief::Of(of) = table.compact else {
+        panic!("a decision may have a compact outcome");
+    };
+    assert_eq!(
+        of(&payload).as_deref(),
+        (kind == Decision::Backoff).then_some("backs off"),
+        "{kind}"
+    );
+}
+
 #[test]
-fn each_decision_has_its_tag_tone_and_phrases() {
-    let rows = [
-        (
-            Decision::StepDeeper,
-            Tag::Step,
-            Tone::Plain,
-            "core 03 passed -10; searches -15 on its next turn",
-            "core 03 searches -15 on its next turn",
-        ),
-        (
-            Decision::CheckSoloLimit,
-            Tag::Confirm,
-            Tone::Plain,
-            "core 03 confirming -15 as its solo limit",
-            "core 03 starts confirming -15 as its solo limit",
-        ),
-        (
-            Decision::Deepen,
-            Tag::Room,
-            Tone::Good,
-            "core 03 -10 → -15",
-            "core 03 deepens -10 → -15",
-        ),
-        (
-            Decision::Yield,
-            Tag::Room,
-            Tone::Plain,
-            "core 03 yields -10 → -15, back to its round baseline",
-            "core 03 yields -10 → -15, back to its round baseline",
-        ),
-        (
-            Decision::Hold,
-            Tag::Hold,
-            Tone::Warn,
-            "core 03 failure held; tuning stays at -10",
-            "core 03 failure held at -10; no tuning move",
-        ),
-        (
-            Decision::Backoff,
-            Tag::Backoff,
-            Tone::Warn,
-            "core 03 -10 → -15",
-            "core 03 -10 → -15",
-        ),
-    ];
-    for (kind, tag, tone, line, phrase) in rows {
-        let d = decision(kind, -10, -15);
-        let said = decision_line(&d);
-        assert_eq!(
-            (said.tag, said.tone, said.text.as_str()),
-            (tag, tone, line),
-            "{kind}"
-        );
-        assert_eq!(decision_phrase(&d, None), phrase, "{kind}");
-        let payload = Payload::from(d);
-        assert_decision_words(&payload);
-        let table = words(EventKind::TunerDecision);
-        let Tagging::By(of) = table.tag else {
-            panic!("a decision is tagged by its payload");
-        };
-        assert_eq!(of(&payload), tag);
-        let Phrase::Of(of) = table.detailed else {
-            panic!("a decision has a phrase");
-        };
-        assert_eq!(of(&payload).as_deref(), Some(phrase));
-        let Brief::Of(of) = table.compact else {
-            panic!("a decision may have a compact outcome");
-        };
-        assert_eq!(
-            of(&payload).as_deref(),
-            (kind == Decision::Backoff).then_some("backs off"),
-            "{kind}"
-        );
-    }
+fn a_named_backoff_records_its_failure_point() {
     let named = decision(Decision::Backoff, -30, -16);
     assert_eq!(
         decision_phrase(&named, Some(core(3))),
@@ -238,19 +207,19 @@ fn a_solo_limit_is_the_offset_the_core_passed_alone() {
         phase_line(&room).map(|line| (line.tag, line.text)),
         Some((Tag::Room, "core 01 has room again at -12".to_owned()))
     );
-    for (from, to) in [
-        (None, CorePhase::Search),
-        (None, CorePhase::HasRoom),
-        (None, CorePhase::AtLimit),
-        (Some(CorePhase::HasRoom), CorePhase::HasRoom),
-        (Some(CorePhase::HasRoom), CorePhase::AtLimit),
-        (Some(CorePhase::AtLimit), CorePhase::AtLimit),
-    ] {
-        assert!(
-            phase_line(&phase(from, to, -12, None)).is_none(),
-            "{from:?} → {to:?} shows on the core's row"
-        );
-    }
+}
+
+#[test_case::test_case(None, CorePhase::Search; "initial search")]
+#[test_case::test_case(None, CorePhase::HasRoom; "initial room")]
+#[test_case::test_case(None, CorePhase::AtLimit; "initial limit")]
+#[test_case::test_case(Some(CorePhase::HasRoom), CorePhase::HasRoom; "room unchanged")]
+#[test_case::test_case(Some(CorePhase::HasRoom), CorePhase::AtLimit; "room to limit")]
+#[test_case::test_case(Some(CorePhase::AtLimit), CorePhase::AtLimit; "limit unchanged")]
+fn a_phase_without_a_new_solo_limit_has_no_line(from: Option<CorePhase>, to: CorePhase) {
+    assert!(
+        phase_line(&phase(from, to, -12, None)).is_none(),
+        "{from:?} → {to:?} shows on the core's row"
+    );
 }
 
 #[test]
@@ -291,38 +260,38 @@ fn hunt_ends_in_the_detailed_story() {
     );
 }
 
+#[test_case::test_case(Regime::R1, "light load", "light"; "r1")]
+#[test_case::test_case(Regime::R2, "heavy vector load", "heavy vector"; "r2")]
+#[test_case::test_case(Regime::R3, "load steps", "load steps"; "r3")]
+#[test_case::test_case(Regime::R4, "partial load", "partial load"; "r4")]
+#[test_case::test_case(Regime::R5, "both threads", "both threads"; "r5")]
+#[test_case::test_case(Regime::R6, "idle with short bursts", "idle + bursts"; "r6")]
+#[test_case::test_case(Regime::R7, "all-core load", "all-core"; "r7")]
+fn the_regime_words(regime: Regime, sentence: &str, kind: &str) {
+    assert_eq!(regime_words(regime), sentence);
+    assert_eq!(kind_words(regime), kind);
+}
+
 #[test]
-fn the_regime_and_signal_words() {
-    for (regime, sentence, kind) in [
-        (Regime::R1, "light load", "light"),
-        (Regime::R2, "heavy vector load", "heavy vector"),
-        (Regime::R3, "load steps", "load steps"),
-        (Regime::R4, "partial load", "partial load"),
-        (Regime::R5, "both threads", "both threads"),
-        (Regime::R6, "idle with short bursts", "idle + bursts"),
-        (Regime::R7, "all-core load", "all-core"),
-    ] {
-        assert_eq!(regime_words(regime), sentence);
-        assert_eq!(kind_words(regime), kind);
-    }
+fn every_regime_has_load_words() {
     for regime in togi_machine::REGIMES {
         let expected = if regime == Regime::R6 {
             "idle + bursts"
         } else {
             regime_words(regime)
         };
-        assert_eq!(load_words(regime), expected);
+        assert_eq!(load_words(regime), expected, "{regime:?}");
     }
-    for (signal, words) in [
-        (Signal::ComputationError, "wrong result"),
-        (Signal::UnexpectedExit, "the backend quit"),
-        (Signal::Stall, "the backend stalled"),
-        (Signal::CorrectedMce, "corrected hardware error"),
-        (Signal::UncorrectedMce, "uncorrected hardware error"),
-        (Signal::Crash, "crash"),
-    ] {
-        assert_eq!(signal_words(signal), words);
-    }
+}
+
+#[test_case::test_case(Signal::ComputationError, "wrong result"; "ComputationError")]
+#[test_case::test_case(Signal::UnexpectedExit, "the backend quit"; "UnexpectedExit")]
+#[test_case::test_case(Signal::Stall, "the backend stalled"; "Stall")]
+#[test_case::test_case(Signal::CorrectedMce, "corrected hardware error"; "CorrectedMce")]
+#[test_case::test_case(Signal::UncorrectedMce, "uncorrected hardware error"; "UncorrectedMce")]
+#[test_case::test_case(Signal::Crash, "crash"; "Crash")]
+fn the_signal_words(signal: Signal, words: &str) {
+    assert_eq!(signal_words(signal), words);
 }
 
 #[test]
@@ -396,11 +365,13 @@ fn a_variant_workload_shows_its_base() {
     for regime in togi_machine::REGIMES {
         for entry in togi_machine::workloads(regime) {
             let shown = workload_display(entry.id());
-            assert!(!shown.is_empty());
+            assert!(!shown.is_empty(), "{regime:?} workload {:?}", entry.id());
             if !entry.base.is_empty() {
                 assert_eq!(
                     shown,
-                    togi_machine::workload_by_id(entry.base).unwrap().label
+                    togi_machine::workload_by_id(entry.base).unwrap().label,
+                    "{regime:?} workload {:?}",
+                    entry.id()
                 );
             }
         }
@@ -680,118 +651,115 @@ fn core_phases_have_phrases() {
         None
     );
     assert_eq!(phrase(&phase(None, CorePhase::HasRoom, None)), None);
+}
+
+#[test_case::test_case(Some(CorePhase::Search), CorePhase::HasRoom, Some(-13), Tag::Limit; "passed solo")]
+#[test_case::test_case(Some(CorePhase::Search), CorePhase::HasRoom, None, Tag::Room; "room")]
+#[test_case::test_case(Some(CorePhase::Search), CorePhase::AtLimit, None, Tag::Limit; "limit")]
+#[test_case::test_case(None, CorePhase::Search, None, Tag::Step; "initial search")]
+#[test_case::test_case(None, CorePhase::HasRoom, None, Tag::Room; "initial room")]
+#[test_case::test_case(None, CorePhase::AtLimit, None, Tag::Limit; "initial limit")]
+#[test_case::test_case(Some(CorePhase::AtLimit), CorePhase::HasRoom, None, Tag::Room; "limit to room")]
+#[test_case::test_case(Some(CorePhase::HasRoom), CorePhase::Search, None, Tag::Step; "room to search")]
+fn core_phases_have_tags(from: Option<CorePhase>, to: CorePhase, pass: Option<i64>, word: Tag) {
+    let phase = |from, to, pass: Option<i64>| -> Payload {
+        let mut start = Start::search(-12);
+        (start.from, start.to, start.pass) = (from, to, pass);
+        transition(1, start).into()
+    };
     let Tagging::By(tag) = words(EventKind::CorePhase).tag else {
         panic!("a core phase is tagged by its payload");
     };
-    for (from, to, pass, word) in [
-        (search, CorePhase::HasRoom, Some(-13), Tag::Limit),
-        (search, CorePhase::HasRoom, None, Tag::Room),
-        (search, CorePhase::AtLimit, None, Tag::Limit),
-        (None, CorePhase::Search, None, Tag::Step),
-        (None, CorePhase::HasRoom, None, Tag::Room),
-        (None, CorePhase::AtLimit, None, Tag::Limit),
-        (
-            Some(CorePhase::AtLimit),
-            CorePhase::HasRoom,
-            None,
-            Tag::Room,
-        ),
-        (Some(CorePhase::HasRoom), CorePhase::Search, None, Tag::Step),
-    ] {
-        assert_eq!(tag(&phase(from, to, pass)), word, "{from:?} → {to:?}");
+    assert_eq!(tag(&phase(from, to, pass)), word, "{from:?} → {to:?}");
+}
+
+#[test_case::test_case(EventKind::TunerDecision; "TunerDecision")]
+#[test_case::test_case(EventKind::CorePhase; "CorePhase")]
+#[test_case::test_case(EventKind::CheckingCycle; "CheckingCycle")]
+#[test_case::test_case(EventKind::CheckingStep; "CheckingStep")]
+#[test_case::test_case(EventKind::CheckingChain; "CheckingChain")]
+#[test_case::test_case(EventKind::HuntStart; "HuntStart")]
+#[test_case::test_case(EventKind::Combination; "Combination")]
+#[test_case::test_case(EventKind::DeepeningRound; "DeepeningRound")]
+#[test_case::test_case(EventKind::DeadEnd; "DeadEnd")]
+#[test_case::test_case(EventKind::Mce; "Mce")]
+fn a_phrase_applies_only_to_its_own_kind(kind: EventKind) {
+    let other = warning("x");
+    let table = words(kind);
+    if let Phrase::Of(of) = table.detailed {
+        assert_eq!(of(&other), None, "{kind}");
+    }
+    if let (Brief::Of(of), false) = (table.compact, kind == EventKind::DeadEnd) {
+        assert_eq!(of(&other), None, "{kind}");
+    }
+    if let (History::Line(of), false) = (table.history, kind == EventKind::CheckingChain) {
+        assert_eq!(of(&other), None, "{kind}");
     }
 }
 
-#[test]
-fn a_phrase_applies_only_to_its_own_kind() {
+#[test_case::test_case(EventKind::TrialEnd; "TrialEnd")]
+#[test_case::test_case(EventKind::Failure; "Failure")]
+#[test_case::test_case(EventKind::TunerDecision; "TunerDecision")]
+#[test_case::test_case(EventKind::HuntGroup; "HuntGroup")]
+#[test_case::test_case(EventKind::CorePhase; "CorePhase")]
+fn a_tag_applies_only_to_its_own_kind(kind: EventKind) {
     let other = warning("x");
-    for kind in [
-        EventKind::TunerDecision,
-        EventKind::CorePhase,
-        EventKind::CheckingCycle,
-        EventKind::CheckingStep,
-        EventKind::CheckingChain,
-        EventKind::HuntStart,
-        EventKind::Combination,
-        EventKind::DeepeningRound,
-        EventKind::DeadEnd,
-        EventKind::Mce,
-    ] {
-        let table = words(kind);
-        if let Phrase::Of(of) = table.detailed {
-            assert_eq!(of(&other), None, "{kind}");
-        }
-        if let (Brief::Of(of), false) = (table.compact, kind == EventKind::DeadEnd) {
-            assert_eq!(of(&other), None, "{kind}");
-        }
-        if let (History::Line(of), false) = (table.history, kind == EventKind::CheckingChain) {
-            assert_eq!(of(&other), None, "{kind}");
-        }
-    }
-    for kind in [
-        EventKind::TrialEnd,
-        EventKind::Failure,
-        EventKind::TunerDecision,
-        EventKind::HuntGroup,
-        EventKind::CorePhase,
-    ] {
-        let Tagging::By(of) = words(kind).tag else {
-            panic!("{kind} is tagged by its payload");
-        };
-        let fallback = match kind {
-            EventKind::TrialEnd => Tag::Unclear,
-            EventKind::Failure => Tag::Fail,
-            EventKind::TunerDecision => Tag::Backoff,
-            EventKind::HuntGroup => Tag::Group,
-            EventKind::SessionStart
-            | EventKind::SessionContext
-            | EventKind::SessionBaseline
-            | EventKind::SessionNotice
-            | EventKind::SessionWarning
-            | EventKind::SessionArchived
-            | EventKind::SessionCarried
-            | EventKind::ConfigLoaded
-            | EventKind::PreflightCheck
-            | EventKind::SmuIntent
-            | EventKind::SmuWrite
-            | EventKind::SmuReadback
-            | EventKind::SmuError
-            | EventKind::ProfileApplied
-            | EventKind::ProfileChange
-            | EventKind::ProfileRestored
-            | EventKind::TrialIntent
-            | EventKind::TrialStart
-            | EventKind::TrialProgress
-            | EventKind::TrialSignal
-            | EventKind::TrialSample
-            | EventKind::TrialCarried
-            | EventKind::FailureCarried
-            | EventKind::Mce
-            | EventKind::CrashDetected
-            | EventKind::CorePhase
-            | EventKind::CheckingCycle
-            | EventKind::CheckingStep
-            | EventKind::CheckingChain
-            | EventKind::HostRanking
-            | EventKind::HuntStart
-            | EventKind::HuntEnd
-            | EventKind::HuntSkipped
-            | EventKind::Combination
-            | EventKind::DeepeningRound
-            | EventKind::TunerWarning
-            | EventKind::BackendRetry
-            | EventKind::CommandReset
-            | EventKind::DefectFound
-            | EventKind::DefectAnswered
-            | EventKind::DeadEnd
-            | EventKind::BootSavedEntry
-            | EventKind::BootLeaveReason
-            | EventKind::Shutdown
-            | EventKind::JournalTorn
-            | EventKind::StateRebuilt => Tag::Limit,
-        };
-        assert_eq!(of(&other), fallback, "{kind}");
-    }
+    let Tagging::By(of) = words(kind).tag else {
+        panic!("{kind} is tagged by its payload");
+    };
+    let fallback = match kind {
+        EventKind::TrialEnd => Tag::Unclear,
+        EventKind::Failure => Tag::Fail,
+        EventKind::TunerDecision => Tag::Backoff,
+        EventKind::HuntGroup => Tag::Group,
+        EventKind::SessionStart
+        | EventKind::SessionContext
+        | EventKind::SessionBaseline
+        | EventKind::SessionNotice
+        | EventKind::SessionWarning
+        | EventKind::SessionArchived
+        | EventKind::SessionCarried
+        | EventKind::ConfigLoaded
+        | EventKind::PreflightCheck
+        | EventKind::SmuIntent
+        | EventKind::SmuWrite
+        | EventKind::SmuReadback
+        | EventKind::SmuError
+        | EventKind::ProfileApplied
+        | EventKind::ProfileChange
+        | EventKind::ProfileRestored
+        | EventKind::TrialIntent
+        | EventKind::TrialStart
+        | EventKind::TrialProgress
+        | EventKind::TrialSignal
+        | EventKind::TrialSample
+        | EventKind::TrialCarried
+        | EventKind::FailureCarried
+        | EventKind::Mce
+        | EventKind::CrashDetected
+        | EventKind::CorePhase
+        | EventKind::CheckingCycle
+        | EventKind::CheckingStep
+        | EventKind::CheckingChain
+        | EventKind::HostRanking
+        | EventKind::HuntStart
+        | EventKind::HuntEnd
+        | EventKind::HuntSkipped
+        | EventKind::Combination
+        | EventKind::DeepeningRound
+        | EventKind::TunerWarning
+        | EventKind::BackendRetry
+        | EventKind::CommandReset
+        | EventKind::DefectFound
+        | EventKind::DefectAnswered
+        | EventKind::DeadEnd
+        | EventKind::BootSavedEntry
+        | EventKind::BootLeaveReason
+        | EventKind::Shutdown
+        | EventKind::JournalTorn
+        | EventKind::StateRebuilt => Tag::Limit,
+    };
+    assert_eq!(of(&other), fallback, "{kind}");
 }
 
 #[test]
@@ -823,19 +791,15 @@ fn a_hunt_group_is_tagged_by_how_it_was_answered() {
     );
 }
 
-#[test]
-fn every_tag_has_a_word() {
-    for (tag, word) in [
-        (Tag::Unclear, "unclear"),
-        (Tag::Reset, "reset"),
-        (Tag::Mce, "mce"),
-        (Tag::Note, "note"),
-        (Tag::Confirm, "confirm"),
-        (Tag::Resume, "resume"),
-        (Tag::Hold, "hold"),
-    ] {
-        assert_eq!(tag.word(), word);
-    }
+#[test_case::test_case(Tag::Unclear, "unclear"; "unclear")]
+#[test_case::test_case(Tag::Reset, "reset"; "reset")]
+#[test_case::test_case(Tag::Mce, "mce"; "mce")]
+#[test_case::test_case(Tag::Note, "note"; "note")]
+#[test_case::test_case(Tag::Confirm, "confirm"; "confirm")]
+#[test_case::test_case(Tag::Resume, "resume"; "resume")]
+#[test_case::test_case(Tag::Hold, "hold"; "hold")]
+fn every_tag_has_a_word(tag: Tag, word: &str) {
+    assert_eq!(tag.word(), word);
 }
 
 #[test]
@@ -852,91 +816,30 @@ fn an_idle_failure_is_worded_but_a_crash_is_not() {
     assert!(failure_line(&unnamed).is_none(), "attributed to no core");
 }
 
-#[test]
-fn the_log_tags_each_kind_by_its_word() {
-    let mut known = failure(Signal::ComputationError, None);
-    known.known_failure = Some(seq(1));
-    let round: Payload = DeepeningRound {
-        round: nz(1),
-        event: RoundEvent::Start,
-        base: offsets(&[]),
-        base_seq: None,
-        target: offsets(&[]),
-        profile: offsets(&[]),
-        cores: set(&[]),
-        ranking: Vec::new(),
-        trials: None,
-        trial_s: None,
-        passed: false,
-        reason: None,
-    }
-    .into();
-    let step: Payload = CheckingStep {
-        cycle: nz(1),
-        step: nz(1),
-        profile: offsets(&[]),
-    }
-    .into();
-    let dead_end: Payload = DeadEnd {
-        condition: DeadEndCondition::Smu,
-        core: None,
-        detail: String::new(),
-        action: None,
-    }
-    .into();
-    let shutdown: Payload = togi_journal::Shutdown {
-        reason: togi_journal::ShutdownReason::Signal,
-        kernel_cursor: None,
-        kernel_error: None,
-        cycles: None,
-    }
-    .into();
-    let trial = togi_journal::TrialId::from("t".to_owned());
-    let mut probe = hunt_group(1, 2, &[0]);
-    probe.probe = Some(togi_journal::Member {
-        core: core(0),
-        offset: off(-1),
-    });
-    let rows: Vec<(Payload, &str)> = vec![
-        (known.into(), "skip"),
-        (failure(Signal::Stall, None).into(), "fail"),
-        (hunt_start(1, &[0]).into(), "hunt"),
-        (hunt_end(1, HuntOutcome::Culprit, &[0]).into(), "hunt"),
-        (
-            HuntSkipped {
-                failure: seq(1),
-                reason: String::new(),
-            }
-            .into(),
-            "hunt",
-        ),
-        (hunt_group(1, 1, &[0]).into(), "group"),
-        (probe.into(), "probe"),
-        (combination(1, 1, &[(0, -1)], false).into(), "combo"),
-        (round, "round"),
-        (step, "step"),
-        (cycle(1, togi_journal::CycleEvent::Start).into(), "cycle"),
-        (dead_end, "stop"),
-        (shutdown, "stop"),
-        (session_start(&[(0, 0)]), "start"),
-        (crash("boot", None).into(), "crash"),
-        (end_payload(&trial, Pass, None).into(), "pass"),
-        (
-            end_payload(&trial, Failure, Some(Signal::Stall)).into(),
-            "fail",
-        ),
-        (
-            end_payload(&trial, Failure, Some(Signal::Crash)).into(),
-            "crash",
-        ),
-        (end_payload(&trial, Inconclusive, None).into(), "unclear"),
-        (decision(Decision::Backoff, -10, -9).into(), "backoff"),
-        (decision(Decision::StepDeeper, -10, -15).into(), "step"),
-        (decision(Decision::Hold, -10, -10).into(), "hold"),
-        (warning("x"), "session warning"),
-        (smu_intent(0, -1), "smu intent"),
-    ];
-    for (payload, word) in rows {
-        assert_eq!(tag_word(&payload), word, "{}", payload.kind());
-    }
+#[test_case::test_case(&{ let mut known = failure(Signal::ComputationError, None); known.known_failure = Some(seq(1)); known.into() }, "skip"; "skip 1")]
+#[test_case::test_case(&failure(Signal::Stall, None).into(), "fail"; "fail 2")]
+#[test_case::test_case(&hunt_start(1, &[0]).into(), "hunt"; "hunt 3")]
+#[test_case::test_case(&hunt_end(1, HuntOutcome::Culprit, &[0]).into(), "hunt"; "hunt 4")]
+#[test_case::test_case(&HuntSkipped { failure: seq(1), reason: String::new(), } .into(), "hunt"; "hunt 5")]
+#[test_case::test_case(&hunt_group(1, 1, &[0]).into(), "group"; "group 6")]
+#[test_case::test_case(&{ let mut probe = hunt_group(1, 2, &[0]); probe.probe = Some(togi_journal::Member { core: core(0), offset: off(-1) }); probe.into() }, "probe"; "probe 7")]
+#[test_case::test_case(&combination(1, 1, &[(0, -1)], false).into(), "combo"; "combo 8")]
+#[test_case::test_case(&DeepeningRound { round: nz(1), event: RoundEvent::Start, base: offsets(&[]), base_seq: None, target: offsets(&[]), profile: offsets(&[]), cores: set(&[]), ranking: Vec::new(), trials: None, trial_s: None, passed: false, reason: None, } .into(), "round"; "round 9")]
+#[test_case::test_case(&CheckingStep { cycle: nz(1), step: nz(1), profile: offsets(&[]), } .into(), "step"; "step 10")]
+#[test_case::test_case(&cycle(1, togi_journal::CycleEvent::Start).into(), "cycle"; "cycle 11")]
+#[test_case::test_case(&DeadEnd { condition: DeadEndCondition::Smu, core: None, detail: String::new(), action: None, } .into(), "stop"; "stop 12")]
+#[test_case::test_case(&togi_journal::Shutdown { reason: togi_journal::ShutdownReason::Signal, kernel_cursor: None, kernel_error: None, cycles: None, } .into(), "stop"; "stop 13")]
+#[test_case::test_case(&session_start(&[(0, 0)]), "start"; "start 14")]
+#[test_case::test_case(&crash("boot", None).into(), "crash"; "crash 15")]
+#[test_case::test_case(&end_payload(&togi_journal::TrialId::from("t".to_owned()), Pass, None).into(), "pass"; "pass 16")]
+#[test_case::test_case(&end_payload(&togi_journal::TrialId::from("t".to_owned()), Failure, Some(Signal::Stall)).into(), "fail"; "fail 17")]
+#[test_case::test_case(&end_payload(&togi_journal::TrialId::from("t".to_owned()), Failure, Some(Signal::Crash)).into(), "crash"; "crash 18")]
+#[test_case::test_case(&end_payload(&togi_journal::TrialId::from("t".to_owned()), Inconclusive, None).into(), "unclear"; "unclear 19")]
+#[test_case::test_case(&decision(Decision::Backoff, -10, -9).into(), "backoff"; "backoff 20")]
+#[test_case::test_case(&decision(Decision::StepDeeper, -10, -15).into(), "step"; "step 21")]
+#[test_case::test_case(&decision(Decision::Hold, -10, -10).into(), "hold"; "hold 22")]
+#[test_case::test_case(&warning("x"), "session warning"; "session warning 23")]
+#[test_case::test_case(&smu_intent(0, -1), "smu intent"; "smu intent 24")]
+fn the_log_tags_each_kind_by_its_word(payload: &Payload, word: &str) {
+    assert_eq!(tag_word(payload), word, "{}", payload.kind());
 }

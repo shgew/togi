@@ -835,132 +835,128 @@ mod tests {
         assert!(recorder.restored());
     }
 
-    #[test]
-    fn real_process_the_reader_is_joined_on_every_exit() {
+    #[test_case::test_case("quit"; "quit")]
+    #[test_case::test_case("end of input"; "end of input")]
+    #[test_case::test_case("stop"; "stop")]
+    #[test_case::test_case("clear error"; "clear error")]
+    #[test_case::test_case("size error"; "size error")]
+    #[test_case::test_case("draw error"; "draw error")]
+    #[test_case::test_case("panic"; "panic")]
+    fn real_process_the_reader_is_joined_on_every_exit(exit: &str) {
         let state = MemoryJournal::new();
-        for exit in [
-            "quit",
-            "end of input",
-            "stop",
-            "clear error",
-            "size error",
-            "draw error",
-            "panic",
-        ] {
-            let (read, write) = pipe();
-            let stop = Stop::new();
-            let live = Config {
-                watch: None,
-                tick: None,
-                stop: Some(&stop),
-                terminating: false,
-                quit: Quit::Keys,
-            };
-            let faults = match exit {
-                "clear error" => Faults {
-                    clear: true,
-                    ..Faults::default()
-                },
-                "size error" => Faults {
-                    size_from: Some(3),
-                    ..Faults::default()
-                },
-                "draw error" => Faults {
-                    draw_from: Some(1),
-                    ..Faults::default()
-                },
-                _ => Faults::default(),
-            };
-            let recorder = Recorder::failing(80, 12, faults);
-            match exit {
-                "quit" => {
-                    rustix::io::write(&write, b"q").unwrap();
-                }
-                "stop" => stop.stop(),
-                _ => {}
+        let (read, write) = pipe();
+        let stop = Stop::new();
+        let live = Config {
+            watch: None,
+            tick: None,
+            stop: Some(&stop),
+            terminating: false,
+            quit: Quit::Keys,
+        };
+        let faults = match exit {
+            "clear error" => Faults {
+                clear: true,
+                ..Faults::default()
+            },
+            "size error" => Faults {
+                size_from: Some(3),
+                ..Faults::default()
+            },
+            "draw error" => Faults {
+                draw_from: Some(1),
+                ..Faults::default()
+            },
+            _ => Faults::default(),
+        };
+        let recorder = Recorder::failing(80, 12, faults);
+        match exit {
+            "quit" => {
+                rustix::io::write(&write, b"q").unwrap();
             }
-            let write = if exit == "end of input" {
-                drop(write);
-                None
-            } else {
-                Some(write)
-            };
-            let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                drive_with(
-                    &tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .unwrap(),
-                    recorder.backend(),
-                    Source::memory(&state, None),
-                    &live,
-                    Some(read.as_fd()),
-                    Colours::None,
-                    || Timestamp::UNIX_EPOCH,
-                    |journal, screen, now, buf| {
-                        assert!(exit != "panic", "frame panic");
-                        plain(journal, screen, now, buf)
-                    },
-                    silent_listener,
-                )
-            }));
-            match exit {
-                "panic" => assert!(result.is_err()),
-                "clear error" | "size error" | "draw error" => {
-                    assert!(
-                        matches!(result.unwrap(), Err(Error::Terminal { .. })),
-                        "{exit}"
-                    );
-                }
-                _ => result.unwrap().unwrap(),
+            "stop" => stop.stop(),
+            _ => {}
+        }
+        let write = if exit == "end of input" {
+            drop(write);
+            None
+        } else {
+            Some(write)
+        };
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            drive_with(
+                &tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap(),
+                recorder.backend(),
+                Source::memory(&state, None),
+                &live,
+                Some(read.as_fd()),
+                Colours::None,
+                || Timestamp::UNIX_EPOCH,
+                |journal, screen, now, buf| {
+                    assert!(exit != "panic", "frame panic");
+                    plain(journal, screen, now, buf)
+                },
+                silent_listener,
+            )
+        }));
+        match exit {
+            "panic" => assert!(result.is_err()),
+            "clear error" | "size error" | "draw error" => {
+                assert!(
+                    matches!(result.unwrap(), Err(Error::Terminal { .. })),
+                    "{exit}"
+                );
             }
-            assert!(recorder.restored(), "{exit}");
-            if let Some(write) = &write {
-                assert_pipe_untouched(&read, write);
-            }
+            _ => result.unwrap().unwrap(),
+        }
+        assert!(recorder.restored(), "{exit}");
+        if let Some(write) = &write {
+            assert_pipe_untouched(&read, write);
         }
     }
 
-    #[test]
-    fn cancellation_ends_the_dashboard_and_restores_the_terminal() {
+    #[test_case::test_case("SIGINT"; "SIGINT")]
+    #[test_case::test_case("SIGTERM"; "SIGTERM")]
+    #[test_case::test_case("SIGHUP"; "SIGHUP")]
+    fn cancellation_ends_the_dashboard_and_restores_the_terminal(name: &str) {
         let state = MemoryJournal::new();
-        for name in ["SIGINT", "SIGTERM", "SIGHUP"] {
-            let recorder = Recorder::new(80, 12);
-            let stop = Stop::new();
-            let live = Config {
-                watch: None,
-                tick: None,
-                stop: Some(&stop),
-                terminating: true,
-                quit: Quit::Keys,
-            };
-            let watchdog = Watchdog::start({
-                let stop = stop.clone();
-                move || stop.stop()
-            });
-            let mut sent = false;
-            run_events(
-                &recorder,
-                &live,
-                Source::memory(&state, None),
-                Colours::Console,
-                |journal, screen, now, buf, events| {
-                    if !sent {
-                        sent = true;
-                        events.send(Event::Cancel).unwrap();
-                    }
-                    frozen(journal, screen, now, buf)
-                },
-            )
-            .unwrap();
-            assert!(!watchdog.fired(), "{name} did not end the dashboard");
-            assert!(recorder.restored(), "{name}");
-            assert_eq!(
-                recorder.raw().last().map(String::as_str),
-                Some(RESET_PALETTE),
-                "{name}: the palette"
-            );
-        }
+        let recorder = Recorder::new(80, 12);
+        let stop = Stop::new();
+        let live = Config {
+            watch: None,
+            tick: None,
+            stop: Some(&stop),
+            terminating: true,
+            quit: Quit::Keys,
+        };
+        let watchdog = Watchdog::start({
+            let stop = stop.clone();
+            move || stop.stop()
+        });
+        let mut sent = false;
+        run_events(
+            &recorder,
+            &live,
+            Source::memory(&state, None),
+            Colours::Console,
+            |journal, screen, now, buf, events| {
+                if !sent {
+                    sent = true;
+                    events.send(Event::Cancel).unwrap();
+                }
+                frozen(journal, screen, now, buf)
+            },
+        )
+        .unwrap();
+        assert!(!watchdog.fired(), "{name} did not end the dashboard");
+        assert!(recorder.restored(), "{name}");
+        assert_eq!(
+            recorder.raw().last().map(String::as_str),
+            Some(RESET_PALETTE),
+            "{name}: the palette"
+        );
     }
 
     /// How long a test waits for a dashboard that should already have ended.
@@ -1334,23 +1330,22 @@ mod tests {
         );
     }
 
-    #[test]
-    fn one_frame_of_another_builds_journal_prints_nothing_and_leaves_the_file_alone() {
+    #[test_case::test_case(120; "normal width")]
+    #[test_case::test_case(400; "wide")]
+    fn one_frame_of_another_builds_journal_prints_nothing_and_leaves_the_file_alone(width: u16) {
         let state = MemoryJournal::new();
         state.write(&super::testing::go_journal());
         let before = state.snapshot();
-        for width in [120, 400] {
-            let mut out = Vec::new();
-            let error = one_frame(&state, width, 33, &mut out).unwrap_err();
-            assert!(out.is_empty(), "a refusal drew a frame");
-            assert!(
-                matches!(error, Error::Journal(SourceError::Foreign(_))),
-                "{error:?}"
-            );
-            let text = error.to_string();
-            assert!(text.contains("events.jsonl"), "{text}");
-            assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
-        }
+        let mut out = Vec::new();
+        let error = one_frame(&state, width, 33, &mut out).unwrap_err();
+        assert!(out.is_empty(), "a refusal drew a frame");
+        assert!(
+            matches!(error, Error::Journal(SourceError::Foreign(_))),
+            "{error:?}"
+        );
+        let text = error.to_string();
+        assert!(text.contains("events.jsonl"), "{text}");
+        assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
         let after = state.snapshot();
         assert_eq!(before.0, after.0);
         assert_eq!(before.1, after.1);

@@ -532,9 +532,13 @@ mod tests {
     fn the_cut_marker_is_one_cell_only_on_rich() {
         assert_eq!(cut_marker(RICH), "…");
         assert_eq!(display_width(cut_marker(RICH), RICH), 1);
-        for colours in [Colours::Full, Colours::Console, Colours::None] {
-            assert_eq!(cut_marker(colours), "...", "{colours:?}");
-        }
+    }
+
+    #[test_case::test_case(Colours::Full; "full")]
+    #[test_case::test_case(Colours::Console; "console")]
+    #[test_case::test_case(Colours::None; "none")]
+    fn the_console_cut_marker_is_three_cells(colours: Colours) {
+        assert_eq!(cut_marker(colours), "...", "{colours:?}");
     }
 
     fn red() -> Style {
@@ -709,16 +713,16 @@ mod tests {
         assert_eq!(console_text(text), want, "console_text({text:?})");
     }
 
-    #[test]
-    fn inert_escapes_controls_visibly_and_is_idempotent() {
+    #[test_case::test_case(Colours::Full; "full")]
+    #[test_case::test_case(Colours::Console; "console")]
+    #[test_case::test_case(Colours::None; "none")]
+    fn inert_escapes_controls_visibly_and_is_idempotent(colours: Colours) {
         let hostile =
             "日本語\x1b[2J\x1b]52;c;data\x07\r\n\u{9b}31m\u{9d}0;title\u{9c}\u{2028}\u{2029}";
         let escaped = r"\u65e5\u672c\u8a9e\x1b[2J\x1b]52;c;data\x07\r\n\u009b31m\u009d0;title\u009c\u2028\u2029";
-        for colours in [Colours::Full, Colours::Console, Colours::None] {
-            assert_eq!(inert(hostile, colours), escaped, "{colours:?}");
-            assert_eq!(inert(escaped, colours), escaped, "{colours:?}");
-            assert!(inert(hostile, colours).chars().all(is_console_glyph));
-        }
+        assert_eq!(inert(hostile, colours), escaped, "{colours:?}");
+        assert_eq!(inert(escaped, colours), escaped, "{colours:?}");
+        assert!(inert(hostile, colours).chars().all(is_console_glyph));
     }
 
     #[test]
@@ -790,14 +794,31 @@ mod tests {
         );
     }
 
-    #[test]
-    fn the_console_glyph_set_holds_what_the_frames_draw() {
-        for glyph in "►▄░█▀▬·│─┌┐└┘→↑↓°".chars() {
-            assert!(is_console_glyph(glyph), "{glyph:?}");
-        }
-        for glyph in "✓日…×—“".chars() {
-            assert!(!is_console_glyph(glyph), "{glyph:?}");
-        }
+    #[test_case::test_case('►', true; "accepted 0")]
+    #[test_case::test_case('▄', true; "accepted 1")]
+    #[test_case::test_case('░', true; "accepted 2")]
+    #[test_case::test_case('█', true; "accepted 3")]
+    #[test_case::test_case('▀', true; "accepted 4")]
+    #[test_case::test_case('▬', true; "accepted 5")]
+    #[test_case::test_case('·', true; "accepted 6")]
+    #[test_case::test_case('│', true; "accepted 7")]
+    #[test_case::test_case('─', true; "accepted 8")]
+    #[test_case::test_case('┌', true; "accepted 9")]
+    #[test_case::test_case('┐', true; "accepted 10")]
+    #[test_case::test_case('└', true; "accepted 11")]
+    #[test_case::test_case('┘', true; "accepted 12")]
+    #[test_case::test_case('→', true; "accepted 13")]
+    #[test_case::test_case('↑', true; "accepted 14")]
+    #[test_case::test_case('↓', true; "accepted 15")]
+    #[test_case::test_case('°', true; "accepted 16")]
+    #[test_case::test_case('✓', false; "rejected 0")]
+    #[test_case::test_case('日', false; "rejected 1")]
+    #[test_case::test_case('…', false; "rejected 2")]
+    #[test_case::test_case('×', false; "rejected 3")]
+    #[test_case::test_case('—', false; "rejected 4")]
+    #[test_case::test_case('“', false; "rejected 5")]
+    fn the_console_glyph_set_holds_what_the_frames_draw(glyph: char, accepted: bool) {
+        assert_eq!(is_console_glyph(glyph), accepted, "{glyph:?}");
         assert_eq!(super::IBM437.chars().count(), 159);
     }
 

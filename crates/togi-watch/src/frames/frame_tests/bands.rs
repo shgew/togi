@@ -461,8 +461,12 @@ fn a_command_shutdown_does_not_mask_an_unrecovered_crash() {
     );
 }
 
-#[test]
-fn a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next() {
+#[test_case::test_case(240, 67; "wide")]
+#[test_case::test_case(160, 45; "medium")]
+fn a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the_next(
+    width: u16,
+    height: u16,
+) {
     let built = togi_watchtest::cycle_completed_by_rerun().expect("the rerun journals");
     assert!(!built.running.is_empty());
     for (n, events) in built.running.iter().enumerate() {
@@ -479,15 +483,13 @@ fn a_rerun_that_completes_the_cycle_names_the_step_checking_resumes_at_never_the
             "rerun {}: {said}",
             n + 1
         );
-        for (width, height) in [(240, 67), (160, 45)] {
-            let sc = main_screen(width, height);
-            let stage = stage_line(&fx.draw(&sc, fx.now).0, &sc);
-            assert!(
-                stage.contains("paused at step 2"),
-                "rerun {} at {width}x{height}: {stage:?}",
-                n + 1
-            );
-        }
+        let sc = main_screen(width, height);
+        let stage = stage_line(&fx.draw(&sc, fx.now).0, &sc);
+        assert!(
+            stage.contains("paused at step 2"),
+            "rerun {} at {width}x{height}: {stage:?}",
+            n + 1
+        );
     }
 }
 

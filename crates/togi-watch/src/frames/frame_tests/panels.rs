@@ -61,8 +61,13 @@ fn region(rows: &[String], rect: ratatui::layout::Rect) -> Vec<String> {
         .collect()
 }
 
-#[test]
-fn a_history_too_short_for_its_entries_counts_every_one_it_leaves_out() {
+#[test_case::test_case(120, 24; "120x24")]
+#[test_case::test_case(120, 25; "120x25")]
+#[test_case::test_case(160, 24; "160x24")]
+#[test_case::test_case(160, 25; "160x25")]
+#[test_case::test_case(240, 24; "240x24")]
+#[test_case::test_case(240, 25; "240x25")]
+fn a_history_too_short_for_its_entries_counts_every_one_it_leaves_out(width: u16, height: u16) {
     let cores: Vec<(u8, u8)> = (0..16).map(|id| (id, id / 8)).collect();
     let mut script = Script::new(&cores, &[Start::search(0); 16]);
     for index in 0..700 {
@@ -72,81 +77,76 @@ fn a_history_too_short_for_its_entries_counts_every_one_it_leaves_out() {
     let snapshot = fx.model.snapshot();
     let total = snapshot.history.len() + snapshot.history_dropped;
     assert!(total > 700);
-    for width in [120, 160, 240] {
-        for height in [24, 25] {
-            let sc = main_screen(width, height);
-            let zone = TimeZone::UTC;
-            let scene = Scene::new(snapshot, fx.now, &zone, Colours::None);
-            let history = measure(&scene, &sc).history;
-            assert!(history.height >= 1, "{width}x{height}");
-            let (buf, _) = fx.draw(&sc, fx.now);
-            let rows = region(&rows_of(&buf), history);
-            let (last, entries) = rows.split_last().expect("a history row");
-            let visible = entries
-                .iter()
-                .filter(|row| row.as_bytes().first().is_some_and(u8::is_ascii_digit))
-                .count();
-            assert_eq!(
-                last,
-                &format!("+{} more", total - visible),
-                "{width}x{height}: the last visible history row counts every hidden entry ({rows:?})"
-            );
-        }
-    }
+    let sc = main_screen(width, height);
+    let zone = TimeZone::UTC;
+    let scene = Scene::new(snapshot, fx.now, &zone, Colours::None);
+    let history = measure(&scene, &sc).history;
+    assert!(history.height >= 1, "{width}x{height}");
+    let (buf, _) = fx.draw(&sc, fx.now);
+    let rows = region(&rows_of(&buf), history);
+    let (last, entries) = rows.split_last().expect("a history row");
+    let visible = entries
+        .iter()
+        .filter(|row| row.as_bytes().first().is_some_and(u8::is_ascii_digit))
+        .count();
+    assert_eq!(
+        last,
+        &format!("+{} more", total - visible),
+        "{width}x{height}: the last visible history row counts every hidden entry ({rows:?})"
+    );
 }
 
-#[test]
-fn a_combination_wider_than_its_columns_names_the_omitted_cores_and_the_journal_bound() {
-    for (members, omitted) in [
-        (vec![0u8, 1, 2, 3, 4, 5, 6, 7, 9], "09"),
-        (vec![0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 15], "09 11 15"),
-    ] {
-        let cores = (0..16)
-            .map(|id| {
-                let mut view = core_view(id, id / 8, CoreState::AtLimit);
-                view.profile = off(-20);
-                view
+#[test_case::test_case(&[0, 1, 2, 3, 4, 5, 6, 7, 9], "09"; "one omitted")]
+#[test_case::test_case(&[0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 15], "09 11 15"; "three omitted")]
+fn a_combination_wider_than_its_columns_names_the_omitted_cores_and_the_journal_bound(
+    members: &[u8],
+    omitted: &str,
+) {
+    let cores = (0..16)
+        .map(|id| {
+            let mut view = core_view(id, id / 8, CoreState::AtLimit);
+            view.profile = off(-20);
+            view
+        })
+        .collect();
+    let combos = vec![ComboView {
+        id: CombinationId::new(nz(1)),
+        members: members
+            .iter()
+            .rev()
+            .map(|&id| Member {
+                core: core(id),
+                offset: off(-25),
             })
-            .collect();
-        let combos = vec![ComboView {
-            id: CombinationId::new(nz(1)),
-            members: members
-                .iter()
-                .rev()
-                .map(|&id| Member {
-                    core: core(id),
-                    offset: off(-25),
-                })
-                .collect(),
-            hunt: 7,
-            probed: true,
-            fallback: false,
-            holds: None,
-            clear: set(&[]),
-        }];
-        let hand = Hand::new(cores, combos);
-        let sc = main_screen(240, 67);
-        let (buf, _) = super::draw_journal(&hand.journal(), &sc, some_time(), &TimeZone::UTC);
-        let Journal::Ready { snapshot, .. } = hand.journal() else {
-            unreachable!()
-        };
-        let zone = TimeZone::UTC;
-        let scene = Scene::new(snapshot, some_time(), &zone, Colours::None);
-        let context = region(&rows_of(&buf), measure(&scene, &sc).context);
-        assert_eq!(
-            context[3],
-            format!(
-                "columns show 8 of {} member cores; not shown: {omitted} · l: last 400 events",
-                members.len()
-            ),
-            "{context:?}"
-        );
-        for id in &members[..8] {
-            assert!(context[2].contains(&format!("{id:02}")), "{}", context[2]);
-        }
-        for id in &members[8..] {
-            assert!(!context[2].contains(&format!("{id:02}")), "{}", context[2]);
-        }
+            .collect(),
+        hunt: 7,
+        probed: true,
+        fallback: false,
+        holds: None,
+        clear: set(&[]),
+    }];
+    let hand = Hand::new(cores, combos);
+    let sc = main_screen(240, 67);
+    let (buf, _) = super::draw_journal(&hand.journal(), &sc, some_time(), &TimeZone::UTC);
+    let Journal::Ready { snapshot, .. } = hand.journal() else {
+        unreachable!()
+    };
+    let zone = TimeZone::UTC;
+    let scene = Scene::new(snapshot, some_time(), &zone, Colours::None);
+    let context = region(&rows_of(&buf), measure(&scene, &sc).context);
+    assert_eq!(
+        context[3],
+        format!(
+            "columns show 8 of {} member cores; not shown: {omitted} · l: last 400 events",
+            members.len()
+        ),
+        "{context:?}"
+    );
+    for id in &members[..8] {
+        assert!(context[2].contains(&format!("{id:02}")), "{}", context[2]);
+    }
+    for id in &members[8..] {
+        assert!(!context[2].contains(&format!("{id:02}")), "{}", context[2]);
     }
 }
 
@@ -210,8 +210,11 @@ fn r7_names() -> Vec<String> {
         .collect()
 }
 
-#[test]
-fn a_short_dashboard_reaches_every_r7_workload_and_the_running_part() {
+#[test_case::test_case(false, false; "own False keys False")]
+#[test_case::test_case(false, true; "own False keys True")]
+#[test_case::test_case(true, false; "own True keys False")]
+#[test_case::test_case(true, true; "own True keys True")]
+fn a_short_dashboard_reaches_every_r7_workload_and_the_running_part(own: bool, keys: bool) {
     let fx = Fixture::scenario(Scenario::Checking);
     let real = fx.model.snapshot();
     let populated: Vec<R7CoreStatus> = real
@@ -225,43 +228,40 @@ fn a_short_dashboard_reaches_every_r7_workload_and_the_running_part() {
         .collect();
     let mut with_own = real;
     with_own.r7 = &populated;
-    for snapshot in [real, with_own] {
-        let journal = Journal::Ready {
-            snapshot,
-            log: snapshot.log(),
+    let snapshot = if own { with_own } else { real };
+    let journal = Journal::Ready {
+        snapshot,
+        log: snapshot.log(),
+    };
+    let draw = |height| {
+        let sc = Screen {
+            keys,
+            ..main_screen(120, height)
         };
-        for keys in [false, true] {
-            let draw = |height| {
-                let sc = Screen {
-                    keys,
-                    ..main_screen(120, height)
-                };
-                super::draw_journal(&journal, &sc, fx.now, &TimeZone::UTC).0
-            };
-            let buf = draw(33);
-            let rows = rows_of(&buf);
-            let shown = text(&buf);
-            assert!(shown.contains("self-sufficient"), "keys {keys}: {shown}");
-            for name in r7_names() {
-                assert!(
-                    rows.iter().any(|row| row.starts_with(&format!(" {name} "))),
-                    "keys {keys}: the R7 {name} status is omitted:\n{shown}"
-                );
-            }
-            assert!(shown.contains("trial 1 of"), "keys {keys}:\n{shown}");
-            let rule = rows
-                .iter()
-                .position(|row| row.starts_with(" R7 ─"))
-                .expect("the R7 rule");
-            let more = rows[rule - 2].trim_start();
-            assert!(
-                more.starts_with('+') && more.contains(" more"),
-                "keys {keys}: the cycle checklist is cut without saying how much it leaves out:\n{shown}"
-            );
-            let short = text(&draw(31));
-            assert!(short.contains("trial 1 of"), "keys {keys}:\n{short}");
-        }
+        super::draw_journal(&journal, &sc, fx.now, &TimeZone::UTC).0
+    };
+    let buf = draw(33);
+    let rows = rows_of(&buf);
+    let shown = text(&buf);
+    assert!(shown.contains("self-sufficient"), "keys {keys}: {shown}");
+    for name in r7_names() {
+        assert!(
+            rows.iter().any(|row| row.starts_with(&format!(" {name} "))),
+            "keys {keys}: the R7 {name} status is omitted:\n{shown}"
+        );
     }
+    assert!(shown.contains("trial 1 of"), "keys {keys}:\n{shown}");
+    let rule = rows
+        .iter()
+        .position(|row| row.starts_with(" R7 ─"))
+        .expect("the R7 rule");
+    let more = rows[rule - 2].trim_start();
+    assert!(
+        more.starts_with('+') && more.contains(" more"),
+        "keys {keys}: the cycle checklist is cut without saying how much it leaves out:\n{shown}"
+    );
+    let short = text(&draw(31));
+    assert!(short.contains("trial 1 of"), "keys {keys}:\n{short}");
 }
 
 #[test]

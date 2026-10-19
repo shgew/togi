@@ -29,19 +29,23 @@ fn every_dead_end_condition_is_narrated_with_and_without_a_saved_profile() {
             }
             let scene = fx.scene(ts(20));
             let said = story(&scene);
-            assert_eq!(said.label, "DEAD END", "{condition:?}");
-            assert!(!said.lines.is_empty(), "{condition:?}");
+            assert_eq!(said.label, "DEAD END", "{condition:?} saved {saved}");
+            assert!(!said.lines.is_empty(), "{condition:?} saved {saved}");
             let band = resting_band(&scene);
-            assert_eq!(band.title, "DEAD END", "{condition:?}");
+            assert_eq!(band.title, "DEAD END", "{condition:?} saved {saved}");
             assert_eq!(
                 band.lines[0],
                 format!(
                     "{}: the recorded detail",
                     condition.as_str().replace('_', " ")
                 ),
-                "{condition:?}"
+                "{condition:?} saved {saved}"
             );
-            assert_eq!(band.lines.len(), 1 + usize::from(saved), "{condition:?}");
+            assert_eq!(
+                band.lines.len(),
+                1 + usize::from(saved),
+                "{condition:?} saved {saved}"
+            );
         }
     }
 }
@@ -153,15 +157,18 @@ fn every_premise_and_uncertainty_is_narrated_without_inventing_a_next_trial() {
                         one.top_requester = flags & 8 != 0;
                         fx.forecast.branches = vec![one];
                         let scene = fx.scene(ts(1010));
+                        let input = format!(
+                            "{premise:?} {uncertainty:?} decisions {decision:?} next {next:?} flags {flags}"
+                        );
                         let rows = outcome_rows(&scene);
-                        assert!(!rows.is_empty(), "{premise:?} {uncertainty:?} says nothing");
+                        assert!(!rows.is_empty(), "{input} says nothing");
                         for row in &rows {
-                            assert!(!row.label.is_empty(), "{premise:?} {uncertainty:?}");
+                            assert!(!row.label.is_empty(), "{input}");
                             if next.is_none() {
                                 let said = fit_phrases(&row.phrases, 400, Colours::None);
                                 assert!(
                                     !said.contains("next trial: "),
-                                    "{premise:?} {uncertainty:?} invents a next trial: {said}"
+                                    "{input} invents a next trial: {said}"
                                 );
                             }
                         }
@@ -173,10 +180,7 @@ fn every_premise_and_uncertainty_is_narrated_without_inventing_a_next_trial() {
                             (40, true),
                         ] {
                             let lines = outcome_lines(&scene, width, compact);
-                            assert!(
-                                !lines.is_empty(),
-                                "{premise:?} {uncertainty:?} at {width} compact {compact}"
-                            );
+                            assert!(!lines.is_empty(), "{input} at {width} compact {compact}");
                         }
                     }
                 }
@@ -186,115 +190,87 @@ fn every_premise_and_uncertainty_is_narrated_without_inventing_a_next_trial() {
 }
 
 /// The forecast between trials: each kind of next trial, the unranked uncertainty and nothing to say.
-#[test]
-fn a_forecast_between_trials_names_the_next_trial_the_ranking_or_nothing() {
+#[test_case::test_case(plan(Regime::R1, many(&[0, 1]), Condition::Together, cycle_ctx(1, 2), 120); "light")]
+#[test_case::test_case(plan(Regime::R6, Load::Single(core(1)), Condition::Alone, cycle_ctx(1, 3), 600); "idle solo")]
+#[test_case::test_case(plan(Regime::R7, many(&[0, 1]), Condition::Parked, cycle_ctx(1, 1), 60); "parked")]
+fn a_forecast_between_trials_names_the_next_trial(next: TrialPlan) {
     let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1), (3, 1)]);
-    for next in [
-        plan(
-            Regime::R1,
-            many(&[0, 1]),
-            Condition::Together,
-            cycle_ctx(1, 2),
-            120,
-        ),
-        plan(
-            Regime::R6,
-            Load::Single(core(1)),
-            Condition::Alone,
-            cycle_ctx(1, 3),
-            600,
-        ),
-        plan(
-            Regime::R7,
-            many(&[0, 1]),
-            Condition::Parked,
-            cycle_ctx(1, 1),
-            60,
-        ),
-    ] {
-        fx.forecast.between = Some(Between {
-            next: Some(next),
-            ..Between::default()
-        });
-        let band = resting_band(&fx.scene(ts(1)));
-        assert_eq!(band.title, "BETWEEN TRIALS");
-        assert!(
-            band.lines
-                .iter()
-                .any(|line| line.starts_with("next trial: "))
-        );
-    }
-    for uncertainty in [
-        None,
-        Some(Uncertainty::NeedsRanking),
-        Some(Uncertainty::NeedsHistory),
-        Some(Uncertainty::RecurringPlan),
-        Some(Uncertainty::Stopped { after: 1 }),
-    ] {
-        fx.forecast.between = Some(Between {
-            uncertainty,
-            ..Between::default()
-        });
-        let band = resting_band(&fx.scene(ts(1)));
-        assert!(
-            band.lines
-                .iter()
-                .any(|line| line.starts_with("next trial: "))
-        );
-    }
+    fx.forecast.between = Some(Between {
+        next: Some(next),
+        ..Between::default()
+    });
+    let band = resting_band(&fx.scene(ts(1)));
+    assert_eq!(band.title, "BETWEEN TRIALS");
+    assert!(
+        band.lines
+            .iter()
+            .any(|line| line.starts_with("next trial: "))
+    );
+}
+
+#[test_case::test_case(None; "none")]
+#[test_case::test_case(Some(Uncertainty::NeedsRanking); "ranking")]
+#[test_case::test_case(Some(Uncertainty::NeedsHistory); "history")]
+#[test_case::test_case(Some(Uncertainty::RecurringPlan); "recurring")]
+#[test_case::test_case(Some(Uncertainty::Stopped { after: 1 }); "stopped")]
+fn a_forecast_between_trials_names_its_uncertainty(uncertainty: Option<Uncertainty>) {
+    let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0), (2, 1), (3, 1)]);
+    fx.forecast.between = Some(Between {
+        uncertainty,
+        ..Between::default()
+    });
+    let band = resting_band(&fx.scene(ts(1)));
+    assert!(
+        band.lines
+            .iter()
+            .any(|line| line.starts_with("next trial: "))
+    );
 }
 
 /// The cycle story says where the step sits whatever the journal gives it: no step number or a step number, and no
 /// phase plan, phase 1 or phase 2.
-#[test]
-fn a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold() {
+#[test_case::test_case(None, "This step is ", None, "Every core runs at its profile offset. The cycle keeps testing until stopped."; "unnumbered phase 0")]
+#[test_case::test_case(None, "This step is ", Some(PhaseNo::One), "Every core runs at its profile offset. Phase 1's cycle: its pass confirms the first BIOS profile."; "unnumbered phase 1")]
+#[test_case::test_case(None, "This step is ", Some(PhaseNo::Two), "Every core runs at its profile offset. Phase 2's confirmation cycle: its pass concludes phase 2."; "unnumbered phase 2")]
+#[test_case::test_case(Some(2), "Step 2 is ", None, "Every core runs at its profile offset. The cycle keeps testing until stopped."; "numbered phase 0")]
+#[test_case::test_case(Some(2), "Step 2 is ", Some(PhaseNo::One), "Every core runs at its profile offset. Phase 1's cycle: its pass confirms the first BIOS profile."; "numbered phase 1")]
+#[test_case::test_case(Some(2), "Step 2 is ", Some(PhaseNo::Two), "Every core runs at its profile offset. Phase 2's confirmation cycle: its pass concludes phase 2."; "numbered phase 2")]
+fn a_cycle_story_says_its_place_whatever_the_phase_plan_and_step_number_hold(
+    step: Option<u32>,
+    opening: &str,
+    phase: Option<PhaseNo>,
+    place: &str,
+) {
     let mut fx = Fx::new().with_cores(&[(0, 0), (1, 0)]);
-    for (step, opening) in [(None, "This step is "), (Some(2), "Step 2 is ")] {
-        let mut running = trial(Regime::R1, Condition::Together, &[0, 1]);
-        running.cycle = Some(CyclePlace {
-            cycle: 1,
-            step,
-            part: None,
-            parts: 1,
-        });
-        fx.trial = Some(running);
-        for (phase, place) in [
-            (
-                None,
-                "Every core runs at its profile offset. The cycle keeps testing until stopped.",
-            ),
-            (
-                Some(PhaseNo::One),
-                "Every core runs at its profile offset. Phase 1's cycle: its pass confirms the first BIOS profile.",
-            ),
-            (
-                Some(PhaseNo::Two),
-                "Every core runs at its profile offset. Phase 2's confirmation cycle: its pass concludes phase 2.",
-            ),
-        ] {
-            fx.phases = phase.map(|phase| PhasePlan {
-                phase,
-                phase1_end: None,
-                concluded: None,
-                confirming: false,
-                rounds_left: 0,
-                round: None,
-                candidates: Vec::new(),
-            });
-            let told = story(&fx.scene(ts(1010)));
-            assert_eq!(told.label, "CYCLE 1", "{step:?} {phase:?}");
-            assert_eq!(told.lines.len(), 2, "{step:?} {phase:?}");
-            assert!(
-                told.lines[0].starts_with(opening),
-                "{step:?} {phase:?}: {told:?}"
-            );
-            assert_eq!(told.lines[1], place, "{step:?} {phase:?}");
-            assert!(
-                told.brief.starts_with(opening),
-                "{step:?} {phase:?}: {told:?}"
-            );
-        }
-    }
+    let mut running = trial(Regime::R1, Condition::Together, &[0, 1]);
+    running.cycle = Some(CyclePlace {
+        cycle: 1,
+        step,
+        part: None,
+        parts: 1,
+    });
+    fx.trial = Some(running);
+    fx.phases = phase.map(|phase| PhasePlan {
+        phase,
+        phase1_end: None,
+        concluded: None,
+        confirming: false,
+        rounds_left: 0,
+        round: None,
+        candidates: Vec::new(),
+    });
+    let told = story(&fx.scene(ts(1010)));
+    assert_eq!(told.label, "CYCLE 1", "{step:?} {phase:?}");
+    assert_eq!(told.lines.len(), 2, "{step:?} {phase:?}");
+    assert!(
+        told.lines[0].starts_with(opening),
+        "{step:?} {phase:?}: {told:?}"
+    );
+    assert_eq!(told.lines[1], place, "{step:?} {phase:?}");
+    assert!(
+        told.brief.starts_with(opening),
+        "{step:?} {phase:?}: {told:?}"
+    );
 }
 
 fn hunting(cause: HuntCause) -> Fx {
@@ -317,146 +293,155 @@ fn told(cause: HuntCause) -> Story {
     story(&fx.scene(ts(1010)))
 }
 
-/// Every cause a hunt can start from, with a core named and without, in the story and its compact line: an idle
-/// crash or failure, a trial that failed with no signal, a trial whose length is not whole minutes, and a
-/// failure already recorded with and without a regime or a carried trial.
-#[test]
-fn every_hunt_cause_is_narrated_with_and_without_a_named_core() {
-    for named in [None, Some(core(0))] {
-        let (opening, tail) = match named {
-            None => ("No core was named: ", "; no core named."),
-            Some(_) => ("Core 00 was named: ", "; core 00 named."),
-        };
-        let split = format!("{opening}I rerun that load with part of ");
-        let common = |told: &Story| {
-            assert_eq!(told.label, "HUNT 1");
-            assert_eq!(told.lines.len(), 2, "{told:?}");
-            assert!(told.lines[1].starts_with(&split), "{told:?}");
+fn assert_hunt_cause_story(told: &Story, named: Option<togi_machine::CoreId>) -> &'static str {
+    let (opening, tail) = match named {
+        None => ("No core was named: ", "; no core named."),
+        Some(_) => ("Core 00 was named: ", "; core 00 named."),
+    };
+    let split = format!("{opening}I rerun that load with part of ");
+    assert_eq!(told.label, "HUNT 1");
+    assert_eq!(told.lines.len(), 2, "{told:?}");
+    assert!(told.lines[1].starts_with(&split), "{told:?}");
+    assert!(
+        told.lines[1].ends_with("at its offsets, the rest parked."),
+        "{told:?}"
+    );
+    assert!(told.brief.contains(" Rerunning it with "), "{told:?}");
+    tail
+}
+
+#[test_case::test_case(None, None, "The machine crashed while idle, with no trial running, and rebooted.", "Crashed while idle"; "unnamed idle 0")]
+#[test_case::test_case(None, Some(Signal::Crash), "The machine crashed while idle, with no trial running, and rebooted.", "Crashed while idle"; "unnamed idle 1")]
+#[test_case::test_case(None, Some(Signal::ComputationError), "With no trial running and the offsets applied, the machine reported a wrong result.", "Wrong result while idle"; "unnamed idle 2")]
+#[test_case::test_case(Some(core(0)), None, "The machine crashed while idle, with no trial running, and rebooted.", "Crashed while idle"; "named idle 0")]
+#[test_case::test_case(Some(core(0)), Some(Signal::Crash), "The machine crashed while idle, with no trial running, and rebooted.", "Crashed while idle"; "named idle 1")]
+#[test_case::test_case(Some(core(0)), Some(Signal::ComputationError), "With no trial running and the offsets applied, the machine reported a wrong result.", "Wrong result while idle"; "named idle 2")]
+fn an_idle_hunt_cause_is_narrated(
+    named: Option<togi_machine::CoreId>,
+    signal: Option<Signal>,
+    first: &str,
+    brief: &str,
+) {
+    let mut idle = cause();
+    idle.core = named;
+    idle.signal = signal;
+    let told = told(idle);
+    let tail = assert_hunt_cause_story(&told, named);
+    assert_eq!(told.lines[0], first, "{signal:?}");
+    assert!(
+        told.brief.starts_with(&format!("{brief}{tail} Rerunning")),
+        "{signal:?}: {told:?}"
+    );
+}
+
+#[test_case::test_case(None, false, None, "An idle failure is already recorded at these offsets."; "unnamed known 0")]
+#[test_case::test_case(None, true, None, "An idle failure is already recorded at these offsets, carried from an earlier session."; "unnamed known 1")]
+#[test_case::test_case(None, false, Some(Regime::R7), "R7 all-core already failed at these offsets."; "unnamed known 2")]
+#[test_case::test_case(None, true, Some(Regime::R7), "R7 all-core already failed at these offsets in a carried trial."; "unnamed known 3")]
+#[test_case::test_case(Some(core(0)), false, None, "An idle failure is already recorded at these offsets."; "named known 0")]
+#[test_case::test_case(Some(core(0)), true, None, "An idle failure is already recorded at these offsets, carried from an earlier session."; "named known 1")]
+#[test_case::test_case(Some(core(0)), false, Some(Regime::R7), "R7 all-core already failed at these offsets."; "named known 2")]
+#[test_case::test_case(Some(core(0)), true, Some(Regime::R7), "R7 all-core already failed at these offsets in a carried trial."; "named known 3")]
+fn a_known_hunt_cause_is_narrated(
+    named: Option<togi_machine::CoreId>,
+    carried: bool,
+    regime: Option<Regime>,
+    first: &str,
+) {
+    let mut known = cause();
+    known.core = named;
+    known.known = true;
+    known.carried = carried;
+    known.regime = regime;
+    let told = told(known);
+    assert_hunt_cause_story(&told, named);
+    assert_eq!(told.lines[0], first, "{carried} {regime:?}");
+    assert!(
+        told.brief.starts_with(&format!("{first} Rerunning")),
+        "{carried} {regime:?}: {told:?}"
+    );
+}
+
+#[test_case::test_case(None, None, 45, "45-second", false; "unnamed None 45 rerun false")]
+#[test_case::test_case(None, None, 45, "45-second", true; "unnamed None 45 rerun true")]
+#[test_case::test_case(None, None, 600, "10-minute", false; "unnamed None 600 rerun false")]
+#[test_case::test_case(None, None, 600, "10-minute", true; "unnamed None 600 rerun true")]
+#[test_case::test_case(None, Some(Signal::Crash), 45, "45-second", false; "unnamed Some(Signal::Crash) 45 rerun false")]
+#[test_case::test_case(None, Some(Signal::Crash), 45, "45-second", true; "unnamed Some(Signal::Crash) 45 rerun true")]
+#[test_case::test_case(None, Some(Signal::Crash), 600, "10-minute", false; "unnamed Some(Signal::Crash) 600 rerun false")]
+#[test_case::test_case(None, Some(Signal::Crash), 600, "10-minute", true; "unnamed Some(Signal::Crash) 600 rerun true")]
+#[test_case::test_case(None, Some(Signal::ComputationError), 45, "45-second", false; "unnamed Some(Signal::ComputationError) 45 rerun false")]
+#[test_case::test_case(None, Some(Signal::ComputationError), 45, "45-second", true; "unnamed Some(Signal::ComputationError) 45 rerun true")]
+#[test_case::test_case(None, Some(Signal::ComputationError), 600, "10-minute", false; "unnamed Some(Signal::ComputationError) 600 rerun false")]
+#[test_case::test_case(None, Some(Signal::ComputationError), 600, "10-minute", true; "unnamed Some(Signal::ComputationError) 600 rerun true")]
+#[test_case::test_case(Some(core(0)), None, 45, "45-second", false; "named None 45 rerun false")]
+#[test_case::test_case(Some(core(0)), None, 45, "45-second", true; "named None 45 rerun true")]
+#[test_case::test_case(Some(core(0)), None, 600, "10-minute", false; "named None 600 rerun false")]
+#[test_case::test_case(Some(core(0)), None, 600, "10-minute", true; "named None 600 rerun true")]
+#[test_case::test_case(Some(core(0)), Some(Signal::Crash), 45, "45-second", false; "named Some(Signal::Crash) 45 rerun false")]
+#[test_case::test_case(Some(core(0)), Some(Signal::Crash), 45, "45-second", true; "named Some(Signal::Crash) 45 rerun true")]
+#[test_case::test_case(Some(core(0)), Some(Signal::Crash), 600, "10-minute", false; "named Some(Signal::Crash) 600 rerun false")]
+#[test_case::test_case(Some(core(0)), Some(Signal::Crash), 600, "10-minute", true; "named Some(Signal::Crash) 600 rerun true")]
+#[test_case::test_case(Some(core(0)), Some(Signal::ComputationError), 45, "45-second", false; "named Some(Signal::ComputationError) 45 rerun false")]
+#[test_case::test_case(Some(core(0)), Some(Signal::ComputationError), 45, "45-second", true; "named Some(Signal::ComputationError) 45 rerun true")]
+#[test_case::test_case(Some(core(0)), Some(Signal::ComputationError), 600, "10-minute", false; "named Some(Signal::ComputationError) 600 rerun false")]
+#[test_case::test_case(Some(core(0)), Some(Signal::ComputationError), 600, "10-minute", true; "named Some(Signal::ComputationError) 600 rerun true")]
+fn a_trial_hunt_cause_is_narrated(
+    named: Option<togi_machine::CoreId>,
+    signal: Option<Signal>,
+    seconds: u64,
+    length: &str,
+    rerun_of: bool,
+) {
+    let mut ran = cause();
+    ran.core = named;
+    ran.signal = signal;
+    ran.rerun_of = rerun_of;
+    let mut failed = trial(Regime::R7, Condition::Together, &[0, 1]);
+    failed.duration = secs(seconds);
+    ran.trial = Some(failed);
+    let told = told(ran);
+    let what = if rerun_of {
+        format!("the rerun of the {length} all-core trial on ")
+    } else {
+        format!("the {length} all-core trial on ")
+    };
+    let case = format!("{signal:?} {seconds}s rerun {rerun_of}");
+    let tail = assert_hunt_cause_story(&told, named);
+    match signal {
+        None => {
             assert!(
-                told.lines[1].ends_with("at its offsets, the rest parked."),
-                "{told:?}"
+                told.lines[0].starts_with(&capitalized(&what)),
+                "{case}: {told:?}"
             );
-            assert!(told.brief.contains(" Rerunning it with "), "{told:?}");
-        };
-        for (signal, first, brief) in [
-            (
-                None,
-                "The machine crashed while idle, with no trial running, and rebooted.",
-                "Crashed while idle",
-            ),
-            (
-                Some(Signal::Crash),
-                "The machine crashed while idle, with no trial running, and rebooted.",
-                "Crashed while idle",
-            ),
-            (
-                Some(Signal::ComputationError),
-                "With no trial running and the offsets applied, the machine reported a wrong result.",
-                "Wrong result while idle",
-            ),
-        ] {
-            let mut idle = cause();
-            idle.core = named;
-            idle.signal = signal;
-            let told = told(idle);
-            common(&told);
-            assert_eq!(told.lines[0], first, "{signal:?}");
-            assert!(
-                told.brief.starts_with(&format!("{brief}{tail} Rerunning")),
-                "{signal:?}: {told:?}"
-            );
+            assert!(told.lines[0].ends_with(" failed."), "{case}: {told:?}");
+            assert!(told.brief.starts_with("Failed in R7 all-core"), "{case}");
         }
-        for (carried, regime, first) in [
-            (
-                false,
-                None,
-                "An idle failure is already recorded at these offsets.",
-            ),
-            (
-                true,
-                None,
-                "An idle failure is already recorded at these offsets, carried from an earlier session.",
-            ),
-            (
-                false,
-                Some(Regime::R7),
-                "R7 all-core already failed at these offsets.",
-            ),
-            (
-                true,
-                Some(Regime::R7),
-                "R7 all-core already failed at these offsets in a carried trial.",
-            ),
-        ] {
-            let mut known = cause();
-            known.core = named;
-            known.known = true;
-            known.carried = carried;
-            known.regime = regime;
-            let told = told(known);
-            common(&told);
-            assert_eq!(told.lines[0], first, "{carried} {regime:?}");
+        Some(Signal::Crash) => {
             assert!(
-                told.brief.starts_with(&format!("{first} Rerunning")),
-                "{carried} {regime:?}: {told:?}"
+                told.lines[0].starts_with("The machine crashed during ")
+                    && told.lines[0].contains(&what)
+                    && told.lines[0].ends_with(" and rebooted."),
+                "{case}: {told:?}"
             );
+            assert!(told.brief.starts_with("Crashed in R7 all-core"), "{case}");
         }
-        for signal in [None, Some(Signal::Crash), Some(Signal::ComputationError)] {
-            for (seconds, length) in [(45, "45-second"), (600, "10-minute")] {
-                for rerun_of in [false, true] {
-                    let mut ran = cause();
-                    ran.core = named;
-                    ran.signal = signal;
-                    ran.rerun_of = rerun_of;
-                    let mut failed = trial(Regime::R7, Condition::Together, &[0, 1]);
-                    failed.duration = secs(seconds);
-                    ran.trial = Some(failed);
-                    let told = told(ran);
-                    let what = if rerun_of {
-                        format!("the rerun of the {length} all-core trial on ")
-                    } else {
-                        format!("the {length} all-core trial on ")
-                    };
-                    let case = format!("{signal:?} {seconds}s rerun {rerun_of}");
-                    common(&told);
-                    match signal {
-                        None => {
-                            assert!(
-                                told.lines[0].starts_with(&capitalized(&what)),
-                                "{case}: {told:?}"
-                            );
-                            assert!(told.lines[0].ends_with(" failed."), "{case}: {told:?}");
-                            assert!(told.brief.starts_with("Failed in R7 all-core"), "{case}");
-                        }
-                        Some(Signal::Crash) => {
-                            assert!(
-                                told.lines[0].starts_with("The machine crashed during ")
-                                    && told.lines[0].contains(&what)
-                                    && told.lines[0].ends_with(" and rebooted."),
-                                "{case}: {told:?}"
-                            );
-                            assert!(told.brief.starts_with("Crashed in R7 all-core"), "{case}");
-                        }
-                        Some(_) => {
-                            assert!(
-                                told.lines[0].starts_with(&capitalized(&what))
-                                    && told.lines[0].ends_with(" ended with wrong result."),
-                                "{case}: {told:?}"
-                            );
-                            assert!(
-                                told.brief.starts_with("Wrong result in R7 all-core"),
-                                "{case}"
-                            );
-                        }
-                    }
-                    assert!(
-                        told.brief.contains(&format!("{tail} Rerunning")),
-                        "{case}: {told:?}"
-                    );
-                }
-            }
+        Some(_) => {
+            assert!(
+                told.lines[0].starts_with(&capitalized(&what))
+                    && told.lines[0].ends_with(" ended with wrong result."),
+                "{case}: {told:?}"
+            );
+            assert!(
+                told.brief.starts_with("Wrong result in R7 all-core"),
+                "{case}"
+            );
         }
     }
+    assert!(
+        told.brief.contains(&format!("{tail} Rerunning")),
+        "{case}: {told:?}"
+    );
 }
 
 fn capitalized(text: &str) -> String {
