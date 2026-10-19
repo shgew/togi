@@ -29,7 +29,8 @@ pub(crate) fn session(
             replay,
             ..RunSettings::default()
         },
-    );
+    )
+    .unwrap();
     let persistence = Persistence::Memory(MemFs::new());
     let outcome = simulate(SimInput {
         config: Config::default(),

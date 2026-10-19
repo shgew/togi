@@ -223,7 +223,16 @@ fn simulate_with_dump(
             }
             kept = Some(journal);
             resume = capsule;
-            simulator.reboot();
+            if let Err(source) = simulator.reboot() {
+                return Err(abandon(
+                    kept.take(),
+                    resume.as_ref(),
+                    SimError::Reboot {
+                        boot: number,
+                        source,
+                    },
+                ));
+            }
             continue;
         }
         let mut dir = close(journal, number)?;
@@ -253,7 +262,10 @@ fn simulate_with_dump(
             });
         }
         resume = capsule.filter(|_| replay == Replay::Warm);
-        simulator.reboot();
+        simulator.reboot().map_err(|source| SimError::Reboot {
+            boot: number,
+            source,
+        })?;
     }
     user.borrow_mut().flush().map_err(SimError::FlushLog)?;
     if outcome.is_none() {

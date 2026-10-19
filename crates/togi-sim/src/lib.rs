@@ -30,7 +30,7 @@ pub use error::{InvalidMachine, Problem, ShapeError};
 pub use hazard::{HazardSource, Load, SourceKind, saturating_count};
 pub use model::Model;
 pub use persisted::{Persisted, RestoreError};
-pub use runtime::{History, REBOOT_TIME, RunSettings};
+pub use runtime::{ArithmeticError, History, REBOOT_TIME, RunSettings};
 pub use samples::SampleStorage;
 pub use simulator::{ScriptError, Simulator};
 pub use vocab::{RESETS, ResetMix, SignalMix, WEIGHTED_SIGNALS, regime_index};

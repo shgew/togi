@@ -151,7 +151,7 @@ fn a_wall_clock_jump_does_not_lose_a_trials_corrected_mce() {
     input.observer = Some(Box::new(move |event| {
         if event.kind() == EventKind::TrialStart && !flag.get() {
             flag.set(true);
-            sim.jump_wall(SignedDuration::from_hours(-2));
+            sim.jump_wall(SignedDuration::from_hours(-2)).unwrap();
             Observe::Continue
         } else if event.kind() == EventKind::TrialEnd {
             Observe::Stop

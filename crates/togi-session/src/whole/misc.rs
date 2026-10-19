@@ -161,7 +161,7 @@ fn a_resumed_checking_session_continues_its_numbering_on_new_boots_in_time_order
     let crashed = one_cycle(&bench, |_| {});
     assert!(crashed.crashed(), "{:?}", crashed.errors);
     drop(crashed);
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let first = one_cycle(&bench, |_| {});
     assert!(first.errors.is_empty(), "{:?}", first.errors);
     assert_eq!(first.stop, Some(Stop::Cycles));
@@ -171,7 +171,7 @@ fn a_resumed_checking_session_continues_its_numbering_on_new_boots_in_time_order
     assert_eq!(boots.len(), 2);
     let cycle = last_cycle(&earlier).unwrap();
 
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let resumed = one_cycle(&bench, |input| {
         input.policy.cycles = NonZeroU32::new(2);
     });
@@ -390,7 +390,7 @@ fn a_signal_during_the_kernel_log_retry_wait_stops_the_run_and_leaves_the_crashe
     assert!(crashed.crashed(), "{:?}", crashed.errors);
     let crashed_boot = crashed.journal.events().last().unwrap().boot.clone();
     drop(crashed);
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
 
     let failed = Rc::new(Cell::new(false));
     let waits = Rc::new(Cell::new(0));
@@ -616,7 +616,7 @@ fn every_startup_runs_preflight_then_the_sweep_before_its_first_smu_write(
         start = setup.journal.events().len();
         drop(setup);
         if matches!(startup, Startup::Reboot) {
-            bench.sim.reboot();
+            bench.sim.reboot().unwrap();
         }
     }
     let expected_checks: BTreeSet<String> = bench

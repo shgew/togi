@@ -57,7 +57,7 @@ pub fn machine(definition: &MachineDefinition, seed: u64) -> Result<Simulator, E
             seed,
             ..RunSettings::default()
         },
-    ))
+    )?)
 }
 
 /// The default sixteen-core machine, its limits drawn from `seed`.

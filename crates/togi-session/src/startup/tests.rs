@@ -551,7 +551,7 @@ fn a_boot_that_crashed_before_this_one_gets_its_crash_recorded() {
     earlier.start().unwrap();
     drop(earlier);
     bench.sim.crash();
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let mut session = bench.open();
     session.start().unwrap();
     assert_eq!(crash_records(&session), 0);
@@ -579,7 +579,7 @@ fn a_dead_end_pending_from_another_boot_is_not_recovered_around() {
         .unwrap();
     drop(earlier);
     bench.sim.crash();
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let mut session = bench.open();
     let before = kinds_of(session.appender());
     assert_eq!(session.recover_prior().unwrap(), Control::Continue);
@@ -1094,7 +1094,7 @@ fn crashed_in_its_first_trial(bench: &Bench) -> BootId {
     assert!(crashed.crashed(), "{:?}", crashed.errors);
     let boot = crashed.journal.events().last().unwrap().boot.clone();
     drop(crashed);
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     boot
 }
 

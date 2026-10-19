@@ -428,7 +428,7 @@ fn a_bios_change_archives_and_checks_solo_limits() {
     let id = session_of(&bench.events());
 
     bench.sim.set_bios_context(changed_bios());
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let mut input = bench.input();
     input.config = quick_matrix();
     input.observer = Some(after_initial_phases(4));
@@ -521,7 +521,7 @@ fn a_bios_archive_interrupted_before_the_move_resumes_the_carry() {
     let id = session_of(&bench.events());
 
     bench.sim.set_bios_context(changed_bios());
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     bench
         .fs
         .inject(Fault::before(Op::Rename, 1).named("events.jsonl"));

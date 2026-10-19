@@ -67,7 +67,7 @@ fn write_faults_start_counting_when_armed() {
     );
     rig.sim.crash_at_write(1);
     assert!(matches!(rig.set(1, -2), Err(Error::Crashed)));
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn an_old_kernel_reports_no_reset_reason_whatever_the_reset(kind: ResetKind) {
     let mut rig = Rig::new(&definition, 1);
     rig.sim.next_reset(kind);
     rig.sim.crash();
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
     let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
     assert!(
@@ -204,7 +204,7 @@ fn stopping_a_trial_matches_what_a_cancelled_wait_would_clean_up(state: Machine)
     match state {
         Machine::Running => {}
         Machine::Crashed => rig.sim.crash(),
-        Machine::Rebooted => rig.sim.reboot(),
+        Machine::Rebooted => rig.sim.reboot().expect("a representable reboot"),
     }
     let before = rig.sim.now();
     let cancel = CancellationToken::new();
@@ -294,7 +294,7 @@ fn a_crashed_machine_rejects_its_operations_and_does_not_move_its_clock() {
         assert!(matches!(result, Err(Error::Crashed)), "{name}: {result:?}");
     }
     assert_eq!(rig.sim.now(), start);
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     assert_eq!(
         rig.read(0).expect("read").0,
         0,
@@ -377,7 +377,9 @@ fn the_clock_seam_follows_sleeps_wall_jumps_and_reboots_from_a_fresh_or_resumed_
         rig.machine.clock.monotonic().expect("clock"),
         Duration::from_secs(5)
     );
-    rig.sim.jump_wall(SignedDuration::from_hours(1));
+    rig.sim
+        .jump_wall(SignedDuration::from_hours(1))
+        .expect("a representable wall clock");
     assert_eq!(
         rig.machine.clock.now(),
         start + SignedDuration::from_secs(5) + SignedDuration::from_hours(1)
@@ -388,7 +390,7 @@ fn the_clock_seam_follows_sleeps_wall_jumps_and_reboots_from_a_fresh_or_resumed_
     );
     let before = rig.machine.clock.now();
     rig.sim.crash();
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     assert_eq!(
         rig.machine.clock.now(),
         before + SignedDuration::from_secs(90)
@@ -433,7 +435,7 @@ fn a_kernel_cursor_resumes_across_empty_reads_and_stays_in_its_boot() {
     assert!(empty.mces.is_empty());
     assert_eq!(empty.cursor, read.cursor, "an empty read leaves the cursor");
 
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let next = rig.boot();
     let foreign = rig.machine.kernel.read_mces(&next, Some(&read.cursor));
     assert!(matches!(
@@ -478,9 +480,9 @@ fn unknown_boots_and_cursors_are_named_errors() {
     ));
     rig.sim.next_reset(ResetKind::ThermalTrip);
     rig.sim.crash();
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     rig.sim.power_loss();
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let after = rig
         .machine
         .kernel
@@ -535,7 +537,7 @@ fn each_reset_leaves_the_line_a_recent_kernel_logs(kind: ResetKind, line: Option
     let mut rig = Rig::new(&two_cores(), 1);
     rig.sim.next_reset(kind);
     rig.sim.crash();
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
     let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
     assert!(reason.supported);
@@ -562,7 +564,7 @@ fn a_boot_without_a_reset_reports_no_kind_and_a_hold_of_the_power_button_is_its_
     let reason = rig.machine.kernel.reset_reason(&first).expect("a reason");
     assert!(reason.supported && reason.kind.is_none() && reason.raw.is_empty());
     rig.sim.hold_power_button();
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     let boot = rig.boot();
     let reason = rig.machine.kernel.reset_reason(&boot).expect("a reason");
     assert_eq!(reason.kind, Some(ResetKind::PowerButton));

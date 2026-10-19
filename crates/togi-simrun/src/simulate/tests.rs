@@ -104,6 +104,7 @@ fn crashing() -> Simulator {
             ..RunSettings::default()
         },
     )
+    .unwrap()
 }
 
 fn checked_boots(replay: Replay, every: Option<NonZeroU32>) -> Vec<u32> {
@@ -154,7 +155,8 @@ fn a_resume_state_that_differs_from_the_journal_fails_the_simulation() {
             seed: 1,
             ..RunSettings::default()
         },
-    );
+    )
+    .unwrap();
     let persistence = Persistence::Memory(MemFs::new());
     let mut input = sim_input(simulator, persistence.clone(), Replay::Warm, None);
     input.observer = Some(Box::new(|event| {

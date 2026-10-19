@@ -183,7 +183,7 @@ fn a_hook_that_crashes_the_machine_before_an_access_leaves_the_access_unapplied(
     rig.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
     let read = rig.read(0);
     assert!(matches!(read, Err(Error::Crashed)), "{read:?}");
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     assert_eq!(registers(&mut rig), [-5, -6]);
 }
 
@@ -196,7 +196,7 @@ fn a_hook_that_reboots_the_machine_before_an_access_cannot_leak_it_into_the_new_
     rig.sim.interrupt_smu(move |access: &SmuOperation| {
         if access.op == op && access.phase == HookPhase::Before {
             sim.crash();
-            sim.reboot();
+            sim.reboot().expect("a representable reboot");
         }
         Ok(())
     });
@@ -223,7 +223,7 @@ fn a_write_stopped_by_a_hook_crash_is_counted_against_the_write_faults_once() {
     rig.sim.fail_write(2);
     assert!(matches!(rig.set(0, -2), Err(Error::Crashed)));
     rig.sim.interrupt_smu(|_: &SmuOperation| Ok(()));
-    rig.sim.reboot();
+    rig.sim.reboot().expect("a representable reboot");
     // The crashed write took the first count; the next write is the second and fails.
     assert!(rig.set(0, -2).is_err());
     assert_eq!(registers(&mut rig), [-5, -6]);

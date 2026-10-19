@@ -472,7 +472,7 @@ fn resumed_dead_end_after(
         }
     }
     drop(first);
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     grub.pending(prior);
     let mut input = bench.input();
     input.bootloader = Some(Box::new(grub.clone()));
@@ -599,7 +599,7 @@ fn a_resumed_dead_end_acknowledges_the_pending_tuning_boot_reason_once_and_leave
     }
     drop(completed);
 
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
     let mut next = bench.open();
     next.recover_prior().unwrap();
     assert!(

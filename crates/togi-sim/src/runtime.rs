@@ -54,6 +54,29 @@ pub struct History {
     pub bios_context: Option<BiosContext>,
 }
 
+/// Arithmetic that cannot be represented by a simulated machine.
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum ArithmeticError {
+    #[error("add reboot time to the last recorded timestamp")]
+    ResumeTime(#[source] jiff::Error),
+    #[error("allocate the next simulated boot number")]
+    BootNumber,
+    #[error("advance the simulated clock")]
+    ClockAdvance,
+    #[error("add elapsed time to the simulated epoch")]
+    WallElapsed(#[source] jiff::Error),
+    #[error("apply the simulated wall-clock offset")]
+    WallOffset(#[source] jiff::Error),
+    #[error("add the simulated wall-clock offset")]
+    OffsetAdvance,
+}
+
+impl From<ArithmeticError> for togi_machine::Error {
+    fn from(error: ArithmeticError) -> Self {
+        Self::Other(Box::new(error))
+    }
+}
+
 /// What differs from one run of a machine to the next, as opposed to the machine itself.
 #[derive(Debug, Default)]
 pub struct RunSettings {
@@ -84,6 +107,8 @@ pub(crate) struct Runtime {
     clock: Duration,
     boot_at: Duration,
     wall_offset: SignedDuration,
+    /// Validated whenever a clock changes, since the machine's `Clock::now` is infallible.
+    wall: Timestamp,
     pub boot_number: u32,
     boots: Vec<BootId>,
     pub regs: Vec<TargetOffset>,
@@ -102,16 +127,18 @@ pub(crate) struct Runtime {
 }
 
 impl Runtime {
-    pub(crate) fn new(model: Model, settings: RunSettings) -> Self {
+    pub(crate) fn new(model: Model, settings: RunSettings) -> Result<Self, ArithmeticError> {
         let RunSettings {
             seed,
             history,
             replay,
         } = settings;
-        let epoch = history
-            .last_time
-            .and_then(|last| last.checked_add(REBOOT_TIME).ok())
-            .unwrap_or(EPOCH);
+        let epoch = match history.last_time {
+            Some(last) => last
+                .checked_add(REBOOT_TIME)
+                .map_err(ArithmeticError::ResumeTime)?,
+            None => EPOCH,
+        };
         let bios = match history.bios_context {
             Some(recorded) if !model.bios_context_declared() => recorded,
             _ => model.bios_context().clone(),
@@ -123,6 +150,7 @@ impl Runtime {
             clock: Duration::ZERO,
             boot_at: Duration::ZERO,
             wall_offset: SignedDuration::ZERO,
+            wall: epoch,
             boot_number: history.boots,
             boots: Vec::new(),
             regs: Vec::new(),
@@ -140,8 +168,8 @@ impl Runtime {
             sample_storage: None,
             model,
         };
-        runtime.start_boot();
-        runtime
+        runtime.start_boot(Duration::ZERO)?;
+        Ok(runtime)
     }
 
     pub(crate) fn restore(
@@ -168,13 +196,14 @@ impl Runtime {
                 logs.insert(boot.id, boot.mces.into_iter().map(Mce::from).collect());
             }
         }
-        Ok(Self {
+        let mut runtime = Self {
             seed: persisted.seed,
             replay,
             epoch: persisted.epoch,
             clock: persisted.clock,
             boot_at: persisted.boot_at,
             wall_offset: persisted.wall_offset,
+            wall: persisted.epoch,
             boot_number: persisted.boot_number,
             boots,
             regs: persisted.regs,
@@ -191,7 +220,9 @@ impl Runtime {
             samples_dir: None,
             sample_storage: None,
             model,
-        })
+        };
+        runtime.wall = runtime.wall_at(runtime.clock)?;
+        Ok(runtime)
     }
 
     pub(crate) fn persisted(&self) -> Persisted {
@@ -222,25 +253,36 @@ impl Runtime {
         }
     }
 
-    fn start_boot(&mut self) {
-        self.boot_number += 1;
-        self.boot_at = self.clock;
-        let id = boot_id(self.seed, self.boot_number);
+    fn start_boot(&mut self, clock: Duration) -> Result<(), ArithmeticError> {
+        let number = self
+            .boot_number
+            .checked_add(1)
+            .ok_or(ArithmeticError::BootNumber)?;
+        let wall = self.wall_at(clock)?;
+        self.clock = clock;
+        self.wall = wall;
+        self.boot_number = number;
+        self.boot_at = clock;
+        let id = boot_id(self.seed, number);
         self.boots.push(id.clone());
         self.regs = self.model.bios().to_vec();
         self.crashed = false;
         self.faults.start_boot();
         for pending in std::mem::take(&mut self.queued) {
-            self.log_mce(&id, pending, self.clock);
+            self.log_mce(&id, pending, clock)?;
         }
         let kind = self.next_reset.take();
         self.reasons
             .insert(id, reset_reason(kind, !self.model.old_kernel()));
+        Ok(())
     }
 
-    pub(crate) fn reboot(&mut self) {
-        self.clock += REBOOT_TIME;
-        self.start_boot();
+    pub(crate) fn reboot(&mut self) -> Result<(), ArithmeticError> {
+        let clock = self
+            .clock
+            .checked_add(REBOOT_TIME)
+            .ok_or(ArithmeticError::ClockAdvance)?;
+        self.start_boot(clock)
     }
 
     pub(crate) fn boot_id(&self) -> &BootId {
@@ -268,31 +310,52 @@ impl Runtime {
         self.clock
     }
 
-    pub(crate) fn advance(&mut self, by: Duration) {
-        self.clock += by;
+    pub(crate) fn advance(&mut self, by: Duration) -> Result<(), ArithmeticError> {
+        let to = self
+            .clock
+            .checked_add(by)
+            .ok_or(ArithmeticError::ClockAdvance)?;
+        self.set_clock(to)
     }
 
-    pub(crate) fn set_clock(&mut self, to: Duration) {
-        self.clock = self.clock.max(to);
+    pub(crate) fn set_clock(&mut self, to: Duration) -> Result<(), ArithmeticError> {
+        let to = self.clock.max(to);
+        let wall = self.wall_at(to)?;
+        self.clock = to;
+        self.wall = wall;
+        Ok(())
     }
 
     pub(crate) fn monotonic(&self) -> Duration {
         self.clock.saturating_sub(self.boot_at)
     }
 
-    pub(crate) fn jump_wall(&mut self, by: SignedDuration) {
-        self.wall_offset = self.wall_offset.saturating_add(by);
+    pub(crate) fn jump_wall(&mut self, by: SignedDuration) -> Result<(), ArithmeticError> {
+        let offset = self
+            .wall_offset
+            .checked_add(by)
+            .ok_or(ArithmeticError::OffsetAdvance)?;
+        let wall = self
+            .epoch
+            .checked_add(self.clock)
+            .map_err(ArithmeticError::WallElapsed)?
+            .checked_add(offset)
+            .map_err(ArithmeticError::WallOffset)?;
+        self.wall_offset = offset;
+        self.wall = wall;
+        Ok(())
     }
 
-    fn wall_at(&self, clock: Duration) -> Timestamp {
+    fn wall_at(&self, clock: Duration) -> Result<Timestamp, ArithmeticError> {
         self.epoch
             .checked_add(clock)
-            .and_then(|time| time.checked_add(self.wall_offset))
-            .unwrap_or(self.epoch)
+            .map_err(ArithmeticError::WallElapsed)?
+            .checked_add(self.wall_offset)
+            .map_err(ArithmeticError::WallOffset)
     }
 
     pub(crate) fn wall(&self) -> Timestamp {
-        self.wall_at(self.clock)
+        self.wall
     }
 
     pub(crate) fn crash(&mut self) {
@@ -313,8 +376,13 @@ impl Runtime {
     }
 
     /// Logs `pending` in `boot` as of virtual time `at`.
-    pub(crate) fn log_mce(&mut self, boot: &BootId, pending: PendingMce, at: Duration) {
-        let time = self.wall_at(at);
+    pub(crate) fn log_mce(
+        &mut self,
+        boot: &BootId,
+        pending: PendingMce,
+        at: Duration,
+    ) -> Result<(), ArithmeticError> {
+        let time = self.wall_at(at)?;
         let kind = if pending.corrected {
             "Corrected"
         } else {
@@ -337,6 +405,7 @@ impl Runtime {
             monotonic: at.saturating_sub(self.boot_at),
             lines: vec![line],
         });
+        Ok(())
     }
 
     /// The machine check a draw `x` in `[0, 1)` names on `core`: a core-local bank with the model's

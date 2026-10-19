@@ -144,7 +144,7 @@ fn a_stall_journaled_before_a_crash_is_recovered_as_the_failure_of_the_interrupt
     assert_eq!(progress.core, Some(core(0)));
     assert!(progress.detail.starts_with("core 00 backend stalled: "));
     drop(crashed);
-    bench.sim.reboot();
+    bench.sim.reboot().unwrap();
 
     let mut input = bench.input();
     input.policy.cycles = Some(NonZeroU32::MIN);

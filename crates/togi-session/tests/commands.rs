@@ -56,6 +56,7 @@ fn simulator_of(definition: &MachineDefinition) -> Simulator {
             ..RunSettings::default()
         },
     )
+    .unwrap()
 }
 
 fn input(sim: &Simulator, mem: &MemFs) -> RunInput<'static> {
@@ -290,7 +291,7 @@ fn a_reset_core_is_consumed_by_the_resumed_session_which_retunes_it_to_its_limit
     let reset = reset_core(&build(), &mut journal, &mut *sim.seams().clock, core(1)).unwrap();
     drop(journal);
 
-    sim.reboot();
+    sim.reboot().unwrap();
     let mut second = input(&sim, &mem);
     second.policy.cycles = NonZeroU32::new(2);
     let ended = run(second);

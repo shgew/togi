@@ -121,7 +121,8 @@ impl Fixture {
                 seed: 42,
                 ..RunSettings::default()
             },
-        );
+        )
+        .unwrap();
         let mut crashed = false;
         let stopped_at = Rc::new(Cell::new(None));
         let at = Rc::clone(&stopped_at);

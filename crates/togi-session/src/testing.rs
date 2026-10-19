@@ -112,7 +112,8 @@ impl Rig {
                 seed: 1,
                 ..RunSettings::default()
             },
-        );
+        )
+        .unwrap();
         let Machine {
             clock,
             smu,
@@ -240,7 +241,8 @@ impl Bench {
                 seed: 1,
                 ..RunSettings::default()
             },
-        );
+        )
+        .unwrap();
         Self {
             sim,
             mem: MemFs::new(),

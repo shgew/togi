@@ -147,7 +147,7 @@ fn the_shared_rail_fails_as_its_probability_says_and_names_no_machine_check() {
         let waited = rig.run(spec.clone()).0;
         if crashed(&waited) {
             failures += 1;
-            rig.sim.reboot();
+            rig.sim.reboot().expect("a representable reboot");
             let boot = rig.boot();
             assert!(
                 rig.mces(&boot).is_empty(),
@@ -207,7 +207,7 @@ fn background_failures_are_unattributed_crashes_and_match_their_probability() {
                     );
                 }
             }
-            rig.sim.reboot();
+            rig.sim.reboot().expect("a representable reboot");
             let boot = rig.boot();
             assert!(
                 rig.mces(&boot).is_empty(),
@@ -271,7 +271,7 @@ fn the_same_seed_draws_the_same_failures_and_telemetry_changes_none() {
                 failures += 1;
             }
             if crashed(&waited) {
-                rig.sim.reboot();
+                rig.sim.reboot().expect("a representable reboot");
             }
             let _ = rig.machine.host.preflight();
             let _ = rig

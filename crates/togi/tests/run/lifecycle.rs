@@ -1196,7 +1196,7 @@ fn seed_a_pending_boot_loop_dead_end(fake: &mut Fake) {
     );
     fake.write(&path, format!("{}\n{dead_end}\n", before.join("\n")))
         .unwrap();
-    fake.sim.reboot();
+    fake.sim.reboot().unwrap();
 }
 
 #[test]
