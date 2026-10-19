@@ -33,15 +33,17 @@ pub(crate) struct Readings {
     pub(crate) tccd_c: Option<BTreeMap<String, i64>>,
     pub(crate) core_mhz: PerCore<i64>,
     pub(crate) package_power_w: Option<f64>,
+    pub(crate) cores_power_w: Option<f64>,
 }
 
-/// Reads temperatures, clocks of the loaded cores and package energy.
+/// Reads temperatures, all-core clocks and package and core-domain energy.
 #[derive(Debug)]
 pub(crate) struct Sensors {
     hwmon: PathBuf,
     powercap: PathBuf,
     clocks: Vec<(CoreId, PathBuf)>,
     energy: Option<i64>,
+    cores_energy: Option<i64>,
     energy_at: Instant,
     inputs: Inputs,
 }
@@ -55,20 +57,15 @@ impl Sensors {
     pub(crate) fn with_inputs(
         roots: &Roots,
         topology: &[CoreInfo],
-        loaded: &[CoreId],
         now: Instant,
         inputs: Inputs,
     ) -> Self {
-        let clocks = loaded
+        let clocks = topology
             .iter()
-            .filter_map(|&core| {
-                let first = topology
-                    .iter()
-                    .find(|info| info.core == core)?
-                    .cpus
-                    .first()?;
+            .filter_map(|info| {
+                let first = info.cpus.first()?;
                 Some((
-                    core,
+                    info.core,
                     roots
                         .cpu
                         .join(format!("cpu{}", first.get()))
@@ -80,6 +77,10 @@ impl Sensors {
         Self {
             hwmon: roots.hwmon.clone(),
             energy: read_integer(&inputs, &powercap.join("energy_uj")),
+            cores_energy: read_integer(
+                &inputs,
+                &powercap.join("intel-rapl:0:0/energy_uj"),
+            ),
             powercap,
             clocks,
             energy_at: now,
@@ -96,14 +97,19 @@ impl Sensors {
             }
         }
         let energy = read_integer(&self.inputs, &self.powercap.join("energy_uj"));
-        let package_power_w = self.power(energy, now);
+        let cores_path = self.powercap.join("intel-rapl:0:0");
+        let cores_energy = read_integer(&self.inputs, &cores_path.join("energy_uj"));
+        let package_power_w = self.power(&self.powercap, energy, self.energy, now);
+        let cores_power_w = self.power(&cores_path, cores_energy, self.cores_energy, now);
         self.energy = energy;
+        self.cores_energy = cores_energy;
         self.energy_at = now;
         Readings {
             tctl_c,
             tccd_c,
             core_mhz,
             package_power_w,
+            cores_power_w,
         }
     }
 
@@ -111,15 +117,24 @@ impl Sensors {
         clippy::cast_precision_loss,
         reason = "microjoule deltas are far below 2^53"
     )]
-    fn power(&self, energy: Option<i64>, now: Instant) -> Option<f64> {
-        let (current, previous) = (energy?, self.energy?);
+    fn power(
+        &self,
+        domain: &Path,
+        energy: Option<i64>,
+        baseline: Option<i64>,
+        now: Instant,
+    ) -> Option<f64> {
+        let (current, previous) = (energy?, baseline?);
+        if current < 0 || previous < 0 {
+            return None;
+        }
         let elapsed = now.checked_duration_since(self.energy_at)?;
         if elapsed.is_zero() {
             return None;
         }
         let mut delta = current - previous;
         if delta < 0 {
-            let limit = read_integer(&self.inputs, &self.powercap.join("max_energy_range_uj"))?;
+            let limit = read_integer(&self.inputs, &domain.join("max_energy_range_uj"))?;
             if limit <= previous {
                 return None;
             }
@@ -223,8 +238,8 @@ mod tests {
             Inputs::memory(self.fs.clone())
         }
 
-        fn sensors(&self, topology: &[CoreInfo], loaded: &[CoreId], now: Instant) -> Sensors {
-            Sensors::with_inputs(&Self::roots(), topology, loaded, now, self.inputs())
+        fn sensors(&self, topology: &[CoreInfo], now: Instant) -> Sensors {
+            Sensors::with_inputs(&Self::roots(), topology, now, self.inputs())
         }
     }
 
@@ -283,29 +298,58 @@ mod tests {
         );
     }
 
+    #[test_case::test_case(None, None, None, None; "missing domain")]
+    #[test_case::test_case(Some("1000000"), Some("4000000"), None, Some(3.0); "delta")]
+    #[test_case::test_case(Some("9000000"), Some("1000000"), Some("10000000"), Some(2.0); "wrap")]
+    #[test_case::test_case(Some("9000000"), Some("1000000"), None, None; "unexplained decrease")]
+    #[test_case::test_case(Some("9000000"), Some("1000000"), Some("500000"), None; "invalid wrap range")]
+    #[test_case::test_case(Some("1000000"), Some("invalid"), None, None; "invalid reading")]
+    #[test_case::test_case(Some("1000000"), Some("-1"), None, None; "negative reading")]
+    fn core_domain_uses_its_own_baseline_and_wrap_range(
+        initial: Option<&str>,
+        current: Option<&str>,
+        range: Option<&str>,
+        expected: Option<f64>,
+    ) {
+        let fixture = Fixture::new();
+        fixture.write("powercap/intel-rapl:0/energy_uj", "100000000");
+        if let Some(value) = initial {
+            fixture.write("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj", value);
+        }
+        if let Some(value) = range {
+            fixture.write("powercap/intel-rapl:0/intel-rapl:0:0/max_energy_range_uj", value);
+        }
+        let start = Instant::now();
+        let mut sensors = fixture.sensors(&[], start);
+        if let Some(value) = current {
+            fixture.write("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj", value);
+        }
+        assert_eq!(sensors.read(start + Duration::from_secs(1)).cores_power_w, expected);
+    }
+
     #[test]
-    fn clocks_come_from_the_first_cpu_of_each_loaded_core_only() {
+    fn clocks_come_from_the_first_cpu_of_every_core_including_idle_cores() {
         let fixture = Fixture::new();
         fixture.write("cpu/cpu0/cpufreq/scaling_cur_freq", "4500000\n");
         fixture.write("cpu/cpu1/cpufreq/scaling_cur_freq", "3999999\n");
         fixture.write("cpu/cpu8/cpufreq/scaling_cur_freq", "1000\n");
         let now = Instant::now();
-        let mut sensors = fixture.sensors(&topology(), &[core(0)], now);
+        let mut sensors = fixture.sensors(&topology(), now);
         let readings = sensors.read(now + Duration::from_secs(1));
         assert_eq!(readings.core_mhz.get(core(0)), Some(4500));
-        assert_eq!(readings.core_mhz.get(core(1)), None);
-        let mut both = fixture.sensors(&topology(), &[core(0), core(1)], now);
-        let readings = both.read(now);
         assert_eq!(readings.core_mhz.get(core(1)), Some(3999));
     }
 
-    #[test]
-    fn negative_or_unparsable_frequencies_are_omitted() {
+    #[test_case::test_case(None; "missing")]
+    #[test_case::test_case(Some("-5\n"); "negative")]
+    #[test_case::test_case(Some("fast\n"); "unparsable")]
+    fn missing_or_invalid_frequencies_are_omitted(value: Option<&str>) {
         let fixture = Fixture::new();
-        fixture.write("cpu/cpu0/cpufreq/scaling_cur_freq", "-5\n");
-        fixture.write("cpu/cpu1/cpufreq/scaling_cur_freq", "fast\n");
+        if let Some(value) = value {
+            fixture.write("cpu/cpu0/cpufreq/scaling_cur_freq", value);
+        }
         let now = Instant::now();
-        let mut sensors = fixture.sensors(&topology(), &[core(0), core(1)], now);
+        let mut sensors = fixture.sensors(&topology(), now);
         assert!(sensors.read(now).core_mhz.is_empty());
     }
 
@@ -314,7 +358,7 @@ mod tests {
         let fixture = Fixture::new();
         fixture.write("powercap/intel-rapl:0/energy_uj", "1000000\n");
         let start = Instant::now();
-        let mut sensors = fixture.sensors(&[], &[], start);
+        let mut sensors = fixture.sensors(&[], start);
         fixture.write("powercap/intel-rapl:0/energy_uj", "11000000\n");
         let readings = sensors.read(start + Duration::from_secs(1));
         assert_eq!(readings.package_power_w, Some(10.0));
@@ -326,7 +370,7 @@ mod tests {
         fixture.write("powercap/intel-rapl:0/energy_uj", "9000000\n");
         fixture.write("powercap/intel-rapl:0/max_energy_range_uj", "10000000\n");
         let start = Instant::now();
-        let mut sensors = fixture.sensors(&[], &[], start);
+        let mut sensors = fixture.sensors(&[], start);
         fixture.write("powercap/intel-rapl:0/energy_uj", "1000000\n");
         assert_eq!(
             sensors.read(start + Duration::from_secs(1)).package_power_w,
@@ -340,29 +384,41 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_missing_reading_resets_the_baseline_so_the_next_good_one_omits_power() {
+    #[test_case::test_case("intel-rapl:0", false; "package")]
+    #[test_case::test_case("intel-rapl:0/intel-rapl:0:0", true; "cores")]
+    fn a_missing_reading_resets_the_baseline_so_the_next_good_one_omits_power(
+        domain: &str,
+        cores: bool,
+    ) {
         let fixture = Fixture::new();
-        fixture.write("powercap/intel-rapl:0/energy_uj", "1000000\n");
+        let path = format!("powercap/{domain}/energy_uj");
+        fixture.write(&path, "1000000\n");
         let start = Instant::now();
-        let mut sensors = fixture.sensors(&[], &[], start);
+        let mut sensors = fixture.sensors(&[], start);
+        let power = |readings: Readings| {
+            if cores {
+                readings.cores_power_w
+            } else {
+                readings.package_power_w
+            }
+        };
         togi_journal::fs::Fs::remove_file(
             fixture.fs.as_ref(),
-            Path::new("/sensors/powercap/intel-rapl:0/energy_uj"),
+            &Path::new("/sensors").join(&path),
         )
         .unwrap();
         assert_eq!(
-            sensors.read(start + Duration::from_secs(1)).package_power_w,
+            power(sensors.read(start + Duration::from_secs(1))),
             None
         );
-        fixture.write("powercap/intel-rapl:0/energy_uj", "5000000\n");
+        fixture.write(&path, "5000000\n");
         assert_eq!(
-            sensors.read(start + Duration::from_secs(2)).package_power_w,
+            power(sensors.read(start + Duration::from_secs(2))),
             None
         );
-        fixture.write("powercap/intel-rapl:0/energy_uj", "7000000\n");
+        fixture.write(&path, "7000000\n");
         assert_eq!(
-            sensors.read(start + Duration::from_secs(3)).package_power_w,
+            power(sensors.read(start + Duration::from_secs(3))),
             Some(2.0)
         );
     }

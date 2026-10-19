@@ -31,6 +31,8 @@ pub struct TrialConditions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_power_w: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cores_power_w: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pm_table: Option<PmTable>,
 }
 

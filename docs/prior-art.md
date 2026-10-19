@@ -37,7 +37,7 @@ What togi takes from existing tools and research, and what it deliberately leave
 | Feature | Why |
 |---|---|
 | Qt GUI, desktop entry, notifications | CLI first; `togi watch` reads the journal as a TUI |
-| Full monitoring subsystem (hwmon, SPD, RAPL, APERF/MPERF, Super I/O) | Not needed to judge a trial; togi samples temperatures, per-core clocks, the PM table and package energy-derived power, not a general monitoring subsystem |
+| Full monitoring subsystem (hwmon, SPD, RAPL, APERF/MPERF, Super I/O) | togi samples temperatures, every core's clock, the PM table and RAPL package and aggregate core energy-derived power. The rest of the [#625 inventory](https://github.com/shgew/togi/issues/625) stays out: duplicates of collected data, per-core IPIs, device IRQs or polled SMBus, or data unrelated to CPU tuning do not justify a general monitoring subsystem. |
 | SQLite history | [ADR 0003](adr/0003-journal-is-source-of-truth.md) |
 | A fixed validation-stage sequence, accumulated clean-time budgets and deeper probes earned by those budgets | The fork calls the last two endurance banks and annealing ([its usage guide](https://github.com/shgew/linux-corecycler/blob/main/docs/usage.md#auto-tuner)). togi instead uses [alone search](spec/tuner.md#search), [hunts](spec/tuner.md#hunt), [phases 1 and 2](spec/tuner.md#phase-1) and [checking](spec/tuner.md#checking); it reports cycle evidence, not durability tiers ([ADR 0020](adr/0020-hunt-and-refine.md), [ADR 0028](adr/0028-remove-tiers.md)) |
 | Zen 1-5 command table, APU dialects | Zen 5 desktop only; other generations are [#20](https://github.com/shgew/togi/issues/20) |

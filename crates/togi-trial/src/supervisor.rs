@@ -373,11 +373,6 @@ pub(crate) async fn start<O: Os>(
     }
     let started = describe(&plan, &live, launched.argv, launched.files);
     let duration = plan.duration;
-    let cores: Vec<CoreId> = plan
-        .instances
-        .iter()
-        .map(|instance| instance.core)
-        .collect();
     let (failed_tx, storage_failed) = unbounded_channel();
     let open = match &env.storage {
         Some(make) => make(),
@@ -406,7 +401,6 @@ pub(crate) async fn start<O: Os>(
         sensors: Sensors::with_inputs(
             &env.roots,
             &env.topology,
-            &cores,
             started_at,
             env.inputs.clone(),
         ),
@@ -1097,6 +1091,7 @@ impl<O: Os> Supervisor<O> {
             core_mhz: readings.core_mhz,
             worker_cpu_ms: *workers,
             package_power_w: readings.package_power_w,
+            cores_power_w: readings.cores_power_w,
             pm_table: self
                 .env
                 .pm_table

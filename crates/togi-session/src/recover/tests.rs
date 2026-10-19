@@ -13,8 +13,8 @@ use togi_journal::{
     TrialProgress, TrialSample, fs::Fault, fs::MemFs, fs::Op,
 };
 use togi_machine::{
-    BankType, BootId, CancellationToken, Clock, Condition, CoreSet, CpuId, Error, Kernel,
-    KernelCursor, KernelRead, Partial, PmTable, PstoreRecord, ReadSamples, Regime, ResetKind,
+    BankType, BootId, CancellationToken, CcdId, Clock, Condition, CoreSet, CpuId, Error, Kernel,
+    KernelCursor, KernelRead, Partial, PerCore, PmTable, PstoreRecord, ReadSamples, Regime, ResetKind,
     ResetReason, Running, Signal, Stopped, Swept, TargetOffset, TrialConditions, TrialSpec, Trials,
     pick_workload,
 };
@@ -1488,15 +1488,19 @@ fn crashed_trial_with(samples: &str) -> Harness {
     h
 }
 
-#[test_case("complete", ""; "complete")]
-#[test_case("torn after it", "{\"elapsed_ms\":30"; "torn after it")]
+#[test_case("complete", "", false; "complete legacy clocks")]
+#[test_case("complete", "", true; "complete all core clocks")]
+#[test_case("torn after it", "{\"elapsed_ms\":30", false; "legacy clocks torn after it")]
+#[test_case("torn after it", "{\"elapsed_ms\":30", true; "all core clocks torn after it")]
 fn a_crashed_trials_end_carries_the_last_complete_sample_and_ignores_a_torn_one(
     name: &str,
     tail: &str,
+    idle_clocks: bool,
 ) {
-    let complete = concat!(
-        "{\"elapsed_ms\":1000,\"tctl_c\":70,\"core_mhz\":{\"0\":4400,\"8\":4300}}\n",
-        "{\"elapsed_ms\":2000,\"tctl_c\":85,\"core_mhz\":{\"0\":4500,\"8\":4300}}\n",
+    let idle = if idle_clocks { ",\"15\":6000" } else { "" };
+    let complete = format!(
+        "{{\"elapsed_ms\":1000,\"tctl_c\":70,\"core_mhz\":{{\"0\":4400,\"8\":4300{idle}}}}}\n\
+         {{\"elapsed_ms\":2000,\"tctl_c\":85,\"core_mhz\":{{\"0\":4500,\"8\":4300{idle}}}}}\n"
     );
 
     let text = format!("{complete}{tail}");
@@ -1549,15 +1553,21 @@ fn an_interrupted_trial_ran_until_its_last_own_sample_and_another_trials_sample_
     assert_eq!(ends[0].1.duration_s, ran_s, "{sampled}");
 }
 
-#[test]
-fn a_recovered_trials_end_carries_the_request_telemetry_of_its_loaded_cores() {
+#[test_case(false; "legacy clocks")]
+#[test_case(true; "all core clocks")]
+fn a_recovered_trials_end_carries_the_request_telemetry_of_its_loaded_cores(idle_clocks: bool) {
     let samples: Vec<TrialConditions> = (0..20)
         .map(|i| {
             let mut table = PmTable::default();
             table.voltage_request_v[0] = 1.25;
+            let mut core_mhz = [(core(0), 5000)].into_iter().collect::<PerCore<i64>>();
+            if idle_clocks {
+                core_mhz.set(core(1), 100);
+                core_mhz.set(core(15), 6000);
+            }
             TrialConditions {
                 elapsed_ms: 5000 + i * 1000,
-                core_mhz: [(core(0), 5000)].into_iter().collect(),
+                core_mhz,
                 worker_cpu_ms: [(core(0), i * 100)].into_iter().collect(),
                 pm_table: Some(table),
                 ..TrialConditions::default()
@@ -1579,7 +1589,7 @@ fn a_recovered_trials_end_carries_the_request_telemetry_of_its_loaded_cores() {
     assert_eq!(end.voltage_request_min_v, Some(1.25));
     assert_eq!(end.voltage_requests_v.get(core(0)), Some(1.25));
     assert!(end.top_requesters.contains(core(0)));
-    assert!(!end.ccd_mhz.is_empty());
+    assert_eq!(end.ccd_mhz.get(&CcdId::new(0).unwrap()), Some(&5000));
     h.consistent();
 }
 
