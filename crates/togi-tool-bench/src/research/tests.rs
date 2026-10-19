@@ -744,13 +744,13 @@ fn a_backwards_campaign_time_is_refused_without_resetting_its_budget() {
     assert_eq!(live.campaign.ledger.records.len(), before);
     assert_eq!(
         live.campaign.guard(&fake, at(0)).unwrap(),
-        std::time::Duration::from_secs(480 * 60),
+        std::time::Duration::from_hours(8),
     );
     assert_eq!(
         live.campaign
             .guard(&fake, at(0) + SignedDuration::from_nanos(1))
             .unwrap(),
-        std::time::Duration::new(480 * 60 - 1, 999_999_999),
+        std::time::Duration::from_hours(8) - std::time::Duration::from_nanos(1),
     );
 }
 
