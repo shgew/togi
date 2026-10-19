@@ -4,21 +4,24 @@ use std::fmt::Write as _;
 use std::io::{self, Read};
 use std::path::Path;
 
+use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use togi_machine::object_only;
 
 use crate::fs::Fs;
 use crate::{Seq, StateError};
 
+object_only! {
 /// The exact complete journal prefix a snapshot covers, including line terminators.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Prefix {
     pub last_seq: Option<Seq>,
     pub bytes: u64,
     pub sha256: String,
+}
 }
 
 impl Prefix {
@@ -52,12 +55,14 @@ impl PrefixHash {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+object_only! {
+#[derive(Serialize)]
 #[serde(deny_unknown_fields)]
 struct Seal {
     build: String,
     prefix: Prefix,
     sha256: String,
+}
 }
 
 /// Why a cache must be discarded. Readers fall back without writing; a run records the rebuild.
@@ -75,6 +80,8 @@ pub enum Rejected {
     Content,
     #[error("snapshot journal prefix differs")]
     Prefix,
+    #[error("snapshot reducer representation differs from this build's shape")]
+    ReducerShape,
     #[error("read snapshot journal prefix")]
     Read(#[from] io::Error),
 }
@@ -108,7 +115,12 @@ pub fn seal(prefix: Prefix, document: &impl Serialize) -> Result<Value, StateErr
 /// # Errors
 ///
 /// Returns the reason the snapshot must not be used.
-pub fn unseal<T: DeserializeOwned>(mut value: Value) -> Result<(Prefix, T), Rejected> {
+pub fn unseal<T: DeserializeOwned + Serialize>(value: Value) -> Result<(Prefix, T), Rejected> {
+    let (prefix, value) = checked_document(value)?;
+    Ok((prefix, decode_state(&value)?))
+}
+
+fn checked_document(mut value: Value) -> Result<(Prefix, Value), Rejected> {
     let object = value.as_object_mut().ok_or(Rejected::Shape)?;
     let seal: Seal = serde_json::from_value(object.remove("snapshot").ok_or(Rejected::Missing)?)?;
     if seal.build != env!("TOGI_SNAPSHOT_BUILD") {
@@ -118,7 +130,22 @@ pub fn unseal<T: DeserializeOwned>(mut value: Value) -> Result<(Prefix, T), Reje
     if seal.sha256 != hex(&Sha256::digest(bytes)) {
         return Err(Rejected::Content);
     }
-    Ok((seal.prefix, serde_json::from_value(value)?))
+    Ok((seal.prefix, value))
+}
+
+fn decode_state<T: DeserializeOwned + Serialize>(value: &Value) -> Result<T, Rejected> {
+    let state = T::deserialize(value)?;
+    let encoded = serde_json::to_value(&state)?;
+    let matches = match (value, &encoded) {
+        (Value::Object(original), Value::Object(encoded)) => encoded
+            .iter()
+            .all(|(key, field)| original.get(key) == Some(field)),
+        _ => *value == encoded,
+    };
+    if !matches {
+        return Err(Rejected::ReducerShape);
+    }
+    Ok(state)
 }
 
 /// Checks the exact prefix without decoding or reducing its events. The caller may then fold only its tail.
@@ -165,7 +192,7 @@ pub fn verify_prefix(fs: &dyn Fs, journal: &Path, prefix: &Prefix) -> Result<(),
 /// # Errors
 ///
 /// Returns the cache rejection; a missing cache is `Ok(None)`.
-pub fn read_in<T: DeserializeOwned>(
+pub fn read_in<T: DeserializeOwned + Serialize>(
     fs: &dyn Fs,
     directory: &Path,
 ) -> Result<Option<(Prefix, T)>, Rejected> {
@@ -174,9 +201,9 @@ pub fn read_in<T: DeserializeOwned>(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.into()),
     };
-    let (prefix, state) = unseal::<Value>(serde_json::from_slice(&bytes)?)?;
+    let (prefix, state) = checked_document(serde_json::from_slice(&bytes)?)?;
     verify_prefix(fs, &directory.join("events.jsonl"), &prefix)?;
-    Ok(Some((prefix, serde_json::from_value(state)?)))
+    Ok(Some((prefix, decode_state(&state)?)))
 }
 
 /// The disk counterpart of [`read_in`], with the same read-only contract.
@@ -184,7 +211,9 @@ pub fn read_in<T: DeserializeOwned>(
 /// # Errors
 ///
 /// Returns the cache rejection.
-pub fn read<T: DeserializeOwned>(directory: &Path) -> Result<Option<(Prefix, T)>, Rejected> {
+pub fn read<T: DeserializeOwned + Serialize>(
+    directory: &Path,
+) -> Result<Option<(Prefix, T)>, Rejected> {
     read_in(&crate::fs::DiskFs::default(), directory)
 }
 
@@ -194,7 +223,9 @@ impl crate::StateDir {
     /// # Errors
     ///
     /// Returns the cache rejection.
-    pub fn read_snapshot<T: DeserializeOwned>(&self) -> Result<Option<(Prefix, T)>, Rejected> {
+    pub fn read_snapshot<T: DeserializeOwned + Serialize>(
+        &self,
+    ) -> Result<Option<(Prefix, T)>, Rejected> {
         read_in(self.fs(), self.path())
     }
 }

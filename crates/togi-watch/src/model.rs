@@ -747,7 +747,22 @@ impl<'a> Snapshot<'a> {
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Presentation {
     facts: Facts,
-    ended: Option<Derived>,
+    ended: Option<RetainedEnd>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+struct RetainedEnd {
+    view: crate::derive::View,
+    tuner: TunerState,
+}
+
+impl RetainedEnd {
+    fn into_derived(self) -> Derived {
+        Derived {
+            view: self.view,
+            forecast: self.tuner.forecast(),
+        }
+    }
 }
 
 fn capture_end(
@@ -770,15 +785,14 @@ fn capture_end(
 impl Presentation {
     /// Retains the last trial's pre-end view before the shared reducers consume its result.
     pub fn before_event(&mut self, event: &Event, journal: &JournalState, tuner: &TunerState) {
-        capture_end(
-            event,
-            journal,
-            tuner,
-            &self.facts,
-            &mut self.ended,
-            None,
-            true,
-        );
+        if matches!(event.payload, Payload::SessionStart(_)) {
+            self.ended = None;
+        } else if matches!(event.payload, Payload::TrialEnd(_)) && journal.session.is_some() {
+            self.ended = Some(RetainedEnd {
+                view: crate::derive::View::new(journal, tuner, &self.facts),
+                tuner: tuner.clone(),
+            });
+        }
     }
 
     /// Updates presentation facts after the shared reducers have consumed the event.
@@ -788,7 +802,7 @@ impl Presentation {
 }
 
 /// The reader-owned part of the published full-state document.
-#[derive(serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct PublishedView {
     facts: JournalState,
     incremental: TunerState,
@@ -885,7 +899,7 @@ impl Model {
             journal,
             tuner,
             facts: presentation.facts,
-            ended: presentation.ended,
+            ended: presentation.ended.map(RetainedEnd::into_derived),
             problem: None,
             skipped: None,
             derived: OnceCell::new(),

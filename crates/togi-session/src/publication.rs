@@ -16,6 +16,7 @@ pub enum PublicationPolicy {
 
 object_only! {
     #[derive(Clone, Debug, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
     pub(crate) struct StateDocument {
         pub facts: togi_journal::State,
         pub tuner: Projection,

@@ -45,7 +45,13 @@ fn state_write_failure_warns_continues_and_rebuilds() {
     resumed.rebuild_state().unwrap();
     assert!(kinds_of(&resumed.appender).contains(&"state.rebuilt"));
     assert!(resumed.appender.publish_state().unwrap());
-    let saved: StateDocument = resumed.appender.journal().read_state().unwrap().unwrap();
+    let (_, saved): (_, StateDocument) = resumed
+        .appender
+        .journal()
+        .dir()
+        .read_snapshot()
+        .unwrap()
+        .unwrap();
     assert_eq!(saved.facts, resumed.appender.folds.facts);
     assert_eq!(saved.tuner, resumed.appender.tuner().project());
 }
@@ -162,7 +168,7 @@ fn deferred_state_is_written_before_the_journal_leaves_the_run() {
     let ended = crate::run(input);
     assert!(ended.errors.is_empty());
     let expected = StateDocument::of(&Folds::replay(ended.journal.events()).unwrap());
-    let saved: StateDocument = ended.journal.read_state().unwrap().unwrap();
+    let (_, saved): (_, StateDocument) = ended.journal.dir().read_snapshot().unwrap().unwrap();
     assert_eq!(saved, expected);
     let bytes = serde_json::to_vec(&saved).unwrap();
     assert_eq!(
@@ -171,7 +177,7 @@ fn deferred_state_is_written_before_the_journal_leaves_the_run() {
     );
     let dir = ended.journal.close().unwrap();
     assert_eq!(
-        dir.read_state::<StateDocument>().unwrap().unwrap(),
+        dir.read_snapshot::<StateDocument>().unwrap().unwrap().1,
         expected
     );
 }
@@ -201,7 +207,7 @@ fn on_finish_publishes_the_state_once_after_the_final_event() {
         ended.journal.events().last().unwrap().payload,
         Payload::Shutdown(_)
     ));
-    let saved: StateDocument = ended.journal.read_state().unwrap().unwrap();
+    let (_, saved): (_, StateDocument) = ended.journal.dir().read_snapshot().unwrap().unwrap();
     assert_eq!(
         saved.facts,
         togi_journal::State::replay(ended.journal.events()).unwrap()
@@ -218,7 +224,7 @@ fn live_publishes_after_every_append_and_the_last_state_covers_the_final_event()
     let ended = crate::run(input);
     assert!(ended.errors.is_empty());
     assert!(publications(&bench) > ended.journal.events().len());
-    let saved: StateDocument = ended.journal.read_state().unwrap().unwrap();
+    let (_, saved): (_, StateDocument) = ended.journal.dir().read_snapshot().unwrap().unwrap();
     assert_eq!(
         saved.facts,
         togi_journal::State::replay(ended.journal.events()).unwrap()
@@ -304,6 +310,16 @@ fn boot_replays_independently_even_when_a_wrong_full_fold_has_a_valid_checksum(
         reseal(state);
     });
     assert_eq!(fields, [expected]);
+}
+
+#[test_case(serde_json::json!([1, "pending"]); "sized recovery record array")]
+#[test_case(serde_json::json!({"seq": 1, "detail": "pending", "future": true}); "unknown recovery record key")]
+fn resealed_nested_reducer_shape_changes_are_discarded(value: serde_json::Value) {
+    let fields = rebuilt_after_tampering(|state| {
+        state["recovery"]["smu"] = value;
+        reseal(state);
+    });
+    assert_eq!(fields, ["state.json"]);
 }
 
 #[test]

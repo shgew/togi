@@ -79,3 +79,49 @@ fn absence_is_not_a_read_failure_or_a_write() {
     );
     assert_eq!(fs.mutations(), before);
 }
+
+#[test_case(true; "stamp array")]
+#[test_case(false; "prefix array")]
+fn positional_verification_metadata_is_rejected(stamp_array: bool) {
+    let mut saved = seal(stamp(), &json!({"facts": {"last_seq": 1}})).unwrap();
+    let metadata = saved["snapshot"].clone();
+    if stamp_array {
+        saved["snapshot"] = json!([metadata["build"], metadata["prefix"], metadata["sha256"]]);
+    } else {
+        let prefix = &metadata["prefix"];
+        saved["snapshot"]["prefix"] =
+            json!([prefix["last_seq"], prefix["bytes"], prefix["sha256"]]);
+    }
+    assert!(matches!(unseal::<Value>(saved), Err(Rejected::Decode(_))));
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct Reducers {
+    nested: Reducer,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct Reducer {
+    count: u32,
+}
+
+#[test_case(&json!({"nested": [1]}); "sized nested array")]
+#[test_case(&json!({"nested": {"count": 1, "future": true}}); "unknown nested key")]
+fn resealed_noncanonical_reducer_shapes_are_rejected(document: &Value) {
+    let saved = seal(stamp(), document).unwrap();
+    assert!(matches!(
+        unseal::<Reducers>(saved),
+        Err(Rejected::ReducerShape)
+    ));
+}
+
+#[test]
+fn partial_reader_checks_the_shape_of_every_field_it_restores() {
+    let saved = seal(
+        stamp(),
+        &json!({"nested": {"count": 1}, "other_reader": {"extra": true}}),
+    )
+    .unwrap();
+    let (_, restored) = unseal::<Reducers>(saved).unwrap();
+    assert_eq!(restored.nested.count, 1);
+}

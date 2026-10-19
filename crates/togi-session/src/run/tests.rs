@@ -31,7 +31,8 @@ fn assert_clean(bench: &Bench, ended: &Ended, stop: Stop) {
     );
     let facts = togi_journal::State::replay(ended.journal.events()).unwrap();
     let tuner = togi_tuner::replay(ended.journal.events()).unwrap();
-    let state: crate::publication::StateDocument = ended.journal.read_state().unwrap().unwrap();
+    let (_, state): (_, crate::publication::StateDocument) =
+        ended.journal.dir().read_snapshot().unwrap().unwrap();
     assert_eq!(state.facts, facts);
     assert_eq!(state.tuner, tuner.project());
 }
@@ -79,7 +80,8 @@ fn an_event_log_that_cannot_be_written_is_reported_and_never_stops_the_run() {
     assert_eq!(ended.stop, Some(Stop::Cycles));
     assert!(ended.emergency.is_none());
     let facts = togi_journal::State::replay(ended.journal.events()).unwrap();
-    let state: crate::publication::StateDocument = ended.journal.read_state().unwrap().unwrap();
+    let (_, state): (_, crate::publication::StateDocument) =
+        ended.journal.dir().read_snapshot().unwrap().unwrap();
     assert_eq!(state.facts, facts);
 }
 

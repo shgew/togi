@@ -29,6 +29,8 @@ pub(super) trait SessionRunner: Sync {
     ) -> Result<Session, RunError>;
     /// Audits every journal of the state directory `session` left.
     fn audit(&self, session: &Session, completion: Completion) -> DirectoryAudit;
+    fn folded(&self, session: &Session)
+    -> Result<togi_session::ReadState, togi_session::FoldError>;
     fn remove(&self, path: &Path);
 }
 
@@ -97,6 +99,12 @@ impl SessionRunner for Simulator {
     }
     fn audit(&self, session: &Session, completion: Completion) -> DirectoryAudit {
         togi_tool_audit::audit_directory(&session.dir, completion)
+    }
+    fn folded(
+        &self,
+        session: &Session,
+    ) -> Result<togi_session::ReadState, togi_session::FoldError> {
+        togi_session::ReadState::read(&session.dir, &session.events)
     }
     fn remove(&self, path: &Path) {
         let _ = std::fs::remove_dir_all(path);

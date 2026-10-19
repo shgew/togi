@@ -103,7 +103,7 @@ enum Reading {
     Lenient,
 }
 
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Folded {
     pub facts: togi_journal::State,
     pub incremental: togi_tuner::State,

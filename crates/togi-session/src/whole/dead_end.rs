@@ -974,7 +974,8 @@ fn assert_restored_and_published(bench: &Bench, ended: &Ended) {
     assert_eq!(observed(&held), baseline);
     let facts = togi_journal::State::replay(ended.journal.events()).unwrap();
     let tuner = togi_tuner::replay(ended.journal.events()).unwrap();
-    let state: crate::publication::StateDocument = ended.journal.read_state().unwrap().unwrap();
+    let (_, state): (_, crate::publication::StateDocument) =
+        ended.journal.dir().read_snapshot().unwrap().unwrap();
     assert_eq!(state.facts, facts);
     assert_eq!(state.tuner, tuner.project());
 }

@@ -17,8 +17,21 @@ use crate::model::{
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
 pub(crate) struct Derived {
-    pub(crate) projection: Projection,
     pub(crate) forecast: Forecast,
+    pub(crate) view: View,
+}
+
+impl std::ops::Deref for Derived {
+    type Target = View;
+
+    fn deref(&self) -> &View {
+        &self.view
+    }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+pub(crate) struct View {
+    pub(crate) projection: Projection,
     pub(crate) cores: Vec<CoreView>,
     pub(crate) combos: Vec<ComboView>,
     pub(crate) trial: Option<TrialView>,
@@ -33,8 +46,23 @@ pub(crate) struct Derived {
 impl Derived {
     pub(crate) fn empty() -> Self {
         Self {
-            projection: TunerState::new().project(),
+            view: View::empty(),
             forecast: Forecast::default(),
+        }
+    }
+
+    pub(crate) fn new(journal: &JournalState, tuner: &TunerState, facts: &Facts) -> Self {
+        Self {
+            view: View::new(journal, tuner, facts),
+            forecast: tuner.forecast(),
+        }
+    }
+}
+
+impl View {
+    fn empty() -> Self {
+        Self {
+            projection: TunerState::new().project(),
             cores: Vec::new(),
             combos: Vec::new(),
             trial: None,
@@ -49,7 +77,6 @@ impl Derived {
 
     pub(crate) fn new(journal: &JournalState, tuner: &TunerState, facts: &Facts) -> Self {
         let projection = tuner.project();
-        let forecast = tuner.forecast();
         let plan = &projection.cycle_plan;
         let mut trial = facts.current.as_ref().map(|current| {
             let mut view = new_trial(&current.intent, facts, journal);
@@ -122,7 +149,6 @@ impl Derived {
         let order = journal.cores.iter().map(|core| core.core).collect();
         Self {
             projection,
-            forecast,
             cores,
             combos,
             trial,

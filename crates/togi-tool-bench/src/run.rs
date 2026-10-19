@@ -323,7 +323,11 @@ impl<R: SessionRunner> Job<'_, R> {
                 self.options.max_boots,
                 self.options.timeout,
             )?;
-            let record = record_of(spec, &session, self.verdicts)?;
+            let folded = self
+                .simulator
+                .folded(&session)
+                .map_err(|error| RunError::Measure(crate::error::MeasureError::Folded(error)))?;
+            let record = record_of(spec, &session, self.verdicts, folded.facts())?;
             let audit = self.simulator.audit(&session, completion(record.status));
             if !keeping {
                 self.simulator.remove(&session.dir);
@@ -375,6 +379,7 @@ fn record_of(
     spec: &RunSpec,
     session: &Session,
     verdicts: &BTreeMap<PathBuf, ModelCheck>,
+    facts: &togi_journal::State,
 ) -> Result<Record, RunError> {
     let model = spec.model().map_err(RunError::Model)?;
     let Measured {
@@ -393,12 +398,7 @@ fn record_of(
         hazard_per_h,
         hazard_max_per_h,
         worst_r7_hazard_per_h,
-    } = metrics::measure_in(
-        &session.dir,
-        &session.events,
-        &model,
-        spec.replay.as_deref(),
-    )?;
+    } = metrics::measure_with(&session.events, &model, spec.replay.as_deref(), Some(facts))?;
     Ok(Record {
         scenario: spec.scenario.clone(),
         machine: spec.machine.as_ref().map(|machine| machine.name.clone()),

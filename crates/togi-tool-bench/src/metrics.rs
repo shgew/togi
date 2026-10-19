@@ -52,23 +52,7 @@ pub fn measure(
     measure_with(events, model, replay, None)
 }
 
-/// Measures a persisted run using its verified snapshot and only folding its uncovered tail.
-///
-/// # Errors
-///
-/// Returns the journal fold or measurement failure.
-pub(crate) fn measure_in(
-    directory: &std::path::Path,
-    events: &[Event],
-    model: &Model,
-    replay: Option<&Replay>,
-) -> Result<Measured, RunError> {
-    let state = togi_session::ReadState::read(directory, events)
-        .map_err(|error| RunError::Measure(MeasureError::Folded(error)))?;
-    measure_with(events, model, replay, Some(state.facts()))
-}
-
-fn measure_with(
+pub(crate) fn measure_with(
     events: &[Event],
     model: &Model,
     replay: Option<&Replay>,
