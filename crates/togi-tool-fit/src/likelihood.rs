@@ -59,7 +59,7 @@ impl<'a> Likelihood<'a> {
     }
 
     pub(crate) fn cores(&self) -> usize {
-        usize::try_from(self.cfg.cores).unwrap_or(0)
+        self.model.as_ref().map_or(0, Model::cores)
     }
 
     pub(crate) fn core_ids(&self) -> impl Iterator<Item = CoreId> + use<> {

@@ -12,15 +12,12 @@ use togi_journal::{
     Decision, Failure, HuntEnd, HuntOutcome, HuntStart, Member, Outcome, ShutdownReason,
     TunerDecision,
 };
-use togi_machine::{
-    CcdId, Condition, CoreId, CoreSet, ObservedOffset, PerCore, Regime, ResetKind, Signal,
-    workloads,
-};
+use togi_machine::{CcdId, Condition, CoreId, PerCore, Regime, ResetKind, Signal, workloads};
 use togi_tuner::{
     Between, Branch, ClassKey, CyclePart, CyclePlan, CycleStep, DecisionPayload, Forecast,
     GroupState, HuntGroup, HuntPart, HuntPlan, Lengths, Load, PartNo, PhaseNo, PhasePlan, Premise,
-    Profile, Quota, R7CoreStatus, Requirement, RerunPlan, Secs, StepNo, Topology, TrialContext,
-    TrialPlan, Uncertainty, Window, WorkloadChoice,
+    Profile, Quota, R7CoreStatus, Requirement, Secs, StepNo, Topology, TrialContext, TrialPlan,
+    Uncertainty, Window, WorkloadChoice,
 };
 
 use super::outcome::{
@@ -42,6 +39,7 @@ use crate::model::{
     TrialEndView, TrialView,
 };
 use crate::screen::{Colours, View};
+use crate::tests::fixtures;
 use crate::tests::kit::{core, infos, nz, off, seq, set};
 
 mod edges;
@@ -167,50 +165,16 @@ impl Fx {
 }
 
 fn core_view(id: u8, ccd: u8) -> CoreView {
-    CoreView {
-        id: core(id),
-        ccd: CcdId::try_from(ccd).unwrap(),
-        state: CoreState::AtLimit,
-        queued: None,
-        applied: Some(ObservedOffset(0)),
-        profile: off(0),
-        solo: None,
-        pass: None,
-        next: None,
-        fail: None,
-        holder: None,
-        gave_back: None,
-        group_fails: Vec::new(),
-        returns_to: None,
-        confirm: None,
-        loaded: false,
-        judged: false,
-    }
+    fixtures::core_view(id, ccd, CoreState::AtLimit)
 }
 
 fn trial(regime: Regime, condition: Condition, cores: &[u8]) -> TrialView {
     TrialView {
-        id: "t1".to_owned().into(),
-        regime,
-        workload: workloads(regime)[0].id(),
         cores: set(cores),
-        parked: CoreSet::default(),
-        idle: CoreSet::default(),
         condition,
         activity: Some(Activity::Checking),
-        profile: PerCore::default(),
         started: Some(ts(1000)),
-        crashed: false,
-        duration: secs(120),
-        partial: false,
-        rerun: false,
-        retry: false,
-        cycle: None,
-        hunt: None,
-        core: None,
-        offset: None,
-        round: None,
-        count: Count::default(),
+        ..fixtures::trial_view(regime)
     }
 }
 
@@ -359,43 +323,11 @@ fn failure(core_id: Option<u8>) -> Failure {
 }
 
 fn hunt_plan() -> HuntPlan {
-    HuntPlan {
-        number: 1,
-        regime: Regime::R7,
-        failure: seq(1),
-        trial: None,
-        candidates: set(&[0, 2]),
-        cut: 0,
-        parts: Vec::new(),
-        groups: Vec::new(),
-        probes: Vec::new(),
-        rerun: RerunPlan {
-            regime: Regime::R7,
-            cores: CoreSet::default(),
-            lengths: Lengths {
-                short: Quota {
-                    count: 1,
-                    secs: 600,
-                },
-                long: None,
-            },
-        },
-    }
+    fixtures::hunt_plan(&[0, 2])
 }
 
 fn cause() -> HuntCause {
-    HuntCause {
-        at: None,
-        trial: None,
-        end: None,
-        signal: None,
-        core: None,
-        known: false,
-        carried: false,
-        regime: None,
-        rerun_of: false,
-        trial_number: 1,
-    }
+    fixtures::hunt_cause(1)
 }
 
 fn text(lines: &[ratatui::text::Line<'static>]) -> Vec<String> {

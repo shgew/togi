@@ -42,6 +42,17 @@ fn without_a_terminal_one_frame_of_the_requested_size_is_printed() {
 }
 
 #[test]
+fn without_a_terminal_the_default_frame_is_240_by_67() {
+    let dir = session(Scenario::Checking);
+    let default = togi(&dir, &["watch"]);
+    let explicit = togi(&dir, &["watch", "--width", "240", "--height", "67"]);
+    assert_eq!(default.status.code(), Some(0));
+    assert_eq!(text(&default.stderr), "");
+    assert_eq!(default.stdout, explicit.stdout);
+    assert_eq!(text(&default.stdout).lines().count(), 66);
+}
+
+#[test]
 fn an_unreadable_journal_prints_the_problem_frame_and_exits_one() {
     // A header of this build, then a line that is not an event: unreadable, not another build's journal.
     let dir = session(Scenario::Search);

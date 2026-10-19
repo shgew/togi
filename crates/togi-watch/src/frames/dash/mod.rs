@@ -13,9 +13,5 @@ pub(crate) use now::draw_now;
 pub(crate) use r7::r7_lines;
 pub(crate) use stage::stage_line;
 
-fn at(cells: usize) -> u16 {
-    u16::try_from(cells).unwrap_or(u16::MAX)
-}
-
 #[cfg(test)]
 mod tests;

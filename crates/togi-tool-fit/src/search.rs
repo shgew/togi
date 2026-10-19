@@ -264,11 +264,13 @@ impl Likelihood<'_> {
         let rate = self.cfg.model.past_limit_rate;
         let growth = self.cfg.model.growth;
         let mut options: Vec<(i64, f64)> = Vec::new();
-        for delta in low..=high {
-            let exponent = f64::from(i32::try_from(-delta).unwrap_or(0));
-            let shifted = rate * growth.powf(exponent);
+        for delta in -50_i32..=50 {
+            if !(low..=high).contains(&i64::from(delta)) {
+                continue;
+            }
+            let shifted = rate * growth.powf(f64::from(-delta));
             if (1e-8..=0.5).contains(&shifted) {
-                options.push((delta, shifted));
+                options.push((i64::from(delta), shifted));
             }
         }
         let apply = |def: &mut MachineDefinition, &(delta, shifted): &(i64, f64)| {

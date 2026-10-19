@@ -818,7 +818,7 @@ fn a_confirmation_failure_naming_a_phase1_core_reverts_only_the_deepened_core() 
             ..
         }) = &action
         {
-            assert!(!(d.core == core(1) && d.decision == Decision::Backoff));
+            assert_ne!((d.core, d.decision), (core(1), Decision::Backoff));
         }
         if !matches!(
             action,

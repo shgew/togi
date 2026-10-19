@@ -101,6 +101,8 @@ pub enum Error {
     NotSharedVoltage,
     #[error("in-sample shared-voltage fit fails the unchanged model check; anchor not written")]
     AnchorFlagged,
+    #[error("convert the bootstrap member index")]
+    BootstrapIndex(#[source] std::num::TryFromIntError),
     #[error("build the thread pool")]
     Pool(#[from] rayon::ThreadPoolBuildError),
 }

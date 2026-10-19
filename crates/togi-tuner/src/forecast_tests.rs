@@ -389,7 +389,8 @@ fn forecast_r7_premises_fold_distinct_outcomes_without_invented_telemetry() {
         );
         if backoff(branch).is_some() {
             let next = branch.next.as_ref().unwrap();
-            assert!(rerun(next) && next.load == plan.load, "{branch:?}");
+            assert!(rerun(next), "{branch:?}");
+            assert_eq!(next.load, plan.load);
         }
         if branch.premise == Premise::AllPass {
             assert_eq!(branch.passes, 3);

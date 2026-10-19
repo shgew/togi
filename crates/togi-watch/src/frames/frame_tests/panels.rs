@@ -2,7 +2,7 @@
 
 use jiff::tz::TimeZone;
 use togi_journal::{Mce, Member, Payload};
-use togi_machine::{BankType, CcdId, CpuId, ObservedOffset, Regime, WorkloadId, workloads};
+use togi_machine::{BankType, CpuId, ObservedOffset, Regime, WorkloadId, workloads};
 use togi_tuner::{CombinationId, Limit, R7CoreStatus, Reached};
 use togi_watchtest::Scenario;
 
@@ -11,30 +11,9 @@ use crate::frames::measure::measure;
 use crate::frames::scene::Scene;
 use crate::model::{ComboView, CoreState, CoreView, Model, SessionView};
 use crate::screen::{Colours, Journal, Screen};
+use crate::tests::fixtures::core_view;
 use crate::tests::kit::{Script, Start, core, nz, off, set, warning};
 use crate::words::workload_display;
-
-fn core_view(id: u8, ccd: u8, state: CoreState) -> CoreView {
-    CoreView {
-        id: core(id),
-        ccd: CcdId::try_from(ccd).unwrap(),
-        state,
-        queued: None,
-        applied: Some(ObservedOffset(0)),
-        profile: off(0),
-        solo: None,
-        pass: None,
-        next: None,
-        fail: None,
-        holder: None,
-        gave_back: None,
-        group_fails: Vec::new(),
-        returns_to: None,
-        confirm: None,
-        loaded: false,
-        judged: false,
-    }
-}
 
 struct Hand {
     model: Model,

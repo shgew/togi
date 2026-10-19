@@ -7,6 +7,7 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use ratatui::buffer::{Buffer, Cell};
 use ratatui::style::{Color, Style};
+use togi_journal::Event;
 use togi_watchtest::Scenario;
 
 use super::colours::Paint;
@@ -19,13 +20,55 @@ use crate::screen::{Colours, Drawn, Journal, Quit, Screen, View};
 /// A moment for frames whose journal has no events to take a clock from.
 pub(crate) const FIXED_NOW: Timestamp = Timestamp::constant(1_700_000_000, 0);
 
-/// The folded journal of `scenario`, and the time the dashboard draws it at: 40 seconds after its last event.
-pub(crate) fn scenario_model(scenario: Scenario) -> (Model, Timestamp) {
-    let events = scenario
-        .events()
-        .unwrap_or_else(|error| panic!("{}: {error}", scenario.name()));
-    let last = events.last().expect("a scenario has events").time;
-    (project(&events), last + SignedDuration::from_secs(40))
+/// A journal folded for frame tests, drawn 40 seconds after its last event unless the test chooses another time.
+pub(crate) struct Fixture {
+    pub(crate) model: Model,
+    pub(crate) now: Timestamp,
+}
+
+impl Fixture {
+    pub(crate) fn scenario(scenario: Scenario) -> Self {
+        Self::of(
+            &scenario
+                .events()
+                .unwrap_or_else(|error| panic!("{}: {error}", scenario.name())),
+        )
+    }
+
+    pub(crate) fn of(events: &[Event]) -> Self {
+        let last = events.last().expect("an event").time;
+        Self {
+            model: project(events),
+            now: last + SignedDuration::from_secs(40),
+        }
+    }
+
+    pub(crate) fn journal(&self) -> Journal<'_> {
+        ready(&self.model)
+    }
+
+    pub(crate) fn draw(&self, screen: &Screen, now: Timestamp) -> (Buffer, Drawn) {
+        draw_journal(&self.journal(), screen, now, &TimeZone::UTC)
+    }
+
+    pub(crate) fn main(&self, width: u16, height: u16) -> (Buffer, Drawn) {
+        self.draw(&main_screen(width, height), self.now)
+    }
+}
+
+pub(crate) fn main_screen(width: u16, height: u16) -> Screen {
+    screen(View::Main, width, height, Colours::None, true)
+}
+
+pub(crate) fn draw_journal(
+    journal: &Journal<'_>,
+    screen: &Screen,
+    now: Timestamp,
+    zone: &TimeZone,
+) -> (Buffer, Drawn) {
+    draw_checked(screen, |screen, buf| {
+        render(journal, screen, now, zone, buf)
+    })
 }
 
 /// `model` as the ready journal the frames draw from, with its own log list.
@@ -44,9 +87,7 @@ pub(crate) fn render_checked(
     screen: &Screen,
     now: Timestamp,
 ) -> (Buffer, Drawn) {
-    draw_checked(screen, |screen, buf| {
-        render(journal, screen, now, &TimeZone::UTC, buf)
-    })
+    draw_journal(journal, screen, now, &TimeZone::UTC)
 }
 
 /// One frame of a journal that does not exist, through the bounds check.

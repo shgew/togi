@@ -198,8 +198,8 @@ pub(crate) struct Measure {
 }
 
 fn rect(x: u16, y: u16, w: usize, h: usize) -> Rect {
-    let w = u16::try_from(w).unwrap_or(u16::MAX);
-    let h = u16::try_from(h).unwrap_or(u16::MAX);
+    let w = crate::numbers::saturating_cells(w);
+    let h = crate::numbers::saturating_cells(h);
     Rect::new(x, y, w, h)
 }
 
@@ -305,8 +305,8 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
             };
         }
         columns.cells = columns.cells.min(w.saturating_sub(columns.gauge + 1));
-        let x = u16::try_from(x).unwrap_or(u16::MAX);
-        let top = u16::try_from(y).unwrap_or(u16::MAX);
+        let x = crate::numbers::saturating_cells(x);
+        let top = crate::numbers::saturating_cells(y);
         ccds.push(Ccd {
             id,
             rect: rect(x, top, w, height),
@@ -315,14 +315,14 @@ pub(crate) fn measure(scene: &Scene<'_>, screen: &Screen) -> Measure {
         low_y = low_y.max(y + height + 1);
     }
     let context_height = hint.saturating_sub(low_y + 1);
-    let low = u16::try_from(low_y).unwrap_or(u16::MAX);
+    let low = crate::numbers::saturating_cells(low_y);
     let (context, history) = if side {
         (
             rect(margin, low, left, context_height),
             rect(layout.right_x, low, left, context_height),
         )
     } else {
-        let below = u16::try_from(low_y + context_height).unwrap_or(u16::MAX);
+        let below = crate::numbers::saturating_cells(low_y + context_height);
         (
             rect(margin, low, full, context_height),
             rect(margin, below, full, 0),

@@ -32,7 +32,7 @@ mod snapshots;
 mod story;
 mod terms;
 #[cfg(test)]
-mod testing;
+pub(crate) mod testing;
 
 pub use colours::{Paint, colours_for, console_palette};
 pub use draw::{bounded_rows, put, put_cells, rows};

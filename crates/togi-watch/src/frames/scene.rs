@@ -147,7 +147,7 @@ pub(crate) fn short_duration(span: Duration) -> String {
 /// The span from `from` to `to`, or zero when `to` is earlier.
 pub(crate) fn between(from: Timestamp, to: Timestamp) -> Duration {
     let nanos = to.as_nanosecond() - from.as_nanosecond();
-    u64::try_from(nanos).map_or(Duration::ZERO, Duration::from_nanos)
+    crate::numbers::nonnegative_elapsed(nanos)
 }
 
 /// Regimes by their kind of load, in order: `light, then heavy`.

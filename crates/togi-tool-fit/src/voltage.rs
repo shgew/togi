@@ -36,8 +36,12 @@ fn r7_ids() -> impl Iterator<Item = &'static str> {
     workloads(Regime::R7).iter().map(|w| w.id)
 }
 
-fn float(value: i64) -> f64 {
-    f64::from(i32::try_from(value).unwrap_or(0))
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "TargetOffset's checked constructor bounds offsets to -50..=0"
+)]
+fn float(value: TargetOffset) -> f64 {
+    value.get() as f64
 }
 
 pub(crate) fn voltage_config(records: &[&TrialFact]) -> SharedVoltageDef {
@@ -127,7 +131,7 @@ fn fit_requests(v: &mut SharedVoltageDef, records: &[&TrialFact], id: &str) {
                 continue;
             }
             slot.push(RequestPoint {
-                offset: float(offset.get()),
+                offset: float(*offset),
                 clock: (f64::from(mhz) - w.reference_mhz) / 100.0,
                 voltage,
             });

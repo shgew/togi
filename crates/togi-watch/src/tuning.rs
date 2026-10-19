@@ -23,7 +23,7 @@ use togi_machine::BootId;
 pub const RECOVERY_LIMIT: Duration = Duration::from_mins(30);
 
 fn between(from: Timestamp, to: Timestamp) -> Duration {
-    Duration::try_from(to.duration_since(from)).unwrap_or(Duration::ZERO)
+    crate::numbers::nonnegative_elapsed(to.as_nanosecond() - from.as_nanosecond())
 }
 
 /// The run that has started and not ended.
