@@ -37,9 +37,7 @@ pub fn summarize(
     cores: &PerCore<Option<CcdId>>,
 ) -> Option<Telemetry> {
     let cores = || cores.iter().filter_map(|(core, ccd)| Some((core, ccd?)));
-    if cores().next().is_none() {
-        return None;
-    }
+    cores().next()?;
     let mut requests: [Vec<f64>; PER_CORE_MAX] = Default::default();
     let mut clocks: BTreeMap<CcdId, Vec<f64>> = BTreeMap::new();
     let mut per_ccd: BTreeMap<CcdId, Vec<f64>> = BTreeMap::new();
