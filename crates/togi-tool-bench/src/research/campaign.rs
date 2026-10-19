@@ -26,6 +26,8 @@ pub enum Refusal {
     Command(#[from] CommandError),
     #[error("read the tree")]
     Workspace(#[from] WorkspaceError),
+    #[error("read elapsed campaign time")]
+    Elapsed(#[source] jiff::Error),
     #[error("the campaign already stopped: {}", .0.name())]
     Stopped(StopReason),
     #[error("runs {0:?} never ended; run `resume` to record them incomplete first")]
@@ -171,7 +173,7 @@ impl Campaign {
         if !dangling.is_empty() {
             return Err(Refusal::Dangling(dangling).into());
         }
-        let left = self.wall_left(now);
+        let left = self.wall_left(now)?;
         if left.is_zero() {
             return Err(stop(
                 StopReason::WallLimit,
@@ -215,13 +217,13 @@ impl Campaign {
         Ok(left)
     }
 
-    fn wall_left(&self, now: Timestamp) -> Duration {
+    fn wall_left(&self, now: Timestamp) -> Result<Duration, Refusal> {
         let limit = Duration::from_secs(u64::from(self.manifest.limits.wall_minutes) * 60);
         let Some(started) = self.ledger.started_at() else {
-            return limit;
+            return Ok(limit);
         };
-        let used = Duration::try_from(now.duration_since(started)).unwrap_or(Duration::ZERO);
-        limit.saturating_sub(used)
+        let used = Duration::try_from(now.duration_since(started)).map_err(Refusal::Elapsed)?;
+        Ok(limit.saturating_sub(used))
     }
 
     /// Checks a run against the guard, the queue, the limits, the role's order and the evaluator's allowlist,

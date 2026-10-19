@@ -97,6 +97,10 @@ pub enum SessionError {
     Write(#[from] WriteFailure),
     #[error("write the event log")]
     Log(#[source] io::Error),
+    #[error("recover trial elapsed time")]
+    RecoveredElapsed(#[source] jiff::Error),
+    #[error("convert recorded workload rotation")]
+    WorkloadRotation(#[source] std::num::TryFromIntError),
     #[error("an initial offset is configured for core {core:02}, which this machine does not have")]
     NoSuchCore { core: CoreId },
     /// The session was recorded on other cores than the machine has now: a resumed session cannot change them.
@@ -145,8 +149,6 @@ pub enum SessionError {
     TrialDuration(#[source] std::num::TryFromIntError),
     #[error("record trial maximum temperature")]
     TrialTemperature(#[source] std::num::TryFromIntError),
-    #[error("index workload rotation")]
-    WorkloadRotation(#[source] std::num::TryFromIntError),
     #[error("record monotonic nanoseconds")]
     Monotonic(#[source] std::num::TryFromIntError),
 }

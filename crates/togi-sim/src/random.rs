@@ -37,7 +37,7 @@ pub enum Domain {
     /// A shared-rail core's failure time.
     Voltage,
     Ccd(u8),
-    Joint(u32),
+    Joint(u64),
     Background,
     /// The signal, reset and MCE bank draws that follow a failure.
     Signal,
@@ -57,7 +57,7 @@ impl Domain {
             Self::Idle => [4, 0],
             Self::Voltage => [5, 0],
             Self::Ccd(ccd) => [6, u64::from(ccd)],
-            Self::Joint(index) => [7, u64::from(index)],
+            Self::Joint(index) => [7, index],
             Self::Background => [8, 0],
             Self::Signal => [9, 0],
             Self::VoltageSignal => [10, 0],
@@ -76,7 +76,7 @@ pub fn stream(seed: u64, domain: Domain, key: &[u64]) -> StdRng {
     for &part in key {
         state = absorb(state, part);
     }
-    state = absorb(state, u64::try_from(key.len()).unwrap_or(u64::MAX));
+    state = absorb(state, key.len() as u64);
     let mut bytes = [0u8; 32];
     for chunk in bytes.as_chunks_mut::<8>().0 {
         state = splitmix64(state);

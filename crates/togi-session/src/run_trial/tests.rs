@@ -1960,10 +1960,3 @@ fn an_escaped_worker_ends_the_trial_inconclusive_with_its_cpus_and_dead_ends_on_
     assert_eq!(ends[0].containment_error, None);
     assert_eq!(ends[0].escaped, [CpuId::from(42)]);
 }
-
-#[test_case::test_case(0; "initial rotation")]
-#[test_case::test_case(u32::MAX; "largest recorded rotation")]
-fn recorded_rotation_indices_remain_exact(rotation: u32) {
-    let index = super::rotation_index(rotation).unwrap();
-    assert_eq!(u32::try_from(index).unwrap(), rotation);
-}

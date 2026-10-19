@@ -60,7 +60,7 @@ impl HazardSource {
             SourceKind::Idle(_) => Domain::Idle,
             SourceKind::Voltage(_) => Domain::Voltage,
             SourceKind::Ccd(ccd) => Domain::Ccd(ccd),
-            SourceKind::Joint(index) => Domain::Joint(u32::try_from(index).unwrap_or(u32::MAX)),
+            SourceKind::Joint(index) => Domain::Joint(index as u64),
             SourceKind::Background => Domain::Background,
         }
     }
@@ -177,8 +177,12 @@ pub fn saturating_count(value: usize) -> f64 {
     f64::from(u32::try_from(value).unwrap_or(u32::MAX))
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "checked model limits and target offsets bound the step counts far below 2^53"
+)]
 pub(crate) fn steps(value: i64) -> f64 {
-    f64::from(i32::try_from(value).unwrap_or(i32::MAX))
+    value as f64
 }
 
 impl Model {
