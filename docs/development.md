@@ -37,7 +37,7 @@ Linux-only code has `#[cfg(target_os = "linux")]` and a non-Linux counterpart re
 
 ## Pull request stacks
 
-Stack only under the merge-unit rule in [Workflow](../AGENTS.md#workflow). Use [`gh stack`](https://github.com/github/gh-stack), installed with `gh extension install github/gh-stack`, for every stack. Each layer has its own branch and pull request based on the layer below; pass that branch as BASE when creating the next layer. Lower layers hold their dependants' prerequisites. Every layer passes `just gate` independently.
+Stack only under the merge-unit rule in [Workflow](../AGENTS.md#workflow). Use [`gh stack`](https://github.com/github/gh-stack), installed with `gh extension install github/gh-stack`, for every stack. Each layer has its own branch and pull request based on the layer below; pass that branch as BASE to `just claim` when creating the next layer. Lower layers hold their dependants' prerequisites. Every layer passes `just gate` independently.
 
 Open with `gh stack submit`, keep current with `gh stack sync`, and merge with `gh stack merge` only under the owner's merge authorization; never merge layers individually by hand. A lower-layer fix restacks and re-reviews every layer above it. During review, follow the [review command's frozen-base and restacking procedure](../.omp/commands/review-pr.md), not a routine sync onto moving `main`.
 
