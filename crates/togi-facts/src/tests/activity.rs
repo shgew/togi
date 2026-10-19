@@ -71,10 +71,11 @@ enum ActivityState {
 fn trial_activity_scoped_to_open_started_trial(kind: &str, state: ActivityState) {
     let mut s = Script::begin(&[0]);
     let intent = s.add(alone("one", 0, -10, &[0]));
-    let mut want = Script::time(intent);
-    if state != ActivityState::NotStarted {
-        want = Script::time(s.add(started("one")));
-    }
+    let mut want = if state != ActivityState::NotStarted {
+        Script::time(s.add(started("one")))
+    } else {
+        Script::time(intent)
+    };
     if state == ActivityState::Ended {
         s.add(end("one", Outcome::Inconclusive, 1));
     }

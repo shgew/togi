@@ -54,8 +54,7 @@ impl Run {
     pub(crate) fn outlook(&self) -> Outlook {
         let mut outlook = Outlook::default();
         let mut from = self.offsets();
-        let mut passed = self.phases.passed().copied();
-        if let Some(round) = self.rounds.active() {
+        let mut passed = if let Some(round) = self.rounds.active() {
             let shape = round.shape();
             outlook.rounds = 1;
             outlook.open = Some(shape);
@@ -74,8 +73,10 @@ impl Run {
                 }
             }
             from = *shape.profile();
-            passed = Some(from);
-        }
+            Some(from)
+        } else {
+            self.phases.passed().copied()
+        };
         for _ in 0..ROUND_CAP {
             #[cfg(test)]
             {
