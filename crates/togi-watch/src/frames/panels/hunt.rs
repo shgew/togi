@@ -941,8 +941,10 @@ mod tests {
         assert_eq!(stage_of(&plan, false), "group 5");
     }
 
-    #[test]
-    fn the_stage_says_when_parts_were_recut() {
+    #[test_case::test_case(1, "part 1 of 2", "parts · part 1 of 2"; "original")]
+    #[test_case::test_case(2, "re-cut 1 · part 1 of 2", "parts · re-cut 1 · part 1 of 2"; "first recut")]
+    #[test_case::test_case(3, "re-cut 2 · part 1 of 2", "parts · re-cut 2 · part 1 of 2"; "second recut")]
+    fn the_stage_says_when_parts_were_recut(cut: u32, short: &str, long: &str) {
         let mut plan = hunt_plan(
             vec![group(3, &[0], GroupState::Running)],
             vec![
@@ -950,23 +952,9 @@ mod tests {
                 part(&[1], &[0], None, None, false),
             ],
         );
-        for (cut, short, long) in [
-            (1, "part 1 of 2", "parts · part 1 of 2"),
-            (
-                2,
-                "re-cut 1 · part 1 of 2",
-                "parts · re-cut 1 · part 1 of 2",
-            ),
-            (
-                3,
-                "re-cut 2 · part 1 of 2",
-                "parts · re-cut 2 · part 1 of 2",
-            ),
-        ] {
-            plan.cut = cut;
-            assert_eq!(stage_of(&plan, true), short, "cut {cut} short");
-            assert_eq!(stage_of(&plan, false), long, "cut {cut}");
-        }
+        plan.cut = cut;
+        assert_eq!(stage_of(&plan, true), short, "cut {cut} short");
+        assert_eq!(stage_of(&plan, false), long, "cut {cut}");
     }
 
     #[test]
@@ -1553,31 +1541,30 @@ mod tests {
         assert!(!rows.iter().any(|row| row.starts_with("evidence")));
     }
 
-    #[test]
-    fn a_long_subject_gives_way_before_the_attribution_and_the_uncertainty() {
+    #[test_case::test_case(MEDIUM_PANEL; "medium")]
+    #[test_case::test_case(60; "sixty")]
+    fn a_long_subject_gives_way_before_the_attribution_and_the_uncertainty(width: usize) {
         let cores = [0, 2, 4, 6, 8, 10, 12, 14];
-        for width in [MEDIUM_PANEL, 60] {
-            let unnamed = medium_rows(&failure_facts(Signal::Crash, None, &cores), width);
-            let cause = row_of(&unnamed, "cause");
-            assert!(
-                cause.ends_with("no core named") && !cause.contains(cut_marker(Colours::None)),
-                "{width}: {cause}"
-            );
-            let evidence = row_of(&unnamed, "evidence");
-            assert!(
-                evidence.ends_with("not enough to attribute")
-                    && !evidence.contains(cut_marker(Colours::None)),
-                "{width}: {evidence}"
-            );
-            let named = medium_rows(
-                &failure_facts(Signal::ComputationError, Some(8), &cores),
-                width,
-            );
-            assert!(
-                row_of(&named, "cause").ends_with("core 08 named"),
-                "{width}: {named:?}"
-            );
-        }
+        let unnamed = medium_rows(&failure_facts(Signal::Crash, None, &cores), width);
+        let cause = row_of(&unnamed, "cause");
+        assert!(
+            cause.ends_with("no core named") && !cause.contains(cut_marker(Colours::None)),
+            "{width}: {cause}"
+        );
+        let evidence = row_of(&unnamed, "evidence");
+        assert!(
+            evidence.ends_with("not enough to attribute")
+                && !evidence.contains(cut_marker(Colours::None)),
+            "{width}: {evidence}"
+        );
+        let named = medium_rows(
+            &failure_facts(Signal::ComputationError, Some(8), &cores),
+            width,
+        );
+        assert!(
+            row_of(&named, "cause").ends_with("core 08 named"),
+            "{width}: {named:?}"
+        );
     }
 
     #[test]

@@ -250,29 +250,30 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_skipped_warning_keeps_its_amber_and_the_keys_their_style() {
+    #[test_case::test_case(20; "width 20")]
+    #[test_case::test_case(30; "width 30")]
+    #[test_case::test_case(40; "width 40")]
+    #[test_case::test_case(50; "width 50")]
+    fn the_skipped_warning_keeps_its_amber_and_the_keys_their_style(width: usize) {
         let after = [skipped_clause(REPORT, Colours::Full)];
         for view in VIEWS {
             let reference = key_hints(view, 80, &[], Colours::Full, Quit::Keys);
-            for width in [20, 30, 40, 50] {
-                let line = key_hints(view, width, &after, Colours::Full, Quit::Keys);
-                for key in ["?", "l", "esc", "q"] {
-                    let style = |line: &ratatui::text::Line<'_>| {
-                        line.spans
-                            .iter()
-                            .find(|span| span.content.trim() == key)
-                            .map(|span| span.style)
-                    };
-                    assert_eq!(style(&line), style(&reference), "{view:?} {width}: {key:?}");
-                }
-                let last = line.spans.last().expect("a footer");
-                assert_eq!(
-                    last.style,
-                    Paint::Hunt.style(Colours::Full),
-                    "{view:?} {width}: the warning lost its amber"
-                );
+            let line = key_hints(view, width, &after, Colours::Full, Quit::Keys);
+            for key in ["?", "l", "esc", "q"] {
+                let style = |line: &ratatui::text::Line<'_>| {
+                    line.spans
+                        .iter()
+                        .find(|span| span.content.trim() == key)
+                        .map(|span| span.style)
+                };
+                assert_eq!(style(&line), style(&reference), "{view:?} {width}: {key:?}");
             }
+            let last = line.spans.last().expect("a footer");
+            assert_eq!(
+                last.style,
+                Paint::Hunt.style(Colours::Full),
+                "{view:?} {width}: the warning lost its amber"
+            );
         }
     }
 
@@ -297,67 +298,68 @@ mod tests {
             .to_owned()
     }
 
-    #[test]
-    fn the_footer_keeps_all_four_keys_at_twenty_cells_and_wider() {
+    #[test_case::test_case(20; "width 20")]
+    #[test_case::test_case(30; "width 30")]
+    #[test_case::test_case(40; "width 40")]
+    #[test_case::test_case(50; "width 50")]
+    fn the_footer_keeps_all_four_keys_at_twenty_cells_and_wider(width: u16) {
         for view in VIEWS {
             let (reference, wide_rect) = draw_footer(view, 80, 12, Colours::Full);
             let wide_text = footer_text(&reference, wide_rect);
-            for width in [20, 30, 40, 50] {
-                let (buf, rect) = draw_footer(view, width, 12, Colours::Full);
-                let text = footer_text(&buf, rect);
-                let fields: Vec<&str> = text.split_whitespace().collect();
-                for key in ["?", "l", "esc", "q"] {
-                    assert!(
-                        fields.contains(&key),
-                        "{view:?} width {width}: footer lost whole key {key:?}: {text:?}"
-                    );
-                    let at = |text: &str, rect: Rect| {
-                        let chars: Vec<char> = text.chars().collect();
-                        let key: Vec<char> = key.chars().collect();
-                        (0..chars.len())
-                            .find(|&i| {
-                                chars[i..].starts_with(&key)
-                                    && (i == 0 || chars[i - 1] == ' ')
-                                    && chars.get(i + key.len()).is_none_or(|c| *c == ' ')
-                            })
-                            .map(|i| (rect.x + u16::try_from(i).unwrap(), rect.y))
-                    };
-                    let (Some(wide_at), Some(at)) = (at(&wide_text, wide_rect), at(&text, rect))
-                    else {
-                        panic!("{view:?} width {width}: key {key:?} not found");
-                    };
-                    let (want, got) = (&reference[wide_at], &buf[at]);
-                    assert_eq!(
-                        (got.fg, got.bg, got.modifier),
-                        (want.fg, want.bg, want.modifier),
-                        "{view:?} width {width}: key {key:?} lost its active/current style"
-                    );
-                }
+            let (buf, rect) = draw_footer(view, width, 12, Colours::Full);
+            let text = footer_text(&buf, rect);
+            let fields: Vec<&str> = text.split_whitespace().collect();
+            for key in ["?", "l", "esc", "q"] {
                 assert!(
-                    !text.contains("..."),
-                    "{view:?} width {width}: key hints must shorten labels, not cut keys: {text:?}"
+                    fields.contains(&key),
+                    "{view:?} width {width}: footer lost whole key {key:?}: {text:?}"
+                );
+                let at = |text: &str, rect: Rect| {
+                    let chars: Vec<char> = text.chars().collect();
+                    let key: Vec<char> = key.chars().collect();
+                    (0..chars.len())
+                        .find(|&i| {
+                            chars[i..].starts_with(&key)
+                                && (i == 0 || chars[i - 1] == ' ')
+                                && chars.get(i + key.len()).is_none_or(|c| *c == ' ')
+                        })
+                        .map(|i| (rect.x + u16::try_from(i).unwrap(), rect.y))
+                };
+                let (Some(wide_at), Some(at)) = (at(&wide_text, wide_rect), at(&text, rect)) else {
+                    panic!("{view:?} width {width}: key {key:?} not found");
+                };
+                let (want, got) = (&reference[wide_at], &buf[at]);
+                assert_eq!(
+                    (got.fg, got.bg, got.modifier),
+                    (want.fg, want.bg, want.modifier),
+                    "{view:?} width {width}: key {key:?} lost its active/current style"
                 );
             }
+            assert!(
+                !text.contains("..."),
+                "{view:?} width {width}: key hints must shorten labels, not cut keys: {text:?}"
+            );
         }
     }
 
-    #[test]
-    fn the_footer_keeps_the_close_key_first() {
+    #[test_case::test_case(4; "width 4")]
+    #[test_case::test_case(5; "width 5")]
+    #[test_case::test_case(6; "width 6")]
+    #[test_case::test_case(10; "width 10")]
+    fn the_footer_keeps_the_close_key_first(width: u16) {
         for view in VIEWS {
-            for width in [4, 5, 6, 10] {
-                let (buf, rect) = draw_footer(view, width, 12, Colours::Full);
-                let text = footer_text(&buf, rect);
-                let keys: Vec<&str> = text.split_whitespace().collect();
+            let (buf, rect) = draw_footer(view, width, 12, Colours::Full);
+            let text = footer_text(&buf, rect);
+            let keys: Vec<&str> = text.split_whitespace().collect();
+            assert!(
+                keys.contains(&"q"),
+                "{view:?} width {width}: closing key must survive first: {text:?}"
+            );
+            for key in keys {
                 assert!(
-                    keys.contains(&"q"),
-                    "{view:?} width {width}: closing key must survive first: {text:?}"
+                    ["?", "l", "esc", "q"].contains(&key),
+                    "{view:?} width {width}: tiny footer cut a key or label: {text:?}"
                 );
-                for key in keys {
-                    assert!(
-                        ["?", "l", "esc", "q"].contains(&key),
-                        "{view:?} width {width}: tiny footer cut a key or label: {text:?}"
-                    );
-                }
             }
         }
     }

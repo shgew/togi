@@ -831,27 +831,26 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn another_builds_journal_is_a_refusal_the_source_hands_over_once() {
-        for since in [None, Some(0)] {
-            let dir = MemoryJournal::new();
-            dir.write(&go_journal());
-            let mut source = Source::memory(&dir, since);
-            assert!(source.reload());
-            let Shown::Problem(text) = show(&mut source, &main_screen()) else {
-                panic!("another build's journal was shown");
-            };
-            assert!(text.contains("events.jsonl"), "{text}");
-            assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
-            assert!(!text.contains("line 2"), "no later line was read: {text}");
-            let refusal = source.refusal().unwrap();
-            assert!(matches!(
-                refusal,
-                SourceError::Foreign(togi_journal::DirError::ForeignJournal { .. })
-            ));
-            assert_eq!(refusal.to_string(), text);
-            assert!(source.refusal().is_none());
-        }
+    #[test_case::test_case(None; "from start")]
+    #[test_case::test_case(Some(0); "since zero")]
+    fn another_builds_journal_is_a_refusal_the_source_hands_over_once(since: Option<u64>) {
+        let dir = MemoryJournal::new();
+        dir.write(&go_journal());
+        let mut source = Source::memory(&dir, since);
+        assert!(source.reload());
+        let Shown::Problem(text) = show(&mut source, &main_screen()) else {
+            panic!("another build's journal was shown");
+        };
+        assert!(text.contains("events.jsonl"), "{text}");
+        assert!(text.contains("docs/howto.md#go-to-rust-cutover"), "{text}");
+        assert!(!text.contains("line 2"), "no later line was read: {text}");
+        let refusal = source.refusal().unwrap();
+        assert!(matches!(
+            refusal,
+            SourceError::Foreign(togi_journal::DirError::ForeignJournal { .. })
+        ));
+        assert_eq!(refusal.to_string(), text);
+        assert!(source.refusal().is_none());
     }
 
     #[test]
@@ -969,112 +968,117 @@ mod tests {
         assert_eq!(arrived, 0);
     }
 
-    #[test]
-    fn a_scrolled_back_log_drops_its_list_when_the_journal_goes_away_or_breaks() {
-        for unavailable in ["missing", "malformed", "empty"] {
-            for redraw in [false, true] {
-                let dir = MemoryJournal::new();
-                let (mut source, back) = scrolled_back(&dir, 40);
-                dir.append(&lines(&[warning(42, "old arrival")]));
-                source.reload();
-                assert_eq!(ready(&show(&mut source, &back)).2, 1);
-                match unavailable {
-                    "missing" => dir.remove(),
-                    "malformed" => {
-                        let mut text = dir.bytes();
-                        text.extend_from_slice(b"not json\n");
-                        dir.write(&text);
-                    }
-                    _ => dir.write(b""),
-                }
-                assert!(source.reload(), "{unavailable}");
-                if redraw {
-                    let shown = show(&mut source, &back);
-                    assert_eq!(
-                        matches!(shown, Shown::Problem(_)),
-                        unavailable == "malformed",
-                        "{unavailable}: {shown:?}"
-                    );
-                    assert!(
-                        !matches!(shown, Shown::Ready { .. }),
-                        "unavailable journal kept old rows"
-                    );
-                }
-                assert!(
-                    !source.reload(),
-                    "unchanged unavailable journal was reloaded again"
-                );
-                let before = (unavailable != "missing").then(|| file_identity(&dir));
-                let mut recovered = session_with_warnings(40);
-                recovered.push(warning(42, &format!("recovered {}", "padding ".repeat(4))));
-                dir.write(&lines(&recovered));
-                if let Some((inode, size, _)) = before {
-                    let (now_inode, now_size, _) = file_identity(&dir);
-                    assert_eq!(now_inode, inode, "{unavailable}");
-                    assert!(now_size > size, "{unavailable}: the recovery did not grow");
-                }
-                assert!(source.reload());
-                let shown = show(&mut source, &back);
-                let (rows, _, arrived) = ready(&shown);
-                assert!(
-                    rows.iter().any(|row| row.starts_with("recovered ")),
-                    "{unavailable}/{redraw}: {rows:?}"
-                );
-                assert!(
-                    !rows.iter().any(|row| row == "old arrival"),
-                    "{unavailable}"
-                );
-                assert_eq!(
-                    arrived, 0,
-                    "{unavailable}/{redraw}: the recovered journal inherited arrivals"
-                );
+    #[test_case::test_case("missing", false; "missing redraw False")]
+    #[test_case::test_case("missing", true; "missing redraw True")]
+    #[test_case::test_case("malformed", false; "malformed redraw False")]
+    #[test_case::test_case("malformed", true; "malformed redraw True")]
+    #[test_case::test_case("empty", false; "empty redraw False")]
+    #[test_case::test_case("empty", true; "empty redraw True")]
+    fn a_scrolled_back_log_drops_its_list_when_the_journal_goes_away_or_breaks(
+        unavailable: &str,
+        redraw: bool,
+    ) {
+        let dir = MemoryJournal::new();
+        let (mut source, back) = scrolled_back(&dir, 40);
+        dir.append(&lines(&[warning(42, "old arrival")]));
+        source.reload();
+        assert_eq!(ready(&show(&mut source, &back)).2, 1);
+        match unavailable {
+            "missing" => dir.remove(),
+            "malformed" => {
+                let mut text = dir.bytes();
+                text.extend_from_slice(b"not json\n");
+                dir.write(&text);
             }
+            _ => dir.write(b""),
         }
+        assert!(source.reload(), "{unavailable}");
+        if redraw {
+            let shown = show(&mut source, &back);
+            assert_eq!(
+                matches!(shown, Shown::Problem(_)),
+                unavailable == "malformed",
+                "{unavailable}: {shown:?}"
+            );
+            assert!(
+                !matches!(shown, Shown::Ready { .. }),
+                "unavailable journal kept old rows"
+            );
+        }
+        assert!(
+            !source.reload(),
+            "unchanged unavailable journal was reloaded again"
+        );
+        let before = (unavailable != "missing").then(|| file_identity(&dir));
+        let mut recovered = session_with_warnings(40);
+        recovered.push(warning(42, &format!("recovered {}", "padding ".repeat(4))));
+        dir.write(&lines(&recovered));
+        if let Some((inode, size, _)) = before {
+            let (now_inode, now_size, _) = file_identity(&dir);
+            assert_eq!(now_inode, inode, "{unavailable}");
+            assert!(now_size > size, "{unavailable}: the recovery did not grow");
+        }
+        assert!(source.reload());
+        let shown = show(&mut source, &back);
+        let (rows, _, arrived) = ready(&shown);
+        assert!(
+            rows.iter().any(|row| row.starts_with("recovered ")),
+            "{unavailable}/{redraw}: {rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|row| row == "old arrival"),
+            "{unavailable}"
+        );
+        assert_eq!(
+            arrived, 0,
+            "{unavailable}/{redraw}: the recovered journal inherited arrivals"
+        );
     }
 
-    #[test]
-    fn a_scrolled_back_log_drops_its_list_when_the_journal_is_replaced_or_truncated() {
-        for operation in ["replace", "shrink"] {
-            for warnings in [41_u64, 42] {
-                let dir = MemoryJournal::new();
-                let mut padded = vec![session_start(1)];
-                padded.extend(
-                    (2..42).map(|seq| warning(seq, &format!("w{seq} {}", "padding ".repeat(40)))),
-                );
-                let (mut source, back) = scrolled_back_over(&dir, &padded);
-                dir.append(&lines(&[warning(42, "old arrival")]));
-                source.reload();
-                assert_eq!(ready(&show(&mut source, &back)).2, 1);
-                let mut changed = session_with_warnings(warnings);
-                changed.push(warning(warnings + 2, "replaced"));
-                if operation == "replace" {
-                    dir.replace(&lines(&changed));
-                } else {
-                    let (inode, size, modified) = file_identity(&dir);
-                    dir.write(&lines(&changed));
-                    let (now_inode, now_size, now_modified) = file_identity(&dir);
-                    assert_eq!((now_inode, now_modified), (inode, modified));
-                    assert!(now_size < size, "the rewrite did not shrink the journal");
-                }
-                assert!(source.reload(), "{operation}/{warnings}");
-                let shown = show(&mut source, &back);
-                let (rows, total, arrived) = ready(&shown);
-                assert_eq!(
-                    total,
-                    usize::try_from(warnings).unwrap() + 2,
-                    "{operation}/{warnings}: {rows:?}"
-                );
-                assert!(
-                    !rows.iter().any(|row| row == "old arrival"),
-                    "{operation}/{warnings}"
-                );
-                assert_eq!(
-                    arrived, 0,
-                    "{operation}/{warnings}: the changed journal inherited arrivals"
-                );
-                assert_eq!(total, rows.len(), "the list is the changed journal's own");
-            }
+    #[test_case::test_case("replace", 41; "replace warnings 41")]
+    #[test_case::test_case("replace", 42; "replace warnings 42")]
+    #[test_case::test_case("shrink", 41; "shrink warnings 41")]
+    #[test_case::test_case("shrink", 42; "shrink warnings 42")]
+    fn a_scrolled_back_log_drops_its_list_when_the_journal_is_replaced_or_truncated(
+        operation: &str,
+        warnings: u64,
+    ) {
+        let dir = MemoryJournal::new();
+        let mut padded = vec![session_start(1)];
+        padded
+            .extend((2..42).map(|seq| warning(seq, &format!("w{seq} {}", "padding ".repeat(40)))));
+        let (mut source, back) = scrolled_back_over(&dir, &padded);
+        dir.append(&lines(&[warning(42, "old arrival")]));
+        source.reload();
+        assert_eq!(ready(&show(&mut source, &back)).2, 1);
+        let mut changed = session_with_warnings(warnings);
+        changed.push(warning(warnings + 2, "replaced"));
+        if operation == "replace" {
+            dir.replace(&lines(&changed));
+        } else {
+            let (inode, size, modified) = file_identity(&dir);
+            dir.write(&lines(&changed));
+            let (now_inode, now_size, now_modified) = file_identity(&dir);
+            assert_eq!((now_inode, now_modified), (inode, modified));
+            assert!(now_size < size, "the rewrite did not shrink the journal");
         }
+        assert!(source.reload(), "{operation}/{warnings}");
+        let shown = show(&mut source, &back);
+        let (rows, total, arrived) = ready(&shown);
+        assert_eq!(
+            total,
+            usize::try_from(warnings).unwrap() + 2,
+            "{operation}/{warnings}: {rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|row| row == "old arrival"),
+            "{operation}/{warnings}"
+        );
+        assert_eq!(
+            arrived, 0,
+            "{operation}/{warnings}: the changed journal inherited arrivals"
+        );
+        assert_eq!(total, rows.len(), "the list is the changed journal's own");
     }
 
     #[test]

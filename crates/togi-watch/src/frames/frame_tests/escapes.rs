@@ -58,45 +58,22 @@ fn a_problem_with_controls_in_its_text_draws_them_visibly_escaped_live_and_in_on
     }
 }
 
-#[test]
-fn a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped() {
-    let cases: [(&str, Payload); 3] = [
-        (
-            "dead end",
-            DeadEnd {
-                condition: DeadEndCondition::Containment,
-                core: None,
-                detail: HOSTILE.to_owned(),
-                action: None,
-            }
-            .into(),
-        ),
-        (
-            "backend retry",
-            BackendRetry {
-                backend: RetryTarget::Mprime,
-                attempt: 1,
-                wait_s: 5,
-                reason: HOSTILE.to_owned(),
-            }
-            .into(),
-        ),
-        ("session warning", warning(HOSTILE)),
-    ];
-    for (name, payload) in cases {
-        let mut script = Script::at_limit();
-        script.append(payload, &[]);
-        let fx = Fixture::of(&script.events);
-        for view in [View::Main, View::Log] {
-            let sc = screen(view, 300, 40, Colours::Full, true);
-            let (buf, _) = fx.draw(&sc, fx.now);
-            assert_inert(&buf, &format!("{name} {view:?}"));
-            if view == View::Main {
-                assert!(
-                    squashed(&buf).contains(ESCAPED),
-                    "{name}: not visibly escaped in the main view"
-                );
-            }
+#[test_case::test_case("dead end", DeadEnd { condition: DeadEndCondition::Containment, core: None, detail: HOSTILE.to_owned(), action: None }.into(); "dead end")]
+#[test_case::test_case("backend retry", BackendRetry { backend: RetryTarget::Mprime, attempt: 1, wait_s: 5, reason: HOSTILE.to_owned() }.into(); "backend retry")]
+#[test_case::test_case("session warning", warning(HOSTILE); "session warning")]
+fn a_dead_end_a_retry_and_a_warning_with_controls_are_drawn_escaped(name: &str, payload: Payload) {
+    let mut script = Script::at_limit();
+    script.append(payload, &[]);
+    let fx = Fixture::of(&script.events);
+    for view in [View::Main, View::Log] {
+        let sc = screen(view, 300, 40, Colours::Full, true);
+        let (buf, _) = fx.draw(&sc, fx.now);
+        assert_inert(&buf, &format!("{name} {view:?}"));
+        if view == View::Main {
+            assert!(
+                squashed(&buf).contains(ESCAPED),
+                "{name}: not visibly escaped in the main view"
+            );
         }
     }
 }
