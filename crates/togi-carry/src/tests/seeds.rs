@@ -64,6 +64,54 @@ fn seeds_solo_limits_and_failure_points() {
     );
 }
 
+#[test]
+fn sparse_seed_reset_and_reinsert_preserve_order_and_wire_shape() {
+    let mut x = Source::new(day(9), &[0, 7, 15], 3, 1).with_context(&context());
+    x.pass(15, -30, Condition::Alone);
+    x.fail(15, -31, Condition::Alone, Attribution::Attributed);
+    x.pass(7, -20, Condition::Alone);
+    x.fail(7, -21, Condition::Alone, Attribution::Attributed);
+    x.add(reset(ResetTarget::Core(super::core(7))));
+    x.add(reset(ResetTarget::Core(super::core(15))));
+    let solo = x.pass(15, -10, Condition::Alone);
+    let failure = x
+        .fail(15, -11, Condition::Alone, Attribution::Attributed)
+        .failure;
+    let low = x.pass(0, -5, Condition::Alone);
+
+    let (mut archive, chain) = chain_of(&[&x]);
+    let got = pending(&mut archive, &chain, None, &[]);
+    assert_eq!(
+        got.seeds(),
+        [
+            seed(0, Some(limit(-5, x.id, low)), None),
+            seed(
+                15,
+                Some(limit(-10, x.id, solo)),
+                Some(point(-11, x.id, failure, Signal::UnexpectedExit))
+            ),
+        ]
+    );
+    assert_eq!(
+        serde_json::to_value(resolve(&got, 1).session_carried(set(&[0, 7, 15])).carried).unwrap(),
+        serde_json::json!([
+            {
+                "core": 0,
+                "candidate_solo_limit": {"offset": -5, "from": {"session": x.id, "seq": low}}
+            },
+            {
+                "core": 15,
+                "candidate_solo_limit": {"offset": -10, "from": {"session": x.id, "seq": solo}},
+                "failure_point": {
+                    "offset": -11,
+                    "from": {"session": x.id, "seq": failure},
+                    "signal": "unexpected_exit"
+                }
+            }
+        ])
+    );
+}
+
 #[test_case(Some(&context()), &context(), true, None; "the same BIOS keeps the failure points")]
 #[test_case(
     Some(&context()),

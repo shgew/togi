@@ -17,6 +17,7 @@ togi-tuner.workspace = true
 
 [dev-dependencies]
 jiff.workspace = true
+serde_json.workspace = true
 test-case.workspace = true
 
 [lints]

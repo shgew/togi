@@ -1,8 +1,6 @@
-use std::collections::BTreeMap;
-
 use jiff::Timestamp;
 use togi_journal::{Build, EventKind, ResetTarget, Seq, SessionId, TrialIntent};
-use togi_machine::{BiosContext, BootId, CoreId, CoreInfo, CoreSet};
+use togi_machine::{BiosContext, BootId, CoreId, CoreInfo, CoreSet, PerCore};
 
 use crate::fact::Fact;
 
@@ -23,7 +21,7 @@ pub struct Reset {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ResetCutoffs {
     all: Option<Seq>,
-    cores: BTreeMap<CoreId, Seq>,
+    cores: PerCore<Option<Seq>>,
 }
 
 impl ResetCutoffs {
@@ -32,14 +30,14 @@ impl ResetCutoffs {
     }
 
     pub fn core(&self, core: CoreId) -> Option<Seq> {
-        self.cores.get(&core).copied()
+        self.cores.get(core).flatten()
     }
 
     pub(crate) fn record(&mut self, seq: Seq, target: ResetTarget) {
         match target {
             ResetTarget::All => self.all = Some(seq),
             ResetTarget::Core(core) => {
-                self.cores.insert(core, seq);
+                self.cores.set(core, Some(seq));
             }
         }
     }

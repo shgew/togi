@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 
 use togi_defect::{DefectState, Entry};
@@ -78,14 +78,22 @@ impl ExclusionTracker {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct SourceSeeds {
-    pub(crate) limits: BTreeMap<CoreId, CarriedLimit>,
-    pub(crate) points: BTreeMap<CoreId, CarriedFailurePoint>,
+    pub(crate) limits: PerCore<Option<CarriedLimit>>,
+    pub(crate) points: PerCore<Option<CarriedFailurePoint>>,
 }
 
 impl SourceSeeds {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.limits.len() + self.points.len()
+        self.limits
+            .iter()
+            .filter(|(_, value)| value.is_some())
+            .count()
+            + self
+                .points
+                .iter()
+                .filter(|(_, value)| value.is_some())
+                .count()
     }
 }
 
@@ -135,8 +143,8 @@ pub(crate) struct SeedFold {
     signals: HashMap<Seq, Signal>,
     failure_end: HashMap<Seq, Seq>,
     hunts: HashMap<NonZeroU32, Hunt>,
-    limits: BTreeMap<CoreId, CarriedLimit>,
-    failures: BTreeMap<CoreId, Vec<FailureCandidate>>,
+    limits: PerCore<Option<CarriedLimit>>,
+    failures: PerCore<Option<Vec<FailureCandidate>>>,
 }
 
 fn all_zero(profile: &PerCore<TargetOffset>) -> bool {
@@ -159,8 +167,8 @@ impl SeedFold {
             signals: HashMap::new(),
             failure_end: HashMap::new(),
             hunts: HashMap::new(),
-            limits: BTreeMap::new(),
-            failures: BTreeMap::new(),
+            limits: PerCore::default(),
+            failures: PerCore::default(),
         }
     }
 
@@ -178,15 +186,20 @@ impl SeedFold {
     fn offer_limit(&mut self, core: CoreId, limit: CarriedLimit) {
         let deeper = self
             .limits
-            .get(&core)
+            .get(core)
+            .flatten()
             .is_none_or(|held| limit.offset < held.offset);
         if deeper {
-            self.limits.insert(core, limit);
+            self.limits.set(core, Some(limit));
         }
     }
 
     fn offer_failure(&mut self, core: CoreId, candidate: FailureCandidate) {
-        self.failures.entry(core).or_default().push(candidate);
+        if let Some(slot) = self.failures.get_mut(core) {
+            slot.get_or_insert_with(Vec::new).push(candidate);
+        } else {
+            self.failures.set(core, Some(vec![candidate]));
+        }
     }
 
     pub(crate) fn fold(&mut self, event: &Event) {
@@ -374,12 +387,12 @@ impl SeedFold {
             }
             Payload::CommandReset(reset) => match reset.target {
                 togi_journal::ResetTarget::All => {
-                    self.limits.clear();
-                    self.failures.clear();
+                    self.limits = PerCore::default();
+                    self.failures = PerCore::default();
                 }
                 togi_journal::ResetTarget::Core(core) => {
-                    self.limits.remove(&core);
-                    self.failures.remove(&core);
+                    self.limits.set(core, None);
+                    self.failures.set(core, None);
                 }
             },
             Payload::SessionContext(_)
@@ -459,10 +472,10 @@ impl SeedFold {
                 );
             }
         }
-        let mut points = BTreeMap::new();
-        for (core, candidates) in self.failures {
+        let mut points = PerCore::default();
+        for (core, candidates) in self.failures.iter_ref() {
             let mut best: Option<CarriedFailurePoint> = None;
-            for candidate in candidates {
+            for candidate in candidates.iter().flatten() {
                 if candidate.defect_checked && exclusions.excludes(candidate.point.from.seq) {
                     continue;
                 }
@@ -487,7 +500,7 @@ impl SeedFold {
                 }
             }
             if let Some(best) = best {
-                points.insert(core, best);
+                points.set(core, Some(best));
             }
         }
         SourceSeeds {
