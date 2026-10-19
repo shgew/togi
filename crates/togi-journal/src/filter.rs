@@ -61,7 +61,7 @@ impl FromStr for KindSelector {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Filter {
     pub cores: CoreSet,
     pub kinds: Vec<KindSelector>,

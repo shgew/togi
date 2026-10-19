@@ -315,7 +315,7 @@ impl HuntStart {
 }
 
 /// What an entry says, with the fields its sentence is built from.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum What {
     /// A sentence kept as it was written, raw untrusted text in it.
     Said(String),
@@ -377,7 +377,7 @@ pub enum What {
 }
 
 /// One line of what happened, in plain words or merged from several events.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Entry {
     /// When it happened; a merged entry shows its last event.
     pub at: Timestamp,

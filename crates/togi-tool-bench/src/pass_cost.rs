@@ -422,7 +422,7 @@ fn core(index: usize) -> Option<CoreId> {
 
 /// What every row of a report is evaluated with: the configuration's short trial, the horizons and the
 /// counterfactual extra short passes.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Settings {
     pub short_trial_s: u32,
     pub launches: u32,

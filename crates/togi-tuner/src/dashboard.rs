@@ -39,7 +39,7 @@ impl Lengths {
     clippy::struct_excessive_bools,
     reason = "independent facts of one part shown as the dashboard shows them"
 )]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(into = "wire::CyclePart", from = "wire::CyclePart")]
 pub struct CyclePart {
     pub cores: CoreSet,
@@ -72,7 +72,7 @@ impl CyclePart {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CycleStep {
     pub regime: Regime,
     pub workload: WorkloadId,
@@ -81,7 +81,7 @@ pub struct CycleStep {
     pub done: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CyclePlan {
     pub number: Option<NonZeroU32>,
     pub open: bool,
@@ -97,7 +97,7 @@ pub enum TurnKind {
     Search { step: NonZeroU8 },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(into = "wire::SearchTurn", try_from = "wire::SearchTurn")]
 pub struct SearchTurn {
     pub core: CoreId,
@@ -139,7 +139,7 @@ impl GroupState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct HuntPart {
     pub failing: CoreSet,
     pub parked: CoreSet,
@@ -150,7 +150,7 @@ pub struct HuntPart {
     pub running: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct HuntGroup {
     pub number: u32,
     pub cores: CoreSet,
@@ -165,7 +165,7 @@ pub struct HuntGroup {
     pub running: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MemberProbe {
     pub member: CoreId,
     pub offset: TargetOffset,
@@ -176,7 +176,7 @@ pub struct MemberProbe {
     pub done: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(into = "wire::RerunPlan", try_from = "wire::RerunPlan")]
 pub struct RerunPlan {
     pub regime: Regime,
@@ -184,7 +184,7 @@ pub struct RerunPlan {
     pub lengths: Lengths,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct HuntPlan {
     pub number: u32,
     pub regime: Regime,
