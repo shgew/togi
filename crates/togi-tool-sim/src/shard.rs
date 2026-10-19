@@ -46,7 +46,7 @@ pub fn shard(runs: &[Run], count: NonZeroUsize, index: usize) -> Result<Vec<Run>
         .ok_or(ShardError { index, count })
 }
 
-/// Approximate shard costs cap at u64::MAX; saturated ties retain the lowest-index tie-break.
+/// Approximate shard costs cap at `u64::MAX`; saturated ties retain the lowest-index tie-break.
 fn saturating_shard_load(load: u64, cost: u64) -> u64 {
     load.saturating_add(cost)
 }
