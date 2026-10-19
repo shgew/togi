@@ -653,7 +653,10 @@ fn a_journal_refuses_unrepresentable_voltage_bins(volts: f64, carried: bool) {
 #[test_case::test_case(0.004, Some(1); "one bin")]
 #[test_case::test_case(-0.004, Some(-1); "negative bin")]
 #[test_case::test_case(2.0_f64.powi(63) / 250.0, None; "first positive overflow")]
+// Adjacent representable requests at these signed bin limits are 8 V apart.
+#[test_case::test_case(2.0_f64.powi(63) / 250.0 - 8.0, Some(i64::MAX - 2047); "last accepted positive request")]
 #[test_case::test_case(-2.0_f64.powi(63) / 250.0, Some(i64::MIN); "exact negative limit")]
+#[test_case::test_case(-2.0_f64.powi(63) / 250.0 - 8.0, None; "first finite negative overflow")]
 #[test_case::test_case(f64::MAX, None; "positive multiplication overflow")]
 #[test_case::test_case(-f64::MAX, None; "negative multiplication overflow")]
 fn voltage_bins_are_checked_at_signed_boundaries(volts: f64, expected: Option<i64>) {

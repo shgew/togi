@@ -721,7 +721,8 @@ fn loaded_mask(loaded: CoreSet) -> u64 {
     loaded.iter().fold(0, |mask, core| mask | 1 << core.get())
 }
 
-/// Synthetic IDs reserve 1000 for nonnumeric trial names and cap numeric names at the PID field.
+/// Trial names that do not parse as a u32, including larger numbers, get synthetic PID 1000.
+/// Parsed names add that reserved base and saturate at the recorded PID field's maximum.
 fn saturating_trial_pid(id: &str) -> u32 {
     1000_u32.saturating_add(id.parse().unwrap_or(0))
 }
@@ -799,6 +800,7 @@ mod numeric_tests {
     #[test_case("4294966295", u32::MAX; "largest exact synthetic pid")]
     #[test_case("4294966296", u32::MAX; "first saturated synthetic pid")]
     #[test_case("4294967295", u32::MAX; "largest numeric trial name")]
+    #[test_case("4294967296", 1000; "numeric name outside u32")]
     fn synthetic_pids_saturate_at_the_recorded_field(id: &str, expected: u32) {
         assert_eq!(saturating_trial_pid(id), expected);
     }
