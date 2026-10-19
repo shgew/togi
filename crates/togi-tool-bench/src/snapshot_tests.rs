@@ -38,7 +38,8 @@ fn generated(seed: u64, cores: i64) -> (Vec<Event>, MachineDefinition) {
                 seed,
                 ..RunSettings::default()
             },
-        ),
+        )
+        .unwrap(),
         persistence: persistence.clone(),
         replay: togi_simrun::Replay::Warm,
         verify_every: None,
