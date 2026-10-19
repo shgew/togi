@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::diff::{Span, parse_diff};
+use crate::diff::{Span, number, parse_diff};
 use crate::manifest::{CoverRange, Coverage, Manifest, NotBuilt, read_manifest, write_manifest};
 use crate::text::{join, quote};
 use crate::{Error, files};
@@ -41,10 +41,12 @@ pub fn parse_cover(text: &str) -> Result<(Vec<CoverRange>, Vec<NotBuilt>), Error
         let Some(m) = range_line.captures(line) else {
             continue;
         };
-        let first = m[2].parse().unwrap_or(i64::MAX);
+        let first = number(m[2].as_bytes())?;
         let last = m
             .get(3)
-            .map_or(first, |d| d.as_str().parse().unwrap_or(i64::MAX));
+            .map(|d| number(d.as_str().as_bytes()))
+            .transpose()?
+            .unwrap_or(first);
         if last < first {
             return Err(Error::new(format!(
                 "cover range {} ends before it starts",
@@ -134,3 +136,25 @@ pub fn add_cover(dir: &str, text: &str) -> Result<Manifest, Error> {
 #[cfg(test)]
 #[path = "tests/cover.rs"]
 mod tests;
+
+#[cfg(test)]
+mod numeric_tests {
+    use test_case::test_case;
+
+    use super::*;
+
+    #[test_case("f:9223372036854775808" ; "first overflow")]
+    #[test_case("f:1-9223372036854775808" ; "last overflow")]
+    fn coverage_line_overflow_is_refused(text: &str) {
+        let error = parse_cover(text).unwrap_err();
+        assert!(error.find::<std::num::ParseIntError>().is_some());
+    }
+
+    #[test_case("f:9223372036854775807", i64::MAX ; "single")]
+    #[test_case("f:1-9223372036854775807", 1 ; "range")]
+    fn coverage_limit_is_exact(text: &str, first: i64) {
+        let (ranges, _) = parse_cover(text).unwrap();
+        assert_eq!(ranges[0].first, first);
+        assert_eq!(ranges[0].last, i64::MAX);
+    }
+}
