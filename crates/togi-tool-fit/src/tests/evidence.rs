@@ -146,6 +146,19 @@ fn equal_profiles_and_classes_aggregate_with_their_counts_in_first_seen_order() 
     assert_eq!(got, [(-10, 7, 4), (-20, 3, 1)]);
 }
 
+#[test_case::test_case(2; "smallest fitter profile")]
+#[test_case::test_case(16; "largest checked profile")]
+fn initial_configuration_preserves_checked_core_counts(cores: usize) {
+    let mut record = fact(&vec![-50; cores], Regime::R1, &[0], 60, Decisive::Pass);
+    record.profile = super::profile(&vec![-50; cores]);
+    let cfg = initial_config(&[&record]);
+    assert_eq!(cfg.cores, i64::try_from(cores).unwrap());
+    assert_eq!(cfg.core.len(), cores);
+    assert_eq!(cfg.core.first().unwrap().id, 0);
+    assert_eq!(cfg.core.last().unwrap().id, cfg.cores - 1);
+    assert_eq!(togi_sim::Model::new(&cfg, 0).unwrap().cores(), cores);
+}
+
 mod properties {
     use proptest::prelude::*;
     use proptest::test_runner::{Config, RngSeed};
