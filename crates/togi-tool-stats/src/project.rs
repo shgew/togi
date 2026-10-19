@@ -153,18 +153,12 @@ pub(crate) struct BootTime {
     pub(crate) first_event: Timestamp,
 }
 
-pub(crate) struct IdleFailure {
-    pub(crate) seq: Seq,
-    pub(crate) profile: Option<Profile>,
-}
-
 /// A journal's trials, runs, hunts and boots, joined by the events' own references.
 pub(crate) struct Projection<'a> {
     pub(crate) events: &'a [Event],
     pub(crate) topology: &'a Topology,
     pub(crate) trials: Vec<Trial<'a>>,
     pub(crate) by_id: HashMap<&'a TrialId, usize>,
-    pub(crate) idle: Vec<IdleFailure>,
     pub(crate) runs: Vec<Run>,
     pub(crate) hunts: Vec<Hunt<'a>>,
     pub(crate) boots: HashMap<&'a BootId, BootTime>,
@@ -178,7 +172,6 @@ impl<'a> Projection<'a> {
             topology: journal.topology(),
             trials: Vec::new(),
             by_id: HashMap::new(),
-            idle: Vec::new(),
             runs: Vec::new(),
             hunts: Vec::new(),
             boots: HashMap::new(),
@@ -300,16 +293,6 @@ impl<'a> Projection<'a> {
                         self.trials[at].crashed = true;
                     }
                 }
-                Payload::Failure(failure) => {
-                    if failure.known_failure.is_none() && failure.trial.is_none() {
-                        self.idle.push(IdleFailure {
-                            seq: event.seq,
-                            profile: failure
-                                .profile
-                                .and_then(|offsets| Profile::new(self.topology, offsets).ok()),
-                        });
-                    }
-                }
                 Payload::HuntStart(start) => {
                     let id = start.hunt.get();
                     hunt_ids.insert(id, self.hunts.len());
@@ -378,6 +361,7 @@ impl<'a> Projection<'a> {
                 | Payload::ProfileRestored(_)
                 | Payload::TrialCarried(_)
                 | Payload::FailureCarried(_)
+                | Payload::Failure(_)
                 | Payload::Mce(_)
                 | Payload::TunerDecision(_)
                 | Payload::CorePhase(_)

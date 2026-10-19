@@ -509,6 +509,7 @@ impl Evidence {
         cells: &FailureCells,
         profile: &Profile,
         since: Option<Seq>,
+        before: Option<Seq>,
     ) -> Option<Seq> {
         let mut newest = None;
         for cell in cells.cells() {
@@ -516,8 +517,10 @@ impl Evidence {
             if !cell.profile.within(profile) {
                 continue;
             }
-            let live = cell.live.last().filter(|&seq| Some(seq) > since);
-            newest = newest.max(live).max(cell.carried.last());
+            let live = cell.live.after(since).before(before).last();
+            newest = newest
+                .max(live)
+                .max(cell.carried.after(None).before(before).last());
         }
         newest
     }
@@ -541,12 +544,22 @@ impl Evidence {
         profile: &Profile,
         since: Option<Seq>,
     ) -> Option<Seq> {
+        self.newest_before(class, profile, since, None)
+    }
+
+    fn newest_before(
+        &self,
+        class: ClassKey,
+        profile: &Profile,
+        since: Option<Seq>,
+        before: Option<Seq>,
+    ) -> Option<Seq> {
         let own = self
             .classes
             .get(&class)
-            .and_then(|cells| self.newest_in(&cells.failures, profile, since));
+            .and_then(|cells| self.newest_in(&cells.failures, profile, since, before));
         let idle = if self.is_all_core_r6(class) {
-            self.newest_in(&self.idle, profile, since)
+            self.newest_in(&self.idle, profile, since, before)
         } else {
             None
         };
@@ -596,6 +609,59 @@ impl Evidence {
         Ok(self.count_unchecked(class, profile, window, needed))
     }
 
+    /// The admitted live and carried passes strictly before `before`, excluding failures at
+    /// or after it. Backend identity and resets are those of this ledger: fold only the
+    /// historical prefix when querying an earlier configuration or reset state.
+    pub fn passes_before(
+        &self,
+        class: ClassKey,
+        profile: &Profile,
+        before: Seq,
+    ) -> Result<usize, TopologyMismatch> {
+        self.check(profile)?;
+        Ok(self
+            .admitted_passes(
+                class,
+                profile,
+                Window::LiveOrCarried { since: None },
+                Some(before),
+            )
+            .map(|run| run.len())
+            .sum())
+    }
+
+    fn admitted_passes<'a>(
+        &'a self,
+        class: ClassKey,
+        profile: &'a Profile,
+        window: Window,
+        before: Option<Seq>,
+    ) -> impl Iterator<Item = Run<'a>> {
+        let floor = self.newest_before(class, profile, None, before);
+        let (since, carried_counts) = match window {
+            Window::Live { since } => (since, false),
+            Window::LiveOrCarried { since } => (since, true),
+        };
+        let live_floor = floor.max(since);
+        let backend = self.backends.active(class.workload().backend());
+        self.classes
+            .get(&class)
+            .into_iter()
+            .flat_map(|cells| cells.passes.cells())
+            .filter(move |cell| {
+                self.visit();
+                cell.backend == backend && cell.profile.covers(profile)
+            })
+            .flat_map(move |cell| {
+                [
+                    Some(cell.live.after(live_floor).before(before)),
+                    carried_counts.then(|| cell.carried.after(floor).before(before)),
+                ]
+                .into_iter()
+                .flatten()
+            })
+    }
+
     fn count_unchecked(
         &self,
         class: ClassKey,
@@ -603,32 +669,8 @@ impl Evidence {
         window: Window,
         needed: NonZeroU16,
     ) -> Count {
-        let Some(cells) = self.classes.get(&class) else {
-            return Count::default();
-        };
-        let floor = self.newest_unchecked(class, profile, None);
-        let (since, carried_counts) = match window {
-            Window::Live { since } => (since, false),
-            Window::LiveOrCarried { since } => (since, true),
-        };
-        let live_floor = floor.max(since);
-        let backend = self.backends.active(class.workload().backend());
-        let mut runs: Vec<Run<'_>> = Vec::new();
-        let mut valid = 0_usize;
-        for cell in cells.passes.cells() {
-            self.visit();
-            if cell.backend != backend || !cell.profile.covers(profile) {
-                continue;
-            }
-            let live = cell.live.after(live_floor);
-            valid += live.len();
-            runs.push(live);
-            if carried_counts {
-                let carried = cell.carried.after(floor);
-                valid += carried.len();
-                runs.push(carried);
-            }
-        }
+        let runs: Vec<Run<'_>> = self.admitted_passes(class, profile, window, None).collect();
+        let valid = runs.iter().map(Run::len).sum();
         Count {
             valid: crate::numbers::saturating_evidence_count(valid),
             witnesses: merge(&runs, usize::from(needed.get())),
