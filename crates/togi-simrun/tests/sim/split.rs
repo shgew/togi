@@ -7,7 +7,7 @@ use togi_session::SessionError;
 use togi_sim::{MachineDefinition, Model};
 use togi_simrun::{Persistence, ResumeError, SimError, SimOutcome, resume_simulator, simulate};
 
-use crate::common::{STATE, hunt_machine, input, nz, simulator};
+use crate::common::{Bench, STATE, finish, hunt_machine, input, nz, simulator, until_kind};
 
 const MACHINE: &str = "machine.json";
 
@@ -79,6 +79,41 @@ fn capped(
         "stopped within {boots} boots"
     );
     serde_json::from_slice(&store.bytes(MACHINE).unwrap()).unwrap()
+}
+
+#[test]
+fn journal_only_resume_refuses_a_timestamp_without_room_for_reboot() {
+    let definition = hunt_machine(2);
+    let bench = Bench::new(&definition, 1);
+    let mut run = bench.input();
+    run.observer = Some(until_kind(togi_journal::EventKind::SessionStart));
+    finish(run);
+    assert!(
+        bench.fs.bytes(MACHINE).is_none(),
+        "resume must use journal history"
+    );
+    let mut journal = Vec::new();
+    for event in bench.events() {
+        let mut value = serde_json::to_value(event).unwrap();
+        value["time"] = serde_json::to_value(jiff::Timestamp::MAX).unwrap();
+        serde_json::to_writer(&mut journal, &value).unwrap();
+        journal.push(b'\n');
+    }
+    bench.fs.put(bench.fs.path("events.jsonl"), journal.clone());
+    let error = resume_simulator(
+        &bench.fs.persistence(),
+        Model::new(&definition, 1).unwrap(),
+        1,
+        None,
+    )
+    .err()
+    .expect("the next boot timestamp cannot be represented");
+    assert!(matches!(
+        error,
+        ResumeError::Construct(togi_sim::ArithmeticError::ResumeTime(_))
+    ));
+    assert_eq!(bench.fs.bytes("events.jsonl").unwrap(), journal);
+    assert!(bench.fs.bytes(MACHINE).is_none());
 }
 
 fn split_matches_whole<S: Store>(
