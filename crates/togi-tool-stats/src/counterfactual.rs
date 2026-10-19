@@ -13,7 +13,7 @@ use serde::Serialize;
 use togi_journal::{CycleEvent, Event, Outcome, Payload, Seq, TrialId};
 use togi_machine::{CcdId, CoreSet, PerCore, Regime, TargetOffset, WorkloadId};
 use togi_requests::VOLTS_PER_COUNT;
-use togi_tuner::{ChainOrder, ClassKey, FoldError, LoadKey, Quota, Secs, State, Window};
+use togi_tuner::{ChainOrder, ClassKey, LoadKey, Quota, Secs, State, Window};
 
 use crate::chains::{self, Derivation, Kind};
 use crate::error::Error;
@@ -586,8 +586,12 @@ impl<'a> Ledger<'a> {
         // its quota multiplies the same base by its own count of earlier parts holding its set.
         let mut tuner_sets: HashMap<(WorkloadId, CoreSet), u32> = HashMap::new();
         let mut held_sets: HashMap<(WorkloadId, CoreSet), u32> = HashMap::new();
-        for (index, step) in plan.steps.iter().enumerate() {
-            let number = NonZeroU32::new(u32::try_from(index + 1).ok()?)?;
+        // Journal construction checked the recorded cycle's step count before the tuner folded it.
+        for (step, number) in plan
+            .steps
+            .iter()
+            .zip((1..=u32::MAX).filter_map(NonZeroU32::new))
+        {
             let mut held_parts = Vec::with_capacity(step.parts.len());
             for part in &step.parts {
                 if step.regime != Regime::R7 || !part.partial {
@@ -657,7 +661,7 @@ impl<'a> Ledger<'a> {
                 .count(class, &profile, window, NonZeroU16::MAX)
                 .ok()?
                 .witnesses;
-            let need = usize::try_from(coverage.needed).ok()?;
+            let need = coverage.needed as usize;
             let (kept, skipped): (Vec<Seq>, Vec<Seq>) = valid
                 .into_iter()
                 .partition(|seq| !self.skipped.contains(seq) && !self.uncertain.contains(seq));
@@ -757,7 +761,7 @@ pub struct Counterfactual {
 /// When the tuner cannot fold the journal or a record cannot be encoded.
 pub fn counterfactual(journal: &Journal) -> Result<Counterfactual, Error> {
     let projection = Projection::new(journal);
-    let accounting = account(&projection).map_err(Error::Fold)?;
+    let accounting = account(&projection)?;
     Ok(Counterfactual {
         text: render(&accounting),
         records: records(&accounting).map_err(Error::Records)?,
@@ -765,7 +769,7 @@ pub fn counterfactual(journal: &Journal) -> Result<Counterfactual, Error> {
 }
 
 /// Folds `p`'s journal into the tuner and accounts every chain derivation under each candidate.
-pub(crate) fn account<'a>(p: &Projection<'a>) -> Result<Accounting<'a>, FoldError> {
+pub(crate) fn account<'a>(p: &Projection<'a>) -> Result<Accounting<'a>, Error> {
     let derivations = chains::attribute(p, None);
     let ends: HashMap<Seq, Seq> = p
         .trials
@@ -790,9 +794,10 @@ pub(crate) fn account<'a>(p: &Projection<'a>) -> Result<Accounting<'a>, FoldErro
             let last_r7_step = cycle
                 .steps
                 .iter()
-                .rposition(|&regime| regime == Regime::R7)
-                .and_then(|at| u32::try_from(at + 1).ok())
-                .and_then(NonZeroU32::new);
+                // Journal construction guarantees every recorded step has a u32 ordinal.
+                .zip((1..=u32::MAX).filter_map(NonZeroU32::new))
+                .filter_map(|(&regime, ordinal)| (regime == Regime::R7).then_some(ordinal))
+                .last();
             cycles.insert(
                 cycle.cycle,
                 CycleFacts {
@@ -840,7 +845,7 @@ pub(crate) fn account<'a>(p: &Projection<'a>) -> Result<Accounting<'a>, FoldErro
                 }
             }
         }
-        state.fold(event)?;
+        state.fold(event).map_err(Error::Fold)?;
         if conclusion.is_none() && is_cycle_end(event) && state.project().clean_cycles >= 1 {
             conclusion = Some(event.time);
         }
@@ -850,13 +855,14 @@ pub(crate) fn account<'a>(p: &Projection<'a>) -> Result<Accounting<'a>, FoldErro
             ledger.close(*candidate, facts, None, &state);
         }
     }
-    let conclusion_s = p
+    let conclusion_s = match p
         .events
         .first()
         .zip(conclusion.or_else(|| p.events.last().map(|event| event.time)))
-        .map_or(0, |(first, end)| {
-            u64::try_from(end.duration_since(first.time).as_secs()).unwrap_or(0)
-        });
+    {
+        Some((first, end)) => recorded_elapsed_seconds(end.duration_since(first.time))?,
+        None => 0,
+    };
     let mut records = Vec::new();
     let mut summaries = Vec::new();
     for (_, mut ledger) in ledgers {
@@ -1016,4 +1022,26 @@ pub(crate) fn render(accounting: &Accounting<'_>) -> String {
         }
     }
     table.finish()
+}
+
+fn recorded_elapsed_seconds(elapsed: jiff::SignedDuration) -> Result<u64, Error> {
+    std::time::Duration::try_from(elapsed)
+        .map(|elapsed| elapsed.as_secs())
+        .map_err(Error::Elapsed)
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use super::recorded_elapsed_seconds;
+    use jiff::SignedDuration;
+
+    #[test_case::test_case(SignedDuration::ZERO, Some(0); "zero")]
+    #[test_case::test_case(SignedDuration::MAX, Some(i64::MAX as u64); "largest signed duration")]
+    #[test_case::test_case(SignedDuration::from_secs(1), Some(1); "positive second")]
+    #[test_case::test_case(SignedDuration::from_nanos(1), Some(0); "positive fraction")]
+    #[test_case::test_case(SignedDuration::from_secs(-1), None; "negative second")]
+    #[test_case::test_case(SignedDuration::from_nanos(-1), None; "negative fraction")]
+    fn recorded_elapsed_is_not_a_zero_fallback(elapsed: SignedDuration, expected: Option<u64>) {
+        assert_eq!(recorded_elapsed_seconds(elapsed).ok(), expected);
+    }
 }
