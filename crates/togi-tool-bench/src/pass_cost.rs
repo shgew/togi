@@ -430,8 +430,13 @@ pub struct Settings {
     pub extra_short: Vec<NonZeroU32>,
 }
 
+/// Counterfactual short-pass counts share the recorded requirement's u32 ceiling.
+fn saturating_short_pass_count(count: u32, extra: NonZeroU32) -> u32 {
+    count.saturating_add(extra.get())
+}
+
 impl Settings {
-    /// `obligation` with `extra` more passes of its short trials: a counterfactual requirement.
+    /// `obligation` with `extra` more passes of its short trials, capped at `u32::MAX`.
     pub fn with_extra_short(&self, obligation: &Obligation, extra: NonZeroU32) -> Obligation {
         Obligation {
             requirements: obligation
@@ -439,7 +444,7 @@ impl Settings {
                 .iter()
                 .map(|r| Requirement {
                     count: if r.trial.get() == self.short_trial_s {
-                        r.count.saturating_add(extra.get())
+                        saturating_short_pass_count(r.count, extra)
                     } else {
                         r.count
                     },
@@ -881,6 +886,17 @@ mod tests {
         assert_eq!(
             settings.with_extra_short(&current, NonZeroU32::new(2).unwrap()),
             obligation(&[req(120, 5, 0.1), req(300, 1, 0.2)])
+        );
+    }
+
+    #[test_case::test_case(0, 1, 1; "first extra pass")]
+    #[test_case::test_case(u32::MAX - 1, 1, u32::MAX; "last exact pass")]
+    #[test_case::test_case(u32::MAX, 1, u32::MAX; "first overflowing pass")]
+    #[test_case::test_case(3, u32::MAX, u32::MAX; "largest requested addition")]
+    fn short_pass_counts_have_one_saturation_policy(count: u32, extra: u32, expected: u32) {
+        assert_eq!(
+            saturating_short_pass_count(count, NonZeroU32::new(extra).unwrap()),
+            expected
         );
     }
 

@@ -9,18 +9,18 @@ pub(crate) fn index(value: u32) -> usize {
 }
 
 /// Evidence queries retain exact witnesses, but report counts capped at the wire limit.
-pub(crate) fn saturating_evidence_count(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
+pub(crate) fn saturating_evidence_count(value: impl TryInto<u32>) -> u32 {
+    value.try_into().unwrap_or(u32::MAX)
 }
 
 /// Hunt progress counters stop at the largest representable journal counter.
-pub(crate) fn saturating_hunt_count(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
+pub(crate) fn saturating_hunt_count(value: impl TryInto<u32>) -> u32 {
+    value.try_into().unwrap_or(u32::MAX)
 }
 
 /// Repeated checking classes accumulate requirements up to the journal count limit.
-pub(crate) fn saturating_checking_count(value: usize) -> u32 {
-    u32::try_from(value).unwrap_or(u32::MAX)
+pub(crate) fn saturating_checking_count(value: impl TryInto<u32>) -> u32 {
+    value.try_into().unwrap_or(u32::MAX)
 }
 
 /// The evidence requirement carries a nonzero, 16-bit count even for larger accumulated quotas.

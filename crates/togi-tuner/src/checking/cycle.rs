@@ -310,14 +310,13 @@ impl Run {
 
     /// Starts the next cycle with the configured schedule.
     pub(crate) fn cycle_start_action(&self) -> Action {
-        let next = self
-            .checking
-            .last_cycle()
-            .map_or(1, |last| last.get().saturating_add(1));
+        let next = self.checking.last_cycle().map_or(NonZeroU32::MIN, |last| {
+            crate::numbers::checking_ordinal(crate::numbers::index(last.get()))
+        });
         let confirming = self.phases.phase1_end().is_some() && self.phases.concluded().is_none();
         Action::Decide(DecisionAction::new(
             CheckingCycle {
-                cycle: NonZeroU32::new(next).unwrap_or(NonZeroU32::MIN),
+                cycle: next,
                 event: CycleEvent::Start,
                 passed: false,
                 full: false,

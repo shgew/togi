@@ -107,9 +107,8 @@ impl Trials for SimTrials {
                 .collect();
             runtime.violations.extend(outsiders);
         }
-        let number: u32 = spec.id.parse().unwrap_or(0);
         let started = Started {
-            pid: 1000u32.saturating_add(number),
+            pid: saturating_trial_pid(spec.id.as_str()),
             scope: format!("togi-trial-{}", spec.id),
             cpus: spec.cpus.clone(),
             argv: vec!["sim".to_owned(), spec.workload.to_string()],
@@ -730,14 +729,20 @@ fn loaded_mask(loaded: CoreSet) -> u64 {
     loaded.iter().fold(0, |mask, core| mask | 1 << core.get())
 }
 
+/// Trial names that do not parse as a u32, including larger numbers, get synthetic PID 1000.
+/// Parsed names add that reserved base and saturate at the recorded PID field's maximum.
+fn saturating_trial_pid(id: &str) -> u32 {
+    1000_u32.saturating_add(id.parse().unwrap_or(0))
+}
+
 /// Synthetic replay keys retain the largest nanosecond word for longer durations.
 fn saturating_key_nanos(duration: Duration) -> u64 {
     u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
 }
 
 /// Synthetic instruction counters saturate at their recorded field's range.
-fn saturating_trial_count(count: usize) -> u32 {
-    u32::try_from(count).unwrap_or(u32::MAX)
+fn saturating_trial_count(count: impl TryInto<u32>) -> u32 {
+    count.try_into().unwrap_or(u32::MAX)
 }
 
 /// Stops and continues the trial's schedule has sent by `result.ran`; R6 counts its own bursts.
@@ -752,10 +757,10 @@ fn count(spec: &TrialSpec, result: &mut TrialResult) {
         result.conts = 0;
         let mut at = spec.duration / 2;
         while at < result.ran && at < spec.duration {
-            result.conts += 1;
+            result.conts = saturating_trial_count(u64::from(result.conts) + 1);
             let end = at + BURST;
             if end < result.ran && end < spec.duration {
-                result.stops += 1;
+                result.stops = saturating_trial_count(u64::from(result.stops) + 1);
             }
             at += BURST_EVERY;
         }
@@ -779,7 +784,7 @@ fn progress(spec: &TrialSpec, result: &TrialResult, events: &mut Vec<Event>) {
 
 #[cfg(test)]
 mod numeric_tests {
-    use super::{saturating_key_nanos, saturating_trial_count};
+    use super::{saturating_key_nanos, saturating_trial_count, saturating_trial_pid};
     use std::time::Duration;
     use test_case::test_case;
 
@@ -795,6 +800,22 @@ mod numeric_tests {
     #[test_case(usize::from(u16::MAX), u32::from(u16::MAX); "exact count")]
     #[test_case(usize::MAX, u32::MAX; "largest platform count")]
     fn instruction_counts_saturate(count: usize, expected: u32) {
+        assert_eq!(saturating_trial_count(count), expected);
+    }
+
+    #[test_case("0", 1000; "zero")]
+    #[test_case("named", 1000; "nonnumeric name")]
+    #[test_case("4294966295", u32::MAX; "largest exact synthetic pid")]
+    #[test_case("4294966296", u32::MAX; "first saturated synthetic pid")]
+    #[test_case("4294967295", u32::MAX; "largest numeric trial name")]
+    #[test_case("4294967296", 1000; "numeric name outside u32")]
+    fn synthetic_pids_saturate_at_the_recorded_field(id: &str, expected: u32) {
+        assert_eq!(saturating_trial_pid(id), expected);
+    }
+
+    #[test_case(u64::from(u32::MAX), u32::MAX; "last exact count")]
+    #[test_case(u64::from(u32::MAX) + 1, u32::MAX; "first overflowing increment")]
+    fn instruction_counter_increments_share_the_count_limit(count: u64, expected: u32) {
         assert_eq!(saturating_trial_count(count), expected);
     }
 }

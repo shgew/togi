@@ -331,10 +331,7 @@ impl Runtime {
     }
 
     pub(crate) fn jump_wall(&mut self, by: SignedDuration) -> Result<(), ArithmeticError> {
-        let offset = self
-            .wall_offset
-            .checked_add(by)
-            .ok_or(ArithmeticError::OffsetAdvance)?;
+        let offset = checked_wall_offset(self.wall_offset, by)?;
         let wall = self
             .epoch
             .checked_add(self.clock)
@@ -435,6 +432,13 @@ impl Runtime {
     }
 }
 
+fn checked_wall_offset(
+    offset: SignedDuration,
+    by: SignedDuration,
+) -> Result<SignedDuration, ArithmeticError> {
+    offset.checked_add(by).ok_or(ArithmeticError::OffsetAdvance)
+}
+
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -492,7 +496,8 @@ fn reset_reason(kind: Option<ResetKind>, supported: bool) -> ResetReason {
 
 #[cfg(test)]
 mod numeric_tests {
-    use super::bank_offset;
+    use super::{ArithmeticError, bank_offset, checked_wall_offset};
+    use jiff::SignedDuration;
     use test_case::test_case;
 
     #[test_case(0.0, 3, 0; "first shared bank")]
@@ -501,5 +506,20 @@ mod numeric_tests {
     #[test_case(1.0, 6, 5; "last core-local bank")]
     fn bank_draws_stay_inside_the_catalogue(draw: f64, count: u8, expected: u8) {
         assert_eq!(bank_offset(draw, count), expected);
+    }
+
+    #[test_case(SignedDuration::ZERO, SignedDuration::ZERO, Some(SignedDuration::ZERO); "zero")]
+    #[test_case(SignedDuration::MAX, SignedDuration::from_nanos(1), None; "positive overflow")]
+    #[test_case(SignedDuration::MIN, SignedDuration::from_nanos(-1), None; "negative overflow")]
+    fn wall_corrections_refuse_both_signed_limits(
+        offset: SignedDuration,
+        by: SignedDuration,
+        expected: Option<SignedDuration>,
+    ) {
+        let result = checked_wall_offset(offset, by);
+        match expected {
+            Some(expected) => assert_eq!(result.unwrap(), expected),
+            None => assert!(matches!(result, Err(ArithmeticError::OffsetAdvance))),
+        }
     }
 }

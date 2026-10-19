@@ -375,6 +375,8 @@ For each part, the output prints the passes, each trial's failure probability an
 
 Only `first` on a current-requirement row describes the current rules; on a `+N short` row it is the first-attempt probability of a requirement the tuner never asks for. Everything else is **counterfactual**, and the output says so: the tuner answers a multi-core R7 failure by backing off ([R7 voltage-targeted backoff](spec/tuner.md#r7-voltage-targeted-backoff)), not by retrying at the same profile, and it never asks for extra short passes. Trials are independent at a fixed profile; a failed trial is charged its full intended duration, so hours are an upper bound; a step counts one R7 occurrence, not the counts a later occurrence of the same workload adds. The probability that a part passes on its first attempt is not the probability that a retried part eventually earns its passes, and the two columns stay apart.
 
+The counterfactual short-pass count caps at `u32::MAX`, the requirement field's ceiling; adding passes never wraps that count.
+
 A trial of 120 s at 2 failures per hour fails with probability 0.0645 and one of 300 s with 0.1535, so a CCD part qualifies on its first attempt with probability 0.6930:
 
 ```text

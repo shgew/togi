@@ -670,7 +670,7 @@ impl Evidence {
         needed: NonZeroU16,
     ) -> Count {
         let runs: Vec<Run<'_>> = self.admitted_passes(class, profile, window, None).collect();
-        let valid = runs.iter().map(Run::len).sum();
+        let valid: usize = runs.iter().map(Run::len).sum();
         Count {
             valid: crate::numbers::saturating_evidence_count(valid),
             witnesses: merge(&runs, usize::from(needed.get())),

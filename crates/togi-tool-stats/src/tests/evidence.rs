@@ -689,3 +689,28 @@ fn r7_request_tables_list_durations_numerically() {
     assert_eq!(bins, want);
     assert_eq!(requesters, want);
 }
+
+#[test_case(None, u32::MAX, None; "unknown remains unknown")]
+#[test_case(Some(0), 0, Some(true); "zero requirement")]
+#[test_case(Some(0), 1, Some(false); "missing evidence")]
+#[test_case(Some(u32::MAX as usize - 1), u32::MAX, Some(false); "just below largest requirement")]
+#[test_case(Some(u32::MAX as usize), u32::MAX, Some(true); "largest requirement")]
+#[test_case(Some(usize::MAX), u32::MAX, Some(true); "largest observed count")]
+fn establishment_compares_exact_counts(
+    prior: Option<usize>,
+    required: u32,
+    expected: Option<bool>,
+) {
+    let group = crate::evidence::GroupReuse {
+        hunt: 1,
+        group: 1,
+        stage: HuntStage::Part,
+        prior,
+        required,
+        passes: 0,
+        failures: 0,
+        trials: 0,
+        seconds: 0,
+    };
+    assert_eq!(group.established(), expected);
+}
