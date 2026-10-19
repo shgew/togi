@@ -6,8 +6,8 @@ use std::time::Duration;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use ratatui::text::Line;
-use togi_journal::{HuntStage, Member, TrialId};
-use togi_machine::{CcdId, CoreSet, ObservedOffset, Regime, workloads};
+use togi_journal::Member;
+use togi_machine::{CcdId, Regime, workloads};
 use togi_tuner::{
     BiosProfile, Confirmed, CyclePart, CyclePlan, CycleStep, GroupState, HuntGroup, HuntPart,
     HuntPlan, Lengths, MemberProbe, PhaseNo, PhasePlan, Profile, Quota, RerunPlan, Topology,
@@ -16,8 +16,9 @@ use togi_tuner::{
 
 use super::super::fit::plain;
 use super::super::scene::Scene;
-use crate::model::{CoreState, CoreView, Count, HuntCause, HuntFacts, Snapshot, TrialView};
+use crate::model::{CoreState, CoreView, Count, HuntFacts, Snapshot, TrialView};
 use crate::screen::Colours;
+use crate::tests::fixtures;
 use crate::tests::kit::{core, infos, off, offsets, seq, set};
 
 /// The rows as the screen shows them, without their style.
@@ -30,71 +31,26 @@ pub(super) fn at(second: i64) -> Timestamp {
 }
 
 pub(super) fn core_view(id: u8, ccd: u8) -> CoreView {
-    CoreView {
-        id: core(id),
-        ccd: CcdId::try_from(ccd).unwrap(),
-        state: CoreState::Waiting,
-        queued: None,
-        applied: Some(ObservedOffset(0)),
-        profile: off(0),
-        solo: None,
-        pass: None,
-        next: None,
-        fail: None,
-        holder: None,
-        gave_back: None,
-        group_fails: Vec::new(),
-        returns_to: None,
-        confirm: None,
-        loaded: false,
-        judged: false,
-    }
+    fixtures::core_view(id, ccd, CoreState::Waiting)
 }
 
 pub(super) fn trial_view(index: u32, of: u32) -> TrialView {
     TrialView {
-        id: TrialId::from("t1".to_owned()),
-        regime: Regime::R7,
-        workload: workloads(Regime::R7)[0].id(),
         cores: set(&[0, 1]),
-        parked: CoreSet::default(),
-        idle: CoreSet::default(),
-        condition: togi_machine::Condition::Together,
-        activity: None,
         profile: offsets(&[-20, -20]),
         started: Some(at(1000)),
-        crashed: false,
         duration: Duration::from_secs(600),
-        partial: false,
-        rerun: false,
-        retry: false,
-        cycle: None,
-        hunt: None,
-        core: None,
-        offset: None,
-        round: None,
         count: Count {
             passed: index.saturating_sub(1),
             index,
             of,
         },
+        ..fixtures::trial_view(Regime::R7)
     }
 }
 
 pub(super) fn group(number: u32, cores: &[u8], outcome: GroupState) -> HuntGroup {
-    HuntGroup {
-        number,
-        cores: set(cores),
-        profile: offsets(&[]),
-        stage: HuntStage::Full,
-        probe: None,
-        held: Vec::new(),
-        outcome,
-        passed: 0,
-        needed: 5,
-        carried: false,
-        running: outcome == GroupState::Running,
-    }
+    fixtures::hunt_group(number, cores, outcome)
 }
 
 pub(super) fn part(
@@ -136,15 +92,8 @@ pub(super) fn member(id: u8, offset: i64) -> Member {
 
 pub(super) fn hunt_plan(groups: Vec<HuntGroup>, parts: Vec<HuntPart>) -> HuntPlan {
     HuntPlan {
-        number: 1,
-        regime: Regime::R7,
-        failure: seq(1),
-        trial: None,
-        candidates: set(&[0, 1, 2]),
-        cut: 0,
         parts,
         groups,
-        probes: Vec::new(),
         rerun: RerunPlan {
             regime: Regime::R7,
             cores: set(&[0, 1, 2]),
@@ -156,27 +105,12 @@ pub(super) fn hunt_plan(groups: Vec<HuntGroup>, parts: Vec<HuntPart>) -> HuntPla
                 long: None,
             },
         },
+        ..fixtures::hunt_plan(&[0, 1, 2])
     }
 }
 
 pub(super) fn hunt_facts() -> HuntFacts {
-    HuntFacts {
-        started: Some(at(1000)),
-        cause: HuntCause {
-            at: None,
-            trial: None,
-            end: None,
-            signal: None,
-            core: None,
-            known: false,
-            carried: false,
-            regime: None,
-            rerun_of: false,
-            trial_number: 0,
-        },
-        parking: None,
-        group_signals: Vec::new(),
-    }
+    fixtures::hunt_facts(Some(at(1000)))
 }
 
 pub(super) fn cycle_part(

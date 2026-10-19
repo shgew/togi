@@ -3,39 +3,20 @@ use std::time::Duration;
 use jiff::Timestamp;
 use test_case::test_case;
 use togi_journal::{HuntStage, Member, Outcome};
-use togi_machine::{
-    CcdId, Condition, CoreSet, ObservedOffset, PerCore, Regime, Signal, TargetOffset, workloads,
-};
+use togi_machine::{Condition, PerCore, Regime, Signal, TargetOffset, workloads};
 use togi_tuner::{
     Action, CyclePart, CyclePlan, CycleStep, GroupState, HuntGroup, HuntPlan, Lengths, Quota,
-    RerunPlan, StepNo,
+    StepNo,
 };
 
+use super::fixtures;
 use super::kit::*;
 use crate::derive::{group_failures, hunt_facts, trial_role};
 use crate::facts::Facts;
-use crate::model::{CoreState, CoreView, Count, CycleView, HuntShape, HuntView, TrialView};
+use crate::model::{CoreState, CoreView, CycleView, HuntShape, HuntView, TrialView};
 
 fn core_view(id: u8) -> CoreView {
-    CoreView {
-        id: core(id),
-        ccd: CcdId::try_from(id / 8).unwrap(),
-        state: CoreState::Waiting,
-        queued: None,
-        applied: Some(ObservedOffset(0)),
-        profile: off(0),
-        solo: None,
-        pass: None,
-        next: None,
-        fail: None,
-        holder: None,
-        gave_back: None,
-        group_fails: Vec::new(),
-        returns_to: None,
-        confirm: None,
-        loaded: false,
-        judged: false,
-    }
+    fixtures::core_view(id, id / 8, CoreState::Waiting)
 }
 
 pub(super) fn trial_view(
@@ -46,26 +27,11 @@ pub(super) fn trial_view(
 ) -> TrialView {
     TrialView {
         id: togi_journal::TrialId::from("probe".to_owned()),
-        regime: Regime::R7,
-        workload: workloads(Regime::R7)[0].id(),
         cores: set(loaded),
-        parked: CoreSet::default(),
-        idle: CoreSet::default(),
         condition,
-        activity: None,
         profile: offsets(profile),
         started: started.then_some(Timestamp::UNIX_EPOCH),
-        crashed: false,
-        duration: Duration::from_secs(120),
-        partial: false,
-        rerun: false,
-        retry: false,
-        cycle: None,
-        hunt: None,
-        core: None,
-        offset: None,
-        round: None,
-        count: Count::default(),
+        ..fixtures::trial_view(Regime::R7)
     }
 }
 
@@ -78,8 +44,6 @@ pub(super) fn group(
     held: Vec<Member>,
 ) -> HuntGroup {
     HuntGroup {
-        number,
-        cores: set(cores),
         profile: offsets(profile),
         stage: if probe.is_some() {
             HuntStage::Probe
@@ -88,36 +52,14 @@ pub(super) fn group(
         },
         probe,
         held,
-        outcome,
-        passed: 0,
-        needed: 5,
-        carried: false,
-        running: outcome == GroupState::Running,
+        ..fixtures::hunt_group(number, cores, outcome)
     }
 }
 
 pub(super) fn plan(groups: Vec<HuntGroup>) -> HuntPlan {
     HuntPlan {
-        number: 1,
-        regime: Regime::R7,
-        failure: seq(1),
-        trial: None,
-        candidates: set(&[0, 2]),
-        cut: 0,
-        parts: Vec::new(),
         groups,
-        probes: Vec::new(),
-        rerun: RerunPlan {
-            regime: Regime::R7,
-            cores: CoreSet::default(),
-            lengths: Lengths {
-                short: Quota {
-                    count: 1,
-                    secs: 600,
-                },
-                long: None,
-            },
-        },
+        ..fixtures::hunt_plan(&[0, 2])
     }
 }
 
