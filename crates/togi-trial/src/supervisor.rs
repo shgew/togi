@@ -1068,6 +1068,7 @@ impl<O: Os> Supervisor<O> {
                         instance: index,
                         what: format!("usage sampling lost: {}", error_chain(&error)),
                     });
+                    return stop;
                 }
                 let active = instance.observed.active_at(now);
                 if let Some(stalled) = instance.observed.stall.observe(active, usage.cpu_time) {

@@ -180,13 +180,22 @@ fn overflowing_energy_baseline_rolls_back_the_launched_trial() {
 fn overflowing_cpu_milliseconds_is_sampling_loss_and_never_a_capped_sample() {
     crate::testing::runtime(true).block_on(async move {
         local(async {
-            let rig = rig();
-            let handle = rig.start(spec(Regime::R1, &[2], secs(2))).await.unwrap();
+            let rig = rig_edit(
+                TestBackend::new("/bin/true"),
+                Timing {
+                    stall_grace: secs(1),
+                    stall_window: secs(1),
+                    ..Timing::default()
+                },
+                |_| {},
+            );
+            let handle = rig.start(spec(Regime::R1, &[2], secs(5))).await.unwrap();
             *rig.fake.process(0).usage.borrow_mut() = Ok(crate::procfs::Usage {
                 cpu_time: Duration::from_millis(i64::MAX.cast_unsigned() + 1),
                 cpu: togi_machine::CpuId::from(2),
             });
             let run = finish(&handle).await;
+            assert_eq!(run.finished.result.failure, None);
             assert!(
                 run.finished
                     .result
