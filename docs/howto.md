@@ -166,7 +166,22 @@ Choose how long to keep testing with `sudo togi run --cycles N`, replacing N wit
 
 A clean cycle is workload breadth, not proof of stability. The default cycle's R3 and R4 trials on every core ([schedule](spec/workloads.md#durations-and-checking-schedule)) add about 2.1 hours per cycle on 16 cores in simulation (a failure-free simulated cycle takes 15.6 hours instead of 13.5). A rare failure can still pass them: under the simulator's limit model, three R4 trials miss a failure one count past a core's limit about 0.01% of the time, against 4.6% for one trial; on a machine fitted to real evidence where one trial misses it 70.6% of the time, three still miss it 35.1% of the time. More cycles provide more testing, but neither a count nor a Tctl peak guarantees safety in untested real use.
 
+Before entering the profile, understand the coverage behind “confirmed”: checking exercises the synthetic loads in the [regime table](spec/workloads.md#regimes), with full-cycle coverage defined by [Checking](spec/tuner.md#checking). Passing evidence can come from deeper offsets, so confirmation does not mean every trial ran at the exact profile you enter.
+
+That coverage does not include light work on many cores at once or both threads of many cores at once. The idle trial is not proof of stability through real desktop idle, sleep and wake, or changing background activity. Trial offsets also do not exercise the early boot phases that a BIOS-applied offset runs through before togi starts. A confirmed profile can still crash in ordinary use.
+
 The table shows the current `OFFSET` and, in `BIOS`, the profile to enter, and shows each core's `CCD` and `SLOT` (0-7 within that CCD). Enter the `BIOS` column of every row in the BIOS per-core Curve Optimizer controls by CCD and slot, not by Linux core number alone. BIOS labels vary by board; confirm every row before saving. Stop if the labels cannot be reconciled with the recorded CCD and slot.
+
+After saving the profile, let it run ordinary use for a while before putting heavy or write-intensive work, such as package builds and system rebuilds, on it. Keep backups: a crash during writes risks the filesystem and package store. No fixed observation period makes the profile proven stable.
+
+### If the profile crashes in daily use
+
+1. Set every Curve Optimizer offset back to **0 in BIOS** before resuming normal work. Do not keep trying the failed profile.
+2. Check the filesystem with the checks appropriate to that filesystem, using rescue media or an unmounted filesystem where required. Check the Nix package store's contents with `sudo nix-store --verify --check-contents`, and address any reported damage before returning to heavy or write-intensive work.
+3. Do not guess a uniform step-back, even one shallower than the profile's shallowest core. It can leave the weakest core almost unchanged from the offset that crashed; it is not a tested replacement profile.
+4. Record what was running, when the crash happened and every per-core offset actually entered in BIOS, then [report the crash](https://github.com/shgew/togi/issues). Keep the togi session and available system logs as evidence; remove personal and machine-identifying details from anything you publish. A readback after changing BIOS settings cannot tell you the crashed boot's offsets.
+
+togi does not currently record daily-use crashes as feedback against the BIOS profile. Running it again or seeing the same confirmed profile in `status` does not clear that failure. Stay at BIOS CO 0 rather than treating the displayed profile as safe to re-enter.
 
 ## 6. Dead ends
 
