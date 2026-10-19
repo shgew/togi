@@ -475,7 +475,7 @@ mod tests {
                 for &v in tip_model {
                     rebuilt.push(s(v));
                 }
-                prop_assert!(tip == &rebuilt);
+                prop_assert_eq!(tip, &rebuilt);
             }
         }
     }
