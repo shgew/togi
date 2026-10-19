@@ -134,9 +134,9 @@ impl Run {
             cores,
             profile: group_profile(&hunt.parked, &hunt.failing, cores).offsets(),
             set: group.set,
-            granularity: u32::try_from(group.granularity).unwrap_or(u32::MAX),
+            granularity: crate::numbers::saturating_hunt_count(group.granularity),
             stage: stage_of(group.stage),
-            index: u32::try_from(group.index).unwrap_or(u32::MAX),
+            index: crate::numbers::saturating_hunt_count(group.index),
             duration_s: Self::hunt_secs(hunt, group.duration).get(),
             escalated: group.escalated,
             full_checked: group.full_checked,
@@ -150,7 +150,7 @@ impl Run {
     }
 
     fn next_group_number(hunt: &Active) -> NonZeroU32 {
-        let next = u32::try_from(hunt.groups.len() + 1).unwrap_or(u32::MAX);
+        let next = crate::numbers::saturating_hunt_count(hunt.groups.len().saturating_add(1));
         NonZeroU32::new(next).unwrap_or(NonZeroU32::MIN)
     }
 
@@ -283,9 +283,9 @@ impl Run {
             } else {
                 plan.set()
             },
-            granularity: u32::try_from(plan.granularity()).unwrap_or(u32::MAX),
+            granularity: crate::numbers::saturating_hunt_count(plan.granularity()),
             stage: HuntStage::Probe,
-            index: u32::try_from(probe.index).unwrap_or(u32::MAX),
+            index: crate::numbers::saturating_hunt_count(probe.index),
             duration_s: Self::hunt_secs(hunt, plan.duration()).get(),
             escalated: plan.escalated(),
             full_checked: plan.full_checked(),
@@ -497,7 +497,7 @@ impl Run {
                 result,
                 cores,
                 members,
-                groups: u32::try_from(hunt.groups.len()).unwrap_or(u32::MAX),
+                groups: crate::numbers::saturating_hunt_count(hunt.groups.len()),
                 reason,
             },
             cause,
@@ -529,7 +529,7 @@ impl Run {
                 result: HuntOutcome::Loaded,
                 cores: hunt.class.loaded(),
                 members: Vec::new(),
-                groups: u32::try_from(hunt.groups.len()).unwrap_or(u32::MAX),
+                groups: crate::numbers::saturating_hunt_count(hunt.groups.len()),
                 reason,
             },
             vec![hunt.seq, failure],
@@ -828,7 +828,7 @@ impl Run {
                     result: HuntOutcome::Direct,
                     cores: std::iter::once(id).collect(),
                     members: Vec::new(),
-                    groups: u32::try_from(hunt.groups.len()).unwrap_or(u32::MAX),
+                    groups: crate::numbers::saturating_hunt_count(hunt.groups.len()),
                     reason: format!("attributed failure #{seq}"),
                 },
                 vec![seq],
@@ -860,7 +860,7 @@ impl Run {
                 result: HuntOutcome::Cancelled,
                 cores: CoreSet::default(),
                 members: Vec::new(),
-                groups: u32::try_from(hunt.groups.len()).unwrap_or(u32::MAX),
+                groups: crate::numbers::saturating_hunt_count(hunt.groups.len()),
                 reason: format!("core {:02} was reset", core.get()),
             },
             vec![queued],

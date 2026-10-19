@@ -25,7 +25,7 @@ impl Run {
                 .phases
                 .mark(core)
                 .map_or((shape.id(), shape.start()), |mark| (mark.round, mark.seq));
-            let rotation = usize::try_from(origin_round.get() - 1).unwrap_or(0);
+            let rotation = crate::numbers::index(origin_round.get() - 1);
             for regime in [Regime::R1, Regime::R2] {
                 checks.push(Check {
                     class: ClassKey::new(

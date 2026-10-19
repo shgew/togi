@@ -96,7 +96,7 @@ pub(crate) struct Rotation([u32; 7]);
 
 impl Rotation {
     pub(crate) fn get(self, regime: Regime) -> usize {
-        usize::try_from(self.0[slot(regime)]).unwrap_or(usize::MAX)
+        crate::numbers::index(self.0[slot(regime)])
     }
 
     pub(crate) fn advance(&mut self, regime: Regime) {

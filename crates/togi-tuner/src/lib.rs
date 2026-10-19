@@ -22,6 +22,7 @@ mod forecast;
 mod hunt;
 mod later;
 mod ledger;
+mod numbers;
 mod optimum;
 mod phase_plan;
 mod phases;

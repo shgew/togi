@@ -93,6 +93,19 @@ fn short_crash_move_still_escapes_a_shallower_failure_point_and_clamps_at_zero()
     assert_eq!(backoff_move(target(-1), None, 1).to, target(0));
 }
 
+#[test_case::test_case(i64::MIN, -49; "negative counts")]
+#[test_case::test_case(0, -49; "zero counts")]
+#[test_case::test_case(1, -49; "one count")]
+#[test_case::test_case(255, 0; "u8 limit")]
+#[test_case::test_case(256, 0; "u8 overflow")]
+#[test_case::test_case(i64::MAX, 0; "largest count")]
+fn backoff_count_conversion_saturates_without_crossing_offset_bounds(counts: i64, want: i64) {
+    use crate::r7::target::backoff_move;
+    use crate::tests::off;
+
+    assert_eq!(backoff_move(off(-50), None, counts).to, off(want));
+}
+
 #[test]
 fn detected_short_crash_with_a_preserved_backend_signal_takes_no_target() {
     let mut j = Journal::r7_session();

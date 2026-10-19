@@ -123,7 +123,7 @@ impl Shape {
             stage: stage_of(group.stage),
             set: group.set,
             cores: group.cores,
-            granularity: u32::try_from(group.granularity).unwrap_or(u32::MAX),
+            granularity: crate::numbers::saturating_hunt_count(group.granularity),
             duration_s: Run::hunt_secs(hunt, group.duration).get(),
             repeated: group.stage == GroupStage::Repeated,
         })
@@ -261,7 +261,7 @@ impl Run {
         match shape.stage {
             stage @ (HuntStage::Part | HuntStage::Complement) => {
                 let split = (shape.set == hunt.start.candidates).then(|| hunt.class.loaded());
-                let granularity = usize::try_from(shape.granularity).unwrap_or(usize::MAX);
+                let granularity = crate::numbers::index(shape.granularity);
                 partition(shape.set, granularity, split, hunt.recent)
                     .iter()
                     .enumerate()

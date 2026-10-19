@@ -185,7 +185,7 @@ impl Checking {
 }
 
 fn step_index(step: NonZeroU32) -> usize {
-    usize::try_from(step.get() - 1).unwrap_or(usize::MAX)
+    crate::numbers::index(step.get() - 1)
 }
 
 impl Run {
@@ -201,8 +201,8 @@ impl Run {
         else {
             return None;
         };
-        let step = usize::try_from(step.get().get()).ok()? - 1;
-        let part = usize::try_from(part.get().get()).ok()? - 1;
+        let step = crate::numbers::index(step.get().get() - 1);
+        let part = crate::numbers::index(part.get().get() - 1);
         (running == cycle).then_some((&trial.trial, step, part))
     }
 

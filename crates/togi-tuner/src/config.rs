@@ -37,7 +37,10 @@ impl TunerConfig {
     }
 
     pub(crate) fn from_config(config: &Config) -> Self {
-        let secs = |value: u32| NonZeroU32::new(value).map_or(Secs::MIN, Secs::new);
+        let secs = |value: u32| match NonZeroU32::new(value) {
+            Some(value) => Secs::new(value),
+            None => unreachable!("validated configuration durations are nonzero"),
+        };
         Self {
             search_trial: secs(config.search_trial().get()),
             short_trial: secs(config.short_trial().get()),
@@ -45,10 +48,13 @@ impl TunerConfig {
             checking_idle: secs(config.checking_idle().get()),
             checking_all_core: secs(config.checking_all_core().get()),
             cycle: config.checking_cycle().as_slice().into(),
-            needed: u16::try_from(config.evidence().trials().get())
+            needed: match u16::try_from(config.evidence().trials().get())
                 .ok()
                 .and_then(NonZeroU16::new)
-                .unwrap_or(NonZeroU16::MIN),
+            {
+                Some(needed) => needed,
+                None => unreachable!("validated TrialCount is in 1..=1000"),
+            },
             miss: config.evidence().miss().get(),
             rate: config.evidence().rate().get(),
             mprime: config

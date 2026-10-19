@@ -19,9 +19,10 @@ impl Default for Depths {
 }
 
 fn bucket(offset: TargetOffset) -> usize {
-    usize::try_from(-offset.signed())
-        .unwrap_or(0)
-        .min(BUCKETS - 1)
+    match usize::try_from(-offset.signed()) {
+        Ok(depth) => depth,
+        Err(_) => unreachable!("TargetOffset depth is bounded to zero through 50"),
+    }
 }
 
 impl Depths {
