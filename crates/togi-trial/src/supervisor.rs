@@ -398,12 +398,7 @@ pub(crate) async fn start<O: Os>(
         ));
     }
     let supervisor = Supervisor {
-        sensors: Sensors::with_inputs(
-            &env.roots,
-            &env.topology,
-            started_at,
-            env.inputs.clone(),
-        ),
+        sensors: Sensors::with_inputs(&env.roots, &env.topology, started_at, env.inputs.clone()),
         timeline: timeline(&plan.load, plan.duration).peekable(),
         env: Rc::clone(&env),
         plan,

@@ -49,7 +49,11 @@ fn each_tick_persists_a_conditions_sample_with_sensors_workers_and_power() {
             write(&rig, "cpu/cpu2/cpufreq/scaling_cur_freq", "4500000\n");
             write(&rig, "cpu/cpu3/cpufreq/scaling_cur_freq", "1000000\n");
             write(&rig, "powercap/intel-rapl:0/energy_uj", "0\n");
-            write(&rig, "powercap/intel-rapl:0/intel-rapl:0:0/energy_uj", "0\n");
+            write(
+                &rig,
+                "powercap/intel-rapl:0/intel-rapl:0:0/energy_uj",
+                "0\n",
+            );
             let handle = rig.start(spec(Regime::R1, &[2], secs(3))).await.unwrap();
             for (at, cpu_ms) in [(900_u64, 1000_u64), (1900, 2000)] {
                 let process = rig.fake.process(0);

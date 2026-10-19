@@ -14,9 +14,9 @@ use togi_journal::{
 };
 use togi_machine::{
     BankType, BootId, CancellationToken, CcdId, Clock, Condition, CoreSet, CpuId, Error, Kernel,
-    KernelCursor, KernelRead, Partial, PerCore, PmTable, PstoreRecord, ReadSamples, Regime, ResetKind,
-    ResetReason, Running, Signal, Stopped, Swept, TargetOffset, TrialConditions, TrialSpec, Trials,
-    pick_workload,
+    KernelCursor, KernelRead, Partial, PerCore, PmTable, PstoreRecord, ReadSamples, Regime,
+    ResetKind, ResetReason, Running, Signal, Stopped, Swept, TargetOffset, TrialConditions,
+    TrialSpec, Trials, pick_workload,
 };
 use togi_render::Renderer;
 
@@ -1497,7 +1497,11 @@ fn a_crashed_trials_end_carries_the_last_complete_sample_and_ignores_a_torn_one(
     tail: &str,
     idle_clocks: bool,
 ) {
-    let idle = if idle_clocks { ",\"8\":4300,\"15\":6000" } else { "" };
+    let idle = if idle_clocks {
+        ",\"8\":4300,\"15\":6000"
+    } else {
+        ""
+    };
     let complete = format!(
         "{{\"elapsed_ms\":1000,\"tctl_c\":70,\"core_mhz\":{{\"0\":4400{idle}}}}}\n\
          {{\"elapsed_ms\":2000,\"tctl_c\":85,\"core_mhz\":{{\"0\":4500{idle}}}}}\n"

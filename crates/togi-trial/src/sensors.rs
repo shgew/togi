@@ -77,10 +77,7 @@ impl Sensors {
         Self {
             hwmon: roots.hwmon.clone(),
             energy: read_integer(&inputs, &powercap.join("energy_uj")),
-            cores_energy: read_integer(
-                &inputs,
-                &powercap.join("intel-rapl:0:0/energy_uj"),
-            ),
+            cores_energy: read_integer(&inputs, &powercap.join("intel-rapl:0:0/energy_uj")),
             powercap,
             clocks,
             energy_at: now,
@@ -317,14 +314,20 @@ mod tests {
             fixture.write("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj", value);
         }
         if let Some(value) = range {
-            fixture.write("powercap/intel-rapl:0/intel-rapl:0:0/max_energy_range_uj", value);
+            fixture.write(
+                "powercap/intel-rapl:0/intel-rapl:0:0/max_energy_range_uj",
+                value,
+            );
         }
         let start = Instant::now();
         let mut sensors = fixture.sensors(&[], start);
         if let Some(value) = current {
             fixture.write("powercap/intel-rapl:0/intel-rapl:0:0/energy_uj", value);
         }
-        assert_eq!(sensors.read(start + Duration::from_secs(1)).cores_power_w, expected);
+        assert_eq!(
+            sensors.read(start + Duration::from_secs(1)).cores_power_w,
+            expected
+        );
     }
 
     #[test]
@@ -402,20 +405,11 @@ mod tests {
                 readings.package_power_w
             }
         };
-        togi_journal::fs::Fs::remove_file(
-            fixture.fs.as_ref(),
-            &Path::new("/sensors").join(&path),
-        )
-        .unwrap();
-        assert_eq!(
-            power(sensors.read(start + Duration::from_secs(1))),
-            None
-        );
+        togi_journal::fs::Fs::remove_file(fixture.fs.as_ref(), &Path::new("/sensors").join(&path))
+            .unwrap();
+        assert_eq!(power(sensors.read(start + Duration::from_secs(1))), None);
         fixture.write(&path, "5000000\n");
-        assert_eq!(
-            power(sensors.read(start + Duration::from_secs(2))),
-            None
-        );
+        assert_eq!(power(sensors.read(start + Duration::from_secs(2))), None);
         fixture.write(&path, "7000000\n");
         assert_eq!(
             power(sensors.read(start + Duration::from_secs(3))),
