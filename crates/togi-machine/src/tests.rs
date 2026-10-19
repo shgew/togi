@@ -514,7 +514,10 @@ fn identities_refuse_values_outside_their_domain() {
     assert_eq!(CcdId::new(15).map(CcdId::get), Ok(15));
     assert_eq!(CcdId::new(16), Err(InvalidCcd(16)));
     assert_eq!(CcdId::new(-1), Err(InvalidCcd(-1)));
-    assert_eq!(CcdId::try_from(usize::MAX), Err(InvalidCcd(usize::MAX as i128)));
+    assert_eq!(
+        CcdId::try_from(usize::MAX),
+        Err(InvalidCcd(usize::MAX as i128))
+    );
     assert_eq!(InvalidCcd(16).to_string(), "ccd 16 outside 0–15");
     assert_eq!(CpuId::new(65535).map(CpuId::get), Ok(u16::MAX));
     assert_eq!(CpuId::new(65536), Err(InvalidCpu(65536)));
@@ -741,7 +744,10 @@ fn core_ids_convert_from_unsigned_integers() {
     assert_eq!(CoreId::try_from(15_usize).unwrap().index(), 15);
     assert_eq!(CoreId::try_from(16_u8), Err(InvalidCore(16)));
     assert_eq!(CoreId::try_from(16_usize), Err(InvalidCore(16)));
-    assert_eq!(CoreId::try_from(usize::MAX), Err(InvalidCore(usize::MAX as i128)));
+    assert_eq!(
+        CoreId::try_from(usize::MAX),
+        Err(InvalidCore(usize::MAX as i128))
+    );
 }
 
 #[test]

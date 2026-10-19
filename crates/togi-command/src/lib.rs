@@ -279,7 +279,9 @@ mod read_tests {
         let input = vec![b'x'; length];
         let invocation = Invocation::new("fixture").output_limit(limit);
         assert_eq!(
-            read_capped(input.as_slice(), Stream::Stdout, &invocation).await.unwrap(),
+            read_capped(input.as_slice(), Stream::Stdout, &invocation)
+                .await
+                .unwrap(),
             input
         );
     }

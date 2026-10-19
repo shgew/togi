@@ -65,7 +65,10 @@ impl Iterator for CoreSetIter {
         if self.remaining == 0 {
             return None;
         }
-        #[expect(clippy::cast_possible_truncation, reason = "a nonempty u16 mask has bit indices 0..16")]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a nonempty u16 mask has bit indices 0..16"
+        )]
         let index = self.remaining.trailing_zeros() as u8;
         self.remaining &= self.remaining - 1;
         Some(CoreId::from_index(index))
@@ -82,7 +85,10 @@ impl DoubleEndedIterator for CoreSetIter {
         if self.remaining == 0 {
             return None;
         }
-        #[expect(clippy::cast_possible_truncation, reason = "a nonempty u16 mask has bit indices 0..16")]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a nonempty u16 mask has bit indices 0..16"
+        )]
         let index = self.remaining.ilog2() as u8;
         self.remaining &= !(1 << index);
         Some(CoreId::from_index(index))
