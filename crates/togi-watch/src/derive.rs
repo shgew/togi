@@ -356,8 +356,8 @@ fn core_views(
             id,
             ccd: facts_core.ccd,
             state: CoreState::Waiting,
-            queued: facts.queued.get(&id).copied(),
-            applied: facts.applied.get(&id).copied(),
+            queued: facts.queued.get(id).flatten(),
+            applied: facts.applied.get(id).flatten(),
             profile: c.offset,
             solo: c.solo_limit,
             pass: c.pass,
@@ -372,7 +372,7 @@ fn core_views(
             judged: false,
         };
         if v.solo.is_some_and(|solo| v.profile.get() > solo.get()) {
-            v.gave_back = facts.backs.get(&id).copied().flatten();
+            v.gave_back = facts.backs.get(id).flatten();
         }
         v.state = match c.phase {
             Some(togi_journal::CorePhase::AtLimit) => CoreState::AtLimit,

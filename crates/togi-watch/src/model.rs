@@ -720,14 +720,14 @@ impl<'a> Snapshot<'a> {
     }
 
     /// The current R7 workload's top requesters, each with whether offsets stand in for its request.
-    pub fn r7_top(&self) -> BTreeMap<CoreId, bool> {
+    pub fn r7_top(&self) -> PerCore<Option<bool>> {
         let Some(workload) = self.r7_workload() else {
-            return BTreeMap::new();
+            return PerCore::default();
         };
         self.r7
             .iter()
             .filter(|status| status.workload == workload && status.top_requester)
-            .map(|status| (status.core, status.offset_proxy))
+            .map(|status| (status.core, Some(status.offset_proxy)))
             .collect()
     }
 
