@@ -1,3 +1,4 @@
+use test_case::test_case;
 use togi_journal::{CorePhase, CoreTransition, Decision, Outcome, Payload, TrialId, TunerDecision};
 use togi_machine::{Condition, Regime, workloads};
 
@@ -89,14 +90,22 @@ fn search_and_solo_limit_check() {
     j.assert_resumes();
 }
 
-#[test]
-fn search_failure_and_retry() {
+#[test_case(Regime::R1, "R1"; "R1")]
+#[test_case(Regime::R2, "R2"; "R2")]
+fn search_failure_and_retry(regime: Regime, wire_regime: &str) {
     let mut j = Journal::search_at(&[-10]);
+    if regime == Regime::R2 {
+        let first = j.next_trial();
+        j.trial(&first, Outcome::Pass);
+    }
     let first = j.next_trial();
+    assert_eq!(first.regime, regime);
+    let intent = first.intent(TrialId::from("search".to_owned()), j.rotation(&first));
+    assert_eq!(serde_json::to_value(intent).unwrap()["regime"], wire_regime);
     j.trial(&first, Outcome::Inconclusive);
     let retry = j.next_trial();
     assert!(retry.retry);
-    assert_eq!(retry.regime, Regime::R1);
+    assert_eq!(retry.regime, regime);
     assert_eq!(retry.duration, first.duration);
     j.trial(&retry, Outcome::Failure);
     let failure = j.next_decision();

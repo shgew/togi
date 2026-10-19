@@ -16,6 +16,22 @@ use crate::{
 /// How many counts shallower than its solo limit a core starts checking.
 const MARGIN: u8 = 1;
 
+/// The two regimes used by search steps and candidate solo-limit checks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SearchRegime {
+    R1,
+    R2,
+}
+
+impl SearchRegime {
+    pub(crate) const fn regime(self) -> Regime {
+        match self {
+            Self::R1 => Regime::R1,
+            Self::R2 => Regime::R2,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct StepPass {
     seq: Seq,
@@ -50,13 +66,16 @@ impl Search {
     pub(crate) fn record_pass(
         &mut self,
         core: CoreId,
-        r1: bool,
+        regime: SearchRegime,
         backend: Backend,
         id: BackendId,
         seq: Seq,
     ) {
         let step = self.steps.entry(core).or_default();
-        let passes = if r1 { &mut step.r1 } else { &mut step.r2 };
+        let passes = match regime {
+            SearchRegime::R1 => &mut step.r1,
+            SearchRegime::R2 => &mut step.r2,
+        };
         passes.entry(id).or_insert(StepPass { seq, backend });
     }
 
@@ -261,9 +280,10 @@ impl Run {
     pub(crate) fn search_trial(
         &self,
         id: CoreId,
-        regime: Regime,
+        regime: SearchRegime,
         frozen: Option<WorkloadId>,
     ) -> TrialPlan {
+        let regime = regime.regime();
         let core = self.core(id);
         let workload = frozen.unwrap_or_else(|| self.rotation_workload(id, regime));
         TrialPlan {
@@ -284,10 +304,16 @@ impl Run {
         Some(self.core(id)).filter(|core| core.phase.searching())
     }
 
-    pub(crate) fn search_second_only(&self, id: CoreId) -> bool {
-        self.searching(id)
+    pub(crate) fn search_regime(&self, id: CoreId) -> SearchRegime {
+        if self
+            .searching(id)
             .is_some_and(|core| core.phase.check().is_none())
             && matches!(self.search.current(id, &self.evidence), (Some(_), None))
+        {
+            SearchRegime::R2
+        } else {
+            SearchRegime::R1
+        }
     }
 
     /// Finish the current turn's R2 first, then visit searching cores in CCD-alternating
@@ -297,7 +323,7 @@ impl Run {
         let cursor = self.search.cursor;
         let priority = cursor
             .and_then(|at| order.get(at).copied())
-            .filter(|&id| self.search_second_only(id));
+            .filter(|&id| self.search_regime(id) == SearchRegime::R2);
         let start = cursor.map_or(0, |at| at + 1);
         priority.into_iter().chain(
             (0..order.len())
@@ -311,7 +337,7 @@ impl Run {
         let phase_seq = Some(check.since);
         let profile = Profile::alone(&self.topo, id, core.offset);
         let mut cause: Vec<Seq> = phase_seq.into_iter().collect();
-        for (regime, frozen) in [(Regime::R1, check.r1), (Regime::R2, check.r2)] {
+        for (regime, frozen) in [(SearchRegime::R1, check.r1), (SearchRegime::R2, check.r2)] {
             let class = self.alone_class(id, frozen);
             let count = self
                 .evidence
@@ -405,10 +431,10 @@ impl Run {
         if core.phase.check().is_some() {
             return self.candidate_exit(id, core);
         }
-        let regime = if Some(id) == cursor && self.search_second_only(id) {
-            Regime::R2
+        let regime = if Some(id) == cursor {
+            self.search_regime(id)
         } else {
-            Regime::R1
+            SearchRegime::R1
         };
         Some(Action::RunTrial(self.search_trial(id, regime, None)))
     }
