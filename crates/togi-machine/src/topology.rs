@@ -32,6 +32,7 @@ pub fn order(cores: &[CoreInfo]) -> Vec<CoreId> {
 
 object_only! {
     #[derive(Clone, Debug, Default, Eq, Hash, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
     pub struct BiosContext {
         pub bios_version: String,
         pub board: String,

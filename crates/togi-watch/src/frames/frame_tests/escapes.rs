@@ -147,6 +147,12 @@ fn a_trial_id_with_controls_is_drawn_escaped() {
             | Payload::BootLeaveReason(_)
             | Payload::Shutdown(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
+            | Payload::DayAnswer(_)
             | Payload::StateRebuilt(_) => {}
         }
     }

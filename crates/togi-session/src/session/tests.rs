@@ -588,7 +588,7 @@ fn a_compatible_journal_that_cannot_be_folded_is_returned_untouched() {
     assert_returned_untouched(&bench, &ended, events);
 }
 
-type Read = Result<togi_machine::KernelRead, Partial<Vec<togi_machine::Mce>>>;
+type Read = Result<togi_machine::KernelRead, Partial<togi_machine::KernelRead>>;
 
 type Seen = std::rc::Rc<std::cell::RefCell<Vec<Option<String>>>>;
 
@@ -612,7 +612,7 @@ impl Kernel for Scripted {
         &mut self,
         _boot: &BootId,
         after: Option<&KernelCursor>,
-    ) -> Result<togi_machine::KernelRead, Partial<Vec<togi_machine::Mce>>> {
+    ) -> Result<togi_machine::KernelRead, Partial<togi_machine::KernelRead>> {
         self.seen
             .borrow_mut()
             .push(after.map(|cursor| cursor.as_str().to_owned()));
@@ -646,7 +646,13 @@ fn machine_check(monotonic: Duration, bank: u16, label: &str) -> togi_machine::M
 }
 
 fn partial(mces: Vec<togi_machine::Mce>, error: Error) -> Read {
-    Err(Partial { value: mces, error })
+    Err(Partial {
+        value: togi_machine::KernelRead {
+            mces,
+            ..togi_machine::KernelRead::default()
+        },
+        error,
+    })
 }
 
 /// A session that opens the bench's journal on the simulator's current boot over a kernel that answers `script`.
@@ -778,6 +784,7 @@ fn a_reopened_session_resumes_its_own_boots_cursor_and_files_the_tail_between_tr
         &bench,
         vec![Ok(togi_machine::KernelRead {
             mces: vec![tail],
+            faults: Vec::new(),
             cursor: resumed.clone(),
         })],
     );

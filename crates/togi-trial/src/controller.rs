@@ -1,10 +1,10 @@
-//! Keeps togi's own threads off the cores a trial loads.
+//! Selects and establishes the controller's physical host for each trial.
 //!
-//! The processes togi starts are confined by their scopes; togi's own threads (the session, the
-//! journal, the hardware seams, the runtime and blocking pools, the dashboard) share one process,
-//! so one affinity rule covers them all. [`select`] picks the CPUs they may use for one trial from
-//! the offsets the machine holds, and [`Threads`] moves every thread of the process onto them and
-//! back.
+//! The backend scopes have their own confinement. The session, journal, hardware seams, runtime,
+//! blocking pools and in-process dashboard share one process, so one affinity rule covers them.
+//! [`placement`] supplies the managed shape-dependent contract; [`select`] preserves the legacy
+//! scheduler's evidence contract. [`Threads`] moves every controller thread onto the chosen CPUs
+//! and restores its original affinity after workload teardown.
 
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
@@ -66,6 +66,97 @@ fn least_deep<'a>(cores: &[&'a CoreInfo], offsets: &PerCore<TargetOffset>) -> Op
     })
 }
 
+/// Managed placement is separate from the legacy selector until a scheduler explicitly opts in.
+/// An excluded host still supplies failure evidence, but supplies no passing exposure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Placement {
+    pub(crate) cpus: Vec<CpuId>,
+    pub(crate) host: Option<CoreId>,
+    pub(crate) capped: bool,
+    pub(crate) excluded: Option<CoreId>,
+}
+
+/// Chooses from the physical trial shape, not the regime's name or workload quota.
+pub(crate) fn placement(
+    topology: &[CoreInfo],
+    spec: &togi_machine::TrialSpec,
+) -> Option<Placement> {
+    let togi_machine::ControllerMode::Managed { rotation } = spec.controller else {
+        return None;
+    };
+    let is_loaded = |info: &&CoreInfo| {
+        spec.cores.contains(&info.core) || info.cpus.iter().any(|cpu| spec.cpus.contains(cpu))
+    };
+    let mut tested: Vec<&CoreInfo> = topology.iter().filter(is_loaded).collect();
+    tested.sort_unstable_by_key(|info| info.core);
+    let first = *tested.first()?;
+    let single_ccd = topology.iter().all(|info| info.ccd == first.ccd);
+    if single_ccd {
+        return rotating(&tested, rotation, true);
+    }
+    // An idle CCD is useful only when every one of its cores is known to hold CO 0.
+    // R6's instances deliberately stop and burst; its entire target remains tested.
+    if spec.regime != togi_machine::Regime::R6
+        && tested.iter().all(|info| info.ccd == first.ccd)
+        && let Some(ccd) = topology
+            .iter()
+            .filter(|info| info.ccd != first.ccd)
+            .map(|info| info.ccd)
+            .filter(|ccd| {
+                topology
+                    .iter()
+                    .filter(|info| info.ccd == *ccd)
+                    .all(|info| offsets_zero(spec, info) && !is_loaded(&info))
+            })
+            .min()
+    {
+        let mut cpus: Vec<CpuId> = topology
+            .iter()
+            .filter(|info| info.ccd == ccd)
+            .flat_map(|info| info.cpus.iter().copied())
+            .collect();
+        cpus.sort_unstable();
+        cpus.dedup();
+        return (!cpus.is_empty()).then_some(Placement {
+            cpus,
+            host: None,
+            capped: true,
+            excluded: None,
+        });
+    }
+    if let Some(idle) = topology
+        .iter()
+        .filter(|info| !is_loaded(info) && offsets_zero(spec, info))
+        .min_by_key(|info| info.core)
+    {
+        return (!idle.cpus.is_empty()).then(|| Placement {
+            cpus: idle.cpus.clone(),
+            host: Some(idle.core),
+            capped: false,
+            excluded: None,
+        });
+    }
+    rotating(&tested, rotation, false)
+}
+
+fn offsets_zero(spec: &togi_machine::TrialSpec, info: &CoreInfo) -> bool {
+    spec.offsets.get(info.core).map(TargetOffset::get) == Some(0)
+}
+
+fn rotating(tested: &[&CoreInfo], rotation: u64, capped: bool) -> Option<Placement> {
+    let count = u64::try_from(tested.len())
+        .ok()
+        .filter(|count| *count != 0)?;
+    let index = usize::try_from(rotation % count).ok()?;
+    let host = tested.get(index)?;
+    (!host.cpus.is_empty()).then(|| Placement {
+        cpus: host.cpus.clone(),
+        host: Some(host.core),
+        capped,
+        excluded: capped.then_some(host.core),
+    })
+}
+
 /// What a confinement or a restoration did to the process's threads.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Moved {
@@ -100,8 +191,8 @@ impl Moved {
     }
 }
 
-/// Moves the threads of the process. A confinement never fails a trial: a thread that cannot be
-/// moved is counted in what it returns.
+/// Moves the process's threads and reports incomplete moves. The supervisor decides whether
+/// incompleteness withholds exposure under the trial's selected controller contract.
 pub(crate) trait Controller: Send + Sync {
     /// Confines every thread of the process to `cpus`, keeping what each had before for
     /// [`Controller::restore`]. `None` when this controller does nothing.
@@ -505,6 +596,164 @@ mod tests {
         assert_eq!(
             select(&[], &[core(0)], &cpus(&[0]), &PerCore::default()),
             None
+        );
+    }
+
+    fn managed(
+        regime: togi_machine::Regime,
+        loaded: &[u8],
+        offsets: [i64; 4],
+        rotation: u64,
+        single_ccd: bool,
+    ) -> Option<Placement> {
+        let mut topology = topology();
+        if !single_ccd {
+            for info in &mut topology[2..] {
+                info.ccd = CcdId::new(1).unwrap();
+            }
+        }
+        let spec = togi_machine::TrialSpec {
+            id: "placement".to_owned(),
+            regime,
+            workload: togi_machine::pick_workload(regime, 0).id(),
+            condition: togi_machine::Condition::Together,
+            cores: loaded.iter().map(|&n| core(n)).collect(),
+            cpus: loaded.iter().map(|&n| CpuId::from(u16::from(n))).collect(),
+            roles: Vec::new(),
+            duration: std::time::Duration::from_secs(120),
+            index: 0,
+            seed: 0,
+            offsets: held(&all(offsets)),
+            controller: togi_machine::ControllerMode::Managed { rotation },
+        };
+        placement(&topology, &spec)
+    }
+
+    #[test_case::test_case(togi_machine::Regime::R1; "light mapping")]
+    #[test_case::test_case(togi_machine::Regime::R2; "heavy mapping")]
+    #[test_case::test_case(togi_machine::Regime::R7; "CCD mapping")]
+    #[test_case::test_case(togi_machine::Regime::R8; "neighbour mapping")]
+    fn mapping_uses_the_entire_idle_zero_ccd_capped(regime: togi_machine::Regime) {
+        assert_eq!(
+            managed(regime, &[0, 1], [-20, -20, 0, 0], 3, false),
+            Some(Placement {
+                cpus: cpus(&[2, 3, 6, 7]),
+                host: None,
+                capped: true,
+                excluded: None,
+            })
+        );
+    }
+
+    #[test_case::test_case(togi_machine::Regime::R7, 0, 0; "all core first host")]
+    #[test_case::test_case(togi_machine::Regime::R7, 1, 1; "all core second host")]
+    #[test_case::test_case(togi_machine::Regime::R7, 4, 0; "all core wraps")]
+    #[test_case::test_case(togi_machine::Regime::R9, 3, 3; "all threads")]
+    #[test_case::test_case(togi_machine::Regime::R6, 2, 2; "idle bursts")]
+    fn full_machine_rotates_uncapped_and_keeps_host_credit(
+        regime: togi_machine::Regime,
+        rotation: u64,
+        host: u8,
+    ) {
+        assert_eq!(
+            managed(regime, &[0, 1, 2, 3], [-20, -10, -5, 0], rotation, false),
+            Some(Placement {
+                cpus: cpus(&[u16::from(host), u16::from(host) + 4]),
+                host: Some(core(host)),
+                capped: false,
+                excluded: None,
+            })
+        );
+    }
+
+    #[test_case::test_case(togi_machine::Regime::R6; "idle subset")]
+    #[test_case::test_case(togi_machine::Regime::R7; "partial load")]
+    fn a_partial_uses_an_unloaded_zero_core_when_no_idle_zero_ccd_exists(
+        regime: togi_machine::Regime,
+    ) {
+        assert_eq!(
+            managed(regime, &[0, 2], [-20, 0, -20, -10], 1, false),
+            Some(Placement {
+                cpus: cpus(&[1, 5]),
+                host: Some(core(1)),
+                capped: false,
+                excluded: None,
+            })
+        );
+    }
+
+    #[test]
+    fn partials_without_an_unloaded_zero_rotate_among_the_loaded_cores_not_the_least_deep_idle() {
+        assert_eq!(
+            managed(
+                togi_machine::Regime::R7,
+                &[0, 2],
+                [-20, -1, -30, -1],
+                1,
+                false
+            ),
+            Some(Placement {
+                cpus: cpus(&[2, 6]),
+                host: Some(core(2)),
+                capped: false,
+                excluded: None,
+            })
+        );
+    }
+
+    #[test_case::test_case(0, 0; "first host")]
+    #[test_case::test_case(1, 2; "second host")]
+    #[test_case::test_case(u64::MAX, 2; "large ordinal")]
+    fn single_ccd_rotates_capped_only_across_tested_cores_and_excludes_the_host(
+        rotation: u64,
+        host: u8,
+    ) {
+        assert_eq!(
+            managed(
+                togi_machine::Regime::R7,
+                &[0, 2],
+                [-20, 0, -20, 0],
+                rotation,
+                true
+            ),
+            Some(Placement {
+                cpus: cpus(&[u16::from(host), u16::from(host) + 4]),
+                host: Some(core(host)),
+                capped: true,
+                excluded: Some(core(host)),
+            })
+        );
+    }
+
+    #[test]
+    fn r6_uses_one_zero_core_even_when_an_entire_idle_zero_ccd_exists() {
+        assert_eq!(
+            managed(
+                togi_machine::Regime::R6,
+                &[0, 1],
+                [-20, -20, 0, 0],
+                7,
+                false
+            ),
+            Some(Placement {
+                cpus: cpus(&[2, 6]),
+                host: Some(core(2)),
+                capped: false,
+                excluded: None,
+            })
+        );
+    }
+
+    #[test]
+    fn a_single_tested_core_on_one_ccd_is_capped_and_excluded_even_with_idle_zero_neighbours() {
+        assert_eq!(
+            managed(togi_machine::Regime::R1, &[2], [0, 0, -20, 0], 9, true),
+            Some(Placement {
+                cpus: cpus(&[2, 6]),
+                host: Some(core(2)),
+                capped: true,
+                excluded: Some(core(2)),
+            })
         );
     }
 

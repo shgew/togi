@@ -56,6 +56,8 @@ impl Reporter for Journaled<'_, '_> {
             detail: detail.to_owned(),
             signal: None,
             core: None,
+            fault: None,
+            pid: None,
         }));
     }
 
@@ -69,7 +71,7 @@ impl Reporter for Journaled<'_, '_> {
         }));
     }
 
-    fn signal(&mut self, core: CoreId, signal: Signal, detail: &str) {
+    fn signal(&mut self, core: CoreId, signal: Signal, pid: Option<u32>, detail: &str) {
         let label = match signal {
             Signal::ComputationError => "computation error",
             Signal::UnexpectedExit => "backend exited early",
@@ -82,6 +84,8 @@ impl Reporter for Journaled<'_, '_> {
             detail: format!("core {core:02} {label}: {detail}"),
             signal: Some(signal),
             core: named.then_some(core),
+            fault: None,
+            pid,
         }));
     }
 }

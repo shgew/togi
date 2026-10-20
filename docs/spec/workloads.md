@@ -118,6 +118,25 @@ Default checking cycle, with elapsed time depending on the request ties and resu
 
 Full-cycle coverage, earlier-cycle credit, carried-evidence boundaries and per-core scheduling order are defined in [tuner.md, Checking](tuner.md#checking). Search time depends on solo limit distance and failed steps; candidate checks require five passes of each frozen R1 and R2 class by default, including eligible carried passes.
 
+## Controller placement
+
+The controller is togi's session, journal, supervisors, Tokio runtime, sampler and in-process dashboard. Its work can request voltage on the shared rail, so its placement and clock are part of a managed trial's evidence contract ([ADR 0078](../adr/0078-controller-clock-and-rotation.md)). `TrialSpec.controller = Managed { rotation }` opts into that contract. The current scheduler continues to use `Legacy`; Ruleset 13's scheduler adoption is separate from executing these trial shapes.
+
+Placement is computed before any backend launches, from the loaded physical cores, their logical CPUs and the applied, read-back offsets. A suspended role remains loaded for this purpose. A missing offset is not CO 0. The rules, in order:
+
+| Shape | Controller placement | Clock and credit |
+|---|---|---|
+| Single CCD | Rotate across the tested physical cores, in core-ID order | Capped; the host core earns no exposure credit |
+| Mapping-shaped, other than R6: every loaded core is on one CCD and another entire CCD is unloaded at CO 0 | Every logical CPU of the lowest-ID eligible idle CCD | Capped; the loaded CCD retains its credit |
+| R6 or a partial load with no eligible idle CCD | The lowest-ID unloaded CO-0 core, when one exists | Uncapped; controller work is outside the tested set |
+| Every core loaded, including both-CCD R7 and R9, or any remaining shape with no unloaded CO-0 core | Rotate across the loaded physical cores, in core-ID order | Uncapped; controller work counts as load on the host core |
+
+Rotation uses the caller's persistent trial ordinal modulo the eligible core count, not a workload index, pass quota or random draw. Each rotating placement records its host core and applied offset. It never chooses a nonzero unloaded core merely because its offset is shallower.
+
+The cap uses the lowest permitted cpufreq limit, respecting the policy's current minimum. The runner discovers shared policies rather than assuming one policy per logical CPU. It must not cap a policy containing another tested core: on a single CCD only the excluded host's SMT CPUs may share the capped policy. Policy discovery, saved limits, requested limits and readbacks are recorded; restoration and same-boot recovery follow [runtime.md](runtime.md#trial-confinement).
+
+An unavailable placement, incomplete thread-affinity change, failed cap or mismatching cap readback withholds passing exposure for the whole trial and records why. It does not erase stronger failure evidence. A successful single-CCD placement excludes only its host: the original whole-load class cannot gain a pass or cycle coverage from that trial; measured R7 self-sufficiency may still credit nonexcluded top requesters. Raw outcomes and telemetry remain visible. A failure on the host remains failure evidence.
+
 ## Containment
 
 Each backend instance runs as a child of togi inside a transient scope confined to its logical CPUs:
@@ -174,6 +193,7 @@ A trial passes when all of these hold:
 - the backend kept making progress;
 - no failure signal named a core;
 - every sampled thread was on an allowed logical CPU.
+- for a managed trial, controller placement and any required cap were established and read back.
 
 Both successful waits and runner errors use the same evidence precedence, including recovery after a crash:
 
@@ -181,6 +201,7 @@ Both successful waits and runner errors use the same evidence precedence, includ
 |---|---|
 | Containment escape | Dead end |
 | Backend computation error, stall or early exit | Failure, even with cleanup errors, cancellation or a crash |
+| Relevant managed controller, dashboard or worker process fault inside the trial window | Failure; kernel-reported executing CPU locates it when available |
 | MCE inside the trial's window | Failure |
 | Reset reason | Applies only without higher-precedence evidence |
 | Required sampling, current-boot kernel log or setup observation missing | Inconclusive |
@@ -206,11 +227,14 @@ Failure signals:
 | Computation error | Backend output | The instance's core |
 | Unexpected exit | Process exits before the trial ends, without a setup error | The instance's core |
 | Stall | Over a 10 s window of unsuspended time, backend CPU time advances less than half of thread count times that window, after a 30 s startup grace | The instance's core |
+| Managed process fault (SIGSEGV, SIGBUS, SIGILL, general-protection fault, SIGABRT) | Kernel trap reports or the system journal's coredump signal metadata, at the trial boundaries and recovery | The executing logical CPU's physical core when reported; a CPU outside the tested set is journaled only, never charged to tested offsets |
 | Corrected MCE | Kernel log, read from a cursor at every trial boundary | The core of the reporting logical CPU if the bank is core-local, else unattributed |
 | Uncorrected MCE | Kernel log of the next boot, or of the crashed boot in the persistent system journal | Same rule |
 | Crash | Boot ID differs from the last journal boot with no clean shutdown; reset reason narrows its classification | Unattributed unless a backend signal or MCE names a core; outside multi-core R7, one nonzero applied offset can also name it |
 
 In trials alone every failure belongs to the target. Outside multi-core R7, together and parked trials use the backend instance's signal, then exactly one core-local MCE, then the sole nonzero offset in the applied profile. Evidence naming more than one core without a higher-precedence backend signal remains unattributed. Multi-core R7 counts named backend or exactly-one-core MCE failures against the named core; otherwise it uses top requesters, never the sole nonzero-offset inference ([tuner.md](tuner.md#r7-request-order-and-attribution)).
+
+Managed process-fault observations match the recorded controller PID or known thread IDs, a saved backend instance PID or exact trial scope, and the dashboard's known process identity. An executable name alone does not prove membership. Faults without a reported CPU remain unattributed failure observations; they never inherit a made-up executing core. Recovered observations use the fault's boot-local time and the same trial window as live observations, including the unread tail of an interrupted same-boot trial. They are deduplicated on recovery. A controller fault can therefore close its interrupted trial as a failure instead of disappearing as an inconclusive interruption. The current scheduler does not opt into these decision changes; Ruleset 13's scheduling cutover owns their activation.
 
 Crash detection and evidence: every boot in the journal other than the current one, whose last event is not `shutdown` and that no `crash.detected` names, has crashed. Its evidence is the MCEs in its own kernel log that are not between trials, plus the uncorrected MCEs logged by the boot after it (the next boot in the journal, or the current boot), each recorded once as an `mce` event with `from_boot`. Recovery also records the previous boot's between-trial MCEs with `between_trials: true`, without using them as crash evidence or decision causes. An MCE that an earlier `crash.detected` already cites is evidence of that crash only: a boot's own log starts with the MCEs its predecessor's crash left in the banks. Recovery is idempotent: detection, closing the crashed trial and its failure are each redone by the next `run` if a further crash or kill interrupts them, so a crash during recovery is detected on its own, normally as stray, without losing the first.
 

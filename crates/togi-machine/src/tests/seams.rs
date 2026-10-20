@@ -45,6 +45,7 @@ fn result(ran: Duration) -> TrialResult {
         ran,
         failure: None,
         inconclusive: None,
+        excluded: crate::CoreSet::default(),
         escaped: Vec::new(),
         tctl_max_c: None,
         stops: 0,
@@ -84,7 +85,7 @@ struct NoReporter;
 impl Reporter for NoReporter {
     fn progress(&mut self, _detail: &str) {}
     fn sample(&mut self, _sample: Sample) {}
-    fn signal(&mut self, _core: CoreId, _signal: Signal, _detail: &str) {}
+    fn signal(&mut self, _core: CoreId, _signal: Signal, _pid: Option<u32>, _detail: &str) {}
 }
 
 fn propagate(running: &mut dyn Running) -> Result<TrialResult, Box<dyn std::error::Error>> {

@@ -221,6 +221,7 @@ impl Log {
                 files: Vec::new(),
                 instances: Vec::new(),
                 roles: Vec::new(),
+                controller: None,
             }),
             &[cause],
         )
@@ -339,6 +340,110 @@ fn a_boot_without_a_shutdown_crashed_unless_it_is_current_or_a_crash_was_recorde
     log.crashed("b0", &[]);
     assert_eq!(log.state().crashed_boots(&boot("b1")).count(), 0);
     assert_eq!(log.state().crash_of(&boot("b0")), Some(log.next().prev()));
+}
+
+fn day_payloads() -> Vec<Payload> {
+    vec![
+        togi_journal::DayBootStart {
+            build: build(),
+            bios: togi_machine::BiosContext::default(),
+            offsets: PerCore::default(),
+        }
+        .into(),
+        togi_journal::DayCheckpoint { applied_secs: 60 }.into(),
+        togi_journal::DayOffsetsChanged {
+            offsets: PerCore::default(),
+        }
+        .into(),
+        togi_journal::DayCleanStop {}.into(),
+        togi_journal::DayUncleanEnd {
+            boot: boot("b0"),
+            last_checkpoint: None,
+            offsets: PerCore::default(),
+            reset_reason: togi_machine::ResetReason {
+                kind: None,
+                raw: Vec::new(),
+                supported: true,
+            },
+            evidence: togi_machine::EndEvidence::unknown(),
+        }
+        .into(),
+        togi_journal::DayAnswer {
+            boot: boot("b0"),
+            offsets: PerCore::default(),
+            answer: togi_journal::DayAnswerKind::Unsure,
+            uid: 1000,
+        }
+        .into(),
+        Payload::JournalTorn(togi_journal::JournalTorn {
+            offset: 0,
+            bytes_hex: "7b".into(),
+        }),
+    ]
+}
+
+#[test]
+fn a_boot_with_only_day_events_is_no_tuning_boot_and_never_a_crash() {
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    log.add(shutdown(ShutdownReason::Signal), &[]);
+    log.at("b1", 0);
+    for payload in day_payloads() {
+        let kind = payload.kind();
+        log.add(payload, &[]);
+        let state = log.state();
+        assert_eq!(state.boots(), [boot("b0")], "after {kind}");
+        assert_eq!(state.last_kind(&boot("b1")), None, "after {kind}");
+        assert_eq!(state.crashed_boots(&boot("b2")).count(), 0, "after {kind}");
+    }
+}
+
+#[test]
+fn a_tuning_boot_after_a_day_only_boot_is_not_a_same_boot_restart() {
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    log.at("b1", 0);
+    for payload in day_payloads() {
+        log.add(payload, &[]);
+    }
+    assert!(!log.state().boots().contains(&boot("b1")));
+    log.add(warning("first tuning record of the boot"), &[]);
+    assert_eq!(log.state().boots(), [boot("b0"), boot("b1")]);
+}
+
+#[test]
+fn day_events_never_replace_the_shutdown_that_ended_a_tuning_boot() {
+    let mut log = Log::new();
+    log.add(shutdown(ShutdownReason::Signal), &[]);
+    for payload in day_payloads() {
+        let kind = payload.kind();
+        log.add(payload, &[]);
+        let state = log.state();
+        assert_eq!(
+            state.last_kind(&boot("b0")),
+            Some(EventKind::Shutdown),
+            "after {kind}"
+        );
+        assert_eq!(state.crashed_boots(&boot("b1")).count(), 0, "after {kind}");
+    }
+}
+
+#[test]
+fn day_events_do_not_hide_a_tuning_boot_that_crashed() {
+    let mut log = Log::new();
+    log.baseline(&[(0, 0), (8, 0)]);
+    for payload in day_payloads() {
+        log.add(payload, &[]);
+    }
+    let state = log.state();
+    assert_eq!(
+        state.last_kind(&boot("b0")),
+        Some(EventKind::SessionBaseline)
+    );
+    assert_eq!(
+        state.crashed_boots(&boot("b1")).collect::<Vec<_>>(),
+        [&boot("b0")]
+    );
 }
 
 trait Prev {
@@ -608,6 +713,8 @@ fn an_open_trial_ran_from_its_start_to_its_last_record_by_the_monotonic_clock_wh
             detail: "running".into(),
             signal: None,
             core: None,
+            fault: None,
+            pid: None,
         }),
         &[start],
     );
@@ -682,6 +789,8 @@ fn a_progress_record_of_another_trial_is_not_this_trials_activity_or_failure() {
             detail: "stray".into(),
             signal: Some(Signal::Stall),
             core: Some(core(0)),
+            fault: None,
+            pid: None,
         }),
         &[],
     );
@@ -703,12 +812,18 @@ fn a_backend_signal_is_kept_on_the_open_trial() {
             detail: "core 00 stalled".into(),
             signal: Some(Signal::Stall),
             core: Some(core(0)),
+            fault: None,
+            pid: None,
         }),
         &[],
     );
     assert_eq!(
         log.state().open_trial().unwrap().failure,
-        Some((Signal::Stall, Some(core(0))))
+        Some(crate::evidence::FailureSignal {
+            signal: Signal::Stall,
+            core: Some(core(0)),
+            pid: None
+        })
     );
 }
 
@@ -1550,6 +1665,8 @@ fn play(log: &mut Log, step: Step) {
                 detail: "p".into(),
                 signal: Some(Signal::Stall),
                 core: None,
+                fault: None,
+                pid: None,
             }),
             Vec::new(),
         ),

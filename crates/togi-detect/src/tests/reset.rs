@@ -182,13 +182,13 @@ fn only_a_kernel_log_line_after_the_version_prefix_sets_support() {
     assert!(scan.finish().supported);
 }
 
-fn boundary(boot: &str, series: &str, sequence: &str) -> Vec<u8> {
+pub(super) fn boundary(boot: &str, series: &str, sequence: &str) -> Vec<u8> {
     json!({"_BOOT_ID": boot, "__SEQNUM_ID": series, "__SEQNUM": sequence})
         .to_string()
         .into_bytes()
 }
 
-fn boots(ids: &[&str]) -> Vec<u8> {
+pub(super) fn boots(ids: &[&str]) -> Vec<u8> {
     json!(
         ids.iter()
             .map(|id| json!({"boot_id": id}))

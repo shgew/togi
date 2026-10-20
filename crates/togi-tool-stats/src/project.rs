@@ -99,7 +99,7 @@ pub(crate) struct End<'a> {
 
 impl Trial<'_> {
     pub(crate) fn outcome(&self) -> Option<Outcome> {
-        self.end.map(|end| end.end.outcome)
+        self.end.map(|end| end.end.evidence_outcome())
     }
 
     pub(crate) fn failed(&self) -> bool {
@@ -380,6 +380,12 @@ impl<'a> Projection<'a> {
                 | Payload::BootSavedEntry(_)
                 | Payload::BootLeaveReason(_)
                 | Payload::JournalTorn(_)
+                | Payload::DayBootStart(_)
+                | Payload::DayCheckpoint(_)
+                | Payload::DayOffsetsChanged(_)
+                | Payload::DayCleanStop(_)
+                | Payload::DayAnswer(_)
+                | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_) => {}
             }
         }

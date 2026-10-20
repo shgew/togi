@@ -15,6 +15,23 @@ use super::{
 use crate::{Decisive, FactsError, Observation, Telemetry, TrialClass};
 
 #[test]
+fn an_excluded_pass_cannot_be_carried_as_a_full_shape_fact() {
+    let mut s = Script::begin(&[0, 1]);
+    s.add(togi_journal::TrialIntent {
+        cores: set(&[0, 1]),
+        profile: profile(&[(0, -10), (1, -10)]),
+        ..intent("excluded", Condition::Together, Regime::R7)
+    });
+    s.add(TrialEnd {
+        excluded: vec![core(0)],
+        ..pass("excluded", 90)
+    });
+    let facts = s.extract();
+    assert_eq!(facts.facts.len(), 0);
+    assert_eq!(facts.open_trials.len(), 0);
+}
+
+#[test]
 fn decisive_facts() {
     let mut s = Script::begin(&[4, 2]);
     s.add(SessionContext {

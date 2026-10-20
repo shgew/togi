@@ -310,6 +310,12 @@ pub(crate) fn single_carried_failure_decisions(events: &[Event], since: Option<T
             | Payload::BootLeaveReason(_)
             | Payload::Shutdown(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => false,
         };
         if !decided {
@@ -388,6 +394,12 @@ pub(crate) fn single_carried_failure_decisions(events: &[Event], since: Option<T
                 | Payload::BootLeaveReason(_)
                 | Payload::Shutdown(_)
                 | Payload::JournalTorn(_)
+                | Payload::DayBootStart(_)
+                | Payload::DayCheckpoint(_)
+                | Payload::DayOffsetsChanged(_)
+                | Payload::DayCleanStop(_)
+                | Payload::DayAnswer(_)
+                | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_) => pending.extend_from_slice(&source.cause),
             }
         }

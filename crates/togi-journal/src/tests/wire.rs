@@ -19,7 +19,7 @@ fn samples_cover_every_kind_once() {
     let kinds: BTreeSet<_> = samples().iter().map(Payload::kind).collect();
     assert_eq!(kinds.len(), samples().len());
     assert_eq!(kinds, EventKind::ALL.iter().copied().collect());
-    assert_eq!(EventKind::ALL.len(), 50);
+    assert_eq!(EventKind::ALL.len(), 56);
 }
 
 #[test]

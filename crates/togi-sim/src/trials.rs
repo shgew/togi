@@ -216,7 +216,7 @@ impl Running for SimRunning {
         for event in outcome.events {
             match event {
                 Event::Progress(detail) => report.progress(&detail),
-                Event::Signal(core, signal, detail) => report.signal(core, signal, &detail),
+                Event::Signal(core, signal, detail) => report.signal(core, signal, None, &detail),
             }
         }
         match outcome.result {
@@ -424,6 +424,7 @@ impl Runtime {
                 result.failure = Some(TrialFailure {
                     signal,
                     core: failure.core,
+                    pid: None,
                 });
                 count(spec, &mut result);
                 if signal == Signal::ComputationError {

@@ -363,6 +363,7 @@ mod tests {
             seed: 7,
             offsets: togi_machine::PerCore::default(),
             roles,
+            controller: togi_machine::ControllerMode::Legacy,
         }
     }
 
@@ -386,6 +387,7 @@ mod tests {
             seed: 7,
             offsets: togi_machine::PerCore::default(),
             roles,
+            controller: togi_machine::ControllerMode::Legacy,
         }
     }
 

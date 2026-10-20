@@ -18,6 +18,7 @@ fn started(id: &str) -> TrialStart {
         files: Vec::new(),
         instances: Vec::new(),
         roles: Vec::new(),
+        controller: None,
     }
 }
 
@@ -28,6 +29,8 @@ fn evidence(kind: &str, id: &str, script: &mut Script) -> Seq {
             detail: String::new(),
             signal: None,
             core: None,
+            fault: None,
+            pid: None,
         }),
         "signal" => script.add(TrialSignal {
             trial: trial(id),

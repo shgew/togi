@@ -31,6 +31,7 @@ fn failure() -> Error {
 
 struct KernelLog {
     mces: Vec<Mce>,
+    faults: Vec<togi_machine::ProcessFault>,
     reads: usize,
     loss: Option<(usize, fn() -> Error)>,
     answers: Vec<(usize, Answer)>,
@@ -91,6 +92,15 @@ struct LogKernel {
 }
 
 impl Kernel for LogKernel {
+    fn process_threads(&mut self, pid: u32) -> Result<Vec<u32>, Error> {
+        Ok(if pid == std::process::id() {
+            vec![pid, 421]
+        } else if pid == 991 {
+            vec![pid, 422]
+        } else {
+            vec![pid]
+        })
+    }
     fn mces(&mut self, _boot: &BootId, since: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>> {
         Ok(self
             .log
@@ -106,7 +116,7 @@ impl Kernel for LogKernel {
         &mut self,
         boot: &BootId,
         after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<Mce>>> {
+    ) -> Result<KernelRead, Partial<KernelRead>> {
         let mut log = self.log.borrow_mut();
         log.reads += 1;
         let reads = log.reads;
@@ -118,7 +128,11 @@ impl Kernel for LogKernel {
                 .into_iter()
                 .collect();
             return Err(Partial {
-                value,
+                value: KernelRead {
+                    mces: value,
+                    faults: log.faults.clone(),
+                    ..KernelRead::default()
+                },
                 error: (answer.error)(),
             });
         }
@@ -133,7 +147,7 @@ impl Kernel for LogKernel {
         };
         let Some(start) = start else {
             return Err(Partial {
-                value: Vec::new(),
+                value: KernelRead::default(),
                 error: Error::CursorMissing,
             });
         };
@@ -143,12 +157,17 @@ impl Kernel for LogKernel {
         {
             log.loss = None;
             return Err(Partial {
-                value: mces,
+                value: KernelRead {
+                    mces,
+                    faults: log.faults.clone(),
+                    ..KernelRead::default()
+                },
                 error: error(),
             });
         }
         Ok(KernelRead {
             mces,
+            faults: log.faults.clone(),
             cursor: KernelCursor::from(format!("{boot}/{}", log.mces.len())),
         })
     }
@@ -197,12 +216,15 @@ impl Clock for RetryClock {
 struct Rigging {
     result: Option<TrialResult>,
     wait_error: Option<fn() -> Error>,
+    result_for_spec: Option<fn(&TrialSpec) -> TrialResult>,
+    reported_failure: Option<TrialFailure>,
     stop_error: Option<fn() -> Error>,
     cancel: Option<CancellationToken>,
     on_start: Option<Rc<dyn Fn()>>,
     samples: Option<Vec<togi_machine::TrialConditions>>,
     samples_file: Option<(Vec<u8>, bool)>,
     instances: Option<Vec<Instance>>,
+    pid: Option<u32>,
     schedule: Option<LoadSchedule>,
     /// Makes the start fail with this error and hand back no proof that nothing runs.
     start_error: Option<fn() -> Error>,
@@ -283,6 +305,9 @@ impl Trials for Rigged {
 impl Running for RiggedRunning {
     fn started(&self) -> Started {
         let mut started = self.inner.started();
+        if let Some(pid) = self.rigs.borrow().pid {
+            started.pid = pid;
+        }
         if let Some(instances) = self.rigs.borrow().instances.clone() {
             started.instances = instances;
         }
@@ -302,6 +327,14 @@ impl Running for RiggedRunning {
             hook();
         }
         let rigs = self.rigs.borrow();
+        if let Some(failure) = rigs.reported_failure {
+            report.signal(
+                failure.core,
+                failure.signal,
+                failure.pid.map(std::num::NonZeroU32::get),
+                "backend reported before interruption",
+            );
+        }
         if let Some(token) = &rigs.cancel {
             token.cancel();
         }
@@ -310,6 +343,9 @@ impl Running for RiggedRunning {
             (None, Ok(result)) => result,
             (None, Err(partial)) => return Err(partial),
         };
+        let value = rigs
+            .result_for_spec
+            .map_or(value, |result| result(rigs.specs.last().unwrap()));
         match rigs.wait_error {
             Some(error) => Err(Partial {
                 value,
@@ -358,6 +394,7 @@ fn rig_input(
     } = machine;
     let log: Log = Rc::new(RefCell::new(KernelLog {
         mces: Vec::new(),
+        faults: Vec::new(),
         reads: 0,
         loss: None,
         answers: Vec::new(),
@@ -499,6 +536,22 @@ fn a_clean_trial_alone_sets_its_core_runs_and_resets_it() {
     assert_eq!(end.outcome, Verdict::Pass);
     assert_eq!(end.core, None);
     crate::testing::assert_fold_consistent(session.appender());
+}
+
+#[test]
+fn trial_end_preserves_controller_host_exclusion_for_evidence_replay() {
+    let mut rig = rigged(Bench::new(2));
+    rig.rigs.borrow_mut().result = Some(TrialResult {
+        ran: full_run(),
+        excluded: [core(0)].into_iter().collect(),
+        ..TrialResult::default()
+    });
+    trial(&mut rig).unwrap();
+    let end = ends(&rig.session).pop().unwrap();
+    assert_eq!(end.outcome, Verdict::Pass);
+    assert_eq!(end.excluded, vec![core(0)]);
+    assert_eq!(end.evidence_outcome(), Verdict::Inconclusive);
+    crate::testing::assert_fold_consistent(rig.session.appender());
 }
 
 #[test]
@@ -760,6 +813,7 @@ fn failing_with(signal: Signal) -> TrialResult {
         failure: Some(TrialFailure {
             signal,
             core: core(0),
+            pid: None,
         }),
         ..TrialResult::default()
     }
@@ -1189,6 +1243,7 @@ fn unreadable_samples_warn_and_omit_all_sample_fields_without_changing_the_outco
             failure: failure.then_some(TrialFailure {
                 signal: Signal::ComputationError,
                 core: core(0),
+                pid: None,
             }),
             ..TrialResult::default()
         });
@@ -1970,4 +2025,571 @@ fn an_escaped_worker_ends_the_trial_inconclusive_with_its_cpus_and_dead_ends_on_
     assert_eq!(ends[0].outcome, Verdict::Inconclusive);
     assert_eq!(ends[0].containment_error, None);
     assert_eq!(ends[0].escaped, [CpuId::from(42)]);
+}
+
+fn public_fault_run(
+    controller: togi_machine::ControllerContract,
+    cpu: Option<u16>,
+    worker: bool,
+    backend: Option<Signal>,
+    backend_pid: u32,
+) -> crate::session::Ended {
+    let bench = Bench::new(2);
+    let (mut input, log, rigs, _, _) = rig_input(&bench);
+    input.controller = controller;
+    let mut rig = rigs.borrow_mut();
+    rig.pid = Some(991);
+    if backend_pid != 991 {
+        rig.instances = Some(same_core_workers(backend_pid));
+    }
+    rig.cancel = Some(input.cancel.clone());
+    rig.result = Some(TrialResult {
+        ran: Duration::from_secs(90),
+        failure: backend.map(|signal| TrialFailure {
+            signal,
+            core: core(0),
+            pid: std::num::NonZeroU32::new(backend_pid),
+        }),
+        ..TrialResult::default()
+    });
+    rig.after_wait = Some(Rc::new(move || {
+        let mut log = log.borrow_mut();
+        let monotonic = log.clock.monotonic().unwrap();
+        log.faults.push(togi_machine::ProcessFault {
+            pid: if worker { 991 } else { std::process::id() },
+            name: if worker { "mprime" } else { "togi-dashboard" }.into(),
+            scope: None,
+            kind: togi_machine::ProcessFaultKind::Segmentation,
+            cpu: cpu.map(CpuId::from),
+            core: cpu.map(|cpu| core(i64::from(cpu))),
+            monotonic: monotonic.saturating_sub(Duration::from_nanos(1)),
+            lines: vec!["kernel trap".into()],
+        });
+        log.faults.push(togi_machine::ProcessFault {
+            pid: if worker { 991 } else { std::process::id() },
+            name: if worker { "mprime" } else { "togi" }.into(),
+            scope: None,
+            kind: togi_machine::ProcessFaultKind::Segmentation,
+            cpu: None,
+            core: None,
+            monotonic,
+            lines: vec!["systemd-coredump summary without an execution CPU".into()],
+        });
+    }));
+    drop(rig);
+    crate::run(input)
+}
+
+#[test_case(Some(0), false, None, Verdict::Failure, Some(Signal::UnexpectedExit); "controller located")]
+#[test_case(None, false, None, Verdict::Failure, Some(Signal::UnexpectedExit); "controller unlocated")]
+#[test_case(Some(1), false, None, Verdict::Pass, None; "controller outside tested set")]
+#[test_case(Some(0), true, Some(Signal::UnexpectedExit), Verdict::Failure, Some(Signal::UnexpectedExit); "worker located")]
+#[test_case(Some(1), true, Some(Signal::UnexpectedExit), Verdict::Inconclusive, None; "outside worker exit is not charged")]
+#[test_case(Some(1), true, Some(Signal::ComputationError), Verdict::Failure, Some(Signal::ComputationError); "independent computation evidence survives")]
+fn managed_public_session_adjudicates_process_faults(
+    cpu: Option<u16>,
+    worker: bool,
+    backend: Option<Signal>,
+    outcome: Verdict,
+    signal: Option<Signal>,
+) {
+    let ended = public_fault_run(
+        togi_machine::ControllerContract::Managed,
+        cpu,
+        worker,
+        backend,
+        991,
+    );
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let end = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(end.outcome, outcome);
+    assert_eq!(end.signal, signal);
+    let fault = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialProgress(progress) = &event.payload {
+                progress.fault.as_ref()
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(fault.cpu, cpu.map(CpuId::from));
+    assert_eq!(fault.core, cpu.map(|cpu| core(i64::from(cpu))));
+    let start = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialStart(start) = &event.payload {
+                Some(start)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(start.controller.as_ref().unwrap().pid, std::process::id());
+    assert!(
+        start
+            .controller
+            .as_ref()
+            .unwrap()
+            .tested_cpus
+            .contains(&CpuId::from(0))
+    );
+}
+
+#[test]
+fn legacy_public_session_does_not_adopt_process_fault_decisions() {
+    let ended = public_fault_run(
+        togi_machine::ControllerContract::Legacy,
+        Some(1),
+        true,
+        Some(Signal::UnexpectedExit),
+        991,
+    );
+    let end = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(end.outcome, Verdict::Failure);
+    assert_eq!(end.signal, Some(Signal::UnexpectedExit));
+}
+
+fn same_core_workers(other_pid: u32) -> Vec<Instance> {
+    [991, other_pid]
+        .into_iter()
+        .map(|pid| Instance {
+            core: core(0),
+            cpus: vec![CpuId::from(0)],
+            pid,
+            scope: format!("worker-{pid}.scope"),
+        })
+        .collect()
+}
+
+#[test_case(Some(0); "located sibling fault")]
+#[test_case(Some(1); "outside sibling fault")]
+fn another_same_core_worker_exit_is_not_replaced_or_withdrawn(cpu: Option<u16>) {
+    let ended = public_fault_run(
+        togi_machine::ControllerContract::Managed,
+        cpu,
+        true,
+        Some(Signal::UnexpectedExit),
+        992,
+    );
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let end = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(end.outcome, Verdict::Failure);
+    assert_eq!(end.signal, Some(Signal::UnexpectedExit));
+    assert_eq!(end.core, Some(core(0)));
+}
+
+#[test_case(Some(0), Verdict::Failure, Some(core(0)), None, None, 991; "located controller death")]
+#[test_case(None, Verdict::Failure, None, None, None, 991; "unlocated controller death")]
+#[test_case(Some(1), Verdict::Inconclusive, None, None, None, 991; "outside tested set")]
+#[test_case(Some(0), Verdict::Failure, Some(core(0)), Some(421), None, 991; "known dashboard thread death")]
+#[test_case(Some(0), Verdict::Failure, Some(core(0)), Some(422), None, 991; "known worker thread located")]
+#[test_case(Some(1), Verdict::Inconclusive, None, Some(991), Some(Signal::UnexpectedExit), 991; "outside worker exit withdrawn on recovery")]
+#[test_case(Some(1), Verdict::Inconclusive, None, Some(422), Some(Signal::UnexpectedExit), 991; "outside known worker thread exit withdrawn")]
+#[test_case(Some(1), Verdict::Failure, Some(core(0)), Some(991), Some(Signal::ComputationError), 991; "independent failure retained on recovery")]
+#[test_case(None, Verdict::Failure, None, Some(991), Some(Signal::UnexpectedExit), 991; "unlocated worker does not inherit assigned core")]
+#[test_case(Some(1), Verdict::Failure, Some(core(0)), Some(991), Some(Signal::UnexpectedExit), 992; "another same-core worker exit retained on recovery")]
+fn public_same_boot_recovery_uses_the_saved_controller_contract(
+    cpu: Option<u16>,
+    outcome: Verdict,
+    location: Option<togi_machine::CoreId>,
+    fault_pid: Option<u32>,
+    backend: Option<Signal>,
+    backend_pid: u32,
+) {
+    let bench = Bench::new(2);
+    let (mut input, log, rigs, _, _) = rig_input(&bench);
+    input.controller = togi_machine::ControllerContract::Managed;
+    let evidence = log.clone();
+    rigs.borrow_mut().wait_error = Some(|| Error::Crashed);
+    rigs.borrow_mut().pid = Some(991);
+    if backend_pid != 991 {
+        rigs.borrow_mut().instances = Some(same_core_workers(backend_pid));
+    }
+    rigs.borrow_mut().reported_failure = backend.map(|signal| TrialFailure {
+        signal,
+        core: core(0),
+        pid: std::num::NonZeroU32::new(backend_pid),
+    });
+    rigs.borrow_mut().after_wait = Some(Rc::new(move || {
+        let mut log = evidence.borrow_mut();
+        let monotonic = log.clock.monotonic().unwrap();
+        log.faults.push(togi_machine::ProcessFault {
+            pid: fault_pid.unwrap_or_else(std::process::id),
+            name: "renamed-thread".into(),
+            scope: None,
+            kind: togi_machine::ProcessFaultKind::Abort,
+            cpu: cpu.map(CpuId::from),
+            core: cpu.map(|cpu| core(i64::from(cpu))),
+            monotonic,
+            lines: vec!["controller abort".into()],
+        });
+    }));
+    let crashed = crate::run(input);
+    assert!(crashed.errors.iter().any(SessionError::is_crash));
+    assert!(
+        !crashed
+            .journal
+            .events()
+            .iter()
+            .any(|event| matches!(event.payload, Payload::TrialEnd(_)))
+    );
+    drop(crashed);
+    let mut input = bench.input();
+    // Default scheduling is still legacy, but the interrupted trial's durable opt-in owns its evidence.
+    assert_eq!(input.controller, togi_machine::ControllerContract::Legacy);
+    let inner = input.machine.kernel;
+    input.machine.kernel = Box::new(LogKernel { log, inner });
+    let cancel = input.cancel.clone();
+    input.on_append = Some(Box::new(move |event| {
+        if matches!(event.payload, Payload::TrialEnd(_)) {
+            cancel.cancel();
+        }
+    }));
+    let resumed = crate::run(input);
+    assert!(resumed.errors.is_empty(), "{:?}", resumed.errors);
+    let (event, end) = resumed
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some((event, end))
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(end.outcome, outcome);
+    assert_eq!(end.core, location);
+    assert_eq!(
+        end.signal,
+        (outcome == Verdict::Failure).then_some(backend.unwrap_or(Signal::UnexpectedExit))
+    );
+    assert!(end.interrupted);
+    let fault_event = resumed.journal.events().iter().find(|event| {
+        matches!(&event.payload, Payload::TrialProgress(progress) if progress.fault.is_some())
+    }).unwrap();
+    assert!(event.cause.contains(&fault_event.seq));
+}
+
+fn trial_end(ended: &crate::session::Ended) -> TrialEnd {
+    ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap()
+}
+
+fn located_fault(pid: u32, cpu: u16, monotonic: Duration) -> togi_machine::ProcessFault {
+    togi_machine::ProcessFault {
+        pid,
+        name: "mprime".into(),
+        scope: None,
+        kind: togi_machine::ProcessFaultKind::Segmentation,
+        cpu: Some(CpuId::from(cpu)),
+        core: Some(core(i64::from(cpu))),
+        monotonic,
+        lines: vec!["kernel trap".into()],
+    }
+}
+
+#[test_case([992, 991], false; "live sibling fault before the withdrawing fault")]
+#[test_case([991, 992], false; "live sibling fault after the withdrawing fault")]
+#[test_case([992, 991], true; "recovered sibling fault before the withdrawing fault")]
+#[test_case([991, 992], true; "recovered sibling fault after the withdrawing fault")]
+fn a_withdrawn_worker_exit_keeps_another_workers_tested_fault(order: [u32; 2], crash: bool) {
+    let bench = Bench::new(2);
+    let (mut input, log, rigs, _, _) = rig_input(&bench);
+    input.controller = togi_machine::ControllerContract::Managed;
+    let evidence = log.clone();
+    {
+        let mut rig = rigs.borrow_mut();
+        rig.pid = Some(991);
+        rig.instances = Some(same_core_workers(992));
+        let failure = TrialFailure {
+            signal: Signal::UnexpectedExit,
+            core: core(0),
+            pid: std::num::NonZeroU32::new(991),
+        };
+        if crash {
+            rig.wait_error = Some(|| Error::Crashed);
+            rig.reported_failure = Some(failure);
+        } else {
+            rig.cancel = Some(input.cancel.clone());
+            rig.result = Some(TrialResult {
+                ran: Duration::from_secs(90),
+                failure: Some(failure),
+                ..TrialResult::default()
+            });
+        }
+        // Worker 991, whose exit the backend reported, executed outside the tested CPUs; its sibling 992 inside.
+        rig.after_wait = Some(Rc::new(move || {
+            let mut log = evidence.borrow_mut();
+            let monotonic = log.clock.monotonic().unwrap();
+            let cpu = |pid| u16::from(pid == 991);
+            let [first, second] = order;
+            let earlier = monotonic.saturating_sub(Duration::from_nanos(1));
+            log.faults.push(located_fault(first, cpu(first), earlier));
+            log.faults
+                .push(located_fault(second, cpu(second), monotonic));
+        }));
+    }
+    let ended = if crash {
+        let crashed = crate::run(input);
+        assert!(crashed.errors.iter().any(SessionError::is_crash));
+        drop(crashed);
+        let mut input = bench.input();
+        let inner = input.machine.kernel;
+        input.machine.kernel = Box::new(LogKernel { log, inner });
+        let cancel = input.cancel.clone();
+        input.on_append = Some(Box::new(move |event| {
+            if matches!(event.payload, Payload::TrialEnd(_)) {
+                cancel.cancel();
+            }
+        }));
+        crate::run(input)
+    } else {
+        crate::run(input)
+    };
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let end = trial_end(&ended);
+    assert_eq!(end.outcome, Verdict::Failure);
+    assert_eq!(end.signal, Some(Signal::UnexpectedExit));
+    assert_eq!(end.core, Some(core(0)));
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Edge {
+    BeforeStart,
+    Start,
+    End,
+    AfterEnd,
+}
+
+#[test_case(Edge::BeforeStart, Verdict::Pass; "just before the window start is ignored")]
+#[test_case(Edge::Start, Verdict::Failure; "at the window start is the trial's")]
+#[test_case(Edge::End, Verdict::Failure; "at the window end is the trial's")]
+#[test_case(Edge::AfterEnd, Verdict::Pass; "just after the window end is ignored")]
+fn public_session_takes_process_faults_only_inside_the_trial_window(edge: Edge, outcome: Verdict) {
+    let bench = Bench::new(2);
+    let (mut input, log, rigs, _, _) = rig_input(&bench);
+    input.controller = togi_machine::ControllerContract::Managed;
+    let push = move |anchor: &[Edge]| {
+        let log = log.clone();
+        let anchor = anchor.to_vec();
+        Rc::new(move || {
+            if !anchor
+                .iter()
+                .any(|at| std::mem::discriminant(at) == std::mem::discriminant(&edge))
+            {
+                return;
+            }
+            let mut log = log.borrow_mut();
+            let now = log.clock.monotonic().unwrap();
+            let monotonic = match edge {
+                Edge::BeforeStart => now.checked_sub(Duration::from_nanos(1)).unwrap(),
+                Edge::Start | Edge::End => now,
+                Edge::AfterEnd => now + Duration::from_nanos(1),
+            };
+            // The controller faulting on a tested CPU fails the trial when its fault counts.
+            log.faults
+                .push(located_fault(std::process::id(), 0, monotonic));
+        }) as Rc<dyn Fn()>
+    };
+    {
+        let mut rig = rigs.borrow_mut();
+        rig.cancel = Some(input.cancel.clone());
+        rig.on_start = Some(push(&[Edge::BeforeStart, Edge::Start]));
+        rig.after_wait = Some(push(&[Edge::End, Edge::AfterEnd]));
+    }
+    // The boot's clock starts at zero; a trial window needs room before it.
+    let cancel = input.cancel.clone();
+    input
+        .machine
+        .clock
+        .sleep(&cancel, Duration::from_secs(1))
+        .unwrap();
+    let ended = crate::run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let fault = ended.journal.events().iter().find_map(|event| {
+        if let Payload::TrialProgress(progress) = &event.payload {
+            progress.fault.as_ref()
+        } else {
+            None
+        }
+    });
+    assert_eq!(fault.is_some(), outcome == Verdict::Failure, "{fault:?}");
+    assert_eq!(trial_end(&ended).outcome, outcome);
+}
+
+#[test_case(false; "complete kernel read")]
+#[test_case(true; "partial kernel read")]
+fn public_multicore_session_uses_execution_core_instead_of_assigned_worker_core(partial: bool) {
+    let mut bench = Bench::new(2);
+    bench.config = Config::parse(
+        r#"{
+        "candidate_solo_limits":{"0":0,"1":0},
+        "checking":{"cycle":["R7"]},
+        "evidence":{"rate":0.95,"miss":0.2}
+    }"#,
+    )
+    .unwrap();
+    let (mut input, log, rigs, _, _) = rig_input(&bench);
+    input.controller = togi_machine::ControllerContract::Managed;
+    let specs = Rc::downgrade(&rigs);
+    let cancel = input.cancel.clone();
+    rigs.borrow_mut().pid = Some(991);
+    rigs.borrow_mut().result_for_spec = Some(|spec| TrialResult {
+        ran: spec.duration,
+        failure: (spec.cores.len() > 1).then_some(TrialFailure {
+            signal: Signal::UnexpectedExit,
+            core: core(0),
+            pid: std::num::NonZeroU32::new(991),
+        }),
+        ..TrialResult::default()
+    });
+    rigs.borrow_mut().after_wait = Some(Rc::new(move || {
+        if specs
+            .upgrade()
+            .unwrap()
+            .borrow()
+            .specs
+            .last()
+            .unwrap()
+            .cores
+            .len()
+            < 2
+        {
+            return;
+        }
+        let mut evidence = log.borrow_mut();
+        let monotonic = evidence.clock.monotonic().unwrap();
+        evidence.faults.push(togi_machine::ProcessFault {
+            pid: 991,
+            name: "mprime".into(),
+            scope: None,
+            kind: togi_machine::ProcessFaultKind::Segmentation,
+            cpu: Some(CpuId::from(1)),
+            core: Some(core(1)),
+            monotonic,
+            lines: vec!["mprime[991]: segfault on CPU 1".into()],
+        });
+        drop(evidence);
+        if partial {
+            lose_read(&log, 1, failure);
+        }
+        cancel.cancel();
+    }));
+    let ended = crate::run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let end = ended
+        .journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end)
+            } else {
+                None
+            }
+        })
+        .next_back()
+        .unwrap();
+    assert_eq!(end.outcome, Verdict::Failure);
+    assert_eq!(end.signal, Some(Signal::UnexpectedExit));
+    assert_eq!(end.core, Some(core(1)));
+    assert_eq!(end.kernel_error.is_some(), partial);
+}
+
+#[test_case(Some("/system.slice/togi-watch.service"), Verdict::Failure; "dashboard service scope")]
+#[test_case(Some("/system.slice/other-togi-watch.service"), Verdict::Pass; "scope component must match exactly")]
+#[test_case(None, Verdict::Pass; "comm alone does not identify a process")]
+fn public_session_matches_dashboard_scope_without_guessing_from_comm(
+    scope: Option<&'static str>,
+    outcome: Verdict,
+) {
+    let bench = Bench::new(2);
+    let (mut input, log, rigs, _, _) = rig_input(&bench);
+    input.controller = togi_machine::ControllerContract::Managed;
+    rigs.borrow_mut().cancel = Some(input.cancel.clone());
+    rigs.borrow_mut().after_wait = Some(Rc::new(move || {
+        let mut log = log.borrow_mut();
+        let monotonic = log.clock.monotonic().unwrap();
+        log.faults.push(togi_machine::ProcessFault {
+            pid: if std::process::id() == 318_991 {
+                318_992
+            } else {
+                318_991
+            },
+            name: "togi".into(),
+            scope: scope.map(str::to_owned),
+            kind: togi_machine::ProcessFaultKind::Abort,
+            cpu: None,
+            core: None,
+            monotonic,
+            lines: vec!["Process togi dumped core (SIGABRT)".into()],
+        });
+    }));
+    let ended = crate::run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let end = ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(end.outcome, outcome);
+    assert_eq!(end.core, None);
 }

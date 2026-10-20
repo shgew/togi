@@ -77,7 +77,15 @@ impl TuningClock {
             Payload::SessionStart(_) => *self = Self::default(),
             // A reset is recorded outside any run, with no `config.loaded` or `shutdown` around it, so it neither
             // ends a run nor shows one alive.
-            Payload::CommandReset(_) => {}
+            Payload::CommandReset(_)
+            // A day observer runs outside tuning: its events, written in any boot, neither extend a run nor mark
+            // a reboot inside one.
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
+            | Payload::DayUncleanEnd(_) => {}
             Payload::SessionContext(_)
             | Payload::SessionBaseline(_)
             | Payload::SessionNotice(_)

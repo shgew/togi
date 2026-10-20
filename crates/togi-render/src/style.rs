@@ -123,6 +123,12 @@ pub fn style_for(payload: &Payload) -> Style {
         | Payload::BootLeaveReason(_)
         | Payload::Shutdown(_)
         | Payload::JournalTorn(_)
+        | Payload::DayBootStart(_)
+        | Payload::DayCheckpoint(_)
+        | Payload::DayOffsetsChanged(_)
+        | Payload::DayCleanStop(_)
+        | Payload::DayAnswer(_)
+        | Payload::DayUncleanEnd(_)
         | Payload::StateRebuilt(_) => Style::Plain,
     }
 }

@@ -85,6 +85,7 @@ fn end() -> TrialEnd {
         trial: TrialId::from("1".to_owned()),
         kernel_cursor: None,
         kernel_error: None,
+        excluded: Vec::new(),
         outcome: Outcome::Pass,
         signal: None,
         core: None,

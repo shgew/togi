@@ -1,0 +1,2 @@
+▌  DAY QUESTION   Boot 7a1b2c3d stopped unclean; reset reason: watchdog; reads as a graphics fault the machine outlived. What happened?
+▌                 1 it froze · 2 graphics died but sound went on · 3 I turned it off while it was working normally · 4 not sure. Answer: togi status

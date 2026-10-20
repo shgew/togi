@@ -746,7 +746,7 @@ impl Kernel for Logged {
         &mut self,
         boot: &BootId,
         after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<togi_machine::Mce>>> {
+    ) -> Result<KernelRead, Partial<KernelRead>> {
         let mut read = self.inner.read_mces(boot, after)?;
         read.mces.extend(self.extra.iter().cloned());
         Ok(read)

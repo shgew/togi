@@ -17,6 +17,7 @@ Usage: togi [OPTIONS] <COMMAND>
 
 Commands:
   run             Start or resume the tuning session in the foreground
+  day             Observe daily use, or answer what happened after an unclean end
   completion      Print a shell completion script
   doctor          Check whether this machine is ready for a run
   events          Print the journal, one readable line per event

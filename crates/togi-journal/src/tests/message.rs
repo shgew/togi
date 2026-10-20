@@ -66,6 +66,32 @@ fn trial_end_pass_names_the_duration_and_temperature() {
 }
 
 #[test]
+fn trial_end_records_host_exclusion_without_claiming_whole_load_coverage() {
+    let mut end = bare_trial_end(Outcome::Pass, None, "");
+    assert_eq!(end.evidence_outcome(), Outcome::Pass);
+    assert_eq!(serde_json::to_value(&end).unwrap().get("excluded"), None);
+    end.excluded = vec![core(3)];
+    let encoded = serde_json::to_value(&end).unwrap();
+    assert_eq!(encoded["excluded"], serde_json::json!([3]));
+    let decoded: TrialEnd = serde_json::from_value(encoded).unwrap();
+    assert_eq!(decoded, end);
+    assert_eq!(end.evidence_outcome(), Outcome::Inconclusive);
+    assert!(
+        Payload::from(end)
+            .message()
+            .contains("no exposure credit for core 03; whole-load coverage withheld")
+    );
+}
+
+#[test_case(Outcome::Failure; "failures retain their safety evidence")]
+#[test_case(Outcome::Inconclusive; "inconclusive stays inconclusive")]
+fn trial_end_exclusion_never_changes_nonpassing_evidence(outcome: Outcome) {
+    let mut end = bare_trial_end(outcome, None, "");
+    end.excluded = vec![core(3)];
+    assert_eq!(end.evidence_outcome(), outcome);
+}
+
+#[test]
 fn trial_end_failure_says_what_it_knows() {
     let text = message(EventKind::TrialEnd);
     for part in [
@@ -409,6 +435,31 @@ fn units_appear_in_text() {
     assert!(message(EventKind::SessionContext).contains("boost limit 5000 MHz"));
     assert!(message(EventKind::BackendRetry).contains("after 300 s"));
     assert!(message(EventKind::JournalTorn).contains("2 torn bytes at offset 1024"));
+}
+
+#[test_case(
+    EventKind::DayBootStart,
+    "day observer started by togi 0.1.0+abc1234: BIOS F31 on X570, 5950X, microcode 0xa201016, boost limit 5000 MHz; offsets [00: 0, 01: -5]"
+)]
+#[test_case(
+    EventKind::DayCheckpoint,
+    "day observer has been active 3600 s in total this boot"
+)]
+#[test_case(
+    EventKind::DayOffsetsChanged,
+    "offsets read back changed to [00: -10, 01: -5]; the time since the previous record is not credited to any offset profile"
+)]
+#[test_case(EventKind::DayCleanStop, "day observer stopped on request")]
+#[test_case(
+    EventKind::DayUncleanEnd,
+    "day observer of boot 7a1b2c3d ended without a clean stop; last checkpoint seq 7; last offsets [00: -10, 01: -5]; reset reason: watchdog; machine checks: none in that boot, unknown in the next; kernel log tail: amdgpu timeout; logging continued after the last error"
+)]
+#[test_case(
+    EventKind::DayAnswer,
+    "uid 1000 answered that boot 7a1b2c3d ended because graphics died but sound went on; offsets [00: -10, 01: -5]"
+)]
+fn day_messages_tell_a_stranger_what_the_observer_saw(kind: EventKind, text: &str) {
+    assert_eq!(message(kind), text);
 }
 
 fn hunt_end(result: HuntOutcome, cores: &[u8], groups: u32, reason: &str) -> String {

@@ -186,3 +186,117 @@ fn a_locate_group_is_identified_and_explained_unlike_an_ordinary_group() {
     assert_eq!(cell, "probe");
     assert_eq!(note.map(|(label, _)| label), Some("probe"));
 }
+
+fn day_events(
+    extra: impl IntoIterator<Item = (&'static str, togi_journal::Payload)>,
+) -> Vec<togi_journal::Event> {
+    use jiff::Timestamp;
+    use togi_journal::{
+        DayBootStart, DayCheckpoint, DayCleanStop, DayUncleanEnd, Event, Payload, Stamp,
+    };
+    use togi_machine::{BiosContext, EndEvidence, ObservedOffset, ResetKind, ResetReason};
+
+    let offsets = [(core(0), ObservedOffset(-10))]
+        .into_iter()
+        .collect::<PerCore<_>>();
+    let start = || {
+        Payload::from(DayBootStart {
+            build: crate::report::current_build(),
+            bios: BiosContext {
+                bios_version: "test".into(),
+                board: "board".into(),
+                cpu_model: "CPU".into(),
+                microcode: "test".into(),
+                boost_limit_mhz: 5000,
+            },
+            offsets,
+        })
+    };
+    [
+        ("day-a", start()),
+        ("day-a", DayCheckpoint { applied_secs: 3600 }.into()),
+        ("day-a", DayCleanStop {}.into()),
+        ("day-b", start()),
+        ("day-b", DayCheckpoint { applied_secs: 1800 }.into()),
+        (
+            "day-c",
+            DayUncleanEnd {
+                boot: "day-b".to_owned().into(),
+                last_checkpoint: Some(Seq::new(5).unwrap()),
+                offsets,
+                reset_reason: ResetReason {
+                    kind: Some(ResetKind::Watchdog),
+                    raw: Vec::new(),
+                    supported: true,
+                },
+                evidence: EndEvidence::unknown(),
+            }
+            .into(),
+        ),
+    ]
+    .into_iter()
+    .chain(extra)
+    .enumerate()
+    .map(|(index, (boot, payload))| {
+        Event::new(
+            Seq::new(u64::try_from(index).unwrap() + 1).unwrap(),
+            Stamp {
+                time: Timestamp::UNIX_EPOCH,
+                mono: None,
+            },
+            boot.to_owned().into(),
+            Vec::new(),
+            payload,
+        )
+    })
+    .collect()
+}
+
+fn answer(kind: togi_journal::DayAnswerKind) -> (&'static str, togi_journal::Payload) {
+    let offsets = [(core(0), togi_machine::ObservedOffset(-10))]
+        .into_iter()
+        .collect::<PerCore<_>>();
+    (
+        "day-c",
+        togi_journal::DayAnswer {
+            boot: "day-b".to_owned().into(),
+            offsets,
+            answer: kind,
+            uid: 1000,
+        }
+        .into(),
+    )
+}
+
+#[test]
+fn day_section_snapshot() {
+    let mut out = String::new();
+    super::render_day(&mut out, &day_events([]));
+    assert_eq!(out, include_str!("day-status.txt"));
+}
+
+#[test]
+fn an_unanswered_unclean_end_is_a_question_with_four_answers() {
+    let mut out = String::new();
+    super::render_questions(&mut out, &day_events([]));
+    assert_eq!(out, include_str!("day-question-pending.txt"));
+}
+
+#[test]
+fn an_answered_end_shows_the_answer_and_how_to_change_it() {
+    let mut out = String::new();
+    let events = day_events([answer(togi_journal::DayAnswerKind::Frozen)]);
+    super::render_questions(&mut out, &events);
+    assert_eq!(out, include_str!("day-question-answered.txt"));
+}
+
+#[test]
+fn a_changed_answer_replaces_the_earlier_one() {
+    let mut out = String::new();
+    let events = day_events([
+        answer(togi_journal::DayAnswerKind::Frozen),
+        answer(togi_journal::DayAnswerKind::Graphics),
+    ]);
+    super::render_questions(&mut out, &events);
+    assert_eq!(out, include_str!("day-question-changed.txt"));
+}

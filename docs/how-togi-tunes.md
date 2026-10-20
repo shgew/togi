@@ -4,6 +4,8 @@ This is the entry point to the tuning sequence. It explains the sequence and its
 
 Togi searches for negative Curve Optimizer offsets, from 0 to −50 counts. More negative is **deeper**. A **profile** is all cores' offsets. It deliberately encounters failures, including crashes; a clean cycle is evidence of the workloads tested, not a promise that the machine cannot fail later.
 
+The runner also supports explicitly managed controller placement for the coming Ruleset 13 schedules: capped isolation during mapping and host rotation when the load occupies the machine. Controller-host exclusions and process faults remain honest evidence rather than hidden load. This does not change the current sequence below; [controller placement](spec/workloads.md#controller-placement) owns the opt-in contract and [ADR 0078](adr/0078-controller-clock-and-rotation.md) explains it.
+
 ## The sequence
 
 ```text

@@ -732,6 +732,12 @@ const fn decides(payload: &Payload) -> bool {
         | Payload::BootLeaveReason(_)
         | Payload::Shutdown(_)
         | Payload::JournalTorn(_)
+        | Payload::DayBootStart(_)
+        | Payload::DayCheckpoint(_)
+        | Payload::DayOffsetsChanged(_)
+        | Payload::DayCleanStop(_)
+        | Payload::DayAnswer(_)
+        | Payload::DayUncleanEnd(_)
         | Payload::StateRebuilt(_) => false,
     }
 }

@@ -190,6 +190,12 @@ impl HiddenClosing {
             | EventKind::BootSavedEntry
             | EventKind::BootLeaveReason
             | EventKind::JournalTorn
+            | EventKind::DayBootStart
+            | EventKind::DayCheckpoint
+            | EventKind::DayOffsetsChanged
+            | EventKind::DayCleanStop
+            | EventKind::DayAnswer
+            | EventKind::DayUncleanEnd
             | EventKind::StateRebuilt => self.0.clear(),
         }
     }

@@ -231,7 +231,7 @@ impl SeedFold {
                 {
                     self.rerun_failed.insert(failure);
                 }
-                match end.outcome {
+                match end.evidence_outcome() {
                     Outcome::Pass => {
                         if let Some(IntentInfo {
                             core: Some(core),
@@ -432,6 +432,12 @@ impl SeedFold {
             | Payload::BootLeaveReason(_)
             | Payload::Shutdown(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_)
             | Payload::CorePhase(_)
             | Payload::SessionArchived(_) => {}

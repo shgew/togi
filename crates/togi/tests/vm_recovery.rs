@@ -38,8 +38,10 @@ mod vm_recovery {
     use togi_cli::dashboard::Surface;
     use togi_cli::system::{Real, System};
     use togi_config::Config;
+    use togi_hardware::day::Observer;
     use togi_hardware::{Diagnosis, Error as HardwareError, RebootError};
     use togi_hostlock::{HostLock, Policy};
+    use togi_journal::{Payload, SessionStart, Stamp, StateDir};
     use togi_machine::{
         BiosContext, BootId, CancellationToken, CcdId, Check, Clock, Condition, CoreId, CoreInfo,
         CoreRank, CpuId, Error, Host, Kernel, KernelCursor, KernelRead, Machine, Mce,
@@ -300,9 +302,9 @@ mod vm_recovery {
             &mut self,
             _: &BootId,
             _: Option<&KernelCursor>,
-        ) -> Result<KernelRead, Partial<Vec<Mce>>> {
+        ) -> Result<KernelRead, Partial<KernelRead>> {
             Err(Partial {
-                value: Vec::new(),
+                value: KernelRead::default(),
                 error: other("the VM has no kernel log reader"),
             })
         }
@@ -318,6 +320,72 @@ mod vm_recovery {
         fn saved_pstore(&mut self, _: &BootId) -> Result<Option<PstoreRecord>, Error> {
             Err(other("the VM has no kernel log reader"))
         }
+    }
+
+    /// Day observation over the fake SMU, with the production kernel-log reader for successor evidence. A VM whose
+    /// log cannot prove a successor reports it unavailable, which `togi day` records as an unknown reset reason.
+    struct VmObserver {
+        kernel: Option<togi_detect::Kernel>,
+    }
+
+    impl Observer for VmObserver {
+        fn bios_context(&mut self) -> Result<BiosContext, Error> {
+            Ok(BiosContext {
+                bios_version: "vm".to_owned(),
+                board: "vm".to_owned(),
+                cpu_model: "vm".to_owned(),
+                microcode: "vm".to_owned(),
+                boost_limit_mhz: 0,
+            })
+        }
+
+        fn offsets(&mut self) -> Result<PerCore<ObservedOffset>, Error> {
+            let mut offsets = PerCore::default();
+            for info in topology() {
+                offsets.set(info.core, FileSmu.offset(info.core)?);
+            }
+            Ok(offsets)
+        }
+
+        fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, Error> {
+            match &mut self.kernel {
+                Some(kernel) => kernel.reset_reason_after(boot),
+                None => Err(other("the VM has no kernel log reader")),
+            }
+        }
+
+        fn end_evidence(&mut self, boot: &BootId) -> togi_machine::EndEvidence {
+            self.kernel
+                .as_mut()
+                .map_or_else(togi_machine::EndEvidence::unknown, |kernel| {
+                    kernel.end_evidence(boot)
+                })
+        }
+    }
+
+    /// Writes a session's first event with the current build, as `togi run` would have, and nothing else. Only this
+    /// helper does it: the production `togi day` never creates a session.
+    fn seed_session() -> i32 {
+        std::fs::create_dir_all(STATE_DIR).unwrap();
+        let dir = StateDir::lock(STATE_DIR).unwrap();
+        let now = Timestamp::now();
+        let session = dir.session_id(now).unwrap();
+        let boot = togi_detect::boot_id().unwrap();
+        let mut journal = dir.open_at(boot, now).unwrap();
+        let stamp = Stamp {
+            time: now,
+            mono: Some(VmClock.monotonic().unwrap()),
+        };
+        let start = SessionStart {
+            build: togi_cli::report::current_build(),
+            session,
+            cores: topology(),
+        };
+        journal
+            .append(stamp, Payload::SessionStart(start), &[])
+            .unwrap();
+        journal.close().unwrap();
+        0
     }
 
     /// The shipped trial runner, with a sweep that fails when the test asks.
@@ -482,6 +550,21 @@ mod vm_recovery {
             })
         }
 
+        fn day_observer<'lock>(
+            &self,
+            _: &'lock HostLock,
+        ) -> Result<Box<dyn Observer + 'lock>, Error> {
+            Ok(Box::new(VmObserver {
+                kernel: togi_detect::Kernel::new(&topology()).ok(),
+            }))
+        }
+
+        fn day_socket(
+            &self,
+        ) -> Result<Option<togi_cli::day::socket::Server>, togi_cli::day::socket::Error> {
+            self.0.day_socket()
+        }
+
         fn interactive(&self) -> bool {
             self.0.interactive()
         }
@@ -500,7 +583,7 @@ mod vm_recovery {
     impl Reporter for Quiet {
         fn progress(&mut self, _: &str) {}
         fn sample(&mut self, _: togi_machine::Sample) {}
-        fn signal(&mut self, _: CoreId, _: Signal, _: &str) {}
+        fn signal(&mut self, _: CoreId, _: Signal, _: Option<u32>, _: &str) {}
     }
 
     fn restore_baseline() {
@@ -557,6 +640,7 @@ mod vm_recovery {
             index: 0,
             seed: 1,
             offsets,
+            controller: togi_machine::ControllerMode::Legacy,
         };
         let mut running = machine
             .trials
@@ -583,6 +667,9 @@ mod vm_recovery {
 
     fn run_togi(arguments: &[String]) -> i32 {
         let system = VmSystem::default();
+        if arguments.get(1).map(String::as_str) == Some("seed-session") {
+            return seed_session();
+        }
         if arguments.get(1).map(String::as_str) == Some("run") {
             return serve(&system);
         }

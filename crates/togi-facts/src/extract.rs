@@ -221,6 +221,12 @@ impl Extractor {
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_)
             | Payload::CorePhase(_)
             | Payload::SessionArchived(_) => {}
@@ -272,7 +278,7 @@ impl Extractor {
     }
 
     fn end<E>(&mut self, event: &Event, end: &TrialEnd) -> Result<(), FactsError<E>> {
-        let decisive = end.outcome != Outcome::Inconclusive;
+        let decisive = end.evidence_outcome() != Outcome::Inconclusive;
         let Some(open) = self
             .open_by_trial
             .remove(&end.trial)
@@ -292,7 +298,7 @@ impl Extractor {
             build,
             backend,
         } = open;
-        let outcome = match end.outcome {
+        let outcome = match end.evidence_outcome() {
             Outcome::Inconclusive => return Ok(()),
             Outcome::Pass => Decisive::Pass,
             Outcome::Failure => Decisive::Failure {

@@ -1,4 +1,5 @@
 mod config;
+mod day;
 mod domain;
 mod message;
 mod session;
@@ -15,6 +16,10 @@ use togi_machine::CoreId;
 pub use config::{
     ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
 };
+pub use day::{
+    DayAnswer, DayAnswerKind, DayBootStart, DayCheckpoint, DayCleanStop, DayOffsetsChanged,
+    DayQuestions, DayUncleanEnd, EndClass,
+};
 pub use domain::{
     Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition, Decision,
     DefectAnswer, DefectDirection, HuntOutcome, HuntStage, Inference, Notice, Outcome, RetryTarget,
@@ -29,9 +34,9 @@ pub use session::{
 };
 pub use smu::{SmuCommand, SmuError, SmuIntentRecord, SmuReadback, SmuWriteRecord};
 pub use trial::{
-    BackendIdentity, CrashDetected, FactSource, Failure, FailureCarried, Mce, TrialCarried,
-    TrialClass, TrialEnd, TrialId, TrialInstance, TrialIntent, TrialProgress, TrialSample,
-    TrialSignal, TrialStart,
+    BackendIdentity, ControllerEvidence, CrashDetected, FactSource, Failure, FailureCarried, Mce,
+    ProcessFaultEvidence, TrialCarried, TrialClass, TrialEnd, TrialId, TrialInstance, TrialIntent,
+    TrialProgress, TrialSample, TrialSignal, TrialStart,
 };
 pub use tuner::{
     BackendRetry, CheckingChain, CheckingCycle, CheckingStep, Combination, CoreTransition,
@@ -149,6 +154,12 @@ payloads! {
     Shutdown(Shutdown) = "shutdown",
     JournalTorn(JournalTorn) = "journal.torn",
     StateRebuilt(StateRebuilt) = "state.rebuilt",
+    DayBootStart(DayBootStart) = "day.boot_start",
+    DayCheckpoint(DayCheckpoint) = "day.checkpoint",
+    DayOffsetsChanged(DayOffsetsChanged) = "day.offsets_changed",
+    DayCleanStop(DayCleanStop) = "day.clean_stop",
+    DayUncleanEnd(DayUncleanEnd) = "day.unclean_end",
+    DayAnswer(DayAnswer) = "day.answer",
 }
 
 impl Payload {
@@ -204,7 +215,13 @@ impl Payload {
             | Self::BootLeaveReason(_)
             | Self::Shutdown(_)
             | Self::JournalTorn(_)
-            | Self::StateRebuilt(_) => None,
+            | Self::StateRebuilt(_)
+            | Self::DayBootStart(_)
+            | Self::DayCheckpoint(_)
+            | Self::DayOffsetsChanged(_)
+            | Self::DayCleanStop(_)
+            | Self::DayUncleanEnd(_)
+            | Self::DayAnswer(_) => None,
         }
     }
 
@@ -218,7 +235,12 @@ impl Payload {
             Self::SmuError(p) => p.core == Some(core),
             Self::TrialIntent(p) => p.core == Some(core) || p.cores.contains(core),
             Self::TrialStart(p) => p.instances.iter().any(|instance| instance.core == core),
-            Self::TrialProgress(p) => p.core == Some(core),
+            Self::TrialProgress(p) => {
+                p.core == Some(core)
+                    || p.fault.as_ref().is_some_and(|fault| {
+                        fault.core == Some(core) || fault.worker_core == Some(core)
+                    })
+            }
             Self::TrialEnd(p) => p.core == Some(core),
             Self::TrialCarried(p) => p.core == Some(core) || p.class.cores.contains(core),
             Self::Failure(p) => p.core == Some(core),
@@ -264,7 +286,13 @@ impl Payload {
             | Self::BootLeaveReason(_)
             | Self::Shutdown(_)
             | Self::JournalTorn(_)
-            | Self::StateRebuilt(_) => false,
+            | Self::StateRebuilt(_)
+            | Self::DayBootStart(_)
+            | Self::DayCheckpoint(_)
+            | Self::DayOffsetsChanged(_)
+            | Self::DayCleanStop(_)
+            | Self::DayUncleanEnd(_)
+            | Self::DayAnswer(_) => false,
         }
     }
 }
@@ -274,6 +302,20 @@ impl Payload {
 pub struct UnknownKind(pub String);
 
 impl EventKind {
+    /// Whether this is a `togi day` observer event. Day events record what the machine did outside tuning and
+    /// never feed a tuning decision.
+    pub const fn is_day(self) -> bool {
+        matches!(
+            self,
+            Self::DayBootStart
+                | Self::DayCheckpoint
+                | Self::DayOffsetsChanged
+                | Self::DayCleanStop
+                | Self::DayUncleanEnd
+                | Self::DayAnswer
+        )
+    }
+
     pub fn group(self) -> &'static str {
         let name = self.as_str();
         name.split_once('.').map_or(name, |(group, _)| group)

@@ -66,7 +66,7 @@ mod cached_errors {
     impl Reporter for Quiet {
         fn progress(&mut self, _: &str) {}
         fn sample(&mut self, _: Sample) {}
-        fn signal(&mut self, _: CoreId, _: Signal, _: &str) {}
+        fn signal(&mut self, _: CoreId, _: Signal, _: Option<u32>, _: &str) {}
     }
 
     static SERIAL: Mutex<()> = Mutex::new(());
@@ -120,6 +120,7 @@ mod cached_errors {
             seed: 1,
             offsets: togi_machine::PerCore::default(),
             roles,
+            controller: togi_machine::ControllerMode::Legacy,
         }
     }
 

@@ -104,6 +104,8 @@ pub(crate) struct Facts {
     pub(crate) tuning: TuningClock,
     pub(crate) log: Vec<LogEntry>,
     pub(crate) log_total: usize,
+    #[serde(default)]
+    pub(crate) day: togi_journal::DayQuestions,
 }
 
 pub(crate) fn secs(seconds: u32) -> Duration {
@@ -119,9 +121,11 @@ impl Facts {
     /// requirement in [`TunerState::trial_history`].
     pub(crate) fn fold(&mut self, event: &Event, journal: &JournalState, tuner: &TunerState) {
         self.tuning.fold(event);
+        self.day.apply(event);
         self.clears_combination(event);
         if let Some(current) = &mut self.current {
-            if !event.boot.as_str().is_empty()
+            if !event.kind().is_day()
+                && !event.boot.as_str().is_empty()
                 && !current.boot.as_str().is_empty()
                 && event.boot != current.boot
             {
@@ -314,6 +318,12 @@ impl Facts {
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
+            | Payload::DayAnswer(_)
             | Payload::StateRebuilt(_) => {}
         }
         if let Some(line) = self.describe(event, journal) {

@@ -200,7 +200,13 @@ impl<'a> Auditor<'a> {
             }
             Payload::SessionWarning(_)
             | Payload::BootLeaveReason(_)
-            | Payload::BootSavedEntry(_) => {
+            | Payload::BootSavedEntry(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
+            | Payload::DayUncleanEnd(_) => {
                 conclusion.stopped = previous;
             }
             Payload::CheckingCycle(cycle)
@@ -316,7 +322,13 @@ impl<'a> Auditor<'a> {
             | Payload::DefectAnswered(_)
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
-            | Payload::JournalTorn(_) => {}
+            | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
+            | Payload::DayUncleanEnd(_) => {}
         }
     }
 

@@ -411,7 +411,7 @@ impl Kernel for FailsTheDashboard {
         &mut self,
         boot: &BootId,
         after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<Mce>>> {
+    ) -> Result<KernelRead, Partial<KernelRead>> {
         if !self.at_drop {
             self.fail_if_the_journal_holds_the_kind();
         }

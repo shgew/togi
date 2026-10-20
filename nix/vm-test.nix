@@ -61,10 +61,11 @@ in
       import json
       import time
 
-      # Completion trials need a real SMU; this VM exercises only scope containment.
+      # Completion trials need a real SMU; controller clock trials need real cpufreq policies.
       hardware = (
           "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes "
-          "--skip an_r8_trial --skip an_r9_trial"
+          "--skip an_r8_trial --skip an_r9_trial "
+          "--skip managed_mapping_caps_idle_ccd_policies --skip managed_all_core_trial_rotates_controller_host"
       )
       pin = "hardware::a_helper_cannot_pin_outside_its_scope"
       flags = "--test-threads 1 --nocapture"
@@ -475,10 +476,11 @@ in
     testScript = ''
       import json
 
-      # Stock-offset R8/R9 completion trials require the real SMU, unlike these scope tests.
+      # Stock-offset completion and controller clock trials need real SMU/cpufreq hardware.
       hardware = (
           "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes "
-          "--skip an_r8_trial --skip an_r9_trial"
+          "--skip an_r8_trial --skip an_r9_trial "
+          "--skip managed_mapping_caps_idle_ccd_policies --skip managed_all_core_trial_rotates_controller_host"
       )
       delegated_hardware = f"{hardware} --skip a_backend_runs_as_the_account --skip the_sweep_removes_orphaned"
       flags = "--test-threads 1 --nocapture"
@@ -778,6 +780,158 @@ in
       assert f"every core read back 0 ({cores} cores)" in output, output
       assert offsets() == [0] * cores, offsets()
       assert scopes() == "", scopes()
+    '';
+  };
+
+  # Runs the shipped module's `togi-day` service in a normal boot over the vm_recovery fake SMU, a file the test never
+  # lets the observer write: a clean stop ends with a final checkpoint of positive active time and then the clean
+  # stop, and a hard reset of the machine leaves an end the next boot's observer records as unclean. Only a helper
+  # command seeds the session journal with the current build; `togi day` itself never creates a session. The reset's
+  # unclean end is then a pending question: a day.users member answers it without root over /run/togi/day.sock and
+  # changes the answer, a user outside the togi group is refused, and the module's group, directory and notifier
+  # unit are checked as installed.
+  day-observer = pkgs.testers.runNixOSTest {
+    name = "togi-day-observer";
+
+    nodes.machine = {
+      imports = [ module ];
+      networking.useDHCP = false;
+      virtualisation.cores = 4;
+      services.togi = {
+        enable = true;
+        day.enable = true;
+        day.users = [ "alice" ];
+        package = pkgs.writeShellScriptBin "togi" ''
+          exec ${vmRecovery}/bin/togi-vm-recovery --exact vm_recovery::helper --nocapture -- togi "$@"
+        '';
+      };
+      hardware.cpu.amd.ryzen-smu.enable = false;
+      users.users.alice.isNormalUser = true;
+      users.users.mallory.isNormalUser = true;
+      systemd.tmpfiles.rules = [
+        "d /var/lib/togi-vm 0755 root root -"
+      ];
+    };
+
+    testScript = ''
+      import json
+
+      journal = "/var/lib/togi/events.jsonl"
+
+
+      def events():
+          raw = machine.succeed(f"cat {journal}").splitlines()
+          return [json.loads(line) for line in raw if line.strip()]
+
+
+      def day(kind=None):
+          return [e for e in events() if e["kind"].startswith("day.") and (kind is None or e["kind"] == kind)]
+
+
+      machine.start(allow_reboot=True)
+      machine.wait_for_unit("multi-user.target")
+      # Without a session the observer refuses and creates no journal.
+      machine.wait_until_succeeds("journalctl -u togi-day.service -o cat --no-pager | grep -F 'no session journal'")
+      machine.succeed(f"test ! -e {journal}")
+      machine.succeed("systemctl stop togi-day.service; systemctl reset-failed togi-day.service")
+      assert machine.succeed("journalctl -u togi-day.service -o cat --no-pager").count("no session journal") >= 1
+      assert "Storage=persistent" in machine.succeed("systemctl cat systemd-journald.service; cat /etc/systemd/journald.conf")
+      assert "SyncIntervalSec=5s" in machine.succeed("cat /etc/systemd/journald.conf")
+      machine.succeed("togi seed-session")
+
+      # A clean stop writes the final checkpoint, then the stop.
+      machine.succeed("systemctl start togi-day.service")
+      machine.wait_until_succeeds(f"grep -q day.boot_start {journal}")
+      machine.sleep(3)
+      machine.succeed("systemctl stop togi-day.service")
+      assert machine.succeed("systemctl show togi-day.service -p Result --value").strip() == "success"
+      kinds = [e["kind"] for e in day()]
+      assert kinds == ["day.boot_start", "day.checkpoint", "day.clean_stop"], kinds
+      checkpoint = day("day.checkpoint")[0]
+      assert checkpoint["data"]["applied_secs"] > 0, checkpoint
+      # The observer only reads the fake SMU: it never wrote it.
+      machine.succeed("! grep -E '^pid=[0-9]+ (set|set-all|emergency-zero|restore-baseline)' /var/lib/togi-vm/smu.log")
+      machine.succeed("grep -q '^pid=[0-9]* read core' /var/lib/togi-vm/smu.log")
+
+      # A reset leaves no clean stop; the next boot's observer records the end as unclean.
+      machine.succeed("systemctl start togi-day.service")
+      machine.wait_until_succeeds(f"test \"$(grep -c day.boot_start {journal})\" = 2")
+      first_boot = machine.succeed("cat /proc/sys/kernel/random/boot_id").strip().replace("-", "")
+      machine.sleep(2)
+      machine.crash()
+      machine.start(allow_reboot=True)
+      machine.wait_for_unit("multi-user.target")
+      machine.wait_for_unit("togi-day.service")
+      machine.wait_until_succeeds(f"grep -q day.unclean_end {journal}")
+      unclean = day("day.unclean_end")
+      assert len(unclean) == 1, unclean
+      assert unclean[0]["data"]["boot"].replace("-", "") == first_boot, (unclean, first_boot)
+      reason = unclean[0]["data"]["reset_reason"]
+      machine.log(json.dumps(reason))
+      # The VM may not prove a successor's reset reason; then it is recorded as unknown, never as a CPU reset.
+      assert reason.get("kind") in (None, "unknown", "Unknown") or reason["supported"], reason
+      machine.wait_until_succeeds(f"test \"$(grep -c day.boot_start {journal})\" = 3")
+
+      # The module wires the answer path: alice, named in day.users, is in the togi group; mallory is not.
+      # /run/togi is root:togi 0750 and the service's socket root:togi 0660 inside it.
+      groups = lambda user: machine.succeed(f"id -nG {user}").split()
+      assert "togi" in groups("alice"), groups("alice")
+      assert "togi" not in groups("mallory"), groups("mallory")
+      assert machine.succeed("stat -c '%U:%G:%a' /run/togi").strip() == "root:togi:750"
+      machine.wait_until_succeeds("test -S /run/togi/day.sock")
+      assert machine.succeed("stat -c '%U:%G:%a' /run/togi/day.sock").strip() == "root:togi:660"
+
+      # The notifier is a graphical-session user unit for the named user only, with notify-send on its PATH.
+      notifier = machine.succeed("cat /etc/systemd/user/togi-day-notify.service")
+      machine.log(notifier)
+      assert "ExecStart=" in notifier and " day notify" in notifier, notifier
+      assert "PartOf=graphical-session.target" in notifier and "After=graphical-session-pre.target" in notifier, notifier
+      assert "After=graphical-session.target" not in notifier, notifier
+      assert "BindsTo=graphical-session.target" in notifier, notifier
+      assert "Restart=on-failure" in notifier and "StartLimitIntervalSec=0" in notifier, notifier
+      assert "libnotify" in notifier, notifier
+      # Supply a real user runtime in this headless VM before checking the graphical-session ordering.
+      alice = machine.succeed("id -u alice").strip()
+      machine.succeed("loginctl enable-linger alice")
+      machine.wait_for_unit(f"user@{alice}.service")
+      machine.succeed(
+          f"runuser -u alice -- env XDG_RUNTIME_DIR=/run/user/{alice} "
+          "systemd-analyze --user verify /etc/systemd/user/togi-day-notify.service"
+      )
+      machine.succeed("test -L /etc/systemd/user/graphical-session.target.wants/togi-day-notify.service")
+      condition = next(
+          line.removeprefix("ExecCondition=") for line in notifier.splitlines() if line.startswith("ExecCondition=")
+      )
+      machine.succeed(f"runuser -u alice -- {condition}")
+      machine.fail(f"runuser -u mallory -- {condition}")
+
+      # The forced reset left the end pending: nothing answers it yet.
+      assert day("day.answer") == [], day("day.answer")
+      crashed = unclean[0]["data"]["boot"]
+      mallory = machine.succeed("id -u mallory").strip()
+
+      # A user outside the group is refused at the socket and records nothing.
+      machine.fail(f"runuser -u mallory -- togi day answer {crashed} frozen")
+      assert day("day.answer") == [], day("day.answer")
+
+      # The group user answers through the real socket without root; the service journals the answer.
+      machine.succeed(f"runuser -u alice -- togi day answer {crashed} frozen")
+      machine.wait_until_succeeds(f"grep -q day.answer {journal}")
+      answers = day("day.answer")
+      assert len(answers) == 1, answers
+      assert answers[0]["data"]["boot"] == crashed, answers
+      assert answers[0]["data"]["answer"] == "frozen", answers
+      assert answers[0]["data"]["uid"] == int(alice), (answers, alice, mallory)
+      assert len(day("day.unclean_end")) == 1
+
+      # A later answer supersedes the first; both stay in the journal.
+      machine.succeed(f"runuser -u alice -- togi day answer {crashed} unsure")
+      machine.wait_until_succeeds(f"test \"$(grep -c day.answer {journal})\" = 2")
+      assert [a["data"]["answer"] for a in day("day.answer")] == ["frozen", "unsure"], day("day.answer")
+      machine.succeed("systemctl is-active togi-day.service")
+      machine.succeed("systemctl stop togi-day.service")
+      kinds = [e["kind"] for e in day()]
+      assert kinds[-1] == "day.clean_stop", kinds
     '';
   };
 }

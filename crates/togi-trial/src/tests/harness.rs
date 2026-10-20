@@ -63,6 +63,7 @@ pub(super) fn spec(regime: Regime, cores: &[u8], duration: Duration) -> TrialSpe
             seed: 7,
             offsets: offsets(&topology),
             roles: Vec::new(),
+            controller: togi_machine::ControllerMode::Legacy,
         },
         &topology,
     )
@@ -110,6 +111,7 @@ fn spec_of(
         seed: 7,
         offsets: offsets(&topology()),
         roles,
+        controller: togi_machine::ControllerMode::Legacy,
     }
 }
 
@@ -213,6 +215,11 @@ pub(super) fn rig_edit(
         supervisors: std::cell::RefCell::default(),
         preparer: crate::prepare::Preparer::with_fs(fs.clone()),
         controller: Arc::new(crate::controller::Idle),
+        frequency: Arc::new(crate::frequency::Limits::new(
+            Arc::new(crate::frequency::Sysfs::default()),
+            dir.path().join("trials"),
+            Some(fs.clone()),
+        )),
     };
     edit(&mut env);
     let env = Rc::new(env);

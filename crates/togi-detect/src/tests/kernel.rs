@@ -142,7 +142,7 @@ fn a_boot_that_is_not_32_hex_digits_is_refused_before_any_command(id: &str, afte
     );
     let after = after.map(|text| KernelCursor::from(text.to_owned()));
     let partial = kernel.read_mces(&boot(id), after.as_ref()).unwrap_err();
-    assert!(partial.value.is_empty(), "{id} after {after:?}");
+    assert!(partial.value.mces.is_empty(), "{id} after {after:?}");
     assert!(
         !matches!(
             partial.error,
@@ -255,6 +255,7 @@ fn a_proc_boot_id_is_read_and_validated() {
 fn the_partial_of_a_failed_read_names_the_error() {
     let (mut kernel, _) = kernel(&[], |_| exit(1, b"", NO_BOOT));
     let Partial { value, error } = kernel.read_mces(&boot(CURRENT), None).unwrap_err();
-    assert!(value.is_empty());
+    assert_eq!(value.mces, []);
+    assert_eq!(value.faults, []);
     assert!(matches!(error, togi_machine::Error::BootMissing));
 }

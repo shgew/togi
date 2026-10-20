@@ -48,7 +48,7 @@ fn a_command_that_times_out_leaves_no_observation() {
     );
 
     let partial = kernel.read_mces(&boot(OLD), None).unwrap_err();
-    assert!(partial.value.is_empty());
+    assert!(partial.value.mces.is_empty());
     assert!(caused_by::<togi_command::Error>(&partial).is_some());
 
     assert!(kernel.reset_reason(&boot(OLD)).is_err());
@@ -121,7 +121,7 @@ fn every_seam_call_that_times_out_keeps_the_timeout_as_its_cause() {
     };
     let (mut kernel, _) = kernel(&[], |_| timed_out());
     let partial = kernel.read_mces(&boot(OLD), None).unwrap_err();
-    assert!(partial.value.is_empty());
+    assert!(partial.value.mces.is_empty());
     assert!(timed_out_cause(&partial), "{partial:?}");
     let error = kernel.reset_reason(&boot(OLD)).unwrap_err();
     assert!(timed_out_cause(&error), "{error:?}");

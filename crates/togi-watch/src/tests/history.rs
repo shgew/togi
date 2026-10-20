@@ -69,6 +69,8 @@ fn reboot_history_during_smu_application() {
             detail: String::new(),
             signal: Some(Signal::ComputationError),
             core: Some(core(0)),
+            pid: None,
+            fault: None,
         }
         .into(),
     ),
@@ -111,6 +113,7 @@ fn reboot_history_during_trial(signal: Signal, evidence: Option<Payload>, end_se
             files: Vec::new(),
             instances: Vec::new(),
             roles: Vec::new(),
+            controller: None,
         }
         .into(),
     );
@@ -197,6 +200,7 @@ fn multiple_reboots_stay_distinct() {
             files: Vec::new(),
             instances: Vec::new(),
             roles: Vec::new(),
+            controller: None,
         }
         .into(),
     );

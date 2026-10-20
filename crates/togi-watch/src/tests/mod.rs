@@ -1,3 +1,4 @@
+mod day;
 mod derive;
 mod describe;
 pub(crate) mod fixtures;

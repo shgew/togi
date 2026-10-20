@@ -7,7 +7,7 @@ use ratatui::buffer::Buffer;
 
 use super::dash::{draw_ccd, draw_now, header, stage_line, status_header};
 use super::draw::{put, rows};
-use super::footer::{footer, skipped_clause};
+use super::footer::{footer, question_clause, skipped_clause};
 use super::help::help_body;
 use super::layout::{Layout, SizeClass};
 use super::measure::measure;
@@ -135,6 +135,10 @@ fn folded(scene: &Scene<'_>, log: &Log<'_>, screen: &Screen, buf: &mut Buffer) -
     };
     if let Some(skipped) = scene.s.skipped {
         after.push(skipped_clause(skipped, screen.colours));
+    }
+    let pending = scene.s.day.pending().count();
+    if pending > 0 {
+        after.push(question_clause(pending, screen.colours));
     }
     footer(screen, &after, buf);
     #[cfg(test)]
