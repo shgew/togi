@@ -1,5 +1,6 @@
 mod build;
 mod config_snapshot;
+mod day;
 mod filter;
 mod fixtures;
 mod lenient;

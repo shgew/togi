@@ -50,7 +50,63 @@ _arguments "${_arguments_options[@]}" : \
 '--state-dir=[State directory]:path:_files -/' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
+":: :_togi__subcmd__day_commands" \
+"*::: :->day" \
 && ret=0
+
+    case $state in
+    (day)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:togi-day-command-$line[1]:"
+        case $line[1] in
+            (answer)
+_arguments "${_arguments_options[@]}" : \
+'--state-dir=[State directory]:path:_files -/' \
+'-h[Print help]' \
+'--help[Print help]' \
+':boot -- Full boot ID shown in the pending question:_default' \
+':answer -- What happened\: frozen, graphics, power-off or unsure:_default' \
+&& ret=0
+;;
+(notify)
+_arguments "${_arguments_options[@]}" : \
+'--state-dir=[State directory]:path:_files -/' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_togi__subcmd__day__subcmd__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:togi-day-help-command-$line[1]:"
+        case $line[1] in
+            (answer)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(notify)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
 ;;
 (completion)
 _arguments "${_arguments_options[@]}" : \
@@ -71,7 +127,7 @@ _arguments "${_arguments_options[@]}" : \
 (events)
 _arguments "${_arguments_options[@]}" : \
 '--core=[Only events naming core N, and the outcomes of trials that load it]:N:' \
-'*--kind=[Only these comma-separated known kinds, or groups such as trial for every trial.* kind]:kinds:_sequence compadd - backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.boot_start day.checkpoint day.clean_stop day.offsets_changed day.unclean_end deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning' \
+'*--kind=[Only these comma-separated known kinds, or groups such as trial for every trial.* kind]:kinds:_sequence compadd - backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.boot_start day.checkpoint day.clean_stop day.offsets_changed day.unclean_end deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning' \
 '--trial=[Only events of trial ID]:ID:' \
 '--since=[Only events at or after this RFC 3339 time]:time:' \
 '--until=[Only events before this RFC 3339 time]:time:' \
@@ -141,7 +197,27 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (day)
 _arguments "${_arguments_options[@]}" : \
+":: :_togi__subcmd__help__subcmd__day_commands" \
+"*::: :->day" \
 && ret=0
+
+    case $state in
+    (day)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:togi-help-day-command-$line[1]:"
+        case $line[1] in
+            (answer)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(notify)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
 ;;
 (completion)
 _arguments "${_arguments_options[@]}" : \
@@ -192,7 +268,7 @@ esac
 _togi_commands() {
     local commands; commands=(
 'run:Start or resume the tuning session in the foreground' \
-'day:Observe normal use without applying offsets or starting workloads' \
+'day:Observe daily use, or answer what happened after an unclean end' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
@@ -212,8 +288,46 @@ _togi__subcmd__completion_commands() {
 }
 (( $+functions[_togi__subcmd__day_commands] )) ||
 _togi__subcmd__day_commands() {
-    local commands; commands=()
+    local commands; commands=(
+'answer:Answer an unclean end; a later answer replaces the previous answer' \
+'notify:Send pending questions to this graphical session'\''s notification daemon' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
     _describe -t commands 'togi day commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__answer_commands] )) ||
+_togi__subcmd__day__subcmd__answer_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day answer commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__help_commands] )) ||
+_togi__subcmd__day__subcmd__help_commands() {
+    local commands; commands=(
+'answer:Answer an unclean end; a later answer replaces the previous answer' \
+'notify:Send pending questions to this graphical session'\''s notification daemon' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'togi day help commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__help__subcmd__answer_commands] )) ||
+_togi__subcmd__day__subcmd__help__subcmd__answer_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day help answer commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__help__subcmd__help_commands] )) ||
+_togi__subcmd__day__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day help help commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__help__subcmd__notify_commands] )) ||
+_togi__subcmd__day__subcmd__help__subcmd__notify_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day help notify commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__notify_commands] )) ||
+_togi__subcmd__day__subcmd__notify_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day notify commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__doctor_commands] )) ||
 _togi__subcmd__doctor_commands() {
@@ -234,7 +348,7 @@ _togi__subcmd__events_commands() {
 _togi__subcmd__help_commands() {
     local commands; commands=(
 'run:Start or resume the tuning session in the foreground' \
-'day:Observe normal use without applying offsets or starting workloads' \
+'day:Observe daily use, or answer what happened after an unclean end' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
@@ -254,8 +368,21 @@ _togi__subcmd__help__subcmd__completion_commands() {
 }
 (( $+functions[_togi__subcmd__help__subcmd__day_commands] )) ||
 _togi__subcmd__help__subcmd__day_commands() {
-    local commands; commands=()
+    local commands; commands=(
+'answer:Answer an unclean end; a later answer replaces the previous answer' \
+'notify:Send pending questions to this graphical session'\''s notification daemon' \
+    )
     _describe -t commands 'togi help day commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__help__subcmd__day__subcmd__answer_commands] )) ||
+_togi__subcmd__help__subcmd__day__subcmd__answer_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help day answer commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__help__subcmd__day__subcmd__notify_commands] )) ||
+_togi__subcmd__help__subcmd__day__subcmd__notify_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help day notify commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__help__subcmd__doctor_commands] )) ||
 _togi__subcmd__help__subcmd__doctor_commands() {

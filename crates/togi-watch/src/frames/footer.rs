@@ -114,6 +114,31 @@ pub(super) fn skipped_clause(skipped: &str, colours: Colours) -> Clause {
     )
 }
 
+/// The footer clause while `pending` day questions wait for an answer, shown on every view so a running tuner
+/// narration cannot hide them: the count with `togi status`, then `day question`, then nothing.
+#[must_use]
+pub(super) fn question_clause(pending: usize, colours: Colours) -> Clause {
+    let amber =
+        |text: String| Line::styled(escape_text(&text).to_string(), Paint::Hunt.style(colours));
+    let noun = if pending == 1 {
+        "question"
+    } else {
+        "questions"
+    };
+    Clause::new(
+        "   ",
+        vec![
+            Form::new(
+                amber(format!("{pending} day {noun} pending: togi status")),
+                10,
+            ),
+            Form::new(amber("day question: togi status".to_owned()), 2),
+            Form::new(amber("day question".to_owned()), 1),
+            Form::empty(),
+        ],
+    )
+}
+
 /// Draws the footer row: the key hints when the reader has keys, with `after` following them; without keys,
 /// `after` alone.
 pub fn footer(screen: &Screen, after: &[Clause], buf: &mut Buffer) {

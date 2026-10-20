@@ -226,6 +226,7 @@ impl Marks {
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
@@ -327,6 +328,7 @@ impl Marks {
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => CoreSet::default(),
         }

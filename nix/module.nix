@@ -29,6 +29,12 @@ in
     tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB entry that tunes unattended";
     day.enable = lib.mkEnableOption "the togi day observer, a read-only service in the normal boot that records the machine's day in togi's journal. It holds the host lock and the journal writer lock while it runs, so `togi run` and `togi reset` fail lock-busy until it stops, and it refuses to start while there is no session. It never exists in the tuning boot, and enabling it keeps the journal on disk with a 5s sync interval";
     day.watchdog = lib.mkEnableOption "the PID 1 hardware watchdog in the normal boot with the day observer, RuntimeWatchdogSec=60s, so a hang resets the machine and the observer can record the unclean end. It sets no lockup panic kernel parameter and never applies in the tuning boot, which keeps its own 30s watchdog";
+    day.users = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "alice" ];
+      description = "Users who may answer the day observer's questions about an unclean end without root, over /run/togi/day.sock. Each joins the togi group, which the module creates; /run/togi is root:togi 0750 and the socket 0660. Each also runs a graphical-session user service that raises the question as a desktop notification. Membership starts at the user's next login. The accounts are declared elsewhere in users.users, which validates them. The default asks nobody and leaves answering to root; the answer never changes tuning or applies offsets. Only meaningful with day.enable.";
+    };
     tuning.leaveOnShutdown = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -89,6 +95,38 @@ in
         services.journald.settings.Journal = {
           Storage = lib.mkDefault "persistent";
           SyncIntervalSec = lib.mkDefault "5s";
+        };
+        # The day service binds /run/togi/day.sock inside this directory. It is a tmpfiles directory, not the unit's
+        # RuntimeDirectory, so the group stays togi and the directory outlives a service restart or a failure.
+        systemd.tmpfiles.rules = [ "d /run/togi 0750 root togi -" ];
+        users.groups.togi = { };
+        users.users = lib.genAttrs cfg.day.users (_: {
+          extraGroups = [ "togi" ];
+        });
+        # The notifier runs only in the graphical sessions of the named users: ConditionUser takes one name and
+        # ConditionGroup would admit anyone added to togi by hand, so ExecCondition (exit 1 skips quietly) matches the list.
+        # Restarts never run out: the day service may be down when the session starts. graphical-session.target keeps
+        # its default dependencies, so it is already ordered after every unit it wants; ordering the notifier after it
+        # too would be a cycle, and the notifier orders after graphical-session-pre.target instead.
+        systemd.user.services.togi-day-notify = lib.mkIf (cfg.day.users != [ ]) {
+          description = "togi day question notifier";
+          wantedBy = [ "graphical-session.target" ];
+          partOf = [ "graphical-session.target" ];
+          bindsTo = [ "graphical-session.target" ];
+          after = [ "graphical-session-pre.target" ];
+          startLimitIntervalSec = 0;
+          path = [ pkgs.libnotify ];
+          serviceConfig = {
+            ExecCondition = pkgs.writeShellScript "togi-day-notify-condition" ''
+              case "$(${pkgs.coreutils}/bin/id -un)" in
+                ${lib.concatMapStringsSep "|" lib.escapeShellArg cfg.day.users}) exit 0 ;;
+                *) exit 1 ;;
+              esac
+            '';
+            ExecStart = "${lib.getExe cfg.package} day notify";
+            Restart = "on-failure";
+            RestartSec = 10;
+          };
         };
         systemd.services.togi-day = {
           description = "togi day observer";

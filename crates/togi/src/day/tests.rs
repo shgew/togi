@@ -34,7 +34,7 @@ fn state_dir(fs: Arc<MemFs>) -> StateDir {
     StateDir::lock_with_fs(fs, Path::new("/state")).unwrap()
 }
 
-fn journal() -> Journal {
+pub(super) fn journal() -> Journal {
     journal_on(Arc::new(MemFs::new()))
 }
 
@@ -98,6 +98,9 @@ impl Observer for Reading {
             })
             .ok_or(MachineError::BootMissing)
     }
+    fn end_evidence(&mut self, _: &BootId) -> togi_machine::EndEvidence {
+        togi_machine::EndEvidence::unknown()
+    }
 }
 
 /// Reads like `reading` until `reads` readings succeeded, then fails every read.
@@ -119,6 +122,9 @@ impl Observer for FailingAfter {
     }
     fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, MachineError> {
         self.reading.reset_reason_after(boot)
+    }
+    fn end_evidence(&mut self, boot: &BootId) -> togi_machine::EndEvidence {
+        self.reading.end_evidence(boot)
     }
 }
 

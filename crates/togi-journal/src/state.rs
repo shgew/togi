@@ -288,6 +288,7 @@ impl State {
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayUncleanEnd(_)
+            | Payload::DayAnswer(_)
             | Payload::StateRebuilt(_) => {}
         }
         self.last_seq = Some(event.seq);

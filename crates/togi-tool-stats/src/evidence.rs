@@ -314,6 +314,7 @@ pub(crate) fn single_carried_failure_decisions(events: &[Event], since: Option<T
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => false,
         };
@@ -397,6 +398,7 @@ pub(crate) fn single_carried_failure_decisions(events: &[Event], since: Option<T
                 | Payload::DayCheckpoint(_)
                 | Payload::DayOffsetsChanged(_)
                 | Payload::DayCleanStop(_)
+                | Payload::DayAnswer(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_) => pending.extend_from_slice(&source.cause),
             }

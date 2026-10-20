@@ -311,6 +311,7 @@ pub(crate) fn attribute<'a>(p: &Projection<'a>, since: Option<Timestamp>) -> Vec
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }

@@ -226,3 +226,33 @@ fn the_read_only_commands_succeed_while_the_host_lock_is_held_and_never_take_it(
 fn state_files(dir: &crate::support::Session) -> crate::fixture::Snapshot {
     crate::fixture::snapshot(dir.fs.as_ref(), dir.path())
 }
+
+#[test_case::test_case("frozen", togi_journal::DayAnswerKind::Frozen)]
+#[test_case::test_case("graphics", togi_journal::DayAnswerKind::Graphics)]
+#[test_case::test_case("power-off", togi_journal::DayAnswerKind::PowerOff)]
+#[test_case::test_case("unsure", togi_journal::DayAnswerKind::Unsure)]
+fn answering_uses_the_service_without_root_hardware_or_a_local_journal(
+    argument: &str,
+    expected: togi_journal::DayAnswerKind,
+) {
+    let mut host = crate::host::Host::new();
+    host.root = false;
+    host.linux = false;
+    host.boot_fails = true;
+    let ran = host.run(
+        std::path::Path::new("/no-session"),
+        &["day", "answer", "crashed-boot", argument],
+    );
+    assert_eq!(ran.exit, togi_cli::Exit::Ok, "{}", ran.err);
+    assert_eq!(ran.out, "answer recorded for boot crashed-boot\n");
+    assert_eq!(ran.err, "");
+    assert_eq!(
+        *host.day_answers.borrow(),
+        [(
+            togi_machine::BootId::from("crashed-boot".to_owned()),
+            expected
+        )]
+    );
+    assert_eq!(host.lock_acquisitions.get(), 0);
+    assert_eq!(host.calls.get(), 0);
+}

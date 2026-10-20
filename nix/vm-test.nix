@@ -776,7 +776,10 @@ in
   # Runs the shipped module's `togi-day` service in a normal boot over the vm_recovery fake SMU, a file the test never
   # lets the observer write: a clean stop ends with a final checkpoint of positive active time and then the clean
   # stop, and a hard reset of the machine leaves an end the next boot's observer records as unclean. Only a helper
-  # command seeds the session journal with the current build; `togi day` itself never creates a session.
+  # command seeds the session journal with the current build; `togi day` itself never creates a session. The reset's
+  # unclean end is then a pending question: a day.users member answers it without root over /run/togi/day.sock and
+  # changes the answer, a user outside the togi group is refused, and the module's group, directory and notifier
+  # unit are checked as installed.
   day-observer = pkgs.testers.runNixOSTest {
     name = "togi-day-observer";
 
@@ -787,11 +790,14 @@ in
       services.togi = {
         enable = true;
         day.enable = true;
+        day.users = [ "alice" ];
         package = pkgs.writeShellScriptBin "togi" ''
           exec ${vmRecovery}/bin/togi-vm-recovery --exact vm_recovery::helper --nocapture -- togi "$@"
         '';
       };
       hardware.cpu.amd.ryzen-smu.enable = false;
+      users.users.alice.isNormalUser = true;
+      users.users.mallory.isNormalUser = true;
       systemd.tmpfiles.rules = [
         "d /var/lib/togi-vm 0755 root root -"
       ];
@@ -855,6 +861,64 @@ in
       # The VM may not prove a successor's reset reason; then it is recorded as unknown, never as a CPU reset.
       assert reason.get("kind") in (None, "unknown", "Unknown") or reason["supported"], reason
       assert len(day("day.boot_start")) == 3
+
+      # The module wires the answer path: alice, named in day.users, is in the togi group; mallory is not.
+      # /run/togi is root:togi 0750 and the service's socket root:togi 0660 inside it.
+      groups = lambda user: machine.succeed(f"id -nG {user}").split()
+      assert "togi" in groups("alice"), groups("alice")
+      assert "togi" not in groups("mallory"), groups("mallory")
+      assert machine.succeed("stat -c '%U:%G:%a' /run/togi").strip() == "root:togi:750"
+      machine.wait_until_succeeds("test -S /run/togi/day.sock")
+      assert machine.succeed("stat -c '%U:%G:%a' /run/togi/day.sock").strip() == "root:togi:660"
+
+      # The notifier is a graphical-session user unit for the named user only, with notify-send on its PATH.
+      notifier = machine.succeed("cat /etc/systemd/user/togi-day-notify.service")
+      machine.log(notifier)
+      assert "ExecStart=" in notifier and " day notify" in notifier, notifier
+      assert "PartOf=graphical-session.target" in notifier and "After=graphical-session-pre.target" in notifier, notifier
+      assert "After=graphical-session.target" not in notifier, notifier
+      assert "BindsTo=graphical-session.target" in notifier, notifier
+      assert "Restart=on-failure" in notifier and "StartLimitIntervalSec=0" in notifier, notifier
+      assert "libnotify" in notifier, notifier
+      # Supply a real user runtime in this headless VM before checking the graphical-session ordering.
+      alice = machine.succeed("id -u alice").strip()
+      machine.succeed("loginctl enable-linger alice")
+      machine.wait_for_unit(f"user@{alice}.service")
+      machine.succeed(
+          f"runuser -u alice -- env XDG_RUNTIME_DIR=/run/user/{alice} "
+          "systemd-analyze --user verify /etc/systemd/user/togi-day-notify.service"
+      )
+      machine.succeed("test -L /etc/systemd/user/graphical-session.target.wants/togi-day-notify.service")
+      condition = next(
+          line.removeprefix("ExecCondition=") for line in notifier.splitlines() if line.startswith("ExecCondition=")
+      )
+      machine.succeed(f"runuser -u alice -- {condition}")
+      machine.fail(f"runuser -u mallory -- {condition}")
+
+      # The forced reset left the end pending: nothing answers it yet.
+      assert day("day.answer") == [], day("day.answer")
+      crashed = unclean[0]["data"]["boot"]
+      mallory = machine.succeed("id -u mallory").strip()
+
+      # A user outside the group is refused at the socket and records nothing.
+      machine.fail(f"runuser -u mallory -- togi day answer {crashed} frozen")
+      assert day("day.answer") == [], day("day.answer")
+
+      # The group user answers through the real socket without root; the service journals the answer.
+      machine.succeed(f"runuser -u alice -- togi day answer {crashed} frozen")
+      machine.wait_until_succeeds(f"grep -q day.answer {journal}")
+      answers = day("day.answer")
+      assert len(answers) == 1, answers
+      assert answers[0]["data"]["boot"] == crashed, answers
+      assert answers[0]["data"]["answer"] == "frozen", answers
+      assert answers[0]["data"]["uid"] == int(alice), (answers, alice, mallory)
+      assert len(day("day.unclean_end")) == 1
+
+      # A later answer supersedes the first; both stay in the journal.
+      machine.succeed(f"runuser -u alice -- togi day answer {crashed} unsure")
+      machine.wait_until_succeeds(f"test \"$(grep -c day.answer {journal})\" = 2")
+      assert [a["data"]["answer"] for a in day("day.answer")] == ["frozen", "unsure"], day("day.answer")
+      machine.succeed("systemctl is-active togi-day.service")
       machine.succeed("systemctl stop togi-day.service")
       kinds = [e["kind"] for e in day()]
       assert kinds[-1] == "day.clean_stop", kinds

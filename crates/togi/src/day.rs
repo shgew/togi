@@ -18,6 +18,9 @@ use crate::cli::Context;
 use crate::exit::Exit;
 use crate::report::{current_build, exit_with};
 
+mod notify;
+pub mod socket;
+
 const CHECKPOINT: Duration = Duration::from_secs(600);
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
@@ -27,21 +30,59 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
             "Observe this boot without applying offsets",
         ),
         ("togi events --kind day", "Read recorded day observations"),
+        (
+            "togi day answer <boot> frozen",
+            "Answer a pending question without root",
+        ),
     ])
 });
 
-/// Observe normal use without applying offsets or starting workloads
+/// Observe daily use, or answer what happened after an unclean end
 ///
-/// Reads every core at start and each ten-minute checkpoint, records active hours excluding
-/// suspend, and writes a final checkpoint before a clean stop on SIGTERM, SIGINT or SIGHUP.
-/// Requires root and an existing compatible session journal. Holds the same host and writer
-/// locks as run/reset: stop the day service before tuning in this boot. Status/watch stay lock-free.
+/// With no subcommand, reads every core at start and each ten-minute checkpoint, records active
+/// hours excluding suspend, and writes a final checkpoint before a clean stop on SIGTERM, SIGINT
+/// or SIGHUP. Observation requires root and an existing compatible session journal. It holds the
+/// host and writer locks: stop the day service before tuning. Status/watch stay lock-free.
+///
+/// The answer and notify subcommands need no root or journal access. They use the running day
+/// service's credential-checked socket; configure services.togi.day.users for access.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
-pub struct Args {}
+pub struct Args {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+/// User-session commands use the day socket and never open the journal writer.
+#[derive(clap::Subcommand, Debug)]
+pub enum Command {
+    /// Answer an unclean end; a later answer replaces the previous answer.
+    Answer {
+        /// Full boot ID shown in the pending question.
+        boot: String,
+        /// What happened: frozen, graphics, power-off or unsure.
+        #[arg(value_parser = parse_answer)]
+        answer: togi_journal::DayAnswerKind,
+    },
+    /// Send pending questions to this graphical session's notification daemon.
+    Notify,
+}
+
+fn parse_answer(value: &str) -> Result<togi_journal::DayAnswerKind, String> {
+    togi_watch::day::ANSWERS
+        .into_iter()
+        .find(|kind| togi_watch::day::answer_arg(*kind) == value)
+        .ok_or_else(|| format!("expected one of {}", togi_watch::day::answer_args()))
+}
 
 /// Runs daily observation until a stop signal or an observation/journal error.
-pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
+pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
+    if let Some(command) = &args.command {
+        return match command {
+            Command::Answer { boot, answer } => answer_end(boot, *answer, ctx),
+            Command::Notify => notify::run(ctx),
+        };
+    }
     if let Err(error) = ctx.system.check_platform() {
         return exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error);
     }
@@ -76,8 +117,19 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
         Ok(observer) => observer,
         Err(error) => return exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error),
     };
+    let socket = match ctx.system.day_socket() {
+        Ok(socket) => socket,
+        Err(error) => return exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error),
+    };
     let mut clock = crate::system::SystemClock(ctx.system);
-    let result = observe(&mut journal, &mut *observer, &mut clock, &cancel, &build);
+    let result = observe_with_socket(
+        &mut journal,
+        &mut *observer,
+        &mut clock,
+        &cancel,
+        &build,
+        socket.as_ref(),
+    );
     // Close before dropping the hardware capability and its borrowed host lock.
     let closed = journal.close();
     if let Err(error) = result {
@@ -86,6 +138,30 @@ pub fn run(_args: &Args, ctx: &mut Context<'_>) -> Exit {
     match closed {
         Ok(_dir) => Exit::Ok,
         Err(error) => exit_with(ctx, "day", togi_render::error_chain(&error), Exit::Error),
+    }
+}
+
+fn answer_end(boot: &str, answer: togi_journal::DayAnswerKind, ctx: &mut Context<'_>) -> Exit {
+    match ctx.system.day_request(&socket::Request::Answer {
+        boot: boot.to_owned().into(),
+        answer,
+    }) {
+        Ok(socket::Reply::Answered) => {
+            crate::report::emit(ctx, format_args!("answer recorded for boot {boot}"))
+                .map_or_else(|exit| exit, |()| Exit::Ok)
+        }
+        Ok(socket::Reply::Questions { .. } | socket::Reply::Refused { .. }) => exit_with(
+            ctx,
+            "day answer",
+            "unexpected day service reply",
+            Exit::Error,
+        ),
+        Err(error) => exit_with(
+            ctx,
+            "day answer",
+            togi_render::error_chain(&error),
+            Exit::Error,
+        ),
     }
 }
 
@@ -100,6 +176,8 @@ pub enum Error {
     ClockReversed,
     #[error("daily observation duration overflowed")]
     DurationOverflow,
+    #[error("serve day questions")]
+    Socket(#[from] socket::Error),
 }
 
 fn append(
@@ -129,6 +207,17 @@ pub fn observe(
     cancel: &CancellationToken,
     build: &Build,
 ) -> Result<(), Error> {
+    observe_with_socket(journal, observer, clock, cancel, build, None)
+}
+
+fn observe_with_socket(
+    journal: &mut Journal,
+    observer: &mut dyn Observer,
+    clock: &mut dyn Clock,
+    cancel: &CancellationToken,
+    build: &Build,
+    socket: Option<&socket::Server>,
+) -> Result<(), Error> {
     let ledger = Ledger::of(journal.events());
     for (boot, previous) in &ledger.boots {
         if boot != journal.boot() && !previous.clean && !previous.unclean {
@@ -149,6 +238,7 @@ pub fn observe(
                     last_checkpoint: previous.checkpoint,
                     offsets: previous.offsets,
                     reset_reason,
+                    evidence: observer.end_evidence(boot),
                 },
             )?;
         }
@@ -169,12 +259,27 @@ pub fn observe(
             offsets,
         },
     )?;
+    let mut checkpointed = started;
     loop {
-        match clock.sleep(cancel, CHECKPOINT) {
+        if let Some(socket) = socket {
+            socket.poll(journal, clock)?;
+        }
+        let wait = if socket.is_some() {
+            Duration::from_secs(1)
+        } else {
+            CHECKPOINT
+        };
+        match clock.sleep(cancel, wait) {
             Ok(()) | Err(togi_machine::Error::Cancelled) => {}
             Err(error) => return Err(error.into()),
         }
         let now = clock.monotonic()?;
+        if !cancel.is_cancelled()
+            && now.checked_sub(checkpointed).ok_or(Error::ClockReversed)? < CHECKPOINT
+        {
+            continue;
+        }
+        checkpointed = now;
         let elapsed = now.checked_sub(started).ok_or(Error::ClockReversed)?;
         let applied = accumulated
             .checked_add(elapsed)

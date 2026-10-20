@@ -1,0 +1,4 @@
+
+Day questions
+boot day-b: answered "graphics died but sound went on" (change it with: togi day
+  answer day-b <frozen|graphics|power-off|unsure>)

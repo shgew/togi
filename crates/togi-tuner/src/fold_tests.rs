@@ -1134,6 +1134,14 @@ fn day_events() -> Vec<Payload> {
                 raw: Vec::new(),
                 supported: true,
             },
+            evidence: togi_machine::EndEvidence::unknown(),
+        }
+        .into(),
+        togi_journal::DayAnswer {
+            boot: BootId::from("earlier".to_owned()),
+            offsets: PerCore::default(),
+            answer: togi_journal::DayAnswerKind::Unsure,
+            uid: 1000,
         }
         .into(),
     ]

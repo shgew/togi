@@ -155,6 +155,7 @@ pub(crate) fn crashed_cycle_trials(events: &[Event]) -> (usize, usize) {
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
