@@ -68,6 +68,36 @@ use crate::fixtures::*;
             &[],
         ); "a boot's leave reason after the shutdown keeps the conclusion")]
 #[test_case::test_case(case(
+            "a day lifecycle after the shutdown keeps the conclusion",
+            vec![
+                stop(2),
+                event(
+                    3,
+                    "day.boot_start",
+                    json!({
+                        "build": {"version": "0.1.0", "rev": "abc1234", "ruleset": 10, "schema": 1, "fixes": 2, "evidence": 1},
+                        "bios": {"bios_version": "F31", "board": "X570", "cpu_model": "5950X", "microcode": "0xa201016", "boost_limit_mhz": 5000},
+                        "offsets": {"0": 0},
+                    }),
+                ),
+                event(4, "day.checkpoint", json!({"applied_secs": 3600})),
+                event(5, "day.offsets_changed", json!({"offsets": {"0": -10}})),
+                event(6, "day.clean_stop", json!({})),
+                event(
+                    7,
+                    "day.unclean_end",
+                    json!({
+                        "boot": "7a1b2c3d-0000-0000-0000-000000000000",
+                        "last_checkpoint": 4,
+                        "offsets": {"0": -10},
+                        "reset_reason": {"kind": "watchdog", "raw": ["watchdog"], "supported": true},
+                    }),
+                ),
+            ],
+            Finished,
+            &[],
+        ); "a day lifecycle after the shutdown keeps the conclusion")]
+#[test_case::test_case(case(
             "an event after the shutdown reopens the run",
             vec![stop(2), phase(3, 0, None)],
             Finished,

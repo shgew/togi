@@ -483,6 +483,11 @@ impl RecoveryState {
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
         Ok(())
@@ -547,11 +552,22 @@ impl RecoveryState {
             | Payload::DeadEnd(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
     }
 
+    /// Admits the event's boot as a tuning boot and tracks its last kind. Day events and a repaired tear record
+    /// no tuning activity: a boot with only those is never a crash, and cannot make a later tuning start in it
+    /// look like a same-boot restart.
     fn track_boot(&mut self, event: &Event) {
+        if event.kind().is_day() || event.kind() == EventKind::JournalTorn {
+            return;
+        }
         if let Some(record) = self.records.get_mut(&event.boot) {
             if !matches!(
                 event.kind(),

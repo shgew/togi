@@ -121,7 +121,8 @@ impl Facts {
         self.tuning.fold(event);
         self.clears_combination(event);
         if let Some(current) = &mut self.current {
-            if !event.boot.as_str().is_empty()
+            if !event.kind().is_day()
+                && !event.boot.as_str().is_empty()
                 && !current.boot.as_str().is_empty()
                 && event.boot != current.boot
             {
@@ -314,6 +315,11 @@ impl Facts {
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
         if let Some(line) = self.describe(event, journal) {

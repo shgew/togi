@@ -293,6 +293,11 @@ fn a_dead_end_resumed_after_its_saved_entry_was_recorded_only_shuts_down() {
             matches!(
                 event.kind(),
                 EventKind::Shutdown
+                    | EventKind::DayBootStart
+                    | EventKind::DayCheckpoint
+                    | EventKind::DayOffsetsChanged
+                    | EventKind::DayCleanStop
+                    | EventKind::DayUncleanEnd
                     | EventKind::StateRebuilt
                     | EventKind::TrialEnd
                     | EventKind::PreflightCheck

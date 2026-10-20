@@ -149,6 +149,7 @@ The catalog is a contract. Adding a kind extends this list in the same pull requ
 | Commands | `command.reset` (a core, or all) |
 | Stop | `deadend` (condition, evidence, action taken), `boot.saved_entry` (GRUB change, optional `reason_error` separate from a clear error), `boot.leave_reason` (`reason_id`, `restart_limit_count`, `reason` imported from GRUB), `shutdown` (clean stop; `cycles` on a requested cycle-count stop, whose message says phase 2 is confirmed and the profile passed the requested clean cycles; reason `first_result` on a `--first-result` stop, whose message says the BIOS profile is confirmed) |
 | Journal | `journal.torn`, `state.rebuilt` |
+| Day | `day.boot_start` (`build` stamp, BIOS context as in `session.context`, `offsets`: every core's offset read back as observation began), `day.checkpoint` (`applied_secs`), `day.offsets_changed` (`offsets`), `day.clean_stop` (no fields), `day.unclean_end` (`boot`, optional `last_checkpoint`, `offsets`, `reset_reason`) |
 
 `crash.detected.pstore`, when present, contains `path` (the absolute location of the archived dmesg record) and `lines` (its bounded tail). Recovery reads at most 128 prefix bytes per candidate to identify its full dump count and chunk part, then at most the final 3968 bytes of the selected record, keeping each record's raw reads within 4096 bytes and retaining at most 32 lines. It discards a partial first tail line when a newline follows it, otherwise keeps the bounded suffix of a long line without splitting a UTF-8 rune. Lines retain raw diagnostic text in JSON, escaped by JSON encoding like MCE lines; terminal renderers escape the message's path like other raw diagnostics. The message names the record but does not repeat its lines; `togi events --json --kind crash.detected` exposes them. This optional diagnostic never changes crash classification, attribution or replay decisions. No matching record leaves `pstore` absent. Archive or boot-span read failures append `session.warning` with `operation: "read saved pstore"` and the failed operation, then recovery continues without `pstore`; failure to append that warning remains fatal under the journal-write rules.
 
@@ -234,6 +235,24 @@ A `trial.intent` names the activity that asked for the trial through these field
 | Retry of an inconclusive trial | the original's | the original's | `retry: true` plus the original's fields | |
 
 A located hunt has `hunt.start.regime: R7`, at least two loaded `cores`, and no overlap between its `candidates` and those loaded cores. Its `reason` explains the location and why the failure was located: it cites the load's backoffs in `cause` and names them, or says that every loaded core on the affected CCDs is at CO 0. Its first `hunt.group` has stage `locate`; there is no located-hunt flag. A hunt trial's stage, granularity and candidate set are not on the `trial.intent`: join its `hunt` and `group` to the `hunt.group` event with the same numbers.
+
+## Day observation
+
+`togi day` watches a machine that is not being tuned and records what it saw in the session journal, without a tuning session of its own: it refuses when the state directory has no session, and never creates a journal. Day events are not tuning events. They add no schema bump, and no tuner or recovery decision reads them.
+
+| Kind | Fields | `msg` shape |
+|---|---|---|
+| `day.boot_start` | `build` (the observer's build stamp), `bios` (`bios_version`, `board`, `cpu_model`, `microcode`, `boost_limit_mhz`), `offsets` (core id to observed offset, all cores) | `day observer started by togi 0.1.0+abc1234: BIOS F31 on X570, 5950X, microcode 0xa201016, boost limit 5000 MHz; offsets [00: 0, 01: -5]` |
+| `day.checkpoint` | `applied_secs`: whole seconds, floored, the observer has been active this boot, cumulative across every `day.boot_start` of the boot; downtime between a stop and the next start is not credited | `day observer has been active 3600 s in total this boot` |
+| `day.offsets_changed` | `offsets`: the offsets read back, which differ from the last record | `offsets read back changed to [00: -10, 01: -5]; the time since the previous record is not credited to any offset profile` |
+| `day.clean_stop` | none (an empty object) | `day observer stopped on request` |
+| `day.unclean_end` | `boot` (the predecessor boot whose observer left no `day.clean_stop`), `last_checkpoint` (that boot's last `day.checkpoint`; omitted when it wrote none), `offsets` (the offsets that boot last recorded), `reset_reason` (`kind`, `raw`, `supported`, as recorded by `crash.detected` for the previous boot's reset) | `day observer of boot 7a1b2c3d ended without a clean stop; last checkpoint seq 7; last offsets [00: -10, 01: -5]; reset reason: watchdog` |
+
+Boot roles. An event's envelope `boot` is the boot the observer runs in, for every day kind; only `day.unclean_end.boot` names another boot, the predecessor. Each service invocation appends one `day.boot_start`, so one boot can hold several, and a later `day.boot_start` in a boot after a `day.clean_stop` reopens observation. `day.offsets_changed` is appended before the next `day.checkpoint`, and `day.clean_stop` after the final one. The interval that ends in a changed offset is ambiguous, so it is credited to no offset profile.
+
+The observer holds the host lock and the state-directory lock, in the order of rule 5, for its whole life: `run` and `reset` fail with lock contention while it runs. `status` and `watch` read without locks.
+
+Tuning ignores day events. The tuner folds each one and changes no decision, phase, plan or evidence. Recovery tracks a boot as a tuning boot only from an event with tuning activity: a boot whose only events are day events, or the `journal.torn` a day open appended, is never an unclean tuning boot, never a crash for `crash.detected`, and never makes a later tuning start in it a same-boot restart. A day event never replaces a tuning boot's last event, so it cannot turn a `shutdown` into a crash or close a pending tuning trial as a same-boot stop. The watch dashboard's tuning clock and boot-change detection skip day events, and the human-readable log lists them under their kind names only.
 
 ## Transitions
 
