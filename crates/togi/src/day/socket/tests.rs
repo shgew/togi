@@ -94,6 +94,53 @@ fn oversized_request_is_refused() {
     assert!(read_request(&mut Cursor::new(bytes)).is_err());
 }
 
+struct Trickle {
+    reads: usize,
+}
+impl io::Read for Trickle {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.reads += 1;
+        buf[0] = b' ';
+        Ok(1)
+    }
+}
+impl Timeouts for Trickle {
+    fn set_read_timeout(&self, _: Duration) -> io::Result<()> {
+        Ok(())
+    }
+    fn set_write_timeout(&self, _: Duration) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Every look at the clock costs 300 ms, as if each byte of the trickle took that long.
+struct SlowClock(std::cell::Cell<Duration>);
+impl Clock for SlowClock {
+    fn now(&self) -> Timestamp {
+        Timestamp::UNIX_EPOCH
+    }
+    fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
+        let now = self.0.get();
+        self.0.set(now + Duration::from_millis(300));
+        Ok(now)
+    }
+    fn sleep(&mut self, _: &CancellationToken, _: Duration) -> Result<(), togi_machine::Error> {
+        panic!("answering must not wait")
+    }
+}
+
+#[test]
+fn a_trickling_request_is_refused_within_the_deadline() {
+    let clock = SlowClock(std::cell::Cell::default());
+    let mut exchange = Deadline::new(Trickle { reads: 0 }, &clock, EXCHANGE).unwrap();
+    let error = read_request(&mut exchange).unwrap_err();
+    assert!(
+        matches!(&error, Error::Io(io) if io.kind() == io::ErrorKind::TimedOut),
+        "{error:?}"
+    );
+    assert_eq!(exchange.stream.reads, 3);
+}
+
 #[test]
 fn answers_are_durable_associated_with_profile_and_can_be_changed() {
     let mut journal = crate::day::tests::journal();

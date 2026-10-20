@@ -12,6 +12,8 @@ use togi_machine::{BootId, Clock};
 
 pub const PATH: &str = "/run/togi/day.sock";
 const LIMIT: u64 = 4096;
+/// Total time one client may hold the observer loop, matching its one-second tick.
+const EXCHANGE: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "request", rename_all = "snake_case", deny_unknown_fields)]
@@ -99,17 +101,12 @@ impl Server {
 
     /// Serve at most one client per tick, bounding an untrusted peer's effect on observation.
     pub fn poll(&self, journal: &mut Journal, clock: &dyn Clock) -> Result<(), super::Error> {
-        let (mut stream, _) = match self.listener.accept() {
+        let (stream, _) = match self.listener.accept() {
             Ok(connection) => connection,
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(()),
             Err(error) => return Err(Error::Io(error).into()),
         };
-        stream
-            .set_read_timeout(Some(Duration::from_millis(250)))
-            .map_err(Error::from)?;
-        stream
-            .set_write_timeout(Some(Duration::from_millis(250)))
-            .map_err(Error::from)?;
+        let mut exchange = Deadline::new(&stream, clock, EXCHANGE)?;
         let peer = credentials(&stream).and_then(|(uid, gid)| {
             let allowed = if uid == 0 || gid == self.group {
                 true
@@ -125,7 +122,7 @@ impl Server {
             Ok((uid, allowed))
         });
         let reply = match peer {
-            Ok((uid, true)) => match read_request(&mut stream) {
+            Ok((uid, true)) => match read_request(&mut exchange) {
                 Ok(request) => respond(journal, clock, uid, request)?,
                 Err(error) => Reply::Refused {
                     reason: error.to_string(),
@@ -139,7 +136,7 @@ impl Server {
             },
         };
         // A client disconnect is not an observation failure; durable append errors above are.
-        if let Err(_disconnected) = write_reply(&mut stream, &reply) {}
+        if let Err(_disconnected) = write_reply(&mut exchange, &reply) {}
         Ok(())
     }
 }
@@ -187,6 +184,64 @@ fn authorized(uid: u32, gid: u32, group: u32, groups: &str, passwd: &str) -> boo
     })
 }
 
+/// Socket timeouts apply per call; this lets [`Deadline`] shrink them to the remaining budget.
+trait Timeouts {
+    fn set_read_timeout(&self, timeout: Duration) -> io::Result<()>;
+    fn set_write_timeout(&self, timeout: Duration) -> io::Result<()>;
+}
+
+impl Timeouts for &UnixStream {
+    fn set_read_timeout(&self, timeout: Duration) -> io::Result<()> {
+        UnixStream::set_read_timeout(self, Some(timeout))
+    }
+    fn set_write_timeout(&self, timeout: Duration) -> io::Result<()> {
+        UnixStream::set_write_timeout(self, Some(timeout))
+    }
+}
+
+/// One overall budget for a whole exchange, so a trickling peer cannot hold the observer loop.
+struct Deadline<'a, S> {
+    stream: S,
+    clock: &'a dyn Clock,
+    expires: Duration,
+}
+
+impl<'a, S> Deadline<'a, S> {
+    fn new(stream: S, clock: &'a dyn Clock, budget: Duration) -> Result<Self, Error> {
+        let expires = clock.monotonic().map_err(io::Error::other)? + budget;
+        Ok(Self {
+            stream,
+            clock,
+            expires,
+        })
+    }
+
+    fn remaining(&self) -> io::Result<Duration> {
+        let now = self.clock.monotonic().map_err(io::Error::other)?;
+        self.expires
+            .checked_sub(now)
+            .filter(|left| !left.is_zero())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "day request deadline passed"))
+    }
+}
+
+impl<S: Timeouts + io::Read> io::Read for Deadline<'_, S> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.stream.set_read_timeout(self.remaining()?)?;
+        self.stream.read(buf)
+    }
+}
+
+impl<S: Timeouts + io::Write> io::Write for Deadline<'_, S> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.stream.set_write_timeout(self.remaining()?)?;
+        self.stream.write(buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
+}
+
 fn read_request(stream: &mut impl io::Read) -> Result<Request, Error> {
     let mut bytes = Vec::new();
     io::BufReader::new(stream.take(LIMIT + 1)).read_until(b'\n', &mut bytes)?;
@@ -196,7 +251,7 @@ fn read_request(stream: &mut impl io::Read) -> Result<Request, Error> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-fn write_reply(stream: &mut UnixStream, reply: &Reply) -> Result<(), Error> {
+fn write_reply(stream: &mut impl io::Write, reply: &Reply) -> Result<(), Error> {
     serde_json::to_writer(&mut *stream, reply)?;
     stream.write_all(b"\n")?;
     Ok(())
