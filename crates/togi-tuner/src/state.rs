@@ -339,6 +339,7 @@ impl State {
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {
                 self.run_mut()?;

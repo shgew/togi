@@ -1,0 +1,4 @@
+reset reason: watchdog
+machine checks, crashed boot: 0 corrected, 0 uncorrected
+machine checks, next boot: 0 corrected, 0 uncorrected
+kernel log tail: missing, so unknown

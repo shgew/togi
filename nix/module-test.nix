@@ -61,8 +61,19 @@ let
             };
           };
           hardware.cpu.amd.ryzen-smu.enable = false;
-          users.groups = lib.optionalAttrs (hardwareTestGroup != null) {
+          users.groups = {
+            svc = { };
+          }
+          // lib.optionalAttrs (hardwareTestGroup != null) {
             ${hardwareTestGroup} = { };
+          };
+          users.users = {
+            alice.isNormalUser = true;
+            bob.isNormalUser = true;
+            svc = {
+              isSystemUser = true;
+              group = "svc";
+            };
           };
         }
       ];
@@ -87,6 +98,22 @@ let
     watchdog = true;
   };
   watchedTuning = watched.specialisation.togi.configuration;
+  dayUsers = evaluateDay [ (mirror "/boot") ] null null null 27 {
+    enable = true;
+    users = [ "alice" ];
+  };
+  dayUsersTuning = dayUsers.specialisation.togi.configuration;
+  dayTwoUsers = evaluateDay [ (mirror "/boot") ] null null null 27 {
+    enable = true;
+    users = [
+      "alice"
+      "bob"
+    ];
+  };
+  daySystemUser = evaluateDay [ (mirror "/boot") ] null null null 27 {
+    enable = true;
+    users = [ "svc" ];
+  };
   lockupPanics =
     config:
     lib.filter (p: lib.hasInfix "lockup" p || lib.hasInfix "nmi_watchdog" p) config.boot.kernelParams
@@ -156,6 +183,44 @@ assert dayTuning.systemd.services ? togi;
 assert day.services.journald.settings.Journal.Storage == "persistent";
 assert day.services.journald.settings.Journal.SyncIntervalSec == "5s";
 assert dayTuning.services.journald.settings.Journal.SyncIntervalSec == "1s";
+# Answering without root: day.users joins the togi group, owns /run/togi 0750 and gets a notifier only in its
+# own graphical sessions. Nothing of it exists without the day observer or in the tuning boot.
+assert one.services.togi.day.users == [ ];
+assert !(one.users.groups ? togi);
+assert !(builtins.elem "d /run/togi 0750 root togi -" one.systemd.tmpfiles.rules);
+assert builtins.elem "d /run/togi 0750 root togi -" day.systemd.tmpfiles.rules;
+assert builtins.elem "d /run/togi 0750 root togi -" dayUsers.systemd.tmpfiles.rules;
+assert !(builtins.elem "d /run/togi 0750 root togi -" dayUsersTuning.systemd.tmpfiles.rules);
+assert day.users.groups ? togi;
+assert !(dayUsersTuning.users.groups ? togi);
+assert (day.systemd.services.togi-day.serviceConfig.Group or "root") == "root";
+assert !(day.systemd.services.togi-day.serviceConfig ? RuntimeDirectory);
+assert dayUsers.users.users.alice.extraGroups == [ "togi" ];
+assert dayUsers.users.users.bob.extraGroups == [ ];
+assert dayTwoUsers.users.users.bob.extraGroups == [ "togi" ];
+assert day.users.users.alice.extraGroups == [ ];
+assert dayUsersTuning.users.users.alice.extraGroups == [ ];
+assert lib.all (a: a.assertion) dayTwoUsers.assertions;
+# Account type is NixOS's to validate: a system user listed here joins the group and gets the notifier too.
+assert daySystemUser.users.users.svc.extraGroups == [ "togi" ];
+assert lib.all (a: a.assertion) daySystemUser.assertions;
+assert daySystemUser.systemd.user.services ? togi-day-notify;
+assert dayUsers.systemd.user.services.togi-day-notify.bindsTo == [ "graphical-session.target" ];
+assert !(day.systemd.user.services ? togi-day-notify);
+assert !(dayUsersTuning.systemd.user.services ? togi-day-notify);
+assert dayUsers.systemd.user.units ? "togi-day-notify.service";
+assert dayUsers.systemd.user.services.togi-day-notify.wantedBy == [ "graphical-session.target" ];
+assert dayUsers.systemd.user.services.togi-day-notify.partOf == [ "graphical-session.target" ];
+assert dayUsers.systemd.user.services.togi-day-notify.after == [ "graphical-session-pre.target" ];
+assert
+  dayUsers.systemd.user.services.togi-day-notify.serviceConfig.ExecStart
+  == "${lib.getExe package} day notify";
+assert dayUsers.systemd.user.services.togi-day-notify.serviceConfig.Restart == "on-failure";
+assert dayUsers.systemd.user.services.togi-day-notify.startLimitIntervalSec == 0;
+assert builtins.elem pkgs.libnotify dayUsers.systemd.user.services.togi-day-notify.path;
+assert
+  dayUsers.systemd.user.services.togi-day-notify.serviceConfig.ExecCondition
+  != dayTwoUsers.systemd.user.services.togi-day-notify.serviceConfig.ExecCondition;
 # The watchdog is off by default; on, the normal boot's PID 1 watchdog is 60s without lockup panics.
 assert !day.services.togi.day.watchdog;
 assert !(day.systemd.settings.Manager ? RuntimeWatchdogSec);

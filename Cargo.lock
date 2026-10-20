@@ -1558,6 +1558,7 @@ dependencies = [
  "clap_complete_nushell",
  "jiff",
  "rustix",
+ "serde",
  "serde_json",
  "tempfile",
  "test-case",

@@ -1,0 +1,14 @@
+
+Day questions
+boot day-b ended without a clean stop. What happened?
+  togi saw:
+    reset reason: watchdog
+    machine checks, crashed boot: unknown
+    machine checks, next boot: unknown
+    kernel log tail: missing, so unknown
+  until you answer, togi reads this as a watchdog reset
+  1. it froze: togi day answer day-b frozen
+  2. graphics died but sound went on: togi day answer day-b graphics
+  3. I turned it off while it was working normally: togi day answer day-b
+     power-off
+  4. not sure: togi day answer day-b unsure

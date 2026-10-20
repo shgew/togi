@@ -84,6 +84,7 @@ impl TuningClock {
             | Payload::DayCheckpoint(_)
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
+            | Payload::DayAnswer(_)
             | Payload::DayUncleanEnd(_) => {}
             Payload::SessionContext(_)
             | Payload::SessionBaseline(_)

@@ -117,6 +117,7 @@ pub struct Host {
     pub diagnosis: RefCell<Option<Result<Diagnosis, togi_hardware::Error>>>,
     pub diagnoses: RefCell<Vec<(Option<BiosContext>, bool)>>,
     pub calls: Cell<usize>,
+    pub day_answers: RefCell<Vec<(togi_machine::BootId, togi_journal::DayAnswerKind)>>,
     /// Whether a second claim on the host lock was refused as busy while `diagnose` ran; `None`
     /// when it did not run as root.
     pub lock_busy_in_diagnose: Cell<Option<bool>>,
@@ -157,6 +158,7 @@ impl Host {
             diagnosis: RefCell::new(None),
             diagnoses: RefCell::default(),
             calls: Cell::new(0),
+            day_answers: RefCell::default(),
             lock_busy_in_diagnose: Cell::new(None),
             machine: RefCell::new(None),
             topology: vec![togi_machine::CoreInfo {
@@ -285,6 +287,22 @@ impl System for Host {
 
     fn privileged(&self) -> bool {
         self.root
+    }
+
+    fn day_request(
+        &self,
+        request: &togi_cli::day::socket::Request,
+    ) -> Result<togi_cli::day::socket::Reply, togi_cli::day::socket::Error> {
+        use togi_cli::day::socket::{Reply, Request};
+        match request {
+            Request::Questions => Ok(Reply::Questions {
+                pending: Vec::new(),
+            }),
+            Request::Answer { boot, answer } => {
+                self.day_answers.borrow_mut().push((boot.clone(), *answer));
+                Ok(Reply::Answered)
+            }
+        }
     }
 
     fn host_lock(&self) -> (&Path, Policy) {

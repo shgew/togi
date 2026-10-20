@@ -8,6 +8,7 @@ mod parse;
 mod pstore;
 mod reset;
 mod runner;
+mod tail;
 
 #[cfg(test)]
 mod tests;
@@ -15,7 +16,8 @@ mod tests;
 use std::time::Duration;
 
 use togi_machine::{
-    BootId, CoreInfo, KernelCursor, KernelRead, Mce, Partial, PstoreRecord, ResetReason,
+    BootId, CoreInfo, EndEvidence, KernelCursor, KernelRead, KernelTail, Mce, MceCount, Partial,
+    PstoreRecord, ResetReason,
 };
 
 pub use boot::boot_id;
@@ -28,7 +30,7 @@ pub use reset::VersionError;
 use boot::JournalBoot;
 use journal::{
     Edge, ExitRules, IntervalError, boot_entries, boots_args, boundary_args, interval_args,
-    mce_messages, mces_args, position, read_interval, reset_args, reset_texts,
+    mce_messages, mces_args, position, read_interval, reset_args, reset_texts, tail_args,
 };
 use pstore::{Archive, BootSpan, Directory, PSTORE_DIR};
 use reset::ResetScan;
@@ -73,6 +75,26 @@ impl Kernel {
             budget,
             pstore,
         })
+    }
+
+    /// What the kernel logs of `boot` and of its proven immediate successor say about how `boot` ended.
+    /// Whatever cannot be read is unknown: a count that failed to read is `MceCount::Unknown` and a tail that
+    /// is absent or failed to read is `KernelTail::Missing` or `KernelTail::Unreadable`, never an absence of errors.
+    pub fn end_evidence(&self, boot: &BootId) -> EndEvidence {
+        JournalBoot::parse(boot.as_str()).map_or_else(
+            |_invalid| EndEvidence::unknown(),
+            |boot| self.read_end_evidence(&boot),
+        )
+    }
+
+    fn read_end_evidence(&self, boot: &JournalBoot) -> EndEvidence {
+        let successor_mces = Self::successor(&self.journal(), boot)
+            .map_or(MceCount::Unknown {}, |successor| self.mce_count(&successor));
+        EndEvidence {
+            crashed_mces: self.mce_count(boot),
+            successor_mces,
+            tail: self.read_tail(boot),
+        }
     }
 
     fn journal(&self) -> Journal<'_> {
@@ -179,6 +201,12 @@ impl Kernel {
 
     fn read_reset_reason_after(&self, boot: &JournalBoot) -> Result<ResetReason, Error> {
         let journal = self.journal();
+        let successor = Self::successor(&journal, boot)?;
+        Self::read_reset_reason(&journal, &successor)
+    }
+
+    /// The boot that started right after `boot` ended, proven by adjacent journal entries.
+    fn successor(journal: &Journal<'_>, boot: &JournalBoot) -> Result<JournalBoot, Error> {
         let operation = Operation::ListBoots;
         let out = journal.query(
             &operation,
@@ -194,12 +222,44 @@ impl Kernel {
             .filter(|next| !next.boot_id.is_empty())
             .ok_or(Error::BootMissing)?;
         let successor = JournalBoot::parse(&successor.boot_id)?;
-        let last = Self::boundary(&journal, boot, Edge::Last)?;
-        let first = Self::boundary(&journal, &successor, Edge::First)?;
+        let last = Self::boundary(journal, boot, Edge::Last)?;
+        let first = Self::boundary(journal, &successor, Edge::First)?;
         if !last.is_followed_by(&first) {
             return Err(Error::BootMissing);
         }
-        Self::read_reset_reason(&journal, &successor)
+        Ok(successor)
+    }
+
+    fn mce_count(&self, boot: &JournalBoot) -> MceCount {
+        match self.read_whole_boot(boot, Duration::ZERO) {
+            Ok(mces) => {
+                let uncorrected = mces.iter().filter(|mce| !mce.corrected).count();
+                MceCount::Read {
+                    corrected: saturating_count(mces.len() - uncorrected),
+                    uncorrected: saturating_count(uncorrected),
+                }
+            }
+            Err(_partial) => MceCount::Unknown {},
+        }
+    }
+
+    fn read_tail(&self, boot: &JournalBoot) -> KernelTail {
+        let operation = Operation::ReadKernelLog {
+            boot: boot.as_str().to_owned(),
+        };
+        let out = self.journal().query(
+            &operation,
+            &tail_args(boot),
+            ExitRules::BOOT_MISSING_WHEN_EMPTY,
+        );
+        match out {
+            Err(Error::BootMissing) => KernelTail::Missing {},
+            Err(_unreadable) => KernelTail::Unreadable {},
+            Ok(out) => match reset_texts(&out) {
+                Ok(lines) => tail::scan(&lines),
+                Err(_undecodable) => KernelTail::Unreadable {},
+            },
+        }
     }
 
     fn boundary(
@@ -293,4 +353,9 @@ impl togi_machine::Kernel for Kernel {
         let boot = JournalBoot::parse(boot.as_str())?;
         Ok(self.read_saved_pstore(&boot)?)
     }
+}
+
+/// Counts saturate at `u32::MAX`, far beyond any log a boot writes.
+fn saturating_count(count: usize) -> u32 {
+    u32::try_from(count).unwrap_or(u32::MAX)
 }

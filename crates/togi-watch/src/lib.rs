@@ -10,6 +10,7 @@
 
 #[cfg(test)]
 mod corpus;
+pub mod day;
 mod derive;
 mod describe;
 mod facts;

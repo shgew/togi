@@ -600,6 +600,8 @@ pub struct Snapshot<'a> {
     pub log: &'a [LogEntry],
     /// Every event the log lists, kept or not.
     pub log_total: usize,
+    /// The unclean ends the day observer recorded and the answers given to them.
+    pub day: &'a togi_journal::DayQuestions,
     /// Core ids in the session's order, ascending, the order every profile is listed in.
     pub order: &'a [CoreId],
     /// What each hunt sets each core to, by hunt number.
@@ -1083,6 +1085,7 @@ impl Model {
             history_dropped: derived.history_dropped,
             log,
             log_total: facts.log_total,
+            day: &facts.day,
             order: &derived.order,
             shapes: &facts.shapes,
             carried: &facts.carried,

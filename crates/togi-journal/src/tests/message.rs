@@ -426,7 +426,11 @@ fn units_appear_in_text() {
 #[test_case(EventKind::DayCleanStop, "day observer stopped on request")]
 #[test_case(
     EventKind::DayUncleanEnd,
-    "day observer of boot 7a1b2c3d ended without a clean stop; last checkpoint seq 7; last offsets [00: -10, 01: -5]; reset reason: watchdog"
+    "day observer of boot 7a1b2c3d ended without a clean stop; last checkpoint seq 7; last offsets [00: -10, 01: -5]; reset reason: watchdog; machine checks: none in that boot, unknown in the next; kernel log tail: amdgpu timeout; logging continued after the last error"
+)]
+#[test_case(
+    EventKind::DayAnswer,
+    "uid 1000 answered that boot 7a1b2c3d ended because graphics died but sound went on; offsets [00: -10, 01: -5]"
 )]
 fn day_messages_tell_a_stranger_what_the_observer_saw(kind: EventKind, text: &str) {
     assert_eq!(message(kind), text);

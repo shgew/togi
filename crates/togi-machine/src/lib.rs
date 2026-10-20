@@ -4,6 +4,7 @@
 mod cancellation;
 mod core_set;
 mod error;
+mod evidence;
 mod ids;
 mod load;
 mod per_core;
@@ -20,6 +21,7 @@ mod workloads;
 pub use cancellation::{CancellationToken, OnCancel};
 pub use core_set::CoreSet;
 pub use error::{Error, Partial, error_chain};
+pub use evidence::{EndEvidence, GraphicsDriver, KernelFault, KernelTail, MAX_FAULTS, MceCount};
 pub use ids::{BootId, KernelCursor};
 pub use load::{DutyPct, InvalidDutyPct, LoadSchedule, Toggles};
 pub use per_core::PerCore;

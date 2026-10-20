@@ -7,12 +7,13 @@ use std::sync::LazyLock;
 use clap::Args as ClapArgs;
 use togi_config::FULL_CYCLE;
 use togi_journal::{
-    CorePhase, DeadEndCondition, DefectDirection, Event, HuntStage, Payload, ResetTarget, Seq,
-    State as JournalState, TrialId,
+    CorePhase, DayQuestions, DeadEndCondition, DefectDirection, Event, HuntStage, Payload,
+    ResetTarget, Seq, State as JournalState, TrialId,
 };
-use togi_machine::{CoreId, CoreSet, Regime};
+use togi_machine::{BootId, CoreId, CoreSet, Regime};
 use togi_render::escape_text;
 use togi_tuner::{HuntGroup, PhaseNo, Projection};
+use togi_watch::day;
 use togi_watch::model::{FoldError, Snapshot};
 use togi_watch::words::{candidate_word, group_word, noun, phase_word};
 
@@ -49,6 +50,9 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// absent, and lists reset commands for too-cautious defects until each affected core is reset.
 /// After daily observations exist, a Day section lists boots, checkpointed hours per read-back
 /// profile, clean/unclean ends and the last unclean boot's reset reason.
+/// Each unclean end of a day-observed boot becomes a question until answered: what togi saw, the
+/// four answers and the `togi day answer` command that records each; an answered one shows the
+/// current answer.
 /// Read-only, rendered from the journal. A different ruleset warns before rendering; a different
 /// schema is refused.
 ///
@@ -172,6 +176,7 @@ impl<'a> Scan<'a> {
                 | Payload::DayOffsetsChanged(_)
                 | Payload::DayCleanStop(_)
                 | Payload::DayUncleanEnd(_)
+                | Payload::DayAnswer(_)
                 | Payload::SessionContext(_)
                 | Payload::SessionBaseline(_)
                 | Payload::SessionNotice(_)
@@ -248,7 +253,61 @@ fn render_model(events: &[Event], model: &togi_watch::model::Model) -> Result<St
     }
     .write();
     render_day(&mut out, events);
+    render_questions(&mut out, events);
     Ok(out)
+}
+
+/// The unclean ends still waiting for an answer and the ones answered, in journal order. A pending question
+/// shows what togi saw and the four choices with the command that records each; an answered one shows the
+/// current answer and how to change it.
+fn render_questions(out: &mut String, events: &[Event]) {
+    let questions = DayQuestions::of(events);
+    let mut boots: Vec<&BootId> = Vec::new();
+    for event in events {
+        if let Payload::DayUncleanEnd(end) = &event.payload {
+            if !boots.contains(&&end.boot) {
+                boots.push(&end.boot);
+            }
+        }
+    }
+    if boots.is_empty() {
+        return;
+    }
+    let _ = writeln!(out, "\nDay questions");
+    for boot in boots {
+        let Some(end) = questions.get(boot) else {
+            continue;
+        };
+        let name = esc(boot.as_str());
+        if let Some(answer) = questions.answer(boot) {
+            let text = format!(
+                "boot {name}: answered \"{}\" (change it with: togi day answer {name} <frozen|graphics|power-off|unsure>)",
+                day::choice_words(answer.answer)
+            );
+            wrap(out, "", "  ", &text);
+            continue;
+        }
+        let text = format!("boot {name} ended without a clean stop. What happened?");
+        wrap(out, "", "  ", &text);
+        out.push_str("  togi saw:\n");
+        for line in day::observed(end) {
+            wrap(out, "    ", "      ", &esc(&line));
+        }
+        let reading = format!(
+            "until you answer, togi reads this as {}",
+            day::class_words(end.class())
+        );
+        wrap(out, "  ", "    ", &reading);
+        for (number, kind) in day::ANSWERS.into_iter().enumerate() {
+            let text = format!(
+                "{}. {}: {}",
+                number + 1,
+                day::choice_words(kind),
+                day::answer_command(boot, kind).replace(boot.as_str(), &name)
+            );
+            wrap(out, "  ", "     ", &text);
+        }
+    }
 }
 
 fn render_day(out: &mut String, events: &[Event]) {

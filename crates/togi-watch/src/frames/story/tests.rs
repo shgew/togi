@@ -71,6 +71,7 @@ struct Fx {
     carried: BTreeSet<togi_journal::Seq>,
     r7: Vec<R7CoreStatus>,
     clean_cycles: u32,
+    day: togi_journal::DayQuestions,
 }
 
 impl Fx {
@@ -96,6 +97,7 @@ impl Fx {
             carried: BTreeSet::new(),
             r7: Vec::new(),
             clean_cycles: 0,
+            day: togi_journal::DayQuestions::default(),
         }
     }
 
@@ -137,6 +139,7 @@ impl Fx {
         s.carried = &self.carried;
         s.r7 = &self.r7;
         s.clean_cycles = self.clean_cycles;
+        s.day = &self.day;
         s
     }
 
@@ -3441,5 +3444,183 @@ mod the_simulated_sessions {
             "{:?}",
             said.lines
         );
+    }
+}
+
+mod the_day_question {
+    use togi_journal::DayUncleanEnd;
+    use togi_machine::{
+        EndEvidence, GraphicsDriver, KernelFault, KernelTail, MceCount, PerCore, ResetKind,
+        ResetReason,
+    };
+
+    use super::super::question_story;
+    use crate::frames::colours::Paint;
+
+    fn end() -> DayUncleanEnd {
+        DayUncleanEnd {
+            boot: "7a1b2c3d-0000-0000-0000-000000000000".to_owned().into(),
+            last_checkpoint: None,
+            offsets: PerCore::default(),
+            reset_reason: ResetReason {
+                kind: Some(ResetKind::Watchdog),
+                raw: Vec::new(),
+                supported: true,
+            },
+            evidence: EndEvidence {
+                crashed_mces: MceCount::Read {
+                    corrected: 0,
+                    uncorrected: 0,
+                },
+                successor_mces: MceCount::Unknown {},
+                tail: KernelTail::Faults {
+                    faults: vec![KernelFault::GraphicsTimeout {
+                        driver: GraphicsDriver::Amdgpu,
+                    }],
+                    logging_continued: true,
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn says_the_reading_the_four_choices_and_where_to_answer() {
+        let said = question_story(&end());
+        assert_eq!(said.label, "DAY QUESTION");
+        assert_eq!(said.paint, Paint::Hunt);
+        assert_eq!(
+            said.lines,
+            [
+                format!("Boot 7a1b2c3d stopped unclean; reset reason: watchdog; reads as {}. What happened?", crate::day::class_words(end().class())),
+                "1 it froze · 2 graphics died but sound went on · 3 I turned it off while it was working normally · 4 not sure. Answer: togi status".to_owned(),
+            ]
+        );
+        assert_eq!(
+            said.brief,
+            "Boot 7a1b2c3d ended unclean: togi day answer 7a1b2c3d-0000-0000-0000-000000000000 frozen|graphics|power-off|unsure"
+        );
+    }
+}
+
+mod the_day_question_on_screen {
+    use togi_journal::{
+        DayAnswer, DayAnswerKind, DayQuestions, DayUncleanEnd, Event, Payload, Stamp,
+    };
+    use togi_machine::{
+        EndEvidence, GraphicsDriver, KernelFault, KernelTail, MceCount, PerCore, ResetKind,
+        ResetReason,
+    };
+
+    use super::{Fx, narrator_lines, plain, story, ts};
+    use crate::frames::fit::fit_clauses;
+    use crate::frames::footer::question_clause;
+    use crate::screen::Colours;
+
+    const BOOT: &str = "7a1b2c3d-0000-0000-0000-000000000000";
+
+    fn events(answers: &[DayAnswerKind]) -> Vec<Event> {
+        let end = DayUncleanEnd {
+            boot: BOOT.to_owned().into(),
+            last_checkpoint: None,
+            offsets: PerCore::default(),
+            reset_reason: ResetReason {
+                kind: Some(ResetKind::Watchdog),
+                raw: Vec::new(),
+                supported: true,
+            },
+            evidence: EndEvidence {
+                crashed_mces: MceCount::Read {
+                    corrected: 0,
+                    uncorrected: 0,
+                },
+                successor_mces: MceCount::Unknown {},
+                tail: KernelTail::Faults {
+                    faults: vec![KernelFault::GraphicsTimeout {
+                        driver: GraphicsDriver::Amdgpu,
+                    }],
+                    logging_continued: true,
+                },
+            },
+        };
+        std::iter::once(Payload::from(end))
+            .chain(answers.iter().map(|&answer| {
+                Payload::from(DayAnswer {
+                    boot: BOOT.to_owned().into(),
+                    offsets: PerCore::default(),
+                    answer,
+                    uid: 1000,
+                })
+            }))
+            .enumerate()
+            .map(|(index, payload)| {
+                Event::new(
+                    togi_journal::Seq::new(u64::try_from(index).unwrap() + 1).unwrap(),
+                    Stamp {
+                        time: ts(0),
+                        mono: None,
+                    },
+                    "next-boot".to_owned().into(),
+                    Vec::new(),
+                    payload,
+                )
+            })
+            .collect()
+    }
+
+    fn fx(answers: &[DayAnswerKind]) -> Fx {
+        let mut fx = Fx::new();
+        fx.day = DayQuestions::of(&events(answers));
+        fx
+    }
+
+    fn narration(fx: &Fx) -> String {
+        let said = story(&fx.scene(ts(1000)));
+        let lines = narrator_lines(&said, 156, 2, false, Colours::None);
+        lines
+            .iter()
+            .map(|line| plain(line, Colours::None))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
+    }
+
+    #[test]
+    fn a_pending_question_narrates_what_was_seen_and_how_to_answer() {
+        assert_eq!(
+            narration(&fx(&[])),
+            include_str!("day-question-pending.txt")
+        );
+    }
+
+    #[test]
+    fn an_answer_ends_the_narration_and_a_changed_answer_does_too() {
+        let none = narration(&Fx::new());
+        assert_eq!(narration(&fx(&[DayAnswerKind::Frozen])), none);
+        assert_eq!(
+            narration(&fx(&[DayAnswerKind::Frozen, DayAnswerKind::Graphics])),
+            none
+        );
+    }
+
+    #[test]
+    fn the_footer_counts_pending_questions_until_answered() {
+        let footer = |fx: &Fx| {
+            let pending = fx.snap().day.pending().count();
+            (pending > 0).then(|| {
+                plain(
+                    &fit_clauses(
+                        80,
+                        &[question_clause(pending, Colours::None)],
+                        Colours::None,
+                    ),
+                    Colours::None,
+                )
+            })
+        };
+        assert_eq!(
+            footer(&fx(&[])).as_deref(),
+            Some("1 day question pending: togi status")
+        );
+        assert_eq!(footer(&fx(&[DayAnswerKind::Unsure])), None);
     }
 }
