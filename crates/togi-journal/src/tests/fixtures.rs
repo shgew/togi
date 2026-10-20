@@ -152,6 +152,7 @@ fn trial_end() -> TrialEnd {
         trial: trial(),
         kernel_cursor: Some(KernelCursor::from("s=1;i=2".to_owned())),
         kernel_error: None,
+        excluded: Vec::new(),
         outcome: Outcome::Failure,
         signal: Some(Signal::ComputationError),
         core: Some(core(3)),
@@ -348,6 +349,7 @@ pub(crate) fn samples() -> Vec<Payload> {
                 scope: "togi-trial-0413-c03".into(),
             }],
             roles: Vec::new(),
+            controller: None,
         }
         .into(),
         TrialProgress {
@@ -355,6 +357,8 @@ pub(crate) fn samples() -> Vec<Payload> {
             detail: "core 03 backend exited early".into(),
             signal: Some(Signal::UnexpectedExit),
             core: Some(core(3)),
+            pid: None,
+            fault: None,
         }
         .into(),
         TrialSignal {

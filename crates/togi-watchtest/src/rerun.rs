@@ -157,6 +157,7 @@ impl Fixture {
                 files: Vec::new(),
                 instances: Vec::new(),
                 roles: Vec::new(),
+                controller: None,
             }
             .into(),
             &[],
@@ -180,6 +181,7 @@ impl Fixture {
                 trial,
                 kernel_cursor: None,
                 kernel_error: None,
+                excluded: Vec::new(),
                 outcome,
                 signal,
                 core: named,

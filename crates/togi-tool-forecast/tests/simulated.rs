@@ -98,6 +98,7 @@ fn simulate(cycles: u32) -> Simulated {
         cancel: CancellationToken::new(),
         report: Box::new(io::sink()),
         on_append: None,
+        controller: togi_machine::ControllerContract::Legacy,
     });
     assert!(ended.errors.is_empty(), "{:?}", ended.errors);
     Simulated { mem, ended }

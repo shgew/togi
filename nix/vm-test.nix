@@ -61,10 +61,11 @@ in
       import json
       import time
 
-      # Completion trials need a real SMU; this VM exercises only scope containment.
+      # Completion trials need a real SMU; controller clock trials need real cpufreq policies.
       hardware = (
           "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes "
-          "--skip an_r8_trial --skip an_r9_trial"
+          "--skip an_r8_trial --skip an_r9_trial "
+          "--skip managed_mapping_caps_idle_ccd_policies --skip managed_all_core_trial_rotates_controller_host"
       )
       pin = "hardware::a_helper_cannot_pin_outside_its_scope"
       flags = "--test-threads 1 --nocapture"
@@ -475,10 +476,11 @@ in
     testScript = ''
       import json
 
-      # Stock-offset R8/R9 completion trials require the real SMU, unlike these scope tests.
+      # Stock-offset completion and controller clock trials need real SMU/cpufreq hardware.
       hardware = (
           "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes "
-          "--skip an_r8_trial --skip an_r9_trial"
+          "--skip an_r8_trial --skip an_r9_trial "
+          "--skip managed_mapping_caps_idle_ccd_policies --skip managed_all_core_trial_rotates_controller_host"
       )
       delegated_hardware = f"{hardware} --skip a_backend_runs_as_the_account --skip the_sweep_removes_orphaned"
       flags = "--test-threads 1 --nocapture"

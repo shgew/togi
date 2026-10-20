@@ -160,10 +160,79 @@ fn an_all_threads_cpu_that_fails_is_attributed_to_its_core_whichever_sibling_it_
                 (failure.signal, failure.core),
                 (Signal::ComputationError, core(8))
             );
+            assert_eq!(
+                failure.pid.map(std::num::NonZeroU32::get),
+                Some(handle.started.instances[17].pid)
+            );
+            assert_ne!(
+                failure.pid.map(std::num::NonZeroU32::get),
+                Some(handle.started.instances[16].pid)
+            );
+            let reported: Vec<_> = run
+                .events
+                .iter()
+                .filter_map(|event| {
+                    if let crate::supervisor::Event::Signal { pid, .. } = event {
+                        Some(*pid)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert_eq!(reported, vec![Some(handle.started.instances[17].pid)]);
             assert!(run.finished.teardown.is_ok());
         })
         .await;
     });
+}
+
+#[test]
+fn an_all_threads_exit_keeps_the_exact_sibling_instance_pid() {
+    crate::testing::runtime(true).block_on(local(async {
+        let rig = rig();
+        rig.fake.on_launch(|index, _| {
+            Launch::Run(script(move |mut ctx: ProcCtx| async move {
+                if index == 17 {
+                    tokio::time::sleep(secs(1)).await;
+                    ctx.exit(crate::os::ExitInfo::Signal(11));
+                } else {
+                    ctx.until_killed().await;
+                }
+            }))
+        });
+        let handle = rig.start(all_threads_spec(0, 0, secs(60))).await.unwrap();
+        let run = finish(&handle).await;
+        let failure = run.finished.result.failure.unwrap();
+        assert_eq!(
+            (
+                failure.signal,
+                failure.core,
+                failure.pid.map(std::num::NonZeroU32::get)
+            ),
+            (
+                Signal::UnexpectedExit,
+                core(8),
+                Some(handle.started.instances[17].pid)
+            ),
+        );
+        assert_ne!(
+            failure.pid.map(std::num::NonZeroU32::get),
+            Some(handle.started.instances[16].pid)
+        );
+        let reported: Vec<_> = run
+            .events
+            .iter()
+            .filter_map(|event| {
+                if let crate::supervisor::Event::Signal { pid, .. } = event {
+                    Some(*pid)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(reported, vec![Some(handle.started.instances[17].pid)]);
+        assert!(run.finished.teardown.is_ok());
+    }));
 }
 
 #[test]

@@ -34,6 +34,7 @@ pub(crate) enum Observation {
     /// A launcher exited before teardown began.
     UnexpectedExit {
         instance: usize,
+        pid: Option<u32>,
         detail: String,
     },
     /// A thread ran on a CPU outside the instance's allowed set.
@@ -75,6 +76,7 @@ pub(crate) enum Report {
     Signal {
         core: CoreId,
         signal: Signal,
+        pid: Option<u32>,
         detail: String,
     },
 }
@@ -98,6 +100,7 @@ pub(crate) struct Verdict {
 #[derive(Debug)]
 struct PendingExit {
     instance: usize,
+    pid: Option<u32>,
     detail: String,
 }
 
@@ -206,8 +209,16 @@ impl Selector {
                 line,
                 text,
             } => self.line(instance, pid, stream, line, text),
-            Observation::UnexpectedExit { instance, detail } => {
-                self.pending_exits.push(PendingExit { instance, detail });
+            Observation::UnexpectedExit {
+                instance,
+                pid,
+                detail,
+            } => {
+                self.pending_exits.push(PendingExit {
+                    instance,
+                    pid,
+                    detail,
+                });
                 Decision {
                     stop: true,
                     reports: Vec::new(),
@@ -231,10 +242,12 @@ impl Selector {
                     self.failure = Some(TrialFailure {
                         signal: Signal::Stall,
                         core,
+                        pid: std::num::NonZeroU32::new(pid),
                     });
                     decision.reports.push(Report::Signal {
                         core,
                         signal: Signal::Stall,
+                        pid: Some(pid),
                         detail: detail.clone(),
                     });
                     decision.reports.push(Report::Warning(Sample {
@@ -330,11 +343,13 @@ impl Selector {
                     self.failure = Some(TrialFailure {
                         signal: Signal::ComputationError,
                         core,
+                        pid: std::num::NonZeroU32::new(pid),
                     });
                     self.inconclusive = None;
                     decision.reports.push(Report::Signal {
                         core,
                         signal: Signal::ComputationError,
+                        pid: Some(pid),
                         detail: text,
                     });
                 }
@@ -383,10 +398,12 @@ impl Selector {
             self.failure = Some(TrialFailure {
                 signal: Signal::UnexpectedExit,
                 core,
+                pid: exit.pid.and_then(std::num::NonZeroU32::new),
             });
             reports.push(Report::Signal {
                 core,
                 signal: Signal::UnexpectedExit,
+                pid: exit.pid,
                 detail: exit.detail,
             });
         }
@@ -732,6 +749,7 @@ mod tests {
         s.observe(Observation::UnexpectedExit {
             instance: 0,
             detail: "exit status 0".into(),
+            pid: None,
         });
         let verdict = conclude(s);
         assert_eq!(verdict.failure, None);
@@ -747,6 +765,7 @@ mod tests {
         s.observe(Observation::UnexpectedExit {
             instance: 0,
             detail: "exit status 0".into(),
+            pid: None,
         });
         s.observe(Observation::Line {
             instance: 1,
@@ -760,7 +779,8 @@ mod tests {
             verdict.failure,
             Some(TrialFailure {
                 signal: Signal::UnexpectedExit,
-                core: core(3)
+                core: core(3),
+                pid: None,
             })
         );
         assert_eq!(verdict.inconclusive, None);
@@ -773,6 +793,7 @@ mod tests {
         for instance in [0, 1] {
             s.observe(Observation::UnexpectedExit {
                 instance,
+                pid: None,
                 detail: "exit status 0".into(),
             });
         }
@@ -807,6 +828,7 @@ mod tests {
     fn exit(instance: usize, detail: &str) -> Observation {
         Observation::UnexpectedExit {
             instance,
+            pid: None,
             detail: detail.to_owned(),
         }
     }
@@ -823,7 +845,8 @@ mod tests {
             verdict.failure,
             Some(TrialFailure {
                 signal: Signal::UnexpectedExit,
-                core: core(9)
+                core: core(9),
+                pid: None,
             })
         );
         assert_eq!(
@@ -831,6 +854,7 @@ mod tests {
             [Report::Signal {
                 core: core(9),
                 signal: Signal::UnexpectedExit,
+                pid: None,
                 detail: "exit status 0".into()
             }]
         );
@@ -913,6 +937,7 @@ mod tests {
         s.observe(Observation::UnexpectedExit {
             instance: 0,
             detail: "exit status 0".into(),
+            pid: None,
         });
         let verdict = conclude(s);
         assert_eq!(
@@ -949,6 +974,7 @@ mod tests {
         let exit = || Observation::UnexpectedExit {
             instance: 0,
             detail: "exit status 0".into(),
+            pid: None,
         };
         let mut s = selector();
         assert!(s.observe(exit()).stop);
@@ -962,6 +988,7 @@ mod tests {
             [Report::Signal {
                 core: core(3),
                 signal: Signal::UnexpectedExit,
+                pid: None,
                 detail: "exit status 0".into()
             }]
         );
@@ -976,6 +1003,7 @@ mod tests {
         s.observe(Observation::UnexpectedExit {
             instance: 0,
             detail: "exit status 0".into(),
+            pid: None,
         });
         s.observe(blocker);
         let (verdict, reports) = s.conclude();
@@ -1002,6 +1030,7 @@ mod tests {
         s.observe(Observation::UnexpectedExit {
             instance: 0,
             detail: "exit status 0".into(),
+            pid: None,
         });
         let verdict = conclude(s);
         assert_eq!(
@@ -1019,6 +1048,7 @@ mod tests {
         s.observe(Observation::UnexpectedExit {
             instance: 0,
             detail: "exit status 1".into(),
+            pid: None,
         });
         let verdict = conclude(s);
         assert_eq!(verdict.failure, None);
@@ -1044,6 +1074,7 @@ mod tests {
         s.observe(Observation::UnexpectedExit {
             instance: 1,
             detail: "exit status 1".into(),
+            pid: None,
         });
         let verdict = conclude(s);
         assert_eq!(verdict.failure, None);

@@ -219,6 +219,7 @@ impl Run {
             return Err(FoldError::MissingSignal);
         }
         self.require_cores(end.core.into_iter().chain(end.stalled_core).collect())?;
+        self.require_cores(end.excluded.iter().copied().collect())?;
         self.require_cores(end.top_requesters)?;
         self.require_cores(
             end.voltage_requests_v
@@ -237,8 +238,9 @@ impl Run {
         self.record_end(event.seq, &open, end)?;
         let cited = cited_mces(&open.mces, &event.cause);
         let (failed, zero) = self.end_r7_and_zero(event.seq, &open, end, cited);
-        self.r7_probe_end(&open, end.outcome);
-        let conclusive = matches!(end.outcome, Outcome::Pass | Outcome::Failure);
+        let outcome = end.evidence_outcome();
+        self.r7_probe_end(&open, outcome);
+        let conclusive = matches!(outcome, Outcome::Pass | Outcome::Failure);
         if conclusive {
             self.advance_rotation(open.intent.core, open.intent.regime);
         }
@@ -251,7 +253,7 @@ impl Run {
         if let Some(turn) = open.requirement.context.turn() {
             self.update_core(turn.core, |state| state.last_seq = Some(event.seq));
         }
-        match end.outcome {
+        match outcome {
             Outcome::Pass => self.record_step_pass(event.seq, &open),
             Outcome::Inconclusive => {
                 self.save_retry(&open);
@@ -277,7 +279,7 @@ impl Run {
         if conclusive {
             self.cycle_evidence_changed(class);
         }
-        if end.outcome == Outcome::Pass && together {
+        if outcome == Outcome::Pass && together {
             self.checking.note_pass(event.seq);
             if let Some(celsius) = end.tctl_max_c {
                 self.checking.note_temperature(celsius, event.seq);

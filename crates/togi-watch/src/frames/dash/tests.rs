@@ -1502,6 +1502,8 @@ fn an_idle_hold_freezes_both_durations_at_the_trials_start_through_its_later_eve
         detail: "still running".to_owned(),
         signal: None,
         core: None,
+        fault: None,
+        pid: None,
     };
     append_at(
         &mut script,

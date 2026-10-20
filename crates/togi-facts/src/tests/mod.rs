@@ -151,6 +151,7 @@ pub(super) fn end(id: &str, outcome: Outcome, duration_s: u32) -> TrialEnd {
         trial: trial(id),
         kernel_cursor: None,
         kernel_error: None,
+        excluded: Vec::new(),
         outcome,
         signal: None,
         core: None,

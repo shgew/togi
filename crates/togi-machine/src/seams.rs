@@ -121,6 +121,8 @@ pub struct TrialSpec {
     /// The offset a readback confirmed on each core as the trial starts; a core whose offset is
     /// not known is absent. The runner keeps togi's own threads off the loaded cores by it.
     pub offsets: PerCore<TargetOffset>,
+    /// Explicit placement contract; existing schedules remain on the legacy evidence contract.
+    pub controller: crate::ControllerMode,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -138,7 +140,9 @@ pub struct Started {
 pub struct TrialResult {
     pub ran: Duration,
     pub failure: Option<TrialFailure>,
-    pub inconclusive: Option<String>,
+    pub inconclusive: Option<Box<str>>,
+    /// Cores whose controller work prevents exposure credit, without hiding failure observations.
+    pub excluded: crate::CoreSet,
     pub escaped: Vec<CpuId>,
     pub tctl_max_c: Option<i64>,
     pub stops: u32,
@@ -149,6 +153,7 @@ pub struct TrialResult {
 pub struct TrialFailure {
     pub signal: Signal,
     pub core: CoreId,
+    pub pid: Option<std::num::NonZeroU32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -170,7 +175,7 @@ pub struct Sample {
 pub trait Reporter {
     fn progress(&mut self, detail: &str);
     fn sample(&mut self, sample: Sample);
-    fn signal(&mut self, core: CoreId, signal: Signal, detail: &str);
+    fn signal(&mut self, core: CoreId, signal: Signal, pid: Option<u32>, detail: &str);
 }
 
 pub trait Running {
@@ -224,6 +229,29 @@ pub struct Mce {
     pub lines: Vec<String>,
 }
 
+/// A userspace trap reported by the kernel. Identity is matched to a trial by the session.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessFault {
+    pub pid: u32,
+    pub name: String,
+    pub scope: Option<String>,
+    pub kind: ProcessFaultKind,
+    pub cpu: Option<CpuId>,
+    pub core: Option<CoreId>,
+    pub monotonic: Duration,
+    pub lines: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessFaultKind {
+    Segmentation,
+    Bus,
+    IllegalInstruction,
+    GeneralProtection,
+    Abort,
+}
+
 object_only! {
     /// What a boot's kernel logged about the reset before it.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -240,10 +268,11 @@ object_only! {
     }
 }
 
-/// Machine-check events and the cursor after the last log entry read.
+/// Kernel traps, machine checks and the cursor after the last log entry read.
 #[derive(Debug, Default)]
 pub struct KernelRead {
     pub mces: Vec<Mce>,
+    pub faults: Vec<ProcessFault>,
     pub cursor: KernelCursor,
 }
 
@@ -257,17 +286,21 @@ object_only! {
 }
 
 pub trait Kernel {
+    /// Snapshot live process TIDs for managed trial identity; a process already gone has no TIDs.
+    fn process_threads(&mut self, pid: u32) -> Result<Vec<u32>, Error> {
+        Ok(vec![pid])
+    }
     /// An earlier boot missing from the journal is `Error::BootMissing`. The partial value keeps
     /// the MCEs decoded before a read failure.
     fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>>;
     /// Reads after an exact cursor, or the whole boot when `after` is `None`. An unresumable cursor
     /// is `Error::CursorMissing`, never a silently shortened interval. The partial value is the
-    /// MCEs read before the failure.
+    /// observations read before the failure. A partial cursor is not safe to resume from.
     fn read_mces(
         &mut self,
         boot: &BootId,
         after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<Mce>>>;
+    ) -> Result<KernelRead, Partial<KernelRead>>;
     fn reset_reason(&mut self, boot: &BootId) -> Result<ResetReason, Error>;
     fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, Error>;
     fn saved_pstore(&mut self, boot: &BootId) -> Result<Option<PstoreRecord>, Error>;

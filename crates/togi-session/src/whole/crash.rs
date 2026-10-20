@@ -1003,6 +1003,8 @@ fn recovery_refuses_an_unrepresentable_wall_elapsed_interval(seconds: i64, refus
             detail: "last recorded activity".into(),
             signal: None,
             core: None,
+            fault: None,
+            pid: None,
         }),
     );
     prefix.push(progress);

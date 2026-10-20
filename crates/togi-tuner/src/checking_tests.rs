@@ -46,6 +46,66 @@ fn started(offsets: &[i64]) -> Journal {
     j
 }
 
+#[test]
+fn an_excluded_controller_host_gets_no_credit_without_discarding_tested_top_requesters() {
+    let mut j = started(&[-10, -10]);
+    let plan = j.r7_plan(&[0, 1], &[-10, -10]);
+    let class = ClassKey::new(plan.workload_at(0), plan.load.cores(), plan.duration);
+    let (intent, trial) = j.intent(&plan);
+    let mut end = Journal::end_payload(&trial, Outcome::Pass, None);
+    end.duration_s = plan.duration.get();
+    end.excluded = vec![core(0)];
+    end.top_requesters = set(&[0, 1]);
+    j.append(end.into(), &[intent]);
+
+    let evidence = j.state.evidence().unwrap();
+    assert_eq!(
+        evidence
+            .count(
+                class,
+                &plan.profile,
+                crate::Window::Live { since: None },
+                std::num::NonZeroU16::new(1).unwrap(),
+            )
+            .unwrap()
+            .valid,
+        0,
+        "an intended full load cannot pass with an excluded controller host",
+    );
+    assert_eq!(evidence.exposure(class.workload()), 0);
+    for step in j.state.cycle_plan().steps {
+        for part in step.parts {
+            assert_eq!((part.passed, part.done), (0, false), "{part:?}");
+        }
+    }
+    let statuses = j.state.r7_status();
+    let host = statuses
+        .iter()
+        .find(|status| status.workload == class.workload() && status.core == core(0))
+        .unwrap();
+    let tested = statuses
+        .iter()
+        .find(|status| status.workload == class.workload() && status.core == core(1))
+        .unwrap();
+    assert_eq!((host.passes, host.self_sufficient), (0, false));
+    assert_eq!((tested.passes, tested.self_sufficient), (1, true));
+}
+
+#[test]
+fn an_excluded_single_core_pass_does_not_advance_search() {
+    let mut j = Journal::search_at(&[-10]);
+    let plan = j.next_trial();
+    let (intent, trial) = j.intent(&plan);
+    let mut end = Journal::end_payload(&trial, Outcome::Pass, None);
+    end.excluded = vec![core(0)];
+    j.append(end.into(), &[intent]);
+    let retry = j.next_trial();
+    assert_eq!(retry.regime, plan.regime);
+    assert_eq!(retry.load, plan.load);
+    assert_eq!(retry.profile, plan.profile);
+    assert_eq!(retry.requirement, plan.requirement);
+}
+
 fn named_failure(j: &mut Journal, plan: &TrialPlan, named: Option<u8>) -> Seq {
     let (intent, trial) = j.intent(plan);
     let mut end = Journal::end_payload(&trial, Outcome::Failure, Some(Signal::ComputationError));
@@ -626,7 +686,7 @@ fn expected_counts(j: &Journal) -> BTreeMap<ClassKey, u32> {
         } else if let Payload::TrialEnd(end) = payload
             && let Some((class, profile)) = classes.get(&end.trial).copied()
         {
-            match end.outcome {
+            match end.evidence_outcome() {
                 Outcome::Pass => passes.push((event.seq, class, profile)),
                 Outcome::Failure => failures.push((event.seq, class, profile)),
                 Outcome::Inconclusive => {}

@@ -275,6 +275,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         zone: zone.clone(),
         cancel,
         report,
+        controller: togi_machine::ControllerContract::Legacy,
     };
     if let Some(dashboard) = &dashboard {
         dashboard.show();

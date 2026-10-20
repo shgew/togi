@@ -12,7 +12,7 @@ use togi_journal::{
 };
 use togi_machine::{
     Backend, BiosContext, BootId, CcdId, Condition, CoreId, CoreSet, CpuId, KernelCursor,
-    ObservedOffset, PerCore, Regime, ResetReason, Signal, TargetOffset,
+    ObservedOffset, PerCore, Regime, ResetReason, TargetOffset,
 };
 use togi_tuner::{CrashKind, recorded_kind};
 
@@ -49,6 +49,8 @@ pub(crate) struct Started {
     pub mono: Option<Duration>,
     pub last_time: Timestamp,
     pub last_mono: Option<Duration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller: Option<togi_journal::ControllerEvidence>,
 }
 
 /// How far the write of the target a trial alone sets before its start got.
@@ -67,9 +69,11 @@ pub(crate) struct OpenTrial {
     pub intent: TrialIntent,
     pub boot: BootId,
     pub started: Option<Started>,
-    pub failure: Option<(Signal, Option<CoreId>)>,
+    pub failure: Option<evidence::FailureSignal>,
     pub mces: Vec<Seq>,
     pub corrected: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub faults: Vec<evidence::RecordedProcessFault>,
     /// The monotonic time from which machine checks count as the trial's: its intent, then the start the backend
     /// reported, then the readback of its target.
     pub window_start: Option<Duration>,
@@ -87,9 +91,25 @@ impl OpenTrial {
             failure: None,
             mces: Vec::new(),
             corrected: false,
+            faults: Vec::new(),
             window_start: event.mono,
             target: None,
             kernel_error: None,
+        }
+    }
+
+    pub(crate) fn failure(&self) -> Option<evidence::FailureSignal> {
+        match self
+            .started
+            .as_ref()
+            .and_then(|start| start.controller.as_ref())
+        {
+            Some(controller) => evidence::process_faults_failure(
+                self.failure,
+                &self.faults,
+                &controller.tested_cpus,
+            ),
+            None => self.failure,
         }
     }
 
@@ -418,6 +438,7 @@ impl RecoveryState {
                         mono: event.mono,
                         last_time: event.time,
                         last_mono: event.mono,
+                        controller: start.controller.clone(),
                     });
                     if let Some(ns) = start.window_start_ns {
                         open.window_start = Some(Duration::from_nanos(ns));
@@ -428,9 +449,17 @@ impl RecoveryState {
                 self.trial_activity(&progress.trial, event);
                 if let Some(open) = &mut self.open
                     && open.intent.trial == progress.trial
-                    && let Some(signal) = progress.signal
                 {
-                    open.failure = Some((signal, progress.core));
+                    if let Some(fault) = &progress.fault {
+                        open.faults
+                            .push(evidence::RecordedProcessFault::new(seq, fault));
+                    } else if let Some(signal) = progress.signal {
+                        open.failure = Some(evidence::FailureSignal {
+                            signal,
+                            core: progress.core,
+                            pid: progress.pid,
+                        });
+                    }
                 }
             }
             Payload::TrialSignal(signal) => self.trial_activity(&signal.trial, event),
@@ -804,7 +833,7 @@ impl RecoveryState {
             .as_ref()
             .map(|started| started.cpus.clone())
             .unwrap_or_default();
-        match end.outcome {
+        match end.evidence_outcome() {
             Outcome::Inconclusive => {
                 if !end.interrupted {
                     let state = self.backend(backend);
@@ -1012,6 +1041,10 @@ impl RecoveryState {
     /// The latest dead end unless a dead-end shutdown followed it.
     pub(crate) fn pending_dead_end(&self) -> Option<&PendingDeadEnd> {
         self.dead_end.as_ref().filter(|pending| !pending.shutdown)
+    }
+
+    pub(crate) fn controller_rotation(&self) -> u64 {
+        u64::from(self.trials)
     }
 
     pub(crate) fn next_trial_id(&self) -> TrialId {

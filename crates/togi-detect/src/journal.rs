@@ -35,11 +35,18 @@ pub(crate) fn mces_args(boot: &JournalBoot) -> Vec<OsString> {
 }
 
 pub(crate) fn interval_args(boot: &JournalBoot, after: Option<&KernelCursor>) -> Vec<OsString> {
-    let mut args = kernel_log(
-        boot,
-        "--output-fields=MESSAGE,__REALTIME_TIMESTAMP,__MONOTONIC_TIMESTAMP,__CURSOR,_BOOT_ID",
-    );
-    args.extend(argv(&["--no-pager", "-q"]));
+    let mut args = argv(&[
+        "-b",
+        boot.as_str(),
+        "-o",
+        "json",
+        "--output-fields=MESSAGE,__REALTIME_TIMESTAMP,__MONOTONIC_TIMESTAMP,__CURSOR,_BOOT_ID,COREDUMP_PID,COREDUMP_COMM,COREDUMP_SIGNAL,COREDUMP_CGROUP",
+        "--no-pager",
+        "-q",
+        "_TRANSPORT=kernel",
+        "+",
+        "MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1",
+    ]);
     if let Some(cursor) = after {
         args.push(format!("--cursor={cursor}").into());
     }
@@ -170,7 +177,7 @@ pub enum DecodeError {
     Json(#[from] serde_json::Error),
     #[error("the entry has no {0}")]
     Missing(&'static str),
-    #[error("{field} {text:?} is not a number of microseconds")]
+    #[error("{field} {text:?} is not an integer in range")]
     Number {
         field: &'static str,
         text: String,
@@ -214,6 +221,14 @@ struct Entry {
     cursor: Option<String>,
     #[serde(rename = "_BOOT_ID")]
     boot: Option<String>,
+    #[serde(rename = "COREDUMP_PID")]
+    fault_pid: Option<String>,
+    #[serde(rename = "COREDUMP_COMM")]
+    fault_name: Option<String>,
+    #[serde(rename = "COREDUMP_SIGNAL")]
+    fault_signal: Option<String>,
+    #[serde(rename = "COREDUMP_CGROUP")]
+    fault_scope: Option<String>,
 }
 
 fn text_of(raw: Option<&RawValue>) -> Result<String, DecodeError> {
@@ -257,6 +272,49 @@ impl Entry {
             monotonic: Duration::from_micros(since_boot),
         })
     }
+
+    fn fault(&self, message: &Message) -> Result<Option<togi_machine::ProcessFault>, DecodeError> {
+        let Some(signal) = self.fault_signal.as_deref() else {
+            return Ok(None);
+        };
+        let signal = signal
+            .parse::<u32>()
+            .map_err(|source| DecodeError::Number {
+                field: "COREDUMP_SIGNAL",
+                text: signal.to_owned(),
+                source,
+            })?;
+        let kind = match signal {
+            11 => togi_machine::ProcessFaultKind::Segmentation,
+            7 => togi_machine::ProcessFaultKind::Bus,
+            4 => togi_machine::ProcessFaultKind::IllegalInstruction,
+            6 => togi_machine::ProcessFaultKind::Abort,
+            _ => return Ok(None),
+        };
+        let pid = self
+            .fault_pid
+            .as_deref()
+            .ok_or(DecodeError::Missing("COREDUMP_PID"))?;
+        let pid = pid.parse::<u32>().map_err(|source| DecodeError::Number {
+            field: "COREDUMP_PID",
+            text: pid.to_owned(),
+            source,
+        })?;
+        let name = self
+            .fault_name
+            .clone()
+            .ok_or(DecodeError::Missing("COREDUMP_COMM"))?;
+        Ok(Some(togi_machine::ProcessFault {
+            pid,
+            name,
+            kind,
+            scope: self.fault_scope.clone(),
+            cpu: None,
+            core: None,
+            monotonic: message.monotonic,
+            lines: vec![message.text.clone()],
+        }))
+    }
 }
 
 /// Decodes one JSON object. A derived `Deserialize` also takes a positional array of the fields,
@@ -298,9 +356,10 @@ pub(crate) fn reset_texts(out: &[u8]) -> Result<Vec<String>, DecodeError> {
         .collect()
 }
 
-/// The hardware-error messages of a cursor read, and where the read ended.
+/// The kernel and coredump messages of a cursor read, and where the read ended.
 pub(crate) struct Interval {
     pub(crate) messages: Vec<Message>,
+    pub(crate) faults: Vec<togi_machine::ProcessFault>,
     pub(crate) end: Result<KernelCursor, IntervalError>,
 }
 
@@ -317,42 +376,59 @@ pub(crate) fn read_interval(
     after: Option<&KernelCursor>,
 ) -> Interval {
     let mut messages = Vec::new();
+    let mut faults = Vec::new();
     let mut last: Option<String> = None;
     for row in rows(out) {
         let entry = match object::<Entry>(row) {
             Ok(entry) => entry,
-            Err(error) => return Interval::failed(messages, IntervalError::Decode(error.into())),
+            Err(error) => {
+                return Interval::failed(messages, faults, IntervalError::Decode(error.into()));
+            }
         };
         let cursor = match (entry.cursor.as_deref(), entry.boot.as_deref()) {
             (Some(cursor), Some(row_boot)) if !cursor.is_empty() && row_boot == boot.as_str() => {
                 cursor
             }
-            _ => return Interval::failed(messages, IntervalError::CursorMissing),
+            _ => return Interval::failed(messages, faults, IntervalError::CursorMissing),
         };
         if let (Some(anchor), None) = (after, &last) {
             if cursor != anchor.as_str() {
-                return Interval::failed(messages, IntervalError::CursorMissing);
+                return Interval::failed(messages, faults, IntervalError::CursorMissing);
             }
             last = Some(cursor.to_owned());
             continue;
         }
         last = Some(cursor.to_owned());
         match entry.message() {
-            Ok(message) if message.text.contains("Hardware Error") => messages.push(message),
-            Ok(_) => {}
-            Err(error) => return Interval::failed(messages, IntervalError::Decode(error)),
+            Ok(message) => match entry.fault(&message) {
+                Ok(Some(fault)) => faults.push(fault),
+                Ok(None) => messages.push(message),
+                Err(error) => {
+                    return Interval::failed(messages, faults, IntervalError::Decode(error));
+                }
+            },
+            Err(error) => return Interval::failed(messages, faults, IntervalError::Decode(error)),
         }
     }
     let end = last
         .map(KernelCursor::from)
         .ok_or(IntervalError::CursorMissing);
-    Interval { messages, end }
+    Interval {
+        messages,
+        faults,
+        end,
+    }
 }
 
 impl Interval {
-    fn failed(messages: Vec<Message>, error: IntervalError) -> Self {
+    fn failed(
+        messages: Vec<Message>,
+        faults: Vec<togi_machine::ProcessFault>,
+        error: IntervalError,
+    ) -> Self {
         Self {
             messages,
+            faults,
             end: Err(error),
         }
     }

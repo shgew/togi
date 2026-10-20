@@ -441,6 +441,14 @@ fn trial_end(p: &TrialEnd) -> String {
             .collect();
         let _ = write!(voltage, " | top requester {}", top.join(", "));
     }
+    if !p.excluded.is_empty() {
+        let excluded: Vec<_> = p.excluded.iter().copied().map(core).collect();
+        let _ = write!(
+            voltage,
+            " | no exposure credit for core {}; whole-load coverage withheld",
+            excluded.join(", ")
+        );
+    }
     conditions.push_str(&voltage);
     let mut duration = if p.signal == Some(Signal::Crash) || p.last_evidence {
         format!(", last evidence {} s after start", p.duration_s)

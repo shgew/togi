@@ -156,9 +156,9 @@ impl Kernel for Unreadable {
         &mut self,
         _: &BootId,
         _: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<togi_machine::Mce>>> {
+    ) -> Result<KernelRead, Partial<KernelRead>> {
         Err(Partial {
-            value: Vec::new(),
+            value: KernelRead::default(),
             error: Error::Crashed,
         })
     }
@@ -570,7 +570,7 @@ impl Kernel for Tail {
         &mut self,
         boot: &BootId,
         after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<togi_machine::Mce>>> {
+    ) -> Result<KernelRead, Partial<KernelRead>> {
         let mut read = self.inner.read_mces(boot, after)?;
         if !self.served {
             self.served = true;

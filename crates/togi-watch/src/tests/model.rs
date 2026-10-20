@@ -263,6 +263,7 @@ fn trial_start_selection(kind: TrialStartSelection) {
                     files: Vec::new(),
                     instances: Vec::new(),
                     roles: Vec::new(),
+                    controller: None,
                 }
                 .into(),
                 &[],
@@ -1167,6 +1168,8 @@ fn a_trial_reporting_progress_past_its_planned_end_is_still_running() {
             detail: "still running".to_owned(),
             signal: None,
             core: None,
+            fault: None,
+            pid: None,
         }
         .into(),
         &[],

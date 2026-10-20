@@ -194,6 +194,7 @@ impl Sim {
             trial: intent.trial.clone(),
             kernel_cursor: None,
             kernel_error: None,
+            excluded: Vec::new(),
             outcome: Outcome::Pass,
             signal: None,
             core: None,

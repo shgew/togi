@@ -2,6 +2,7 @@ use std::fmt;
 use std::process::ExitStatus;
 use std::time::Duration;
 
+use crate::fault::FaultNumberError;
 use crate::journal::DecodeError;
 use crate::parse::StatusError;
 use crate::pstore::PstoreError;
@@ -65,6 +66,12 @@ pub enum Error {
         source: StatusError,
     },
     #[error("cannot {operation}")]
+    FaultStatus {
+        operation: Operation,
+        #[source]
+        source: FaultNumberError,
+    },
+    #[error("cannot {operation}")]
     Version {
         operation: Operation,
         #[source]
@@ -78,6 +85,8 @@ pub enum Error {
     Pstore(#[from] PstoreError),
     #[error("cannot read the boot id")]
     BootId(#[source] BootIdError),
+    #[error("cannot read process thread identities")]
+    ProcessThreads(#[source] std::io::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -108,9 +117,11 @@ impl From<Error> for togi_machine::Error {
             | Error::Exit { .. }
             | Error::Decode { .. }
             | Error::Status { .. }
+            | Error::FaultStatus { .. }
             | Error::Version { .. }
             | Error::Pstore(_)
-            | Error::BootId(_)) => Self::Other(Box::new(other)),
+            | Error::BootId(_)
+            | Error::ProcessThreads(_)) => Self::Other(Box::new(other)),
         }
     }
 }

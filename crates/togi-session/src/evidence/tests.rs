@@ -90,6 +90,7 @@ fn rows() -> Vec<Row> {
                 case.result.failure = Some(TrialFailure {
                     signal: Signal::ComputationError,
                     core: core(3),
+                    pid: None,
                 });
             },
             outcome: Outcome::Failure,
@@ -162,6 +163,7 @@ fn a_backend_failure_survives_every_weaker_diagnostic_and_keeps_its_core(signal:
     case.result.failure = Some(TrialFailure {
         signal,
         core: core(5),
+        pid: None,
     });
     case.missing = Some("canceled; cleanup failed".into());
     case.reset = Some(ResetVerdict {

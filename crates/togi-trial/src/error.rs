@@ -63,6 +63,9 @@ pub enum Error {
     Containment(#[source] Arc<Containment>),
     #[error("cancelled")]
     Cancelled,
+    #[cfg(target_os = "linux")]
+    #[error("controller frequency recovery")]
+    Frequency(#[source] crate::frequency::Error),
     #[error("trial supervision panicked: {what}")]
     Panicked { what: String },
     #[error("the samples file")]
@@ -258,6 +261,8 @@ impl Error {
             Self::Containment(_) | Self::Stuck { .. } => Seam::Containment,
             Self::Cancelled => Seam::Cancelled,
             Self::BackendMissing(_) => Seam::BackendMissing,
+            #[cfg(target_os = "linux")]
+            Self::Frequency(_) => Seam::Other,
             Self::Joined(joined) => {
                 if joined
                     .errors

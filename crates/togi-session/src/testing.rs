@@ -279,6 +279,7 @@ impl Bench {
             zone: TimeZone::UTC,
             cancel: CancellationToken::new(),
             report: Box::new(io::sink()),
+            controller: togi_machine::ControllerContract::Legacy,
         }
     }
 

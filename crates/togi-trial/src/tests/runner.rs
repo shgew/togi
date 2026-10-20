@@ -108,6 +108,7 @@ fn runner_on(
 struct Collect {
     progress: Vec<String>,
     signals: Vec<(CoreId, Signal)>,
+    signal_pids: Vec<Option<u32>>,
 }
 
 impl Reporter for Collect {
@@ -117,8 +118,9 @@ impl Reporter for Collect {
 
     fn sample(&mut self, _: Sample) {}
 
-    fn signal(&mut self, core: CoreId, signal: Signal, _: &str) {
+    fn signal(&mut self, core: CoreId, signal: Signal, pid: Option<u32>, _: &str) {
         self.signals.push((core, signal));
+        self.signal_pids.push(pid);
     }
 }
 
@@ -260,6 +262,15 @@ fn a_failing_trial_reports_its_signal_on_the_waiting_thread() {
     let mut report = Collect::default();
     let result = trial.wait(&CancellationToken::new(), &mut report).unwrap();
     assert_eq!(report.signals.len(), 1);
+    let expected_pid = Some(trial.started().instances[0].pid);
+    assert_eq!(report.signal_pids, vec![expected_pid]);
+    assert_eq!(
+        result
+            .failure
+            .and_then(|failure| failure.pid)
+            .map(std::num::NonZeroU32::get),
+        expected_pid
+    );
     assert_eq!(
         result.failure.map(|f| f.signal),
         Some(Signal::ComputationError)
@@ -425,7 +436,7 @@ impl Reporter for CancelOnProgress {
 
     fn sample(&mut self, _: Sample) {}
 
-    fn signal(&mut self, _: CoreId, _: Signal, _: &str) {}
+    fn signal(&mut self, _: CoreId, _: Signal, _: Option<u32>, _: &str) {}
 }
 
 #[test]
@@ -715,7 +726,7 @@ impl Reporter for Slow {
 
     fn sample(&mut self, _: Sample) {}
 
-    fn signal(&mut self, _: CoreId, _: Signal, _: &str) {}
+    fn signal(&mut self, _: CoreId, _: Signal, _: Option<u32>, _: &str) {}
 }
 
 #[test]

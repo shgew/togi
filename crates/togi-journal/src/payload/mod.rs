@@ -34,9 +34,9 @@ pub use session::{
 };
 pub use smu::{SmuCommand, SmuError, SmuIntentRecord, SmuReadback, SmuWriteRecord};
 pub use trial::{
-    BackendIdentity, CrashDetected, FactSource, Failure, FailureCarried, Mce, TrialCarried,
-    TrialClass, TrialEnd, TrialId, TrialInstance, TrialIntent, TrialProgress, TrialSample,
-    TrialSignal, TrialStart,
+    BackendIdentity, ControllerEvidence, CrashDetected, FactSource, Failure, FailureCarried, Mce,
+    ProcessFaultEvidence, TrialCarried, TrialClass, TrialEnd, TrialId, TrialInstance, TrialIntent,
+    TrialProgress, TrialSample, TrialSignal, TrialStart,
 };
 pub use tuner::{
     BackendRetry, CheckingChain, CheckingCycle, CheckingStep, Combination, CoreTransition,
@@ -235,7 +235,12 @@ impl Payload {
             Self::SmuError(p) => p.core == Some(core),
             Self::TrialIntent(p) => p.core == Some(core) || p.cores.contains(core),
             Self::TrialStart(p) => p.instances.iter().any(|instance| instance.core == core),
-            Self::TrialProgress(p) => p.core == Some(core),
+            Self::TrialProgress(p) => {
+                p.core == Some(core)
+                    || p.fault.as_ref().is_some_and(|fault| {
+                        fault.core == Some(core) || fault.worker_core == Some(core)
+                    })
+            }
             Self::TrialEnd(p) => p.core == Some(core),
             Self::TrialCarried(p) => p.core == Some(core) || p.class.cores.contains(core),
             Self::Failure(p) => p.core == Some(core),

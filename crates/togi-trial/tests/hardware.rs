@@ -619,6 +619,7 @@ mod hardware {
             seed: 1,
             offsets: togi_machine::PerCore::default(),
             roles,
+            controller: togi_machine::ControllerMode::Legacy,
         }
     }
 
@@ -627,7 +628,7 @@ mod hardware {
     impl Reporter for Quiet {
         fn progress(&mut self, _: &str) {}
         fn sample(&mut self, _: togi_machine::Sample) {}
-        fn signal(&mut self, _: CoreId, _: Signal, _: &str) {}
+        fn signal(&mut self, _: CoreId, _: Signal, _: Option<u32>, _: &str) {}
     }
 
     fn ready() -> Stopped {
@@ -1399,8 +1400,8 @@ mod hardware {
             eprintln!("sample: {sample:?}");
         }
 
-        fn signal(&mut self, core: CoreId, signal: Signal, detail: &str) {
-            eprintln!("signal: core {core:02} {signal}: {detail}");
+        fn signal(&mut self, core: CoreId, signal: Signal, pid: Option<u32>, detail: &str) {
+            eprintln!("signal: core {core:02} {signal}, process {pid:?}: {detail}");
         }
     }
 
@@ -1482,6 +1483,7 @@ mod hardware {
                         seed: 0,
                         offsets: togi_machine::PerCore::default(),
                         roles,
+                        controller: togi_machine::ControllerMode::Legacy,
                     };
                     let mut trial = start(&mut runner, spec);
                     let result = trial
@@ -1596,6 +1598,7 @@ mod hardware {
                 })
                 .collect(),
             roles: roles.to_vec(),
+            controller: None,
         }
     }
 
@@ -1679,6 +1682,7 @@ mod hardware {
                 .map(|info| (info.core, togi_machine::TargetOffset::ZERO))
                 .collect(),
             roles: roles.to_vec(),
+            controller: togi_machine::ControllerMode::Legacy,
         };
         let mut trial = start(&mut runner, spec);
         let record = journal_start(&id, &trial.started(), roles);
@@ -1735,6 +1739,159 @@ mod hardware {
             togi_trial::PhaseSchedule::Alternate { serial: true, .. }
         )));
         run_roles(&staged, class, &roles, &topology, togi_machine::R9_DURATION);
+    }
+
+    fn managed_spec(
+        topology: &[CoreInfo],
+        cores: Vec<CoreId>,
+        regime: Regime,
+        rotation: u64,
+    ) -> TrialSpec {
+        let workload = pick_workload(regime, 0).id();
+        let cpus: Vec<_> = cores
+            .iter()
+            .map(|core| {
+                topology
+                    .iter()
+                    .find(|info| info.core == *core)
+                    .unwrap()
+                    .cpus[0]
+            })
+            .collect();
+        let roles = TrialRole::legacy(regime, workload, 1, &cores, &cpus, topology).unwrap();
+        TrialSpec {
+            id: "hardware".to_owned(),
+            regime,
+            workload,
+            condition: Condition::Alone,
+            cores,
+            cpus,
+            roles,
+            duration: Duration::from_secs(2),
+            index: 0,
+            seed: 1,
+            offsets: topology
+                .iter()
+                .map(|info| (info.core, togi_machine::TargetOffset::ZERO))
+                .collect(),
+            controller: togi_machine::ControllerMode::Managed { rotation },
+        }
+    }
+
+    fn managed_runner(staged: &Staged, topology: &[CoreInfo]) -> Runner {
+        let mut driver = togi_smu::Driver::system().unwrap();
+        let _validated = driver.validate().unwrap();
+        for info in topology {
+            assert_eq!(
+                togi_machine::Smu::offset(&mut driver, info.core).unwrap(),
+                togi_machine::ObservedOffset(0),
+                "controller placement acceptance requires CO 0 on core {}",
+                info.core,
+            );
+        }
+        Runner::new(Options {
+            dir: staged.tree.root.join("trials"),
+            backends: Backends::new().with(Helper::new(&staged.tree, "owner")),
+            topology: topology.to_vec(),
+            identity: Some(account()),
+            pm_table: None,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn managed_mapping_caps_idle_ccd_policies_during_trial_and_restores_them() {
+        use togi_machine::CpuFrequency as _;
+        let staged = Staged::new();
+        let topology = host_topology();
+        let target = &topology[0];
+        let idle_ccd = topology
+            .iter()
+            .find(|info| info.ccd != target.ccd)
+            .expect("mapping acceptance needs a host with two CCDs")
+            .ccd;
+        let controller_cpus: Vec<_> = topology
+            .iter()
+            .filter(|info| info.ccd == idle_ccd)
+            .flat_map(|info| info.cpus.iter().copied())
+            .collect();
+        let frequency = togi_trial::CpuFrequencySysfs::default();
+        let before = frequency.policies().unwrap();
+        let affected: Vec<_> = before
+            .iter()
+            .filter(|policy| {
+                policy
+                    .related_cpus
+                    .iter()
+                    .any(|cpu| controller_cpus.contains(cpu))
+            })
+            .collect();
+        assert!(!affected.is_empty());
+        let mut runner = managed_runner(&staged, &topology);
+        let mut trial = start(
+            &mut runner,
+            managed_spec(&topology, vec![target.core], Regime::R1, 0),
+        );
+        let observed: Vec<_> = affected
+            .iter()
+            .map(|policy| (policy.id, frequency.scaling_max_khz(policy.id).unwrap()))
+            .collect();
+        let result = trial.wait(&CancellationToken::new(), &mut Logged).unwrap();
+        assert!(trial.stop().is_ok());
+        for (policy, (_, capped)) in affected.iter().zip(observed) {
+            let floor = policy.cpuinfo_min_khz.max(policy.scaling_min_khz);
+            let minimum = policy.available_khz.as_ref().map_or(floor, |values| {
+                values
+                    .iter()
+                    .copied()
+                    .filter(|&value| value >= floor && value <= policy.scaling_max_khz)
+                    .min()
+                    .unwrap()
+            });
+            assert_eq!(capped, minimum, "policy{}", policy.id.get());
+            assert_eq!(
+                frequency.scaling_max_khz(policy.id).unwrap(),
+                policy.scaling_max_khz
+            );
+        }
+        assert_eq!((result.failure, result.inconclusive), (None, None));
+    }
+
+    #[test_case::test_case(0; "first rotating host")]
+    #[test_case::test_case(1; "second rotating host")]
+    fn managed_all_core_trial_rotates_controller_host(rotation: u64) {
+        let staged = Staged::new();
+        let topology = host_topology();
+        assert!(
+            topology.len() >= 2,
+            "rotation acceptance needs two physical cores"
+        );
+        let host = &topology[usize::try_from(rotation).unwrap() % topology.len()];
+        let mut runner = managed_runner(&staged, &topology);
+        let mut trial = start(
+            &mut runner,
+            managed_spec(
+                &topology,
+                topology.iter().map(|info| info.core).collect(),
+                Regime::R7,
+                rotation,
+            ),
+        );
+        let affinity = rustix::thread::sched_getaffinity(None).unwrap();
+        let selected: Vec<_> = topology
+            .iter()
+            .flat_map(|info| info.cpus.iter().copied())
+            .filter(|cpu| affinity.is_set(usize::from(cpu.get())))
+            .collect();
+        let result = trial.wait(&CancellationToken::new(), &mut Logged).unwrap();
+        assert!(trial.stop().is_ok());
+        assert_eq!(selected, host.cpus);
+        assert_eq!((result.failure, result.inconclusive), (None, None));
+        let single_ccd = topology.iter().all(|info| info.ccd == topology[0].ccd);
+        assert_eq!(
+            result.excluded,
+            single_ccd.then_some(host.core).into_iter().collect()
+        );
     }
 
     #[test]

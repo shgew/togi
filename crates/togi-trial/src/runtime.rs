@@ -206,14 +206,22 @@ async fn serve<O: Os>(env: Rc<Env<O>>, command: Command) {
         Command::Sweep { cancel, reply } => {
             let outcome = sweep::sweep(&env, &cancel)
                 .await
-                .map(|(mut detail, stopped)| {
+                .and_then(|(mut detail, stopped)| {
+                    let mut reports = Vec::new();
+                    env.frequency
+                        .restore(&mut reports)
+                        .map_err(Error::Frequency)?;
+                    for line in reports {
+                        detail.push_str("; ");
+                        detail.push_str(&line);
+                    }
                     // A sweep proves nothing runs, so threads still confined by a start that never
                     // reached its teardown can have their own CPUs back.
                     if let Some(moved) = env.controller.restore() {
                         detail.push_str("; ");
                         detail.push_str(&crate::supervisor::restored_line(moved));
                     }
-                    Swept { detail, stopped }
+                    Ok(Swept { detail, stopped })
                 });
             if let Err(std::sync::mpsc::SendError(Err(error))) = reply.send(outcome) {
                 report(&format!(

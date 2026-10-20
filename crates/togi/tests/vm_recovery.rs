@@ -302,9 +302,9 @@ mod vm_recovery {
             &mut self,
             _: &BootId,
             _: Option<&KernelCursor>,
-        ) -> Result<KernelRead, Partial<Vec<Mce>>> {
+        ) -> Result<KernelRead, Partial<KernelRead>> {
             Err(Partial {
-                value: Vec::new(),
+                value: KernelRead::default(),
                 error: other("the VM has no kernel log reader"),
             })
         }
@@ -583,7 +583,7 @@ mod vm_recovery {
     impl Reporter for Quiet {
         fn progress(&mut self, _: &str) {}
         fn sample(&mut self, _: togi_machine::Sample) {}
-        fn signal(&mut self, _: CoreId, _: Signal, _: &str) {}
+        fn signal(&mut self, _: CoreId, _: Signal, _: Option<u32>, _: &str) {}
     }
 
     fn restore_baseline() {
@@ -640,6 +640,7 @@ mod vm_recovery {
             index: 0,
             seed: 1,
             offsets,
+            controller: togi_machine::ControllerMode::Legacy,
         };
         let mut running = machine
             .trials
