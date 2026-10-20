@@ -27,6 +27,7 @@ in
       description = "An explicitly authorized existing group whose members may acquire the root-owned host lock for delegated hardware tests. The default permits root only. This does not grant access to hardware or a delegated cpuset controller.";
     };
     tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB entry that tunes unattended";
+    day.enable = lib.mkEnableOption "the togi day observer, a read-only service in the normal boot that records the machine's day in togi's journal. It holds the host lock and the journal writer lock while it runs, so `togi run` and `togi reset` fail lock-busy until it stops, and it refuses to start while there is no session. It never exists in the tuning boot, and enabling it keeps the journal on disk with a 5s sync interval";
     tuning.leaveOnShutdown = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -82,6 +83,27 @@ in
           ycruncher = lib.mkIf cfg.backends.ycruncher.enable (lib.mkDefault "${pkgs.y-cruncher}");
         };
       }
+      (lib.mkIf cfg.day.enable {
+        # The journal must survive a hang or reset, and a short sync interval bounds what the final seconds can lose.
+        services.journald.settings.Journal = {
+          Storage = lib.mkDefault "persistent";
+          SyncIntervalSec = lib.mkDefault "5s";
+        };
+        systemd.services.togi-day = {
+          description = "togi day observer";
+          wantedBy = [ "multi-user.target" ];
+          after = [
+            "systemd-modules-load.service"
+            "local-fs.target"
+          ];
+          serviceConfig = {
+            ExecStart = "${lib.getExe cfg.package} day --state-dir /var/lib/togi";
+            Restart = "on-failure";
+            RestartSec = 60;
+            StateDirectory = "togi";
+          };
+        };
+      })
       (lib.mkIf cfg.tuning.enable {
         assertions = [
           {
@@ -91,6 +113,8 @@ in
         ];
         boot.loader.grub.default = "saved";
         specialisation.togi.configuration = {
+          # The tuning boot inherits the normal configuration; the observer is a normal-boot service.
+          services.togi.day.enable = lib.mkForce false;
           system.nixos.tags = [ "togi" ];
           boot.loader.grub.configurationName = "togi";
           systemd.defaultUnit = lib.mkForce "multi-user.target";

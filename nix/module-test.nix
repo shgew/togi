@@ -13,6 +13,9 @@ let
     evaluateDisplay mirrors selectedPackage hardwareTestGroup null 27;
   evaluateDisplay =
     mirrors: selectedPackage: hardwareTestGroup: display: fontSize:
+    evaluateDay mirrors selectedPackage hardwareTestGroup display fontSize { };
+  evaluateDay =
+    mirrors: selectedPackage: hardwareTestGroup: display: fontSize: day:
     (import (pkgs.path + "/nixos/lib/eval-config.nix") {
       # Keep generated configuration files native while evaluating Linux boot settings on every host.
       pkgs = pkgs // {
@@ -39,6 +42,7 @@ let
             };
           };
           services.togi = {
+            inherit day;
             enable = true;
             package = lib.mkIf (selectedPackage != null) selectedPackage;
             inherit hardwareTestGroup;
@@ -76,6 +80,8 @@ let
   overridden = evaluate [ (mirror "/boot") ] pkgs.hello null;
   delegated = evaluate [ (mirror "/boot") ] null "togi-hardware";
   overriddenTuning = overridden.specialisation.togi.configuration;
+  day = evaluateDay [ (mirror "/boot") ] null null null 27 { enable = true; };
+  dayTuning = day.specialisation.togi.configuration;
   rejectsMirrors =
     config:
     lib.any (
@@ -118,6 +124,27 @@ assert tuning.systemd.settings.Manager.RuntimeWatchdogSec == "30s";
 assert
   tuning.systemd.services.togi-restart-limit.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";
 assert leaveTuningBoot.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";
+# The day observer is off by default, a normal-boot service only, and keeps the journal on disk.
+assert !one.services.togi.day.enable;
+assert !(one.systemd.services ? togi-day);
+assert !(one.systemd.units ? "togi-day.service");
+assert !(one.services.journald.settings.Journal ? SyncIntervalSec);
+assert !(tuning.systemd.services ? togi-day);
+assert day.services.togi.day.enable;
+assert !dayTuning.services.togi.day.enable;
+assert
+  day.systemd.services.togi-day.serviceConfig.ExecStart
+  == "${lib.getExe package} day --state-dir /var/lib/togi";
+assert day.systemd.services.togi-day.serviceConfig.StateDirectory == "togi";
+assert day.systemd.services.togi-day.wantedBy == [ "multi-user.target" ];
+assert builtins.elem "systemd-modules-load.service" day.systemd.services.togi-day.after;
+assert day.systemd.units ? "togi-day.service";
+assert !(dayTuning.systemd.services ? togi-day);
+assert !(dayTuning.systemd.units ? "togi-day.service");
+assert dayTuning.systemd.services ? togi;
+assert day.services.journald.settings.Journal.Storage == "persistent";
+assert day.services.journald.settings.Journal.SyncIntervalSec == "5s";
+assert dayTuning.services.journald.settings.Journal.SyncIntervalSec == "1s";
 assert lib.hasInfix ''[ "''${MONITOR_SERVICE_RESULT:-}" = start-limit-hit ] || exit 0''
   restartLimitScript;
 assert lib.hasInfix

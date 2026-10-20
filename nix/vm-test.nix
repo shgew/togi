@@ -772,4 +772,92 @@ in
       assert scopes() == "", scopes()
     '';
   };
+
+  # Runs the shipped module's `togi-day` service in a normal boot over the vm_recovery fake SMU, a file the test never
+  # lets the observer write: a clean stop ends with a final checkpoint of positive active time and then the clean
+  # stop, and a hard reset of the machine leaves an end the next boot's observer records as unclean. Only a helper
+  # command seeds the session journal with the current build; `togi day` itself never creates a session.
+  day-observer = pkgs.testers.runNixOSTest {
+    name = "togi-day-observer";
+
+    nodes.machine = {
+      imports = [ module ];
+      networking.useDHCP = false;
+      virtualisation.cores = 4;
+      services.togi = {
+        enable = true;
+        day.enable = true;
+        package = pkgs.writeShellScriptBin "togi" ''
+          exec ${vmRecovery}/bin/togi-vm-recovery --exact vm_recovery::helper --nocapture -- togi "$@"
+        '';
+      };
+      hardware.cpu.amd.ryzen-smu.enable = false;
+      systemd.tmpfiles.rules = [
+        "d /var/lib/togi-vm 0755 root root -"
+      ];
+    };
+
+    testScript = ''
+      import json
+
+      journal = "/var/lib/togi/events.jsonl"
+
+
+      def events():
+          raw = machine.succeed(f"cat {journal}").splitlines()
+          return [json.loads(line) for line in raw if line.strip()]
+
+
+      def day(kind=None):
+          return [e for e in events() if e["kind"].startswith("day.") and (kind is None or e["kind"] == kind)]
+
+
+      machine.start(allow_reboot=True)
+      machine.wait_for_unit("multi-user.target")
+      # Without a session the observer refuses and creates no journal.
+      machine.wait_until_succeeds("journalctl -u togi-day.service -o cat --no-pager | grep -F 'no session journal'")
+      machine.succeed(f"test ! -e {journal}")
+      machine.succeed("systemctl stop togi-day.service; systemctl reset-failed togi-day.service")
+      assert machine.succeed("journalctl -u togi-day.service -o cat --no-pager").count("no session journal") >= 1
+      assert "Storage=persistent" in machine.succeed("systemctl cat systemd-journald.service; cat /etc/systemd/journald.conf")
+      assert "SyncIntervalSec=5s" in machine.succeed("cat /etc/systemd/journald.conf")
+      machine.succeed("togi seed-session")
+
+      # A clean stop writes the final checkpoint, then the stop.
+      machine.succeed("systemctl start togi-day.service")
+      machine.wait_until_succeeds(f"grep -q day.boot_start {journal}")
+      machine.sleep(3)
+      machine.succeed("systemctl stop togi-day.service")
+      assert machine.succeed("systemctl show togi-day.service -p Result --value").strip() == "success"
+      kinds = [e["kind"] for e in day()]
+      assert kinds == ["day.boot_start", "day.checkpoint", "day.clean_stop"], kinds
+      checkpoint = day("day.checkpoint")[0]
+      assert checkpoint["data"]["applied_secs"] > 0, checkpoint
+      # The observer only reads the fake SMU: it never wrote it.
+      machine.succeed("! grep -E '^pid=[0-9]+ (set|set-all|emergency-zero|restore-baseline)' /var/lib/togi-vm/smu.log")
+      machine.succeed("grep -q '^pid=[0-9]* read core' /var/lib/togi-vm/smu.log")
+
+      # A reset leaves no clean stop; the next boot's observer records the end as unclean.
+      machine.succeed("systemctl start togi-day.service")
+      machine.wait_until_succeeds(f"test \"$(grep -c day.boot_start {journal})\" = 2")
+      first_boot = machine.succeed("cat /proc/sys/kernel/random/boot_id").strip().replace("-", "")
+      machine.sleep(2)
+      machine.crash()
+      machine.start(allow_reboot=True)
+      machine.wait_for_unit("multi-user.target")
+      machine.wait_for_unit("togi-day.service")
+      machine.wait_until_succeeds(f"grep -q day.unclean_end {journal}")
+      unclean = day("day.unclean_end")
+      assert len(unclean) == 1, unclean
+      assert unclean[0]["data"]["boot"].replace("-", "") == first_boot, (unclean, first_boot)
+      reason = unclean[0]["data"]["reset_reason"]
+      machine.log(json.dumps(reason))
+      # The VM may not prove a successor's reset reason; then it is recorded as unknown, never as a CPU reset.
+      assert reason.get("kind") in (None, "unknown", "Unknown") or reason["supported"], reason
+      assert len(day("day.boot_start")) == 3
+      machine.succeed("systemctl stop togi-day.service")
+      kinds = [e["kind"] for e in day()]
+      assert kinds[-1] == "day.clean_stop", kinds
+    '';
+  };
 }
