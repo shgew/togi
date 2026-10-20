@@ -2,7 +2,9 @@
 //! storage and workloads, with [`Machine`], [`Smu`], [`Kernel`] and [`Trials`] as execution boundaries.
 
 mod cancellation;
+mod controller;
 mod core_set;
+mod cpufreq;
 mod error;
 mod ids;
 mod load;
@@ -18,7 +20,9 @@ mod vocab;
 mod workloads;
 
 pub use cancellation::{CancellationToken, OnCancel};
+pub use controller::ControllerMode;
 pub use core_set::CoreSet;
+pub use cpufreq::{CpuFrequency, FrequencyPolicy, FrequencyPolicyId};
 pub use error::{Error, Partial, error_chain};
 pub use ids::{BootId, KernelCursor};
 pub use load::{DutyPct, InvalidDutyPct, LoadSchedule, Toggles};
@@ -31,7 +35,8 @@ pub use scalars::{
 };
 pub use seams::{
     Check, Clock, CoreRank, Host, Instance, Kernel, KernelRead, Machine, Mce, PstoreRecord,
-    Reporter, ResetReason, Running, Sample, Smu, SmuValidated, Started, Stopped, Swept,
+    ProcessFault, ProcessFaultKind, Reporter, ResetReason, Running, Sample, Smu, SmuValidated,
+    Started, Stopped, Swept,
     TrialFailure, TrialResult, TrialSpec, Trials, monotonic_duration,
 };
 pub use topology::{BiosContext, ContextField, ContextMismatch, CoreInfo, order};

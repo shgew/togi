@@ -325,6 +325,7 @@ impl Session<'_> {
             index: rotation,
             seed: intent.get(),
             offsets: self.hardware.confirmed(),
+            controller: togi_machine::ControllerMode::Legacy,
         };
         let mut trial = Trial {
             plan,

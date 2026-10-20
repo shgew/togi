@@ -607,19 +607,17 @@ mod hardware {
             })
             .collect();
         let roles = TrialRole::legacy(regime, workload, 1, &cores, &cpus, &topology).unwrap();
-        TrialSpec {
-            id: "hardware".into(),
-            regime,
-            workload,
-            condition: Condition::Alone,
-            cores,
-            cpus,
-            duration,
-            index: 0,
-            seed: 1,
-            offsets: togi_machine::PerCore::default(),
-            roles,
-        }
+        TrialSpec { id: "hardware".into(),
+        regime,
+        workload,
+        condition: Condition::Alone,
+        cores,
+        cpus,
+        duration,
+        index: 0,
+        seed: 1,
+        offsets: togi_machine::PerCore::default(),
+        roles, controller: togi_machine::ControllerMode::Legacy }
     }
 
     struct Quiet;
@@ -1470,19 +1468,17 @@ mod hardware {
                     let roles =
                         TrialRole::legacy(regime, workload.id(), 0, &cores, &cpus, &topology)
                             .unwrap();
-                    let spec = TrialSpec {
-                        id: format!("hw-{}", workload.id),
-                        regime,
-                        workload: workload.id(),
-                        condition: Condition::Alone,
-                        cores,
-                        cpus,
-                        duration: Duration::from_secs(20),
-                        index,
-                        seed: 0,
-                        offsets: togi_machine::PerCore::default(),
-                        roles,
-                    };
+                    let spec = TrialSpec { id: format!("hw-{}", workload.id),
+                    regime,
+                    workload: workload.id(),
+                    condition: Condition::Alone,
+                    cores,
+                    cpus,
+                    duration: Duration::from_secs(20),
+                    index,
+                    seed: 0,
+                    offsets: togi_machine::PerCore::default(),
+                    roles, controller: togi_machine::ControllerMode::Legacy };
                     let mut trial = start(&mut runner, spec);
                     let result = trial
                         .wait(&CancellationToken::new(), &mut Logged)
@@ -1664,22 +1660,20 @@ mod hardware {
             pm_table: None,
         })
         .unwrap();
-        let spec = TrialSpec {
-            id: id.clone(),
-            regime,
-            workload: class,
-            condition: Condition::Alone,
-            cores: TrialRole::cores(roles),
-            cpus: TrialRole::cpus(roles),
-            duration,
-            index: 0,
-            seed: ROLE_SEED,
-            offsets: topology
-                .iter()
-                .map(|info| (info.core, togi_machine::TargetOffset::ZERO))
-                .collect(),
-            roles: roles.to_vec(),
-        };
+        let spec = TrialSpec { id: id.clone(),
+        regime,
+        workload: class,
+        condition: Condition::Alone,
+        cores: TrialRole::cores(roles),
+        cpus: TrialRole::cpus(roles),
+        duration,
+        index: 0,
+        seed: ROLE_SEED,
+        offsets: topology
+            .iter()
+            .map(|info| (info.core, togi_machine::TargetOffset::ZERO))
+            .collect(),
+        roles: roles.to_vec(), controller: togi_machine::ControllerMode::Legacy };
         let mut trial = start(&mut runner, spec);
         let record = journal_start(&id, &trial.started(), roles);
         eprintln!("journal: {}", serde_json::to_string(&record).unwrap());

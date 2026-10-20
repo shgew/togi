@@ -386,19 +386,17 @@ pub(crate) fn spec(
             })
             .collect()
     };
-    TrialSpec {
-        id: id.to_owned(),
-        regime,
-        workload: workload.id(),
-        condition: Condition::Together,
-        cores,
-        cpus,
-        roles,
-        duration,
-        index: 0,
-        seed,
-        offsets: PerCore::default(),
-    }
+    TrialSpec { id: id.to_owned(),
+    regime,
+    workload: workload.id(),
+    condition: Condition::Together,
+    cores,
+    cpus,
+    roles,
+    duration,
+    index: 0,
+    seed,
+    offsets: PerCore::default(), controller: togi_machine::ControllerMode::Legacy }
 }
 
 /// A trial of the first workload of `regime`.

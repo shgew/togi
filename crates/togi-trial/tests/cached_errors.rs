@@ -108,19 +108,17 @@ mod cached_errors {
         let cores = vec![CoreId::new(0).unwrap()];
         let cpus = vec![CpuId::from(2)];
         let roles = TrialRole::legacy(Regime::R1, workload, 1, &cores, &cpus, &topology()).unwrap();
-        TrialSpec {
-            id: id.into(),
-            regime: Regime::R1,
-            workload,
-            condition: Condition::Alone,
-            cores,
-            cpus,
-            duration: Duration::from_secs(600),
-            index: 0,
-            seed: 1,
-            offsets: togi_machine::PerCore::default(),
-            roles,
-        }
+        TrialSpec { id: id.into(),
+        regime: Regime::R1,
+        workload,
+        condition: Condition::Alone,
+        cores,
+        cpus,
+        duration: Duration::from_secs(600),
+        index: 0,
+        seed: 1,
+        offsets: togi_machine::PerCore::default(),
+        roles, controller: togi_machine::ControllerMode::Legacy }
     }
 
     fn started(runner: &mut Runner, id: &str) -> Box<dyn Running> {

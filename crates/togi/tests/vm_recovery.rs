@@ -545,19 +545,17 @@ mod vm_recovery {
         let cores: Vec<CoreId> = topology[..LOADED].iter().map(|info| info.core).collect();
         let cpus: Vec<CpuId> = topology[..LOADED].iter().map(|info| info.cpus[0]).collect();
         let roles = TrialRole::legacy(regime, workload, 1, &cores, &cpus, &topology).unwrap();
-        let spec = TrialSpec {
-            id: format!("vm-{}-{}", Timestamp::now().as_second(), std::process::id()),
-            regime,
-            workload,
-            condition: Condition::Together,
-            cores,
-            cpus,
-            roles,
-            duration: Duration::from_secs(3600),
-            index: 0,
-            seed: 1,
-            offsets,
-        };
+        let spec = TrialSpec { id: format!("vm-{}-{}", Timestamp::now().as_second(), std::process::id()),
+        regime,
+        workload,
+        condition: Condition::Together,
+        cores,
+        cpus,
+        roles,
+        duration: Duration::from_secs(3600),
+        index: 0,
+        seed: 1,
+        offsets, controller: togi_machine::ControllerMode::Legacy };
         let mut running = machine
             .trials
             .start(&cancel, spec, ready)

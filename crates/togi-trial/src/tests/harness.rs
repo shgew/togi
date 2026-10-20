@@ -51,19 +51,17 @@ pub(super) fn spec(regime: Regime, cores: &[u8], duration: Duration) -> TrialSpe
         vec![topology[usize::from(cores[0])].cpus[0]]
     };
     with_roles(
-        TrialSpec {
-            id: "t1".into(),
-            regime,
-            workload: pick_workload(regime, 0).id(),
-            condition: Condition::Alone,
-            cores: cores.iter().map(|&n| core(n)).collect(),
-            cpus,
-            duration,
-            index: 0,
-            seed: 7,
-            offsets: offsets(&topology),
-            roles: Vec::new(),
-        },
+        TrialSpec { id: "t1".into(),
+        regime,
+        workload: pick_workload(regime, 0).id(),
+        condition: Condition::Alone,
+        cores: cores.iter().map(|&n| core(n)).collect(),
+        cpus,
+        duration,
+        index: 0,
+        seed: 7,
+        offsets: offsets(&topology),
+        roles: Vec::new(), controller: togi_machine::ControllerMode::Legacy },
         &topology,
     )
 }
@@ -98,19 +96,17 @@ fn spec_of(
     roles: Vec<TrialRole>,
     duration: Duration,
 ) -> TrialSpec {
-    TrialSpec {
-        id: "t1".into(),
-        regime,
-        workload,
-        condition: Condition::Alone,
-        cores: TrialRole::cores(&roles),
-        cpus: TrialRole::cpus(&roles),
-        duration,
-        index: 0,
-        seed: 7,
-        offsets: offsets(&topology()),
-        roles,
-    }
+    TrialSpec { id: "t1".into(),
+    regime,
+    workload,
+    condition: Condition::Alone,
+    cores: TrialRole::cores(&roles),
+    cpus: TrialRole::cpus(&roles),
+    duration,
+    index: 0,
+    seed: 7,
+    offsets: offsets(&topology()),
+    roles, controller: togi_machine::ControllerMode::Legacy }
 }
 
 /// R8 on the harness topology: `light` runs what the catalog's `class`th entry names beside the
