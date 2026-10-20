@@ -138,6 +138,7 @@ impl Facts {
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayUncleanEnd(_)
+            | Payload::DayAnswer(_)
             | Payload::StateRebuilt(_) => None,
         }
     }

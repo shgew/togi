@@ -1,0 +1,4 @@
+reset reason: watchdog
+machine checks, crashed boot: 0 corrected, 0 uncorrected
+machine checks, next boot: unknown
+kernel log tail: xe reset, i915 ring timeout; nothing was logged after the last

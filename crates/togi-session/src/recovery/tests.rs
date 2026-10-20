@@ -365,6 +365,14 @@ fn day_payloads() -> Vec<Payload> {
                 raw: Vec::new(),
                 supported: true,
             },
+            evidence: togi_machine::EndEvidence::unknown(),
+        }
+        .into(),
+        togi_journal::DayAnswer {
+            boot: boot("b0"),
+            offsets: PerCore::default(),
+            answer: togi_journal::DayAnswerKind::Unsure,
+            uid: 1000,
         }
         .into(),
         Payload::JournalTorn(togi_journal::JournalTorn {

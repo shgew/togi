@@ -147,6 +147,7 @@ pub fn copied_identity(payload: &Payload) -> Option<FactId> {
         | Payload::DayCheckpoint(_)
         | Payload::DayOffsetsChanged(_)
         | Payload::DayCleanStop(_)
+        | Payload::DayAnswer(_)
         | Payload::DayUncleanEnd(_)
         | Payload::StateRebuilt(_) => return None,
     };

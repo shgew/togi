@@ -18,10 +18,12 @@ clap.workspace = true
 clap_complete.workspace = true
 clap_complete_nushell.workspace = true
 jiff = { workspace = true, features = ["tz-system", "tzdb-zoneinfo"] }
-rustix = { workspace = true, features = ["event", "stdio", "termios", "time"] }
+rustix = { workspace = true, features = ["event", "net", "stdio", "termios", "time"] }
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "signal"] }
+togi-command.workspace = true
 togi-config.workspace = true
 togi-defect.workspace = true
 togi-detect.workspace = true
@@ -42,7 +44,6 @@ rustix = { workspace = true, features = ["event", "process", "termios"] }
 tempfile.workspace = true
 test-case.workspace = true
 togi-backend.workspace = true
-togi-command.workspace = true
 togi-hostlock = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["rt"] }
 togi-render = { workspace = true, features = ["test-support"] }

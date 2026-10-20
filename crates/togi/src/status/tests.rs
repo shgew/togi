@@ -187,13 +187,14 @@ fn a_locate_group_is_identified_and_explained_unlike_an_ordinary_group() {
     assert_eq!(note.map(|(label, _)| label), Some("probe"));
 }
 
-#[test]
-fn day_section_snapshot() {
+fn day_events(
+    extra: impl IntoIterator<Item = (&'static str, togi_journal::Payload)>,
+) -> Vec<togi_journal::Event> {
     use jiff::Timestamp;
     use togi_journal::{
         DayBootStart, DayCheckpoint, DayCleanStop, DayUncleanEnd, Event, Payload, Stamp,
     };
-    use togi_machine::{BiosContext, ObservedOffset, ResetKind, ResetReason};
+    use togi_machine::{BiosContext, EndEvidence, ObservedOffset, ResetKind, ResetReason};
 
     let offsets = [(core(0), ObservedOffset(-10))]
         .into_iter()
@@ -211,7 +212,7 @@ fn day_section_snapshot() {
             offsets,
         })
     };
-    let events = [
+    [
         ("day-a", start()),
         ("day-a", DayCheckpoint { applied_secs: 3600 }.into()),
         ("day-a", DayCleanStop {}.into()),
@@ -228,11 +229,13 @@ fn day_section_snapshot() {
                     raw: Vec::new(),
                     supported: true,
                 },
+                evidence: EndEvidence::unknown(),
             }
             .into(),
         ),
     ]
     .into_iter()
+    .chain(extra)
     .enumerate()
     .map(|(index, (boot, payload))| {
         Event::new(
@@ -246,8 +249,54 @@ fn day_section_snapshot() {
             payload,
         )
     })
-    .collect::<Vec<_>>();
+    .collect()
+}
+
+fn answer(kind: togi_journal::DayAnswerKind) -> (&'static str, togi_journal::Payload) {
+    let offsets = [(core(0), togi_machine::ObservedOffset(-10))]
+        .into_iter()
+        .collect::<PerCore<_>>();
+    (
+        "day-c",
+        togi_journal::DayAnswer {
+            boot: "day-b".to_owned().into(),
+            offsets,
+            answer: kind,
+            uid: 1000,
+        }
+        .into(),
+    )
+}
+
+#[test]
+fn day_section_snapshot() {
     let mut out = String::new();
-    super::render_day(&mut out, &events);
+    super::render_day(&mut out, &day_events([]));
     assert_eq!(out, include_str!("day-status.txt"));
+}
+
+#[test]
+fn an_unanswered_unclean_end_is_a_question_with_four_answers() {
+    let mut out = String::new();
+    super::render_questions(&mut out, &day_events([]));
+    assert_eq!(out, include_str!("day-question-pending.txt"));
+}
+
+#[test]
+fn an_answered_end_shows_the_answer_and_how_to_change_it() {
+    let mut out = String::new();
+    let events = day_events([answer(togi_journal::DayAnswerKind::Frozen)]);
+    super::render_questions(&mut out, &events);
+    assert_eq!(out, include_str!("day-question-answered.txt"));
+}
+
+#[test]
+fn a_changed_answer_replaces_the_earlier_one() {
+    let mut out = String::new();
+    let events = day_events([
+        answer(togi_journal::DayAnswerKind::Frozen),
+        answer(togi_journal::DayAnswerKind::Graphics),
+    ]);
+    super::render_questions(&mut out, &events);
+    assert_eq!(out, include_str!("day-question-changed.txt"));
 }

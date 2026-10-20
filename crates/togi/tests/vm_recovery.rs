@@ -353,6 +353,14 @@ mod vm_recovery {
                 None => Err(other("the VM has no kernel log reader")),
             }
         }
+
+        fn end_evidence(&mut self, boot: &BootId) -> togi_machine::EndEvidence {
+            self.kernel
+                .as_mut()
+                .map_or_else(togi_machine::EndEvidence::unknown, |kernel| {
+                    kernel.end_evidence(boot)
+                })
+        }
     }
 
     /// Writes a session's first event with the current build, as `togi run` would have, and nothing else. Only this
@@ -549,6 +557,12 @@ mod vm_recovery {
             Ok(Box::new(VmObserver {
                 kernel: togi_detect::Kernel::new(&topology()).ok(),
             }))
+        }
+
+        fn day_socket(
+            &self,
+        ) -> Result<Option<togi_cli::day::socket::Server>, togi_cli::day::socket::Error> {
+            self.0.day_socket()
         }
 
         fn interactive(&self) -> bool {

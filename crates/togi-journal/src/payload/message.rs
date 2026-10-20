@@ -1,6 +1,8 @@
 use std::fmt::Write as _;
 
-use togi_machine::{CoreId, CoreSet, PerCore, Signal, TargetOffset, WorkloadId};
+use togi_machine::{
+    CoreId, CoreSet, KernelFault, KernelTail, MceCount, PerCore, Signal, TargetOffset, WorkloadId,
+};
 
 use super::domain::{
     Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, Decision, HuntOutcome, HuntStage,
@@ -11,14 +13,14 @@ use super::smu::SmuCommand;
 use super::tuner::{Member, Rederived};
 use super::{
     BackendRetry, BootLeaveReason, BootSavedEntry, CheckingChain, CheckingCycle, CheckingStep,
-    Combination, CommandReset, ConfigLoaded, CoreTransition, CrashDetected, DayBootStart,
-    DayCheckpoint, DayOffsetsChanged, DayUncleanEnd, DeadEnd, DeepeningRound, DefectAnswered,
-    DefectFound, Failure, FailureCarried, HostRanking, HuntEnd, HuntGroup, HuntSkipped, HuntStart,
-    JournalTorn, Mce, Payload, PreflightCheck, ProfileApplied, ProfileChange, ProfileRestored,
-    SessionArchived, SessionBaseline, SessionCarried, SessionContext, SessionNotice, SessionStart,
-    SessionWarning, Shutdown, SmuError, SmuIntentRecord, SmuReadback, SmuWriteRecord, StateRebuilt,
-    TrialCarried, TrialEnd, TrialIntent, TrialProgress, TrialSample, TrialSignal, TrialStart,
-    TunerDecision, TunerWarning,
+    Combination, CommandReset, ConfigLoaded, CoreTransition, CrashDetected, DayAnswer,
+    DayBootStart, DayCheckpoint, DayOffsetsChanged, DayUncleanEnd, DeadEnd, DeepeningRound,
+    DefectAnswered, DefectFound, Failure, FailureCarried, HostRanking, HuntEnd, HuntGroup,
+    HuntSkipped, HuntStart, JournalTorn, Mce, Payload, PreflightCheck, ProfileApplied,
+    ProfileChange, ProfileRestored, SessionArchived, SessionBaseline, SessionCarried,
+    SessionContext, SessionNotice, SessionStart, SessionWarning, Shutdown, SmuError,
+    SmuIntentRecord, SmuReadback, SmuWriteRecord, StateRebuilt, TrialCarried, TrialEnd,
+    TrialIntent, TrialProgress, TrialSample, TrialSignal, TrialStart, TunerDecision, TunerWarning,
 };
 use crate::Build;
 
@@ -80,6 +82,7 @@ impl Payload {
             Self::DayOffsetsChanged(p) => day_offsets_changed(p),
             Self::DayCleanStop(_) => "day observer stopped on request".to_owned(),
             Self::DayUncleanEnd(p) => day_unclean_end(p),
+            Self::DayAnswer(p) => day_answer(p),
         }
     }
 }
@@ -1153,7 +1156,7 @@ fn day_offsets_changed(p: &DayOffsetsChanged) -> String {
     )
 }
 
-fn day_unclean_end(p: &DayUncleanEnd) -> String {
+pub(super) fn day_unclean_end(p: &DayUncleanEnd) -> String {
     let mut text = format!(
         "day observer of boot {} ended without a clean stop; ",
         short_boot(p.boot.as_str())
@@ -1176,5 +1179,79 @@ fn day_unclean_end(p: &DayUncleanEnd) -> String {
     } else if !p.reset_reason.supported {
         text.push_str("; reset reason unavailable on this kernel");
     }
+    let _ = write!(
+        text,
+        "; machine checks: {} in that boot, {} in the next; kernel log tail: {}",
+        mce_count(p.evidence.crashed_mces),
+        mce_count(p.evidence.successor_mces),
+        kernel_tail(&p.evidence.tail)
+    );
     text
+}
+
+fn mce_count(count: MceCount) -> String {
+    match count {
+        MceCount::Unknown {} => "unknown".to_owned(),
+        MceCount::Read {
+            corrected: 0,
+            uncorrected: 0,
+        } => "none".to_owned(),
+        MceCount::Read {
+            corrected,
+            uncorrected,
+        } => format!("{uncorrected} uncorrected and {corrected} corrected"),
+    }
+}
+
+fn kernel_fault(out: &mut String, fault: KernelFault) {
+    match fault {
+        KernelFault::MachineCheck {} => out.push_str("machine check"),
+        KernelFault::GraphicsTimeout { driver } => {
+            let _ = write!(out, "{} timeout", driver.as_str());
+        }
+        KernelFault::GraphicsReset { driver } => {
+            let _ = write!(out, "{} reset", driver.as_str());
+        }
+        KernelFault::NvidiaXid { code } => {
+            let _ = write!(out, "NVIDIA Xid {code}");
+        }
+        KernelFault::Oops {} => out.push_str("kernel oops"),
+        KernelFault::HungTask {} => out.push_str("hung task"),
+    }
+}
+
+fn kernel_tail(tail: &KernelTail) -> String {
+    match tail {
+        KernelTail::Missing {} => "missing".to_owned(),
+        KernelTail::Unreadable {} => "unreadable".to_owned(),
+        KernelTail::Quiet {} => "no recognized errors".to_owned(),
+        KernelTail::Faults {
+            faults,
+            logging_continued,
+        } => {
+            let mut text = String::new();
+            for (index, fault) in faults.iter().enumerate() {
+                if index > 0 {
+                    text.push_str(", ");
+                }
+                kernel_fault(&mut text, *fault);
+            }
+            text.push_str(if *logging_continued {
+                "; logging continued after the last error"
+            } else {
+                "; the log ended at the last error"
+            });
+            text
+        }
+    }
+}
+
+fn day_answer(p: &DayAnswer) -> String {
+    format!(
+        "uid {} answered that boot {} ended because {}; offsets {}",
+        p.uid,
+        short_boot(p.boot.as_str()),
+        p.answer.meaning(),
+        offsets(&p.offsets, |offset| offset.0.to_string())
+    )
 }

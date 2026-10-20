@@ -4,8 +4,8 @@ use std::marker::PhantomData;
 
 use togi_hostlock::HostLock;
 use togi_machine::{
-    BiosContext, BootId, CoreInfo, Error, Kernel as _, ObservedOffset, PerCore, ResetReason,
-    Smu as _,
+    BiosContext, BootId, CoreInfo, EndEvidence, Error, Kernel as _, ObservedOffset, PerCore,
+    ResetReason, Smu as _,
 };
 use togi_smu::Driver;
 
@@ -17,6 +17,9 @@ pub trait Observer {
     fn offsets(&mut self) -> Result<PerCore<ObservedOffset>, Error>;
     /// Reset evidence from the proven immediate successor of `boot`.
     fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, Error>;
+    /// What the kernel logs of the crashed `boot` and of its proven immediate successor say about how it ended.
+    /// Infallible: whatever cannot be read is unknown in the result, never an absence of errors.
+    fn end_evidence(&mut self, boot: &BootId) -> EndEvidence;
 }
 
 struct ReadOnly<'lock> {
@@ -60,5 +63,9 @@ impl Observer for ReadOnly<'_> {
 
     fn reset_reason_after(&mut self, boot: &BootId) -> Result<ResetReason, Error> {
         self.kernel.reset_reason_after(boot)
+    }
+
+    fn end_evidence(&mut self, boot: &BootId) -> EndEvidence {
+        self.kernel.end_evidence(boot)
     }
 }

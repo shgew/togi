@@ -64,6 +64,13 @@ pub(crate) fn reset_args(boot: &JournalBoot) -> Vec<OsString> {
     args
 }
 
+/// The last kernel log entries of a boot, oldest first.
+pub(crate) fn tail_args(boot: &JournalBoot) -> Vec<OsString> {
+    let mut args = kernel_log(boot, "--output-fields=MESSAGE");
+    args.extend(argv(&["-n", crate::tail::TAIL_ENTRIES, "--no-pager", "-q"]));
+    args
+}
+
 pub(crate) fn boots_args() -> Vec<OsString> {
     argv(&["--list-boots", "-o", "json", "--no-pager", "-q"])
 }

@@ -16,7 +16,10 @@ use togi_machine::CoreId;
 pub use config::{
     ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
 };
-pub use day::{DayBootStart, DayCheckpoint, DayCleanStop, DayOffsetsChanged, DayUncleanEnd};
+pub use day::{
+    DayAnswer, DayAnswerKind, DayBootStart, DayCheckpoint, DayCleanStop, DayOffsetsChanged,
+    DayQuestions, DayUncleanEnd, EndClass,
+};
 pub use domain::{
     Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition, Decision,
     DefectAnswer, DefectDirection, HuntOutcome, HuntStage, Inference, Notice, Outcome, RetryTarget,
@@ -156,6 +159,7 @@ payloads! {
     DayOffsetsChanged(DayOffsetsChanged) = "day.offsets_changed",
     DayCleanStop(DayCleanStop) = "day.clean_stop",
     DayUncleanEnd(DayUncleanEnd) = "day.unclean_end",
+    DayAnswer(DayAnswer) = "day.answer",
 }
 
 impl Payload {
@@ -216,7 +220,8 @@ impl Payload {
             | Self::DayCheckpoint(_)
             | Self::DayOffsetsChanged(_)
             | Self::DayCleanStop(_)
-            | Self::DayUncleanEnd(_) => None,
+            | Self::DayUncleanEnd(_)
+            | Self::DayAnswer(_) => None,
         }
     }
 
@@ -286,7 +291,8 @@ impl Payload {
             | Self::DayCheckpoint(_)
             | Self::DayOffsetsChanged(_)
             | Self::DayCleanStop(_)
-            | Self::DayUncleanEnd(_) => false,
+            | Self::DayUncleanEnd(_)
+            | Self::DayAnswer(_) => false,
         }
     }
 }
@@ -306,6 +312,7 @@ impl EventKind {
                 | Self::DayOffsetsChanged
                 | Self::DayCleanStop
                 | Self::DayUncleanEnd
+                | Self::DayAnswer
         )
     }
 

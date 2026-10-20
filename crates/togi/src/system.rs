@@ -173,6 +173,40 @@ pub trait System {
         togi_hardware::day::observe(lock)
     }
 
+    /// Opens the day question listener; in-memory command hosts have no external socket.
+    fn day_socket(&self) -> Result<Option<crate::day::socket::Server>, crate::day::socket::Error> {
+        Ok(None)
+    }
+
+    /// Sends a question request without requiring journal access or elevated privileges.
+    fn day_request(
+        &self,
+        request: &crate::day::socket::Request,
+    ) -> Result<crate::day::socket::Reply, crate::day::socket::Error> {
+        crate::day::socket::request(request)
+    }
+
+    /// Plasma is the supported actions desktop; others get a plain notification.
+    fn day_notification_actions(&self) -> bool {
+        std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|desktop| {
+            desktop
+                .split(':')
+                .any(|name| name.eq_ignore_ascii_case("KDE"))
+        })
+    }
+
+    /// Runs the installed notification CLI with bounded output and runtime.
+    fn day_notification(
+        &self,
+        invocation: &togi_command::Invocation,
+    ) -> Result<togi_command::Output, togi_command::Error> {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the graphical-session adapter invokes the installed libnotify CLI"
+        )]
+        togi_command::run_blocking(invocation, Duration::from_secs(130))
+    }
+
     /// Whether stdin and stderr are both terminals.
     fn interactive(&self) -> bool;
 
@@ -200,6 +234,10 @@ impl System for Real {
 
     fn privileged(&self) -> bool {
         rustix::process::geteuid().is_root()
+    }
+
+    fn day_socket(&self) -> Result<Option<crate::day::socket::Server>, crate::day::socket::Error> {
+        crate::day::socket::Server::bind().map(Some)
     }
 
     fn host_lock(&self) -> (&Path, Policy) {

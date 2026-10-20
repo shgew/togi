@@ -95,6 +95,11 @@ fn spoken(scene: &Scene<'_>) -> Story {
             Paint::Running,
         );
     }
+    if s.trial.is_none() {
+        if let Some(end) = s.day.pending().next() {
+            return question_story(end);
+        }
+    }
     if let Some(dead_end) = s.dead_end {
         return dead_end_story(dead_end.condition);
     }
@@ -123,6 +128,30 @@ fn spoken(scene: &Scene<'_>) -> Story {
         return Story::one(stage_label(scene), text.to_owned(), Paint::Running);
     };
     trial_story(scene, trial)
+}
+
+/// The oldest unanswered unclean end of a day-observed boot, as a question. The dashboard has two lines that fit
+/// the medium class: the boot, reset reason and reading first, then the four choices with where to answer; the
+/// full evidence and the answering commands are in `togi status`, and the compact brief carries the command.
+fn question_story(end: &togi_journal::DayUncleanEnd) -> Story {
+    use crate::day;
+    let command = format!(
+        "togi day answer {} {}",
+        end.boot.as_str(),
+        day::answer_args()
+    );
+    Story::new(
+        "DAY QUESTION",
+        vec![
+            day::headline(end),
+            format!("{}. Answer: togi status", day::choices_line()),
+        ],
+        format!(
+            "Boot {} ended unclean: {command}",
+            day::short_boot(&end.boot)
+        ),
+        Paint::Hunt,
+    )
 }
 
 fn trial_story(scene: &Scene<'_>, trial: &TrialView) -> Story {

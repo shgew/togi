@@ -3,9 +3,9 @@ use std::num::NonZeroU32;
 
 use jiff::Timestamp;
 use togi_machine::{
-    BankType, BiosContext, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId,
-    KernelCursor, LoadSchedule, ObservedOffset, PerCore, PstoreRecord, Regime, ResetKind,
-    ResetReason, Signal, TargetOffset, WorkloadId,
+    BankType, BiosContext, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, EndEvidence,
+    GraphicsDriver, KernelCursor, KernelFault, KernelTail, LoadSchedule, MceCount, ObservedOffset,
+    PerCore, PstoreRecord, Regime, ResetKind, ResetReason, Signal, TargetOffset, WorkloadId,
 };
 
 use crate::*;
@@ -670,6 +670,26 @@ pub(crate) fn samples() -> Vec<Payload> {
                 raw: vec!["watchdog".into()],
                 supported: true,
             },
+            evidence: EndEvidence {
+                crashed_mces: MceCount::Read {
+                    corrected: 0,
+                    uncorrected: 0,
+                },
+                successor_mces: MceCount::Unknown {},
+                tail: KernelTail::Faults {
+                    faults: vec![KernelFault::GraphicsTimeout {
+                        driver: GraphicsDriver::Amdgpu,
+                    }],
+                    logging_continued: true,
+                },
+            },
+        }
+        .into(),
+        DayAnswer {
+            boot: BootId::from("7a1b2c3d-0000-0000-0000-000000000000".to_owned()),
+            offsets: day_offsets(-10),
+            answer: DayAnswerKind::Graphics,
+            uid: 1000,
         }
         .into(),
     ]

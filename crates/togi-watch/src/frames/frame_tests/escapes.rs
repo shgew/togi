@@ -152,6 +152,7 @@ fn a_trial_id_with_controls_is_drawn_escaped() {
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayUncleanEnd(_)
+            | Payload::DayAnswer(_)
             | Payload::StateRebuilt(_) => {}
         }
     }

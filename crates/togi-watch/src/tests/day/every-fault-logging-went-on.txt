@@ -1,0 +1,4 @@
+reset reason: watchdog
+machine checks, crashed boot: 0 corrected, 0 uncorrected
+machine checks, next boot: unknown
+kernel log tail: machine check, amdgpu ring timeout, i915 reset, xe ring timeout, nvidia Xid 79, oops, hung task; logging went on after the last
