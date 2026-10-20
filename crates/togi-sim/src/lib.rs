@@ -9,6 +9,7 @@
 
 mod adapters;
 mod cores;
+pub mod day_night;
 pub mod definition;
 mod error;
 pub mod faults;
