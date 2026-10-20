@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use togi_command::Invocation;
 use togi_journal::{DayAnswerKind, DayUncleanEnd};
-use togi_machine::{CancellationToken, Clock as _};
+use togi_machine::{CancellationToken, Clock};
 
 use super::socket::{Reply, Request};
 use crate::cli::Context;
@@ -55,6 +55,10 @@ pub(super) fn run(ctx: &mut Context<'_>) -> Exit {
         }
     };
     let mut clock = crate::system::SystemClock(ctx.system);
+    serve(ctx, &cancel, &mut clock)
+}
+
+fn serve(ctx: &mut Context<'_>, cancel: &CancellationToken, clock: &mut impl Clock) -> Exit {
     let mut sent = BTreeSet::new();
     loop {
         let pending = match ctx.system.day_request(&Request::Questions) {
@@ -123,7 +127,7 @@ pub(super) fn run(ctx: &mut Context<'_>) -> Exit {
                 }
             }
         }
-        match clock.sleep(&cancel, Duration::from_secs(10)) {
+        match clock.sleep(cancel, Duration::from_secs(10)) {
             Ok(()) => {}
             Err(togi_machine::Error::Cancelled) => return Exit::Ok,
             Err(error) => {
@@ -183,5 +187,523 @@ mod tests {
                 end.summary(),
             ));
         assert_eq!(invocation(&end, actions), expected);
+    }
+
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+    use std::os::unix::process::ExitStatusExt as _;
+    use std::path::Path;
+    use std::process::ExitStatus;
+    use std::sync::Arc;
+
+    use jiff::Timestamp;
+    use jiff::tz::TimeZone;
+    use togi_command::Output;
+    use togi_hostlock::{HostLock, Policy};
+    use togi_machine::BootId;
+    use togi_render::OutputFacts;
+
+    use crate::dashboard::Surface;
+    use crate::day::socket::Error as SocketError;
+    use crate::system::System;
+
+    #[derive(Debug, PartialEq)]
+    enum Seen {
+        Questions,
+        Answer(BootId, DayAnswerKind),
+    }
+
+    /// A desktop session whose day service and notification daemon answer from scripts.
+    #[derive(Default)]
+    struct Desktop {
+        actions: bool,
+        listen_error: RefCell<Option<crate::signals::Error>>,
+        token: RefCell<Option<CancellationToken>>,
+        replies: RefCell<VecDeque<Result<Reply, SocketError>>>,
+        notifications: RefCell<VecDeque<Result<Output, togi_command::Error>>>,
+        requests: RefCell<Vec<Seen>>,
+        shown: RefCell<Vec<Invocation>>,
+    }
+
+    impl Desktop {
+        fn new(
+            replies: impl IntoIterator<Item = Result<Reply, SocketError>>,
+            notifications: impl IntoIterator<Item = Result<Output, togi_command::Error>>,
+        ) -> Self {
+            Self {
+                replies: RefCell::new(replies.into_iter().collect()),
+                notifications: RefCell::new(notifications.into_iter().collect()),
+                ..Self::default()
+            }
+        }
+    }
+
+    impl System for Desktop {
+        fn check_platform(&self) -> Result<(), togi_hardware::Error> {
+            Ok(())
+        }
+
+        fn privileged(&self) -> bool {
+            false
+        }
+
+        fn listen(
+            &self,
+            token: &CancellationToken,
+        ) -> Result<Box<dyn std::any::Any>, crate::signals::Error> {
+            if let Some(error) = self.listen_error.borrow_mut().take() {
+                return Err(error);
+            }
+            *self.token.borrow_mut() = Some(token.clone());
+            Ok(Box::new(()))
+        }
+
+        fn host_lock(&self) -> (&Path, Policy) {
+            (Path::new("/lock"), Policy::Private)
+        }
+
+        fn config_path(&self) -> &Path {
+            Path::new("/config")
+        }
+
+        fn boot_id(&self) -> Result<BootId, togi_detect::Error> {
+            panic!("notify does not read the boot id")
+        }
+
+        fn now(&self) -> Timestamp {
+            Timestamp::UNIX_EPOCH
+        }
+
+        fn monotonic(&self) -> Result<std::time::Duration, togi_machine::Error> {
+            Ok(std::time::Duration::ZERO)
+        }
+
+        fn zone(&self) -> TimeZone {
+            TimeZone::UTC
+        }
+
+        fn topology(&self) -> Result<Vec<togi_machine::CoreInfo>, togi_hardware::Error> {
+            panic!("notify does not read the topology")
+        }
+
+        fn diagnose(
+            &self,
+            _: &togi_config::Config,
+            _: Option<&togi_machine::BiosContext>,
+            _: Option<&HostLock>,
+        ) -> Result<togi_hardware::Diagnosis, togi_hardware::Error> {
+            panic!("notify does not diagnose hardware")
+        }
+
+        fn bootloader(&self, _: &Path) -> Box<dyn togi_tuningboot::Bootloader> {
+            panic!("notify does not touch the bootloader")
+        }
+
+        fn create_retry_marker(&self) -> std::io::Result<()> {
+            panic!("notify does not create the retry marker")
+        }
+
+        fn remove_retry_marker(&self) -> std::io::Result<()> {
+            panic!("notify does not remove the retry marker")
+        }
+
+        fn reboot(&self) -> Result<(), togi_hardware::RebootError> {
+            panic!("notify does not reboot")
+        }
+
+        fn stderr_facts(&self) -> OutputFacts {
+            OutputFacts::default()
+        }
+
+        fn open_machine<'lock>(
+            &self,
+            _: &togi_config::Config,
+            _: &Path,
+            _: &'lock HostLock,
+        ) -> Result<togi_machine::Machine<'lock>, togi_hardware::Error> {
+            panic!("notify does not open the machine")
+        }
+
+        fn day_request(&self, request: &Request) -> Result<Reply, SocketError> {
+            self.requests.borrow_mut().push(match request {
+                Request::Questions => Seen::Questions,
+                Request::Answer { boot, answer } => Seen::Answer(boot.clone(), *answer),
+            });
+            let mut replies = self.replies.borrow_mut();
+            let reply = replies.pop_front().expect("unscripted day request");
+            if replies.is_empty()
+                && let Some(token) = &*self.token.borrow()
+            {
+                token.cancel();
+            }
+            reply
+        }
+
+        fn day_notification_actions(&self) -> bool {
+            self.actions
+        }
+
+        fn day_notification(&self, invocation: &Invocation) -> Result<Output, togi_command::Error> {
+            self.shown.borrow_mut().push(invocation.clone());
+            self.notifications
+                .borrow_mut()
+                .pop_front()
+                .expect("unscripted notification")
+        }
+
+        fn interactive(&self) -> bool {
+            false
+        }
+
+        fn stderr(&self) -> Box<dyn std::io::Write> {
+            Box::new(std::io::sink())
+        }
+
+        fn surface(&self) -> Arc<dyn Surface> {
+            panic!("notify draws no dashboard")
+        }
+    }
+
+    /// Each `sleep` pops the next scripted result, as an injected clock must not wait ten seconds.
+    struct Ticks {
+        results: VecDeque<Result<(), togi_machine::Error>>,
+        slept: Vec<Duration>,
+    }
+
+    impl Ticks {
+        fn new(results: impl IntoIterator<Item = Result<(), togi_machine::Error>>) -> Self {
+            Self {
+                results: results.into_iter().collect(),
+                slept: Vec::new(),
+            }
+        }
+    }
+
+    impl Clock for Ticks {
+        fn now(&self) -> jiff::Timestamp {
+            Timestamp::UNIX_EPOCH
+        }
+
+        fn monotonic(&self) -> Result<Duration, togi_machine::Error> {
+            Ok(Duration::ZERO)
+        }
+
+        fn sleep(
+            &mut self,
+            _: &CancellationToken,
+            duration: Duration,
+        ) -> Result<(), togi_machine::Error> {
+            self.slept.push(duration);
+            self.results.pop_front().expect("unscripted sleep")
+        }
+    }
+
+    fn end(boot: &str) -> DayUncleanEnd {
+        DayUncleanEnd {
+            boot: boot.to_owned().into(),
+            last_checkpoint: None,
+            offsets: togi_machine::PerCore::default(),
+            reset_reason: togi_machine::ResetReason {
+                kind: None,
+                raw: Vec::new(),
+                supported: false,
+            },
+            evidence: togi_machine::EndEvidence::unknown(),
+        }
+    }
+
+    fn pending(boots: &[&str]) -> Reply {
+        Reply::Questions {
+            pending: boots.iter().map(|boot| end(boot)).collect(),
+        }
+    }
+
+    fn chose(stdout: &[u8]) -> Output {
+        Output {
+            status: ExitStatus::from_raw(0),
+            stdout: stdout.to_vec(),
+            stderr: Vec::new(),
+        }
+    }
+
+    fn drive(desktop: &Desktop, ticks: &mut Ticks) -> (Exit, String) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let exit = {
+            let mut ctx = Context {
+                state_dir: Path::new("/state"),
+                out: &mut out,
+                err: &mut err,
+                system: desktop,
+            };
+            serve(&mut ctx, &CancellationToken::new(), ticks)
+        };
+        assert_eq!(out, b"", "notify writes nothing to stdout");
+        (exit, String::from_utf8(err).unwrap())
+    }
+
+    fn boot(id: &str) -> BootId {
+        id.to_owned().into()
+    }
+
+    #[test_case(true ; "plasma with actions")]
+    #[test_case(false ; "other desktop without actions")]
+    fn a_pending_question_raises_one_notification_and_dismissal_sends_no_answer(actions: bool) {
+        let desktop = Desktop {
+            actions,
+            ..Desktop::new([Ok(pending(&["crashed"]))], [Ok(chose(b""))])
+        };
+        let mut ticks = Ticks::new([Err(togi_machine::Error::Cancelled)]);
+
+        let (exit, err) = drive(&desktop, &mut ticks);
+
+        assert_eq!((exit, err.as_str()), (Exit::Ok, ""));
+        assert_eq!(
+            *desktop.shown.borrow(),
+            [invocation(&end("crashed"), actions)]
+        );
+        assert_eq!(*desktop.requests.borrow(), [Seen::Questions]);
+        assert_eq!(ticks.slept, [Duration::from_secs(10)]);
+    }
+
+    #[test_case(b"frozen\n", DayAnswerKind::Frozen)]
+    #[test_case(b"graphics\n", DayAnswerKind::Graphics)]
+    #[test_case(b"power-off\n", DayAnswerKind::PowerOff)]
+    #[test_case(b"unsure\n", DayAnswerKind::Unsure)]
+    fn a_chosen_action_answers_the_notified_boot(stdout: &[u8], answer: DayAnswerKind) {
+        let desktop = Desktop {
+            actions: true,
+            ..Desktop::new(
+                [
+                    Ok(pending(&["other-pending", "crashed"])),
+                    Ok(Reply::Answered),
+                ],
+                [Ok(chose(b"")), Ok(chose(stdout))],
+            )
+        };
+        let mut ticks = Ticks::new([Err(togi_machine::Error::Cancelled)]);
+
+        let (exit, err) = drive(&desktop, &mut ticks);
+
+        assert_eq!((exit, err.as_str()), (Exit::Ok, ""));
+        assert_eq!(
+            *desktop.requests.borrow(),
+            [Seen::Questions, Seen::Answer(boot("crashed"), answer)],
+        );
+        assert_eq!(desktop.shown.borrow().len(), 2);
+    }
+
+    #[test]
+    fn an_already_notified_question_is_not_notified_again_but_a_new_one_is() {
+        let desktop = Desktop::new(
+            [
+                Ok(pending(&["first"])),
+                Ok(pending(&["first"])),
+                Ok(pending(&["first", "second"])),
+            ],
+            [Ok(chose(b"")), Ok(chose(b""))],
+        );
+        let mut ticks = Ticks::new([Ok(()), Ok(()), Err(togi_machine::Error::Cancelled)]);
+
+        let (exit, err) = drive(&desktop, &mut ticks);
+
+        assert_eq!((exit, err.as_str()), (Exit::Ok, ""));
+        assert_eq!(
+            *desktop.shown.borrow(),
+            [
+                invocation(&end("first"), false),
+                invocation(&end("second"), false)
+            ],
+        );
+        assert_eq!(
+            *desktop.requests.borrow(),
+            [Seen::Questions, Seen::Questions, Seen::Questions],
+        );
+        assert_eq!(ticks.slept, [Duration::from_secs(10); 3]);
+    }
+
+    #[test]
+    fn a_dismissed_question_is_not_asked_again_even_when_it_stays_pending() {
+        let desktop = Desktop::new(
+            [Ok(pending(&["first"])), Ok(pending(&["first"]))],
+            [Ok(chose(b""))],
+        );
+        let mut ticks = Ticks::new([Ok(()), Err(togi_machine::Error::Cancelled)]);
+
+        let (exit, _) = drive(&desktop, &mut ticks);
+
+        assert_eq!(exit, Exit::Ok);
+        assert_eq!(desktop.shown.borrow().len(), 1);
+        assert!(
+            desktop
+                .requests
+                .borrow()
+                .iter()
+                .all(|seen| *seen == Seen::Questions)
+        );
+    }
+
+    #[test]
+    fn a_day_service_failure_ends_the_loop_before_any_notification() {
+        let desktop = Desktop::new([Err(SocketError::Refused("no access".into()))], []);
+        let mut ticks = Ticks::new([]);
+
+        let (exit, err) = drive(&desktop, &mut ticks);
+
+        assert_eq!(
+            (exit, err.as_str()),
+            (
+                Exit::Error,
+                "togi day notify: day service refused the request: no access\n"
+            ),
+        );
+        assert!(desktop.shown.borrow().is_empty());
+        assert!(ticks.slept.is_empty());
+    }
+
+    #[test_case(Ok(Reply::Answered) ; "answered")]
+    #[test_case(Ok(Reply::Refused { reason: "no".into() }) ; "refused")]
+    fn a_wrong_reply_to_the_question_list_ends_the_loop(reply: Result<Reply, SocketError>) {
+        let desktop = Desktop::new([reply], []);
+        let mut ticks = Ticks::new([]);
+
+        let (exit, err) = drive(&desktop, &mut ticks);
+
+        assert_eq!(
+            (exit, err.as_str()),
+            (
+                Exit::Error,
+                "togi day notify: unexpected day service reply\n"
+            ),
+        );
+    }
+
+    #[test]
+    fn a_failed_notify_send_ends_the_loop_without_an_answer() {
+        let desktop = Desktop::new(
+            [Ok(pending(&["crashed"]))],
+            [Ok(Output {
+                status: ExitStatus::from_raw(1 << 8),
+                stdout: b"frozen\n".to_vec(),
+                stderr: Vec::new(),
+            })],
+        );
+        let mut ticks = Ticks::new([]);
+
+        let (exit, err) = drive(&desktop, &mut ticks);
+
+        assert_eq!(
+            (exit, err.as_str()),
+            (Exit::Error, "togi day notify: notify-send failed\n"),
+        );
+        assert_eq!(*desktop.requests.borrow(), [Seen::Questions]);
+        assert!(ticks.slept.is_empty());
+    }
+
+    #[test]
+    fn an_unstartable_notify_send_ends_the_loop() {
+        let desktop = Desktop::new(
+            [Ok(pending(&["crashed"]))],
+            [Err(togi_command::Error::Spawn {
+                program: "notify-send".into(),
+                source: std::io::Error::other("not installed"),
+            })],
+        );
+        let mut ticks = Ticks::new([]);
+
+        let (exit, err) = drive(&desktop, &mut ticks);
+
+        assert_eq!(
+            (exit, err.as_str()),
+            (
+                Exit::Error,
+                "togi day notify: cannot start notify-send: not installed\n"
+            ),
+        );
+    }
+
+    #[test_case(Err(SocketError::Refused("not yours".into())), "day service refused the request: not yours" ; "failed request")]
+    #[test_case(Ok(pending(&[])), "unexpected day service reply" ; "wrong reply")]
+    #[test_case(Ok(Reply::Refused { reason: "no".into() }), "unexpected day service reply" ; "refusal reply")]
+    fn a_failed_answer_ends_the_loop(reply: Result<Reply, SocketError>, message: &str) {
+        let desktop = Desktop::new([Ok(pending(&["crashed"])), reply], [Ok(chose(b"frozen\n"))]);
+        let mut ticks = Ticks::new([]);
+
+        let (exit, err) = drive(&desktop, &mut ticks);
+
+        assert_eq!(
+            (exit, err),
+            (Exit::Error, format!("togi day notify: {message}\n")),
+        );
+        assert_eq!(
+            *desktop.requests.borrow(),
+            [
+                Seen::Questions,
+                Seen::Answer(boot("crashed"), DayAnswerKind::Frozen)
+            ],
+        );
+        assert!(ticks.slept.is_empty());
+    }
+
+    #[test]
+    fn a_clock_failure_ends_the_loop() {
+        let desktop = Desktop::new([Ok(pending(&[]))], []);
+        let mut ticks = Ticks::new([Err(togi_machine::Error::Crashed)]);
+
+        let (exit, err) = drive(&desktop, &mut ticks);
+
+        assert_eq!(
+            (exit, err.as_str()),
+            (
+                Exit::Error,
+                "togi day notify: the simulated machine crashed\n"
+            ),
+        );
+    }
+
+    #[test]
+    fn run_listens_for_signals_and_stops_cleanly_once_cancelled() {
+        let desktop = Desktop::new(
+            [Ok(pending(&["crashed"])), Ok(Reply::Answered)],
+            [Ok(chose(b"graphics\n"))],
+        );
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+
+        let exit = run(&mut Context {
+            state_dir: Path::new("/state"),
+            out: &mut out,
+            err: &mut err,
+            system: &desktop,
+        });
+
+        assert_eq!(exit, Exit::Ok);
+        assert_eq!(
+            *desktop.requests.borrow(),
+            [
+                Seen::Questions,
+                Seen::Answer(boot("crashed"), DayAnswerKind::Graphics)
+            ],
+        );
+        assert_eq!((out, err), (Vec::new(), Vec::new()));
+    }
+
+    #[test]
+    fn run_reports_a_signal_listener_that_cannot_start_and_asks_nothing() {
+        let desktop = Desktop::default();
+        *desktop.listen_error.borrow_mut() = Some(crate::signals::Error::Lost);
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+
+        let exit = run(&mut Context {
+            state_dir: Path::new("/state"),
+            out: &mut out,
+            err: &mut err,
+            system: &desktop,
+        });
+
+        assert_eq!(exit, Exit::Error);
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            "togi day notify: the signal listener stopped\n",
+        );
+        assert!(desktop.requests.borrow().is_empty());
     }
 }
