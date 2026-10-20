@@ -15,7 +15,8 @@ mod cached_errors {
     use togi_hostlock::{DEFAULT_PATH, HostLock, Policy};
     use togi_machine::{
         CancellationToken, CcdId, Condition, CoreId, CoreInfo, CpuId, Partial, Regime, Reporter,
-        Running, Sample, Signal, Stopped, TrialResult, TrialSpec, Trials, Workload, pick_workload,
+        Running, Sample, Signal, Stopped, TrialResult, TrialRole, TrialSpec, Trials, Workload,
+        pick_workload,
     };
     use togi_trial::{BackendIdentity, Backends, Options, Runner};
 
@@ -103,17 +104,22 @@ mod cached_errors {
     }
 
     fn spec(id: &str) -> TrialSpec {
+        let workload = pick_workload(Regime::R1, 0).id();
+        let cores = vec![CoreId::new(0).unwrap()];
+        let cpus = vec![CpuId::from(2)];
+        let roles = TrialRole::legacy(Regime::R1, workload, 1, &cores, &cpus, &topology()).unwrap();
         TrialSpec {
             id: id.into(),
             regime: Regime::R1,
-            workload: pick_workload(Regime::R1, 0).id(),
+            workload,
             condition: Condition::Alone,
-            cores: vec![CoreId::new(0).unwrap()],
-            cpus: vec![CpuId::from(2)],
+            cores,
+            cpus,
             duration: Duration::from_secs(600),
             index: 0,
             seed: 1,
             offsets: togi_machine::PerCore::default(),
+            roles,
         }
     }
 

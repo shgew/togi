@@ -176,6 +176,8 @@ fn parts_of(
             ClassKey::new(workload, topo.all(), config.checking_idle),
         )],
         Regime::R7 => r7_parts(config, topo, workload, started),
+        // No ruleset schedules the role regimes yet and the configuration refuses them in a cycle.
+        Regime::R8 | Regime::R9 => Vec::new(),
     }
 }
 

@@ -2138,6 +2138,7 @@ dependencies = [
  "togi-journal",
  "togi-machine",
  "togi-mprime",
+ "togi-smu",
  "togi-trialfiles",
  "togi-ycruncher",
  "tokio",

@@ -543,6 +543,17 @@ fn trial_start(session: &Session) -> TrialStart {
 }
 
 #[test]
+fn a_trial_start_records_the_roles_sent_to_the_trial_backend() {
+    let mut rig = rigged(Bench::new(2));
+    trial(&mut rig).unwrap();
+    let roles = rig.rigs.borrow().specs[0].roles.clone();
+    assert_eq!(roles.len(), 1);
+    assert_eq!(roles[0].core, core(0));
+    assert_eq!(roles[0].cpu, CpuId::from(0));
+    assert_eq!(trial_start(&rig.session).roles, roles);
+}
+
+#[test]
 fn a_joint_trial_start_records_every_instance_and_a_single_one_is_left_out() {
     let two = vec![
         Instance {

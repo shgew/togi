@@ -7,10 +7,25 @@ use test_case::test_case;
 mod evidence;
 mod load;
 mod object_only;
+mod roles;
 mod seams;
 
 fn core(value: i64) -> CoreId {
     CoreId::new(value).unwrap()
+}
+
+/// Sixteen cores on two CCDs, each with an SMT sibling numbered 16 above it.
+fn topology() -> Vec<CoreInfo> {
+    (0..16_u8)
+        .map(|value| CoreInfo {
+            core: core(i64::from(value)),
+            ccd: CcdId::try_from(value / 8).unwrap(),
+            cpus: vec![
+                CpuId::from(u16::from(value)),
+                CpuId::from(u16::from(value) + 16),
+            ],
+        })
+        .collect()
 }
 
 #[test]
@@ -109,6 +124,8 @@ fn per_core_copies_are_independent() {
 #[test_case(Regime::R5, 6, 2, &[Regime::R1, Regime::R2]; "R5")]
 #[test_case(Regime::R6, 3, 1, &[Regime::R1]; "R6")]
 #[test_case(Regime::R7, 3, 1, &[Regime::R2]; "R7")]
+#[test_case(Regime::R8, 6, 1, &[Regime::R1]; "R8")]
+#[test_case(Regime::R9, 3, 1, &[Regime::R1]; "R9")]
 fn workload_regime_contracts(regime: Regime, count: usize, threads: u8, bases: &[Regime]) {
     let catalog = workloads(regime);
     assert_eq!(catalog.len(), count);
@@ -171,7 +188,7 @@ fn workload_regime_contracts(regime: Regime, count: usize, threads: u8, bases: &
 #[test]
 fn workload_ids_name_every_catalog_entry() {
     let mut seen = std::collections::BTreeSet::new();
-    for regime in REGIMES {
+    for regime in ALL_REGIMES {
         for (index, workload) in workloads(regime).iter().enumerate() {
             let id = workload.id();
             assert_eq!(
@@ -214,7 +231,7 @@ fn workload_ids_name_every_catalog_entry() {
             assert!(seen.insert(id), "{regime}, index {index}: {workload:?}");
         }
     }
-    assert_eq!(seen.len(), 33);
+    assert_eq!(seen.len(), 42);
     assert!(seen.iter().zip(seen.iter().skip(1)).all(|(a, b)| a < b));
 }
 
@@ -419,7 +436,7 @@ fn vocabulary_serde_uses_wire_strings() {
         serde_json::from_str::<Signal>("\"unexpected_exit\"").unwrap(),
         Signal::UnexpectedExit
     );
-    for regime in REGIMES {
+    for regime in ALL_REGIMES {
         let json = serde_json::to_string(&regime).unwrap();
         assert_eq!(
             serde_json::from_str::<Regime>(&json).unwrap(),
@@ -429,7 +446,7 @@ fn vocabulary_serde_uses_wire_strings() {
         assert_eq!(json, format!("\"{regime}\""), "{regime}");
         assert_eq!(
             regime.instance_per_core(),
-            matches!(regime, Regime::R6 | Regime::R7),
+            matches!(regime, Regime::R6 | Regime::R7 | Regime::R8),
             "{regime}"
         );
     }
@@ -463,7 +480,7 @@ fn backends_read_their_wire_strings(name: &str) {
 
 #[test]
 fn unknown_vocabulary_strings_are_rejected() {
-    assert!(serde_json::from_str::<Regime>("\"R8\"").is_err());
+    assert!(serde_json::from_str::<Regime>("\"R10\"").is_err());
     assert!(serde_json::from_str::<Regime>("\"\"").is_err());
     assert!(serde_json::from_str::<Regime>("null").is_err());
     assert!(serde_json::from_str::<Signal>("\"future\"").is_err());

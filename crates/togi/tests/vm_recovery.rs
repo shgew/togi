@@ -46,8 +46,8 @@ mod vm_recovery {
         BiosContext, BootId, CancellationToken, CcdId, Check, Clock, Condition, CoreId, CoreInfo,
         CoreRank, CpuId, Error, Host, Kernel, KernelCursor, KernelRead, Machine, Mce,
         ObservedOffset, Partial, PerCore, PstoreRecord, Regime, Reporter, ResetReason, Running,
-        Signal, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions, TrialSpec,
-        Trials, Workload, pick_workload,
+        Signal, Smu, SmuValidated, Stopped, Swept, TargetOffset, TrialConditions, TrialRole,
+        TrialSpec, Trials, Workload, pick_workload,
     };
     use togi_render::OutputFacts;
     use togi_trial::{BackendIdentity, Backends, Options, Runner};
@@ -624,13 +624,18 @@ mod vm_recovery {
         let topology = topology();
         // R7 runs one instance per core, so the two loaded cores get one scope each.
         let regime = Regime::R7;
+        let workload = pick_workload(regime, 0).id();
+        let cores: Vec<CoreId> = topology[..LOADED].iter().map(|info| info.core).collect();
+        let cpus: Vec<CpuId> = topology[..LOADED].iter().map(|info| info.cpus[0]).collect();
+        let roles = TrialRole::legacy(regime, workload, 1, &cores, &cpus, &topology).unwrap();
         let spec = TrialSpec {
             id: format!("vm-{}-{}", Timestamp::now().as_second(), std::process::id()),
             regime,
-            workload: pick_workload(regime, 0).id(),
+            workload,
             condition: Condition::Together,
-            cores: topology[..LOADED].iter().map(|info| info.core).collect(),
-            cpus: topology[..LOADED].iter().map(|info| info.cpus[0]).collect(),
+            cores,
+            cpus,
+            roles,
             duration: Duration::from_secs(3600),
             index: 0,
             seed: 1,

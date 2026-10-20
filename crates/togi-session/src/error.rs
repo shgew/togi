@@ -130,6 +130,8 @@ pub enum SessionError {
     /// The profile a trial together was planned on is not the one the tuner stands at.
     #[error("the trial's profile is not the one the machine is set to")]
     PlanDisagrees,
+    #[error("assign trial roles")]
+    TrialRoles(#[source] togi_machine::InvalidRoles),
     #[error("the tuner cannot choose the next action after startup")]
     NotReady(#[from] togi_tuner::NotReady),
     #[error("clear GRUB's saved entry after refusing to start")]

@@ -1015,7 +1015,13 @@ fn load_word(regime: Regime) -> &'static str {
     match regime {
         Regime::R1 => " · LIGHT",
         Regime::R2 => " · HEAVY",
-        Regime::R3 | Regime::R4 | Regime::R5 | Regime::R6 | Regime::R7 => "",
+        Regime::R3
+        | Regime::R4
+        | Regime::R5
+        | Regime::R6
+        | Regime::R7
+        | Regime::R8
+        | Regime::R9 => "",
     }
 }
 

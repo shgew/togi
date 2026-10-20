@@ -60,12 +60,14 @@ pub struct JointMember {
 pub struct RegimeSet(u8);
 
 impl RegimeSet {
-    fn from_regimes(regimes: &[Regime]) -> Self {
-        Self(
-            regimes
-                .iter()
-                .fold(0, |mask, &regime| mask | 1 << regime_index(regime)),
-        )
+    fn from_regimes(path: &Path<'_>, regimes: &[Regime]) -> Result<Self, InvalidMachine> {
+        let mut mask = 0;
+        for (index, &regime) in regimes.iter().enumerate() {
+            let slot = regime_index(regime)
+                .ok_or_else(|| path.index(index).error(Problem::UnmodeledRegime))?;
+            mask |= 1 << slot;
+        }
+        Ok(Self(mask))
     }
 
     pub const fn is_all(self) -> bool {
@@ -73,7 +75,7 @@ impl RegimeSet {
     }
 
     pub fn covers(self, regime: Regime) -> bool {
-        self.is_all() || self.0 & (1 << regime_index(regime)) != 0
+        self.is_all() || regime_index(regime).is_some_and(|slot| self.0 & (1 << slot) != 0)
     }
 }
 
@@ -243,8 +245,8 @@ impl Model {
 
     /// The signal weights of failures in `regime`: its own when the model lists one, else the pooled mix.
     pub fn signal_mix(&self, regime: Regime) -> &SignalMix {
-        self.0.regime_signals[regime_index(regime)]
-            .as_ref()
+        regime_index(regime)
+            .and_then(|slot| self.0.regime_signals[slot].as_ref())
             .unwrap_or(&self.0.signals)
     }
 
@@ -385,8 +387,9 @@ fn resolve_model(model: &ModelDef, path: &Path<'_>) -> Result<ModelParts, Invali
     let mut regime_signals: [Option<SignalMix>; 7] = Default::default();
     let regimes = path.key("regime_signals");
     for (regime, mix) in &model.regime_signals {
-        regime_signals[regime_index(*regime)] =
-            Some(signal_mix(&regimes.key(regime.as_str()), mix)?);
+        let mix_path = regimes.key(regime.as_str());
+        let slot = regime_index(*regime).ok_or_else(|| mix_path.error(Problem::UnmodeledRegime))?;
+        regime_signals[slot] = Some(signal_mix(&mix_path, mix)?);
     }
     let reset = mix_weights(
         &path.key("reset"),
@@ -512,7 +515,7 @@ fn resolve_joint(
         .transpose()?;
     Ok(Joint {
         members,
-        regimes: RegimeSet::from_regimes(&joint.regimes),
+        regimes: RegimeSet::from_regimes(&path.key("regimes"), &joint.regimes)?,
         rate,
         after_s,
         signal,

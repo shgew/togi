@@ -690,6 +690,8 @@ mod tests {
             core: CoreId::new(0).unwrap(),
             cpus: vec![CpuId::from(0)],
             cpu_count: 1,
+            workload: workload(),
+            load: crate::plan::Load::Continuous,
         }
     }
 

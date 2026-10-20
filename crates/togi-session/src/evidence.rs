@@ -269,7 +269,7 @@ impl Observer {
                 };
                 loaded.len()
             ],
-            valid: loaded.len() >= 2 && regime != Regime::R6,
+            valid: loaded.len() >= 2 && regime != Regime::R6 && !regime.has_roles(),
             loaded,
             last: None,
             count: 0,
@@ -387,7 +387,15 @@ pub(crate) fn summarize_samples(
         .map(|core| ccd_of(core).map(|ccd| (core, Some(ccd))))
         .collect();
     let telemetry = if let Some(placed) = placed.filter(|placed| !placed.is_empty()) {
-        togi_requests::summarize(observed, &placed)
+        togi_requests::summarize(
+            observed.filter(|sample| {
+                regime.warm_up().is_none_or(|warm_up| {
+                    sample.elapsed_ms >= 0
+                        && Duration::from_millis(sample.elapsed_ms.unsigned_abs()) >= warm_up
+                })
+            }),
+            &placed,
+        )
     } else {
         observed.for_each(drop);
         None

@@ -41,12 +41,11 @@ impl fmt::Display for TrialId {
 pub(crate) struct ScopeName(String);
 
 impl ScopeName {
-    pub(crate) fn for_instance(id: &TrialId, instance: InstanceName, per_core: bool) -> Self {
-        match (per_core, instance) {
-            (true, InstanceName::Core(core)) => {
-                Self(format!("{SCOPE_PREFIX}{id}-c{:02}", core.get()))
-            }
-            _ => Self(format!("{SCOPE_PREFIX}{id}")),
+    pub(crate) fn for_instance(id: &TrialId, instance: InstanceName) -> Self {
+        match instance {
+            InstanceName::Work => Self(format!("{SCOPE_PREFIX}{id}")),
+            InstanceName::Core(core) => Self(format!("{SCOPE_PREFIX}{id}-c{:02}", core.get())),
+            InstanceName::Cpu(cpu) => Self(format!("{SCOPE_PREFIX}{id}-cpu{:02}", cpu.get())),
         }
     }
 

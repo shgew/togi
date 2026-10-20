@@ -6,7 +6,7 @@ use togi_machine::{BiosContext, Regime, ResetKind, Signal};
 use togi_sim::definition::{DEFAULT_GROWTH, DEFAULT_ONSET_S, ScriptDef, Weights};
 use togi_sim::file::{self, LoadError};
 use togi_sim::model::Script;
-use togi_sim::{MachineDefinition, Model, RunSettings, WEIGHTED_SIGNALS};
+use togi_sim::{MachineDefinition, Model, Problem, RunSettings, WEIGHTED_SIGNALS};
 
 use test_case::test_case;
 
@@ -126,9 +126,9 @@ fn unknown_workload_limit_ids_are_refused() {
 #[test_case(r#"{"model":{"regime_signals":{"R7":{"crash":1},"R7":{"crash":1}}}}"#, "duplicate"; "duplicate regime")]
 #[test_case(r#"{"model":{"regime_signals":{"R7":{"crash":1,"crash":1}}}}"#, "duplicate"; "duplicate signal within a regime")]
 #[test_case(r#"{"cores":2,"joint":[{"members":{"nope":-10}}]}"#, "expected key to be a number"; "joint member that is no number")]
-#[test_case(r#"{"joint":[{"members":{"0":-5},"regimes":["R9"]}]}"#, "unknown variant `R9`"; "unsupported regime")]
+#[test_case(r#"{"joint":[{"members":{"0":-5},"regimes":["R10"]}]}"#, "unknown variant `R10`"; "unsupported regime")]
 #[test_case(r#"{"joint":[{"members":{"0":-5},"signal":"crsh"}]}"#, "unknown variant `crsh`"; "unsupported joint signal")]
-#[test_case(r#"{"model":{"regime_signals":{"R9":{"crash":1}}}}"#, "unknown variant `R9`"; "unsupported regime in regime_signals")]
+#[test_case(r#"{"model":{"regime_signals":{"R10":{"crash":1}}}}"#, "unknown variant `R10`"; "unsupported regime in regime_signals")]
 #[test_case(r#"{"script":[{"trial":"0001","signal":"crsh"}]}"#, "unknown variant `crsh`"; "unsupported script signal")]
 #[test_case(r#"{"script":[{"trial":"0001","reset":"brownout"}]}"#, "unknown variant `brownout`"; "unsupported script reset")]
 #[test_case(r#"{"model":{"reset":{"brownout":1}}}"#, "unknown variant `brownout`"; "unsupported reset")]
@@ -138,6 +138,26 @@ fn malformed_documents_are_refused_with_the_file_named(text: &str, want: &str) {
     assert!(matches!(error, LoadError::Parse { .. }), "{message}");
     assert!(message.contains("machine.json"), "{message}");
     assert!(message.contains(want), "{message} lacks {want:?}");
+}
+
+#[test_case(r#"{"joint":[{"members":{"0":-5},"regimes":["R8"]}]}"#, "joint[0].regimes[0]"; "r8 in joint regimes")]
+#[test_case(r#"{"joint":[{"members":{"0":-5},"regimes":["R7","R9"]}]}"#, "joint[0].regimes[1]"; "r9 in joint regimes")]
+#[test_case(r#"{"model":{"regime_signals":{"R8":{"crash":1}}}}"#, "model.regime_signals.R8"; "r8 in regime_signals")]
+#[test_case(r#"{"model":{"regime_signals":{"R9":{"crash":1}}}}"#, "model.regime_signals.R9"; "r9 in regime_signals")]
+fn role_regimes_the_simulator_does_not_model_are_refused(text: &str, at: &str) {
+    let error = load_text(text).expect_err("an unmodeled regime");
+    let message = togi_machine::error_chain(&error);
+    let LoadError::Invalid { source, .. } = error else {
+        panic!("{message}");
+    };
+    assert_eq!(
+        (source.path.as_str(), source.problem),
+        (at, Problem::UnmodeledRegime)
+    );
+    assert!(
+        message.contains("is a role regime the simulator does not model"),
+        "{message}"
+    );
 }
 
 #[test]

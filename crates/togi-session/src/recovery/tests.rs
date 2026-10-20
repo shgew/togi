@@ -220,6 +220,7 @@ impl Log {
                 argv: Vec::new(),
                 files: Vec::new(),
                 instances: Vec::new(),
+                roles: Vec::new(),
             }),
             &[cause],
         )

@@ -381,6 +381,25 @@ pub enum InvalidTrial {
     ForeignCpu(CpuId),
     #[error("the logical CPUs do not match the first CPU of each core")]
     CpusMismatch,
+    #[error("the trial names no role")]
+    NoRoles,
+    #[error("logical CPU {0} has two roles")]
+    DuplicateCpu(CpuId),
+    #[error("the roles do not cover exactly the trial's cores and logical CPUs")]
+    RolesMismatch,
+    #[error(
+        "the roles of the instance led by logical CPU {0} differ in core, workload or schedule, \
+         or the instance's first CPU is not its first role"
+    )]
+    InstanceSplit(CpuId),
+    #[error(
+        "the roles of this regime need a different number of instances or a different placement"
+    )]
+    InstanceLayout,
+    #[error("the burst positions of the roles are not each of 0..n once")]
+    BurstPositions,
+    #[error("the phase of a role's schedule is zero seconds")]
+    ZeroPhase,
     #[error("a regime that runs one instance takes exactly one core")]
     CoresForOneInstance,
     #[error("the trial duration cannot be represented as a deadline")]

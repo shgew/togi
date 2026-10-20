@@ -24,7 +24,7 @@ mod hardware {
         CancellationToken, CcdId, Condition, CoreId, CoreInfo, CpuId, Regime, Reporter, Running,
         Signal, Stopped, TrialSpec, Trials, Workload, pick_workload,
     };
-    use togi_trial::{BackendIdentity, Backends, Options, Runner};
+    use togi_trial::{BackendIdentity, Backends, Options, Runner, TrialRole};
 
     const HELPER: &str = "hardware::helper";
     const ROOT_ENV: &str = "TOGI_TRIAL_HARDWARE_ROOT";
@@ -594,20 +594,31 @@ mod hardware {
 
     fn spec(regime: Regime, cores: &[i64], duration: Duration) -> TrialSpec {
         let topology = topology();
+        let workload = pick_workload(regime, 0).id();
+        let cores: Vec<CoreId> = cores.iter().map(|&n| CoreId::new(n).unwrap()).collect();
+        let cpus: Vec<CpuId> = cores
+            .iter()
+            .map(|core| {
+                topology
+                    .iter()
+                    .find(|info| info.core == *core)
+                    .unwrap()
+                    .cpus[0]
+            })
+            .collect();
+        let roles = TrialRole::legacy(regime, workload, 1, &cores, &cpus, &topology).unwrap();
         TrialSpec {
             id: "hardware".into(),
             regime,
-            workload: pick_workload(regime, 0).id(),
+            workload,
             condition: Condition::Alone,
-            cores: cores.iter().map(|&n| CoreId::new(n).unwrap()).collect(),
-            cpus: cores
-                .iter()
-                .map(|&n| topology[usize::try_from(n).unwrap()].cpus[0])
-                .collect(),
+            cores,
+            cpus,
             duration,
             index: 0,
             seed: 1,
             offsets: togi_machine::PerCore::default(),
+            roles,
         }
     }
 
@@ -1432,6 +1443,11 @@ mod hardware {
         ];
         for (kind, backend) in backends {
             eprintln!("{kind}: {}", backend.check().unwrap().detail);
+            let topology = vec![CoreInfo {
+                core: CoreId::new(2).unwrap(),
+                ccd: CcdId::new(0).unwrap(),
+                cpus: vec![CpuId::from(2)],
+            }];
             #[expect(
                 clippy::disallowed_methods,
                 reason = "gated hardware backend tests must not sync disposable trial output"
@@ -1439,11 +1455,7 @@ mod hardware {
             let mut runner = Runner::new_unsynced(Options {
                 dir: staged.tree.root.join(format!("trials-{kind}")),
                 backends: Backends::new().with(Arc::clone(&backend)),
-                topology: vec![CoreInfo {
-                    core: CoreId::new(2).unwrap(),
-                    ccd: CcdId::new(0).unwrap(),
-                    cpus: vec![CpuId::from(2)],
-                }],
+                topology: topology.clone(),
                 identity: Some(account()),
                 pm_table: None,
             })
@@ -1453,17 +1465,23 @@ mod hardware {
                     if workload.backend != kind {
                         continue;
                     }
+                    let cores = vec![CoreId::new(2).unwrap()];
+                    let cpus = vec![CpuId::from(2)];
+                    let roles =
+                        TrialRole::legacy(regime, workload.id(), 0, &cores, &cpus, &topology)
+                            .unwrap();
                     let spec = TrialSpec {
                         id: format!("hw-{}", workload.id),
                         regime,
                         workload: workload.id(),
                         condition: Condition::Alone,
-                        cores: vec![CoreId::new(2).unwrap()],
-                        cpus: vec![CpuId::from(2)],
+                        cores,
+                        cpus,
                         duration: Duration::from_secs(20),
                         index,
                         seed: 0,
                         offsets: togi_machine::PerCore::default(),
+                        roles,
                     };
                     let mut trial = start(&mut runner, spec);
                     let result = trial
@@ -1485,6 +1503,238 @@ mod hardware {
                 }
             }
         }
+    }
+
+    /// The seed the role trials derive their roles from; R8's sustained light core and R9 use none.
+    const ROLE_SEED: u64 = 0;
+
+    /// Logical CPU numbers of a sysfs list such as `0-3,32`.
+    fn cpu_list(text: &str) -> Vec<u16> {
+        text.trim()
+            .split(',')
+            .filter(|part| !part.is_empty())
+            .flat_map(|part| {
+                let (from, to) = part.split_once('-').unwrap_or((part, part));
+                from.parse::<u16>().unwrap()..=to.parse::<u16>().unwrap()
+            })
+            .collect()
+    }
+
+    /// The host's cores and CCDs from sysfs: cores number from 0 by their first logical CPU, and a
+    /// CCD is the set of cores that share a level 3 cache, numbered the same way.
+    fn host_topology() -> Vec<CoreInfo> {
+        let sysfs = Path::new("/sys/devices/system/cpu");
+        let read = |cpu: u16, file: &str| {
+            cpu_list(&std::fs::read_to_string(sysfs.join(format!("cpu{cpu}")).join(file)).unwrap())
+        };
+        let online = cpu_list(&std::fs::read_to_string(sysfs.join("online")).unwrap());
+        let mut cores: Vec<(Vec<u16>, u16)> = Vec::new();
+        for &cpu in &online {
+            let mut siblings = read(cpu, "topology/thread_siblings_list");
+            siblings.retain(|sibling| online.contains(sibling));
+            if siblings.iter().min() != Some(&cpu) {
+                continue;
+            }
+            let cache = read(cpu, "cache/index3/shared_cpu_list");
+            cores.push((siblings, cache.iter().copied().min().unwrap_or(0)));
+        }
+        let mut caches: Vec<u16> = cores.iter().map(|(_, cache)| *cache).collect();
+        caches.sort_unstable();
+        caches.dedup();
+        cores
+            .into_iter()
+            .enumerate()
+            .map(|(core, (siblings, cache))| CoreInfo {
+                core: CoreId::new(i64::try_from(core).unwrap()).unwrap(),
+                ccd: CcdId::new(
+                    i64::try_from(caches.iter().position(|&seen| seen == cache).unwrap()).unwrap(),
+                )
+                .unwrap(),
+                cpus: siblings.into_iter().map(CpuId::from).collect(),
+            })
+            .collect()
+    }
+
+    /// Both real backends, as an R8 trial needs them side by side.
+    fn real_backends() -> Backends {
+        Backends::new()
+            .with(Arc::new(
+                togi_mprime::Mprime::new(package(togi_machine::Backend::Mprime, "TOGI_MPRIME"))
+                    .unwrap(),
+            ))
+            .with(Arc::new(
+                togi_ycruncher::Ycruncher::new(package(
+                    togi_machine::Backend::Ycruncher,
+                    "TOGI_YCRUNCHER",
+                ))
+                .unwrap(),
+            ))
+    }
+
+    /// The record the session writes when a trial starts, from what the trial reports of itself.
+    fn journal_start(
+        id: &str,
+        started: &togi_machine::Started,
+        roles: &[TrialRole],
+    ) -> togi_journal::TrialStart {
+        togi_journal::TrialStart {
+            trial: id.to_owned().into(),
+            window_start_ns: None,
+            scope: started.scope.clone(),
+            pid: started.pid,
+            cpus: started.cpus.clone(),
+            argv: started.argv.clone(),
+            files: started.files.clone(),
+            instances: started
+                .instances
+                .iter()
+                .map(|instance| togi_journal::TrialInstance {
+                    core: instance.core,
+                    cpus: instance.cpus.clone(),
+                    pid: instance.pid,
+                    scope: instance.scope.clone(),
+                })
+                .collect(),
+            roles: roles.to_vec(),
+        }
+    }
+
+    /// Every role sits in the instance its record names, on its own core, and the record says so
+    /// in the journal's own encoding.
+    fn assert_placement(record: &togi_journal::TrialStart, roles: &[TrialRole], per_cpu: bool) {
+        assert_eq!(record.roles, roles);
+        let mut leaders: Vec<CpuId> = roles.iter().map(|role| role.instance).collect();
+        leaders.sort_unstable_by_key(|cpu| cpu.get());
+        leaders.dedup();
+        assert_eq!(record.instances.len(), leaders.len());
+        for role in roles {
+            let instance = record
+                .instances
+                .iter()
+                .find(|instance| instance.cpus.first() == Some(&role.instance))
+                .unwrap_or_else(|| panic!("no instance starts at cpu {}", role.instance));
+            assert_eq!(instance.core, role.core, "cpu {}", role.cpu);
+            assert!(instance.cpus.contains(&role.cpu), "cpu {}", role.cpu);
+            let suffix = if per_cpu {
+                format!("-cpu{:02}", role.instance.get())
+            } else {
+                format!("-c{:02}", role.core.get())
+            };
+            assert!(
+                instance.scope.ends_with(&suffix),
+                "{} does not end {suffix}",
+                instance.scope
+            );
+        }
+        let encoded = serde_json::to_value(record).unwrap();
+        assert_eq!(encoded["roles"].as_array().map(Vec::len), Some(roles.len()));
+    }
+
+    /// Runs a role trial to its full duration only after reading CO 0 on every core. The host lock
+    /// excludes another togi writer; this test changes no offset and therefore needs no restoration.
+    fn run_roles(
+        staged: &Staged,
+        class: togi_machine::WorkloadId,
+        roles: &[TrialRole],
+        topology: &[CoreInfo],
+        duration: Duration,
+    ) {
+        let regime = class.regime();
+        let mut driver = togi_smu::Driver::system().unwrap();
+        let _validated = driver.validate().unwrap();
+        for info in topology {
+            let offset = togi_machine::Smu::offset(&mut driver, info.core).unwrap();
+            assert_eq!(
+                offset,
+                togi_machine::ObservedOffset(0),
+                "role trials require CO 0 on core {}",
+                info.core
+            );
+        }
+        let id = format!("hw-{}", class.as_str());
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "gated hardware backend tests must not sync disposable trial output"
+        )]
+        let mut runner = Runner::new_unsynced(Options {
+            dir: staged.tree.root.join(format!("trials-{regime}")),
+            backends: real_backends(),
+            topology: topology.to_vec(),
+            identity: Some(account()),
+            pm_table: None,
+        })
+        .unwrap();
+        let spec = TrialSpec {
+            id: id.clone(),
+            regime,
+            workload: class,
+            condition: Condition::Alone,
+            cores: TrialRole::cores(roles),
+            cpus: TrialRole::cpus(roles),
+            duration,
+            index: 0,
+            seed: ROLE_SEED,
+            offsets: topology
+                .iter()
+                .map(|info| (info.core, togi_machine::TargetOffset::ZERO))
+                .collect(),
+            roles: roles.to_vec(),
+        };
+        let mut trial = start(&mut runner, spec);
+        let record = journal_start(&id, &trial.started(), roles);
+        eprintln!("journal: {}", serde_json::to_string(&record).unwrap());
+        assert_placement(&record, roles, regime == Regime::R9);
+        let result = trial
+            .wait(&CancellationToken::new(), &mut Logged)
+            .unwrap_or_else(|partial| panic!("{id}: {}", partial.error));
+        eprintln!(
+            "{id} ran {:?}, Tctl max {:?}",
+            result.ran, result.tctl_max_c
+        );
+        assert!(trial.stop().is_ok(), "{id}");
+        assert!(
+            result.failure.is_none()
+                && result.inconclusive.is_none()
+                && result.escaped.is_empty()
+                && result.ran >= duration,
+            "{id} did not pass: {result:?}"
+        );
+    }
+
+    #[test]
+    fn an_r8_trial_runs_a_light_core_beside_its_neighbours_to_completion_at_co0() {
+        let staged = Staged::new();
+        let topology = host_topology();
+        let light = topology
+            .iter()
+            .find(|info| {
+                topology
+                    .iter()
+                    .filter(|other| other.ccd == info.ccd)
+                    .count()
+                    > 1
+            })
+            .expect("a CCD with at least two cores")
+            .core;
+        // The light y-cruncher workload beside mprime R2 neighbours: two backends at once.
+        let class = togi_machine::WorkloadId::new(Regime::R8, 1).unwrap();
+        let heavy = pick_workload(Regime::R2, 0).id();
+        let roles = TrialRole::neighbours(class, light, heavy, ROLE_SEED, &topology).unwrap();
+        run_roles(&staged, class, &roles, &topology, togi_machine::R8_DURATION);
+    }
+
+    #[test]
+    fn an_r9_trial_alternates_all_threads_and_one_thread_phases_to_completion_at_co0() {
+        let staged = Staged::new();
+        let topology = host_topology();
+        let serial = topology[0].cpus[0];
+        let class = togi_machine::WorkloadId::new(Regime::R9, 0).unwrap();
+        let roles = TrialRole::all_threads(class, serial, &topology).unwrap();
+        assert!(roles.iter().any(|role| matches!(
+            role.schedule,
+            togi_trial::PhaseSchedule::Alternate { serial: true, .. }
+        )));
+        run_roles(&staged, class, &roles, &topology, togi_machine::R9_DURATION);
     }
 
     #[test]

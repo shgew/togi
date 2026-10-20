@@ -110,3 +110,6 @@ pub use error::{
 };
 pub use identity::{BackendIdentity, IdentityError};
 pub use runner::{Backends, Options, Runner, Trial};
+/// The roles a trial's logical CPUs play, so a caller can build and read a `TrialSpec` through
+/// this crate alone.
+pub use togi_machine::{InvalidRoles, PhaseSchedule, TrialRole};

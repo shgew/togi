@@ -4,6 +4,7 @@ mod output;
 #[cfg(target_os = "linux")]
 mod process;
 mod r6;
+mod roles;
 mod runner;
 mod samples;
 mod sweep;

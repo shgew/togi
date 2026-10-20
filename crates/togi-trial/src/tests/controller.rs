@@ -16,6 +16,7 @@ use togi_machine::{
 
 use super::harness::{
     core, crate_error, finish, local, nothing_runs, rig_edit, spec as base_spec, topology,
+    with_roles,
 };
 use super::process::{Helper, allowed_cpus, linux, timing};
 use crate::Error;
@@ -495,7 +496,7 @@ fn trial_spec(id: &str, loaded: usize, topology: &[CoreInfo]) -> TrialSpec {
         .iter()
         .map(|info| (info.core, TargetOffset::ZERO))
         .collect();
-    spec
+    with_roles(spec, topology)
 }
 
 /// Every thread of the process runs on exactly `expected`, none on a loaded CPU, and the runtime

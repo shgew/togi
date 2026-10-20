@@ -7,12 +7,14 @@ use togi_backend::{Backend, Line};
 use crate::evidence::{Decision, Observation, Report, Selector, Stream, Verdict};
 use crate::supervisor::{Event, panic_text};
 
-/// Classifies output with the backend, feeds the one selector and forwards what it decides to
-/// report to the thread blocked in `wait`. A backend that panics while classifying is caught
-/// here, so the teardown that follows still runs; the first panic is kept for the supervisor.
+/// Classifies each instance's output with that instance's own backend, feeds the one selector and
+/// forwards what it decides to report to the thread blocked in `wait`. A backend that panics while
+/// classifying is caught here, so the teardown that follows still runs; the first panic is kept
+/// for the supervisor.
 pub(crate) struct Judge {
     selector: Selector,
-    backend: Arc<dyn Backend>,
+    /// Indexed like the trial plan's instances.
+    backends: Vec<Arc<dyn Backend>>,
     events: Sender<Event>,
     panic: Option<String>,
     invalid_affinity: Vec<togi_backend::InvalidAffinityCpu>,
@@ -21,12 +23,12 @@ pub(crate) struct Judge {
 impl Judge {
     pub(crate) fn new(
         selector: Selector,
-        backend: Arc<dyn Backend>,
+        backends: Vec<Arc<dyn Backend>>,
         events: Sender<Event>,
     ) -> Self {
         Self {
             selector,
-            backend,
+            backends,
             events,
             panic: None,
             invalid_affinity: Vec::new(),
@@ -49,15 +51,15 @@ impl Judge {
     }
 
     pub(crate) fn line(&mut self, instance: usize, pid: u32, stream: Stream, text: String) -> bool {
-        let (line, panicked) = match catch_unwind(AssertUnwindSafe(|| self.backend.classify(&text)))
-        {
-            Ok(line) => (line, false),
-            Err(payload) => {
-                self.panic
-                    .get_or_insert_with(|| panic_text(payload.as_ref()));
-                (Line::Other, true)
-            }
-        };
+        let (line, panicked) =
+            match catch_unwind(AssertUnwindSafe(|| self.backends[instance].classify(&text))) {
+                Ok(line) => (line, false),
+                Err(payload) => {
+                    self.panic
+                        .get_or_insert_with(|| panic_text(payload.as_ref()));
+                    (Line::Other, true)
+                }
+            };
         if let Line::InvalidAffinity(error) = &line {
             self.invalid_affinity.push(error.clone());
         }

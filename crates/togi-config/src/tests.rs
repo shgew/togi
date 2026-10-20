@@ -426,7 +426,9 @@ fn thresholds_rejected(key: &str, value: i64) {
 }
 
 #[test_case(r#"{"checking":{"cycle":[]}}"#, "checking.cycle" ; "empty cycle")]
-#[test_case(r#"{"checking":{"cycle":["R1","R8"]}}"#, "R8" ; "not a regime")]
+#[test_case(r#"{"checking":{"cycle":["R1","R10"]}}"#, "R10" ; "not a regime")]
+#[test_case(r#"{"checking":{"cycle":["R1","R8"]}}"#, "R8" ; "an unscheduled role regime")]
+#[test_case(r#"{"checking":{"cycle":["R9"]}}"#, "R9" ; "another unscheduled role regime")]
 #[test_case(r#"{"checking":{"cycle":["r1"]}}"#, "r1" ; "lowercase regime")]
 fn cycles_rejected(text: &str, message: &str) {
     let got = rejection(text);

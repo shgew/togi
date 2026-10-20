@@ -519,7 +519,7 @@ fn spec(regime: Regime, cores: &[u8], duration: Duration) -> togi_machine::Trial
     let mut spec = super::harness::spec(regime, cores, duration);
     let cpus = allowed_cpus();
     spec.cpus = match regime {
-        Regime::R6 | Regime::R7 => cores
+        Regime::R6 | Regime::R7 | Regime::R8 => cores
             .iter()
             .map(|&n| {
                 CpuId::from(if n == 0 {
@@ -532,8 +532,9 @@ fn spec(regime: Regime, cores: &[u8], duration: Duration) -> togi_machine::Trial
         Regime::R1 | Regime::R2 | Regime::R3 | Regime::R4 | Regime::R5 => {
             vec![CpuId::from(cpus[0])]
         }
+        Regime::R9 => panic!("the process tests run no all-threads trial"),
     };
-    spec
+    super::harness::with_roles(spec, &topology())
 }
 
 /// What a trial reported while it was waited for.

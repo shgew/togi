@@ -297,7 +297,13 @@ impl Run {
         let regime = match turn.regime {
             Regime::R1 => SearchRegime::R1,
             Regime::R2 => SearchRegime::R2,
-            Regime::R3 | Regime::R4 | Regime::R5 | Regime::R6 | Regime::R7 => return,
+            Regime::R3
+            | Regime::R4
+            | Regime::R5
+            | Regime::R6
+            | Regime::R7
+            | Regime::R8
+            | Regime::R9 => return,
         };
         let state = self.core(turn.core);
         let current = state.phase.searching() && turn.offset == Some(state.offset);

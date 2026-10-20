@@ -5,7 +5,9 @@ use std::{
 
 use togi_machine::{Backend, Regime};
 
-use crate::error::{EmptySchedule, ProbabilityError, RangeError, RelativeBackendPath, TrialsError};
+use crate::error::{
+    InvalidSchedule, ProbabilityError, RangeError, RelativeBackendPath, TrialsError,
+};
 
 macro_rules! bounded {
     ($(#[$doc:meta])* $name:ident, $min:expr, $max:expr) => {
@@ -165,12 +167,14 @@ impl Default for EvidencePolicy {
 pub struct CheckingSchedule(Vec<Regime>);
 
 impl CheckingSchedule {
-    pub fn new(regimes: Vec<Regime>) -> Result<Self, EmptySchedule> {
+    pub fn new(regimes: Vec<Regime>) -> Result<Self, InvalidSchedule> {
         if regimes.is_empty() {
-            Err(EmptySchedule)
-        } else {
-            Ok(Self(regimes))
+            return Err(InvalidSchedule::Empty);
         }
+        if let Some(&regime) = regimes.iter().find(|regime| !regime.scheduled()) {
+            return Err(InvalidSchedule::Unscheduled(regime));
+        }
+        Ok(Self(regimes))
     }
 
     pub fn as_slice(&self) -> &[Regime] {
