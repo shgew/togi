@@ -67,8 +67,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// schema or evidence epoch stops the run before another event is written; reset --all archives that
 /// session. Journal lines are colored on terminals and in the system journal unless the environment asks for no colour.
 ///
-/// Only one run or reset can own this machine, even with different state directories. A busy
-/// /run/lock/togi.lock stops the command before any hardware access or event.
+/// Only one day observer, run or reset can own this machine, even with different state directories.
+/// Stop the day service before tuning. A busy /run/lock/togi.lock stops the command before any hardware access or event.
 ///
 /// When stdin and stderr are terminals, run shows the session as the watch dashboard instead of one line per
 /// event, and prints the outcome when it stops: the restored offsets and why it stopped, or the dead end or

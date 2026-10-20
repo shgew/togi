@@ -23,6 +23,7 @@ Works today, on a simulated 16-core machine:
 - an all-zero rerun before a failure at CO 0 stops tuning ([Dead ends](docs/spec/tuner.md#dead-ends));
 - reading a session's phase, BIOS profile with its unconfirmed marker, phase 2's remaining work, hunt, combinations, clean cycles, top requesters, per-workload self-sufficiency, valid trials and Tctl peak with `status`, `events` and the live `watch` dashboard ([Commands](docs/spec/runtime.md#commands)).
 - console-compatible dashboard rendering and a [rich truecolour profile](docs/spec/runtime.md#dashboard) using the same colours with Unicode gauges and text.
+- read-only normal-boot observation with `togi day`: checkpointed hours per offset profile and clean/unclean ends, without changing tuning decisions or applying offsets.
 
 Built for real hardware, a Granite Ridge desktop running NixOS with GRUB, and tested piece by piece on one:
 - the `ryzen_smu` driver on full 8-core CCDs only; CCDs with fused-off slots are not yet supported;
@@ -41,6 +42,7 @@ Not yet:
 togi --version                         # version and git revision of this build
 sudo togi doctor                       # check this machine is ready for a run, without starting a session or writing the journal
 sudo togi run                          # tune this machine; Ctrl-C stops, the next run resumes
+sudo togi day                          # observe daily use after a session exists; stop before run/reset
 sudo togi run --cycles 3            # stop after three clean cycles, counted from phase 2's confirmation
 sudo togi run --first-result        # stop at the first confirmed BIOS profile, after phase 1's passed cycle
 togi status                            # phase, BIOS profile, failure points and combinations, per-core offsets and evidence
@@ -53,6 +55,8 @@ source <(togi completion bash)         # shell completions; the Nix package inst
 `doctor`, `run` and `reset` read JSON configuration from `/etc/togi/config.json`; `--config FILE` selects another file. The NixOS module generates it from `services.togi.settings`. See [Configuration](docs/spec/runtime.md#configuration) for keys, defaults and a hand-written example.
 
 The dashboard adapts to wide and compact terminals. It shows checking's cycle checklist, hunt parts and member probes, or search turns beside recent decisions; `?` explains the gauges and `l` opens the journal. Outcome lines come from the tuner itself. [Commands](docs/spec/runtime.md#commands) describes when the screen redraws.
+
+`status` adds a Day section after observations exist: observed boots, checkpointed hours per read-back offset profile, clean and unclean ends, and the latest unclean boot's reset reason. Daily observation is read-only; it does not classify failures or ask questions. See [day observation](docs/howto.md#daily-observation) for service setup.
 
 [docs/howto.md](docs/howto.md) walks through installing the NixOS module, a first in-session run and an overnight tuning boot. `togi --help` lists every command, and `togi <command> --help` gives its description, examples and flags. [Commands](docs/spec/runtime.md#commands) describes each one in full.
 

@@ -3,7 +3,10 @@
 use std::marker::PhantomData;
 
 use togi_hostlock::HostLock;
-use togi_machine::{BiosContext, BootId, CoreInfo, Error, Kernel as _, ObservedOffset, PerCore, ResetReason, Smu as _};
+use togi_machine::{
+    BiosContext, BootId, CoreInfo, Error, Kernel as _, ObservedOffset, PerCore, ResetReason,
+    Smu as _,
+};
 use togi_smu::Driver;
 
 /// The observations a day boot needs. Implementations never apply offsets or start workloads.
@@ -32,8 +35,14 @@ pub fn observe(_lock: &HostLock) -> Result<Box<dyn Observer + '_>, Error> {
     let mut driver = Driver::system().map_err(Error::from)?;
     let _validated = driver.validate().map_err(Error::from)?;
     let cores = driver.topology().map_err(Error::from)?;
-    let kernel = togi_detect::Kernel::new(&cores).map_err(|source| Error::from(crate::Error::KernelLog(source)))?;
-    Ok(Box::new(ReadOnly { driver, cores, kernel, lock: PhantomData }))
+    let kernel = togi_detect::Kernel::new(&cores)
+        .map_err(|source| Error::from(crate::Error::KernelLog(source)))?;
+    Ok(Box::new(ReadOnly {
+        driver,
+        cores,
+        kernel,
+        lock: PhantomData,
+    }))
 }
 
 impl Observer for ReadOnly<'_> {

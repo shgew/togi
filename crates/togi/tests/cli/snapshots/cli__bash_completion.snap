@@ -23,6 +23,9 @@ _togi() {
             togi,completion)
                 cmd="togi__subcmd__completion"
                 ;;
+            togi,day)
+                cmd="togi__subcmd__day"
+                ;;
             togi,doctor)
                 cmd="togi__subcmd__doctor"
                 ;;
@@ -52,6 +55,9 @@ _togi() {
                 ;;
             togi__subcmd__help,completion)
                 cmd="togi__subcmd__help__subcmd__completion"
+                ;;
+            togi__subcmd__help,day)
+                cmd="togi__subcmd__help__subcmd__day"
                 ;;
             togi__subcmd__help,doctor)
                 cmd="togi__subcmd__help__subcmd__doctor"
@@ -87,7 +93,7 @@ _togi() {
 
     case "${cmd}" in
         togi)
-            opts="-h -V --state-dir --help --version run completion doctor events reset restart-limit emergency-stop status watch help"
+            opts="-h -V --state-dir --help --version run day completion doctor events reset restart-limit emergency-stop status watch help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -109,6 +115,27 @@ _togi() {
             ;;
         togi__subcmd__completion)
             opts="-h --state-dir --help bash zsh fish nushell"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --state-dir)
+                    COMPREPLY=()
+                    if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+                        compopt -o plusdirs
+                    fi
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__day)
+            opts="-h --state-dir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -204,7 +231,7 @@ _togi() {
                     if [[ ${cur} == *,* ]]; then
                         prefix="${cur%,*},"
                     fi
-                    COMPREPLY=($(compgen -P "${prefix}" -W "backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning" -- "${cur##*,}"))
+                    COMPREPLY=($(compgen -P "${prefix}" -W "backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.boot_start day.checkpoint day.clean_stop day.offsets_changed day.unclean_end deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning" -- "${cur##*,}"))
                     return 0
                     ;;
                 --trial)
@@ -243,7 +270,7 @@ _togi() {
             return 0
             ;;
         togi__subcmd__help)
-            opts="run completion doctor events reset restart-limit emergency-stop status watch help"
+            opts="run day completion doctor events reset restart-limit emergency-stop status watch help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -257,6 +284,20 @@ _togi() {
             return 0
             ;;
         togi__subcmd__help__subcmd__completion)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        togi__subcmd__help__subcmd__day)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
