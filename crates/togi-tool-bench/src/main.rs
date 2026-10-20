@@ -12,6 +12,7 @@ use signal_hook::iterator::Signals;
 use togi_machine::error_chain;
 use togi_tool_bench::{Fleet, Options, Selection, execute, inspect, sanity};
 
+mod day_night_cli;
 mod forecast_cli;
 mod pass_cost_cli;
 mod research_cli;
@@ -45,6 +46,8 @@ enum Command {
     PassCost(pass_cost_cli::PassCostArgs),
     /// Dispatch one step of a bounded research campaign under its launch manifest.
     Research(research_cli::ResearchArgs),
+    /// Run the preregistered day/night comparators, without scoring the future real policy.
+    DayNight(day_night_cli::DayNightArgs),
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -117,6 +120,7 @@ fn main() -> ExitCode {
             Some(Command::Forecast(args)) => forecast_cli::run(args),
             Some(Command::PassCost(args)) => pass_cost_cli::run(args),
             Some(Command::Research(args)) => research_cli::run(args),
+            Some(Command::DayNight(args)) => day_night_cli::run(args),
         },
         Err(error) => {
             if error.use_stderr() {

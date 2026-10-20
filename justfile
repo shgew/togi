@@ -162,6 +162,11 @@ sql dir="/var/lib/togi" *args: _dev-shell
 bench *args: _dev-shell
     cargo run --release --locked -p togi-tool-bench -- "$@"
 
+# Run the preregistered two-year day/night comparator experiment
+[group('run')]
+bench-day-night *args: _dev-shell
+    cargo run --release --locked -p togi-tool-bench -- day-night "$@"
+
 # Audit the current and archived journals of state directories; `just bench` audits its own runs (`just audit COPY-OF-STATE-DIR`)
 [group('run')]
 audit *args: _dev-shell

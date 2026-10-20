@@ -42,6 +42,10 @@ extern crate self as togi_tool_bench;
 
 pub mod cache;
 pub mod compare;
+pub mod day_night;
+pub mod day_night_report;
+#[cfg(test)]
+mod day_night_tests;
 mod error;
 pub mod forecast;
 pub mod gate;
