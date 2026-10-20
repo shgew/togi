@@ -56,6 +56,8 @@ mod fold_tests;
 #[cfg(test)]
 mod forecast_tests;
 #[cfg(test)]
+mod honest_chain_tests;
+#[cfg(test)]
 mod later_tests;
 #[cfg(test)]
 mod ledger_tests;
@@ -98,7 +100,7 @@ mod tests;
 #[cfg(test)]
 mod zero_tests;
 
-pub use checking::{R7PartRole, r7_part_passes};
+pub use checking::{HonestChain, PartialBasis, R7PartRole, UncoveredReason, r7_part_passes};
 pub use class::{ClassKey, LoadKey, Secs};
 pub use constraints::{
     Combination, CombinationId, ConstraintError, Constraints, FailurePoint, Insertion, Limit,
