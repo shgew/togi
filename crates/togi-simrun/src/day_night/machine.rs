@@ -465,11 +465,13 @@ impl Running for CycleRunning {
                 reporter.signal(
                     core,
                     Signal::ComputationError,
+                    None,
                     "night trial observed a failure",
                 );
                 Some(TrialFailure {
                     core,
                     signal: Signal::ComputationError,
+                    pid: None,
                 })
             } else {
                 None

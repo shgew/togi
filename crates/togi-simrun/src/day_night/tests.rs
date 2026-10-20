@@ -279,7 +279,7 @@ struct Silent;
 impl Reporter for Silent {
     fn progress(&mut self, _detail: &str) {}
     fn sample(&mut self, _sample: Sample) {}
-    fn signal(&mut self, _core: CoreId, _signal: Signal, _detail: &str) {}
+    fn signal(&mut self, _core: CoreId, _signal: Signal, _pid: Option<u32>, _detail: &str) {}
 }
 
 #[test]
@@ -477,6 +477,7 @@ impl Trials for EdgeTrials {
             .map(|core| TrialFailure {
                 signal: Signal::ComputationError,
                 core,
+                pid: None,
             });
         Ok(Box::new(EdgeRun(TrialResult {
             ran: spec.duration,

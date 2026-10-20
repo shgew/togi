@@ -104,6 +104,7 @@ impl TrialClass {
             index,
             seed,
             offsets,
+            controller: togi_machine::ControllerMode::Legacy,
         })
     }
 

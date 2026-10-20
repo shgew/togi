@@ -253,7 +253,7 @@ struct Silent;
 impl Reporter for Silent {
     fn progress(&mut self, _detail: &str) {}
     fn sample(&mut self, _sample: Sample) {}
-    fn signal(&mut self, _core: CoreId, _signal: Signal, _detail: &str) {}
+    fn signal(&mut self, _core: CoreId, _signal: Signal, _pid: Option<u32>, _detail: &str) {}
 }
 
 fn probe(machine: &mut Machine<'_>, spec: TrialSpec) -> Result<(bool, Duration), RunError> {

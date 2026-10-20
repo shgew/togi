@@ -269,6 +269,7 @@ fn class(
         index: 0,
         seed: 0,
         offsets: PerCore::default(),
+        controller: togi_machine::ControllerMode::Legacy,
     };
     spec.check_roles(topology).map_err(TruthError::Roles)?;
     TrialClass::from_spec(&spec)
