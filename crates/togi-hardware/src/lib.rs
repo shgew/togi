@@ -4,6 +4,7 @@
 mod adapters;
 mod assemble;
 mod checks;
+pub mod day;
 mod diagnose;
 mod error;
 mod files;

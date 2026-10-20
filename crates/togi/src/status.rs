@@ -47,6 +47,8 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
 /// treating them as failures. It shows each core's observed self-sufficiency for each R7 workload
 /// and the CCD's current top requesters, with offsets standing in only when request telemetry is
 /// absent, and lists reset commands for too-cautious defects until each affected core is reset.
+/// After daily observations exist, a Day section lists boots, checkpointed hours per read-back
+/// profile, clean/unclean ends and the last unclean boot's reset reason.
 /// Read-only, rendered from the journal. A different ruleset warns before rendering; a different
 /// schema is refused.
 ///
@@ -165,6 +167,11 @@ impl<'a> Scan<'a> {
                     }
                 },
                 Payload::SessionStart(_)
+                | Payload::DayBootStart(_)
+                | Payload::DayCheckpoint(_)
+                | Payload::DayOffsetsChanged(_)
+                | Payload::DayCleanStop(_)
+                | Payload::DayUncleanEnd(_)
                 | Payload::SessionContext(_)
                 | Payload::SessionBaseline(_)
                 | Payload::SessionNotice(_)
@@ -240,7 +247,47 @@ fn render_model(events: &[Event], model: &togi_watch::model::Model) -> Result<St
         scan: &scan,
     }
     .write();
+    render_day(&mut out, events);
     Ok(out)
+}
+
+fn render_day(out: &mut String, events: &[Event]) {
+    let ledger = crate::day::Ledger::of(events);
+    if ledger.boots.is_empty() {
+        return;
+    }
+    let clean = ledger.boots.values().filter(|boot| boot.clean).count();
+    let unclean = ledger.boots.values().filter(|boot| boot.unclean).count();
+    let _ = writeln!(out, "\nDay");
+    let _ = writeln!(
+        out,
+        "boots observed: {}; clean ends: {clean}; unclean ends: {unclean}",
+        ledger.boots.len()
+    );
+    out.push_str("Applied hours per read-back profile (changed intervals excluded):\n");
+    for (profile, seconds) in &ledger.profiles {
+        let offsets: Vec<String> = profile
+            .iter()
+            .map(|(core, offset)| format!("{core:02}:{offset}"))
+            .collect();
+        let text = format!(
+            "{}: {}.{:03} h",
+            offsets.join(" "),
+            seconds / 3600,
+            (seconds % 3600) * 1000 / 3600
+        );
+        wrap(out, "  ", "    ", &text);
+    }
+    if let Some((boot, reason)) = ledger.last_unclean {
+        let reason = reason.kind.map_or("unknown", |kind| kind.as_str());
+        let text = format!(
+            "last unclean end: {} (reset reason: {reason})",
+            esc(boot.as_str())
+        );
+        wrap(out, "", "  ", &text);
+    } else {
+        out.push_str("last unclean end: none\n");
+    }
 }
 
 struct Status<'a> {

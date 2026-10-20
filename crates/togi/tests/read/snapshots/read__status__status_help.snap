@@ -4,7 +4,7 @@ expression: text(&ran.stdout)
 ---
 Show the session at a glance
 
-The search, hunt, phase 2 round or checking activity and the phase; the BIOS profile to enter, marked * while unconfirmed; then each core's offset, BIOS offset, failure point, phase, queued work and last decision, and its combinations. In phase 2 it lists the candidates with their remaining gaps and the most rounds left if none fails, then one full cycle. An open hunt shows groups and trials; an open phase 2 round shows checks and passes. Evidence lists the workloads' valid passes and the Tctl peak since the last profile change, and between-trial MCEs without treating them as failures. It shows each core's observed self-sufficiency for each R7 workload and the CCD's current top requesters, with offsets standing in only when request telemetry is absent, and lists reset commands for too-cautious defects until each affected core is reset. Read-only, rendered from the journal. A different ruleset warns before rendering; a different schema is refused.
+The search, hunt, phase 2 round or checking activity and the phase; the BIOS profile to enter, marked * while unconfirmed; then each core's offset, BIOS offset, failure point, phase, queued work and last decision, and its combinations. In phase 2 it lists the candidates with their remaining gaps and the most rounds left if none fails, then one full cycle. An open hunt shows groups and trials; an open phase 2 round shows checks and passes. Evidence lists the workloads' valid passes and the Tctl peak since the last profile change, and between-trial MCEs without treating them as failures. It shows each core's observed self-sufficiency for each R7 workload and the CCD's current top requesters, with offsets standing in only when request telemetry is absent, and lists reset commands for too-cautious defects until each affected core is reset. After daily observations exist, a Day section lists boots, checkpointed hours per read-back profile, clean/unclean ends and the last unclean boot's reset reason. Read-only, rendered from the journal. A different ruleset warns before rendering; a different schema is refused.
 
 An event of a kind this build does not know is skipped and an unknown field is ignored; stderr says which, after the output.
 
@@ -22,4 +22,3 @@ Options:
 Examples:
   togi status                     The session in the default state directory
   togi --state-dir <dir> status   The session in <dir>, such as a copied state directory
-

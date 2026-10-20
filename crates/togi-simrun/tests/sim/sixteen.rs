@@ -346,6 +346,11 @@ fn sixteen_cores_reach_a_clean_cycle() {
             | Payload::BootLeaveReason(_)
             | Payload::Shutdown(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_)
             | Payload::DeepeningRound(_) => {}
         }

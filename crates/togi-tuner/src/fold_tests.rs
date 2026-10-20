@@ -1107,3 +1107,82 @@ fn an_intent_while_a_trial_is_open_or_awaiting_attribution_is_refused() {
             if trial == TrialId::from("0002".to_owned()) && open == failed
     ));
 }
+
+fn day_events() -> Vec<Payload> {
+    use togi_journal::{
+        DayBootStart, DayCheckpoint, DayCleanStop, DayOffsetsChanged, DayUncleanEnd,
+    };
+    use togi_machine::{BiosContext, BootId, ResetReason};
+
+    vec![
+        DayBootStart {
+            build: crate::testkit::build(),
+            bios: BiosContext::default(),
+            offsets: PerCore::default(),
+        }
+        .into(),
+        DayCheckpoint { applied_secs: 60 }.into(),
+        DayOffsetsChanged {
+            offsets: PerCore::default(),
+        }
+        .into(),
+        DayCleanStop {}.into(),
+        DayUncleanEnd {
+            boot: BootId::from("earlier".to_owned()),
+            last_checkpoint: None,
+            offsets: PerCore::default(),
+            reset_reason: ResetReason {
+                kind: None,
+                raw: Vec::new(),
+                supported: true,
+            },
+        }
+        .into(),
+    ]
+}
+
+/// A `togi day` observer shares the session journal while tuning is stopped, running or between trials; whatever
+/// it records, the tuner asks for what it would have asked for without it.
+#[test]
+fn day_events_never_change_what_the_tuner_asks_for() {
+    let mut j = Journal::new(&[0, 1], &[Start::search(-20), Start::search(-20)]);
+    let asks_alike = |j: &Journal, before: &crate::State| {
+        assert_eq!(j.state.next(), before.next());
+        // Forecasts mint hypothetical future trial-end sequences after the current journal tail.
+        // Inert observations move those sequences, not the predicted decisions or trial shape.
+        let without_future_causes = |mut forecast: crate::Forecast| {
+            for branch in &mut forecast.branches {
+                if let Some(next) = &mut branch.next {
+                    next.cause.clear();
+                }
+            }
+            forecast
+        };
+        assert_eq!(
+            without_future_causes(j.state.forecast()),
+            without_future_causes(before.forecast())
+        );
+    };
+
+    let before = j.state.clone();
+    for payload in day_events() {
+        j.append(payload, &[]);
+    }
+    asks_alike(&j, &before);
+
+    let plan = j.next_trial();
+    let (intent, trial) = j.intent(&plan);
+    let open = j.state.clone();
+    for payload in day_events() {
+        j.append(payload, &[]);
+    }
+    asks_alike(&j, &open);
+
+    j.end(intent, &trial, Outcome::Pass);
+    let ended = j.state.clone();
+    for payload in day_events() {
+        j.append(payload, &[]);
+    }
+    asks_alike(&j, &ended);
+    j.assert_resumes();
+}

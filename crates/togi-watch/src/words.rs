@@ -873,6 +873,11 @@ pub fn words(kind: EventKind) -> Words {
         | EventKind::BootSavedEntry
         | EventKind::BootLeaveReason
         | EventKind::JournalTorn
+        | EventKind::DayBootStart
+        | EventKind::DayCheckpoint
+        | EventKind::DayOffsetsChanged
+        | EventKind::DayCleanStop
+        | EventKind::DayUncleanEnd
         | EventKind::StateRebuilt => Words::SILENT,
         EventKind::PreflightCheck
         | EventKind::SmuIntent

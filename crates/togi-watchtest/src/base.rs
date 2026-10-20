@@ -150,6 +150,11 @@ impl Base {
                         | Payload::BootLeaveReason(_)
                         | Payload::Shutdown(_)
                         | Payload::JournalTorn(_)
+                        | Payload::DayBootStart(_)
+                        | Payload::DayCheckpoint(_)
+                        | Payload::DayOffsetsChanged(_)
+                        | Payload::DayCleanStop(_)
+                        | Payload::DayUncleanEnd(_)
                         | Payload::StateRebuilt(_) => false,
                     })),
                     Stop::cycles(1),
@@ -311,6 +316,11 @@ fn dead_end() -> Result<Vec<Event>, Error> {
             | Payload::BootLeaveReason(_)
             | Payload::Shutdown(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
         false

@@ -252,15 +252,20 @@ pub enum ProcessFaultKind {
     Abort,
 }
 
-/// What a boot's kernel logged about the reset before it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ResetReason {
-    /// `None` when the boot logged no reason line; `Some(ResetKind::Unknown)` for a line togi does
-    /// not recognize.
-    pub kind: Option<ResetKind>,
-    pub raw: Vec<String>,
-    /// Whether the kernel is recent enough (6.16 or later) to log reset reasons.
-    pub supported: bool,
+object_only! {
+    /// What a boot's kernel logged about the reset before it.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ResetReason {
+        /// `None` when the boot logged no reason line; `Some(ResetKind::Unknown)` for a line togi does
+        /// not recognize.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub kind: Option<ResetKind>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub raw: Vec<String>,
+        /// Whether the kernel is recent enough (6.16 or later) to log reset reasons.
+        pub supported: bool,
+    }
 }
 
 /// Kernel traps, machine checks and the cursor after the last log entry read.

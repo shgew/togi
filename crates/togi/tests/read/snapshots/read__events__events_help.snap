@@ -20,7 +20,7 @@ Options:
       --kind <kinds>
           Only these comma-separated known kinds, or groups such as trial for every trial.* kind
           
-          [possible values: backend, backend.retry, boot, boot.leave_reason, boot.saved_entry, checking, checking.chain, checking.cycle, checking.step, combination, command, command.reset, config, config.loaded, core, core.phase, crash, crash.detected, deadend, deepening, deepening.round, defect, defect.answered, defect.found, failure, failure.carried, host, host.ranking, hunt, hunt.end, hunt.group, hunt.skipped, hunt.start, journal, journal.torn, mce, preflight, preflight.check, profile, profile.applied, profile.change, profile.restored, session, session.archived, session.baseline, session.carried, session.context, session.notice, session.start, session.warning, shutdown, smu, smu.error, smu.intent, smu.readback, smu.write, state, state.rebuilt, trial, trial.carried, trial.end, trial.intent, trial.progress, trial.sample, trial.signal, trial.start, tuner, tuner.decision, tuner.warning]
+          [possible values: backend, backend.retry, boot, boot.leave_reason, boot.saved_entry, checking, checking.chain, checking.cycle, checking.step, combination, command, command.reset, config, config.loaded, core, core.phase, crash, crash.detected, day, day.boot_start, day.checkpoint, day.clean_stop, day.offsets_changed, day.unclean_end, deadend, deepening, deepening.round, defect, defect.answered, defect.found, failure, failure.carried, host, host.ranking, hunt, hunt.end, hunt.group, hunt.skipped, hunt.start, journal, journal.torn, mce, preflight, preflight.check, profile, profile.applied, profile.change, profile.restored, session, session.archived, session.baseline, session.carried, session.context, session.notice, session.start, session.warning, shutdown, smu, smu.error, smu.intent, smu.readback, smu.write, state, state.rebuilt, trial, trial.carried, trial.end, trial.intent, trial.progress, trial.sample, trial.signal, trial.start, tuner, tuner.decision, tuner.warning]
 
       --trial <ID>
           Only events of trial ID
@@ -41,4 +41,3 @@ Examples:
   togi events --core 3                      Everything that happened to core 3
   togi events --kind trial,checking.cycle   Every trial event and checking cycle
   togi events --json --trial 0413           The raw events of trial 0413
-

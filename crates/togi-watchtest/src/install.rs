@@ -162,6 +162,11 @@ fn write(dir: &Path, events: &[Event], fs: Option<Arc<dyn Fs>>) -> Result<Build,
                 | Payload::BootLeaveReason(_)
                 | Payload::Shutdown(_)
                 | Payload::JournalTorn(_)
+                | Payload::DayBootStart(_)
+                | Payload::DayCheckpoint(_)
+                | Payload::DayOffsetsChanged(_)
+                | Payload::DayCleanStop(_)
+                | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_)) => {
                     journal
                         .append(stamp, payload.clone(), &event.cause)

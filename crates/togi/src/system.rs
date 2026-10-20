@@ -165,6 +165,14 @@ pub trait System {
         lock: &'lock HostLock,
     ) -> Result<Machine<'lock>, togi_hardware::Error>;
 
+    /// Opens read-only daily observation under the held host lock.
+    fn day_observer<'lock>(
+        &self,
+        lock: &'lock HostLock,
+    ) -> Result<Box<dyn togi_hardware::day::Observer + 'lock>, Error> {
+        togi_hardware::day::observe(lock)
+    }
+
     /// Whether stdin and stderr are both terminals.
     fn interactive(&self) -> bool;
 

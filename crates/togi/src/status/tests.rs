@@ -186,3 +186,68 @@ fn a_locate_group_is_identified_and_explained_unlike_an_ordinary_group() {
     assert_eq!(cell, "probe");
     assert_eq!(note.map(|(label, _)| label), Some("probe"));
 }
+
+#[test]
+fn day_section_snapshot() {
+    use jiff::Timestamp;
+    use togi_journal::{
+        DayBootStart, DayCheckpoint, DayCleanStop, DayUncleanEnd, Event, Payload, Stamp,
+    };
+    use togi_machine::{BiosContext, ObservedOffset, ResetKind, ResetReason};
+
+    let offsets = [(core(0), ObservedOffset(-10))]
+        .into_iter()
+        .collect::<PerCore<_>>();
+    let start = || {
+        Payload::from(DayBootStart {
+            build: crate::report::current_build(),
+            bios: BiosContext {
+                bios_version: "test".into(),
+                board: "board".into(),
+                cpu_model: "CPU".into(),
+                microcode: "test".into(),
+                boost_limit_mhz: 5000,
+            },
+            offsets,
+        })
+    };
+    let events = [
+        ("day-a", start()),
+        ("day-a", DayCheckpoint { applied_secs: 3600 }.into()),
+        ("day-a", DayCleanStop {}.into()),
+        ("day-b", start()),
+        ("day-b", DayCheckpoint { applied_secs: 1800 }.into()),
+        (
+            "day-c",
+            DayUncleanEnd {
+                boot: "day-b".to_owned().into(),
+                last_checkpoint: Some(Seq::new(5).unwrap()),
+                offsets,
+                reset_reason: ResetReason {
+                    kind: Some(ResetKind::Watchdog),
+                    raw: Vec::new(),
+                    supported: true,
+                },
+            }
+            .into(),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (boot, payload))| {
+        Event::new(
+            Seq::new(u64::try_from(index).unwrap() + 1).unwrap(),
+            Stamp {
+                time: Timestamp::UNIX_EPOCH,
+                mono: None,
+            },
+            boot.to_owned().into(),
+            Vec::new(),
+            payload,
+        )
+    })
+    .collect::<Vec<_>>();
+    let mut out = String::new();
+    super::render_day(&mut out, &events);
+    assert_eq!(out, include_str!("day-status.txt"));
+}

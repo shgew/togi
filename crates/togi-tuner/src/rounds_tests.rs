@@ -88,6 +88,11 @@ fn kinds(events: &[Event]) -> Vec<&'static str> {
             | Payload::BootLeaveReason(_)
             | Payload::Shutdown(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => None,
         })
         .collect()

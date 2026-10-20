@@ -246,6 +246,11 @@ pub(crate) fn stamp_of(event: &Event) -> Option<&Build> {
         | Payload::BootLeaveReason(_)
         | Payload::Shutdown(_)
         | Payload::JournalTorn(_)
+        | Payload::DayBootStart(_)
+        | Payload::DayCheckpoint(_)
+        | Payload::DayOffsetsChanged(_)
+        | Payload::DayCleanStop(_)
+        | Payload::DayUncleanEnd(_)
         | Payload::StateRebuilt(_) => None,
     }
 }
@@ -354,6 +359,11 @@ impl Scan {
             | Payload::BootLeaveReason(_)
             | Payload::Shutdown(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
         (end, true)
@@ -414,6 +424,11 @@ impl RunTime {
             Payload::Mce(_)
                 | Payload::BootLeaveReason(_)
                 | Payload::JournalTorn(_)
+                | Payload::DayBootStart(_)
+                | Payload::DayCheckpoint(_)
+                | Payload::DayOffsetsChanged(_)
+                | Payload::DayCleanStop(_)
+                | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_)
                 | Payload::CommandReset(_)
                 | Payload::SessionArchived(_)
@@ -474,6 +489,11 @@ impl RunTime {
             | Payload::BootLeaveReason(_)
             | Payload::Shutdown(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => event.boot != self.boot,
         };
         if matches!(event.payload, Payload::SessionStart(_))

@@ -11,13 +11,14 @@ use super::smu::SmuCommand;
 use super::tuner::{Member, Rederived};
 use super::{
     BackendRetry, BootLeaveReason, BootSavedEntry, CheckingChain, CheckingCycle, CheckingStep,
-    Combination, CommandReset, ConfigLoaded, CoreTransition, CrashDetected, DeadEnd,
-    DeepeningRound, DefectAnswered, DefectFound, Failure, FailureCarried, HostRanking, HuntEnd,
-    HuntGroup, HuntSkipped, HuntStart, JournalTorn, Mce, Payload, PreflightCheck, ProfileApplied,
-    ProfileChange, ProfileRestored, SessionArchived, SessionBaseline, SessionCarried,
-    SessionContext, SessionNotice, SessionStart, SessionWarning, Shutdown, SmuError,
-    SmuIntentRecord, SmuReadback, SmuWriteRecord, StateRebuilt, TrialCarried, TrialEnd,
-    TrialIntent, TrialProgress, TrialSample, TrialSignal, TrialStart, TunerDecision, TunerWarning,
+    Combination, CommandReset, ConfigLoaded, CoreTransition, CrashDetected, DayBootStart,
+    DayCheckpoint, DayOffsetsChanged, DayUncleanEnd, DeadEnd, DeepeningRound, DefectAnswered,
+    DefectFound, Failure, FailureCarried, HostRanking, HuntEnd, HuntGroup, HuntSkipped, HuntStart,
+    JournalTorn, Mce, Payload, PreflightCheck, ProfileApplied, ProfileChange, ProfileRestored,
+    SessionArchived, SessionBaseline, SessionCarried, SessionContext, SessionNotice, SessionStart,
+    SessionWarning, Shutdown, SmuError, SmuIntentRecord, SmuReadback, SmuWriteRecord, StateRebuilt,
+    TrialCarried, TrialEnd, TrialIntent, TrialProgress, TrialSample, TrialSignal, TrialStart,
+    TunerDecision, TunerWarning,
 };
 use crate::Build;
 
@@ -74,6 +75,11 @@ impl Payload {
             Self::Shutdown(p) => shutdown(p),
             Self::JournalTorn(p) => journal_torn(p),
             Self::StateRebuilt(p) => state_rebuilt(p),
+            Self::DayBootStart(p) => day_boot_start(p),
+            Self::DayCheckpoint(p) => day_checkpoint(*p),
+            Self::DayOffsetsChanged(p) => day_offsets_changed(p),
+            Self::DayCleanStop(_) => "day observer stopped on request".to_owned(),
+            Self::DayUncleanEnd(p) => day_unclean_end(p),
         }
     }
 }
@@ -1118,4 +1124,57 @@ fn state_rebuilt(p: &StateRebuilt) -> String {
         "state.json rebuilt from the journal; differed in {}",
         p.fields.join(", ")
     )
+}
+
+fn day_boot_start(p: &DayBootStart) -> String {
+    format!(
+        "day observer started by {}: BIOS {} on {}, {}, microcode {}, boost limit {} MHz; offsets {}",
+        build_name(&p.build),
+        p.bios.bios_version,
+        p.bios.board,
+        p.bios.cpu_model,
+        p.bios.microcode,
+        p.bios.boost_limit_mhz,
+        offsets(&p.offsets, |offset| offset.0.to_string())
+    )
+}
+
+fn day_checkpoint(p: DayCheckpoint) -> String {
+    format!(
+        "day observer has been active {} s in total this boot",
+        p.applied_secs
+    )
+}
+
+fn day_offsets_changed(p: &DayOffsetsChanged) -> String {
+    format!(
+        "offsets read back changed to {}; the time since the previous record is not credited to any offset profile",
+        offsets(&p.offsets, |offset| offset.0.to_string())
+    )
+}
+
+fn day_unclean_end(p: &DayUncleanEnd) -> String {
+    let mut text = format!(
+        "day observer of boot {} ended without a clean stop; ",
+        short_boot(p.boot.as_str())
+    );
+    match p.last_checkpoint {
+        Some(seq) => {
+            let _ = write!(text, "last checkpoint seq {seq}");
+        }
+        None => text.push_str("it wrote no checkpoint"),
+    }
+    let _ = write!(
+        text,
+        "; last offsets {}",
+        offsets(&p.offsets, |offset| offset.0.to_string())
+    );
+    if let Some(raw) = p.reset_reason.raw.first() {
+        let _ = write!(text, "; reset reason: {raw}");
+    } else if let Some(kind) = p.reset_reason.kind {
+        let _ = write!(text, "; reset reason: {kind}");
+    } else if !p.reset_reason.supported {
+        text.push_str("; reset reason unavailable on this kernel");
+    }
+    text
 }

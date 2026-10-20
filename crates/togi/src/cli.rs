@@ -52,6 +52,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Run(crate::run::Args),
+    Day(crate::day::Args),
     Completion(completion::Args),
     Doctor(doctor::Args),
     Events(events::Args),
@@ -67,6 +68,7 @@ impl Command {
     pub fn run(self, ctx: &mut Context<'_>) -> Exit {
         match self {
             Self::Run(args) => crate::run::run(&args, ctx),
+            Self::Day(args) => crate::day::run(&args, ctx),
             Self::Completion(args) => completion::run(&args, ctx),
             Self::Doctor(args) => doctor::run(&args, ctx),
             Self::Events(args) => events::run(&args, ctx),

@@ -4,8 +4,8 @@ use std::num::NonZeroU32;
 use jiff::Timestamp;
 use togi_machine::{
     BankType, BiosContext, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId,
-    KernelCursor, LoadSchedule, ObservedOffset, PerCore, PstoreRecord, Regime, ResetKind, Signal,
-    TargetOffset, WorkloadId,
+    KernelCursor, LoadSchedule, ObservedOffset, PerCore, PstoreRecord, Regime, ResetKind,
+    ResetReason, Signal, TargetOffset, WorkloadId,
 };
 
 use crate::*;
@@ -649,7 +649,49 @@ pub(crate) fn samples() -> Vec<Payload> {
             fields: vec!["last_seq".into()],
         }
         .into(),
+        DayBootStart {
+            build: build(),
+            bios: bios(),
+            offsets: day_offsets(0),
+        }
+        .into(),
+        DayCheckpoint { applied_secs: 3600 }.into(),
+        DayOffsetsChanged {
+            offsets: day_offsets(-10),
+        }
+        .into(),
+        DayCleanStop {}.into(),
+        DayUncleanEnd {
+            boot: BootId::from("7a1b2c3d-0000-0000-0000-000000000000".to_owned()),
+            last_checkpoint: Some(seq(7)),
+            offsets: day_offsets(-10),
+            reset_reason: ResetReason {
+                kind: Some(ResetKind::Watchdog),
+                raw: vec!["watchdog".into()],
+                supported: true,
+            },
+        }
+        .into(),
     ]
+}
+
+fn bios() -> BiosContext {
+    BiosContext {
+        bios_version: "F31".into(),
+        board: "X570".into(),
+        cpu_model: "5950X".into(),
+        microcode: "0xa201016".into(),
+        boost_limit_mhz: 5000,
+    }
+}
+
+fn day_offsets(core_zero: i64) -> PerCore<ObservedOffset> {
+    [
+        (core(0), ObservedOffset(core_zero)),
+        (core(1), ObservedOffset(-5)),
+    ]
+    .into_iter()
+    .collect()
 }
 
 pub(crate) fn sample(kind: EventKind) -> Payload {

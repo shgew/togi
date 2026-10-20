@@ -380,6 +380,11 @@ impl<'a> Projection<'a> {
                 | Payload::BootSavedEntry(_)
                 | Payload::BootLeaveReason(_)
                 | Payload::JournalTorn(_)
+                | Payload::DayBootStart(_)
+                | Payload::DayCheckpoint(_)
+                | Payload::DayOffsetsChanged(_)
+                | Payload::DayCleanStop(_)
+                | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_) => {}
             }
         }

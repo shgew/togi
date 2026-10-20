@@ -119,6 +119,27 @@ togi events --kind trial
 
 If the machine freezes during an in-session trial, it needs a manual reset unless an active hardware watchdog provides reset protection. `sudo togi run` warns when none is active and continues; it does not arm one ([Preflight](spec/runtime.md#preflight)). The warning stays in `togi events --kind session.warning`. After a reset or crash reboot, the next run attributes the crash from the journal and continues ([Crashes](spec/tuner.md#crashes)).
 
+## Daily observation
+
+After a session exists, `sudo togi day` observes a normal boot until Ctrl-C or a stop signal. It never applies Curve Optimizer offsets or starts test workloads. It reads the BIOS context and every core's offsets at start, re-reads offsets every ten minutes, and records checkpointed active hours excluding suspend. An orderly shutdown, including a short power-button shutdown handled by systemd, writes a final checkpoint followed by a clean-stop marker. A later start records a previous observed boot without that marker as an unclean end, with its last checkpoint, offsets and reset reason when the immediate successor's evidence proves one; unavailable evidence stays unknown. It asks no question and makes no CPU-fault classification.
+
+`togi status` shows the Day summary; `togi events --kind day` shows the raw records. Hours are checkpointed lower bounds, not a stability guarantee. An interval whose two readbacks differ cannot identify when offsets changed, so it remains in boot hours but earns no hours for either profile.
+
+Daily observation requires an existing compatible session journal. It refuses to create a session or transition one written by another ruleset. Start a session through the tuning boot first. Stop daily observation before `togi run` or `togi reset` in a normal boot: they share the host and writer locks. `togi status`, `togi events` and `togi watch` remain lock-free while observation runs.
+
+To run it automatically in normal boots, enable the NixOS module option after creating a session:
+
+```nix
+services.togi = {
+  enable = true;
+  day.enable = true;
+};
+```
+
+The `togi-day.service` unit is absent from the tuning specialisation. Enabling it keeps journald persistent with a five-second sync interval. Before a manual `run` or `reset` in a normal boot, use `systemctl stop togi-day.service`; start it again with `systemctl start togi-day.service` afterward. Inspect service diagnostics with `journalctl -u togi-day.service`. Enabling it without a session reports why it cannot start instead of creating a tuning session.
+
+The optional `services.togi.day.watchdog = true;` asks PID 1 to arm/feed a 60-second hardware watchdog in normal boots, without lockup panics. It is **off by default**; observation itself needs no watchdog and writes no offsets. Before opting in, validate the watchdog device and suspend/resume behavior on the hardware. Some systems lose devices after watchdog resets ([#315](https://github.com/shgew/togi/issues/315)); after a freeze, a full power-off rather than a warm reset avoids carrying that device state into the next boot.
+
 ## 4. Overnight: the tuning boot
 
 Reboot and pick "NixOS - togi" in the GRUB menu once. That entry boots to a console with no desktop, and tty1 shows `togi watch --tuning-boot`, a dashboard of the session. That dashboard ignores `q`, `Q`, Ctrl-C and Ctrl-D, so a stray keypress cannot close it, and its help and footer name no quit key; `systemctl stop togi-watch.service` still ends it. Its log is on tty3 (Alt+F3), with the kernel's messages; tty2 has a login prompt. `togi.service` tunes unattended. GRUB remembers the entry, so every crash reboot returns to it and the service resumes. Shutting down or rebooting on purpose, with the power button, `poweroff` or `reboot`, leaves the tuning boot: togi stops cleanly and the next boot selects your newest normal generation. To keep tuning across your own reboots instead, set `services.togi.tuning.leaveOnShutdown = false;`. Automatic service restart-limit retry reboots are different and keep the tuning entry even with this option on ([Restart-limit retry boots and leave reasons](spec/runtime.md#restart-limit-retry-boots-and-leave-reasons)).
