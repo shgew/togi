@@ -209,52 +209,65 @@ pub(crate) const fn machine_check_signal(any_corrected: bool) -> Signal {
 }
 
 pub(crate) fn process_faults_failure(
-    mut previous: Option<FailureSignal>,
+    previous: Option<FailureSignal>,
     faults: &[RecordedProcessFault],
     tested: &[CpuId],
 ) -> Option<FailureSignal> {
-    for fault in faults {
-        // A later coredump summary carries no execution CPU. It must not erase the trap's
-        // location, nor turn an observed out-of-test fault into an unlocated tested failure.
-        if fault.cpu.is_none()
-            && faults
+    // A later coredump summary carries no execution CPU. It must not erase the trap's
+    // location, nor turn an observed out-of-test fault into an unlocated tested failure.
+    let located = |fault: &RecordedProcessFault| {
+        fault.cpu.is_some()
+            || !faults
                 .iter()
                 .any(|other| other.process_pid == fault.process_pid && other.cpu.is_some())
-        {
+    };
+    let outside =
+        |fault: &RecordedProcessFault| fault.cpu.is_some_and(|cpu| !tested.contains(&cpu));
+    // An out-of-test execution withdraws only the exit of the worker that ran there, so the backend's
+    // evidence is resolved against all of them before another process's tested fault is considered.
+    let mut failure = previous;
+    for fault in faults
+        .iter()
+        .filter(|fault| located(fault) && outside(fault))
+    {
+        failure = failure.filter(|failure| !withdraws(fault, failure));
+    }
+    for (index, fault) in faults.iter().enumerate() {
+        if !located(fault) || outside(fault) {
             continue;
         }
-        previous = process_fault_failure(previous, fault, tested);
+        // The process's own later out-of-test execution withdraws its tested one.
+        let withdrawn = faults[index + 1..].iter().any(|later| {
+            later.process_pid == fault.process_pid && located(later) && outside(later)
+        });
+        if !withdrawn {
+            failure = Some(adopt_fault(failure, fault));
+        }
     }
-    previous
+    failure
 }
 
-/// A kernel location replaces the assigned worker location for an unexpected exit. An
-/// out-of-test execution can withdraw only that worker's exit, never independent evidence.
-fn process_fault_failure(
-    previous: Option<FailureSignal>,
-    fault: &RecordedProcessFault,
-    tested: &[CpuId],
-) -> Option<FailureSignal> {
-    if fault.cpu.is_some_and(|cpu| !tested.contains(&cpu)) {
-        return previous.filter(|previous| {
-            let same_process = match previous.pid {
-                Some(pid) => pid == fault.process_pid,
-                None => fault.worker_core.is_some() && fault.worker_core == previous.core,
-            };
-            previous.signal != Signal::UnexpectedExit || !same_process
-        });
-    }
+fn withdraws(fault: &RecordedProcessFault, failure: &FailureSignal) -> bool {
+    let same_process = match failure.pid {
+        Some(pid) => pid == fault.process_pid,
+        None => fault.worker_core.is_some() && fault.worker_core == failure.core,
+    };
+    failure.signal == Signal::UnexpectedExit && same_process
+}
+
+/// A kernel location replaces the assigned worker location for an unexpected exit, never independent evidence.
+fn adopt_fault(previous: Option<FailureSignal>, fault: &RecordedProcessFault) -> FailureSignal {
     if let Some(previous) = previous
         && (previous.signal != Signal::UnexpectedExit
             || previous.pid.is_some_and(|pid| pid != fault.process_pid))
     {
-        return Some(previous);
+        return previous;
     }
-    Some(FailureSignal {
+    FailureSignal {
         signal: Signal::UnexpectedExit,
         core: fault.core,
         pid: Some(fault.process_pid),
-    })
+    }
 }
 
 /// The outcome a trial's evidence adds up to. The first that holds wins: a worker outside its CPUs, containment

@@ -1,15 +1,22 @@
+use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::Path;
 use std::sync::Arc;
 
+use serde_json::{Value, json};
+use test_case::test_case;
 use togi_journal::fs::{Fault, Fs as _, MemFs, Op};
-use togi_machine::{CpuFrequency as _, CpuId, FrequencyPolicy, FrequencyPolicyId};
+use togi_machine::{CpuFrequency as _, CpuId, FrequencyPolicy, FrequencyPolicyId, error_chain};
 
 use super::fake::Fake;
-use super::{Limits, PENDING};
+use super::{Limits, PENDING, STAGING};
 
 fn policy(cpus: &[u16]) -> FrequencyPolicy {
+    policy_of(0, cpus)
+}
+
+fn policy_of(id: u32, cpus: &[u16]) -> FrequencyPolicy {
     FrequencyPolicy {
-        id: FrequencyPolicyId::new(0),
+        id: FrequencyPolicyId::new(id),
         related_cpus: cpus.iter().copied().map(CpuId::from).collect(),
         cpuinfo_min_khz: 400_000,
         scaling_min_khz: 400_000,
@@ -213,4 +220,140 @@ fn discovery_failure_is_refused() {
     machine.fail_discovery();
     assert!(limits.cap(&[CpuId::from(0)], &[], &mut Vec::new()).is_err());
     assert_eq!(machine.writes(), Vec::new());
+}
+
+fn two_policies() -> Vec<FrequencyPolicy> {
+    vec![policy_of(0, &[0, 16]), policy_of(1, &[1, 17])]
+}
+
+fn both() -> [CpuId; 2] {
+    [CpuId::from(0), CpuId::from(1)]
+}
+
+fn pending_path() -> std::path::PathBuf {
+    Path::new("/trials").join(PENDING)
+}
+
+#[test]
+fn failed_restored_persistence_still_restores_every_policy_and_keeps_the_intent() {
+    let (machine, fs, limits) = fixture(two_policies());
+    limits.cap(&both(), &[], &mut Vec::new()).unwrap();
+    fs.inject(Fault::before(Op::Sync, 1));
+    let error = limits.restore(&mut Vec::new()).unwrap_err();
+    let chain = error_chain(&error);
+    assert!(chain.contains("1 of 2 saved policies"), "{chain}");
+    assert_eq!(
+        machine.writes()[2..],
+        [
+            (FrequencyPolicyId::new(0), 5_700_000),
+            (FrequencyPolicyId::new(1), 5_700_000)
+        ]
+    );
+    assert!(fs.contents(pending_path()).is_some());
+    limits.restore(&mut Vec::new()).unwrap();
+    assert_eq!(fs.contents(pending_path()), None);
+}
+
+#[test_case(false, "saved policy is missing"; "missing policy")]
+#[test_case(true, "are now"; "changed related cpus")]
+fn recovery_refuses_a_changed_policy_without_writing_it_and_restores_the_rest(
+    changed: bool,
+    message: &str,
+) {
+    let (machine, fs, limits) = fixture(two_policies());
+    limits.cap(&both(), &[], &mut Vec::new()).unwrap();
+    let mut current = machine.policies().unwrap();
+    if changed {
+        current[0].related_cpus = vec![CpuId::from(0), CpuId::from(2)];
+    } else {
+        current.remove(0);
+    }
+    machine.set_policies(current);
+    let mut report = Vec::new();
+    let error = limits.restore(&mut report).unwrap_err();
+    let chain = error_chain(&error);
+    assert!(chain.contains(message), "{chain}");
+    assert!(chain.contains("1 of 2 saved policies"), "{chain}");
+    assert!(chain.contains("first policy0"), "{chain}");
+    assert_eq!(
+        machine.writes(),
+        vec![
+            (FrequencyPolicyId::new(0), 400_000),
+            (FrequencyPolicyId::new(1), 400_000),
+            (FrequencyPolicyId::new(1), 5_700_000)
+        ]
+    );
+    assert!(fs.contents(pending_path()).is_some());
+    assert!(
+        report
+            .iter()
+            .any(|line| line.contains("restore failed: policy0"))
+    );
+}
+
+fn published(fs: &MemFs) -> Value {
+    serde_json::from_slice(&fs.contents(pending_path()).unwrap()).unwrap()
+}
+
+fn as_positional_pending(value: &Value) -> Value {
+    json!([value["boot"], value["policies"]])
+}
+
+fn as_positional_saved(value: &Value) -> Value {
+    let policies: Vec<Value> = value["policies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|saved| {
+            json!([
+                saved["policy"],
+                saved["related_cpus"],
+                saved["original_khz"],
+                saved["cap_khz"],
+                saved["state"]
+            ])
+        })
+        .collect();
+    json!({ "boot": value["boot"], "policies": policies })
+}
+
+#[test_case(as_positional_pending; "pending")]
+#[test_case(as_positional_saved; "saved")]
+fn a_positional_recovery_intent_is_refused_without_any_write(positional: fn(&Value) -> Value) {
+    let (machine, fs, limits) = fixture(two_policies());
+    limits.cap(&both(), &[], &mut Vec::new()).unwrap();
+    let writes = machine.writes();
+    let bytes = serde_json::to_vec(&positional(&published(&fs))).unwrap();
+    fs.put(pending_path(), bytes.clone());
+    assert!(limits.restore(&mut Vec::new()).is_err());
+    assert!(
+        limits.cap(&both(), &[], &mut Vec::new()).is_err(),
+        "an undecodable intent must keep blocking a new transaction"
+    );
+    assert_eq!(machine.writes(), writes);
+    assert_eq!(fs.contents(pending_path()), Some(bytes));
+}
+
+#[test_case(false; "regular file")]
+#[test_case(true; "symlink")]
+fn real_fs_intent_is_private_and_replaces_unsafe_staging_entries(link: bool) {
+    let tmp = crate::testing::tempdir();
+    let dir = tmp.path().to_owned();
+    let victim = dir.join("victim");
+    std::fs::write(&victim, "keep").unwrap();
+    let staging = dir.join(STAGING);
+    if link {
+        symlink(&victim, &staging).unwrap();
+    } else {
+        std::fs::write(&staging, "old").unwrap();
+        std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o666)).unwrap();
+    }
+    let limits = Limits::new(Arc::new(Fake::new(two_policies())), dir.clone(), None);
+    limits.cap(&both(), &[], &mut Vec::new()).unwrap();
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+    let intent = std::fs::metadata(dir.join(PENDING)).unwrap();
+    assert!(intent.is_file());
+    assert_eq!(intent.permissions().mode() & 0o777, 0o600);
+    assert!(!staging.exists());
+    limits.restore(&mut Vec::new()).unwrap();
 }

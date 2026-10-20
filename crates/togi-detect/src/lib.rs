@@ -159,7 +159,15 @@ impl Kernel {
                 Some(failure.error)
             }
         };
-        let (mces, parse_error) = match parse(&interval.messages, &self.cores) {
+        // Only hardware-error lines belong to the MCE parser: an ordinary message between a status
+        // line and its bank line would otherwise end the block and drop the bank.
+        let hardware: Vec<Message> = interval
+            .messages
+            .iter()
+            .filter(|message| message.text.contains("Hardware Error"))
+            .cloned()
+            .collect();
+        let (mces, parse_error) = match parse(&hardware, &self.cores) {
             Ok(mces) => (mces, None),
             Err(failure) => (failure.mces, Some(failure.error)),
         };

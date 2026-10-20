@@ -246,3 +246,44 @@ fn single_ccd_shared_policy_with_another_worker_is_refused() {
         assert_eq!(machine.writes(), Vec::new());
     }));
 }
+
+/// Every core of both CCDs is tested, so the controller takes an idle core uncapped.
+fn uncapped() -> togi_machine::TrialSpec {
+    let mut trial = spec(Regime::R7, &[2, 10], Duration::from_secs(5));
+    trial.controller = ControllerMode::Managed { rotation: 0 };
+    trial
+}
+
+#[test]
+fn an_uncapped_trial_recovers_a_failed_restore_first_or_is_refused() {
+    crate::testing::runtime(true).block_on(local(async {
+        let machine = Fake::new(policies());
+        let rig = rig(&machine);
+        let handle = rig.start(managed()).await.unwrap();
+        machine.refuse_write(true);
+        let run = finish(&handle).await;
+        assert!(run.finished.result.inconclusive.is_some());
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            400_000,
+            "the failed restore left the idle CCD capped"
+        );
+
+        let refused = rig.start(uncapped()).await.err().unwrap();
+        assert!(togi_machine::error_chain(&refused.error).contains("restore saved limits"));
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            400_000
+        );
+
+        machine.refuse_write(false);
+        let handle = rig.start(uncapped()).await.unwrap();
+        assert_eq!(
+            machine.scaling_max_khz(FrequencyPolicyId::new(8)).unwrap(),
+            5_700_000,
+            "the stale cap is lifted before the trial runs"
+        );
+        let run = finish(&handle).await;
+        assert_eq!(run.finished.result.inconclusive, None);
+    }));
+}

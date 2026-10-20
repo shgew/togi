@@ -4,9 +4,10 @@ use std::io::{self, Write as _};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use rustix::fs::{Mode, OFlags};
 use serde::{Deserialize, Serialize};
 use togi_journal::fs::Fs;
-use togi_machine::{BootId, CpuFrequency, CpuId, FrequencyPolicy, FrequencyPolicyId};
+use togi_machine::{BootId, CpuFrequency, CpuId, FrequencyPolicy, FrequencyPolicyId, object_only};
 
 mod sysfs;
 pub use sysfs::Sysfs;
@@ -28,21 +29,36 @@ impl Error {
     }
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Pending {
-    boot: BootId,
-    policies: Vec<Saved>,
+/// Recovery attempts every saved policy; the intent stays published until each one reads back.
+#[derive(Debug, thiserror::Error)]
+#[error("{failed} of {total} saved policies were not confirmed restored, first policy{policy}")]
+struct Unrestored {
+    failed: usize,
+    total: usize,
+    policy: u32,
+    #[source]
+    first: io::Error,
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct Saved {
-    policy: FrequencyPolicyId,
-    related_cpus: Vec<CpuId>,
-    original_khz: u32,
-    cap_khz: u32,
-    state: State,
+object_only! {
+    #[derive(Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct Pending {
+        boot: BootId,
+        policies: Vec<Saved>,
+    }
+}
+
+object_only! {
+    #[derive(Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct Saved {
+        policy: FrequencyPolicyId,
+        related_cpus: Vec<CpuId>,
+        original_khz: u32,
+        cap_khz: u32,
+        state: State,
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -191,66 +207,100 @@ impl Limits {
             return self.remove();
         }
         let policies = self.machine.policies()?;
-        let mut failures = Vec::new();
-        for index in 0..pending.policies.len() {
-            let saved = &pending.policies[index];
-            let phase = match saved.state {
-                State::Intended => "write or cap readback unconfirmed",
-                State::Capped => "cap read back",
-                State::Restored => "restoration read back",
+        let total = pending.policies.len();
+        let mut unrestored: Option<Unrestored> = None;
+        for index in 0..total {
+            let policy = pending.policies[index].policy;
+            // A policy restored in hardware whose Restored state fails to persist is restored
+            // again by the next recovery; the later policies are attempted regardless.
+            let result = self
+                .restore_saved(&pending.policies[index], &policies, report)
+                .and_then(|()| {
+                    pending.policies[index].state = State::Restored;
+                    self.save(&pending)
+                });
+            let Err(error) = result else {
+                continue;
             };
             report.push(format!(
-                "controller frequency recovery: policy{} saved {} kHz, intended cap {} kHz; {phase}",
-                saved.policy.get(), saved.original_khz, saved.cap_khz,
+                "controller frequency restore failed: policy{}: {error}",
+                policy.get()
             ));
-            let result = (|| {
-                let Some(current) = policies.iter().find(|policy| policy.id == saved.policy) else {
-                    return Err(invalid("saved policy is missing"));
-                };
-                let mut current_cpus = current.related_cpus.clone();
-                let mut saved_cpus = saved.related_cpus.clone();
-                current_cpus.sort_unstable();
-                saved_cpus.sort_unstable();
-                if current_cpus != saved_cpus || saved.original_khz == 0 || saved.cap_khz == 0 {
-                    return Err(invalid("saved policy identity or limits are invalid"));
+            match &mut unrestored {
+                Some(unrestored) => unrestored.failed += 1,
+                None => {
+                    unrestored = Some(Unrestored {
+                        failed: 1,
+                        total,
+                        policy: policy.get(),
+                        first: error,
+                    });
                 }
-                report.push(format!(
-                    "controller frequency restore intent: policy{} saved scaling_max_freq {} kHz",
-                    saved.policy.get(),
-                    saved.original_khz
-                ));
-                self.machine
-                    .set_scaling_max_khz(saved.policy, saved.original_khz)?;
-                let observed = self.machine.scaling_max_khz(saved.policy)?;
-                report.push(format!(
-                    "controller frequency restore readback: policy{} {} kHz (saved {} kHz)",
-                    saved.policy.get(),
-                    observed,
-                    saved.original_khz
-                ));
-                if observed != saved.original_khz {
-                    return Err(invalid(
-                        "restored frequency readback differs from the saved limit",
-                    ));
-                }
-                Ok(())
-            })();
-            match result {
-                Ok(()) => {
-                    pending.policies[index].state = State::Restored;
-                    self.save(&pending)?;
-                }
-                Err(error) => failures.push(format!("policy{}: {error}", saved.policy.get())),
             }
         }
-        if !failures.is_empty() {
-            return Err(io::Error::other(failures.join("; ")));
+        if let Some(unrestored) = unrestored {
+            return Err(io::Error::other(unrestored));
         }
         self.remove()?;
         report.push(
             "controller frequency limits restored and read back; recovery intent cleared"
                 .to_owned(),
         );
+        Ok(())
+    }
+
+    /// Writes nothing to a policy that is missing or whose CPUs changed since the intent.
+    fn restore_saved(
+        &self,
+        saved: &Saved,
+        policies: &[FrequencyPolicy],
+        report: &mut Vec<String>,
+    ) -> io::Result<()> {
+        let phase = match saved.state {
+            State::Intended => "write or cap readback unconfirmed",
+            State::Capped => "cap read back",
+            State::Restored => "restoration read back",
+        };
+        report.push(format!(
+            "controller frequency recovery: policy{} saved {} kHz, intended cap {} kHz; {phase}",
+            saved.policy.get(),
+            saved.original_khz,
+            saved.cap_khz,
+        ));
+        let Some(current) = policies.iter().find(|policy| policy.id == saved.policy) else {
+            return Err(invalid("saved policy is missing"));
+        };
+        let mut current_cpus = current.related_cpus.clone();
+        let mut saved_cpus = saved.related_cpus.clone();
+        current_cpus.sort_unstable();
+        saved_cpus.sort_unstable();
+        if current_cpus != saved_cpus {
+            return Err(invalid(format!(
+                "saved policy related CPUs {saved_cpus:?} are now {current_cpus:?}"
+            )));
+        }
+        if saved.original_khz == 0 || saved.cap_khz == 0 {
+            return Err(invalid("saved policy limits are invalid"));
+        }
+        report.push(format!(
+            "controller frequency restore intent: policy{} saved scaling_max_freq {} kHz",
+            saved.policy.get(),
+            saved.original_khz
+        ));
+        self.machine
+            .set_scaling_max_khz(saved.policy, saved.original_khz)?;
+        let observed = self.machine.scaling_max_khz(saved.policy)?;
+        report.push(format!(
+            "controller frequency restore readback: policy{} {} kHz (saved {} kHz)",
+            saved.policy.get(),
+            observed,
+            saved.original_khz
+        ));
+        if observed != saved.original_khz {
+            return Err(invalid(
+                "restored frequency readback differs from the saved limit",
+            ));
+        }
         Ok(())
     }
 
@@ -269,6 +319,9 @@ impl Limits {
         }
     }
 
+    /// The trials root is searchable by the backend account, so the intent is created exclusively
+    /// with mode 0600 (never wider, whatever the umask) and never through a symlink, after
+    /// removing whatever entry an interrupted save or anyone else left at the staging name.
     #[expect(
         clippy::disallowed_methods,
         reason = "frequency recovery intent must reach stable storage before sysfs writes"
@@ -279,18 +332,24 @@ impl Limits {
         let path = self.dir.join(PENDING);
         match &self.storage {
             Storage::Disk => {
-                let mut file = std::fs::OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(true)
-                    .open(&staging)?;
+                absent(std::fs::remove_file(&staging))?;
+                let mut file = std::fs::File::from(rustix::fs::open(
+                    &staging,
+                    OFlags::WRONLY
+                        | OFlags::CREATE
+                        | OFlags::EXCL
+                        | OFlags::NOFOLLOW
+                        | OFlags::CLOEXEC,
+                    Mode::from_raw_mode(0o600),
+                )?);
                 file.write_all(&bytes)?;
                 file.sync_all()?;
                 std::fs::rename(staging, path)?;
                 std::fs::File::open(&self.dir)?.sync_all()
             }
             Storage::Memory(fs) => {
-                let mut file = fs.create_truncate(&staging)?;
+                absent(fs.remove_file(&staging))?;
+                let mut file = fs.create_new(&staging)?;
                 file.write_all(&bytes)?;
                 file.sync()?;
                 fs.rename(&staging, &path)?;
@@ -348,4 +407,12 @@ mod tests;
 
 fn invalid_parse(error: std::num::ParseIntError) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, error)
+}
+
+/// A staging entry that was never there is as good as one removed.
+fn absent(result: io::Result<()>) -> io::Result<()> {
+    match result {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        other => other,
+    }
 }

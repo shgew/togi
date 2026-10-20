@@ -60,6 +60,11 @@ impl Fake {
     pub(crate) fn writes(&self) -> Vec<(FrequencyPolicyId, u32)> {
         self.state().writes.clone()
     }
+
+    /// Replaces the discovered policies, as a hotplug or driver change between runs would.
+    pub(crate) fn set_policies(&self, policies: Vec<FrequencyPolicy>) {
+        self.state().policies = policies;
+    }
 }
 
 impl CpuFrequency for Fake {

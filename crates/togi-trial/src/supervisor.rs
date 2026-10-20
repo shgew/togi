@@ -389,6 +389,16 @@ pub(crate) async fn start<O: Os>(
         Confinement::Scoped { identity, .. } => Some(identity),
         Confinement::Unscoped => None,
     };
+    // A managed trial never runs beside limits an earlier trial left armed, whatever placement it
+    // takes: they are restored first, and a failed restoration refuses the start.
+    let mut recovered = Vec::new();
+    if matches!(
+        spec.controller,
+        togi_machine::ControllerMode::Managed { .. }
+    ) && let Err(error) = env.frequency.restore(&mut recovered)
+    {
+        return Err(early(Error::Frequency(error), ready));
+    }
     let prepare_until = Instant::now() + env.timing.prepare;
     let (commands_tx, mut commands_rx) = unbounded_channel();
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -430,6 +440,9 @@ pub(crate) async fn start<O: Os>(
     drop(ready);
 
     let (events_tx, events_rx) = channel();
+    for line in recovered {
+        let _ = events_tx.send(Event::Progress(line));
+    }
     let placement = confine(&env, &spec, &events_tx);
     let (inbound_tx, mut inbound_rx) = bounded(INBOUND_CAPACITY);
     let selector = Selector::mixed(

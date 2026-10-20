@@ -2311,6 +2311,163 @@ fn public_same_boot_recovery_uses_the_saved_controller_contract(
     assert!(event.cause.contains(&fault_event.seq));
 }
 
+fn trial_end(ended: &crate::session::Ended) -> TrialEnd {
+    ended
+        .journal
+        .events()
+        .iter()
+        .find_map(|event| {
+            if let Payload::TrialEnd(end) = &event.payload {
+                Some(end.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap()
+}
+
+fn located_fault(pid: u32, cpu: u16, monotonic: Duration) -> togi_machine::ProcessFault {
+    togi_machine::ProcessFault {
+        pid,
+        name: "mprime".into(),
+        scope: None,
+        kind: togi_machine::ProcessFaultKind::Segmentation,
+        cpu: Some(CpuId::from(cpu)),
+        core: Some(core(i64::from(cpu))),
+        monotonic,
+        lines: vec!["kernel trap".into()],
+    }
+}
+
+#[test_case([992, 991], false; "live sibling fault before the withdrawing fault")]
+#[test_case([991, 992], false; "live sibling fault after the withdrawing fault")]
+#[test_case([992, 991], true; "recovered sibling fault before the withdrawing fault")]
+#[test_case([991, 992], true; "recovered sibling fault after the withdrawing fault")]
+fn a_withdrawn_worker_exit_keeps_another_workers_tested_fault(order: [u32; 2], crash: bool) {
+    let bench = Bench::new(2);
+    let (mut input, log, rigs, _, _) = rig_input(&bench);
+    input.controller = togi_machine::ControllerContract::Managed;
+    let evidence = log.clone();
+    {
+        let mut rig = rigs.borrow_mut();
+        rig.pid = Some(991);
+        rig.instances = Some(same_core_workers(992));
+        let failure = TrialFailure {
+            signal: Signal::UnexpectedExit,
+            core: core(0),
+            pid: std::num::NonZeroU32::new(991),
+        };
+        if crash {
+            rig.wait_error = Some(|| Error::Crashed);
+            rig.reported_failure = Some(failure);
+        } else {
+            rig.cancel = Some(input.cancel.clone());
+            rig.result = Some(TrialResult {
+                ran: Duration::from_secs(90),
+                failure: Some(failure),
+                ..TrialResult::default()
+            });
+        }
+        // Worker 991, whose exit the backend reported, executed outside the tested CPUs; its sibling 992 inside.
+        rig.after_wait = Some(Rc::new(move || {
+            let mut log = evidence.borrow_mut();
+            let monotonic = log.clock.monotonic().unwrap();
+            let cpu = |pid| u16::from(pid == 991);
+            let [first, second] = order;
+            let earlier = monotonic.saturating_sub(Duration::from_nanos(1));
+            log.faults.push(located_fault(first, cpu(first), earlier));
+            log.faults
+                .push(located_fault(second, cpu(second), monotonic));
+        }));
+    }
+    let ended = if crash {
+        let crashed = crate::run(input);
+        assert!(crashed.errors.iter().any(SessionError::is_crash));
+        drop(crashed);
+        let mut input = bench.input();
+        let inner = input.machine.kernel;
+        input.machine.kernel = Box::new(LogKernel { log, inner });
+        let cancel = input.cancel.clone();
+        input.on_append = Some(Box::new(move |event| {
+            if matches!(event.payload, Payload::TrialEnd(_)) {
+                cancel.cancel();
+            }
+        }));
+        crate::run(input)
+    } else {
+        crate::run(input)
+    };
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let end = trial_end(&ended);
+    assert_eq!(end.outcome, Verdict::Failure);
+    assert_eq!(end.signal, Some(Signal::UnexpectedExit));
+    assert_eq!(end.core, Some(core(0)));
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Edge {
+    BeforeStart,
+    Start,
+    End,
+    AfterEnd,
+}
+
+#[test_case(Edge::BeforeStart, Verdict::Pass; "just before the window start is ignored")]
+#[test_case(Edge::Start, Verdict::Failure; "at the window start is the trial's")]
+#[test_case(Edge::End, Verdict::Failure; "at the window end is the trial's")]
+#[test_case(Edge::AfterEnd, Verdict::Pass; "just after the window end is ignored")]
+fn public_session_takes_process_faults_only_inside_the_trial_window(edge: Edge, outcome: Verdict) {
+    let bench = Bench::new(2);
+    let (mut input, log, rigs, _, _) = rig_input(&bench);
+    input.controller = togi_machine::ControllerContract::Managed;
+    let push = move |anchor: &[Edge]| {
+        let log = log.clone();
+        let anchor = anchor.to_vec();
+        Rc::new(move || {
+            if !anchor
+                .iter()
+                .any(|at| std::mem::discriminant(at) == std::mem::discriminant(&edge))
+            {
+                return;
+            }
+            let mut log = log.borrow_mut();
+            let now = log.clock.monotonic().unwrap();
+            let monotonic = match edge {
+                Edge::BeforeStart => now.checked_sub(Duration::from_nanos(1)).unwrap(),
+                Edge::Start | Edge::End => now,
+                Edge::AfterEnd => now + Duration::from_nanos(1),
+            };
+            // The controller faulting on a tested CPU fails the trial when its fault counts.
+            log.faults
+                .push(located_fault(std::process::id(), 0, monotonic));
+        }) as Rc<dyn Fn()>
+    };
+    {
+        let mut rig = rigs.borrow_mut();
+        rig.cancel = Some(input.cancel.clone());
+        rig.on_start = Some(push(&[Edge::BeforeStart, Edge::Start]));
+        rig.after_wait = Some(push(&[Edge::End, Edge::AfterEnd]));
+    }
+    // The boot's clock starts at zero; a trial window needs room before it.
+    let cancel = input.cancel.clone();
+    input
+        .machine
+        .clock
+        .sleep(&cancel, Duration::from_secs(1))
+        .unwrap();
+    let ended = crate::run(input);
+    assert!(ended.errors.is_empty(), "{:?}", ended.errors);
+    let fault = ended.journal.events().iter().find_map(|event| {
+        if let Payload::TrialProgress(progress) = &event.payload {
+            progress.fault.as_ref()
+        } else {
+            None
+        }
+    });
+    assert_eq!(fault.is_some(), outcome == Verdict::Failure, "{fault:?}");
+    assert_eq!(trial_end(&ended).outcome, outcome);
+}
+
 #[test_case(false; "complete kernel read")]
 #[test_case(true; "partial kernel read")]
 fn public_multicore_session_uses_execution_core_instead_of_assigned_worker_core(partial: bool) {

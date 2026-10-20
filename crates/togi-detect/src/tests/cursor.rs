@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use test_case::test_case;
-use togi_machine::{Kernel as _, KernelCursor, Partial};
+use togi_machine::{BankType, Kernel as _, KernelCursor, Partial};
 
 use super::support::{OLD, Reply, argv, boot, caused_by, core, exit, kernel, lines, locked, ok};
 use crate::{DecodeError, StatusError};
@@ -107,6 +107,25 @@ fn an_empty_cursor_reads_the_whole_boot() {
             .iter()
             .any(|arg| arg.starts_with("--cursor"))
     );
+}
+
+#[test]
+fn an_ordinary_message_between_a_status_and_its_bank_keeps_the_bank() {
+    let out = lines(&[
+        entry("mce", OLD, STATUS, 1_000_000),
+        entry("other", OLD, "ordinary kernel message", 1_000_001),
+        entry(
+            "bank",
+            OLD,
+            "[Hardware Error]: Decode Unit Ext. Error Code: 1",
+            1_000_002,
+        ),
+    ]);
+    let (mut kernel, _) = kernel(&[(1, &[2])], move |_| ok(&out));
+    let read = kernel.read_mces(&boot(OLD), None).unwrap();
+    assert_eq!(read.mces.len(), 1);
+    assert_eq!(read.mces[0].bank_type, BankType::DecodeUnit);
+    assert_eq!(read.cursor, cursor("bank"));
 }
 
 #[test]
