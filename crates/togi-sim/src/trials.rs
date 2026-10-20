@@ -16,7 +16,7 @@ use crate::random::{Domain, stream, text_part};
 use crate::replay::ReplayOutcome;
 use crate::runtime::{ArithmeticError, PendingMce, Runtime, Shared};
 use crate::samples::LastTrial;
-use crate::vocab::regime_index;
+use crate::vocab::regime_key;
 
 const BURST: Duration = Duration::from_millis(100);
 const BURST_EVERY: Duration = Duration::from_secs(2);
@@ -330,7 +330,7 @@ impl Runtime {
         let mut key = DrawKey {
             words: [
                 u64::from(core.get()),
-                regime_index(spec.regime) as u64,
+                regime_key(spec.regime),
                 condition_index(spec.condition),
                 self.regs[core.index()].get().cast_unsigned(),
                 spec.index as u64,
@@ -557,7 +557,7 @@ impl Runtime {
                 Domain::Replay,
                 &[
                     spec.index as u64,
-                    regime_index(spec.regime) as u64,
+                    regime_key(spec.regime),
                     saturating_key_nanos(spec.duration),
                     text_part(spec.workload.as_str()),
                 ],

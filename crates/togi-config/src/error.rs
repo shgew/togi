@@ -1,6 +1,6 @@
 use std::{io, path::PathBuf};
 
-use togi_machine::{Backend, CoreId, InvalidCore, InvalidTarget};
+use togi_machine::{Backend, CoreId, InvalidCore, InvalidTarget, Regime};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("{value} is not within [{min}, {max}]")]
@@ -21,9 +21,14 @@ pub struct TrialsError {
     pub rate: f64,
 }
 
+/// A checking cycle the tuner cannot run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("the schedule must name at least one regime")]
-pub struct EmptySchedule;
+pub enum InvalidSchedule {
+    #[error("the schedule must name at least one regime")]
+    Empty,
+    #[error("{0} is not a regime this ruleset schedules")]
+    Unscheduled(Regime),
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("{path:?} is not an absolute path")]
@@ -54,7 +59,7 @@ pub enum ConfigError {
         source: RangeError,
     },
     #[error("checking.cycle")]
-    Schedule(#[from] EmptySchedule),
+    Schedule(#[from] InvalidSchedule),
     #[error("{table}.{key:?}: a core id is a plain decimal number such as \"3\"")]
     CoreKey { table: &'static str, key: String },
     #[error("{table}")]

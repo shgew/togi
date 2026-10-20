@@ -24,7 +24,7 @@ mod values;
 
 pub use config::{Config, DEFAULT_PATH};
 pub use error::{
-    ConfigError, EmptySchedule, LoadError, ProbabilityError, RangeError, RelativeBackendPath,
+    ConfigError, InvalidSchedule, LoadError, ProbabilityError, RangeError, RelativeBackendPath,
     TrialsError,
 };
 pub use overrides::InitialOverride;

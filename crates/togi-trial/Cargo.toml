@@ -28,6 +28,7 @@ test-case.workspace = true
 togi-config.workspace = true
 togi-hostlock.workspace = true
 togi-mprime.workspace = true
+togi-smu.workspace = true
 togi-ycruncher.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 

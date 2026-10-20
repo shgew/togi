@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use togi_machine::{
-    BootId, CancellationToken, Condition, CoreId, CoreSet, CpuId, Error, Machine, Mce,
-    ObservedOffset, Partial, PerCore, Regime, Reporter, Running, Sample, Signal, Stopped,
-    TargetOffset, TrialResult, TrialSpec, Workload, pick_workload,
+    BootId, CancellationToken, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, Error, Machine,
+    Mce, ObservedOffset, Partial, PerCore, Regime, Reporter, Running, Sample, Signal, Stopped,
+    TargetOffset, TrialResult, TrialRole, TrialSpec, Workload, pick_workload,
 };
 use togi_sim::definition::{CoreDef, ModelDef, Weights};
 use togi_sim::{InvalidMachine, Load, MachineDefinition, Model, RunSettings, Simulator, file};
@@ -343,6 +343,17 @@ impl Reporter for Recorder {
     }
 }
 
+/// Sixteen cores on two CCDs, core `n` on CPU `n` with its SMT sibling on CPU `n + 16`.
+fn topology() -> Vec<CoreInfo> {
+    (0..16_u8)
+        .map(|id| CoreInfo {
+            core: core(i64::from(id)),
+            ccd: CcdId::try_from(id / 8).expect("a CCD"),
+            cpus: vec![CpuId::from(u16::from(id)), CpuId::from(u16::from(id) + 16)],
+        })
+        .collect()
+}
+
 pub(crate) fn spec(
     id: &str,
     regime: Regime,
@@ -350,19 +361,42 @@ pub(crate) fn spec(
     cores: &[i64],
     duration: Duration,
 ) -> TrialSpec {
+    let cores: Vec<CoreId> = cores.iter().map(|&id| core(id)).collect();
+    let cpus: Vec<CpuId> = cores
+        .iter()
+        .map(|core| CpuId::from(u16::from(core.get())))
+        .collect();
+    let topology = topology();
+    let seed = 1;
+    // The simulator loads any set of cores whatever the regime, where the runtime loads one core for R1 to R5:
+    // those regimes get the legacy roles of each core on its own.
+    // Replay-miss tests deliberately mismatch the trial's regime and workload. Roles describe the
+    // workload that actually runs, retaining the mismatched class the oracle must refuse.
+    let role_regime = workload.id().regime();
+    let roles = if role_regime.instance_per_core() {
+        TrialRole::legacy(role_regime, workload.id(), seed, &cores, &cpus, &topology)
+            .expect("roles for the loaded cores")
+    } else {
+        cores
+            .iter()
+            .zip(&cpus)
+            .flat_map(|(&core, &cpu)| {
+                TrialRole::legacy(role_regime, workload.id(), seed, &[core], &[cpu], &topology)
+                    .expect("roles for the loaded core")
+            })
+            .collect()
+    };
     TrialSpec {
         id: id.to_owned(),
         regime,
         workload: workload.id(),
         condition: Condition::Together,
-        cores: cores.iter().map(|&id| core(id)).collect(),
-        cpus: cores
-            .iter()
-            .map(|&id| CpuId::from(u16::try_from(id).expect("a CPU")))
-            .collect(),
+        cores,
+        cpus,
+        roles,
         duration,
         index: 0,
-        seed: 1,
+        seed,
         offsets: PerCore::default(),
     }
 }

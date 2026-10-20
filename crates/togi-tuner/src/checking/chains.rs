@@ -212,7 +212,10 @@ impl HonestChain {
             PartialBasis::Measured => {
                 let groups = togi_requests::groups(&measured);
                 for group in &groups {
-                    remaining = remaining.iter().filter(|&core| !group.contains(core)).collect();
+                    remaining = remaining
+                        .iter()
+                        .filter(|&core| !group.contains(core))
+                        .collect();
                     if remaining.len() < 2 {
                         break;
                     }

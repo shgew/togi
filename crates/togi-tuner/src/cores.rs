@@ -77,15 +77,17 @@ impl Phase {
     }
 }
 
-const fn slot(regime: Regime) -> usize {
+/// A regime's place in a rotation; R8 and R9 are not scheduled by this ruleset and keep none.
+const fn slot(regime: Regime) -> Option<usize> {
     match regime {
-        Regime::R1 => 0,
-        Regime::R2 => 1,
-        Regime::R3 => 2,
-        Regime::R4 => 3,
-        Regime::R5 => 4,
-        Regime::R6 => 5,
-        Regime::R7 => 6,
+        Regime::R1 => Some(0),
+        Regime::R2 => Some(1),
+        Regime::R3 => Some(2),
+        Regime::R4 => Some(3),
+        Regime::R5 => Some(4),
+        Regime::R6 => Some(5),
+        Regime::R7 => Some(6),
+        Regime::R8 | Regime::R9 => None,
     }
 }
 
@@ -96,12 +98,13 @@ pub(crate) struct Rotation([u32; 7]);
 
 impl Rotation {
     pub(crate) fn get(self, regime: Regime) -> usize {
-        crate::numbers::index(self.0[slot(regime)])
+        slot(regime).map_or(0, |slot| crate::numbers::index(self.0[slot]))
     }
 
     pub(crate) fn advance(&mut self, regime: Regime) {
-        let count = &mut self.0[slot(regime)];
-        *count = count.wrapping_add(1);
+        if let Some(slot) = slot(regime) {
+            self.0[slot] = self.0[slot].wrapping_add(1);
+        }
     }
 }
 

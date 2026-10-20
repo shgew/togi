@@ -18,10 +18,10 @@ use togi_machine::Regime;
 use crate::state::Run;
 use crate::{ClassKey, FoldError, Profile, Topology, TrialContext, Window};
 
+pub use chains::{HonestChain, PartialBasis, UncoveredReason};
 pub(crate) use chains::{Link, Node, R7Step};
 pub(crate) use reruns::Reruns;
 pub(crate) use schedule::{PartPlan, Quota, StepPlan};
-pub use chains::{HonestChain, PartialBasis, UncoveredReason};
 pub use schedule::{R7PartRole, r7_part_passes};
 
 /// A cycle that is open: the schedule its start captured, the R7 occurrences that began, and for

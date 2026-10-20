@@ -110,6 +110,7 @@ fn reboot_history_during_trial(signal: Signal, evidence: Option<Payload>, end_se
             argv: Vec::new(),
             files: Vec::new(),
             instances: Vec::new(),
+            roles: Vec::new(),
         }
         .into(),
     );
@@ -195,6 +196,7 @@ fn multiple_reboots_stay_distinct() {
             argv: Vec::new(),
             files: Vec::new(),
             instances: Vec::new(),
+            roles: Vec::new(),
         }
         .into(),
     );

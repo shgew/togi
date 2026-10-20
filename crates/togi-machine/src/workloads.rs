@@ -1,4 +1,4 @@
-use crate::{Backend, DutyPct, REGIMES, Regime};
+use crate::{ALL_REGIMES, Backend, DutyPct, Regime};
 
 const fn duty(pct: u8) -> DutyPct {
     match DutyPct::new(pct) {
@@ -45,12 +45,33 @@ impl WorkloadId {
     }
 
     pub fn by_id(id: &str) -> Option<Self> {
-        REGIMES.into_iter().find_map(|regime| {
+        ALL_REGIMES.into_iter().find_map(|regime| {
             let index = workloads(regime)
                 .iter()
                 .position(|workload| workload.id == id)?;
             Self::new(regime, index)
         })
+    }
+
+    /// The workload that runs where this one is named: itself, except an R8 or R9 entry, which names the R1 or
+    /// R3 workload its light or every-thread roles run. An R8 entry's index picks the R1 workload for 0 to 2
+    /// and the R3 workload, with random load steps, for 3 to 5.
+    #[must_use]
+    pub const fn runs(self) -> Self {
+        match (self.regime, self.index) {
+            (Regime::R8, index @ 0..=2) | (Regime::R9, index) => Self::catalog(Regime::R1, index),
+            (Regime::R8, index) => Self::catalog(Regime::R3, index - 3),
+            (
+                Regime::R1
+                | Regime::R2
+                | Regime::R3
+                | Regime::R4
+                | Regime::R5
+                | Regime::R6
+                | Regime::R7,
+                _,
+            ) => self,
+        }
     }
 
     pub const fn regime(self) -> Regime {
@@ -421,6 +442,96 @@ static R7: [Workload; 3] = [
     },
 ];
 
+/// The light-core workloads of R8: the three R1 workloads sustained, then the three R1-based R3 workloads
+/// with random load steps.
+static R8: [Workload; 6] = [
+    Workload {
+        id: "mprime-sse-4k-21k-neighbours",
+        base: "mprime-sse-4k-21k",
+        backend: Backend::Mprime,
+        label: "mprime SSE 4K-21K light core beside R2 neighbours",
+        threads: 1,
+        duty_pct: duty(0),
+        key: WorkloadId::catalog(Regime::R8, 0),
+    },
+    Workload {
+        id: "ycruncher-bkt-sftv4-neighbours",
+        base: "ycruncher-bkt-sftv4",
+        backend: Backend::Ycruncher,
+        label: "y-cruncher BKT + SFTv4 light core beside R2 neighbours",
+        threads: 1,
+        duty_pct: duty(0),
+        key: WorkloadId::catalog(Regime::R8, 1),
+    },
+    Workload {
+        id: "ycruncher-snt-svt-neighbours",
+        base: "ycruncher-snt-svt",
+        backend: Backend::Ycruncher,
+        label: "y-cruncher SNT + SVT light core beside R2 neighbours",
+        threads: 1,
+        duty_pct: duty(0),
+        key: WorkloadId::catalog(Regime::R8, 2),
+    },
+    Workload {
+        id: "mprime-sse-4k-21k-steps-neighbours",
+        base: "mprime-sse-4k-21k",
+        backend: Backend::Mprime,
+        label: "mprime SSE 4K-21K load-step light core beside R2 neighbours",
+        threads: 1,
+        duty_pct: duty(0),
+        key: WorkloadId::catalog(Regime::R8, 3),
+    },
+    Workload {
+        id: "ycruncher-bkt-sftv4-steps-neighbours",
+        base: "ycruncher-bkt-sftv4",
+        backend: Backend::Ycruncher,
+        label: "y-cruncher BKT + SFTv4 load-step light core beside R2 neighbours",
+        threads: 1,
+        duty_pct: duty(0),
+        key: WorkloadId::catalog(Regime::R8, 4),
+    },
+    Workload {
+        id: "ycruncher-snt-svt-steps-neighbours",
+        base: "ycruncher-snt-svt",
+        backend: Backend::Ycruncher,
+        label: "y-cruncher SNT + SVT load-step light core beside R2 neighbours",
+        threads: 1,
+        duty_pct: duty(0),
+        key: WorkloadId::catalog(Regime::R8, 5),
+    },
+];
+
+/// The workloads every logical CPU runs in R9: the three R1 workloads.
+static R9: [Workload; 3] = [
+    Workload {
+        id: "mprime-sse-4k-21k-all-threads",
+        base: "mprime-sse-4k-21k",
+        backend: Backend::Mprime,
+        label: "mprime SSE 4K-21K on every thread",
+        threads: 1,
+        duty_pct: duty(0),
+        key: WorkloadId::catalog(Regime::R9, 0),
+    },
+    Workload {
+        id: "ycruncher-bkt-sftv4-all-threads",
+        base: "ycruncher-bkt-sftv4",
+        backend: Backend::Ycruncher,
+        label: "y-cruncher BKT + SFTv4 on every thread",
+        threads: 1,
+        duty_pct: duty(0),
+        key: WorkloadId::catalog(Regime::R9, 1),
+    },
+    Workload {
+        id: "ycruncher-snt-svt-all-threads",
+        base: "ycruncher-snt-svt",
+        backend: Backend::Ycruncher,
+        label: "y-cruncher SNT + SVT on every thread",
+        threads: 1,
+        duty_pct: duty(0),
+        key: WorkloadId::catalog(Regime::R9, 2),
+    },
+];
+
 pub fn workloads(regime: Regime) -> &'static [Workload] {
     match regime {
         Regime::R1 => &R1,
@@ -430,6 +541,8 @@ pub fn workloads(regime: Regime) -> &'static [Workload] {
         Regime::R5 => &R5,
         Regime::R6 => &R6,
         Regime::R7 => &R7,
+        Regime::R8 => &R8,
+        Regime::R9 => &R9,
     }
 }
 
@@ -439,16 +552,8 @@ pub fn pick_workload(regime: Regime, index: usize) -> &'static Workload {
 }
 
 pub fn workload_by_id(id: &str) -> Option<&'static Workload> {
-    [
-        &R1[..],
-        &R2[..],
-        &R3[..],
-        &R4[..],
-        &R5[..],
-        &R6[..],
-        &R7[..],
-    ]
-    .into_iter()
-    .flatten()
-    .find(|workload| workload.id == id)
+    ALL_REGIMES
+        .into_iter()
+        .flat_map(workloads)
+        .find(|workload| workload.id == id)
 }

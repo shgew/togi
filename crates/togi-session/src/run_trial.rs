@@ -10,7 +10,7 @@ use togi_journal::{
 };
 use togi_machine::{
     Backend, CancellationToken, Condition, CoreId, CpuId, Error, Partial, PerCore, Running,
-    TargetOffset, TrialResult, TrialSpec, WorkloadId,
+    TargetOffset, TrialResult, TrialRole, TrialSpec, WorkloadId,
 };
 use togi_tuner::{Load, TrialPlan};
 
@@ -38,6 +38,7 @@ struct Trial<'p> {
     start: Seq,
     /// The core a trial alone sets and resets around its run.
     alone: Option<CoreId>,
+    roles: Vec<TrialRole>,
 }
 
 /// How the wait for a started workload ended, before the workload is joined.
@@ -304,17 +305,19 @@ impl Session<'_> {
             .monotonic()
             .map_err(SessionError::Machine)?;
         let window_start_ns = u64::try_from(since.as_nanos()).map_err(SessionError::Monotonic)?;
-        let mut trial = Trial {
-            plan,
-            id,
-            since,
-            start: intent,
-            alone,
-        };
         let spec = TrialSpec {
-            id: trial.id.as_str().to_owned(),
+            id: id.as_str().to_owned(),
             regime: plan.regime,
             workload,
+            roles: TrialRole::legacy(
+                plan.regime,
+                workload,
+                intent.get(),
+                &cores,
+                &cpus,
+                &self.topology,
+            )
+            .map_err(SessionError::TrialRoles)?,
             condition: plan.condition,
             cores,
             cpus,
@@ -322,6 +325,14 @@ impl Session<'_> {
             index: rotation,
             seed: intent.get(),
             offsets: self.hardware.confirmed(),
+        };
+        let mut trial = Trial {
+            plan,
+            id,
+            since,
+            start: intent,
+            alone,
+            roles: spec.roles.clone(),
         };
         let Lifecycle::Swept(Swept {
             stopped,
@@ -424,6 +435,7 @@ impl Session<'_> {
             } else {
                 Vec::new()
             },
+            roles: std::mem::take(&mut trial.roles),
         };
         trial.start = self.appender.append(Payload::TrialStart(record), cites)?;
         if let Some(schedule) = started.schedule {

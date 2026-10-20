@@ -134,7 +134,16 @@ impl Run {
             (None, Regime::R1) => self.rotation_workload(id, Regime::R1),
             (None, Regime::R2) if self.r1_passed(id) => self.rotation_workload(id, Regime::R2),
             (None, Regime::R2)
-            | (Some(_) | None, Regime::R3 | Regime::R4 | Regime::R5 | Regime::R6 | Regime::R7) => {
+            | (
+                Some(_) | None,
+                Regime::R3
+                | Regime::R4
+                | Regime::R5
+                | Regime::R6
+                | Regime::R7
+                | Regime::R8
+                | Regime::R9,
+            ) => {
                 return None;
             }
         };

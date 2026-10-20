@@ -44,10 +44,7 @@ fn measured_ties_leave_together() {
 
 #[test]
 fn measured_chain_never_has_fewer_than_two_loaded_cores() {
-    let chain = HonestChain::derive(
-        set(&[0, 1, 2]),
-        &requests(&[(0, 1.3), (1, 1.2), (2, 1.1)]),
-    );
+    let chain = HonestChain::derive(set(&[0, 1, 2]), &requests(&[(0, 1.3), (1, 1.2), (2, 1.1)]));
     assert_eq!(chain.partials(), [set(&[1, 2])]);
     for partial in chain.partials() {
         assert!(partial.len() >= 2);
@@ -56,10 +53,7 @@ fn measured_chain_never_has_fewer_than_two_loaded_cores() {
 
 #[test]
 fn measured_top_group_leaving_one_core_is_uncovered() {
-    let chain = HonestChain::derive(
-        set(&[0, 1, 2]),
-        &requests(&[(0, 1.2), (1, 1.2), (2, 1.0)]),
-    );
+    let chain = HonestChain::derive(set(&[0, 1, 2]), &requests(&[(0, 1.2), (1, 1.2), (2, 1.0)]));
     assert_eq!(
         chain,
         HonestChain::Uncovered {
@@ -92,9 +86,7 @@ fn incomplete_requests_are_not_mixed_into_the_fallback() {
     );
     assert_eq!(
         chain.basis(),
-        PartialBasis::SubsetFallback {
-            missing: set(&[2])
-        }
+        PartialBasis::SubsetFallback { missing: set(&[2]) }
     );
     assert_eq!(chain.partials(), [set(&[0, 1, 2]), set(&[0, 1])]);
 }
@@ -107,9 +99,7 @@ fn a_non_finite_request_counts_as_missing() {
     );
     assert_eq!(
         chain.basis(),
-        PartialBasis::SubsetFallback {
-            missing: set(&[1])
-        }
+        PartialBasis::SubsetFallback { missing: set(&[1]) }
     );
 }
 

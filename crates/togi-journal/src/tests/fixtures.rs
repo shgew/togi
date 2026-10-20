@@ -347,6 +347,7 @@ pub(crate) fn samples() -> Vec<Payload> {
                 pid: 48211,
                 scope: "togi-trial-0413-c03".into(),
             }],
+            roles: Vec::new(),
         }
         .into(),
         TrialProgress {

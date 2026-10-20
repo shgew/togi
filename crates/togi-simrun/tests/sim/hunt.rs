@@ -216,7 +216,7 @@ fn condition_limit_script(definition: &MachineDefinition, intent: &TrialIntent) 
         .cores()
         .iter()
         .collect();
-    let regime = regime_index(intent.regime);
+    let regime = regime_index(intent.regime).unwrap();
     let alone = intent.condition == Condition::Alone;
     for core in &loaded {
         let limits = &definition.core[core.index()];

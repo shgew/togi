@@ -21,8 +21,12 @@ pub const RESETS: [ResetKind; 7] = [
     ResetKind::Unknown,
 ];
 
-/// Position of `regime` among R1 to R7.
-pub const fn regime_index(regime: Regime) -> usize {
+/// How many regimes the simulator models: R1 to R7. R8 and R9 name role loads it does not model.
+const MODELED_REGIMES: usize = 7;
+
+/// A regime's number in the simulator's draw keys: R1 to R7 as their position, then R8 and R9. The numbers of
+/// R1 to R7 are part of the simulator's recorded streams.
+pub(crate) const fn regime_key(regime: Regime) -> u64 {
     match regime {
         Regime::R1 => 0,
         Regime::R2 => 1,
@@ -31,6 +35,22 @@ pub const fn regime_index(regime: Regime) -> usize {
         Regime::R5 => 4,
         Regime::R6 => 5,
         Regime::R7 => 6,
+        Regime::R8 => 7,
+        Regime::R9 => 8,
+    }
+}
+
+/// Position of `regime` among R1 to R7, which the simulator models; `None` for R8 and R9.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the modeled regime key is below 7 on every pointer width"
+)]
+pub const fn regime_index(regime: Regime) -> Option<usize> {
+    let key = regime_key(regime);
+    if key < MODELED_REGIMES as u64 {
+        Some(key as usize)
+    } else {
+        None
     }
 }
 

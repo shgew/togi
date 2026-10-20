@@ -227,6 +227,9 @@ impl Model {
         mut visit: impl FnMut(HazardSource),
     ) -> Result<(), ShapeError> {
         self.check_shape(profile, load)?;
+        let slot = regime_index(load.regime).ok_or(ShapeError::UnmodeledRegime {
+            regime: load.regime,
+        })?;
         let regime = load.regime;
         let shared = self
             .shared_voltage(load)
@@ -236,7 +239,7 @@ impl Model {
             let loaded = load.cores.contains(core);
             let rate = match (loaded, shared.is_some()) {
                 (_, true) => 0.0,
-                (true, false) => self.loaded_rate(profile, regime, load.workload, core, nonzero),
+                (true, false) => self.loaded_rate(profile, slot, load.workload, core, nonzero),
                 (false, false) => self.idle_rate(profile, core),
             };
             if rate > 0.0 {
@@ -334,7 +337,7 @@ impl Model {
     fn loaded_rate(
         &self,
         profile: &[TargetOffset],
-        regime: Regime,
+        slot: usize,
         workload: &str,
         core: CoreId,
         nonzero: usize,
@@ -342,7 +345,7 @@ impl Model {
         let limits = &self.limits()[core.index()];
         let offset = profile[core.index()].get();
         let alone = nonzero == 0 || (nonzero == 1 && offset != 0);
-        let limit = limit(limits, regime, workload, alone);
+        let limit = limit(limits, slot, workload, alone);
         let params = self.params();
         let past = limit - offset;
         let flat = if offset == 0 { 0.0 } else { limits.flat };
@@ -409,7 +412,7 @@ impl Model {
     }
 }
 
-fn limit(limits: &Limits, regime: Regime, workload: &str, alone: bool) -> i64 {
+fn limit(limits: &Limits, slot: usize, workload: &str, alone: bool) -> i64 {
     if let Some((_, limit)) = limits
         .workload
         .iter()
@@ -417,11 +420,10 @@ fn limit(limits: &Limits, regime: Regime, workload: &str, alone: bool) -> i64 {
     {
         return *limit;
     }
-    let index = regime_index(regime);
-    if alone && index < limits.alone.len() {
-        limits.alone[index]
+    if alone && slot < limits.alone.len() {
+        limits.alone[slot]
     } else {
-        limits.together[index]
+        limits.together[slot]
     }
 }
 

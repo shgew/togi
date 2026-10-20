@@ -7,6 +7,7 @@ mod error;
 mod ids;
 mod load;
 mod per_core;
+mod roles;
 mod samples;
 mod scalars;
 mod seams;
@@ -22,6 +23,7 @@ pub use error::{Error, Partial, error_chain};
 pub use ids::{BootId, KernelCursor};
 pub use load::{DutyPct, InvalidDutyPct, LoadSchedule, Toggles};
 pub use per_core::PerCore;
+pub use roles::{InvalidRoles, PhaseSchedule, TrialRole};
 pub use samples::{PmTable, PmTableReader, ReadSamples, SampleError, TrialConditions};
 pub use scalars::{
     CcdId, CoreId, CpuId, InvalidCcd, InvalidCore, InvalidCpu, InvalidTarget, MAX_OFFSET,
@@ -33,7 +35,10 @@ pub use seams::{
     TrialFailure, TrialResult, TrialSpec, Trials, monotonic_duration,
 };
 pub use topology::{BiosContext, ContextField, ContextMismatch, CoreInfo, order};
-pub use vocab::{Backend, BankType, Condition, REGIMES, Regime, ResetKind, Signal};
+pub use vocab::{
+    ALL_REGIMES, Backend, BankType, Condition, R8_DURATION, R9_DURATION, R9_PHASE, R9_PHASE_S,
+    REGIMES, ROLE_WARM_UP, Regime, ResetKind, Signal,
+};
 pub use workloads::{
     MPRIME_AVX512_ID, UnknownWorkload, Workload, WorkloadId, pick_workload, workload_by_id,
     workloads,

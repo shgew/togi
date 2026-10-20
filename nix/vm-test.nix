@@ -61,7 +61,11 @@ in
       import json
       import time
 
-      hardware = "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes"
+      # Completion trials need a real SMU; this VM exercises only scope containment.
+      hardware = (
+          "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes "
+          "--skip an_r8_trial --skip an_r9_trial"
+      )
       pin = "hardware::a_helper_cannot_pin_outside_its_scope"
       flags = "--test-threads 1 --nocapture"
       scopes = "systemctl {manager} list-units --all 'togi-*.scope' --plain --no-legend"
@@ -471,7 +475,11 @@ in
     testScript = ''
       import json
 
-      hardware = "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes"
+      # Stock-offset R8/R9 completion trials require the real SMU, unlike these scope tests.
+      hardware = (
+          "hardware:: --skip hardware::helper --skip every_r1_and_r2_workload_passes "
+          "--skip an_r8_trial --skip an_r9_trial"
+      )
       delegated_hardware = f"{hardware} --skip a_backend_runs_as_the_account --skip the_sweep_removes_orphaned"
       flags = "--test-threads 1 --nocapture"
       scopes = "systemctl {manager} list-units --all 'togi-*.scope' --plain --no-legend"

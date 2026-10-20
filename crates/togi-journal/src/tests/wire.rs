@@ -46,6 +46,64 @@ fn every_kind_round_trips_through_the_wire() {
     }
 }
 
+#[test_case::test_case(togi_machine::Regime::R8; "neighbours")]
+#[test_case::test_case(togi_machine::Regime::R9; "all threads")]
+fn trial_roles_round_trip_with_logical_cpu_workload_and_phase_identity(
+    regime: togi_machine::Regime,
+) {
+    use togi_machine::{CcdId, CoreId, CoreInfo, CpuId, Regime, TrialRole, pick_workload};
+
+    let topology: Vec<_> = (0_u16..4)
+        .map(|id| CoreInfo {
+            core: CoreId::new(i64::from(id)).unwrap(),
+            ccd: CcdId::new(0).unwrap(),
+            cpus: vec![CpuId::from(id), CpuId::from(id + 4)],
+        })
+        .collect();
+    let roles = match regime {
+        Regime::R8 => TrialRole::neighbours(
+            pick_workload(Regime::R8, 0).id(),
+            topology[2].core,
+            pick_workload(Regime::R2, 0).id(),
+            42,
+            &topology,
+        )
+        .unwrap(),
+        Regime::R9 => TrialRole::all_threads(
+            pick_workload(Regime::R9, 0).id(),
+            topology[2].cpus[1],
+            &topology,
+        )
+        .unwrap(),
+        Regime::R1
+        | Regime::R2
+        | Regime::R3
+        | Regime::R4
+        | Regime::R5
+        | Regime::R6
+        | Regime::R7 => unreachable!("parametric inputs are the mixed-role regimes"),
+    };
+    let Payload::TrialStart(mut start) = super::fixtures::sample(EventKind::TrialStart) else {
+        unreachable!();
+    };
+    start.roles = roles.clone();
+    let event = Event::new(seq(2), stamp(None), boot(), vec![seq(1)], start.into());
+    let wire = event.encode().unwrap();
+    let decoded = Event::decode(&wire).unwrap();
+    assert_eq!(decoded, event);
+    let Payload::TrialStart(decoded) = decoded.payload else {
+        unreachable!();
+    };
+    assert_eq!(decoded.roles, roles);
+    let legacy = super::fixtures::sample(EventKind::TrialStart);
+    let legacy = Event::new(seq(2), stamp(None), boot(), vec![seq(1)], legacy);
+    let Payload::TrialStart(legacy) = Event::decode(&legacy.encode().unwrap()).unwrap().payload
+    else {
+        unreachable!();
+    };
+    assert_eq!(legacy.roles, []);
+}
+
 /// The line of every sample payload, pinned: the kind names and the payload fields and numbers on the wire.
 #[test]
 fn every_kind_matches_its_golden() {

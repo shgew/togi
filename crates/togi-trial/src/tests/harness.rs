@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use togi_journal::fs::{Fs, MemFs};
 use togi_machine::{
     CancellationToken, CcdId, Condition, CoreId, CoreInfo, CpuId, Partial, Regime, Stopped,
-    TargetOffset, TrialSpec, pick_workload,
+    TargetOffset, TrialRole, TrialSpec, WorkloadId, pick_workload,
 };
 use tokio::task::LocalSet;
 
@@ -36,6 +36,8 @@ pub(super) fn topology() -> Vec<CoreInfo> {
         .collect()
 }
 
+/// A specification for R1 to R7 whose roles are the ones the regime derives for its cores and
+/// first logical CPUs.
 pub(super) fn spec(regime: Regime, cores: &[u8], duration: Duration) -> TrialSpec {
     let topology = topology();
     let cpus = if regime.instance_per_core() {
@@ -48,21 +50,89 @@ pub(super) fn spec(regime: Regime, cores: &[u8], duration: Duration) -> TrialSpe
     } else {
         vec![topology[usize::from(cores[0])].cpus[0]]
     };
+    with_roles(
+        TrialSpec {
+            id: "t1".into(),
+            regime,
+            workload: pick_workload(regime, 0).id(),
+            condition: Condition::Alone,
+            cores: cores.iter().map(|&n| core(n)).collect(),
+            cpus,
+            duration,
+            index: 0,
+            seed: 7,
+            offsets: offsets(&topology),
+            roles: Vec::new(),
+        },
+        &topology,
+    )
+}
+
+fn offsets(topology: &[CoreInfo]) -> togi_machine::PerCore<TargetOffset> {
+    topology
+        .iter()
+        .map(|info| (info.core, TargetOffset::ZERO))
+        .collect()
+}
+
+/// Gives `spec` the roles its regime derives for its own cores and logical CPUs over `topology`.
+/// A combination the regime refuses (a test of the refusal) has none, which the plan refuses
+/// after it has checked the cores and CPUs themselves.
+pub(super) fn with_roles(mut spec: TrialSpec, topology: &[CoreInfo]) -> TrialSpec {
+    spec.roles = TrialRole::legacy(
+        spec.regime,
+        spec.workload,
+        spec.seed,
+        &spec.cores,
+        &spec.cpus,
+        topology,
+    )
+    .unwrap_or_default();
+    spec
+}
+
+/// A specification that loads exactly what `roles` cover, in their order.
+fn spec_of(
+    regime: Regime,
+    workload: WorkloadId,
+    roles: Vec<TrialRole>,
+    duration: Duration,
+) -> TrialSpec {
     TrialSpec {
         id: "t1".into(),
         regime,
-        workload: pick_workload(regime, 0).id(),
+        workload,
         condition: Condition::Alone,
-        cores: cores.iter().map(|&n| core(n)).collect(),
-        cpus,
+        cores: TrialRole::cores(&roles),
+        cpus: TrialRole::cpus(&roles),
         duration,
         index: 0,
         seed: 7,
-        offsets: topology
-            .iter()
-            .map(|info| (info.core, TargetOffset::ZERO))
-            .collect(),
+        offsets: offsets(&topology()),
+        roles,
     }
+}
+
+/// R8 on the harness topology: `light` runs what the catalog's `class`th entry names beside the
+/// R2 workload `heavy` on the rest of its CCD.
+pub(super) fn neighbours_spec(
+    class: usize,
+    light: u8,
+    heavy: usize,
+    duration: Duration,
+) -> TrialSpec {
+    let class = WorkloadId::new(Regime::R8, class).unwrap();
+    let heavy = WorkloadId::new(Regime::R2, heavy).unwrap();
+    let roles = TrialRole::neighbours(class, core(light), heavy, 7, &topology()).unwrap();
+    spec_of(Regime::R8, class, roles, duration)
+}
+
+/// R9 on the harness topology: every logical CPU runs R1, and `serial` keeps running through the
+/// one-thread phases.
+pub(super) fn all_threads_spec(class: usize, serial: u16, duration: Duration) -> TrialSpec {
+    let class = WorkloadId::new(Regime::R9, class).unwrap();
+    let roles = TrialRole::all_threads(class, CpuId::from(serial), &topology()).unwrap();
+    spec_of(Regime::R9, class, roles, duration)
 }
 
 pub(super) struct Rig {

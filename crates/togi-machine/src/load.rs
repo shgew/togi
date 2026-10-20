@@ -1,5 +1,5 @@
 use crate::object_only;
-use crate::{Regime, TrialSpec};
+use crate::{Regime, TrialSpec, WorkloadId};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -79,13 +79,26 @@ pub struct Toggles {
 }
 
 impl LoadSchedule {
+    /// The load steps of a whole trial of `spec`'s regime; R8's light core steps by its role instead.
     pub fn for_spec(spec: &TrialSpec) -> Option<Self> {
-        match spec.regime {
-            Regime::R3 => Some(Self::Random { seed: spec.seed }),
+        Self::for_regime(spec.regime, spec.workload, spec.seed)
+    }
+
+    /// The load steps of a workload of `regime` that runs alone with `seed`: R3 by random periods, R4 by its
+    /// duty cycle.
+    pub fn for_regime(regime: Regime, workload: WorkloadId, seed: u64) -> Option<Self> {
+        match regime {
+            Regime::R3 => Some(Self::Random { seed }),
             Regime::R4 => Some(Self::Duty {
-                pct: spec.workload.workload().duty_pct,
+                pct: workload.workload().duty_pct,
             }),
-            Regime::R1 | Regime::R2 | Regime::R5 | Regime::R6 | Regime::R7 => None,
+            Regime::R1
+            | Regime::R2
+            | Regime::R5
+            | Regime::R6
+            | Regime::R7
+            | Regime::R8
+            | Regime::R9 => None,
         }
     }
 
