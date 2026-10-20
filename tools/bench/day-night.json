@@ -1,0 +1,66 @@
+{
+  "id": "ruleset-13-day-night",
+  "version": 1,
+  "policy_status": "pending-1217",
+  "lambda_per_hour": 0.0003333333333333333,
+  "policy_slopes": [1.5, 2.0],
+  "seeds": {
+    "dev": {"first": 1, "count": 200},
+    "holdout": {"first": 10001, "count": 200}
+  },
+  "calendar": {
+    "days": 730,
+    "daily_hours": 8,
+    "night_hours": 8,
+    "night_weekdays": [0, 2, 4],
+    "year_days": 365,
+    "firmware_change_day": 180,
+    "sleep": "remaining wall hours; no daily or trial exposure; thermal state cools"
+  },
+  "thresholds": {
+    "covered_crash_free_fraction": 0.90,
+    "hidden_year_one_max_crashes_per_ccd": 2,
+    "hidden_year_one_fraction": 0.90,
+    "overshoot_one_count_fraction": 0.95,
+    "overshoot_absolute_max_counts": 3,
+    "median_convergence_days": 90,
+    "retention_max_lost_counts": 1,
+    "retention_fraction": 0.90,
+    "fixed_cap_max_steps_per_ccd": 7
+  },
+  "censored": "Remain in every seed denominator; convergence is infinite; each applicable criterion fails for that seed. Partial crash, step and overshoot counts are lower bounds, never a pass.",
+  "tail_criteria": "Every criterion applies separately to every listed scenario, using the worst CCD in each seed. No pooled seed or CCD average may hide a failure. Overshoot absolute maximum and fixed-cap step bound apply to every uncensored seed; any censored seed fails both. The covered-climb criterion ends only after every CCD first reaches within one count of true safe. Hidden-class first-year counts include all 365 days, not only the climb. Retention compares day 730 with the first converged profile, counts never-converged runs as failures, and reports background-only drift separately from CO-justified retreats. Fixed-cap steps count promotions, not retreats or requalification; moving-cap and firmware-change report steps but are exempt from the fixed-cap bound.",
+  "scenarios": [
+    {"name": "edge-shallow", "daily_class": "covered", "cap": "fixed"},
+    {"name": "edge-deep", "daily_class": "covered", "cap": "fixed"},
+    {"name": "no-write-limit-failure", "daily_class": "covered", "cap": "fixed"},
+    {"name": "slope-flat", "daily_class": "covered", "cap": "fixed"},
+    {"name": "slope-steep", "daily_class": "covered", "cap": "fixed"},
+    {"name": "flattening-tail", "daily_class": "covered", "cap": "fixed"},
+    {"name": "flatter-dangerous-class", "daily_class": "covered", "cap": "fixed"},
+    {"name": "delayed-onset", "daily_class": "covered", "cap": "fixed"},
+    {"name": "thermal-history", "daily_class": "covered", "cap": "fixed"},
+    {"name": "hidden-daily", "daily_class": "hidden", "cap": "fixed"},
+    {"name": "partial-only", "daily_class": "covered", "cap": "fixed"},
+    {"name": "single-core-binding", "daily_class": "covered", "cap": "fixed"},
+    {"name": "jointly-binding", "daily_class": "covered", "cap": "fixed"},
+    {"name": "r8-nonbinding", "daily_class": "covered", "cap": "fixed"},
+    {"name": "both-ccd-interaction", "daily_class": "covered", "cap": "fixed"},
+    {"name": "stock-background", "daily_class": "covered", "cap": "fixed", "retention": true},
+    {"name": "single-ccd", "daily_class": "covered", "cap": "fixed"},
+    {"name": "moving-cap", "daily_class": "covered", "cap": "moving"},
+    {"name": "firmware-change", "daily_class": "covered", "cap": "firmware"},
+    {"name": "non-cpu-correct", "daily_class": "covered", "cap": "fixed"},
+    {"name": "non-cpu-wrong", "daily_class": "covered", "cap": "fixed"},
+    {"name": "non-cpu-missing", "daily_class": "covered", "cap": "fixed"}
+  ],
+  "notes": [
+    "Registered for issue #1216 before comparator scoring; Ruleset 13 is implemented and scored in #1217, never inferred from comparator results.",
+    "Comparator choices before scoring: CO 0 forever; fixed margin maps observed night failures by binary probes through ordinary Trials, keeps four counts shallower than the observed edge, promotes by at most eight counts after 50 active daily hours, and retreats one count after a CPU-suspect daily event. Comparators do not implement Ruleset 13.",
+    "Thresholds are unchanged from #1216. Lambda is the owner-selected incremental CO-caused hazard over stock, split evenly across CCDs and also bounded jointly; total stock-background crashes are reported separately.",
+    "The finite grid is the runtime write range 0 through -50. True safe maximizes total jointly admissible CCD depth, then minimizes depth imbalance, then chooses lexicographically smaller depth. Its policy-independent reference is the scenario's ordered eight-hour daily mix followed by sixteen hours of sleep at periodic thermal equilibrium, integrating hidden classes, delayed onsets and intended durations. Night stress changes actual simulated heat but cannot change this reference target. Stock is always admissible.",
+    "The horizon is two 365-day years. Day zero is Monday. Active daily hours precede the optional night; other hours are sleep. Every scenario declares its daily load mix and night class coverage in the truth model; hidden daily classes never appear at night.",
+    "Develop only on dev seeds. Holdout is reserved for the once-only confirmation of each real policy slope after #1217; comparator tables are diagnostics, not gate passes. No threshold changes after inspecting either split.",
+    "Per-scenario percentile criteria use the exact empirical seed fraction, with no bootstrap or rounding up. Median uses the mean of the middle two sorted values, with censored and nonconverged values at positive infinity."
+  ]
+}
