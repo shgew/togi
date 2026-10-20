@@ -67,7 +67,7 @@ just bench-day-night --split dev
 just bench-day-night --split dev --out day-night.jsonl
 ```
 
-The command runs **CO 0 forever** and **fixed margin** over every registered scenario. Output is a per-scenario metrics table; `--out` preserves per-seed metrics as JSON Lines. This experiment is in memory, independent of the legacy session suite and baseline. It does not run hardware. [Simulating](simulating.md#daynight-experiments) owns the truth, calendar, policy seam and comparator behavior.
+The command runs **CO 0 forever** and **fixed margin** over every registered scenario. Output is a per-scenario metrics table; `--out` preserves per-seed metrics as JSON Lines. This experiment is in memory, independent of the legacy session suite and baseline. It does not run hardware. [Simulating](simulating.md#calendar-daynight-experiments) owns the truth, calendar, policy seam and comparator behavior.
 
 True safe uses the hazard **CO adds over stock**, not total failures: λ* = 1/3,000 active hours jointly and λ*/CCD-count on each CCD. It is the deepest admissible profile in the write range; both-CCD interaction risk must satisfy the joint bound too. The reference repeats the ordered eight-hour daily mix and sixteen-hour sleep at periodic thermal equilibrium, integrating hidden classes, delayed onsets and intended durations. Policy-dependent night heating changes actual simulated risk, not this reference target. Total depth wins, then balanced CCD depth, then lexicographically smaller depths break ties. Only metrics can inspect the oracle; policies see machine-seam observations, never true safe.
 
