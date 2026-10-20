@@ -301,3 +301,24 @@ fn the_summary_is_the_journal_message() {
         end.summary()
     );
 }
+
+const SUMMARY_HEAD: &str = "day observer of boot aaaaaaaa ended without a clean stop; it wrote no checkpoint; last offsets [00: -10, 01: -5]; machine checks: ";
+
+#[test_case(read(0, 0), read(0, 0), KernelTail::Quiet {}, "none in that boot, none in the next; kernel log tail: no recognized errors"; "quiet tail and no machine checks")]
+#[test_case(read(3, 0), read(0, 0), KernelTail::Quiet {}, "0 uncorrected and 3 corrected in that boot, none in the next; kernel log tail: no recognized errors"; "corrected only in the crashed boot")]
+#[test_case(read(0, 2), read(5, 1), KernelTail::Quiet {}, "2 uncorrected and 0 corrected in that boot, 1 uncorrected and 5 corrected in the next; kernel log tail: no recognized errors"; "uncorrected listed before corrected in both boots")]
+#[test_case(MceCount::Unknown {}, read(1, 0), KernelTail::Unreadable {}, "unknown in that boot, 0 uncorrected and 1 corrected in the next; kernel log tail: unreadable"; "unreadable tail")]
+#[test_case(MceCount::Unknown {}, MceCount::Unknown {}, KernelTail::Missing {}, "unknown in that boot, unknown in the next; kernel log tail: missing"; "missing tail")]
+#[test_case(read(0, 0), read(0, 0), faults(&[KernelFault::MachineCheck {}], true), "none in that boot, none in the next; kernel log tail: machine check; logging continued after the last error"; "machine check in the tail")]
+#[test_case(read(0, 0), read(0, 0), faults(&[KernelFault::GraphicsReset { driver: GraphicsDriver::I915 }], false), "none in that boot, none in the next; kernel log tail: i915 reset; the log ended at the last error"; "graphics reset")]
+#[test_case(read(0, 0), read(0, 0), faults(&[KernelFault::GraphicsTimeout { driver: GraphicsDriver::Xe }], true), "none in that boot, none in the next; kernel log tail: xe timeout; logging continued after the last error"; "graphics timeout")]
+#[test_case(read(0, 0), read(0, 0), faults(&[KernelFault::Oops {}, KernelFault::HungTask {}], false), "none in that boot, none in the next; kernel log tail: kernel oops, hung task; the log ended at the last error"; "oops then hung task")]
+fn the_summary_words_the_evidence(
+    crashed: MceCount,
+    successor: MceCount,
+    tail: KernelTail,
+    expected: &str,
+) {
+    let end = end_of(A, None, crashed, successor, tail);
+    assert_eq!(end.summary(), format!("{SUMMARY_HEAD}{expected}"));
+}
