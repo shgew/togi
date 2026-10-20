@@ -8,6 +8,7 @@ description = "Drives a tuning session on the simulator: a crash reboots the sim
 
 [dependencies]
 jiff.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 togi-config.workspace = true

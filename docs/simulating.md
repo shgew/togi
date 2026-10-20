@@ -240,6 +240,86 @@ A divergence is `SimError::Diverged`, and a state that cannot be published is `S
 
 The tuner's simulation tests (`tests/sim/forecast.rs` and `tests/sim/memo.rs`) live in this crate, because they need whole simulated sessions. `togi-tuner` cannot take `togi-simrun` as a dev-dependency: that would build a second `togi-tuner` whose types do not unify with the first.
 
+### Calendar day/night experiments
+
+`togi_sim::day_night` and `togi_simrun::day_night` are opt-in experimental modules.
+They do not change the existing `Simulator`, machine-file model, or session runner.
+`day_night::run(scenario, seed, comparator, CalendarConfig)` runs the CO-0 or fixed-margin
+diagnostic adapter; `run_with_policy` takes another implementation of the same `Policy`
+interface. Neither diagnostic adapter implements Ruleset 13 or the production day service.
+The registered benchmark and its gate reporting are described in [benchmarking](benchmarking.md).
+
+The default calendar contains 730 days, with day zero on Monday, eight active daily hours,
+and an allocation of eight testing hours on Monday, Wednesday and Friday. A policy need
+not fill that allocation: unused time and explicit clock sleeps are sleep, not exposure.
+Actual daily-active hours, actual night-trial hours and sleep hours are reported separately.
+Daily workload fractions can be overridden without changing the scenario's workload classes.
+The built-in mix contains sustained two-hour blocks, not just short repeated tests.
+Firmware transitions change the machine's BIOS context, clear its deployed offsets and
+notify the policy; a calendar override can move the scenario's transition day.
+
+The hidden truth is per CCD and full experimental class: workload catalog content, ordered
+loaded cores and logical CPUs, process instances, roles, phase schedules, burst positions
+and intended duration. Trial labels, indices and applied offsets are not class identity.
+Daily activity and the night `Trials` adapter call the same truth model. Night requests are
+ordinary `togi_machine::TrialSpec` values, including their actual placement and duration;
+changing a probe's duration changes that class's identity. Only elapsed exposure before
+the first competing event advances history. Positive waiting times are represented at a
+minimum of one nanosecond, and events at the intended end do not terminate a trial.
+
+CO hazard is excess over the same class at stock, exactly zero at CO 0; platform background
+is a separate competing source. Exponential curves range from 1.2x to 6x per count.
+The flattening family joins the central curve continuously to flatter tails.
+The delayed-onset family needs 600 uninterrupted seconds of the same full class:
+splitting identical exposure preserves that history, while changing class, interruption or
+sleep resets onset. Thermal history heats toward 1800 heat-seconds with an 1800-second time
+constant; its 600 heat-second threshold takes over twelve minutes from cold. Sleep cools
+exponentially, so a short sleep preserves some heat, but never adds CO or background
+exposure. Both-CCD interactions require simultaneous exposure of both CCDs.
+
+The policy receives machine seams, ordinary night trial descriptions and daily completion
+or interruption evidence, including a CPU/other/missing operator answer. It never receives
+the scenario identity, true event cause, true hazard or safe profile. The non-CPU scenarios
+include graphics and power interruptions, with correct, false CPU and missing answers.
+Their hidden causes remain separate from the classifications returned by the policy;
+CPU-suspect metrics count those actual returned decisions, not a runner-owned policy rule.
+The fixed-margin adapter treats missing answers conservatively as CPU-suspect; a correct
+other answer does not cause a retreat.
+
+The fixed-margin comparator binary-searches an observed edge with probes of at least
+half an hour, preserving longer supplied classes and their intended duration. It respects
+the actual night budget and carries unfinished searches forward.
+It tests each CCD while the other is at stock, restores daytime settings after probing,
+then subtracts four counts from the observed edge. It approaches that fixed cap by at most
+eight counts after each 50 actual daily-active hours; sleep and night trials cannot pay
+that hold. A CPU-suspect interruption retreats deployed CCDs and their comparator caps by
+one count. These deliberately simple decisions use observed trial results, not the oracle.
+
+Only the reporting side computes a safe reference profile. It integrates the configured
+ordered daily blocks and the remainder of a 24-hour cycle as sleep, including exact onset
+and periodic-equilibrium thermal history, then divides by actual active hours. The default
+reference is eight active hours plus sixteen asleep. It excludes policy-dependent nightly
+stress, so a policy cannot change its target by changing its night schedule; actual daily
+risk can still inherit heat from a preceding night. Background is excluded, per-CCD CO
+excess is at most the joint target divided by CCD count, and total excess plus interaction
+is at most the joint target.
+The default joint target is one failure per 3000 active hours. Among feasible profiles,
+the oracle maximizes total depth, minimizes CCD depth imbalance, then chooses the
+lexicographically smaller depth vector (CCD 0 shallower on an exact tie). Safe profiles
+are reused until the truth's cap epoch changes.
+
+Reports retain every CCD: first convergence within one count of its safe reference,
+maximum overshoot, promotion count, final and converged depth, and daily true CO crashes
+both over the whole run and in year one. Climb crashes are counted until every CCD has
+first converged. Joint crashes count for each affected CCD, while the unique daily CO
+crash total counts the event once. Background-only, true-CO-justified and non-CPU-triggered
+lost-depth counts remain separate; a retreat by eight counts records eight lost counts,
+not one incident. Retreats of an unaffected CCD or without an event are unattributed, not
+justified. Unconverged runs are right-censored with a missing convergence
+day; they are never dropped from a benchmark denominator. Fixed-cap and moving-cap
+reports remain distinguishable. Diagnostic comparator results cannot establish that the
+registered real-policy gate passed.
+
 ### The simulator command (`togi-tool-sim`)
 
 `crates/togi-tool-sim` builds the `togi-tool-sim` command. It runs from a source checkout:

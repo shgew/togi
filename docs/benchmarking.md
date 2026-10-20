@@ -45,7 +45,7 @@ Iterate on `dev`. Run `holdout` only to confirm a result, so the holdout seeds s
 
 A ruleset's bench gate is the `gate` object in [`tools/bench/suite.json`](../tools/bench/suite.json), committed before the ruleset is scored. It names the gate `id`, the `baseline` it is judged against (the ruleset and the commits that recorded the runs; a pull request that re-records runs adds its commit), the seed `split`, the `gated` scenarios, the `pooled` subset, the `conclude` scenarios, the `quantiles`, the bootstrap (`confidence`, `resamples`, `bootstrap_seed`) and `max_time_ratio`. The object and its `note` are the definition and the rationale; this page does not restate them per ruleset. The gate comes from [issue #491](https://github.com/shgew/togi/issues/491) and [issue #570](https://github.com/shgew/togi/issues/570).
 
-No gate is registered now: the suite has none until the next ruleset's is committed, so `just bench` prints no gate. Historical gates are linked [below](#historical-gates).
+The legacy session suite has no current gate. Ruleset 13 registers a separate [day/night gate](#daynight-gate) because a session's conclusion cannot measure a profile's daily-use safety.
 
 A gate's `notes` array preserves accompanying provenance and caveats as JSON data; it does not affect scoring. `just bench` prints each `notes` entry of a registered gate as a `suite: ...` line before its summary.
 
@@ -57,6 +57,23 @@ With `--baseline`, `just bench` judges the gate after the generic verdict below,
 - **Pooled median:** the median over the `pooled` scenarios' seeds together is strictly lower than the baseline's; equal fails.
 
 Maxima and everything else are reported by the summary and the comparison, not gated. Treat a failed gate as the owner's decision, not a threshold to renegotiate after scoring.
+
+### Day/night gate
+
+[`tools/bench/day-night.json`](../tools/bench/day-night.json) is the Ruleset 13 registration for [#1216](https://github.com/shgew/togi/issues/1216). It is committed before any scoring. It freezes 200 development seeds and 200 disjoint holdout seeds, 730 calendar days, eight active daily hours, three eight-hour nights a week, the scenario set, incremental hazard budget, thresholds and tail treatment. Iterate on development seeds; reserve holdout for the real policy's once-only confirmation, separately at the fallback slopes 1.5× and 2×. Neither comparator is the real policy, and comparator results cannot pass this gate.
+
+```sh
+just bench-day-night --split dev
+just bench-day-night --split dev --out day-night.jsonl
+```
+
+The command runs **CO 0 forever** and **fixed margin** over every registered scenario. Output is a per-scenario metrics table; `--out` preserves per-seed metrics as JSON Lines. This experiment is in memory, independent of the legacy session suite and baseline. It does not run hardware. [Simulating](simulating.md#calendar-daynight-experiments) owns the truth, calendar, policy seam and comparator behavior.
+
+True safe uses the hazard **CO adds over stock**, not total failures: λ* = 1/3,000 active hours jointly and λ*/CCD-count on each CCD. It is the deepest admissible profile in the write range; both-CCD interaction risk must satisfy the joint bound too. The reference repeats the ordered eight-hour daily mix and sixteen-hour sleep at periodic thermal equilibrium, integrating hidden classes, delayed onsets and intended durations. Policy-dependent night heating changes actual simulated risk, not this reference target. Total depth wins, then balanced CCD depth, then lexicographically smaller depths break ties. Only metrics can inspect the oracle; policies see machine-seam observations, never true safe.
+
+The table distinguishes true CO-caused daily crashes from CPU-suspect classifications, which can include wrong or missing answers to non-CPU unclean ends. Per-CCD metrics retain first-year crashes, convergence day, maximum overshoot, cap-promotion steps, first converged and final depth, and counts retreated on background alone versus new CO evidence. Sleep is wall time only, not daily or trial exposure. A moving-cap scenario reports steps separately; its count does not enter the fixed-cap bound. A firmware change invalidates prior qualification and returns day offsets to stock.
+
+The registration is authoritative: covered-class climb is crash-free in at least 90% of seeds; hidden-class first-year crashes are at most two per CCD in at least 90%; maximum overshoot is at most one count in at least 95% and never more than three; median days within one count of true safe is at most 90; after two years on the stock-background scenario at least 90% keep converged depth minus one; fixed caps need at most seven promotions per CCD. Each criterion is evaluated per scenario using each seed's worst CCD, never pooled. Every censored or nonconverged run stays in the denominator, with infinite convergence time; partial counts cannot earn a pass. The committed registration describes applicable scenarios and exact empirical fractions. A failed score is an owner decision, not a reason to relax thresholds.
 
 ### Historical gates
 

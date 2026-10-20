@@ -25,6 +25,7 @@ togi-machine.workspace = true
 togi-requests.workspace = true
 togi-session.workspace = true
 togi-sim.workspace = true
+togi-simrun.workspace = true
 togi-statecopy.workspace = true
 togi-tool-audit.workspace = true
 togi-tool-forecast.workspace = true
@@ -38,7 +39,6 @@ proptest.workspace = true
 test-case.workspace = true
 
 togi-render.workspace = true
-togi-simrun.workspace = true
 togi-watch.workspace = true
 
 [lints]
