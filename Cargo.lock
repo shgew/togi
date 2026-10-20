@@ -1819,6 +1819,7 @@ name = "togi-simrun"
 version = "0.0.0"
 dependencies = [
  "jiff",
+ "serde",
  "serde_json",
  "tempfile",
  "test-case",
