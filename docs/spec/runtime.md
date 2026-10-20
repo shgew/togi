@@ -2,6 +2,11 @@
 
 Normative rules for how togi is invoked, configured and deployed.
 
+## Day journal destination
+
+Daily observation appends to the existing session's `events.jsonl`, using the same writer lock, strict decoding, compatibility check and durable append as tuning. It never creates a session or archives/transitions an incompatible one. Without a live session journal, `togi day` exits 1 with an instruction to start a session with `togi run`; this refusal creates no state directory or journal. Incompatible builds or unknown event data are refused before appending (exit 16). Compatibility is checked again under the writer lock, and an already archived session is not reopened for observation.
+
+
 ## Commands
 
 | Command | Writes journal | Purpose |
