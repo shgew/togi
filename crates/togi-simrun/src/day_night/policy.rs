@@ -11,11 +11,19 @@ use super::{DayClassification, DayObservation, Night, Policy, RunError};
 pub struct CoZero;
 
 impl Policy for CoZero {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the stock diagnostic comparator writes only simulated registers"
+    )]
     fn firmware_changed(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
         machine.smu.set_all_offsets(TargetOffset::ZERO)?;
         Ok(())
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the stock diagnostic comparator writes only simulated registers"
+    )]
     fn start_day(&mut self, _day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
         machine.smu.set_all_offsets(TargetOffset::ZERO)?;
         Ok(())
@@ -93,6 +101,10 @@ impl FixedMargin {
 }
 
 impl Policy for FixedMargin {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the fixed-margin diagnostic comparator resets only simulated registers"
+    )]
     fn firmware_changed(&mut self, machine: &mut Machine<'_>) -> Result<(), RunError> {
         self.ccds.clear();
         self.active_credit = Duration::ZERO;
@@ -100,9 +112,13 @@ impl Policy for FixedMargin {
         Ok(())
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the fixed-margin diagnostic comparator deploys only simulated offsets"
+    )]
     fn start_day(&mut self, _day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
         self.initialize(machine)?;
-        if self.active_credit < Duration::from_secs(50 * 3600) {
+        if self.active_credit < Duration::from_hours(50) {
             return Ok(());
         }
         let mut promoted = false;
@@ -125,6 +141,10 @@ impl Policy for FixedMargin {
         Ok(())
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the fixed-margin diagnostic comparator retreats only simulated offsets"
+    )]
     fn observe_day(
         &mut self,
         _day: u32,
@@ -153,6 +173,10 @@ impl Policy for FixedMargin {
         Ok(classification)
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the fixed-margin diagnostic comparator probes and restores only simulated offsets"
+    )]
     fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError> {
         self.initialize(machine)?;
         if night.trials.is_empty() {
@@ -184,7 +208,7 @@ impl Policy for FixedMargin {
                         continue;
                     }
                     // Preserve covered sustained classes, and lengthen short onset-blind probes.
-                    spec.duration = spec.duration.max(Duration::from_secs(1800));
+                    spec.duration = spec.duration.max(Duration::from_mins(30));
                     if remaining < spec.duration {
                         return Ok(());
                     }
@@ -241,7 +265,7 @@ fn probe(machine: &mut Machine<'_>, spec: TrialSpec) -> Result<(bool, Duration),
         .start(&cancel, spec, stopped)
         .map_err(|partial| partial.error)?;
     let result = running.wait(&cancel, &mut Silent);
-    running.stop()?;
+    let _stopped = running.stop()?;
     machine.trials.ended(&id)?;
     match result {
         Ok(result) => Ok((
@@ -250,7 +274,13 @@ fn probe(machine: &mut Machine<'_>, spec: TrialSpec) -> Result<(bool, Duration),
         )),
         Err(partial) => match partial.error {
             togi_machine::Error::Crashed => Ok((false, partial.value.ran)),
-            other => Err(other.into()),
+            error @ (togi_machine::Error::BackendMissing
+            | togi_machine::Error::Containment(_)
+            | togi_machine::Error::BootMissing
+            | togi_machine::Error::CursorMissing
+            | togi_machine::Error::Cancelled
+            | togi_machine::Error::InvalidMonotonic { .. }
+            | togi_machine::Error::Other(_)) => Err(error.into()),
         },
     }
 }

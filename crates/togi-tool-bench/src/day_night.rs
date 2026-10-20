@@ -200,7 +200,7 @@ impl SeedRange {
             ))
     }
 
-    pub fn iter(&self) -> Result<std::ops::RangeInclusive<u64>, Error> {
+    pub fn values(&self) -> Result<std::ops::RangeInclusive<u64>, Error> {
         Ok(self.first..=self.end()?)
     }
 }

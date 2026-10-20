@@ -29,6 +29,10 @@ impl Policy for Observer {
         self.bios.push(machine.host.bios_context()?.bios_version);
         Ok(())
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test policy sets only the in-memory simulated machine"
+    )]
     fn start_day(&mut self, _day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
         if self.topology.is_empty() {
             self.topology = machine.host.topology()?;
@@ -59,7 +63,7 @@ impl Policy for Observer {
 #[test]
 fn sleep_never_becomes_daily_or_night_exposure() {
     let mut policy = Observer {
-        night_sleep: Duration::from_secs(3600),
+        night_sleep: Duration::from_hours(1),
         ..Observer::default()
     };
     let metrics = run_with_policy(
@@ -217,6 +221,10 @@ impl Policy for NightProbe {
     fn firmware_changed(&mut self, _machine: &mut Machine<'_>) -> Result<(), RunError> {
         Ok(())
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test policy sets only the in-memory simulated machine"
+    )]
     fn start_day(&mut self, _day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
         machine.smu.set_all_offsets(TargetOffset::ZERO)?;
         Ok(())
@@ -229,6 +237,10 @@ impl Policy for NightProbe {
     ) -> Result<DayClassification, RunError> {
         Ok(DayClassification::NotCpuSuspect)
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test probe sets and restores only the in-memory simulated machine"
+    )]
     fn night(&mut self, night: &Night, machine: &mut Machine<'_>) -> Result<(), RunError> {
         let count = machine.host.topology()?.len();
         let mut spec = night
@@ -237,7 +249,7 @@ impl Policy for NightProbe {
             .find(|spec| spec.cores.len() == count && spec.regime == togi_machine::Regime::R7)
             .cloned()
             .ok_or(RunError::Calendar("test night menu has no full class"))?;
-        spec.duration = Duration::from_secs(1800);
+        spec.duration = Duration::from_mins(30);
         let offset = TargetOffset::new(-50).map_err(|_| RunError::Calendar("test offset"))?;
         machine.smu.set_all_offsets(offset)?;
         for info in machine.host.topology()? {
@@ -255,7 +267,7 @@ impl Policy for NightProbe {
                 .wait(&cancel, &mut Silent)
                 .map_err(|partial| partial.error)?,
         );
-        running.stop()?;
+        let _stopped = running.stop()?;
         machine.trials.ended(&spec.id)?;
         machine.smu.set_all_offsets(TargetOffset::ZERO)?;
         Ok(())
@@ -362,12 +374,20 @@ impl Policy for SettingPolicy {
     fn firmware_changed(&mut self, _machine: &mut Machine<'_>) -> Result<(), RunError> {
         Ok(())
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test policy sets only the in-memory simulated machine"
+    )]
     fn start_day(&mut self, _day: u32, machine: &mut Machine<'_>) -> Result<(), RunError> {
         machine
             .smu
             .set_all_offsets(TargetOffset::clamped(-i64::from(self.depth)))?;
         Ok(())
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test policy retreats only the in-memory simulated machine"
+    )]
     fn observe_day(
         &mut self,
         _day: u32,

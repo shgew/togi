@@ -5,8 +5,8 @@ use togi_machine::{CcdId, PerCore, Regime, TargetOffset, WorkloadId};
 
 use super::{FailureCause, FailureCurve, SCENARIO_IDS, Scenario, TrialClass, TruthState};
 
-const HOUR: Duration = Duration::from_secs(3600);
-const FIVE_MINUTES: Duration = Duration::from_secs(300);
+const HOUR: Duration = Duration::from_hours(1);
+const FIVE_MINUTES: Duration = Duration::from_mins(5);
 const LAMBDA: f64 = 1.0 / 3000.0;
 
 fn profile(scenario: &Scenario, offset: i64) -> Vec<TargetOffset> {
@@ -67,10 +67,8 @@ fn delayed_onset_identity_includes_intended_duration_not_exposed_prefix() {
     let class = full_class(&scenario);
     let offsets = profile(&scenario, -40);
     let mut state = TruthState::cold(2).unwrap();
-    state
-        .advance(Some(class), Duration::from_secs(600))
-        .unwrap();
-    let other_duration = class.with_duration(Duration::from_secs(1200)).unwrap();
+    state.advance(Some(class), Duration::from_mins(10)).unwrap();
+    let other_duration = class.with_duration(Duration::from_mins(20)).unwrap();
     assert_ne!(class, &other_duration);
     assert_eq!(
         scenario
@@ -103,20 +101,19 @@ fn thermal_history_survives_a_short_sleep_but_not_a_long_sleep() {
     );
     assert_eq!(
         scenario
-            .evaluate(class, &offsets, &warm, Duration::from_secs(600), 0)
+            .evaluate(class, &offsets, &warm, Duration::from_mins(10), 0)
             .unwrap()
             .co_total(),
         0.0
     );
     assert!(
         scenario
-            .evaluate(class, &offsets, &warm, Duration::from_secs(1200), 0)
+            .evaluate(class, &offsets, &warm, Duration::from_mins(20), 0)
             .unwrap()
             .co_total()
             > 0.0
     );
-    warm.advance(Some(class), Duration::from_secs(1200))
-        .unwrap();
+    warm.advance(Some(class), Duration::from_mins(20)).unwrap();
     let ccd = CcdId::new(0).unwrap();
     let before = warm.heat_seconds(ccd).unwrap();
     warm.advance(None, Duration::from_secs(60)).unwrap();
@@ -128,7 +125,7 @@ fn thermal_history_survives_a_short_sleep_but_not_a_long_sleep() {
             .co_total()
             > 0.0
     );
-    warm.advance(None, Duration::from_secs(12 * 3600)).unwrap();
+    warm.advance(None, Duration::from_hours(12)).unwrap();
     assert_eq!(
         scenario
             .evaluate(class, &offsets, &warm, FIVE_MINUTES, 0)
@@ -173,7 +170,7 @@ fn curves_have_the_registered_exponential_slopes(growth: f64) {
 #[test]
 fn flattening_tail_is_continuous_and_flatter_away_from_the_edge() {
     let curve = FailureCurve::new(20.0, 6.0, Some(1.2), 0.01).unwrap();
-    let rate = |depth| curve.excess_per_hour(TargetOffset::new(-depth).unwrap());
+    let rate = |depth: i64| curve.excess_per_hour(TargetOffset::new(-depth).unwrap());
     let central = (rate(22) - rate(21)) / (rate(21) - rate(20));
     let tail = (rate(27) - rate(26)) / (rate(26) - rate(25));
     assert!((central - 6.0).abs() < 1e-10);
@@ -407,9 +404,7 @@ fn all_registered_scenarios_have_finite_rates_and_feasible_joint_safe_profiles()
                     .advance(Some(&block.class), block.class.duration())
                     .unwrap();
             }
-            periodic
-                .advance(None, Duration::from_secs(16 * 3600))
-                .unwrap();
+            periodic.advance(None, Duration::from_hours(16)).unwrap();
         }
         for block in scenario.daily_mix() {
             assert!(block.class.duration() > FIVE_MINUTES, "{name}");
@@ -554,14 +549,14 @@ fn safe_profile_integrates_duration_and_onset_instead_of_steady_hot_rates() {
     let scenario = Scenario::builtin("delayed-onset", 9).unwrap();
     let fractions = [0.25; 4];
     let short = scenario
-        .safe_profile_for(0, LAMBDA, Duration::from_secs(20 * 60), &fractions)
+        .safe_profile_for(0, LAMBDA, Duration::from_mins(20), &fractions)
         .unwrap();
     assert_eq!(short, profile(&scenario, -50));
     assert_ne!(scenario.safe_profile(0, LAMBDA).unwrap(), short);
     assert_eq!(
         scenario.safe_profile(0, LAMBDA).unwrap(),
         scenario
-            .safe_profile_for(0, LAMBDA, Duration::from_secs(8 * 3600), &fractions)
+            .safe_profile_for(0, LAMBDA, Duration::from_hours(8), &fractions)
             .unwrap()
     );
 }
@@ -576,7 +571,7 @@ fn configurable_safe_reference_refuses_invalid_calendar_values() {
     );
     assert!(
         scenario
-            .safe_profile_for(0, LAMBDA, Duration::from_secs(25 * 3600), &[0.25; 4])
+            .safe_profile_for(0, LAMBDA, Duration::from_hours(25), &[0.25; 4])
             .is_err()
     );
     assert!(

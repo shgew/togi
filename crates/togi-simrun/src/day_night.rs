@@ -79,7 +79,7 @@ pub enum EndAnswer {
 }
 
 /// Evidence deliberately has no oracle cause, hazard, safe offset, or scenario identity.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DayObservation {
     Completed {
         active: Duration,
@@ -303,10 +303,10 @@ pub fn run_with_policy(
                             );
                         }
                         machine::Cause::Truth(FailureCause::Background) => {
-                            metrics.background_events += 1
+                            metrics.background_events += 1;
                         }
                         machine::Cause::Graphics | machine::Cause::Power => {
-                            metrics.non_cpu_events += 1
+                            metrics.non_cpu_events += 1;
                         }
                     }
                     DayObservation::Ended {
@@ -346,8 +346,11 @@ pub fn run_with_policy(
         } else {
             0.0
         };
-        let spent = runtime.now() - day_start;
-        let remainder = Duration::from_secs(24 * 3600)
+        let spent = runtime
+            .now()
+            .checked_sub(day_start)
+            .ok_or(RunError::Calendar("monotonic clock moved backwards"))?;
+        let remainder = Duration::from_hours(24)
             .checked_sub(spent)
             .ok_or(RunError::Calendar("policy waits overran the calendar day"))?;
         runtime.sleep(remainder)?;
@@ -378,19 +381,19 @@ fn record_profile(
         let lost = u32::from(before[ccd].saturating_sub(after[ccd]));
         match cause {
             Some(machine::Cause::Truth(FailureCause::Background)) => {
-                metrics.background_retreat_counts[ccd] += lost
+                metrics.background_retreat_counts[ccd] += lost;
             }
             Some(machine::Cause::Truth(FailureCause::Ccd(cause))) if cause.index() == ccd => {
-                metrics.justified_retreat_counts[ccd] += lost
+                metrics.justified_retreat_counts[ccd] += lost;
             }
             Some(machine::Cause::Truth(FailureCause::Interaction)) => {
-                metrics.justified_retreat_counts[ccd] += lost
+                metrics.justified_retreat_counts[ccd] += lost;
             }
             Some(machine::Cause::Truth(FailureCause::Ccd(_))) | None => {
-                metrics.unattributed_retreat_counts[ccd] += lost
+                metrics.unattributed_retreat_counts[ccd] += lost;
             }
             Some(machine::Cause::Graphics | machine::Cause::Power) => {
-                metrics.non_cpu_retreat_counts[ccd] += lost
+                metrics.non_cpu_retreat_counts[ccd] += lost;
             }
         }
         metrics.max_overshoot[ccd] = metrics.max_overshoot[ccd].max(after[ccd].saturating_sub(cap));

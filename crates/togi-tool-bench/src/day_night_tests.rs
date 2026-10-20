@@ -20,14 +20,14 @@ pub(super) fn registration() -> Registration {
 fn seed_ranges_are_disjoint_and_exact() {
     let registration = registration();
     assert_eq!(
-        registration.seeds.dev.iter().unwrap().collect::<Vec<_>>(),
+        registration.seeds.dev.values().unwrap().collect::<Vec<_>>(),
         [1, 2]
     );
     assert_eq!(
         registration
             .seeds
             .holdout
-            .iter()
+            .values()
             .unwrap()
             .collect::<Vec<_>>(),
         [101, 102]
@@ -64,7 +64,7 @@ fn refuses_unrecognized_registration_fields() {
 
 #[test]
 fn refuses_positional_registration_document() {
-    assert!(Registration::parse(br#"[]"#).is_err());
+    assert!(Registration::parse(b"[]").is_err());
 }
 
 fn successful_metrics() -> togi_simrun::day_night::Metrics {

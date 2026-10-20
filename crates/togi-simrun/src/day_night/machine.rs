@@ -47,7 +47,7 @@ struct State {
 pub(super) struct Runtime(Shared);
 
 impl Runtime {
-    pub fn new(
+    pub(super) fn new(
         scenario: Scenario,
         seed: u64,
         lambda: f64,
@@ -85,25 +85,29 @@ impl Runtime {
         }))))
     }
 
-    pub fn ccd_count(&self) -> usize {
+    pub(super) fn ccd_count(&self) -> usize {
         self.0.borrow().scenario.ccd_count()
     }
-    pub fn scenario(&self) -> std::cell::Ref<'_, Scenario> {
+    pub(super) fn scenario(&self) -> std::cell::Ref<'_, Scenario> {
         std::cell::Ref::map(self.0.borrow(), |state| &state.scenario)
     }
-    pub fn now(&self) -> Duration {
+    pub(super) fn now(&self) -> Duration {
         self.0.borrow().elapsed
     }
-    pub fn set_day(&mut self, day: u32) {
+    pub(super) fn set_day(&mut self, day: u32) {
         let mut state = self.0.borrow_mut();
         state.day = day;
         state.non_cpu_today = false;
     }
-    pub fn cap_epoch(&self) -> u32 {
+    pub(super) fn cap_epoch(&self) -> u32 {
         let state = self.0.borrow();
         state.scenario.cap_epoch(state.truth_day())
     }
-    pub fn safe_depths(&self, active: Duration, fractions: &[f64]) -> Result<Vec<u8>, RunError> {
+    pub(super) fn safe_depths(
+        &self,
+        active: Duration,
+        fractions: &[f64],
+    ) -> Result<Vec<u8>, RunError> {
         let state = self.0.borrow();
         state
             .scenario
@@ -112,11 +116,15 @@ impl Runtime {
             .map(depth)
             .collect()
     }
-    pub fn depths(&self) -> Result<[u8; 2], RunError> {
+    pub(super) fn depths(&self) -> Result<[u8; 2], RunError> {
         let offsets = self.0.borrow_mut().offsets()?;
         Ok([depth(offsets[0])?, depth(offsets[1])?])
     }
-    pub fn firmware_changed(&mut self) -> Result<(), RunError> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the synthetic firmware reset restores simulated registers, never hardware"
+    )]
+    pub(super) fn firmware_changed(&mut self) -> Result<(), RunError> {
         let mut state = self.0.borrow_mut();
         let mut context = state.base.host.bios_context()?;
         context.bios_version.push_str("-transition");
@@ -124,7 +132,7 @@ impl Runtime {
         state.base.smu.set_all_offsets(TargetOffset::ZERO)?;
         Ok(())
     }
-    pub fn seams(&self) -> Machine<'static> {
+    pub(super) fn seams(&self) -> Machine<'static> {
         let mut machine = self.0.borrow().host.seams();
         // The existing simulator splits cores in halves; the opt-in model also supports
         // one physical eight-core CCD, so topology belongs to this adapter.
@@ -136,7 +144,7 @@ impl Runtime {
         machine.trials = Box::new(CycleTrials(self.0.clone()));
         machine
     }
-    pub fn night_specs(&self) -> Result<Vec<TrialSpec>, RunError> {
+    pub(super) fn night_specs(&self) -> Result<Vec<TrialSpec>, RunError> {
         let state = self.0.borrow();
         state
             .scenario
@@ -153,20 +161,20 @@ impl Runtime {
             })
             .collect()
     }
-    pub fn begin_night(&mut self, budget: Duration) {
+    pub(super) fn begin_night(&mut self, budget: Duration) {
         let mut state = self.0.borrow_mut();
         state.night_remaining = Some(budget);
         state.night_active = Duration::ZERO;
     }
-    pub fn end_night(&mut self) -> Duration {
+    pub(super) fn end_night(&mut self) -> Duration {
         let mut state = self.0.borrow_mut();
         state.night_remaining = None;
         state.night_active
     }
-    pub fn sleep(&mut self, duration: Duration) -> Result<(), RunError> {
+    pub(super) fn sleep(&mut self, duration: Duration) -> Result<(), RunError> {
         self.0.borrow_mut().advance(None, duration)
     }
-    pub fn active(
+    pub(super) fn active(
         &mut self,
         class: &TrialClass,
         duration: Duration,
@@ -227,13 +235,13 @@ impl Runtime {
 
 impl State {
     fn truth_day(&self) -> u32 {
-        match (self.transition, self.scenario.transition_day()) {
-            (Some(actual), Some(original)) if self.day >= actual => original + self.day - actual,
-            (Some(actual), Some(original)) if self.day < actual => {
-                self.day.min(original.saturating_sub(1))
+        if let (Some(actual), Some(original)) = (self.transition, self.scenario.transition_day()) {
+            if self.day >= actual {
+                return original + self.day - actual;
             }
-            (Some(_), None) | (None, Some(_)) | (None, None) | (Some(_), Some(_)) => self.day,
+            return self.day.min(original.saturating_sub(1));
         }
+        self.day
     }
     fn offsets(&mut self) -> Result<[TargetOffset; 2], RunError> {
         let mut offsets = [TargetOffset::ZERO; 2];
@@ -343,7 +351,7 @@ impl Trials for CycleTrials {
         }
         Ok(Swept {
             detail: "no external workloads in the calendar simulator".into(),
-            stopped: Stopped::confirmed(),
+            stopped: confirmed(),
         })
     }
     fn start(
@@ -375,7 +383,7 @@ impl Trials for CycleTrials {
             }) as Box<dyn Running>)
         };
         build().map_err(|error| Partial {
-            value: Some(Stopped::confirmed()),
+            value: Some(confirmed()),
             error,
         })
     }
@@ -478,10 +486,18 @@ impl Running for CycleRunning {
         })
     }
     fn stop(self: Box<Self>) -> Result<Stopped, Error> {
-        Ok(Stopped::confirmed())
+        Ok(confirmed())
     }
 }
 
 fn machine_error(error: RunError) -> Error {
     Error::Other(Box::new(error))
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the simulator is a seam: no workload ever runs, so teardown is always confirmed"
+)]
+fn confirmed() -> Stopped {
+    Stopped::confirmed()
 }

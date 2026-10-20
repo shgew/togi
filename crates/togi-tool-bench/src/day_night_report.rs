@@ -68,7 +68,7 @@ pub fn score(
     };
     let mut expected = BTreeSet::new();
     for range in ranges {
-        expected.extend(range.iter()?);
+        expected.extend(range.values()?);
     }
     if records
         .iter()

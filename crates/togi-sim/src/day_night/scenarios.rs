@@ -80,7 +80,7 @@ pub(super) fn builtin(name: &str, seed: u64) -> Result<Scenario, TruthError> {
     FailureCurve::new(edge, growth, tail, REFERENCE_LAMBDA)?;
     let topology = topology(ccd_count)?;
     let mut nights = Vec::new();
-    let night_duration = Duration::from_secs(300);
+    let night_duration = Duration::from_mins(5);
     for info in &topology {
         nights.push(class(
             Regime::R1,
@@ -124,7 +124,7 @@ pub(super) fn builtin(name: &str, seed: u64) -> Result<Scenario, TruthError> {
     let all = topology.iter().map(|info| info.core).collect::<Vec<_>>();
     nights.push(class(Regime::R7, 0, &all, &topology, night_duration)?);
     nights.push(class(Regime::R9, 0, &all[..1], &topology, night_duration)?);
-    let duration = Duration::from_secs(7200);
+    let duration = Duration::from_hours(2);
     let sustained = class(Regime::R7, 0, &all, &topology, duration)?;
     let mut daily_classes = vec![sustained.clone(), sustained];
     // Four sustained two-hour conditions. Single-CCD-only conditions remain in the mix

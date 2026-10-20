@@ -66,7 +66,7 @@ fn execute(args: DayNightArgs) -> Result<(), Error> {
     let mut records = Vec::new();
     for scenario in &registration.scenarios {
         for range in &ranges {
-            for seed in range.iter()? {
+            for seed in range.values()? {
                 for (label, comparator) in [
                     ("co-zero", Comparator::CoZero),
                     ("fixed-margin", Comparator::FixedMargin),

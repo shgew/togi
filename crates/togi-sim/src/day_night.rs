@@ -23,7 +23,7 @@ const THERMAL_THRESHOLD_S: f64 = 600.0;
 const REFERENCE_LAMBDA: f64 = 1.0 / 3000.0;
 
 /// A refused truth input, before it can introduce non-finite hazard or invalid history.
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum TruthError {
     #[error("unknown day/night scenario {0:?}")]
     UnknownScenario(String),
@@ -688,12 +688,7 @@ impl Scenario {
         lambda_per_hour: f64,
     ) -> Result<Vec<TargetOffset>, TruthError> {
         let fractions = self.daily.each_ref().map(|block| block.fraction);
-        self.safe_profile_for(
-            day,
-            lambda_per_hour,
-            Duration::from_secs(8 * 3600),
-            &fractions,
-        )
+        self.safe_profile_for(day, lambda_per_hour, Duration::from_hours(8), &fractions)
     }
 
     /// The same policy-independent reference with configured active duration and load mix.
@@ -708,7 +703,7 @@ impl Scenario {
         if !lambda_per_hour.is_finite() || lambda_per_hour <= 0.0 {
             return Err(TruthError::Invalid("lambda per hour"));
         }
-        let cycle = Duration::from_secs(24 * 3600);
+        let cycle = Duration::from_hours(24);
         if active.is_zero()
             || active > cycle
             || fractions.len() != self.daily.len()
@@ -730,9 +725,11 @@ impl Scenario {
             } else {
                 active.mul_f64(fractions[index] / sum).min(remaining)
             };
-            remaining -= *duration;
+            remaining = remaining.saturating_sub(*duration);
         }
-        let sleep = cycle - active;
+        let sleep = cycle
+            .checked_sub(active)
+            .ok_or(TruthError::Invalid("daily reference calendar"))?;
         let mut state = TruthState::cold(self.ccd_count)?;
         for (block, &duration) in self.daily.iter().zip(&durations) {
             if !duration.is_zero() {
@@ -768,21 +765,21 @@ impl Scenario {
             state.advance(Some(&block.class), duration)?;
         }
         let mut joint_roots = [0.0; 51];
-        let mut joint_fraction = 0.0;
-        if self.family == Family::Interaction {
+        let joint_fraction = if self.family == Family::Interaction {
             let joint =
                 FailureCurve::new(self.edge - 7.0, self.growth, self.tail, REFERENCE_LAMBDA)?;
             for (depth, root) in joint_roots.iter_mut().enumerate() {
                 *root = joint.excess_per_hour(offset_for_depth(depth)?).sqrt();
             }
-            joint_fraction = self
-                .daily
+            self.daily
                 .iter()
                 .zip(&durations)
                 .filter(|(block, _)| block.class.loads_ccd(0) && block.class.loads_ccd(1))
                 .map(|(_, duration)| duration.as_secs_f64() / active.as_secs_f64())
-                .sum();
-        }
+                .sum()
+        } else {
+            0.0
+        };
         let share = lambda_per_hour / count_as_float(self.ccd_count);
         let mut best = (0_usize, 0_usize);
         let mut best_score = (0_usize, usize::MAX);
