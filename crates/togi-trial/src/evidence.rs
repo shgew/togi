@@ -108,6 +108,8 @@ struct Instance {
     /// The first CPU it was told to use, which names the CPU of an affinity error whose own number
     /// cannot be read.
     first_cpu: CpuId,
+    /// The backend whose output the instance's lines are classified with.
+    backend: Backend,
     /// Whether it reported a setup error, which explains only its own exit.
     setup_error: bool,
 }
@@ -118,7 +120,6 @@ struct Instance {
 /// as diagnostics unless an escape or backend failure signal suppresses them.
 #[derive(Debug)]
 pub(crate) struct Selector {
-    backend: Backend,
     /// Indexed like the trial plan.
     instances: Vec<Instance>,
     failure: Option<TrialFailure>,
@@ -131,15 +132,27 @@ pub(crate) struct Selector {
 }
 
 impl Selector {
-    /// `instances` pairs each instance's core with the first CPU it was told to use.
+    #[cfg(test)]
+    /// `instances` pairs each instance's core with the first CPU it was told to use; all run
+    /// `backend`.
     pub(crate) fn new(backend: Backend, instances: &[(CoreId, CpuId)]) -> Self {
+        let instances: Vec<_> = instances
+            .iter()
+            .map(|&(core, first_cpu)| (core, first_cpu, backend))
+            .collect();
+        Self::mixed(&instances)
+    }
+
+    /// `instances` gives each instance's core, the first CPU it was told to use and its own
+    /// backend, which may differ from its neighbours'.
+    pub(crate) fn mixed(instances: &[(CoreId, CpuId, Backend)]) -> Self {
         Self {
-            backend,
             instances: instances
                 .iter()
-                .map(|&(core, first_cpu)| Instance {
+                .map(|&(core, first_cpu, backend)| Instance {
                     core,
                     first_cpu,
+                    backend,
                     setup_error: false,
                 })
                 .collect(),
@@ -329,7 +342,7 @@ impl Selector {
             }
             Line::SetupError => {
                 self.instances[instance].setup_error = true;
-                let backend = self.backend;
+                let backend = self.instances[instance].backend;
                 self.weak_reason(|| format!("{backend} setup error: {text}"));
                 Decision {
                     stop: true,
@@ -1012,6 +1025,31 @@ mod tests {
         assert_eq!(
             verdict.inconclusive.as_deref(),
             Some(&*format!("mprime setup error: {text}"))
+        );
+    }
+
+    #[test]
+    fn a_setup_error_names_the_backend_of_the_instance_that_reported_it() {
+        let mut s = Selector::mixed(&[
+            (core(3), CpuId::from(3), Backend::Mprime),
+            (core(4), CpuId::from(4), Backend::Ycruncher),
+        ]);
+        s.observe(Observation::Line {
+            instance: 1,
+            pid: 43,
+            stream: Stream::Stdout,
+            line: Line::SetupError,
+            text: "PIN FAILED".to_owned(),
+        });
+        s.observe(Observation::UnexpectedExit {
+            instance: 1,
+            detail: "exit status 1".into(),
+        });
+        let verdict = conclude(s);
+        assert_eq!(verdict.failure, None);
+        assert_eq!(
+            verdict.inconclusive.as_deref(),
+            Some("ycruncher setup error: PIN FAILED")
         );
     }
 

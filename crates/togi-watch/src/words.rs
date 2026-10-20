@@ -198,6 +198,8 @@ pub const fn regime_words(regime: Regime) -> &'static str {
         Regime::R5 => "both threads",
         Regime::R6 => "idle with short bursts",
         Regime::R7 => "all-core load",
+        Regime::R8 => "light core beside heavy neighbours",
+        Regime::R9 => "every thread, alternating with one thread",
     }
 }
 
@@ -205,9 +207,14 @@ pub const fn regime_words(regime: Regime) -> &'static str {
 pub const fn load_words(regime: Regime) -> &'static str {
     match regime {
         Regime::R6 => "idle + bursts",
-        Regime::R1 | Regime::R2 | Regime::R3 | Regime::R4 | Regime::R5 | Regime::R7 => {
-            regime_words(regime)
-        }
+        Regime::R1
+        | Regime::R2
+        | Regime::R3
+        | Regime::R4
+        | Regime::R5
+        | Regime::R7
+        | Regime::R8
+        | Regime::R9 => regime_words(regime),
     }
 }
 
@@ -221,6 +228,8 @@ pub const fn kind_words(regime: Regime) -> &'static str {
         Regime::R5 => "both threads",
         Regime::R6 => "idle + bursts",
         Regime::R7 => "all-core",
+        Regime::R8 => "light core + heavy neighbours",
+        Regime::R9 => "all threads",
     }
 }
 

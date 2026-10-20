@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use togi_machine::object_only;
 use togi_machine::{
     Backend, BankType, BootId, CcdId, Condition, CoreId, CoreSet, CpuId, KernelCursor,
-    LoadSchedule, PerCore, PstoreRecord, Regime, ResetKind, Signal, TargetOffset, WorkloadId,
+    LoadSchedule, PerCore, PstoreRecord, Regime, ResetKind, Signal, TargetOffset, TrialRole,
+    WorkloadId,
 };
 
 use super::domain::{Activity, Attribution, Outcome};
@@ -100,6 +101,8 @@ object_only! {
         pub files: Vec<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pub instances: Vec<TrialInstance>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub roles: Vec<TrialRole>,
     }
 }
 

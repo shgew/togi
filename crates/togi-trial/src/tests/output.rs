@@ -567,7 +567,7 @@ fn a_slow_classified_watched_flood_is_polled_during_the_trial_and_leaves_the_loa
     let load = crate::plan::Load::Steps(
         togi_machine::LoadSchedule::for_spec(&spec(Regime::R4, &[0], secs(1))).unwrap(),
     );
-    let planned: Vec<_> = crate::schedule::timeline(&load, secs(1))
+    let planned: Vec<_> = crate::schedule::timeline(&[load], secs(1))
         .map(|step| step.at)
         .collect();
     assert!(planned.len() >= 10 && toggles.len() >= planned.len());

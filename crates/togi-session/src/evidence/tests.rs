@@ -419,6 +419,8 @@ fn set(ids: &[i64]) -> CoreSet {
                 &[(2, 1000), (7, 2000)],
             ], Regime::R7, Some((2, 2000)); "first stall")]
 #[test_case("scheduled R6 suspension", &[&[(2, 0), (7, 0)], &[(2, 0), (7, 100)], &[(2, 0), (7, 200)]], Regime::R6, None; "scheduled R6 suspension")]
+#[test_case("scheduled R8 suspension", &[&[(2, 0), (7, 0)], &[(2, 0), (7, 100)], &[(2, 0), (7, 200)]], Regime::R8, None; "scheduled R8 suspension")]
+#[test_case("scheduled R9 suspension", &[&[(2, 0), (7, 0)], &[(2, 0), (7, 100)], &[(2, 0), (7, 200)]], Regime::R9, None; "scheduled R9 suspension")]
 #[test_case("advancing until end", &[&[(2, 1000), (7, 1000)], &[(2, 2000), (7, 2000)]], Regime::R7, None; "advancing until end")]
 #[test_case("tie", &[&[(2, 1000), (7, 1000)], &[(2, 1000), (7, 1000)]], Regime::R7, None; "tie")]
 #[test_case("missing reading", &[
@@ -570,6 +572,33 @@ fn request_telemetry_needs_twenty_samples_after_the_warmup_and_every_loaded_core
     .unwrap();
     assert!(unknown.telemetry.is_none());
     assert!(unknown.voltage.is_some());
+}
+
+#[test_case(Regime::R8; "neighbour load")]
+#[test_case(Regime::R9; "all threads")]
+fn mixed_regime_telemetry_starts_at_thirty_seconds_and_suspension_is_not_a_stall(regime: Regime) {
+    let ccd = |core: CoreId| CcdId::try_from(core.get() / 4).ok();
+    let before = summarize_samples(
+        telemetry_samples(44).into_iter().map(Ok),
+        set(&[2, 7]),
+        regime,
+        ccd,
+    )
+    .unwrap();
+    assert!(before.telemetry.is_none());
+    assert_eq!(before.stalled, None);
+    let at_boundary = summarize_samples(
+        telemetry_samples(45).into_iter().map(Ok),
+        set(&[2, 7]),
+        regime,
+        ccd,
+    )
+    .unwrap();
+    assert_eq!(
+        at_boundary.telemetry.unwrap().requests.get(core(7)),
+        Some(1.5)
+    );
+    assert_eq!(at_boundary.stalled, None);
 }
 
 #[test]

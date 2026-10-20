@@ -279,7 +279,7 @@ fn slow_storage_neither_delays_load_steps_nor_the_trial_and_the_join_is_bounded(
     let load = crate::plan::Load::Steps(
         togi_machine::LoadSchedule::for_spec(&spec(Regime::R4, &[0], secs(3))).unwrap(),
     );
-    let expected: Vec<u128> = crate::schedule::timeline(&load, secs(3))
+    let expected: Vec<u128> = crate::schedule::timeline(&[load], secs(3))
         .map(|step| step.at.as_millis())
         .collect();
     assert_eq!(steps, expected);
@@ -497,7 +497,7 @@ fn blocked_samples_setup_keeps_the_load_schedule_and_the_end_waits_for_the_write
                 .collect();
             let load =
                 crate::plan::Load::Steps(togi_machine::LoadSchedule::for_spec(&trial).unwrap());
-            let expected: Vec<u128> = crate::schedule::timeline(&load, secs(3))
+            let expected: Vec<u128> = crate::schedule::timeline(&[load], secs(3))
                 .map(|step| step.at.as_millis())
                 .collect();
             assert_eq!(steps, expected);

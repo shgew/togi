@@ -141,7 +141,7 @@ fn a_snapshot_records_values_without_the_configuration_policy() {
 #[test_case("/start_offsets", json!({"3": 10}); "a start offset on a core that does not exist")]
 #[test_case("/start_offsets", json!({"16": -1}); "a start offset on a core past the last")]
 #[test_case("/durations/search_trial_s", json!(-1); "a negative duration")]
-#[test_case("/checking/cycle", json!(["R9"]); "an unknown regime")]
+#[test_case("/checking/cycle", json!(["R10"]); "an unknown regime")]
 fn a_snapshot_still_refuses_what_its_own_types_refuse(pointer: &str, bad: serde_json::Value) {
     let mut value = serde_json::to_value(minimal().config).unwrap();
     *value.pointer_mut(pointer).unwrap() = bad;

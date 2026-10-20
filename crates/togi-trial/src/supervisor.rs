@@ -33,7 +33,7 @@ use crate::judge::Judge;
 use crate::launch::{self, Confinement};
 use crate::logs::{LogWriter, LogsEnd, Wrap};
 use crate::os::{Child as _, GroupSignal, LaunchFailure, Os, SignalError};
-use crate::plan::{Load, TrialPlan};
+use crate::plan::{InstancePlan, Load, TrialPlan};
 use crate::prepare::Preparer;
 use crate::procfs::ProcError;
 use crate::runner::Backends;
@@ -266,11 +266,20 @@ pub(crate) async fn start<O: Os>(
     spec: TrialSpec,
     ready: Stopped,
 ) -> Result<Handle, Partial<Option<Stopped>>> {
-    let Some(backend) = env.backends.get(spec.workload.backend()).cloned() else {
-        return Err(early(Error::BackendMissing(spec.workload.backend()), ready));
-    };
-    if let Err(error) = backend.check() {
-        return Err(early(error.into(), ready));
+    // Every distinct backend the roles name must be configured and usable before anything starts.
+    let mut checked: Vec<togi_machine::Backend> = Vec::new();
+    for role in &spec.roles {
+        let kind = role.workload.backend();
+        if checked.contains(&kind) {
+            continue;
+        }
+        let Some(backend) = env.backends.get(kind) else {
+            return Err(early(Error::BackendMissing(kind), ready));
+        };
+        if let Err(error) = backend.check() {
+            return Err(early(error.into(), ready));
+        }
+        checked.push(kind);
     }
     let confinement = match env.confinement() {
         Ok(confinement) => confinement,
@@ -281,6 +290,21 @@ pub(crate) async fn start<O: Os>(
         Err(error) => return Err(early(error.into(), ready)),
     };
     let instances = plan.instance_count();
+    // One backend per instance, indexed like the plan: each classifies its own instance's output.
+    let backends: Vec<Arc<dyn Backend>> = match plan
+        .instances
+        .iter()
+        .map(|instance| {
+            env.backends
+                .get(instance.workload.backend)
+                .cloned()
+                .ok_or(Error::BackendMissing(instance.workload.backend))
+        })
+        .collect::<Result<Vec<_>, Error>>()
+    {
+        Ok(backends) => backends,
+        Err(error) => return Err(early(error, ready)),
+    };
     if !env.timing.representable(plan.duration, instances) {
         return Err(early(InvalidTrial::UnrepresentableDuration.into(), ready));
     }
@@ -331,15 +355,14 @@ pub(crate) async fn start<O: Os>(
     let (events_tx, events_rx) = channel();
     confine(&env, &spec, &events_tx);
     let (inbound_tx, mut inbound_rx) = bounded(INBOUND_CAPACITY);
-    let selector = Selector::new(
-        plan.workload.backend,
+    let selector = Selector::mixed(
         &plan
             .instances
             .iter()
-            .map(|instance| (instance.core, instance.cpus[0]))
+            .map(|instance| (instance.core, instance.cpus[0], instance.workload.backend))
             .collect::<Vec<_>>(),
     );
-    let judge = Judge::new(selector, Arc::clone(&backend), events_tx.clone());
+    let judge = Judge::new(selector, backends.clone(), events_tx.clone());
     let mut live = Live {
         instances: Vec::with_capacity(plan.instances.len()),
         scopes: Vec::new(),
@@ -352,7 +375,7 @@ pub(crate) async fn start<O: Os>(
         &plan,
         &container,
         confinement,
-        &backend,
+        &backends,
         prepare_until,
         &logs,
         &mut live,
@@ -401,14 +424,14 @@ pub(crate) async fn start<O: Os>(
         stops: launched.stops,
         conts: 0,
     };
-    if let Load::Bursts { .. } = plan.load {
+    if plan.bursts() {
         let _ = events_tx.send(Event::Progress(
             "first half idle, then 100ms bursts every 2s, one core at a time".to_owned(),
         ));
     }
     let supervisor = Supervisor {
         sensors,
-        timeline: timeline(&plan.load, plan.duration).peekable(),
+        timeline: timeline(&plan.loads(), plan.duration).peekable(),
         env: Rc::clone(&env),
         plan,
         live,
@@ -467,10 +490,14 @@ fn describe<O: Os>(
                 scope: instance.scope.to_string(),
             })
             .collect(),
-        schedule: match plan.load {
-            Load::Steps(schedule) => Some(schedule),
-            Load::Continuous | Load::Bursts { .. } => None,
-        },
+        // The first seeded step schedule: R3, R4 and R8's random light core have one.
+        schedule: plan
+            .instances
+            .iter()
+            .find_map(|instance| match instance.load {
+                Load::Steps(schedule) => Some(schedule),
+                Load::Continuous | Load::Burst { .. } | Load::Phases { .. } => None,
+            }),
     }
 }
 
@@ -483,7 +510,7 @@ async fn launch_all<O: Os>(
     plan: &TrialPlan,
     container: &Arc<Container>,
     confinement: Confinement,
-    backend: &Arc<dyn Backend>,
+    backends: &[Arc<dyn Backend>],
     prepare_until: Instant,
     logs: &LogWriter,
     live: &mut Live<O>,
@@ -507,13 +534,13 @@ async fn launch_all<O: Os>(
         },
         BackendIdentity::uid,
     );
-    let suspend_first = matches!(plan.load, Load::Bursts { .. });
+    let suspend_first = |instance: &InstancePlan| matches!(instance.load, Load::Burst { .. });
     for (index, instance) in plan.instances.iter().enumerate() {
         if cancelled.load(Ordering::Acquire) {
             return Err(Error::Cancelled);
         }
         let label = instance.name.dir_name();
-        let scope = ScopeName::for_instance(&plan.id, instance.name, plan.per_core());
+        let scope = ScopeName::for_instance(&plan.id, instance.name);
         let files = env
             .preparer
             .run(
@@ -523,8 +550,9 @@ async fn launch_all<O: Os>(
                 commands,
                 cancelled,
                 {
-                    let (container, backend) = (Arc::clone(container), Arc::clone(backend));
-                    let (instance, workload) = (instance.clone(), plan.workload.clone());
+                    let (container, backend) =
+                        (Arc::clone(container), Arc::clone(&backends[index]));
+                    let (instance, workload) = (instance.clone(), instance.workload.clone());
                     move || container.instance(&instance, backend.as_ref(), &workload, identity)
                 },
             )
@@ -647,7 +675,7 @@ async fn launch_all<O: Os>(
                 .collect();
         }
         launched.files.extend(files.inputs);
-        if suspend_first {
+        if suspend_first(instance) {
             let readiness = await_scope(env, &live.instances[index], commands).await;
             let now = Instant::now();
             let instance = &mut live.instances[index];
@@ -1060,8 +1088,15 @@ impl<O: Os> Supervisor<O> {
         }
         match env.os.usage(pid) {
             Ok(usage) => {
-                if let Ok(milliseconds) = sample_millis(usage.cpu_time) {
-                    workers.set(instance.plan.core, milliseconds);
+                // The two threads of an SMT core run as separate instances, so a core's time is
+                // the sum of its instances'.
+                if let Some(total) = sample_millis(usage.cpu_time).ok().and_then(|milliseconds| {
+                    workers
+                        .get(instance.plan.core)
+                        .unwrap_or(0)
+                        .checked_add(milliseconds)
+                }) {
+                    workers.set(instance.plan.core, total);
                 } else {
                     let error = ProcError::CpuTimeOverflow { pid };
                     self.judge.observe(Observation::SamplingLoss {
@@ -1224,7 +1259,7 @@ impl<O: Os> Supervisor<O> {
                 diagnostics: verdict.diagnostics,
             }));
         }
-        if let Load::Bursts { .. } = plan.load {
+        if plan.bursts() {
             let _ = events.send(Event::Progress(format!(
                 "bursts: {} continues, {} stops",
                 toggles.conts, toggles.stops

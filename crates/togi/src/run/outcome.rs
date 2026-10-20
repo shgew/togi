@@ -68,6 +68,7 @@ pub(super) fn conclude(
             | SessionError::NoSuchTrialCore { .. }
             | SessionError::Unproven
             | SessionError::PlanDisagrees
+            | SessionError::TrialRoles(_)
             | SessionError::NotReady(_)
             | SessionError::ClearSavedEntry(_)
             | SessionError::SessionId(_)

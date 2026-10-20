@@ -211,6 +211,7 @@ pub(super) fn trial_start(id: &str) -> TrialStart {
         argv: Vec::new(),
         files: Vec::new(),
         instances: Vec::new(),
+        roles: Vec::new(),
     }
 }
 

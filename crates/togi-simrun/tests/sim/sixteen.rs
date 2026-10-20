@@ -36,7 +36,8 @@ fn named_target_observer(bench: &Bench, definition: MachineDefinition) -> Observ
         };
         let (signal, core) = if intent.condition == Condition::Alone {
             let core = intent.core.unwrap();
-            let limit = limits[core.index()].alone[regime_index(intent.regime)];
+            let slot = regime_index(intent.regime).unwrap();
+            let limit = limits[core.index()].alone[slot];
             (
                 (at(&intent.profile, core) < limit).then_some(Signal::ComputationError),
                 core,

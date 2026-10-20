@@ -17,6 +17,7 @@ fn started(id: &str) -> TrialStart {
         argv: Vec::new(),
         files: Vec::new(),
         instances: Vec::new(),
+        roles: Vec::new(),
     }
 }
 

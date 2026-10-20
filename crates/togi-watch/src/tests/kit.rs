@@ -315,6 +315,7 @@ pub(crate) fn trial_start(trial: &TrialId) -> Payload {
         argv: Vec::new(),
         files: Vec::new(),
         instances: Vec::new(),
+        roles: Vec::new(),
     }
     .into()
 }

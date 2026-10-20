@@ -1,15 +1,21 @@
+use super::{core, topology};
 use crate::*;
 use std::time::Duration;
 use test_case::test_case;
 
 fn spec(regime: Regime, seed: u64, index: usize) -> TrialSpec {
+    let workload = pick_workload(regime, index).id();
+    let cores = vec![core(0)];
+    let cpus = vec![CpuId::from(0)];
+    let roles = TrialRole::legacy(regime, workload, seed, &cores, &cpus, &topology()).unwrap();
     TrialSpec {
         id: "t".to_owned(),
         regime,
-        workload: pick_workload(regime, index).id(),
+        workload,
         condition: Condition::Alone,
-        cores: Vec::new(),
-        cpus: Vec::new(),
+        cores,
+        cpus,
+        roles,
         duration: Duration::from_secs(60),
         index,
         seed,

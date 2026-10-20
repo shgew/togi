@@ -2,7 +2,7 @@ use crate::object_only;
 use crate::{
     BankType, BiosContext, BootId, CancellationToken, Condition, CoreId, CoreInfo, CpuId, Error,
     KernelCursor, LoadSchedule, ObservedOffset, Partial, PerCore, Regime, ResetKind, Signal,
-    TargetOffset, TrialConditions, WorkloadId,
+    TargetOffset, TrialConditions, TrialRole, WorkloadId,
 };
 use jiff::Timestamp;
 use serde::Serialize;
@@ -102,6 +102,10 @@ pub struct Check {
     pub ok: bool,
 }
 
+/// One trial to run. `roles` gives every loaded logical CPU its workload, instance and schedule; build them with
+/// [`TrialRole::legacy`], [`TrialRole::neighbours`] or [`TrialRole::all_threads`] and `cores` and `cpus` list
+/// what they load, in role order ([`TrialSpec::check_roles`]). For R8 and R9 `workload` names the class, whose
+/// [`WorkloadId::runs`] is what the light or every-thread roles run.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TrialSpec {
     pub id: String,
@@ -110,6 +114,7 @@ pub struct TrialSpec {
     pub condition: Condition,
     pub cores: Vec<CoreId>,
     pub cpus: Vec<CpuId>,
+    pub roles: Vec<TrialRole>,
     pub duration: Duration,
     pub index: usize,
     pub seed: u64,
