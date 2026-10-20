@@ -868,7 +868,7 @@ in
       machine.log(json.dumps(reason))
       # The VM may not prove a successor's reset reason; then it is recorded as unknown, never as a CPU reset.
       assert reason.get("kind") in (None, "unknown", "Unknown") or reason["supported"], reason
-      assert len(day("day.boot_start")) == 3
+      machine.wait_until_succeeds(f"test \"$(grep -c day.boot_start {journal})\" = 3")
 
       # The module wires the answer path: alice, named in day.users, is in the togi group; mallory is not.
       # /run/togi is root:togi 0750 and the service's socket root:togi 0660 inside it.
