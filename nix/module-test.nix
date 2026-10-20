@@ -82,6 +82,17 @@ let
   overriddenTuning = overridden.specialisation.togi.configuration;
   day = evaluateDay [ (mirror "/boot") ] null null null 27 { enable = true; };
   dayTuning = day.specialisation.togi.configuration;
+  watched = evaluateDay [ (mirror "/boot") ] null null null 27 {
+    enable = true;
+    watchdog = true;
+  };
+  watchedTuning = watched.specialisation.togi.configuration;
+  lockupPanics =
+    config:
+    lib.filter (p: lib.hasInfix "lockup" p || lib.hasInfix "nmi_watchdog" p) config.boot.kernelParams
+    ++ lib.filter (k: lib.hasInfix "lockup" k || lib.hasInfix "nmi_watchdog" k) (
+      builtins.attrNames config.boot.kernel.sysctl
+    );
   rejectsMirrors =
     config:
     lib.any (
@@ -145,6 +156,17 @@ assert dayTuning.systemd.services ? togi;
 assert day.services.journald.settings.Journal.Storage == "persistent";
 assert day.services.journald.settings.Journal.SyncIntervalSec == "5s";
 assert dayTuning.services.journald.settings.Journal.SyncIntervalSec == "1s";
+# The watchdog is off by default; on, the normal boot's PID 1 watchdog is 60s without lockup panics.
+assert !day.services.togi.day.watchdog;
+assert !(day.systemd.settings.Manager ? RuntimeWatchdogSec);
+assert !(one.systemd.settings.Manager ? RuntimeWatchdogSec);
+assert watched.services.togi.day.watchdog;
+assert watched.systemd.settings.Manager.RuntimeWatchdogSec == "60s";
+assert builtins.elem "sp5100_tco" watched.boot.initrd.kernelModules;
+assert !(builtins.elem "sp5100_tco" day.boot.initrd.kernelModules);
+assert lockupPanics watched == [ ];
+assert lockupPanics day == [ ];
+assert watchedTuning.systemd.settings.Manager.RuntimeWatchdogSec == "30s";
 assert lib.hasInfix ''[ "''${MONITOR_SERVICE_RESULT:-}" = start-limit-hit ] || exit 0''
   restartLimitScript;
 assert lib.hasInfix

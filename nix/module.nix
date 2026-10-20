@@ -28,6 +28,7 @@ in
     };
     tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB entry that tunes unattended";
     day.enable = lib.mkEnableOption "the togi day observer, a read-only service in the normal boot that records the machine's day in togi's journal. It holds the host lock and the journal writer lock while it runs, so `togi run` and `togi reset` fail lock-busy until it stops, and it refuses to start while there is no session. It never exists in the tuning boot, and enabling it keeps the journal on disk with a 5s sync interval";
+    day.watchdog = lib.mkEnableOption "the PID 1 hardware watchdog in the normal boot with the day observer, RuntimeWatchdogSec=60s, so a hang resets the machine and the observer can record the unclean end. It sets no lockup panic kernel parameter and never applies in the tuning boot, which keeps its own 30s watchdog";
     tuning.leaveOnShutdown = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -103,6 +104,10 @@ in
             StateDirectory = "togi";
           };
         };
+      })
+      (lib.mkIf (cfg.day.enable && cfg.day.watchdog) {
+        boot.initrd.kernelModules = [ "sp5100_tco" ];
+        systemd.settings.Manager.RuntimeWatchdogSec = lib.mkDefault "60s";
       })
       (lib.mkIf cfg.tuning.enable {
         assertions = [

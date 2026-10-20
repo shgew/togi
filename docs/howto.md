@@ -138,6 +138,7 @@ services.togi = {
 
 The `togi-day.service` unit is absent from the tuning specialisation. Enabling it keeps journald persistent with a five-second sync interval. Before a manual `run` or `reset` in a normal boot, use `systemctl stop togi-day.service`; start it again with `systemctl start togi-day.service` afterward. Inspect service diagnostics with `journalctl -u togi-day.service`. Enabling it without a session reports why it cannot start instead of creating a tuning session.
 
+The optional `services.togi.day.watchdog = true;` asks PID 1 to arm/feed a 60-second hardware watchdog in normal boots, without lockup panics. It is **off by default**; observation itself needs no watchdog and writes no offsets. Before opting in, validate the watchdog device and suspend/resume behavior on the hardware. Some systems lose devices after watchdog resets ([#315](https://github.com/shgew/togi/issues/315)); after a freeze, a full power-off rather than a warm reset avoids carrying that device state into the next boot.
 
 ## 4. Overnight: the tuning boot
 
