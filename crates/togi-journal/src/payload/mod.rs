@@ -1,4 +1,5 @@
 mod config;
+mod day;
 mod domain;
 mod message;
 mod session;
@@ -15,6 +16,7 @@ use togi_machine::CoreId;
 pub use config::{
     ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
 };
+pub use day::{DayBootStart, DayCheckpoint, DayCleanStop, DayOffsetsChanged, DayUncleanEnd};
 pub use domain::{
     Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition, Decision,
     DefectAnswer, DefectDirection, HuntOutcome, HuntStage, Inference, Notice, Outcome, RetryTarget,
@@ -149,6 +151,11 @@ payloads! {
     Shutdown(Shutdown) = "shutdown",
     JournalTorn(JournalTorn) = "journal.torn",
     StateRebuilt(StateRebuilt) = "state.rebuilt",
+    DayBootStart(DayBootStart) = "day.boot_start",
+    DayCheckpoint(DayCheckpoint) = "day.checkpoint",
+    DayOffsetsChanged(DayOffsetsChanged) = "day.offsets_changed",
+    DayCleanStop(DayCleanStop) = "day.clean_stop",
+    DayUncleanEnd(DayUncleanEnd) = "day.unclean_end",
 }
 
 impl Payload {
@@ -204,7 +211,12 @@ impl Payload {
             | Self::BootLeaveReason(_)
             | Self::Shutdown(_)
             | Self::JournalTorn(_)
-            | Self::StateRebuilt(_) => None,
+            | Self::StateRebuilt(_)
+            | Self::DayBootStart(_)
+            | Self::DayCheckpoint(_)
+            | Self::DayOffsetsChanged(_)
+            | Self::DayCleanStop(_)
+            | Self::DayUncleanEnd(_) => None,
         }
     }
 
@@ -264,7 +276,12 @@ impl Payload {
             | Self::BootLeaveReason(_)
             | Self::Shutdown(_)
             | Self::JournalTorn(_)
-            | Self::StateRebuilt(_) => false,
+            | Self::StateRebuilt(_)
+            | Self::DayBootStart(_)
+            | Self::DayCheckpoint(_)
+            | Self::DayOffsetsChanged(_)
+            | Self::DayCleanStop(_)
+            | Self::DayUncleanEnd(_) => false,
         }
     }
 }
@@ -274,6 +291,19 @@ impl Payload {
 pub struct UnknownKind(pub String);
 
 impl EventKind {
+    /// Whether this is a `togi day` observer event. Day events record what the machine did outside tuning and
+    /// never feed a tuning decision.
+    pub const fn is_day(self) -> bool {
+        matches!(
+            self,
+            Self::DayBootStart
+                | Self::DayCheckpoint
+                | Self::DayOffsetsChanged
+                | Self::DayCleanStop
+                | Self::DayUncleanEnd
+        )
+    }
+
     pub fn group(self) -> &'static str {
         let name = self.as_str();
         name.split_once('.').map_or(name, |(group, _)| group)

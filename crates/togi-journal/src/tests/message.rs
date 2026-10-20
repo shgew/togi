@@ -411,6 +411,27 @@ fn units_appear_in_text() {
     assert!(message(EventKind::JournalTorn).contains("2 torn bytes at offset 1024"));
 }
 
+#[test_case(
+    EventKind::DayBootStart,
+    "day observer started by togi 0.1.0+abc1234: BIOS F31 on X570, 5950X, microcode 0xa201016, boost limit 5000 MHz; offsets [00: 0, 01: -5]"
+)]
+#[test_case(
+    EventKind::DayCheckpoint,
+    "day observer has been active 3600 s in total this boot"
+)]
+#[test_case(
+    EventKind::DayOffsetsChanged,
+    "offsets read back changed to [00: -10, 01: -5]; the time since the previous record is not credited to any offset profile"
+)]
+#[test_case(EventKind::DayCleanStop, "day observer stopped on request")]
+#[test_case(
+    EventKind::DayUncleanEnd,
+    "day observer of boot 7a1b2c3d ended without a clean stop; last checkpoint seq 7; last offsets [00: -10, 01: -5]; reset reason: watchdog"
+)]
+fn day_messages_tell_a_stranger_what_the_observer_saw(kind: EventKind, text: &str) {
+    assert_eq!(message(kind), text);
+}
+
 fn hunt_end(result: HuntOutcome, cores: &[u8], groups: u32, reason: &str) -> String {
     Payload::from(HuntEnd {
         hunt: ord(3),

@@ -307,6 +307,11 @@ pub(crate) fn attribute<'a>(p: &Projection<'a>, since: Option<Timestamp>) -> Vec
             | Payload::BootLeaveReason(_)
             | Payload::Shutdown(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
     }

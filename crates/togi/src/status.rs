@@ -165,6 +165,11 @@ impl<'a> Scan<'a> {
                     }
                 },
                 Payload::SessionStart(_)
+                | Payload::DayBootStart(_)
+                | Payload::DayCheckpoint(_)
+                | Payload::DayOffsetsChanged(_)
+                | Payload::DayCleanStop(_)
+                | Payload::DayUncleanEnd(_)
                 | Payload::SessionContext(_)
                 | Payload::SessionBaseline(_)
                 | Payload::SessionNotice(_)

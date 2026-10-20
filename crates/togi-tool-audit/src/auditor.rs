@@ -250,6 +250,11 @@ impl<'a> Auditor<'a> {
             | Payload::DefectFound(_)
             | Payload::DefectAnswered(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
     }
@@ -316,7 +321,12 @@ impl<'a> Auditor<'a> {
             | Payload::DefectAnswered(_)
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
-            | Payload::JournalTorn(_) => {}
+            | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_) => {}
         }
     }
 

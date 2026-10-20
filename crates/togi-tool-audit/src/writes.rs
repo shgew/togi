@@ -104,6 +104,11 @@ impl Writes {
                 | Payload::BootLeaveReason(_)
                 | Payload::Shutdown(_)
                 | Payload::JournalTorn(_)
+                | Payload::DayBootStart(_)
+                | Payload::DayCheckpoint(_)
+                | Payload::DayOffsetsChanged(_)
+                | Payload::DayCleanStop(_)
+                | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_) => {}
             }
         }
@@ -169,6 +174,11 @@ impl Writes {
             | Payload::BootSavedEntry(_)
             | Payload::BootLeaveReason(_)
             | Payload::JournalTorn(_)
+            | Payload::DayBootStart(_)
+            | Payload::DayCheckpoint(_)
+            | Payload::DayOffsetsChanged(_)
+            | Payload::DayCleanStop(_)
+            | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }
     }
