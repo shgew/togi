@@ -20,7 +20,7 @@ mod vocab;
 mod workloads;
 
 pub use cancellation::{CancellationToken, OnCancel};
-pub use controller::ControllerMode;
+pub use controller::{ControllerContract, ControllerMode};
 pub use core_set::CoreSet;
 pub use cpufreq::{CpuFrequency, FrequencyPolicy, FrequencyPolicyId};
 pub use error::{Error, Partial, error_chain};
@@ -34,10 +34,9 @@ pub use scalars::{
     MIN_OFFSET, ObservedOffset, PER_CORE_MAX, TargetOffset,
 };
 pub use seams::{
-    Check, Clock, CoreRank, Host, Instance, Kernel, KernelRead, Machine, Mce, PstoreRecord,
-    ProcessFault, ProcessFaultKind, Reporter, ResetReason, Running, Sample, Smu, SmuValidated,
-    Started, Stopped, Swept,
-    TrialFailure, TrialResult, TrialSpec, Trials, monotonic_duration,
+    Check, Clock, CoreRank, Host, Instance, Kernel, KernelRead, Machine, Mce, ProcessFault,
+    ProcessFaultKind, PstoreRecord, Reporter, ResetReason, Running, Sample, Smu, SmuValidated,
+    Started, Stopped, Swept, TrialFailure, TrialResult, TrialSpec, Trials, monotonic_duration,
 };
 pub use topology::{BiosContext, ContextField, ContextMismatch, CoreInfo, order};
 pub use vocab::{

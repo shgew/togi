@@ -351,17 +351,20 @@ mod tests {
         // A specification the regime refuses has no roles; its cores and CPUs are checked first.
         let roles =
             TrialRole::legacy(regime, workload, 7, &cores, &cpus, &topology()).unwrap_or_default();
-        TrialSpec { id: "t1".into(),
-        regime,
-        workload,
-        condition: Condition::Alone,
-        cores,
-        cpus,
-        duration: Duration::from_secs(10),
-        index: 0,
-        seed: 7,
-        offsets: togi_machine::PerCore::default(),
-        roles, controller: togi_machine::ControllerMode::Legacy }
+        TrialSpec {
+            id: "t1".into(),
+            regime,
+            workload,
+            condition: Condition::Alone,
+            cores,
+            cpus,
+            duration: Duration::from_secs(10),
+            index: 0,
+            seed: 7,
+            offsets: togi_machine::PerCore::default(),
+            roles,
+            controller: togi_machine::ControllerMode::Legacy,
+        }
     }
 
     /// A specification whose cores and CPUs are exactly what `roles` cover, in their order.
@@ -372,17 +375,20 @@ mod tests {
                 cores.push(role.core);
             }
         }
-        TrialSpec { id: "t1".into(),
-        regime,
-        workload: pick_workload(regime, 0).id(),
-        condition: Condition::Alone,
-        cores,
-        cpus: roles.iter().map(|role| role.cpu).collect(),
-        duration: Duration::from_secs(10),
-        index: 0,
-        seed: 7,
-        offsets: togi_machine::PerCore::default(),
-        roles, controller: togi_machine::ControllerMode::Legacy }
+        TrialSpec {
+            id: "t1".into(),
+            regime,
+            workload: pick_workload(regime, 0).id(),
+            condition: Condition::Alone,
+            cores,
+            cpus: roles.iter().map(|role| role.cpu).collect(),
+            duration: Duration::from_secs(10),
+            index: 0,
+            seed: 7,
+            offsets: togi_machine::PerCore::default(),
+            roles,
+            controller: togi_machine::ControllerMode::Legacy,
+        }
     }
 
     fn neighbours(class_index: usize, light: u8) -> TrialSpec {

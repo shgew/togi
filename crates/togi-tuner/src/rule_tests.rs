@@ -413,6 +413,8 @@ fn an_out_of_order_event_poisons_the_state() {
     detail: String::new(),
     signal: None,
     core: Some(core(9)),
+    pid: None,
+    fault: None,
 }.into(); "progress core")]
 fn every_core_a_payload_names_must_be_in_the_topology(make: fn(&TrialId) -> Payload) {
     let mut j = Journal::search_at(&[-10]);

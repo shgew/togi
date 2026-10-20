@@ -75,6 +75,7 @@ pub(crate) struct Env<O: Os> {
     pub(crate) preparer: Preparer,
     /// Moves togi's own threads off the cores a trial loads, and back.
     pub(crate) controller: Arc<dyn Controller>,
+    pub(crate) frequency: Arc<crate::frequency::Limits>,
 }
 
 impl<O: Os> Env<O> {
@@ -151,6 +152,7 @@ pub(crate) enum Event {
     Signal {
         core: CoreId,
         signal: Signal,
+        pid: Option<u32>,
         detail: String,
     },
     Finished(Box<Finished>),
@@ -205,19 +207,77 @@ fn early(error: Error, ready: Stopped) -> Partial<Option<Stopped>> {
     }
 }
 
-/// Moves every thread of togi onto the CPUs `controller::select` chooses for this trial, before
-/// any workload starts, and reports it. Never fails the trial: a thread that could not be read or
-/// moved, or a pass limit reached while threads kept appearing, is said in the report.
-fn confine<O: Os>(env: &Env<O>, spec: &TrialSpec, events: &StdSender<Event>) {
-    let Some(cpus) = controller::select(&env.topology, &spec.cores, &spec.cpus, &spec.offsets)
-    else {
-        return;
+/// Placement failures withhold passing exposure without hiding stronger workload evidence.
+#[derive(Default)]
+struct PlacementEvidence {
+    inconclusive: Option<String>,
+    excluded: togi_machine::CoreSet,
+}
+
+fn confine<O: Os>(env: &Env<O>, spec: &TrialSpec, events: &StdSender<Event>) -> PlacementEvidence {
+    let managed = matches!(
+        spec.controller,
+        togi_machine::ControllerMode::Managed { .. }
+    );
+    let placement = if managed {
+        controller::placement(&env.topology, spec)
+    } else {
+        controller::select(&env.topology, &spec.cores, &spec.cpus, &spec.offsets).map(|cpus| {
+            controller::Placement {
+                cpus,
+                host: None,
+                capped: false,
+                excluded: None,
+            }
+        })
     };
-    if let Some(moved) = env.controller.confine(&cpus) {
-        let line = if moved.complete() {
+    let Some(placement) = placement else {
+        return PlacementEvidence {
+            inconclusive: managed
+                .then(|| "managed controller placement could not select a host".to_owned()),
+            excluded: togi_machine::CoreSet::default(),
+        };
+    };
+    let mut evidence = PlacementEvidence::default();
+    if placement.capped {
+        let excluded_cpus = placement
+            .excluded
+            .and_then(|host| env.topology.iter().find(|info| info.core == host));
+        let workers: Vec<_> = spec
+            .cpus
+            .iter()
+            .copied()
+            .filter(|cpu| !excluded_cpus.is_some_and(|info| info.cpus.contains(cpu)))
+            .collect();
+        let mut reports = Vec::new();
+        let outcome = env.frequency.cap(&placement.cpus, &workers, &mut reports);
+        for line in reports {
+            let _ = events.send(Event::Progress(line));
+        }
+        if let Err(error) = outcome {
+            evidence.inconclusive = Some(error_chain(&error));
+        }
+    }
+    let moved = env.controller.confine(&placement.cpus);
+    if managed && !moved.is_some_and(Moved::complete) {
+        evidence.inconclusive.get_or_insert_with(|| {
+            "managed controller placement did not confine every controller thread".to_owned()
+        });
+    }
+    if let Some(moved) = moved {
+        let line = if managed {
+            format!(
+                "togi controller CPUs {} while the trial loads {}; host {:?}; capped {}; {}",
+                launch::cpus_list(&placement.cpus),
+                launch::cpus_list(&spec.cpus),
+                placement.host,
+                placement.capped,
+                moved.describe(),
+            )
+        } else if moved.complete() {
             format!(
                 "togi's own threads run on CPUs {} while the trial loads {}: {}",
-                launch::cpus_list(&cpus),
+                launch::cpus_list(&placement.cpus),
                 launch::cpus_list(&spec.cpus),
                 moved.describe(),
             )
@@ -225,20 +285,37 @@ fn confine<O: Os>(env: &Env<O>, spec: &TrialSpec, events: &StdSender<Event>) {
             format!(
                 "togi's own threads were not all confined to CPUs {} and may still run on a CPU \
                  the trial loads ({}): {}",
-                launch::cpus_list(&cpus),
+                launch::cpus_list(&placement.cpus),
                 launch::cpus_list(&spec.cpus),
                 moved.describe(),
             )
         };
         let _ = events.send(Event::Progress(line));
     }
+    if let Some(reason) = &evidence.inconclusive {
+        let _ = events.send(Event::Progress(format!(
+            "controller placement inconclusive: {reason}"
+        )));
+    } else if let Some(host) = placement.excluded {
+        evidence.excluded.insert(host);
+        let _ = events.send(Event::Progress(format!(
+            "controller host core {host} is excluded from passing exposure; its failure evidence remains"
+        )));
+    }
+    evidence
 }
 
 /// Gives togi's threads back the affinity they had, once the teardown confirmed nothing runs.
-fn restore<O: Os>(env: &Env<O>, events: &StdSender<Event>) {
+fn restore<O: Os>(env: &Env<O>, events: &StdSender<Event>) -> Result<(), crate::frequency::Error> {
+    let mut reports = Vec::new();
+    let outcome = env.frequency.restore(&mut reports);
+    for line in reports {
+        let _ = events.send(Event::Progress(line));
+    }
     if let Some(moved) = env.controller.restore() {
         let _ = events.send(Event::Progress(restored_line(moved)));
     }
+    outcome
 }
 
 /// What a restoration reports; one that was not complete says the threads stay confined until the
@@ -353,7 +430,7 @@ pub(crate) async fn start<O: Os>(
     drop(ready);
 
     let (events_tx, events_rx) = channel();
-    confine(&env, &spec, &events_tx);
+    let placement = confine(&env, &spec, &events_tx);
     let (inbound_tx, mut inbound_rx) = bounded(INBOUND_CAPACITY);
     let selector = Selector::mixed(
         &plan
@@ -447,6 +524,7 @@ pub(crate) async fn start<O: Os>(
         toggles,
         tctl_max: None,
         errors,
+        placement,
         rotation: 0,
         inbound_open: true,
     };
@@ -755,6 +833,9 @@ async fn roll_back<O: Os>(
     diagnostics.splice(0..0, judge.conclude().diagnostics);
     let (first, proof) = match ended.proof {
         Ok(stopped) => {
+            if let Err(error) = env.frequency.restore(&mut diagnostics) {
+                diagnostics.push(error_chain(&error));
+            }
             if let Some(moved) = env.controller.restore()
                 && !moved.complete()
             {
@@ -856,6 +937,7 @@ struct Supervisor<O: Os> {
     toggles: Toggles,
     tctl_max: Option<i64>,
     errors: Vec<Error>,
+    placement: PlacementEvidence,
     rotation: usize,
 }
 
@@ -962,8 +1044,11 @@ impl<O: Os> Supervisor<O> {
                     .as_ref()
                     .and_then(|child| child.exit().ok().flatten())
                     .map_or_else(|| "exited".to_owned(), |info| info.to_string());
-                self.judge
-                    .observe(Observation::UnexpectedExit { instance, detail });
+                self.judge.observe(Observation::UnexpectedExit {
+                    instance,
+                    pid: Some(self.live.instances[instance].pid),
+                    detail,
+                });
                 Some(End::Evidence)
             }
         }
@@ -1181,6 +1266,7 @@ impl<O: Os> Supervisor<O> {
             tctl_max,
             mut errors,
             mut commands,
+            mut placement,
             ..
         } = self;
         for instance in &live.instances {
@@ -1199,7 +1285,11 @@ impl<O: Os> Supervisor<O> {
                     .as_ref()
                     .and_then(|child| child.exit().ok().flatten())
                     .map_or_else(|| "exited".to_owned(), |info| info.to_string());
-                judge.observe(Observation::UnexpectedExit { instance, detail });
+                judge.observe(Observation::UnexpectedExit {
+                    instance,
+                    pid: Some(live.instances[instance].pid),
+                    detail,
+                });
             }
         }
         let ran = Instant::now()
@@ -1223,8 +1313,12 @@ impl<O: Os> Supervisor<O> {
             .await
             .finish()
             .await;
-        if ended.proof.is_ok() {
-            restore(&env, &events);
+        if ended.proof.is_ok()
+            && let Err(error) = restore(&env, &events)
+        {
+            let reason = error_chain(&error);
+            let _ = events.send(Event::Progress(reason.clone()));
+            placement.inconclusive.get_or_insert(reason);
         }
         panics.extend(judge.take_panic());
         for what in &panics {
@@ -1268,7 +1362,11 @@ impl<O: Os> Supervisor<O> {
         let result = TrialResult {
             ran,
             failure: verdict.failure,
-            inconclusive: verdict.inconclusive,
+            inconclusive: verdict
+                .inconclusive
+                .or(placement.inconclusive)
+                .map(String::into_boxed_str),
+            excluded: placement.excluded,
             escaped: verdict.escaped,
             tctl_max_c: tctl_max,
             stops: toggles.stops,

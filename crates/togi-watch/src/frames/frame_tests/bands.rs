@@ -293,6 +293,8 @@ fn a_trial_overdue_with_later_progress_reports_its_missing_end() {
             detail: "FFT 36K done".to_owned(),
             signal: None,
             core: None,
+            fault: None,
+            pid: None,
         }
         .into(),
         end.duration_since(last).as_secs() + 10,

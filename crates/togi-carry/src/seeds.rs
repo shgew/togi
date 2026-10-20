@@ -231,7 +231,7 @@ impl SeedFold {
                 {
                     self.rerun_failed.insert(failure);
                 }
-                match end.outcome {
+                match end.evidence_outcome() {
                     Outcome::Pass => {
                         if let Some(IntentInfo {
                             core: Some(core),

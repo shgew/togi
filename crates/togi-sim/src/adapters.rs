@@ -358,9 +358,9 @@ impl Kernel for SimKernel {
         &mut self,
         boot: &BootId,
         after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<Mce>>> {
+    ) -> Result<KernelRead, Partial<KernelRead>> {
         let fail = |error| Partial {
-            value: Vec::new(),
+            value: KernelRead::default(),
             error,
         };
         self.known(boot).map_err(fail)?;
@@ -378,6 +378,7 @@ impl Kernel for SimKernel {
         };
         Ok(KernelRead {
             mces: log[start..].to_vec(),
+            faults: Vec::new(),
             cursor: KernelCursor::from(format!("{boot}:{}", log.len())),
         })
     }

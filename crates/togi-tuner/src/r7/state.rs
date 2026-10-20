@@ -39,6 +39,7 @@ impl Run {
         ended: Ended<'_>,
         outcome: Outcome,
         backend: BackendId,
+        excluded: &[CoreId],
     ) -> Option<FailedTrial> {
         let Ended {
             seq,
@@ -60,31 +61,35 @@ impl Run {
         );
         match outcome {
             Outcome::Pass => {
-                self.r7.strikes.pass(class.load());
-                self.r7.loaded.remove(&class.load());
-                self.r7.status.pass(
-                    backend,
-                    class.workload(),
-                    class.loaded(),
-                    effective_top(telemetry.top, &order),
-                    profile,
-                );
-                self.r7.targets.insert(
-                    &self.topo,
-                    &self.evidence,
-                    &PassRecord {
-                        seq,
-                        class,
-                        backend,
-                        profile: *profile,
-                        requests: *telemetry.requests,
-                        ccd_mhz: telemetry
-                            .clocks
-                            .iter()
-                            .map(|(&ccd, &mhz)| (ccd, i64::from(mhz)))
-                            .collect(),
-                    },
-                );
+                if excluded.is_empty() {
+                    self.r7.strikes.pass(class.load());
+                    self.r7.loaded.remove(&class.load());
+                }
+                let mut top = effective_top(telemetry.top, &order);
+                for &core in excluded {
+                    top.remove(core);
+                }
+                self.r7
+                    .status
+                    .pass(backend, class.workload(), class.loaded(), top, profile);
+                if excluded.is_empty() {
+                    self.r7.targets.insert(
+                        &self.topo,
+                        &self.evidence,
+                        &PassRecord {
+                            seq,
+                            class,
+                            backend,
+                            profile: *profile,
+                            requests: *telemetry.requests,
+                            ccd_mhz: telemetry
+                                .clocks
+                                .iter()
+                                .map(|(&ccd, &mhz)| (ccd, i64::from(mhz)))
+                                .collect(),
+                        },
+                    );
+                }
             }
             Outcome::Inconclusive | Outcome::Failure => {}
         }
@@ -140,9 +145,11 @@ impl Run {
             },
             end.outcome,
             open.backend,
+            &end.excluded,
         );
-        let zero = self.zero.end(&end.trial, seq, end.outcome);
-        if let (Some(failure), Outcome::Pass) = (zero, end.outcome) {
+        let outcome = end.evidence_outcome();
+        let zero = self.zero.end(&end.trial, seq, outcome);
+        if let (Some(failure), Outcome::Pass) = (zero, outcome) {
             self.zero_passed(failure);
         }
         (failed, zero)

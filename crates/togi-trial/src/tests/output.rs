@@ -99,9 +99,10 @@ fn an_oversized_line_is_inconclusive_keeps_its_prefix_and_is_not_containment(
             let result = &run.finished.result;
             assert_eq!(
                 result.inconclusive,
-                Some(format!(
-                    "core 00 read {name}: backend output line exceeds 64 KiB"
-                ))
+                Some(
+                    format!("core 00 read {name}: backend output line exceeds 64 KiB")
+                        .into_boxed_str()
+                )
             );
             assert_eq!((result.failure, result.escaped.len()), (None, 0));
             assert!(run.finished.teardown.is_ok());

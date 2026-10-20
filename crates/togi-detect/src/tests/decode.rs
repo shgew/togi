@@ -35,8 +35,8 @@ fn an_array_entry_in_a_cursor_read_is_malformed_output_after_the_earlier_checks(
         "{}",
         partial.error
     );
-    assert_eq!(partial.value.len(), 1);
-    assert_eq!(partial.value[0].core, Some(super::support::core(1)));
+    assert_eq!(partial.value.mces.len(), 1);
+    assert_eq!(partial.value.mces[0].core, Some(super::support::core(1)));
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn an_array_entry_alone_never_becomes_an_empty_interval() {
     let (mut kernel, _) = kernel(&[], move |_| ok(&out));
     let partial = kernel.read_mces(&boot(OLD), None).unwrap_err();
     assert!(caused_by::<DecodeError>(&partial).is_some());
-    assert!(partial.value.is_empty());
+    assert!(partial.value.mces.is_empty());
 }
 
 #[test]

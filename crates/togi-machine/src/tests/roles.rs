@@ -16,17 +16,20 @@ fn r2() -> WorkloadId {
 }
 
 fn spec_of(regime: Regime, workload: WorkloadId, seed: u64, roles: Vec<TrialRole>) -> TrialSpec {
-    TrialSpec { id: "t".to_owned(),
-    regime,
-    workload,
-    condition: Condition::Together,
-    cores: TrialRole::cores(&roles),
-    cpus: TrialRole::cpus(&roles),
-    roles,
-    duration: Duration::from_secs(120),
-    index: 0,
-    seed,
-    offsets: PerCore::default(), controller: crate::ControllerMode::Legacy }
+    TrialSpec {
+        id: "t".to_owned(),
+        regime,
+        workload,
+        condition: Condition::Together,
+        cores: TrialRole::cores(&roles),
+        cpus: TrialRole::cpus(&roles),
+        roles,
+        duration: Duration::from_secs(120),
+        index: 0,
+        seed,
+        offsets: PerCore::default(),
+        controller: crate::ControllerMode::Legacy,
+    }
 }
 
 fn neighbours(light: i64, index: usize) -> TrialSpec {

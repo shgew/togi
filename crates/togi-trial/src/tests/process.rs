@@ -546,7 +546,7 @@ struct Record {
 impl togi_machine::Reporter for Record {
     fn progress(&mut self, _: &str) {}
     fn sample(&mut self, _: togi_machine::Sample) {}
-    fn signal(&mut self, _: togi_machine::CoreId, signal: Signal, detail: &str) {
+    fn signal(&mut self, _: togi_machine::CoreId, signal: Signal, _: Option<u32>, detail: &str) {
         self.signals.push((signal, detail.to_owned()));
     }
 }

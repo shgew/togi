@@ -127,7 +127,7 @@ impl Kernel for TestKernel {
         &mut self,
         _boot: &BootId,
         _after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<togi_machine::Mce>>> {
+    ) -> Result<KernelRead, Partial<KernelRead>> {
         Ok(KernelRead::default())
     }
 
@@ -518,6 +518,8 @@ fn progress(id: &str, signal: Option<Signal>) -> Payload {
         detail: "running".into(),
         signal,
         core: signal.map(|_| core(0)),
+        fault: None,
+        pid: None,
     })
 }
 

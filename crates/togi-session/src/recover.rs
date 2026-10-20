@@ -262,7 +262,7 @@ impl Crashes<'_, '_> {
     fn has_evidence(&self, crashed: &BootId) -> bool {
         self.state()
             .open_trial()
-            .is_some_and(|open| open.boot == *crashed && open.failure.is_some())
+            .is_some_and(|open| open.boot == *crashed && open.failure().is_some())
             || !self
                 .state()
                 .recorded_for(crashed, self.recovery.boot)
@@ -667,7 +667,7 @@ fn close_open_trial(recovery: &mut Recovery<'_, '_>) -> Step<()> {
     let reset = crash.map(|(_, detected)| reset_verdict(detected));
     let closure = Closure::decide(&Facts {
         trial: open.seq,
-        backend_failure: open.failure,
+        backend_failure: open.failure().map(|failure| (failure.signal, failure.core)),
         machine_checks: &open.mces,
         machine_check_corrected: open.corrected
             || recorded.iter().any(|&seq| {
@@ -681,6 +681,8 @@ fn close_open_trial(recovery: &mut Recovery<'_, '_>) -> Step<()> {
             reset,
         }),
     });
+    let mut causes = closure.causes().to_vec();
+    causes.extend(open.faults.iter().map(|fault| fault.seq));
     let ruling = closure.ruling();
     let trial: TrialId = open.intent.trial.clone();
     let end = TrialEnd {
@@ -716,7 +718,7 @@ fn close_open_trial(recovery: &mut Recovery<'_, '_>) -> Step<()> {
         end,
         summary,
         crash.is_some(),
-        closure.causes(),
+        &causes,
     )?;
     Ok(())
 }

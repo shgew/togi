@@ -1,4 +1,5 @@
 mod controller;
+mod frequency;
 pub(crate) mod harness;
 mod output;
 #[cfg(target_os = "linux")]

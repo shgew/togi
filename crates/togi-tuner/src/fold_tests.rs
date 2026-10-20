@@ -640,6 +640,8 @@ fn trial_progress_belongs_to_the_open_trial() {
         detail: String::new(),
         signal,
         core: None,
+        fault: None,
+        pid: None,
     };
     j.append(progress(&trial, Some(Signal::Crash)).into(), &[]);
     let other = TrialId::from("elsewhere".to_owned());

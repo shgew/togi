@@ -183,7 +183,7 @@ impl Run {
             condition: open.intent.condition,
             named: end.core,
         };
-        match end.outcome {
+        match end.evidence_outcome() {
             Outcome::Inconclusive => {}
             Outcome::Pass => self.evidence.record_pass(observation, open.backend)?,
             Outcome::Failure => {
@@ -259,6 +259,7 @@ impl Run {
             },
             carried.outcome,
             backend,
+            &[],
         );
         if let Some(trial) = failed.as_mut() {
             trial.backoffs = self.r7.strikes.snapshot(class.load());

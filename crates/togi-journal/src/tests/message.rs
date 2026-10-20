@@ -66,6 +66,32 @@ fn trial_end_pass_names_the_duration_and_temperature() {
 }
 
 #[test]
+fn trial_end_records_host_exclusion_without_claiming_whole_load_coverage() {
+    let mut end = bare_trial_end(Outcome::Pass, None, "");
+    assert_eq!(end.evidence_outcome(), Outcome::Pass);
+    assert_eq!(serde_json::to_value(&end).unwrap().get("excluded"), None);
+    end.excluded = vec![core(3)];
+    let encoded = serde_json::to_value(&end).unwrap();
+    assert_eq!(encoded["excluded"], serde_json::json!([3]));
+    let decoded: TrialEnd = serde_json::from_value(encoded).unwrap();
+    assert_eq!(decoded, end);
+    assert_eq!(end.evidence_outcome(), Outcome::Inconclusive);
+    assert!(
+        Payload::from(end)
+            .message()
+            .contains("no exposure credit for core 03; whole-load coverage withheld")
+    );
+}
+
+#[test_case(Outcome::Failure; "failures retain their safety evidence")]
+#[test_case(Outcome::Inconclusive; "inconclusive stays inconclusive")]
+fn trial_end_exclusion_never_changes_nonpassing_evidence(outcome: Outcome) {
+    let mut end = bare_trial_end(outcome, None, "");
+    end.excluded = vec![core(3)];
+    assert_eq!(end.evidence_outcome(), outcome);
+}
+
+#[test]
 fn trial_end_failure_says_what_it_knows() {
     let text = message(EventKind::TrialEnd);
     for part in [

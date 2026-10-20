@@ -212,6 +212,7 @@ pub(super) fn trial_start(id: &str) -> TrialStart {
         files: Vec::new(),
         instances: Vec::new(),
         roles: Vec::new(),
+        controller: None,
     }
 }
 
@@ -220,6 +221,7 @@ pub(super) fn end(id: &str, outcome: Outcome) -> TrialEnd {
         trial: TrialId::from(id.to_owned()),
         kernel_cursor: None,
         kernel_error: None,
+        excluded: Vec::new(),
         outcome,
         signal: (outcome == Outcome::Failure).then_some(Signal::ComputationError),
         core: None,

@@ -221,6 +221,7 @@ impl Log {
                 files: Vec::new(),
                 instances: Vec::new(),
                 roles: Vec::new(),
+                controller: None,
             }),
             &[cause],
         )
@@ -608,6 +609,8 @@ fn an_open_trial_ran_from_its_start_to_its_last_record_by_the_monotonic_clock_wh
             detail: "running".into(),
             signal: None,
             core: None,
+            fault: None,
+            pid: None,
         }),
         &[start],
     );
@@ -682,6 +685,8 @@ fn a_progress_record_of_another_trial_is_not_this_trials_activity_or_failure() {
             detail: "stray".into(),
             signal: Some(Signal::Stall),
             core: Some(core(0)),
+            fault: None,
+            pid: None,
         }),
         &[],
     );
@@ -703,12 +708,18 @@ fn a_backend_signal_is_kept_on_the_open_trial() {
             detail: "core 00 stalled".into(),
             signal: Some(Signal::Stall),
             core: Some(core(0)),
+            fault: None,
+            pid: None,
         }),
         &[],
     );
     assert_eq!(
         log.state().open_trial().unwrap().failure,
-        Some((Signal::Stall, Some(core(0))))
+        Some(crate::evidence::FailureSignal {
+            signal: Signal::Stall,
+            core: Some(core(0)),
+            pid: None
+        })
     );
 }
 
@@ -1550,6 +1561,8 @@ fn play(log: &mut Log, step: Step) {
                 detail: "p".into(),
                 signal: Some(Signal::Stall),
                 core: None,
+                fault: None,
+                pid: None,
             }),
             Vec::new(),
         ),

@@ -240,6 +240,7 @@ pub(crate) fn end(id: &str, outcome: Outcome, duration_s: u32) -> TrialEnd {
         trial: TrialId::from(id.to_owned()),
         kernel_cursor: None,
         kernel_error: None,
+        excluded: Vec::new(),
         outcome,
         signal: None,
         core: None,

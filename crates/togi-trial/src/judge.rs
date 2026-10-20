@@ -100,10 +100,12 @@ fn report_event(report: Report) -> Event {
         Report::Signal {
             core,
             signal,
+            pid,
             detail,
         } => Event::Signal {
             core,
             signal,
+            pid,
             detail,
         },
     }

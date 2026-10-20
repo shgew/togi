@@ -191,6 +191,11 @@ impl Runner {
         let timer_only = fs.is_some();
         let mut preparer = crate::prepare::Preparer::default();
         preparer.fs = settings.fs;
+        let frequency = Arc::new(crate::frequency::Limits::new(
+            Arc::new(crate::frequency::Sysfs::default()),
+            dir.clone(),
+            fs.clone(),
+        ));
         let make_env = move || Env {
             os: std::rc::Rc::new(make_os()),
             timing: settings.timing,
@@ -209,6 +214,7 @@ impl Runner {
             supervisors: std::cell::RefCell::default(),
             preparer,
             controller: settings.controller,
+            frequency,
             durability,
         };
         let runtime = if timer_only {
@@ -471,8 +477,9 @@ impl Trial {
                 Some(Event::Signal {
                     core,
                     signal,
+                    pid,
                     detail,
-                }) => report.signal(core, signal, &detail),
+                }) => report.signal(core, signal, pid, &detail),
                 Some(Event::Finished(finished)) => self.ended = Some(*finished),
                 None => return false,
             }
@@ -512,7 +519,14 @@ struct Discard;
 impl Reporter for Discard {
     fn progress(&mut self, _: &str) {}
     fn sample(&mut self, _: togi_machine::Sample) {}
-    fn signal(&mut self, _: togi_machine::CoreId, _: togi_machine::Signal, _: &str) {}
+    fn signal(
+        &mut self,
+        _: togi_machine::CoreId,
+        _: togi_machine::Signal,
+        _: Option<u32>,
+        _: &str,
+    ) {
+    }
 }
 
 impl Running for Trial {

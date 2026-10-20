@@ -13,6 +13,7 @@ hardware = []
 flate2.workspace = true
 nix = { workspace = true, features = ["user", "signal"] }
 rustix = { workspace = true, features = ["fs", "process", "param", "pipe", "thread"] }
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 togi-backend.workspace = true

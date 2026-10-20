@@ -89,6 +89,43 @@ object_only! {
 object_only! {
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
+    pub struct ControllerEvidence {
+        pub pid: u32,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub threads: Vec<u32>,
+        /// Worker TID to owning leader PID, captured before the trial wait.
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        pub workers: std::collections::BTreeMap<u32, u32>,
+        pub tested_cpus: Vec<CpuId>,
+    }
+}
+
+object_only! {
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct ProcessFaultEvidence {
+        pub pid: u32,
+        /// The saved controller or worker leader owning this PID/TID.
+        pub process_pid: u32,
+        pub name: String,
+        pub kind: togi_machine::ProcessFaultKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub scope: Option<String>,
+        pub monotonic_ns: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub cpu: Option<CpuId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub core: Option<CoreId>,
+        /// The worker instance that died, distinct from the CPU where the fault executed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub worker_core: Option<CoreId>,
+        pub lines: Vec<String>,
+    }
+}
+
+object_only! {
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
     pub struct TrialStart {
         pub trial: TrialId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -103,6 +140,8 @@ object_only! {
         pub instances: Vec<TrialInstance>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pub roles: Vec<TrialRole>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub controller: Option<ControllerEvidence>,
     }
 }
 
@@ -116,6 +155,10 @@ object_only! {
         pub signal: Option<Signal>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub core: Option<CoreId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub pid: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub fault: Option<ProcessFaultEvidence>,
     }
 }
 
@@ -160,6 +203,9 @@ object_only! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub core: Option<CoreId>,
         pub duration_s: u32,
+        /// Cores withheld from exposure credit, even when the workload passed.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub excluded: Vec<CoreId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub tctl_max_c: Option<i32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -196,6 +242,20 @@ object_only! {
         pub backend_missing: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub containment_error: Option<String>,
+    }
+}
+
+impl TrialEnd {
+    /// A pass with an excluded controller host does not prove the intended whole load.
+    /// Per-core ledgers may still credit tested, nonexcluded cores; class evidence and
+    /// coverage must treat that pass as inconclusive instead of crediting the host.
+    pub fn evidence_outcome(&self) -> Outcome {
+        match self.outcome {
+            Outcome::Pass if !self.excluded.is_empty() => Outcome::Inconclusive,
+            Outcome::Pass => Outcome::Pass,
+            Outcome::Failure => Outcome::Failure,
+            Outcome::Inconclusive => Outcome::Inconclusive,
+        }
     }
 }
 

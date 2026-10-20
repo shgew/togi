@@ -8,17 +8,20 @@ fn spec(regime: Regime, seed: u64, index: usize) -> TrialSpec {
     let cores = vec![core(0)];
     let cpus = vec![CpuId::from(0)];
     let roles = TrialRole::legacy(regime, workload, seed, &cores, &cpus, &topology()).unwrap();
-    TrialSpec { id: "t".to_owned(),
-    regime,
-    workload,
-    condition: Condition::Alone,
-    cores,
-    cpus,
-    roles,
-    duration: Duration::from_secs(60),
-    index,
-    seed,
-    offsets: PerCore::default(), controller: crate::ControllerMode::Legacy }
+    TrialSpec {
+        id: "t".to_owned(),
+        regime,
+        workload,
+        condition: Condition::Alone,
+        cores,
+        cpus,
+        roles,
+        duration: Duration::from_secs(60),
+        index,
+        seed,
+        offsets: PerCore::default(),
+        controller: crate::ControllerMode::Legacy,
+    }
 }
 
 fn first(schedule: LoadSchedule, count: usize) -> Vec<Duration> {

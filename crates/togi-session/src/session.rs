@@ -75,6 +75,8 @@ pub struct RunInput<'machine> {
     pub journal: Journal,
     pub machine: Machine<'machine>,
     pub policy: StopPolicy,
+    /// Explicit opt-in to the Ruleset13 controller experiment; ordinary runs use Legacy.
+    pub controller: togi_machine::ControllerContract,
     pub publication: crate::publication::PublicationPolicy,
     /// Set only in the tuning boot, where a dead end hands the next boot back to the normal system.
     pub bootloader: Option<Box<dyn Bootloader>>,
@@ -303,6 +305,7 @@ pub(crate) struct Session<'machine> {
     pub(crate) config: Config,
     pub(crate) source: ConfigSource,
     pub(crate) policy: StopPolicy,
+    pub(crate) controller: togi_machine::ControllerContract,
     pub(crate) prompt: Option<Box<dyn Prompt>>,
     pub(crate) carry: Option<PendingCarry>,
     pub(crate) cancel: CancellationToken,
@@ -336,6 +339,7 @@ impl<'machine> Session<'machine> {
             journal,
             machine,
             policy,
+            controller,
             publication,
             mut bootloader,
             prompt,
@@ -429,6 +433,7 @@ impl<'machine> Session<'machine> {
             config,
             source,
             policy,
+            controller,
             prompt,
             carry,
             cancel,
@@ -560,10 +565,10 @@ impl<'machine> Session<'machine> {
         causes: &[Seq],
     ) -> Step<Boundary> {
         let mut cursor = self.appender.recovery().kernel_cursor(&self.boot).cloned();
-        let (mces, error) = match self.kernel.read_mces(&self.boot, cursor.as_ref()) {
+        let (read, error) = match self.kernel.read_mces(&self.boot, cursor.as_ref()) {
             Ok(read) => {
-                cursor = Some(read.cursor);
-                (read.mces, None)
+                cursor = Some(read.cursor.clone());
+                (read, None)
             }
             Err(Partial {
                 error: Error::Crashed,
@@ -573,21 +578,23 @@ impl<'machine> Session<'machine> {
                 value,
                 error: Error::CursorMissing,
             }) if cursor.is_some() => {
-                let mut mces = value;
+                let mut read = value;
                 match self.kernel.read_mces(&self.boot, None) {
                     Ok(fresh) => {
-                        mces.extend(fresh.mces);
+                        read.mces.extend(fresh.mces);
+                        read.faults.extend(fresh.faults);
                         cursor = Some(fresh.cursor);
-                        (mces, Some(Error::CursorMissing.to_string()))
+                        (read, Some(Error::CursorMissing.to_string()))
                     }
                     Err(Partial {
                         error: Error::Crashed,
                         ..
                     }) => return Err(SessionError::Machine(Error::Crashed).into()),
                     Err(Partial { value, error }) => {
-                        mces.extend(value);
+                        read.mces.extend(value.mces);
+                        read.faults.extend(value.faults);
                         (
-                            mces,
+                            read,
                             Some(format!(
                                 "{}; {}",
                                 Error::CursorMissing,
@@ -610,7 +617,8 @@ impl<'machine> Session<'machine> {
             .crashed_boots(&self.boot)
             .next()
             .is_some();
-        for mce in mces {
+        self.record_process_faults(read.faults, window, until, causes)?;
+        for mce in read.mces {
             if self.appender.recovery().has_recorded(&self.boot, &mce) {
                 continue;
             }
@@ -647,6 +655,138 @@ impl<'machine> Session<'machine> {
             cursor,
             error: error.map(|error| format!("kernel log unreadable: {error}")),
         })
+    }
+
+    fn record_process_faults(
+        &mut self,
+        faults: Vec<togi_machine::ProcessFault>,
+        window: Option<TrialWindow<'_>>,
+        until: Duration,
+        causes: &[Seq],
+    ) -> Step<()> {
+        // The saved start is authoritative after a controller dies: the new run's PID is not.
+        let Some(open) = self.appender.recovery().open_trial() else {
+            return Ok(());
+        };
+        if open.boot != self.boot {
+            return Ok(());
+        }
+        let Some(started) = &open.started else {
+            return Ok(());
+        };
+        let start_seq = started.seq;
+        let sole_worker = open.intent.core.or_else(|| {
+            (open.intent.cores.len() == 1)
+                .then(|| open.intent.cores.first())
+                .flatten()
+        });
+        let since = window
+            .map(|window| window.since)
+            .or(open.window_start)
+            .unwrap_or(Duration::ZERO);
+        for fault in faults {
+            if fault.monotonic < since || fault.monotonic > until {
+                continue;
+            }
+            let Some(event) = self.appender.journal().event(start_seq) else {
+                return Ok(());
+            };
+            let Payload::TrialStart(start) = &event.payload else {
+                return Ok(());
+            };
+            let in_scope = |scope: &str| {
+                fault.scope.as_ref().is_some_and(|cgroup| {
+                    cgroup
+                        .split('/')
+                        .any(|part| !scope.is_empty() && part == scope)
+                })
+            };
+            let worker_pid = start
+                .controller
+                .as_ref()
+                .and_then(|controller| controller.workers.get(&fault.pid))
+                .copied()
+                .unwrap_or(fault.pid);
+            let worker = worker_pid == start.pid
+                || in_scope(&start.scope)
+                || start
+                    .instances
+                    .iter()
+                    .any(|instance| instance.pid == worker_pid || in_scope(&instance.scope));
+            let controller = start.controller.as_ref().is_some_and(|controller| {
+                fault.pid == controller.pid || controller.threads.contains(&fault.pid)
+            });
+            let dashboard = in_scope("togi-watch.service");
+            let worker_core = start
+                .instances
+                .iter()
+                .find(|instance| instance.pid == worker_pid || in_scope(&instance.scope))
+                .map(|instance| instance.core)
+                .or_else(|| {
+                    (worker_pid == start.pid || in_scope(&start.scope))
+                        .then_some(sole_worker)
+                        .flatten()
+                });
+            if !worker && !controller && !dashboard {
+                continue;
+            }
+            let process_pid = if controller {
+                start
+                    .controller
+                    .as_ref()
+                    .map_or(fault.pid, |controller| controller.pid)
+            } else {
+                start
+                    .instances
+                    .iter()
+                    .find(|instance| instance.pid == worker_pid || in_scope(&instance.scope))
+                    .map_or(if worker { start.pid } else { fault.pid }, |instance| {
+                        instance.pid
+                    })
+            };
+            let monotonic_ns =
+                u64::try_from(fault.monotonic.as_nanos()).map_err(SessionError::Monotonic)?;
+            let duplicate = self.appender.recovery().open_trial().is_some_and(|open| {
+                open.faults.iter().any(|recorded| {
+                    recorded.pid == fault.pid
+                        && recorded.monotonic_ns == monotonic_ns
+                        && recorded.kind == fault.kind
+                })
+            });
+            if duplicate {
+                continue;
+            }
+            let charged = start.controller.as_ref().is_some_and(|controller| {
+                fault
+                    .cpu
+                    .is_none_or(|cpu| controller.tested_cpus.contains(&cpu))
+            });
+            let progress = togi_journal::TrialProgress {
+                trial: start.trial.clone(),
+                detail: format!(
+                    "kernel reported {:?} in {}[{}]",
+                    fault.kind, fault.name, fault.pid
+                ),
+                signal: charged.then_some(togi_machine::Signal::UnexpectedExit),
+                pid: Some(process_pid),
+                core: charged.then_some(fault.core).flatten(),
+                fault: Some(togi_journal::ProcessFaultEvidence {
+                    pid: fault.pid,
+                    process_pid,
+                    name: fault.name,
+                    kind: fault.kind,
+                    monotonic_ns,
+                    scope: fault.scope,
+                    worker_core,
+                    cpu: fault.cpu,
+                    core: fault.core,
+                    lines: fault.lines,
+                }),
+            };
+            self.appender
+                .append(Payload::TrialProgress(progress), causes)?;
+        }
+        Ok(())
     }
 
     /// Ends the run with `reason`; the cleanup records the `shutdown` once the machine is restored.

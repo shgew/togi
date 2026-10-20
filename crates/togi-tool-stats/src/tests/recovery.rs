@@ -60,6 +60,8 @@ impl Interruption {
                 detail: String::new(),
                 signal: Some(self.signal),
                 core: None,
+                fault: None,
+                pid: None,
             }),
             Evidence::Signal => log.add(TrialSignal {
                 trial: id(),

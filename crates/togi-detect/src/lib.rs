@@ -3,6 +3,7 @@
 
 mod boot;
 mod error;
+mod fault;
 mod journal;
 mod parse;
 mod pstore;
@@ -20,6 +21,7 @@ use togi_machine::{
 
 pub use boot::boot_id;
 pub use error::{BootIdError, Error, Operation};
+pub use fault::{FaultNumberError, FaultParseFailure, process_faults};
 pub use journal::DecodeError;
 pub use parse::{CpuCoreMap, DuplicateCpu, Message, ParseFailure, StatusError, parse};
 pub use pstore::{Access, PstoreError, Unsafe};
@@ -128,13 +130,13 @@ impl Kernel {
         &self,
         boot: &JournalBoot,
         after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<Mce>>> {
+    ) -> Result<KernelRead, Partial<KernelRead>> {
         let operation = Operation::ReadKernelLog {
             boot: boot.as_str().to_owned(),
         };
         let after = after.filter(|cursor| !cursor.as_str().is_empty());
         let nothing = |error: Error| Partial {
-            value: Vec::new(),
+            value: KernelRead::default(),
             error: error.into(),
         };
         let out = self
@@ -146,18 +148,42 @@ impl Kernel {
             )
             .map_err(nothing)?;
         let interval = read_interval(&out, boot, after);
+        let mut faults = interval.faults;
+        let fault_error = match process_faults(&interval.messages, &self.cores) {
+            Ok(parsed) => {
+                faults.extend(parsed);
+                None
+            }
+            Err(failure) => {
+                faults.extend(failure.faults);
+                Some(failure.error)
+            }
+        };
         let (mces, parse_error) = match parse(&interval.messages, &self.cores) {
             Ok(mces) => (mces, None),
             Err(failure) => (failure.mces, Some(failure.error)),
         };
-        let error = match (parse_error, interval.end) {
-            (Some(source), _) => Error::Status { operation, source },
-            (None, Ok(cursor)) => return Ok(KernelRead { mces, cursor }),
-            (None, Err(IntervalError::CursorMissing)) => Error::CursorMissing,
-            (None, Err(IntervalError::Decode(source))) => Self::decode_failure(&operation, source),
+        let error = match (parse_error, fault_error, interval.end) {
+            (Some(source), _, _) => Error::Status { operation, source },
+            (None, Some(source), _) => Error::FaultStatus { operation, source },
+            (None, None, Ok(cursor)) => {
+                return Ok(KernelRead {
+                    mces,
+                    faults,
+                    cursor,
+                });
+            }
+            (None, None, Err(IntervalError::CursorMissing)) => Error::CursorMissing,
+            (None, None, Err(IntervalError::Decode(source))) => {
+                Self::decode_failure(&operation, source)
+            }
         };
         Err(Partial {
-            value: mces,
+            value: KernelRead {
+                mces,
+                faults,
+                ..KernelRead::default()
+            },
             error: error.into(),
         })
     }
@@ -259,6 +285,43 @@ impl Kernel {
 }
 
 impl togi_machine::Kernel for Kernel {
+    fn process_threads(&mut self, pid: u32) -> Result<Vec<u32>, togi_machine::Error> {
+        #[cfg(target_os = "linux")]
+        {
+            let read = || -> Result<Vec<u32>, std::io::Error> {
+                let mut threads = Vec::new();
+                let entries = match std::fs::read_dir(format!("/proc/{pid}/task")) {
+                    Ok(entries) => entries,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        return Ok(threads);
+                    }
+                    Err(error) => return Err(error),
+                };
+                for entry in entries {
+                    let entry = entry?;
+                    let id = entry.file_name();
+                    let id = id
+                        .to_str()
+                        .and_then(|id| id.parse::<u32>().ok())
+                        .ok_or_else(|| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "invalid process task id",
+                            )
+                        })?;
+                    threads.push(id);
+                }
+                threads.sort_unstable();
+                Ok(threads)
+            };
+            read().map_err(|source| Error::ProcessThreads(source).into())
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            Ok(vec![pid])
+        }
+    }
+
     fn mces(&mut self, boot: &BootId, since: Duration) -> Result<Vec<Mce>, Partial<Vec<Mce>>> {
         let boot = JournalBoot::parse(boot.as_str()).map_err(|error| Partial {
             value: Vec::new(),
@@ -271,9 +334,9 @@ impl togi_machine::Kernel for Kernel {
         &mut self,
         boot: &BootId,
         after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<Mce>>> {
+    ) -> Result<KernelRead, Partial<KernelRead>> {
         let boot = JournalBoot::parse(boot.as_str()).map_err(|error| Partial {
-            value: Vec::new(),
+            value: KernelRead::default(),
             error: error.into(),
         })?;
         self.read_interval(&boot, after)

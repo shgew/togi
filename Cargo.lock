@@ -2126,6 +2126,7 @@ dependencies = [
  "flate2",
  "nix",
  "rustix",
+ "serde",
  "serde_json",
  "tempfile",
  "test-case",

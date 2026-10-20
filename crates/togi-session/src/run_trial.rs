@@ -39,6 +39,7 @@ struct Trial<'p> {
     /// The core a trial alone sets and resets around its run.
     alone: Option<CoreId>,
     roles: Vec<TrialRole>,
+    controller: Option<togi_journal::ControllerEvidence>,
 }
 
 /// How the wait for a started workload ended, before the workload is joined.
@@ -325,7 +326,28 @@ impl Session<'_> {
             index: rotation,
             seed: intent.get(),
             offsets: self.hardware.confirmed(),
-            controller: togi_machine::ControllerMode::Legacy,
+            controller: self
+                .controller
+                .for_trial(self.appender.recovery().controller_rotation()),
+        };
+        let controller = if matches!(
+            spec.controller,
+            togi_machine::ControllerMode::Managed { .. }
+        ) {
+            let pid = std::process::id();
+            Some(togi_journal::ControllerEvidence {
+                pid,
+                threads: Vec::new(),
+                workers: std::collections::BTreeMap::default(),
+                tested_cpus: self
+                    .topology
+                    .iter()
+                    .filter(|info| spec.cores.contains(&info.core))
+                    .flat_map(|info| info.cpus.iter().copied())
+                    .collect(),
+            })
+        } else {
+            None
         };
         let mut trial = Trial {
             plan,
@@ -334,6 +356,7 @@ impl Session<'_> {
             start: intent,
             alone,
             roles: spec.roles.clone(),
+            controller,
         };
         let Lifecycle::Swept(Swept {
             stopped,
@@ -413,6 +436,28 @@ impl Session<'_> {
         window_start_ns: u64,
     ) -> Step<(bool, Waiting)> {
         let started = running.started();
+        let mut controller = trial.controller.take();
+        if let Some(evidence) = &mut controller {
+            evidence.threads = self
+                .kernel
+                .process_threads(evidence.pid)
+                .map_err(SessionError::Machine)?;
+            for pid in std::iter::once(started.pid)
+                .chain(started.instances.iter().map(|instance| instance.pid))
+            {
+                if evidence.workers.contains_key(&pid) {
+                    continue;
+                }
+                evidence.workers.insert(pid, pid);
+                for tid in self
+                    .kernel
+                    .process_threads(pid)
+                    .map_err(SessionError::Machine)?
+                {
+                    evidence.workers.insert(tid, pid);
+                }
+            }
+        }
         let scheduled = started.schedule.is_some();
         let record = TrialStart {
             trial: trial.id.clone(),
@@ -422,7 +467,7 @@ impl Session<'_> {
             cpus: started.cpus,
             argv: started.argv,
             files: started.files,
-            instances: if started.instances.len() > 1 {
+            instances: if started.instances.len() > 1 || controller.is_some() {
                 started
                     .instances
                     .into_iter()
@@ -437,6 +482,7 @@ impl Session<'_> {
                 Vec::new()
             },
             roles: std::mem::take(&mut trial.roles),
+            controller,
         };
         trial.start = self.appender.append(Payload::TrialStart(record), cites)?;
         if let Some(schedule) = started.schedule {
@@ -529,7 +575,7 @@ impl Session<'_> {
         what: &str,
     ) -> Step<()> {
         let Waited {
-            result,
+            mut result,
             mut error,
             mut joined,
         } = waited;
@@ -579,12 +625,37 @@ impl Session<'_> {
                 corrected: self.mce_corrected(seq),
             })
             .collect();
+        let fault_causes: Vec<_> = open
+            .into_iter()
+            .flat_map(|open| open.faults.iter().map(|fault| fault.seq))
+            .collect();
+        let process_failure = open.and_then(|open| {
+            let controller = open.started.as_ref()?.controller.as_ref()?;
+            let failure = evidence::process_faults_failure(
+                result.failure.map(evidence::FailureSignal::from),
+                &open.faults,
+                &controller.tested_cpus,
+            );
+            Some(failure)
+        });
+        if let Some(failure) = process_failure {
+            if result.failure.is_some() && failure.is_none() {
+                result.inconclusive = Some("worker fault executed outside tested CPUs".into());
+            }
+            result.failure = failure.and_then(|failure| {
+                failure.core.map(|core| togi_machine::TrialFailure {
+                    signal: failure.signal,
+                    core,
+                    pid: failure.pid.and_then(std::num::NonZeroU32::new),
+                })
+            });
+        }
         let runner = error
             .as_ref()
             .filter(|error| !matches!(error, Error::Cancelled))
             .map(|error| format!("{what}: {}", togi_render::error_chain(error)));
         let missing = evidence::join_diagnostic(kernel_error.as_deref(), runner.as_deref());
-        let adjudication = match evidence::adjudicate(&TrialEvidence {
+        let mut adjudication = match evidence::adjudicate(&TrialEvidence {
             result: &result,
             mces: &mces,
             reset: None,
@@ -598,6 +669,14 @@ impl Session<'_> {
                 return Err(error.into());
             }
         };
+        if result.escaped.is_empty()
+            && containment.is_none()
+            && let Some(Some(failure)) = process_failure
+        {
+            adjudication.outcome = togi_journal::Outcome::Failure;
+            adjudication.signal = Some(failure.signal);
+            adjudication.core = failure.core;
+        }
         let interrupted = token.is_cancelled();
         let reason = if interrupted {
             evidence::join_diagnostic(adjudication.reason.as_deref(), Some("stopped by signal"))
@@ -610,11 +689,12 @@ impl Session<'_> {
             signal: adjudication.signal,
             core: adjudication
                 .core
-                .filter(|_| trial.plan.condition != Condition::Alone),
+                .filter(|_| trial.plan.condition != Condition::Alone || process_failure.is_some()),
             tctl_max_c: adjudication.tctl_max_c,
             reason,
             interrupted: interrupted || crashed,
             escaped: adjudication.escaped,
+            excluded: result.excluded.into_iter().collect(),
             backend_missing: matches!(error, Some(Error::BackendMissing)),
             containment_error: adjudication.containment_error,
             ..evidence::trial_end(
@@ -631,6 +711,7 @@ impl Session<'_> {
             |core| topology.get(core).flatten(),
         );
         let mut causes = vec![trial.start];
+        causes.extend(fault_causes);
         causes.extend(machine_checks);
         append_trial_end(
             &mut self.appender,

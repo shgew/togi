@@ -316,10 +316,10 @@ impl Kernel for UnreadableOnce {
         &mut self,
         boot: &BootId,
         after: Option<&KernelCursor>,
-    ) -> Result<KernelRead, Partial<Vec<togi_machine::Mce>>> {
+    ) -> Result<KernelRead, Partial<KernelRead>> {
         if self.fails(boot) {
             return Err(Partial {
-                value: Vec::new(),
+                value: KernelRead::default(),
                 error: unreadable(),
             });
         }

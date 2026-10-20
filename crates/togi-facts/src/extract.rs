@@ -272,7 +272,7 @@ impl Extractor {
     }
 
     fn end<E>(&mut self, event: &Event, end: &TrialEnd) -> Result<(), FactsError<E>> {
-        let decisive = end.outcome != Outcome::Inconclusive;
+        let decisive = end.evidence_outcome() != Outcome::Inconclusive;
         let Some(open) = self
             .open_by_trial
             .remove(&end.trial)
@@ -292,7 +292,7 @@ impl Extractor {
             build,
             backend,
         } = open;
-        let outcome = match end.outcome {
+        let outcome = match end.evidence_outcome() {
             Outcome::Inconclusive => return Ok(()),
             Outcome::Pass => Decisive::Pass,
             Outcome::Failure => Decisive::Failure {

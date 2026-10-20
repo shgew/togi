@@ -176,6 +176,7 @@ fn simulate_with_dump(
             zone: zone.clone(),
             cancel: run_cancel,
             report: Box::new(io::sink()),
+            controller: togi_machine::ControllerContract::Legacy,
         });
         if let Some(panic) = ended.panic.take() {
             // The journal has no drop flush: close it so a file-backed boot keeps the events it buffered and the

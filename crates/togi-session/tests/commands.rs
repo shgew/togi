@@ -83,6 +83,7 @@ fn input(sim: &Simulator, mem: &MemFs) -> RunInput<'static> {
         zone: TimeZone::UTC,
         cancel: CancellationToken::new(),
         report: Box::new(io::sink()),
+        controller: togi_machine::ControllerContract::Legacy,
     }
 }
 
@@ -370,6 +371,7 @@ impl togi_machine::Running for DurationRunning {
                 result.failure = Some(togi_machine::TrialFailure {
                     signal: togi_machine::Signal::ComputationError,
                     core: core(0),
+                    pid: None,
                 });
                 return Err(togi_machine::Partial {
                     value: result,
@@ -571,7 +573,7 @@ impl togi_machine::Kernel for MonotonicKernel {
         &mut self,
         boot: &togi_machine::BootId,
         after: Option<&togi_machine::KernelCursor>,
-    ) -> Result<togi_machine::KernelRead, togi_machine::Partial<Vec<togi_machine::Mce>>> {
+    ) -> Result<togi_machine::KernelRead, togi_machine::Partial<togi_machine::KernelRead>> {
         let mut read = self.inner.read_mces(boot, after)?;
         if self.visible.get() {
             read.mces.push(self.mce());
@@ -917,7 +919,7 @@ impl togi_machine::Kernel for TeardownKernel {
         &mut self,
         boot: &togi_machine::BootId,
         after: Option<&togi_machine::KernelCursor>,
-    ) -> Result<togi_machine::KernelRead, togi_machine::Partial<Vec<togi_machine::Mce>>> {
+    ) -> Result<togi_machine::KernelRead, togi_machine::Partial<togi_machine::KernelRead>> {
         let read = self.inner.read_mces(boot, after)?;
         if self.cancel.is_cancelled() {
             self.refuse.set(true);

@@ -99,7 +99,7 @@ pub(crate) struct End<'a> {
 
 impl Trial<'_> {
     pub(crate) fn outcome(&self) -> Option<Outcome> {
-        self.end.map(|end| end.end.outcome)
+        self.end.map(|end| end.end.evidence_outcome())
     }
 
     pub(crate) fn failed(&self) -> bool {

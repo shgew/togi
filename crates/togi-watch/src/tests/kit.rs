@@ -316,6 +316,7 @@ pub(crate) fn trial_start(trial: &TrialId) -> Payload {
         files: Vec::new(),
         instances: Vec::new(),
         roles: Vec::new(),
+        controller: None,
     }
     .into()
 }
@@ -325,6 +326,7 @@ pub(crate) fn end_payload(trial: &TrialId, outcome: Outcome, signal: Option<Sign
         trial: trial.clone(),
         kernel_cursor: None,
         kernel_error: None,
+        excluded: Vec::new(),
         outcome,
         signal,
         core: None,

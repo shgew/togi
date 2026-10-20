@@ -122,6 +122,50 @@ pub(crate) struct RecordedMce {
     pub corrected: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct FailureSignal {
+    pub signal: Signal,
+    pub core: Option<CoreId>,
+    pub pid: Option<u32>,
+}
+
+impl From<togi_machine::TrialFailure> for FailureSignal {
+    fn from(failure: togi_machine::TrialFailure) -> Self {
+        Self {
+            signal: failure.signal,
+            core: Some(failure.core),
+            pid: failure.pid.map(std::num::NonZeroU32::get),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct RecordedProcessFault {
+    pub seq: Seq,
+    pub pid: u32,
+    pub kind: togi_machine::ProcessFaultKind,
+    pub monotonic_ns: u64,
+    pub process_pid: u32,
+    pub cpu: Option<CpuId>,
+    pub core: Option<CoreId>,
+    pub worker_core: Option<CoreId>,
+}
+
+impl RecordedProcessFault {
+    pub(crate) const fn new(seq: Seq, fault: &togi_journal::ProcessFaultEvidence) -> Self {
+        Self {
+            seq,
+            pid: fault.pid,
+            kind: fault.kind,
+            monotonic_ns: fault.monotonic_ns,
+            process_pid: fault.process_pid,
+            cpu: fault.cpu,
+            core: fault.core,
+            worker_core: fault.worker_core,
+        }
+    }
+}
+
 /// What the reset after a crashed trial says of it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ResetVerdict {
@@ -162,6 +206,55 @@ pub(crate) const fn machine_check_signal(any_corrected: bool) -> Signal {
     } else {
         Signal::UncorrectedMce
     }
+}
+
+pub(crate) fn process_faults_failure(
+    mut previous: Option<FailureSignal>,
+    faults: &[RecordedProcessFault],
+    tested: &[CpuId],
+) -> Option<FailureSignal> {
+    for fault in faults {
+        // A later coredump summary carries no execution CPU. It must not erase the trap's
+        // location, nor turn an observed out-of-test fault into an unlocated tested failure.
+        if fault.cpu.is_none()
+            && faults
+                .iter()
+                .any(|other| other.process_pid == fault.process_pid && other.cpu.is_some())
+        {
+            continue;
+        }
+        previous = process_fault_failure(previous, fault, tested);
+    }
+    previous
+}
+
+/// A kernel location replaces the assigned worker location for an unexpected exit. An
+/// out-of-test execution can withdraw only that worker's exit, never independent evidence.
+fn process_fault_failure(
+    previous: Option<FailureSignal>,
+    fault: &RecordedProcessFault,
+    tested: &[CpuId],
+) -> Option<FailureSignal> {
+    if fault.cpu.is_some_and(|cpu| !tested.contains(&cpu)) {
+        return previous.filter(|previous| {
+            let same_process = match previous.pid {
+                Some(pid) => pid == fault.process_pid,
+                None => fault.worker_core.is_some() && fault.worker_core == previous.core,
+            };
+            previous.signal != Signal::UnexpectedExit || !same_process
+        });
+    }
+    if let Some(previous) = previous
+        && (previous.signal != Signal::UnexpectedExit
+            || previous.pid.is_some_and(|pid| pid != fault.process_pid))
+    {
+        return Some(previous);
+    }
+    Some(FailureSignal {
+        signal: Signal::UnexpectedExit,
+        core: fault.core,
+        pid: Some(fault.process_pid),
+    })
 }
 
 /// The outcome a trial's evidence adds up to. The first that holds wins: a worker outside its CPUs, containment
@@ -418,6 +511,7 @@ pub(crate) fn trial_end(trial: TrialId, outcome: Outcome, duration_s: u32) -> Tr
         trial,
         kernel_cursor: None,
         kernel_error: None,
+        excluded: Vec::new(),
         outcome,
         signal: None,
         core: None,

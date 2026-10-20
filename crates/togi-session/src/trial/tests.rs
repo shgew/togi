@@ -65,7 +65,7 @@ fn the_first_append_failure_is_kept_cancels_the_trial_and_silences_later_reports
     });
     assert!(cancel.is_cancelled());
     reporter.progress("after the failure");
-    reporter.signal(core(0), Signal::Stall, "after the failure");
+    reporter.signal(core(0), Signal::Stall, None, "after the failure");
     let Some(AppendFailure::Journal(failure)) = reporter.into_failure() else {
         panic!("the first failure was not kept");
     };
@@ -89,7 +89,12 @@ fn every_signal_is_journaled_with_its_label_and_a_core_only_where_one_is_named(
     let before = rig.events().len();
     let cancel = CancellationToken::new();
     let trial = trial();
-    Journaled::new(&mut rig.appender, &trial, start, &cancel).signal(core(7), signal, "bad sum");
+    Journaled::new(&mut rig.appender, &trial, start, &cancel).signal(
+        core(7),
+        signal,
+        Some(991),
+        "bad sum",
+    );
     assert_eq!(
         payloads(&rig, before),
         [Payload::TrialProgress(TrialProgress {
@@ -97,6 +102,8 @@ fn every_signal_is_journaled_with_its_label_and_a_core_only_where_one_is_named(
             detail: detail.to_owned(),
             signal: Some(signal),
             core: named.then(|| core(7)),
+            pid: Some(991),
+            fault: None,
         })],
         "{signal:?}"
     );

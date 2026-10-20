@@ -45,6 +45,8 @@ fn review_boundary() -> (Log, jiff::Timestamp) {
                 detail: String::new(),
                 signal: None,
                 core: None,
+                fault: None,
+                pid: None,
             });
         }
         let mut ended = end(id, outcome);
@@ -254,6 +256,8 @@ fn combination() -> Log {
         detail: String::new(),
         signal: None,
         core: None,
+        fault: None,
+        pid: None,
     });
     log.boot("b").at(330).mono(12_000);
     log.add(config_loaded(build("1.2.3", Some("abc"))));

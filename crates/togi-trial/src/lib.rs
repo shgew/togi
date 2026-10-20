@@ -16,6 +16,8 @@ mod controller;
 mod evidence;
 #[cfg(target_os = "linux")]
 mod files;
+#[cfg(target_os = "linux")]
+mod frequency;
 #[cfg(any(test, target_os = "linux"))]
 #[cfg_attr(
     not(target_os = "linux"),
@@ -108,6 +110,8 @@ pub use error::{
     CleanupFailure, Containment, Error, InvalidId, InvalidTrial, Joined, OutputFailure,
     PrepareError, StorageError, StorageFailure, SystemdError,
 };
+#[cfg(target_os = "linux")]
+pub use frequency::{Error as FrequencyError, Sysfs as CpuFrequencySysfs};
 pub use identity::{BackendIdentity, IdentityError};
 pub use runner::{Backends, Options, Runner, Trial};
 /// The roles a trial's logical CPUs play, so a caller can build and read a `TrialSpec` through

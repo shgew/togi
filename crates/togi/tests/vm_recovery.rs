@@ -300,9 +300,9 @@ mod vm_recovery {
             &mut self,
             _: &BootId,
             _: Option<&KernelCursor>,
-        ) -> Result<KernelRead, Partial<Vec<Mce>>> {
+        ) -> Result<KernelRead, Partial<KernelRead>> {
             Err(Partial {
-                value: Vec::new(),
+                value: KernelRead::default(),
                 error: other("the VM has no kernel log reader"),
             })
         }
@@ -500,7 +500,7 @@ mod vm_recovery {
     impl Reporter for Quiet {
         fn progress(&mut self, _: &str) {}
         fn sample(&mut self, _: togi_machine::Sample) {}
-        fn signal(&mut self, _: CoreId, _: Signal, _: &str) {}
+        fn signal(&mut self, _: CoreId, _: Signal, _: Option<u32>, _: &str) {}
     }
 
     fn restore_baseline() {
@@ -545,17 +545,20 @@ mod vm_recovery {
         let cores: Vec<CoreId> = topology[..LOADED].iter().map(|info| info.core).collect();
         let cpus: Vec<CpuId> = topology[..LOADED].iter().map(|info| info.cpus[0]).collect();
         let roles = TrialRole::legacy(regime, workload, 1, &cores, &cpus, &topology).unwrap();
-        let spec = TrialSpec { id: format!("vm-{}-{}", Timestamp::now().as_second(), std::process::id()),
-        regime,
-        workload,
-        condition: Condition::Together,
-        cores,
-        cpus,
-        roles,
-        duration: Duration::from_secs(3600),
-        index: 0,
-        seed: 1,
-        offsets, controller: togi_machine::ControllerMode::Legacy };
+        let spec = TrialSpec {
+            id: format!("vm-{}-{}", Timestamp::now().as_second(), std::process::id()),
+            regime,
+            workload,
+            condition: Condition::Together,
+            cores,
+            cpus,
+            roles,
+            duration: Duration::from_secs(3600),
+            index: 0,
+            seed: 1,
+            offsets,
+            controller: togi_machine::ControllerMode::Legacy,
+        };
         let mut running = machine
             .trials
             .start(&cancel, spec, ready)

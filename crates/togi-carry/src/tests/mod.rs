@@ -367,6 +367,7 @@ pub(super) fn trial_end(
         trial: trial.clone(),
         kernel_cursor: None,
         kernel_error: None,
+        excluded: Vec::new(),
         outcome,
         signal,
         core,

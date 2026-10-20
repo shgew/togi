@@ -338,7 +338,7 @@ impl Reporter for Recorder {
 
     fn sample(&mut self, _sample: Sample) {}
 
-    fn signal(&mut self, core: CoreId, signal: Signal, _detail: &str) {
+    fn signal(&mut self, core: CoreId, signal: Signal, _pid: Option<u32>, _detail: &str) {
         self.signals.push((core, signal));
     }
 }
@@ -386,17 +386,20 @@ pub(crate) fn spec(
             })
             .collect()
     };
-    TrialSpec { id: id.to_owned(),
-    regime,
-    workload: workload.id(),
-    condition: Condition::Together,
-    cores,
-    cpus,
-    roles,
-    duration,
-    index: 0,
-    seed,
-    offsets: PerCore::default(), controller: togi_machine::ControllerMode::Legacy }
+    TrialSpec {
+        id: id.to_owned(),
+        regime,
+        workload: workload.id(),
+        condition: Condition::Together,
+        cores,
+        cpus,
+        roles,
+        duration,
+        index: 0,
+        seed,
+        offsets: PerCore::default(),
+        controller: togi_machine::ControllerMode::Legacy,
+    }
 }
 
 /// A trial of the first workload of `regime`.
