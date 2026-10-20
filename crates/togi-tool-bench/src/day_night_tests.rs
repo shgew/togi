@@ -171,3 +171,155 @@ fn overshoot_tail_uses_exact_seed_fraction(failures: usize, expected: bool) {
     assert_eq!(criteria.overshoot_fraction, expected);
     assert!(criteria.overshoot_absolute);
 }
+
+#[test_case::test_case([3, 0], 1, 0, true; "exactly ninety percent of seeds")]
+#[test_case::test_case([3, 0], 2, 0, false; "below ninety percent of seeds")]
+#[test_case::test_case([2, 0], 10, 0, true; "two first-year crashes pass")]
+#[test_case::test_case([3, 0], 10, 0, false; "three first-year crashes fail")]
+#[test_case::test_case([0, 0], 0, 1, true; "one censored seed leaves ninety percent")]
+#[test_case::test_case([0, 0], 0, 2, false; "censored seeds count as failures")]
+#[test_case::test_case([2, 2], 10, 0, true; "each ccd is judged separately")]
+#[test_case::test_case([0, 3], 10, 0, false; "worst ccd decides")]
+fn hidden_year_one_gate(first_year: [u32; 2], offenders: usize, censored: usize, expected: bool) {
+    let mut registration = registration();
+    registration.scenarios[0].daily_class = crate::day_night::DailyCoverage::Hidden;
+    let mut metrics = vec![successful_metrics(); 10];
+    for metric in metrics.iter_mut().take(offenders) {
+        metric.year_one_co_crashes = first_year.to_vec();
+    }
+    for metric in metrics.iter_mut().skip(offenders).take(censored) {
+        metric.censored = true;
+    }
+    let metrics = metrics.iter().collect::<Vec<_>>();
+    let criteria =
+        crate::day_night_report::judge(&registration, &registration.scenarios[0], &metrics);
+    assert_eq!(criteria.hidden_year_one, Some(expected));
+    assert_eq!(criteria.covered_climb, None);
+}
+
+type Call = (
+    String,
+    u64,
+    togi_simrun::day_night::Comparator,
+    u32,
+    u32,
+    f64,
+    f64,
+    f64,
+    Vec<u8>,
+    Option<u32>,
+);
+
+type Written = Vec<(String, u64, String)>;
+
+fn orchestration(selection: crate::Selection) -> (Vec<Call>, Written, Vec<String>) {
+    let mut document = document();
+    document["lambda_per_hour"] = 0.0005.into();
+    document["calendar"]["daily_hours"] = 6.into();
+    document["calendar"]["night_hours"] = 10.into();
+    document["calendar"]["night_weekdays"] = serde_json::json!([1, 3]);
+    document["calendar"]["firmware_change_day"] = 200.into();
+    document["scenarios"] = serde_json::json!([
+        {"name":"edge-shallow","daily_class":"covered","cap":"fixed"},
+        {"name":"firmware-change","daily_class":"hidden","cap":"firmware"}
+    ]);
+    let registration = Registration::parse(&serde_json::to_vec(&document).unwrap()).unwrap();
+    let mut calls = Vec::new();
+    let mut run = |scenario: &str,
+                   seed: u64,
+                   comparator: togi_simrun::day_night::Comparator,
+                   calendar: togi_simrun::day_night::CalendarConfig| {
+        calls.push((
+            scenario.to_owned(),
+            seed,
+            comparator,
+            calendar.days,
+            calendar.year_days,
+            calendar.lambda_per_hour,
+            calendar.active_hours,
+            calendar.night_hours,
+            calendar.night_weekdays.clone(),
+            calendar.firmware_change_day,
+        ));
+        let mut metrics = successful_metrics();
+        if comparator == togi_simrun::day_night::Comparator::CoZero {
+            metrics.true_co_crashes = u32::try_from(seed).unwrap();
+            metrics.cpu_suspect_events = 1;
+        } else if scenario == "firmware-change" && seed.is_multiple_of(2) {
+            metrics.background_retreat_counts = vec![2, 1];
+        }
+        Ok(metrics)
+    };
+    let mut jsonl = Vec::new();
+    let records =
+        crate::day_night_report::run_comparators(&registration, selection, &mut run, &mut jsonl)
+            .unwrap();
+    let mut table = Vec::new();
+    crate::day_night_report::report(&mut table, &registration, &records).unwrap();
+    let written = String::from_utf8(jsonl)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            let record: crate::day_night_report::Record = serde_json::from_str(line).unwrap();
+            (record.scenario, record.seed, record.comparator)
+        })
+        .collect();
+    let table = String::from_utf8(table)
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    (calls, written, table)
+}
+
+#[test_case::test_case(crate::Selection::Dev, [1, 2]; "development seeds")]
+#[test_case::test_case(crate::Selection::Holdout, [101, 102]; "holdout seeds")]
+fn orchestration_runs_only_the_selected_seeds_and_reports_them(
+    selection: crate::Selection,
+    seeds: [u64; 2],
+) {
+    use togi_simrun::day_night::Comparator;
+    let (calls, written, table) = orchestration(selection);
+    let mut expected_calls = Vec::new();
+    let mut expected_written = Vec::new();
+    for scenario in ["edge-shallow", "firmware-change"] {
+        for seed in seeds {
+            for (label, comparator) in [
+                ("co-zero", Comparator::CoZero),
+                ("fixed-margin", Comparator::FixedMargin),
+            ] {
+                expected_calls.push((
+                    scenario.to_owned(),
+                    seed,
+                    comparator,
+                    730,
+                    365,
+                    0.0005,
+                    6.0,
+                    10.0,
+                    vec![1, 3],
+                    (scenario == "firmware-change").then_some(200),
+                ));
+                expected_written.push((scenario.to_owned(), seed, label.to_owned()));
+            }
+        }
+    }
+    assert_eq!(calls, expected_calls);
+    assert_eq!(written, expected_written);
+
+    let crashes = seeds.iter().sum::<u64>();
+    // Exactly one seed per range is even, and it charges 2 + 1 background retreats.
+    let bg = 3;
+    assert_eq!(
+        table,
+        [
+            "test-gate: comparator diagnostics; Ruleset 13 pending #1217; slopes [1.5, 2.0] unscored".to_owned(),
+            "scenario comparator seeds CO/day suspect year1/CCD climb-free% converge-d overshoot steps final-depth retained% bg-retreat CO-retreat nonCPU-retreat censored".to_owned(),
+            format!("edge-shallow co-zero 2 {crashes} 2 0 100.0 90.0 1 7 26.5 100.0 0 0 0 0"),
+            "edge-shallow fixed-margin 2 0 0 0 100.0 90.0 1 7 26.5 100.0 0 0 0 0".to_owned(),
+            format!("firmware-change co-zero 2 {crashes} 2 0 100.0 90.0 1 7 26.5 100.0 0 0 0 0"),
+            format!("firmware-change fixed-margin 2 0 0 0 100.0 90.0 1 7 26.5 100.0 {bg} 0 0 0"),
+            "CO/day counts unique CO-caused daily crashes over seeds; retreats sum per-CCD counts; year1/CCD, overshoot and steps are maxima; convergence is median worst-CCD day (inf = not converged); final-depth is median per-run mean CCD depth. Per-CCD JSON crash counts can charge both CCDs for a joint crash. Censored partial counts are lower bounds.".to_owned(),
+        ]
+    );
+}

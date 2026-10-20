@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use serde::{Deserialize, Serialize};
 use togi_sim::saturating_count;
-use togi_simrun::day_night::Metrics;
+use togi_simrun::day_night::{CalendarConfig, Comparator, Metrics, RunError};
 
 use crate::day_night::{CapKind, DailyCoverage, RegisteredScenario, Registration};
 
@@ -39,6 +39,70 @@ impl Criteria {
             && self.retention != Some(false)
             && self.fixed_cap_steps != Some(false)
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ComparatorError {
+    #[error("select registered day/night seeds")]
+    Seeds(#[from] crate::day_night::Error),
+    #[error("run day/night comparator")]
+    Run(#[from] RunError),
+    #[error("write day/night results")]
+    Write(#[from] io::Error),
+    #[error("encode day/night results")]
+    Encode(#[from] serde_json::Error),
+}
+
+/// One comparator run of a scenario and seed; production uses `togi_simrun::day_night::run`.
+pub type Runner<'a> =
+    dyn FnMut(&str, u64, Comparator, CalendarConfig) -> Result<Metrics, RunError> + 'a;
+
+/// Runs both comparators on every selected seed of every registered scenario, writing each record
+/// to `jsonl` as one JSON line as it completes. `run` is `togi_simrun::day_night::run` outside tests.
+pub fn run_comparators(
+    registration: &Registration,
+    selection: crate::Selection,
+    run: &mut Runner<'_>,
+    jsonl: &mut dyn Write,
+) -> Result<Vec<Record>, ComparatorError> {
+    let ranges = match selection {
+        crate::Selection::Dev => vec![&registration.seeds.dev],
+        crate::Selection::Holdout => vec![&registration.seeds.holdout],
+        crate::Selection::All => vec![&registration.seeds.dev, &registration.seeds.holdout],
+    };
+    let mut records = Vec::new();
+    for scenario in &registration.scenarios {
+        for range in &ranges {
+            for seed in range.values()? {
+                for (label, comparator) in [
+                    ("co-zero", Comparator::CoZero),
+                    ("fixed-margin", Comparator::FixedMargin),
+                ] {
+                    let calendar = CalendarConfig {
+                        days: registration.calendar.days,
+                        year_days: registration.calendar.year_days,
+                        lambda_per_hour: registration.lambda_per_hour,
+                        active_hours: f64::from(registration.calendar.daily_hours),
+                        night_hours: f64::from(registration.calendar.night_hours),
+                        night_weekdays: registration.calendar.night_weekdays.clone(),
+                        firmware_change_day: (scenario.name == "firmware-change")
+                            .then_some(registration.calendar.firmware_change_day),
+                        ..CalendarConfig::default()
+                    };
+                    let record = Record {
+                        scenario: scenario.name.clone(),
+                        seed,
+                        comparator: label.to_owned(),
+                        metrics: run(&scenario.name, seed, comparator, calendar)?,
+                    };
+                    serde_json::to_writer(&mut *jsonl, &record)?;
+                    writeln!(jsonl)?;
+                    records.push(record);
+                }
+            }
+        }
+    }
+    Ok(records)
 }
 
 #[derive(Debug, thiserror::Error)]

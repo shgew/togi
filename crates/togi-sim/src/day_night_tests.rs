@@ -364,6 +364,56 @@ fn draws_repeat_and_report_the_same_sources_the_integrator_uses() {
 }
 
 #[test]
+fn stock_draws_fail_only_from_background() {
+    let scenario = Scenario::builtin("stock-background", 3).unwrap();
+    let class = full_class(&scenario);
+    let state = TruthState::cold(2).unwrap();
+    let stock = profile(&scenario, 0);
+    // Background is 1/3000 per hour: 60_000 hours fail with probability 1 - e^-20.
+    let long = Duration::from_hours(60_000);
+    let causes: Vec<_> = (0..16)
+        .map(|seed| {
+            scenario
+                .draw(class, &stock, &state, long, 0, seed, 42)
+                .unwrap()
+                .unwrap()
+                .cause
+        })
+        .collect();
+    assert_eq!(causes, vec![FailureCause::Background; 16]);
+}
+
+#[test]
+fn interaction_draws_need_both_ccds_loaded() {
+    let scenario = Scenario::builtin("both-ccd-interaction", 9).unwrap();
+    let state = TruthState::cold(2).unwrap();
+    let causes = |class: &TrialClass, offset: i64, duration: Duration| -> Vec<FailureCause> {
+        let offsets = profile(&scenario, offset);
+        (0..64)
+            .filter_map(|seed| {
+                scenario
+                    .draw(class, &offsets, &state, duration, 0, seed, 42)
+                    .unwrap()
+                    .map(|failure| failure.cause)
+            })
+            .collect()
+    };
+    let both = causes(full_class(&scenario), -25, HOUR);
+    assert!(both.contains(&FailureCause::Interaction));
+    let alone = causes(
+        &scenario.daily_mix()[2].class,
+        -40,
+        Duration::from_hours(10_000),
+    );
+    assert!(
+        alone
+            .iter()
+            .any(|cause| matches!(cause, FailureCause::Ccd(_)))
+    );
+    assert!(!alone.contains(&FailureCause::Interaction));
+}
+
+#[test]
 fn class_round_trip_preserves_roles_phase_placement_and_duration() {
     let scenario = Scenario::builtin("partial-only", 3).unwrap();
     let class = scenario
