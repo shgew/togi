@@ -632,6 +632,16 @@ mod tests {
             InvalidTrial::ForeignCpu(CpuId::from(1))
         );
         assert_eq!(
+            TrialPlan::build(&spec(Regime::R9, &[0], &[]), &topo).unwrap_err(),
+            InvalidTrial::NoCpus,
+            "the per-CPU layout needs a CPU"
+        );
+        assert_eq!(
+            TrialPlan::build(&spec(Regime::R9, &[0], &[0, 8, 1]), &topo).unwrap_err(),
+            InvalidTrial::ForeignCpu(CpuId::from(1)),
+            "the per-CPU layout refuses a CPU outside the selected cores"
+        );
+        assert_eq!(
             TrialPlan::build(&spec(Regime::R1, &[0, 1], &[1]), &topo).unwrap_err(),
             InvalidTrial::CoresForOneInstance,
             "work on core 1 must not be attributed to core 0"

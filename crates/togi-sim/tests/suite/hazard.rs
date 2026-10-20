@@ -177,6 +177,17 @@ fn profiles_and_loads_that_do_not_fit_the_machine_are_refused() {
     );
 }
 
+#[test_case(Regime::R8; "r8")]
+#[test_case(Regime::R9; "r9")]
+fn role_regime_loads_are_refused_as_unmodeled(regime: Regime) {
+    let model = model(&base());
+    let load = load(regime, "", &[0], 90.0);
+    assert_eq!(
+        model.hazard(&offsets(&[0, 0]), &load),
+        Err(ShapeError::UnmodeledRegime { regime })
+    );
+}
+
 fn kinds(sources: &[HazardSource]) -> Vec<SourceKind> {
     sources.iter().map(|source| source.kind).collect()
 }
