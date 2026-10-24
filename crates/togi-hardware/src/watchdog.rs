@@ -1,8 +1,8 @@
 use std::ffi::OsString;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use togi_machine::{Check, error_chain};
+use togi_machine::{Check, WatchdogState, error_chain};
 
 use crate::checks::{CheckName, failed, passed};
 use crate::files::read_attribute;
@@ -30,6 +30,8 @@ enum Refusal {
     },
     #[error("{name} is not a hardware watchdog ({identity:?})")]
     NotHardware { name: String, identity: String },
+    #[error("read PID 1 descriptors")]
+    ReadPid1(#[source] io::Error),
 }
 
 struct Ready {
@@ -129,4 +131,54 @@ where
         return failed(CheckName::Watchdog, "no hardware watchdog state available");
     }
     failed(CheckName::Watchdog, refusals.join("; "))
+}
+
+/// The device paths PID 1's open descriptors point at. A descriptor that closes between the listing and its
+/// readlink is skipped: PID 1 closes and opens descriptors while it runs.
+pub(crate) fn pid1_descriptors(root: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut targets = Vec::new();
+    for entry in std::fs::read_dir(root.join("proc/1/fd"))? {
+        if let Ok(target) = std::fs::read_link(entry?.path()) {
+            targets.push(target);
+        }
+    }
+    Ok(targets)
+}
+
+/// Whether PID 1's hardware watchdog is armed under `root`: some hardware watchdog is active (`probe`) and PID 1
+/// holds a watchdog device, which is what feeds it. Observes only what the kernel reports.
+pub(crate) fn arming(root: &Path) -> WatchdogState {
+    arming_with(&probe(root), pid1_descriptors(root))
+}
+
+pub(crate) fn arming_with(
+    active: &Check,
+    pid1_descriptors: io::Result<Vec<PathBuf>>,
+) -> WatchdogState {
+    if !active.ok {
+        return WatchdogState::Unarmed {
+            detail: active.detail.clone(),
+        };
+    }
+    match pid1_descriptors {
+        Err(error) => WatchdogState::Unarmed {
+            detail: format!(
+                "{}; {}",
+                active.detail,
+                error_chain(&Refusal::ReadPid1(error))
+            ),
+        },
+        Ok(held) if held.iter().any(|path| is_watchdog_device(path)) => WatchdogState::Armed {
+            detail: format!("{}, held by PID 1", active.detail),
+        },
+        Ok(_) => WatchdogState::Unarmed {
+            detail: format!("{}, but PID 1 holds no /dev/watchdog device", active.detail),
+        },
+    }
+}
+
+/// `/dev/watchdog` or `/dev/watchdogN`; a component-wise prefix test would miss the numbered devices.
+fn is_watchdog_device(path: &Path) -> bool {
+    path.to_str()
+        .is_some_and(|path| path.starts_with("/dev/watchdog"))
 }

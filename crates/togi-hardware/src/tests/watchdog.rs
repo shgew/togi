@@ -1,6 +1,10 @@
-use togi_machine::Check;
+use std::path::PathBuf;
+
+use test_case::test_case;
+use togi_machine::{Check, WatchdogState};
 
 use super::support::Tree;
+use crate::watchdog::arming_with;
 
 fn device(root: &Tree, index: usize, state: &str, identity: Option<&str>) {
     let dir = format!("sys/class/watchdog/watchdog{index}");
@@ -176,4 +180,70 @@ fn a_class_directory_that_cannot_be_listed_fails_with_its_cause() {
         check.detail
     );
     assert!(check.detail.contains("Not a directory"), "{}", check.detail);
+}
+
+fn held(paths: &[&str]) -> std::io::Result<Vec<PathBuf>> {
+    Ok(paths.iter().map(PathBuf::from).collect())
+}
+
+fn armed(detail: &str) -> WatchdogState {
+    WatchdogState::Armed {
+        detail: detail.to_owned(),
+    }
+}
+
+fn unarmed(detail: &str) -> WatchdogState {
+    WatchdogState::Unarmed {
+        detail: detail.to_owned(),
+    }
+}
+
+#[test_case("/dev/watchdog0"; "a numbered device")]
+#[test_case("/dev/watchdog"; "the compatibility node")]
+fn an_active_watchdog_that_pid_1_holds_is_armed(device: &str) {
+    assert_eq!(
+        arming_with(
+            &ready("watchdog0 (SP5100 TCO timer) active"),
+            held(&["/dev/null", device, "socket:[12]"])
+        ),
+        armed("watchdog0 (SP5100 TCO timer) active, held by PID 1")
+    );
+}
+
+#[test]
+fn an_active_watchdog_that_pid_1_does_not_hold_is_not_armed() {
+    assert_eq!(
+        arming_with(
+            &ready("watchdog0 (SP5100 TCO timer) active"),
+            held(&["/dev/null", "/dev/ttyS0"])
+        ),
+        unarmed("watchdog0 (SP5100 TCO timer) active, but PID 1 holds no /dev/watchdog device")
+    );
+}
+
+#[test]
+fn a_present_but_inactive_watchdog_is_not_armed_whatever_pid_1_holds() {
+    assert_eq!(
+        arming_with(
+            &refused("watchdog0 state \"inactive\", want active"),
+            held(&["/dev/watchdog0"])
+        ),
+        unarmed("watchdog0 state \"inactive\", want active")
+    );
+}
+
+#[test]
+fn unreadable_pid_1_descriptors_leave_the_watchdog_unarmed_with_the_cause() {
+    let state = arming_with(
+        &ready("watchdog0 (SP5100 TCO timer) active"),
+        Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+    );
+    assert!(!state.is_armed());
+    assert!(
+        state
+            .detail()
+            .starts_with("watchdog0 (SP5100 TCO timer) active; read PID 1 descriptors: "),
+        "{}",
+        state.detail()
+    );
 }

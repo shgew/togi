@@ -28,7 +28,7 @@ in
     };
     tuning.enable = lib.mkEnableOption "the togi tuning boot, a GRUB entry that tunes unattended";
     day.enable = lib.mkEnableOption "the togi day observer, a read-only service in the normal boot that records the machine's day in togi's journal. It holds the host lock and the journal writer lock while it runs, so `togi run` and `togi reset` fail lock-busy until it stops, and it refuses to start while there is no session. It never exists in the tuning boot, and enabling it keeps the journal on disk with a 5s sync interval";
-    day.watchdog = lib.mkEnableOption "the PID 1 hardware watchdog in the normal boot with the day observer, RuntimeWatchdogSec=60s, so a hang resets the machine and the observer can record the unclean end. It sets no lockup panic kernel parameter and never applies in the tuning boot, which keeps its own 30s watchdog";
+    day.watchdog = lib.mkEnableOption "the PID 1 hardware watchdog in the normal boot with the day observer, RuntimeWatchdogSec=60s, so a hang resets the machine and the observer can record the unclean end. A unit ordered before sleep.target stops the watchdog around every suspend or hibernation and restarts it on resume, so a sleep longer than 60s never resets the machine. It sets no lockup panic kernel parameter and never applies in the tuning boot, which keeps its own 30s watchdog";
     day.users = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -143,10 +143,33 @@ in
           };
         };
       })
-      (lib.mkIf (cfg.day.enable && cfg.day.watchdog) {
-        boot.initrd.kernelModules = [ "sp5100_tco" ];
-        systemd.settings.Manager.RuntimeWatchdogSec = lib.mkDefault "60s";
-      })
+      (lib.mkIf (cfg.day.enable && cfg.day.watchdog) (
+        let
+          busctl = "${config.systemd.package}/bin/busctl";
+          runtimeWatchdog =
+            value:
+            "${busctl} set-property org.freedesktop.systemd1 /org/freedesktop/systemd1 org.freedesktop.systemd1.Manager RuntimeWatchdogUSec t ${value}";
+        in
+        {
+          boot.initrd.kernelModules = [ "sp5100_tco" ];
+          systemd.settings.Manager.RuntimeWatchdogSec = lib.mkDefault "60s";
+          # Writing 0 to the manager's RuntimeWatchdogUSec disarms and closes the device; writing infinity drops
+          # the override and re-arms the configured RuntimeWatchdogSec. sleep.target stops after resume, which
+          # stops this unit and runs its ExecStop.
+          systemd.services.togi-day-watchdog-sleep = {
+            description = "Pause PID 1's hardware watchdog across sleep";
+            wantedBy = [ "sleep.target" ];
+            before = [ "sleep.target" ];
+            unitConfig.StopWhenUnneeded = true;
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              ExecStart = runtimeWatchdog "0";
+              ExecStop = runtimeWatchdog "18446744073709551615";
+            };
+          };
+        }
+      ))
       (lib.mkIf cfg.tuning.enable {
         assertions = [
           {

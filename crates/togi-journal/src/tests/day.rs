@@ -1,7 +1,7 @@
 use test_case::test_case;
 use togi_machine::{
     BootId, EndEvidence, GraphicsDriver, KernelFault, KernelTail, MceCount, ObservedOffset,
-    PerCore, ResetKind, ResetReason,
+    PerCore, ResetKind, ResetReason, SleepMode,
 };
 
 use super::fixtures::{at, core};
@@ -65,6 +65,7 @@ fn end_of(
             crashed_mces,
             successor_mces,
             tail,
+            asleep: None,
         },
     }
 }
@@ -108,6 +109,43 @@ fn evidence_classification(
     tail: KernelTail,
 ) -> EndClass {
     class(kind, crashed, successor, tail)
+}
+
+#[test_case(Some(ResetKind::Watchdog), read(0, 0), read(0, 0), KernelTail::Quiet {}, Some(SleepMode::Suspend) => EndClass::Sleep; "a watchdog reset at suspend entry")]
+#[test_case(Some(ResetKind::Watchdog), read(0, 0), read(0, 0), KernelTail::Quiet {}, Some(SleepMode::Hibernate) => EndClass::Sleep; "a watchdog reset at hibernation entry")]
+#[test_case(Some(ResetKind::Watchdog), MceCount::Unknown {}, MceCount::Unknown {}, KernelTail::Missing {}, Some(SleepMode::Suspend) => EndClass::Sleep; "sleep with nothing else readable")]
+#[test_case(Some(ResetKind::Watchdog), read(0, 0), read(0, 0), faults(&[RING], false), Some(SleepMode::Suspend) => EndClass::Sleep; "an earlier graphics error does not make the sleep a hang")]
+#[test_case(Some(ResetKind::Watchdog), read(0, 0), read(0, 0), KernelTail::Quiet {}, None => EndClass::Watchdog; "a watchdog reset that did not end asleep stays a watchdog reset")]
+#[test_case(Some(ResetKind::Watchdog), read(0, 1), read(0, 0), KernelTail::Quiet {}, Some(SleepMode::Suspend) => EndClass::CpuFault; "an uncorrected machine check outranks sleep")]
+#[test_case(Some(ResetKind::PowerLoss), read(0, 0), read(0, 0), KernelTail::Quiet {}, Some(SleepMode::Suspend) => EndClass::PowerLoss; "sleep does not explain a power loss")]
+#[test_case(None, read(0, 0), read(0, 0), KernelTail::Quiet {}, Some(SleepMode::Suspend) => EndClass::Unknown; "sleep does not explain an unknown reset")]
+fn a_watchdog_reset_at_sleep_entry_is_sleep_related(
+    kind: Option<ResetKind>,
+    crashed: MceCount,
+    successor: MceCount,
+    tail: KernelTail,
+    asleep: Option<SleepMode>,
+) -> EndClass {
+    let mut end = end_of(A, kind, crashed, successor, tail);
+    end.evidence.asleep = asleep;
+    end.class()
+}
+
+#[test]
+fn a_record_without_sleep_evidence_decodes_as_not_asleep() {
+    let json = serde_json::json!({
+        "boot": A,
+        "offsets": {"0": -10, "1": -5},
+        "reset_reason": {"kind": "watchdog", "raw": [], "supported": true},
+        "evidence": {
+            "crashed_mces": {"kind": "unknown"},
+            "successor_mces": {"kind": "unknown"},
+            "tail": {"kind": "quiet"},
+        },
+    });
+    let end: DayUncleanEnd = serde_json::from_value(json).unwrap();
+    assert_eq!(end.evidence.asleep, None);
+    assert_eq!(end.class(), EndClass::Watchdog);
 }
 
 fn unclean(seq: u64, boot: &str) -> Event {

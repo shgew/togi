@@ -3479,6 +3479,7 @@ mod the_day_question {
                     }],
                     logging_continued: true,
                 },
+                asleep: None,
             },
         }
     }
@@ -3540,6 +3541,7 @@ mod the_day_question_on_screen {
                     }],
                     logging_continued: true,
                 },
+                asleep: None,
             },
         };
         std::iter::once(Payload::from(end))

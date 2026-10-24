@@ -156,7 +156,16 @@ services.togi = {
 
 The `togi-day.service` unit is absent from the tuning specialisation. Enabling it keeps journald persistent with a five-second sync interval. Before a manual `run` or `reset` in a normal boot, use `systemctl stop togi-day.service`; start it again with `systemctl start togi-day.service` afterward. Inspect service diagnostics with `journalctl -u togi-day.service`. Enabling it without a session reports why it cannot start instead of creating a tuning session.
 
-The optional `services.togi.day.watchdog = true;` asks PID 1 to arm/feed a 60-second hardware watchdog in normal boots, without lockup panics. It is **off by default**; observation itself needs no watchdog and writes no offsets. Before opting in, validate the watchdog device and suspend/resume behavior on the hardware. Some systems lose devices after watchdog resets ([#315](https://github.com/shgew/togi/issues/315)); after a freeze, a full power-off rather than a warm reset avoids carrying that device state into the next boot.
+The optional `services.togi.day.watchdog = true;` asks PID 1 to arm and feed a 60-second hardware watchdog in normal boots, so a frozen machine resets itself and the next day service start records why. It is **off by default**; observation itself needs no watchdog and writes no offsets. It loads `sp5100_tco`, the AMD chipset watchdog driver, so it fits machines whose watchdog is that device. Add it next to `day.enable`:
+
+```nix
+services.togi = {
+  day.enable = true;
+  day.watchdog = true;
+};
+```
+
+A hardware watchdog may keep counting while the machine sleeps, so the option also adds `togi-day-watchdog-sleep.service`: before every suspend or hibernation it stops PID 1's watchdog, and after resume it starts it again. It works through systemd's sleep target, so a sleep started any other way (writing to `/sys/power/state` directly) does not stop the watchdog. The unit cannot stop a watchdog the kernel was told never to stop (`CONFIG_WATCHDOG_NOWAYOUT` or the driver's `nowayout` parameter). [Day watchdog](spec/runtime.md#day-watchdog) says what each sleep mode does. After rebuilding, `togi status` shows in its Day section whether the watchdog was armed when the day service last started, and `cat /sys/class/watchdog/watchdog0/state` says `active` while it is armed. Suspend the machine for longer than a minute in each sleep mode it offers (`cat /sys/power/mem_sleep`) and check that it resumes without a reset before relying on it. A watchdog reset that ended at a suspend or hibernation entry shows in the day question as a watchdog reset while the machine was going to sleep, not as a CPU hang.
 
 ## 4. Overnight: the tuning boot
 

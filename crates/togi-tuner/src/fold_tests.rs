@@ -1119,6 +1119,7 @@ fn day_events() -> Vec<Payload> {
             build: crate::testkit::build(),
             bios: BiosContext::default(),
             offsets: PerCore::default(),
+            watchdog: None,
         }
         .into(),
         DayCheckpoint { applied_secs: 60 }.into(),

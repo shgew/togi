@@ -102,6 +102,33 @@ pub struct Check {
     pub ok: bool,
 }
 
+object_only! {
+    /// Whether PID 1's hardware watchdog is armed: the kernel reports a hardware watchdog active and PID 1 holds
+    /// its device, so a frozen machine resets. `detail` names the device, or what is missing.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum WatchdogState {
+        Armed { detail: String },
+        Unarmed { detail: String },
+    }
+}
+
+impl WatchdogState {
+    /// Whether a hang would reset the machine.
+    pub const fn is_armed(&self) -> bool {
+        match self {
+            Self::Armed { .. } => true,
+            Self::Unarmed { .. } => false,
+        }
+    }
+
+    pub fn detail(&self) -> &str {
+        match self {
+            Self::Armed { detail } | Self::Unarmed { detail } => detail,
+        }
+    }
+}
+
 /// One trial to run. `roles` gives every loaded logical CPU its workload, instance and schedule; build them with
 /// [`TrialRole::legacy`], [`TrialRole::neighbours`] or [`TrialRole::all_threads`] and `cores` and `cpus` list
 /// what they load, in role order ([`TrialSpec::check_roles`]). For R8 and R9 `workload` names the class, whose

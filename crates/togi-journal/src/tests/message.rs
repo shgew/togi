@@ -439,7 +439,7 @@ fn units_appear_in_text() {
 
 #[test_case(
     EventKind::DayBootStart,
-    "day observer started by togi 0.1.0+abc1234: BIOS F31 on X570, 5950X, microcode 0xa201016, boost limit 5000 MHz; offsets [00: 0, 01: -5]"
+    "day observer started by togi 0.1.0+abc1234: BIOS F31 on X570, 5950X, microcode 0xa201016, boost limit 5000 MHz; offsets [00: 0, 01: -5]; hardware watchdog armed: watchdog0 (SP5100 TCO timer) active, held by PID 1"
 )]
 #[test_case(
     EventKind::DayCheckpoint,

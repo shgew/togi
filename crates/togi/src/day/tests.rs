@@ -67,6 +67,13 @@ fn journal_on(fs: Arc<MemFs>) -> Journal {
 struct Reading {
     offsets: VecDeque<PerCore<ObservedOffset>>,
     reason: Option<ResetKind>,
+    watchdog: WatchdogState,
+}
+
+fn armed() -> WatchdogState {
+    WatchdogState::Armed {
+        detail: "watchdog0 (SP5100 TCO timer) active, held by PID 1".into(),
+    }
 }
 
 impl Reading {
@@ -74,6 +81,7 @@ impl Reading {
         Self {
             offsets: [offsets(-10)].into(),
             reason: None,
+            watchdog: armed(),
         }
     }
 }
@@ -101,6 +109,9 @@ impl Observer for Reading {
     fn end_evidence(&mut self, _: &BootId) -> togi_machine::EndEvidence {
         togi_machine::EndEvidence::unknown()
     }
+    fn watchdog(&mut self) -> WatchdogState {
+        self.watchdog.clone()
+    }
 }
 
 /// Reads like `reading` until `reads` readings succeeded, then fails every read.
@@ -125,6 +136,9 @@ impl Observer for FailingAfter {
     }
     fn end_evidence(&mut self, boot: &BootId) -> togi_machine::EndEvidence {
         self.reading.end_evidence(boot)
+    }
+    fn watchdog(&mut self) -> WatchdogState {
+        self.reading.watchdog()
     }
 }
 
@@ -315,6 +329,7 @@ fn next_boot_records_unclean_end_without_classifying_it(reason: Option<ResetKind
                 build: current_build(),
                 bios: bios(),
                 offsets: offsets(-10),
+                watchdog: None,
             }
             .into(),
             &[],
@@ -423,6 +438,7 @@ fn changed_readback_records_change_before_checkpoint_and_excludes_ambiguous_prof
     let mut reading = Reading {
         offsets: [offsets(-10), offsets(-5)].into(),
         reason: None,
+        watchdog: armed(),
     };
     observe(
         &mut journal,
@@ -440,4 +456,32 @@ fn changed_readback_records_change_before_checkpoint_and_excludes_ambiguous_prof
     let ledger = Ledger::of(events);
     assert_eq!(ledger.boots.values().next().unwrap().seconds, 120);
     assert!(ledger.profiles.is_empty());
+}
+
+#[test_case(armed() ; "armed")]
+#[test_case(WatchdogState::Unarmed { detail: "watchdog0 state \"inactive\", want active".into() } ; "unarmed")]
+fn the_observer_records_whether_pid_1_s_watchdog_is_armed_as_it_starts(state: WatchdogState) {
+    let mut journal = journal();
+    let mut reading = Reading {
+        watchdog: state.clone(),
+        ..Reading::fixed()
+    };
+    observe(
+        &mut journal,
+        &mut reading,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    let start = journal
+        .events()
+        .iter()
+        .find_map(|event| match &event.payload {
+            Payload::DayBootStart(start) => Some(start.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(start.watchdog, Some(state.clone()));
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(state));
 }

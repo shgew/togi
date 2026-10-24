@@ -64,6 +64,7 @@ fn evidence_round_trips_through_json() {
             faults: vec![RING, KernelFault::NvidiaXid { code: 13 }],
             logging_continued: true,
         },
+        asleep: None,
     };
     let json = serde_json::to_value(&evidence).unwrap();
     assert_eq!(

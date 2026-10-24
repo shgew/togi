@@ -5,7 +5,8 @@ use jiff::Timestamp;
 use togi_machine::{
     BankType, BiosContext, BootId, CcdId, Condition, CoreId, CoreInfo, CoreSet, CpuId, EndEvidence,
     GraphicsDriver, KernelCursor, KernelFault, KernelTail, LoadSchedule, MceCount, ObservedOffset,
-    PerCore, PstoreRecord, Regime, ResetKind, ResetReason, Signal, TargetOffset, WorkloadId,
+    PerCore, PstoreRecord, Regime, ResetKind, ResetReason, Signal, TargetOffset, WatchdogState,
+    WorkloadId,
 };
 
 use crate::*;
@@ -653,6 +654,9 @@ pub(crate) fn samples() -> Vec<Payload> {
             build: build(),
             bios: bios(),
             offsets: day_offsets(0),
+            watchdog: Some(WatchdogState::Armed {
+                detail: "watchdog0 (SP5100 TCO timer) active, held by PID 1".into(),
+            }),
         }
         .into(),
         DayCheckpoint { applied_secs: 3600 }.into(),
@@ -682,6 +686,7 @@ pub(crate) fn samples() -> Vec<Payload> {
                     }],
                     logging_continued: true,
                 },
+                asleep: None,
             },
         }
         .into(),

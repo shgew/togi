@@ -120,6 +120,25 @@ impl MceCount {
     }
 }
 
+/// The kind of sleep a boot's kernel log shows it entering last.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SleepMode {
+    /// Suspend to idle or to RAM.
+    Suspend,
+    Hibernate,
+}
+
+impl SleepMode {
+    /// The kernel event the log ends at, for messages.
+    pub const fn entry_words(self) -> &'static str {
+        match self {
+            Self::Suspend => "a suspend entry",
+            Self::Hibernate => "a hibernation entry",
+        }
+    }
+}
+
 object_only! {
     /// What the kernel logs of a crashed boot and of its immediate successor say about how it ended.
     #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -130,6 +149,10 @@ object_only! {
         /// Machine checks in the immediate successor's log, which carries those the crash prevented logging.
         pub successor_mces: MceCount,
         pub tail: KernelTail,
+        /// The sleep the crashed boot's log ends in: its last suspend or hibernation entry has no exit after
+        /// it. Absent when the log shows no such entry, could not be read, or an earlier record predates it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub asleep: Option<SleepMode>,
     }
 }
 
@@ -140,6 +163,7 @@ impl EndEvidence {
             crashed_mces: MceCount::Unknown {},
             successor_mces: MceCount::Unknown {},
             tail: KernelTail::Missing {},
+            asleep: None,
         }
     }
 

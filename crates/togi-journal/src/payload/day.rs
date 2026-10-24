@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use togi_machine::object_only;
 use togi_machine::{
     BiosContext, BootId, EndEvidence, KernelFault, KernelTail, ObservedOffset, PerCore, ResetKind,
-    ResetReason,
+    ResetReason, WatchdogState,
 };
 
 use crate::{Build, Event, Seq};
@@ -18,6 +18,10 @@ object_only! {
         pub bios: BiosContext,
         /// The offsets read back as the observer started.
         pub offsets: PerCore<ObservedOffset>,
+        /// Whether PID 1's hardware watchdog was armed as the observer started. Absent in a record written
+        /// before the observer checked, which reads as unknown.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub watchdog: Option<WatchdogState>,
     }
 }
 
@@ -77,6 +81,9 @@ pub enum EndClass {
     Thermal,
     /// An uncorrected machine check, a sync flood or a CPU shutdown: the CPU reported a fault.
     CpuFault,
+    /// The hardware watchdog expired while the crashed boot's log ended at a suspend or hibernation entry: the
+    /// machine was going to sleep, which is not a CPU hang.
+    Sleep,
     /// A graphics driver reported a reset or timeout and the kernel log went on after it: the machine kept
     /// running while graphics died.
     GraphicsSurvived,
@@ -116,6 +123,9 @@ impl DayUncleanEnd {
             .contains(&KernelFault::MachineCheck {});
         if by_reset == EndClass::CpuFault || self.evidence.has_uncorrected_mce() || machine_check {
             return EndClass::CpuFault;
+        }
+        if by_reset == EndClass::Watchdog && self.evidence.asleep.is_some() {
+            return EndClass::Sleep;
         }
         match &self.evidence.tail {
             KernelTail::Faults {

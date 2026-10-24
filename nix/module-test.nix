@@ -232,6 +232,19 @@ assert !(builtins.elem "sp5100_tco" day.boot.initrd.kernelModules);
 assert lockupPanics watched == [ ];
 assert lockupPanics day == [ ];
 assert watchedTuning.systemd.settings.Manager.RuntimeWatchdogSec == "30s";
+# Around sleep the watchdog is stopped and restarted through the manager's RuntimeWatchdogUSec property: 0 disarms
+# it, infinity restores the configured 60s. Without the option, and in the tuning boot, there is no such unit.
+assert watched.systemd.services.togi-day-watchdog-sleep.wantedBy == [ "sleep.target" ];
+assert watched.systemd.services.togi-day-watchdog-sleep.before == [ "sleep.target" ];
+assert watched.systemd.services.togi-day-watchdog-sleep.unitConfig.StopWhenUnneeded;
+assert lib.hasSuffix "RuntimeWatchdogUSec t 0" (
+  builtins.unsafeDiscardStringContext watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStart
+);
+assert lib.hasSuffix "RuntimeWatchdogUSec t 18446744073709551615" (
+  builtins.unsafeDiscardStringContext watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStop
+);
+assert !(day.systemd.services ? togi-day-watchdog-sleep);
+assert !(watchedTuning.systemd.services ? togi-day-watchdog-sleep);
 assert lib.hasInfix ''[ "''${MONITOR_SERVICE_RESULT:-}" = start-limit-hit ] || exit 0''
   restartLimitScript;
 assert lib.hasInfix
