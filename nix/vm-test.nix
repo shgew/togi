@@ -542,6 +542,9 @@ in
           if [ "$1" = restart-limit ]; then
             exit 2
           fi
+          if [ "$1" = night-guard ]; then
+            exit 0
+          fi
           if [ "$1" = emergency-stop ]; then
             echo "stub emergency-stop"
             exit 0

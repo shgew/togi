@@ -264,6 +264,7 @@ assert lib.hasInfix
 # The guard runs before the tuner in every tuning boot, and the tuner requires it.
 assert nightGuard.serviceConfig.ExecStart == "${lib.getExe package} night-guard";
 assert nightGuard.serviceConfig.Type == "oneshot";
+assert nightGuard.serviceConfig.RemainAfterExit;
 assert builtins.elem "togi.service" nightGuard.before;
 assert nightGuard.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";
 assert builtins.elem "togi-night-guard.service" togiService.requires;

@@ -228,6 +228,8 @@ in
             ];
             serviceConfig = {
               Type = "oneshot";
+              # Once per boot: a restart of the tuner finds the guard active and does not count as a boot.
+              RemainAfterExit = true;
               ExecStart = "${lib.getExe cfg.package} night-guard";
             };
           };
