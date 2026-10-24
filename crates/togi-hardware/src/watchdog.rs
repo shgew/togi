@@ -55,6 +55,25 @@ impl Ready {
     }
 }
 
+/// Every watchdog device the sysfs probe validated as active hardware, in name order; never empty.
+pub(crate) struct Active {
+    pub(crate) first: Ready,
+    pub(crate) rest: Vec<Ready>,
+}
+
+impl Active {
+    fn devices(&self) -> impl Iterator<Item = &Ready> {
+        std::iter::once(&self.first).chain(&self.rest)
+    }
+
+    fn detail(&self) -> String {
+        self.devices()
+            .map(Ready::detail)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
 fn devices(class: &Path) -> io::Result<impl Iterator<Item = io::Result<OsString>> + use<>> {
     Ok(std::fs::read_dir(class)?.map(|entry| entry.map(|entry| entry.file_name())))
 }
@@ -114,13 +133,13 @@ where
     I: IntoIterator<Item = io::Result<OsString>>,
 {
     match scan_with(root, list, read_attribute) {
-        Ok(ready) => passed(CheckName::Watchdog, ready.detail()),
+        Ok(active) => passed(CheckName::Watchdog, active.first.detail()),
         Err(check) => check,
     }
 }
 
-/// The first active hardware watchdog under `root`, or the failed check saying why there is none.
-pub(crate) fn scan(root: &Path) -> Result<Ready, Check> {
+/// Every active hardware watchdog under `root`, or the failed check saying why there is none.
+pub(crate) fn scan(root: &Path) -> Result<Active, Check> {
     scan_with(root, devices, read_attribute)
 }
 
@@ -128,7 +147,7 @@ fn scan_with<I>(
     root: &Path,
     list: impl Fn(&Path) -> io::Result<I>,
     read_attribute: impl Fn(&Path) -> io::Result<String>,
-) -> Result<Ready, Check>
+) -> Result<Active, Check>
 where
     I: IntoIterator<Item = io::Result<OsString>>,
 {
@@ -160,12 +179,20 @@ where
     }
     devices.sort();
     let mut refusals = Vec::new();
+    let mut ready = Vec::new();
     for (name, dir) in &devices {
         match examine(name, dir, &read_attribute) {
-            Ok(Some(ready)) => return Ok(ready),
+            Ok(Some(device)) => ready.push(device),
             Ok(None) => {}
             Err(refusal) => refusals.push(error_chain(&refusal)),
         }
+    }
+    let mut ready = ready.into_iter();
+    if let Some(first) = ready.next() {
+        return Ok(Active {
+            first,
+            rest: ready.collect(),
+        });
     }
     if refusals.is_empty() {
         return Err(failed(
@@ -189,33 +216,52 @@ pub(crate) fn pid1_descriptors(root: &Path) -> io::Result<Vec<PathBuf>> {
 }
 
 /// Whether PID 1's hardware watchdog is armed under `root`: a hardware watchdog is active (`scan`) and PID 1
-/// holds that same device, which is what feeds it. Observes only what the kernel reports.
+/// holds one of the active devices, which is what feeds it. Observes only what the kernel reports.
 pub(crate) fn arming(root: &Path) -> WatchdogState {
     arming_with(&scan(root), pid1_descriptors(root))
 }
 
 pub(crate) fn arming_with(
-    active: &Result<Ready, Check>,
+    active: &Result<Active, Check>,
     pid1_descriptors: io::Result<Vec<PathBuf>>,
 ) -> WatchdogState {
-    let ready = match active {
-        Ok(ready) => ready,
+    let active = match active {
+        Ok(active) => active,
         Err(check) => {
             return WatchdogState::Unarmed {
                 detail: check.detail.clone(),
             };
         }
     };
-    let detail = ready.detail();
-    match pid1_descriptors {
-        Err(error) => WatchdogState::Unarmed {
-            detail: format!("{detail}; {}", error_chain(&Refusal::ReadPid1(error))),
+    let held = match pid1_descriptors {
+        Ok(held) => held,
+        Err(error) => {
+            return WatchdogState::Unarmed {
+                detail: format!(
+                    "{}; {}",
+                    active.detail(),
+                    error_chain(&Refusal::ReadPid1(error))
+                ),
+            };
+        }
+    };
+    match active
+        .devices()
+        .find(|device| held.iter().any(|path| device.is_node(path)))
+    {
+        Some(device) => WatchdogState::Armed {
+            detail: format!("{}, held by PID 1", device.detail()),
         },
-        Ok(held) if held.iter().any(|path| ready.is_node(path)) => WatchdogState::Armed {
-            detail: format!("{detail}, held by PID 1"),
-        },
-        Ok(_) => WatchdogState::Unarmed {
-            detail: format!("{detail}, but PID 1 does not hold /dev/{}", ready.name),
+        None => WatchdogState::Unarmed {
+            detail: format!(
+                "{}, but PID 1 does not hold {}",
+                active.detail(),
+                active
+                    .devices()
+                    .map(|device| format!("/dev/{}", device.name))
+                    .collect::<Vec<_>>()
+                    .join(" or ")
+            ),
         },
     }
 }

@@ -4,7 +4,7 @@ use test_case::test_case;
 use togi_machine::{Check, WatchdogState};
 
 use super::support::Tree;
-use crate::watchdog::{Ready, arming_with};
+use crate::watchdog::{Active, Ready, arming_with};
 
 fn device(root: &Tree, index: usize, state: &str, identity: Option<&str>) {
     let dir = format!("sys/class/watchdog/watchdog{index}");
@@ -198,11 +198,52 @@ fn unarmed(detail: &str) -> WatchdogState {
     }
 }
 
-fn active(name: &str, identity: &str) -> Ready {
+fn ready_device(name: &str, identity: &str) -> Ready {
     Ready {
         name: name.to_owned(),
         identity: identity.to_owned(),
     }
+}
+
+fn active(name: &str, identity: &str) -> Active {
+    Active {
+        first: ready_device(name, identity),
+        rest: Vec::new(),
+    }
+}
+
+fn two_active() -> Active {
+    Active {
+        first: ready_device("watchdog0", "SP5100 TCO timer"),
+        rest: vec![ready_device("watchdog1", "i6300ESB timer")],
+    }
+}
+
+#[test_case(&["/dev/watchdog1"]; "the second device")]
+#[test_case(&["/dev/watchdog0", "/dev/watchdog1"]; "both devices")]
+fn pid_1_holding_any_active_hardware_watchdog_arms_it(descriptors: &[&str]) {
+    assert!(arming_with(&Ok(two_active()), Ok(held(descriptors))).is_armed());
+}
+
+#[test]
+fn the_armed_detail_names_the_device_pid_1_holds() {
+    assert_eq!(
+        arming_with(&Ok(two_active()), Ok(held(&["/dev/watchdog1"]))),
+        armed("watchdog1 (i6300ESB timer) active, held by PID 1")
+    );
+}
+
+#[test]
+fn pid_1_holding_neither_of_two_active_watchdogs_is_not_armed() {
+    assert_eq!(
+        arming_with(
+            &Ok(two_active()),
+            Ok(held(&["/dev/null", "/dev/watchdog2"]))
+        ),
+        unarmed(
+            "watchdog0 (SP5100 TCO timer) active, watchdog1 (i6300ESB timer) active, but PID 1 does not hold /dev/watchdog0 or /dev/watchdog1"
+        )
+    );
 }
 
 #[test_case("/dev/watchdog0"; "a numbered device")]
