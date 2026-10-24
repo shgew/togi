@@ -8,6 +8,24 @@ pub(crate) struct Fake {
     state: Arc<Mutex<State>>,
 }
 
+/// When a successful write reaches the value a read shows, as the cpufreq core applies a limit
+/// from a work item after the write returned.
+#[derive(Clone, Copy)]
+pub(crate) enum Apply {
+    Immediately,
+    /// The write shows after this many reads of the policy have still shown the old value.
+    AfterReads(u32),
+    Never,
+}
+
+/// A written limit the policy has not applied yet; `reads` is how many more reads show the old
+/// value, or `None` when it is never applied.
+struct Held {
+    id: FrequencyPolicyId,
+    khz: u32,
+    reads: Option<u32>,
+}
+
 struct State {
     boot: BootId,
     policies: Vec<FrequencyPolicy>,
@@ -15,6 +33,8 @@ struct State {
     refuse_write: bool,
     wrong_readback: bool,
     fail_discovery: bool,
+    apply: Apply,
+    held: Vec<Held>,
     before_write: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
@@ -28,6 +48,8 @@ impl Fake {
                 refuse_write: false,
                 wrong_readback: false,
                 fail_discovery: false,
+                apply: Apply::Immediately,
+                held: Vec::new(),
                 before_write: None,
             })),
         }
@@ -53,6 +75,11 @@ impl Fake {
         self.state().fail_discovery = true;
     }
 
+    /// Applies every later write as `apply` says; a write already held keeps its own delay.
+    pub(crate) fn apply(&self, apply: Apply) {
+        self.state().apply = apply;
+    }
+
     pub(crate) fn before_write(&self, hook: impl Fn() + Send + Sync + 'static) {
         self.state().before_write = Some(Box::new(hook));
     }
@@ -64,6 +91,16 @@ impl Fake {
     /// Replaces the discovered policies, as a hotplug or driver change between runs would.
     pub(crate) fn set_policies(&self, policies: Vec<FrequencyPolicy>) {
         self.state().policies = policies;
+    }
+
+    fn set(state: &mut State, id: FrequencyPolicyId, khz: u32) -> io::Result<()> {
+        state
+            .policies
+            .iter_mut()
+            .find(|policy| policy.id == id)
+            .ok_or_else(|| io::Error::other("policy missing"))?
+            .scaling_max_khz = khz;
+        Ok(())
     }
 }
 
@@ -81,7 +118,17 @@ impl CpuFrequency for Fake {
     }
 
     fn scaling_max_khz(&self, id: FrequencyPolicyId) -> io::Result<u32> {
-        let state = self.state();
+        let mut state = self.state();
+        if let Some(index) = state.held.iter().position(|held| held.id == id)
+            && let Some(reads) = state.held[index].reads
+        {
+            if reads == 0 {
+                let held = state.held.remove(index);
+                Self::set(&mut state, held.id, held.khz)?;
+            } else {
+                state.held[index].reads = Some(reads - 1);
+            }
+        }
         let policy = state
             .policies
             .iter()
@@ -106,12 +153,16 @@ impl CpuFrequency for Fake {
                 "policy write refused",
             ));
         }
-        state
-            .policies
-            .iter_mut()
-            .find(|policy| policy.id == id)
-            .ok_or_else(|| io::Error::other("policy missing"))?
-            .scaling_max_khz = khz;
+        state.held.retain(|held| held.id != id);
+        let reads = match state.apply {
+            Apply::Immediately => return Self::set(&mut state, id, khz),
+            Apply::AfterReads(reads) => Some(reads),
+            Apply::Never => None,
+        };
+        if !state.policies.iter().any(|policy| policy.id == id) {
+            return Err(io::Error::other("policy missing"));
+        }
+        state.held.push(Held { id, khz, reads });
         Ok(())
     }
 }

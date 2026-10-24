@@ -1,19 +1,40 @@
 //! A recoverable transaction over the controller CPUs' frequency policies.
 
+use std::fmt;
 use std::io::{self, Write as _};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use rustix::fs::{Mode, OFlags};
 use serde::{Deserialize, Serialize};
 use togi_journal::fs::Fs;
-use togi_machine::{BootId, CpuFrequency, CpuId, FrequencyPolicy, FrequencyPolicyId, object_only};
+use togi_machine::{
+    BootId, CancellationToken, CpuFrequency, CpuId, FrequencyPolicy, FrequencyPolicyId, OnCancel,
+    object_only,
+};
+use tokio::sync::Notify;
+use tokio::time::{Instant, sleep_until};
+
+use crate::sweep::until_cancelled;
 
 mod sysfs;
 pub use sysfs::Sysfs;
 
 const PENDING: &str = "controller-frequency.pending.json";
 const STAGING: &str = "controller-frequency.pending.tmp";
+
+/// How long one cap or one restore waits, in total, for its written limits to read back: the
+/// cpufreq core applies a written limit from a work item that normally runs within milliseconds,
+/// so half a second leaves ample room for a work queue delayed by load while the whole
+/// transaction, whose policies share this one deadline, stays inside the slack the start, stop
+/// and sweep bounds keep (`Timing::margin`).
+const READBACK_DEADLINE: Duration = Duration::from_millis(500);
+
+/// How long a limit that does not read back yet waits before it is read again: ten milliseconds
+/// notices the applied limit soon after the work item runs while reading a policy at most fifty
+/// times per deadline, a negligible load on sysfs.
+const READBACK_POLL: Duration = Duration::from_millis(10);
 
 #[derive(Debug, thiserror::Error)]
 #[error("controller frequency limits: {operation}")]
@@ -97,20 +118,23 @@ impl Limits {
 
     /// Every worker CPU must be disjoint from every affected policy. The caller removes only
     /// explicitly excluded host-core CPUs from `workers`, never an entire CCD or policy.
-    pub(crate) fn cap(
+    pub(crate) async fn cap(
         &self,
         controller: &[CpuId],
         workers: &[CpuId],
+        cancel: &CancellationToken,
         report: &mut Vec<String>,
     ) -> Result<(), Error> {
-        self.apply(controller, workers, report)
+        self.apply(controller, workers, cancel, report)
+            .await
             .map_err(|source| Error::new("save and apply the cap", source))
     }
 
-    fn apply(
+    async fn apply(
         &self,
         controller: &[CpuId],
         workers: &[CpuId],
+        cancel: &CancellationToken,
         report: &mut Vec<String>,
     ) -> io::Result<()> {
         if self.load()?.is_some() {
@@ -163,6 +187,7 @@ impl Limits {
         // Publish all originals durably before the first hardware write. Even a failing write
         // may have taken effect, so every intended policy remains recoverable until read back.
         self.save(&pending)?;
+        let wait = ReadbackWait::begin(cancel);
         for index in 0..pending.policies.len() {
             let saved = &pending.policies[index];
             report.push(format!(
@@ -171,16 +196,16 @@ impl Limits {
             ));
             self.machine
                 .set_scaling_max_khz(saved.policy, saved.cap_khz)?;
-            let observed = self.machine.scaling_max_khz(saved.policy)?;
+            let readback = self.read_back(&wait, saved.policy, saved.cap_khz).await?;
             report.push(format!(
                 "controller frequency cap readback: policy{} {} kHz (requested {} kHz)",
                 saved.policy.get(),
-                observed,
+                readback.last(saved.cap_khz),
                 saved.cap_khz
             ));
-            if observed != saved.cap_khz {
+            if let Readback::Unconfirmed { last, ended } = readback {
                 return Err(invalid(format!(
-                    "policy{} cap readback {observed} kHz differs from {} kHz",
+                    "policy{} cap readback {last} kHz differs from {} kHz {ended}",
                     saved.policy.get(),
                     saved.cap_khz
                 )));
@@ -193,12 +218,19 @@ impl Limits {
 
     /// Call only after teardown or sweep proved no workload remains. A previous boot's policy
     /// values are obsolete, and are discarded without touching the current boot's policies.
-    pub(crate) fn restore(&self, report: &mut Vec<String>) -> Result<(), Error> {
-        self.recover(report)
+    /// Cancellation ends a readback wait early, leaving that policy unconfirmed; every saved
+    /// policy is still written and read.
+    pub(crate) async fn restore(
+        &self,
+        cancel: &CancellationToken,
+        report: &mut Vec<String>,
+    ) -> Result<(), Error> {
+        self.recover(cancel, report)
+            .await
             .map_err(|source| Error::new("restore saved limits", source))
     }
 
-    fn recover(&self, report: &mut Vec<String>) -> io::Result<()> {
+    async fn recover(&self, cancel: &CancellationToken, report: &mut Vec<String>) -> io::Result<()> {
         let Some(mut pending) = self.load()? else {
             return Ok(());
         };
@@ -209,16 +241,21 @@ impl Limits {
         let policies = self.machine.policies()?;
         let total = pending.policies.len();
         let mut unrestored: Option<Unrestored> = None;
+        let wait = ReadbackWait::begin(cancel);
         for index in 0..total {
             let policy = pending.policies[index].policy;
             // A policy restored in hardware whose Restored state fails to persist is restored
             // again by the next recovery; the later policies are attempted regardless.
-            let result = self
-                .restore_saved(&pending.policies[index], &policies, report)
-                .and_then(|()| {
+            let result = match self
+                .restore_saved(&pending.policies[index], &policies, &wait, report)
+                .await
+            {
+                Ok(()) => {
                     pending.policies[index].state = State::Restored;
                     self.save(&pending)
-                });
+                }
+                Err(error) => Err(error),
+            };
             let Err(error) = result else {
                 continue;
             };
@@ -250,10 +287,11 @@ impl Limits {
     }
 
     /// Writes nothing to a policy that is missing or whose CPUs changed since the intent.
-    fn restore_saved(
+    async fn restore_saved(
         &self,
         saved: &Saved,
         policies: &[FrequencyPolicy],
+        wait: &ReadbackWait<'_>,
         report: &mut Vec<String>,
     ) -> io::Result<()> {
         let phase = match saved.state {
@@ -289,19 +327,52 @@ impl Limits {
         ));
         self.machine
             .set_scaling_max_khz(saved.policy, saved.original_khz)?;
-        let observed = self.machine.scaling_max_khz(saved.policy)?;
+        let readback = self
+            .read_back(wait, saved.policy, saved.original_khz)
+            .await?;
         report.push(format!(
             "controller frequency restore readback: policy{} {} kHz (saved {} kHz)",
             saved.policy.get(),
-            observed,
+            readback.last(saved.original_khz),
             saved.original_khz
         ));
-        if observed != saved.original_khz {
-            return Err(invalid(
-                "restored frequency readback differs from the saved limit",
-            ));
+        if let Readback::Unconfirmed { ended, .. } = readback {
+            return Err(invalid(format!(
+                "restored frequency readback differs from the saved limit {ended}"
+            )));
         }
         Ok(())
+    }
+
+    /// Reads `policy` until it shows `written`, the transaction's deadline passes or
+    /// cancellation ends the wait. The cpufreq core applies a written limit asynchronously, so
+    /// the first read can still show the previous one.
+    async fn read_back(
+        &self,
+        wait: &ReadbackWait<'_>,
+        policy: FrequencyPolicyId,
+        written: u32,
+    ) -> io::Result<Readback> {
+        loop {
+            let last = self.machine.scaling_max_khz(policy)?;
+            if last == written {
+                return Ok(Readback::Matched);
+            }
+            let now = Instant::now();
+            if now >= wait.deadline {
+                return Ok(Readback::Unconfirmed {
+                    last,
+                    ended: Ended::Deadline,
+                });
+            }
+            tokio::select! {
+                biased;
+                () = until_cancelled(wait.cancel, &wait.woken) => {
+                    return Ok(Readback::Unconfirmed { last, ended: Ended::Cancelled });
+                }
+                () = sleep_until((now + READBACK_POLL).min(wait.deadline)) => {}
+            }
+        }
     }
 
     fn load(&self) -> io::Result<Option<Pending>> {
@@ -373,6 +444,66 @@ impl Limits {
                 fs.remove_file(&path)?;
                 fs.sync_dir(&self.dir)
             }
+        }
+    }
+}
+
+/// The one readback deadline of a cap or a restore, and the cancellation that can end its waits
+/// sooner.
+struct ReadbackWait<'a> {
+    deadline: Instant,
+    cancel: &'a CancellationToken,
+    woken: Arc<Notify>,
+    _registration: OnCancel,
+}
+
+impl<'a> ReadbackWait<'a> {
+    fn begin(cancel: &'a CancellationToken) -> Self {
+        let woken = Arc::new(Notify::new());
+        let registration = {
+            let woken = Arc::clone(&woken);
+            cancel.on_cancel(move || woken.notify_one())
+        };
+        Self {
+            deadline: Instant::now() + READBACK_DEADLINE,
+            cancel,
+            woken,
+            _registration: registration,
+        }
+    }
+}
+
+enum Readback {
+    Matched,
+    /// The limit never read back as written; `last` is what the final read showed.
+    Unconfirmed { last: u32, ended: Ended },
+}
+
+impl Readback {
+    /// What the final read showed, given the limit that was written.
+    fn last(&self, written: u32) -> u32 {
+        match self {
+            Self::Matched => written,
+            Self::Unconfirmed { last, .. } => *last,
+        }
+    }
+}
+
+/// What ended the wait for a limit that never read back as written.
+#[derive(Clone, Copy)]
+enum Ended {
+    Deadline,
+    Cancelled,
+}
+
+impl fmt::Display for Ended {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Deadline => write!(
+                formatter,
+                "when the {READBACK_DEADLINE:?} readback deadline passed"
+            ),
+            Self::Cancelled => formatter.write_str("when cancellation ended the wait"),
         }
     }
 }
