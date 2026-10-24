@@ -1,5 +1,5 @@
 use test_case::test_case;
-use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal};
+use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal, SleepMode};
 
 use super::fixtures::{
     core, failure, member, ord, profile, sample, samples, seq, set, target, trial,
@@ -460,6 +460,23 @@ fn units_appear_in_text() {
 )]
 fn day_messages_tell_a_stranger_what_the_observer_saw(kind: EventKind, text: &str) {
     assert_eq!(message(kind), text);
+}
+
+#[test_case(
+    SleepMode::Suspend,
+    "; kernel log tail: amdgpu timeout; logging continued after the last error; the log ended at a suspend entry"
+)]
+#[test_case(
+    SleepMode::Hibernate,
+    "; kernel log tail: amdgpu timeout; logging continued after the last error; the log ended at a hibernation entry"
+)]
+fn an_unclean_end_that_ended_asleep_says_which_sleep(asleep: SleepMode, suffix: &str) {
+    let Payload::DayUncleanEnd(mut end) = sample(EventKind::DayUncleanEnd) else {
+        unreachable!()
+    };
+    end.evidence.asleep = Some(asleep);
+    let text = Payload::from(end).message();
+    assert!(text.ends_with(suffix), "{text}");
 }
 
 fn hunt_end(result: HuntOutcome, cores: &[u8], groups: u32, reason: &str) -> String {
