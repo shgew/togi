@@ -1,8 +1,12 @@
+use std::collections::BTreeMap;
+
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use togi_machine::object_only;
 use togi_machine::{
-    BankType, BiosContext, BootId, CoreId, CpuId, EndEvidence, KernelErrorKind, KernelFault,
-    KernelTail, ObservedOffset, PerCore, ProcessFaultKind, ResetKind, ResetReason,
+    BankType, BiosContext, BootId, CoreId, CpuId, EndEvidence, InvalidTarget, KernelErrorKind,
+    KernelFault, KernelTail, ObservedOffset, PerCore, ProcessFaultKind, ResetKind, ResetReason,
+    TargetOffset,
 };
 
 use crate::{Build, Event, Seq};
@@ -406,5 +410,231 @@ impl DayQuestions {
     pub fn answer(&self, boot: &BootId) -> Option<&DayAnswer> {
         self.find(boot)
             .and_then(|question| question.answer.as_ref())
+    }
+}
+
+object_only! {
+    /// Where the offsets of a recorded crash came from, and when: `Entered`, the user entered them in firmware
+    /// setup at `at`; `ReadBack`, a day observer read them back from the CPU at `at`, its last reading of the
+    /// crashed boot.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum OffsetSource {
+        Entered { at: Timestamp },
+        ReadBack { at: Timestamp },
+    }
+}
+
+object_only! {
+    /// Which boot a recorded crash ended: `UncleanEnd`, a boot whose `day.unclean_end` the journal holds; or
+    /// `Unobserved`, a crash the journal holds no unclean end for, such as one before the day observer ran, at
+    /// `at` as the user gives it.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum CrashedBoot {
+        UncleanEnd { boot: BootId },
+        Unobserved { at: Timestamp },
+    }
+}
+
+/// What was running when a recorded crash happened, as a short category.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Running {
+    /// Nothing in particular: the machine sat idle.
+    Idle,
+    /// Desktop start, browsing, editing and other light interactive use.
+    Desktop,
+    /// Compiling, building or running tests.
+    Build,
+    /// A game or another graphics load.
+    Game,
+    /// Something the other categories do not name; the note says what.
+    Other,
+    /// The user does not know.
+    Unknown,
+}
+
+impl Running {
+    pub const ALL: [Self; 6] = [
+        Self::Idle,
+        Self::Desktop,
+        Self::Build,
+        Self::Game,
+        Self::Other,
+        Self::Unknown,
+    ];
+
+    /// The category as the journal and the command line name it.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Desktop => "desktop",
+            Self::Build => "build",
+            Self::Game => "game",
+            Self::Other => "other",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// What the category says, as a phrase.
+    pub const fn meaning(self) -> &'static str {
+        match self {
+            Self::Idle => "the machine was idle",
+            Self::Desktop => "desktop or other light interactive use",
+            Self::Build => "builds or tests",
+            Self::Game => "a game or another graphics load",
+            Self::Other => "something else",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Why a set of offsets cannot be a crash record's.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum OffsetsError {
+    #[error("a crash record must name the offsets that crashed")]
+    Empty,
+    #[error("core {core:02}")]
+    OutOfRange {
+        core: CoreId,
+        #[source]
+        source: InvalidTarget,
+    },
+}
+
+/// The offsets of a recorded crash: at least one core, each within the range togi applies.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(try_from = "PerCore<ObservedOffset>", into = "PerCore<ObservedOffset>")]
+pub struct RecordedOffsets(PerCore<ObservedOffset>);
+
+impl RecordedOffsets {
+    /// # Errors
+    /// Refuses offsets that name no core, and an offset outside the range togi applies.
+    pub fn new(offsets: PerCore<ObservedOffset>) -> Result<Self, OffsetsError> {
+        if offsets.is_empty() {
+            return Err(OffsetsError::Empty);
+        }
+        for (core, offset) in offsets.iter() {
+            TargetOffset::new(offset.0)
+                .map_err(|source| OffsetsError::OutOfRange { core, source })?;
+        }
+        Ok(Self(offsets))
+    }
+
+    pub const fn get(&self) -> &PerCore<ObservedOffset> {
+        &self.0
+    }
+}
+
+impl TryFrom<PerCore<ObservedOffset>> for RecordedOffsets {
+    type Error = OffsetsError;
+
+    fn try_from(offsets: PerCore<ObservedOffset>) -> Result<Self, OffsetsError> {
+        Self::new(offsets)
+    }
+}
+
+impl From<RecordedOffsets> for PerCore<ObservedOffset> {
+    fn from(offsets: RecordedOffsets) -> Self {
+        offsets.0
+    }
+}
+
+object_only! {
+    /// A crash togi did not observe, recorded with `togi day record`. The envelope's boot is the one it was
+    /// recorded in.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct DayRecord {
+        pub boot: CrashedBoot,
+        /// The offsets the crashed boot ran.
+        pub offsets: RecordedOffsets,
+        pub source: OffsetSource,
+        pub running: Running,
+        /// Free text about what was running.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub note: Option<String>,
+    }
+}
+
+impl DayRecord {
+    /// What Ruleset 13 will do with the record, in words, so the user reads it before it is appended.
+    pub fn effect(&self) -> String {
+        super::message::day_record_effect(self)
+    }
+}
+
+/// An unclean end a crash record can name.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordableEnd {
+    pub end: DayUncleanEnd,
+    /// When the observer of that boot last read its offsets back: its last `day.boot_start`,
+    /// `day.offsets_changed` or `day.checkpoint`. A checkpoint counts because the observer read the offsets
+    /// and found them unchanged.
+    pub read_back: Option<Timestamp>,
+    /// The first `day.record` that names this boot.
+    pub recorded: Option<Seq>,
+}
+
+/// The unclean ends a crash record can name, folded from the journal.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DayCrashes {
+    ends: Vec<RecordableEnd>,
+    last_read: BTreeMap<BootId, Timestamp>,
+}
+
+impl DayCrashes {
+    pub fn of(events: &[Event]) -> Self {
+        let mut crashes = Self::default();
+        for event in events {
+            crashes.apply(event);
+        }
+        crashes
+    }
+
+    /// Folds one event, in journal order. An unclean end opens one entry per boot; the first record naming it
+    /// marks it recorded.
+    pub fn apply(&mut self, event: &Event) {
+        if matches!(
+            event.payload,
+            Payload::DayBootStart(_) | Payload::DayOffsetsChanged(_) | Payload::DayCheckpoint(_)
+        ) {
+            self.last_read.insert(event.boot.clone(), event.time);
+        }
+        if let Payload::DayUncleanEnd(end) = &event.payload
+            && self.get(&end.boot).is_none()
+        {
+            self.ends.push(RecordableEnd {
+                end: end.clone(),
+                read_back: self.last_read.get(&end.boot).copied(),
+                recorded: None,
+            });
+        }
+        if let Payload::DayRecord(record) = &event.payload
+            && let CrashedBoot::UncleanEnd { boot } = &record.boot
+            && let Some(named) = self.ends.iter_mut().find(|named| named.end.boot == *boot)
+            && named.recorded.is_none()
+        {
+            named.recorded = Some(event.seq);
+        }
+    }
+
+    /// Every unclean end, in journal order.
+    pub fn ends(&self) -> &[RecordableEnd] {
+        &self.ends
+    }
+
+    /// The unclean end of `boot`.
+    pub fn get(&self, boot: &BootId) -> Option<&RecordableEnd> {
+        self.ends.iter().find(|named| named.end.boot == *boot)
+    }
+
+    /// The newest unclean end no record names yet.
+    pub fn newest_unrecorded(&self) -> Option<&RecordableEnd> {
+        self.ends
+            .iter()
+            .rev()
+            .find(|named| named.recorded.is_none())
     }
 }

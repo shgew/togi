@@ -206,6 +206,7 @@ impl<'a> Auditor<'a> {
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
             | Payload::DayFault(_)
             | Payload::DayUncleanEnd(_) => {
                 conclusion.stopped = previous;
@@ -329,6 +330,7 @@ impl<'a> Auditor<'a> {
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
             | Payload::DayFault(_)
             | Payload::DayUncleanEnd(_) => {}
         }

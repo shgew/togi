@@ -153,6 +153,7 @@ fn a_trial_id_with_controls_is_drawn_escaped() {
             | Payload::DayCleanStop(_)
             | Payload::DayUncleanEnd(_)
             | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
             | Payload::DayFault(_)
             | Payload::StateRebuilt(_) => {}
         }

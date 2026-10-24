@@ -6,7 +6,7 @@ function __togi_kinds
     set -l token (commandline -ct)
     set token (string replace -r -- '^--?[^=]*=' '' "$token")
     set -l prefix (string replace -r -- '[^,]*$' '' "$token")
-    for kind in backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.boot_start day.checkpoint day.clean_stop day.fault day.offsets_changed day.unclean_end deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning
+    for kind in backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.boot_start day.checkpoint day.clean_stop day.fault day.offsets_changed day.record day.unclean_end deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning
         echo "$prefix$kind"
     end
 end
@@ -41,7 +41,7 @@ complete -c togi -n "__fish_togi_needs_command" -l state-dir -d 'State directory
 complete -c togi -n "__fish_togi_needs_command" -s h -l help -d 'Print help'
 complete -c togi -n "__fish_togi_needs_command" -s V -l version -d 'Print version'
 complete -c togi -n "__fish_togi_needs_command" -f -a "run" -d 'Start or resume the tuning session in the foreground'
-complete -c togi -n "__fish_togi_needs_command" -f -a "day" -d 'Observe daily use, or answer what happened after an unclean end'
+complete -c togi -n "__fish_togi_needs_command" -f -a "day" -d 'Observe daily use, answer what happened after an unclean end, or record a crash togi missed'
 complete -c togi -n "__fish_togi_needs_command" -f -a "completion" -d 'Print a shell completion script'
 complete -c togi -n "__fish_togi_needs_command" -f -a "doctor" -d 'Check whether this machine is ready for a run'
 complete -c togi -n "__fish_togi_needs_command" -f -a "events" -d 'Print the journal, one readable line per event'
@@ -58,17 +58,28 @@ complete -c togi -n "__fish_togi_using_subcommand run" -l state-dir -d 'State di
 complete -c togi -n "__fish_togi_using_subcommand run" -l first-result -d 'Stop once the BIOS profile is first confirmed, after phase 1\'s passed cycle and before phase 2 moves a core'
 complete -c togi -n "__fish_togi_using_subcommand run" -l no-tui -d 'Print one line per event instead of the dashboard on a terminal'
 complete -c togi -n "__fish_togi_using_subcommand run" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify help" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify help" -s h -l help -d 'Print help (see more with \'--help\')'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify help" -f -a "answer" -d 'Answer an unclean end; a later answer replaces the previous answer'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify help" -f -a "notify" -d 'Send pending questions to this graphical session\'s notification daemon'
-complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify record help" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify record help" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify record help" -f -a "answer" -d 'Answer an unclean end; a later answer replaces the previous answer'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify record help" -f -a "notify" -d 'Send pending questions to this graphical session\'s notification daemon'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify record help" -f -a "record" -d 'Record a crash togi did not observe'
+complete -c togi -n "__fish_togi_using_subcommand day; and not __fish_seen_subcommand_from answer notify record help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from answer" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from answer" -s h -l help -d 'Print help'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from notify" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from notify" -s h -l help -d 'Print help'
+complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l boot -d 'The crashed boot: the ID of a boot with a recorded unclean end' -r
+complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l unobserved-at -d 'When a crash happened that has no recorded unclean end' -r
+complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l offset -d 'An offset the crashed boot ran: all=N, ccdI=N or coreI=N; repeat for more' -r
+complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l entered-at -d 'When the offsets given with --offset were entered in firmware setup' -r
+complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l running -d 'What was running: idle, desktop, build, game, other or unknown' -r
+complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l note -d 'Free text about what was running' -r
+complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
+complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -l yes -d 'Append without asking first at a terminal'
+complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from record" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from help" -f -a "answer" -d 'Answer an unclean end; a later answer replaces the previous answer'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from help" -f -a "notify" -d 'Send pending questions to this graphical session\'s notification daemon'
+complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from help" -f -a "record" -d 'Record a crash togi did not observe'
 complete -c togi -n "__fish_togi_using_subcommand day; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c togi -n "__fish_togi_using_subcommand completion" -l state-dir -d 'State directory' -r -f -a "(__fish_complete_directories)"
 complete -c togi -n "__fish_togi_using_subcommand completion" -s h -l help -d 'Print help (see more with \'--help\')'
@@ -101,7 +112,7 @@ complete -c togi -n "__fish_togi_using_subcommand watch" -l state-dir -d 'State 
 complete -c togi -n "__fish_togi_using_subcommand watch" -l tuning-boot -d 'Run as the unattended tuning-boot dashboard: ignore q, Q, Ctrl-C and Ctrl-D in every view and leave the quit key out of the help and footer'
 complete -c togi -n "__fish_togi_using_subcommand watch" -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run day completion doctor events reset restart-limit emergency-stop status watch help" -f -a "run" -d 'Start or resume the tuning session in the foreground'
-complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run day completion doctor events reset restart-limit emergency-stop status watch help" -f -a "day" -d 'Observe daily use, or answer what happened after an unclean end'
+complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run day completion doctor events reset restart-limit emergency-stop status watch help" -f -a "day" -d 'Observe daily use, answer what happened after an unclean end, or record a crash togi missed'
 complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run day completion doctor events reset restart-limit emergency-stop status watch help" -f -a "completion" -d 'Print a shell completion script'
 complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run day completion doctor events reset restart-limit emergency-stop status watch help" -f -a "doctor" -d 'Check whether this machine is ready for a run'
 complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run day completion doctor events reset restart-limit emergency-stop status watch help" -f -a "events" -d 'Print the journal, one readable line per event'
@@ -113,3 +124,4 @@ complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subc
 complete -c togi -n "__fish_togi_using_subcommand help; and not __fish_seen_subcommand_from run day completion doctor events reset restart-limit emergency-stop status watch help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c togi -n "__fish_togi_using_subcommand help; and __fish_seen_subcommand_from day" -f -a "answer" -d 'Answer an unclean end; a later answer replaces the previous answer'
 complete -c togi -n "__fish_togi_using_subcommand help; and __fish_seen_subcommand_from day" -f -a "notify" -d 'Send pending questions to this graphical session\'s notification daemon'
+complete -c togi -n "__fish_togi_using_subcommand help; and __fish_seen_subcommand_from day" -f -a "record" -d 'Record a crash togi did not observe'

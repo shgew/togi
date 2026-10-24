@@ -76,6 +76,20 @@ _arguments "${_arguments_options[@]}" : \
 '--help[Print help]' \
 && ret=0
 ;;
+(record)
+_arguments "${_arguments_options[@]}" : \
+'(--unobserved-at)--boot=[The crashed boot\: the ID of a boot with a recorded unclean end]:BOOT:_default' \
+'--unobserved-at=[When a crash happened that has no recorded unclean end]:TIME:_default' \
+'*--offset=[An offset the crashed boot ran\: all=N, ccdI=N or coreI=N; repeat for more]:SPEC:_default' \
+'--entered-at=[When the offsets given with --offset were entered in firmware setup]:TIME:_default' \
+'--running=[What was running\: idle, desktop, build, game, other or unknown]:CATEGORY:_default' \
+'--note=[Free text about what was running]:TEXT:_default' \
+'--state-dir=[State directory]:path:_files -/' \
+'--yes[Append without asking first at a terminal]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : \
 ":: :_togi__subcmd__day__subcmd__help_commands" \
@@ -93,6 +107,10 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (notify)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(record)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -127,7 +145,7 @@ _arguments "${_arguments_options[@]}" : \
 (events)
 _arguments "${_arguments_options[@]}" : \
 '--core=[Only events naming core N, and the outcomes of trials that load it]:N:' \
-'*--kind=[Only these comma-separated known kinds, or groups such as trial for every trial.* kind]:kinds:_sequence compadd - backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.boot_start day.checkpoint day.clean_stop day.fault day.offsets_changed day.unclean_end deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning' \
+'*--kind=[Only these comma-separated known kinds, or groups such as trial for every trial.* kind]:kinds:_sequence compadd - backend backend.retry boot boot.leave_reason boot.saved_entry checking checking.chain checking.cycle checking.step combination command command.reset config config.loaded core core.phase crash crash.detected day day.answer day.boot_start day.checkpoint day.clean_stop day.fault day.offsets_changed day.record day.unclean_end deadend deepening deepening.round defect defect.answered defect.found failure failure.carried host host.ranking hunt hunt.end hunt.group hunt.skipped hunt.start journal journal.torn mce preflight preflight.check profile profile.applied profile.change profile.restored session session.archived session.baseline session.carried session.context session.notice session.start session.warning shutdown smu smu.error smu.intent smu.readback smu.write state state.rebuilt trial trial.carried trial.end trial.intent trial.progress trial.sample trial.signal trial.start tuner tuner.decision tuner.warning' \
 '--trial=[Only events of trial ID]:ID:' \
 '--since=[Only events at or after this RFC 3339 time]:time:' \
 '--until=[Only events before this RFC 3339 time]:time:' \
@@ -215,6 +233,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(record)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
         esac
     ;;
 esac
@@ -268,7 +290,7 @@ esac
 _togi_commands() {
     local commands; commands=(
 'run:Start or resume the tuning session in the foreground' \
-'day:Observe daily use, or answer what happened after an unclean end' \
+'day:Observe daily use, answer what happened after an unclean end, or record a crash togi missed' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
@@ -291,6 +313,7 @@ _togi__subcmd__day_commands() {
     local commands; commands=(
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions to this graphical session'\''s notification daemon' \
+'record:Record a crash togi did not observe' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'togi day commands' commands "$@"
@@ -305,6 +328,7 @@ _togi__subcmd__day__subcmd__help_commands() {
     local commands; commands=(
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions to this graphical session'\''s notification daemon' \
+'record:Record a crash togi did not observe' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'togi day help commands' commands "$@"
@@ -324,10 +348,20 @@ _togi__subcmd__day__subcmd__help__subcmd__notify_commands() {
     local commands; commands=()
     _describe -t commands 'togi day help notify commands' commands "$@"
 }
+(( $+functions[_togi__subcmd__day__subcmd__help__subcmd__record_commands] )) ||
+_togi__subcmd__day__subcmd__help__subcmd__record_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day help record commands' commands "$@"
+}
 (( $+functions[_togi__subcmd__day__subcmd__notify_commands] )) ||
 _togi__subcmd__day__subcmd__notify_commands() {
     local commands; commands=()
     _describe -t commands 'togi day notify commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__day__subcmd__record_commands] )) ||
+_togi__subcmd__day__subcmd__record_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi day record commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__doctor_commands] )) ||
 _togi__subcmd__doctor_commands() {
@@ -348,7 +382,7 @@ _togi__subcmd__events_commands() {
 _togi__subcmd__help_commands() {
     local commands; commands=(
 'run:Start or resume the tuning session in the foreground' \
-'day:Observe daily use, or answer what happened after an unclean end' \
+'day:Observe daily use, answer what happened after an unclean end, or record a crash togi missed' \
 'completion:Print a shell completion script' \
 'doctor:Check whether this machine is ready for a run' \
 'events:Print the journal, one readable line per event' \
@@ -371,6 +405,7 @@ _togi__subcmd__help__subcmd__day_commands() {
     local commands; commands=(
 'answer:Answer an unclean end; a later answer replaces the previous answer' \
 'notify:Send pending questions to this graphical session'\''s notification daemon' \
+'record:Record a crash togi did not observe' \
     )
     _describe -t commands 'togi help day commands' commands "$@"
 }
@@ -383,6 +418,11 @@ _togi__subcmd__help__subcmd__day__subcmd__answer_commands() {
 _togi__subcmd__help__subcmd__day__subcmd__notify_commands() {
     local commands; commands=()
     _describe -t commands 'togi help day notify commands' commands "$@"
+}
+(( $+functions[_togi__subcmd__help__subcmd__day__subcmd__record_commands] )) ||
+_togi__subcmd__help__subcmd__day__subcmd__record_commands() {
+    local commands; commands=()
+    _describe -t commands 'togi help day record commands' commands "$@"
 }
 (( $+functions[_togi__subcmd__help__subcmd__doctor_commands] )) ||
 _togi__subcmd__help__subcmd__doctor_commands() {

@@ -22,7 +22,7 @@ module completions {
     --help(-h)                # Print help (see more with '--help')
   ]
 
-  # Observe daily use, or answer what happened after an unclean end
+  # Observe daily use, answer what happened after an unclean end, or record a crash togi missed
   export extern "togi day" [
     --state-dir: directory    # State directory
     --help(-h)                # Print help (see more with '--help')
@@ -42,6 +42,19 @@ module completions {
     --help(-h)                # Print help
   ]
 
+  # Record a crash togi did not observe
+  export extern "togi day record" [
+    --boot: string            # The crashed boot: the ID of a boot with a recorded unclean end
+    --unobserved-at: string   # When a crash happened that has no recorded unclean end
+    --offset: string          # An offset the crashed boot ran: all=N, ccdI=N or coreI=N; repeat for more
+    --entered-at: string      # When the offsets given with --offset were entered in firmware setup
+    --running: string         # What was running: idle, desktop, build, game, other or unknown
+    --note: string            # Free text about what was running
+    --yes                     # Append without asking first at a terminal
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
   # Print this message or the help of the given subcommand(s)
   export extern "togi day help" [
   ]
@@ -52,6 +65,10 @@ module completions {
 
   # Send pending questions to this graphical session's notification daemon
   export extern "togi day help notify" [
+  ]
+
+  # Record a crash togi did not observe
+  export extern "togi day help record" [
   ]
 
   # Print this message or the help of the given subcommand(s)
@@ -77,7 +94,7 @@ module completions {
   ]
 
   def "nu-complete togi events kind" [] {
-    [ "backend" "backend.retry" "boot" "boot.leave_reason" "boot.saved_entry" "checking" "checking.chain" "checking.cycle" "checking.step" "combination" "command" "command.reset" "config" "config.loaded" "core" "core.phase" "crash" "crash.detected" "day" "day.answer" "day.boot_start" "day.checkpoint" "day.clean_stop" "day.fault" "day.offsets_changed" "day.unclean_end" "deadend" "deepening" "deepening.round" "defect" "defect.answered" "defect.found" "failure" "failure.carried" "host" "host.ranking" "hunt" "hunt.end" "hunt.group" "hunt.skipped" "hunt.start" "journal" "journal.torn" "mce" "preflight" "preflight.check" "profile" "profile.applied" "profile.change" "profile.restored" "session" "session.archived" "session.baseline" "session.carried" "session.context" "session.notice" "session.start" "session.warning" "shutdown" "smu" "smu.error" "smu.intent" "smu.readback" "smu.write" "state" "state.rebuilt" "trial" "trial.carried" "trial.end" "trial.intent" "trial.progress" "trial.sample" "trial.signal" "trial.start" "tuner" "tuner.decision" "tuner.warning" ]
+    [ "backend" "backend.retry" "boot" "boot.leave_reason" "boot.saved_entry" "checking" "checking.chain" "checking.cycle" "checking.step" "combination" "command" "command.reset" "config" "config.loaded" "core" "core.phase" "crash" "crash.detected" "day" "day.answer" "day.boot_start" "day.checkpoint" "day.clean_stop" "day.fault" "day.offsets_changed" "day.record" "day.unclean_end" "deadend" "deepening" "deepening.round" "defect" "defect.answered" "defect.found" "failure" "failure.carried" "host" "host.ranking" "hunt" "hunt.end" "hunt.group" "hunt.skipped" "hunt.start" "journal" "journal.torn" "mce" "preflight" "preflight.check" "profile" "profile.applied" "profile.change" "profile.restored" "session" "session.archived" "session.baseline" "session.carried" "session.context" "session.notice" "session.start" "session.warning" "shutdown" "smu" "smu.error" "smu.intent" "smu.readback" "smu.write" "state" "state.rebuilt" "trial" "trial.carried" "trial.end" "trial.intent" "trial.progress" "trial.sample" "trial.signal" "trial.start" "tuner" "tuner.decision" "tuner.warning" ]
   }
 
   # Print the journal, one readable line per event
@@ -137,7 +154,7 @@ module completions {
   export extern "togi help run" [
   ]
 
-  # Observe daily use, or answer what happened after an unclean end
+  # Observe daily use, answer what happened after an unclean end, or record a crash togi missed
   export extern "togi help day" [
   ]
 
@@ -147,6 +164,10 @@ module completions {
 
   # Send pending questions to this graphical session's notification daemon
   export extern "togi help day notify" [
+  ]
+
+  # Record a crash togi did not observe
+  export extern "togi help day record" [
   ]
 
   # Print a shell completion script

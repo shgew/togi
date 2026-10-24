@@ -140,6 +140,34 @@ togi day answer <boot> frozen
 
 `<boot>` is the boot id `status` prints. Answering needs no root shell, but it needs the day service running and your user allowed on its socket: name your user in `services.togi.day.users` (below). Run the same command again to change an answer; the last one counts. The answer is journaled against the crashed boot and its offset profile. It does not change any profile or tuning decision, and until you answer, togi's own reading of the evidence is shown but equally not acted on.
 
+### Recording a crash togi did not observe
+
+A freeze from before the day service existed has no unclean end to answer. `sudo togi day record` journals it, so Ruleset 13 can treat the offsets it ran as a whole-profile veto; the [journal spec](spec/journal.md#day-observation) has the rules, and the command prints what the record will do before it appends. It writes the journal itself, so stop the day service first (`systemctl stop togi-day.service`) and start it afterward.
+
+For a boot the observer saw end uncleanly, name it with `--boot <boot>`; the offsets are the ones the observer read back, unless you pass `--offset` for the ones you remember entering:
+
+```sh
+sudo togi day record --boot <boot> --running game
+```
+
+For a crash with no recorded end, give when it happened with `--unobserved-at` and the offsets with `--offset`, plus when you entered them in firmware setup with `--entered-at`. Each `--offset` is `all=N`, `ccdI=N` or `coreI=N`; a more specific one overrides a less specific one, and every core needs a value. To record the 2026-10-19 freezes:
+
+```sh
+# the freeze at -25 and -30 by CCD (check which CCD took which value)
+sudo togi day record --unobserved-at "<crash time>" --offset ccd0=-25 --offset ccd1=-30 \
+  --entered-at "<time you entered the offsets>" --running build
+
+# the freeze at the confirmed profile, which differs per core: one --offset coreI=N per core, N from your profile
+sudo togi day record --unobserved-at "<crash time>" --offset core0=N --offset core1=N --offset core2=N \
+  --entered-at "<time you entered the offsets>" --running desktop  # ...and so on for every core
+
+# the freeze at a uniform -20
+sudo togi day record --unobserved-at "<crash time>" --offset all=-20 \
+  --entered-at "<time you entered the offsets>" --running build
+```
+
+Times are RFC 3339 or local (`2026-10-19 14:30`). `--running` is `idle`, `desktop`, `build`, `game`, `other` or `unknown` (the default). At a terminal, `togi day record` asks for whatever the options leave out, with defaults: the newest unclean end without a record, and its read-back offsets. The prompts take the same `all=N` form as the options and journal the same record; `--yes` skips the final confirmation.
+
 `togi day notify` sends a desktop notification for each pending question using the installed `notify-send` (from libnotify; togi adds no notification library). On KDE Plasma (`XDG_CURRENT_DESKTOP` containing `KDE`) the notification has the four answers as buttons and waits up to two minutes for one. On other desktops it is a plain notification naming the command, because togi does not query what a notification server supports; answer with `togi day answer`. Dismissing a notification answers nothing, and the question stays in `status` and `watch`. The module's `togi-day-notify` user service runs it for each user in `services.togi.day.users`; elsewhere run `togi day notify` in your graphical session yourself.
 
 Daily observation requires an existing compatible session journal. It refuses to create a session or transition one written by another ruleset. Start a session through the tuning boot first. Stop daily observation before `togi run` or `togi reset` in a normal boot: they share the host and writer locks. `togi status`, `togi events` and `togi watch` remain lock-free while observation runs.

@@ -459,6 +459,10 @@ fn units_appear_in_text() {
     "uid 1000 answered that boot 7a1b2c3d ended because graphics died but sound went on; offsets [00: -10, 01: -5]"
 )]
 #[test_case(
+    EventKind::DayRecord,
+    "recorded a crash at 2026-10-19T11:00:00Z that no day observer saw with offsets [00: -25, 01: -5] (entered in firmware setup at 2026-10-19T12:00:00Z); running: builds or tests; a Nix build"
+)]
+#[test_case(
     EventKind::DayFault,
     "uncorrected MCE on cpu 2 (core 01), bank 0 load_store at 1 s since boot; offsets [00: -10, 01: -5]"
 )]
