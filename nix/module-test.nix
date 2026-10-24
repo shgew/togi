@@ -262,8 +262,7 @@ assert lib.hasInfix
   (builtins.unsafeDiscardStringContext "${lib.getExe package} night-end || ${pkgs.grub2}/bin/grub-editenv /boot/grub/grubenv unset saved_entry")
   leaveTuningBoot.preStop;
 # The guard runs before the tuner in every tuning boot, and the tuner requires it.
-assert
-  nightGuard.serviceConfig.ExecStart == "${lib.getExe package} night-guard";
+assert nightGuard.serviceConfig.ExecStart == "${lib.getExe package} night-guard";
 assert nightGuard.serviceConfig.Type == "oneshot";
 assert builtins.elem "togi.service" nightGuard.before;
 assert nightGuard.unitConfig.RequiresMountsFor == "/boot/grub/grubenv";
