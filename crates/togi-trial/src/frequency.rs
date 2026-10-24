@@ -230,7 +230,11 @@ impl Limits {
             .map_err(|source| Error::new("restore saved limits", source))
     }
 
-    async fn recover(&self, cancel: &CancellationToken, report: &mut Vec<String>) -> io::Result<()> {
+    async fn recover(
+        &self,
+        cancel: &CancellationToken,
+        report: &mut Vec<String>,
+    ) -> io::Result<()> {
         let Some(mut pending) = self.load()? else {
             return Ok(());
         };
@@ -476,7 +480,10 @@ impl<'a> ReadbackWait<'a> {
 enum Readback {
     Matched,
     /// The limit never read back as written; `last` is what the final read showed.
-    Unconfirmed { last: u32, ended: Ended },
+    Unconfirmed {
+        last: u32,
+        ended: Ended,
+    },
 }
 
 impl Readback {

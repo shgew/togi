@@ -52,8 +52,7 @@ impl Blocking {
     }
 
     fn restore(&self, report: &mut Vec<String>) -> Result<(), Error> {
-        crate::testing::runtime(true)
-            .block_on(self.0.restore(&CancellationToken::new(), report))
+        crate::testing::runtime(true).block_on(self.0.restore(&CancellationToken::new(), report))
     }
 }
 
@@ -426,11 +425,7 @@ fn a_restore_that_applies_after_some_reads_is_confirmed_within_the_deadline(read
     let (machine, fs, limits) = fixture(vec![policy(&[0, 16])]);
     limits.cap(&[CpuId::from(0)], &[], &mut Vec::new()).unwrap();
     machine.apply(Apply::AfterReads(reads));
-    let (outcome, waited) = timed(
-        limits
-            .0
-            .restore(&CancellationToken::new(), &mut Vec::new()),
-    );
+    let (outcome, waited) = timed(limits.0.restore(&CancellationToken::new(), &mut Vec::new()));
     outcome.unwrap();
     assert!(waited <= READBACK_DEADLINE, "{waited:?}");
     assert_eq!(
@@ -501,11 +496,7 @@ fn a_restore_that_never_applies_shares_one_deadline_and_is_retried() {
     let (machine, fs, limits) = fixture(two_policies());
     limits.cap(&both(), &[], &mut Vec::new()).unwrap();
     machine.apply(Apply::Never);
-    let (outcome, waited) = timed(
-        limits
-            .0
-            .restore(&CancellationToken::new(), &mut Vec::new()),
-    );
+    let (outcome, waited) = timed(limits.0.restore(&CancellationToken::new(), &mut Vec::new()));
     let chain = error_chain(&outcome.unwrap_err());
     assert!(chain.contains("2 of 2 saved policies"), "{chain}");
     assert!(chain.contains("readback deadline passed"), "{chain}");
