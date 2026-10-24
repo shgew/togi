@@ -1,6 +1,5 @@
-use std::io;
-use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::io::{self, Write};
+use std::path::PathBuf;
 
 use togi_machine::{BootId, CpuFrequency, CpuId, FrequencyPolicy, FrequencyPolicyId};
 
@@ -83,13 +82,26 @@ impl CpuFrequency for Sysfs {
         if khz == 0 {
             return Err(super::invalid("zero is not a frequency limit"));
         }
-        write_limit(&self.path(policy, "scaling_max_freq"), khz)
+        let mut attribute = std::fs::OpenOptions::new()
+            .write(true)
+            .open(self.path(policy, "scaling_max_freq"))?;
+        write_limit(&mut attribute, khz)
     }
 }
 
-fn write_limit(path: &Path, khz: u32) -> io::Result<()> {
-    let mut file = std::fs::OpenOptions::new().write(true).open(path)?;
-    writeln!(file, "{khz}")
+/// Writes `khz` to a cpufreq attribute in one write call. sysfs hands each write call to
+/// the attribute's store on its own, so a value split across calls applies its first part
+/// and fails on the rest. A short write is refused rather than continued for the same reason.
+fn write_limit(attribute: &mut impl Write, khz: u32) -> io::Result<()> {
+    let value = format!("{khz}\n");
+    let written = attribute.write(value.as_bytes())?;
+    if written != value.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::WriteZero,
+            format!("wrote {written} of {} bytes", value.len()),
+        ));
+    }
+    Ok(())
 }
 
 fn number(value: &str) -> io::Result<u32> {
@@ -132,8 +144,51 @@ fn related_cpus(value: &str) -> io::Result<Vec<CpuId>> {
 
 #[cfg(test)]
 mod tests {
-    use super::related_cpus;
+    use std::io;
+
+    use super::{related_cpus, write_limit};
     use togi_machine::CpuId;
+
+    /// A cpufreq attribute as sysfs presents it: every write call is parsed on its own and
+    /// must be one complete value, so a value split across calls fails as on the kernel.
+    #[derive(Default)]
+    struct Attribute {
+        applied: Vec<u32>,
+        accept: Option<usize>,
+    }
+
+    impl io::Write for Attribute {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            let einval = || io::Error::from_raw_os_error(22);
+            let text = std::str::from_utf8(bytes).map_err(|_| einval())?;
+            let khz: u32 = text.trim_end_matches('\n').parse().map_err(|_| einval())?;
+            self.applied.push(khz);
+            Ok(self.accept.unwrap_or(bytes.len()))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_cap_and_a_restore_each_reach_the_attribute_as_one_complete_write() {
+        let mut attribute = Attribute::default();
+        write_limit(&mut attribute, 614_286).unwrap();
+        write_limit(&mut attribute, 5_665_080).unwrap();
+        assert_eq!(attribute.applied, vec![614_286, 5_665_080]);
+    }
+
+    #[test]
+    fn a_short_write_is_an_error_not_continued_in_a_second_write() {
+        let mut attribute = Attribute {
+            accept: Some(3),
+            ..Attribute::default()
+        };
+        let error = write_limit(&mut attribute, 614_286).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WriteZero);
+        assert_eq!(attribute.applied, vec![614_286]);
+    }
 
     #[test]
     fn parses_related_cpu_membership() {
