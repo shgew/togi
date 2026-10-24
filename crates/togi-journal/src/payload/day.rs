@@ -262,25 +262,28 @@ impl DayQuestions {
     }
 }
 
-/// Where the offsets of a recorded crash came from, and when.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum OffsetSource {
-    /// The user entered them in firmware setup at `at`.
-    Entered { at: Timestamp },
-    /// A day observer read them back from the CPU at `at`, its last reading of the crashed boot.
-    ReadBack { at: Timestamp },
+object_only! {
+    /// Where the offsets of a recorded crash came from, and when: `Entered`, the user entered them in firmware
+    /// setup at `at`; `ReadBack`, a day observer read them back from the CPU at `at`, its last reading of the
+    /// crashed boot.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum OffsetSource {
+        Entered { at: Timestamp },
+        ReadBack { at: Timestamp },
+    }
 }
 
-/// Which boot a recorded crash ended.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CrashedBoot {
-    /// A boot whose `day.unclean_end` the journal holds.
-    UncleanEnd { boot: BootId },
-    /// A crash the journal holds no unclean end for, such as one before the day observer ran. `at` is when it
-    /// happened, as the user gives it.
-    Unobserved { at: Timestamp },
+object_only! {
+    /// Which boot a recorded crash ended: `UncleanEnd`, a boot whose `day.unclean_end` the journal holds; or
+    /// `Unobserved`, a crash the journal holds no unclean end for, such as one before the day observer ran, at
+    /// `at` as the user gives it.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum CrashedBoot {
+        UncleanEnd { boot: BootId },
+        Unobserved { at: Timestamp },
+    }
 }
 
 /// What was running when a recorded crash happened, as a short category.

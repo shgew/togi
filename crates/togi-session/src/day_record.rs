@@ -75,6 +75,8 @@ pub enum RecordError {
     UnknownBoot { boot: BootId },
     #[error("boot {boot} already has a crash record, at seq {seq}")]
     AlreadyRecorded { boot: BootId, seq: Seq },
+    #[error("a crash at {at} already has a crash record, at seq {seq}")]
+    AlreadyRecordedAt { at: Timestamp, seq: Seq },
     #[error("boot {boot}: its observer's last offset reading is not in the journal")]
     NoReadBack { boot: BootId },
     #[error("core {core:02} is not in the session")]
@@ -163,7 +165,7 @@ fn resolve(specs: &[OffsetSpec], cores: &[CoreInfo]) -> Result<RecordedOffsets, 
 /// Checks `draft` against the journal and returns the record it describes.
 ///
 /// # Errors
-/// Refuses a boot with no recorded unclean end or one that already has a record, a core or CCD the session does
+/// Refuses a boot with no recorded unclean end or one that already has a record, a second record of the same unobserved crash time, a core or CCD the session does
 /// not have, a core given twice, a core left without an offset when the user enters them, offsets that name no
 /// core and an offset outside what togi applies.
 pub fn draft_record(events: &[Event], draft: &Draft) -> Result<DayRecord, RecordError> {
@@ -200,11 +202,26 @@ pub fn draft_record(events: &[Event], draft: &Draft) -> Result<DayRecord, Record
                 source,
             )
         }
-        Crash::Unobserved { at, entered } => (
-            CrashedBoot::Unobserved { at: *at },
-            resolve(&entered.specs, cores)?,
-            OffsetSource::Entered { at: entered.at },
-        ),
+        Crash::Unobserved { at, entered } => {
+            let earlier = events.iter().find(|event| {
+                matches!(
+                    &event.payload,
+                    Payload::DayRecord(record)
+                        if matches!(record.boot, CrashedBoot::Unobserved { at: recorded } if recorded == *at)
+                )
+            });
+            if let Some(event) = earlier {
+                return Err(RecordError::AlreadyRecordedAt {
+                    at: *at,
+                    seq: event.seq,
+                });
+            }
+            (
+                CrashedBoot::Unobserved { at: *at },
+                resolve(&entered.specs, cores)?,
+                OffsetSource::Entered { at: entered.at },
+            )
+        }
     };
     Ok(DayRecord {
         boot,

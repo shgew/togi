@@ -237,6 +237,25 @@ fn a_boot_that_already_has_a_record_is_refused() {
 }
 
 #[test]
+fn a_second_record_of_the_same_unobserved_crash_is_refused() {
+    let mut events = history(profile([-5; 4]));
+    let unobserved = |second: i64| {
+        draft(Crash::Unobserved {
+            at: at(second),
+            entered: entered(&[OffsetSpec::All(-20)]),
+        })
+    };
+    let first = draft_record(&events, &unobserved(300)).unwrap();
+    events.push(event(6, "next", 1100, first));
+    let error = draft_record(&events, &unobserved(300)).unwrap_err();
+    assert!(matches!(
+        error,
+        RecordError::AlreadyRecordedAt { at: crash, seq } if crash == at(300) && seq == Seq::new(6).unwrap()
+    ));
+    assert!(draft_record(&events, &unobserved(301)).is_ok());
+}
+
+#[test]
 fn a_record_of_an_unobserved_crash_does_not_mark_any_boot_recorded() {
     let mut events = history(profile([-5; 4]));
     let unobserved = draft_record(

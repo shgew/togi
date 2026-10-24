@@ -460,3 +460,30 @@ fn running_categories_are_snake_case_on_the_wire(running: Running, wire: &str) {
         format!("\"{wire}\"")
     );
 }
+
+#[test]
+fn the_parts_of_a_record_decode_only_from_objects() {
+    let time = "2026-10-02T01:00:00Z";
+    assert!(
+        serde_json::from_value::<OffsetSource>(serde_json::json!({"kind": "entered", "at": time}))
+            .is_ok()
+    );
+    assert!(
+        serde_json::from_value::<CrashedBoot>(
+            serde_json::json!({"kind": "unobserved", "at": time})
+        )
+        .is_ok()
+    );
+    assert!(serde_json::from_value::<OffsetSource>(serde_json::json!(["entered", time])).is_err());
+    assert!(
+        serde_json::from_value::<CrashedBoot>(serde_json::json!(["unobserved", time])).is_err()
+    );
+    assert!(serde_json::from_value::<CrashedBoot>(serde_json::json!(["unclean_end", A])).is_err());
+    let nested = serde_json::json!({
+        "boot": ["unobserved", time],
+        "offsets": {"0": -10},
+        "source": ["entered", time],
+        "running": "game",
+    });
+    assert!(serde_json::from_value::<DayRecord>(nested).is_err());
+}

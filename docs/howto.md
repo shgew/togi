@@ -157,6 +157,10 @@ For a crash with no recorded end, give when it happened with `--unobserved-at` a
 sudo togi day record --unobserved-at "<crash time>" --offset ccd0=-25 --offset ccd1=-30 \
   --entered-at "<time you entered the offsets>" --running build
 
+# the freeze at the confirmed profile, which differs per core: one --offset coreI=N per core, N from your profile
+sudo togi day record --unobserved-at "<crash time>" --offset core0=N --offset core1=N --offset core2=N \
+  --entered-at "<time you entered the offsets>" --running desktop  # ...and so on for every core
+
 # the freeze at a uniform -20
 sudo togi day record --unobserved-at "<crash time>" --offset all=-20 \
   --entered-at "<time you entered the offsets>" --running build

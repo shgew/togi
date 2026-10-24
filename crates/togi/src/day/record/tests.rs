@@ -322,6 +322,41 @@ fn an_answer_that_does_not_parse_is_asked_again() {
 }
 
 #[test]
+fn a_malformed_replacement_offset_is_explained_and_asked_again() {
+    let crashes = crashes(&[]);
+    let (draft, script) = by_prompts(
+        &["--boot", "second", "--running", "build"],
+        &["core0=oops", "ccd0=-25 ccd1=-30", ENTERED, ""],
+        &crashes,
+    );
+    let flags = by_flags(
+        &[
+            "--boot",
+            "second",
+            "--offset",
+            "ccd0=-25",
+            "--offset",
+            "ccd1=-30",
+            "--entered-at",
+            ENTERED,
+            "--running",
+            "build",
+        ],
+        &crashes,
+    )
+    .unwrap();
+    assert_eq!(draft.unwrap(), flags);
+    assert_eq!(
+        script.said,
+        ["\"core0=oops\": \"oops\" is not a number"],
+        "{:?}",
+        script.said
+    );
+    assert!(script.asked[0].starts_with("Offsets the observer read back"));
+    assert_eq!(script.asked[1], SPECS_QUESTION);
+}
+
+#[test]
 fn the_input_ending_midway_is_an_error() {
     let (draft, _) = by_prompts(&[], &["second"], &crashes(&[]));
     assert!(matches!(draft, Err(Error::InputEnded)));
