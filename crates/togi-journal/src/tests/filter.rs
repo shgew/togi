@@ -232,6 +232,45 @@ fn core_filters_see_typed_core_fields_of_every_shape(kind: EventKind, wanted: u8
     assert!(!filter(&[15]).matches(&event), "{kind} for core 15");
 }
 
+fn fault_event(fault: LiveFault) -> Event {
+    let Payload::DayFault(mut day) = sample(EventKind::DayFault) else {
+        unreachable!()
+    };
+    day.fault = fault;
+    at(1, "boot-a", 0, &[], Payload::from(day))
+}
+
+fn machine_check(owner: Option<u8>) -> LiveFault {
+    LiveFault::MachineCheck {
+        cpu: CpuId::from(2_u16),
+        core: owner.map(core),
+        bank: 0,
+        bank_type: togi_machine::BankType::LoadStore,
+        corrected: false,
+    }
+}
+
+fn trap(owner: Option<u8>) -> LiveFault {
+    LiveFault::Trap {
+        trap: Trap::Bus,
+        name: "mprime".into(),
+        pid: 7,
+        cpu: owner.map(|_| CpuId::from(2_u16)),
+        core: owner.map(core),
+    }
+}
+
+#[test_case(machine_check(Some(3)), true; "a located machine check")]
+#[test_case(machine_check(None), false; "an unlocated machine check")]
+#[test_case(trap(Some(3)), true; "a located trap")]
+#[test_case(trap(None), false; "an unlocated trap")]
+#[test_case(LiveFault::KernelError { error: togi_machine::KernelErrorKind::Oops }, false; "a kernel error")]
+fn a_live_fault_matches_the_core_it_names_and_no_other(fault: LiveFault, names_core_3: bool) {
+    let event = fault_event(fault);
+    assert_eq!(filter(&[3]).matches(&event), names_core_3);
+    assert!(!filter(&[4]).matches(&event));
+}
+
 #[test]
 fn a_member_probe_group_matches_the_probed_core_absent_from_its_cores() {
     let Payload::HuntGroup(mut group) = sample(EventKind::HuntGroup) else {

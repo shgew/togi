@@ -17,6 +17,8 @@ pub enum CpuTimesError {
         #[source]
         source: std::num::ParseIntError,
     },
+    #[error("CPU line {line:?} has times whose sum does not fit a 64-bit tick count")]
+    Overflow { line: String },
 }
 
 /// The cumulative times of every logical CPU, in the order `/proc/stat` lists them. The aggregate `cpu` line and
@@ -48,13 +50,20 @@ pub fn cpu_times(stat: &str) -> Result<Vec<CpuTime>, CpuTimesError> {
                 })?;
             }
             let [user, nice, system, idle, iowait, irq, softirq, steal] = ticks;
-            let busy = [user, nice, system, irq, softirq, steal]
-                .into_iter()
-                .fold(0, u64::saturating_add);
+            let overflow = || CpuTimesError::Overflow {
+                line: line.to_owned(),
+            };
+            let sum = |ticks: &[u64]| {
+                ticks
+                    .iter()
+                    .try_fold(0_u64, |sum, tick| sum.checked_add(*tick))
+                    .ok_or_else(overflow)
+            };
+            let busy = sum(&[user, nice, system, irq, softirq, steal])?;
             Ok(CpuTime {
                 cpu,
                 busy,
-                total: busy.saturating_add(idle).saturating_add(iowait),
+                total: sum(&[busy, idle, iowait])?,
             })
         })
         .collect()
@@ -95,5 +104,15 @@ mod tests {
     #[test_case("cpu0 1 2 3 4 5 6 7 -8"; "negative field")]
     fn a_malformed_cpu_line_is_refused(line: &str) {
         assert!(cpu_times(line).is_err(), "{line}");
+    }
+
+    #[test_case("cpu0 18446744073709551615 1 0 0 0 0 0 0"; "busy")]
+    #[test_case("cpu0 1 0 0 18446744073709551615 0 0 0 0"; "total through idle")]
+    #[test_case("cpu0 0 0 0 0 18446744073709551615 0 0 1"; "total through iowait")]
+    fn a_sum_that_overflows_is_refused_not_saturated(line: &str) {
+        assert!(matches!(
+            cpu_times(line),
+            Err(CpuTimesError::Overflow { .. })
+        ));
     }
 }

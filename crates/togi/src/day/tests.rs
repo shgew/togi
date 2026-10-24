@@ -7,7 +7,7 @@ use std::sync::Arc;
 use jiff::Timestamp;
 use test_case::test_case;
 use togi_journal::fs::{Fault, Op};
-use togi_journal::{DayFault, LiveFault, LoadMix, Trap};
+use togi_journal::{DayFault, EventKind, LiveFault, LoadMix, Trap};
 use togi_journal::{MemFs, SessionId, SessionStart, StateDir};
 use togi_machine::{
     BankType, BiosContext, CcdId, CoreInfo, CpuId, CpuTime, Error as MachineError, KernelCursor,
@@ -719,8 +719,102 @@ fn an_unresumable_cursor_reads_the_boot_again_without_repeating_a_fault() {
             Some(KernelCursor::from("c1".to_owned())),
             None,
             Some(KernelCursor::from("c1".to_owned())),
+            Some(KernelCursor::from("c1".to_owned())),
+        ],
+        "the lost cursor is replaced by a read of the boot within the same poll"
+    );
+}
+
+#[test]
+fn a_cursor_lost_at_the_stop_is_replaced_before_the_clean_stop_so_no_later_fault_is_lost() {
+    let mut calls = 0;
+    let mut reading = Reading::fixed().logging(move |after| {
+        calls += 1;
+        match (calls, after) {
+            (1, None) => Ok(logged_faults()),
+            (2, Some(_)) => Err(Partial {
+                value: KernelRead::default(),
+                error: MachineError::CursorMissing,
+            }),
+            (3, None) => {
+                let mut read = logged_faults();
+                read.mces.push(uncorrected_mce(9));
+                Ok(read)
+            }
+            other => panic!("{other:?}"),
+        }
+    });
+    let mut journal = journal();
+    observe_for(&mut journal, &mut reading, 1);
+    let kinds: Vec<_> = journal
+        .events()
+        .iter()
+        .map(|event| event.payload.kind())
+        .filter(|kind| matches!(kind, EventKind::DayFault | EventKind::DayCleanStop))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            EventKind::DayFault,
+            EventKind::DayFault,
+            EventKind::DayFault,
+            EventKind::DayFault,
+            EventKind::DayCleanStop,
         ]
     );
+}
+
+#[test]
+fn a_later_crash_that_reuses_the_pid_is_another_fault() {
+    let mut journal = journal();
+    let crash = |seconds: u64| {
+        move |_: Option<&KernelCursor>| {
+            Ok(KernelRead {
+                faults: vec![
+                    trap(ProcessFaultKind::IllegalInstruction, 7, Some(0), 10),
+                    trap(ProcessFaultKind::IllegalInstruction, 7, None, seconds),
+                ],
+                ..KernelRead::default()
+            })
+        }
+    };
+    observe_for(&mut journal, &mut Reading::fixed().logging(crash(400)), 1);
+    assert_eq!(
+        day_faults(&journal).len(),
+        2,
+        "400 s later is a second death"
+    );
+    observe_for(&mut journal, &mut Reading::fixed().logging(crash(400)), 1);
+    assert_eq!(
+        day_faults(&journal).len(),
+        2,
+        "a restart records neither again"
+    );
+}
+
+#[test]
+fn a_general_protection_fault_is_journaled_with_its_trap_boot_and_offsets() {
+    let mut journal = journal();
+    let mut reading = Reading::fixed().logging(|_| {
+        Ok(KernelRead {
+            faults: vec![trap(ProcessFaultKind::GeneralProtection, 9, Some(0), 5)],
+            ..KernelRead::default()
+        })
+    });
+    observe_for(&mut journal, &mut reading, 1);
+    let faults = day_faults(&journal);
+    assert_eq!(faults.len(), 1);
+    let (boot, fault) = faults[0];
+    assert_eq!(boot.as_str(), "day-a");
+    assert_eq!(fault.offsets, offsets(-10));
+    assert!(matches!(
+        fault.fault,
+        LiveFault::Trap {
+            trap: Trap::GeneralProtection,
+            pid: 9,
+            ..
+        }
+    ));
 }
 
 #[test]

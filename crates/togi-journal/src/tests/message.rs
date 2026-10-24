@@ -480,6 +480,44 @@ fn day_messages_tell_a_stranger_what_the_observer_saw(kind: EventKind, text: &st
     },
     "SIGILL (invalid opcode) in mprime[991] on cpu 3 at 1 s since boot; offsets [00: -10, 01: -5]"
 ; "trap")]
+#[test_case(
+    crate::LiveFault::MachineCheck {
+        cpu: togi_machine::CpuId::from(5_u16),
+        core: None,
+        bank: 2,
+        bank_type: togi_machine::BankType::L3Cache,
+        corrected: true,
+    },
+    "corrected MCE on cpu 5 (no core), bank 2 l3_cache at 1 s since boot; offsets [00: -10, 01: -5]"
+; "corrected machine check")]
+#[test_case(
+    crate::LiveFault::KernelError { error: togi_machine::KernelErrorKind::Oops },
+    "kernel oops at 1 s since boot; offsets [00: -10, 01: -5]"
+; "oops")]
+#[test_case(
+    crate::LiveFault::KernelError { error: togi_machine::KernelErrorKind::SoftLockup },
+    "soft lockup at 1 s since boot; offsets [00: -10, 01: -5]"
+; "soft lockup")]
+#[test_case(
+    crate::LiveFault::Trap {
+        trap: crate::Trap::GeneralProtection,
+        name: "togi".into(),
+        pid: 421,
+        cpu: Some(togi_machine::CpuId::from(8_u16)),
+        core: Some(togi_machine::CoreId::new(0).unwrap()),
+    },
+    "general-protection fault in togi[421] on cpu 8 (core 00) at 1 s since boot; offsets [00: -10, 01: -5]"
+; "general protection")]
+#[test_case(
+    crate::LiveFault::Trap {
+        trap: crate::Trap::Bus,
+        name: "mprime".into(),
+        pid: 7,
+        cpu: None,
+        core: None,
+    },
+    "SIGBUS in mprime[7] at 1 s since boot; offsets [00: -10, 01: -5]"
+; "bus error")]
 fn live_fault_messages_name_the_fault_the_time_and_the_profile(
     fault: crate::LiveFault,
     text: &str,

@@ -396,4 +396,25 @@ mod tests {
         let cores = vec![vec![CpuId::from(0_u16)], vec![CpuId::from(1_u16)]];
         assert_eq!(census(&cores, &times(0), &times(100)), census_of(0, 0, 1));
     }
+
+    #[test]
+    fn an_interval_in_which_no_counter_advanced_credits_nothing_and_forgets_the_last_shape() {
+        let mut sampler = sampler();
+        sampler.record(at(0), reading(0, 100, &[0; 6])).unwrap();
+        sampler.record(at(1), reading(1, 100, &[0; 6])).unwrap();
+        let credited = sampler.mix();
+        assert_eq!(credited.quiet_ms, 5000);
+        // The counters stand still for an interval, so it says nothing about the load.
+        sampler.record(at(2), reading(1, 100, &[0; 6])).unwrap();
+        assert_eq!(sampler.mix(), credited);
+        // The next interval is busy; with the quiet one forgotten it is no idle transition.
+        sampler.record(at(3), reading(2, 100, &[50; 6])).unwrap();
+        assert_eq!(
+            sampler.mix(),
+            LoadMix {
+                all_threads_ms: 5000,
+                ..credited
+            }
+        );
+    }
 }

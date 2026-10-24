@@ -147,9 +147,10 @@ object_only! {
 
 impl DayFault {
     /// What identifies the fault within its boot, which is how the same log line is journaled once however often
-    /// the observer restarts. A machine check or kernel error is told apart by its content and time. A trap is
-    /// told apart by its kind, process name and pid alone: the kernel line and the core dump record of one
-    /// killed process carry different times and CPU evidence, and are one fault.
+    /// the observer restarts: the fault and the time it was logged. A trap carries only its kind, process name
+    /// and pid in the fault part, with the CPU evidence left out, because the kernel line and the core dump
+    /// record of one killed process carry different CPU evidence; such records are one fault when their times
+    /// are close, which the observer judges, so a later crash that reuses the pid is another.
     pub fn identity(&self) -> (LiveFault, u64) {
         match &self.fault {
             LiveFault::Trap {
@@ -162,7 +163,7 @@ impl DayFault {
                     cpu: None,
                     core: None,
                 },
-                0,
+                self.monotonic_ns,
             ),
             LiveFault::MachineCheck { .. } | LiveFault::KernelError { .. } => {
                 (self.fault.clone(), self.monotonic_ns)
