@@ -673,7 +673,7 @@ in
       # The deadline passes: the guard restores the day's selection and reboots. The guard also runs, before the
       # tuner, in every tuning boot; its ordering is pinned by the module check and its count by the unit tests.
       machine.succeed("grub-editenv /boot/grub/grubenv set 'togi_night={\"until\":1,\"boots\":[]}' && sync")
-      machine.succeed("systemctl start togi-night-guard.service || true")
+      machine.succeed("systemctl restart togi-night-guard.service || true")
       reaches_reboot()
       assert machine.succeed("readlink -f /run/current-system").strip() == normal_system
       env = grubenv()
