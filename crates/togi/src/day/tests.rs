@@ -474,14 +474,14 @@ fn the_observer_records_whether_pid_1_s_watchdog_is_armed_as_it_starts(state: Wa
         &current_build(),
     )
     .unwrap();
-    let start = journal
-        .events()
+    let events = journal.events();
+    let first = events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::DayBootStart(start) => Some(start.clone()),
-            _ => None,
-        })
+        .find(|event| event.kind() == togi_journal::EventKind::DayBootStart)
         .unwrap();
+    let Payload::DayBootStart(start) = &first.payload else {
+        panic!("a day.boot_start event carries a DayBootStart payload");
+    };
     assert_eq!(start.watchdog, Some(state.clone()));
     assert_eq!(Ledger::of(journal.events()).watchdog, Some(state));
 }
