@@ -551,9 +551,12 @@ fn day_faults(journal: &Journal) -> Vec<(&BootId, &DayFault)> {
     journal
         .events()
         .iter()
-        .filter_map(|event| match &event.payload {
-            Payload::DayFault(fault) => Some((&event.boot, fault)),
-            _ => None,
+        .filter_map(|event| {
+            if let Payload::DayFault(fault) = &event.payload {
+                Some((&event.boot, fault))
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -680,9 +683,11 @@ fn the_kernel_line_and_the_core_dump_of_one_killed_process_are_one_fault() {
     observe_for(&mut journal, &mut reading, 1);
     let pids: Vec<_> = day_faults(&journal)
         .iter()
-        .map(|(_, fault)| match &fault.fault {
-            LiveFault::Trap { pid, .. } => *pid,
-            other => panic!("{other:?}"),
+        .map(|(_, fault)| {
+            let LiveFault::Trap { pid, .. } = &fault.fault else {
+                panic!("{:?}", fault.fault)
+            };
+            *pid
         })
         .collect();
     assert_eq!(pids, [7, 8]);

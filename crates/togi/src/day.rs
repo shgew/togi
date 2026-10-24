@@ -341,9 +341,12 @@ fn observe_with_socket(
 fn session_cores(events: &[Event]) -> Result<&[CoreInfo], Error> {
     events
         .iter()
-        .find_map(|event| match &event.payload {
-            Payload::SessionStart(start) => Some(start.cores.as_slice()),
-            _ => None,
+        .find_map(|event| {
+            if let Payload::SessionStart(start) = &event.payload {
+                Some(start.cores.as_slice())
+            } else {
+                None
+            }
         })
         .ok_or(Error::Topology)
 }

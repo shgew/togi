@@ -21,9 +21,12 @@ impl Faults {
         let seen = events
             .iter()
             .filter(|event| &event.boot == boot)
-            .filter_map(|event| match &event.payload {
-                Payload::DayFault(fault) => Some(fault.identity()),
-                _ => None,
+            .filter_map(|event| {
+                if let Payload::DayFault(fault) = &event.payload {
+                    Some(fault.identity())
+                } else {
+                    None
+                }
             })
             .collect();
         Self { cursor: None, seen }
