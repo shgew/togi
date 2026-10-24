@@ -378,7 +378,7 @@ fn next_boot_records_unclean_end_without_classifying_it(reason: Option<ResetKind
             },
             DayCheckpoint {
                 applied_secs: 600,
-                load_mix: Default::default(),
+                load_mix: LoadMix::default(),
             }
             .into(),
             &[],

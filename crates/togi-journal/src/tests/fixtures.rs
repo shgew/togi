@@ -657,7 +657,7 @@ pub(crate) fn samples() -> Vec<Payload> {
         .into(),
         DayCheckpoint {
             applied_secs: 3600,
-            load_mix: Default::default(),
+            load_mix: LoadMix::default(),
         }
         .into(),
         DayOffsetsChanged {

@@ -218,7 +218,7 @@ fn day_events(
             "day-a",
             DayCheckpoint {
                 applied_secs: 3600,
-                load_mix: Default::default(),
+                load_mix: togi_journal::LoadMix::default(),
             }
             .into(),
         ),
@@ -228,7 +228,7 @@ fn day_events(
             "day-b",
             DayCheckpoint {
                 applied_secs: 1800,
-                load_mix: Default::default(),
+                load_mix: togi_journal::LoadMix::default(),
             }
             .into(),
         ),
