@@ -12,6 +12,9 @@ Commands:
   completion      Print a shell completion script
   doctor          Check whether this machine is ready for a run
   events          Print the journal, one readable line per event
+  night           Reboot into the tuning boot for the night
+  night-end       Restore the day's boot selection
+  night-guard     Return to the day when the night is over, before the tuner starts
   reset           Reset one core, or archive the whole session
   restart-limit   Recover after the tuning service reaches its restart limit
   emergency-stop  Internal emergency recovery that stops leftover trials and sets every core to offset 0

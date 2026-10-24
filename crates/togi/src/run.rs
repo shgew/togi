@@ -34,7 +34,7 @@ use crate::exit::Exit;
 use crate::report::{current_build, exit_with, refusal_message, unknown_event_message};
 
 mod outcome;
-mod prompt;
+pub(crate) mod prompt;
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     examples(&[

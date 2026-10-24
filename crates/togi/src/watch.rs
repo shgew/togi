@@ -6,11 +6,13 @@ use std::sync::LazyLock;
 
 use clap::{Args as ClapArgs, ValueHint};
 use togi_journal::DirError;
-use togi_watch::screen::Quit;
-use togi_watch::terminal::{self, ONE_FRAME_SIZE, SourceError};
+use togi_watch::screen::{Direction, Quit};
+use togi_watch::terminal::{self, ONE_FRAME_SIZE, Outcome, SourceError};
 
 use crate::cli::{Context, examples};
 use crate::exit::Exit;
+use crate::night::{self, Confirmation};
+use crate::night_end;
 use crate::read::unknown_kind;
 use crate::report::fail;
 
@@ -89,7 +91,13 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
     let result = if ctx.system.stdout_facts().is_terminal {
         let out = stdout();
         let keys = stdin();
-        terminal::run(ctx.state_dir, out.as_fd(), Some(keys.as_fd()), args.quit())
+        terminal::run(
+            ctx.state_dir,
+            out.as_fd(),
+            Some(keys.as_fd()),
+            args.quit(),
+            offer(args, ctx),
+        )
     } else if let Some(fs) = ctx.system.journal_fs() {
         terminal::one_frame_in(
             fs.as_ref(),
@@ -100,17 +108,34 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
             ctx.system.now(),
             &ctx.system.zone(),
         )
+        .map(|()| Outcome::Ended)
     } else {
         terminal::one_frame(ctx.state_dir, args.width, args.height, &mut ctx.out)
+            .map(|()| Outcome::Ended)
     };
     match result {
-        Ok(()) => Exit::Ok,
+        Ok(Outcome::Ended) => Exit::Ok,
+        Ok(Outcome::Switch(Direction::Night)) => night::begin(ctx, None, Confirmation::Given),
+        Ok(Outcome::Switch(Direction::Day)) => night_end::leave(ctx),
         Err(terminal::Error::Journal(SourceError::Read(error))) => {
             let message = unknown_kind(&error).unwrap_or_else(|| togi_render::error_chain(&error));
             fail(ctx, "watch", message)
         }
         Err(error) => fail(ctx, "watch", togi_render::error_chain(&error)),
     }
+}
+
+/// The night switch the dashboard offers: into the night from a normal boot, back to the day from the tuning
+/// boot, and none when the host has no tuning boot set up or the reader cannot change the boot loader.
+fn offer(args: &Args, ctx: &Context<'_>) -> Option<Direction> {
+    if !ctx.system.privileged() || night::setup(ctx).is_err() {
+        return None;
+    }
+    Some(if args.tuning_boot {
+        Direction::Day
+    } else {
+        Direction::Night
+    })
 }
 
 impl Args {

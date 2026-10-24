@@ -1,0 +1,23 @@
+---
+source: crates/togi/tests/cli/main.rs
+expression: "help(\"night-guard\")"
+---
+Return to the day when the night is over, before the tuner starts
+
+Runs first in every tuning boot. It records the boot in the GRUB environment, where the count needs neither the tuner nor its journal. When the morning time has passed, or too many crash reboots came too fast, it restores the day's boot selection exactly and reboots; the tuner never starts. Otherwise it exits 0 and the tuner may start. A tuning boot entered from the boot menu gets a night that ends at the next morning time.
+
+An error exits unsuccessfully, which keeps the tuner from starting unguarded.
+
+Usage: togi night-guard [OPTIONS]
+
+Options:
+      --state-dir <path>
+          State directory
+          
+          [default: /var/lib/togi]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  sudo togi night-guard   Record this tuning boot, then end the night or let the tuner start

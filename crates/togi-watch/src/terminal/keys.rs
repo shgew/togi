@@ -1,6 +1,6 @@
 //! Keys: decoding the raw bytes a terminal sends, and what a key does to the screen.
 
-use crate::screen::{Quit, Screen, View};
+use crate::screen::{Direction, Quit, Screen, Switch, View};
 
 /// One key press.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,13 +14,15 @@ pub(super) enum Key {
     PageDown,
     Home,
     End,
+    /// F10, the key of the night switch.
+    F10,
 }
 
 /// The most bytes an unfinished sequence may hold before it is dropped.
 const PENDING_LIMIT: usize = 128;
 
 /// The key an escape sequence names, from the bytes after the escape: the ones the Linux console and common
-/// terminals send for the keys that scroll.
+/// terminals send for the keys that scroll and for F10.
 fn sequence_key(sequence: &[u8]) -> Option<Key> {
     match sequence {
         b"[A" | b"OA" => Some(Key::Up),
@@ -29,6 +31,7 @@ fn sequence_key(sequence: &[u8]) -> Option<Key> {
         b"[6~" => Some(Key::PageDown),
         b"[H" | b"OH" | b"[1~" | b"[7~" => Some(Key::Home),
         b"[F" | b"OF" | b"[4~" | b"[8~" => Some(Key::End),
+        b"[21~" => Some(Key::F10),
         _ => None,
     }
 }
@@ -173,14 +176,54 @@ pub(super) fn press(screen: Screen, key: Key, scrolled: usize) -> (Screen, bool)
         Key::PageDown | Key::Char(' ' | 'f') => (to(at.saturating_add(page)), false),
         Key::Home | Key::Char('g') => (to(0), false),
         Key::End | Key::Char('G') => (to(scrolled), false),
-        Key::Char(_) => (screen, false),
+        Key::Char(_) | Key::F10 => (screen, false),
+    }
+}
+
+/// What a key does to the night switch before [`press`] sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Step {
+    /// The switch has no use for the key.
+    Pass,
+    /// The key changed the question on the screen and is used up.
+    Screen(Screen),
+    /// The viewer answered yes: the dashboard ends and the caller switches.
+    Confirmed(Direction),
+}
+
+/// Applies a key to the night switch: F10, and `n` where the switch goes into the night, asks the question; then
+/// `y` or `Y` confirms it and any other key, Esc and Ctrl-C included, withdraws it and does nothing else.
+pub(super) fn switch(screen: Screen, key: Key) -> Step {
+    match screen.switch {
+        Switch::Off => Step::Pass,
+        Switch::Asking(direction) => {
+            if matches!(key, Key::Char('y' | 'Y')) {
+                Step::Confirmed(direction)
+            } else {
+                Step::Screen(Screen {
+                    switch: Switch::Offered(direction),
+                    ..screen
+                })
+            }
+        }
+        Switch::Offered(direction) => {
+            let night_key = direction == Direction::Night && matches!(key, Key::Char('n' | 'N'));
+            if key == Key::F10 || night_key {
+                Step::Screen(Screen {
+                    switch: Switch::Asking(direction),
+                    ..screen
+                })
+            } else {
+                Step::Pass
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Decoder, Key, decode, press};
-    use crate::screen::{Colours, Quit, Screen, View};
+    use super::{Decoder, Key, Step, decode, press, switch};
+    use crate::screen::{Colours, Direction, Quit, Screen, Switch, View};
     use test_case::test_case;
 
     const FOLLOW: usize = usize::MAX;
@@ -206,6 +249,7 @@ mod tests {
             one_frame: false,
             colours: Colours::None,
             quit: Quit::Keys,
+            switch: Switch::Off,
         }
     }
 
@@ -541,6 +585,7 @@ mod tests {
     #[test_case("\x1b[15~q", &[Key::Char('q')]; "an unmapped tilde sequence is dropped")]
     #[test_case("\x1bq", &[Key::Esc, Key::Char('q')]; "escape then a character")]
     #[test_case("\x1b[", &[]; "an unfinished sequence yields nothing")]
+    #[test_case("\x1b[21~", &[Key::F10]; "f10")]
     #[test_case("\x1b[C\x1b[D", &[]; "horizontal csi arrows are ignored")]
     #[test_case("\x1bOC\x1bOD", &[]; "horizontal ss3 arrows are ignored")]
     fn decode_maps_input_bytes_to_keys(input: &str, want: &[Key]) {
@@ -606,5 +651,70 @@ mod tests {
         assert_eq!(decoder.push(b"\x1b["), []);
         assert_eq!(decoder.push(&[b'0'; 200]), []);
         assert!(!decoder.is_pending());
+    }
+    fn offering(switch: Switch) -> Screen {
+        Screen {
+            switch,
+            ..screen(View::Main, 0, 0)
+        }
+    }
+
+    #[test_case(Direction::Day, Key::F10; "f10 into the day")]
+    #[test_case(Direction::Night, Key::F10; "f10 into the night")]
+    #[test_case(Direction::Night, Key::Char('n'); "n into the night")]
+    #[test_case(Direction::Night, Key::Char('N'); "capital n into the night")]
+    fn the_key_of_an_offered_switch_asks_before_it_does_anything(direction: Direction, key: Key) {
+        let offered = offering(Switch::Offered(direction));
+        assert_eq!(
+            switch(offered, key),
+            Step::Screen(offering(Switch::Asking(direction)))
+        );
+    }
+
+    #[test_case(Direction::Day, Key::Char('n'); "n does not leave the night")]
+    #[test_case(Direction::Day, Key::Char('y'); "y without a question")]
+    #[test_case(Direction::Night, Key::Char('y'); "y without a question before the night")]
+    #[test_case(Direction::Night, Key::Esc; "esc")]
+    #[test_case(Direction::Day, Key::Char('q'); "q")]
+    fn other_keys_pass_an_offered_switch_by(direction: Direction, key: Key) {
+        assert_eq!(
+            switch(offering(Switch::Offered(direction)), key),
+            Step::Pass
+        );
+    }
+
+    #[test]
+    fn a_dashboard_without_a_switch_passes_every_key_by() {
+        for key in [Key::F10, Key::Char('n'), Key::Char('y')] {
+            assert_eq!(switch(offering(Switch::Off), key), Step::Pass);
+        }
+    }
+
+    #[test_case(Key::Char('y'); "y")]
+    #[test_case(Key::Char('Y'); "capital y")]
+    fn yes_confirms_the_question_in_its_direction(key: Key) {
+        for direction in [Direction::Night, Direction::Day] {
+            assert_eq!(
+                switch(offering(Switch::Asking(direction)), key),
+                Step::Confirmed(direction)
+            );
+        }
+    }
+
+    #[test_case(Key::Char('n'); "n")]
+    #[test_case(Key::Char('N'); "capital n")]
+    #[test_case(Key::Esc; "esc")]
+    #[test_case(Key::F10; "f10 again")]
+    #[test_case(Key::Char('q'); "q")]
+    #[test_case(Key::Char('\x03'); "ctrl c")]
+    #[test_case(Key::Char(' '); "space")]
+    #[test_case(Key::Up; "up")]
+    fn any_other_key_withdraws_the_question_and_changes_nothing_else(key: Key) {
+        for direction in [Direction::Night, Direction::Day] {
+            assert_eq!(
+                switch(offering(Switch::Asking(direction)), key),
+                Step::Screen(offering(Switch::Offered(direction)))
+            );
+        }
     }
 }

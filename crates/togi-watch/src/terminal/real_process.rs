@@ -189,15 +189,24 @@ fn real_process_helper() {
             stdout.as_fd(),
             Some(stdin.as_fd()),
             Quit::Keys,
+            None,
             frame(Arc::clone(&received), hold),
         )
+        .map(|_| ())
     };
     let outcome = match mode.as_str() {
         "integrated" => integrated(&state_dir, &received, frame(Arc::clone(&received), hold)),
         "frames" => {
             let stdin = std::io::stdin();
             let stdout = std::io::stdout();
-            run(&state_dir, stdout.as_fd(), Some(stdin.as_fd()), Quit::Keys)
+            run(
+                &state_dir,
+                stdout.as_fd(),
+                Some(stdin.as_fd()),
+                Quit::Keys,
+                None,
+            )
+            .map(|_| ())
         }
         "frames_after" => {
             let stdin = std::io::stdin();

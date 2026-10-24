@@ -1,7 +1,10 @@
-//! Bounded restart-limit retries and leave reasons kept in GRUB's environment block.
+//! Bounded restart-limit retries and leave reasons kept in GRUB's environment block, and the night
+//! switch ([`night`]): the morning deadline, the crash-loop count and the boot loader selection.
 //!
 //! The record types make an invalid leave reason unrepresentable, and `restart_limit` records an
 //! attempt before it grants either boot action, so a failure never grants a retry.
+
+pub mod night;
 
 use std::fmt;
 use std::io;
@@ -38,6 +41,9 @@ pub struct SavedEntry {
 }
 
 pub trait Bootloader: Environment {
+    /// Gives up the tuning selection, so the next boot is the day's: the entry a night remembered
+    /// (`night::DAY_ENTRY_VARIABLE`) selected again exactly, or none when the day had none. It also
+    /// forgets the night record. Reads the selection back and reports what it was before and is now.
     fn clear_saved_entry(&mut self) -> io::Result<SavedEntry>;
 }
 

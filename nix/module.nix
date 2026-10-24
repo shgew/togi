@@ -38,7 +38,13 @@ in
     tuning.leaveOnShutdown = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Clear GRUB's saved entry on an orderly operator shutdown or reboot of the tuning boot, so the next boot is the normal system. Restart-limit retry reboots preserve the tuning entry; crash reboots return to it either way.";
+      description = "Restore the normal boot selection (`togi night-end`) on an orderly operator shutdown or reboot of the tuning boot, so the next boot is the normal system. This is how the power button ends a night. Restart-limit retry reboots preserve the tuning entry; crash reboots return to it either way.";
+    };
+    tuning.night.morning = lib.mkOption {
+      type = lib.types.strMatching "([01][0-9]|2[0-3]):[0-5][0-9]";
+      default = "07:00";
+      example = "06:30";
+      description = "The time of day, as HH:MM in the machine's time zone, when a night in the tuning boot ends, whether it began with `togi night` or from the boot menu. `togi night --until` overrides it for one night. Once the time has passed, a guard in the tuning boot restores the normal boot selection and reboots before the tuner starts.";
     };
     tuning.display = lib.mkOption {
       type = lib.types.enum [
@@ -155,6 +161,15 @@ in
           }
         ];
         boot.loader.grub.default = "saved";
+        # `togi night` runs grub-editenv in the normal boot, where a shell has no other path to it.
+        environment.systemPackages = [ pkgs.grub2 ];
+        # What the night switch needs to know, in one file the normal boot and the tuning boot both read: GRUB's
+        # environment, the menu title of the tuning entry as the boot loader lists it, and when a night ends.
+        environment.etc."togi/night.json".source = json.generate "togi-night.json" {
+          grubenv = toString grubenv;
+          entry = "${config.system.nixos.distroName} - togi";
+          inherit (cfg.tuning.night) morning;
+        };
         specialisation.togi.configuration = {
           # The tuning boot inherits the normal configuration; the observer is a normal-boot service.
           services.togi.day.enable = lib.mkForce false;
@@ -199,15 +214,34 @@ in
               systemctl reboot
             '';
           };
+          # Runs before the tuner in every tuning boot and counts the boot in GRUB's environment, so neither the count
+          # nor the morning deadline depends on the tuner starting. togi requires it: a guard that fails keeps the
+          # tuner from starting unguarded, and the restart limit then returns to the normal system.
+          systemd.services.togi-night-guard = {
+            description = "Return to the normal system when the night is over";
+            before = [ "togi.service" ];
+            after = [ "local-fs.target" ];
+            unitConfig.RequiresMountsFor = grubenv;
+            path = [
+              pkgs.grub2
+              config.systemd.package
+            ];
+            serviceConfig = {
+              Type = "oneshot";
+              ExecStart = "${lib.getExe cfg.package} night-guard";
+            };
+          };
           systemd.services.togi = {
             description = "togi tuning boot";
             onFailure = [ "togi-restart-limit.service" ];
             unitConfig.RequiresMountsFor = grubenv;
             wantedBy = [ "multi-user.target" ];
+            requires = [ "togi-night-guard.service" ];
             after = [
               "systemd-modules-load.service"
               "systemd-pstore.service"
               "local-fs.target"
+              "togi-night-guard.service"
             ];
             path = [
               pkgs.grub2
@@ -236,9 +270,13 @@ in
             before = [ "togi.service" ];
             restartIfChanged = false;
             unitConfig.RequiresMountsFor = grubenv;
+            path = [
+              pkgs.grub2
+              config.systemd.package
+            ];
             preStop = ''
               [ ! -e /run/togi-retry-tuning-boot ] || exit 0
-              ${pkgs.grub2}/bin/grub-editenv ${grubenv} unset saved_entry
+              ${lib.getExe cfg.package} night-end || ${pkgs.grub2}/bin/grub-editenv ${grubenv} unset saved_entry
             '';
             serviceConfig = {
               Type = "oneshot";
@@ -277,6 +315,11 @@ in
             wants = [ "togi-kernel-log.service" ];
             wantedBy = lib.optional (cfg.tuning.display == "console") "multi-user.target";
             unitConfig.ConditionPathExists = "/dev/tty1";
+            # F10 stops the run, restores the boot selection and reboots: it needs systemctl and grub-editenv.
+            path = [
+              pkgs.grub2
+              config.systemd.package
+            ];
             environment.TERM = "linux";
             serviceConfig = {
               ExecStart = "${lib.getExe cfg.package} watch --tuning-boot";
@@ -309,6 +352,10 @@ in
             unitConfig.ConditionPathExists = "/dev/tty1";
             startLimitIntervalSec = 180;
             startLimitBurst = 3;
+            path = [
+              pkgs.grub2
+              config.systemd.package
+            ];
             environment = {
               COLORTERM = "truecolor";
               TERM = "xterm-256color";

@@ -48,7 +48,7 @@ use tokio::sync::{Notify, mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::frames;
-use crate::screen::{Colours, Drawn, Journal, Quit, Screen, View};
+use crate::screen::{Colours, Direction, Drawn, Journal, Quit, Screen, Switch, View};
 use console::Tty;
 use input::Reader;
 use notify::{Handshake, Watch as _};
@@ -143,6 +143,19 @@ pub struct Config<'a> {
     pub terminating: bool,
     /// What `q`, `Q`, Ctrl-C and Ctrl-D do.
     pub quit: Quit,
+    /// The night switch to offer: its key is shown and, once confirmed, ends the dashboard with
+    /// [`Outcome::Switch`]. `None` offers none.
+    pub switch: Option<Direction>,
+}
+
+/// Why a dashboard that needed no error ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub enum Outcome {
+    /// The viewer quit, a signal came or the caller stopped it.
+    Ended,
+    /// The viewer confirmed the night switch in this direction; the caller carries it out.
+    Switch(Direction),
 }
 
 /// The journal a dashboard shows, which the caller owns.
@@ -213,8 +226,9 @@ pub fn run(
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
     quit: Quit,
-) -> Result<(), Error> {
-    run_rendered(state_dir, out, keys, quit, dashboard())
+    switch: Option<Direction>,
+) -> Result<Outcome, Error> {
+    run_rendered(state_dir, out, keys, quit, switch, dashboard())
 }
 
 /// [`run`] on a journal and a clock the caller owns, which stays the only loop there is: the frames draw `feed`'s
@@ -227,7 +241,7 @@ pub fn run_with(
     now: impl Fn() -> Timestamp,
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
-) -> Result<(), Error> {
+) -> Result<Outcome, Error> {
     start(feed, config, out, keys, now, dashboard())
 }
 
@@ -238,8 +252,9 @@ fn run_rendered(
     out: BorrowedFd<'_>,
     keys: Option<BorrowedFd<'_>>,
     quit: Quit,
+    switch: Option<Direction>,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
-) -> Result<(), Error> {
+) -> Result<Outcome, Error> {
     let mut source = Source::new(state_dir, None);
     refuse_foreign(&mut source)?;
     start(
@@ -250,6 +265,7 @@ fn run_rendered(
             stop: None,
             terminating: true,
             quit,
+            switch,
         },
         out,
         keys,
@@ -300,12 +316,14 @@ fn run_after_rendered(
             stop: Some(stop),
             terminating: false,
             quit: Quit::Keys,
+            switch: None,
         },
         out,
         keys,
         Timestamp::now,
         render,
     )
+    .map(|_| ())
 }
 
 /// The dashboard's frames: [`frames::render`] in the system's time zone.
@@ -321,7 +339,7 @@ fn start(
     keys: Option<BorrowedFd<'_>>,
     now: impl Fn() -> Timestamp,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
-) -> Result<(), Error> {
+) -> Result<Outcome, Error> {
     let facts = togi_render::OutputFacts::detect(
         &out,
         std::env::var_os("NO_COLOR").as_deref(),
@@ -365,7 +383,7 @@ fn drive<B: console::Console>(
     colours: Colours,
     now: impl Fn() -> Timestamp,
     render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
-) -> Result<(), Error> {
+) -> Result<Outcome, Error> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -398,7 +416,7 @@ fn drive_with<B: console::Console>(
     now: impl Fn() -> Timestamp,
     mut render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
     listen: impl FnOnce(bool, mpsc::UnboundedSender<Event>) -> io::Result<JoinHandle<()>>,
-) -> Result<(), Error> {
+) -> Result<Outcome, Error> {
     let now = &now;
     std::thread::scope(|scope| {
         runtime.block_on(async {
@@ -447,6 +465,7 @@ fn drive_with<B: console::Console>(
                     palette: uses_palette(colours),
                     keys: reader.is_some(),
                     quit: live.quit,
+                    switch: live.switch,
                     colours,
                     now,
                     tick: live.tick,
@@ -570,6 +589,7 @@ fn one_frame_loaded(
         one_frame: true,
         colours: Colours::None,
         quit: Quit::Keys,
+        switch: Switch::Off,
     };
     let mut buffer = Buffer::empty(Rect::new(
         0,
@@ -615,6 +635,7 @@ mod tests {
     use jiff::Timestamp;
     use ratatui::buffer::Buffer;
 
+    use super::Outcome;
     use super::console::RESET_PALETTE;
     use super::source::MemoryJournal;
     use super::testing::{Faults, Recorder, lines, session_with_warnings};
@@ -661,7 +682,7 @@ mod tests {
         feed: impl Feed,
         colours: Colours,
         render: impl FnMut(&Journal<'_>, &Screen, Timestamp, &mut Buffer) -> Drawn,
-    ) -> Result<(), Error> {
+    ) -> Result<Outcome, Error> {
         drive_with(
             &timer_runtime(),
             recorder.backend(),
@@ -706,7 +727,7 @@ mod tests {
             &mut Buffer,
             &tokio::sync::mpsc::UnboundedSender<Event>,
         ) -> Drawn,
-    ) -> Result<(), Error> {
+    ) -> Result<Outcome, Error> {
         let events = std::cell::RefCell::new(None);
         drive_with(
             &timer_runtime(),
@@ -794,6 +815,7 @@ mod tests {
             stop: Some(&stop),
             terminating: false,
             quit: Quit::Keys,
+            switch: None,
         };
         let reads = std::cell::Cell::new(0_i64);
         let clock = || {
@@ -806,25 +828,28 @@ mod tests {
         });
         let mut drawn_at = Vec::new();
         let recorder = Recorder::new(80, 12);
-        drive_with(
-            &timer_runtime(),
-            recorder.backend(),
-            feed,
-            &config,
-            None,
-            Colours::None,
-            clock,
-            |journal, screen, now, buf| {
-                assert!(matches!(journal, Journal::Missing));
-                drawn_at.push(now);
-                if drawn_at.len() == 3 {
-                    stop.stop();
-                }
-                frozen(journal, screen, now, buf)
-            },
-            silent_listener,
-        )
-        .unwrap();
+        assert_eq!(
+            drive_with(
+                &timer_runtime(),
+                recorder.backend(),
+                feed,
+                &config,
+                None,
+                Colours::None,
+                clock,
+                |journal, screen, now, buf| {
+                    assert!(matches!(journal, Journal::Missing));
+                    drawn_at.push(now);
+                    if drawn_at.len() == 3 {
+                        stop.stop();
+                    }
+                    frozen(journal, screen, now, buf)
+                },
+                silent_listener,
+            )
+            .unwrap(),
+            Outcome::Ended
+        );
         assert!(!watchdog.fired(), "a frozen frame was never redrawn");
         assert_eq!(reloads.get(), 1, "one reload before the first frame");
         assert_eq!(journals.get(), 3, "the feed was asked for each frame");
@@ -852,6 +877,7 @@ mod tests {
             stop: Some(&stop),
             terminating: false,
             quit: Quit::Keys,
+            switch: None,
         };
         let faults = match exit {
             "clear error" => Faults {
@@ -909,7 +935,7 @@ mod tests {
                     "{exit}"
                 );
             }
-            _ => result.unwrap().unwrap(),
+            _ => assert_eq!(result.unwrap().unwrap(), Outcome::Ended),
         }
         assert!(recorder.restored(), "{exit}");
         if let Some(write) = &write {
@@ -930,26 +956,30 @@ mod tests {
             stop: Some(&stop),
             terminating: true,
             quit: Quit::Keys,
+            switch: None,
         };
         let watchdog = Watchdog::start({
             let stop = stop.clone();
             move || stop.stop()
         });
         let mut sent = false;
-        run_events(
-            &recorder,
-            &live,
-            Source::memory(&state, None),
-            Colours::Console,
-            |journal, screen, now, buf, events| {
-                if !sent {
-                    sent = true;
-                    events.send(Event::Cancel).unwrap();
-                }
-                frozen(journal, screen, now, buf)
-            },
-        )
-        .unwrap();
+        assert_eq!(
+            run_events(
+                &recorder,
+                &live,
+                Source::memory(&state, None),
+                Colours::Console,
+                |journal, screen, now, buf, events| {
+                    if !sent {
+                        sent = true;
+                        events.send(Event::Cancel).unwrap();
+                    }
+                    frozen(journal, screen, now, buf)
+                },
+            )
+            .unwrap(),
+            Outcome::Ended
+        );
         assert!(!watchdog.fired(), "{name} did not end the dashboard");
         assert!(recorder.restored(), "{name}");
         assert_eq!(
@@ -1013,6 +1043,7 @@ mod tests {
             stop: Some(&stop),
             terminating: true,
             quit: Quit::Keys,
+            switch: None,
         };
         let watchdog = Watchdog::start({
             let stop = stop.clone();
@@ -1020,24 +1051,27 @@ mod tests {
         });
         let mut sizes = Vec::new();
         let probe = recorder.clone();
-        run_events(
-            &recorder,
-            &live,
-            Source::memory(&state, None),
-            Colours::None,
-            |journal, screen, now, buf, events| {
-                sizes.push((screen.width, screen.height));
-                match sizes.len() {
-                    1 => {
-                        probe.resize(100, 30);
-                        events.send(Event::Resize).unwrap();
+        assert_eq!(
+            run_events(
+                &recorder,
+                &live,
+                Source::memory(&state, None),
+                Colours::None,
+                |journal, screen, now, buf, events| {
+                    sizes.push((screen.width, screen.height));
+                    match sizes.len() {
+                        1 => {
+                            probe.resize(100, 30);
+                            events.send(Event::Resize).unwrap();
+                        }
+                        _ => events.send(Event::Cancel).unwrap(),
                     }
-                    _ => events.send(Event::Cancel).unwrap(),
-                }
-                frozen(journal, screen, now, buf)
-            },
-        )
-        .unwrap();
+                    frozen(journal, screen, now, buf)
+                },
+            )
+            .unwrap(),
+            Outcome::Ended
+        );
         assert!(!watchdog.fired(), "the resize drew nothing");
         assert_eq!(sizes, [(80, 12), (100, 30)]);
         assert_eq!(recorder.clears(), 3, "entry, the resize, and leaving");
@@ -1055,15 +1089,19 @@ mod tests {
             stop: Some(&stop),
             terminating: false,
             quit: Quit::Keys,
+            switch: None,
         };
-        run_drive(
-            &recorder,
-            &live,
-            Source::memory(&state, None),
-            Colours::None,
-            plain,
-        )
-        .unwrap();
+        assert_eq!(
+            run_drive(
+                &recorder,
+                &live,
+                Source::memory(&state, None),
+                Colours::None,
+                plain,
+            )
+            .unwrap(),
+            Outcome::Ended
+        );
         assert!(recorder.restored());
     }
 
@@ -1078,6 +1116,7 @@ mod tests {
             stop: Some(&stop),
             terminating: true,
             quit: Quit::Keys,
+            switch: None,
         };
         let watchdog = Watchdog::start({
             let stop = stop.clone();
@@ -1085,20 +1124,23 @@ mod tests {
         });
         let other = stop.clone();
         let mut frames = 0;
-        run_drive(
-            &recorder,
-            &live,
-            Source::memory(&state, None),
-            Colours::None,
-            |journal, screen, now, buf| {
-                frames += 1;
-                std::thread::scope(|scope| {
-                    scope.spawn(|| other.stop());
-                });
-                frozen(journal, screen, now, buf)
-            },
-        )
-        .unwrap();
+        assert_eq!(
+            run_drive(
+                &recorder,
+                &live,
+                Source::memory(&state, None),
+                Colours::None,
+                |journal, screen, now, buf| {
+                    frames += 1;
+                    std::thread::scope(|scope| {
+                        scope.spawn(|| other.stop());
+                    });
+                    frozen(journal, screen, now, buf)
+                },
+            )
+            .unwrap(),
+            Outcome::Ended
+        );
         assert!(!watchdog.fired(), "the stop from another thread was lost");
         assert_eq!(frames, 1);
         assert!(recorder.restored());
@@ -1122,15 +1164,19 @@ mod tests {
                 stop: Some(&stop),
                 terminating: false,
                 quit: Quit::Keys,
+                switch: None,
             };
-            run_drive(
-                &recorder,
-                &live,
-                Source::memory(&state, None),
-                colours,
-                plain,
-            )
-            .unwrap();
+            assert_eq!(
+                run_drive(
+                    &recorder,
+                    &live,
+                    Source::memory(&state, None),
+                    colours,
+                    plain,
+                )
+                .unwrap(),
+                Outcome::Ended
+            );
             let raw = recorder.raw();
             let palette = raw.iter().any(|text| text.starts_with("\x1b]P"));
             assert_eq!(palette, colours == Colours::Console, "{colours:?}");
@@ -1156,17 +1202,21 @@ mod tests {
             stop: Some(&stop),
             terminating: false,
             quit: Quit::Keys,
+            switch: None,
         };
-        run_drive(
-            &recorder,
-            &live,
-            Source::memory(&state, None),
-            Colours::None,
-            |journal, screen, now, buf| {
-                crate::frames::render(journal, screen, now, &jiff::tz::TimeZone::UTC, buf)
-            },
-        )
-        .unwrap();
+        assert_eq!(
+            run_drive(
+                &recorder,
+                &live,
+                Source::memory(&state, None),
+                Colours::None,
+                |journal, screen, now, buf| {
+                    crate::frames::render(journal, screen, now, &jiff::tz::TimeZone::UTC, buf)
+                },
+            )
+            .unwrap(),
+            Outcome::Ended
+        );
         let frames = recorder.draws();
         assert_eq!(frames.len(), 1);
         let mut buffer = Buffer::empty(ratatui::layout::Rect::new(0, 0, 119, 32));
@@ -1364,6 +1414,7 @@ mod tests {
             stop: Some(&stop),
             terminating: false,
             quit: Quit::Keys,
+            switch: None,
         };
         let error = run_drive(
             &recorder,
@@ -1391,6 +1442,7 @@ mod tests {
             stop: Some(&stop),
             terminating: false,
             quit: Quit::Keys,
+            switch: None,
         };
         let watchdog = Watchdog::start({
             let stop = stop.clone();

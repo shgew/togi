@@ -13,6 +13,7 @@ mod host;
 mod preflight;
 mod ranking;
 mod reboot;
+mod stop;
 mod watchdog;
 
 use std::path::Path;
@@ -27,6 +28,7 @@ pub use diagnose::Diagnosis;
 pub use error::Error;
 pub use grub::{ClearError, CommandError, Grub, GrubError, Verb};
 pub use reboot::{RebootError, reboot};
+pub use stop::{StopError, stop_tuning};
 
 use adapters::{SharedSmu, SystemClock};
 use assemble::Parts;

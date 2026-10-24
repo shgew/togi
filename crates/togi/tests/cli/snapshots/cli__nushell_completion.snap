@@ -92,6 +92,25 @@ module completions {
     --help(-h)                # Print help (see more with '--help')
   ]
 
+  # Reboot into the tuning boot for the night
+  export extern "togi night" [
+    --until: string           # When the night ends, as HH:MM in the machine's time zone
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
+  # Restore the day's boot selection
+  export extern "togi night-end" [
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
+  # Return to the day when the night is over, before the tuner starts
+  export extern "togi night-guard" [
+    --state-dir: directory    # State directory
+    --help(-h)                # Print help (see more with '--help')
+  ]
+
   # Reset one core, or archive the whole session
   export extern "togi reset" [
     --core: string            # Reset core N: clear its failure point and every combination that includes it, and restart its search from the baseline
@@ -159,6 +178,18 @@ module completions {
 
   # Print the journal, one readable line per event
   export extern "togi help events" [
+  ]
+
+  # Reboot into the tuning boot for the night
+  export extern "togi help night" [
+  ]
+
+  # Restore the day's boot selection
+  export extern "togi help night-end" [
+  ]
+
+  # Return to the day when the night is over, before the tuner starts
+  export extern "togi help night-guard" [
   ]
 
   # Reset one core, or archive the whole session
