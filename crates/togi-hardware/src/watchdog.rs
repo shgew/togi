@@ -34,9 +34,25 @@ enum Refusal {
     ReadPid1(#[source] io::Error),
 }
 
-struct Ready {
-    name: String,
-    identity: String,
+/// The watchdog device the sysfs probe validated as active hardware.
+pub(crate) struct Ready {
+    pub(crate) name: String,
+    pub(crate) identity: String,
+}
+
+impl Ready {
+    fn detail(&self) -> String {
+        format!("{} ({}) active", self.name, self.identity)
+    }
+
+    /// Whether `path` is this device's node: `/dev/<name>`, or the legacy `/dev/watchdog`, which the kernel
+    /// registers for `watchdog0` only.
+    fn is_node(&self, path: &Path) -> bool {
+        let Some(node) = path.to_str().and_then(|path| path.strip_prefix("/dev/")) else {
+            return false;
+        };
+        node == self.name || (node == "watchdog" && self.name == "watchdog0")
+    }
 }
 
 fn devices(class: &Path) -> io::Result<impl Iterator<Item = io::Result<OsString>> + use<>> {
@@ -97,17 +113,46 @@ pub(crate) fn probe_with<I>(
 where
     I: IntoIterator<Item = io::Result<OsString>>,
 {
+    match scan_with(root, list, read_attribute) {
+        Ok(ready) => passed(CheckName::Watchdog, ready.detail()),
+        Err(check) => check,
+    }
+}
+
+/// The first active hardware watchdog under `root`, or the failed check saying why there is none.
+pub(crate) fn scan(root: &Path) -> Result<Ready, Check> {
+    scan_with(root, devices, read_attribute)
+}
+
+fn scan_with<I>(
+    root: &Path,
+    list: impl Fn(&Path) -> io::Result<I>,
+    read_attribute: impl Fn(&Path) -> io::Result<String>,
+) -> Result<Ready, Check>
+where
+    I: IntoIterator<Item = io::Result<OsString>>,
+{
     let class = root.join(CLASS_DIR);
     let entries = match list(&class) {
         Ok(entries) => Some(entries),
         Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-        Err(error) => return failed(CheckName::Watchdog, error_chain(&Refusal::List(error))),
+        Err(error) => {
+            return Err(failed(
+                CheckName::Watchdog,
+                error_chain(&Refusal::List(error)),
+            ));
+        }
     };
     let mut devices = Vec::new();
     for entry in entries.into_iter().flatten() {
         let name = match entry {
             Ok(name) => name,
-            Err(error) => return failed(CheckName::Watchdog, error_chain(&Refusal::List(error))),
+            Err(error) => {
+                return Err(failed(
+                    CheckName::Watchdog,
+                    error_chain(&Refusal::List(error)),
+                ));
+            }
         };
         if let Some(name) = name.to_str().filter(|name| name.starts_with("watchdog")) {
             devices.push((name.to_owned(), class.join(name)));
@@ -117,20 +162,18 @@ where
     let mut refusals = Vec::new();
     for (name, dir) in &devices {
         match examine(name, dir, &read_attribute) {
-            Ok(Some(ready)) => {
-                return passed(
-                    CheckName::Watchdog,
-                    format!("{} ({}) active", ready.name, ready.identity),
-                );
-            }
+            Ok(Some(ready)) => return Ok(ready),
             Ok(None) => {}
             Err(refusal) => refusals.push(error_chain(&refusal)),
         }
     }
     if refusals.is_empty() {
-        return failed(CheckName::Watchdog, "no hardware watchdog state available");
+        return Err(failed(
+            CheckName::Watchdog,
+            "no hardware watchdog state available",
+        ));
     }
-    failed(CheckName::Watchdog, refusals.join("; "))
+    Err(failed(CheckName::Watchdog, refusals.join("; ")))
 }
 
 /// The device paths PID 1's open descriptors point at. A descriptor that closes between the listing and its
@@ -145,40 +188,34 @@ pub(crate) fn pid1_descriptors(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(targets)
 }
 
-/// Whether PID 1's hardware watchdog is armed under `root`: some hardware watchdog is active (`probe`) and PID 1
-/// holds a watchdog device, which is what feeds it. Observes only what the kernel reports.
+/// Whether PID 1's hardware watchdog is armed under `root`: a hardware watchdog is active (`scan`) and PID 1
+/// holds that same device, which is what feeds it. Observes only what the kernel reports.
 pub(crate) fn arming(root: &Path) -> WatchdogState {
-    arming_with(&probe(root), pid1_descriptors(root))
+    arming_with(&scan(root), pid1_descriptors(root))
 }
 
 pub(crate) fn arming_with(
-    active: &Check,
+    active: &Result<Ready, Check>,
     pid1_descriptors: io::Result<Vec<PathBuf>>,
 ) -> WatchdogState {
-    if !active.ok {
-        return WatchdogState::Unarmed {
-            detail: active.detail.clone(),
-        };
-    }
+    let ready = match active {
+        Ok(ready) => ready,
+        Err(check) => {
+            return WatchdogState::Unarmed {
+                detail: check.detail.clone(),
+            };
+        }
+    };
+    let detail = ready.detail();
     match pid1_descriptors {
         Err(error) => WatchdogState::Unarmed {
-            detail: format!(
-                "{}; {}",
-                active.detail,
-                error_chain(&Refusal::ReadPid1(error))
-            ),
+            detail: format!("{detail}; {}", error_chain(&Refusal::ReadPid1(error))),
         },
-        Ok(held) if held.iter().any(|path| is_watchdog_device(path)) => WatchdogState::Armed {
-            detail: format!("{}, held by PID 1", active.detail),
+        Ok(held) if held.iter().any(|path| ready.is_node(path)) => WatchdogState::Armed {
+            detail: format!("{detail}, held by PID 1"),
         },
         Ok(_) => WatchdogState::Unarmed {
-            detail: format!("{}, but PID 1 holds no /dev/watchdog device", active.detail),
+            detail: format!("{detail}, but PID 1 does not hold /dev/{}", ready.name),
         },
     }
-}
-
-/// `/dev/watchdog` or `/dev/watchdogN`; a component-wise prefix test would miss the numbered devices.
-fn is_watchdog_device(path: &Path) -> bool {
-    path.to_str()
-        .is_some_and(|path| path.starts_with("/dev/watchdog"))
 }
