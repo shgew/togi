@@ -221,10 +221,24 @@ fn day_events(
     };
     [
         ("day-a", start()),
-        ("day-a", DayCheckpoint { applied_secs: 3600 }.into()),
+        (
+            "day-a",
+            DayCheckpoint {
+                applied_secs: 3600,
+                load_mix: togi_journal::LoadMix::default(),
+            }
+            .into(),
+        ),
         ("day-a", DayCleanStop {}.into()),
         ("day-b", start()),
-        ("day-b", DayCheckpoint { applied_secs: 1800 }.into()),
+        (
+            "day-b",
+            DayCheckpoint {
+                applied_secs: 1800,
+                load_mix: togi_journal::LoadMix::default(),
+            }
+            .into(),
+        ),
         (
             "day-c",
             DayUncleanEnd {

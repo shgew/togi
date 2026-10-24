@@ -8,20 +8,32 @@ use clap::Args as ClapArgs;
 use togi_hardware::day::Observer;
 use togi_journal::{
     Build, DayBootStart, DayCheckpoint, DayCleanStop, DayOffsetsChanged, DayUncleanEnd, Event,
-    Journal, Payload, Seq, Stamp,
+    Journal, LoadMix, Payload, Seq, Stamp,
 };
 use togi_machine::{
-    BootId, CancellationToken, Clock, CoreId, ObservedOffset, PerCore, ResetReason, WatchdogState,
+    BootId, CancellationToken, Clock, CoreId, CoreInfo, ObservedOffset, PerCore, ResetReason,
+    WatchdogState,
 };
 
 use crate::cli::Context;
 use crate::exit::Exit;
 use crate::report::{current_build, exit_with};
 
+mod faults;
+mod load_mix;
 mod notify;
+mod record;
 pub mod socket;
 
+use faults::Faults;
+use load_mix::{SAMPLE, Sampler};
+
 const CHECKPOINT: Duration = Duration::from_secs(600);
+
+/// How often the kernel log is read for new faults. A fault is journaled with the offsets last read back, so
+/// reading more often than that matters less than reading at all; half a minute keeps the journalctl process
+/// off the machine's busy seconds.
+const FAULT_POLL: Duration = Duration::from_secs(30);
 
 static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
     crate::cli::examples(&[
@@ -34,18 +46,25 @@ static EXAMPLES: LazyLock<String> = LazyLock::new(|| {
             "togi day answer <boot> frozen",
             "Answer a pending question without root",
         ),
+        (
+            "sudo togi day record",
+            "Record a crash togi did not observe",
+        ),
     ])
 });
 
-/// Observe daily use, or answer what happened after an unclean end
+/// Observe daily use, answer what happened after an unclean end, or record a crash togi missed
 ///
 /// With no subcommand, reads every core at start and each ten-minute checkpoint, records active
-/// hours excluding suspend, and writes a final checkpoint before a clean stop on SIGTERM, SIGINT
-/// or SIGHUP. Observation requires root and an existing compatible session journal. It holds the
+/// hours excluding suspend, samples per-CPU load every few seconds into a mix of load shapes
+/// checkpointed with the hours, journals each machine check, kernel error and SIGILL, SIGBUS or
+/// general-protection fault once, and writes a final checkpoint before a clean stop on SIGTERM,
+/// SIGINT or SIGHUP. Observation requires root and an existing compatible session journal. It holds the
 /// host and writer locks: stop the day service before tuning. Status/watch stay lock-free.
 ///
 /// The answer and notify subcommands need no root or journal access. They use the running day
-/// service's credential-checked socket; configure services.togi.day.users for access.
+/// service's credential-checked socket; configure services.togi.day.users for access. The record
+/// subcommand needs root and writes the journal itself, so it needs the day service stopped.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES.as_str())]
 pub struct Args {
@@ -66,6 +85,7 @@ pub enum Command {
     },
     /// Send pending questions to this graphical session's notification daemon.
     Notify,
+    Record(record::Args),
 }
 
 fn parse_answer(value: &str) -> Result<togi_journal::DayAnswerKind, String> {
@@ -81,6 +101,7 @@ pub fn run(args: &Args, ctx: &mut Context<'_>) -> Exit {
         return match command {
             Command::Answer { boot, answer } => answer_end(boot, *answer, ctx),
             Command::Notify => notify::run(ctx),
+            Command::Record(record) => record::run(record, ctx),
         };
     }
     if let Err(error) = ctx.system.check_platform() {
@@ -176,6 +197,8 @@ pub enum Error {
     ClockReversed,
     #[error("daily observation duration overflowed")]
     DurationOverflow,
+    #[error("the session journal records no core topology to group the sampled CPUs by")]
+    Topology,
     #[error("serve day questions")]
     Socket(#[from] socket::Error),
 }
@@ -261,7 +284,19 @@ fn observe_with_socket(
             watchdog: Some(watchdog),
         },
     )?;
+    let mut sampler = Sampler::new(
+        session_cores(journal.events())?,
+        ledger
+            .boots
+            .get(journal.boot())
+            .map_or_else(LoadMix::default, |boot| boot.load_mix),
+    );
+    sampler.record(started, observer.cpu_times()?)?;
+    let mut faults = Faults::of(journal.events(), journal.boot());
+    faults.poll(journal, observer, clock, offsets)?;
     let mut checkpointed = started;
+    let mut sampled = started;
+    let mut polled = started;
     loop {
         if let Some(socket) = socket {
             socket.poll(journal, clock)?;
@@ -269,16 +304,23 @@ fn observe_with_socket(
         let wait = if socket.is_some() {
             Duration::from_secs(1)
         } else {
-            CHECKPOINT
+            SAMPLE
         };
         match clock.sleep(cancel, wait) {
             Ok(()) | Err(togi_machine::Error::Cancelled) => {}
             Err(error) => return Err(error.into()),
         }
         let now = clock.monotonic()?;
-        if !cancel.is_cancelled()
-            && now.checked_sub(checkpointed).ok_or(Error::ClockReversed)? < CHECKPOINT
-        {
+        let stopping = cancel.is_cancelled();
+        if stopping || now.checked_sub(sampled).ok_or(Error::ClockReversed)? >= SAMPLE {
+            sampler.record(now, observer.cpu_times()?)?;
+            sampled = now;
+        }
+        if stopping || now.checked_sub(polled).ok_or(Error::ClockReversed)? >= FAULT_POLL {
+            faults.poll(journal, observer, clock, offsets)?;
+            polled = now;
+        }
+        if !stopping && now.checked_sub(checkpointed).ok_or(Error::ClockReversed)? < CHECKPOINT {
             continue;
         }
         checkpointed = now;
@@ -296,19 +338,35 @@ fn observe_with_socket(
             clock,
             DayCheckpoint {
                 applied_secs: applied.as_secs(),
+                load_mix: sampler.mix(),
             },
         )?;
-        if cancel.is_cancelled() {
+        if stopping {
             append(journal, clock, DayCleanStop {})?;
             return Ok(());
         }
     }
 }
 
+/// The cores the session journal recorded, which group the sampled CPUs.
+fn session_cores(events: &[Event]) -> Result<&[CoreInfo], Error> {
+    events
+        .iter()
+        .find_map(|event| {
+            if let Payload::SessionStart(start) = &event.payload {
+                Some(start.cores.as_slice())
+            } else {
+                None
+            }
+        })
+        .ok_or(Error::Topology)
+}
+
 pub(crate) struct Boot {
     pub offsets: PerCore<ObservedOffset>,
     pub checkpoint: Option<Seq>,
     pub seconds: u64,
+    pub load_mix: LoadMix,
     pub clean: bool,
     pub unclean: bool,
     changed: bool,
@@ -339,6 +397,9 @@ impl Ledger {
                         offsets: start.offsets,
                         checkpoint: previous.as_ref().and_then(|boot| boot.checkpoint),
                         seconds: previous.as_ref().map_or(0, |boot| boot.seconds),
+                        load_mix: previous
+                            .as_ref()
+                            .map_or_else(LoadMix::default, |boot| boot.load_mix),
                         clean: false,
                         unclean: false,
                         changed: false,
@@ -366,6 +427,7 @@ impl Ledger {
                         );
                     }
                     boot.seconds = checkpoint.applied_secs;
+                    boot.load_mix = checkpoint.load_mix;
                     boot.checkpoint = Some(event.seq);
                     boot.changed = false;
                 }

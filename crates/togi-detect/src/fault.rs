@@ -1,6 +1,6 @@
 use std::num::ParseIntError;
 
-use togi_machine::{CpuId, ProcessFault, ProcessFaultKind};
+use togi_machine::{CpuId, KernelError, KernelErrorKind, ProcessFault, ProcessFaultKind};
 
 use crate::{CpuCoreMap, Message};
 
@@ -34,6 +34,31 @@ pub fn process_faults(
         }
     }
     Ok(faults)
+}
+
+/// The oopses, RCU stalls and soft lockups the kernel reported. An x86 `kernel BUG at` line comes with its own
+/// `Oops:` line, so only that one counts.
+pub fn kernel_errors(messages: &[Message]) -> Vec<KernelError> {
+    messages
+        .iter()
+        .filter_map(|message| {
+            let text = message.text.as_str();
+            let kind = if text.contains("Oops:") {
+                KernelErrorKind::Oops
+            } else if text.contains("detected stall") {
+                KernelErrorKind::RcuStall
+            } else if text.contains("BUG: soft lockup") {
+                KernelErrorKind::SoftLockup
+            } else {
+                return None;
+            };
+            Some(KernelError {
+                kind,
+                monotonic: message.monotonic,
+                lines: vec![message.text.clone()],
+            })
+        })
+        .collect()
 }
 
 fn process_fault(
@@ -195,6 +220,46 @@ mod tests {
         assert_eq!(
             process_faults(&messages, &CpuCoreMap::default()).unwrap(),
             []
+        );
+    }
+
+    #[test_case::test_case(
+        "Oops: general protection fault, probably for non-canonical address 0xdead [#1] PREEMPT SMP NOPTI",
+        Some(KernelErrorKind::Oops);
+        "oops"
+    )]
+    #[test_case::test_case(
+        "rcu: INFO: rcu_preempt self-detected stall on CPU",
+        Some(KernelErrorKind::RcuStall);
+        "self-detected RCU stall"
+    )]
+    #[test_case::test_case(
+        "rcu: INFO: rcu_preempt detected stalls on CPUs/tasks:",
+        Some(KernelErrorKind::RcuStall);
+        "RCU stalls on other CPUs"
+    )]
+    #[test_case::test_case(
+        "watchdog: BUG: soft lockup - CPU#3 stuck for 26s! [kworker/3:1:123]",
+        Some(KernelErrorKind::SoftLockup);
+        "soft lockup"
+    )]
+    #[test_case::test_case("kernel BUG at mm/slub.c:123!", None; "a BUG line comes with its own oops line")]
+    #[test_case::test_case("amdgpu 0000:03:00.0: ring gfx_0.0.0 timeout", None; "an unrelated line")]
+    fn kernel_error_examples(text: &str, kind: Option<KernelErrorKind>) {
+        let messages = [Message {
+            time: jiff::Timestamp::UNIX_EPOCH,
+            text: text.into(),
+            monotonic: Duration::from_secs(9),
+        }];
+        let errors = kernel_errors(&messages);
+        assert_eq!(
+            errors.iter().map(|error| error.kind).collect::<Vec<_>>(),
+            kind.into_iter().collect::<Vec<_>>()
+        );
+        assert!(
+            errors
+                .iter()
+                .all(|error| error.monotonic == Duration::from_secs(9) && error.lines == [text])
         );
     }
 }

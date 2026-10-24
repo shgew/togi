@@ -51,6 +51,8 @@ const SILENT: &[EventKind] = &[
     EventKind::DayCleanStop,
     EventKind::DayUncleanEnd,
     EventKind::DayAnswer,
+    EventKind::DayRecord,
+    EventKind::DayFault,
 ];
 
 /// The kinds the log leaves out: the SMU dance and the preflight checks.
@@ -71,7 +73,7 @@ fn quiet(kind: EventKind) -> bool {
 
 #[test]
 fn every_kind_has_its_words_or_says_it_is_silent() {
-    assert_eq!(EventKind::ALL.len(), 56);
+    assert_eq!(EventKind::ALL.len(), 58);
     for &kind in EventKind::ALL {
         let table = words(kind);
         assert_eq!(
@@ -460,6 +462,8 @@ fn assert_decision_words(payload: &Payload) {
         | Payload::DayCleanStop(_)
         | Payload::DayUncleanEnd(_)
         | Payload::DayAnswer(_)
+        | Payload::DayRecord(_)
+        | Payload::DayFault(_)
         | Payload::StateRebuilt(_) => return,
     };
     let table = words(payload.kind());
@@ -774,6 +778,8 @@ fn a_tag_applies_only_to_its_own_kind(kind: EventKind) {
         | EventKind::DayOffsetsChanged
         | EventKind::DayCleanStop
         | EventKind::DayAnswer
+        | EventKind::DayRecord
+        | EventKind::DayFault
         | EventKind::DayUncleanEnd
         | EventKind::StateRebuilt => Tag::Limit,
     };

@@ -295,12 +295,41 @@ object_only! {
     }
 }
 
-/// Kernel traps, machine checks and the cursor after the last log entry read.
+/// An error the kernel logged about itself: an oops, an RCU stall or a soft lockup.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KernelErrorKind {
+    Oops,
+    RcuStall,
+    SoftLockup,
+}
+
+/// One kernel log entry reporting a [`KernelErrorKind`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KernelError {
+    pub kind: KernelErrorKind,
+    pub monotonic: Duration,
+    pub lines: Vec<String>,
+}
+
+/// Kernel traps, machine checks, kernel errors and the cursor after the last log entry read.
 #[derive(Debug, Default)]
 pub struct KernelRead {
     pub mces: Vec<Mce>,
     pub faults: Vec<ProcessFault>,
+    pub errors: Vec<KernelError>,
     pub cursor: KernelCursor,
+}
+
+/// One logical CPU's cumulative scheduler time, in the kernel's clock ticks since boot. Suspended time adds to
+/// neither count.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CpuTime {
+    pub cpu: CpuId,
+    /// Ticks spent running anything but the idle task (and not waiting for I/O).
+    pub busy: u64,
+    /// Ticks in every state.
+    pub total: u64,
 }
 
 object_only! {

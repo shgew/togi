@@ -1,12 +1,19 @@
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use jiff::Timestamp;
 use test_case::test_case;
 use togi_journal::fs::{Fault, Op};
+use togi_journal::{DayFault, EventKind, LiveFault, LoadMix, Trap};
 use togi_journal::{MemFs, SessionId, SessionStart, StateDir};
-use togi_machine::{BiosContext, CcdId, CoreInfo, CpuId, Error as MachineError, ResetKind};
+use togi_machine::{
+    BankType, BiosContext, CcdId, CoreInfo, CpuId, CpuTime, Error as MachineError, KernelCursor,
+    KernelError, KernelErrorKind, KernelRead, Mce, Partial, ProcessFault, ProcessFaultKind,
+    ResetKind,
+};
 
 use super::*;
 
@@ -64,10 +71,14 @@ fn journal_on(fs: Arc<MemFs>) -> Journal {
     journal
 }
 
+type LiveLog = dyn FnMut(Option<&KernelCursor>) -> Result<KernelRead, Partial<KernelRead>>;
+
 struct Reading {
     offsets: VecDeque<PerCore<ObservedOffset>>,
     reason: Option<ResetKind>,
     watchdog: WatchdogState,
+    times: VecDeque<Vec<CpuTime>>,
+    live: Box<LiveLog>,
 }
 
 fn armed() -> WatchdogState {
@@ -82,7 +93,22 @@ impl Reading {
             offsets: [offsets(-10)].into(),
             reason: None,
             watchdog: armed(),
+            times: [vec![CpuTime {
+                cpu: CpuId::from(0_u16),
+                busy: 0,
+                total: 0,
+            }]]
+            .into(),
+            live: Box::new(|_| Ok(KernelRead::default())),
         }
+    }
+
+    fn logging(
+        mut self,
+        live: impl FnMut(Option<&KernelCursor>) -> Result<KernelRead, Partial<KernelRead>> + 'static,
+    ) -> Self {
+        self.live = Box::new(live);
+        self
     }
 }
 
@@ -112,6 +138,20 @@ impl Observer for Reading {
     fn watchdog(&mut self) -> WatchdogState {
         self.watchdog.clone()
     }
+    fn live_faults(
+        &mut self,
+        _: &BootId,
+        after: Option<&KernelCursor>,
+    ) -> Result<KernelRead, Partial<KernelRead>> {
+        (self.live)(after)
+    }
+    fn cpu_times(&mut self) -> Result<Vec<CpuTime>, MachineError> {
+        Ok(if self.times.len() > 1 {
+            self.times.pop_front().unwrap()
+        } else {
+            self.times.front().unwrap().clone()
+        })
+    }
 }
 
 /// Reads like `reading` until `reads` readings succeeded, then fails every read.
@@ -139,6 +179,16 @@ impl Observer for FailingAfter {
     }
     fn watchdog(&mut self) -> WatchdogState {
         self.reading.watchdog()
+    }
+    fn live_faults(
+        &mut self,
+        boot: &BootId,
+        after: Option<&KernelCursor>,
+    ) -> Result<KernelRead, Partial<KernelRead>> {
+        self.reading.live_faults(boot, after)
+    }
+    fn cpu_times(&mut self) -> Result<Vec<CpuTime>, MachineError> {
+        self.reading.cpu_times()
     }
 }
 
@@ -170,7 +220,7 @@ impl Clock for ActiveClock {
         cancel: &CancellationToken,
         duration: Duration,
     ) -> Result<(), MachineError> {
-        assert_eq!(duration, CHECKPOINT);
+        assert_eq!(duration, SAMPLE);
         let (active, wall) = self.sleeps.pop_front().unwrap();
         self.active += active;
         self.wall += wall;
@@ -341,7 +391,11 @@ fn next_boot_records_unclean_end_without_classifying_it(reason: Option<ResetKind
                 time: Timestamp::UNIX_EPOCH,
                 mono: Some(Duration::from_secs(600)),
             },
-            DayCheckpoint { applied_secs: 600 }.into(),
+            DayCheckpoint {
+                applied_secs: 600,
+                load_mix: LoadMix::default(),
+            }
+            .into(),
             &[],
         )
         .unwrap()
@@ -437,8 +491,8 @@ fn changed_readback_records_change_before_checkpoint_and_excludes_ambiguous_prof
     let mut journal = journal();
     let mut reading = Reading {
         offsets: [offsets(-10), offsets(-5)].into(),
-        reason: None,
         watchdog: armed(),
+        ..Reading::fixed()
     };
     observe(
         &mut journal,
@@ -484,4 +538,456 @@ fn the_observer_records_whether_pid_1_s_watchdog_is_armed_as_it_starts(state: Wa
     };
     assert_eq!(start.watchdog, Some(state.clone()));
     assert_eq!(Ledger::of(journal.events()).watchdog, Some(state));
+}
+
+/// An active clock that wakes `ticks` times, each after `active` of active time and `wall` of wall time.
+fn ticking(ticks: usize, active: Duration, wall: Duration) -> ActiveClock {
+    ActiveClock {
+        active: Duration::ZERO,
+        wall: Duration::ZERO,
+        sleeps: std::iter::repeat_n((active, wall), ticks).collect(),
+    }
+}
+
+fn uncorrected_mce(seconds: u64) -> Mce {
+    Mce {
+        cpu: CpuId::from(0_u16),
+        core: Some(CoreId::new(0).unwrap()),
+        bank: 1,
+        bank_type: BankType::LoadStore,
+        corrected: false,
+        time: Timestamp::UNIX_EPOCH,
+        monotonic: Duration::from_secs(seconds),
+        lines: vec!["[Hardware Error]: Uncorrected".into()],
+    }
+}
+
+fn trap(kind: ProcessFaultKind, pid: u32, cpu: Option<u16>, seconds: u64) -> ProcessFault {
+    ProcessFault {
+        pid,
+        name: "worker".into(),
+        scope: None,
+        kind,
+        cpu: cpu.map(CpuId::from),
+        core: cpu.map(|_| CoreId::new(0).unwrap()),
+        monotonic: Duration::from_secs(seconds),
+        lines: vec!["trap".into()],
+    }
+}
+
+fn logged_faults() -> KernelRead {
+    KernelRead {
+        mces: vec![uncorrected_mce(2)],
+        faults: vec![
+            trap(ProcessFaultKind::IllegalInstruction, 42, Some(0), 4),
+            trap(ProcessFaultKind::Segmentation, 43, Some(0), 5),
+        ],
+        errors: vec![KernelError {
+            kind: KernelErrorKind::SoftLockup,
+            monotonic: Duration::from_secs(3),
+            lines: vec!["watchdog: BUG: soft lockup - CPU#0 stuck for 26s!".into()],
+        }],
+        cursor: KernelCursor::from("c1".to_owned()),
+    }
+}
+
+fn day_faults(journal: &Journal) -> Vec<(&BootId, &DayFault)> {
+    journal
+        .events()
+        .iter()
+        .filter_map(|event| {
+            if let Payload::DayFault(fault) = &event.payload {
+                Some((&event.boot, fault))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn observe_for(journal: &mut Journal, reading: &mut Reading, ticks: usize) {
+    observe(
+        journal,
+        reading,
+        &mut ticking(ticks, Duration::from_secs(30), Duration::from_secs(30)),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn each_live_fault_is_journaled_once_with_its_boot_and_the_applied_offsets_however_often_it_is_read()
+ {
+    let afters = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&afters);
+    let mut reading = Reading::fixed().logging(move |after| {
+        seen.borrow_mut().push(after.cloned());
+        Ok(logged_faults())
+    });
+    let mut journal = journal();
+    observe_for(&mut journal, &mut reading, 3);
+
+    let faults = day_faults(&journal);
+    assert_eq!(
+        faults
+            .iter()
+            .map(|(_, fault)| (fault.fault.clone(), fault.monotonic_ns))
+            .collect::<Vec<_>>(),
+        [
+            (
+                LiveFault::MachineCheck {
+                    cpu: CpuId::from(0_u16),
+                    core: Some(CoreId::new(0).unwrap()),
+                    bank: 1,
+                    bank_type: BankType::LoadStore,
+                    corrected: false,
+                },
+                2_000_000_000
+            ),
+            (
+                LiveFault::KernelError {
+                    error: KernelErrorKind::SoftLockup
+                },
+                3_000_000_000
+            ),
+            (
+                LiveFault::Trap {
+                    trap: Trap::IllegalInstruction,
+                    name: "worker".into(),
+                    pid: 42,
+                    cpu: Some(CpuId::from(0_u16)),
+                    core: Some(CoreId::new(0).unwrap()),
+                },
+                4_000_000_000
+            ),
+        ],
+        "a segmentation fault is not recorded"
+    );
+    for (boot, fault) in &faults {
+        assert_eq!(boot.as_str(), "day-a");
+        assert_eq!(fault.offsets, offsets(-10));
+    }
+    assert_eq!(
+        *afters.borrow(),
+        [
+            None,
+            Some(KernelCursor::from("c1".to_owned())),
+            Some(KernelCursor::from("c1".to_owned())),
+            Some(KernelCursor::from("c1".to_owned())),
+        ],
+        "the first read takes the whole boot, the later ones resume after the cursor"
+    );
+}
+
+#[test]
+fn a_restart_within_the_boot_does_not_journal_a_fault_again_but_a_new_boot_does() {
+    let mut journal = journal();
+    observe_for(
+        &mut journal,
+        &mut Reading::fixed().logging(|_| Ok(logged_faults())),
+        1,
+    );
+    observe_for(
+        &mut journal,
+        &mut Reading::fixed().logging(|_| Ok(logged_faults())),
+        1,
+    );
+    assert_eq!(day_faults(&journal).len(), 3);
+
+    journal.reboot("day-b".to_owned().into()).unwrap();
+    observe_for(
+        &mut journal,
+        &mut Reading::fixed().logging(|_| Ok(logged_faults())),
+        1,
+    );
+    let faults = day_faults(&journal);
+    assert_eq!(
+        faults
+            .iter()
+            .map(|(boot, _)| boot.as_str())
+            .collect::<Vec<_>>(),
+        ["day-a", "day-a", "day-a", "day-b", "day-b", "day-b"]
+    );
+}
+
+#[test]
+fn the_kernel_line_and_the_core_dump_of_one_killed_process_are_one_fault() {
+    let mut journal = journal();
+    let mut reading = Reading::fixed().logging(|_| {
+        Ok(KernelRead {
+            faults: vec![
+                trap(ProcessFaultKind::Bus, 7, Some(0), 10),
+                trap(ProcessFaultKind::Bus, 7, None, 12),
+                trap(ProcessFaultKind::Bus, 8, None, 12),
+            ],
+            ..KernelRead::default()
+        })
+    });
+    observe_for(&mut journal, &mut reading, 1);
+    let pids: Vec<_> = day_faults(&journal)
+        .iter()
+        .map(|(_, fault)| {
+            let LiveFault::Trap { pid, .. } = &fault.fault else {
+                panic!("{:?}", fault.fault)
+            };
+            *pid
+        })
+        .collect();
+    assert_eq!(pids, [7, 8]);
+}
+
+#[test]
+fn an_unresumable_cursor_reads_the_boot_again_without_repeating_a_fault() {
+    let afters = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&afters);
+    let mut calls = 0;
+    let mut reading = Reading::fixed().logging(move |after| {
+        seen.borrow_mut().push(after.cloned());
+        calls += 1;
+        if calls == 2 {
+            return Err(Partial {
+                value: KernelRead::default(),
+                error: MachineError::CursorMissing,
+            });
+        }
+        Ok(logged_faults())
+    });
+    let mut journal = journal();
+    observe_for(&mut journal, &mut reading, 3);
+    assert_eq!(day_faults(&journal).len(), 3);
+    assert_eq!(
+        *afters.borrow(),
+        [
+            None,
+            Some(KernelCursor::from("c1".to_owned())),
+            None,
+            Some(KernelCursor::from("c1".to_owned())),
+            Some(KernelCursor::from("c1".to_owned())),
+        ],
+        "the lost cursor is replaced by a read of the boot within the same poll"
+    );
+}
+
+#[test]
+fn a_cursor_lost_at_the_stop_is_replaced_before_the_clean_stop_so_no_later_fault_is_lost() {
+    let mut calls = 0;
+    let mut reading = Reading::fixed().logging(move |after| {
+        calls += 1;
+        match (calls, after) {
+            (1, None) => Ok(logged_faults()),
+            (2, Some(_)) => Err(Partial {
+                value: KernelRead::default(),
+                error: MachineError::CursorMissing,
+            }),
+            (3, None) => {
+                let mut read = logged_faults();
+                read.mces.push(uncorrected_mce(9));
+                Ok(read)
+            }
+            other => panic!("{other:?}"),
+        }
+    });
+    let mut journal = journal();
+    observe_for(&mut journal, &mut reading, 1);
+    let kinds: Vec<_> = journal
+        .events()
+        .iter()
+        .map(|event| event.payload.kind())
+        .filter(|kind| matches!(kind, EventKind::DayFault | EventKind::DayCleanStop))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            EventKind::DayFault,
+            EventKind::DayFault,
+            EventKind::DayFault,
+            EventKind::DayFault,
+            EventKind::DayCleanStop,
+        ]
+    );
+}
+
+#[test]
+fn a_later_crash_that_reuses_the_pid_is_another_fault() {
+    let mut journal = journal();
+    let crash = |seconds: u64| {
+        move |_: Option<&KernelCursor>| {
+            Ok(KernelRead {
+                faults: vec![
+                    trap(ProcessFaultKind::IllegalInstruction, 7, Some(0), 10),
+                    trap(ProcessFaultKind::IllegalInstruction, 7, None, seconds),
+                ],
+                ..KernelRead::default()
+            })
+        }
+    };
+    observe_for(&mut journal, &mut Reading::fixed().logging(crash(400)), 1);
+    assert_eq!(
+        day_faults(&journal).len(),
+        2,
+        "400 s later is a second death"
+    );
+    observe_for(&mut journal, &mut Reading::fixed().logging(crash(400)), 1);
+    assert_eq!(
+        day_faults(&journal).len(),
+        2,
+        "a restart records neither again"
+    );
+}
+
+#[test]
+fn a_general_protection_fault_is_journaled_with_its_trap_boot_and_offsets() {
+    let mut journal = journal();
+    let mut reading = Reading::fixed().logging(|_| {
+        Ok(KernelRead {
+            faults: vec![trap(ProcessFaultKind::GeneralProtection, 9, Some(0), 5)],
+            ..KernelRead::default()
+        })
+    });
+    observe_for(&mut journal, &mut reading, 1);
+    let faults = day_faults(&journal);
+    assert_eq!(faults.len(), 1);
+    let (boot, fault) = faults[0];
+    assert_eq!(boot.as_str(), "day-a");
+    assert_eq!(fault.offsets, offsets(-10));
+    assert!(matches!(
+        fault.fault,
+        LiveFault::Trap {
+            trap: Trap::GeneralProtection,
+            pid: 9,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_failed_log_read_journals_what_it_read_and_ends_the_observer_without_a_clean_stop() {
+    let mut reading = Reading::fixed().logging(|_| {
+        Err(Partial {
+            value: KernelRead {
+                mces: vec![uncorrected_mce(2)],
+                ..KernelRead::default()
+            },
+            error: MachineError::BootMissing,
+        })
+    });
+    let mut journal = journal();
+    let error = observe(
+        &mut journal,
+        &mut reading,
+        &mut ticking(1, Duration::from_secs(30), Duration::from_secs(30)),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, Error::Observe(MachineError::BootMissing)),
+        "{error:?}"
+    );
+    assert_eq!(day_faults(&journal).len(), 1);
+    assert!(
+        !journal
+            .events()
+            .iter()
+            .any(|event| matches!(event.payload, Payload::DayCleanStop(_)))
+    );
+}
+
+fn busy_ticks(step: u64, busy: u64) -> Vec<CpuTime> {
+    vec![CpuTime {
+        cpu: CpuId::from(0_u16),
+        busy: busy * step,
+        total: 100 * step,
+    }]
+}
+
+#[test]
+fn the_checkpoint_carries_the_load_mix_of_the_active_time_and_a_suspended_interval_adds_nothing() {
+    let mut reading = Reading {
+        times: [
+            busy_ticks(0, 0),
+            busy_ticks(1, 100),
+            busy_ticks(2, 100),
+            busy_ticks(3, 100),
+        ]
+        .into(),
+        ..Reading::fixed()
+    };
+    let mut clock = ActiveClock {
+        active: Duration::ZERO,
+        wall: Duration::ZERO,
+        sleeps: [
+            (SAMPLE, SAMPLE),
+            (SAMPLE, SAMPLE),
+            // The machine slept for an hour of wall time; no active time passed, so nothing is sampled.
+            (Duration::ZERO, Duration::from_hours(1)),
+            (SAMPLE, SAMPLE),
+        ]
+        .into(),
+    };
+    let mut journal = journal();
+    observe(
+        &mut journal,
+        &mut reading,
+        &mut clock,
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    let Some(Payload::DayCheckpoint(last)) = journal
+        .events()
+        .iter()
+        .rev()
+        .map(|event| &event.payload)
+        .find(|payload| matches!(payload, Payload::DayCheckpoint(_)))
+    else {
+        panic!("no checkpoint")
+    };
+    assert_eq!(last.applied_secs, 15);
+    assert_eq!(
+        last.load_mix,
+        LoadMix {
+            all_threads_ms: 15_000,
+            ..LoadMix::default()
+        }
+    );
+    assert_eq!(
+        Ledger::of(journal.events())
+            .boots
+            .values()
+            .next()
+            .unwrap()
+            .load_mix,
+        last.load_mix
+    );
+}
+
+#[test]
+fn a_restart_within_the_boot_continues_the_recorded_load_mix() {
+    let mut journal = journal();
+    for _ in 0..2 {
+        let mut reading = Reading {
+            times: [busy_ticks(0, 0), busy_ticks(1, 100)].into(),
+            ..Reading::fixed()
+        };
+        observe(
+            &mut journal,
+            &mut reading,
+            &mut ticking(1, SAMPLE, SAMPLE),
+            &CancellationToken::new(),
+            &current_build(),
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        Ledger::of(journal.events())
+            .boots
+            .values()
+            .next()
+            .unwrap()
+            .load_mix
+            .all_threads_ms,
+        10_000
+    );
 }

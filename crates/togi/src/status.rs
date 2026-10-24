@@ -177,6 +177,8 @@ impl<'a> Scan<'a> {
                 | Payload::DayCleanStop(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::DayAnswer(_)
+                | Payload::DayRecord(_)
+                | Payload::DayFault(_)
                 | Payload::SessionContext(_)
                 | Payload::SessionBaseline(_)
                 | Payload::SessionNotice(_)

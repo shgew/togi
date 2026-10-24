@@ -145,7 +145,7 @@ async fn each_scope<O: Os>(
 }
 
 /// Resolves once `cancel` fires; `woken` is the notify its `on_cancel` callback signals.
-async fn until_cancelled(cancel: &CancellationToken, woken: &Notify) {
+pub(crate) async fn until_cancelled(cancel: &CancellationToken, woken: &Notify) {
     if !cancel.is_cancelled() {
         woken.notified().await;
     }

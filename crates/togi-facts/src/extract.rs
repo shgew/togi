@@ -226,6 +226,8 @@ impl Extractor {
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
+            | Payload::DayRecord(_)
+            | Payload::DayFault(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_)
             | Payload::CorePhase(_)
