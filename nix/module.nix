@@ -155,7 +155,9 @@ in
           systemd.settings.Manager.RuntimeWatchdogSec = lib.mkDefault "60s";
           # Writing 0 to the manager's RuntimeWatchdogUSec disarms and closes the device; writing infinity drops
           # the override and re-arms the configured RuntimeWatchdogSec. sleep.target stops after resume, which
-          # stops this unit and runs its ExecStop.
+          # stops this unit. The restore is ExecStopPost, not ExecStop: systemd skips ExecStop when the start
+          # failed, but PID 1 may have applied the 0 before busctl failed, and the restore is harmless after a
+          # start that applied nothing.
           systemd.services.togi-day-watchdog-sleep = {
             description = "Pause PID 1's hardware watchdog across sleep";
             wantedBy = [ "sleep.target" ];
@@ -165,7 +167,7 @@ in
               Type = "oneshot";
               RemainAfterExit = true;
               ExecStart = runtimeWatchdog "0";
-              ExecStop = runtimeWatchdog "18446744073709551615";
+              ExecStopPost = runtimeWatchdog "18446744073709551615";
             };
           };
         }

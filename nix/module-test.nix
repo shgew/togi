@@ -241,8 +241,9 @@ assert lib.hasSuffix "RuntimeWatchdogUSec t 0" (
   builtins.unsafeDiscardStringContext watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStart
 );
 assert lib.hasSuffix "RuntimeWatchdogUSec t 18446744073709551615" (
-  builtins.unsafeDiscardStringContext watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStop
+  builtins.unsafeDiscardStringContext watched.systemd.services.togi-day-watchdog-sleep.serviceConfig.ExecStopPost
 );
+assert !(watched.systemd.services.togi-day-watchdog-sleep.serviceConfig ? ExecStop);
 assert !(day.systemd.services ? togi-day-watchdog-sleep);
 assert !(watchedTuning.systemd.services ? togi-day-watchdog-sleep);
 assert lib.hasInfix ''[ "''${MONITOR_SERVICE_RESULT:-}" = start-limit-hit ] || exit 0''
