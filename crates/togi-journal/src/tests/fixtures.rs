@@ -655,7 +655,11 @@ pub(crate) fn samples() -> Vec<Payload> {
             offsets: day_offsets(0),
         }
         .into(),
-        DayCheckpoint { applied_secs: 3600 }.into(),
+        DayCheckpoint {
+            applied_secs: 3600,
+            load_mix: LoadMix::default(),
+        }
+        .into(),
         DayOffsetsChanged {
             offsets: day_offsets(-10),
         }
@@ -690,6 +694,19 @@ pub(crate) fn samples() -> Vec<Payload> {
             offsets: day_offsets(-10),
             answer: DayAnswerKind::Graphics,
             uid: 1000,
+        }
+        .into(),
+        crate::DayFault {
+            fault: crate::LiveFault::MachineCheck {
+                cpu: togi_machine::CpuId::from(2_u16),
+                core: Some(core(1)),
+                bank: 0,
+                bank_type: togi_machine::BankType::LoadStore,
+                corrected: false,
+            },
+            monotonic_ns: 1_500_000_000,
+            offsets: day_offsets(-10),
+            lines: vec!["[Hardware Error]: Uncorrected".into()],
         }
         .into(),
     ]

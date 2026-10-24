@@ -1,7 +1,8 @@
 use std::fmt::Write as _;
 
 use togi_machine::{
-    CoreId, CoreSet, KernelFault, KernelTail, MceCount, PerCore, Signal, TargetOffset, WorkloadId,
+    CoreId, CoreSet, KernelErrorKind, KernelFault, KernelTail, MceCount, PerCore, Signal,
+    TargetOffset, WorkloadId,
 };
 
 use super::domain::{
@@ -14,13 +15,14 @@ use super::tuner::{Member, Rederived};
 use super::{
     BackendRetry, BootLeaveReason, BootSavedEntry, CheckingChain, CheckingCycle, CheckingStep,
     Combination, CommandReset, ConfigLoaded, CoreTransition, CrashDetected, DayAnswer,
-    DayBootStart, DayCheckpoint, DayOffsetsChanged, DayUncleanEnd, DeadEnd, DeepeningRound,
-    DefectAnswered, DefectFound, Failure, FailureCarried, HostRanking, HuntEnd, HuntGroup,
-    HuntSkipped, HuntStart, JournalTorn, Mce, Payload, PreflightCheck, ProfileApplied,
-    ProfileChange, ProfileRestored, SessionArchived, SessionBaseline, SessionCarried,
-    SessionContext, SessionNotice, SessionStart, SessionWarning, Shutdown, SmuError,
-    SmuIntentRecord, SmuReadback, SmuWriteRecord, StateRebuilt, TrialCarried, TrialEnd,
-    TrialIntent, TrialProgress, TrialSample, TrialSignal, TrialStart, TunerDecision, TunerWarning,
+    DayBootStart, DayCheckpoint, DayFault, DayOffsetsChanged, DayUncleanEnd, DeadEnd,
+    DeepeningRound, DefectAnswered, DefectFound, Failure, FailureCarried, HostRanking, HuntEnd,
+    HuntGroup, HuntSkipped, HuntStart, JournalTorn, LiveFault, Mce, Payload, PreflightCheck,
+    ProfileApplied, ProfileChange, ProfileRestored, SessionArchived, SessionBaseline,
+    SessionCarried, SessionContext, SessionNotice, SessionStart, SessionWarning, Shutdown,
+    SmuError, SmuIntentRecord, SmuReadback, SmuWriteRecord, StateRebuilt, Trap, TrialCarried,
+    TrialEnd, TrialIntent, TrialProgress, TrialSample, TrialSignal, TrialStart, TunerDecision,
+    TunerWarning,
 };
 use crate::Build;
 
@@ -83,6 +85,7 @@ impl Payload {
             Self::DayCleanStop(_) => "day observer stopped on request".to_owned(),
             Self::DayUncleanEnd(p) => day_unclean_end(p),
             Self::DayAnswer(p) => day_answer(p),
+            Self::DayFault(p) => day_fault(p),
         }
     }
 }
@@ -1143,10 +1146,24 @@ fn day_boot_start(p: &DayBootStart) -> String {
 }
 
 fn day_checkpoint(p: DayCheckpoint) -> String {
-    format!(
+    let mut text = format!(
         "day observer has been active {} s in total this boot",
         p.applied_secs
-    )
+    );
+    let mix = p.load_mix;
+    if mix.total_ms() > 0 {
+        let _ = write!(
+            text,
+            "; sampled load: {} s single-thread, {} s light beside busy cores, {} s all threads, {} s idle transitions, {} s quiet, {} s other",
+            mix.single_thread_ms / 1000,
+            mix.light_beside_busy_ms / 1000,
+            mix.all_threads_ms / 1000,
+            mix.idle_transition_ms / 1000,
+            mix.quiet_ms / 1000,
+            mix.other_ms / 1000
+        );
+    }
+    text
 }
 
 fn day_offsets_changed(p: &DayOffsetsChanged) -> String {
@@ -1244,6 +1261,58 @@ fn kernel_tail(tail: &KernelTail) -> String {
             text
         }
     }
+}
+
+fn day_fault(p: &DayFault) -> String {
+    let what = match &p.fault {
+        LiveFault::MachineCheck {
+            cpu,
+            core: owner,
+            bank,
+            bank_type,
+            corrected,
+        } => format!(
+            "{} MCE on cpu {} ({}), bank {bank} {bank_type}",
+            if *corrected {
+                "corrected"
+            } else {
+                "uncorrected"
+            },
+            cpu.get(),
+            owner.map_or_else(|| "no core".to_owned(), |id| format!("core {}", core(id))),
+        ),
+        LiveFault::KernelError { error } => match error {
+            KernelErrorKind::Oops => "kernel oops".to_owned(),
+            KernelErrorKind::RcuStall => "RCU stall".to_owned(),
+            KernelErrorKind::SoftLockup => "soft lockup".to_owned(),
+        },
+        LiveFault::Trap {
+            trap,
+            name,
+            pid,
+            cpu,
+            core: owner,
+        } => {
+            let trap = match trap {
+                Trap::IllegalInstruction => "SIGILL (invalid opcode)",
+                Trap::Bus => "SIGBUS",
+                Trap::GeneralProtection => "general-protection fault",
+            };
+            let mut text = format!("{trap} in {name}[{pid}]");
+            if let Some(cpu) = cpu {
+                let _ = write!(text, " on cpu {}", cpu.get());
+            }
+            if let Some(owner) = owner {
+                let _ = write!(text, " (core {})", core(*owner));
+            }
+            text
+        }
+    };
+    format!(
+        "{what} at {} s since boot; offsets {}",
+        p.monotonic_ns / 1_000_000_000,
+        offsets(&p.offsets, |offset| offset.0.to_string())
+    )
 }
 
 fn day_answer(p: &DayAnswer) -> String {

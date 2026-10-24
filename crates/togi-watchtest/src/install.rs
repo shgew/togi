@@ -167,6 +167,7 @@ fn write(dir: &Path, events: &[Event], fs: Option<Arc<dyn Fs>>) -> Result<Build,
                 | Payload::DayOffsetsChanged(_)
                 | Payload::DayCleanStop(_)
                 | Payload::DayAnswer(_)
+                | Payload::DayFault(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_)) => {
                     journal

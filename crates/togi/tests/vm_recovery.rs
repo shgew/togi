@@ -361,6 +361,27 @@ mod vm_recovery {
                     kernel.end_evidence(boot)
                 })
         }
+
+        fn live_faults(
+            &mut self,
+            boot: &BootId,
+            after: Option<&KernelCursor>,
+        ) -> Result<KernelRead, Partial<KernelRead>> {
+            match &mut self.kernel {
+                Some(kernel) => kernel.read_mces(boot, after),
+                None => Err(Partial {
+                    value: KernelRead::default(),
+                    error: other("the VM has no kernel log reader"),
+                }),
+            }
+        }
+
+        fn cpu_times(&mut self) -> Result<Vec<togi_machine::CpuTime>, Error> {
+            match &self.kernel {
+                Some(kernel) => Ok(kernel.read_cpu_times()?),
+                None => Err(other("the VM has no kernel log reader")),
+            }
+        }
     }
 
     /// Writes a session's first event with the current build, as `togi run` would have, and nothing else. Only this

@@ -118,6 +118,7 @@ fn decision(payload: &Payload) -> Option<DecisionPayload> {
         | Payload::DayOffsetsChanged(_)
         | Payload::DayCleanStop(_)
         | Payload::DayAnswer(_)
+        | Payload::DayFault(_)
         | Payload::DayUncleanEnd(_)
         | Payload::StateRebuilt(_) => return None,
     })

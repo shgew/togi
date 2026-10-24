@@ -324,6 +324,7 @@ impl Facts {
             | Payload::DayCleanStop(_)
             | Payload::DayUncleanEnd(_)
             | Payload::DayAnswer(_)
+            | Payload::DayFault(_)
             | Payload::StateRebuilt(_) => {}
         }
         if let Some(line) = self.describe(event, journal) {
