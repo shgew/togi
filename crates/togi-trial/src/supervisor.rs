@@ -214,7 +214,12 @@ struct PlacementEvidence {
     excluded: togi_machine::CoreSet,
 }
 
-fn confine<O: Os>(env: &Env<O>, spec: &TrialSpec, events: &StdSender<Event>) -> PlacementEvidence {
+async fn confine<O: Os>(
+    env: &Env<O>,
+    spec: &TrialSpec,
+    cancel: &CancellationToken,
+    events: &StdSender<Event>,
+) -> PlacementEvidence {
     let managed = matches!(
         spec.controller,
         togi_machine::ControllerMode::Managed { .. }
@@ -250,7 +255,10 @@ fn confine<O: Os>(env: &Env<O>, spec: &TrialSpec, events: &StdSender<Event>) -> 
             .filter(|cpu| !excluded_cpus.is_some_and(|info| info.cpus.contains(cpu)))
             .collect();
         let mut reports = Vec::new();
-        let outcome = env.frequency.cap(&placement.cpus, &workers, &mut reports);
+        let outcome = env
+            .frequency
+            .cap(&placement.cpus, &workers, cancel, &mut reports)
+            .await;
         for line in reports {
             let _ = events.send(Event::Progress(line));
         }
@@ -306,9 +314,16 @@ fn confine<O: Os>(env: &Env<O>, spec: &TrialSpec, events: &StdSender<Event>) -> 
 }
 
 /// Gives togi's threads back the affinity they had, once the teardown confirmed nothing runs.
-fn restore<O: Os>(env: &Env<O>, events: &StdSender<Event>) -> Result<(), crate::frequency::Error> {
+/// Cleanup is not cancellable, so the frequency restoration waits on a token nothing cancels.
+async fn restore<O: Os>(
+    env: &Env<O>,
+    events: &StdSender<Event>,
+) -> Result<(), crate::frequency::Error> {
     let mut reports = Vec::new();
-    let outcome = env.frequency.restore(&mut reports);
+    let outcome = env
+        .frequency
+        .restore(&CancellationToken::new(), &mut reports)
+        .await;
     for line in reports {
         let _ = events.send(Event::Progress(line));
     }
@@ -395,7 +410,7 @@ pub(crate) async fn start<O: Os>(
     if matches!(
         spec.controller,
         togi_machine::ControllerMode::Managed { .. }
-    ) && let Err(error) = env.frequency.restore(&mut recovered)
+    ) && let Err(error) = env.frequency.restore(&cancel, &mut recovered).await
     {
         return Err(early(Error::Frequency(error), ready));
     }
@@ -443,7 +458,7 @@ pub(crate) async fn start<O: Os>(
     for line in recovered {
         let _ = events_tx.send(Event::Progress(line));
     }
-    let placement = confine(&env, &spec, &events_tx);
+    let placement = confine(&env, &spec, &cancel, &events_tx).await;
     let (inbound_tx, mut inbound_rx) = bounded(INBOUND_CAPACITY);
     let selector = Selector::mixed(
         &plan
@@ -846,7 +861,11 @@ async fn roll_back<O: Os>(
     diagnostics.splice(0..0, judge.conclude().diagnostics);
     let (first, proof) = match ended.proof {
         Ok(stopped) => {
-            if let Err(error) = env.frequency.restore(&mut diagnostics) {
+            if let Err(error) = env
+                .frequency
+                .restore(&CancellationToken::new(), &mut diagnostics)
+                .await
+            {
                 diagnostics.push(error_chain(&error));
             }
             if let Some(moved) = env.controller.restore()
@@ -1327,7 +1346,7 @@ impl<O: Os> Supervisor<O> {
             .finish()
             .await;
         if ended.proof.is_ok()
-            && let Err(error) = restore(&env, &events)
+            && let Err(error) = restore(&env, &events).await
         {
             let reason = error_chain(&error);
             let _ = events.send(Event::Progress(reason.clone()));
