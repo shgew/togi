@@ -6,4 +6,4 @@ A missing clean-stop marker is evidence of an unclean end, not proof that Curve 
 
 Blaming the most recently changed CCD is rejected: an older CCD can survive a hold by chance. Permanently charging every unexplained end is also rejected because background/graphics failures would consume depth without CO evidence. A whole-profile veto preserves the contradiction while an answer can reclassify it; independent machine-check evidence cannot disappear merely because someone chose a non-CPU answer.
 
-The ban on re-entering a vetoed profile concerns **day use**. Controlled-night reproduction is a separately budgeted exception, earns no qualification and a clean result never clears the veto. This reconciles the wording of Q15 with its explicit exact-profile reproduction requirement rather than reopening either decision.
+The [veto and controlled-reproduction rules](../spec/tuner.md#whole-profile-veto-and-escalation) reconcile Q15's day-use ban with its explicit night-reproduction requirement rather than reopening either decision. Keeping those purposes distinct permits investigation without treating a clean reproduction as proof of daily safety.
