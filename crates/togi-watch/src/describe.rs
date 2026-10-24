@@ -139,6 +139,7 @@ impl Facts {
             | Payload::DayCleanStop(_)
             | Payload::DayUncleanEnd(_)
             | Payload::DayAnswer(_)
+            | Payload::DayFault(_)
             | Payload::StateRebuilt(_) => None,
         }
     }

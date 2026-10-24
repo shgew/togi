@@ -109,6 +109,7 @@ impl Writes {
                 | Payload::DayOffsetsChanged(_)
                 | Payload::DayCleanStop(_)
                 | Payload::DayAnswer(_)
+                | Payload::DayFault(_)
                 | Payload::DayUncleanEnd(_)
                 | Payload::StateRebuilt(_) => {}
             }
@@ -180,6 +181,7 @@ impl Writes {
             | Payload::DayOffsetsChanged(_)
             | Payload::DayCleanStop(_)
             | Payload::DayAnswer(_)
+            | Payload::DayFault(_)
             | Payload::DayUncleanEnd(_)
             | Payload::StateRebuilt(_) => {}
         }

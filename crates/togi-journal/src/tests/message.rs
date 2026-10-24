@@ -458,8 +458,53 @@ fn units_appear_in_text() {
     EventKind::DayAnswer,
     "uid 1000 answered that boot 7a1b2c3d ended because graphics died but sound went on; offsets [00: -10, 01: -5]"
 )]
+#[test_case(
+    EventKind::DayFault,
+    "uncorrected MCE on cpu 2 (core 01), bank 0 load_store at 1 s since boot; offsets [00: -10, 01: -5]"
+)]
 fn day_messages_tell_a_stranger_what_the_observer_saw(kind: EventKind, text: &str) {
     assert_eq!(message(kind), text);
+}
+
+#[test_case(
+    crate::LiveFault::KernelError { error: togi_machine::KernelErrorKind::RcuStall },
+    "RCU stall at 1 s since boot; offsets [00: -10, 01: -5]"
+; "kernel error")]
+#[test_case(
+    crate::LiveFault::Trap {
+        trap: crate::Trap::IllegalInstruction,
+        name: "mprime".into(),
+        pid: 991,
+        cpu: Some(togi_machine::CpuId::from(3_u16)),
+        core: None,
+    },
+    "SIGILL (invalid opcode) in mprime[991] on cpu 3 at 1 s since boot; offsets [00: -10, 01: -5]"
+; "trap")]
+fn live_fault_messages_name_the_fault_the_time_and_the_profile(
+    fault: crate::LiveFault,
+    text: &str,
+) {
+    let Payload::DayFault(mut sample) = sample(EventKind::DayFault) else {
+        unreachable!()
+    };
+    sample.fault = fault;
+    assert_eq!(Payload::from(sample).message(), text);
+}
+
+#[test]
+fn a_checkpoint_with_a_load_mix_names_each_share_in_seconds() {
+    let Payload::DayCheckpoint(mut checkpoint) = sample(EventKind::DayCheckpoint) else {
+        unreachable!()
+    };
+    checkpoint.load_mix = crate::LoadMix {
+        single_thread_ms: 1500,
+        all_threads_ms: 62_000,
+        ..crate::LoadMix::default()
+    };
+    assert_eq!(
+        Payload::from(checkpoint).message(),
+        "day observer has been active 3600 s in total this boot; sampled load: 1 s single-thread, 0 s light beside busy cores, 62 s all threads, 0 s idle transitions, 0 s quiet, 0 s other"
+    );
 }
 
 fn hunt_end(result: HuntOutcome, cores: &[u8], groups: u32, reason: &str) -> String {

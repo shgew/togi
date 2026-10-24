@@ -1121,7 +1121,11 @@ fn day_events() -> Vec<Payload> {
             offsets: PerCore::default(),
         }
         .into(),
-        DayCheckpoint { applied_secs: 60 }.into(),
+        DayCheckpoint {
+            applied_secs: 60,
+            load_mix: Default::default(),
+        }
+        .into(),
         DayOffsetsChanged {
             offsets: PerCore::default(),
         }

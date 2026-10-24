@@ -379,6 +379,7 @@ impl Kernel for SimKernel {
         Ok(KernelRead {
             mces: log[start..].to_vec(),
             faults: Vec::new(),
+            errors: Vec::new(),
             cursor: KernelCursor::from(format!("{boot}:{}", log.len())),
         })
     }

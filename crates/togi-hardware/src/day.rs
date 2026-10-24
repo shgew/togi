@@ -4,8 +4,8 @@ use std::marker::PhantomData;
 
 use togi_hostlock::HostLock;
 use togi_machine::{
-    BiosContext, BootId, CoreInfo, EndEvidence, Error, Kernel as _, ObservedOffset, PerCore,
-    ResetReason, Smu as _,
+    BiosContext, BootId, CoreInfo, CpuTime, EndEvidence, Error, Kernel as _, KernelCursor,
+    KernelRead, ObservedOffset, Partial, PerCore, ResetReason, Smu as _,
 };
 use togi_smu::Driver;
 
@@ -20,6 +20,15 @@ pub trait Observer {
     /// What the kernel logs of the crashed `boot` and of its proven immediate successor say about how it ended.
     /// Infallible: whatever cannot be read is unknown in the result, never an absence of errors.
     fn end_evidence(&mut self, boot: &BootId) -> EndEvidence;
+    /// The faults the running `boot`'s kernel log holds after `after`, or in the whole boot when `after` is `None`.
+    /// An unresumable cursor is `Error::CursorMissing`; the partial value keeps what was read before a failure.
+    fn live_faults(
+        &mut self,
+        boot: &BootId,
+        after: Option<&KernelCursor>,
+    ) -> Result<KernelRead, Partial<KernelRead>>;
+    /// Every logical CPU's cumulative scheduler time since boot.
+    fn cpu_times(&mut self) -> Result<Vec<CpuTime>, Error>;
 }
 
 struct ReadOnly<'lock> {
@@ -67,5 +76,17 @@ impl Observer for ReadOnly<'_> {
 
     fn end_evidence(&mut self, boot: &BootId) -> EndEvidence {
         self.kernel.end_evidence(boot)
+    }
+
+    fn live_faults(
+        &mut self,
+        boot: &BootId,
+        after: Option<&KernelCursor>,
+    ) -> Result<KernelRead, Partial<KernelRead>> {
+        self.kernel.read_mces(boot, after)
+    }
+
+    fn cpu_times(&mut self) -> Result<Vec<CpuTime>, Error> {
+        Ok(self.kernel.read_cpu_times()?)
     }
 }

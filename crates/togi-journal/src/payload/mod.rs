@@ -17,8 +17,8 @@ pub use config::{
     ConfigBackends, ConfigChecking, ConfigDeadEnds, ConfigDurations, ConfigEvidence, ConfigSnapshot,
 };
 pub use day::{
-    DayAnswer, DayAnswerKind, DayBootStart, DayCheckpoint, DayCleanStop, DayOffsetsChanged,
-    DayQuestions, DayUncleanEnd, EndClass,
+    DayAnswer, DayAnswerKind, DayBootStart, DayCheckpoint, DayCleanStop, DayFault,
+    DayOffsetsChanged, DayQuestions, DayUncleanEnd, EndClass, LiveFault, LoadMix, Trap,
 };
 pub use domain::{
     Activity, Attribution, CorePhase, CycleEvent, DeadEndAction, DeadEndCondition, Decision,
@@ -160,6 +160,7 @@ payloads! {
     DayCleanStop(DayCleanStop) = "day.clean_stop",
     DayUncleanEnd(DayUncleanEnd) = "day.unclean_end",
     DayAnswer(DayAnswer) = "day.answer",
+    DayFault(DayFault) = "day.fault",
 }
 
 impl Payload {
@@ -221,7 +222,8 @@ impl Payload {
             | Self::DayOffsetsChanged(_)
             | Self::DayCleanStop(_)
             | Self::DayUncleanEnd(_)
-            | Self::DayAnswer(_) => None,
+            | Self::DayAnswer(_)
+            | Self::DayFault(_) => None,
         }
     }
 
@@ -262,6 +264,7 @@ impl Payload {
             Self::DefectFound(p) => p.cores.contains(core),
             Self::DefectAnswered(p) => p.cores.contains(core),
             Self::DeadEnd(p) => p.core == Some(core),
+            Self::DayFault(p) => p.fault.core() == Some(core),
             Self::SessionStart(_)
             | Self::SessionContext(_)
             | Self::SessionBaseline(_)
@@ -313,6 +316,7 @@ impl EventKind {
                 | Self::DayCleanStop
                 | Self::DayUncleanEnd
                 | Self::DayAnswer
+                | Self::DayFault
         )
     }
 
