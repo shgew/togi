@@ -1,4 +1,4 @@
-Status: see [the index](README.md).
+Status: superseded by [0080](0080-per-ccd-first.md); Ruleset 13 has no singleton hunts, anchors or member probes.
 
 # Probe reproduced singleton failures
 

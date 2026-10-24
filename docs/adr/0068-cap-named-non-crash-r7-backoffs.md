@@ -1,4 +1,4 @@
-Status: see [the index](README.md).
+Status: superseded by [0080](0080-per-ccd-first.md); named-core voltage-target backoff and its count cap are removed.
 
 # Cap named non-crash R7 backoffs
 

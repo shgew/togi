@@ -1,4 +1,4 @@
-Status: see [the index](README.md).
+Status: superseded by [0080](0080-per-ccd-first.md); no hunt or combination-backoff mechanics remain in Ruleset 13. The measurements below remain historical.
 
 # Hunts that converge on shared voltage
 

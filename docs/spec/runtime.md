@@ -2,6 +2,23 @@
 
 Normative rules for how togi is invoked, configured and deployed.
 
+## Ruleset 13 policy boundary
+
+The [tuner spec](tuner.md) owns all CCD decisions and thresholds. The session and the day service call those pure functions; neither re-implements the policy, and the simulator plugs into those same functions rather than a second simulated tuner. This section covers policy integration only. The applying service's watchdog-arming requirement and pause-command forms are separate decisions, not specified by this layer.
+
+**Night.** After normal preflight, recovery and verified all-zero baseline, fold raw observations and query the [night scheduler](tuner.md#night-order-and-reserved-budgets) with the declared night identity/deadline and consumed wall budget. Execute its typed task through the existing transaction, managed controller and trial seams. Append the actual outcome, exposure and resulting edge/cap/qualification commitments before querying again. A restart resumes that night's budget and open task, not a new allowance. Deadline/cancellation stops work with containment and zero restoration; an incomplete matrix is never marked qualified. Existing boot-selection and morning-return machinery owns returning to day, not the tuner.
+
+**Cold-boot day decision.** Resolve the previous observed boot and its current answers/fault evidence, fold interval credit and firmware identity, then query the [day-step functions](tuner.md#day-steps). Journal the hold/promotion/retreat/firmware-zero proposal. The applying layer executes it through the normal SMU intent → write → readback chain; only verified success writes `day.applied` and starts a new hold. A failed or interrupted write never commits a promotion or credits hours at the proposed profile. Re-querying after a failure/restart must not apply the same logical step twice.
+
+**Same boot.** A service restart or resume may reapply the already committed D but never call the promotion path. A freeze changes eligibility, not applied-hour accounting. Paused intervals are excluded from holds and exposure; this spec does not choose timed versus until-reboot pause. Firmware invalidation and safety retreats take precedence over freeze. The applying layer owns stop/error zeroing and readback; no pure policy function obtains a hardware capability.
+
+**Daily evidence.** Raw boot ends, live faults, manual records and revised answers feed [daily-event classification and escalation](tuner.md#daily-events). An answered question and a resolved event are separate states. Daily-only boots remain excluded from tuning crash recovery, even though their observations now affect day decisions. The day service never starts test workloads.
+
+**Transition.** Before a new Ruleset 13 night, [journal transition](journal.md#transitions) archives the predecessor session unchanged and imports only eligible raw daily observations. It does not seed tuning state or restore a prior day profile. The earlier seeded-session descriptions elsewhere in the command/configuration surface are predecessor behavior to be removed with the implementation cutover; they cannot override that transition.
+
+**Surfaces and acceptance.** `status` and `watch` query the tuner for each CCD's D, S, tagged U, hold and coverage, including uncovered classes and slope mode, rather than calculating their own cap. They show total crashes beside stock observations without a total-rate guarantee. The cutover updates CLI/configuration/status text and removes obsolete callers together with implementation; full evidence views are #1221. The [registered day/night gate](../benchmarking.md#daynight-gate) owns scenario scoring and frozen thresholds; passing Markdown checks does not score it.
+
+
 ## Day journal destination
 
 Daily observation appends to the existing session's `events.jsonl`, using the same writer lock, strict decoding, compatibility check and durable append as tuning. It never creates a session or archives/transitions an incompatible one. Without a live session journal, `togi day` exits 1 with an instruction to start a session with `togi run`; this refusal creates no state directory or journal. Incompatible builds or unknown event data are refused before appending (exit 16). Compatibility is checked again under the writer lock, and an already archived session is not reopened for observation.
@@ -14,7 +31,7 @@ Every ten minutes of active monotonic time (`CLOCK_MONOTONIC`, not boot-time or 
 
 SIGTERM, SIGINT and SIGHUP wake the wait and finish with a final readback/checkpoint, then `day.clean_stop`, in that durable order. Systemd's orderly shutdown/reboot stop includes a power-button shutdown it handles normally. A failed read, clock or append exits 1 and never fabricates a clean stop. The observer never zeroes or restores offsets, even on error.
 
-The next invocation records each previously observed other boot with no final clean-stop marker once as `day.unclean_end`, naming its boot ID, last checkpoint (or absence), last read-back offsets, reset reason and the evidence below. An unclean end is an observation, not a tuning crash. The tuner ignores all day events; session recovery admits only tuning activity as a tuning boot. Applying offsets is outside this command.
+The next invocation records each previously observed other boot with no final clean-stop marker once as `day.unclean_end`, naming its boot ID, last checkpoint (or absence), last read-back offsets, reset reason and the evidence below. An unclean end is an observation, never a tuning crash. [Ruleset 13's policy boundary](#ruleset-13-policy-boundary) consumes it as daily evidence; session recovery still admits only tuning activity as a tuning boot. The observation path itself starts no workload.
 
 ### Live faults
 

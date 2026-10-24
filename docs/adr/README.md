@@ -4,15 +4,30 @@ The specs describe current behavior; ADRs record why and the alternatives reject
 
 A new ADR adds its line here and updates the status of any ADR it supersedes.
 
+## Ruleset 13 cutover status
+
+These statuses take precedence over the predecessor chronology below. The spec and implementation stack land together; historical measurements and rejected alternatives retain their original context.
+
+| Decision | Status under Ruleset 13 |
+|---|---|
+| [0079: Days observe; nights test](0079-day-observer-night-tester.md) | Accepted; replaces the per-core phase/cycle policy of 0020, 0024, 0054, 0055, 0056 and 0069. |
+| [0080: Tune one offset per CCD first](0080-per-ccd-first.md) | Accepted; supersedes per-core hunt/constraint/attribution mechanics in 0023, 0038, 0040, 0049, 0053, 0064–0068 and 0070. Honest partial-load generation remains, without blame. |
+| [0081: Set the cap from measured slope](0081-margin-from-measured-slope.md) | Accepted; reverses 0038's rejection of rate-based policy; no annual-rate or total-crash guarantee. |
+| [0082: Keep BIOS Curve Optimizer at zero](0082-bios-stays-at-zero.md) | Accepted; supersedes 0004's BIOS application and 0006's nonzero starting baseline. |
+| [0083: Ask after unclean daily ends](0083-ask-after-unclean-ends.md) | Accepted; whole-profile daily evidence replaces last-changed-core blame. |
+| [0084: Start Ruleset 13 fresh](0084-a-fresh-ruleset-transition.md) | Accepted for this transition; supersedes 0019/0027 tuning carry, retains provenance-preserving raw daily records. Later transitions remain separate decisions. |
+| [0078: Controller clock and rotation](0078-controller-clock-and-rotation.md) | Amended: managed placement is mandatory for Ruleset 13; the legacy-schedule exception ends. |
+
+
 ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-from-screen-to-journal.md) and [0037](0037-cycles-and-trials.md) translate it to the terms in `GLOSSARY.md` without changing the tuning decisions.
 
 ## Ruleset chronology
 
-[How togi tunes, Ruleset history](../how-togi-tunes.md#ruleset-history) owns the chronology of ruleset changes, their merge commits and their decision sources. The rows below record each ADR's current status.
+[How togi tunes, Ruleset history](../how-togi-tunes.md#ruleset-history) owns the chronology of ruleset changes, their merge commits and their decision sources. The Ruleset 13 table above overrides superseded predecessor statuses below.
 
 ## ADR 0020 terms today
 
-[ADR 0020](0020-hunt-and-refine.md) records the ruleset-4 decision, not all of today's rules. Use the [glossary](../../GLOSSARY.md) for the current terms and the linked spec sections for the current rules.
+The following table maps ADR 0020's vocabulary to the **pre-13** policy for historical readers. Its tuner links now name retirement sections, not live per-core rules; the Ruleset 13 status table above owns supersession.
 
 | ADR 0020 term or rule | Today's term or rule | Decision sources |
 |---|---|---|
@@ -28,7 +43,7 @@ ADRs 0001–0034 keep their historical vocabulary. [0034](0034-one-vocabulary-fr
 | Hunt every unattributed together failure | Hunts remain outside multi-core R7. Multi-core R7 uses request attribution and voltage-targeted backoff, with located hunts on escalation ([R7 request order and attribution](../spec/tuner.md#r7-request-order-and-attribution), [Hunt](../spec/tuner.md#hunt)) | [0038](0038-self-sufficient-cores.md); [0040](0040-located-hunts.md); [0053](0053-escalation-only-located-hunts.md) |
 | Prove candidate limits, hunt groups, reruns and deepening checks | Eligible carried facts can answer them; cycle coverage stays live ([Evidence](../spec/tuner.md#evidence)) | [0027](0027-carry-trial-facts.md) |
 
-## Status
+## Predecessor status and unaffected decisions
 
 - [0001: Go as the implementation language](0001-go.md) — **superseded** by [0048](0048-rust.md): togi has shipped in Rust since [v0.11.1](https://github.com/shgew/togi/releases/tag/v0.11.1), and since [#1038](https://github.com/shgew/togi/issues/1038) no Go remains in the repository ([0071](0071-no-go-in-the-repository.md)); its Bubble Tea consequence went with the Go dashboard.
 - [0002: Clean-room rewrite, not a port of linux-corecycler](0002-clean-room-rewrite.md) — **in force**.

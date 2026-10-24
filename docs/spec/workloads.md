@@ -4,7 +4,7 @@ Normative rules for what a trial runs, how it is contained, and how its outcome 
 
 ## Evidence compatibility
 
-The evidence epoch (`togi_tuner::EVIDENCE_EPOCH`; `tuner.md`, Ruleset) versions whether recorded passes remain comparable with current trials. Changes to workload content, the backend configuration togi generates, intended trial durations, or pass/failure detection must bump it when they change the evidence contract. An epoch bump drops older carried passes while retaining eligible failures; it does not change the journal schema or the strategy ruleset. A new backend build needs no bump: passes are keyed by the backend's package store path (`tuner.md`, Evidence).
+The evidence epoch (`togi_tuner::EVIDENCE_EPOCH`) versions workload content, effective backend configuration, duration and pass/failure detection contracts. Incompatible observations remain raw history but earn no current passing exposure or qualification. Content identity includes executable bytes/build and effective generated configuration, never the Nix store path alone; a path-only relocation preserves compatibility, changed content does not. Firmware context separately scopes validity. [The tuner](tuner.md#evidence) owns ledger keys and [the journal](journal.md#transitions) owns the fresh transition.
 
 ## Backends
 
@@ -50,17 +50,15 @@ Watched-file opens, `fstat` calls and reads never run on the runtime thread: eac
 | R4 medium load | Partial duty cycles | An R1 workload at 25%, 50% or 75% duty with a 100 ms period, cycling per trial |
 | R5 SMT pair | Both threads of one core | R1 and R2 workloads with 2 threads on both logical CPUs of the core |
 | R6 idle | Normal power management with the profile applied | One confined 1-thread R1 instance per core, each stopped with SIGSTOP as soon as it enters its scope, before the next instance launches. Trial timing begins only after all instances are stopped. First half: no load at all. Second half: short bursts (SIGCONT, then SIGSTOP 100 ms later, every 2 s) on one core at a time in scheduling order |
-| R7 all-core | Self-sufficiency, package power, thermals, cross-CCD interaction | One confined 1-thread R2 instance on each loaded core. For each CCD a checking step runs its full part then partial parts that idle successive top-request groups, ties within 1 mV together, while at least two cores remain loaded; the all-core part runs last. On one CCD the all-core part is its full part, run once before the chain |
+| R7 full and partial | Package power, thermals and shared-rail/CCD interaction | One confined 1-thread R2 instance per loaded physical core; full CCD, honest partial subsets and all-CCD full load are distinct classes |
 | R8 neighbours | Light-core boost beside heavy neighbours on one CCD | One light role on one core's first logical CPU, an R1 workload sustained or an R3 workload with load steps, beside an R2 workload sustained on the first logical CPU of every other core of that CCD, one instance per core. The light core is an explicit argument. Light and heavy roles may use different backends |
 | R9 all threads | Every logical CPU loaded, SMT and whole-CCD interaction | An R1 workload, 1 thread, on every logical CPU of every core, one instance per logical CPU. 10 s phases alternate all threads loaded and only the serial logical CPU loaded, all threads first. The serial logical CPU is an explicit argument and never stops |
 
-Within a regime, search cycles listed workloads; candidate-solo-limit checks freeze one R1 and one R2 workload. Checking's repeated steps cycle their regime's catalog from the start of each cycle: three R1, R2 or R7 occurrences cover each workload, and three R3 or R4 occurrences run the first three entries of their longer catalogs. All parts of one R7 step share its selected R2 workload. Inconclusive trials retry the same class. Every R7 part requires passing trials; every failed multi-core R7 trial follows the request-based attribution and [voltage-targeted backoff rules](tuner.md#r7-voltage-targeted-backoff).
-
-R6 runs on the profile and in parked hunt trials; R7 runs on the profile, checks deepening rounds and runs located hunts: a live unattributed multi-core R7 failure with an unloaded core off CO 0 is first located among the unloaded cores. R6 targets every core; an R7 trial can target part of a CCD, a full CCD or every core. `trial.intent.cores` lists exactly the loaded cores; the applied profile also includes idle cores. Each loaded core runs one instance on its first logical CPU, in its own scope and work directory, so a backend signal names that instance's core. Partial-chain derivation and its stopping reason are recorded in `checking.chain`; no partial with fewer than two loaded cores is launched.
+Ruleset 13 schedules R1–R9 under the [coverage matrix](#coverage-matrix). Workloads, subsets, roles, light/serial positions and intended durations remain distinct classes. A failure never selects a culprit by request rank: requests generate informative partials only. R6 uses every physical core; the profile includes idle cores even when a trial loads only a subset. Every set-load intent names its actual loaded cores.
 
 Every loaded logical CPU has a role: its core, logical CPU, instance, workload and schedule (`trial.start.roles`, `journal.md`). Roles that name the same instance share one process, as both threads of an R5 core do; separate instances may run different backends side by side, so an R8 light y-cruncher instance can run beside mprime neighbours, and each instance's output is classified by its own backend. R1–R7 derive their roles exactly as before. Instance directories and scopes keep their names (`work` and `togi-trial-<id>` for one instance, `cNN` and `togi-trial-<id>-cNN` per core in R6, R7 and R8) and an R9 instance, one per logical CPU, is `cpuNN` and `togi-trial-<id>-cpuNN` named by its logical CPU, so the SMT siblings of one core never share a name. Whichever instance a backend signal comes from, it names that role's core.
 
-Partial loads: the checking scheduler derives each partial from the previous load's request order, where a core without a measured request is ordered by its offset in place of a request, and a link with fewer than two loaded cores ends the chain; that derivation is unchanged. A separate, independently callable derivation, `togi_tuner::HonestChain::derive`, is not yet used by the scheduler. From one CCD's loaded cores and their measured requests it returns the partials in order, each with at least two loaded cores. When every loaded core has a finite measured request it idles successive top request groups, ties within 1 mV together. When any request is absent or not finite it uses an explicit subset fallback instead: it ignores both the other measured requests and offsets, idles one core per partial, highest core ID first, and records which cores lacked a request. A load of fewer than three cores, or a top group that leaves fewer than two, yields a typed uncovered result with its reason, never an empty chain counted as partial coverage. Moving the scheduler to this derivation changes decisions and is deferred to #1217.
+Ruleset 13 uses the existing honest partial-load derivation (`HonestChain`), not the removed checking-chain policy. With finite measured requests for every loaded core, idle successive highest-request groups, ties within 1 mV together, retaining at least two physical cores. With any absent/nonfinite request, ignore offsets and all partial telemetry and use explicit subsets, removing highest core ID first, one per link. Record the measured source or missing-request fallback, the frozen subsets and any changed derivation. Fewer than three cores, or a tied group leaving fewer than two, produces a typed uncovered reason, never an empty chain counted as partial coverage. To qualify when a measured tied chain has no partial, explicitly run the subset fallback; topology that admits no two-core partial is reported structurally unavailable rather than passed.
 
 ### Load-step schedules
 
@@ -74,68 +72,64 @@ R9 alternates 10 s phases, all threads first. Every instance runs through an all
 
 ## Durations and checking schedule
 
-Defaults, configurable except the two role regimes noted below:
+The old search/checking/hunt duration allocation is retired. The matrix below is sized against the registered gate's eight-hour night, with a normal one-CCD day-step qualification planned for at most 75% of that night. This is a design allocation, not a measured runtime guarantee: launch/cleanup overhead and required repeats consume it too, and incomplete qualification spans nights rather than dropping cells.
 
-| Use | Duration |
-|---|---|
-| Search trial (R1, then R2) | 90 s each; a candidate-solo-limit class needs `n` passing trials |
-| Short trial for R7, hunt groups, deepening checks and backoff reruns | 120 s (`durations.short_trial_s`) |
-| Checking per-core trial (R1 to R5) | 2 min each |
-| Checking R6 | 15 min |
-| Checking R7 long trials | One long trial per part, on top of the part's three short trials (below). Long trials of the full parts total 20 min on two CCDs: 5 min each CCD, 10 min all cores; each derived partial adds 5 min. On one CCD the full part's long trial runs 20 min and each derived partial adds 20 min |
-| Role trial (R8, R9; unscheduled) | 120 s each, after a 30 s warm-up; not configurable |
+### Warm-up boundary
 
-R8 and R9 are role regimes the runner can execute but no ruleset schedules: neither search, checking nor hunting launches them, and nothing above changes for R1–R7. A role trial runs `Regime::role_duration` (120 s each) unless its `TrialSpec` carries another duration; these are fixed constants, not configuration settings, so no `durations` key sets them.
+After all instances and confinement are ready and profile readback is verified, trial timing starts. Exposure excludes the first 5 s for R1–R7 or 30 s for R8/R9, **inside** the intended duration, not added to it. These retain the runner's existing boundaries without crediting setup or making many small cells cost an extra warm-up. Schedules run from timing start and are not restarted at the boundary. Failures are active throughout and always retained, including during warm-up. A sustained block is one uninterrupted launch, not summed short starts; its eligible seconds are duration minus warm-up. Request/clock summaries still require 20 valid post-warm-up samples.
 
-Request and clock telemetry skips a warm-up at the start of timing: 5 s for R1–R7 and 30 s for R8 and R9 (`Regime::warm_up`). A role trial shorter than its warm-up plus the 20 samples the summaries need therefore records none of them. Warm-up only selects which samples feed those summaries: the schedules run from the start of timing, and backend failure detection (computation error, unexpected exit, stall, containment escape) is active throughout.
+### Coverage matrix
 
-For `D = durations.checking_all_core_s` and `n` CCDs (at most three; a topology with more is refused before a session starts, with nothing appended ([runtime.md](runtime.md#preflight)), because `D - n*floor(D / 4)` would reach zero), a full R7 long trial runs for `D` on one CCD; on multiple CCDs, each full single-CCD part runs `floor(D / 4)` seconds and the all-core part runs `D - n*floor(D / 4)` seconds. The duration follows the part's role (CCD full part, derived partial or all-core part), never its core count. A partial receives its CCD's full-part long duration in addition to these allocations. Every part runs three short `short_trial_s` trials and one long trial. When short and long durations match, their counts add: four trials. All parts require passes and supply full-cycle coverage. `checking_all_core_s` must be in [4, 86400]. A trial is torn down before the next trial. Inconclusive trials repeat their part's frozen loaded cores and workload; partial sets are derived after the predecessor passes, using request telemetry as specified in [tuner.md](tuner.md#r7-request-order-and-attribution).
+The exact-profile qualification certificate is a **composite matrix**. R1–R5 per-core cells on the changed CCD run at its proposed offset; unchanged CCD cells may reuse an earlier completed qualification only at that CCD's identical offset, class, placement contract, content, epoch and firmware, with no intervening applicable failure. This is reuse of a per-CCD observation, not a pass from a deeper offset. All package/interaction cells below run freshly at the **complete proposed profile**. On first qualification, stock controls or firmware invalidation, no unchanged-CCD credit is assumed. Monthly re-qualification runs all CCDs' cells fresh. The certificate explicitly lists reused witnesses and the fresh whole-profile cells; it cannot be described as every class having run freshly at that vector.
 
-Worked example of one R7 workload's parts:
+One full own-duration launch per listed breadth position plus each stated sustained block is required. A conclusive failure invalidates the certificate; incomplete cells stay outstanding across nights. Every position means every physical core for per-core/R8 rows, and each explicit physical-core position group for R9; only the actually tested logical position gains ledger exposure.
 
-Defaults on two CCDs (`short_trial_s` 120, `checking_all_core_s` 1200), one R2 workload:
+| Regime | Breadth cells, ordered by catalog then core ID | Intended duration | Additional sustained cells |
+|---|---|---:|---|
+| R1 | All 3 light catalog entries on every core of the changed CCD | 90 s | None |
+| R2 | All 3 heavy catalog entries on every core of the changed CCD | 90 s | None |
+| R3 | First 3 light load-step entries, every core of the changed CCD | 120 s | None |
+| R4 | The 3 light entries paired in order with 25%, 50%, 75% duty, every core of the changed CCD | 120 s | None |
+| R5 | One rotating R1/R2 catalog entry on both SMT CPUs of every changed-CCD core | 120 s | None |
+| R6 | One rotating R1 entry, all cores, full idle-then-burst schedule at the exact profile | 900 s | None: its own duration already exceeds a short probe |
+| R7 | One rotating R2 entry, each CCD full then every honest partial, finally all CCDs full | 120 s | One 600 s all-CCD full block |
+| R8 | One rotating light/heavy catalog pair and light schedule, every light-core position on **both** CCDs | 120 s | One 600 s block at the rotating light-core position |
+| R9 | One rotating R1 entry, one serial logical CPU per physical-core position group, all threads otherwise following its phase schedule | 120 s | One 600 s block at the rotating serial position |
 
-| Part | Short trials | Long trial | Part total |
-|---|---|---|---|
-| CCD0 full | 3 × 120 s | `floor(1200 / 4)` = 300 s | 660 s |
-| CCD1 full | 3 × 120 s | 300 s | 660 s |
-| All cores | 3 × 120 s | `1200 - 2 × 300` = 600 s | 960 s |
-| Each derived partial | 3 × 120 s | its CCD's full-part long duration, 300 s | 660 s |
+Use the durable qualification ordinal, starting at zero, modulo catalog/position count for rotating selections. R5 enumerates R1 then R2; R8 enumerates index-matched light/heavy pairs, sustained light then bursty light for each pair. R9 selects the serial SMT sibling by ordinal modulo sibling count; consecutive qualifications cover the other logical positions. Sustained R8/R9 position is ordinal modulo physical-core count, using the same selected workload/schedule. The declared classes are frozen when qualification starts. R7 full/all-CCD are one cell on a single-CCD machine; honest partials do not duplicate the full set.
 
-Without failures or inconclusive retries, the two full CCD parts and the all-core part run 2280 s (38 min) of trials, of which 1200 s (20 min) is long trials. Each partial in a CCD's chain adds 660 s, and the chain's length depends on the request ties and on which partials pass. Each of the default cycle's three R7 steps runs this for its own R2 workload ([tuner.md, Checking](tuner.md#checking)).
+The numerical choices preserve existing 90 s search, 120 s short and 900 s idle budgets and add ten-minute package blocks to expose sustained load without an exhaustive cost explosion. For two eight-core CCDs with at most twelve partials, a normal one-CCD step schedules 19,380 s (about 5.38 h) before launch/cleanup and required repeats, leaving room inside the six-hour allocation. First controls, fresh firmware qualification, single-CCD exclusion repeats and monthly all-CCD work may take longer and span nights. Qualification does not shorten a cell or silently omit it to meet a deadline.
 
-Hunt-group duration selection and its carried-evidence rules are defined in [tuner.md, Hunt](tuner.md#hunt).
+Against the [registered calendar](../../tools/bench/day-night.json)'s eight-hour night, that leaves 2 h 37 min overall and 37 min inside the scheduler's normal qualification pool for overhead. Across 155 launches, the latter is about 14.3 s per launch for startup/teardown and other nontrial time; this is an arithmetic ceiling, **not measured overhead**. If actual overhead or exclusions exceed it, preserve every cell and span nights. The implementation gate must report that cost rather than claim this calculation proves convergence.
 
-Default checking cycle, with elapsed time depending on the request ties and resulting partial chains:
-1. R7, R7, R7: three R7 steps, each with the next R2 workload (three occurrences cover the R2 catalog), on CCD0 full and its partial chain, CCD1 full and its partial chain, then all cores. Every part, partials included, runs three short trials and one long trial, so the long-trial budget in the table is only part of the time (worked example above).
-2. R2, R2, R2: every R2 workload on every core.
-3. R6.
-4. R5 on every core.
-5. R1, R1, R1: every R1 workload on every core.
-6. R3, R3, R3: every R1 workload with load steps on every core.
-7. R4, R4, R4: every R1 workload on every core, at 25%, 50% and 75% duty respectively.
-8. R6.
+**Coverage limits:** this bounded matrix does not test every workload/duty Cartesian product, both R8 schedules and all pairs at each step, every R9 serial SMT sibling at each step, or sustained blocks at every position/partial. Untested classes remain uncovered, never inferred safe. Later qualifications rotate the sampled classes and positions. This deliberately trades exhaustive exposure for timely day steps within the registered calendar; neither a certificate nor its cap is a rare-event or hidden-daily-load guarantee.
 
-Full-cycle coverage, earlier-cycle credit, carried-evidence boundaries and per-core scheduling order are defined in [tuner.md, Checking](tuner.md#checking). Search time depends on solo limit distance and failed steps; candidate checks require five passes of each frozen R1 and R2 class by default, including eligible carried passes.
+For **mapping**, run one breadth launch per R1/R2 catalog/core position, the selected rotating R8 pair/schedule at every light position, selected R7 full/partials and selected R9 serial position group at each tested CCD offset, other CCDs zero. Use the same duration and selection rules, frozen by the mapping-step ordinal instead of the qualification ordinal. Mapping never qualifies a day profile. Order is R1, R2, R8, R7, R9; full qualification order is R1 through R9. Reproduction follows the qualification order but stops under its [bounded task](tuner.md#night-order-and-reserved-budgets).
+
+All trials use managed placement. Only isolated mapping may clock-cap an idle CO-0 CCD. Exact-profile trials use an uncapped unloaded CO-0 core when available, otherwise uncapped rotation on loaded cores. These conditions are separate classes; mapping's quieter contract cannot qualify an exact-profile cell.
+
+On a single-CCD machine retain capped host rotation and exclude its host from passing credit. Each required position must run with that position **not** the host; repeat rotations until its quota is met. For multi-position CCD rate accounting use the minimum eligible seconds across required positions, never summed simultaneous core-hours, retaining every failure once. This conservative minimum neither pretends the host was tested nor multiplies wall-hours by cores. A placement that cannot cover a required position remains uncovered and cannot qualify.
+
+
 
 ## Controller placement
 
-The controller is togi's session, journal, supervisors, Tokio runtime, sampler and in-process dashboard. Its work can request voltage on the shared rail, so its placement and clock are part of a managed trial's evidence contract ([ADR 0078](../adr/0078-controller-clock-and-rotation.md)). `TrialSpec.controller = Managed { rotation }` opts into that contract. The current scheduler continues to use `Legacy`; Ruleset 13's scheduler adoption is separate from executing these trial shapes.
+The controller is togi's session, journal, supervisors, Tokio runtime, sampler and in-process dashboard. Every Ruleset 13 trial uses managed placement ([ADR 0078](../adr/0078-controller-clock-and-rotation.md)); no legacy-placement evidence qualifies it. The trial's purpose distinguishes isolated mapping from exact-profile qualification.
 
 Placement is computed before any backend launches, from the loaded physical cores, their logical CPUs and the applied, read-back offsets. A suspended role remains loaded for this purpose. A missing offset is not CO 0. The rules, in order:
 
 | Shape | Controller placement | Clock and credit |
 |---|---|---|
 | Single CCD | Rotate across the tested physical cores, in core-ID order | Capped; the host core earns no exposure credit |
-| Mapping-shaped, other than R6: every loaded core is on one CCD and another entire CCD is unloaded at CO 0 | Every logical CPU of the lowest-ID eligible idle CCD | Capped; the loaded CCD retains its credit |
-| R6 or a partial load with no eligible idle CCD | The lowest-ID unloaded CO-0 core, when one exists | Uncapped; controller work is outside the tested set |
+| Isolated mapping, other than R6: every loaded core is on one CCD and another entire CCD is unloaded at CO 0 | Every logical CPU of the lowest-ID eligible idle CCD | Capped; the loaded CCD retains its credit |
+| Exact-profile trial or R6 with an eligible unloaded CO-0 core | The lowest-ID unloaded CO-0 core | Uncapped; controller work is outside the tested set |
 | Every core loaded, including both-CCD R7 and R9, or any remaining shape with no unloaded CO-0 core | Rotate across the loaded physical cores, in core-ID order | Uncapped; controller work counts as load on the host core |
 
 Rotation uses the caller's persistent trial ordinal modulo the eligible core count, not a workload index, pass quota or random draw. Each rotating placement records its host core and applied offset. It never chooses a nonzero unloaded core merely because its offset is shallower.
 
 The cap uses the lowest permitted cpufreq limit, respecting the policy's current minimum. The runner discovers shared policies rather than assuming one policy per logical CPU. It must not cap a policy containing another tested core: on a single CCD only the excluded host's SMT CPUs may share the capped policy. Policy discovery, saved limits, requested limits and readbacks are recorded; restoration and same-boot recovery follow [runtime.md](runtime.md#trial-confinement).
 
-An unavailable placement, incomplete thread-affinity change, failed cap or mismatching cap readback withholds passing exposure for the whole trial and records why. It does not erase stronger failure evidence. A successful single-CCD placement excludes only its host: the original whole-load class cannot gain a pass or cycle coverage from that trial; measured R7 self-sufficiency may still credit nonexcluded top requesters. Raw outcomes and telemetry remain visible. A failure on the host remains failure evidence.
+An unavailable placement, incomplete thread-affinity change, failed cap or mismatching cap readback withholds passing exposure for the whole trial and records why. It never erases stronger failure evidence. Single-CCD exclusions and their coverage accounting follow [the matrix](#coverage-matrix); raw outcomes/telemetry remain visible and a host fault remains failure evidence.
 
 ## Containment
 
