@@ -29,6 +29,7 @@ fn unclean_end() -> DayUncleanEnd {
                 faults: vec![KernelFault::Oops {}],
                 logging_continued: false,
             },
+            asleep: None,
         },
     }
 }

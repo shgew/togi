@@ -78,6 +78,7 @@ fn history(offsets: PerCore<ObservedOffset>) -> Vec<Event> {
                 build: build(),
                 bios: BiosContext::default(),
                 offsets: profile([0, 0, 0, 0]),
+                watchdog: None,
             },
         ),
         event(

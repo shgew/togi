@@ -1,6 +1,6 @@
 //! Reads the end of a crashed boot's kernel log. This is the only place the text of those lines is parsed.
 
-use togi_machine::{GraphicsDriver, KernelFault, KernelTail, MAX_FAULTS};
+use togi_machine::{GraphicsDriver, KernelFault, KernelTail, MAX_FAULTS, SleepMode};
 
 use crate::parse::digits;
 
@@ -116,4 +116,24 @@ pub(crate) fn scan(lines: &[String]) -> KernelTail {
             logging_continued: at + 1 < lines.len(),
         },
     }
+}
+
+/// The sleep the tail ends in: the last suspend or hibernation entry the kernel logged, unless an exit follows
+/// it. The kernel prints `PM: suspend entry (<state>)` and `PM: suspend exit` around a suspend, and
+/// `PM: hibernation: hibernation entry` and `PM: hibernation: hibernation exit` around a hibernation
+/// (kernel/power/suspend.c and hibernate.c).
+pub(crate) fn sleep_end(lines: &[String]) -> Option<SleepMode> {
+    let mut asleep = None;
+    for line in lines {
+        if line.starts_with("PM: suspend entry") {
+            asleep = Some(SleepMode::Suspend);
+        } else if line.starts_with("PM: hibernation: hibernation entry") {
+            asleep = Some(SleepMode::Hibernate);
+        } else if line.starts_with("PM: suspend exit")
+            || line.starts_with("PM: hibernation: hibernation exit")
+        {
+            asleep = None;
+        }
+    }
+    asleep
 }

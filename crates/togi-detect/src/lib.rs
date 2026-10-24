@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use togi_machine::{
     BootId, CoreInfo, CpuTime, EndEvidence, KernelCursor, KernelRead, KernelTail, Mce, MceCount,
-    Partial, PstoreRecord, ResetReason,
+    Partial, PstoreRecord, ResetReason, SleepMode,
 };
 
 pub use boot::boot_id;
@@ -95,10 +95,12 @@ impl Kernel {
     fn read_end_evidence(&self, boot: &JournalBoot) -> EndEvidence {
         let successor_mces = Self::successor(&self.journal(), boot)
             .map_or(MceCount::Unknown {}, |successor| self.mce_count(&successor));
+        let (tail, asleep) = self.read_tail(boot);
         EndEvidence {
             crashed_mces: self.mce_count(boot),
             successor_mces,
-            tail: self.read_tail(boot),
+            tail,
+            asleep,
         }
     }
 
@@ -292,7 +294,7 @@ impl Kernel {
         }
     }
 
-    fn read_tail(&self, boot: &JournalBoot) -> KernelTail {
+    fn read_tail(&self, boot: &JournalBoot) -> (KernelTail, Option<SleepMode>) {
         let operation = Operation::ReadKernelLog {
             boot: boot.as_str().to_owned(),
         };
@@ -302,11 +304,11 @@ impl Kernel {
             ExitRules::BOOT_MISSING_WHEN_EMPTY,
         );
         match out {
-            Err(Error::BootMissing) => KernelTail::Missing {},
-            Err(_unreadable) => KernelTail::Unreadable {},
+            Err(Error::BootMissing) => (KernelTail::Missing {}, None),
+            Err(_unreadable) => (KernelTail::Unreadable {}, None),
             Ok(out) => match reset_texts(&out) {
-                Ok(lines) => tail::scan(&lines),
-                Err(_undecodable) => KernelTail::Unreadable {},
+                Ok(lines) => (tail::scan(&lines), tail::sleep_end(&lines)),
+                Err(_undecodable) => (KernelTail::Unreadable {}, None),
             },
         }
     }

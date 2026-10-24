@@ -12,6 +12,7 @@ use togi_journal::{
 };
 use togi_machine::{
     BootId, CancellationToken, Clock, CoreId, CoreInfo, ObservedOffset, PerCore, ResetReason,
+    WatchdogState,
 };
 
 use crate::cli::Context;
@@ -272,6 +273,7 @@ fn observe_with_socket(
     let started = clock.monotonic()?;
     let bios = observer.bios_context()?;
     let mut offsets = observer.offsets()?;
+    let watchdog = observer.watchdog();
     append(
         journal,
         clock,
@@ -279,6 +281,7 @@ fn observe_with_socket(
             build: build.clone(),
             bios,
             offsets,
+            watchdog: Some(watchdog),
         },
     )?;
     let mut sampler = Sampler::new(
@@ -376,6 +379,9 @@ pub(crate) struct Ledger {
     pub boots: BTreeMap<BootId, Boot>,
     pub profiles: BTreeMap<Profile, u64>,
     pub last_unclean: Option<(BootId, ResetReason)>,
+    /// The watchdog state the newest observer start recorded; `None` before any start, or when that start's
+    /// record predates the check.
+    pub watchdog: Option<WatchdogState>,
 }
 
 impl Ledger {
@@ -383,6 +389,7 @@ impl Ledger {
         let mut ledger = Self::default();
         for event in events {
             if let Payload::DayBootStart(start) = &event.payload {
+                ledger.watchdog.clone_from(&start.watchdog);
                 let previous = ledger.boots.remove(&event.boot);
                 ledger.boots.insert(
                     event.boot.clone(),

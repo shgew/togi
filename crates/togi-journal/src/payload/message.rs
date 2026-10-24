@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 
 use togi_machine::{
     CoreId, CoreSet, KernelErrorKind, KernelFault, KernelTail, MceCount, PerCore, Signal,
-    TargetOffset, WorkloadId,
+    TargetOffset, WatchdogState, WorkloadId,
 };
 
 use super::domain::{
@@ -1134,7 +1134,7 @@ fn state_rebuilt(p: &StateRebuilt) -> String {
 }
 
 fn day_boot_start(p: &DayBootStart) -> String {
-    format!(
+    let mut text = format!(
         "day observer started by {}: BIOS {} on {}, {}, microcode {}, boost limit {} MHz; offsets {}",
         build_name(&p.build),
         p.bios.bios_version,
@@ -1143,7 +1143,17 @@ fn day_boot_start(p: &DayBootStart) -> String {
         p.bios.microcode,
         p.bios.boost_limit_mhz,
         offsets(&p.offsets, |offset| offset.0.to_string())
-    )
+    );
+    match &p.watchdog {
+        Some(WatchdogState::Armed { detail }) => {
+            let _ = write!(text, "; hardware watchdog armed: {detail}");
+        }
+        Some(WatchdogState::Unarmed { detail }) => {
+            let _ = write!(text, "; hardware watchdog not armed: {detail}");
+        }
+        None => {}
+    }
+    text
 }
 
 fn day_checkpoint(p: DayCheckpoint) -> String {
@@ -1204,6 +1214,9 @@ pub(super) fn day_unclean_end(p: &DayUncleanEnd) -> String {
         mce_count(p.evidence.successor_mces),
         kernel_tail(&p.evidence.tail)
     );
+    if let Some(asleep) = p.evidence.asleep {
+        let _ = write!(text, "; the log ended at {}", asleep.entry_words());
+    }
     text
 }
 

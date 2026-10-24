@@ -362,6 +362,12 @@ mod vm_recovery {
                 })
         }
 
+        fn watchdog(&mut self) -> togi_machine::WatchdogState {
+            togi_machine::WatchdogState::Unarmed {
+                detail: "the VM observer reads no watchdog".to_owned(),
+            }
+        }
+
         fn live_faults(
             &mut self,
             boot: &BootId,

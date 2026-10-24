@@ -261,6 +261,7 @@ mod record {
                     build: togi_cli::report::current_build(),
                     bios: BiosContext::default(),
                     offsets: profile([-5, -5, -10, -10]),
+                    watchdog: None,
                 }
                 .into(),
                 &[],

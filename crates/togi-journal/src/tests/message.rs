@@ -1,5 +1,5 @@
 use test_case::test_case;
-use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal};
+use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal, SleepMode};
 
 use super::fixtures::{
     core, failure, member, ord, profile, sample, samples, seq, set, target, trial,
@@ -439,7 +439,7 @@ fn units_appear_in_text() {
 
 #[test_case(
     EventKind::DayBootStart,
-    "day observer started by togi 0.1.0+abc1234: BIOS F31 on X570, 5950X, microcode 0xa201016, boost limit 5000 MHz; offsets [00: 0, 01: -5]"
+    "day observer started by togi 0.1.0+abc1234: BIOS F31 on X570, 5950X, microcode 0xa201016, boost limit 5000 MHz; offsets [00: 0, 01: -5]; hardware watchdog armed: watchdog0 (SP5100 TCO timer) active, held by PID 1"
 )]
 #[test_case(
     EventKind::DayCheckpoint,
@@ -468,6 +468,23 @@ fn units_appear_in_text() {
 )]
 fn day_messages_tell_a_stranger_what_the_observer_saw(kind: EventKind, text: &str) {
     assert_eq!(message(kind), text);
+}
+
+#[test_case(
+    SleepMode::Suspend,
+    "; kernel log tail: amdgpu timeout; logging continued after the last error; the log ended at a suspend entry"
+)]
+#[test_case(
+    SleepMode::Hibernate,
+    "; kernel log tail: amdgpu timeout; logging continued after the last error; the log ended at a hibernation entry"
+)]
+fn an_unclean_end_that_ended_asleep_says_which_sleep(asleep: SleepMode, suffix: &str) {
+    let Payload::DayUncleanEnd(mut end) = sample(EventKind::DayUncleanEnd) else {
+        unreachable!()
+    };
+    end.evidence.asleep = Some(asleep);
+    let text = Payload::from(end).message();
+    assert!(text.ends_with(suffix), "{text}");
 }
 
 #[test_case(

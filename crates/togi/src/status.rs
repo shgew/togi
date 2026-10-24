@@ -325,6 +325,19 @@ fn render_day(out: &mut String, events: &[Event]) {
         "boots observed: {}; clean ends: {clean}; unclean ends: {unclean}",
         ledger.boots.len()
     );
+    let watchdog = match &ledger.watchdog {
+        Some(state) => format!(
+            "hardware watchdog at the last observer start: {} ({})",
+            if state.is_armed() {
+                "armed"
+            } else {
+                "not armed"
+            },
+            esc(state.detail())
+        ),
+        None => "hardware watchdog at the last observer start: not recorded".to_owned(),
+    };
+    wrap(out, "", "  ", &watchdog);
     out.push_str("Applied hours per read-back profile (changed intervals excluded):\n");
     for (profile, seconds) in &ledger.profiles {
         let offsets: Vec<String> = profile

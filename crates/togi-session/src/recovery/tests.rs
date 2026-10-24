@@ -348,6 +348,7 @@ fn day_payloads() -> Vec<Payload> {
             build: build(),
             bios: togi_machine::BiosContext::default(),
             offsets: PerCore::default(),
+            watchdog: None,
         }
         .into(),
         togi_journal::DayCheckpoint {

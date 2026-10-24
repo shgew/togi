@@ -91,6 +91,7 @@ pub const fn class_words(class: EndClass) -> &'static str {
         EndClass::Thermal => "overheating",
         EndClass::GraphicsSurvived => "a graphics fault the machine outlived",
         EndClass::GraphicsLast => "a graphics fault that was the last thing logged",
+        EndClass::Sleep => "a watchdog reset while the machine was going to sleep",
         EndClass::Watchdog => "a watchdog reset",
         EndClass::PowerButton => "a power-button shutdown",
         EndClass::PowerLoss => "a power loss",
@@ -106,13 +107,18 @@ pub fn observed(end: &DayUncleanEnd) -> Vec<String> {
         crashed_mces,
         successor_mces,
         tail,
+        asleep,
     } = &end.evidence;
-    vec![
+    let mut facts = vec![
         reset_words(&end.reset_reason),
         format!("machine checks, crashed boot: {}", mce_words(crashed_mces)),
         format!("machine checks, next boot: {}", mce_words(successor_mces)),
         tail_words(tail),
-    ]
+    ];
+    if let Some(asleep) = asleep {
+        facts.push(format!("the log ended at {}", asleep.entry_words()));
+    }
+    facts
 }
 
 fn reset_words(reason: &ResetReason) -> String {

@@ -69,6 +69,7 @@ fn crashes(recorded: &[&str]) -> DayCrashes {
                 build: crate::report::current_build(),
                 bios: BiosContext::default(),
                 offsets: two_cores(0),
+                watchdog: None,
             },
         )
     };

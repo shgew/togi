@@ -76,8 +76,15 @@ type LiveLog = dyn FnMut(Option<&KernelCursor>) -> Result<KernelRead, Partial<Ke
 struct Reading {
     offsets: VecDeque<PerCore<ObservedOffset>>,
     reason: Option<ResetKind>,
+    watchdog: WatchdogState,
     times: VecDeque<Vec<CpuTime>>,
     live: Box<LiveLog>,
+}
+
+fn armed() -> WatchdogState {
+    WatchdogState::Armed {
+        detail: "watchdog0 (SP5100 TCO timer) active, held by PID 1".into(),
+    }
 }
 
 impl Reading {
@@ -85,6 +92,7 @@ impl Reading {
         Self {
             offsets: [offsets(-10)].into(),
             reason: None,
+            watchdog: armed(),
             times: [vec![CpuTime {
                 cpu: CpuId::from(0_u16),
                 busy: 0,
@@ -127,6 +135,9 @@ impl Observer for Reading {
     fn end_evidence(&mut self, _: &BootId) -> togi_machine::EndEvidence {
         togi_machine::EndEvidence::unknown()
     }
+    fn watchdog(&mut self) -> WatchdogState {
+        self.watchdog.clone()
+    }
     fn live_faults(
         &mut self,
         _: &BootId,
@@ -165,6 +176,9 @@ impl Observer for FailingAfter {
     }
     fn end_evidence(&mut self, boot: &BootId) -> togi_machine::EndEvidence {
         self.reading.end_evidence(boot)
+    }
+    fn watchdog(&mut self) -> WatchdogState {
+        self.reading.watchdog()
     }
     fn live_faults(
         &mut self,
@@ -365,6 +379,7 @@ fn next_boot_records_unclean_end_without_classifying_it(reason: Option<ResetKind
                 build: current_build(),
                 bios: bios(),
                 offsets: offsets(-10),
+                watchdog: None,
             }
             .into(),
             &[],
@@ -476,6 +491,7 @@ fn changed_readback_records_change_before_checkpoint_and_excludes_ambiguous_prof
     let mut journal = journal();
     let mut reading = Reading {
         offsets: [offsets(-10), offsets(-5)].into(),
+        watchdog: armed(),
         ..Reading::fixed()
     };
     observe(
@@ -494,6 +510,34 @@ fn changed_readback_records_change_before_checkpoint_and_excludes_ambiguous_prof
     let ledger = Ledger::of(events);
     assert_eq!(ledger.boots.values().next().unwrap().seconds, 120);
     assert!(ledger.profiles.is_empty());
+}
+
+#[test_case(armed() ; "armed")]
+#[test_case(WatchdogState::Unarmed { detail: "watchdog0 state \"inactive\", want active".into() } ; "unarmed")]
+fn the_observer_records_whether_pid_1_s_watchdog_is_armed_as_it_starts(state: WatchdogState) {
+    let mut journal = journal();
+    let mut reading = Reading {
+        watchdog: state.clone(),
+        ..Reading::fixed()
+    };
+    observe(
+        &mut journal,
+        &mut reading,
+        &mut ActiveClock::one(),
+        &CancellationToken::new(),
+        &current_build(),
+    )
+    .unwrap();
+    let events = journal.events();
+    let first = events
+        .iter()
+        .find(|event| event.kind() == togi_journal::EventKind::DayBootStart)
+        .unwrap();
+    let Payload::DayBootStart(start) = &first.payload else {
+        panic!("a day.boot_start event carries a DayBootStart payload");
+    };
+    assert_eq!(start.watchdog, Some(state.clone()));
+    assert_eq!(Ledger::of(journal.events()).watchdog, Some(state));
 }
 
 /// An active clock that wakes `ticks` times, each after `active` of active time and `wall` of wall time.
