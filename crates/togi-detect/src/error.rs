@@ -2,6 +2,7 @@ use std::fmt;
 use std::process::ExitStatus;
 use std::time::Duration;
 
+use crate::cpu_times::CpuTimesError;
 use crate::fault::FaultNumberError;
 use crate::journal::DecodeError;
 use crate::parse::StatusError;
@@ -87,6 +88,10 @@ pub enum Error {
     BootId(#[source] BootIdError),
     #[error("cannot read process thread identities")]
     ProcessThreads(#[source] std::io::Error),
+    #[error("cannot read the per-CPU scheduler times")]
+    CpuTimes(#[source] std::io::Error),
+    #[error("cannot decode the per-CPU scheduler times")]
+    CpuTimesFormat(#[source] CpuTimesError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -121,7 +126,9 @@ impl From<Error> for togi_machine::Error {
             | Error::Version { .. }
             | Error::Pstore(_)
             | Error::BootId(_)
-            | Error::ProcessThreads(_)) => Self::Other(Box::new(other)),
+            | Error::ProcessThreads(_)
+            | Error::CpuTimes(_)
+            | Error::CpuTimesFormat(_)) => Self::Other(Box::new(other)),
         }
     }
 }

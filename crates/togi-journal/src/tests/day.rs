@@ -1,10 +1,10 @@
 use test_case::test_case;
 use togi_machine::{
     BootId, EndEvidence, GraphicsDriver, KernelFault, KernelTail, MceCount, ObservedOffset,
-    PerCore, ResetKind, ResetReason,
+    PerCore, ResetKind, ResetReason, SleepMode,
 };
 
-use super::fixtures::{at, core};
+use super::fixtures::{at, core, seq};
 use crate::*;
 
 const A: &str = "aaaaaaaa-0000-0000-0000-000000000000";
@@ -65,6 +65,7 @@ fn end_of(
             crashed_mces,
             successor_mces,
             tail,
+            asleep: None,
         },
     }
 }
@@ -108,6 +109,43 @@ fn evidence_classification(
     tail: KernelTail,
 ) -> EndClass {
     class(kind, crashed, successor, tail)
+}
+
+#[test_case(Some(ResetKind::Watchdog), read(0, 0), read(0, 0), KernelTail::Quiet {}, Some(SleepMode::Suspend) => EndClass::Sleep; "a watchdog reset at suspend entry")]
+#[test_case(Some(ResetKind::Watchdog), read(0, 0), read(0, 0), KernelTail::Quiet {}, Some(SleepMode::Hibernate) => EndClass::Sleep; "a watchdog reset at hibernation entry")]
+#[test_case(Some(ResetKind::Watchdog), MceCount::Unknown {}, MceCount::Unknown {}, KernelTail::Missing {}, Some(SleepMode::Suspend) => EndClass::Sleep; "sleep with nothing else readable")]
+#[test_case(Some(ResetKind::Watchdog), read(0, 0), read(0, 0), faults(&[RING], false), Some(SleepMode::Suspend) => EndClass::Sleep; "an earlier graphics error does not make the sleep a hang")]
+#[test_case(Some(ResetKind::Watchdog), read(0, 0), read(0, 0), KernelTail::Quiet {}, None => EndClass::Watchdog; "a watchdog reset that did not end asleep stays a watchdog reset")]
+#[test_case(Some(ResetKind::Watchdog), read(0, 1), read(0, 0), KernelTail::Quiet {}, Some(SleepMode::Suspend) => EndClass::CpuFault; "an uncorrected machine check outranks sleep")]
+#[test_case(Some(ResetKind::PowerLoss), read(0, 0), read(0, 0), KernelTail::Quiet {}, Some(SleepMode::Suspend) => EndClass::PowerLoss; "sleep does not explain a power loss")]
+#[test_case(None, read(0, 0), read(0, 0), KernelTail::Quiet {}, Some(SleepMode::Suspend) => EndClass::Unknown; "sleep does not explain an unknown reset")]
+fn a_watchdog_reset_at_sleep_entry_is_sleep_related(
+    kind: Option<ResetKind>,
+    crashed: MceCount,
+    successor: MceCount,
+    tail: KernelTail,
+    asleep: Option<SleepMode>,
+) -> EndClass {
+    let mut end = end_of(A, kind, crashed, successor, tail);
+    end.evidence.asleep = asleep;
+    end.class()
+}
+
+#[test]
+fn a_record_without_sleep_evidence_decodes_as_not_asleep() {
+    let json = serde_json::json!({
+        "boot": A,
+        "offsets": {"0": -10, "1": -5},
+        "reset_reason": {"kind": "watchdog", "raw": [], "supported": true},
+        "evidence": {
+            "crashed_mces": {"kind": "unknown"},
+            "successor_mces": {"kind": "unknown"},
+            "tail": {"kind": "quiet"},
+        },
+    });
+    let end: DayUncleanEnd = serde_json::from_value(json).unwrap();
+    assert_eq!(end.evidence.asleep, None);
+    assert_eq!(end.class(), EndClass::Watchdog);
 }
 
 fn unclean(seq: u64, boot: &str) -> Event {
@@ -321,4 +359,190 @@ fn the_summary_words_the_evidence(
 ) {
     let end = end_of(A, None, crashed, successor, tail);
     assert_eq!(end.summary(), format!("{SUMMARY_HEAD}{expected}"));
+}
+
+fn started(seq: u64, boot: &str, seconds: i64) -> Event {
+    at(
+        seq,
+        boot,
+        seconds,
+        &[],
+        DayBootStart {
+            build: super::fixtures::build(),
+            bios: super::fixtures::bios(),
+            offsets: offsets(0),
+            watchdog: None,
+        }
+        .into(),
+    )
+}
+
+fn recorded(seq: u64, boot: &str) -> Event {
+    at(
+        seq,
+        "cccccccc-0000-0000-0000-000000000000",
+        0,
+        &[],
+        DayRecord {
+            boot: CrashedBoot::UncleanEnd { boot: id(boot) },
+            offsets: RecordedOffsets::new(offsets(-10)).unwrap(),
+            source: OffsetSource::ReadBack {
+                at: "2026-10-02T01:00:00Z".parse().unwrap(),
+            },
+            running: Running::Idle,
+            note: None,
+        }
+        .into(),
+    )
+}
+
+#[test]
+fn the_newest_unrecorded_end_is_the_default_crash() {
+    let events = [unclean(2, A), unclean(3, B)];
+    let crashes = DayCrashes::of(&events);
+    assert_eq!(
+        crashes
+            .newest_unrecorded()
+            .map(|named| named.end.boot.clone()),
+        Some(id(B))
+    );
+    let crashes = DayCrashes::of(&[unclean(2, A), unclean(3, B), recorded(4, B)]);
+    assert_eq!(
+        crashes
+            .newest_unrecorded()
+            .map(|named| named.end.boot.clone()),
+        Some(id(A))
+    );
+    let crashes = DayCrashes::of(&[unclean(2, A), recorded(3, A)]);
+    assert_eq!(crashes.newest_unrecorded(), None);
+    assert_eq!(crashes.ends().len(), 1, "a recorded end stays listed");
+}
+
+#[test]
+fn the_first_record_of_a_boot_is_the_one_the_fold_keeps() {
+    let crashes = DayCrashes::of(&[unclean(2, A), recorded(3, A), recorded(4, A)]);
+    assert_eq!(
+        crashes.get(&id(A)).and_then(|named| named.recorded),
+        Some(seq(3))
+    );
+}
+
+#[test]
+fn a_record_before_the_unclean_end_names_nothing() {
+    let crashes = DayCrashes::of(&[recorded(2, A), unclean(3, A)]);
+    assert_eq!(crashes.get(&id(A)).and_then(|named| named.recorded), None);
+}
+
+#[test]
+fn a_boot_was_read_back_when_its_observer_last_reported() {
+    let crashes = DayCrashes::of(&[
+        started(2, A, 0),
+        at(
+            3,
+            A,
+            600,
+            &[],
+            DayCheckpoint {
+                applied_secs: 600,
+                load_mix: LoadMix::default(),
+            }
+            .into(),
+        ),
+        at(
+            4,
+            B,
+            900,
+            &[],
+            DayCheckpoint {
+                applied_secs: 1,
+                load_mix: LoadMix::default(),
+            }
+            .into(),
+        ),
+        unclean(5, A),
+    ]);
+    let read = crashes.get(&id(A)).and_then(|named| named.read_back);
+    assert_eq!(read, Some("2026-10-02T01:10:00Z".parse().unwrap()));
+    let crashes = DayCrashes::of(&[unclean(2, A)]);
+    assert_eq!(crashes.get(&id(A)).and_then(|named| named.read_back), None);
+}
+
+#[test]
+fn recorded_offsets_refuse_nothing_and_anything_outside_the_target_range() {
+    assert_eq!(
+        RecordedOffsets::new(PerCore::default()),
+        Err(OffsetsError::Empty)
+    );
+    let too_deep: PerCore<ObservedOffset> = [(core(0), ObservedOffset(-51))].into_iter().collect();
+    assert!(matches!(
+        RecordedOffsets::new(too_deep),
+        Err(OffsetsError::OutOfRange { .. })
+    ));
+    let positive: PerCore<ObservedOffset> = [(core(0), ObservedOffset(1))].into_iter().collect();
+    assert!(RecordedOffsets::new(positive).is_err());
+}
+
+#[test]
+fn a_record_on_the_wire_cannot_carry_empty_or_unknown_parts() {
+    let known = serde_json::json!({
+        "boot": {"kind": "unclean_end", "boot": A},
+        "offsets": {"0": -10},
+        "source": {"kind": "read_back", "at": "2026-10-02T01:00:00Z"},
+        "running": "game",
+    });
+    let record: DayRecord = serde_json::from_value(known.clone()).unwrap();
+    assert_eq!(record.note, None);
+    let mut empty = known.clone();
+    empty["offsets"] = serde_json::json!({});
+    assert!(serde_json::from_value::<DayRecord>(empty).is_err());
+    let mut deep = known.clone();
+    deep["offsets"] = serde_json::json!({"0": -80});
+    assert!(serde_json::from_value::<DayRecord>(deep).is_err());
+    let mut extra = known.clone();
+    extra["extra"] = serde_json::json!(1);
+    assert!(serde_json::from_value::<DayRecord>(extra).is_err());
+    let mut other = known;
+    other["running"] = serde_json::json!("sleeping");
+    assert!(serde_json::from_value::<DayRecord>(other).is_err());
+}
+
+#[test_case(Running::Idle, "idle"; "idle")]
+#[test_case(Running::Desktop, "desktop"; "desktop")]
+#[test_case(Running::Build, "build"; "build")]
+#[test_case(Running::Game, "game"; "game")]
+#[test_case(Running::Other, "other"; "other")]
+#[test_case(Running::Unknown, "unknown"; "unknown")]
+fn running_categories_are_snake_case_on_the_wire(running: Running, wire: &str) {
+    assert_eq!(running.as_str(), wire);
+    assert_eq!(
+        serde_json::to_string(&running).unwrap(),
+        format!("\"{wire}\"")
+    );
+}
+
+#[test]
+fn the_parts_of_a_record_decode_only_from_objects() {
+    let time = "2026-10-02T01:00:00Z";
+    assert!(
+        serde_json::from_value::<OffsetSource>(serde_json::json!({"kind": "entered", "at": time}))
+            .is_ok()
+    );
+    assert!(
+        serde_json::from_value::<CrashedBoot>(
+            serde_json::json!({"kind": "unobserved", "at": time})
+        )
+        .is_ok()
+    );
+    assert!(serde_json::from_value::<OffsetSource>(serde_json::json!(["entered", time])).is_err());
+    assert!(
+        serde_json::from_value::<CrashedBoot>(serde_json::json!(["unobserved", time])).is_err()
+    );
+    assert!(serde_json::from_value::<CrashedBoot>(serde_json::json!(["unclean_end", A])).is_err());
+    let nested = serde_json::json!({
+        "boot": ["unobserved", time],
+        "offsets": {"0": -10},
+        "source": ["entered", time],
+        "running": "game",
+    });
+    assert!(serde_json::from_value::<DayRecord>(nested).is_err());
 }

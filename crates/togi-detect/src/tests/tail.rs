@@ -1,12 +1,12 @@
 use test_case::test_case;
 use togi_machine::{
-    BootId, EndEvidence, GraphicsDriver, KernelFault, KernelTail, MAX_FAULTS, MceCount,
+    BootId, EndEvidence, GraphicsDriver, KernelFault, KernelTail, MAX_FAULTS, MceCount, SleepMode,
 };
 
 use super::reset::{boots, boundary};
 use super::support::{LATER, OLD, argv, boot, exit, kernel, kernel_lines, lines, locked, ok};
 use crate::runner::RunError;
-use crate::tail::scan;
+use crate::tail::{scan, sleep_end};
 
 const RING: &str =
     "amdgpu 0000:03:00.0: amdgpu: ring gfx_0.0.0 timeout, signaled seq=1234, emitted seq=1236";
@@ -182,6 +182,7 @@ fn evidence_of_a_crashed_boot_joins_its_tail_and_both_boots_machine_checks() {
                 },
                 true
             ),
+            asleep: None,
         }
     );
     let tail_call = locked(&calls)
@@ -224,7 +225,38 @@ fn a_successor_that_is_not_proven_leaves_its_machine_checks_unknown() {
             },
             successor_mces: MceCount::Unknown {},
             tail: KernelTail::Quiet {},
+            asleep: None,
         }
+    );
+}
+
+const SUSPEND_ENTRY: &str = "PM: suspend entry (s2idle)";
+const SUSPEND_EXIT: &str = "PM: suspend exit";
+const HIBERNATE_ENTRY: &str = "PM: hibernation: hibernation entry";
+const HIBERNATE_EXIT: &str = "PM: hibernation: hibernation exit";
+
+#[test_case(&[CALM], None; "no sleep in the tail")]
+#[test_case(&[CALM, SUSPEND_ENTRY], Some(SleepMode::Suspend); "a suspend entry that ends the log")]
+#[test_case(&["PM: suspend entry (deep)", "Freezing user space processes"], Some(SleepMode::Suspend); "deep suspend with later freezing lines")]
+#[test_case(&[SUSPEND_ENTRY, SUSPEND_EXIT, CALM], None; "a suspend that exited")]
+#[test_case(&[SUSPEND_ENTRY, SUSPEND_EXIT, SUSPEND_ENTRY], Some(SleepMode::Suspend); "the last entry decides")]
+#[test_case(&[HIBERNATE_ENTRY, CALM], Some(SleepMode::Hibernate); "a hibernation entry")]
+#[test_case(&[HIBERNATE_ENTRY, HIBERNATE_EXIT], None; "a hibernation that exited")]
+#[test_case(&["usb 1-2: PM: suspend entry (s2idle)"], None; "text that only mentions suspend entry")]
+fn the_tail_ends_asleep_only_after_an_entry_with_no_exit(rows: &[&str], want: Option<SleepMode>) {
+    assert_eq!(sleep_end(&texts(rows)), want);
+}
+
+#[test]
+fn evidence_names_the_sleep_the_crashed_boot_ended_in() {
+    let (kernel, _) = kernel(&[(1, &[2, 18])], |args| match args[0].as_str() {
+        "--list-boots" => ok(boots(&[OLD])),
+        _ if args.iter().any(|arg| arg == "-n") => ok(kernel_lines(&[CALM, SUSPEND_ENTRY])),
+        _ => ok(b""),
+    });
+    assert_eq!(
+        kernel.end_evidence(&boot(OLD)).asleep,
+        Some(SleepMode::Suspend)
     );
 }
 

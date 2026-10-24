@@ -187,6 +187,12 @@ fn a_locate_group_is_identified_and_explained_unlike_an_ordinary_group() {
     assert_eq!(note.map(|(label, _)| label), Some("probe"));
 }
 
+fn armed() -> togi_machine::WatchdogState {
+    togi_machine::WatchdogState::Armed {
+        detail: "watchdog0 (SP5100 TCO timer) active, held by PID 1".to_owned(),
+    }
+}
+
 fn day_events(
     extra: impl IntoIterator<Item = (&'static str, togi_journal::Payload)>,
 ) -> Vec<togi_journal::Event> {
@@ -210,14 +216,29 @@ fn day_events(
                 boost_limit_mhz: 5000,
             },
             offsets,
+            watchdog: Some(armed()),
         })
     };
     [
         ("day-a", start()),
-        ("day-a", DayCheckpoint { applied_secs: 3600 }.into()),
+        (
+            "day-a",
+            DayCheckpoint {
+                applied_secs: 3600,
+                load_mix: togi_journal::LoadMix::default(),
+            }
+            .into(),
+        ),
         ("day-a", DayCleanStop {}.into()),
         ("day-b", start()),
-        ("day-b", DayCheckpoint { applied_secs: 1800 }.into()),
+        (
+            "day-b",
+            DayCheckpoint {
+                applied_secs: 1800,
+                load_mix: togi_journal::LoadMix::default(),
+            }
+            .into(),
+        ),
         (
             "day-c",
             DayUncleanEnd {
@@ -273,6 +294,44 @@ fn day_section_snapshot() {
     let mut out = String::new();
     super::render_day(&mut out, &day_events([]));
     assert_eq!(out, include_str!("day-status.txt"));
+}
+
+fn restart_with(
+    watchdog: Option<togi_machine::WatchdogState>,
+) -> (&'static str, togi_journal::Payload) {
+    (
+        "day-d",
+        togi_journal::DayBootStart {
+            build: crate::report::current_build(),
+            bios: togi_machine::BiosContext::default(),
+            offsets: PerCore::default(),
+            watchdog,
+        }
+        .into(),
+    )
+}
+
+#[test]
+fn the_latest_observer_start_decides_the_reported_watchdog() {
+    let unarmed = togi_machine::WatchdogState::Unarmed {
+        detail: "watchdog0 state \"inactive\", want active".to_owned(),
+    };
+    let mut out = String::new();
+    super::render_day(&mut out, &day_events([restart_with(Some(unarmed))]));
+    assert!(
+        out.contains("hardware watchdog at the last observer start: not armed (watchdog0 state"),
+        "{out}"
+    );
+}
+
+#[test]
+fn a_start_recorded_before_the_check_reports_the_watchdog_as_not_recorded() {
+    let mut out = String::new();
+    super::render_day(&mut out, &day_events([restart_with(None)]));
+    assert!(
+        out.contains("hardware watchdog at the last observer start: not recorded\n"),
+        "{out}"
+    );
 }
 
 #[test]

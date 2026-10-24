@@ -25,7 +25,9 @@ pub use controller::{ControllerContract, ControllerMode};
 pub use core_set::CoreSet;
 pub use cpufreq::{CpuFrequency, FrequencyPolicy, FrequencyPolicyId};
 pub use error::{Error, Partial, error_chain};
-pub use evidence::{EndEvidence, GraphicsDriver, KernelFault, KernelTail, MAX_FAULTS, MceCount};
+pub use evidence::{
+    EndEvidence, GraphicsDriver, KernelFault, KernelTail, MAX_FAULTS, MceCount, SleepMode,
+};
 pub use ids::{BootId, KernelCursor};
 pub use load::{DutyPct, InvalidDutyPct, LoadSchedule, Toggles};
 pub use per_core::PerCore;
@@ -36,9 +38,10 @@ pub use scalars::{
     MIN_OFFSET, ObservedOffset, PER_CORE_MAX, TargetOffset,
 };
 pub use seams::{
-    Check, Clock, CoreRank, Host, Instance, Kernel, KernelRead, Machine, Mce, ProcessFault,
-    ProcessFaultKind, PstoreRecord, Reporter, ResetReason, Running, Sample, Smu, SmuValidated,
-    Started, Stopped, Swept, TrialFailure, TrialResult, TrialSpec, Trials, monotonic_duration,
+    Check, Clock, CoreRank, CpuTime, Host, Instance, Kernel, KernelError, KernelErrorKind,
+    KernelRead, Machine, Mce, ProcessFault, ProcessFaultKind, PstoreRecord, Reporter, ResetReason,
+    Running, Sample, Smu, SmuValidated, Started, Stopped, Swept, TrialFailure, TrialResult,
+    TrialSpec, Trials, WatchdogState, monotonic_duration,
 };
 pub use topology::{BiosContext, ContextField, ContextMismatch, CoreInfo, order};
 pub use vocab::{

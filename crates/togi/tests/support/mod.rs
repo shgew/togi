@@ -118,6 +118,9 @@ pub struct Host {
     pub diagnoses: RefCell<Vec<(Option<BiosContext>, bool)>>,
     pub calls: Cell<usize>,
     pub day_answers: RefCell<Vec<(togi_machine::BootId, togi_journal::DayAnswerKind)>>,
+    /// Whether stdin and stderr are terminals, and the lines typed at them.
+    pub terminal: Cell<bool>,
+    pub typed: RefCell<std::collections::VecDeque<String>>,
     /// Whether a second claim on the host lock was refused as busy while `diagnose` ran; `None`
     /// when it did not run as root.
     pub lock_busy_in_diagnose: Cell<Option<bool>>,
@@ -159,6 +162,8 @@ impl Host {
             diagnoses: RefCell::default(),
             calls: Cell::new(0),
             day_answers: RefCell::default(),
+            terminal: Cell::new(false),
+            typed: RefCell::default(),
             lock_busy_in_diagnose: Cell::new(None),
             machine: RefCell::new(None),
             topology: vec![togi_machine::CoreInfo {
@@ -449,7 +454,11 @@ impl System for Host {
     }
 
     fn interactive(&self) -> bool {
-        panic!("only run asks whether the terminal is interactive")
+        self.terminal.get()
+    }
+
+    fn prompt_line(&self) -> io::Result<Option<String>> {
+        Ok(self.typed.borrow_mut().pop_front().map(|line| line + "\n"))
     }
 
     fn stderr(&self) -> Box<dyn Write> {

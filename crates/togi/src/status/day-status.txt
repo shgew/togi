@@ -1,6 +1,8 @@
 
 Day
 boots observed: 2; clean ends: 1; unclean ends: 1
+hardware watchdog at the last observer start: armed (watchdog0 (SP5100 TCO
+  timer) active, held by PID 1)
 Applied hours per read-back profile (changed intervals excluded):
   00:-10: 1.500 h
 last unclean end: day-b (reset reason: watchdog)

@@ -348,9 +348,14 @@ fn day_payloads() -> Vec<Payload> {
             build: build(),
             bios: togi_machine::BiosContext::default(),
             offsets: PerCore::default(),
+            watchdog: None,
         }
         .into(),
-        togi_journal::DayCheckpoint { applied_secs: 60 }.into(),
+        togi_journal::DayCheckpoint {
+            applied_secs: 60,
+            load_mix: togi_journal::LoadMix::default(),
+        }
+        .into(),
         togi_journal::DayOffsetsChanged {
             offsets: PerCore::default(),
         }

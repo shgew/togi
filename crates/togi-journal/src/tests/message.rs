@@ -1,5 +1,5 @@
 use test_case::test_case;
-use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal};
+use togi_machine::{Condition, CoreSet, PerCore, Regime, Signal, SleepMode};
 
 use super::fixtures::{
     core, failure, member, ord, profile, sample, samples, seq, set, target, trial,
@@ -439,7 +439,7 @@ fn units_appear_in_text() {
 
 #[test_case(
     EventKind::DayBootStart,
-    "day observer started by togi 0.1.0+abc1234: BIOS F31 on X570, 5950X, microcode 0xa201016, boost limit 5000 MHz; offsets [00: 0, 01: -5]"
+    "day observer started by togi 0.1.0+abc1234: BIOS F31 on X570, 5950X, microcode 0xa201016, boost limit 5000 MHz; offsets [00: 0, 01: -5]; hardware watchdog armed: watchdog0 (SP5100 TCO timer) active, held by PID 1"
 )]
 #[test_case(
     EventKind::DayCheckpoint,
@@ -458,8 +458,112 @@ fn units_appear_in_text() {
     EventKind::DayAnswer,
     "uid 1000 answered that boot 7a1b2c3d ended because graphics died but sound went on; offsets [00: -10, 01: -5]"
 )]
+#[test_case(
+    EventKind::DayRecord,
+    "recorded a crash at 2026-10-19T11:00:00Z that no day observer saw with offsets [00: -25, 01: -5] (entered in firmware setup at 2026-10-19T12:00:00Z); running: builds or tests; a Nix build"
+)]
+#[test_case(
+    EventKind::DayFault,
+    "uncorrected MCE on cpu 2 (core 01), bank 0 load_store at 1 s since boot; offsets [00: -10, 01: -5]"
+)]
 fn day_messages_tell_a_stranger_what_the_observer_saw(kind: EventKind, text: &str) {
     assert_eq!(message(kind), text);
+}
+
+#[test_case(
+    SleepMode::Suspend,
+    "; kernel log tail: amdgpu timeout; logging continued after the last error; the log ended at a suspend entry"
+)]
+#[test_case(
+    SleepMode::Hibernate,
+    "; kernel log tail: amdgpu timeout; logging continued after the last error; the log ended at a hibernation entry"
+)]
+fn an_unclean_end_that_ended_asleep_says_which_sleep(asleep: SleepMode, suffix: &str) {
+    let Payload::DayUncleanEnd(mut end) = sample(EventKind::DayUncleanEnd) else {
+        unreachable!()
+    };
+    end.evidence.asleep = Some(asleep);
+    let text = Payload::from(end).message();
+    assert!(text.ends_with(suffix), "{text}");
+}
+
+#[test_case(
+    crate::LiveFault::KernelError { error: togi_machine::KernelErrorKind::RcuStall },
+    "RCU stall at 1 s since boot; offsets [00: -10, 01: -5]"
+; "kernel error")]
+#[test_case(
+    crate::LiveFault::Trap {
+        trap: crate::Trap::IllegalInstruction,
+        name: "mprime".into(),
+        pid: 991,
+        cpu: Some(togi_machine::CpuId::from(3_u16)),
+        core: None,
+    },
+    "SIGILL (invalid opcode) in mprime[991] on cpu 3 at 1 s since boot; offsets [00: -10, 01: -5]"
+; "trap")]
+#[test_case(
+    crate::LiveFault::MachineCheck {
+        cpu: togi_machine::CpuId::from(5_u16),
+        core: None,
+        bank: 2,
+        bank_type: togi_machine::BankType::L3Cache,
+        corrected: true,
+    },
+    "corrected MCE on cpu 5 (no core), bank 2 l3_cache at 1 s since boot; offsets [00: -10, 01: -5]"
+; "corrected machine check")]
+#[test_case(
+    crate::LiveFault::KernelError { error: togi_machine::KernelErrorKind::Oops },
+    "kernel oops at 1 s since boot; offsets [00: -10, 01: -5]"
+; "oops")]
+#[test_case(
+    crate::LiveFault::KernelError { error: togi_machine::KernelErrorKind::SoftLockup },
+    "soft lockup at 1 s since boot; offsets [00: -10, 01: -5]"
+; "soft lockup")]
+#[test_case(
+    crate::LiveFault::Trap {
+        trap: crate::Trap::GeneralProtection,
+        name: "togi".into(),
+        pid: 421,
+        cpu: Some(togi_machine::CpuId::from(8_u16)),
+        core: Some(togi_machine::CoreId::new(0).unwrap()),
+    },
+    "general-protection fault in togi[421] on cpu 8 (core 00) at 1 s since boot; offsets [00: -10, 01: -5]"
+; "general protection")]
+#[test_case(
+    crate::LiveFault::Trap {
+        trap: crate::Trap::Bus,
+        name: "mprime".into(),
+        pid: 7,
+        cpu: None,
+        core: None,
+    },
+    "SIGBUS in mprime[7] at 1 s since boot; offsets [00: -10, 01: -5]"
+; "bus error")]
+fn live_fault_messages_name_the_fault_the_time_and_the_profile(
+    fault: crate::LiveFault,
+    text: &str,
+) {
+    let Payload::DayFault(mut sample) = sample(EventKind::DayFault) else {
+        unreachable!()
+    };
+    sample.fault = fault;
+    assert_eq!(Payload::from(sample).message(), text);
+}
+
+#[test]
+fn a_checkpoint_with_a_load_mix_names_each_share_in_seconds() {
+    let Payload::DayCheckpoint(mut checkpoint) = sample(EventKind::DayCheckpoint) else {
+        unreachable!()
+    };
+    checkpoint.load_mix = crate::LoadMix {
+        single_thread_ms: 1500,
+        all_threads_ms: 62_000,
+        ..crate::LoadMix::default()
+    };
+    assert_eq!(
+        Payload::from(checkpoint).message(),
+        "day observer has been active 3600 s in total this boot; sampled load: 1 s single-thread, 0 s light beside busy cores, 62 s all threads, 0 s idle transitions, 0 s quiet, 0 s other"
+    );
 }
 
 fn hunt_end(result: HuntOutcome, cores: &[u8], groups: u32, reason: &str) -> String {

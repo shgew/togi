@@ -140,6 +140,34 @@ togi day answer <boot> frozen
 
 `<boot>` is the boot id `status` prints. Answering needs no root shell, but it needs the day service running and your user allowed on its socket: name your user in `services.togi.day.users` (below). Run the same command again to change an answer; the last one counts. The answer is journaled against the crashed boot and its offset profile. It does not change any profile or tuning decision, and until you answer, togi's own reading of the evidence is shown but equally not acted on.
 
+### Recording a crash togi did not observe
+
+A freeze from before the day service existed has no unclean end to answer. `sudo togi day record` journals it, so Ruleset 13 can treat the offsets it ran as a whole-profile veto; the [journal spec](spec/journal.md#day-observation) has the rules, and the command prints what the record will do before it appends. It writes the journal itself, so stop the day service first (`systemctl stop togi-day.service`) and start it afterward.
+
+For a boot the observer saw end uncleanly, name it with `--boot <boot>`; the offsets are the ones the observer read back, unless you pass `--offset` for the ones you remember entering:
+
+```sh
+sudo togi day record --boot <boot> --running game
+```
+
+For a crash with no recorded end, give when it happened with `--unobserved-at` and the offsets with `--offset`, plus when you entered them in firmware setup with `--entered-at`. Each `--offset` is `all=N`, `ccdI=N` or `coreI=N`; a more specific one overrides a less specific one, and every core needs a value. To record the 2026-10-19 freezes:
+
+```sh
+# the freeze at -25 and -30 by CCD (check which CCD took which value)
+sudo togi day record --unobserved-at "<crash time>" --offset ccd0=-25 --offset ccd1=-30 \
+  --entered-at "<time you entered the offsets>" --running build
+
+# the freeze at the confirmed profile, which differs per core: one --offset coreI=N per core, N from your profile
+sudo togi day record --unobserved-at "<crash time>" --offset core0=N --offset core1=N --offset core2=N \
+  --entered-at "<time you entered the offsets>" --running desktop  # ...and so on for every core
+
+# the freeze at a uniform -20
+sudo togi day record --unobserved-at "<crash time>" --offset all=-20 \
+  --entered-at "<time you entered the offsets>" --running build
+```
+
+Times are RFC 3339 or local (`2026-10-19 14:30`). `--running` is `idle`, `desktop`, `build`, `game`, `other` or `unknown` (the default). At a terminal, `togi day record` asks for whatever the options leave out, with defaults: the newest unclean end without a record, and its read-back offsets. The prompts take the same `all=N` form as the options and journal the same record; `--yes` skips the final confirmation.
+
 `togi day notify` sends a desktop notification for each pending question using the installed `notify-send` (from libnotify; togi adds no notification library). On KDE Plasma (`XDG_CURRENT_DESKTOP` containing `KDE`) the notification has the four answers as buttons and waits up to two minutes for one. On other desktops it is a plain notification naming the command, because togi does not query what a notification server supports; answer with `togi day answer`. Dismissing a notification answers nothing, and the question stays in `status` and `watch`. The module's `togi-day-notify` user service runs it for each user in `services.togi.day.users`; elsewhere run `togi day notify` in your graphical session yourself.
 
 Daily observation requires an existing compatible session journal. It refuses to create a session or transition one written by another ruleset. Start a session through the tuning boot first. Stop daily observation before `togi run` or `togi reset` in a normal boot: they share the host and writer locks. `togi status`, `togi events` and `togi watch` remain lock-free while observation runs.
@@ -156,7 +184,16 @@ services.togi = {
 
 The `togi-day.service` unit is absent from the tuning specialisation. Enabling it keeps journald persistent with a five-second sync interval. Before a manual `run` or `reset` in a normal boot, use `systemctl stop togi-day.service`; start it again with `systemctl start togi-day.service` afterward. Inspect service diagnostics with `journalctl -u togi-day.service`. Enabling it without a session reports why it cannot start instead of creating a tuning session.
 
-The optional `services.togi.day.watchdog = true;` asks PID 1 to arm/feed a 60-second hardware watchdog in normal boots, without lockup panics. It is **off by default**; observation itself needs no watchdog and writes no offsets. Before opting in, validate the watchdog device and suspend/resume behavior on the hardware. Some systems lose devices after watchdog resets ([#315](https://github.com/shgew/togi/issues/315)); after a freeze, a full power-off rather than a warm reset avoids carrying that device state into the next boot.
+The optional `services.togi.day.watchdog = true;` asks PID 1 to arm and feed a 60-second hardware watchdog in normal boots, so a frozen machine resets itself and the next day service start records why. It is **off by default**; observation itself needs no watchdog and writes no offsets. It loads `sp5100_tco`, the AMD chipset watchdog driver, so it fits machines whose watchdog is that device. Add it next to `day.enable`:
+
+```nix
+services.togi = {
+  day.enable = true;
+  day.watchdog = true;
+};
+```
+
+A hardware watchdog may keep counting while the machine sleeps, so the option also adds `togi-day-watchdog-sleep.service`: before every suspend or hibernation it stops PID 1's watchdog, and after resume it starts it again. It works through systemd's sleep target, so a sleep started any other way (writing to `/sys/power/state` directly) does not stop the watchdog. The unit cannot stop a watchdog the kernel was told never to stop (`CONFIG_WATCHDOG_NOWAYOUT` or the driver's `nowayout` parameter). [Day watchdog](spec/runtime.md#day-watchdog) says what each sleep mode does. After rebuilding, `togi status` shows in its Day section whether the watchdog was armed when the day service last started, and `cat /sys/class/watchdog/watchdog0/state` says `active` while it is armed. Suspend the machine for longer than a minute in each sleep mode it offers (`cat /sys/power/mem_sleep`) and check that it resumes without a reset before relying on it. A watchdog reset that ended at a suspend or hibernation entry shows in the day question as a watchdog reset while the machine was going to sleep, not as a CPU hang.
 
 ## 4. Overnight: the tuning boot
 

@@ -1,6 +1,10 @@
-use togi_machine::Check;
+use std::path::PathBuf;
+
+use test_case::test_case;
+use togi_machine::{Check, WatchdogState};
 
 use super::support::Tree;
+use crate::watchdog::{Active, Ready, arming_with};
 
 fn device(root: &Tree, index: usize, state: &str, identity: Option<&str>) {
     let dir = format!("sys/class/watchdog/watchdog{index}");
@@ -176,4 +180,131 @@ fn a_class_directory_that_cannot_be_listed_fails_with_its_cause() {
         check.detail
     );
     assert!(check.detail.contains("Not a directory"), "{}", check.detail);
+}
+
+fn held(paths: &[&str]) -> Vec<PathBuf> {
+    paths.iter().map(PathBuf::from).collect()
+}
+
+fn armed(detail: &str) -> WatchdogState {
+    WatchdogState::Armed {
+        detail: detail.to_owned(),
+    }
+}
+
+fn unarmed(detail: &str) -> WatchdogState {
+    WatchdogState::Unarmed {
+        detail: detail.to_owned(),
+    }
+}
+
+fn ready_device(name: &str, identity: &str) -> Ready {
+    Ready {
+        name: name.to_owned(),
+        identity: identity.to_owned(),
+    }
+}
+
+fn active(name: &str, identity: &str) -> Active {
+    Active {
+        first: ready_device(name, identity),
+        rest: Vec::new(),
+    }
+}
+
+fn two_active() -> Active {
+    Active {
+        first: ready_device("watchdog0", "SP5100 TCO timer"),
+        rest: vec![ready_device("watchdog1", "i6300ESB timer")],
+    }
+}
+
+#[test_case(&["/dev/watchdog1"]; "the second device")]
+#[test_case(&["/dev/watchdog0", "/dev/watchdog1"]; "both devices")]
+fn pid_1_holding_any_active_hardware_watchdog_arms_it(descriptors: &[&str]) {
+    assert!(arming_with(&Ok(two_active()), Ok(held(descriptors))).is_armed());
+}
+
+#[test]
+fn the_armed_detail_names_the_device_pid_1_holds() {
+    assert_eq!(
+        arming_with(&Ok(two_active()), Ok(held(&["/dev/watchdog1"]))),
+        armed("watchdog1 (i6300ESB timer) active, held by PID 1")
+    );
+}
+
+#[test]
+fn pid_1_holding_neither_of_two_active_watchdogs_is_not_armed() {
+    assert_eq!(
+        arming_with(
+            &Ok(two_active()),
+            Ok(held(&["/dev/null", "/dev/watchdog2"]))
+        ),
+        unarmed(
+            "watchdog0 (SP5100 TCO timer) active, watchdog1 (i6300ESB timer) active, but PID 1 does not hold /dev/watchdog0 or /dev/watchdog1"
+        )
+    );
+}
+
+#[test_case("/dev/watchdog0"; "a numbered device")]
+#[test_case("/dev/watchdog"; "the compatibility node")]
+fn an_active_watchdog_that_pid_1_holds_is_armed(node: &str) {
+    assert_eq!(
+        arming_with(
+            &Ok(active("watchdog0", "SP5100 TCO timer")),
+            Ok(held(&["/dev/null", node, "socket:[12]"]))
+        ),
+        armed("watchdog0 (SP5100 TCO timer) active, held by PID 1")
+    );
+}
+
+#[test]
+fn the_compatibility_node_belongs_to_the_first_watchdog_only() {
+    assert_eq!(
+        arming_with(
+            &Ok(active("watchdog1", "i6300ESB timer")),
+            Ok(held(&["/dev/watchdog"]))
+        ),
+        unarmed("watchdog1 (i6300ESB timer) active, but PID 1 does not hold /dev/watchdog1")
+    );
+}
+
+#[test_case(&["/dev/watchdog1"]; "a software watchdog it feeds instead")]
+#[test_case(&["/dev/null", "/dev/ttyS0"]; "no watchdog at all")]
+#[test_case(&["/dev/watchdog00"]; "a name that only starts like the device")]
+fn an_active_watchdog_that_pid_1_does_not_hold_is_not_armed(descriptors: &[&str]) {
+    assert_eq!(
+        arming_with(
+            &Ok(active("watchdog0", "SP5100 TCO timer")),
+            Ok(held(descriptors))
+        ),
+        unarmed("watchdog0 (SP5100 TCO timer) active, but PID 1 does not hold /dev/watchdog0")
+    );
+}
+
+#[test]
+fn a_present_but_inactive_watchdog_is_not_armed_whatever_pid_1_holds() {
+    assert_eq!(
+        arming_with(
+            &Err(refused("watchdog0 state \"inactive\", want active")),
+            Ok(held(&["/dev/watchdog0"]))
+        ),
+        unarmed("watchdog0 state \"inactive\", want active")
+    );
+}
+
+#[test]
+fn unreadable_pid_1_descriptors_leave_the_watchdog_unarmed_with_the_cause() {
+    let state = arming_with(
+        &Ok(active("watchdog0", "SP5100 TCO timer")),
+        Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+    );
+    assert!(!state.is_armed());
+    assert!(
+        state
+            .detail()
+            .starts_with("watchdog0 (SP5100 TCO timer) active; read PID 1 descriptors: "),
+        "{}",
+        state.detail()
+    );
 }

@@ -102,6 +102,33 @@ pub struct Check {
     pub ok: bool,
 }
 
+object_only! {
+    /// Whether PID 1's hardware watchdog is armed: the kernel reports a hardware watchdog active and PID 1 holds
+    /// its device, so a frozen machine resets. `detail` names the device, or what is missing.
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+    #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+    pub enum WatchdogState {
+        Armed { detail: String },
+        Unarmed { detail: String },
+    }
+}
+
+impl WatchdogState {
+    /// Whether a hang would reset the machine.
+    pub const fn is_armed(&self) -> bool {
+        match self {
+            Self::Armed { .. } => true,
+            Self::Unarmed { .. } => false,
+        }
+    }
+
+    pub fn detail(&self) -> &str {
+        match self {
+            Self::Armed { detail } | Self::Unarmed { detail } => detail,
+        }
+    }
+}
+
 /// One trial to run. `roles` gives every loaded logical CPU its workload, instance and schedule; build them with
 /// [`TrialRole::legacy`], [`TrialRole::neighbours`] or [`TrialRole::all_threads`] and `cores` and `cpus` list
 /// what they load, in role order ([`TrialSpec::check_roles`]). For R8 and R9 `workload` names the class, whose
@@ -268,12 +295,41 @@ object_only! {
     }
 }
 
-/// Kernel traps, machine checks and the cursor after the last log entry read.
+/// An error the kernel logged about itself: an oops, an RCU stall or a soft lockup.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KernelErrorKind {
+    Oops,
+    RcuStall,
+    SoftLockup,
+}
+
+/// One kernel log entry reporting a [`KernelErrorKind`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KernelError {
+    pub kind: KernelErrorKind,
+    pub monotonic: Duration,
+    pub lines: Vec<String>,
+}
+
+/// Kernel traps, machine checks, kernel errors and the cursor after the last log entry read.
 #[derive(Debug, Default)]
 pub struct KernelRead {
     pub mces: Vec<Mce>,
     pub faults: Vec<ProcessFault>,
+    pub errors: Vec<KernelError>,
     pub cursor: KernelCursor,
+}
+
+/// One logical CPU's cumulative scheduler time, in the kernel's clock ticks since boot. Suspended time adds to
+/// neither count.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CpuTime {
+    pub cpu: CpuId,
+    /// Ticks spent running anything but the idle task (and not waiting for I/O).
+    pub busy: u64,
+    /// Ticks in every state.
+    pub total: u64,
 }
 
 object_only! {

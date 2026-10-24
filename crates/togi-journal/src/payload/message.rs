@@ -1,7 +1,8 @@
 use std::fmt::Write as _;
 
 use togi_machine::{
-    CoreId, CoreSet, KernelFault, KernelTail, MceCount, PerCore, Signal, TargetOffset, WorkloadId,
+    CoreId, CoreSet, KernelErrorKind, KernelFault, KernelTail, MceCount, PerCore, Signal,
+    TargetOffset, WatchdogState, WorkloadId,
 };
 
 use super::domain::{
@@ -13,14 +14,15 @@ use super::smu::SmuCommand;
 use super::tuner::{Member, Rederived};
 use super::{
     BackendRetry, BootLeaveReason, BootSavedEntry, CheckingChain, CheckingCycle, CheckingStep,
-    Combination, CommandReset, ConfigLoaded, CoreTransition, CrashDetected, DayAnswer,
-    DayBootStart, DayCheckpoint, DayOffsetsChanged, DayUncleanEnd, DeadEnd, DeepeningRound,
-    DefectAnswered, DefectFound, Failure, FailureCarried, HostRanking, HuntEnd, HuntGroup,
-    HuntSkipped, HuntStart, JournalTorn, Mce, Payload, PreflightCheck, ProfileApplied,
-    ProfileChange, ProfileRestored, SessionArchived, SessionBaseline, SessionCarried,
-    SessionContext, SessionNotice, SessionStart, SessionWarning, Shutdown, SmuError,
-    SmuIntentRecord, SmuReadback, SmuWriteRecord, StateRebuilt, TrialCarried, TrialEnd,
-    TrialIntent, TrialProgress, TrialSample, TrialSignal, TrialStart, TunerDecision, TunerWarning,
+    Combination, CommandReset, ConfigLoaded, CoreTransition, CrashDetected, CrashedBoot, DayAnswer,
+    DayBootStart, DayCheckpoint, DayFault, DayOffsetsChanged, DayRecord, DayUncleanEnd, DeadEnd,
+    DeepeningRound, DefectAnswered, DefectFound, Failure, FailureCarried, HostRanking, HuntEnd,
+    HuntGroup, HuntSkipped, HuntStart, JournalTorn, LiveFault, Mce, OffsetSource, Payload,
+    PreflightCheck, ProfileApplied, ProfileChange, ProfileRestored, SessionArchived,
+    SessionBaseline, SessionCarried, SessionContext, SessionNotice, SessionStart, SessionWarning,
+    Shutdown, SmuError, SmuIntentRecord, SmuReadback, SmuWriteRecord, StateRebuilt, Trap,
+    TrialCarried, TrialEnd, TrialIntent, TrialProgress, TrialSample, TrialSignal, TrialStart,
+    TunerDecision, TunerWarning,
 };
 use crate::Build;
 
@@ -83,6 +85,8 @@ impl Payload {
             Self::DayCleanStop(_) => "day observer stopped on request".to_owned(),
             Self::DayUncleanEnd(p) => day_unclean_end(p),
             Self::DayAnswer(p) => day_answer(p),
+            Self::DayRecord(p) => day_record(p),
+            Self::DayFault(p) => day_fault(p),
         }
     }
 }
@@ -1130,7 +1134,7 @@ fn state_rebuilt(p: &StateRebuilt) -> String {
 }
 
 fn day_boot_start(p: &DayBootStart) -> String {
-    format!(
+    let mut text = format!(
         "day observer started by {}: BIOS {} on {}, {}, microcode {}, boost limit {} MHz; offsets {}",
         build_name(&p.build),
         p.bios.bios_version,
@@ -1139,14 +1143,38 @@ fn day_boot_start(p: &DayBootStart) -> String {
         p.bios.microcode,
         p.bios.boost_limit_mhz,
         offsets(&p.offsets, |offset| offset.0.to_string())
-    )
+    );
+    match &p.watchdog {
+        Some(WatchdogState::Armed { detail }) => {
+            let _ = write!(text, "; hardware watchdog armed: {detail}");
+        }
+        Some(WatchdogState::Unarmed { detail }) => {
+            let _ = write!(text, "; hardware watchdog not armed: {detail}");
+        }
+        None => {}
+    }
+    text
 }
 
 fn day_checkpoint(p: DayCheckpoint) -> String {
-    format!(
+    let mut text = format!(
         "day observer has been active {} s in total this boot",
         p.applied_secs
-    )
+    );
+    let mix = p.load_mix;
+    if mix.total_ms() > 0 {
+        let _ = write!(
+            text,
+            "; sampled load: {} s single-thread, {} s light beside busy cores, {} s all threads, {} s idle transitions, {} s quiet, {} s other",
+            mix.single_thread_ms / 1000,
+            mix.light_beside_busy_ms / 1000,
+            mix.all_threads_ms / 1000,
+            mix.idle_transition_ms / 1000,
+            mix.quiet_ms / 1000,
+            mix.other_ms / 1000
+        );
+    }
+    text
 }
 
 fn day_offsets_changed(p: &DayOffsetsChanged) -> String {
@@ -1186,6 +1214,9 @@ pub(super) fn day_unclean_end(p: &DayUncleanEnd) -> String {
         mce_count(p.evidence.successor_mces),
         kernel_tail(&p.evidence.tail)
     );
+    if let Some(asleep) = p.evidence.asleep {
+        let _ = write!(text, "; the log ended at {}", asleep.entry_words());
+    }
     text
 }
 
@@ -1246,6 +1277,58 @@ fn kernel_tail(tail: &KernelTail) -> String {
     }
 }
 
+fn day_fault(p: &DayFault) -> String {
+    let what = match &p.fault {
+        LiveFault::MachineCheck {
+            cpu,
+            core: owner,
+            bank,
+            bank_type,
+            corrected,
+        } => format!(
+            "{} MCE on cpu {} ({}), bank {bank} {bank_type}",
+            if *corrected {
+                "corrected"
+            } else {
+                "uncorrected"
+            },
+            cpu.get(),
+            owner.map_or_else(|| "no core".to_owned(), |id| format!("core {}", core(id))),
+        ),
+        LiveFault::KernelError { error } => match error {
+            KernelErrorKind::Oops => "kernel oops".to_owned(),
+            KernelErrorKind::RcuStall => "RCU stall".to_owned(),
+            KernelErrorKind::SoftLockup => "soft lockup".to_owned(),
+        },
+        LiveFault::Trap {
+            trap,
+            name,
+            pid,
+            cpu,
+            core: owner,
+        } => {
+            let trap = match trap {
+                Trap::IllegalInstruction => "SIGILL (invalid opcode)",
+                Trap::Bus => "SIGBUS",
+                Trap::GeneralProtection => "general-protection fault",
+            };
+            let mut text = format!("{trap} in {name}[{pid}]");
+            if let Some(cpu) = cpu {
+                let _ = write!(text, " on cpu {}", cpu.get());
+            }
+            if let Some(owner) = owner {
+                let _ = write!(text, " (core {})", core(*owner));
+            }
+            text
+        }
+    };
+    format!(
+        "{what} at {} s since boot; offsets {}",
+        p.monotonic_ns / 1_000_000_000,
+        offsets(&p.offsets, |offset| offset.0.to_string())
+    )
+}
+
 fn day_answer(p: &DayAnswer) -> String {
     format!(
         "uid {} answered that boot {} ended because {}; offsets {}",
@@ -1254,4 +1337,43 @@ fn day_answer(p: &DayAnswer) -> String {
         p.answer.meaning(),
         offsets(&p.offsets, |offset| offset.0.to_string())
     )
+}
+
+fn offset_source(source: OffsetSource) -> String {
+    match source {
+        OffsetSource::Entered { at } => format!("entered in firmware setup at {at}"),
+        OffsetSource::ReadBack { at } => format!("read back at {at}"),
+    }
+}
+
+fn day_record(p: &DayRecord) -> String {
+    let boot = match &p.boot {
+        CrashedBoot::UncleanEnd { boot } => format!("boot {}", short_boot(boot.as_str())),
+        CrashedBoot::Unobserved { at } => format!("a crash at {at} that no day observer saw"),
+    };
+    let mut text = format!(
+        "recorded {boot} with offsets {} ({}); running: {}",
+        offsets(p.offsets.get(), |offset| offset.0.to_string()),
+        offset_source(p.source),
+        p.running.meaning()
+    );
+    if let Some(note) = &p.note {
+        let _ = write!(text, "; {note}");
+    }
+    text
+}
+
+pub(super) fn day_record_effect(p: &DayRecord) -> String {
+    let mut text = format!(
+        "Ruleset 13 will treat this record as a whole-profile veto: it never applies a day profile at or deeper than offsets {} on every core, until evidence clears the record. This build only records it; nothing reads it yet.",
+        offsets(p.offsets.get(), |offset| offset.0.to_string())
+    );
+    if let CrashedBoot::UncleanEnd { boot } = &p.boot {
+        let _ = write!(
+            text,
+            " It does not answer the question about boot {}.",
+            short_boot(boot.as_str())
+        );
+    }
+    text
 }

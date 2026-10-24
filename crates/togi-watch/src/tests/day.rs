@@ -4,7 +4,8 @@
 use test_case::test_case;
 use togi_journal::DayUncleanEnd;
 use togi_machine::{
-    EndEvidence, GraphicsDriver, KernelFault, KernelTail, MceCount, PerCore, ResetKind, ResetReason,
+    EndEvidence, GraphicsDriver, KernelFault, KernelTail, MceCount, PerCore, ResetKind,
+    ResetReason, SleepMode,
 };
 
 use crate::day::observed;
@@ -37,6 +38,7 @@ fn rendered(crashed_mces: MceCount, successor_mces: MceCount, tail: KernelTail) 
             crashed_mces,
             successor_mces,
             tail,
+            asleep: None,
         },
     };
     observed(&end).join("\n") + "\n"
@@ -93,4 +95,28 @@ fn the_evidence_is_worded_for_the_operator(
     expected: &str,
 ) {
     assert_eq!(rendered(crashed, successor, tail), expected);
+}
+
+#[test]
+fn a_log_that_ended_at_a_sleep_entry_says_so_and_reads_as_a_sleep_watchdog_reset() {
+    let mut end = DayUncleanEnd {
+        boot: "7a1b2c3d-0000-0000-0000-000000000000".to_owned().into(),
+        last_checkpoint: None,
+        offsets: PerCore::default(),
+        reset_reason: ResetReason {
+            kind: Some(ResetKind::Watchdog),
+            raw: Vec::new(),
+            supported: true,
+        },
+        evidence: EndEvidence::unknown(),
+    };
+    end.evidence.asleep = Some(SleepMode::Suspend);
+    assert_eq!(
+        observed(&end).last().map(String::as_str),
+        Some("the log ended at a suspend entry")
+    );
+    assert_eq!(
+        crate::day::class_words(end.class()),
+        "a watchdog reset while the machine was going to sleep"
+    );
 }
