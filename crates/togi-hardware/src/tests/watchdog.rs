@@ -182,8 +182,8 @@ fn a_class_directory_that_cannot_be_listed_fails_with_its_cause() {
     assert!(check.detail.contains("Not a directory"), "{}", check.detail);
 }
 
-fn held(paths: &[&str]) -> std::io::Result<Vec<PathBuf>> {
-    Ok(paths.iter().map(PathBuf::from).collect())
+fn held(paths: &[&str]) -> Vec<PathBuf> {
+    paths.iter().map(PathBuf::from).collect()
 }
 
 fn armed(detail: &str) -> WatchdogState {
@@ -204,7 +204,7 @@ fn an_active_watchdog_that_pid_1_holds_is_armed(device: &str) {
     assert_eq!(
         arming_with(
             &ready("watchdog0 (SP5100 TCO timer) active"),
-            held(&["/dev/null", device, "socket:[12]"])
+            Ok(held(&["/dev/null", device, "socket:[12]"]))
         ),
         armed("watchdog0 (SP5100 TCO timer) active, held by PID 1")
     );
@@ -215,7 +215,7 @@ fn an_active_watchdog_that_pid_1_does_not_hold_is_not_armed() {
     assert_eq!(
         arming_with(
             &ready("watchdog0 (SP5100 TCO timer) active"),
-            held(&["/dev/null", "/dev/ttyS0"])
+            Ok(held(&["/dev/null", "/dev/ttyS0"]))
         ),
         unarmed("watchdog0 (SP5100 TCO timer) active, but PID 1 holds no /dev/watchdog device")
     );
@@ -226,7 +226,7 @@ fn a_present_but_inactive_watchdog_is_not_armed_whatever_pid_1_holds() {
     assert_eq!(
         arming_with(
             &refused("watchdog0 state \"inactive\", want active"),
-            held(&["/dev/watchdog0"])
+            Ok(held(&["/dev/watchdog0"]))
         ),
         unarmed("watchdog0 state \"inactive\", want active")
     );
