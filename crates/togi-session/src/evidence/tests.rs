@@ -604,7 +604,7 @@ fn mixed_regime_telemetry_starts_at_thirty_seconds_and_suspension_is_not_a_stall
 }
 
 #[test]
-fn idle_core_clocks_and_core_power_do_not_change_loaded_core_summaries() {
+fn idle_core_clocks_do_not_change_loaded_core_summaries() {
     let samples = telemetry_samples(20);
     let loaded = set(&[2, 7]);
     let ccd = |core: CoreId| CcdId::try_from(core.get() / 4).ok();
