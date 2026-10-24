@@ -613,7 +613,6 @@ fn idle_core_clocks_and_core_power_do_not_change_loaded_core_summaries() {
     let extended = samples.into_iter().map(|mut sample| {
         sample.core_mhz.set(core(0), 100);
         sample.core_mhz.set(core(4), 6000);
-        sample.cores_power_w = Some(50.0);
         Ok(sample)
     });
     let after = summarize_samples(extended, loaded, Regime::R7, ccd).unwrap();

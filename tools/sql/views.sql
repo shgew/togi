@@ -123,7 +123,6 @@ select
     core_mhz,
     worker_cpu_ms,
     package_power_w,
-    cores_power_w,
     pm_table
 from read_json(
     getvariable('sample_files'),
@@ -135,7 +134,6 @@ from read_json(
         core_mhz: 'MAP(INTEGER, BIGINT)',
         worker_cpu_ms: 'MAP(INTEGER, BIGINT)',
         package_power_w: 'DOUBLE',
-        cores_power_w: 'DOUBLE',
         pm_table: 'STRUCT(power_w DOUBLE[], voltage_request_v DOUBLE[], temperature_c DOUBLE[], c0_pct DOUBLE[], cc1_pct DOUBLE[], cc6_pct DOUBLE[])'
     },
     filename = true,
@@ -164,8 +162,7 @@ select
     s.pm_table.cc1_pct[core + 1] as cc1_pct,
     s.pm_table.cc6_pct[core + 1] as cc6_pct,
     s.tctl_c,
-    s.package_power_w,
-    s.cores_power_w
+    s.package_power_w
 from samples s
 left join trials t on t.session = s.session and t.trial = s.trial
 cross join unnest(list_sort(list_distinct(list_concat(map_keys(s.core_mhz), map_keys(s.worker_cpu_ms))))) as loaded(core)
